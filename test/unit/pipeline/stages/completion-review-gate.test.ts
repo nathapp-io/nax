@@ -9,14 +9,14 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { InteractionChain } from "../../../../src/interaction/chain";
-import type { InteractionPlugin, InteractionResponse } from "../../../../src/interaction/types";
-import { _completionDeps } from "../../../../src/pipeline/stages/completion";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import type { PRD, UserStory } from "../../../../src/prd";
-import { withTempDir } from "../../../helpers/temp";
-import { makeNaxConfig } from "../../../helpers";
-import { makeMockRuntime } from "../../../helpers/runtime";
+import { InteractionChain } from "@/interaction/chain";
+import type { InteractionPlugin, InteractionResponse } from "@/interaction/types";
+import { _completionDeps } from "@/pipeline/stages/completion";
+import type { PipelineContext } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd";
+import { withTempDir } from "@test/helpers";
+import { makeNaxConfig } from "@test/helpers";
+import { makeMockRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration
@@ -120,7 +120,7 @@ afterEach(() => {
 describe("completionStage — review-gate trigger", () => {
   test("calls review-gate trigger after story passes when enabled", async () => {
     await withTempDir(async (tempDir) => {
-      const { completionStage } = await import("../../../../src/pipeline/stages/completion");
+      const { completionStage } = await import("@/pipeline/stages/completion");
       _completionDeps.checkReviewGate = mock(async () => true);
 
       const config = makeConfig({ "review-gate": { enabled: true } });
@@ -136,7 +136,7 @@ describe("completionStage — review-gate trigger", () => {
 
   test("does not call trigger when review-gate is disabled (default)", async () => {
     await withTempDir(async (tempDir) => {
-      const { completionStage } = await import("../../../../src/pipeline/stages/completion");
+      const { completionStage } = await import("@/pipeline/stages/completion");
       _completionDeps.checkReviewGate = mock(async () => true);
 
       const config = makeConfig({});
@@ -152,7 +152,7 @@ describe("completionStage — review-gate trigger", () => {
 
   test("does not fail pipeline when trigger responds abort", async () => {
     await withTempDir(async (tempDir) => {
-      const { completionStage } = await import("../../../../src/pipeline/stages/completion");
+      const { completionStage } = await import("@/pipeline/stages/completion");
       _completionDeps.checkReviewGate = mock(async () => false);
 
       const config = makeConfig({ "review-gate": { enabled: true } });
@@ -168,7 +168,7 @@ describe("completionStage — review-gate trigger", () => {
 
   test("continues normally when trigger approves", async () => {
     await withTempDir(async (tempDir) => {
-      const { completionStage } = await import("../../../../src/pipeline/stages/completion");
+      const { completionStage } = await import("@/pipeline/stages/completion");
       _completionDeps.checkReviewGate = mock(async () => true);
 
       const config = makeConfig({ "review-gate": { enabled: true } });
@@ -183,7 +183,7 @@ describe("completionStage — review-gate trigger", () => {
 
   test("does not call trigger when no interaction chain", async () => {
     await withTempDir(async (tempDir) => {
-      const { completionStage } = await import("../../../../src/pipeline/stages/completion");
+      const { completionStage } = await import("@/pipeline/stages/completion");
       _completionDeps.checkReviewGate = mock(async () => true);
 
       const config = makeConfig({ "review-gate": { enabled: true } });
@@ -198,7 +198,7 @@ describe("completionStage — review-gate trigger", () => {
 
   test("passes correct context to checkReviewGate", async () => {
     await withTempDir(async (tempDir) => {
-      const { completionStage } = await import("../../../../src/pipeline/stages/completion");
+      const { completionStage } = await import("@/pipeline/stages/completion");
       _completionDeps.checkReviewGate = mock(async () => true);
 
       const config = makeConfig({ "review-gate": { enabled: true } });
@@ -215,7 +215,7 @@ describe("completionStage — review-gate trigger", () => {
 
   test("calls trigger for each story when multiple stories passed", async () => {
     await withTempDir(async (tempDir) => {
-      const { completionStage } = await import("../../../../src/pipeline/stages/completion");
+      const { completionStage } = await import("@/pipeline/stages/completion");
       _completionDeps.checkReviewGate = mock(async () => true);
 
       const config = makeConfig({ "review-gate": { enabled: true } });

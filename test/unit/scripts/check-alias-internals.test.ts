@@ -7,8 +7,8 @@ import {
   formatShadowedBarrelReport,
   loadBarrels,
   scanFileForAliasInternals,
-} from "../../../scripts/check-alias-internals";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+} from "@scripts/check-alias-internals";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function setupRepo(root: string) {
   mkdirSync(join(root, "src", "routing"), { recursive: true });

@@ -16,11 +16,11 @@
  *   - runAsSessionFn controls what the underlying send returns (stateful via counter)
  */
 import { describe, expect, test } from "bun:test";
-import { callOp } from "../../../src/operations";
-import type { RunOperation } from "../../../src/operations";
-import { DEFAULT_CONFIG, pickSelector } from "../../../src/config";
-import { makeMockAgentManager, makeMockCallContext, makeMockRuntime, makeSessionManager } from "../../helpers";
-import type { TurnResult } from "../../../src/agents/types";
+import { callOp } from "@/operations";
+import type { RunOperation } from "@/operations";
+import { DEFAULT_CONFIG, pickSelector } from "@/config";
+import { makeMockAgentManager, makeMockCallContext, makeMockRuntime, makeSessionManager } from "@test/helpers";
+import type { TurnResult } from "@/agents/types";
 
 const sel = pickSelector("run-empty-output-retry-test", "routing");
 

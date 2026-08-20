@@ -7,8 +7,8 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { InteractionChain } from "../../../src/interaction/chain";
-import type { InteractionPlugin, InteractionResponse } from "../../../src/interaction/types";
+import { InteractionChain } from "@/interaction/chain";
+import type { InteractionPlugin, InteractionResponse } from "@/interaction/types";
 import {
   checkCostExceeded,
   checkCostWarning,
@@ -17,8 +17,8 @@ import {
   checkPreMerge,
   checkSecurityReview,
   isTriggerEnabled,
-} from "../../../src/interaction/triggers";
-import { makeNaxConfig } from "../../helpers";
+} from "@/interaction/triggers";
+import { makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

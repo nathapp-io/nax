@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   acceptanceSetupStage,
   _acceptanceSetupDeps,
-} from "../../../../src/pipeline/stages/acceptance-setup";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import { DEFAULT_CONFIG } from "../../../../src/config";
-import { waitForCondition } from "../../../helpers/timeout";
+} from "@/pipeline/stages/acceptance-setup";
+import type { PipelineContext } from "@/pipeline/types";
+import { DEFAULT_CONFIG } from "@/config";
+import { waitForCondition } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

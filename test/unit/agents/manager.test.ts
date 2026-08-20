@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { AgentManager } from "../../../src/agents/manager";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import type { NaxConfig } from "../../../src/config";
-import { NaxConfigSchema } from "../../../src/config/schemas";
-import { MiddlewareChain, type AgentMiddleware, type MiddlewareContext } from "../../../src/runtime/agent-middleware";
-import { _acpAdapterDeps } from "../../../src/agents/acp/adapter";
+import { AgentManager } from "@/agents/manager";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import type { NaxConfig } from "@/config";
+import { NaxConfigSchema } from "@/config/schemas";
+import { MiddlewareChain, type AgentMiddleware, type MiddlewareContext } from "@/runtime/agent-middleware";
+import { _acpAdapterDeps } from "@/agents/acp/adapter";
 import { makeClient, makeSession } from "./acp/adapter.test";
 
 function makeManager(fallback: Record<string, unknown> = {}) {
@@ -118,7 +118,7 @@ describe("AgentManager — Phase 1 pass-through", () => {
   });
 
   test("AgentAdapter interface has no run() method", () => {
-    const hasRun = "run" in ({} as import("../../../src/agents/types").AgentAdapter);
+    const hasRun = "run" in ({} as import("@/agents/types").AgentAdapter);
     expect(typeof hasRun).toBe("boolean");
   });
 });

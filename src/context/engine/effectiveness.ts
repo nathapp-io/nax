@@ -11,8 +11,8 @@
  * See: docs/specs/SPEC-context-engine-v2-amendments.md Amendment A.2
  */
 
-import { getLogger } from "../../logger";
-import { errorMessage } from "../../utils/errors";
+import { getLogger } from "@/logger";
+import { errorMessage } from "@/utils/errors";
 import { globToRegex, normalizePath } from "./index";
 import { _manifestStoreDeps, loadContextManifests } from "./manifest-store";
 import type { ChunkEffectiveness } from "./types";

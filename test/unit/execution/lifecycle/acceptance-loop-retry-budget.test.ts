@@ -13,7 +13,7 @@ import type { Finding } from "@/findings";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { PRD } from "@/prd";
 import { cleanupTempDir, makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeTempDir } from "@test/helpers";
-import { _diagnosisDeps } from "../../../../src/execution/lifecycle/acceptance-fix";
+import { _diagnosisDeps } from "@/execution/lifecycle/acceptance-fix";
 import {
   type AcceptanceLoopContext,
   _acceptanceFixCycleDeps,
@@ -21,7 +21,7 @@ import {
   _regenerateDeps,
   _runAcceptanceTestsOnceDeps,
   runAcceptanceLoop,
-} from "../../../../src/execution/lifecycle/acceptance-loop";
+} from "@/execution/lifecycle/acceptance-loop";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 

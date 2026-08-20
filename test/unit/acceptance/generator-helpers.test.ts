@@ -7,8 +7,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { extractTestCode, generateSkeletonTests } from "../../../src/acceptance/generator-helpers";
-import type { AcceptanceCriterion } from "../../../src/acceptance/types";
+import { extractTestCode, generateSkeletonTests } from "@/acceptance/generator-helpers";
+import type { AcceptanceCriterion } from "@/acceptance/types";
 
 function makeCriteria(count = 2): AcceptanceCriterion[] {
   return Array.from({ length: count }, (_, i) => ({

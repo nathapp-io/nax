@@ -6,8 +6,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { UserStory } from "../../../src/prd";
-import { PromptBuilder } from "../../../src/prompts";
+import type { UserStory } from "@/prd";
+import { PromptBuilder } from "@/prompts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

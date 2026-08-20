@@ -9,12 +9,12 @@ import { describe, expect, test } from "bun:test";
 
 describe("ADR-020: wrapAdapterAsManager is forbidden", () => {
   test("is not exported from src/agents/utils", async () => {
-    const mod = await import("../../../src/agents/utils");
+    const mod = await import("@/agents/utils");
     expect("wrapAdapterAsManager" in mod).toBe(false);
   });
 
   test("fakeAgentManager is available from test helpers", async () => {
-    const { fakeAgentManager } = await import("../../helpers/fake-agent-manager");
+    const { fakeAgentManager } = await import("@test/helpers");
     expect(typeof fakeAgentManager).toBe("function");
   });
 });

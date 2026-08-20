@@ -7,8 +7,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { NaxConfigSchema } from "../../../src/config/schemas";
-import type { SmartTestRunnerConfig } from "../../../src/config/types";
+import { NaxConfigSchema } from "@/config/schemas";
+import type { SmartTestRunnerConfig } from "@/config/types";
 
 describe("SmartTestRunner config coercion", () => {
   function parseExecution(smartTestRunner: unknown) {

@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import type { UserStory } from "../../../../src/prd/types";
+import type { UserStory } from "@/prd/types";
 import {
   buildBatchStorySection,
   buildStoryReminderSection,
   buildStorySection,
-} from "../../../../src/prompts/sections/story";
-import { makeStory } from "../../../helpers";
+} from "@/prompts/sections/story";
+import { makeStory } from "@test/helpers";
 
 describe("buildStorySection", () => {
   const mockStory = makeStory({ id: "STORY-001", title: "Test Story", description: "This is a test story", acceptanceCriteria: ["Criterion 1", "Criterion 2", "Criterion 3"] });

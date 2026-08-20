@@ -129,7 +129,7 @@ describe("story.start logging — parallel batch dispatch", () => {
   }
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunParallelBatch = deps.runParallelBatch;
     origSelectIndependentBatch = deps.selectIndependentBatch;
@@ -168,7 +168,7 @@ describe("story.start logging — parallel batch dispatch", () => {
       totalCost: 0,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
     const ctx = makeCtx({ parallelCount: 2 });
 
@@ -205,7 +205,7 @@ describe("story.start logging — parallel batch dispatch", () => {
       totalCost: 0,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, makePendingStory("US-002")]);
     const ctx = makeCtx({ parallelCount: 2 });
 
@@ -240,7 +240,7 @@ describe("story.start logging — sequential (single-story) dispatch", () => {
   }
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunIteration = deps.runIteration;
     origSelectIndependentBatch = deps.selectIndependentBatch;
@@ -277,7 +277,7 @@ describe("story.start logging — sequential (single-story) dispatch", () => {
       prdDirty: false,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1]);
     const ctx = makeCtx({ parallelCount: 2 });
 
@@ -310,7 +310,7 @@ describe("story.start logging — sequential (single-story) dispatch", () => {
       prdDirty: false,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1]);
     const ctx = makeCtx({ parallelCount: 2 });
 
@@ -338,7 +338,7 @@ describe("story.start announcement — profile-assigned stories (#1575)", () => 
   let origRunParallelBatch: unknown;
   let origSelectIndependentBatch: unknown;
   let loggerSpy: ReturnType<typeof spyOn>;
-  let executeUnified: typeof import("../../../src/execution/unified-executor").executeUnified;
+  let executeUnified: typeof import("@/execution/unified-executor").executeUnified;
 
   interface LogCall {
     stage: string;
@@ -365,7 +365,7 @@ describe("story.start announcement — profile-assigned stories (#1575)", () => 
     // unified-executor is not re-exported from the execution barrel, so this
     // stays a direct module import; capture executeUnified here so each test
     // does not repeat it.
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     executeUnified = mod.executeUnified;
     origRunIteration = deps.runIteration;

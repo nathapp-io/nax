@@ -6,15 +6,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _setupDeps, setupCommand } from "../../../src/cli/setup";
-import { setupCommand as barrelSetupCommand } from "../../../src/cli";
-import { DEFAULT_CONFIG, NaxConfigSchema } from "../../../src/config";
-import { NaxError } from "../../../src/errors";
-import type { RepoAnalysis } from "../../../src/cli/setup-types";
-import type { SetupPlan } from "../../../src/operations/setup-generate";
+import { _setupDeps, setupCommand } from "@/cli/setup";
+import { setupCommand as barrelSetupCommand } from "@/cli";
+import { DEFAULT_CONFIG, NaxConfigSchema } from "@/config";
+import { NaxError } from "@/errors";
+import type { RepoAnalysis } from "@/cli/setup-types";
+import type { SetupPlan } from "@/operations/setup-generate";
 import type { NaxConfig } from "@/config";
 import type { MonoPackageConfig } from "@/operations/setup-generate";
-import { withTempDir } from "../../helpers/temp";
+import { withTempDir } from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -63,7 +63,7 @@ beforeEach(() => {
   saved = { ..._setupDeps };
   _setupDeps.analyzeRepo = mock(async () => SINGLE_ANALYSIS);
   _setupDeps.buildCallContext = mock(async () => ({
-    ctx: {} as import("../../../src/operations/types").CallContext,
+    ctx: {} as import("@/operations/types").CallContext,
     close: mock(async () => {}),
   }));
   _setupDeps.generateSetupPlan = mock(async () => MOCK_PLAN);

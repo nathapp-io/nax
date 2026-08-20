@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { parseDecomposeOutput } from "../../../../src/agents/shared/decompose";
+import { parseDecomposeOutput } from "@/agents/shared/decompose";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests: AC-6 — parseDecomposeOutput handles code-fenced JSON

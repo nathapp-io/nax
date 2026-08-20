@@ -12,8 +12,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { estimateCostFromTokenUsage } from "../../../../src/agents/cost";
-import type { TokenUsage } from "../../../../src/agents/cost";
+import { estimateCostFromTokenUsage } from "@/agents/cost";
+import type { TokenUsage } from "@/agents/cost";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // estimateCostFromTokenUsage — basic input/output tokens

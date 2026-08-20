@@ -7,12 +7,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { groupStoriesIntoBatches, precomputeBatchPlan } from "../../../src/execution/batching";
-import type { StoryBatch } from "../../../src/execution/batching";
-import { escalateTier } from "../../../src/execution/escalation";
-import { resolveMaxAttemptsOutcome } from "../../../src/execution/runner";
-import type { UserStory } from "../../../src/prd";
-import type { FailureCategory } from "../../../src/tdd/types";
+import { groupStoriesIntoBatches, precomputeBatchPlan } from "@/execution/batching";
+import type { StoryBatch } from "@/execution/batching";
+import { escalateTier } from "@/execution/escalation";
+import { resolveMaxAttemptsOutcome } from "@/execution/runner";
+import type { UserStory } from "@/prd";
+import type { FailureCategory } from "@/tdd/types";
 
 
 describe("Queue Commands Before Batch Execution", () => {

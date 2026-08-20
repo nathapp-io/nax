@@ -62,3 +62,4 @@ export { optimizerStage } from "./optimizer";
 export { executionStage, _executionDeps } from "./execution";
 export { completionStage, _completionDeps } from "./completion";
 export { acceptanceStage } from "./acceptance";
+export { acceptanceSetupStage, _acceptanceSetupDeps } from "./acceptance-setup";

@@ -7,8 +7,8 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { AgentManager, _agentManagerDeps } from "../../../src/agents/manager";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { AgentManager, _agentManagerDeps } from "@/agents/manager";
+import { DEFAULT_CONFIG } from "@/config/defaults";
 
 const rateLimitFailure = {
   category: "availability" as const,
@@ -17,7 +17,7 @@ const rateLimitFailure = {
   message: "429",
 };
 
-const mockBundle = {} as import("../../../src/context/engine").ContextBundle;
+const mockBundle = {} as import("@/context/engine").ContextBundle;
 
 function makeConfigNoFallback() {
   // No fallback chain — forces the rate-limit-backoff branch rather than a swap.

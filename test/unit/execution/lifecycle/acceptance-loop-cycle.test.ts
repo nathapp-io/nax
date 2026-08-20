@@ -21,8 +21,8 @@ import {
   runAcceptanceFixCycle,
   runAcceptanceLoop,
   type AcceptanceLoopContext,
-} from "../../../../src/execution/lifecycle/acceptance-loop";
-import { _diagnosisDeps } from "../../../../src/execution/lifecycle/acceptance-fix";
+} from "@/execution/lifecycle/acceptance-loop";
+import { _diagnosisDeps } from "@/execution/lifecycle/acceptance-fix";
 import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 import type { PRD } from "@/prd";
 
@@ -86,7 +86,7 @@ function makeDiagnosis(verdict: DiagnosisResult["verdict"] = "source_bug"): Diag
   return { verdict, reasoning: "test reasoning", confidence: 0.9 };
 }
 
-function makeIteration(): import("../../../../src/findings").Iteration<Finding> {
+function makeIteration(): import("@/findings").Iteration<Finding> {
   return {
     iterationNum: 1,
     findingsBefore: [

@@ -9,7 +9,7 @@ import type {
   IPostRunAction,
   PostRunActionResult,
   PostRunContext,
-} from "../../../src/plugins/extensions";
+} from "@/plugins/extensions";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // IPostRunAction interface tests

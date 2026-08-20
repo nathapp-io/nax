@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseSelfVerificationMarker } from "../../../src/quality/self-verification";
+import { parseSelfVerificationMarker } from "@/quality/self-verification";
 
 describe("parseSelfVerificationMarker", () => {
   test("parses explicit marker statuses", () => {

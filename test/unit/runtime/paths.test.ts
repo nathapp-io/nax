@@ -2,8 +2,8 @@ import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { globalConfigDir } from "../../../src/config/paths";
-import { NaxError } from "../../../src/errors";
+import { globalConfigDir } from "@/config/paths";
+import { NaxError } from "@/errors";
 import {
   globalOutputDir,
   projectInputDir,
@@ -14,7 +14,7 @@ import {
   claimProjectIdentity,
   curatorRollupPath,
   type ProjectIdentity,
-} from "../../../src/runtime";
+} from "@/runtime";
 
 describe("projectInputDir", () => {
   it("returns workdir/.nax", () => {
@@ -148,7 +148,7 @@ describe("claimProjectIdentity", () => {
   });
 });
 
-import { NaxConfigSchema } from "../../../src/config/schemas";
+import { NaxConfigSchema } from "@/config/schemas";
 
 describe("NaxConfigSchema name field", () => {
   it.each([

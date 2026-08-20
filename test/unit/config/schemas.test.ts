@@ -10,8 +10,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { NaxConfigSchema } from "../../../src/config/schemas";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { NaxConfigSchema } from "@/config/schemas";
 
 /** Minimal valid config base — everything except models */
 function baseConfig(models: unknown): Record<string, unknown> {

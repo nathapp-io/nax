@@ -8,9 +8,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { parseRefinementResponse, refinementWouldFallback } from "../../../src/acceptance/refinement";
-import { AcceptancePromptBuilder } from "../../../src/prompts";
-import type { RefinedCriterion } from "../../../src/acceptance/types";
+import { parseRefinementResponse, refinementWouldFallback } from "@/acceptance/refinement";
+import { AcceptancePromptBuilder } from "@/prompts";
+import type { RefinedCriterion } from "@/acceptance/types";
 
 const buildRefinementPrompt = (
   criteria: string[],

@@ -11,8 +11,8 @@
 
 import type { InteractionChain } from "@/interaction/chain";
 import type { InteractionResponse } from "@/interaction/types";
+import { getSafeLogger } from "@/logger";
 import type { PRD } from "@/prd/types";
-import { getSafeLogger } from "../../logger";
 
 export interface PausedStoryPromptSummary {
   resumed: string[];

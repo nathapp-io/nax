@@ -13,15 +13,15 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { semanticReviewOp } from "../../../src/operations/semantic-review";
-import type { SemanticReviewInput } from "../../../src/operations/semantic-review";
-import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
-import type { AdversarialReviewInput } from "../../../src/operations/adversarial-review";
+import { semanticReviewOp } from "@/operations/semantic-review";
+import type { SemanticReviewInput } from "@/operations/semantic-review";
+import { adversarialReviewOp } from "@/operations/adversarial-review";
+import type { AdversarialReviewInput } from "@/operations/adversarial-review";
 import { _adversarialDeps, _diffUtilsDeps, runAdversarialReview } from "@/review";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review";
 import type { IAgentManager } from "@/agents";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeTestRuntime, withTempDir } from "../../helpers";
-import type { NaxRuntime } from "../../../src/runtime";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeTestRuntime, withTempDir } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -390,7 +390,7 @@ describe("Adversarial op verify() parity with wrapper consumer (AC10, AC11 adver
       expect(result!.findings).toHaveLength(0);
       expect(result!.normalizedFindings).toHaveLength(0);
       // The drop is tracked in acDropped for counterfactual telemetry.
-      expect((result as import("../../../src/operations/adversarial-review").AdversarialReviewOutput).acDropped).toHaveLength(1);
+      expect((result as import("@/operations/adversarial-review").AdversarialReviewOutput).acDropped).toHaveLength(1);
     });
   });
 });

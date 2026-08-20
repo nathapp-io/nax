@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { greenfieldGateOp } from "@/operations";
-import { makeTempDir, cleanupTempDir } from "../../helpers/temp";
+import { makeTempDir, cleanupTempDir } from "@test/helpers";
 
 describe("greenfieldGateOp — deterministic filesystem detection", () => {
   test("kind is deterministic (no LLM session)", () => {

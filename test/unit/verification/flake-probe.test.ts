@@ -79,7 +79,7 @@ describe("runFlakeProbe — export surface (AC2)", () => {
     // Deliberately the leaf module path (not the "@/verification" barrel) — this
     // test's whole point is verifying the leaf export, exercised again from the
     // barrel below.
-    const mod = await import("../../../src/verification/flake-probe");
+    const mod = await import("@/verification/flake-probe");
     expect(typeof mod.runFlakeProbe).toBe("function");
   });
 

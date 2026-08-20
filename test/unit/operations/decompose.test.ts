@@ -15,10 +15,10 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { decomposeConfigSelector } from "../../../src/config";
-import { _decomposeOpDeps, decomposeOp } from "../../../src/operations/decompose";
-import { makeNaxConfig, makeTestRuntime } from "../../helpers";
-import type { NaxRuntime } from "../../../src/runtime";
+import { decomposeConfigSelector } from "@/config";
+import { _decomposeOpDeps, decomposeOp } from "@/operations/decompose";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

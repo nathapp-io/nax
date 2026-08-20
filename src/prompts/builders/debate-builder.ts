@@ -11,10 +11,16 @@
  * from src/prompts, so importing the barrel here would form a cycle.
  */
 
+// Sub-barrel import (not the `src/debate` barrel): the barrel re-exports
+// `./runner`, which loads `runner-plan-helpers`, `verifiers/...`, and other
+// modules that import from `src/operations`, which re-exports from
+// `src/agents` — closing a 10+ hop cycle back through this file. `personas` is
+// its own nested barrel, so this reaches it without loading
+// `src/debate/index.ts`.
+import { PERSONA_FRAGMENTS } from "@/debate/personas";
 import type { DebateResolverContext, Debater, Proposal, Rebuttal } from "@/debate/types";
 import type { Finding } from "@/findings";
 import type { DiffContext } from "@/review/types";
-import { PERSONA_FRAGMENTS } from "../../debate/personas";
 import type { ComposeInput } from "../compose";
 
 // ─── Constants ────────────────────────────────────────────────────────────────

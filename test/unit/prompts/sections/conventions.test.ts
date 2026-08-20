@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildConventionsSection } from "../../../../src/prompts/sections/conventions";
+import { buildConventionsSection } from "@/prompts/sections/conventions";
 
 describe("buildConventionsSection", () => {
   test("includes code pattern guidelines", () => {

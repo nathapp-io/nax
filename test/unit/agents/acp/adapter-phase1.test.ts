@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { computeAcpHandle } from "../../../../src/agents/acp/adapter";
+import { computeAcpHandle } from "@/agents/acp/adapter";
 
 describe("computeAcpHandle", () => {
   const workdir = "/tmp/test-project";

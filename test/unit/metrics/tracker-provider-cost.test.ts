@@ -9,11 +9,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _manifestStoreDeps } from "../../../src/context/engine/manifest-store";
-import type { ContextManifest } from "../../../src/context/engine/types";
-import { collectStoryMetrics } from "../../../src/metrics/tracker";
-import type { PipelineContext } from "../../../src/pipeline/types";
-import { makeMockRuntime } from "../../helpers/runtime";
+import { _manifestStoreDeps } from "@/context/engine/manifest-store";
+import type { ContextManifest } from "@/context/engine/types";
+import { collectStoryMetrics } from "@/metrics/tracker";
+import type { PipelineContext } from "@/pipeline/types";
+import { makeMockRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals
@@ -162,7 +162,7 @@ describe("AC-25: provider cost accounting in StoryMetrics", () => {
 
 describe("AC-25: orchestrator aggregates chunk costUsd into providerResults", () => {
   test("providerResults.costUsd is sum of chunk costUsd values", async () => {
-    const { ContextOrchestrator, _orchestratorDeps } = await import("../../../src/context/engine/orchestrator");
+    const { ContextOrchestrator, _orchestratorDeps } = await import("@/context/engine/orchestrator");
     const orig = _orchestratorDeps.uuid;
     let seq = 0;
     _orchestratorDeps.uuid = () => `test-uuid-${++seq}` as `${string}-${string}-${string}-${string}-${string}`;
@@ -197,7 +197,7 @@ describe("AC-25: orchestrator aggregates chunk costUsd into providerResults", ()
   });
 
   test("providerResults.costUsd is absent when no chunks have costUsd", async () => {
-    const { ContextOrchestrator, _orchestratorDeps } = await import("../../../src/context/engine/orchestrator");
+    const { ContextOrchestrator, _orchestratorDeps } = await import("@/context/engine/orchestrator");
     let seq = 0;
     _orchestratorDeps.uuid = () => `test-uuid-${++seq}` as `${string}-${string}-${string}-${string}-${string}`;
 

@@ -16,9 +16,9 @@ import {
   getAllReadyStories,
   hookCtx,
   releaseLock,
-} from "../../../src/execution/helpers";
-import type { PRD, UserStory } from "../../../src/prd";
-import { makeTempDir } from "../../helpers/temp";
+} from "@/execution/helpers";
+import type { PRD, UserStory } from "@/prd";
+import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

@@ -12,9 +12,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { NaxError } from "../../../src/errors";
-import { _clearRootConfigCache, loadConfig } from "../../../src/config/loader";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { NaxError } from "@/errors";
+import { _clearRootConfigCache, loadConfig } from "@/config/loader";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const tempDirs: string[] = [];
 

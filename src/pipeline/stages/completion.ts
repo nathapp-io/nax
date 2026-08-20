@@ -15,16 +15,16 @@
 import { join } from "node:path";
 import { persistSemanticVerdict } from "@/acceptance";
 import { featureDir } from "@/config";
+import { annotateManifestEffectiveness } from "@/context/engine";
 import { renderFragmentBody, writeFragment } from "@/context/fragments";
+import { appendProgress } from "@/execution";
+import { checkReviewGate, isTriggerEnabled } from "@/interaction";
+import { getLogger } from "@/logger";
+import { collectBatchMetrics, collectStoryMetrics } from "@/metrics";
+import { countStories, markStoryPassed, savePRD } from "@/prd";
+import { errorMessage } from "@/utils/errors";
 import { GIT_TIMEOUT_MS } from "@/utils/git";
 import { DRAIN_TIMEOUT, raceWithDeadline } from "@/verification";
-import { annotateManifestEffectiveness } from "../../context/engine/effectiveness";
-import { appendProgress } from "../../execution/progress";
-import { checkReviewGate, isTriggerEnabled } from "../../interaction/triggers";
-import { getLogger } from "../../logger";
-import { collectBatchMetrics, collectStoryMetrics } from "../../metrics";
-import { countStories, markStoryPassed, savePRD } from "../../prd";
-import { errorMessage } from "../../utils/errors";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 

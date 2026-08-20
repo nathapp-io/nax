@@ -9,10 +9,10 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
-import { _statusFeaturesDeps, displayFeatureStatus } from "../../../src/cli/status-features";
-import type { NaxStatusFile } from "../../../src/execution/status-file";
-import type { PRD } from "../../../src/prd";
-import { makeTempDir } from "../../helpers/temp";
+import { _statusFeaturesDeps, displayFeatureStatus } from "@/cli/status-features";
+import type { NaxStatusFile } from "@/execution/status-file";
+import type { PRD } from "@/prd";
+import { makeTempDir } from "@test/helpers";
 
 describe("displayFeatureDetails - PostRun Status Display (US-004)", () => {
   let testDir: string;

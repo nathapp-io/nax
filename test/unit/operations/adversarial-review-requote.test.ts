@@ -10,9 +10,9 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
-import { makeTestRuntime, withTempDir } from "../../helpers";
-import type { NaxRuntime } from "../../../src/runtime";
+import { adversarialReviewOp } from "@/operations/adversarial-review";
+import { makeTestRuntime, withTempDir } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

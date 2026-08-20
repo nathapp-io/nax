@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { AcpTokenUsageMapper, defaultAcpTokenUsageMapper } from "../../../../src/agents/acp/token-mapper";
-import type { SessionTokenUsage } from "../../../../src/agents/acp/wire-types";
+import { AcpTokenUsageMapper, defaultAcpTokenUsageMapper } from "@/agents/acp/token-mapper";
+import type { SessionTokenUsage } from "@/agents/acp/wire-types";
 
 describe("AcpTokenUsageMapper", () => {
   test("maps full snake_case wire to camelCase internal", () => {

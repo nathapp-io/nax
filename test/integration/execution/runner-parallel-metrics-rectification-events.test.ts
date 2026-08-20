@@ -10,9 +10,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { initLogger, resetLogger } from "../../../src/logger";
-import type { StoryMetrics } from "../../../src/metrics";
-import type { UserStory } from "../../../src/prd/types";
+import { initLogger, resetLogger } from "@/logger";
+import type { StoryMetrics } from "@/metrics";
+import type { UserStory } from "@/prd/types";
 import { makePendingStory, makePrd, makeCtx } from "./_parallel-metrics-helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
   let origSelectIndependentBatch: unknown;
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunParallelBatch = deps.runParallelBatch;
     origSelectIndependentBatch = deps.selectIndependentBatch;
@@ -106,7 +106,7 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
       totalCost: 0.18,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(
       makeCtx({ parallelCount: 2 }) as never,
       makePrd([conflictStory, story2]) as never,
@@ -134,7 +134,7 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
       totalCost: 0.18,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(
       makeCtx({ parallelCount: 2 }) as never,
       makePrd([conflictStory, otherStory]) as never,
@@ -163,7 +163,7 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
       totalCost: 0.18,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(
       makeCtx({ parallelCount: 2 }) as never,
       makePrd([conflictStory, otherStory]) as never,
@@ -186,7 +186,7 @@ describe("AC-4 — story:started emitted with correct storyId for each batch sto
   let origSelectIndependentBatch: unknown;
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunParallelBatch = deps.runParallelBatch;
     origSelectIndependentBatch = deps.selectIndependentBatch;
@@ -219,7 +219,7 @@ describe("AC-4 — story:started emitted with correct storyId for each batch sto
       totalCost: 0.3,
     }));
 
-    const { pipelineEventBus } = await import("../../../src/pipeline/event-bus");
+    const { pipelineEventBus } = await import("@/pipeline/event-bus");
     const origEmit = pipelineEventBus.emit.bind(pipelineEventBus);
     pipelineEventBus.emit = mock((event: Record<string, unknown>) => {
       if (event.type === "story:started") {
@@ -229,7 +229,7 @@ describe("AC-4 — story:started emitted with correct storyId for each batch sto
     }) as typeof pipelineEventBus.emit;
 
     try {
-      const { executeUnified } = await import("../../../src/execution/unified-executor");
+      const { executeUnified } = await import("@/execution/unified-executor");
       await executeUnified(
         makeCtx({ parallelCount: 3 }) as never,
         makePrd([story1, story2, story3]) as never,
@@ -266,7 +266,7 @@ describe("AC-4 — story:started emitted with correct storyId for each batch sto
       };
     });
 
-    const { pipelineEventBus } = await import("../../../src/pipeline/event-bus");
+    const { pipelineEventBus } = await import("@/pipeline/event-bus");
     const origEmit = pipelineEventBus.emit.bind(pipelineEventBus);
     pipelineEventBus.emit = mock((event: Record<string, unknown>) => {
       if (event.type === "story:started") {
@@ -276,7 +276,7 @@ describe("AC-4 — story:started emitted with correct storyId for each batch sto
     }) as typeof pipelineEventBus.emit;
 
     try {
-      const { executeUnified } = await import("../../../src/execution/unified-executor");
+      const { executeUnified } = await import("@/execution/unified-executor");
       await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([story1, story2]) as never);
     } finally {
       pipelineEventBus.emit = origEmit;

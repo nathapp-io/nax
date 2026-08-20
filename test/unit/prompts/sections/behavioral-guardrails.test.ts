@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { buildBehavioralGuardrailsSection } from "../../../../src/prompts/sections/behavioral-guardrails";
-import type { GuardrailLevel, GuardrailRole } from "../../../../src/prompts/sections/behavioral-guardrails";
+import { buildBehavioralGuardrailsSection } from "@/prompts/sections/behavioral-guardrails";
+import type { GuardrailLevel, GuardrailRole } from "@/prompts/sections/behavioral-guardrails";
 
 // AC-11: exports exist (verified by the imports above compiling)
 

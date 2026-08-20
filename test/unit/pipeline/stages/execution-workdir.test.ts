@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { resolveStoryWorkdir } from "../../../../src/pipeline/stages/execution";
+import { resolveStoryWorkdir } from "@/pipeline/stages/execution";
 
 describe("resolveStoryWorkdir (MW-002)", () => {
   test("returns repoRoot unchanged when storyWorkdir is undefined", () => {

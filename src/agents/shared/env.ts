@@ -10,7 +10,7 @@
 
 import { homedir } from "node:os";
 import { isAbsolute } from "node:path";
-import { getSafeLogger } from "../../logger";
+import { getSafeLogger } from "@/logger";
 
 /** Essential OS vars passed through to every agent subprocess. */
 const ESSENTIAL_VARS = ["PATH", "TMPDIR", "NODE_ENV", "USER", "LOGNAME"];

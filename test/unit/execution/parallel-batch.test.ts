@@ -9,20 +9,20 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import type { LoadedHooksConfig } from "../../../src/hooks";
-import type { PipelineContext, PipelineRunResult } from "../../../src/pipeline/types";
-import type { PluginRegistry } from "../../../src/plugins/registry";
-import type { PRD, UserStory } from "../../../src/prd/types";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
+import type { LoadedHooksConfig } from "@/hooks";
+import type { PipelineContext, PipelineRunResult } from "@/pipeline/types";
+import type { PluginRegistry } from "@/plugins/registry";
+import type { PRD, UserStory } from "@/prd/types";
 import {
   _parallelBatchDeps,
   runParallelBatch,
   type ParallelBatchCtx,
   type RunParallelBatchResult,
-} from "../../../src/execution/parallel-batch";
-import type { ParallelBatchResult } from "../../../src/execution/parallel-worker";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+} from "@/execution/parallel-batch";
+import type { ParallelBatchResult } from "@/execution/parallel-worker";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -671,20 +671,20 @@ describe("AC-7: runParallelBatch — rectification failure", () => {
 
 describe("AC-8: merge-conflict-rectify exports identical to parallel-executor-rectify", () => {
   test("exports rectifyConflictedStory function", async () => {
-    const { rectifyConflictedStory } = await import("../../../src/execution/merge-conflict-rectify");
+    const { rectifyConflictedStory } = await import("@/execution/merge-conflict-rectify");
     expect(typeof rectifyConflictedStory).toBe("function");
   });
 
   test("ConflictedStoryInfo, RectificationResult, RectifyConflictedStoryOptions types are exported", async () => {
     // Verify the module loads — types cannot be tested at runtime but must not cause import errors
-    const module = await import("../../../src/execution/merge-conflict-rectify");
+    const module = await import("@/execution/merge-conflict-rectify");
     expect(module).toBeDefined();
     // The presence of rectifyConflictedStory confirms the type exports compile correctly
     expect(typeof module.rectifyConflictedStory).toBe("function");
   });
 
   test("rectifyConflictedStory from merge-conflict-rectify is same function as from the original parallel-executor-rectify (now deleted, re-exported)", async () => {
-    const { rectifyConflictedStory: fromNew } = await import("../../../src/execution/merge-conflict-rectify");
+    const { rectifyConflictedStory: fromNew } = await import("@/execution/merge-conflict-rectify");
     // parallel-executor-rectify was renamed to merge-conflict-rectify; the old name is deleted
     // Verify fromNew is a function (the rename means the old module no longer exists to compare)
     expect(typeof fromNew).toBe("function");

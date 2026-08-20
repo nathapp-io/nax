@@ -10,11 +10,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
-import { mapDecomposedStoriesToUserStories } from "../../../src/prd/decompose-mapper";
-import type { DecomposedStory } from "../../../src/agents/shared/types-extended";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
-import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "../../helpers";
+import { _planDeps, planDecomposeCommand } from "@/cli/plan";
+import { mapDecomposedStoriesToUserStories } from "@/prd/decompose-mapper";
+import type { DecomposedStory } from "@/agents/shared/types-extended";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,

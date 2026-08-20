@@ -20,7 +20,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { executeUnified } from "../../../src/execution/unified-executor";
+import { executeUnified } from "@/execution/unified-executor";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixture helpers

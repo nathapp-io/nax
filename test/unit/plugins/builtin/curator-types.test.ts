@@ -15,7 +15,7 @@ import type {
   RectifyCycleObservation,
   ReviewFindingObservation,
   VerdictObservation,
-} from "../../../../src/plugins/builtin/curator";
+} from "@/plugins/builtin/curator";
 
 describe("Observation Types", () => {
   test("ChunkIncludedObservation should have correct shape", () => {

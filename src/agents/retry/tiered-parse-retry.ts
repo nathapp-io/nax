@@ -1,5 +1,5 @@
 import { getSafeLogger } from "@/logger";
-import { looksLikeTruncatedJson } from "../../review/truncation";
+import { looksLikeTruncatedJson } from "@/review";
 import { ParseValidationError } from "./types";
 import type { RetryStrategy } from "./types";
 

@@ -6,8 +6,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { computePollutionMetrics } from "../../../../src/context/engine/pollution";
-import type { StoredContextManifest } from "../../../../src/context/engine/manifest-store";
+import { computePollutionMetrics } from "@/context/engine/pollution";
+import type { StoredContextManifest } from "@/context/engine/manifest-store";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

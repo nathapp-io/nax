@@ -5,7 +5,7 @@
  * for testing the acpx CLI-based adapter.
  */
 
-import { _acpAdapterDeps } from "../../../../src/agents/acp";
+import { _acpAdapterDeps } from "@/agents/acp";
 
 /**
  * Create a mock process that returns the given stdout text and exit code.

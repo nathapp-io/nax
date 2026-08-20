@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { dedupeChunks, SIMILARITY_THRESHOLD } from "../../../../src/context/engine/dedupe";
-import type { ScoredChunk } from "../../../../src/context/engine/scoring";
+import { dedupeChunks, SIMILARITY_THRESHOLD } from "@/context/engine/dedupe";
+import type { ScoredChunk } from "@/context/engine/scoring";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

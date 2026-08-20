@@ -1,9 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
-import { AgentManager } from "../../../src/agents/manager";
-import type { AgentRegistry } from "../../../src/agents/registry";
-import type { CompleteOptions } from "../../../src/agents/types";
-import { PidRegistry } from "../../../src/execution/pid-registry";
-import { makeNaxConfig } from "../../helpers";
+import { AgentManager } from "@/agents/manager";
+import type { AgentRegistry } from "@/agents/registry";
+import type { CompleteOptions } from "@/agents/types";
+import { PidRegistry } from "@/execution/pid-registry";
+import { makeNaxConfig } from "@test/helpers";
 
 const availFailure = {
   category: "availability" as const,

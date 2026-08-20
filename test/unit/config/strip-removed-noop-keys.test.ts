@@ -22,11 +22,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { stripRemovedNoOpKeys } from "../../../src/config/config-guards";
-import { _clearRootConfigCache, loadConfig, loadConfigForWorkdir } from "../../../src/config/loader";
-import { NaxConfigSchema } from "../../../src/config/schemas";
-import { FIELD_DESCRIPTIONS } from "../../../src/cli/config-descriptions";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { stripRemovedNoOpKeys } from "@/config/config-guards";
+import { _clearRootConfigCache, loadConfig, loadConfigForWorkdir } from "@/config/loader";
+import { NaxConfigSchema } from "@/config/schemas";
+import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const tempDirs: string[] = [];
 

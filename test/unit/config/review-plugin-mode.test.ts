@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { NaxConfigSchema } from "@/config";
-import { ReviewConfigSchema } from "../../../src/config/schemas-review";
+import { ReviewConfigSchema } from "@/config/schemas-review";
 
 describe("ReviewConfigSchema.pluginMode", () => {
   const base = {

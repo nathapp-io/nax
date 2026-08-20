@@ -8,11 +8,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { testPatternConfigSelector } from "../../../src/config";
-import type { TestPatternConfig } from "../../../src/config/selectors";
-import type { DetectionResult } from "../../../src/test-runners/detect";
-import { _resolverDeps, resolveReviewExcludePatterns, resolveTestFilePatterns } from "../../../src/test-runners/resolver";
-import { makeNaxConfig } from "../../helpers/mock-nax-config";
+import { testPatternConfigSelector } from "@/config";
+import type { TestPatternConfig } from "@/config/selectors";
+import type { DetectionResult } from "@/test-runners/detect";
+import { _resolverDeps, resolveReviewExcludePatterns, resolveTestFilePatterns } from "@/test-runners/resolver";
+import { makeNaxConfig } from "@test/helpers";
 
 const WORKDIR = "/fake/workdir";
 

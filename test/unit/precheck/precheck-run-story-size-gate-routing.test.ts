@@ -10,12 +10,12 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { PRD, UserStory } from "../../../src/prd/types";
-import { _precheckDeps, runPrecheck } from "../../../src/precheck";
-import type { StorySizeGateResult } from "../../../src/precheck/story-size-gate";
-import { _checkCliDeps } from "../../../src/precheck/checks-cli";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
-import { makeNaxConfig } from "../../helpers";
+import type { PRD, UserStory } from "@/prd/types";
+import { _precheckDeps, runPrecheck } from "@/precheck";
+import type { StorySizeGateResult } from "@/precheck/story-size-gate";
+import { _checkCliDeps } from "@/precheck/checks-cli";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Temp repo setup — provides a clean git repo where tier 1 env checks pass

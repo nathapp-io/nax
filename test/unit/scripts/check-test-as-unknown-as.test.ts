@@ -4,8 +4,8 @@ import { join } from "node:path";
 import {
   formatReport,
   scanAsUnknownAs,
-} from "../../../scripts/check-test-as-unknown-as";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+} from "@scripts/check-test-as-unknown-as";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function write(root: string, rel: string, content: string) {
   mkdirSync(join(root, rel.split("/").slice(0, -1).join("/")), { recursive: true });

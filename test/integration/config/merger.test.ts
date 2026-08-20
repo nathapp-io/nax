@@ -10,8 +10,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { deepMergeConfig } from "../../../src/config/merger";
-import type { NaxConfig } from "../../../src/config/schema";
+import { deepMergeConfig } from "@/config/merger";
+import type { NaxConfig } from "@/config/schema";
 
 describe("config/merger", () => {
   describe("basic object merging", () => {

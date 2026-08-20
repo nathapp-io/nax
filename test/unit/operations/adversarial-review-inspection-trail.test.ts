@@ -11,8 +11,8 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
-import { AdversarialReviewPromptBuilder } from "../../../src/prompts";
+import { adversarialReviewOp } from "@/operations/adversarial-review";
+import { AdversarialReviewPromptBuilder } from "@/prompts";
 
 const ADVERSARIAL_CONFIG = {
   model: "balanced" as const,

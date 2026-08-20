@@ -1,8 +1,8 @@
 // test/unit/agents/resolve-default-agent.test.ts
 import { describe, expect, test } from "bun:test";
-import { resolveDefaultAgent } from "../../../src/agents/utils";
-import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { resolveDefaultAgent } from "@/agents/utils";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config/defaults";
 
 function cfg(overrides: Record<string, unknown> = {}): NaxConfig {
   return { ...DEFAULT_CONFIG, ...overrides } as NaxConfig;

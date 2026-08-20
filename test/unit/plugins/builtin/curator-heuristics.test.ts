@@ -5,9 +5,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { Observation } from "../../../../src/plugins/builtin/curator";
-import { runHeuristics } from "../../../../src/plugins/builtin/curator/heuristics";
-import type { CuratorThresholds, Proposal } from "../../../../src/plugins/builtin/curator/heuristics";
+import type { Observation } from "@/plugins/builtin/curator";
+import { runHeuristics } from "@/plugins/builtin/curator/heuristics";
+import type { CuratorThresholds, Proposal } from "@/plugins/builtin/curator/heuristics";
 
 describe("runHeuristics", () => {
   const defaultThresholds: CuratorThresholds = {

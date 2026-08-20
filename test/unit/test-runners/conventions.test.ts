@@ -10,7 +10,7 @@ import {
   DEFAULT_TS_DERIVE_SUFFIXES,
   globsToTestRegex,
   isTestFileByPatterns,
-} from "../../../src/test-runners/conventions";
+} from "@/test-runners/conventions";
 
 describe("DEFAULT_TEST_FILE_PATTERNS", () => {
   test("is a non-empty frozen list", () => {

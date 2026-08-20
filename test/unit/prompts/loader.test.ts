@@ -7,13 +7,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { promptLoaderConfigSelector } from "../../../src/config";
-import type { NaxConfig } from "../../../src/config";
-import { loadOverride } from "../../../src/prompts/loader";
-import type { PromptRole } from "../../../src/prompts/core/types";
-import { fullTest } from "../../helpers/env";
-import { makeTempDir } from "../../helpers/temp";
-import { makeNaxConfig } from "../../helpers";
+import { promptLoaderConfigSelector } from "@/config";
+import type { NaxConfig } from "@/config";
+import { loadOverride } from "@/prompts/loader";
+import type { PromptRole } from "@/prompts/core/types";
+import { fullTest, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

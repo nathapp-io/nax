@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeStory } from "../../../helpers";
-import { TddPromptBuilder } from "../../../../src/prompts/builders/tdd-builder";
+import { makeNaxConfig, makeStory } from "@test/helpers";
+import { TddPromptBuilder } from "@/prompts/builders/tdd-builder";
 
 describe("TddPromptBuilder.buildForRole", () => {
   test("builds a non-empty prompt for test-writer", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createMockAgentManager } from "../../../helpers/mock-agent-manager";
+import { createMockAgentManager } from "@test/helpers";
 
 describe("PipelineContext agentManager propagation", () => {
   test("createMockAgentManager returns IAgentManager with getDefault()", () => {

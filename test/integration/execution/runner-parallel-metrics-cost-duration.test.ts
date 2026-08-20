@@ -9,9 +9,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { initLogger, resetLogger } from "../../../src/logger";
-import type { RunParallelBatchResult } from "../../../src/execution/parallel-batch";
-import type { UserStory } from "../../../src/prd/types";
+import { initLogger, resetLogger } from "@/logger";
+import type { RunParallelBatchResult } from "@/execution/parallel-batch";
+import type { UserStory } from "@/prd/types";
 import { makePendingStory, makePrd, makeCtx } from "./_parallel-metrics-helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ describe("AC-1 — completed story cost equals storyCosts.get(story.id)", () => 
   let origSelectIndependentBatch: unknown;
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunParallelBatch = deps.runParallelBatch;
     origSelectIndependentBatch = deps.selectIndependentBatch;
@@ -84,7 +84,7 @@ describe("AC-1 — completed story cost equals storyCosts.get(story.id)", () => 
       makeBatchResult([story1, story2], costMap),
     );
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
     const ctx = makeCtx({ parallelCount: 2 });
 
@@ -113,7 +113,7 @@ describe("AC-1 — completed story cost equals storyCosts.get(story.id)", () => 
       makeBatchResult([story1, story2], costMap),
     );
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
     const ctx = makeCtx({ parallelCount: 2 });
 
@@ -139,7 +139,7 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id) from batch res
   let origSelectIndependentBatch: unknown;
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunParallelBatch = deps.runParallelBatch;
     origSelectIndependentBatch = deps.selectIndependentBatch;
@@ -171,7 +171,7 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id) from batch res
       makeBatchResult([story1, story2], costMap, durationsMap),
     );
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
     const ctx = makeCtx({ parallelCount: 2 });
 
@@ -204,7 +204,7 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id) from batch res
       makeBatchResult([story1, story2], costMap, durationsMap),
     );
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(
       makeCtx({ parallelCount: 2 }) as never,
       makePrd([story1, story2]) as never,
@@ -240,12 +240,12 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id) from batch res
 
 describe("AC-5 — executeUnified is the only dispatch entry point; removed function is absent", () => {
   test("executeUnified is a callable function exported from unified-executor", async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     expect(typeof mod.executeUnified).toBe("function");
   });
 
   test("unified-executor module does not export the old removed dispatch function", async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     // The old function was named runParallelExecution and was removed in US-003.
     // Key: it must not appear as an export.
     const exportedKeys = Object.keys(mod);

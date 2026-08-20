@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { AcceptancePromptBuilder } from "../../../src/prompts";
+import { AcceptancePromptBuilder } from "@/prompts";
 
 const builder = new AcceptancePromptBuilder();
 

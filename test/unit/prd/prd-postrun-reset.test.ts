@@ -10,9 +10,9 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { markStoryFailed, markStoryPassed } from "../../../src/prd/index";
-import { markStoryAsBlocked } from "../../../src/prd/types";
-import type { PRD, UserStory } from "../../../src/prd";
+import { markStoryFailed, markStoryPassed } from "@/prd/index";
+import { markStoryAsBlocked } from "@/prd/types";
+import type { PRD, UserStory } from "@/prd";
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -5,8 +5,8 @@
  * Poll for callback query or reply message responses.
  */
 
+import { getSafeLogger } from "@/logger";
 import { errorMessage } from "@/utils/errors";
-import { getSafeLogger } from "../../logger";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 import { TelegramConfigSchema, type TelegramMessage, type TelegramUpdate, normalizeChatId } from "./telegram-config";
 import {

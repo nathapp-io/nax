@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { MiddlewareChain, type AgentMiddleware, type MiddlewareContext } from "../../../src/runtime/agent-middleware";
-import { DEFAULT_CONFIG } from "../../../src/config";
+import { MiddlewareChain, type AgentMiddleware, type MiddlewareContext } from "@/runtime/agent-middleware";
+import { DEFAULT_CONFIG } from "@/config";
 
 function makeCtx(overrides: Partial<MiddlewareContext> = {}): MiddlewareContext {
   return {

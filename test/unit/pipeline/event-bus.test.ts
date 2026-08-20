@@ -1,7 +1,7 @@
 // RE-ARCH: keep
 import { describe, expect, test } from "bun:test";
-import { PipelineEventBus } from "../../../src/pipeline/event-bus";
-import type { PipelineEvent } from "../../../src/pipeline/event-bus";
+import { PipelineEventBus } from "@/pipeline/event-bus";
+import type { PipelineEvent } from "@/pipeline/event-bus";
 
 function makeStoryCompletedEvent(): PipelineEvent {
   return {

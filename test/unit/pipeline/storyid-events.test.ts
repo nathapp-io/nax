@@ -11,18 +11,17 @@
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { getLogger, initLogger, resetLogger } from "../../../src/logger";
-import type { PipelineContext } from "../../../src/pipeline/types";
-import type { UserStory } from "../../../src/prd/types";
-import { makeAgentAdapter, makeNaxConfig } from "../../../test/helpers";
-import { fakeAgentManager } from "../../helpers/fake-agent-manager";
+import { DEFAULT_CONFIG } from "@/config";
+import { getLogger, initLogger, resetLogger } from "@/logger";
+import type { PipelineContext } from "@/pipeline/types";
+import type { UserStory } from "@/prd/types";
+import { fakeAgentManager, makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-test-storyid-${randomUUID()}`;
 
 // ── Static imports (uses _deps pattern — no mock.module() needed) ────────────
 
-import { _executionDeps, executionStage } from "../../../src/pipeline/stages/execution";
+import { _executionDeps, executionStage } from "@/pipeline/stages/execution";
 
 // ── Mock agent ────────────────────────────────────────────────────────────────
 

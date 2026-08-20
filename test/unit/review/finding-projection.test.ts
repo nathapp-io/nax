@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { llmFindingToReviewFinding, llmFindingsToReviewFindings, toAdversarialReviewFindings } from "../../../src/review";
+import { llmFindingToReviewFinding, llmFindingsToReviewFindings, toAdversarialReviewFindings } from "@/review";
 // LLMFinding / AdversarialLLMFinding are import-type only (erased at compile
 // time) so leaf-path imports here do not cause singleton fragmentation.
-import type { LLMFinding } from "../../../src/review/semantic-helpers";
-import type { AdversarialLLMFinding } from "../../../src/review/adversarial-helpers";
+import type { LLMFinding } from "@/review/semantic-helpers";
+import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 
 describe("llmFindingToReviewFinding", () => {
   test("joins issue and suggestion into message with arrow separator", () => {

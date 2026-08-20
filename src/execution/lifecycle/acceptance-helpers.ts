@@ -8,10 +8,10 @@
 
 import path from "node:path";
 import { isStubTestContent } from "@/acceptance";
+import { getSafeLogger } from "@/logger";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
-import { getSafeLogger } from "../../logger";
-import { filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../../utils/path-filters";
+import { filterNaxInternalPaths, resolveNaxIgnorePatterns } from "@/utils/path-filters";
 import type { AcceptanceLoopResult } from "./acceptance-loop";
 
 // ─── Stub detection ─────────────────────────────────────────────────────────
@@ -147,7 +147,7 @@ export const _regenerateDeps = {
   },
   readFile: async (filePath: string): Promise<string> => Bun.file(filePath).text(),
   acceptanceSetupExecute: async (ctx: PipelineContext): Promise<void> => {
-    const { acceptanceSetupStage } = await import("../../pipeline/stages/acceptance-setup");
+    const { acceptanceSetupStage } = await import("@/pipeline/stages");
     await acceptanceSetupStage.execute(ctx);
   },
 };

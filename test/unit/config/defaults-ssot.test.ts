@@ -12,9 +12,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { NaxConfigSchema } from "../../../src/config/schemas";
-import type { NaxConfig } from "../../../src/config/types";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { NaxConfigSchema } from "@/config/schemas";
+import type { NaxConfig } from "@/config/types";
 
 const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "name",

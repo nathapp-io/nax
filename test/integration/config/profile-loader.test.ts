@@ -11,8 +11,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig } from "../../../src/config/loader";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { loadConfig } from "@/config/loader";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 /**
  * Write a JSON file, creating parent directories as needed.
@@ -284,7 +284,7 @@ describe("loadConfig — profile activation (US-002)", () => {
     });
 
     // Import loadConfigForWorkdir dynamically to avoid circular deps in test setup
-    const { loadConfigForWorkdir } = await import("../../../src/config/loader");
+    const { loadConfigForWorkdir } = await import("@/config/loader");
 
     const rootConfigPath = join(projectDir, ".nax", "config.json");
     const config = await loadConfigForWorkdir(rootConfigPath);
@@ -296,7 +296,7 @@ describe("loadConfig — profile activation (US-002)", () => {
 
   // Additional: new profile functions are exported from src/config/index.ts barrel
   test("resolveProfileName, loadProfile, loadProfileEnv, listProfiles are exported from src/config/index.ts", async () => {
-    const barrel = await import("../../../src/config/index");
+    const barrel = await import("@/config/index");
 
     expect(typeof barrel.resolveProfileName).toBe("function");
     expect(typeof barrel.loadProfile).toBe("function");
@@ -478,8 +478,8 @@ describe("loadConfig — multi-profile chain override", () => {
     });
     writeJson(join(globalDir, "profiles", "b.json"), { execution: { sessionTimeoutSeconds: 2 } });
 
-    const { loadConfigForWorkdir } = await import("../../../src/config/loader");
-    const { profileOverrideFromConfig } = await import("../../../src/config/profile");
+    const { loadConfigForWorkdir } = await import("@/config/loader");
+    const { profileOverrideFromConfig } = await import("@/config/profile");
     const rootConfigPath = join(projectDir, ".nax", "config.json");
 
     const rootConfig = await loadConfig(projectDir, { profile: "a,b" });
@@ -499,7 +499,7 @@ describe("loadConfig — multi-profile chain override", () => {
     writeJson(join(globalDir, "profiles", "a.json"), { execution: { sessionTimeoutSeconds: 1 } });
     writeJson(join(globalDir, "profiles", "b.json"), { execution: { sessionTimeoutSeconds: 2 } });
 
-    const { loadConfigForWorkdir } = await import("../../../src/config/loader");
+    const { loadConfigForWorkdir } = await import("@/config/loader");
     const rootConfigPath = join(projectDir, ".nax", "config.json");
 
     // The old (buggy) behavior passed the composite string; "a+b" is not a profile.
@@ -519,7 +519,7 @@ describe("loadConfig — multi-profile chain override", () => {
     // Package opts into the broken profile.
     writeJson(join(projectDir, ".nax", "mono", "pkg", "config.json"), { profile: "broken" });
 
-    const { loadConfigForWorkdir } = await import("../../../src/config/loader");
+    const { loadConfigForWorkdir } = await import("@/config/loader");
     const rootConfigPath = join(projectDir, ".nax", "config.json");
 
     const err = await loadConfigForWorkdir(rootConfigPath, "pkg").catch((e: Error) => e);

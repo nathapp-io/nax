@@ -1,6 +1,6 @@
 // test/unit/config/non-blocking-fix-config.test.ts
 import { describe, expect, test } from "bun:test";
-import { AdversarialReviewConfigSchema } from "../../../src/config/schemas-review";
+import { AdversarialReviewConfigSchema } from "@/config/schemas-review";
 
 describe("nonBlockingFix config", () => {
   test("defaults: disabled, scope both, 1 regression attempt, verifierGuard on", () => {

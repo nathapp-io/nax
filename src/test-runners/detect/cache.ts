@@ -9,7 +9,7 @@
  * Concurrency: last-write-wins; no file lock (derived data, cheap to rebuild).
  */
 
-import { getSafeLogger } from "../../logger";
+import { getSafeLogger } from "@/logger";
 import type { DetectionResult } from "./types";
 
 /** Manifest file names consulted during mtime-based invalidation */

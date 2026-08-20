@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { FIELD_DESCRIPTIONS } from "../../../src/cli/config-descriptions";
+import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
 
 describe("FIELD_DESCRIPTIONS acceptance model discoverability (issue #225)", () => {
   test("acceptance.model description exists and mentions model tiers", () => {

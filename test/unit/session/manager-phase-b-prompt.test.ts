@@ -1,11 +1,11 @@
 import { describe, expect, mock, test } from "bun:test";
-import { NO_OP_INTERACTION_HANDLER } from "../../../src/agents";
-import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "../../../src/agents/types";
-import { SessionFailureError, SessionTurnError } from "../../../src/agents/types";
-import { AgentStreamEventBus } from "../../../src/runtime/agent-stream-events";
-import { SessionManager } from "../../../src/session/manager";
-import type { OpenSessionRequest, RunInSessionOpts } from "../../../src/session/types";
-import { makeAgentAdapter } from "../../helpers/mock-agent-adapter";
+import { NO_OP_INTERACTION_HANDLER } from "@/agents";
+import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/types";
+import { SessionFailureError, SessionTurnError } from "@/agents/types";
+import { AgentStreamEventBus } from "@/runtime/agent-stream-events";
+import { SessionManager } from "@/session/manager";
+import type { OpenSessionRequest, RunInSessionOpts } from "@/session/types";
+import { makeAgentAdapter } from "@test/helpers";
 
 const WORKDIR = "/tmp/nax-phase-b-test";
 

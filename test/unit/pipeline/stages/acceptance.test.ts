@@ -6,12 +6,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { acceptanceStage, parseTestFailures } from "../../../../src/pipeline/stages/acceptance";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import { DEFAULT_CONFIG } from "../../../../src/config";
+import { acceptanceStage, parseTestFailures } from "@/pipeline/stages/acceptance";
+import type { PipelineContext } from "@/pipeline/types";
+import { DEFAULT_CONFIG } from "@/config";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import { _executorDeps } from "@/verification";
-import { makeStory } from "../../../helpers";
+import { makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

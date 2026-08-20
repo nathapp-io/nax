@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { reconcileBatchOutcome } from "../../../src/execution/unified-executor";
-import type { PRD } from "../../../src/prd/types";
+import { reconcileBatchOutcome } from "@/execution/unified-executor";
+import type { PRD } from "@/prd/types";
 
 function prdWith(...ids: string[]): PRD {
   return {

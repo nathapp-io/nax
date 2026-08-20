@@ -1,12 +1,12 @@
 import { afterEach, describe, test, expect } from "bun:test";
 import { join } from "node:path";
-import { createRuntime } from "../../../src/runtime";
-import { _promptAuditorDeps } from "../../../src/runtime/prompt-auditor";
-import { _costAggDeps } from "../../../src/runtime/cost-aggregator";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { makeNaxConfig, makeMockAgentManager, makeTestRuntime } from "../../helpers";
-import { withTempDir } from "../../helpers/temp";
-import type { NaxRuntime } from "../../../src/runtime";
+import { createRuntime } from "@/runtime";
+import { _promptAuditorDeps } from "@/runtime/prompt-auditor";
+import { _costAggDeps } from "@/runtime/cost-aggregator";
+import { DEFAULT_CONFIG } from "@/config";
+import { makeNaxConfig, makeMockAgentManager, makeTestRuntime } from "@test/helpers";
+import { withTempDir } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

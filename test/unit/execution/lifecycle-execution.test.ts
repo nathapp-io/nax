@@ -7,15 +7,15 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { NaxConfig } from "../../../src/config";
-import type { PRD, UserStory } from "../../../src/prd";
-import type { StoryMetrics } from "../../../src/metrics";
+import type { NaxConfig } from "@/config";
+import type { PRD, UserStory } from "@/prd";
+import type { StoryMetrics } from "@/metrics";
 import {
   _regressionDeps,
   runDeferredRegression,
-} from "../../../src/execution/lifecycle/run-regression";
-import type { VerificationResult } from "../../../src/verification";
-import { makeMockRuntime, makeNaxConfig } from "../../helpers";
+} from "@/execution/lifecycle/run-regression";
+import type { VerificationResult } from "@/verification";
+import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 const WORKDIR_DISABLED = `/tmp/nax-test-disabled-${randomUUID()}`;
 const WORKDIR_PER_STORY = `/tmp/nax-test-per-story-${randomUUID()}`;

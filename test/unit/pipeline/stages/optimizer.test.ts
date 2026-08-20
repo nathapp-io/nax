@@ -7,8 +7,8 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { _optimizerDeps, optimizerStage } from "../../../../src/pipeline/stages/optimizer";
-import type { PipelineContext } from "../../../../src/pipeline/types";
+import { _optimizerDeps, optimizerStage } from "@/pipeline/stages/optimizer";
+import type { PipelineContext } from "@/pipeline/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

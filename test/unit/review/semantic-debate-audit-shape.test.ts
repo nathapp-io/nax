@@ -4,14 +4,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { DebateResult, DebateRunner } from "../../../src/debate";
-import { reviewConfigSelector } from "../../../src/config/selectors";
-import type { NaxRuntime, ReviewAuditDecision } from "../../../src/runtime";
+import type { DebateResult, DebateRunner } from "@/debate";
+import { reviewConfigSelector } from "@/config/selectors";
+import type { NaxRuntime, ReviewAuditDecision } from "@/runtime";
 import { MAX_ACKS } from "@/review";
-import { runSemanticDebate } from "../../../src/review/semantic-debate";
-import type { SemanticReviewConfig } from "../../../src/review/types";
-import type { SemanticStory } from "../../../src/review/types";
-import { makeNaxConfig, makeMockAgentManager, makeMockRuntime, captureAuditDecisions } from "../../helpers";
+import { runSemanticDebate } from "@/review/semantic-debate";
+import type { SemanticReviewConfig } from "@/review/types";
+import type { SemanticStory } from "@/review/types";
+import { makeNaxConfig, makeMockAgentManager, makeMockRuntime, captureAuditDecisions } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

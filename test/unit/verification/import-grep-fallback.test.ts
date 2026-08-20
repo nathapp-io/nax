@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { importGrepFallback, _bunDeps, MAX_GREP_TEST_FILES } from "../../../src/verification/smart-runner";
+import { importGrepFallback, _bunDeps, MAX_GREP_TEST_FILES } from "@/verification/smart-runner";
 
 describe("importGrepFallback", () => {
   test("caps the number of scanned test files at MAX_GREP_TEST_FILES", async () => {

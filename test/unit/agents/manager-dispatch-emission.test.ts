@@ -14,22 +14,22 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { AgentManager } from "../../../src/agents/manager";
-import { _acpAdapterDeps } from "../../../src/agents/acp/adapter";
+import { AgentManager } from "@/agents/manager";
+import { _acpAdapterDeps } from "@/agents/acp/adapter";
 import { makeClient, makeSession } from "./acp/adapter.test";
-import type { SessionHandle, TurnResult } from "../../../src/agents/types";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { NaxConfigSchema } from "../../../src/config/schemas";
-import type { NaxConfig } from "../../../src/config/types";
+import type { SessionHandle, TurnResult } from "@/agents/types";
+import { DEFAULT_CONFIG } from "@/config";
+import { NaxConfigSchema } from "@/config/schemas";
+import type { NaxConfig } from "@/config/types";
 import type {
   CompleteDispatchEvent,
   OperationCompletedEvent,
   SessionTurnDispatchEvent,
-} from "../../../src/runtime/dispatch-events";
-import { DispatchEventBus } from "../../../src/runtime/dispatch-events";
-import { runTrackedSession } from "../../../src/session/manager-run";
-import type { SessionManagerState } from "../../../src/session/manager-run";
-import type { SessionDescriptor } from "../../../src/session/types";
+} from "@/runtime/dispatch-events";
+import { DispatchEventBus } from "@/runtime/dispatch-events";
+import { runTrackedSession } from "@/session/manager-run";
+import type { SessionManagerState } from "@/session/manager-run";
+import type { SessionDescriptor } from "@/session/types";
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
 

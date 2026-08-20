@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { packChunks } from "../../../../src/context/engine/packing";
-import type { ScoredChunk } from "../../../../src/context/engine/scoring";
+import { packChunks } from "@/context/engine/packing";
+import type { ScoredChunk } from "@/context/engine/scoring";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

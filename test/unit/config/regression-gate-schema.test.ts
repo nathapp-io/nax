@@ -8,8 +8,8 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import { NaxConfigSchema } from "../../../src/config/schemas";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { NaxConfigSchema } from "@/config/schemas";
+import { DEFAULT_CONFIG } from "@/config/defaults";
 
 // ---------------------------------------------------------------------------
 // Helper: build a full NaxConfig-shaped object with a custom regressionGate

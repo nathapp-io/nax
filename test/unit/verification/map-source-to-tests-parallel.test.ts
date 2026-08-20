@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mapSourceToTests, _bunDeps } from "../../../src/verification/smart-runner";
+import { mapSourceToTests, _bunDeps } from "@/verification/smart-runner";
 
 describe("mapSourceToTests", () => {
   test("runs candidate existence checks concurrently", async () => {

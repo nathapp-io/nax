@@ -6,9 +6,9 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { GitHistoryProvider, _gitHistoryDeps } from "../../../../../src/context/engine/providers/git-history";
-import type { GitHistoryProviderOptions } from "../../../../../src/context/engine/providers/git-history";
-import type { ContextRequest } from "../../../../../src/context/engine/types";
+import { GitHistoryProvider, _gitHistoryDeps } from "@/context/engine/providers/git-history";
+import type { GitHistoryProviderOptions } from "@/context/engine/providers/git-history";
+import type { ContextRequest } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals

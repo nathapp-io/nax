@@ -14,9 +14,9 @@ import {
   _resetPluginErrorSink,
   _setPluginErrorSink,
   loadPlugins as loadPluginsWithBuiltins,
-} from "../../../src/plugins/loader";
-import type { NaxPlugin, PluginConfigEntry } from "../../../src/plugins/types";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+} from "@/plugins/loader";
+import type { NaxPlugin, PluginConfigEntry } from "@/plugins/types";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const DISABLE_BUILTIN_PLUGINS = ["nax-curator", "nax-auto-pr"];
 

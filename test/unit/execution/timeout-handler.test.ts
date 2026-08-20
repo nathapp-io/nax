@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { withProcessTimeout } from "../../../src/execution/timeout-handler";
-import { waitForCondition } from "../../helpers/timeout";
+import { withProcessTimeout } from "@/execution/timeout-handler";
+import { waitForCondition } from "@test/helpers";
 
 const SHORT_DELAY_MS = 25;
 const TIMEOUT_MS = 75;

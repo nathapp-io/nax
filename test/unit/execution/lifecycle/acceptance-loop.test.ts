@@ -16,7 +16,7 @@ import {
   loadAcceptanceTestContent,
   resolveAcceptanceFixTarget,
   regenerateAcceptanceTest,
-} from "../../../../src/execution/lifecycle/acceptance-loop";
+} from "@/execution/lifecycle/acceptance-loop";
 import type { AgentGetFn, PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd";
 import { makeNaxConfig } from "@test/helpers";

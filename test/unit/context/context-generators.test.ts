@@ -5,12 +5,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { claudeGenerator } from "../../../src/context/generators/claude";
-import { opencodeGenerator } from "../../../src/context/generators/opencode";
-import { codexGenerator } from "../../../src/context/generators/codex";
-import { geminiGenerator } from "../../../src/context/generators/gemini";
-import { aiderGenerator } from "../../../src/context/generators/aider";
-import type { ContextContent } from "../../../src/context/types";
+import { claudeGenerator } from "@/context/generators/claude";
+import { opencodeGenerator } from "@/context/generators/opencode";
+import { codexGenerator } from "@/context/generators/codex";
+import { geminiGenerator } from "@/context/generators/gemini";
+import { aiderGenerator } from "@/context/generators/aider";
+import type { ContextContent } from "@/context/types";
 
 const sampleContext: ContextContent = {
   markdown: `# Project Context

@@ -136,7 +136,7 @@ export interface DecomposedStory {
   /** Implementation risks */
   risks: string[];
   /** Test strategy recommendation from LLM */
-  testStrategy?: import("../../config/test-strategy").TestStrategy;
+  testStrategy?: import("@/config").TestStrategy;
   /**
    * Agent profile ID selected by the plan LLM from the capability cards.
    * Present only when routing.agents.enabled === true and the LLM emitted a
@@ -148,7 +148,7 @@ export interface DecomposedStory {
    * Routing metadata resolved from agentProfileId during decomposeOp.parse().
    * Populated only when a matching profile is found in config.routing.agents.profiles.
    */
-  routing?: Pick<import("../../prd/types").StoryRouting, "agent" | "agentProfileId" | "profileModelTier">;
+  routing?: Pick<import("@/prd").StoryRouting, "agent" | "agentProfileId" | "profileModelTier">;
 }
 
 /**

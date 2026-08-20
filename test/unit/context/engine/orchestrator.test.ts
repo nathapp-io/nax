@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import { ContextOrchestrator, _orchestratorDeps } from "../../../../src/context/engine/orchestrator";
+import { ContextOrchestrator, _orchestratorDeps } from "@/context/engine/orchestrator";
 import { NeutralityLintError } from "@/context";
-import type { ContextRequest, IContextProvider, ContextProviderResult } from "../../../../src/context/engine/types";
+import type { ContextRequest, IContextProvider, ContextProviderResult } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

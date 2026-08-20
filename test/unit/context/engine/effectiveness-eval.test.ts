@@ -13,7 +13,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { makeLogger, withDepsRestore } from "@test/helpers";
-import { buildEvidenceTerms, classifyWithTerms } from "../../../../src/context/engine/effectiveness";
+import { buildEvidenceTerms, classifyWithTerms } from "@/context/engine/effectiveness";
 import {
   type Classifier,
   type EvalReport,
@@ -25,7 +25,7 @@ import {
   _effectivenessEvalDeps,
   loadLabelSet,
   scoreEffectiveness,
-} from "../../../../src/context/engine/effectiveness-eval";
+} from "@/context/engine/effectiveness-eval";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared fixtures

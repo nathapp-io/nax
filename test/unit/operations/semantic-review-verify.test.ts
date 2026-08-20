@@ -7,10 +7,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { semanticReviewOp } from "../../../src/operations/semantic-review";
-import type { SemanticReviewInput, SemanticReviewOutput } from "../../../src/operations/semantic-review";
-import { makeTestRuntime, withTempDir } from "../../helpers";
-import type { NaxRuntime } from "../../../src/runtime";
+import { semanticReviewOp } from "@/operations/semantic-review";
+import type { SemanticReviewInput, SemanticReviewOutput } from "@/operations/semantic-review";
+import { makeTestRuntime, withTempDir } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { importGrepFallback, mapSourceToTests } from "../../../src/verification/smart-runner";
+import { importGrepFallback, mapSourceToTests } from "@/verification/smart-runner";
 
 describe("Pass 1: mapSourceToTests (path convention)", () => {
   let originalFile: typeof Bun.file;

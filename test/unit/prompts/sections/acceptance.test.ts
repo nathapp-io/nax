@@ -9,7 +9,7 @@ import {
   ACCEPTANCE_SECTION_MAX_BYTES,
   type AcceptanceEntry,
   buildAcceptanceSection,
-} from "../../../../src/prompts/sections/acceptance";
+} from "@/prompts/sections/acceptance";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC2: empty entries → empty string
@@ -28,7 +28,7 @@ describe("buildAcceptanceSection — empty input", () => {
 describe("buildAcceptanceSection — single entry", () => {
   const entry: AcceptanceEntry = {
     testPath: "test/unit/foo.test.ts",
-    content: 'import { foo } from "../../src/foo";\ntest("foo works", () => {});',
+    content: 'import { foo } from "@test/unit/src/foo";\ntest("foo works", () => {});',
   };
 
   test("includes the test file path as a heading", () => {

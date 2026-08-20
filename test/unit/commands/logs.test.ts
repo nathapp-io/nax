@@ -16,7 +16,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type LogsOptions, _deps, logsCommand } from "../../../src/commands/logs";
+import { type LogsOptions, _deps, logsCommand } from "@/commands/logs";
 
 const TEST_WORKSPACE = join(import.meta.dir, "..", "..", "tmp", "logs-test");
 

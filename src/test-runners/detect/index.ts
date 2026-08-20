@@ -18,7 +18,7 @@
  * framework are suppressed so developer intent is always honoured.
  */
 
-import { getSafeLogger } from "../../logger";
+import { getSafeLogger } from "@/logger";
 import type { DetectionResult, DetectionSource } from "./types";
 export type { DetectionResult, DetectionSource } from "./types";
 

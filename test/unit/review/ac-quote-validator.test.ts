@@ -11,7 +11,7 @@ import {
   validateAcGroundingMinimal,
   validateAcQuote,
   validateScopeQuote,
-} from "../../../src/review/ac-quote-validator";
+} from "@/review/ac-quote-validator";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 

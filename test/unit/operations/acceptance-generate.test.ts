@@ -6,8 +6,8 @@ import type { BuildContext, HopBodyContext, VerifyContext } from "@/operations/t
 import type { TurnResult } from "@/agents/types";
 import { acceptanceGenConfigSelector } from "@/config";
 import type { AcceptanceGenConfig } from "@/config/selectors";
-import { makeNaxConfig, makeTestRuntime } from "../../helpers";
-import { withTempDir } from "../../helpers/temp";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { withTempDir } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];

@@ -7,8 +7,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { loadSourceFilesForDiagnosis } from "../../../src/acceptance/fix-diagnosis";
-import type { DiagnosisResult } from "../../../src/acceptance/types";
+import { loadSourceFilesForDiagnosis } from "@/acceptance/fix-diagnosis";
+import type { DiagnosisResult } from "@/acceptance/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // loadSourceFilesForDiagnosis

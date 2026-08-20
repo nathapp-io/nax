@@ -4,22 +4,22 @@
  * Runs configurable quality checks after story implementation
  */
 
-import type { IAgentManager } from "../agents";
-import type { ExecutionConfig, QualityConfig } from "../config/schema";
-import type { ReviewConfig as ReviewNaxConfig } from "../config/selectors";
-import type { Iteration } from "../findings";
-import { getSafeLogger } from "../logger";
-import type { UserStory } from "../prd";
-import { runQualityCommand } from "../quality";
-import { autoCommitIfDirty, gitWithTimeout } from "../utils/git";
-import type { NaxIgnoreIndex } from "../utils/path-filters";
-import { runAdversarialReview as _runAdversarialReviewImpl } from "./adversarial";
-import { resolveLanguageCommand } from "./language-commands";
-import { runScopedLintCheck } from "./scoped-lint";
-import { runSemanticReview as _runSemanticReviewImpl } from "./semantic";
-import type { SemanticStory } from "./semantic";
-import { parseTypecheckOutput } from "./typecheck-parsing";
-import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
+import type { IAgentManager } from "@/agents";
+import type { ExecutionConfig, QualityConfig } from "@/config/schema";
+import type { ReviewConfig as ReviewNaxConfig } from "@/config/selectors";
+import type { Iteration } from "@/findings";
+import { getSafeLogger } from "@/logger";
+import type { UserStory } from "@/prd";
+import { runQualityCommand } from "@/quality";
+import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
+import type { NaxIgnoreIndex } from "@/utils/path-filters";
+import { runAdversarialReview as _runAdversarialReviewImpl } from "../adversarial";
+import { resolveLanguageCommand } from "../language-commands";
+import { runScopedLintCheck } from "../scoped-lint";
+import { runSemanticReview as _runSemanticReviewImpl } from "../semantic";
+import type { SemanticStory } from "../semantic";
+import { parseTypecheckOutput } from "../typecheck-parsing";
+import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "../types";
 
 // Re-export for test compatibility
 export { resolveLanguageCommand };
@@ -40,13 +40,13 @@ export interface RunReviewOptions {
   priorSemanticIterations?: Iteration[];
   featureContextMarkdown?: string;
   contextBundles?: {
-    semantic?: import("../context/engine").ContextBundle;
-    adversarial?: import("../context/engine").ContextBundle;
+    semantic?: import("@/context/engine").ContextBundle;
+    adversarial?: import("@/context/engine").ContextBundle;
   };
   projectDir?: string;
   env?: Record<string, string | undefined>;
   naxIgnoreIndex?: NaxIgnoreIndex;
-  runtime?: import("../runtime").NaxRuntime;
+  runtime?: import("@/runtime").NaxRuntime;
   priorAdversarialIterations?: Iteration[];
 }
 

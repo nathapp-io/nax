@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config/defaults";
 import {
   _parallelWorkerDeps,
   executeParallelBatch,
   executeStoryInWorktree,
-} from "../../../src/execution/parallel-worker";
-import { defaultPipeline } from "../../../src/pipeline/stages";
-import type { PipelineContext, PipelineStage } from "../../../src/pipeline/types";
-import type { PRD, UserStory } from "../../../src/prd/types";
-import type { WorktreeDependencyContext } from "../../../src/worktree/types";
+} from "@/execution/parallel-worker";
+import { defaultPipeline } from "@/pipeline/stages";
+import type { PipelineContext, PipelineStage } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd/types";
+import type { WorktreeDependencyContext } from "@/worktree/types";
 
 function makeStory(id: string): UserStory {
   return {

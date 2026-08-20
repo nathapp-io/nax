@@ -7,12 +7,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import type { NaxConfig } from "../../../src/config/schema";
-import { initLogger, resetLogger } from "../../../src/logger";
-import { runPipeline } from "../../../src/pipeline/runner";
-import type { PipelineContext, PipelineStage } from "../../../src/pipeline/types";
-import type { PRD, UserStory } from "../../../src/prd/types";
+import { DEFAULT_CONFIG } from "@/config";
+import type { NaxConfig } from "@/config/schema";
+import { initLogger, resetLogger } from "@/logger";
+import { runPipeline } from "@/pipeline/runner";
+import type { PipelineContext, PipelineStage } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd/types";
 
 /** Helper: Create minimal test context */
 function createTestContext(overrides?: Partial<PipelineContext>): PipelineContext {
@@ -357,8 +357,8 @@ describe("Pipeline Runner", () => {
 // routeTddFailure — TDD failure routing by failureCategory
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { routeTddFailure } from "../../../src/pipeline/stages/execution";
-import type { FailureCategory } from "../../../src/tdd/types";
+import { routeTddFailure } from "@/pipeline/stages/execution";
+import type { FailureCategory } from "@/tdd/types";
 
 describe("routeTddFailure", () => {
   /** Minimal context stub — only retryAsLite is used */

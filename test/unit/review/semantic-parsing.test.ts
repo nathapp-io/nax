@@ -9,12 +9,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _diffUtilsDeps } from "../../../src/review/diff-utils";
-import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
-import type { SemanticStory } from "../../../src/review/semantic";
-import type { SemanticReviewConfig } from "../../../src/review/types";
-import type { AgentResult } from "../../../src/agents/types";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "../../helpers";
+import { _diffUtilsDeps } from "@/review/diff-utils";
+import { _semanticDeps, runSemanticReview } from "@/review/semantic";
+import type { SemanticStory } from "@/review/semantic";
+import type { SemanticReviewConfig } from "@/review/types";
+import type { AgentResult } from "@/agents/types";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers (mirrors semantic.test.ts patterns)

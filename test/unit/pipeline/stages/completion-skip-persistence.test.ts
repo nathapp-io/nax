@@ -8,11 +8,11 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { pipelineEventBus } from "../../../../src/pipeline";
-import { _completionDeps, completionStage } from "../../../../src/pipeline/stages/completion";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import { makeNaxConfig, makePRD, makeStory } from "../../../helpers";
-import { makeMockRuntime } from "../../../helpers/runtime";
+import { pipelineEventBus } from "@/pipeline";
+import { _completionDeps, completionStage } from "@/pipeline/stages/completion";
+import type { PipelineContext } from "@/pipeline/types";
+import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { makeMockRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration

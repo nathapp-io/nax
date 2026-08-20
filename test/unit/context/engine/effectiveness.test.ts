@@ -18,7 +18,7 @@ import {
 import * as EngineBarrel from "@/context/engine";
 // AC2: must import directly from effectiveness.ts to verify direct-vs-barrel equivalence
 import { classifyWithTerms as classifyWithTermsDirect } from "@/context/engine/effectiveness";
-import { _manifestStoreDeps } from "../../../../src/context/engine/manifest-store";
+import { _manifestStoreDeps } from "@/context/engine/manifest-store";
 import { withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────

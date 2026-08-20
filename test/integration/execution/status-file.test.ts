@@ -23,9 +23,9 @@ import {
   buildStatusSnapshot,
   countProgress,
   writeStatusFile,
-} from "../../../src/execution/status-file";
-import type { PRD, UserStory } from "../../../src/prd";
-import { makeTempDir } from "../../helpers/temp";
+} from "@/execution/status-file";
+import type { PRD, UserStory } from "@/prd";
+import { makeTempDir } from "@test/helpers";
 
 // ============================================================================
 // Helpers

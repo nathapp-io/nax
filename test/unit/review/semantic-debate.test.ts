@@ -8,17 +8,17 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { pickBaseSelectorKind } from "../../../src/debate";
-import type { AgentResult } from "../../../src/agents/types";
-import type { AgentAdapter } from "../../../src/agents/types";
-import type { NaxConfig } from "../../../src/config";
-import type { DebateResult } from "../../../src/debate/types";
-import { _diffUtilsDeps } from "../../../src/review/diff-utils";
-import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
-import type { SemanticStory } from "../../../src/review/semantic";
-import type { SemanticReviewConfig } from "../../../src/review/types";
-import { makeMockAgentManager } from "../../helpers";
-import { makeMockRuntime } from "../../helpers/runtime";
+import { pickBaseSelectorKind } from "@/debate";
+import type { AgentResult } from "@/agents/types";
+import type { AgentAdapter } from "@/agents/types";
+import type { NaxConfig } from "@/config";
+import type { DebateResult } from "@/debate/types";
+import { _diffUtilsDeps } from "@/review/diff-utils";
+import { _semanticDeps, runSemanticReview } from "@/review/semantic";
+import type { SemanticStory } from "@/review/semantic";
+import type { SemanticReviewConfig } from "@/review/types";
+import { makeMockAgentManager } from "@test/helpers";
+import { makeMockRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

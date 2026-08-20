@@ -9,18 +9,22 @@
  */
 
 import { join } from "node:path";
+import { resolveDefaultAgent } from "@/agents";
 import type { AgentAdapter } from "@/agents/types";
 import type { NaxConfig } from "@/config";
+import { AgentNotFoundError, AgentNotInstalledError, StoryLimitExceededError } from "@/errors";
+import { getSafeLogger } from "@/logger";
 import type { AgentGetFn } from "@/pipeline/types";
+import { countStories, loadPRD, markStoryPassed, resetFailedStoriesToPending, savePRD } from "@/prd";
 import type { PRD } from "@/prd/types";
+// Sub-barrel import (not the `@/review` barrel): `runReview` lives in
+// `./runner`, deliberately not re-exported by the barrel (see its header) to
+// avoid a cycle through `@/prompts` → `review-builder.ts`. `runner` is its own
+// nested barrel, so this reaches it without loading `src/review/index.ts`.
+import { runReview } from "@/review/runner";
 import type { ReviewConfig } from "@/review/types";
-import { resolveDefaultAgent } from "../../agents";
-import { AgentNotFoundError, AgentNotInstalledError, StoryLimitExceededError } from "../../errors";
-import { getSafeLogger } from "../../logger";
-import { countStories, loadPRD, markStoryPassed, resetFailedStoriesToPending, savePRD } from "../../prd";
-import { runReview } from "../../review/runner";
-import { spawn } from "../../utils/bun-deps";
-import { hasCommitsForStory } from "../../utils/git";
+import { spawn } from "@/utils/bun-deps";
+import { hasCommitsForStory } from "@/utils/git";
 
 /**
  * Injectable dependencies for reconcileState — allows tests to mock

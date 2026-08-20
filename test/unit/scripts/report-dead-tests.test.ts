@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 import {
   parseTestFile,
   findDeadImports,
   findDeadTestReferences,
   generateDeadTestsReport,
   scanTestDirectory,
-} from "../../../scripts/report-dead-tests";
+} from "@scripts/report-dead-tests";
 
 describe("parseTestFile", () => {
   test("extracts import paths from test file", () => {

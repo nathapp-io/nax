@@ -5,7 +5,7 @@ import {
   filterNaxInternalPaths,
   isNaxInternalPath,
   resolveNaxIgnorePatterns,
-} from "../../../src/utils/path-filters";
+} from "@/utils/path-filters";
 
 describe("path-filters (#542)", () => {
   let origFileExists: typeof _pathFilterDeps.fileExists;

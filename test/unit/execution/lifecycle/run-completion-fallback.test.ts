@@ -8,19 +8,19 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
-import type { NaxConfig } from "../../../../src/config";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import type { NaxConfig } from "@/config";
 import {
   _runCompletionDeps,
   handleRunCompletion,
   type RunCompletionOptions,
-} from "../../../../src/execution/lifecycle/run-completion";
-import type { DeferredRegressionResult } from "../../../../src/execution/lifecycle/run-regression";
-import type { AgentFallbackHop, StoryMetrics } from "../../../../src/metrics";
-import { pipelineEventBus } from "../../../../src/pipeline/event-bus";
-import type { RunCompletedEvent } from "../../../../src/pipeline/event-bus";
-import type { PRD, UserStory } from "../../../../src/prd";
-import { makeMockRuntime } from "../../../helpers";
+} from "@/execution/lifecycle/run-completion";
+import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
+import type { AgentFallbackHop, StoryMetrics } from "@/metrics";
+import { pipelineEventBus } from "@/pipeline/event-bus";
+import type { RunCompletedEvent } from "@/pipeline/event-bus";
+import type { PRD, UserStory } from "@/prd";
+import { makeMockRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

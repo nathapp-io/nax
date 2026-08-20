@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { priorFailuresSection } from "../../../../../src/prompts/core/sections/prior-failures";
+import { priorFailuresSection } from "@/prompts/core/sections/prior-failures";
 
 describe("priorFailuresSection()", () => {
   test("returns null when failures array is empty", () => {

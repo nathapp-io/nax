@@ -8,9 +8,9 @@
 
 import type { InteractionChain } from "@/interaction/chain";
 import type { InteractionResponse } from "@/interaction/types";
+import { getSafeLogger } from "@/logger";
 import type { PRD } from "@/prd/types";
 import type { FlaggedStory } from "@/precheck/story-size-gate";
-import { getSafeLogger } from "../../logger";
 
 /** Prompt result for a single story */
 export interface StoryPromptResult {

@@ -11,8 +11,8 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { semanticReviewOp } from "../../../src/operations/semantic-review";
-import { ReviewPromptBuilder } from "../../../src/prompts";
+import { semanticReviewOp } from "@/operations/semantic-review";
+import { ReviewPromptBuilder } from "@/prompts";
 
 const SEMANTIC_CONFIG = {
   model: "balanced" as const,

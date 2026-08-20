@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { pickSelector, reshapeSelector } from "../../../src/config/selector";
-import type { NaxConfig } from "../../../src/config/types";
+import { pickSelector, reshapeSelector } from "@/config/selector";
+import type { NaxConfig } from "@/config/types";
 
 describe("ConfigSelector", () => {
   describe("pickSelector", () => {

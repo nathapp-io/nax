@@ -6,10 +6,10 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { CodeNeighborProvider, _codeNeighborDeps } from "../../../../../src/context/engine/providers/code-neighbor";
-import type { ContextRequest } from "../../../../../src/context/engine/types";
-import { extractTestDirs, globsToPathspec, globsToTestRegex } from "../../../../../src/test-runners/conventions";
-import type { ResolvedTestPatterns } from "../../../../../src/test-runners/resolver";
+import { CodeNeighborProvider, _codeNeighborDeps } from "@/context/engine/providers/code-neighbor";
+import type { ContextRequest } from "@/context/engine/types";
+import { extractTestDirs, globsToPathspec, globsToTestRegex } from "@/test-runners/conventions";
+import type { ResolvedTestPatterns } from "@/test-runners/resolver";
 
 function makePatterns(globs: readonly string[]): ResolvedTestPatterns {
   return {

@@ -17,8 +17,8 @@ import {
   _semanticVerdictDeps,
   loadSemanticVerdicts,
   persistSemanticVerdict,
-} from "../../../src/acceptance/semantic-verdict";
-import type { SemanticVerdict } from "../../../src/acceptance/types";
+} from "@/acceptance/semantic-verdict";
+import type { SemanticVerdict } from "@/acceptance/types";
 
 // ---------------------------------------------------------------------------
 // Save and restore _deps around each test

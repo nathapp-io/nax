@@ -10,7 +10,7 @@
  * Usage:
  *
  * ```ts
- * import { withWarnSpy } from "../../helpers";
+ * import { withWarnSpy } from "@test/helpers";
  *
  * await withWarnSpy(async (warnSpy) => {
  *   await runThePlanPath();

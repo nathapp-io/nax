@@ -10,11 +10,11 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   _diagnosisDeps,
   resolveAcceptanceDiagnosis,
-} from "../../../../src/execution/lifecycle/acceptance-fix";
-import type { DiagnosisResult, SemanticVerdict } from "../../../../src/acceptance/types";
-import type { NaxConfig } from "../../../../src/config/schema";
-import type { AcceptanceLoopContext } from "../../../../src/execution/lifecycle/acceptance-loop";
-import { makeNaxConfig } from "../../../helpers";
+} from "@/execution/lifecycle/acceptance-fix";
+import type { DiagnosisResult, SemanticVerdict } from "@/acceptance/types";
+import type { NaxConfig } from "@/config/schema";
+import type { AcceptanceLoopContext } from "@/execution/lifecycle/acceptance-loop";
+import { makeNaxConfig } from "@test/helpers";
 
 function makeConfig(): NaxConfig {
   return makeNaxConfig({

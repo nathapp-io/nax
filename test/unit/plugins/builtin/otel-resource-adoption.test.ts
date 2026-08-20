@@ -17,13 +17,13 @@ import {
   type HeartbeatSnapshot,
   buildHeartbeatMetricsPayload,
   startHeartbeat,
-} from "../../../../src/plugins/builtin/otel-reporter/heartbeat";
+} from "@/plugins/builtin/otel-reporter/heartbeat";
 import {
   buildMetricsPayload,
   buildResourceAttributes,
   buildTracesPayload,
-} from "../../../../src/plugins/builtin/otel-reporter/otlp";
-import { createPhaseMetricsAggregator, createSpanTree } from "../../../../src/plugins/builtin/otel-reporter/span-tree";
+} from "@/plugins/builtin/otel-reporter/otlp";
+import { createPhaseMetricsAggregator, createSpanTree } from "@/plugins/builtin/otel-reporter/span-tree";
 
 const liveHeartbeats: Heartbeat[] = [];
 function track(hb: Heartbeat): Heartbeat {

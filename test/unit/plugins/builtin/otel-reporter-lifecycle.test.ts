@@ -2,7 +2,7 @@ import { describe, expect, spyOn, test } from "bun:test";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { type PostJsonDeps, createOtelReporterPlugin } from "@/plugins";
 import { mockFetch, withWarnSpy } from "@test/helpers";
-import { attr } from "../../../../src/plugins/builtin/otel-reporter/otlp";
+import { attr } from "@/plugins/builtin/otel-reporter/otlp";
 
 /**
  * Heartbeat cadence/content, detail-level redaction (counts vs verbose), and

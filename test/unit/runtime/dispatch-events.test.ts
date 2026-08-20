@@ -7,7 +7,7 @@ import {
   type ReviewDecisionEvent,
   type ReviewRepromptEvent,
   type SessionTurnDispatchEvent,
-} from "../../../src/runtime/dispatch-events";
+} from "@/runtime/dispatch-events";
 
 const PERMS = { mode: "approve-reads" as const };
 

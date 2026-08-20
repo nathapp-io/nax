@@ -15,7 +15,7 @@
  *
  * Per-file floor: the aggregate floor above can hide a single file collapsing
  * (e.g. 12% -> 0%) inside an 87%-covered repo. A second ratchet, in the same
- * style as check-file-sizes.ts / check-deep-relatives.ts, tracks every `src/`
+ * style as check-file-sizes.ts / check-nax-error.ts, tracks every `src/`
  * file whose unit-suite line coverage sits below PER_FILE_FLOOR. Files already
  * below it are grandfathered in scripts/baselines/coverage-per-file-baseline.json
  * at their current pct; the gate then fails if a NEW file drops below the floor,

@@ -6,12 +6,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { NaxConfig } from "../../../../src/config";
-import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
-import { initLogger, resetLogger } from "../../../../src/logger";
-import type { UserStory } from "../../../../src/prd/types";
-import { classifyComplexity, complexityToModelTier, determineTestStrategy } from "../../../../src/routing";
-import type { RoutingDecision } from "../../../../src/routing";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { initLogger, resetLogger } from "@/logger";
+import type { UserStory } from "@/prd/types";
+import { classifyComplexity, complexityToModelTier, determineTestStrategy } from "@/routing";
+import type { RoutingDecision } from "@/routing";
 
 // ---------------------------------------------------------------------------
 // Helper: replaces the deleted keywordStrategy.route(story, ctx)

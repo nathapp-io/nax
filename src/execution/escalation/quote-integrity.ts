@@ -13,8 +13,8 @@
  * described in Issue #930 Pattern B.
  */
 
+import { getSafeLogger } from "@/logger";
 import { validateModulePath } from "@/utils/path-security";
-import { getSafeLogger } from "../../logger";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

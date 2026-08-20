@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
-import { cancellationMiddleware } from "../../../../src/runtime/middleware/cancellation";
-import { DEFAULT_CONFIG } from "../../../../src/config";
-import type { MiddlewareContext } from "../../../../src/runtime/agent-middleware";
+import { cancellationMiddleware } from "@/runtime/middleware/cancellation";
+import { DEFAULT_CONFIG } from "@/config";
+import type { MiddlewareContext } from "@/runtime/agent-middleware";
 
 function makeCtx(aborted = false): MiddlewareContext {
   const ctrl = new AbortController();

@@ -9,7 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { initLogger, resetLogger } from "../../../../src/logger";
+import { initLogger, resetLogger } from "@/logger";
 
 beforeEach(() => {
   resetLogger();
@@ -33,13 +33,13 @@ describe("llm.ts module exports — cache utilities still available", () => {
   });
 
   test("ROUTING_INSTRUCTIONS is exported from llm.ts", async () => {
-    const { ROUTING_INSTRUCTIONS } = await import("../../../../src/routing/strategies/llm");
+    const { ROUTING_INSTRUCTIONS } = await import("@/routing/strategies/llm");
     expect(typeof ROUTING_INSTRUCTIONS).toBe("string");
     expect(ROUTING_INSTRUCTIONS.length).toBeGreaterThan(0);
   });
 
   test("_llmStrategyDeps.spawn is defined (not undefined)", async () => {
-    const { _llmStrategyDeps } = await import("../../../../src/routing/strategies/llm");
+    const { _llmStrategyDeps } = await import("@/routing/strategies/llm");
     expect(_llmStrategyDeps.spawn).toBeDefined();
   });
 });

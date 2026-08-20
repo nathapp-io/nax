@@ -6,8 +6,8 @@
  */
 
 import { mock } from "bun:test";
-import { _diffUtilsDeps } from "../../src/review/diff-utils";
-import type { IReviewAuditor, ReviewAuditDecision } from "../../src/runtime";
+import { _diffUtilsDeps } from "@/review/diff-utils";
+import type { IReviewAuditor, ReviewAuditDecision } from "@/runtime";
 import { makeAgentAdapter } from "./mock-agent-adapter";
 import { makeMockAgentManager } from "./mock-agent-manager";
 

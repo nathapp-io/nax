@@ -21,7 +21,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { StaticRulesProvider, _staticRulesDeps } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
-import { loadCanonicalRules } from "../../../../../src/context/rules/canonical-loader";
+import { loadCanonicalRules } from "@/context/rules/canonical-loader";
 
 describe("StaticRulesProvider — US-006 real .nax/rules store stage scoping", () => {
   const REAL_REPO_REQUEST: ContextRequest = {

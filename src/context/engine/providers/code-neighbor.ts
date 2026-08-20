@@ -8,11 +8,11 @@
  */
 
 import { join, relative, resolve } from "node:path";
+import { getLogger } from "@/logger";
+import { detectLanguage } from "@/project";
 import { discoverWorkspacePackages } from "@/test-runners/detect";
 import type { NaxIgnoreMatcher } from "@/utils/path-filters";
-import { getLogger } from "../../../logger";
-import { detectLanguage } from "../../../project";
-import { isRelativeAndSafe } from "../../../utils/path-security";
+import { isRelativeAndSafe } from "@/utils/path-security";
 import type { ContextProviderResult, ContextRequest, IContextProvider } from "../types";
 import { type ContentCacheState, createContentCacheState, readCached } from "./code-neighbor-cache";
 import { type NeighborSection, assembleCodeNeighborChunk } from "./code-neighbor-chunk";

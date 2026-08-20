@@ -13,7 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { killProcessTree } from "../../../../src/agents/acp/spawn-client-process";
+import { killProcessTree } from "@/agents/acp/spawn-client-process";
 import { waitForCondition } from "@test/helpers";
 
 const FAKE_PID = 99999999;

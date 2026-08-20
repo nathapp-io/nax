@@ -8,8 +8,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { initLogger, resetLogger } from "../../../src/logger";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { initLogger, resetLogger } from "@/logger";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("Headless mode formatter integration", () => {
   let testDir: string;

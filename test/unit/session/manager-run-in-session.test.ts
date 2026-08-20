@@ -13,13 +13,13 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import type { IAgentManager } from "../../../src/agents/manager-types";
-import type { AgentRunRequest } from "../../../src/agents/manager-types";
-import type { AgentResult } from "../../../src/agents/types";
-import type { NaxConfig } from "../../../src/config";
-import { DispatchEventBus, type SessionTurnDispatchEvent } from "../../../src/runtime/dispatch-events";
-import { SessionManager } from "../../../src/session/manager";
-import { makeMockAgentManager } from "../../../test/helpers";
+import type { IAgentManager } from "@/agents/manager-types";
+import type { AgentRunRequest } from "@/agents/manager-types";
+import type { AgentResult } from "@/agents/types";
+import type { NaxConfig } from "@/config";
+import { DispatchEventBus, type SessionTurnDispatchEvent } from "@/runtime/dispatch-events";
+import { SessionManager } from "@/session/manager";
+import { makeMockAgentManager } from "@test/helpers";
 
 function makeRequest(overrides: Partial<AgentRunRequest> = {}): AgentRunRequest {
   return {

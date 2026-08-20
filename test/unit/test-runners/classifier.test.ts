@@ -3,8 +3,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { createTestFileClassifier } from "../../../src/test-runners/classifier";
-import type { ResolvedTestPatterns } from "../../../src/test-runners/resolver";
+import { createTestFileClassifier } from "@/test-runners/classifier";
+import type { ResolvedTestPatterns } from "@/test-runners/resolver";
 
 function makeResolved(override: Partial<ResolvedTestPatterns> = {}): ResolvedTestPatterns {
   return {

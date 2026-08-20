@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { formatAdvisorySummary, formatLogEntry } from "../../../src/log-format";
-import type { LogEntry } from "../../../src/logger/types";
-import type { AdvisoryFindingSummaryEntry } from "../../../src/runtime";
+import { formatAdvisorySummary, formatLogEntry } from "@/log-format";
+import type { LogEntry } from "@/logger/types";
+import type { AdvisoryFindingSummaryEntry } from "@/runtime";
 
 const TS = "2026-05-29T11:35:59.000Z";
 

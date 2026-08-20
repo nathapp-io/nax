@@ -6,9 +6,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { PipelineEventEmitter } from "../../../src/pipeline/events";
-import type { StageResult } from "../../../src/pipeline/types";
-import type { UserStory } from "../../../src/prd/types";
+import { PipelineEventEmitter } from "@/pipeline/events";
+import type { StageResult } from "@/pipeline/types";
+import type { UserStory } from "@/prd/types";
 
 // ── Test Fixtures ────────────────────────────────────
 

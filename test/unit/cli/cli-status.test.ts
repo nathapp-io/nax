@@ -7,12 +7,11 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { _statusFeaturesDeps, displayFeatureStatus } from "../../../src/cli/status-features";
-import type { NaxStatusFile } from "../../../src/execution/status-file";
-import type { PRD } from "../../../src/prd";
+import { _statusFeaturesDeps, displayFeatureStatus } from "@/cli/status-features";
+import type { NaxStatusFile } from "@/execution/status-file";
+import type { PRD } from "@/prd";
 // Requires real PID checks — skipped by default, run with FULL=1.
-import { fullTest as skipInCI } from "../../helpers/env";
-import { makeTempDir } from "../../helpers/temp";
+import { fullTest as skipInCI, makeTempDir } from "@test/helpers";
 
 describe("displayFeatureStatus", () => {
   let testDir: string;

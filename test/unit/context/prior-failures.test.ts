@@ -6,10 +6,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { createPriorFailuresContext, formatPriorFailures } from "../../../src/context/elements";
-import { buildContext, sortContextElements } from "../../../src/context/builder";
-import type { StructuredFailure, UserStory } from "../../../src/prd";
-import type { StoryContext } from "../../../src/context/types";
+import { createPriorFailuresContext, formatPriorFailures } from "@/context/elements";
+import { buildContext, sortContextElements } from "@/context/builder";
+import type { StructuredFailure, UserStory } from "@/prd";
+import type { StoryContext } from "@/context/types";
 
 describe("formatPriorFailures", () => {
   test("should format a single prior failure correctly", () => {

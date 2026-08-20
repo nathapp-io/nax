@@ -11,8 +11,8 @@ import {
   KNOWN_FRONTMATTER_KEYS,
   parseFrontmatter,
   RulesFrontmatterError,
-} from "../../../../src/context/rules/rules-frontmatter";
-import { loadCanonicalRules, _canonicalLoaderDeps } from "../../../../src/context/rules/canonical-loader";
+} from "@/context/rules/rules-frontmatter";
+import { loadCanonicalRules, _canonicalLoaderDeps } from "@/context/rules/canonical-loader";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // US-001: Canonical rules accept and carry an optional single-line description.

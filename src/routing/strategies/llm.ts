@@ -7,8 +7,8 @@
  */
 
 import type { UserStory } from "@/prd";
-import { OneShotPromptBuilder, type RoutingCandidate, type SchemaDescriptor } from "../../prompts";
-import { typedSpawn } from "../../utils/bun-deps";
+import { OneShotPromptBuilder, type RoutingCandidate, type SchemaDescriptor } from "@/prompts";
+import { typedSpawn } from "@/utils/bun-deps";
 
 // Re-export parse/validate utilities for callers that import from this module
 export { validateRoutingDecision, stripCodeFences, parseRoutingResponse } from "./llm-parsing";

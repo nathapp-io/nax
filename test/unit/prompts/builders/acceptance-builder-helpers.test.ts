@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { fenceLangFor, formatTestOutputForFix } from "../../../../src/prompts";
+import { fenceLangFor, formatTestOutputForFix } from "@/prompts";
 
 // ─── formatTestOutputForFix ───────────────────────────────────────────────────
 

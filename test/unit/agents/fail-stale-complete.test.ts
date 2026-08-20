@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { AdapterFailure } from "../../../src/context/engine";
-import type { CompleteResult } from "../../../src/agents/types";
+import type { AdapterFailure } from "@/context/engine";
+import type { CompleteResult } from "@/agents/types";
 
 const staleFailure: AdapterFailure = {
   category: "availability",

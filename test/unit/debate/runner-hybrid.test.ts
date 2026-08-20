@@ -5,10 +5,10 @@ import type { DebateRunnerOptions, DebateStageConfig } from "@/debate";
 import type { CallContext } from "@/operations";
 import * as callModule from "@/operations";
 import type { DebateStatefulInput } from "@/operations/debate-stateful";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { debateConfigSelector } from "../../../src/config";
-import { createNoOpCostAggregator } from "../../../src/runtime/cost-aggregator";
-import { makeMockAgentManager, makeSessionManager } from "../../helpers";
+import { DEFAULT_CONFIG } from "@/config";
+import { debateConfigSelector } from "@/config";
+import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
+import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 

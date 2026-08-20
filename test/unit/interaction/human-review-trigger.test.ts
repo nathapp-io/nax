@@ -9,11 +9,11 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import type { NaxConfig } from "../../../src/config";
-import { InteractionChain } from "../../../src/interaction/chain";
-import type { InteractionPlugin, InteractionResponse, TriggerName } from "../../../src/interaction/types";
-import { TRIGGER_METADATA } from "../../../src/interaction/types";
-import { createTriggerRequest, executeTrigger } from "../../../src/interaction/triggers";
+import type { NaxConfig } from "@/config";
+import { InteractionChain } from "@/interaction/chain";
+import type { InteractionPlugin, InteractionResponse, TriggerName } from "@/interaction/types";
+import { TRIGGER_METADATA } from "@/interaction/types";
+import { createTriggerRequest, executeTrigger } from "@/interaction/triggers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

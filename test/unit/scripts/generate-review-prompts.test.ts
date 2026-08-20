@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { firstDifferingLine } from "../../../scripts/check-review-prompts-generated";
+import { firstDifferingLine } from "@scripts/check-review-prompts-generated";
 import {
   escapeForTemplateLiteral,
   extractFirstFencedBlock,
   generatePromptsFileContent,
   splitWorkerProtocol,
-} from "../../../scripts/generate-review-prompts";
+} from "@scripts/generate-review-prompts";
 
 /** Unescapes exactly what `escapeForTemplateLiteral` escapes, for round-trip assertions. */
 function unescapeTemplateLiteral(text: string): string {

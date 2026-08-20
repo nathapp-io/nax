@@ -12,11 +12,11 @@ import {
   decideStageAction,
   deriveTddFailureCategory,
   extractPauseReason,
-} from "../../../src/execution/post-run";
-import type { InspectionOptions } from "../../../src/execution/post-run";
-import { EXHAUSTED_EXIT_REASONS } from "../../../src/execution/story-orchestrator";
-import type { StoryOrchestratorResult } from "../../../src/execution/story-orchestrator";
-import type { Finding } from "../../../src/findings/types";
+} from "@/execution/post-run";
+import type { InspectionOptions } from "@/execution/post-run";
+import { EXHAUSTED_EXIT_REASONS } from "@/execution/story-orchestrator";
+import type { StoryOrchestratorResult } from "@/execution/story-orchestrator";
+import type { Finding } from "@/findings/types";
 import {
   fullSuiteGateOp,
   greenfieldGateOp,
@@ -25,8 +25,8 @@ import {
   testWriterOp,
   verifierOp,
   verifyScopedOp,
-} from "../../../src/operations";
-import { makeTestContext } from "../../helpers/pipeline-context";
+} from "@/operations";
+import { makeTestContext } from "@test/helpers";
 import { SEMANTIC_REVIEW_FINDING, TEST_RUNNER_FINDING, makeInspectionOpts, makePlanResult } from "./_post-run-fixtures";
 
 // ─────────────────────────────────────────────────────────────────────────────

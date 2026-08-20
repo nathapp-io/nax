@@ -11,7 +11,7 @@ import type {
   IPostRunAction,
   PostRunActionResult,
   PostRunContext,
-} from "../../../src/plugins";
+} from "@/plugins";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Index barrel exports tests

@@ -11,9 +11,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { NaxConfig } from "../../../../src/config/types";
-import { _codeNeighborDeps } from "../../../../src/context/engine/providers/code-neighbor";
-import { _featureContextV2Deps } from "../../../../src/context/engine/providers/feature-context";
+import type { NaxConfig } from "@/config/types";
+import { _codeNeighborDeps } from "@/context/engine/providers/code-neighbor";
+import { _featureContextV2Deps } from "@/context/engine/providers/feature-context";
 import {
   PULL_TOOL_REGISTRY,
   PullToolBudget,
@@ -23,10 +23,10 @@ import {
   createRunCallCounter,
   handleQueryFeatureContext,
   handleQueryNeighbor,
-} from "../../../../src/context/engine/pull-tools";
-import { NaxError } from "../../../../src/errors";
-import type { UserStory } from "../../../../src/prd";
-import { makeLogger } from "../../../../test/helpers";
+} from "@/context/engine/pull-tools";
+import { NaxError } from "@/errors";
+import type { UserStory } from "@/prd";
+import { makeLogger } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals for dep injection

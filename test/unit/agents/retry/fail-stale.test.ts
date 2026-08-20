@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { defaultRetryStrategy } from "../../../../src/agents/retry/index";
-import type { AdapterFailure } from "../../../../src/context/engine";
+import { defaultRetryStrategy } from "@/agents/retry/index";
+import type { AdapterFailure } from "@/context/engine";
 
 const staleFailure: AdapterFailure = {
   category: "availability",

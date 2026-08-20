@@ -10,10 +10,10 @@
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
 import { createElement } from "react";
-import type { UserStory } from "../../../src/prd/types";
-import { StatusBar } from "../../../src/tui/components/StatusBar";
-import { StoriesPanel } from "../../../src/tui/components/StoriesPanel";
-import type { StoryDisplayState } from "../../../src/tui/types";
+import type { UserStory } from "@/prd/types";
+import { StatusBar } from "@/tui/components/StatusBar";
+import { StoriesPanel } from "@/tui/components/StoriesPanel";
+import type { StoryDisplayState } from "@/tui/types";
 
 // Helper to create mock stories
 function createMockStory(id: string, status: StoryDisplayState["status"]): StoryDisplayState {

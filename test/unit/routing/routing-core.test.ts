@@ -8,11 +8,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import type { NaxConfig } from "../../../src/config";
-import { escalateTier } from "../../../src/execution/runner";
-import { classifyComplexity, complexityToModelTier, determineTestStrategy, isSecurityCriticalStory, routeTask } from "../../../src/routing";
-import { makeNaxConfig } from "../../helpers";
+import { DEFAULT_CONFIG } from "@/config";
+import type { NaxConfig } from "@/config";
+import { escalateTier } from "@/execution/runner";
+import { classifyComplexity, complexityToModelTier, determineTestStrategy, isSecurityCriticalStory, routeTask } from "@/routing";
+import { makeNaxConfig } from "@test/helpers";
 
 describe("classifyComplexity", () => {
   test.each([

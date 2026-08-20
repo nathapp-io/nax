@@ -9,8 +9,8 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { CodeNeighborProvider, _codeNeighborDeps } from "../../../../../src/context/engine/providers/code-neighbor";
-import type { ContextRequest } from "../../../../../src/context/engine/types";
+import { CodeNeighborProvider, _codeNeighborDeps } from "@/context/engine/providers/code-neighbor";
+import type { ContextRequest } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals

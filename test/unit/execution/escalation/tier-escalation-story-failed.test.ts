@@ -26,7 +26,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import type { LoadedHooksConfig } from "@/hooks";
 import { pipelineEventBus } from "@/pipeline";
-import { wireHooks } from "../../../../src/pipeline/subscribers/hooks";
+import { wireHooks } from "@/pipeline/subscribers/hooks";
 import { cleanupTempDir, makeMockRuntime, makeNaxConfig, makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 describe("preIterationTierCheck — story:failed event emission (BUG-5)", () => {

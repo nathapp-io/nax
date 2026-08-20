@@ -5,8 +5,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { Proposal } from "../../../../src/plugins/builtin/curator/heuristics";
-import { renderProposals } from "../../../../src/plugins/builtin/curator/render";
+import type { Proposal } from "@/plugins/builtin/curator/heuristics";
+import { renderProposals } from "@/plugins/builtin/curator/render";
 
 describe("renderProposals", () => {
   const baseProposal: Proposal = {
@@ -218,7 +218,7 @@ describe("renderProposals", () => {
 
 describe("renderProposals — evidence survives `nax curator commit` (#1422)", () => {
   test("multi-line evidence is flattened so the parser keeps the samples", async () => {
-    const { _testing } = await import("../../../../src/commands/curator");
+    const { _testing } = await import("@/commands/curator");
     const markdown = renderProposals(
       [
         {

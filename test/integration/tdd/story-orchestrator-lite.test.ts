@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { buildPlanForStrategy } from "../../../src/execution/build-plan-for-strategy";
-import type { PlanInputs } from "../../../src/execution/plan-inputs";
-import { makeMockCallContext } from "../../helpers/call-context";
-import { makeRuntimeWithFakeAgent } from "../../helpers/runtime";
-import type { UserStory } from "../../../src/prd";
+import { DEFAULT_CONFIG } from "@/config";
+import { buildPlanForStrategy } from "@/execution/build-plan-for-strategy";
+import type { PlanInputs } from "@/execution/plan-inputs";
+import { makeMockCallContext } from "@test/helpers";
+import { makeRuntimeWithFakeAgent } from "@test/helpers";
+import type { UserStory } from "@/prd";
 import { type SavedDeps, createMockAgent, mockGitSpawn, restoreDeps, saveDeps, stubFullSuiteGateContext } from "./_tdd-test-helpers";
 
 let saved: SavedDeps;

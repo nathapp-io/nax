@@ -6,8 +6,8 @@
 
 import { describe, expect, test } from "bun:test";
 import * as path from "node:path";
-import type { Observation } from "../../../../src/plugins/builtin/curator";
-import { withTempDir } from "../../../helpers";
+import type { Observation } from "@/plugins/builtin/curator";
+import { withTempDir } from "@test/helpers";
 
 describe("Curator Plugin Integration", () => {
   describe("End-to-end workflow", () => {

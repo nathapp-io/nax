@@ -6,9 +6,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ExecutionConfig, NaxConfig } from "../../../src/config";
-import type { PRD, UserStory } from "../../../src/prd/types";
-import { makeTempDir } from "../../helpers/temp";
+import type { ExecutionConfig, NaxConfig } from "@/config";
+import type { PRD, UserStory } from "@/prd/types";
+import { makeTempDir } from "@test/helpers";
 import {
   checkCanonicalRulesLint,
   checkClaudeCLI,
@@ -18,8 +18,8 @@ import {
   checkPRDValid,
   checkStaleLock,
   checkWorkingTreeClean,
-} from "../../../src/precheck/checks";
-import { _checkCanonicalRulesDeps } from "../../../src/precheck/checks-system";
+} from "@/precheck/checks";
+import { _checkCanonicalRulesDeps } from "@/precheck/checks-system";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -330,7 +330,7 @@ describe("checkPRDValid (Tier 1 blocker)", () => {
 });
 
 // Requires real `claude` binary — skipped by default, run with FULL=1.
-import { fullTest as skipInCI } from "../../helpers/env";
+import { fullTest as skipInCI } from "@test/helpers";
 
 describe("checkClaudeCLI (Tier 1 blocker)", () => {
   skipInCI("runs claude --version command", async () => {

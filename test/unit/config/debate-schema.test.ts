@@ -6,9 +6,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { NaxConfigSchema } from "../../../src/config/schemas";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { FIELD_DESCRIPTIONS } from "../../../src/cli/config-descriptions";
+import { NaxConfigSchema } from "@/config/schemas";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
 
 // Minimal valid base config — debate key intentionally absent
 const baseConfig = {

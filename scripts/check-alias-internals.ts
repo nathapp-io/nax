@@ -3,13 +3,17 @@
  * CI gate: prevent value-level `@/<dir>/<internal>` imports when
  * `src/<dir>/index.ts` exists.
  *
- * Purpose: this guard exists so the path-alias migration (tracked by
- * `check-deep-relatives.ts`, added in the same change) cannot launder barrel
- * violations. That ratchet only counts `../../` specifiers, so mechanically
- * rewriting `../../routing/router` to `@/routing/router` would drop the count
- * by one while changing nothing — the import still bypasses the barrel. This
- * check closes that loophole, keeping production code on each module's public
- * API.
+ * Purpose: encapsulation — production code stays on each module's public API.
+ * The guard was introduced alongside the path-alias migration so that
+ * mechanically rewriting `../../routing/router` to `@/routing/router` could not
+ * launder a barrel violation into a passing import; that migration is complete
+ * and its ratchet retired, but the encapsulation rule is permanent.
+ *
+ * When a module must be reachable from outside its directory without loading
+ * the parent barrel — typically because the barrel closes an import cycle —
+ * promote it to its own nested barrel (`x.ts` -> `x/index.ts`). An exact barrel
+ * match such as `@/review/runner` is legal; an internal path is not. See
+ * `src/review/{runner,semantic-categories}` and `src/execution/{helpers,story-context}`.
  *
  * NOTE: an earlier version of this comment claimed alias-internal imports
  * "fragment singletons across Bun's module registry (BUG-035)". That is not
@@ -29,8 +33,9 @@
  * 2. Value imports of `@/<dir>/<internal>` from files under `test/` — a unit
  *    test's job is to exercise the unit, so reaching past a barrel is the
  *    intended behaviour rather than a violation. Without this, a test of any
- *    non-barrelled internal is unwritable: the deep-relative form is rejected
- *    by the ratchet and the alias form was rejected here (GitHub #1647).
+ *    non-barrelled internal was unwritable: the deep-relative form was
+ *    rejected by the then-active `check-deep-relatives` ratchet and the alias
+ *    form was rejected here (GitHub #1647).
  *    Encapsulation is still enforced for `src/`, `bin/` and `scripts/`.
  *    `@test/<dir>/<internal>` stays enforced everywhere — shared fixtures are
  *    a real public API for tests.

@@ -12,9 +12,9 @@ import {
   _stageAssemblerDeps,
   assembleForStage,
   discoverSessionScratchDirsOnDisk,
-} from "../../../../src/context/engine/stage-assembler";
-import type { ContextBundle, ContextRequest } from "../../../../src/context/engine/types";
-import type { PipelineContext } from "../../../../src/pipeline/types";
+} from "@/context/engine/stage-assembler";
+import type { ContextBundle, ContextRequest } from "@/context/engine/types";
+import type { PipelineContext } from "@/pipeline/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

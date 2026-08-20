@@ -7,16 +7,16 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { RectifierPromptBuilder } from "../../../../src/prompts";
+import { RectifierPromptBuilder } from "@/prompts";
 import {
   buildEscapeHatch,
   escapeHatchFor,
   exceptionCountWord,
   implementerOwnsTests,
   testEditHeadline,
-} from "../../../../src/prompts/builders/rectifier-builder-helpers";
-import type { ReviewCheckResult } from "../../../../src/review/types";
-import { makeStory } from "../../../helpers";
+} from "@/prompts/builders/rectifier-builder-helpers";
+import type { ReviewCheckResult } from "@/review/types";
+import { makeStory } from "@test/helpers";
 
 const TDD_STORY = makeStory({
   id: "US-TDD",

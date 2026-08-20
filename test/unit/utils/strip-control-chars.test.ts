@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { stripControlChars } from "../../../src/utils/strip-control-chars";
+import { stripControlChars } from "@/utils/strip-control-chars";
 
 describe("stripControlChars (SEC-09)", () => {
   test("strips a CSI cursor-move sequence", () => {

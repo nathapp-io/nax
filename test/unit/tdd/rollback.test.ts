@@ -8,7 +8,7 @@
  * calls instead of shelling out to `git clean`.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _rollbackDeps, rollbackToRef } from "../../../src/tdd/rollback";
+import { _rollbackDeps, rollbackToRef } from "@/tdd/rollback";
 
 function makeResetSpawn(exitCode = 0) {
   return (() => ({

@@ -3,7 +3,7 @@
 // writes complete as a single microtask-scheduled unit, so a same-process
 // reader can never observe a mid-write file regardless of whether the write
 // is atomic.
-import { saveJsonFile } from "../../src/utils/json-file";
+import { saveJsonFile } from "@/utils/json-file";
 
 const path = process.argv[2];
 if (!path) {

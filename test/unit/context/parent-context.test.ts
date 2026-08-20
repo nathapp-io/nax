@@ -3,8 +3,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { getParentOutputFiles } from "../../../src/context/parent-context";
-import type { UserStory } from "../../../src/prd/types";
+import { getParentOutputFiles } from "@/context/parent-context";
+import type { UserStory } from "@/prd/types";
 
 function makeStory(id: string, overrides: Partial<UserStory> = {}): UserStory {
   return {

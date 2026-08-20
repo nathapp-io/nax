@@ -10,22 +10,22 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { DispatchContext } from "../../../src/runtime/dispatch-context";
-import type { PipelineContext } from "../../../src/pipeline/types";
-import type { AcceptanceLoopContext } from "../../../src/execution/lifecycle/acceptance-loop";
-import type { SequentialExecutionContext } from "../../../src/execution/executor-types";
-import type { RoutingContext } from "../../../src/routing/router";
-import type { RunnerExecutionOptions } from "../../../src/execution/runner-execution";
-import type { RunCompletionOptions } from "../../../src/execution/lifecycle/run-completion";
-import type { SessionRunnerContext } from "../../../src/session/session-runner";
+import type { DispatchContext } from "@/runtime/dispatch-context";
+import type { PipelineContext } from "@/pipeline/types";
+import type { AcceptanceLoopContext } from "@/execution/lifecycle/acceptance-loop";
+import type { SequentialExecutionContext } from "@/execution/executor-types";
+import type { RoutingContext } from "@/routing/router";
+import type { RunnerExecutionOptions } from "@/execution/runner-execution";
+import type { RunCompletionOptions } from "@/execution/lifecycle/run-completion";
+import type { SessionRunnerContext } from "@/session/session-runner";
 
 function assertExtends<T extends U, U>(_value: T): void {}
 
 function makeDispatchContext(): DispatchContext {
   return {
-    agentManager: {} as import("../../../src/agents/manager-types").IAgentManager,
-    sessionManager: {} as import("../../../src/session").ISessionManager,
-    runtime: {} as import("../../../src/runtime").NaxRuntime,
+    agentManager: {} as import("@/agents/manager-types").IAgentManager,
+    sessionManager: {} as import("@/session").ISessionManager,
+    runtime: {} as import("@/runtime").NaxRuntime,
     abortSignal: new AbortController().signal,
   };
 }

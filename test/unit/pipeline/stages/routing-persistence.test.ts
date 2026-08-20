@@ -6,12 +6,12 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
-import { routingStage, _routingDeps } from "../../../../src/pipeline/stages/routing";
-import type { PRD, UserStory } from "../../../../src/prd";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import type { StoryRouting } from "../../../../src/prd/types";
-import { makeNaxConfig, makeStory } from "../../../helpers";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { routingStage, _routingDeps } from "@/pipeline/stages/routing";
+import type { PRD, UserStory } from "@/prd";
+import type { PipelineContext } from "@/pipeline/types";
+import type { StoryRouting } from "@/prd/types";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-routing-test-${randomUUID()}`;
 
@@ -64,7 +64,7 @@ const FRESH_ROUTING_RESULT = {
 // ---------------------------------------------------------------------------
 
 describe("routingStage - first classification persists routing to prd.json", () => {
-  let origRoutingDeps: typeof import("../../../../src/pipeline/stages/routing")["_routingDeps"];
+  let origRoutingDeps: typeof import("@/pipeline/stages/routing")["_routingDeps"];
   let savePRDCallArgs: Array<[PRD, string]>;
 
   beforeEach(() => {
@@ -182,7 +182,7 @@ describe("routingStage - first classification persists routing to prd.json", () 
 // ---------------------------------------------------------------------------
 
 describe("routingStage - skips savePRD when story.routing already set", () => {
-  let origRoutingDeps: typeof import("../../../../src/pipeline/stages/routing")["_routingDeps"];
+  let origRoutingDeps: typeof import("@/pipeline/stages/routing")["_routingDeps"];
   let savePRDCallCount: number;
 
   beforeEach(() => {
@@ -274,7 +274,7 @@ describe("routingStage - skips savePRD when story.routing already set", () => {
 // ---------------------------------------------------------------------------
 
 describe("routingStage - escalation overwrites modelTier even after persistence", () => {
-  let origRoutingDeps: typeof import("../../../../src/pipeline/stages/routing")["_routingDeps"];
+  let origRoutingDeps: typeof import("@/pipeline/stages/routing")["_routingDeps"];
 
   afterEach(() => {
     mock.restore();

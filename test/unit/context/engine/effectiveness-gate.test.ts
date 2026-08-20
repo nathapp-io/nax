@@ -23,13 +23,13 @@ import {
   _effectivenessDeps,
   buildEvidenceTerms,
   classifyWithTerms,
-} from "../../../../src/context/engine/effectiveness";
+} from "@/context/engine/effectiveness";
 import {
   type Classifier,
   type LabelCase,
   loadLabelSet,
   scoreEffectiveness,
-} from "../../../../src/context/engine/effectiveness-eval";
+} from "@/context/engine/effectiveness-eval";
 
 const COMMITTED_FIXTURE = join(
   import.meta.dir,

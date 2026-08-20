@@ -13,12 +13,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { ContextOrchestrator } from "../../../../src/context/engine/orchestrator";
+import { ContextOrchestrator } from "@/context/engine/orchestrator";
 import type {
   ContextProviderResult,
   ContextRequest,
   IContextProvider,
-} from "../../../../src/context/engine/types";
+} from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

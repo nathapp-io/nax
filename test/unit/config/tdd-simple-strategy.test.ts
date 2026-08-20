@@ -11,10 +11,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { initLogger, resetLogger } from "../../../src/logger";
-import { determineTestStrategy } from "../../../src/routing/classify";
-import { validateRoutingDecision } from "../../../src/routing/strategies/llm";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { initLogger, resetLogger } from "@/logger";
+import { determineTestStrategy } from "@/routing/classify";
+import { validateRoutingDecision } from "@/routing/strategies/llm";
 
 beforeEach(() => {
   resetLogger();

@@ -8,13 +8,13 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } from "bun:test";
-import { CodeNeighborProvider, _codeNeighborDeps } from "../../../../../src/context/engine/providers/code-neighbor";
-import type { CodeNeighborProviderOptions } from "../../../../../src/context/engine/providers/code-neighbor";
-import type { ContextRequest } from "../../../../../src/context/engine/types";
-import type { NaxIgnoreMatcher, NaxIgnoreIndex } from "../../../../../src/utils/path-filters";
-import type { ResolvedTestPatterns } from "../../../../../src/test-runners/resolver";
-import { extractTestDirs, globsToPathspec, globsToTestRegex } from "../../../../../src/test-runners/conventions";
-import { cleanupTempDir, makeTempDir } from "../../../../helpers/temp";
+import { CodeNeighborProvider, _codeNeighborDeps } from "@/context/engine/providers/code-neighbor";
+import type { CodeNeighborProviderOptions } from "@/context/engine/providers/code-neighbor";
+import type { ContextRequest } from "@/context/engine/types";
+import type { NaxIgnoreMatcher, NaxIgnoreIndex } from "@/utils/path-filters";
+import type { ResolvedTestPatterns } from "@/test-runners/resolver";
+import { extractTestDirs, globsToPathspec, globsToTestRegex } from "@/test-runners/conventions";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 /**
  * Build a ResolvedTestPatterns value from test-file globs.

@@ -7,8 +7,7 @@
  * exists for tests that mutate a rules dir mid-suite and need a fresh read.
  */
 
-import type { CanonicalRule } from "@/context/rules/canonical-loader";
-import { loadCanonicalRules } from "../../rules/canonical-loader";
+import { type CanonicalRule, loadCanonicalRules } from "@/context";
 
 const canonicalRulesCache = new Map<string, Promise<CanonicalRule[]>>();
 

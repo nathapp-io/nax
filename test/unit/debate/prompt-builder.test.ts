@@ -11,10 +11,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { DebatePromptBuilder } from "../../../src/prompts";
-import { PERSONA_FRAGMENTS } from "../../../src/debate/personas";
-import type { Debater, Proposal, Rebuttal } from "../../../src/debate/types";
-import type { ComposeInput } from "../../../src/prompts/compose";
+import { DebatePromptBuilder } from "@/prompts";
+import { PERSONA_FRAGMENTS } from "@/debate/personas";
+import type { Debater, Proposal, Rebuttal } from "@/debate/types";
+import type { ComposeInput } from "@/prompts/compose";
 
 // ─── Shared fixtures ─────────────────────────────────────────────────────────
 
@@ -320,9 +320,9 @@ describe("buildClosePrompt()", () => {
 
 // ─── Review-specific methods (Phase 4) ──────────────────────────────────────
 
-import type { DebateResolverContext } from "../../../src/debate/types";
-import type { Finding } from "../../../src/findings";
-import type { ReviewStoryContext } from "../../../src/prompts";
+import type { DebateResolverContext } from "@/debate/types";
+import type { Finding } from "@/findings";
+import type { ReviewStoryContext } from "@/prompts";
 
 const REVIEW_STORY: ReviewStoryContext = {
   id: "US-001",

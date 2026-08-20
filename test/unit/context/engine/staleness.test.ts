@@ -16,7 +16,7 @@ import {
   parseFeatureContextEntries,
   selectStaleByAge,
   tokenize,
-} from "../../../../src/context/engine/staleness";
+} from "@/context/engine/staleness";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // tokenize

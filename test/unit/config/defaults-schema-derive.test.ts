@@ -16,9 +16,9 @@ import {
   RectificationConfigSchema,
   RegressionGateConfigSchema,
 } from "@/config";
-import { loadConfig } from "../../../src/config/loader";
-import { DEFAULT_CONFIG, NaxConfigSchema } from "../../../src/config/schema";
-import type { NaxConfig } from "../../../src/config/schema";
+import { loadConfig } from "@/config/loader";
+import { DEFAULT_CONFIG, NaxConfigSchema } from "@/config/schema";
+import type { NaxConfig } from "@/config/schema";
 
 describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
   describe("defaults.ts structure", () => {

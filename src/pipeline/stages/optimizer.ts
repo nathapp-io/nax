@@ -25,9 +25,9 @@
  * ```
  */
 
-import { getLogger } from "../../logger/index.js";
-import { resolveOptimizer } from "../../optimizer/index.js";
-import type { PipelineContext, PipelineStage, StageResult } from "../types.js";
+import { getLogger } from "@/logger";
+import { resolveOptimizer } from "@/optimizer";
+import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /**
  * Injectable dependencies for optimizer stage — allows tests to mock the logger

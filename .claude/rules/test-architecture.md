@@ -84,13 +84,14 @@ import { applyConfigCompatShims } from "@/config/compat-shims";
 ```
 
 This is deliberate (GitHub #1647). Before it, a test of any non-barrelled
-internal was unwritable: `check:deep-relatives` rejected the `../../../src/...`
-form and `check:alias-internals` rejected the `@/...` form, so the two gates
-were jointly unsatisfiable. Prefer the barrel (`@/config`) when the symbol is
+internal was unwritable: the then-active `check:deep-relatives` ratchet rejected
+the `../../../src/...` form and `check:alias-internals` rejected the `@/...`
+form, so the two gates were jointly unsatisfiable. That ratchet has since been
+retired. Prefer the barrel (`@/config`) when the symbol is
 exported from it; reach for the internal path only when it is not.
 
 `@test/<dir>/<internal>` remains forbidden — shared helpers and fixtures are a
 real public API for tests, so import them from their barrel (`@test/helpers`).
 
-See `.claude/rules/project-conventions.md` for the full path-alias rules and
-the deep-relative and import-cycle ratchets.
+See `project-conventions.md` for the full path-alias rules and
+the import-cycle ratchet.

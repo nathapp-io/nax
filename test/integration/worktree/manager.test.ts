@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { NAX_GITIGNORE_ENTRIES } from "../../../src/utils/gitignore";
-import { WorktreeManager } from "../../../src/worktree/manager";
-import { makeTempDir } from "../../helpers/temp";
+import { NAX_GITIGNORE_ENTRIES } from "@/utils/gitignore";
+import { WorktreeManager } from "@/worktree/manager";
+import { makeTempDir } from "@test/helpers";
 
 describe("WorktreeManager", () => {
   let testDir: string;

@@ -18,14 +18,13 @@ import { join, relative } from "node:path";
 import { applySectionBudget } from "@/context";
 import { splitRuleIntoSections } from "@/context";
 import type { RuleSection } from "@/context";
-import type { CanonicalRule } from "@/context/rules/canonical-loader";
+import { type CanonicalRule, DEFAULT_CANONICAL_RULES_BUDGET_TOKENS } from "@/context";
 import { getLogger } from "@/logger";
 // Same estimator the section budget uses (via `rule-sections`). A second local
 // `length / 4` here would let a chunk's reported token count disagree with the
 // number the budget admitted it on.
 import { estimateTokens } from "@/optimizer";
 import { errorMessage } from "@/utils/errors";
-import { DEFAULT_CANONICAL_RULES_BUDGET_TOKENS } from "../../rules/canonical-loader";
 import type { ProviderScopingReport } from "../manifest-types";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 import { memoizedLoadCanonicalRules } from "./canonical-rules-cache";

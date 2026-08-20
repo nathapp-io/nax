@@ -4,21 +4,21 @@
 
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { DEFAULT_CONFIG } from "@/config/defaults";
 import { loadPRD, savePRD } from "@/prd";
-import { makeMockRuntime } from "../../helpers/runtime";
+import { makeMockRuntime } from "@test/helpers";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { _tierEscalationDeps } from "../../../src/execution/escalation/tier-escalation";
-import type { PRD, UserStory } from "../../../src/prd/types";
-import { _gitDeps } from "../../../src/utils/git";
+import { _tierEscalationDeps } from "@/execution/escalation/tier-escalation";
+import type { PRD, UserStory } from "@/prd/types";
+import { _gitDeps } from "@/utils/git";
 import {
   _resultHandlerDeps,
   handlePipelineFailure,
   handlePipelineSuccess,
   type PipelineHandlerContext,
-} from "../../../src/execution/pipeline-result-handler";
-import type { PipelineRunResult } from "../../../src/pipeline/runner";
-import { PluginRegistry } from "../../../src/plugins/registry";
+} from "@/execution/pipeline-result-handler";
+import type { PipelineRunResult } from "@/pipeline/runner";
+import { PluginRegistry } from "@/plugins/registry";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -385,8 +385,8 @@ describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
 // story:skipped event emission
 // ---------------------------------------------------------------------------
 
-import { pipelineEventBus } from "../../../src/pipeline/event-bus";
-import type { StorySkippedEvent } from "../../../src/pipeline/event-bus";
+import { pipelineEventBus } from "@/pipeline/event-bus";
+import type { StorySkippedEvent } from "@/pipeline/event-bus";
 
 describe("handlePipelineFailure — story:skipped event", () => {
   let capturedSkipped: StorySkippedEvent[];

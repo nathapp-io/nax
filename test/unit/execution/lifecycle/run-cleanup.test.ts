@@ -12,9 +12,9 @@
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { _runCleanupDeps, cleanupRun } from "@/execution";
-import type { IPostRunAction, PostRunActionResult, PostRunContext } from "../../../../src/plugins/extensions";
-import type { RunCleanupOptions } from "../../../../src/execution/lifecycle/run-cleanup";
-import * as loggerModule from "../../../../src/logger";
+import type { IPostRunAction, PostRunActionResult, PostRunContext } from "@/plugins/extensions";
+import type { RunCleanupOptions } from "@/execution/lifecycle/run-cleanup";
+import * as loggerModule from "@/logger";
 
 // ============================================================================
 // Helpers
@@ -24,11 +24,11 @@ function makePrd(overrides: Partial<{ stories: unknown[] }> = {}) {
   return {
     feature: "test-feature",
     userStories: overrides.stories ?? [],
-  } as import("../../../../src/prd").PRD;
+  } as import("@/prd").PRD;
 }
 
 function makeStory(status: string) {
-  return { id: `US-${status}`, title: "Story", status, passes: status === "passed" } as unknown as import("../../../../src/prd/types").UserStory;
+  return { id: `US-${status}`, title: "Story", status, passes: status === "passed" } as unknown as import("@/prd/types").UserStory;
 }
 
 function makePluginRegistry(actions: IPostRunAction[] = [], reporters: unknown[] = []) {
@@ -40,7 +40,7 @@ function makePluginRegistry(actions: IPostRunAction[] = [], reporters: unknown[]
     ),
     getReporters: mock(() => reporters),
     teardownAll,
-  } as unknown as import("../../../../src/plugins/registry").PluginRegistry;
+  } as unknown as import("@/plugins/registry").PluginRegistry;
 }
 
 function makeCleanupOptions(overrides: Partial<RunCleanupOptions> = {}): RunCleanupOptions {
@@ -89,7 +89,7 @@ describe("RunCleanupOptions", () => {
 
 describe("buildPostRunContext", () => {
   test("is exported, constructs PostRunContext with fields, stories from prd, and empty pluginConfig", async () => {
-    const { buildPostRunContext } = await import("../../../../src/execution/lifecycle/run-cleanup");
+    const { buildPostRunContext } = await import("@/execution/lifecycle/run-cleanup");
     expect(typeof buildPostRunContext).toBe("function");
 
     const prd = makePrd({ stories: [makeStory("passed"), makeStory("failed")] });
@@ -113,14 +113,14 @@ describe("buildPostRunContext", () => {
     // setting it, every collector silently falls back to "no scoping" and the
     // cumulative-count defect returns — with the consumer-side tests still green,
     // because they inject runStartedAt directly.
-    const { buildPostRunContext } = await import("../../../../src/execution/lifecycle/run-cleanup");
+    const { buildPostRunContext } = await import("@/execution/lifecycle/run-cleanup");
     const startTime = Date.parse("2026-08-01T12:00:00.000Z");
     const ctx = buildPostRunContext(makeCleanupOptions({ startTime }), 5000, makePluginLogger());
     expect(ctx.runStartedAt).toBe(startTime);
   });
 
   test("storySummary reflects prd story counts", async () => {
-    const { buildPostRunContext } = await import("../../../../src/execution/lifecycle/run-cleanup");
+    const { buildPostRunContext } = await import("@/execution/lifecycle/run-cleanup");
 
     const prd = makePrd({
       stories: [
@@ -148,7 +148,7 @@ describe("buildPostRunContext", () => {
 
 describe("cleanupRun — post-run action loop", () => {
   test("calls shouldRun() before execute()", async () => {
-    const { cleanupRun } = await import("../../../../src/execution/lifecycle/run-cleanup");
+    const { cleanupRun } = await import("@/execution/lifecycle/run-cleanup");
 
     const callOrder: string[] = [];
     const action: IPostRunAction = {
@@ -165,7 +165,7 @@ describe("cleanupRun — post-run action loop", () => {
   });
 
   test("skips execute() when shouldRun() returns false", async () => {
-    const { cleanupRun } = await import("../../../../src/execution/lifecycle/run-cleanup");
+    const { cleanupRun } = await import("@/execution/lifecycle/run-cleanup");
 
     const action: IPostRunAction = {
       name: "skip-me",
@@ -181,7 +181,7 @@ describe("cleanupRun — post-run action loop", () => {
   });
 
   test("executes multiple actions in registration order", async () => {
-    const { cleanupRun } = await import("../../../../src/execution/lifecycle/run-cleanup");
+    const { cleanupRun } = await import("@/execution/lifecycle/run-cleanup");
 
     const order: string[] = [];
     const actions: IPostRunAction[] = ["first", "second", "third"].map((name) => ({
@@ -198,7 +198,7 @@ describe("cleanupRun — post-run action loop", () => {
   });
 
   test("post-run actions execute after reporters.onRunEnd() and before teardownAll()", async () => {
-    const { cleanupRun } = await import("../../../../src/execution/lifecycle/run-cleanup");
+    const { cleanupRun } = await import("@/execution/lifecycle/run-cleanup");
     const callOrder: string[] = [];
 
     const reporter = {
@@ -329,7 +329,7 @@ describe("cleanupRun — action result logging", () => {
   });
 
   test("successful execute() logs at info level; skipped result logs at info level with reason", async () => {
-    const { cleanupRun } = await import("../../../../src/execution/lifecycle/run-cleanup");
+    const { cleanupRun } = await import("@/execution/lifecycle/run-cleanup");
 
     const successAction: IPostRunAction = {
       name: "publisher",
@@ -354,7 +354,7 @@ describe("cleanupRun — action result logging", () => {
   });
 
   test("shouldRun()=false emits debug log", async () => {
-    const { cleanupRun } = await import("../../../../src/execution/lifecycle/run-cleanup");
+    const { cleanupRun } = await import("@/execution/lifecycle/run-cleanup");
 
     const action: IPostRunAction = {
       name: "skipped-action",
@@ -372,7 +372,7 @@ describe("cleanupRun — action result logging", () => {
   });
 
   test("failed result (success=false) logs at warn level", async () => {
-    const { cleanupRun } = await import("../../../../src/execution/lifecycle/run-cleanup");
+    const { cleanupRun } = await import("@/execution/lifecycle/run-cleanup");
 
     const result: PostRunActionResult = { success: false, message: "Connection refused" };
     const action: IPostRunAction = {
@@ -422,7 +422,7 @@ describe("cleanupRun — action result logging", () => {
 
 describe("cleanupRun — error tolerance", () => {
   test("error thrown in shouldRun() or execute() does not block run completion; teardownAll still called", async () => {
-    const { cleanupRun } = await import("../../../../src/execution/lifecycle/run-cleanup");
+    const { cleanupRun } = await import("@/execution/lifecycle/run-cleanup");
 
     const shouldRunAction: IPostRunAction = {
       name: "bad-should-run",
@@ -446,7 +446,7 @@ describe("cleanupRun — error tolerance", () => {
   });
 
   test("error in one action does not prevent subsequent actions from running", async () => {
-    const { cleanupRun } = await import("../../../../src/execution/lifecycle/run-cleanup");
+    const { cleanupRun } = await import("@/execution/lifecycle/run-cleanup");
 
     const executed: string[] = [];
     const badAction: IPostRunAction = {
@@ -477,7 +477,7 @@ describe("runner.ts — cleanupRun receives feature/prdPath/branch/version", () 
   test("RunCleanupOptions interface requires feature, prdPath, branch, version fields", async () => {
     // Compile-time + runtime check: all four new fields must be present and typed as strings.
     // This fails until RunCleanupOptions is extended with these fields in run-cleanup.ts.
-    const mod = await import("../../../../src/execution/lifecycle/run-cleanup");
+    const mod = await import("@/execution/lifecycle/run-cleanup");
 
     // Build a full RunCleanupOptions — TypeScript will reject this if fields are missing
     const opts: RunCleanupOptions = {
@@ -536,7 +536,7 @@ describe("runner-completion.ts — does not invoke post-run actions", () => {
     const getPostRunActionsSpy = mock(() => []);
     registry.getPostRunActions = getPostRunActionsSpy as typeof registry.getPostRunActions;
 
-    const { runCompletionPhase } = await import("../../../../src/execution/runner-completion");
+    const { runCompletionPhase } = await import("@/execution/runner-completion");
 
     const prd = makePrd({ stories: [makeStory("passed")] });
 
@@ -548,7 +548,7 @@ describe("runner-completion.ts — does not invoke post-run actions", () => {
           autoCommit: { enabled: false },
           // biome-ignore lint/suspicious/noExplicitAny: minimal stub for test
         } as any,
-        hooks: { hooks: [] } as import("../../../../src/hooks").LoadedHooksConfig,
+        hooks: { hooks: [] } as import("@/hooks").LoadedHooksConfig,
         feature: "test-feat",
         workdir: "/tmp/test",
         statusFile: "/tmp/test/status.json",
@@ -579,13 +579,13 @@ describe("runner-completion.ts — does not invoke post-run actions", () => {
 // Helpers (private)
 // ============================================================================
 
-function makePluginLogger(): import("../../../../src/plugins/types").PluginLogger {
+function makePluginLogger(): import("@/plugins/types").PluginLogger {
   return {
     debug: mock(() => {}),
     info: mock(() => {}),
     warn: mock(() => {}),
     error: mock(() => {}),
-  } as unknown as import("../../../../src/plugins/types").PluginLogger;
+  } as unknown as import("@/plugins/types").PluginLogger;
 }
 
 // ============================================================================

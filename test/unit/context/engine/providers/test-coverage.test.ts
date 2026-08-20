@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { TestCoverageProvider, _testCoverageProviderDeps } from "../../../../../src/context/engine/providers/test-coverage";
-import type { ContextRequest } from "../../../../../src/context/engine/types";
-import { makeNaxConfig, makeStory } from "../../../../helpers";
+import { TestCoverageProvider, _testCoverageProviderDeps } from "@/context/engine/providers/test-coverage";
+import type { ContextRequest } from "@/context/engine/types";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 
 const STORY = makeStory({ id: "story-001", title: "Test story" });
 const CONFIG = makeNaxConfig();
@@ -378,7 +378,7 @@ describe("TestCoverageProvider", () => {
         throw new Error("scanner failed");
       };
 
-      const TestCoverageProvider = (await import("../../../../../src/context/engine/providers/test-coverage")).TestCoverageProvider;
+      const TestCoverageProvider = (await import("@/context/engine/providers/test-coverage")).TestCoverageProvider;
       const provider = new TestCoverageProvider(STORY, cfg);
 
       // The provider needs to use our mock logger — we test via the dep pattern
@@ -402,7 +402,7 @@ describe("TestCoverageProvider", () => {
         throw new Error("simulated scan failure");
       };
 
-      const { getLogger } = await import("../../../../../src/logger/logger");
+      const { getLogger } = await import("@/logger/logger");
       const logger = getLogger();
 
       const warnCalls: Array<{ component: string; message: string; data: Record<string, unknown> }> = [];
@@ -413,7 +413,7 @@ describe("TestCoverageProvider", () => {
       }) as typeof logger.warn;
 
       try {
-        const TestCoverageProvider = (await import("../../../../../src/context/engine/providers/test-coverage")).TestCoverageProvider;
+        const TestCoverageProvider = (await import("@/context/engine/providers/test-coverage")).TestCoverageProvider;
         const provider = new TestCoverageProvider(STORY, cfg);
         await provider.fetch(makeRequest({ packageDir: "/repo/packages/api" }));
 
@@ -432,12 +432,12 @@ describe("TestCoverageProvider", () => {
 
   describe("AC13: _testCoverageProviderDeps is exported and used", () => {
     test("module exports _testCoverageProviderDeps", async () => {
-      const mod = await import("../../../../../src/context/engine/providers/test-coverage");
+      const mod = await import("@/context/engine/providers/test-coverage");
       expect(mod._testCoverageProviderDeps).toBeDefined();
     });
 
     test("_testCoverageProviderDeps has generateTestCoverageSummary and resolveTestFilePatterns", async () => {
-      const mod = await import("../../../../../src/context/engine/providers/test-coverage");
+      const mod = await import("@/context/engine/providers/test-coverage");
       expect(typeof mod._testCoverageProviderDeps.generateTestCoverageSummary).toBe("function");
       expect(typeof mod._testCoverageProviderDeps.resolveTestFilePatterns).toBe("function");
     });

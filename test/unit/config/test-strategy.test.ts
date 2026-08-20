@@ -11,7 +11,7 @@ import {
   isSingleSessionTestOwningStrategy,
   isThreeSessionStrategy,
   resolveTestStrategy,
-} from "../../../src/config/test-strategy";
+} from "@/config/test-strategy";
 
 describe("resolveTestStrategy", () => {
   test("valid values pass through unchanged", () => {

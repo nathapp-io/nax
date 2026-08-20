@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { initLogger, resetLogger } from "../../../src/logger";
-import type { LoadedHooksConfig } from "../../../src/hooks";
-import type { PluginRegistry } from "../../../src/plugins";
-import type { PRD, UserStory } from "../../../src/prd/types";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
+import { initLogger, resetLogger } from "@/logger";
+import type { LoadedHooksConfig } from "@/hooks";
+import type { PluginRegistry } from "@/plugins";
+import type { PRD, UserStory } from "@/prd/types";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -61,7 +61,7 @@ afterEach(() => {
 
 describe("AC-1: runParallelBatch completed stories", () => {
   test("returns ParallelBatchResult with completed array containing successful stories", async () => {
-    const { runParallelBatch, _parallelBatchDeps } = await import("../../../src/execution/parallel-batch");
+    const { runParallelBatch, _parallelBatchDeps } = await import("@/execution/parallel-batch");
     expect(typeof runParallelBatch).toBe("function");
 
     const stories = [makeStory("US-001")];
@@ -113,7 +113,7 @@ describe("AC-1: runParallelBatch completed stories", () => {
 
 describe("AC-2: runParallelBatch failed stories", () => {
   test("returns ParallelBatchResult.failed containing pipeline failures", async () => {
-    const { runParallelBatch, _parallelBatchDeps } = await import("../../../src/execution/parallel-batch");
+    const { runParallelBatch, _parallelBatchDeps } = await import("@/execution/parallel-batch");
 
     const stories = [makeStory("US-001")];
     const prd = makePrd(stories);
@@ -164,7 +164,7 @@ describe("AC-2: runParallelBatch failed stories", () => {
 
 describe("AC-3: runParallelBatch merge conflicts", () => {
   test("returns ParallelBatchResult.mergeConflicts containing conflict info", async () => {
-    const { runParallelBatch, _parallelBatchDeps } = await import("../../../src/execution/parallel-batch");
+    const { runParallelBatch, _parallelBatchDeps } = await import("@/execution/parallel-batch");
 
     const stories = [makeStory("US-001")];
     const prd = makePrd(stories);
@@ -216,7 +216,7 @@ describe("AC-3: runParallelBatch merge conflicts", () => {
 
 describe("AC-4: runParallelBatch per-story costs", () => {
   test("storyCosts Map contains exact cost from executeParallelBatch, not even-split", async () => {
-    const { runParallelBatch, _parallelBatchDeps } = await import("../../../src/execution/parallel-batch");
+    const { runParallelBatch, _parallelBatchDeps } = await import("@/execution/parallel-batch");
 
     const stories = [makeStory("US-001"), makeStory("US-002")];
     const prd = makePrd(stories);
@@ -266,7 +266,7 @@ describe("AC-4: runParallelBatch per-story costs", () => {
 
 describe("AC-5: runParallelBatch totalCost", () => {
   test("totalCost equals sum of all per-story costs", async () => {
-    const { runParallelBatch, _parallelBatchDeps } = await import("../../../src/execution/parallel-batch");
+    const { runParallelBatch, _parallelBatchDeps } = await import("@/execution/parallel-batch");
 
     const stories = [makeStory("US-001"), makeStory("US-002"), makeStory("US-003")];
     const prd = makePrd(stories);

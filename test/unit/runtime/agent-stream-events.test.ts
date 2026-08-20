@@ -4,7 +4,7 @@ import {
   type AgentCallEndedEvent,
   type AgentCallStartedEvent,
   type AgentStreamEvent,
-} from "../../../src/runtime/agent-stream-events";
+} from "@/runtime/agent-stream-events";
 
 function makeCallStartedEvent(overrides: Partial<AgentCallStartedEvent> = {}): AgentCallStartedEvent {
   return {

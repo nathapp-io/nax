@@ -12,7 +12,7 @@ import type { CompleteOptions } from "@/agents";
 import type { DebateStageConfig } from "@/debate";
 import type { CallContext } from "@/operations";
 import { debateConfigSelector, DEFAULT_CONFIG } from "@/config";
-import { makeMockAgentManager } from "../../helpers";
+import { makeMockAgentManager } from "@test/helpers";
 
 function makeCallCtx(): CallContext {
   return {

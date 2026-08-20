@@ -3,7 +3,7 @@ import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/h
 import { NaxError } from "@/errors";
 import { DebatePromptBuilder } from "@/prompts";
 import * as callModule from "@/operations";
-import { runHybrid } from "../../../src/debate/runner-hybrid";
+import { runHybrid } from "@/debate/runner-hybrid";
 import type { DebateStageConfig } from "@/debate/types";
 import type { HybridCtx } from "@/debate/runner-hybrid";
 import type { DebateHybridInput } from "@/operations/debate-hybrid";

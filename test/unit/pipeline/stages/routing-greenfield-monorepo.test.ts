@@ -12,13 +12,13 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_CONFIG } from "../../../../src/config";
-import type { NaxConfig } from "../../../../src/config";
-import { initLogger, resetLogger } from "../../../../src/logger";
-import { _routingDeps, routingStage } from "../../../../src/pipeline/stages/routing";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import type { UserStory } from "../../../../src/prd/types";
-import { makeTempDir } from "../../../helpers/temp";
+import { DEFAULT_CONFIG } from "@/config";
+import type { NaxConfig } from "@/config";
+import { initLogger, resetLogger } from "@/logger";
+import { _routingDeps, routingStage } from "@/pipeline/stages/routing";
+import type { PipelineContext } from "@/pipeline/types";
+import type { UserStory } from "@/prd/types";
+import { makeTempDir } from "@test/helpers";
 
 // ── Capture originals ─────────────────────────────────────────────────────────
 

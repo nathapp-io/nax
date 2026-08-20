@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { globalConfigDir } from "../../../../src/config/paths";
-import { PipelineEventBus } from "../../../../src/pipeline/event-bus";
-import { wireEventsWriter } from "../../../../src/pipeline/subscribers/events-writer";
-import { waitForFile } from "../../../../test/helpers/fs";
-import { makeTempDir } from "../../../helpers/temp";
+import { globalConfigDir } from "@/config/paths";
+import { PipelineEventBus } from "@/pipeline/event-bus";
+import { wireEventsWriter } from "@/pipeline/subscribers/events-writer";
+import { makeTempDir, waitForFile } from "@test/helpers";
 
 // Minimal UserStory stub for event payloads
 const stubStory = { id: "US-001", title: "Test story" } as never;

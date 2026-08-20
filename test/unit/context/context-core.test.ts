@@ -13,9 +13,9 @@ import {
   createStoryContext,
   estimateTokens,
   sortContextElements,
-} from "../../../src/context";
-import type { ContextBudget, ContextElement, StoryContext } from "../../../src/context/types";
-import type { PRD, UserStory } from "../../../src/prd";
+} from "@/context";
+import type { ContextBudget, ContextElement, StoryContext } from "@/context/types";
+import type { PRD, UserStory } from "@/prd";
 
 // Helper to create test PRD
 const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({

@@ -12,10 +12,10 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { NaxConfig } from "../../../src/config/types";
-import type { UserStory } from "../../../src/prd";
-import { PromptBuilder } from "../../../src/prompts";
-import { makeTempDir } from "../../helpers/temp";
+import type { NaxConfig } from "@/config/types";
+import type { UserStory } from "@/prd";
+import { PromptBuilder } from "@/prompts";
+import { makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -301,14 +301,14 @@ describe("Structural: call sites migrated away from old prompt functions", () =>
 describe("Internal prompts: not migrated, still accessible", () => {
   test("tdd/prompts.ts and execution/prompts.ts deleted; RectifierPromptBuilder exported (Phase 5)", async () => {
     let tddErr: unknown = null;
-    try { await import("../../../src/tdd/prompts"); } catch (err) { tddErr = err; }
+    try { await import("@/tdd/prompts"); } catch (err) { tddErr = err; }
     expect(tddErr).not.toBeNull();
 
-    const mod = await import("../../../src/prompts");
+    const mod = await import("@/prompts");
     expect(typeof mod.RectifierPromptBuilder).toBe("function");
 
     let execErr: unknown = null;
-    try { await import("../../../src/execution/prompts"); } catch (err) { execErr = err; }
+    try { await import("@/execution/prompts"); } catch (err) { execErr = err; }
     expect(execErr).not.toBeNull();
   });
 

@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { DebateRunner } from "../../../src/debate/runner";
-import { _debateSessionDeps } from "../../../src/debate/session-helpers";
-import { type DebateStageConfig } from "../../../src/debate/types";
-import * as callModule from "../../../src/operations";
-import type { DebateHybridInput } from "../../../src/operations/debate-hybrid";
-import type { CallContext } from "../../../src/operations/types";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "../../helpers";
+import { DEFAULT_CONFIG } from "@/config";
+import { DebateRunner } from "@/debate/runner";
+import { _debateSessionDeps } from "@/debate/session-helpers";
+import { type DebateStageConfig } from "@/debate/types";
+import * as callModule from "@/operations";
+import type { DebateHybridInput } from "@/operations/debate-hybrid";
+import type { CallContext } from "@/operations/types";
+import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/helpers";
 
 function makeHybridStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {

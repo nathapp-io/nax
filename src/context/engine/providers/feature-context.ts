@@ -19,15 +19,15 @@
 import { createHash } from "node:crypto";
 import type { ContextToolRuntimeConfig } from "@/config/selectors";
 import type { NaxConfig } from "@/config/types";
+import { FeatureContextProvider as FeatureContextProviderV1 } from "@/context";
 import {
   listFragmentStoryIds as listFragmentStoryIdsImpl,
   readFragment as readFragmentImpl,
 } from "@/context/fragments";
+import { getLogger } from "@/logger";
 import type { PRD, UserStory } from "@/prd";
-import { getLogger } from "../../../logger";
-import { loadPRD as loadPRDImpl } from "../../../prd";
-import { errorMessage } from "../../../utils/errors";
-import { FeatureContextProvider as FeatureContextProviderV1 } from "../../providers/feature-context";
+import { loadPRD as loadPRDImpl } from "@/prd";
+import { errorMessage } from "@/utils/errors";
 import { applyStaleness, detectContradictions, parseFeatureContextEntries, selectStaleByAge } from "../staleness";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 

@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { _applyFinishAutoFlowShim } from "../../../src/config/compat-shims";
+import { _applyFinishAutoFlowShim } from "@/config/compat-shims";
 
 describe("_applyFinishAutoFlowShim", () => {
   test("lifts finish.autoFlow.* onto finish.* and drops the removed keys", () => {

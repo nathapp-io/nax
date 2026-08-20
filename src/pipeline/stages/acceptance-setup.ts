@@ -150,7 +150,7 @@ export const _acceptanceSetupDeps = {
     pipelineCtx: PipelineContext,
     packageDir: string,
     // biome-ignore lint/suspicious/noExplicitAny: generic operation dispatcher
-    op: import("../../operations/types").Operation<any, any, any>,
+    op: import("@/operations").Operation<any, any, any>,
     // biome-ignore lint/suspicious/noExplicitAny: generic operation dispatcher
     input: any,
     storyId?: string,

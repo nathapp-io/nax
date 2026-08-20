@@ -6,8 +6,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { resolveBalancedModelDef } from "../../../src/agents/shared/model-resolution";
-import type { ModelDef } from "../../../src/config/schema";
+import { resolveBalancedModelDef } from "@/agents/shared/model-resolution";
+import type { ModelDef } from "@/config/schema";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // resolveBalancedModelDef — fallback chain utility

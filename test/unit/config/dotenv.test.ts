@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { parseDotenv, resolveEnvVars } from "../../../src/config/dotenv";
+import { parseDotenv, resolveEnvVars } from "@/config/dotenv";
 
 describe("parseDotenv", () => {
   test("parses standard dotenv content stripping comments, blank lines, export prefixes, and quotes", () => {

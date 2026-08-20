@@ -12,22 +12,22 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { NaxConfig } from "../../../src/config";
-import { pipelineEventBus } from "../../../src/pipeline/event-bus";
-import type { AcceptanceLoopResult } from "../../../src/execution/lifecycle/acceptance-loop";
+import type { NaxConfig } from "@/config";
+import { pipelineEventBus } from "@/pipeline/event-bus";
+import type { AcceptanceLoopResult } from "@/execution/lifecycle/acceptance-loop";
 import {
   _runnerCompletionDeps,
   runCompletionPhase,
   type RunnerCompletionOptions,
-} from "../../../src/execution/runner-completion";
+} from "@/execution/runner-completion";
 import {
   _runCompletionDeps,
-} from "../../../src/execution/lifecycle/run-completion";
-import type { DeferredRegressionResult } from "../../../src/execution/lifecycle/run-regression";
-import type { LoadedHooksConfig } from "../../../src/hooks";
-import type { PRD, UserStory } from "../../../src/prd";
-import type { PostRunStatus } from "../../../src/execution/status-file";
-import { makeNaxConfig } from "../../helpers";
+} from "@/execution/lifecycle/run-completion";
+import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
+import type { LoadedHooksConfig } from "@/hooks";
+import type { PRD, UserStory } from "@/prd";
+import type { PostRunStatus } from "@/execution/status-file";
+import { makeNaxConfig } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

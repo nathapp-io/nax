@@ -8,12 +8,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config/schema";
-import { contextStage } from "../../../src/pipeline/stages/context";
-import type { PipelineContext } from "../../../src/pipeline/types";
-import { PluginRegistry } from "../../../src/plugins/registry";
-import type { IContextProvider, NaxPlugin } from "../../../src/plugins/types";
-import type { PRD, UserStory } from "../../../src/prd/types";
+import { DEFAULT_CONFIG } from "@/config/schema";
+import { contextStage } from "@/pipeline/stages/context";
+import type { PipelineContext } from "@/pipeline/types";
+import { PluginRegistry } from "@/plugins/registry";
+import type { IContextProvider, NaxPlugin } from "@/plugins/types";
+import type { PRD, UserStory } from "@/prd/types";
 
 /**
  * Create a minimal test context for context stage testing

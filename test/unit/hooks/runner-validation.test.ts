@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import { validateHookCommand } from "../../../src/hooks/runner";
+import { validateHookCommand } from "@/hooks/runner";
 
 describe("validateHookCommand - ReDoS Protection", () => {
   test("rejects command substitution $(..)", () => {

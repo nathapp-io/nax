@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _unifiedExecutorDeps, executeUnified } from "../../../src/execution/unified-executor";
-import type { ISessionManager } from "../../../src/session";
+import { _unifiedExecutorDeps, executeUnified } from "@/execution/unified-executor";
+import type { ISessionManager } from "@/session";
 
 function makePendingStory(id: string) {
   return {

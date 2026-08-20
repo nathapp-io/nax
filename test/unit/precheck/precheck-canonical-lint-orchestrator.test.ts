@@ -7,11 +7,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ExecutionConfig, NaxConfig } from "../../../src/config";
-import type { PRD, UserStory } from "../../../src/prd/types";
-import { runEnvironmentPrecheck, runPrecheck } from "../../../src/precheck";
-import { _checkCliDeps } from "../../../src/precheck/checks-cli";
-import { makeTempDir } from "../../helpers/temp";
+import type { ExecutionConfig, NaxConfig } from "@/config";
+import type { PRD, UserStory } from "@/prd/types";
+import { runEnvironmentPrecheck, runPrecheck } from "@/precheck";
+import { _checkCliDeps } from "@/precheck/checks-cli";
+import { makeTempDir } from "@test/helpers";
 
 const createMockConfig = (cwd: string, overrides: Partial<ExecutionConfig> = {}): NaxConfig => ({
   execution: {

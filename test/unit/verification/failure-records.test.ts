@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildFailureRecords } from "../../../src/verification/failure-records";
+import { buildFailureRecords } from "@/verification/failure-records";
 
 describe("buildFailureRecords", () => {
   test("maps structured failures without fallback text", () => {

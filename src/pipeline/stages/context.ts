@@ -18,28 +18,32 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { featureDir } from "@/config";
-import type { ContextRequest, IContextProvider } from "@/context/engine";
-import type { ContextElement } from "@/context/types";
-import { NaxError } from "@/errors";
-import { packageDirRelative } from "@/utils/paths";
+import { FeatureContextProvider } from "@/context";
 import {
+  type ContextRequest,
+  type IContextProvider,
   NeutralityLintError,
   createDefaultOrchestrator,
   createRunCallCounter,
   deriveProviderWeights,
+  estimateAvailableBudgetTokens,
+  getStageContextConfig,
   loadFeatureManifests,
-} from "../../context/engine";
-import { estimateAvailableBudgetTokens } from "../../context/engine/available-budget";
-import { writeContextManifest } from "../../context/engine/manifest-store";
-import { loadPluginProviders } from "../../context/engine/providers/plugin-loader";
-import { getStageContextConfig } from "../../context/engine/stage-config";
-import { FeatureContextProvider } from "../../context/providers/feature-context";
-import { buildStoryContextFullFromCtx } from "../../execution/helpers";
-import { getLogger } from "../../logger";
-import { getContextFiles } from "../../prd";
-import { readDigestFile, writeDigestFile } from "../../session/scratch-writer";
-import { resolveTestFilePatterns } from "../../test-runners/resolver";
-import { errorMessage } from "../../utils/errors";
+  loadPluginProviders,
+  writeContextManifest,
+} from "@/context/engine";
+import type { ContextElement } from "@/context/types";
+import { NaxError } from "@/errors";
+// Sub-barrel import (not the `@/execution` barrel): routing through it closes
+// a 12-hop pipeline -> execution loop. `helpers` is its own nested barrel, so
+// this reaches it without loading `src/execution/index.ts`.
+import { buildStoryContextFullFromCtx } from "@/execution/helpers";
+import { getLogger } from "@/logger";
+import { getContextFiles } from "@/prd";
+import { readDigestFile, writeDigestFile } from "@/session";
+import { resolveTestFilePatterns } from "@/test-runners";
+import { errorMessage } from "@/utils/errors";
+import { packageDirRelative } from "@/utils/paths";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -128,7 +132,7 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   // ADR-009 SSOT: resolve test-file patterns once per request and thread them
   // through so providers never classify test files via inline regex.
   // Failure is non-fatal — providers degrade by skipping sibling-test hinting.
-  let resolvedTestPatterns: import("../../test-runners/resolver").ResolvedTestPatterns | undefined;
+  let resolvedTestPatterns: import("@/test-runners").ResolvedTestPatterns | undefined;
   try {
     // Anchors must match routing.ts:113-115 — resolveTestFilePatterns takes the
     // absolute project ROOT plus a package path RELATIVE to it. In monorepo mode

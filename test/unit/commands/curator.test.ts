@@ -12,18 +12,18 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { NaxConfig } from "../../../src/config";
+import type { NaxConfig } from "@/config";
 import {
   _curatorCmdDeps as _deps,
   curatorCommit,
   curatorDryrun,
   curatorGc,
   curatorStatus,
-} from "../../../src/commands/curator";
-import type { ResolvedProject } from "../../../src/commands/common";
-import type { Observation } from "../../../src/plugins/builtin/curator/types";
-import { makeNaxConfig } from "../../helpers";
-import { makeTempDir } from "../../helpers/temp";
+} from "@/commands/curator";
+import type { ResolvedProject } from "@/commands/common";
+import type { Observation } from "@/plugins/builtin/curator/types";
+import { makeNaxConfig } from "@test/helpers";
+import { makeTempDir } from "@test/helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

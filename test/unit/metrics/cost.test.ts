@@ -4,7 +4,7 @@ import {
   estimateCost,
   estimateCostByDuration,
   formatCostWithConfidence,
-} from "../../../src/agents/cost";
+} from "@/agents/cost";
 
 describe("estimateCost", () => {
   test.each([

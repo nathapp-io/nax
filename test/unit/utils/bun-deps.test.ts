@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { cancellableDelay } from "../../../src/utils/bun-deps";
+import { cancellableDelay } from "@/utils/bun-deps";
 
 describe("cancellableDelay", () => {
   test("without a signal — resolves after the requested delay", async () => {

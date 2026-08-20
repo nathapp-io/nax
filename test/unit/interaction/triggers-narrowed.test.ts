@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
-import type { NaxConfig } from "../../../src/config";
-import type { InteractionChain } from "../../../src/interaction/chain";
-import type { TriggerName } from "../../../src/interaction/types";
+import type { NaxConfig } from "@/config";
+import type { InteractionChain } from "@/interaction/chain";
+import type { TriggerName } from "@/interaction/types";
 import {
   isTriggerEnabled,
   getTriggerConfig,
@@ -15,7 +15,7 @@ import {
   checkPreMerge,
   checkReviewGate,
   type TriggerContext,
-} from "../../../src/interaction/triggers";
+} from "@/interaction/triggers";
 
 const makeSlicedConfig = (triggers: Partial<Record<TriggerName, unknown>>, defaults: Record<string, unknown> = {}): NaxConfig =>
   ({ interaction: { triggers: triggers as Record<string, unknown>, defaults } } as NaxConfig);

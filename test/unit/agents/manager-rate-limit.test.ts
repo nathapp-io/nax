@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { AgentManager, _agentManagerDeps } from "../../../src/agents/manager";
-import type { RetryDecision, RetryStrategy } from "../../../src/agents/retry";
-import type { AdapterFailure } from "../../../src/context/engine";
+import { AgentManager, _agentManagerDeps } from "@/agents/manager";
+import type { RetryDecision, RetryStrategy } from "@/agents/retry";
+import type { AdapterFailure } from "@/context/engine";
 
 const rateLimitFailure: AdapterFailure = {
   category: "availability",

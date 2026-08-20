@@ -18,7 +18,7 @@ import {
   normalizeSemanticCategory,
   validateLLMShape,
 } from "@/review";
-import { llmFindingToFinding, parseLLMResponse } from "../../../src/review/semantic-helpers";
+import { llmFindingToFinding, parseLLMResponse } from "@/review/semantic-helpers";
 
 /** A prior round in which the same semantic finding was already reported. */
 function priorIterationWith(file: string, category: string, message: string): Iteration {

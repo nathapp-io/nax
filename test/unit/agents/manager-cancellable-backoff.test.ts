@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { _agentManagerDeps } from "../../../src/agents/manager";
+import { _agentManagerDeps } from "@/agents/manager";
 
 describe("AgentManager — rate-limit backoff wiring", () => {
   test("_deps.sleep accepts an AbortSignal and aborts mid-flight", async () => {

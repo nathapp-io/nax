@@ -11,8 +11,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { RectifierPromptBuilder } from "../../../../src/prompts";
-import type { ReviewCheckResult } from "../../../../src/review/types";
+import { RectifierPromptBuilder } from "@/prompts";
+import type { ReviewCheckResult } from "@/review/types";
 
 type DialogueMessage = { role: string; content: string };
 

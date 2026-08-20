@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { initLogger, resetLogger } from "../../../src/logger";
-import type { UserStory } from "../../../src/prd/types";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { initLogger, resetLogger } from "@/logger";
+import type { UserStory } from "@/prd/types";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -48,7 +48,7 @@ afterEach(() => {
 describe("AC-11: selectIndependentBatch empty", () => {
   test("returns empty array when stories is empty", async () => {
     try {
-      const { selectIndependentBatch } = await import("../../../src/execution/story-selector");
+      const { selectIndependentBatch } = await import("@/execution/story-selector");
       const result = selectIndependentBatch([], 5);
       expect(result).toEqual([]);
     } catch {
@@ -64,7 +64,7 @@ describe("AC-11: selectIndependentBatch empty", () => {
 describe("AC-12: selectIndependentBatch single independent", () => {
   test("returns single-element array when exactly one story has no dependencies", async () => {
     try {
-      const { selectIndependentBatch } = await import("../../../src/execution/story-selector");
+      const { selectIndependentBatch } = await import("@/execution/story-selector");
       const stories = [makeStory("US-001", [])];
       const result = selectIndependentBatch(stories, 5);
       expect(result.length).toBe(1);
@@ -76,7 +76,7 @@ describe("AC-12: selectIndependentBatch single independent", () => {
 
   test("returns story with no dependencies when others have dependencies", async () => {
     try {
-      const { selectIndependentBatch } = await import("../../../src/execution/story-selector");
+      const { selectIndependentBatch } = await import("@/execution/story-selector");
       const stories = [
         makeStory("US-001", []),
         makeStory("US-002", ["US-001"]),
@@ -98,7 +98,7 @@ describe("AC-12: selectIndependentBatch single independent", () => {
 describe("AC-13: selectIndependentBatch maxCount cap", () => {
   test("returns at most maxCount stories even when more dependency-free are available", async () => {
     try {
-      const { selectIndependentBatch } = await import("../../../src/execution/story-selector");
+      const { selectIndependentBatch } = await import("@/execution/story-selector");
       const stories = [
         makeStory("US-001", []),
         makeStory("US-002", []),
@@ -115,7 +115,7 @@ describe("AC-13: selectIndependentBatch maxCount cap", () => {
 
   test("respects maxCount=1", async () => {
     try {
-      const { selectIndependentBatch } = await import("../../../src/execution/story-selector");
+      const { selectIndependentBatch } = await import("@/execution/story-selector");
       const stories = [
         makeStory("US-001", []),
         makeStory("US-002", []),
@@ -136,7 +136,7 @@ describe("AC-13: selectIndependentBatch maxCount cap", () => {
 describe("AC-14: selectIndependentBatch dependency-free only", () => {
   test("returns only stories whose dependencies are all in 'completed' status", async () => {
     try {
-      const { selectIndependentBatch } = await import("../../../src/execution/story-selector");
+      const { selectIndependentBatch } = await import("@/execution/story-selector");
       const stories = [
         makeStory("US-001", [], "completed"),
         makeStory("US-002", ["US-001"], "pending"),
@@ -151,7 +151,7 @@ describe("AC-14: selectIndependentBatch dependency-free only", () => {
 
   test("excludes stories with unmet dependencies", async () => {
     try {
-      const { selectIndependentBatch } = await import("../../../src/execution/story-selector");
+      const { selectIndependentBatch } = await import("@/execution/story-selector");
       const stories = [
         makeStory("US-001", [], "pending"),
         makeStory("US-002", ["US-001"], "pending"),
@@ -172,7 +172,7 @@ describe("AC-14: selectIndependentBatch dependency-free only", () => {
 describe("AC-15: selectIndependentBatch exported", () => {
   test("selectIndependentBatch is exported from src/execution/story-selector.ts", async () => {
     try {
-      const { selectIndependentBatch } = await import("../../../src/execution/story-selector");
+      const { selectIndependentBatch } = await import("@/execution/story-selector");
       expect(typeof selectIndependentBatch).toBe("function");
     } catch (_e) {
       expect(true).toBe(true);
@@ -187,7 +187,7 @@ describe("AC-15: selectIndependentBatch exported", () => {
 describe("AC-16: SequentialExecutionContext.parallelCount", () => {
   test("SequentialExecutionContext has parallelCount?: number field", async () => {
     try {
-      await import("../../../src/execution/executor-types");
+      await import("@/execution/executor-types");
       expect(true).toBe(true);
     } catch {
       const source = await Bun.file(
@@ -209,7 +209,7 @@ describe("AC-16: SequentialExecutionContext.parallelCount", () => {
 describe("AC-17: groupStoriesByDependencies accessibility", () => {
   test("groupStoriesByDependencies is exported or re-exported from story-selector.ts", async () => {
     try {
-      const { groupStoriesByDependencies } = await import("../../../src/execution/story-selector");
+      const { groupStoriesByDependencies } = await import("@/execution/story-selector");
       expect(typeof groupStoriesByDependencies).toBe("function");
     } catch {
       expect(true).toBe(true);
@@ -224,7 +224,7 @@ describe("AC-17: groupStoriesByDependencies accessibility", () => {
 
 describe("AC-18: executeUnified function", () => {
   test("src/execution/unified-executor.ts exports executeUnified()", async () => {
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     expect(typeof executeUnified).toBe("function");
   });
 

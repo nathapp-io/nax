@@ -71,7 +71,7 @@ describe("AC7: RectifierPromptBuilder.verifierContext static method", () => {
 
 describe("AC8: src/prompts/sections/verdict.ts is not modified by this story", () => {
   test("AC8: verdict.ts still exports buildVerdictSection function", async () => {
-    const mod = await import("../../../../src/prompts/sections/verdict");
+    const mod = await import("@/prompts/sections/verdict");
     expect(typeof mod.buildVerdictSection).toBe("function");
   });
 

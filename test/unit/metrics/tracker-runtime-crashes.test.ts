@@ -13,12 +13,12 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { NaxConfig } from "../../../src/config";
-import type { PipelineContext } from "../../../src/pipeline/types";
-import type { PRD, UserStory } from "../../../src/prd";
-import { collectStoryMetrics } from "../../../src/metrics/tracker";
-import { makeNaxConfig } from "../../helpers";
-import { makeMockRuntime } from "../../helpers/runtime";
+import type { NaxConfig } from "@/config";
+import type { PipelineContext } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd";
+import { collectStoryMetrics } from "@/metrics/tracker";
+import { makeNaxConfig } from "@test/helpers";
+import { makeMockRuntime } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-test-metrics-${randomUUID()}`;
 const WORKDIR_BATCH = `/tmp/nax-test-metrics-batch-${randomUUID()}`;
@@ -158,7 +158,7 @@ describe("StoryMetrics type — runtimeCrashes field", () => {
 
 describe("collectBatchMetrics - runtimeCrashes per story", () => {
   test("batch stories have runtimeCrashes set to 0 (no individual crash tracking)", async () => {
-    const { collectBatchMetrics } = await import("../../../src/metrics/tracker");
+    const { collectBatchMetrics } = await import("@/metrics/tracker");
 
     const stories = [makeStory({ id: "US-001" }), makeStory({ id: "US-002" })];
     const ctx = {

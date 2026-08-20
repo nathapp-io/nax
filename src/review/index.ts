@@ -16,15 +16,20 @@ export * from "./prepare-inputs";
 export * from "./recurrence-demotion";
 export * from "./finding-projection";
 export * from "./types";
-export * from "./runner";
+// `./runner` is NOT re-exported here (deliberately). It pulls in `./semantic`,
+// which imports `ReviewPromptBuilder` from `@/prompts` — and `@/prompts`
+// re-exports `./builders/review-builder`. Import `runReview` from
+// `@/review/runner` instead.
+//
+// `review-builder.ts` reaches `SEMANTIC_CATEGORY_ENUM_LINE` through the
+// `./semantic-categories` nested barrel rather than this one, which avoids the
+// independent cycles `./adversarial` and `./review-iteration-store` close back
+// through `@/prompts`.
 export * from "./requote-response";
 export * from "./severity";
 export { validateLLMShape, parseLLMResponse } from "./semantic-helpers";
 // Review acknowledgements (#1423) — shared read path for both reviewers.
 export { extractAcks, MAX_ACKS } from "./acks";
-// Semantic finding taxonomy. `src/prompts/builders/review-builder.ts` must keep
-// using the leaf path (importing this barrel from src/prompts would close a
-// cycle — see that file's header); every other consumer goes through here.
 export * from "./semantic-categories";
 // Projection of adversarial LLM findings to the ADR-021 wire format. Already consumed
 // outside src/review (src/operations/adversarial-review.ts); exported here so callers

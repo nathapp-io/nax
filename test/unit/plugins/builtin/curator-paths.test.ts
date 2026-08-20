@@ -3,8 +3,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { CuratorPostRunContext } from "../../../../src/plugins/builtin/curator";
-import { resolveCuratorOutputs } from "../../../../src/plugins/builtin/curator/paths";
+import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
+import { resolveCuratorOutputs } from "@/plugins/builtin/curator/paths";
 
 describe("resolveCuratorOutputs", () => {
   test("should resolve observations path under outputDir/runs/<runId>/", () => {

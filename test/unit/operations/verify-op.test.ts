@@ -61,7 +61,7 @@ describe("verifierOp.parse — error handling (strict: throws ParseValidationErr
     ["malformed JSON", '{ "incomplete":'],
   ])("throws ParseValidationError when output is %s", async (_label, output) => {
     const { verifierOp } = await import("@/operations");
-    const { ParseValidationError } = await import("../../../src/agents/retry");
+    const { ParseValidationError } = await import("@/agents/retry");
     const { DEFAULT_CONFIG } = await import("@/config");
 
     const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };

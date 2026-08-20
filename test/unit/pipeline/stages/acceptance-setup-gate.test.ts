@@ -3,10 +3,10 @@ import {
   acceptanceSetupStage,
   _acceptanceSetupDeps,
   computeACFingerprint,
-} from "../../../../src/pipeline/stages/acceptance-setup";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import { DEFAULT_CONFIG } from "../../../../src/config";
-import { preRunPipeline } from "../../../../src/pipeline/stages/index";
+} from "@/pipeline/stages/acceptance-setup";
+import type { PipelineContext } from "@/pipeline/types";
+import { DEFAULT_CONFIG } from "@/config";
+import { preRunPipeline } from "@/pipeline/stages/index";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -361,7 +361,7 @@ describe("acceptanceSetupStage.enabled()", () => {
 
 describe("acceptance stage (GREEN gate): works with pre-generated test file", () => {
   test("acceptance stage is enabled when featureDir set; returns continue when test file does not exist", async () => {
-    const { acceptanceStage } = await import("../../../../src/pipeline/stages/acceptance");
+    const { acceptanceStage } = await import("@/pipeline/stages/acceptance");
 
     const stories = [makeStory("US-001", ["AC-1: criterion"])];
     stories[0].status = "passed" as any;

@@ -15,7 +15,7 @@
  * - buildRoleTaskSection("lite") → implementer, lite
  */
 
-import { buildTestFrameworkHint } from "../../test-runners";
+import { buildTestFrameworkHint } from "@/test-runners";
 
 export function buildRoleTaskSection(
   roleOrVariant:

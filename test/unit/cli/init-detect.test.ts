@@ -11,9 +11,9 @@ import {
   buildInitConfig,
   buildQualityCommands,
   detectProjectStack,
-} from "../../../src/cli/init-detect";
-import { initProject } from "../../../src/cli/init";
-import { withTempDir } from "../../helpers/temp";
+} from "@/cli/init-detect";
+import { initProject } from "@/cli/init";
+import { withTempDir } from "@test/helpers";
 
 
 // ---------------------------------------------------------------------------

@@ -10,8 +10,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { RectifierPromptBuilder } from "../../../../src/prompts/builders/rectifier-builder";
-import type { ReviewCheckResult } from "../../../../src/review/types";
+import { RectifierPromptBuilder } from "@/prompts/builders/rectifier-builder";
+import type { ReviewCheckResult } from "@/review/types";
 
 // ---------------------------------------------------------------------------
 // Helpers

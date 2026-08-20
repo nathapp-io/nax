@@ -12,7 +12,7 @@ import type {
   PostRunActionResult,
   PostRunContext,
   NaxPlugin,
-} from "../../../src/plugins/types";
+} from "@/plugins/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PluginType union tests

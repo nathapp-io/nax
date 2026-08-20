@@ -7,7 +7,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { installServePortZeroCompat } from "../../../../src/interaction/plugins/webhook-serve-compat";
+import { installServePortZeroCompat } from "@/interaction/plugins/webhook-serve-compat";
 
 describe("installServePortZeroCompat (SEC-06)", () => {
   const originalServe = Bun.serve;

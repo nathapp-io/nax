@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   VERDICT_FILE,
   type VerifierVerdict,
@@ -11,7 +11,7 @@ import {
   cleanupVerdict,
   coerceVerdict,
   readVerdict,
-} from "../../../src/tdd/verdict";
+} from "@/tdd/verdict";
 
 // ---------------------------------------------------------------------------
 // Helpers

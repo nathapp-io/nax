@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseTraceparent } from "../../../../src/plugins/builtin/otel-reporter/traceparent";
+import { parseTraceparent } from "@/plugins/builtin/otel-reporter/traceparent";
 
 describe("parseTraceparent", () => {
   test("AC12: a valid W3C traceparent yields its trace id and parent (span) id", () => {

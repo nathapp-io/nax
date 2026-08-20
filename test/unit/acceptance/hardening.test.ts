@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { type HardeningContext, _hardeningDeps, runHardeningPass } from "../../../src/acceptance/hardening";
-import type { NaxConfig } from "../../../src/config";
-import { makeMockAgentManager, makePRD, makeStory } from "../../helpers";
+import { type HardeningContext, _hardeningDeps, runHardeningPass } from "@/acceptance/hardening";
+import type { NaxConfig } from "@/config";
+import { makeMockAgentManager, makePRD, makeStory } from "@test/helpers";
 
 // ─── Fixtures ───────────────────────────────────────────────────────────────
 

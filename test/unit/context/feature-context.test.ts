@@ -8,11 +8,11 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   FeatureContextProvider,
   _featureContextDeps,
-} from "../../../src/context/providers/feature-context";
-import type { NaxConfig } from "../../../src/config/types";
-import type { UserStory } from "../../../src/prd";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { makeNaxConfig } from "../../helpers";
+} from "@/context/providers/feature-context";
+import type { NaxConfig } from "@/config/types";
+import type { UserStory } from "@/prd";
+import { DEFAULT_CONFIG } from "@/config";
+import { makeNaxConfig } from "@test/helpers";
 
 function makeStory(id: string): UserStory {
   return {

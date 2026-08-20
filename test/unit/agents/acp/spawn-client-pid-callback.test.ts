@@ -13,8 +13,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { SpawnAcpClient, SpawnAcpSession, _spawnClientDeps, createSpawnAcpClient } from "../../../../src/agents/acp/spawn-client";
-import { withDepsRestore } from "../../../helpers/deps";
+import { SpawnAcpClient, SpawnAcpSession, _spawnClientDeps, createSpawnAcpClient } from "@/agents/acp/spawn-client";
+import { withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

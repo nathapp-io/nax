@@ -7,9 +7,9 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_ORPHAN_TTL_MS, sweepOrphansImpl } from "../../../src/session/manager-sweep";
-import { _sessionManagerDeps } from "../../../src/session/manager-deps";
-import type { SessionDescriptor, SessionState } from "../../../src/session/types";
+import { DEFAULT_ORPHAN_TTL_MS, sweepOrphansImpl } from "@/session/manager-sweep";
+import { _sessionManagerDeps } from "@/session/manager-deps";
+import type { SessionDescriptor, SessionState } from "@/session/types";
 
 function makeSession(overrides: Partial<SessionDescriptor> & { id: string; state: SessionState }): SessionDescriptor {
   return {

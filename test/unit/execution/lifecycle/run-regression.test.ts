@@ -579,7 +579,7 @@ const _ac4TypeCheck: DeferredRegressionOptions = {
   config: {} as NaxConfig,
   prd: {} as PRD,
   workdir: "/tmp",
-  agentManager: {} as import("../../../../src/agents").IAgentManager,
+  agentManager: {} as import("@/agents").IAgentManager,
 };
 void _ac4TypeCheck;
 
@@ -604,7 +604,7 @@ describe("runDeferredRegression — runtime threading (AC5/AC6)", () => {
       return makeFixCycleResult(true, 0.1);
     });
 
-    const { makeMockAgentManager: makeAM } = await import("../../../helpers");
+    const { makeMockAgentManager: makeAM } = await import("@test/helpers");
     const specificAgentManager = makeAM();
     const mockRuntime = makeMockRuntime({ agentManager: specificAgentManager });
 

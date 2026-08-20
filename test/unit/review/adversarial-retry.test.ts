@@ -7,13 +7,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import * as loggerModule from "../../../src/logger";
-import { _adversarialDeps, runAdversarialReview } from "../../../src/review/adversarial";
-import { _diffUtilsDeps } from "../../../src/review/diff-utils";
-import type { AdversarialReviewConfig } from "../../../src/review/types";
-import type { SemanticStory } from "../../../src/review/types";
-import { makeMockAgentManager } from "../../helpers";
-import { makeMockRuntime } from "../../helpers/runtime";
+import * as loggerModule from "@/logger";
+import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
+import { _diffUtilsDeps } from "@/review/diff-utils";
+import type { AdversarialReviewConfig } from "@/review/types";
+import type { SemanticStory } from "@/review/types";
+import { makeMockAgentManager } from "@test/helpers";
+import { makeMockRuntime } from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 

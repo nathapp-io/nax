@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { WorktreeManager } from "../../../src/worktree/manager";
-import { MergeEngine } from "../../../src/worktree/merge";
-import { makeTempDir } from "../../helpers/temp";
+import { WorktreeManager } from "@/worktree/manager";
+import { MergeEngine } from "@/worktree/merge";
+import { makeTempDir } from "@test/helpers";
 
 describe("MergeEngine", () => {
   let testDir: string;

@@ -1,8 +1,8 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { finalizePlanSelection } from "../../../src/debate/runner-plan-helpers";
-import * as verifierPick from "../../../src/debate/selectors/verifier-pick";
-import type { ScoredProposal } from "../../../src/debate/selectors/verifier-pick";
-import type { SuccessfulProposal } from "../../../src/debate/session-helpers";
+import { finalizePlanSelection } from "@/debate/runner-plan-helpers";
+import * as verifierPick from "@/debate/selectors/verifier-pick";
+import type { ScoredProposal } from "@/debate/selectors/verifier-pick";
+import type { SuccessfulProposal } from "@/debate/session-helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 

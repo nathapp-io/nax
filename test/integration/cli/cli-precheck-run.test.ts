@@ -6,13 +6,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { run } from "../../../src/execution";
-import type { PRD } from "../../../src/prd/types";
-import { EXIT_CODES, runPrecheck } from "../../../src/precheck";
-import { fullTest } from "../../helpers/env";
-import { makeTempDir } from "../../helpers/temp";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
+import { run } from "@/execution";
+import type { PRD } from "@/prd/types";
+import { EXIT_CODES, runPrecheck } from "@/precheck";
+import { fullTest, makeTempDir } from "@test/helpers";
 
 // Requires real claude binary — skipped by default, run with FULL=1.
 const skipInCI = fullTest;

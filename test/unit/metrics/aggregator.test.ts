@@ -7,8 +7,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { calculateAggregateMetrics } from "../../../src/metrics/aggregator";
-import type { RunMetrics, StoryMetrics } from "../../../src/metrics/types";
+import { calculateAggregateMetrics } from "@/metrics/aggregator";
+import type { RunMetrics, StoryMetrics } from "@/metrics/types";
 
 // ---------------------------------------------------------------------------
 // Helpers

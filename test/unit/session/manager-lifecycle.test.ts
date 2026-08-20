@@ -5,7 +5,7 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import { SessionManager, _sessionManagerDeps } from "../../../src/session/manager";
+import { SessionManager, _sessionManagerDeps } from "@/session/manager";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test setup

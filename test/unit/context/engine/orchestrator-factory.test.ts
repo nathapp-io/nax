@@ -8,15 +8,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { NaxConfig } from "../../../../src/config";
-import { createDefaultOrchestrator } from "../../../../src/context/engine/orchestrator-factory";
-import { _codeNeighborDeps } from "../../../../src/context/engine/providers/code-neighbor";
-import { _gitHistoryDeps } from "../../../../src/context/engine/providers/git-history";
-import { TestCoverageProvider, _testCoverageProviderDeps } from "../../../../src/context/engine/providers/test-coverage";
-import { ToolDiagnosticsProvider, _toolDiagnosticsDeps } from "../../../../src/context/engine/providers/tool-diagnostics";
-import type { ContextRequest } from "../../../../src/context/engine/types";
-import type { UserStory } from "../../../../src/prd";
-import { makeNaxConfig } from "../../../helpers";
+import type { NaxConfig } from "@/config";
+import { createDefaultOrchestrator } from "@/context/engine/orchestrator-factory";
+import { _codeNeighborDeps } from "@/context/engine/providers/code-neighbor";
+import { _gitHistoryDeps } from "@/context/engine/providers/git-history";
+import { TestCoverageProvider, _testCoverageProviderDeps } from "@/context/engine/providers/test-coverage";
+import { ToolDiagnosticsProvider, _toolDiagnosticsDeps } from "@/context/engine/providers/tool-diagnostics";
+import type { ContextRequest } from "@/context/engine/types";
+import type { UserStory } from "@/prd";
+import { makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

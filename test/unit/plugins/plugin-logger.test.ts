@@ -3,9 +3,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { getLogger, initLogger, resetLogger } from "../../../src/logger";
-import { createPluginLogger } from "../../../src/plugins/plugin-logger";
-import type { PluginLogger } from "../../../src/plugins/types";
+import { getLogger, initLogger, resetLogger } from "@/logger";
+import { createPluginLogger } from "@/plugins/plugin-logger";
+import type { PluginLogger } from "@/plugins/types";
 
 describe("createPluginLogger", () => {
   let logFile: string;

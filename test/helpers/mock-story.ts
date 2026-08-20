@@ -1,4 +1,4 @@
-import type { PRD, UserStory } from "../../src/prd/types";
+import type { PRD, UserStory } from "@/prd/types";
 
 export function makeStory(overrides: Partial<UserStory> = {}): UserStory {
   return {

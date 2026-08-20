@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseBiomeJson } from "../../../src/review/lint-parsing/strategies/biome-json";
+import { parseBiomeJson } from "@/review/lint-parsing/strategies/biome-json";
 
 const REAL_BIOME_ERROR_OUTPUT =
   '{"summary":{"changed":0,"unchanged":1,"matches":0,"duration":{"secs":0,"nanos":1203755},"errors":1,"warnings":0,"skipped":0,"suggestedFixesSkipped":0,"diagnosticsNotPrinted":0},"diagnostics":[{"category":"lint/suspicious/noDebugger","severity":"error","description":"This is an unexpected use of the debugger statement.","message":[{"elements":[],"content":"This is an unexpected use of the "},{"elements":["Emphasis"],"content":"debugger"},{"elements":[],"content":" statement."}],"advices":{"advices":[]},"verboseAdvices":{"advices":[]},"location":{"path":{"file":"/repo/src/foo.ts"},"span":[26,35],"sourceCode":"const x = 1;\\nconst y = 2;\\ndebugger;\\n"},"tags":["fixable"],"source":null}],"command":"check"}';

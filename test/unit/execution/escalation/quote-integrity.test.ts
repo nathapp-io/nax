@@ -8,7 +8,7 @@ import {
   extractQuoteTriples,
   verifyEscalationQuotes,
   verifyQuoteTriple,
-} from "../../../../src/execution/escalation/quote-integrity";
+} from "@/execution/escalation/quote-integrity";
 
 // ─── extractQuoteTriples ──────────────────────────────────────────────────────
 

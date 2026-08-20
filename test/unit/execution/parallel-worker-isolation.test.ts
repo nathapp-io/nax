@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildWorktreePipelineContext } from "../../../src/execution/parallel-worker";
+import { buildWorktreePipelineContext } from "@/execution/parallel-worker";
 
 describe("buildWorktreePipelineContext", () => {
   test("deep-clones prd so concurrent stories never share one object", () => {

@@ -7,10 +7,10 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { createHmac } from "node:crypto";
-import type { InteractionRequest } from "../../../src/interaction";
-import { WebhookInteractionPlugin, _webhookPluginDeps } from "../../../src/interaction/plugins/webhook";
-import { addSink, initLogger, resetLogger } from "../../../src/logger";
-import type { LogEntry } from "../../../src/logger/types";
+import type { InteractionRequest } from "@/interaction";
+import { WebhookInteractionPlugin, _webhookPluginDeps } from "@/interaction/plugins/webhook";
+import { addSink, initLogger, resetLogger } from "@/logger";
+import type { LogEntry } from "@/logger/types";
 
 describe("WebhookInteractionPlugin", () => {
   test("should validate required config", async () => {

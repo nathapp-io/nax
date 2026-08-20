@@ -11,7 +11,7 @@
 
 import type { DecomposeOptions } from "@/agents/types";
 import type { AgentRoutingProfile } from "@/config";
-import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE } from "../../config/test-strategy";
+import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE } from "@/config";
 import type { SchemaDescriptor } from "../core";
 import { OneShotPromptBuilder } from "./one-shot-builder";
 
@@ -110,8 +110,8 @@ ${GROUPING_RULES}${acConstraint}`;
 export interface DecomposePromptInput {
   specContent: string;
   codebaseContext: string;
-  targetStory?: import("../../prd/types").UserStory;
-  siblings?: import("../../prd/types").UserStory[];
+  targetStory?: import("@/prd").UserStory;
+  siblings?: import("@/prd").UserStory[];
   maxAcCount?: number | null;
   /** Agent routing profiles to inject as capability cards. Empty array = no cards. */
   profiles?: AgentRoutingProfile[];

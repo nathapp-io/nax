@@ -7,15 +7,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _qualityRunnerDeps as _runnerDeps } from "../../../src/quality/runner";
+import { _qualityRunnerDeps as _runnerDeps } from "@/quality/runner";
 import {
   _reviewGitDeps as _deps,
   _reviewLintDeps as _lintDeps,
   _reviewSemanticDeps as _semanticDeps,
   runReview,
-} from "../../../src/review/runner";
-import type { ReviewConfig } from "../../../src/review/types";
-import { _gitDeps } from "../../../src/utils/git";
+} from "@/review/runner";
+import type { ReviewConfig } from "@/review/types";
+import { _gitDeps } from "@/utils/git";
 
 /** Minimal ReviewConfig with typecheck enabled but command set to disable via executionConfig */
 const typecheckConfig: ReviewConfig = {

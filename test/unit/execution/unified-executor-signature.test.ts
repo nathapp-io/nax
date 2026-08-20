@@ -53,14 +53,14 @@ describe("AC-1 — executeUnified signature matches SequentialExecutionResult", 
 
 describe("_unifiedExecutorDeps — injectable dispatch dependencies", () => {
   test("unified-executor.ts exports _unifiedExecutorDeps object", async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     expect((mod as Record<string, unknown>)._unifiedExecutorDeps).toBeDefined();
   });
 
   test.each(["runParallelBatch", "runIteration", "selectIndependentBatch"])(
     "_unifiedExecutorDeps contains %s function",
     async (fnName) => {
-      const mod = await import("../../../src/execution/unified-executor");
+      const mod = await import("@/execution/unified-executor");
       const deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
       expect(typeof deps[fnName]).toBe("function");
     },

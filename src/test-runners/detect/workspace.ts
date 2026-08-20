@@ -15,7 +15,7 @@
  */
 
 import { join } from "node:path";
-import { getSafeLogger } from "../../logger";
+import { getSafeLogger } from "@/logger";
 
 /** Injectable deps for testability */
 export const _workspaceDeps = {

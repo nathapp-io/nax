@@ -13,16 +13,16 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { addSink, initLogger, resetLogger } from "../../../src/logger";
-import type { LogEntry } from "../../../src/logger";
+import { addSink, initLogger, resetLogger } from "@/logger";
+import type { LogEntry } from "@/logger";
 import {
   MAX_RETAINED_RUNS,
   _resetRunTruncationWarningForTests,
   loadRunMetrics,
   saveRunMetrics,
-} from "../../../src/metrics/tracker";
-import type { RunMetrics, StoryMetrics } from "../../../src/metrics/types";
-import { TokenUsage } from "../../../src/metrics/types";
+} from "@/metrics/tracker";
+import type { RunMetrics, StoryMetrics } from "@/metrics/types";
+import { TokenUsage } from "@/metrics/types";
 
 // OUTPUT_DIR plays the role of outputDir (e.g. ~/.nax/<projectKey>): metrics are written
 // directly to OUTPUT_DIR/metrics.json, no .nax/ subdirectory.

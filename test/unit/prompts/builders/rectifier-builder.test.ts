@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeStory } from "../../../helpers";
+import { makeStory } from "@test/helpers";
 import { RectifierPromptBuilder } from "@/prompts";
 import type { ReviewCheckResult } from "@/review";
 import type { Finding } from "@/findings";
@@ -211,7 +211,7 @@ describe("RectifierPromptBuilder.continuation", () => {
 // ---------------------------------------------------------------------------
 
 describe("RectifierPromptBuilder.testWriterRectification", () => {
-  function makeTestFileCheck(file: string, message: string): import("../../../../src/review/types").ReviewCheckResult {
+  function makeTestFileCheck(file: string, message: string): import("@/review/types").ReviewCheckResult {
     return {
       check: "adversarial",
       success: false,
@@ -287,7 +287,7 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
   });
 
   test("lint-only check: uses lint opener, includes raw output, and simplified note", () => {
-    const lintCheck: import("../../../../src/review/types").ReviewCheckResult = {
+    const lintCheck: import("@/review/types").ReviewCheckResult = {
       check: "lint",
       success: false,
       command: "bun run lint",
@@ -319,7 +319,7 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
 
 // D2 — write-failing-test mode (#897)
 describe("RectifierPromptBuilder.testWriterRectification — write-failing-test mode", () => {
-  function makeSourceBugCheck(file: string, message: string): import("../../../../src/review/types").ReviewCheckResult {
+  function makeSourceBugCheck(file: string, message: string): import("@/review/types").ReviewCheckResult {
     return {
       check: "adversarial",
       success: false,
@@ -363,7 +363,7 @@ describe("RectifierPromptBuilder.testWriterRectification — write-failing-test 
   });
 
   test("blockingThreshold='error' drops advisory findings from write-failing-test mode", () => {
-    const checks: import("../../../../src/review/types").ReviewCheckResult[] = [
+    const checks: import("@/review/types").ReviewCheckResult[] = [
       {
         check: "adversarial",
         success: false,
@@ -392,7 +392,7 @@ describe("RectifierPromptBuilder.testWriterRectification — write-failing-test 
 // buildEscapeHatch({ includeMockHandoff: true }) — Exception 4 (mock-structure handoff)
 // ---------------------------------------------------------------------------
 
-import { buildEscapeHatch } from "../../../../src/prompts/builders/rectifier-builder-helpers";
+import { buildEscapeHatch } from "@/prompts/builders/rectifier-builder-helpers";
 
 describe("buildEscapeHatch({ includeMockHandoff: true }) — Exception 4", () => {
   const tddHatch = buildEscapeHatch({ includeMockHandoff: true });
@@ -510,7 +510,7 @@ describe("RectifierPromptBuilder.reviewRectification — blocking-only defensive
     } as any;
   }
 
-  function makeMixedSeverityCheck(): import("../../../../src/review/types").ReviewCheckResult {
+  function makeMixedSeverityCheck(): import("@/review/types").ReviewCheckResult {
     return {
       check: "semantic",
       success: false,

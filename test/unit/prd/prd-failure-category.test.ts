@@ -7,9 +7,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { FailureCategory } from "../../../src/execution";
-import { markStoryFailed, markStoryPassed, markStoryPaused } from "../../../src/prd";
-import type { PRD, UserStory } from "../../../src/prd/types";
+import type { FailureCategory } from "@/execution";
+import { markStoryFailed, markStoryPassed, markStoryPaused } from "@/prd";
+import type { PRD, UserStory } from "@/prd/types";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

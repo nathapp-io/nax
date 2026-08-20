@@ -12,8 +12,8 @@ import {
   _runSetupDeps,
   warnFallbackMisconfiguration,
   warnProfileMismatch,
-} from "../../../../src/execution/lifecycle/run-setup";
-import { makeNaxConfig, makePRD, makeStory } from "../../../helpers";
+} from "@/execution/lifecycle/run-setup";
+import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -28,7 +28,7 @@ afterEach(() => {
 
 // biome-ignore lint/style/noNamespaceImport: cleanup after all tests
 import { afterAll } from "bun:test";
-import { makeTempDir } from "../../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 afterAll(() => {
   rmSync(tmpDir, { recursive: true, force: true });
 });
@@ -108,7 +108,7 @@ describe("warnFallbackMisconfiguration — #508-M4 AC-35 pre-flight warning", ()
     warnFallbackMisconfiguration(
       makeConfig({ claude: ["codex", "gemini"] }),
       agentGetFn as (name: string) => unknown,
-      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
     );
 
     expect(warns.length).toBe(1);
@@ -123,7 +123,7 @@ describe("warnFallbackMisconfiguration — #508-M4 AC-35 pre-flight warning", ()
     warnFallbackMisconfiguration(
       makeConfig({ claude: ["codex"] }),
       agentGetFn as (name: string) => unknown,
-      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
     );
 
     expect(warns).toHaveLength(0);
@@ -134,12 +134,12 @@ describe("warnFallbackMisconfiguration — #508-M4 AC-35 pre-flight warning", ()
     const agentGetFn = (_name: string) => undefined;
     const config = {
       agent: { fallback: { enabled: false, map: { claude: ["gemini"] } } },
-    } as unknown as import("../../../../src/config").NaxConfig;
+    } as unknown as import("@/config").NaxConfig;
 
     warnFallbackMisconfiguration(
       config,
       agentGetFn as (name: string) => unknown,
-      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
     );
 
     expect(warns).toHaveLength(0);
@@ -151,7 +151,7 @@ describe("warnFallbackMisconfiguration — #508-M4 AC-35 pre-flight warning", ()
     warnFallbackMisconfiguration(
       makeConfig({ claude: ["gemini"] }),
       undefined,
-      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
     );
 
     expect(warns).toHaveLength(0);
@@ -164,7 +164,7 @@ describe("warnFallbackMisconfiguration — #508-M4 AC-35 pre-flight warning", ()
     warnFallbackMisconfiguration(
       makeConfig({ claude: ["gemini"], codex: ["gemini"] }),
       agentGetFn as (name: string) => unknown,
-      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
     );
 
     const geminiWarns = warns.filter((w) => (w[2] as Record<string, unknown>).candidate === "gemini");
@@ -223,7 +223,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
     warnProfileMismatch(
       prd,
       config,
-      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
     );
 
     expect(warns).toHaveLength(1);
@@ -267,7 +267,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
     warnProfileMismatch(
       prd,
       config,
-      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
     );
 
     expect(warns).toHaveLength(0);
@@ -304,7 +304,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
     warnProfileMismatch(
       prd,
       config,
-      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
     );
 
     expect(warns).toHaveLength(0);
@@ -318,7 +318,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
     warnProfileMismatch(
       prd,
       config,
-      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
     );
 
     expect(warns).toHaveLength(1);
@@ -338,7 +338,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
     warnProfileMismatch(
       prd,
       config,
-      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
     );
 
     expect(warns).toHaveLength(0);
@@ -365,7 +365,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
     warnProfileMismatch(
       prd,
       config,
-      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
     );
 
     const agentWarns = warns.filter(

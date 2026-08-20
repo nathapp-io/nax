@@ -9,10 +9,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { pluginsListCommand } from "../../../src/cli/plugins";
-import type { NaxConfig } from "../../../src/config/schema";
-import type { NaxPlugin } from "../../../src/plugins/types";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { pluginsListCommand } from "@/cli/plugins";
+import type { NaxConfig } from "@/config/schema";
+import type { NaxPlugin } from "@/plugins/types";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // Test fixture helpers
 async function createTempDir(): Promise<string> {

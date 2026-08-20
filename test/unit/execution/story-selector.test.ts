@@ -5,12 +5,12 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import { selectIndependentBatch, groupStoriesByDependencies, selectNextStories } from "../../../src/execution/story-selector";
-import type { UserStory } from "../../../src/prd/types";
-import type { StoryBatch } from "../../../src/execution/batching";
+import { selectIndependentBatch, groupStoriesByDependencies, selectNextStories } from "@/execution/story-selector";
+import type { UserStory } from "@/prd/types";
+import type { StoryBatch } from "@/execution/batching";
 import { markStoryFailed, markStoryPassed } from "@/prd";
-import { makePRD, makeStory } from "../../helpers/mock-story";
-import { DEFAULT_CONFIG } from "../../../src/config";
+import { makePRD, makeStory } from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
 
 /**
  * Helper to create a minimal UserStory for testing

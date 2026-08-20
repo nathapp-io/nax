@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { hostname } from "node:os";
-import { newSpanId, newTraceId } from "../../../../src/plugins/builtin/otel-reporter/ids";
+import { newSpanId, newTraceId } from "@/plugins/builtin/otel-reporter/ids";
 import {
   type SpanEvent,
   attr,
@@ -10,9 +10,9 @@ import {
   buildResourceAttributes,
   buildTracesPayload,
   msToUnixNano,
-} from "../../../../src/plugins/builtin/otel-reporter/otlp";
-import { PHASE_DURATION_BOUNDS } from "../../../../src/plugins/builtin/otel-reporter/span-tree";
-import { NAX_VERSION } from "../../../../src/version";
+} from "@/plugins/builtin/otel-reporter/otlp";
+import { PHASE_DURATION_BOUNDS } from "@/plugins/builtin/otel-reporter/span-tree";
+import { NAX_VERSION } from "@/version";
 
 describe("ids", () => {
   test("newTraceId is 32 lowercase hex chars", () => {

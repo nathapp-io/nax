@@ -14,8 +14,8 @@ import {
   buildDebaterLabel,
   buildPersonaBlock,
   resolvePersonas,
-} from "../../../src/debate/personas";
-import type { Debater, DebaterPersona } from "../../../src/debate/types";
+} from "@/debate/personas";
+import type { Debater, DebaterPersona } from "@/debate/types";
 
 // ─── PERSONA_FRAGMENTS ───────────────────────────────────────────────────────
 

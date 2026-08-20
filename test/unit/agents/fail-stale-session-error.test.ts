@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { SessionFailureError } from "../../../src/agents/types";
-import type { AdapterFailure } from "../../../src/context/engine";
+import { SessionFailureError } from "@/agents/types";
+import type { AdapterFailure } from "@/context/engine";
 
 const staleFailure: AdapterFailure = {
   category: "availability",

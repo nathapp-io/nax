@@ -6,12 +6,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { NaxConfig } from "../../../src/config/schema";
-import { initLogger, resetLogger } from "../../../src/logger";
-import { PipelineEventEmitter } from "../../../src/pipeline/events";
-import { runPipeline } from "../../../src/pipeline/runner";
-import type { PipelineContext, PipelineStage, StageResult } from "../../../src/pipeline/types";
-import type { UserStory } from "../../../src/prd/types";
+import type { NaxConfig } from "@/config/schema";
+import { initLogger, resetLogger } from "@/logger";
+import { PipelineEventEmitter } from "@/pipeline/events";
+import { runPipeline } from "@/pipeline/runner";
+import type { PipelineContext, PipelineStage, StageResult } from "@/pipeline/types";
+import type { UserStory } from "@/prd/types";
 
 // ── Test Fixtures ────────────────────────────────────
 

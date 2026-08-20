@@ -10,9 +10,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { NaxConfigSchema } from "../../../src/config/schemas";
-import type { ReviewCheckName, SemanticReviewConfig } from "../../../src/review/types";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { NaxConfigSchema } from "@/config/schemas";
+import type { ReviewCheckName, SemanticReviewConfig } from "@/review/types";
 
 describe("ReviewCheckName type", () => {
   test("ReviewCheckName accepts 'semantic' as a valid value", () => {

@@ -10,8 +10,8 @@ import {
   generateTestCoverageSummary,
   scanTestFiles,
   truncateToTokenBudget,
-} from "../../../src/context/test-scanner";
-import { makeTempDir } from "../../helpers/temp";
+} from "@/context/test-scanner";
+import { makeTempDir } from "@test/helpers";
 
 describe("extractTestStructure", () => {
   test("extracts describe and test blocks", () => {

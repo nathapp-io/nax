@@ -12,13 +12,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import type { UserStory } from "../../../src/prd/types";
+import { DEFAULT_CONFIG } from "@/config";
+import type { UserStory } from "@/prd/types";
 import {
   parseRoutingResponse,
   stripCodeFences,
   validateRoutingDecision,
-} from "../../../src/routing/strategies/llm";
+} from "@/routing/strategies/llm";
 
 const simpleStory: UserStory = {
   id: "US-001",

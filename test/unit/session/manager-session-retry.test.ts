@@ -15,12 +15,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { AgentRunRequest } from "../../../src/agents/manager-types";
-import type { AgentResult } from "../../../src/agents/types";
-import type { AdapterFailure } from "../../../src/context/engine";
-import { SessionManager, _sessionManagerDeps } from "../../../src/session/manager";
-import { makeMockAgentManager } from "../../../test/helpers";
-import { makeNaxConfig } from "../../helpers";
+import type { AgentRunRequest } from "@/agents/manager-types";
+import type { AgentResult } from "@/agents/types";
+import type { AdapterFailure } from "@/context/engine";
+import { SessionManager, _sessionManagerDeps } from "@/session/manager";
+import { makeMockAgentManager } from "@test/helpers";
+import { makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

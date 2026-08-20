@@ -12,10 +12,10 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { promptStage } from "../../../../src/pipeline/stages/prompt";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import type { PRD, UserStory } from "../../../../src/prd";
-import { makeNaxConfig } from "../../../helpers";
+import { promptStage } from "@/pipeline/stages/prompt";
+import type { PipelineContext } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd";
+import { makeNaxConfig } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-test-prompt-${randomUUID()}`;
 

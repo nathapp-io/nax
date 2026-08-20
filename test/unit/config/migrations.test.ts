@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { migrateLegacyReviewModelKey, migrateLegacyTestPattern } from "../../../src/config/migrations";
+import { migrateLegacyReviewModelKey, migrateLegacyTestPattern } from "@/config/migrations";
 
 describe("migrateLegacyTestPattern", () => {
   test("no-op when testPattern absent", () => {

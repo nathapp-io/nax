@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeSessionManager } from "@test/helpers";
-import { runPatchStep } from "../../../../src/debate/selectors/verifier-pick";
+import { runPatchStep } from "@/debate/selectors/verifier-pick";
 
 type RunPatchStepWinner = Parameters<typeof runPatchStep>[1];
 type RunPatchStepRunnerUp = Parameters<typeof runPatchStep>[2];

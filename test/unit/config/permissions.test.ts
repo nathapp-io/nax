@@ -9,9 +9,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { resolvePermissions } from "../../../src/config/permissions";
-import type { PipelineStage } from "../../../src/config/permissions";
-import type { NaxConfig } from "../../../src/config";
+import { resolvePermissions } from "@/config/permissions";
+import type { PipelineStage } from "@/config/permissions";
+import type { NaxConfig } from "@/config";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
