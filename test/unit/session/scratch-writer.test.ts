@@ -7,8 +7,8 @@ import {
   scratchFilePath,
   writeDigestFile,
   _scratchWriterDeps,
-} from "../../../src/session/scratch-writer";
-import type { ScratchEntry } from "../../../src/session/scratch-writer";
+} from "@/session/scratch-writer";
+import type { ScratchEntry } from "@/session/scratch-writer";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────

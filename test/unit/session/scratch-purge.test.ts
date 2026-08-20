@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _scratchPurgeDeps, purgeStaleScratch } from "../../../src/session/scratch-purge";
+import { _scratchPurgeDeps, purgeStaleScratch } from "@/session/scratch-purge";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals

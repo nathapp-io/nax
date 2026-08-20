@@ -4,8 +4,8 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import { NaxError } from "../../../src/errors";
-import { SessionManager, _sessionManagerDeps } from "../../../src/session/manager";
+import { NaxError } from "@/errors";
+import { SessionManager, _sessionManagerDeps } from "@/session/manager";
 
 let _timeSeq = 0;
 

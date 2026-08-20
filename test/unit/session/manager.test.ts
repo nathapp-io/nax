@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { SessionManager, _sessionManagerDeps } from "../../../src/session/manager";
-import { NaxError } from "../../../src/errors";
-import type { SessionState } from "../../../src/session/types";
+import { SessionManager, _sessionManagerDeps } from "@/session/manager";
+import { NaxError } from "@/errors";
+import type { SessionState } from "@/session/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test setup
