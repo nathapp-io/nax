@@ -18,6 +18,7 @@ import { resolveRunFileFromRegistry, selectRunFile } from "./logs-reader";
 export { _logsReaderDeps as _deps } from "./logs-reader";
 export { extractRunSummary, resolveRunFileFromRegistry, selectRunFile } from "./logs-reader";
 export { displayLogs, displayRunsList, followLogs, formatDuration } from "./logs-formatter";
+export type { FollowLogsDeps } from "./logs-formatter";
 
 /**
  * Options for logs command
@@ -37,6 +38,13 @@ export interface LogsOptions {
   run?: string;
   /** Output raw JSONL (from --json / -j flag) */
   json?: boolean;
+  /**
+   * Abort signal forwarded to follow mode. No production caller sets this
+   * today — `bin/nax.ts` does not wire SIGINT to it — so this seam is
+   * currently exercised only by tests. Wiring a real SIGINT handler in
+   * the CLI entry point is a separate, out-of-scope concern.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -50,7 +58,7 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
       return;
     }
     if (options.follow) {
-      await followLogs(runFile, options);
+      await followLogs(runFile, options, { signal: options.signal });
     } else {
       await displayLogs(runFile, options);
     }
@@ -89,7 +97,7 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
 
   // Handle follow mode
   if (options.follow) {
-    await followLogs(runFile, options);
+    await followLogs(runFile, options, { signal: options.signal });
     return;
   }
 

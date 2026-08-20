@@ -1,0 +1,139 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "logs-follow-tailing",
+  "branchName": "fix/logs-follow-tailing",
+  "createdAt": "2026-08-20T02:50:06Z",
+  "updatedAt": "2026-08-20T04:17:19.780Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Make follow mode cancellable and observable",
+      "description": "**Goal** — Give `followLogs` an AbortSignal and injectable output/sleep seam, and forward the signal through `logsCommand` while preserving its `undefined` result.\n\n**Motivation** — `followLogs` is currently a `while (true)` with no exit, which is why all six of its unit tests and its one integration test are `test.skip`ed today, and why the offset defect shipped unnoticed.\n\n**Approach** — Give `followLogs` an `AbortSignal` and a `Partial<Deps>` override merged over a module-level default, mirroring `waitForSchedule` in `src/schedule/wait.ts`. The function returns `\"cancelled\"` when the signal fires — at the top of the loop, or via the delay's abort-rejection. Output moves behind an injectable `emit`; the inter-poll wait moves behind an injectable `sleep` defaulting to `cancellableDelay`. `logsCommand` accepts an optional signal and forwards it to both of its `followLogs` call sites. The read logic is **unchanged** in this story.\n\n`followLogs` adopts the same three elements: a `Partial<Deps>` override merged over a module-level default, a top-of-loop `signal.aborted` check, and a `try/catch` around the delay that converts an abort-rejection into a normal return.\n\nOutput currently goes through direct `console.log` calls. Those move behind an injectable `emit` dependency so a test can capture emitted lines; the default `emit` preserves today's behaviour. Bun-native APIs only, per `project-conventions.md`.\n\n`logsCommand` gains an optional signal that it forwards to `followLogs`. Its two existing call sites stay gated on `options.follow`; passing nothing preserves today's run-until-Ctrl-C behaviour. `logsCommand` must keep resolving to `undefined`: it consumes the outcome internally and each call site keeps its bare `return`.\n\n**Scope** — In: cancellation, module-default dependency merging, injected `emit` and `sleep`, optional-signal forwarding through both `options.follow` branches, and replacing the six unit and one integration follow placeholders using ASCII fixtures. Out: byte-aligned reads, byte-range-reader injection, shrink resynchronisation, and non-ASCII tailing tests (US-002); Following a log file across rotation to a **different path or inode** is not addressed; only in-place truncation of the same path is handled.; Making the 500 ms poll interval configurable, or replacing polling with filesystem watch notifications, is not addressed.; Replacing the console-based output in `src/commands/logs-formatter.ts` with the project logger is not addressed; this spec only routes the existing output through an injectable dependency.; Following more than one run or more than one log file in a single invocation is not addressed.; Changing the JSONL log format, the `LogEntry` shape, or the filtering semantics of `--story`, `--level`, and `--json` is not addressed.\n\n**Interface**\n```typescript\nexport interface FollowLogsDeps {\n  /** Emits one formatted line. Defaults to today's console output. */\n  emit: (line: string) => void;\n  /** Waits between polls. Defaults to cancellableDelay; rejects on abort. */\n  sleep: (ms: number, signal?: AbortSignal) => Promise<void>;\n}\n\nexport async function followLogs(\n  filePath: string,\n  options: { json?: boolean; story?: string; level?: LogLevel },\n  opts?: { signal?: AbortSignal; _deps?: Partial<FollowLogsDeps> },\n): Promise<\"cancelled\">;\n\n// LogsOptions gains an optional `signal`; the return type is unchanged.\nexport async function logsCommand(options: LogsOptions): Promise<void>;\n```\n\nThe third `followLogs` parameter is optional, so both existing call sites in `src/commands/logs.ts` keep compiling unchanged. `waitForSchedule`/`WaitDeps` in `src/schedule/wait.ts` are READ-ONLY precedent to mirror — this story neither creates nor modifies them. US-002 extends `FollowLogsDeps` with `readRange`.\n",
+      "acceptanceCriteria": [
+        "[followLogs] returns `\"cancelled\"` and the injected `emit` receives no lines when a valid ASCII JSONL file is followed with an already-aborted signal.",
+        "[followLogs] returns `\"cancelled\"` rather than rejecting when the injected `sleep` rejects on its first inter-poll wait for an ASCII JSONL fixture.",
+        "[followLogs] emits both valid pre-existing ASCII entries through injected `emit` in file order before returning `\"cancelled\"` when the injected first sleep aborts the signal.",
+        "[followLogs] emits only the `storyId: \"US-001\"` ASCII entry through injected `emit` when `options.story` is `\"US-001\"`, the file also contains `storyId: \"US-002\"`, and the injected first sleep aborts the signal.",
+        "[followLogs] returns `\"cancelled\"` when called with an already-aborted signal and no dependency override.",
+        "[logsCommand] resolves to `undefined` when called with `follow: true`, a resolvable run, and an already-aborted signal."
+      ],
+      "tags": [
+        "feature",
+        "logs",
+        "cancellation",
+        "cli"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This changes two existing production modules and replaces indefinite test stubs, but follows an established cancellable polling and dependency-injection pattern.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/commands/logs-formatter.ts",
+        "src/commands/logs.ts",
+        "src/schedule/wait.ts",
+        "test/unit/commands/logs.test.ts",
+        "test/integration/cli/cli-core-logs.test.ts",
+        "src/utils/bun-deps.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/commands/logs.test.ts",
+          "reason": "the six `test.skip` stubs across the follow-mode, story-filter, level-filter and json describe blocks are empty bodies that assert nothing and defer to an integration file that does not exist; they must become real tests driving the new signal and dependency seam, and the dangling path reference in the block comment must go. This authorisation covers those six skipped stubs only — the eight live `resolves.toBeUndefined()` assertions over `logsCommand` elsewhere in the file state an invariant this spec preserves and must not be weakened or deleted."
+        },
+        {
+          "path": "test/integration/cli/cli-core-logs.test.ts",
+          "reason": "the skipped follow-mode test names the missing cancellation hook as its reason for skipping; it must drive `logsCommand` with an abort signal instead."
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "06e763589d68e860fa291c99f3d6f4b9f6428e96",
+      "outOfScope": [
+        "Byte-aligned incremental reads, byte-range-reader injection, shrink resynchronisation, and non-ASCII tailing tests belong to US-002."
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Tail appended JSONL by byte offset",
+      "description": "**Goal** — Replace string-indexed incremental reads with byte-aligned range reads and resume tailing after in-place truncation.\n\n**Motivation** — Any non-ASCII character in the log makes the byte and UTF-16 domains diverge permanently, so every subsequent poll slices past the true append boundary, the appended entry arrives truncated mid-token, `JSON.parse` throws, and a bare `catch {}` discards it. Log lines are silently lost.\n\n**Approach** — Replace the string-sliced incremental read with a byte-aligned one so the offset and the read share a domain, eliminating the drift that silently drops entries. Stop re-reading and re-decoding the whole file on every poll. Resynchronise the offset when the file shrinks.\n\nTwo behaviours change in the loop body:\n\n- The incremental read becomes **byte-aligned**: the offset and the read live in the same domain, so the appended range is obtained by byte position rather than by slicing a decoded string. `BunFile` exposes a byte-ranged read that satisfies this. This also removes the whole-file re-read and re-decode on every tick.\n- The offset is **resynchronised when the file shrinks**. Today the loop only acts when `currentSize > lastSize`, so an in-place truncation leaves `lastSize` stale forever and the tail goes permanently silent.\n\n**Scope** — In: byte-aligned incremental range reads, an injectable byte-range read seam, no whole-file decode on append polls, malformed-line continuation, exactly-once emissions, and in-place-truncation resynchronisation with non-ASCII fixtures. Out: cancellation, `emit`, and `sleep` seams (US-001); Following a log file across rotation to a **different path or inode** is not addressed; only in-place truncation of the same path is handled.; Making the 500 ms poll interval configurable, or replacing polling with filesystem watch notifications, is not addressed.; Replacing the console-based output in `src/commands/logs-formatter.ts` with the project logger is not addressed; this spec only routes the existing output through an injectable dependency.; Following more than one run or more than one log file in a single invocation is not addressed.; Changing the JSONL log format, the `LogEntry` shape, or the filtering semantics of `--story`, `--level`, and `--json` is not addressed.\n\n**Interface**\n```typescript\nexport interface FollowLogsDeps {\n  emit: (line: string) => void;\n  sleep: (ms: number, signal?: AbortSignal) => Promise<void>;\n  /** Added by this story: reads the file from a byte offset to EOF. */\n  readRange: (filePath: string, start: number) => Promise<string>;\n}\n\nexport async function followLogs(\n  filePath: string,\n  options: { json?: boolean; story?: string; level?: LogLevel },\n  opts?: { signal?: AbortSignal; _deps?: Partial<FollowLogsDeps> },\n): Promise<\"cancelled\">;\n```\n\nExtends the US-001 `FollowLogsDeps` with `readRange`; the `followLogs` signature is otherwise unchanged from US-001.\n",
+      "acceptanceCriteria": [
+        "Given an initial JSONL entry whose `message` contains three `✓` characters, when one further valid entry is appended and exactly one poll runs, then `followLogs` emits the appended entry with its `message` intact through injected `emit`.",
+        "When three successive valid entries each containing at least one `✓` are appended across three polls, then `followLogs` emits all three appended entries through injected `emit` in append order.",
+        "When `followLogs` emits pre-existing entries and then observes two appends, then injected `emit` receives every entry exactly once.",
+        "When an invalid JSON line is appended between two valid entries containing `✓` characters, then `followLogs` skips the invalid line without rejecting and emits the later valid entry.",
+        "When the followed file is rewritten to a shorter byte length than the consumed offset and a valid entry is appended afterwards, then `followLogs` resynchronises and emits that appended entry.",
+        "When an append is observed on a poll, then the injected byte-range reader receives a start offset equal to the byte length already consumed and not `0`."
+      ],
+      "tags": [
+        "feature",
+        "logs",
+        "tailing",
+        "unicode",
+        "bugfix"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The stateful byte-offset and truncation fix stays within the formatter and existing tests, while requiring deterministic multi-poll fixtures rather than a new subsystem.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/commands/logs-formatter.ts",
+        "src/logger/types.ts",
+        "test/unit/commands/logs.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/commands/logs.test.ts",
+          "reason": "the same file gains the byte-offset, truncation and malformed-line criteria; any follow-mode expectation that pins the pre-fix read behaviour must be replaced by the invariant that every appended entry is emitted exactly once regardless of the byte width of preceding characters."
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6e7e632125da4aec5e1177960fa32c4181453f5f",
+      "outOfScope": [
+        "Cancellation, injected `emit`, and injected `sleep` are produced by US-001."
+      ]
+    }
+  ],
+  "analysis": "This is an enhancement of the existing logs command. `followLogs` (src/commands/logs-formatter.ts:103) initially decodes the full JSONL file, tracks `Bun.file(filePath).stat().size` in bytes, then every 500 ms re-reads and decodes the entire file before using `newContent.slice(lastSize)`. The offset is therefore a byte count applied as a UTF-16 index: non-ASCII content can truncate an appended JSON record and the existing bare JSON catch silently drops it. The loop is indefinite, output is direct `console.log`, and a shrink never resets `lastSize`. `logsCommand` (src/commands/logs.ts:45) owns `LogsOptions`, invokes `followLogs` at :53 and :92 only under `options.follow`, and makes a bare return after each call; its public result must remain `Promise<void>`/`undefined` despite the tail outcome. `followLogs` is re-exported by logs.ts, so its extension must remain additive for two-argument callers. `LogEntry` is defined in src/logger/types.ts:9. `cancellableDelay` (src/utils/bun-deps.ts:71) rejects when aborted. The directly applicable repository pattern is `waitForSchedule` in src/schedule/wait.ts:14-61: module-level default deps, `Partial<Deps>` merge, top-of-loop abort return, and caught delay rejection. Existing module-family reader dependencies are in src/commands/logs-reader.ts. Tests are in test/unit/commands/logs.test.ts, with six skipped follow tests, and test/integration/cli/cli-core-logs.test.ts:201, with the seventh skipped follow test; the formerly referenced test/integration/cli-logs.test.ts does not exist. Eight live unit assertions already pin `logsCommand(...).resolves.toBeUndefined()` and must remain. US-001 must establish deterministic cancellation/output seams with ASCII fixtures before US-002 uses them to prove byte-aligned range reading, malformed-line continuation, no duplicate emission, and in-place truncation resynchronisation with non-ASCII fixtures. No migration is required: new signal and dependency controls are optional, default output remains console output, and the public CLI still follows until Ctrl-C when no signal is supplied.",
+  "outOfScope": [
+    "Following a log file across rotation to a **different path or inode** is not addressed; only in-place truncation of the same path is handled.",
+    "Making the 500 ms poll interval configurable, or replacing polling with filesystem watch notifications, is not addressed.",
+    "Replacing the console-based output in `src/commands/logs-formatter.ts` with the project logger is not addressed; this spec only routes the existing output through an injectable dependency.",
+    "Following more than one run or more than one log file in a single invocation is not addressed.",
+    "Changing the JSONL log format, the `LogEntry` shape, or the filtering semantics of `--story`, `--level`, and `--json` is not addressed.",
+    "The remaining findings of the 2026-08-20 gap analysis — the CI bundle-build step, the per-file coverage floor, the `.gitignore` run-artifact entries, the deprecation-shim inventory, and the rule-based optimizer decision — are not addressed by this spec."
+  ],
+  "routingProfile": "cross-agent"
+}

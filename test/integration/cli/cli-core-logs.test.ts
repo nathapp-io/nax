@@ -9,7 +9,6 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { logsCommand } from "../../../src/commands/logs";
-import { waitForCondition } from "../../helpers/timeout";
 
 const TEST_WORKSPACE = join(import.meta.dir, "../../..", "tmp", "cli-logs-test");
 const REGISTRY_DIR = join(TEST_WORKSPACE, "registry");
@@ -198,10 +197,16 @@ describe("nax logs CLI integration", () => {
   });
 
   describe("--follow mode", () => {
-    test.skip("nax logs --follow streams existing entries then watches", async () => {
-      // followLogs currently runs indefinitely with no cancellation hook.
-      // Exercising it in-process leaks background polling into later tests.
-      await waitForCondition(() => false, 1, 1);
+    test("nax logs --follow resolves to undefined when aborted before invocation", async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      const { error } = await captureLogsCommand({
+        dir: projectDir,
+        follow: true,
+        signal: controller.signal,
+      });
+      expect(error).toBeUndefined();
     });
   });
 

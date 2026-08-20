@@ -1,0 +1,2 @@
+[2026-08-20T04:01:55.193Z] US-001 — PASSED — Make follow mode cancellable and observable — Cost: $1.1578
+[2026-08-20T04:17:19.779Z] US-002 — PASSED — Tail appended JSONL by byte offset — Cost: $1.6190

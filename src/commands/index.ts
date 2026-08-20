@@ -15,6 +15,7 @@ export {
   type CuratorGcOptions,
 } from "./curator";
 export { logsCommand, type LogsOptions } from "./logs";
+export { followLogs, type FollowLogsDeps } from "./logs-formatter";
 export { precheckCommand, type PrecheckOptions } from "./precheck";
 export {
   registerReplayCommand,

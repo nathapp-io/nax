@@ -9,6 +9,7 @@ import { formatDuration, formatLogEntry, formatRunSummary } from "../log-format/
 import type { LogEntry, LogLevel } from "../logger/types";
 export { formatDuration };
 import type { VerbosityMode } from "../log-format/types";
+import { cancellableDelay } from "../utils/bun-deps";
 import { extractRunSummary } from "./logs-reader";
 
 /**
@@ -98,19 +99,120 @@ export async function displayLogs(
 }
 
 /**
- * Follow logs in real-time (tail -f mode)
+ * Dependencies for {@link followLogs}.
+ *
+ * Mirrors the {@link WaitDeps} pattern from `src/schedule/wait.ts`: a
+ * `Partial<Deps>` override merged over a module-level default at call
+ * time. The defaults preserve today's `console.log` output and the
+ * canonical cancellable inter-poll delay.
+ */
+export interface FollowLogsDeps {
+  /** Emits one formatted line. Defaults to today's console output. */
+  emit: (line: string) => void;
+  /** Waits between polls. Defaults to cancellableDelay; rejects on abort. */
+  sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** Reads the file from a byte offset to EOF. Defaults to `Bun.file(path).slice(start).text()`. */
+  readRange: (filePath: string, start: number) => Promise<string>;
+  /** Reads the file's current byte size. Defaults to `Bun.file(path).stat().size`. */
+  size: (filePath: string) => Promise<number>;
+}
+
+async function defaultReadRange(filePath: string, start: number): Promise<string> {
+  return Bun.file(filePath).slice(start).text();
+}
+
+async function defaultSize(filePath: string): Promise<number> {
+  return (await Bun.file(filePath).stat()).size;
+}
+
+const DEFAULT_FOLLOW_LOGS_DEPS: FollowLogsDeps = {
+  emit: (line) => console.log(line),
+  sleep: (ms, signal) => cancellableDelay(ms, signal),
+  readRange: defaultReadRange,
+  size: defaultSize,
+};
+
+/**
+ * Follow logs in real-time (tail -f mode).
+ *
+ * Returns `"cancelled"` when the supplied signal fires — either at the
+ * top of the loop on the next iteration, or via the injected `sleep`
+ * rejecting on abort. Output and inter-poll delay are routed through
+ * injectable dependencies for testability. Incremental reads are
+ * byte-aligned via the injected `readRange` seam, so non-ASCII content
+ * in the file does not cause the offset and the read to drift out of
+ * sync. The offset advances only past complete lines (last `\n`), so a
+ * partial trailing line observed on one poll is re-read on the next.
+ * When the file is rewritten shorter than the consumed offset
+ * (in-place truncation), the offset is resynchronised to the new file
+ * size: any content already present in the shrunk file at that point is
+ * not re-emitted, and only subsequent appends are captured. If the
+ * followed file is deleted or rotated to a different inode while
+ * polling, the size check fails and the loop returns `"cancelled"`
+ * rather than letting the error propagate and crash the CLI — following
+ * across rotation is out of scope for this function.
  */
 export async function followLogs(
   filePath: string,
   options: { json?: boolean; story?: string; level?: LogLevel },
-): Promise<void> {
+  opts?: { signal?: AbortSignal; _deps?: Partial<FollowLogsDeps> },
+): Promise<"cancelled"> {
+  const deps: FollowLogsDeps = { ...DEFAULT_FOLLOW_LOGS_DEPS, ...opts?._deps };
+  const signal = opts?.signal;
   const mode: VerbosityMode = options.json ? "json" : "normal";
 
-  const file = Bun.file(filePath);
-  const content = await file.text();
-  const lines = content.trim().split("\n");
+  if (signal?.aborted) return "cancelled";
 
-  for (const line of lines) {
+  let lastOffset = await consumeRange(filePath, 0, deps, options, mode);
+
+  while (true) {
+    if (signal?.aborted) return "cancelled";
+
+    try {
+      await deps.sleep(500, signal);
+    } catch (err) {
+      if (signal?.aborted) return "cancelled";
+      throw err;
+    }
+
+    let currentSize: number;
+    try {
+      currentSize = await deps.size(filePath);
+    } catch {
+      return "cancelled";
+    }
+
+    if (currentSize > lastOffset) {
+      lastOffset = await consumeRange(filePath, lastOffset, deps, options, mode);
+    } else if (currentSize < lastOffset) {
+      lastOffset = currentSize;
+    }
+  }
+}
+
+/**
+ * Reads the file from `start` (byte offset) to EOF via the injected
+ * `readRange` seam, splits the result on newline, formats each line,
+ * and returns the new offset. The offset advances only to the byte
+ * position past the last complete line (last `\n`); any bytes after
+ * that point form a partial line that the next poll re-reads. Skips
+ * invalid JSON lines and never throws on a partial trailing line —
+ * that is the "malformed-line continuation" invariant.
+ */
+async function consumeRange(
+  filePath: string,
+  start: number,
+  deps: FollowLogsDeps,
+  options: { json?: boolean; story?: string; level?: LogLevel },
+  mode: VerbosityMode,
+): Promise<number> {
+  const chunk = await deps.readRange(filePath, start);
+  if (!chunk) return start;
+
+  const lastNewline = chunk.lastIndexOf("\n");
+  const complete = lastNewline === -1 ? "" : chunk.slice(0, lastNewline + 1);
+
+  for (const line of complete.split("\n")) {
     if (!line.trim()) continue;
 
     try {
@@ -123,48 +225,14 @@ export async function followLogs(
       const formatted = formatLogEntry(entry, { mode, useColor: true });
 
       if (formatted.shouldDisplay && formatted.output) {
-        console.log(formatted.output);
+        deps.emit(formatted.output);
       }
     } catch {
       // Skip invalid JSON lines
     }
   }
 
-  let lastSize = (await Bun.file(filePath).stat()).size;
-
-  while (true) {
-    await Bun.sleep(500);
-
-    const currentSize = (await Bun.file(filePath).stat()).size;
-
-    if (currentSize > lastSize) {
-      const newFile = Bun.file(filePath);
-      const newContent = await newFile.text();
-      const newLines = newContent.slice(lastSize).trim().split("\n");
-
-      for (const line of newLines) {
-        if (!line.trim()) continue;
-
-        try {
-          const entry: LogEntry = JSON.parse(line);
-
-          if (!shouldDisplayEntry(entry, options)) {
-            continue;
-          }
-
-          const formatted = formatLogEntry(entry, { mode, useColor: true });
-
-          if (formatted.shouldDisplay && formatted.output) {
-            console.log(formatted.output);
-          }
-        } catch {
-          // Skip invalid JSON lines
-        }
-      }
-
-      lastSize = currentSize;
-    }
-  }
+  return start + Buffer.byteLength(complete, "utf8");
 }
 
 /**

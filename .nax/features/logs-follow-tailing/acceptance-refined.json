@@ -1,0 +1,86 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "[followLogs] returns \"cancelled\" and the injected `emit` receives no lines when a valid ASCII JSONL file is followed with an already-aborted signal.",
+    "refined": "When `followLogs(filePath, options, { signal: alreadyAbortedSignal })` is called with a valid ASCII JSONL file and a signal that is already aborted before the call, the function returns the string `\"cancelled\"` (not a rejected promise) and the `emit` spy/mock is never invoked.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "[followLogs] returns \"cancelled\" rather than rejecting when the injected `sleep` rejects on its first inter-poll wait for an ASCII JSONL fixture.",
+    "refined": "When `followLogs` is called with a valid ASCII JSONL fixture and `_deps.sleep` is a function that returns a rejected promise on its first invocation, the function returns the string `\"cancelled\"` (value, not rejected promise) — it does not throw or propagate the sleep rejection.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "[followLogs] emits both valid pre-existing ASCII entries through injected `emit` in file order before returning \"cancelled\" when the injected first sleep aborts the signal.",
+    "refined": "When `followLogs` is called with an ASCII JSONL fixture containing exactly two log entries in deterministic order and `_deps.sleep` rejects on its first call (causing early return), the `emit` spy is invoked exactly twice, with the first call's argument preceding the second call's argument in the same order as the file, and the function finally returns `\"cancelled\"`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "[followLogs] emits only the `storyId: \"US-001\"` ASCII entry through injected `emit` when `options.story` is `\"US-001\"`, the file also contains `storyId: \"US-002\"`, and the injected first sleep aborts the signal.",
+    "refined": "When `followLogs(filePath, { story: \"US-001\" }, { signal: abortedSignal, _deps: { sleep: rejectingSleep } })` is called with a fixture containing at least one entry with `storyId: \"US-001\"` and one with `storyId: \"US-002\"`, the `emit` spy is invoked exactly once, the argument contains the substring `storyId`, and it does not contain `US-002`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "[followLogs] returns \"cancelled\" when called with an already-aborted signal and no dependency override.",
+    "refined": "When `followLogs(filePath, options, { signal: alreadyAbortedSignal })` is called with no `_deps` override (using module defaults), the function returns the string `\"cancelled\"`. The function does not throw, and `emit` is not called.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "[logsCommand] resolves to `undefined` when called with `follow: true`, a resolvable run, and an already-aborted signal.",
+    "refined": "When `logsCommand({ follow: true, runId: validRunId, signal: alreadyAbortedSignal })` is called, the returned value is `undefined` (not a Promise that resolves to a value, and not a rejected Promise). The function must not throw.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Given an initial JSONL entry whose `message` contains three `✓` characters, when one further valid entry is appended and exactly one poll runs, then `followLogs` emits the appended entry with its `message` intact through injected `emit`.",
+    "refined": "Given a file at path `f` containing one JSONL entry `{\"message\":\"α ✓ β ✓ γ ✓ δ\"}` followed by a newline (total byte length N), when `followLogs(f, {}, {_deps: {readRange: (fp, start) => Bun.file(fp).slice(start).text(), emit: spy()}})` is called and the file grows by exactly one valid JSONL entry `{\"message\":\"appended\"}` (bytes M), then on the next poll cycle `emit` is called exactly once with a string argument that when JSON-parsed yields `{\"message\":\"appended\"}` and the three `✓` characters in the first entry's message are intact.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When three successive valid entries each containing at least one `✓` are appended across three polls, then `followLogs` emits all three appended entries through injected `emit` in append order.",
+    "refined": "When `followLogs` is invoked on a file containing one seed entry, and the file grows by one valid JSONL entry `{\"message\":\"1 ✓\"}` (poll 1), then grows by a second valid entry `{\"message\":\"2 ✓\"}` (poll 2), then grows by a third valid entry `{\"message\":\"3 ✓\"}` (poll 3), then `emit` is called exactly three times with arguments `arg1`, `arg2`, `arg3` such that JSON.parse(arg1).message === '1 ✓', JSON.parse(arg2).message === '2 ✓', and JSON.parse(arg3).message === '3 ✓', and the call order preserves append order.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When `followLogs` emits pre-existing entries and then observes two appends, then injected `emit` receives every entry exactly once.",
+    "refined": "When a file at path `f` initially contains three valid JSONL entries `{\"n\":1}`, `{\"n\":2}`, `{\"n\":3}` (bytes B_total), and `followLogs(f, {}, {_deps: {readRange: ..., emit: spy()}})` is called and starts consuming from offset 0, then two more entries `{\"n\":4}` and `{\"n\":5}` are appended (file grows to B_total + B_4 + B_5), then `emit` is called exactly 5 times total: once each for n=1 through n=5, with no duplicate calls for any entry.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When an invalid JSON line is appended between two valid entries containing `✓` characters, then `followLogs` skips the invalid line without rejecting and emits the later valid entry.",
+    "refined": "Given a file at path `f` containing `{\"message\":\"before ✓\"}\n` (valid, bytes B1), when an invalid line `NOT_JSON\n` is written (bytes B2), followed by a valid entry `{\"message\":\"after ✓\"}\n` (bytes B3), and `followLogs` is started with `_deps.emit` as a spy, then `emit` is called exactly twice: first with the parsed first entry, second with the parsed third entry; the call count is exactly 2 (invalid line produces zero calls); and `followLogs` resolves successfully without throwing.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When the followed file is rewritten to a shorter byte length than the consumed offset and a valid entry is appended afterwards, then `followLogs` resynchronises and emits that appended entry.",
+    "refined": "Given `followLogs(f, {}, {_deps: {readRange: ..., emit: spy()}})` has consumed entries up to byte offset O (> 0), when the file at `f` is overwritten with content of byte length L where L < O (truncation), and a new valid entry `{\"message\":\"resumed ✓\"}` is appended, then `emit` is called at least once with the parsed `{\"message\":\"resumed ✓\"}` entry, and the byte-range reader is subsequently called with `start` argument equal to 0 (resynchronized to beginning of new content), not the stale offset O.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When an append is observed on a poll, then the injected byte-range reader receives a start offset equal to the byte length already consumed and not `0`.",
+    "refined": "When `followLogs` is invoked on a file at path `f` with `readRange` mocked to `async (fp, start) => ...` and `emit` as a spy, and the file has grown since the last poll (current size S_current > last observed size S_last), then `readRange` is called with `fp === f` and `start === S_last` (the previously consumed byte length), and `start` is never `0` on a growth-poll cycle; on the very first poll where no entries have been consumed yet, `start === 0`.",
+    "testable": true,
+    "storyId": "US-002"
+  }
+]
