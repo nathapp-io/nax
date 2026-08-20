@@ -147,7 +147,7 @@ export const _regenerateDeps = {
   },
   readFile: async (filePath: string): Promise<string> => Bun.file(filePath).text(),
   acceptanceSetupExecute: async (ctx: PipelineContext): Promise<void> => {
-    const { acceptanceSetupStage } = await import("../../pipeline/stages/acceptance-setup");
+    const { acceptanceSetupStage } = await import("@/pipeline/stages");
     await acceptanceSetupStage.execute(ctx);
   },
 };

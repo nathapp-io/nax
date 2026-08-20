@@ -110,7 +110,7 @@ export const _acceptanceFixCycleDeps = {
 
 /** Injectable deps for runAcceptanceTestsOnce — swap in tests to avoid mock.module(). */
 export const _runAcceptanceTestsOnceDeps = {
-  importAcceptanceStage: () => import("../../pipeline/stages/acceptance"),
+  importAcceptanceStage: () => import("@/pipeline/stages"),
 };
 
 // _regenerateDeps, regenerateAcceptanceTest, generateAndAddFixStories, executeFixStory
