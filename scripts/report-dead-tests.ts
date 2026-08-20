@@ -79,26 +79,25 @@ export function parseTestFile(content: string, filePath: string): TestInfo {
 }
 
 /**
- * Check if an import path exists on disk (handles both .ts and .tsx variants)
+ * Check if an import path exists on disk (handles both .ts and .tsx variants).
+ *
+ * TypeScript's ESM convention writes the specifier with the extension of the
+ * EMITTED file (`./foo.js`) while the file on disk is `./foo.ts`. Probing only the
+ * literal specifier means `foo.js` is tested as `foo.js.ts` and a live module is
+ * reported dead — a false positive that has already cost this repo five real test
+ * files (98b27affe). Both the literal and the extension-stripped form are tried, so
+ * a genuine `foo.js.ts` on disk still resolves too.
  */
 function importExists(importPath: string, baseDir: string): boolean {
-  // Try with .ts
-  const tsPath = join(baseDir, `${importPath}.ts`);
-  if (existsSync(tsPath)) return true;
+  const candidates = [importPath];
+  const stripped = importPath.replace(/\.(js|jsx|mjs|cjs)$/, "");
+  if (stripped !== importPath) candidates.push(stripped);
 
-  // Try with .tsx
-  const tsxPath = join(baseDir, `${importPath}.tsx`);
-  if (existsSync(tsxPath)) return true;
-
-  // Try as directory with index.ts
-  const indexPath = join(baseDir, importPath, "index.ts");
-  if (existsSync(indexPath)) return true;
-
-  // Try as directory with index.tsx
-  const indexTsxPath = join(baseDir, importPath, "index.tsx");
-  if (existsSync(indexTsxPath)) return true;
-
-  return false;
+  return candidates.some((candidate) =>
+    [`${candidate}.ts`, `${candidate}.tsx`, join(candidate, "index.ts"), join(candidate, "index.tsx")].some((rel) =>
+      existsSync(join(baseDir, rel)),
+    ),
+  );
 }
 
 /**
