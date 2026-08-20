@@ -23,10 +23,10 @@ import {
 } from "@/execution";
 import type { TddMode } from "@/execution/post-run";
 import type { StoryOrchestratorResult } from "@/execution/story-orchestrator";
+import { buildInteractionBridge } from "@/interaction";
 import { getLogger } from "@/logger";
 import type { CallContext } from "@/operations/types";
 import { captureGitRef, getUntrackedPaths } from "@/utils/git";
-import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 // Re-export helpers so existing importers continue to work.
