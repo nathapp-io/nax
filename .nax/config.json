@@ -149,10 +149,6 @@
       "build": "bun run build",
       "lintFix": "bun run lint:fix",
       "formatFix": "bun run lint:fix"
-    },
-    "semantic": {
-      "modelTier": "fast",
-      "rules": []
     }
   },
   "plan": {
