@@ -37,7 +37,9 @@ describe("NAX_GITIGNORE_ENTRIES", () => {
     expect(ignored).toBeDefined();
 
     const produced = dirname(fragmentPath("/repo", "my-feature", "US-001"));
-    const expanded = ignored?.replace("*", "my-feature").replace(/\/$/, "") ?? "";
+    // The `**/` prefix makes the rule reach a monorepo package's own .nax/;
+    // strip it to compare against the repo-root path fragmentPath produces.
+    const expanded = (ignored ?? "").replace(/^\*\*\//, "").replace("*", "my-feature").replace(/\/$/, "");
 
     expect(produced).toBe(join("/repo", expanded));
   });
@@ -50,6 +52,33 @@ describe("NAX_GITIGNORE_ENTRIES", () => {
 
   test("no duplicate entries", () => {
     expect(new Set(NAX_GITIGNORE_ENTRIES).size).toBe(NAX_GITIGNORE_ENTRIES.length);
+  });
+
+  test("git ignores a feature's run artifacts but not its committed spec and prd", async () => {
+    // Asked of git itself rather than of the list, because the failure this
+    // pins was invisible in the list: a blanket `<features>/*/` entry reads as
+    // one more artifact rule, and only git reveals that it also swallows
+    // spec.md and prd.json — silently, since git never reports ignored files.
+    await withTempDir(async (dir) => {
+      Bun.spawnSync(["git", "init", "-q", dir], { cwd: dir });
+      await Bun.write(join(dir, ".gitignore"), `${NAX_GITIGNORE_ENTRIES.join("\n")}\n`);
+
+      const isIgnored = (path: string) =>
+        Bun.spawnSync(["git", "check-ignore", "-q", path], { cwd: dir }).exitCode === 0;
+
+      const feature = ".nax/features/my-feature";
+      for (const committed of ["spec.md", "prd.json", "prd-fidelity-report.md", "acceptance-meta.json"]) {
+        expect(`${committed}: ${isIgnored(`${feature}/${committed}`)}`).toBe(`${committed}: false`);
+      }
+      for (const artifact of ["status.json", "progress.txt", "plan/x.jsonl", "fragments/US-001.md", "prd.json.bak"]) {
+        expect(`${artifact}: ${isIgnored(`${feature}/${artifact}`)}`).toBe(`${artifact}: true`);
+      }
+
+      // Same rules must hold for a monorepo package's own .nax/, which is
+      // where nax writes when a story carries a workdir.
+      expect(isIgnored(`packages/api/${feature}/spec.md`)).toBe(false);
+      expect(isIgnored(`packages/api/${feature}/status.json`)).toBe(true);
+    });
   });
 });
 
