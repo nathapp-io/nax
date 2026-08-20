@@ -8,8 +8,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { NaxConfigSchema } from "../../../src/config/schemas";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { NaxConfigSchema } from "@/config/schemas";
 
 /** Build a full config with a specific storyIsolation value (all required fields present). */
 function withIsolation(storyIsolation: string): unknown {

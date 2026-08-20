@@ -19,8 +19,8 @@ import {
   _applyLegacyReviewExecutionShim,
   _applyRemovedRoutingKeysShim,
   _applyRemovedWorktreeInheritShim,
-} from "../../../src/config/compat-shims";
-import { _clearRootConfigCache, loadConfig, loadConfigForWorkdir } from "../../../src/config/loader";
+} from "@/config/compat-shims";
+import { _clearRootConfigCache, loadConfig, loadConfigForWorkdir } from "@/config/loader";
 
 describe("_applyRemovedRoutingKeysShim — routing keys removed with ROUTE-001", () => {
   test("warns and strips routing.customStrategyPath", () => {

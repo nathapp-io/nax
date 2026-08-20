@@ -3,9 +3,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { mergePackageConfig } from "../../../src/config/merge";
-import type { NaxConfig } from "../../../src/config/schema";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { mergePackageConfig } from "@/config/merge";
+import type { NaxConfig } from "@/config/schema";
 
 function makeRoot(): NaxConfig {
   return {

@@ -12,8 +12,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { PromptsConfigSchema, NaxConfigSchema } from "../../../src/config/schemas";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { PromptsConfigSchema, NaxConfigSchema } from "@/config/schemas";
+import { DEFAULT_CONFIG } from "@/config/defaults";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PromptsConfigSchema — individual role validation

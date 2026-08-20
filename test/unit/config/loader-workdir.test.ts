@@ -5,8 +5,8 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { _clearRootConfigCache, loadConfigForWorkdir } from "../../../src/config/loader";
-import { getLogger } from "../../../src/logger";
+import { _clearRootConfigCache, loadConfigForWorkdir } from "@/config/loader";
+import { getLogger } from "@/logger";
 import { makeTempDir } from "@test/helpers";
 
 describe("loadConfigForWorkdir", () => {

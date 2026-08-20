@@ -10,9 +10,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { validateConfig } from "../../../src/config/validate";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import type { NaxConfig } from "../../../src/config/types";
+import { validateConfig } from "@/config/validate";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import type { NaxConfig } from "@/config/types";
 
 /** Merge overrides into a copy of DEFAULT_CONFIG */
 function cfg(overrides: Record<string, unknown>): NaxConfig {

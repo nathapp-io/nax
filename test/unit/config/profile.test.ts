@@ -17,7 +17,7 @@ import {
   profileOverrideFromConfig,
   resolveProfileName,
   resolveProfileNames,
-} from "../../../src/config/profile";
+} from "@/config/profile";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("config/profile", () => {

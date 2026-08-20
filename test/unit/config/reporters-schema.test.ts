@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ReportersConfigSchema } from "../../../src/config/schemas-reporters";
+import { ReportersConfigSchema } from "@/config/schemas-reporters";
 
 describe("ReportersConfigSchema", () => {
   test("defaults both reporters to disabled with 5000ms timeout", () => {

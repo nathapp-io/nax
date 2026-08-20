@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { CuratorConfigSchema, CuratorThresholdsSchema } from "../../../src/config/schemas-infra";
+import { CuratorConfigSchema, CuratorThresholdsSchema } from "@/config/schemas-infra";
 
 describe("CuratorThresholdsSchema", () => {
   test("should parse valid thresholds", () => {
