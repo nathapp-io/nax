@@ -37,10 +37,10 @@ import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import { getContextFiles } from "@/prd";
 import { readDigestFile, writeDigestFile } from "@/session";
+import { resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
 import { packageDirRelative } from "@/utils/paths";
 import { buildStoryContextFullFromCtx } from "../../execution/helpers";
-import { resolveTestFilePatterns } from "../../test-runners/resolver";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
