@@ -1,5 +1,5 @@
-import type { PipelineStage } from "../../config/permissions";
-import type { AdapterFailure } from "../../context/engine";
+import type { PipelineStage } from "@/config/permissions";
+import type { AdapterFailure } from "@/context/engine";
 import type { TurnResult } from "../types";
 
 export type RetryDecision =

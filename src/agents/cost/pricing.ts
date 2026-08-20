@@ -2,7 +2,7 @@
  * Cost rate tables for all supported model tiers and specific models.
  */
 
-import type { ModelTier } from "../../config/schema";
+import type { ModelTier } from "@/config/schema";
 import type { ModelCostRates } from "./types";
 
 /** Model tier cost rates (as of 2025-01) */

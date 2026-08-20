@@ -1,4 +1,4 @@
-import type { AdapterFailure } from "../../context/engine";
+import type { AdapterFailure } from "@/context/engine";
 import type { RetryContext, RetryDecision, RetryStrategy } from "./types";
 
 const MAX_RETRIES = 3;

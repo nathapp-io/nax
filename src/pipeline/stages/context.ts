@@ -18,6 +18,8 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { featureDir } from "@/config";
+import type { ContextRequest, IContextProvider } from "@/context/engine";
+import type { ContextElement } from "@/context/types";
 import { NaxError } from "@/errors";
 import { packageDirRelative } from "@/utils/paths";
 import {
@@ -27,13 +29,11 @@ import {
   deriveProviderWeights,
   loadFeatureManifests,
 } from "../../context/engine";
-import type { ContextRequest, IContextProvider } from "../../context/engine";
 import { estimateAvailableBudgetTokens } from "../../context/engine/available-budget";
 import { writeContextManifest } from "../../context/engine/manifest-store";
 import { loadPluginProviders } from "../../context/engine/providers/plugin-loader";
 import { getStageContextConfig } from "../../context/engine/stage-config";
 import { FeatureContextProvider } from "../../context/providers/feature-context";
-import type { ContextElement } from "../../context/types";
 import { buildStoryContextFullFromCtx } from "../../execution/helpers";
 import { getLogger } from "../../logger";
 import { getContextFiles } from "../../prd";

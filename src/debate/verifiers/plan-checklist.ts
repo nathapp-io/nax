@@ -8,10 +8,10 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import type { VerifierFinding } from "@/plan/spec-deltas";
 import { validatePlanOutput } from "@/prd";
 import type { PRD } from "@/prd/types";
 import { formatSpecDeltas } from "../../plan/spec-deltas";
-import type { VerifierFinding } from "../../plan/spec-deltas";
 import type { FactsManifest } from "../facts-manifest";
 import { parseFactsManifest } from "../facts-manifest";
 import { checkAcAnchored, checkClaimsCited, checkFilesExist, checkNoContradictions, checkSpecCoverage } from "./checks";

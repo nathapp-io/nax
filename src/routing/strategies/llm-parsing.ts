@@ -5,8 +5,8 @@
  * response parsing, validation, and JSON cleanup for LLM-based routing.
  */
 
-import type { Complexity, ModelTier, NaxConfig, TddStrategy } from "../../config";
-import type { UserStory } from "../../prd/types";
+import type { Complexity, ModelTier, NaxConfig, TddStrategy } from "@/config";
+import type { UserStory } from "@/prd/types";
 import { extractJsonFromMarkdown, parseLLMJson } from "../../utils/llm-json";
 import { determineTestStrategy } from "../classify";
 import type { RoutingDecision } from "../router";

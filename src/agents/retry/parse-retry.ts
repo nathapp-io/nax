@@ -1,4 +1,4 @@
-import type { AdapterFailure } from "../../context/engine";
+import type { AdapterFailure } from "@/context/engine";
 import { getSafeLogger } from "../../logger";
 import { looksLikeTruncatedJson } from "../../review/truncation";
 import { tryParseLLMJson } from "../../utils/llm-json";

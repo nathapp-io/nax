@@ -13,11 +13,11 @@
  */
 
 import { join } from "node:path";
+import { persistSemanticVerdict } from "@/acceptance";
 import { featureDir } from "@/config";
 import { renderFragmentBody, writeFragment } from "@/context/fragments";
 import { GIT_TIMEOUT_MS } from "@/utils/git";
 import { DRAIN_TIMEOUT, raceWithDeadline } from "@/verification";
-import { persistSemanticVerdict } from "../../acceptance/semantic-verdict";
 import { annotateManifestEffectiveness } from "../../context/engine/effectiveness";
 import { appendProgress } from "../../execution/progress";
 import { checkReviewGate, isTriggerEnabled } from "../../interaction/triggers";

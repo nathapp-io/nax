@@ -8,24 +8,24 @@
  * - Update final status
  */
 
+import type { IAgentManager } from "@/agents";
+import type { NaxConfig } from "@/config";
 import { _resetCanonicalRulesCache, purgeStaleManifests } from "@/context/engine";
+import type { HooksConfig } from "@/hooks/types";
+import type { StoryMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline";
+import type { PRD } from "@/prd";
+import type { DispatchContext } from "@/runtime/dispatch-context";
+import type { ISessionManager } from "@/session";
+import { purgeStaleScratch } from "@/session";
+import { clearGitRootCache } from "@/verification";
 import { resolveDefaultAgent } from "../../agents";
-import type { IAgentManager } from "../../agents";
-import type { NaxConfig } from "../../config";
 import { fireHook } from "../../hooks/runner";
-import type { HooksConfig } from "../../hooks/types";
 import { getSafeLogger } from "../../logger";
-import type { StoryMetrics } from "../../metrics";
 import { deriveRunFallbackAggregates, saveRunMetrics } from "../../metrics";
 import { countStories, isComplete, isStalled } from "../../prd";
-import type { PRD } from "../../prd";
 import { clearLanguageCache } from "../../project/detector";
-import type { DispatchContext } from "../../runtime/dispatch-context";
-import type { ISessionManager } from "../../session";
-import { purgeStaleScratch } from "../../session/scratch-purge";
 import { clearWorkspaceCache } from "../../test-runners/detect/workspace";
-import { clearGitRootCache } from "../../verification/smart-runner";
 import type { DeferredReviewResult } from "../deferred-review";
 import type { ExitReason } from "../executor-types";
 import { closeAllRunSessions } from "../session-manager-runtime";

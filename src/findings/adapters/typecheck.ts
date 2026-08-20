@@ -1,4 +1,4 @@
-import type { TypecheckDiagnostic } from "../../review/typecheck-parsing/types";
+import type { TypecheckDiagnostic } from "@/review/typecheck-parsing/types";
 import { rebaseToWorkdir } from "../path-utils";
 import type { Finding } from "../types";
 

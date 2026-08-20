@@ -5,7 +5,7 @@
  * Provides instructions for writing the .nax-verifier-verdict.json file.
  */
 
-import type { UserStory } from "../../prd/types";
+import type { UserStory } from "@/prd/types";
 
 export function buildVerdictSection(story: UserStory): string {
   return `# Verdict Instructions

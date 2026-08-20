@@ -10,7 +10,7 @@
  * Instantiation cost is negligible; builders are short-lived call-and-discard.
  */
 
-import type { PRD } from "../../prd/types";
+import type { PRD } from "@/prd/types";
 import { buildTestFrameworkHint } from "../../test-runners";
 import { wrapJsonPrompt } from "../../utils/llm-json";
 import { formatTestOutputForFix } from "./acceptance-builder-helpers";

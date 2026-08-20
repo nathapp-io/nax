@@ -2,7 +2,7 @@
  * Cost calculation functions for all agent adapters.
  */
 
-import type { ModelTier } from "../../config/schema";
+import type { ModelTier } from "@/config/schema";
 import { parseModelSpec } from "../acp/model-spec";
 import { COST_RATES, MODEL_PRICING } from "./pricing";
 import type { CostEstimate, ModelCostRates, TokenUsage } from "./types";

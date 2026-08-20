@@ -1,4 +1,4 @@
-import type { PackageFacts, RepoAnalysis } from "../../cli/setup-types";
+import type { PackageFacts, RepoAnalysis } from "@/cli/setup-types";
 import type { ComposeInput } from "../compose";
 
 function formatPackageFacts(pkg: PackageFacts): string {

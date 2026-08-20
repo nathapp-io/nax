@@ -4,10 +4,10 @@
  */
 
 import { createHash } from "node:crypto";
-import type { ModelDef, ModelTier } from "../../config/schema";
+import type { ModelDef, ModelTier } from "@/config/schema";
+import type { ProtocolIds } from "@/runtime/protocol-types";
 import { NaxError } from "../../errors";
 import { getSafeLogger } from "../../logger";
-import type { ProtocolIds } from "../../runtime/protocol-types";
 import { sleep, which } from "../../utils/bun-deps";
 import type { SessionHandle } from "../types";
 import type { AcpClient, AcpClientOptions, AcpSession, AcpSessionResponse } from "./adapter-session-types";

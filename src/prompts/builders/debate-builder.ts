@@ -11,10 +11,10 @@
  * from src/prompts, so importing the barrel here would form a cycle.
  */
 
+import type { DebateResolverContext, Debater, Proposal, Rebuttal } from "@/debate/types";
+import type { Finding } from "@/findings";
+import type { DiffContext } from "@/review/types";
 import { PERSONA_FRAGMENTS } from "../../debate/personas";
-import type { DebateResolverContext, Debater, Proposal, Rebuttal } from "../../debate/types";
-import type { Finding } from "../../findings";
-import type { DiffContext } from "../../review/types";
 import type { ComposeInput } from "../compose";
 
 // ─── Constants ────────────────────────────────────────────────────────────────

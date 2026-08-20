@@ -43,3 +43,6 @@ export {
 } from "./test-path";
 export { runHardeningPass } from "./hardening";
 export type { HardeningContext, HardeningResult } from "./hardening";
+export { persistSemanticVerdict } from "./semantic-verdict";
+export { loadSourceFilesForDiagnosis } from "./fix-diagnosis";
+export { isStubTestContent } from "./heuristics";

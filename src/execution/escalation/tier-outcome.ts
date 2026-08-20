@@ -8,9 +8,9 @@
  */
 
 import { pipelineEventBus } from "@/pipeline";
+import type { FailureCategory } from "@/tdd/types";
 import { getSafeLogger } from "../../logger";
 import { markStoryFailed, markStoryPaused, savePRD } from "../../prd";
-import type { FailureCategory } from "../../tdd/types";
 import { appendProgress } from "../progress";
 import { verifyEscalationQuotes } from "./quote-integrity";
 import type { EscalationHandlerContext, EscalationHandlerResult } from "./tier-escalation";

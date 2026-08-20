@@ -142,3 +142,4 @@ export {
   type InspectionOptions,
 } from "./post-run";
 export { buildPreviewRouting } from "./executor-types";
+export { requiresInitialRefCapture } from "./build-plan-for-strategy";

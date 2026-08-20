@@ -5,7 +5,7 @@
  * The adapter shells out to `acpx` CLI — no in-process ACP client needed.
  */
 
-import type { ModelTier } from "../../config/schema";
+import type { ModelTier } from "@/config/schema";
 
 /**
  * Maps agent names to their acpx registry entries and capabilities.

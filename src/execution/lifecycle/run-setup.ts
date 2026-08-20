@@ -13,20 +13,20 @@
  */
 
 import path from "node:path";
+import type { NaxConfig } from "@/config";
+import type { LoadedHooksConfig } from "@/hooks";
+import type { InteractionChain } from "@/interaction";
 import { pipelineEventBus } from "@/pipeline";
+import type { AgentGetFn } from "@/pipeline/types";
+import type { PluginRegistry } from "@/plugins/registry";
+import type { PRD } from "@/prd";
 import { discoverWorkspacePackages, resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
-import type { NaxConfig } from "../../config";
 import { globalConfigDir } from "../../config/paths";
 import { LockAcquisitionError, NaxError } from "../../errors";
-import type { LoadedHooksConfig } from "../../hooks";
-import type { InteractionChain } from "../../interaction";
 import { initInteractionChain } from "../../interaction";
 import { getSafeLogger } from "../../logger";
-import type { AgentGetFn } from "../../pipeline/types";
 import { loadPlugins } from "../../plugins/loader";
-import type { PluginRegistry } from "../../plugins/registry";
-import type { PRD } from "../../prd";
 import { countStories, loadPRD, savePRD } from "../../prd";
 import { detectProjectProfile } from "../../project";
 import { type NaxRuntime, createRuntime } from "../../runtime";
