@@ -110,9 +110,14 @@ Replace the string-sliced incremental read with a byte-aligned one so the offset
 
 ### Modifies
 
-- **US-001** `test/unit/commands/logs.test.ts` — the six `test.skip` stubs across the `--follow mode (real-time streaming)`, `--story filter`, `--level filter`, and `--json` describe blocks are empty bodies that assert nothing and defer to `test/integration/cli-logs.test.ts`, which does not exist; they must become real tests driving the new signal and dependency seam, and the dangling path reference in the block comment must go. This authorisation covers the six skipped stubs only — the eight live `resolves.toBeUndefined()` assertions over `logsCommand` elsewhere in the file state an invariant this spec preserves and must not be weakened or deleted.
-- **US-001** `test/integration/cli/cli-core-logs.test.ts` — the skipped `--follow mode` test names the missing cancellation hook as its reason for skipping; it must drive `logsCommand` with an abort signal instead.
-- **US-002** `test/unit/commands/logs.test.ts` — the same file gains the byte-offset, truncation, and malformed-line criteria; its existing `--follow` expectations pin the pre-fix read behaviour and must be replaced by the invariant that every appended entry is emitted exactly once regardless of the byte width of preceding characters.
+**US-001**
+
+- `test/unit/commands/logs.test.ts` — the six `test.skip` stubs across the follow-mode, story-filter, level-filter and json describe blocks are empty bodies that assert nothing and defer to an integration file that does not exist; they must become real tests driving the new signal and dependency seam, and the dangling path reference in the block comment must go. This authorisation covers those six skipped stubs only — the eight live `resolves.toBeUndefined()` assertions over `logsCommand` elsewhere in the file state an invariant this spec preserves and must not be weakened or deleted.
+- `test/integration/cli/cli-core-logs.test.ts` — the skipped follow-mode test names the missing cancellation hook as its reason for skipping; it must drive `logsCommand` with an abort signal instead.
+
+**US-002**
+
+- `test/unit/commands/logs.test.ts` — the same file gains the byte-offset, truncation and malformed-line criteria; any follow-mode expectation that pins the pre-fix read behaviour must be replaced by the invariant that every appended entry is emitted exactly once regardless of the byte width of preceding characters.
 
 ## Acceptance Criteria
 
