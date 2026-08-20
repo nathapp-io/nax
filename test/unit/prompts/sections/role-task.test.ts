@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildRoleTaskSection } from "../../../../src/prompts/sections/role-task";
+import { buildRoleTaskSection } from "@/prompts/sections/role-task";
 
 // ---------------------------------------------------------------------------
 // AC-1: implementer standard

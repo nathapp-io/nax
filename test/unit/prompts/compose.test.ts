@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
-import { composeSections, join } from "../../../src/prompts/compose";
-import type { ComposeInput } from "../../../src/prompts/compose";
-import type { PromptSection, SectionSlot } from "../../../src/prompts";
+import { composeSections, join } from "@/prompts/compose";
+import type { ComposeInput } from "@/prompts/compose";
+import type { PromptSection, SectionSlot } from "@/prompts";
 
 function makeSection(
   id: string,

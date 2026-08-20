@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import type { UserStory } from "../../../../src/prd/types";
-import { buildConventionsSection } from "../../../../src/prompts/sections/conventions";
-import { buildIsolationSection } from "../../../../src/prompts/sections/isolation";
-import { buildRoleTaskSection } from "../../../../src/prompts/sections/role-task";
-import { buildStorySection } from "../../../../src/prompts/sections/story";
-import { buildVerdictSection } from "../../../../src/prompts/sections/verdict";
+import type { UserStory } from "@/prd/types";
+import { buildConventionsSection } from "@/prompts/sections/conventions";
+import { buildIsolationSection } from "@/prompts/sections/isolation";
+import { buildRoleTaskSection } from "@/prompts/sections/role-task";
+import { buildStorySection } from "@/prompts/sections/story";
+import { buildVerdictSection } from "@/prompts/sections/verdict";
 
 // ---------------------------------------------------------------------------
 // Fixtures

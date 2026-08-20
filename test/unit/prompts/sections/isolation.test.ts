@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildIsolationSection } from "../../../../src/prompts/sections/isolation";
+import { buildIsolationSection } from "@/prompts/sections/isolation";
 
 describe("buildIsolationSection — test-writer role", () => {
   test("strict mode forbids src/ modification", () => {

@@ -7,8 +7,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { OneShotPromptBuilder } from "../../../src/prompts";
-import type { OneShotRole, RoutingCandidate, SchemaDescriptor } from "../../../src/prompts";
+import { OneShotPromptBuilder } from "@/prompts";
+import type { OneShotRole, RoutingCandidate, SchemaDescriptor } from "@/prompts";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 

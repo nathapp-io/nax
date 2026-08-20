@@ -12,9 +12,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { AdversarialReviewPromptBuilder } from "../../../src/prompts/builders/adversarial-review-builder";
-import type { AdversarialReviewConfig } from "../../../src/review/types";
-import type { SemanticStory } from "../../../src/review/types";
+import { AdversarialReviewPromptBuilder } from "@/prompts/builders/adversarial-review-builder";
+import type { AdversarialReviewConfig } from "@/review/types";
+import type { SemanticStory } from "@/review/types";
 
 // ─── Fixtures ──────────────────────────────────────────────────────────────────
 

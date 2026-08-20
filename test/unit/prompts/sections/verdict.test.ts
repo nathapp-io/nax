@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { UserStory } from "../../../../src/prd/types";
-import { buildVerdictSection } from "../../../../src/prompts/sections/verdict";
+import type { UserStory } from "@/prd/types";
+import { buildVerdictSection } from "@/prompts/sections/verdict";
 
 describe("buildVerdictSection", () => {
   const mockStory: UserStory = {

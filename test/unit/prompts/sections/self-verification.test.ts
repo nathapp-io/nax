@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildSelfVerificationSection } from "../../../../src/prompts/sections/self-verification";
+import { buildSelfVerificationSection } from "@/prompts/sections/self-verification";
 
 describe("buildSelfVerificationSection", () => {
   test("renders commands when configured", () => {

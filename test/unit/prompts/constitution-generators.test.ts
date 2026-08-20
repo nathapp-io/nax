@@ -6,12 +6,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { aiderGenerator } from "../../../src/constitution/generators/aider";
-import { claudeGenerator } from "../../../src/constitution/generators/claude";
-import { cursorGenerator } from "../../../src/constitution/generators/cursor";
-import { opencodeGenerator } from "../../../src/constitution/generators/opencode";
-import type { ConstitutionContent } from "../../../src/constitution/generators/types";
-import { windsurfGenerator } from "../../../src/constitution/generators/windsurf";
+import { aiderGenerator } from "@/constitution/generators/aider";
+import { claudeGenerator } from "@/constitution/generators/claude";
+import { cursorGenerator } from "@/constitution/generators/cursor";
+import { opencodeGenerator } from "@/constitution/generators/opencode";
+import type { ConstitutionContent } from "@/constitution/generators/types";
+import { windsurfGenerator } from "@/constitution/generators/windsurf";
 
 const sampleConstitution: ConstitutionContent = {
 	markdown: `# Project Constitution

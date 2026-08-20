@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { buildTestQualitySection } from "../../../../src/prompts/sections/test-quality";
+import { buildTestQualitySection } from "@/prompts/sections/test-quality";
 
 const TEST_AUTHORING_ROLES = ["test-writer", "single-session", "tdd-simple", "batch"] as const;
 

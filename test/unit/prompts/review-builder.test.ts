@@ -10,10 +10,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { Iteration } from "../../../src/findings";
-import { ReviewPromptBuilder } from "../../../src/prompts";
-import { SEMANTIC_CATEGORIES, SEMANTIC_CATEGORY_ENUM_LINE } from "../../../src/review/semantic-categories";
-import type { SemanticReviewConfig, SemanticStory } from "../../../src/review/types";
+import type { Iteration } from "@/findings";
+import { ReviewPromptBuilder } from "@/prompts";
+import { SEMANTIC_CATEGORIES, SEMANTIC_CATEGORY_ENUM_LINE } from "@/review/semantic-categories";
+import type { SemanticReviewConfig, SemanticStory } from "@/review/types";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 

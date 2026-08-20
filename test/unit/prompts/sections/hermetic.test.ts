@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildHermeticSection } from "../../../../src/prompts/sections/hermetic";
+import { buildHermeticSection } from "@/prompts/sections/hermetic";
 
 describe("buildHermeticSection", () => {
   describe("role filtering", () => {

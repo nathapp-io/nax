@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { buildTddLanguageSection } from "../../../../src/prompts/sections/tdd-conventions";
-import { PromptBuilder } from "../../../../src/prompts";
-import type { NaxConfig } from "../../../../src/config/types";
+import { buildTddLanguageSection } from "@/prompts/sections/tdd-conventions";
+import { PromptBuilder } from "@/prompts";
+import type { NaxConfig } from "@/config/types";
 
 describe("buildTddLanguageSection", () => {
   describe("go", () => {
