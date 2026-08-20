@@ -136,7 +136,7 @@ export interface DecomposedStory {
   /** Implementation risks */
   risks: string[];
   /** Test strategy recommendation from LLM */
-  testStrategy?: import("../../config/test-strategy").TestStrategy;
+  testStrategy?: import("@/config").TestStrategy;
   /**
    * Agent profile ID selected by the plan LLM from the capability cards.
    * Present only when routing.agents.enabled === true and the LLM emitted a

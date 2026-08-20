@@ -57,7 +57,7 @@ export class SpawnAcpClient implements AcpClient {
   private readonly onActiveCall?: (callId: string, cancel: () => Promise<void>) => void;
   private readonly runId?: string;
   private readonly storyId?: string;
-  private readonly stage?: import("../../config/permissions").PipelineStage;
+  private readonly stage?: import("@/config").PipelineStage;
   /** Resolved teardown deadline (ms), forwarded to sessions this client creates (#1583). */
   private readonly trackedSpawnDeadlineMs: number;
   /** Resolved startup deadline (ms) — used by this client's own trackedSpawn (createSession/loadSession/applyReasoningEffort) (#1583). */

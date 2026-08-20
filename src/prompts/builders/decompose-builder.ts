@@ -11,7 +11,7 @@
 
 import type { DecomposeOptions } from "@/agents/types";
 import type { AgentRoutingProfile } from "@/config";
-import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE } from "../../config/test-strategy";
+import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE } from "@/config";
 import type { SchemaDescriptor } from "../core";
 import { OneShotPromptBuilder } from "./one-shot-builder";
 

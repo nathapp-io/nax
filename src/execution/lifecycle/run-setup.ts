@@ -13,7 +13,7 @@
  */
 
 import path from "node:path";
-import type { NaxConfig } from "@/config";
+import { type NaxConfig, globalConfigDir } from "@/config";
 import { LockAcquisitionError, NaxError } from "@/errors";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { InteractionChain } from "@/interaction";
@@ -30,7 +30,6 @@ import { SessionManager } from "@/session";
 import { discoverWorkspacePackages, resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
 import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "@/version";
-import { globalConfigDir } from "../../config/paths";
 import { loadPlugins } from "../../plugins/loader";
 import { installCrashHandlers } from "../crash-recovery";
 import { acquireLock, releaseLock } from "../helpers";
