@@ -29,6 +29,8 @@
  * and detaches their `// test-ratchet-allow` markers, tripping
  * `check:test-as-unknown-as`.
  *
+ * Runbook: docs/specs/2026-08-20-deep-relatives-migration-runbook.md
+ *
  * Usage:
  *   bun scripts/migrate-deep-relatives.ts --dry-run
  *   bun scripts/migrate-deep-relatives.ts --scope test [--dir test/unit/config]
