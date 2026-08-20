@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatReport, parseTypecheckOutput } from "../../../scripts/check-test-typecheck";
+import { formatReport, parseTypecheckOutput } from "@scripts/check-test-typecheck";
 
 describe("parseTypecheckOutput", () => {
   test("returns 0 for empty stdout", () => {

@@ -7,7 +7,7 @@ import {
   formatShadowedBarrelReport,
   loadBarrels,
   scanFileForAliasInternals,
-} from "../../../scripts/check-alias-internals";
+} from "@scripts/check-alias-internals";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function setupRepo(root: string) {

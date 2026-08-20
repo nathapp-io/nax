@@ -8,7 +8,7 @@ import {
   findDeadTestReferences,
   generateDeadTestsReport,
   scanTestDirectory,
-} from "../../../scripts/report-dead-tests";
+} from "@scripts/report-dead-tests";
 
 describe("parseTestFile", () => {
   test("extracts import paths from test file", () => {

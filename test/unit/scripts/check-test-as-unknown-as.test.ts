@@ -4,7 +4,7 @@ import { join } from "node:path";
 import {
   formatReport,
   scanAsUnknownAs,
-} from "../../../scripts/check-test-as-unknown-as";
+} from "@scripts/check-test-as-unknown-as";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function write(root: string, rel: string, content: string) {

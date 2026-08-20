@@ -6,7 +6,7 @@ import {
   discoverCheckScripts,
   findUnreachableCheckScripts,
   parseCiEntryPoints,
-} from "../../../scripts/check-gate-reachability";
+} from "@scripts/check-gate-reachability";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function writeScripts(root: string, names: string[]) {

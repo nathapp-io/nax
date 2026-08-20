@@ -6,7 +6,7 @@ import {
   findImportCycles,
   formatReport,
   resolveSpecifier,
-} from "../../../scripts/check-import-cycles";
+} from "@scripts/check-import-cycles";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function write(root: string, rel: string, content: string): void {

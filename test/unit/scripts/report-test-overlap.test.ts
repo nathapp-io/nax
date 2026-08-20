@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { makeTempDir } from "@test/helpers";
-import { analyzeOverlap, generateReport, parseTestFile } from "../../../scripts/report-test-overlap";
+import { analyzeOverlap, generateReport, parseTestFile } from "@scripts/report-test-overlap";
 
 describe("report-test-overlap", () => {
   let testDir: string;

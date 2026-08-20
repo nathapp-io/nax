@@ -4,7 +4,7 @@ import { join } from "node:path";
 import {
   formatReport,
   scanForDeepRelatives,
-} from "../../../scripts/check-deep-relatives";
+} from "@scripts/check-deep-relatives";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function write(root: string, rel: string, content: string) {

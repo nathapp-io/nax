@@ -4,7 +4,7 @@ import { join } from "node:path";
 import {
   findForbiddenGlobalNaxUsages,
   formatGlobalNaxViolationReport,
-} from "../../../scripts/check-no-real-global-nax";
+} from "@scripts/check-no-real-global-nax";
 import { makeTempDir } from "@test/helpers";
 
 describe("findForbiddenGlobalNaxUsages", () => {
