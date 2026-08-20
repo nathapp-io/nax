@@ -274,6 +274,57 @@ touches adversarial-specific exports before repeating this approach, and treat
 since this class of regression is a runtime TDZ, not a static cycle-count
 change.
 
+### §7.2 Second attempt — `./adversarial` split alone is still not enough,
+### and `check:import-cycles` has a real blind spot
+
+Tested §7.1's follow-up directly: temporarily dropped `export * from
+"./adversarial";` from `src/review/index.ts` and re-pointed
+`review-builder.ts` at the (now `runner`- and `adversarial`-free) `@/review`
+barrel.
+
+- Consumer footprint for `./adversarial`'s barrel-only exports
+  (`runAdversarialReview`, `_adversarialDeps`, `RunAdversarialReviewOptions`)
+  is small and safe: 4 files, all `test/unit/review/*.test.ts`, all exempt
+  from `check:alias-internals`. No `src/` consumer needs them via the barrel.
+- `check:import-cycles` reported **0 cycles** touching `review-builder.ts` or
+  `adversarial` — looked clean.
+- `tsc --noEmit` passed clean.
+- `bun run test` still hit the **identical TDZ crash** from §7.1
+  (`Cannot access 'SEMANTIC_CATEGORY_ENUM_LINE' before initialization`).
+
+Traced the real module graph by hand (BFS over value-only imports, same
+semantics as the checker) and found a **third, independent cycle** the
+checker silently misses:
+
+```
+review-builder.ts -> @/review -> review-iteration-store.ts -> @/findings
+  -> findings/cycle.ts -> @/operations -> operations/plan.ts -> @/prompts
+  -> review-builder.ts   (closes the loop)
+```
+
+`review-iteration-store.ts` is already barrel-exported (`index.ts` line 8)
+and has nothing to do with `./runner` or `./adversarial`.
+
+**Root cause of the false negative:** `scripts/check-import-cycles.ts`'s DFS
+marks each node `DONE` after its first visit and never re-examines it. When a
+node participates in more than one simple cycle within the same strongly
+connected component, only the first cycle discovered during traversal gets
+recorded — the others are silently dropped. This is a real defect in the
+checker, not a fluke of this cycle. `check:import-cycles` reporting 0 is
+**not sufficient proof** a barrel change is safe; `bun run test` is the only
+reliable gate for this class of change.
+
+**Net assessment:** splitting `./adversarial` alone does not unblock
+`review-builder.ts`. Fully clearing this residual would additionally require
+breaking the `review-iteration-store.ts -> findings -> operations -> prompts`
+chain — a materially larger, deeper structural cycle spanning four core
+modules (review, findings, operations, prompts), not a narrow leaf-file
+split. That is a different order of risk and should not be attempted
+opportunistically alongside the other two. Recommendation: leave
+`review-builder.ts` on its leaf import permanently, same as the two §5
+exemptions — don't reopen this without a dedicated investigation into the
+`review-iteration-store.ts` / `findings/cycle.ts` coupling first.
+
 ## 8. Why the rules exist
 
 Both non-obvious rules come from failures hit while building this, not caution.
