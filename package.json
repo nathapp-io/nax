@@ -1,6 +1,6 @@
 {
   "name": "@nathapp/nax",
-  "version": "0.81.0-canary.2",
+  "version": "0.81.0",
   "description": "AI Coding Agent Orchestrator — loops until done",
   "type": "module",
   "bin": {
@@ -82,8 +82,18 @@
   },
   "license": "MIT",
   "author": "William Khoo",
-  "keywords": ["ai", "agent", "orchestrator", "tdd", "coding"],
-  "files": ["dist/", "README.md", "CHANGELOG.md"],
+  "keywords": [
+    "ai",
+    "agent",
+    "orchestrator",
+    "tdd",
+    "coding"
+  ],
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/nathapp-io/nax.git"
