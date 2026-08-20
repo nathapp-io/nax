@@ -96,7 +96,13 @@ function barrelExportsAll(fromFile: string, line: number, spec: string): boolean
 }
 
 function classify(file: string, line: number, spec: string, alias: string): Klass {
-  if (!alias.startsWith("@/") && !alias.startsWith("@test/")) return "unresolved";
+  if (
+    !alias.startsWith("@/") &&
+    !alias.startsWith("@test/") &&
+    !alias.startsWith("@scripts/")
+  ) {
+    return "unresolved";
+  }
 
   if (file.startsWith("test/")) {
     if (alias.startsWith("@/")) return "test";

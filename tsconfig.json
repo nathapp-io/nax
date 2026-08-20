@@ -17,7 +17,8 @@
     "rootDir": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@test/*": ["./test/*"]
+      "@test/*": ["./test/*"],
+      "@scripts/*": ["./scripts/*"]
     },
     "jsx": "react-jsx",
     "jsxImportSource": "react"

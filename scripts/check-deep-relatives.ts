@@ -58,6 +58,7 @@ function suggestAlias(spec: string, fileRelative: string): string {
 
   if (anchorTop === "src") return sub ? `@/${sub}` : "@/";
   if (anchorTop === "test") return sub ? `@test/${sub}` : "@test/";
+  if (anchorTop === "scripts") return sub ? `@scripts/${sub}` : "@scripts/";
   return spec;
 }
 
