@@ -1,7 +1,7 @@
 import type { AdapterFailure } from "@/context/engine";
-import { getSafeLogger } from "../../logger";
+import { getSafeLogger } from "@/logger";
+import { tryParseLLMJson } from "@/utils/llm-json";
 import { looksLikeTruncatedJson } from "../../review/truncation";
-import { tryParseLLMJson } from "../../utils/llm-json";
 import { ParseValidationError } from "./types";
 import type { RetryContext, RetryDecision, RetryStrategy } from "./types";
 
