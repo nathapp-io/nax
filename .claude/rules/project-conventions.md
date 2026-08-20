@@ -98,20 +98,31 @@ Aliases are not mandatory — relative paths are still fine. Use the alias when 
 
 
 **Cycle ratchet:** `bun run check:import-cycles` (also part of `lint`) counts
-runtime import cycles in `src/` against a baseline. Routing an import through a
-barrel adds an edge to that barrel, which can close a loop — so migrating onto
+the `src/` modules that sit inside a runtime import cycle, against a baseline
+that also records which modules they are. Routing an import through a barrel
+adds an edge to that barrel, which can close a loop — so migrating onto
 barrels is gated by this check rather than by reviewer intuition. Type-only
 imports are excluded; they are erased and cannot participate in initialisation
-order. When a conversion is rejected, leave the import as a leaf/relative
-import: a deep relative is strictly better than a cycle. To lower the baseline
-after genuinely breaking cycles: `bun run check:import-cycles:update`.
+order. A module that becomes newly cyclic fails the check **even if the total
+count drops**, so a change cannot hide one new cycle behind two removed ones.
+To lower the baseline after genuinely breaking cycles:
+`bun run check:import-cycles:update`.
 
-Two imports are deliberately left as deep relatives because barrelling them
-closes a `pipeline` to `execution` loop — `src/pipeline/stages/context.ts`
-(`buildStoryContextFullFromCtx`) and `src/pipeline/subscribers/hooks.ts`
-(`hookCtx`). Two more are left alone because `src/test-runners/detect.ts` and
-`src/test-runners/detect/` both exist, so `@/test-runners/detect` resolves to
-the file and shadows the directory barrel.
+It counts modules rather than loops on purpose. The earlier version enumerated
+simple cycles with a DFS that marked each node done after its first visit, so
+within one strongly connected component only the first loop found was ever
+reported — a module could join an existing component and the check would still
+read clean. Enumerating every loop instead is not viable (`src/`'s largest
+component has 94 modules), so it uses Tarjan's SCC algorithm, which is complete
+and linear.
+
+**When a conversion is rejected**, do not route the import through the barrel.
+Either leave it as a relative import, or — preferably — promote the target to
+its own nested barrel (`x.ts` -> `x/index.ts`) so `@/<dir>/<x>` reaches it
+directly without loading the parent barrel. That satisfies
+`check:alias-internals` without adding the edge that closes the loop; see
+`src/review/{runner,semantic-categories}` and
+`src/execution/{helpers,story-context}`.
 
 ## Logging
 
