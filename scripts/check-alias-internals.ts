@@ -58,8 +58,10 @@ export interface AliasViolation {
 }
 
 interface BarrelMap {
-  /** Set of alias prefixes that have a corresponding barrel (e.g. "@/routing"). */
+  /** Set of alias prefixes that have a reachable barrel (e.g. "@/routing"). */
   barrels: Set<string>;
+  /** Directory barrels shadowed by a same-named sibling file. */
+  shadowed: ShadowedBarrel[];
 }
 
 /**
@@ -130,10 +132,49 @@ function listBarrelDirs(rootDir: string, subdir: string, prefix: string): Set<st
   return dirs;
 }
 
+export interface ShadowedBarrel {
+  /** Repo-relative path of the directory barrel that cannot be reached. */
+  barrel: string;
+  /** Repo-relative path of the sibling file that wins resolution. */
+  shadowedBy: string;
+  /** The alias that resolves to `shadowedBy` rather than `barrel`. */
+  alias: string;
+}
+
+/**
+ * Find directory barrels shadowed by a sibling module of the same name.
+ *
+ * When both `x.ts` and `x/index.ts` exist, resolution prefers the file, so
+ * `@/x` never reaches `x/index.ts`. Adding an export to the barrel then looks
+ * correct on disk but fails at the import site, which is exactly the confusion
+ * reported in #1648. Treat the collision itself as the defect.
+ */
+export function findShadowedBarrels(rootDir: string, barrels: Set<string>): ShadowedBarrel[] {
+  const shadowed: ShadowedBarrel[] = [];
+  for (const alias of barrels) {
+    const rel = alias.startsWith("@test/")
+      ? join("test", alias.slice("@test/".length))
+      : join("src", alias.slice("@/".length));
+    const sibling = `${rel}.ts`;
+    try {
+      if (!statSync(join(rootDir, sibling)).isFile()) continue;
+    } catch {
+      continue;
+    }
+    shadowed.push({ barrel: `${rel}/index.ts`, shadowedBy: sibling, alias });
+  }
+  return shadowed.sort((a, b) => a.alias.localeCompare(b.alias));
+}
+
 export function loadBarrels(rootDir: string): BarrelMap {
   const src = listBarrelDirs(rootDir, "src", "@");
   const tst = listBarrelDirs(rootDir, "test", "@test");
-  return { barrels: new Set<string>([...src, ...tst]) };
+  const barrels = new Set<string>([...src, ...tst]);
+  // A shadowed barrel is unreachable, so it must not be suggested as the fix
+  // for an internal import. The collision is reported separately.
+  const shadowed = findShadowedBarrels(rootDir, barrels);
+  for (const entry of shadowed) barrels.delete(entry.alias);
+  return { barrels, shadowed };
 }
 
 function* walk(dir: string): Generator<string> {
@@ -225,6 +266,22 @@ export function findAliasInternalViolations(rootDir: string): AliasViolation[] {
   return all;
 }
 
+export function formatShadowedBarrelReport(shadowed: readonly ShadowedBarrel[]): string {
+  const lines: string[] = [
+    `[FAIL] ${shadowed.length} directory barrel(s) shadowed by a same-named sibling file.`,
+    "Module resolution prefers the file, so the alias never reaches the barrel:",
+    "an export added to the barrel is unreachable at that specifier (#1648).",
+    "Rename the sibling, or fold it into the barrel and delete it.",
+    "",
+  ];
+  for (const s of shadowed) {
+    lines.push(`  ${s.alias}`);
+    lines.push(`    resolves to:  ${s.shadowedBy}`);
+    lines.push(`    shadowing:    ${s.barrel}`);
+  }
+  return lines.join("\n");
+}
+
 export function formatAliasViolationReport(violations: readonly AliasViolation[], barrelCount: number): string {
   if (violations.length === 0) {
     return `[OK] no alias-into-internal imports (${barrelCount} barrels checked)`;
@@ -244,7 +301,11 @@ export function formatAliasViolationReport(violations: readonly AliasViolation[]
 
 export function main(): void {
   const root = process.cwd();
-  const { barrels } = loadBarrels(root);
+  const { barrels, shadowed } = loadBarrels(root);
+  if (shadowed.length > 0) {
+    console.error(formatShadowedBarrelReport(shadowed));
+    process.exit(1);
+  }
   const violations = findAliasInternalViolations(root);
   const report = formatAliasViolationReport(violations, barrels.size);
   if (violations.length > 0) {

@@ -21,6 +21,22 @@
 import { getSafeLogger } from "../../logger";
 import type { DetectionResult, DetectionSource } from "./types";
 export type { DetectionResult, DetectionSource } from "./types";
+
+// Public surface of the detect/ module. Previously lived in a sibling
+// `src/test-runners/detect.ts` facade; that file shadowed this barrel at
+// resolution time, so `@/test-runners/detect` never reached here (#1648).
+export { detectManifestFrameworksFromPackageJson } from "./framework-defaults";
+export { clearWorkspaceCache, discoverWorkspacePackages } from "./workspace";
+
+// Sub-module deps objects, re-exported so tests can inject mocks without
+// reaching past this barrel (mock.module() is banned — see
+// `.claude/rules/forbidden-patterns.md`).
+export { _cacheDeps } from "./cache";
+export { _directoryScanDeps } from "./directory-scan";
+export { _fileScanDeps } from "./file-scan";
+export { _frameworkConfigDeps } from "./framework-configs";
+export { _frameworkDefaultsDeps } from "./framework-defaults";
+export { _workspaceDeps } from "./workspace";
 import { readCache, writeCache } from "./cache";
 import { detectFromDirectoryScan } from "./directory-scan";
 import { detectFromFileScan } from "./file-scan";

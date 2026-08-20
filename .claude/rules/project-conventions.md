@@ -40,6 +40,12 @@ Quick rules of thumb:
 - Types go in `types.ts` per module directory.
 - Import from barrels (`src/routing`), **never from internal paths** (`src/routing/router`) in `src/`, `bin/` and `scripts/`. This keeps each module's public API meaningful. Tests are exempt — see Path Aliases below.
 
+**One module per name.** Never place `x.ts` beside `x/index.ts`. Resolution
+prefers the file, so `@/x` never reaches the directory barrel — an export added
+to the barrel is unreachable at that specifier, while still looking correct on
+disk (#1648). `bun run check:alias-internals` fails on the collision. Either
+rename the sibling, or fold it into the barrel and delete it.
+
 ### Path Aliases
 
 Two path aliases are wired in `tsconfig.json`:
