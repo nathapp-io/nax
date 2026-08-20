@@ -36,4 +36,4 @@ export {
 } from "./story-context";
 
 // Lock management
-export { acquireLock, releaseLock } from "./lock";
+export { acquireLock, releaseLock, _lockDeps } from "./lock";

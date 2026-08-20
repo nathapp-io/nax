@@ -10,6 +10,16 @@ import path from "node:path";
 import { isProcessAlive } from "@/utils/process-alive";
 import { getLogger } from "../logger";
 
+/**
+ * Injectable seam for the stale-lock rename step, so tests can deterministically
+ * simulate the race window BUG-34 guards against (another racer replacing lockPath
+ * with a fresh live lock between our staleness read and our rename) instead of
+ * relying on real concurrent scheduling, which only exercises that branch sometimes.
+ */
+export const _lockDeps = {
+  rename: rename as typeof rename,
+};
+
 /** Safely get logger instance, returns null if not initialized */
 function getSafeLogger() {
   try {
@@ -101,7 +111,7 @@ export async function acquireLock(workdir: string): Promise<boolean> {
         // back off.
         const tombstonePath = `${lockPath}.stale.${process.pid}.${Date.now()}`;
         try {
-          await rename(lockPath, tombstonePath);
+          await _lockDeps.rename(lockPath, tombstonePath);
         } catch (renameError) {
           if ((renameError as NodeJS.ErrnoException).code === "ENOENT") {
             // Another process already claimed cleanup of this stale lock —

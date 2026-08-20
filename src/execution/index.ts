@@ -18,6 +18,7 @@ export {
   getAllReadyStories,
   acquireLock,
   releaseLock,
+  _lockDeps,
   formatProgress,
   type ExecutionResult,
   type StoryCounts,
