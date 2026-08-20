@@ -11,8 +11,8 @@
  */
 
 import type { PRD } from "@/prd/types";
-import { buildTestFrameworkHint } from "../../test-runners";
-import { wrapJsonPrompt } from "../../utils/llm-json";
+import { buildTestFrameworkHint } from "@/test-runners";
+import { wrapJsonPrompt } from "@/utils/llm-json";
 import { formatTestOutputForFix } from "./acceptance-builder-helpers";
 
 export type AcceptanceRole = "generator" | "diagnoser" | "fix-executor";

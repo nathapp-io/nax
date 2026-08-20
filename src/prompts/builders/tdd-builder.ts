@@ -23,9 +23,9 @@
 
 import type { PromptLoaderConfig } from "@/config/selectors";
 import type { NaxConfig } from "@/config/types";
+import { filterContextByRole, truncateToContextBudget } from "@/context";
 import type { UserStory } from "@/prd";
 import type { SelfVerificationPromptInput } from "@/quality/self-verification";
-import { filterContextByRole, truncateToContextBudget } from "../../context";
 import { SectionAccumulator } from "../core";
 import type { PromptOptions, PromptRole, PromptSection } from "../core";
 import { universalConstitutionSection, universalContextSection } from "../core";
@@ -293,7 +293,7 @@ export class TddPromptBuilder {
       lite?: boolean;
       contextMarkdown?: string;
       featureContextMarkdown?: string;
-      contextBundle?: import("../../context/engine").ContextBundle;
+      contextBundle?: import("@/context/engine").ContextBundle;
       constitution?: string;
     },
   ): Promise<string> {

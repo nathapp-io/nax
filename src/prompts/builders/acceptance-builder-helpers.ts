@@ -1,4 +1,4 @@
-import { detectFramework, formatFailureSummary, parseTestOutput } from "../../test-runners";
+import { detectFramework, formatFailureSummary, parseTestOutput } from "@/test-runners";
 
 const MAX_FAILURE_CHARS = 4000;
 const TAIL_FALLBACK_LINES = 60;
