@@ -72,10 +72,9 @@ import { Router } from "@/routing/router";
 
 **Tests may reach internals.** Under `test/`, a value import of `@/<dir>/<internal>`
 is allowed: exercising the unit is a unit test's job, and a non-barrelled
-internal would otherwise be untestable — the deep-relative form is rejected by
-the ratchet below and the alias form used to be rejected by the barrel gate
-(GitHub #1647). `@test/<dir>/<internal>` stays forbidden everywhere: shared
-fixtures are a real public API for tests.
+internal would otherwise be untestable — the alias form used to be rejected by
+the barrel gate (GitHub #1647). `@test/<dir>/<internal>` stays forbidden
+everywhere: shared fixtures are a real public API for tests.
 
 ```typescript
 // Correct — in test/, exercising a non-barrelled internal directly
@@ -90,12 +89,13 @@ Note that the barrel gate's older justification — that alias-internal imports
 `@/foo/bar` and `../foo/bar` resolve to the same realpath and therefore the
 same module instance. BUG-035 concerns `mock.module()` interception, and its
 remedy is the `_deps` injection pattern. The gate's real purpose is
-encapsulation, and to stop the alias migration from laundering barrel
-violations past the deep-relative ratchet.
+encapsulation: production code stays on each module's public API. A module that
+must be reachable from outside its directory without going through the parent
+barrel (usually to avoid a cycle) becomes its own nested barrel — an exact
+alias match like `@/review/runner` is legal, an internal path is not.
 
 Aliases are not mandatory — relative paths are still fine. Use the alias when it improves readability (typically 3+ levels of `../`). Enforced by `bun run check:alias-internals` (runs as part of `bun run lint`).
 
-**Migration ratchet:** `bun run check:deep-relatives` (also part of `lint`) tracks all 2+ level relative imports against a saved baseline. The count must not increase — new code must use aliases. When you touch a file, convert its deep relatives as you go. When the baseline reaches 0, delete it. To lower the baseline after migrating a batch: `bun run check:deep-relatives:update`.
 
 **Cycle ratchet:** `bun run check:import-cycles` (also part of `lint`) counts
 runtime import cycles in `src/` against a baseline. Routing an import through a

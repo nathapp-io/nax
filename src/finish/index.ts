@@ -8,7 +8,7 @@
  * each module's injectable `_*Deps` seam, matching the convention already
  * used by `src/pipeline` (`_scopeFilesDeps`, `_executionDeps`,
  * `_acceptanceSetupDeps`) — tests reach them through this barrel rather than
- * a deep relative import, per `scripts/check-deep-relatives.ts`.
+ * a deep relative import.
  */
 export { appendRound, readRounds, recordRound, resultPath, roundsPath, writeResult } from "./audit";
 export type { AuditTarget } from "./audit";

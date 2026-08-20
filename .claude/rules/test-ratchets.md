@@ -5,7 +5,7 @@ Issue #1514 ships two ratchets in CI to lock in the test/ typecheck invariant:
 - `check:test-typecheck` — counts TypeScript errors in `tsconfig.test.json`; fails if grown.
 - `check:test-as-unknown-as` — counts `as unknown as` casts in `test/`; fails if grown.
 
-Both behave like the existing `check:nax-error` / `check:deep-relatives` ratchets: they have a `--update-baseline` to lower the threshold when intentional improvements land, and `--list` to surface offenders.
+Both behave like the existing `check:nax-error` / `check:import-cycles` ratchets: they have a `--update-baseline` to lower the threshold when intentional improvements land, and `--list` to surface offenders.
 
 ## Why both exist
 

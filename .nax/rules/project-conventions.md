@@ -77,8 +77,6 @@ import { Router } from "@/routing/router";
 
 Aliases are not mandatory — relative paths are still fine. Use the alias when it improves readability (typically 3+ levels of `../`). Enforced by `bun run check:alias-internals` (runs as part of `bun run lint`).
 
-**Migration ratchet:** `bun run check:deep-relatives` (also part of `lint`) tracks all 2+ level relative imports against a saved baseline. The count must not increase — new code must use aliases. When you touch a file, convert its deep relatives as you go. When the baseline reaches 0, delete it. To lower the baseline after migrating a batch: `bun run check:deep-relatives:update`.
-
 ## Logging
 
 - Use the project logger (`src/logger`). Never use `console.log` / `console.error` in source code.
