@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-08-20T06:05:31.740Z",
+  "updatedAt": "2026-08-20T06:30:29.890Z",
   "byFile": {
     "src/acceptance/content-loader.ts": 0,
     "src/agents/acp/adapter-close-physical.ts": 0.0741,
@@ -54,7 +54,6 @@
     "src/execution/lifecycle/headless-formatter.ts": 0.7193,
     "src/execution/lifecycle/run-initialization.ts": 0.7481,
     "src/execution/lifecycle/run-setup.ts": 0.4852,
-    "src/execution/lock.ts": 0.6762,
     "src/execution/parallel-worker.ts": 0.7763,
     "src/execution/post-run.ts": 0.5685,
     "src/execution/progress.ts": 0.6667,

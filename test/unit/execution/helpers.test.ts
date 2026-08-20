@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
-import { acquireLock, formatProgress, releaseLock } from "@/execution";
+import { _lockDeps, acquireLock, formatProgress, releaseLock } from "@/execution";
 import type { StoryCounts } from "@/execution";
 import { spawn } from "bun";
 
@@ -343,5 +343,76 @@ describe("acquireLock and releaseLock", () => {
     expect(entries.some((e) => e.includes(".stale."))).toBe(false);
 
     await releaseLock(testDir);
+  });
+
+  describe("BUG-34: stolen-lock restore path (deterministic)", () => {
+    // The real BUG-07 concurrency test above only exercises this branch when
+    // real OS scheduling happens to interleave two racers a specific way —
+    // observed to make lock.ts's own line coverage bounce between runs
+    // (nax-gap-analysis-2026-08-20 §3). These tests force the race window
+    // deterministically via `_lockDeps.rename` instead of relying on luck.
+    let originalRename: typeof _lockDeps.rename;
+
+    beforeEach(() => {
+      originalRename = _lockDeps.rename;
+    });
+
+    afterEach(() => {
+      _lockDeps.rename = originalRename;
+    });
+
+    test("restores the stolen live lock when a racer's fresh lock appears mid-rename", async () => {
+      const stalePid = 999999;
+      await Bun.write(lockPath, JSON.stringify({ pid: stalePid, timestamp: Date.now() - 60000 }));
+
+      const freshPid = process.pid;
+      _lockDeps.rename = (async (src: string, dest: string) => {
+        // Simulate a second racer winning the O_CREAT|O_EXCL create at
+        // lockPath after our staleness read but before our rename lands.
+        await Bun.write(src as string, JSON.stringify({ pid: freshPid, timestamp: Date.now() }));
+        return originalRename(src, dest);
+      }) as typeof _lockDeps.rename;
+
+      const acquired = await acquireLock(testDir);
+      expect(acquired).toBe(false);
+
+      // The freshly-created live lock must be restored, untouched, at lockPath.
+      const lockData = JSON.parse(await Bun.file(lockPath).text());
+      expect(lockData.pid).toBe(freshPid);
+
+      // No leftover tombstone from the aborted steal.
+      const { readdirSync } = await import("node:fs");
+      const entries = readdirSync(testDir);
+      expect(entries.some((e) => e.includes(".stale."))).toBe(false);
+    });
+
+    test("drops the tombstone when the stolen lock cannot be restored (occupied by a third racer)", async () => {
+      const stalePid = 999999;
+      await Bun.write(lockPath, JSON.stringify({ pid: stalePid, timestamp: Date.now() - 60000 }));
+
+      const freshPid = process.pid;
+      const thirdRacerPid = 424242;
+      _lockDeps.rename = (async (src: string, dest: string) => {
+        // Simulate racer B's fresh live lock appearing...
+        await Bun.write(src as string, JSON.stringify({ pid: freshPid, timestamp: Date.now() }));
+        const result = await originalRename(src, dest);
+        // ...then racer D winning a brand-new create at lockPath before we
+        // get a chance to restore B's content — the restore must not clobber it.
+        await Bun.write(src as string, JSON.stringify({ pid: thirdRacerPid, timestamp: Date.now() }));
+        return result;
+      }) as typeof _lockDeps.rename;
+
+      const acquired = await acquireLock(testDir);
+      expect(acquired).toBe(false);
+
+      // Racer D's lock must survive untouched.
+      const lockData = JSON.parse(await Bun.file(lockPath).text());
+      expect(lockData.pid).toBe(thirdRacerPid);
+
+      // Our stolen tombstone must be dropped, not left behind.
+      const { readdirSync } = await import("node:fs");
+      const entries = readdirSync(testDir);
+      expect(entries.some((e) => e.includes(".stale."))).toBe(false);
+    });
   });
 });
