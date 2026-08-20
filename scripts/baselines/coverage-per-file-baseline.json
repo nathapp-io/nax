@@ -60,7 +60,7 @@
     "src/execution/runner-execution.ts": 0.0455,
     "src/execution/runner.ts": 0.4236,
     "src/execution/status-writer.ts": 0.6554,
-    "src/execution/story-context.ts": 0.6645,
+    "src/execution/story-context/index.ts": 0.6645,
     "src/execution/story-orchestrator/flake-triage-seam.ts": 0.74,
     "src/forge/deps.ts": 0.5938,
     "src/hooks/runner.ts": 0.6989,

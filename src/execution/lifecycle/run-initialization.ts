@@ -17,15 +17,14 @@ import { getSafeLogger } from "@/logger";
 import type { AgentGetFn } from "@/pipeline/types";
 import { countStories, loadPRD, markStoryPassed, resetFailedStoriesToPending, savePRD } from "@/prd";
 import type { PRD } from "@/prd/types";
+// Sub-barrel import (not the `@/review` barrel): `runReview` lives in
+// `./runner`, deliberately not re-exported by the barrel (see its header) to
+// avoid a cycle through `@/prompts` → `review-builder.ts`. `runner` is its own
+// nested barrel, so this reaches it without loading `src/review/index.ts`.
+import { runReview } from "@/review/runner";
 import type { ReviewConfig } from "@/review/types";
 import { spawn } from "@/utils/bun-deps";
 import { hasCommitsForStory } from "@/utils/git";
-// Leaf import (not the `@/review` barrel): `runReview` lives in `./runner`,
-// which is deliberately not re-exported by the barrel (see its header) to
-// avoid a cycle through `@/prompts` → `review-builder.ts`. Relative, not
-// `@/review/runner`, because `check:alias-internals` forbids aliasing past a
-// barrel in `src/`.
-import { runReview } from "../../review/runner";
 
 /**
  * Injectable dependencies for reconcileState — allows tests to mock

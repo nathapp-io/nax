@@ -14,7 +14,7 @@ MATCHES=$(grep -rnE "agentManager\?[[:space:]]*:[[:space:]]*(import\(.+\)\.)?IAg
   | grep -v "^src/execution/runner-setup\.ts:" \
   | grep -v "^src/execution/lifecycle/run-setup\.ts:" \
   | grep -v "^src/execution/parallel-coordinator\.ts:" \
-  | grep -v "^src/review/runner\.ts:" \
+  | grep -v "^src/review/runner/index\.ts:" \
   | grep -v "^src/review/orchestrator\.ts:" \
   || true)
 
