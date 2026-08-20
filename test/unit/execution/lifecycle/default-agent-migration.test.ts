@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { resolveDefaultAgent } from "../../../../src/agents";
-import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
+import { resolveDefaultAgent } from "@/agents";
+import { DEFAULT_CONFIG } from "@/config/defaults";
 
 describe("resolveDefaultAgent — execution lifecycle", () => {
   test("resolves from canonical config.agent.default", () => {

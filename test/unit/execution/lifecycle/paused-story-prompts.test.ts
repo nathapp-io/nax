@@ -8,9 +8,9 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { promptForPausedStories } from "../../../../src/execution/lifecycle/paused-story-prompts";
-import type { InteractionChain } from "../../../../src/interaction/chain";
-import type { PRD, UserStory } from "../../../../src/prd/types";
+import { promptForPausedStories } from "@/execution/lifecycle/paused-story-prompts";
+import type { InteractionChain } from "@/interaction/chain";
+import type { PRD, UserStory } from "@/prd/types";
 
 // ---------------------------------------------------------------------------
 // Helpers

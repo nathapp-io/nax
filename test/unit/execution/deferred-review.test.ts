@@ -12,14 +12,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { PluginRegistry } from "../../../src/plugins";
-import type { IReviewPlugin } from "../../../src/plugins/extensions";
-import type { ReviewConfig } from "../../../src/review/types";
+import type { PluginRegistry } from "@/plugins";
+import type { IReviewPlugin } from "@/plugins/extensions";
+import type { ReviewConfig } from "@/review/types";
 import {
   _deferredReviewDeps,
   captureRunStartRef,
   runDeferredReview,
-} from "../../../src/execution/deferred-review";
+} from "@/execution/deferred-review";
 import { withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -315,8 +315,8 @@ describe("runDeferredReview — plugin failures do NOT fail the run", () => {
 describe("SequentialExecutionResult — includes optional deferredReview field", () => {
   test("SequentialExecutionResult type accepts deferredReview field", () => {
     // Type-level check: if this compiles, the type has the field
-    const result: import("../../../src/execution/executor-types").SequentialExecutionResult = {
-      prd: { feature: "test", userStories: [] } as unknown as import("../../../src/prd/types").PRD,
+    const result: import("@/execution/executor-types").SequentialExecutionResult = {
+      prd: { feature: "test", userStories: [] } as unknown as import("@/prd/types").PRD,
       iterations: 1,
       storiesCompleted: 1,
       totalCost: 0,
@@ -335,8 +335,8 @@ describe("SequentialExecutionResult — includes optional deferredReview field",
   });
 
   test("SequentialExecutionResult allows deferredReview to be undefined", () => {
-    const result: import("../../../src/execution/executor-types").SequentialExecutionResult = {
-      prd: { feature: "test", userStories: [] } as unknown as import("../../../src/prd/types").PRD,
+    const result: import("@/execution/executor-types").SequentialExecutionResult = {
+      prd: { feature: "test", userStories: [] } as unknown as import("@/prd/types").PRD,
       iterations: 1,
       storiesCompleted: 1,
       totalCost: 0,

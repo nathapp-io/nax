@@ -9,7 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { makeNaxConfig, makePRD, makeStory } from "../../helpers";
+import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 const SRC = join(import.meta.dir, "../../../src");
 
@@ -118,7 +118,7 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
   let origBatch: unknown;
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origSelect = deps.selectIndependentBatch;
     origBatch = deps.runParallelBatch;
@@ -158,12 +158,12 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
     }));
 
     // Inject a savePRD spy so handlePipelineFailure doesn't attempt real disk writes
-    const { _tierEscalationDeps } = await import("../../../src/execution/escalation/tier-escalation");
+    const { _tierEscalationDeps } = await import("@/execution/escalation/tier-escalation");
     const origSavePRD = _tierEscalationDeps.savePRD;
     _tierEscalationDeps.savePRD = mock(async () => {});
 
     // Inject into pipeline-result-handler as well
-    const { _resultHandlerDeps } = await import("../../../src/execution/pipeline-result-handler");
+    const { _resultHandlerDeps } = await import("@/execution/pipeline-result-handler");
     const origSpawn = _resultHandlerDeps.spawn;
     _resultHandlerDeps.spawn = mock(() => {
       const proc = { exited: Promise.resolve(0) };
@@ -171,7 +171,7 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
     });
 
     try {
-      const mod = await import("../../../src/execution/unified-executor");
+      const mod = await import("@/execution/unified-executor");
       // Failure routing is best-effort and must not throw.
       const result = await mod
         .executeUnified(makeCtx() as never, makePrd([story1, story2]) as never)
@@ -212,7 +212,7 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
       totalCost: 0.25,
     }));
 
-    const { _resultHandlerDeps } = await import("../../../src/execution/pipeline-result-handler");
+    const { _resultHandlerDeps } = await import("@/execution/pipeline-result-handler");
     const origSpawn = _resultHandlerDeps.spawn;
     _resultHandlerDeps.spawn = mock(() => {
       const proc = { exited: Promise.resolve(0) };
@@ -220,7 +220,7 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
     });
 
     try {
-      const mod = await import("../../../src/execution/unified-executor");
+      const mod = await import("@/execution/unified-executor");
       const result = await mod
         .executeUnified(makeCtx() as never, makePrd([story1, story2]) as never)
         .catch(() => ({ exitReason: "error", totalCost: 0, allStoryMetrics: [], storiesCompleted: 0 }) as never);

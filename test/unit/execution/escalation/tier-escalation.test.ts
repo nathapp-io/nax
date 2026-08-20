@@ -17,7 +17,7 @@ import { makeLogger } from "@test/helpers";
 
 describe("shouldRetrySameTier", () => {
   test("returns true when verifyResult status is RUNTIME_CRASH", async () => {
-    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const mod = await import("@/execution/escalation/tier-escalation");
     const { shouldRetrySameTier } = mod;
 
     expect(typeof shouldRetrySameTier).toBe("function");
@@ -25,7 +25,7 @@ describe("shouldRetrySameTier", () => {
   });
 
   test("returns false when verifyResult status is TEST_FAILURE", async () => {
-    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const mod = await import("@/execution/escalation/tier-escalation");
     const { shouldRetrySameTier } = mod;
 
     expect(typeof shouldRetrySameTier).toBe("function");
@@ -33,7 +33,7 @@ describe("shouldRetrySameTier", () => {
   });
 
   test("returns false when verifyResult is undefined", async () => {
-    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const mod = await import("@/execution/escalation/tier-escalation");
     const { shouldRetrySameTier } = mod;
 
     expect(typeof shouldRetrySameTier).toBe("function");
@@ -41,7 +41,7 @@ describe("shouldRetrySameTier", () => {
   });
 
   test("returns false when verifyResult status is TIMEOUT", async () => {
-    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const mod = await import("@/execution/escalation/tier-escalation");
     const { shouldRetrySameTier } = mod;
 
     expect(typeof shouldRetrySameTier).toBe("function");
@@ -49,7 +49,7 @@ describe("shouldRetrySameTier", () => {
   });
 
   test("returns false when verifyResult status is PASS", async () => {
-    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const mod = await import("@/execution/escalation/tier-escalation");
     const { shouldRetrySameTier } = mod;
 
     expect(typeof shouldRetrySameTier).toBe("function");
@@ -92,7 +92,7 @@ describe("resolveMaxAttemptsOutcome — runtime-crash category", () => {
 
 describe("handleTierEscalation — tier escalation regression guard", () => {
   test("still escalates tier for TEST_FAILURE (regression guard)", async () => {
-    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const mod = await import("@/execution/escalation/tier-escalation");
     const { handleTierEscalation, _tierEscalationDeps } = mod;
 
     const origSavePRD = _tierEscalationDeps.savePRD;
@@ -169,7 +169,7 @@ describe("handleTierEscalation — tier escalation regression guard", () => {
 
 describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
   test("sets routing.agent in PRD when next tier entry has agent field (AC-5)", async () => {
-    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const mod = await import("@/execution/escalation/tier-escalation");
     const { handleTierEscalation, _tierEscalationDeps } = mod;
 
     const origSavePRD = _tierEscalationDeps.savePRD;
@@ -248,7 +248,7 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
   });
 
   test("sets codex agent when escalating from claude/balanced to codex/fast (AC-5, AC-6)", async () => {
-    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const mod = await import("@/execution/escalation/tier-escalation");
     const { handleTierEscalation, _tierEscalationDeps } = mod;
 
     const origSavePRD = _tierEscalationDeps.savePRD;
@@ -327,7 +327,7 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
   });
 
   test("does not set agent when tierOrder entry has no agent field (AC-4 backward compat)", async () => {
-    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const mod = await import("@/execution/escalation/tier-escalation");
     const { handleTierEscalation, _tierEscalationDeps } = mod;
 
     const origSavePRD = _tierEscalationDeps.savePRD;
@@ -420,7 +420,7 @@ describe("preIterationTierCheck — story:escalated event emission", () => {
   });
 
   test("emits story:escalated when story has exhausted current tier budget", async () => {
-    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const mod = await import("@/execution/escalation/tier-escalation");
     const { preIterationTierCheck, _tierEscalationDeps } = mod;
 
     const origSavePRD = _tierEscalationDeps.savePRD;
@@ -492,7 +492,7 @@ describe("preIterationTierCheck — story:escalated event emission", () => {
   });
 
   test("does not emit story:escalated when story is still within tier budget", async () => {
-    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const mod = await import("@/execution/escalation/tier-escalation");
     const { preIterationTierCheck, _tierEscalationDeps } = mod;
 
     const origSavePRD = _tierEscalationDeps.savePRD;
@@ -578,7 +578,7 @@ describe("handleTierEscalation — story:escalated event emission", () => {
   });
 
   test("emits story:escalated event with correct storyId, fromTier, and toTier on successful escalation", async () => {
-    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const mod = await import("@/execution/escalation/tier-escalation");
     const { handleTierEscalation, _tierEscalationDeps } = mod;
 
     const origSavePRD = _tierEscalationDeps.savePRD;
@@ -661,7 +661,7 @@ describe("handleTierEscalation — story:escalated event emission", () => {
 
 describe("preIterationTierCheck — M2: unmatched rung on non-empty agent ladder", () => {
   test("shouldSkipIteration is false when (tier, agent) pair is absent from agent-qualified tierOrder", async () => {
-    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const mod = await import("@/execution/escalation/tier-escalation");
     const { preIterationTierCheck, _tierEscalationDeps } = mod;
 
     const origSavePRD = _tierEscalationDeps.savePRD;
@@ -750,7 +750,7 @@ describe("preIterationTierCheck — M2: unmatched rung on non-empty agent ladder
 
 describe("preIterationTierCheck — ADR-025 gap #3: prior context captured on budget exhaustion", () => {
   test("saves priorErrors and priorFailures when story budget is exhausted (AC)", async () => {
-    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const mod = await import("@/execution/escalation/tier-escalation");
     const { preIterationTierCheck, _tierEscalationDeps } = mod;
 
     const origSavePRD = _tierEscalationDeps.savePRD;
@@ -849,7 +849,7 @@ describe("preIterationTierCheck — ADR-025 gap #3: prior context captured on bu
 
 describe("handleTierEscalation — ADR-025 gap #2: cross-agent escalation provenance", () => {
   test("escalation record includes fromAgent and toAgent on cross-agent escalation", async () => {
-    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const mod = await import("@/execution/escalation/tier-escalation");
     const { handleTierEscalation, _tierEscalationDeps } = mod;
 
     const origSavePRD = _tierEscalationDeps.savePRD;

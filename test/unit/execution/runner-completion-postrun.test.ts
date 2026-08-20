@@ -11,18 +11,18 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { pipelineEventBus } from "../../../src/pipeline/event-bus";
+import { pipelineEventBus } from "@/pipeline/event-bus";
 import {
   _runnerCompletionDeps,
   runCompletionPhase,
   type RunnerCompletionOptions,
-} from "../../../src/execution/runner-completion";
-import type { AcceptanceLoopResult } from "../../../src/execution/lifecycle/acceptance-loop";
-import type { RunCompletionResult } from "../../../src/execution/lifecycle/run-completion";
-import type { NaxConfig } from "../../../src/config";
-import type { PRD, UserStory } from "../../../src/prd";
-import type { LoadedHooksConfig } from "../../../src/hooks";
-import { makeNaxConfig, makeTestRuntime } from "../../helpers";
+} from "@/execution/runner-completion";
+import type { AcceptanceLoopResult } from "@/execution/lifecycle/acceptance-loop";
+import type { RunCompletionResult } from "@/execution/lifecycle/run-completion";
+import type { NaxConfig } from "@/config";
+import type { PRD, UserStory } from "@/prd";
+import type { LoadedHooksConfig } from "@/hooks";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

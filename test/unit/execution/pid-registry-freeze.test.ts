@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { PidRegistry } from "../../../src/execution/pid-registry";
+import { PidRegistry } from "@/execution/pid-registry";
 
 describe("PidRegistry.freeze()", () => {
   let workdir: string;

@@ -19,7 +19,7 @@ import {
   type DeferredRegressionResult,
 } from "@/execution";
 import type { StoryMetrics } from "@/metrics";
-import { pipelineEventBus } from "../../../../src/pipeline/event-bus";
+import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd";
 import { makeNaxConfig, makeMockRuntime } from "@test/helpers";

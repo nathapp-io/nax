@@ -14,8 +14,8 @@ import {
 import type { DeferredReviewResult } from "@/execution/deferred-review";
 import type { NaxConfig } from "@/config";
 import { makeNaxConfig, makeMockRuntime, makePRD } from "@test/helpers";
-import { pipelineEventBus } from "../../../../src/pipeline/event-bus";
-import type { DeferredRegressionResult } from "../../../../src/execution/lifecycle/run-regression";
+import { pipelineEventBus } from "@/pipeline/event-bus";
+import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
 
 const origDeps = { ..._runCompletionDeps };
 

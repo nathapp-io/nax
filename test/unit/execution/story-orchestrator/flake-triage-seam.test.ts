@@ -12,9 +12,9 @@ import { realpathSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _storyOrchestratorDeps } from "@/execution";
 import type { Finding } from "@/findings";
-import { productionTriageSeam } from "../../../../src/execution/story-orchestrator/flake-triage-seam";
-import { _flakeTriageDeps } from "../../../../src/verification/flake-triage";
-import { cleanupTempDir, makeNaxConfig, makeTempDir, makeTestRuntime } from "../../../helpers";
+import { productionTriageSeam } from "@/execution/story-orchestrator/flake-triage-seam";
+import { _flakeTriageDeps } from "@/verification/flake-triage";
+import { cleanupTempDir, makeNaxConfig, makeTempDir, makeTestRuntime } from "@test/helpers";
 
 function git(cwd: string, ...args: string[]): void {
   const result = spawnSync("git", args, { cwd });

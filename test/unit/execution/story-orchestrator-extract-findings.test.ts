@@ -38,12 +38,12 @@ function makeVerifierOutput(normalizedFindings: Finding[]) {
 
 describe("AC6: extractPhaseFindings exported from story-orchestrator", () => {
   test("AC6: extractPhaseFindings is a named export of story-orchestrator", async () => {
-    const mod = await import("../../../src/execution/story-orchestrator");
+    const mod = await import("@/execution/story-orchestrator");
     expect(typeof mod.extractPhaseFindings).toBe("function");
   });
 
   test("AC6: returns F1 and F2 when normalizedFindings is [F1, F2]", async () => {
-    const { extractPhaseFindings } = await import("../../../src/execution/story-orchestrator");
+    const { extractPhaseFindings } = await import("@/execution/story-orchestrator");
 
     const output = makeVerifierOutput([F1, F2]);
     const findings = extractPhaseFindings(output);
@@ -53,7 +53,7 @@ describe("AC6: extractPhaseFindings exported from story-orchestrator", () => {
   });
 
   test("AC6: returned array length equals normalizedFindings length", async () => {
-    const { extractPhaseFindings } = await import("../../../src/execution/story-orchestrator");
+    const { extractPhaseFindings } = await import("@/execution/story-orchestrator");
 
     const output = makeVerifierOutput([F1, F2]);
     const findings = extractPhaseFindings(output);
@@ -62,7 +62,7 @@ describe("AC6: extractPhaseFindings exported from story-orchestrator", () => {
   });
 
   test("AC6: returns empty array when normalizedFindings is []", async () => {
-    const { extractPhaseFindings } = await import("../../../src/execution/story-orchestrator");
+    const { extractPhaseFindings } = await import("@/execution/story-orchestrator");
 
     const output = makeVerifierOutput([]);
     const findings = extractPhaseFindings(output);
@@ -71,7 +71,7 @@ describe("AC6: extractPhaseFindings exported from story-orchestrator", () => {
   });
 
   test("AC6: returns empty array when output is null", async () => {
-    const { extractPhaseFindings } = await import("../../../src/execution/story-orchestrator");
+    const { extractPhaseFindings } = await import("@/execution/story-orchestrator");
 
     const findings = extractPhaseFindings(null);
 

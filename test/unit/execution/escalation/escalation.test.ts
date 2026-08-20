@@ -6,8 +6,8 @@
  */
 
 import { describe, expect, it, test } from "bun:test";
-import type { TierConfig } from "../../../../src/config";
-import { calculateMaxIterations, escalateTier, getTierConfig } from "../../../../src/execution/escalation";
+import type { TierConfig } from "@/config";
+import { calculateMaxIterations, escalateTier, getTierConfig } from "@/execution/escalation";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

@@ -7,9 +7,9 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { installSignalHandlers, performTeardown } from "../../../src/execution/crash-signals";
-import type { SignalHandlerContext } from "../../../src/execution/crash-signals";
-import type { StatusWriter } from "../../../src/execution/status-writer";
+import { installSignalHandlers, performTeardown } from "@/execution/crash-signals";
+import type { SignalHandlerContext } from "@/execution/crash-signals";
+import type { StatusWriter } from "@/execution/status-writer";
 
 const minimalCtx: SignalHandlerContext = {
   getTotalCost: () => 0,

@@ -8,10 +8,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { isThreeSessionStrategy } from "../../../../src/config/test-strategy";
-import { resolveMaxAttemptsOutcome } from "../../../../src/execution/escalation/tier-escalation";
-import type { UserStory } from "../../../../src/prd";
-import type { FailureCategory } from "../../../../src/tdd/types";
+import { isThreeSessionStrategy } from "@/config/test-strategy";
+import { resolveMaxAttemptsOutcome } from "@/execution/escalation/tier-escalation";
+import type { UserStory } from "@/prd";
+import type { FailureCategory } from "@/tdd/types";
 
 describe("S5: greenfield-no-tests fallback", () => {
   /**

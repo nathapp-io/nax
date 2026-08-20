@@ -101,7 +101,7 @@ describe("rect AC-10: no src/ file imports from parallel-executor-rectification-
 
 describe("rect AC-8a: RectificationResult exported from merge-conflict-rectify with correct shape", () => {
   test("AC-8a: RectificationResult type compiles — success variant has storyId + cost fields", async () => {
-    const { rectifyConflictedStory } = await import("../../../src/execution/merge-conflict-rectify");
+    const { rectifyConflictedStory } = await import("@/execution/merge-conflict-rectify");
     // Confirm module loaded; type exports verified by TypeScript compilation
     expect(typeof rectifyConflictedStory).toBe("function");
 
@@ -116,7 +116,7 @@ describe("rect AC-8a: RectificationResult exported from merge-conflict-rectify w
 
   test("AC-8a: RectificationResult success-true literal satisfies the exported type at compile time", () => {
     // TypeScript will reject this file if the import type is wrong — compile-time verification
-    type RectificationResult = import("../../../src/execution/merge-conflict-rectify").RectificationResult;
+    type RectificationResult = import("@/execution/merge-conflict-rectify").RectificationResult;
     const success: RectificationResult = { success: true, storyId: "US-001", cost: 1.5 };
     expect(success.success).toBe(true);
     expect(success.storyId).toBe("US-001");
@@ -124,7 +124,7 @@ describe("rect AC-8a: RectificationResult exported from merge-conflict-rectify w
   });
 
   test("AC-8a: RectificationResult failure literal satisfies the exported type at compile time", () => {
-    type RectificationResult = import("../../../src/execution/merge-conflict-rectify").RectificationResult;
+    type RectificationResult = import("@/execution/merge-conflict-rectify").RectificationResult;
     const failure: RectificationResult = { success: false, storyId: "US-001", cost: 0, finalConflict: true };
     expect(failure.success).toBe(false);
     expect(failure.storyId).toBe("US-001");
@@ -151,7 +151,7 @@ describe("rect AC-8b: RectifyConflictedStoryOptions exported from merge-conflict
   test("AC-8b: module exports RectifyConflictedStoryOptions (confirmed via rectifyConflictedStory function signature accepting it)", async () => {
     // The function accepting RectifyConflictedStoryOptions is rectifyConflictedStory — its existence
     // at runtime proves the type compiled and is exported
-    const mod = await import("../../../src/execution/merge-conflict-rectify");
+    const mod = await import("@/execution/merge-conflict-rectify");
     expect(typeof mod.rectifyConflictedStory).toBe("function");
     // The type export is confirmed at compile time: if RectifyConflictedStoryOptions were missing,
     // src/execution/parallel-batch.ts (which imports it) would fail to compile.

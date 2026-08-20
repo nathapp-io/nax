@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { AgentManager } from "../../../src/agents";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { createAgentRegistry } from "../../../src/agents/registry";
+import { AgentManager } from "@/agents";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { createAgentRegistry } from "@/agents/registry";
 
 describe("Runner → AgentManager wiring", () => {
   test("AgentManager constructed from config + registry", () => {

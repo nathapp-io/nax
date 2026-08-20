@@ -6,12 +6,12 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { _executionDeps, executionStage, routeTddFailure } from "../../../src/pipeline/stages/execution";
-import type { FailureCategory } from "../../../src/tdd";
-import { NaxError } from "../../../src/errors";
-import { makeAgentAdapter, makeNaxConfig } from "../../helpers";
+import { _executionDeps, executionStage, routeTddFailure } from "@/pipeline/stages/execution";
+import type { FailureCategory } from "@/tdd";
+import { NaxError } from "@/errors";
+import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 import { makeTestContext, makeTestStory } from "@test/helpers";
-import type { PipelineContext } from "../../../src/pipeline/types";
+import type { PipelineContext } from "@/pipeline/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

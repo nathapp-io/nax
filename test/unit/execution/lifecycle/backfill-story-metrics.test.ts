@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { synthesizeBackfillMetric } from "@/execution";
 import type { StoryRouting } from "@/prd/types";
-import { makeNaxConfig, makeStory } from "../../../helpers";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 
 const TS = "2026-07-03T00:00:00.000Z";
 // Default config.models = { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } }

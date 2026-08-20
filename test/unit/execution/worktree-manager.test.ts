@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { WorktreeManager } from "../../../src/worktree/manager";
+import { WorktreeManager } from "@/worktree/manager";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

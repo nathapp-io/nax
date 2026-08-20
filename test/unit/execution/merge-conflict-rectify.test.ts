@@ -8,13 +8,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { RectifyConflictedStoryOptions } from "../../../src/execution/merge-conflict-rectify";
+import type { RectifyConflictedStoryOptions } from "@/execution/merge-conflict-rectify";
 import {
   buildRectificationPipelineContext,
   rectifyConflictedStory,
   rectifyMergeFailure,
-} from "../../../src/execution/merge-conflict-rectify";
-import { makeMockAgentManager, makeNaxConfig, makePRD, makeSessionManager, makeStory } from "../../helpers";
+} from "@/execution/merge-conflict-rectify";
+import { makeMockAgentManager, makeNaxConfig, makePRD, makeSessionManager, makeStory } from "@test/helpers";
 import { makeTestContext } from "@test/helpers";
 
 const FAKE_RUNTIME = {

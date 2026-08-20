@@ -9,9 +9,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { _iterationRunnerDeps } from "../../../src/execution/iteration-runner";
-import { WorktreeManager } from "../../../src/worktree/manager";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { _iterationRunnerDeps } from "@/execution/iteration-runner";
+import { WorktreeManager } from "@/worktree/manager";
 
 // ---------------------------------------------------------------------------
 // Save / Restore deps

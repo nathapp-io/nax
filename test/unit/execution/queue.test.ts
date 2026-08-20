@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { QueueManager, parseQueueFile } from "../../../src/queue/manager";
+import { QueueManager, parseQueueFile } from "@/queue/manager";
 
 describe("QueueManager", () => {
   test("enqueue and dequeue in priority order (highest first)", () => {

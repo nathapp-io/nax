@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, test, expect } from "bun:test";
-import { startHeartbeat, stopHeartbeat, _heartbeatDeps } from "../../../src/execution/crash-heartbeat";
+import { startHeartbeat, stopHeartbeat, _heartbeatDeps } from "@/execution/crash-heartbeat";
 
 let origSleep: typeof _heartbeatDeps.sleep;
 let origGetLogger: typeof _heartbeatDeps.getSafeLogger;

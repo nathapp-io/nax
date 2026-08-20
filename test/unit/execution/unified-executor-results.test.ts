@@ -87,7 +87,7 @@ function makeCtx(overrides: Record<string, unknown> = {}) {
 
 describe("exec AC-18: executeUnified return value matches SequentialExecutionResult shape", () => {
   test("AC-18: SequentialExecutionResult has all required keys", async () => {
-    type R = import("../../../src/execution/executor-types").SequentialExecutionResult;
+    type R = import("@/execution/executor-types").SequentialExecutionResult;
     // Compile-time: if any key is missing, TypeScript will reject this file
     const result: R = {
       prd: makePrd([]) as never,
@@ -110,7 +110,7 @@ describe("exec AC-18: executeUnified return value matches SequentialExecutionRes
     const story2 = makePendingStory("US-002");
     const prd = makePrd([story1, story2]);
 
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     const deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     const origSelect = deps.selectIndependentBatch;
     const origBatch = deps.runParallelBatch;
@@ -153,7 +153,7 @@ describe("results AC-1 / AC-4 / exec AC-29: completed stories produce correct me
   let origBatch: unknown;
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origSelect = deps.selectIndependentBatch;
     origBatch = deps.runParallelBatch;
@@ -183,7 +183,7 @@ describe("results AC-1 / AC-4 / exec AC-29: completed stories produce correct me
       totalCost: story1Cost + story2Cost,
     }));
 
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     const result = await mod.executeUnified(makeCtx() as never, makePrd([story1, story2]) as never);
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);
@@ -225,7 +225,7 @@ describe("results AC-1 / AC-4 / exec AC-29: completed stories produce correct me
       totalCost: 0.2,
     }));
 
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     const result = await mod.executeUnified(makeCtx() as never, makePrd([profiled, plain]) as never);
 
     expect(result.allStoryMetrics.find((m) => m.storyId === profiled.id)?.modelUsed).toBe("pi");
@@ -251,7 +251,7 @@ describe("results AC-1 / AC-4 / exec AC-29: completed stories produce correct me
       totalCost: costA + costB,
     }));
 
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     const result = await mod.executeUnified(makeCtx() as never, makePrd([story1, story2]) as never);
 
     const mA = result.allStoryMetrics.find((m) => m.storyId === story1.id);
@@ -276,7 +276,7 @@ describe("results AC-5: totalCost sums all batch costs", () => {
   let origBatch: unknown;
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origSelect = deps.selectIndependentBatch;
     origBatch = deps.runParallelBatch;
@@ -305,7 +305,7 @@ describe("results AC-5: totalCost sums all batch costs", () => {
       totalCost: batchCost,
     }));
 
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     const result = await mod.executeUnified(makeCtx() as never, makePrd([story1, story2]) as never);
 
     // totalCost accumulates the batch's totalCost
@@ -347,7 +347,7 @@ describe("results AC-3 / exec AC-31: rectified merge-conflict stories produce co
   let origBatch: unknown;
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origSelect = deps.selectIndependentBatch;
     origBatch = deps.runParallelBatch;
@@ -386,7 +386,7 @@ describe("results AC-3 / exec AC-31: rectified merge-conflict stories produce co
       totalCost: 0.3 + conflictTotalCost,
     }));
 
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     const result = await mod.executeUnified(makeCtx() as never, makePrd([story1, conflictStory]) as never);
 
     const conflictMetric = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
@@ -426,7 +426,7 @@ describe("results AC-3 / exec AC-31: rectified merge-conflict stories produce co
       totalCost: 0.3,
     }));
 
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     const result = await mod.executeUnified(makeCtx() as never, makePrd([story1, conflictStory]) as never);
 
     const conflictMetric = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
@@ -445,7 +445,7 @@ describe("exec AC-30: durationMs is per-story elapsed from storyDurations Map", 
   let origBatch: unknown;
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origSelect = deps.selectIndependentBatch;
     origBatch = deps.runParallelBatch;
@@ -479,7 +479,7 @@ describe("exec AC-30: durationMs is per-story elapsed from storyDurations Map", 
       totalCost: 0.2,
     }));
 
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     const result = await mod.executeUnified(makeCtx() as never, makePrd([story1, story2]) as never);
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);

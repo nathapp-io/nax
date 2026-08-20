@@ -106,7 +106,7 @@ describe("AC-7 — cost-limit exit after parallel batch (runtime)", () => {
   let origSelectIndependentBatch: unknown;
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunParallelBatch = deps.runParallelBatch;
     origSelectIndependentBatch = deps.selectIndependentBatch;
@@ -136,7 +136,7 @@ describe("AC-7 — cost-limit exit after parallel batch (runtime)", () => {
       totalCost: 6,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
     const baseCtx = makeCtx({ parallelCount: 2 });
     const ctx = {
@@ -172,7 +172,7 @@ describe("AC-7 — cost-limit exit after parallel batch (runtime)", () => {
       totalCost: 2,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
     const baseCtx = makeCtx({ parallelCount: 2 });
     const ctx = {
@@ -204,7 +204,7 @@ describe("BUG-61 — cost-warning trigger fires after a parallel batch, not just
   let origSelectIndependentBatch: unknown;
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunParallelBatch = deps.runParallelBatch;
     origSelectIndependentBatch = deps.selectIndependentBatch;
@@ -251,7 +251,7 @@ describe("BUG-61 — cost-warning trigger fires after a parallel batch, not just
     const interactionChain = new InteractionChain({ defaultTimeout: 1000, defaultFallback: "continue" });
     interactionChain.register(fakePlugin, 0);
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
     const baseCtx = makeCtx({ parallelCount: 2 });
     const ctx = {
@@ -290,7 +290,7 @@ describe("BUG-6 — parallel cost-limit stop has parity with sequential (event +
   let unsubResumed: (() => void) | undefined;
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunParallelBatch = deps.runParallelBatch;
     origSelectIndependentBatch = deps.selectIndependentBatch;
@@ -330,7 +330,7 @@ describe("BUG-6 — parallel cost-limit stop has parity with sequential (event +
       totalCost: 6,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
     const baseCtx = makeCtx({ parallelCount: 2 });
     const ctx = {
@@ -379,7 +379,7 @@ describe("BUG-6 — parallel cost-limit stop has parity with sequential (event +
     const interactionChain = new InteractionChain({ defaultTimeout: 1000, defaultFallback: "continue" });
     interactionChain.register(fakePlugin, 0);
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
     const baseCtx = makeCtx({ parallelCount: 2 });
     const ctx = {
@@ -417,7 +417,7 @@ describe("BUG-13 — parallel batch updates statusWriter after batch completion"
   let origSelectIndependentBatch: unknown;
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunParallelBatch = deps.runParallelBatch;
     origSelectIndependentBatch = deps.selectIndependentBatch;
@@ -447,7 +447,7 @@ describe("BUG-13 — parallel batch updates statusWriter after batch completion"
       totalCost: 2,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
     const baseCtx = makeCtx({ parallelCount: 2 });
     const ctx = {

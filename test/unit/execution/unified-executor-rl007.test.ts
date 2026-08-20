@@ -10,16 +10,16 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { DEFAULT_CONFIG } from "@/config/defaults";
 import {
   _isHeartbeatActive,
   resetCrashHandlers,
   startHeartbeat,
   stopHeartbeat,
-} from "../../../src/execution/crash-recovery";
-import { type SequentialExecutionContext, executeUnified } from "../../../src/execution/unified-executor";
-import type { LoadedHooksConfig } from "../../../src/hooks";
-import type { PRD, UserStory } from "../../../src/prd/types";
+} from "@/execution/crash-recovery";
+import { type SequentialExecutionContext, executeUnified } from "@/execution/unified-executor";
+import type { LoadedHooksConfig } from "@/hooks";
+import type { PRD, UserStory } from "@/prd/types";
 
 // ---------------------------------------------------------------------------
 // Fixtures

@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
-import { closeAllRunSessions, closeStorySessions, failAndClose } from "../../../src/execution/session-manager-runtime";
-import type { SessionDescriptor, SessionState } from "../../../src/session/types";
+import { closeAllRunSessions, closeStorySessions, failAndClose } from "@/execution/session-manager-runtime";
+import type { SessionDescriptor, SessionState } from "@/session/types";
 
 type SessionManagerLike = {
   closeStory(storyId: string): SessionDescriptor[];

@@ -8,13 +8,13 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { type SequentialExecutionContext, executeUnified } from "../../../src/execution/unified-executor";
-import { _runCompletionDeps, handleRunCompletion } from "../../../src/execution/lifecycle/run-completion";
-import type { LoadedHooksConfig } from "../../../src/hooks";
-import type { PipelineEvent, RunCompletedEvent } from "../../../src/pipeline/event-bus";
-import { pipelineEventBus } from "../../../src/pipeline/event-bus";
-import type { PRD, UserStory } from "../../../src/prd/types";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { type SequentialExecutionContext, executeUnified } from "@/execution/unified-executor";
+import { _runCompletionDeps, handleRunCompletion } from "@/execution/lifecycle/run-completion";
+import type { LoadedHooksConfig } from "@/hooks";
+import type { PipelineEvent, RunCompletedEvent } from "@/pipeline/event-bus";
+import { pipelineEventBus } from "@/pipeline/event-bus";
+import type { PRD, UserStory } from "@/prd/types";
 
 // ---------------------------------------------------------------------------
 // Fixtures

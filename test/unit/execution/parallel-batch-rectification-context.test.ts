@@ -13,20 +13,20 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
 import {
   _parallelBatchDeps,
   runParallelBatch,
   type ParallelBatchCtx,
-} from "../../../src/execution/parallel-batch";
-import type { ParallelBatchResult } from "../../../src/execution/parallel-worker";
-import type { RectifyConflictedStoryOptions } from "../../../src/execution/merge-conflict-rectify";
-import type { LoadedHooksConfig } from "../../../src/hooks";
-import type { PipelineContext } from "../../../src/pipeline/types";
-import type { PluginRegistry } from "../../../src/plugins/registry";
-import type { PRD, UserStory } from "../../../src/prd/types";
-import { makePRD, makeStory as makeSharedStory } from "../../helpers";
+} from "@/execution/parallel-batch";
+import type { ParallelBatchResult } from "@/execution/parallel-worker";
+import type { RectifyConflictedStoryOptions } from "@/execution/merge-conflict-rectify";
+import type { LoadedHooksConfig } from "@/hooks";
+import type { PipelineContext } from "@/pipeline/types";
+import type { PluginRegistry } from "@/plugins/registry";
+import type { PRD, UserStory } from "@/prd/types";
+import { makePRD, makeStory as makeSharedStory } from "@test/helpers";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function makeConflictStory(id: string, opts: Partial<UserStory> = {}): UserStory {

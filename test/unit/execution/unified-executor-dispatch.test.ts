@@ -12,7 +12,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { precomputeBatchPlan } from "../../../src/execution/batching";
+import { precomputeBatchPlan } from "@/execution/batching";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixture helpers
@@ -103,7 +103,7 @@ describe("AC-2 — runParallelBatch dispatch via _deps injection", () => {
   let origSelectIndependentBatch: unknown;
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunParallelBatch = deps.runParallelBatch;
     origRunIteration = deps.runIteration;
@@ -132,7 +132,7 @@ describe("AC-2 — runParallelBatch dispatch via _deps injection", () => {
       prdDirty: false,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const story = makePendingStory("US-001");
     const prd = makePrd([story]);
     const ctx = makeCtx({ parallelCount: 2 });
@@ -170,7 +170,7 @@ describe("AC-2 — runParallelBatch dispatch via _deps injection", () => {
       return { prd: makePrd([]), storiesCompletedDelta: 1, costDelta: 0, prdDirty: false };
     });
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
     const ctx = makeCtx({ parallelCount: 2 });
 
@@ -196,7 +196,7 @@ describe("AC-2 — runParallelBatch dispatch via _deps injection", () => {
       return { prd: makePrd([]), storiesCompletedDelta: 1, costDelta: 0, prdDirty: false };
     });
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1]);
     const ctx = makeCtx({ parallelCount: undefined });
 
@@ -223,7 +223,7 @@ describe("AC-2 — runParallelBatch dispatch via _deps injection", () => {
       prdDirty: false,
     }));
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1]);
     const ctx = makeCtx({ parallelCount: 0 });
 
@@ -248,7 +248,7 @@ describe("AC-2 — runParallelBatch dispatch via _deps injection", () => {
       return { prd: makePrd([]), storiesCompletedDelta: 1, costDelta: 0, prdDirty: false };
     });
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1]);
     const ctx = makeCtx({ parallelCount: 4 });
 
@@ -269,7 +269,7 @@ describe("AC-5 — story:started per-batch story via _deps injection", () => {
   let origSelectIndependentBatch: unknown;
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunParallelBatch = deps.runParallelBatch;
     origSelectIndependentBatch = deps.selectIndependentBatch;
@@ -300,7 +300,7 @@ describe("AC-5 — story:started per-batch story via _deps injection", () => {
       };
     });
 
-    const { pipelineEventBus } = await import("../../../src/pipeline/event-bus");
+    const { pipelineEventBus } = await import("@/pipeline/event-bus");
     const origEmit = pipelineEventBus.emit.bind(pipelineEventBus);
     pipelineEventBus.emit = mock((event: Record<string, unknown>) => {
       if (event.type === "story:started") {
@@ -309,7 +309,7 @@ describe("AC-5 — story:started per-batch story via _deps injection", () => {
       return origEmit(event as never);
     }) as typeof pipelineEventBus.emit;
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
     const ctx = makeCtx({ parallelCount: 2 });
 
@@ -335,7 +335,7 @@ describe("useBatch scheduling refresh", () => {
   let origPreIterationTierCheck: unknown;
 
   beforeEach(async () => {
-    const mod = await import("../../../src/execution/unified-executor");
+    const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunIteration = deps.runIteration;
     origPreIterationTierCheck = deps.preIterationTierCheck;
@@ -384,7 +384,7 @@ describe("useBatch scheduling refresh", () => {
       };
     });
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const ctx = {
       ...makeCtx(),
       config: {
@@ -452,7 +452,7 @@ describe("useBatch scheduling refresh", () => {
       };
     });
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const baseCtx = makeCtx();
     const ctx = {
       ...baseCtx,
@@ -529,7 +529,7 @@ describe("useBatch scheduling refresh", () => {
       return { shouldSkipIteration: true, prdDirty: false, prd };
     });
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const baseCtx = makeCtx();
     const ctx = {
       ...baseCtx,
@@ -590,7 +590,7 @@ describe("useBatch scheduling refresh", () => {
       return { prd: nextPrd, storiesCompletedDelta: failsThisCall ? 0 : 1, costDelta: 0, prdDirty: false };
     });
 
-    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const { executeUnified } = await import("@/execution/unified-executor");
     const baseCtx = makeCtx();
     const ctx = {
       ...baseCtx,

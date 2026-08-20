@@ -5,7 +5,7 @@ import {
   nonBlockingExtraPhases,
   runNonBlockingFix,
   shouldRunNonBlockingFix,
-} from "../../../src/execution/non-blocking-fix";
+} from "@/execution/non-blocking-fix";
 import type { Finding } from "@/findings";
 import { withInfoSpy } from "@test/helpers";
 

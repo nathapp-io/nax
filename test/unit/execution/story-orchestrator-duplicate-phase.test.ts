@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { NaxError } from "../../../src/errors";
-import { StoryOrchestratorBuilder } from "../../../src/execution/story-orchestrator";
+import { NaxError } from "@/errors";
+import { StoryOrchestratorBuilder } from "@/execution/story-orchestrator";
 
 const INPUT = { story: { id: "S1", title: "t" } as any, contextMarkdown: "c" };
 

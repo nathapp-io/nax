@@ -1,7 +1,7 @@
 // test/unit/execution/non-blocking-fix-wiring.test.ts
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { buildPlanForStrategy, _storyOrchestratorDeps } from "@/execution";
-import { shouldRunNonBlockingFix } from "../../../src/execution/non-blocking-fix";
+import { shouldRunNonBlockingFix } from "@/execution/non-blocking-fix";
 import type { NaxRuntime } from "@/runtime";
 import { _rollbackDeps } from "@/tdd";
 import { makeMockCallContext, makeMockPlanInputs, makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
