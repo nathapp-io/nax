@@ -18,6 +18,7 @@ import { resolveRunFileFromRegistry, selectRunFile } from "./logs-reader";
 export { _logsReaderDeps as _deps } from "./logs-reader";
 export { extractRunSummary, resolveRunFileFromRegistry, selectRunFile } from "./logs-reader";
 export { displayLogs, displayRunsList, followLogs, formatDuration } from "./logs-formatter";
+export type { FollowLogsDeps } from "./logs-formatter";
 
 /**
  * Options for logs command

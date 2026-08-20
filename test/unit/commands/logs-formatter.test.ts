@@ -12,12 +12,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { followLogs } from "../../../src/commands/logs-formatter";
-
-const TMP_ROOT = join(tmpdir(), "nax-follow-logs-test");
+import { followLogs } from "@/commands";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 interface Deps {
   emit: (line: string) => void;
@@ -51,7 +49,6 @@ const SAMPLE_ENTRIES = [
 ];
 
 function writeFixture(dir: string, name: string, entries: typeof SAMPLE_ENTRIES): string {
-  mkdirSync(dir, { recursive: true });
   const path = join(dir, name);
   writeFileSync(path, entries.map((e) => JSON.stringify(e)).join("\n"));
   return path;
@@ -61,12 +58,11 @@ describe("followLogs", () => {
   let dir: string;
 
   beforeEach(() => {
-    dir = join(TMP_ROOT, `case-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`);
-    mkdirSync(dir, { recursive: true });
+    dir = makeTempDir("nax-follow-logs-");
   });
 
   afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
+    cleanupTempDir(dir);
   });
 
   describe("cancellation", () => {
@@ -169,6 +165,24 @@ describe("followLogs", () => {
 
       const outcome = await followLogs(fixture, {}, { signal: controller.signal });
 
+      expect(outcome).toBe("cancelled");
+    });
+
+    test("default sleep rejects on mid-flight abort (no _deps override)", async () => {
+      // Pins the production wiring: with no _deps override, followLogs
+      // uses cancellableDelay(500, signal) as its inter-poll wait.
+      // Aborting the signal while that timer is armed must propagate
+      // through the catch as a clean "cancelled" return — not a throw,
+      // and not a hang past the abort. Without this test, a regression
+      // that swapped the default sleep for a non-cancellable one
+      // (or removed the try/catch around deps.sleep) would slip through.
+      const fixture = writeFixture(dir, "run.jsonl", SAMPLE_ENTRIES);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20);
+
+      const outcome = await followLogs(fixture, {}, { signal: controller.signal });
+
+      clearTimeout(timer);
       expect(outcome).toBe("cancelled");
     });
   });
