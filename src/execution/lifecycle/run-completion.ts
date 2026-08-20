@@ -12,6 +12,7 @@ import type { IAgentManager } from "@/agents";
 import { resolveDefaultAgent } from "@/agents";
 import type { NaxConfig } from "@/config";
 import { _resetCanonicalRulesCache, purgeStaleManifests } from "@/context/engine";
+import { fireHook } from "@/hooks";
 import type { HooksConfig } from "@/hooks/types";
 import { getSafeLogger } from "@/logger";
 import type { StoryMetrics } from "@/metrics";
@@ -24,7 +25,6 @@ import type { ISessionManager } from "@/session";
 import { purgeStaleScratch } from "@/session";
 import { clearWorkspaceCache } from "@/test-runners/detect";
 import { clearGitRootCache } from "@/verification";
-import { fireHook } from "../../hooks/runner";
 import { clearLanguageCache } from "../../project/detector";
 import type { DeferredReviewResult } from "../deferred-review";
 import type { ExitReason } from "../executor-types";
@@ -248,7 +248,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
 
       if (hooksConfig) {
         await _runCompletionDeps.fireHook(
-          hooksConfig as import("../../hooks/runner").LoadedHooksConfig,
+          hooksConfig as import("@/hooks").LoadedHooksConfig,
           "on-final-regression-fail",
           {
             event: "on-final-regression-fail",
