@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeNaxConfig } from "@test/helpers";
 import * as callModule from "@/operations";
 import { _debateSessionDeps } from "@/debate";
-import { runPlan } from "../../../src/debate/runner-plan";
+import { runPlan } from "@/debate/runner-plan";
 
 interface PlanCallInput {
   readonly debater?: { readonly agent: string; readonly model?: string };

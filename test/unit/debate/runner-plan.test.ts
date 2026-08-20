@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { DebateRunner } from "../../../src/debate/runner";
-import { _debateSessionDeps } from "../../../src/debate/session-helpers";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
+import { DebateRunner } from "@/debate/runner";
+import { _debateSessionDeps } from "@/debate/session-helpers";
 import { _runPlanDeps } from "@/debate";
 import * as callModule from "@/operations";
-import type { CallContext } from "../../../src/operations/types";
-import type { DebateStageConfig } from "../../../src/debate/types";
-import { makeMockAgentManager, makeSessionManager } from "../../helpers";
+import type { CallContext } from "@/operations/types";
+import type { DebateStageConfig } from "@/debate/types";
+import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/helpers";
 import * as callModule from "@/operations";
-import { runStateful } from "../../../src/debate/runner-stateful";
+import { runStateful } from "@/debate/runner-stateful";
 
 interface PromiseWithResolvers<T> {
   readonly promise: Promise<T>;

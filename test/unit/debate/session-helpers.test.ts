@@ -12,21 +12,21 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import { readdirSync } from "node:fs";
 
-import { _debateSessionDeps, resolveOutcome } from "../../../src/debate/session-helpers";
-import type { DebateSessionOptions } from "../../../src/debate/session-helpers";
-import type { SelectorContext } from "../../../src/debate/selectors";
-import { computeAcpHandle } from "../../../src/agents/acp/adapter";
-import type { CompleteOptions } from "../../../src/agents/types";
-import type { CallContext } from "../../../src/operations/types";
-import type { DebateStageConfig } from "../../../src/debate/types";
-import { debateConfigSelector, DEFAULT_CONFIG } from "../../../src/config";
-import { makeMockAgentManager } from "../../helpers";
+import { _debateSessionDeps, resolveOutcome } from "@/debate/session-helpers";
+import type { DebateSessionOptions } from "@/debate/session-helpers";
+import type { SelectorContext } from "@/debate/selectors";
+import { computeAcpHandle } from "@/agents/acp/adapter";
+import type { CompleteOptions } from "@/agents/types";
+import type { CallContext } from "@/operations/types";
+import type { DebateStageConfig } from "@/debate/types";
+import { debateConfigSelector, DEFAULT_CONFIG } from "@/config";
+import { makeMockAgentManager } from "@test/helpers";
 
 const DEFAULT_DEBATE_CONFIG = debateConfigSelector.select(DEFAULT_CONFIG);
 
 // Barrel re-export checks
-import { _debateSessionDeps as barrelDeps } from "../../../src/debate";
-import type { DebateSessionOptions as BarrelDebateSessionOptions } from "../../../src/debate";
+import { _debateSessionDeps as barrelDeps } from "@/debate";
+import type { DebateSessionOptions as BarrelDebateSessionOptions } from "@/debate";
 
 // ─── AC1: File size constraint ────────────────────────────────────────────────
 

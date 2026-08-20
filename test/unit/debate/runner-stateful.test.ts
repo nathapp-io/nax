@@ -1,19 +1,19 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { DebateRunner } from "../../../src/debate/runner";
-import { _debateSessionDeps } from "../../../src/debate/session-helpers";
-import type { DebateStageConfig } from "../../../src/debate/types";
-import * as callModule from "../../../src/operations";
-import type { DebateStatefulInput } from "../../../src/operations/debate-stateful";
-import type { CallContext } from "../../../src/operations/types";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { computeAcpHandle } from "../../../src/agents/acp/adapter";
-import { createNoOpCostAggregator } from "../../../src/runtime/cost-aggregator";
-import { makeMockAgentManager, makeSessionManager } from "../../helpers";
+import { DebateRunner } from "@/debate/runner";
+import { _debateSessionDeps } from "@/debate/session-helpers";
+import type { DebateStageConfig } from "@/debate/types";
+import * as callModule from "@/operations";
+import type { DebateStatefulInput } from "@/operations/debate-stateful";
+import type { CallContext } from "@/operations/types";
+import { DEFAULT_CONFIG } from "@/config";
+import { computeAcpHandle } from "@/agents/acp/adapter";
+import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
+import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 // ─── Compile-time check ───────────────────────────────────────────────────────
 
 test("SuccessfulProposal type carries optional handle field (compile-time check)", () => {
-  const proposal: import("../../../src/debate/session-helpers").SuccessfulProposal = {
+  const proposal: import("@/debate/session-helpers").SuccessfulProposal = {
     debater: { agent: "claude", model: "fast" },
     agentName: "claude",
     output: "test",

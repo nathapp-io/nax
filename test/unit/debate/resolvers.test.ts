@@ -14,10 +14,10 @@ import {
   judgeResolver,
   majorityResolver,
   synthesisResolver,
-} from "../../../src/debate/resolvers";
-import type { CompleteOptions } from "../../../src/agents/types";
-import type { Debater, ResolverConfig } from "../../../src/debate/types";
-import { makeMockAgentManager } from "../../helpers";
+} from "@/debate/resolvers";
+import type { CompleteOptions } from "@/agents/types";
+import type { Debater, ResolverConfig } from "@/debate/types";
+import { makeMockAgentManager } from "@test/helpers";
 
 // ─── AC7 & AC8: majorityResolver ─────────────────────────────────────────────
 
