@@ -11,15 +11,14 @@
 
 import type { Iteration } from "@/findings";
 import type { AcDroppedEntry, AcGroundingMinimalRejection } from "@/review/ac-quote-validator";
+// Sub-barrel import (not the `src/review` barrel): routing through `@/review`
+// closes cycles via `./adversarial` and `./review-iteration-store`.
+// `semantic-categories` is its own nested barrel, so this reaches the module
+// directly without loading `src/review/index.ts`.
+import { SEMANTIC_CATEGORY_ENUM_LINE } from "@/review/semantic-categories";
 import type { LLMFinding } from "@/review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "@/review/types";
 import { wrapJsonPrompt } from "@/utils/llm-json";
-// Leaf import (not the `src/review` barrel): the barrel also re-exports
-// `./adversarial`, which reaches `src/operations/adversarial-review.ts` ->
-// `@/prompts` -> this very file -> the barrel again, a 5-hop cycle
-// independent of the `./runner` cycle documented in the barrel's header
-// (#Phase C escalation).
-import { SEMANTIC_CATEGORY_ENUM_LINE } from "../../review/semantic-categories";
 import { buildReviewOutOfScopeBlock } from "../sections";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";
 

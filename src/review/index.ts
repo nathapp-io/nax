@@ -18,16 +18,13 @@ export * from "./finding-projection";
 export * from "./types";
 // `./runner` is NOT re-exported here (deliberately). It pulls in `./semantic`,
 // which imports `ReviewPromptBuilder` from `@/prompts` — and `@/prompts`
-// re-exports `./builders/review-builder`, which needs this barrel's
-// `SEMANTIC_CATEGORY_ENUM_LINE`. Import `runReview` from `../../review/runner`
-// (relative, in `src/`) or `@/review/runner` (in `test/`) instead.
+// re-exports `./builders/review-builder`. Import `runReview` from
+// `@/review/runner` instead.
 //
-// NOTE: dropping `./runner` alone does not let `review-builder.ts` import
-// this barrel — `./adversarial` (below) closes an independent 5-hop cycle
-// through `src/operations/adversarial-review.ts` -> `@/prompts` ->
-// `review-builder.ts` -> back here. `review-builder.ts` must keep using the
-// leaf path for `./semantic-categories` until `./adversarial` is also split
-// out of this barrel.
+// `review-builder.ts` reaches `SEMANTIC_CATEGORY_ENUM_LINE` through the
+// `./semantic-categories` nested barrel rather than this one, which avoids the
+// independent cycles `./adversarial` and `./review-iteration-store` close back
+// through `@/prompts`.
 export * from "./requote-response";
 export * from "./severity";
 export { validateLLMShape, parseLLMResponse } from "./semantic-helpers";
