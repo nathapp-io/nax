@@ -10,8 +10,8 @@ import {
   KNOWN_FRONTMATTER_KEYS,
   parseFrontmatter,
   RulesFrontmatterError,
-} from "../../../../src/context/rules/rules-frontmatter";
-import { loadCanonicalRules, _canonicalLoaderDeps } from "../../../../src/context/rules/canonical-loader";
+} from "@/context/rules/rules-frontmatter";
+import { loadCanonicalRules, _canonicalLoaderDeps } from "@/context/rules/canonical-loader";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC1: parseFrontmatter() returns priority 100 when content has no frontmatter block

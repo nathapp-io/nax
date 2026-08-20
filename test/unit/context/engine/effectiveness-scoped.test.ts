@@ -26,10 +26,10 @@ import {
   buildEvidenceTerms,
   classifyWithTerms,
   splitDiffByFile,
-} from "../../../../src/context/engine/effectiveness";
-import { _manifestStoreDeps } from "../../../../src/context/engine/manifest-store";
+} from "@/context/engine/effectiveness";
+import { _manifestStoreDeps } from "@/context/engine/manifest-store";
 import { withDepsRestore, makeLogger } from "@test/helpers";
-import type { ChunkEffectiveness } from "../../../../src/context/engine/types";
+import type { ChunkEffectiveness } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC1 — splitDiffByFile: each post-image path maps to its own section

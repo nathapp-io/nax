@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { neutralizeForAgent } from "../../../../src/context/engine/scratch-neutralizer";
+import { neutralizeForAgent } from "@/context/engine/scratch-neutralizer";
 
 describe("neutralizeForAgent", () => {
   describe("same agent — no-op", () => {

@@ -8,9 +8,9 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { StaticRulesProvider, _staticRulesDeps } from "../../../../../src/context/engine/providers/static-rules";
-import { NaxConfigSchema } from "../../../../../src/config/schemas";
-import type { ContextRequest } from "../../../../../src/context/engine/types";
+import { StaticRulesProvider, _staticRulesDeps } from "@/context/engine/providers/static-rules";
+import { NaxConfigSchema } from "@/config/schemas";
+import type { ContextRequest } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers

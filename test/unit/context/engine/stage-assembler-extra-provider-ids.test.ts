@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { ContextV2ConfigSchema } from "../../../../src/config/schemas";
-import { _stageAssemblerDeps, assembleForStage } from "../../../../src/context/engine/stage-assembler";
-import type { ContextBundle, ContextRequest } from "../../../../src/context/engine/types";
-import type { PipelineContext } from "../../../../src/pipeline/types";
+import { ContextV2ConfigSchema } from "@/config/schemas";
+import { _stageAssemblerDeps, assembleForStage } from "@/context/engine/stage-assembler";
+import type { ContextBundle, ContextRequest } from "@/context/engine/types";
+import type { PipelineContext } from "@/pipeline/types";
 
 function makeCtx(extraProviderIds?: string[]): PipelineContext {
   return {

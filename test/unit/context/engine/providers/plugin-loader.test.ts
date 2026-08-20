@@ -15,9 +15,9 @@ import {
   loadPluginProviders,
   resolveModuleSpecifier,
   _pluginLoaderDeps,
-} from "../../../../../src/context/engine/providers/plugin-loader";
-import type { IContextProvider, ContextProviderResult } from "../../../../../src/context/engine";
-import type { ContextPluginProviderConfig } from "../../../../../src/config/runtime-types";
+} from "@/context/engine/providers/plugin-loader";
+import type { IContextProvider, ContextProviderResult } from "@/context/engine";
+import type { ContextPluginProviderConfig } from "@/config/runtime-types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { buildDigest, digestTokens } from "../../../../src/context/engine/digest";
-import type { PackedChunk } from "../../../../src/context/engine/packing";
+import { buildDigest, digestTokens } from "@/context/engine/digest";
+import type { PackedChunk } from "@/context/engine/packing";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

@@ -7,8 +7,8 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import { ContextOrchestrator, _orchestratorDeps } from "../../../../src/context/engine/orchestrator";
-import type { ContextRequest, IContextProvider, ContextProviderResult } from "../../../../src/context/engine/types";
+import { ContextOrchestrator, _orchestratorDeps } from "@/context/engine/orchestrator";
+import type { ContextRequest, IContextProvider, ContextProviderResult } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -123,13 +123,13 @@ describe("ContextOrchestrator — determinism mode (AC-24)", () => {
   });
 
   test("schema: ContextV2ConfigSchema includes deterministic field defaulting to false", async () => {
-    const { ContextV2ConfigSchema } = await import("../../../../src/config/schemas");
+    const { ContextV2ConfigSchema } = await import("@/config/schemas");
     const parsed = ContextV2ConfigSchema.parse({});
     expect(parsed.deterministic).toBe(false);
   });
 
   test("schema: ContextV2ConfigSchema accepts deterministic: true", async () => {
-    const { ContextV2ConfigSchema } = await import("../../../../src/config/schemas");
+    const { ContextV2ConfigSchema } = await import("@/config/schemas");
     const parsed = ContextV2ConfigSchema.parse({ deterministic: true });
     expect(parsed.deterministic).toBe(true);
   });

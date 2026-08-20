@@ -11,7 +11,7 @@ import {
   parseAudienceTags,
   shouldIncludeEntry,
   truncateToContextBudget,
-} from "../../../src/context/feature-context-filter";
+} from "@/context/feature-context-filter";
 
 describe("parseAudienceTags", () => {
   test.each([

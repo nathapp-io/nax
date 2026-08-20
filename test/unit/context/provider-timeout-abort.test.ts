@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ContextOrchestrator, fetchWithTimeout } from "../../../src/context/engine/orchestrator";
+import { ContextOrchestrator, fetchWithTimeout } from "@/context/engine/orchestrator";
 
 describe("fetchWithTimeout", () => {
   test("aborts the losing provider fetch when the timeout wins and does not throw unhandled", async () => {

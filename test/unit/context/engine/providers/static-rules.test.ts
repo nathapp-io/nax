@@ -8,11 +8,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { StaticRulesProvider, _staticRulesDeps } from "../../../../../src/context/engine/providers/static-rules";
-import type { ContextRequest } from "../../../../../src/context/engine/types";
-import { NeutralityLintError } from "../../../../../src/context/rules/canonical-loader";
-import type { CanonicalRule } from "../../../../../src/context/rules/canonical-loader";
-import type { NaxError } from "../../../../../src/errors";
+import { StaticRulesProvider, _staticRulesDeps } from "@/context/engine/providers/static-rules";
+import type { ContextRequest } from "@/context/engine/types";
+import { NeutralityLintError } from "@/context/rules/canonical-loader";
+import type { CanonicalRule } from "@/context/rules/canonical-loader";
+import type { NaxError } from "@/errors";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers

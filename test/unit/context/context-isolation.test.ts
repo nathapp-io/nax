@@ -6,9 +6,9 @@
 import { describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { buildContext, formatContextAsMarkdown } from "../../../src/context";
-import type { ContextBudget, StoryContext } from "../../../src/context/types";
-import type { PRD, UserStory } from "../../../src/prd";
+import { buildContext, formatContextAsMarkdown } from "@/context";
+import type { ContextBudget, StoryContext } from "@/context/types";
+import type { PRD, UserStory } from "@/prd";
 import { makeTempDir } from "@test/helpers";
 
 // Helper to create test PRD

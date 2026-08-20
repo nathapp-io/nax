@@ -7,7 +7,7 @@ import {
   rebuildManifestPath,
   writeContextManifest,
   writeRebuildManifest,
-} from "../../../../src/context/engine/manifest-store";
+} from "@/context/engine/manifest-store";
 import { withDepsRestore, withTempDir } from "@test/helpers";
 
 withDepsRestore(_manifestStoreDeps);

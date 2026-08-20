@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AdapterFailure, RebuildOptions } from "../../../src/context/engine";
+import type { AdapterFailure, RebuildOptions } from "@/context/engine";
 
 /**
  * Tests for context rebuilding when fail-stale occurs.

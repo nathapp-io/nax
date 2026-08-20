@@ -13,9 +13,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 // NOTE: _contextBuilderDeps is exported from builder.ts — mock-based tests below
 // use this injection pattern for testing
-import { _contextBuilderDeps, buildContext } from "../../../src/context/builder";
-import type { ContextBudget, StoryContext } from "../../../src/context/types";
-import type { PRD, UserStory } from "../../../src/prd";
+import { _contextBuilderDeps, buildContext } from "@/context/builder";
+import type { ContextBudget, StoryContext } from "@/context/types";
+import type { PRD, UserStory } from "@/prd";
 import { makeTempDir } from "@test/helpers";
 
 // Helper to create a minimal test PRD

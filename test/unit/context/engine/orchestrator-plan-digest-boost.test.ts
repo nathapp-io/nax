@@ -7,9 +7,9 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import { ContextOrchestrator, _orchestratorDeps } from "../../../../src/context/engine/orchestrator";
-import { getStageContextConfig, STAGE_CONTEXT_MAP } from "../../../../src/context/engine/stage-config";
-import type { ContextRequest } from "../../../../src/context/engine/types";
+import { ContextOrchestrator, _orchestratorDeps } from "@/context/engine/orchestrator";
+import { getStageContextConfig, STAGE_CONTEXT_MAP } from "@/context/engine/stage-config";
+import type { ContextRequest } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

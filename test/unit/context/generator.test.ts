@@ -6,9 +6,9 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NaxConfig } from "../../../src/config";
-import { _generatorDeps, discoverPackages, generateForPackage } from "../../../src/context/generator";
-import { makeNaxConfig } from "../../helpers";
+import type { NaxConfig } from "@/config";
+import { _generatorDeps, discoverPackages, generateForPackage } from "@/context/generator";
+import { makeNaxConfig } from "@test/helpers";
 import { makeTempDir } from "@test/helpers";
 
 describe("discoverPackages (MW-004)", () => {
@@ -154,7 +154,7 @@ describe("generateForPackage (MW-004)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { mkdirSync, writeFileSync } from "node:fs";
-import { discoverWorkspacePackages } from "../../../src/context/generator";
+import { discoverWorkspacePackages } from "@/context/generator";
 
 describe("discoverWorkspacePackages", () => {
   let tmpDir: string;

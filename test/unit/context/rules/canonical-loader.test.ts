@@ -6,7 +6,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { NaxError } from "../../../../src/errors";
+import { NaxError } from "@/errors";
 import { translateLegacyFrontmatter, withReviewNotice } from "@/cli";
 import {
   applyCanonicalRulesBudget,
@@ -15,7 +15,7 @@ import {
   NeutralityLintError,
   CANONICAL_RULES_DIR,
   _canonicalLoaderDeps,
-} from "../../../../src/context/rules/canonical-loader";
+} from "@/context/rules/canonical-loader";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
