@@ -24,9 +24,9 @@ import { join, relative } from "node:path";
 import { loadPlugins } from "@/plugins";
 import type { PostRunContext } from "@/plugins/extensions";
 import { makeStory } from "@test/helpers";
-import { _autoPrDeps, autoPrPlugin } from "../../../../src/plugins/builtin/auto-pr";
-import { buildBody, buildTitle } from "../../../../src/plugins/builtin/auto-pr/pr-body";
-import type { AutoPrDeps } from "../../../../src/plugins/builtin/auto-pr/types";
+import { _autoPrDeps, autoPrPlugin } from "@/plugins/builtin/auto-pr";
+import { buildBody, buildTitle } from "@/plugins/builtin/auto-pr/pr-body";
+import type { AutoPrDeps } from "@/plugins/builtin/auto-pr/types";
 
 const PLUGIN_NAME = "nax-auto-pr";
 

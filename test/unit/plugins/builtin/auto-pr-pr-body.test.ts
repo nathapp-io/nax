@@ -7,8 +7,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { makeStory } from "@test/helpers";
-import { buildBody, buildTitle } from "../../../../src/plugins/builtin/auto-pr/pr-body";
-import type { PrBodyContext } from "../../../../src/plugins/builtin/auto-pr/pr-body";
+import { buildBody, buildTitle } from "@/plugins/builtin/auto-pr/pr-body";
+import type { PrBodyContext } from "@/plugins/builtin/auto-pr/pr-body";
 
 function makeContext(overrides: Partial<PrBodyContext> = {}): PrBodyContext {
   return {

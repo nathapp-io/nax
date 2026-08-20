@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { PostRunContext } from "../../../src/plugins/extensions";
+import type { PostRunContext } from "@/plugins/extensions";
 
 describe("PostRunContext curator extensions", () => {
   test("should support outputDir field", () => {

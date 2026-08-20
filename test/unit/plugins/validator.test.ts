@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { validatePlugin } from "../../../src/plugins/validator";
+import { validatePlugin } from "@/plugins/validator";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // validatePlugin with post-run-action

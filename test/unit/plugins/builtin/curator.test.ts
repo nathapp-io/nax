@@ -5,8 +5,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { curatorPlugin } from "../../../../src/plugins/builtin/curator";
-import type { PostRunContext } from "../../../../src/plugins/extensions";
+import { curatorPlugin } from "@/plugins/builtin/curator";
+import type { PostRunContext } from "@/plugins/extensions";
 
 describe("curatorPlugin", () => {
   test("should have correct plugin metadata", () => {

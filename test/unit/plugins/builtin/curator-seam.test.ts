@@ -17,11 +17,11 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { collectObservations, curatorPlugin, readHeuristicWindow } from "../../../../src/plugins/builtin/curator";
-import type { CuratorPostRunContext } from "../../../../src/plugins/builtin/curator";
-import { runHeuristics } from "../../../../src/plugins/builtin/curator/heuristics";
-import type { CuratorThresholds } from "../../../../src/plugins/builtin/curator/heuristics";
-import { appendToRollup } from "../../../../src/plugins/builtin/curator/rollup";
+import { collectObservations, curatorPlugin, readHeuristicWindow } from "@/plugins/builtin/curator";
+import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
+import { runHeuristics } from "@/plugins/builtin/curator/heuristics";
+import type { CuratorThresholds } from "@/plugins/builtin/curator/heuristics";
+import { appendToRollup } from "@/plugins/builtin/curator/rollup";
 
 const THRESHOLDS: CuratorThresholds = {
   repeatedFinding: 3,

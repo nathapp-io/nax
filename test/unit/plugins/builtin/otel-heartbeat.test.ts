@@ -6,8 +6,8 @@ import {
   _heartbeatDeps,
   buildHeartbeatMetricsPayload,
   startHeartbeat,
-} from "../../../../src/plugins/builtin/otel-reporter/heartbeat";
-import { attr } from "../../../../src/plugins/builtin/otel-reporter/otlp";
+} from "@/plugins/builtin/otel-reporter/heartbeat";
+import { attr } from "@/plugins/builtin/otel-reporter/otlp";
 
 function snapshot(overrides: Partial<HeartbeatSnapshot> = {}): HeartbeatSnapshot {
   return {
