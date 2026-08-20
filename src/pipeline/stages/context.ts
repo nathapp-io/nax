@@ -34,13 +34,16 @@ import {
 } from "@/context/engine";
 import type { ContextElement } from "@/context/types";
 import { NaxError } from "@/errors";
+// Sub-barrel import (not the `@/execution` barrel): routing through it closes
+// a 12-hop pipeline -> execution loop. `helpers` is its own nested barrel, so
+// this reaches it without loading `src/execution/index.ts`.
+import { buildStoryContextFullFromCtx } from "@/execution/helpers";
 import { getLogger } from "@/logger";
 import { getContextFiles } from "@/prd";
 import { readDigestFile, writeDigestFile } from "@/session";
 import { resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
 import { packageDirRelative } from "@/utils/paths";
-import { buildStoryContextFullFromCtx } from "../../execution/helpers";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 

@@ -33,7 +33,7 @@ export {
   getAllReadyStories,
   type StoryCounts,
   formatProgress,
-} from "./story-context";
+} from "../story-context";
 
 // Lock management
-export { acquireLock, releaseLock, _lockDeps } from "./lock";
+export { acquireLock, releaseLock, _lockDeps } from "../lock";
