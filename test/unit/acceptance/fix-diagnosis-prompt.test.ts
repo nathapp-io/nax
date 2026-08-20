@@ -10,8 +10,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { AcceptancePromptBuilder } from "../../../src/prompts";
-import type { SemanticVerdict } from "../../../src/acceptance/types";
+import { AcceptancePromptBuilder } from "@/prompts";
+import type { SemanticVerdict } from "@/acceptance/types";
 
 const builder = new AcceptancePromptBuilder();
 const buildDiagnosisPrompt = (opts: Parameters<AcceptancePromptBuilder["buildDiagnosisPrompt"]>[0]) =>

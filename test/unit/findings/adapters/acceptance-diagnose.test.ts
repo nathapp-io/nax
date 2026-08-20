@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   acceptanceDiagnoseRawArrayToFindings,
   acceptanceDiagnoseRawToFinding,
-} from "../../../../src/findings";
+} from "@/findings";
 
 describe("acceptanceDiagnoseRawToFinding", () => {
   test("maps well-formed minimal record with default severity", () => {

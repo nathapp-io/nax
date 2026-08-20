@@ -12,7 +12,7 @@ import {
   readCapped,
   resolveLanguage,
   resolveSourceFiles,
-} from "../../../src/acceptance/import-resolution";
+} from "@/acceptance/import-resolution";
 import { clearLanguageCache } from "@/project";
 import { withTempDir } from "@test/helpers";
 

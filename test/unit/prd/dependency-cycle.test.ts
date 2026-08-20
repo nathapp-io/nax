@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { assertNoDependencyCycle, detectDependencyCycle } from "../../../src/prd/dependency-cycle";
-import type { UserStory } from "../../../src/prd/types";
+import { assertNoDependencyCycle, detectDependencyCycle } from "@/prd/dependency-cycle";
+import type { UserStory } from "@/prd/types";
 
 function story(id: string, dependencies: string[] = []): UserStory {
   return { id, dependencies } as UserStory;

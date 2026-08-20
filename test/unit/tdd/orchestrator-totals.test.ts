@@ -6,15 +6,15 @@
  */
 
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
-import type { AgentResult } from "../../../src/agents/types";
-import { buildPlanForStrategy } from "../../../src/execution/build-plan-for-strategy";
-import type { PlanInputs } from "../../../src/execution/plan-inputs";
-import { _fullSuiteGateDeps } from "../../../src/operations/full-suite-gate";
-import type { UserStory } from "../../../src/prd";
-import { _isolationDeps } from "../../../src/tdd/isolation";
-import { _rollbackDeps } from "../../../src/tdd/rollback";
-import { _gitDeps } from "../../../src/utils/git";
-import { makeNaxConfig, makeMockRuntime } from "../../helpers";
+import type { AgentResult } from "@/agents/types";
+import { buildPlanForStrategy } from "@/execution/build-plan-for-strategy";
+import type { PlanInputs } from "@/execution/plan-inputs";
+import { _fullSuiteGateDeps } from "@/operations/full-suite-gate";
+import type { UserStory } from "@/prd";
+import { _isolationDeps } from "@/tdd/isolation";
+import { _rollbackDeps } from "@/tdd/rollback";
+import { _gitDeps } from "@/utils/git";
+import { makeNaxConfig, makeMockRuntime } from "@test/helpers";
 import { fakeAgentManager } from "../../helpers/fake-agent-manager";
 import { makeMockCallContext } from "@test/helpers";
 

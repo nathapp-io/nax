@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
 import { act } from "react";
 import { Text } from "ink";
-import { pipelineEventBus } from "../../src/pipeline/event-bus";
-import { usePipelineBusEvents } from "../../src/tui/hooks/usePipelineBusEvents";
-import type { StoryDisplayState } from "../../src/tui/types";
+import { pipelineEventBus } from "@/pipeline/event-bus";
+import { usePipelineBusEvents } from "@/tui/hooks/usePipelineBusEvents";
+import type { StoryDisplayState } from "@/tui/types";
 
 function makeInitialStory(id: string): StoryDisplayState {
   return {

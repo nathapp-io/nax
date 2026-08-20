@@ -5,8 +5,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { rankContestants } from "../../../src/bakeoff/ranking";
-import type { ContestantResult, ContestantStatus } from "../../../src/bakeoff/types";
+import { rankContestants } from "@/bakeoff/ranking";
+import type { ContestantResult, ContestantStatus } from "@/bakeoff/types";
 
 // Helper to create a ContestantResult with defaults
 function makeContestant(

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { genericTypecheckDiagnosticToFinding } from "../../../../src/findings";
-import type { TypecheckDiagnostic } from "../../../../src/review/typecheck-parsing";
+import { genericTypecheckDiagnosticToFinding } from "@/findings";
+import type { TypecheckDiagnostic } from "@/review/typecheck-parsing";
 
 const WORKDIR = "/repo";
 

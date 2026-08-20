@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir, waitForCondition, withTimeout } from "@test/helpers";
-import { type FollowLogsDeps, followLogs } from "../../../src/commands/logs";
+import { type FollowLogsDeps, followLogs } from "@/commands/logs";
 
 describe("--follow mode byte-offset tailing (US-002)", () => {
   let followDir: string;

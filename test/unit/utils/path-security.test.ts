@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { validateModulePath } from "../../../src/utils/path-security";
+import { validateModulePath } from "@/utils/path-security";
 import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────

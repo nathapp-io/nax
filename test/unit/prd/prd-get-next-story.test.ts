@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { getNextStory, markStoryFailed } from "../../../src/prd";
-import type { PRD, UserStory } from "../../../src/prd/types";
+import { getNextStory, markStoryFailed } from "@/prd";
+import type { PRD, UserStory } from "@/prd/types";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

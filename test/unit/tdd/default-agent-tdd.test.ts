@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { resolveDefaultAgent } from "../../../src/agents/utils";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { resolveDefaultAgent } from "@/agents/utils";
+import { DEFAULT_CONFIG } from "@/config/defaults";
 
 describe("resolveDefaultAgent in tdd context", () => {
   test("returns agent.default when present", () => {

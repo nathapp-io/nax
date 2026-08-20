@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { errorMessage } from "../../../src/utils/errors";
+import { errorMessage } from "@/utils/errors";
 
 describe("errorMessage", () => {
   test("extracts message from Error instance", () => {

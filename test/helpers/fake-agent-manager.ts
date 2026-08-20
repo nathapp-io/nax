@@ -1,13 +1,13 @@
-import { DEFAULT_CONFIG } from "../../src/config";
-import type { NaxConfig } from "../../src/config";
-import { resolvePermissions } from "../../src/config/permissions";
-import { getLogger } from "../../src/logger";
-import { formatSessionName } from "../../src/runtime/session-name";
-import { buildContextToolPreamble, buildRunInteractionHandler } from "../../src/agents/acp/adapter";
-import { NO_OP_INTERACTION_HANDLER } from "../../src/agents/interaction-handler";
-import type { IAgentManager } from "../../src/agents/manager-types";
-import type { AgentAdapter, AgentResult } from "../../src/agents/types";
-import type { IDispatchEventBus } from "../../src/runtime/dispatch-events";
+import { DEFAULT_CONFIG } from "@/config";
+import type { NaxConfig } from "@/config";
+import { resolvePermissions } from "@/config/permissions";
+import { getLogger } from "@/logger";
+import { formatSessionName } from "@/runtime/session-name";
+import { buildContextToolPreamble, buildRunInteractionHandler } from "@/agents/acp/adapter";
+import { NO_OP_INTERACTION_HANDLER } from "@/agents/interaction-handler";
+import type { IAgentManager } from "@/agents/manager-types";
+import type { AgentAdapter, AgentResult } from "@/agents/types";
+import type { IDispatchEventBus } from "@/runtime/dispatch-events";
 
 export interface FakeAgentManagerOptions {
   /** Optional default agent name override. Defaults to adapter.name. */

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CLIInteractionPlugin } from "../../../../src/interaction/plugins/cli";
+import { CLIInteractionPlugin } from "@/interaction/plugins/cli";
 
 const makeRequest = (id = "req-1") => ({
   id,

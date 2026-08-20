@@ -9,10 +9,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { loadPRD, savePRD } from "../../../src/prd";
-import type { PRD } from "../../../src/prd/types";
-import { routeTask } from "../../../src/routing";
+import { DEFAULT_CONFIG } from "@/config";
+import { loadPRD, savePRD } from "@/prd";
+import type { PRD } from "@/prd/types";
+import { routeTask } from "@/routing";
 import { makeTempDir } from "@test/helpers";
 
 // BUG-004

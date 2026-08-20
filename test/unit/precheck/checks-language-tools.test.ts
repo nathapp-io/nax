@@ -6,8 +6,8 @@
  */
 
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import type { ProjectProfile } from "../../../src/config/runtime-types";
-import { checkLanguageTools, _languageToolsDeps } from "../../../src/precheck/checks-warnings";
+import type { ProjectProfile } from "@/config/runtime-types";
+import { checkLanguageTools, _languageToolsDeps } from "@/precheck/checks-warnings";
 
 describe("checkLanguageTools", () => {
   let originalWhich: typeof Bun.which;

@@ -7,8 +7,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _telegramPluginDeps, TelegramInteractionPlugin } from "../../../src/interaction/plugins/telegram";
-import type { InteractionRequest } from "../../../src/interaction/types";
+import { _telegramPluginDeps, TelegramInteractionPlugin } from "@/interaction/plugins/telegram";
+import type { InteractionRequest } from "@/interaction/types";
 
 describe("TelegramInteractionPlugin - Regression BUG-116", () => {
   let savedFetch: typeof _telegramPluginDeps.fetch;

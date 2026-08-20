@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { buildTestFrameworkHint, detectFramework, stripAnsi } from "../../../src/test-runners/detector";
+import { buildTestFrameworkHint, detectFramework, stripAnsi } from "@/test-runners/detector";
 
 describe("buildTestFrameworkHint", () => {
   test("returns neutral hint for empty command (#543)", () => {

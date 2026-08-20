@@ -1,5 +1,5 @@
-import { DEFAULT_CONFIG } from "../../src/config";
-import type { NaxConfig } from "../../src/config";
+import { DEFAULT_CONFIG } from "@/config";
+import type { NaxConfig } from "@/config";
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
 

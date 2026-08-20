@@ -9,8 +9,8 @@ import {
   findRelatedStories,
   groupACsByRelatedStories,
   parseACTextFromSpec,
-} from "../../../src/acceptance/fix-generator";
-import { AcceptancePromptBuilder } from "../../../src/prompts";
+} from "@/acceptance/fix-generator";
+import { AcceptancePromptBuilder } from "@/prompts";
 
 function buildFixPrompt(
   batchedACs: string[],
@@ -29,7 +29,7 @@ function buildFixPrompt(
     testFilePath,
   });
 }
-import type { PRD, UserStory } from "../../../src/prd/types";
+import type { PRD, UserStory } from "@/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

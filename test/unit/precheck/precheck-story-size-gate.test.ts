@@ -7,9 +7,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { NaxConfig } from "../../../src/config";
-import type { PRD, UserStory } from "../../../src/prd/types";
-import { checkStorySizeGate } from "../../../src/precheck/story-size-gate";
+import type { NaxConfig } from "@/config";
+import type { PRD, UserStory } from "@/prd/types";
+import { checkStorySizeGate } from "@/precheck/story-size-gate";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

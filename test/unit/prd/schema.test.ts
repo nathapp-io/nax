@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { MAX_OUT_OF_SCOPE_ITEMS } from "@/prd";
-import { extractJsonFromMarkdown, validatePlanOutput } from "../../../src/prd/schema";
+import { extractJsonFromMarkdown, validatePlanOutput } from "@/prd/schema";
 
 // ---------------------------------------------------------------------------
 // Helpers

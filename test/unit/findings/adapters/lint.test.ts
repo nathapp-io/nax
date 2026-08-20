@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { lintDiagnosticToFinding } from "../../../../src/findings";
-import type { LintDiagnostic } from "../../../../src/review/lint-parsing";
+import { lintDiagnosticToFinding } from "@/findings";
+import type { LintDiagnostic } from "@/review/lint-parsing";
 
 const WORKDIR = "/repo";
 

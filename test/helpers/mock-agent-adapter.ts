@@ -1,5 +1,5 @@
 import { mock } from "bun:test";
-import type { AgentAdapter, CompleteResult, SessionHandle, TurnResult } from "../../src/agents/types";
+import type { AgentAdapter, CompleteResult, SessionHandle, TurnResult } from "@/agents/types";
 
 const DEFAULT_COMPLETE_RESULT: CompleteResult = {
   output: "",

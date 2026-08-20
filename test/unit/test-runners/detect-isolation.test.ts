@@ -13,12 +13,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _directoryScanDeps } from "../../../src/test-runners/detect/directory-scan";
-import { _fileScanDeps } from "../../../src/test-runners/detect/file-scan";
-import { _frameworkConfigDeps } from "../../../src/test-runners/detect/framework-configs";
-import { _frameworkDefaultsDeps } from "../../../src/test-runners/detect/framework-defaults";
-import { detectTestFilePatterns } from "../../../src/test-runners/detect/index";
-import { _cacheDeps } from "../../../src/test-runners/detect/cache";
+import { _directoryScanDeps } from "@/test-runners/detect/directory-scan";
+import { _fileScanDeps } from "@/test-runners/detect/file-scan";
+import { _frameworkConfigDeps } from "@/test-runners/detect/framework-configs";
+import { _frameworkDefaultsDeps } from "@/test-runners/detect/framework-defaults";
+import { detectTestFilePatterns } from "@/test-runners/detect/index";
+import { _cacheDeps } from "@/test-runners/detect/cache";
 
 // ─── Save/restore helpers ─────────────────────────────────────────────────────
 

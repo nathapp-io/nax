@@ -7,8 +7,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { expandExtglob, expandExtglobAll } from "../../../src/test-runners/detect/extglob";
-import { globsToTestRegex } from "../../../src/test-runners/conventions";
+import { expandExtglob, expandExtglobAll } from "@/test-runners/detect/extglob";
+import { globsToTestRegex } from "@/test-runners/conventions";
 
 describe("expandExtglob — passthrough cases", () => {
   test("returns plain pattern unchanged when no extglob/brace syntax is present", () => {

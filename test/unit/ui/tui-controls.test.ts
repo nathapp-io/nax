@@ -11,13 +11,13 @@ import { unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { render } from "ink-testing-library";
 import { createElement } from "react";
-import type { UserStory } from "../../../src/prd/types";
-import { CostOverlay } from "../../../src/tui/components/CostOverlay";
-import { HelpOverlay } from "../../../src/tui/components/HelpOverlay";
-import type { KeyboardAction } from "../../../src/tui/hooks/useKeyboard";
-import { PanelFocus } from "../../../src/tui/types";
-import type { StoryDisplayState } from "../../../src/tui/types";
-import { writeQueueCommand } from "../../../src/utils/queue-writer";
+import type { UserStory } from "@/prd/types";
+import { CostOverlay } from "@/tui/components/CostOverlay";
+import { HelpOverlay } from "@/tui/components/HelpOverlay";
+import type { KeyboardAction } from "@/tui/hooks/useKeyboard";
+import { PanelFocus } from "@/tui/types";
+import type { StoryDisplayState } from "@/tui/types";
+import { writeQueueCommand } from "@/utils/queue-writer";
 
 // Helper to create mock stories
 function createMockStory(id: string, status: StoryDisplayState["status"], cost = 0.01): StoryDisplayState {

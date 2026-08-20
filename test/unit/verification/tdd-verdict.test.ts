@@ -11,7 +11,7 @@ import {
   cleanupVerdict,
   coerceVerdict,
   readVerdict,
-} from "../../../src/tdd/verdict";
+} from "@/tdd/verdict";
 
 // ---------------------------------------------------------------------------
 // Helpers

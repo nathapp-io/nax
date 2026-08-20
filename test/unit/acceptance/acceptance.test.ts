@@ -8,7 +8,7 @@ import {
   buildAcceptanceTestPrompt,
   generateSkeletonTests,
   parseAcceptanceCriteria,
-} from "../../../src/acceptance/generator";
+} from "@/acceptance/generator";
 
 describe("parseAcceptanceCriteria", () => {
   test("parses AC-N: format", () => {

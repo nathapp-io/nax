@@ -7,8 +7,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveProject, resolveProjectAsync } from "../../../src/commands/common";
-import { NaxError } from "../../../src/errors";
+import { resolveProject, resolveProjectAsync } from "@/commands/common";
+import { NaxError } from "@/errors";
 import { makeTempDir } from "@test/helpers";
 
 describe("resolveProject", () => {
@@ -291,7 +291,7 @@ describe("resolveProjectAsync", () => {
 
     // Set up identity registry entry pointing to it
     // globalConfigDir() is redirected to a temp dir in tests via preload.ts
-    const { globalConfigDir } = await import("../../../src/config/paths");
+    const { globalConfigDir } = await import("@/config/paths");
     const registryDir = join(globalConfigDir(), "my-project");
     mkdirSync(registryDir, { recursive: true });
     writeFileSync(join(registryDir, ".identity"), JSON.stringify({ workdir: projectDir, name: "my-project", createdAt: "", lastSeen: "", remoteUrl: null }));
@@ -324,7 +324,7 @@ describe("resolveProjectAsync", () => {
     }
 
     // corrupt identity file
-    const { globalConfigDir } = await import("../../../src/config/paths");
+    const { globalConfigDir } = await import("@/config/paths");
     const registryDir = join(globalConfigDir(), "corrupt-project");
     mkdirSync(registryDir, { recursive: true });
     writeFileSync(join(registryDir, ".identity"), "not valid json{{{");

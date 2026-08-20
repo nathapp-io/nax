@@ -10,7 +10,7 @@ import {
   clearWorkspaceCache,
   discoverWorkspacePackages,
   _workspaceDeps,
-} from "../../../src/test-runners/detect/workspace";
+} from "@/test-runners/detect/workspace";
 import { withTempDir } from "@test/helpers";
 
 describe("discoverWorkspacePackages memoization", () => {

@@ -6,7 +6,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { clearLanguageCache, detectLanguage, _detectorDeps } from "../../../src/project/detector";
+import { clearLanguageCache, detectLanguage, _detectorDeps } from "@/project/detector";
 import { withTempDir } from "@test/helpers";
 
 describe("detectLanguage memoization", () => {

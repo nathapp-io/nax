@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { killProcessGroup } from "../../../src/utils/process-kill";
+import { killProcessGroup } from "@/utils/process-kill";
 
 describe("killProcessGroup", () => {
   let originalKill: typeof process.kill;

@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { countStories, isComplete, isStalled } from "../../../src/prd";
-import type { PRD, StoryStatus, UserStory } from "../../../src/prd";
+import { countStories, isComplete, isStalled } from "@/prd";
+import type { PRD, StoryStatus, UserStory } from "@/prd";
 
 // ---------------------------------------------------------------------------
 // Fixtures

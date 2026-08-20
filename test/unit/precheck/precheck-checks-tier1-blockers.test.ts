@@ -6,8 +6,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ExecutionConfig, NaxConfig } from "../../../src/config";
-import type { PRD, UserStory } from "../../../src/prd/types";
+import type { ExecutionConfig, NaxConfig } from "@/config";
+import type { PRD, UserStory } from "@/prd/types";
 import { makeTempDir } from "@test/helpers";
 import {
   checkCanonicalRulesLint,
@@ -18,8 +18,8 @@ import {
   checkPRDValid,
   checkStaleLock,
   checkWorkingTreeClean,
-} from "../../../src/precheck/checks";
-import { _checkCanonicalRulesDeps } from "../../../src/precheck/checks-system";
+} from "@/precheck/checks";
+import { _checkCanonicalRulesDeps } from "@/precheck/checks-system";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

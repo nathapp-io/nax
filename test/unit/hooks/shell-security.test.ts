@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 // Access internal functions for testing
 // @ts-ignore
-import { hasShellOperators, validateHookCommand } from "../../../src/hooks/runner";
+import { hasShellOperators, validateHookCommand } from "@/hooks/runner";
 
 describe("Hook Shell Security (SEC-3)", () => {
   test("hasShellOperators detects backticks", () => {
@@ -40,7 +40,7 @@ describe("Hook Shell Security (SEC-3)", () => {
 });
 
 // @ts-ignore — parseCommandToArgv is not exported but accessible for testing
-import { parseCommandToArgv } from "../../../src/hooks/runner";
+import { parseCommandToArgv } from "@/hooks/runner";
 
 describe("Hook tilde expansion", () => {
   test("expands ~/ to HOME in hook command tokens", () => {

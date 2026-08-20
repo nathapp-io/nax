@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _queueLockDeps, listLiveCandidates } from "../../../src/utils/queue-file-lock";
+import { _queueLockDeps, listLiveCandidates } from "@/utils/queue-file-lock";
 
 const QUEUE_PATH = "/tmp/nax-queue-lock-test/queue.txt";
 const NOW = 2_000_000_000;

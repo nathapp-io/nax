@@ -9,7 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _qualityRunnerDeps, runQualityCommand } from "../../../src/quality/runner";
+import { _qualityRunnerDeps, runQualityCommand } from "@/quality/runner";
 
 // ---------------------------------------------------------------------------
 // Mock helpers

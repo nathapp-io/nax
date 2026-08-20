@@ -9,9 +9,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { DecomposedStory } from "../../../src/agents/shared/types-extended";
-import { NaxError } from "../../../src/errors";
-import { mapDecomposedStoriesToUserStories } from "../../../src/prd/decompose-mapper";
+import type { DecomposedStory } from "@/agents/shared/types-extended";
+import { NaxError } from "@/errors";
+import { mapDecomposedStoriesToUserStories } from "@/prd/decompose-mapper";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import * as tddIndex from "../../../src/tdd/index";
+import * as tddIndex from "@/tdd/index";
 
 /**
  * Story: Retire legacy TDD surfaces and migrate tests in mergeable increments

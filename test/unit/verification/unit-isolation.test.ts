@@ -11,8 +11,8 @@ import {
   LITE_STUB_ADDED_LINES_CEILING,
   isSourceFile,
   verifyTestWriterIsolation,
-} from "../../../src/tdd/isolation";
-import { isTestFile } from "../../../src/test-runners";
+} from "@/tdd/isolation";
+import { isTestFile } from "@/test-runners";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // isTestFile

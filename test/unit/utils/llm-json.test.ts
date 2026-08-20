@@ -14,7 +14,7 @@ import {
   parseLLMJson,
   stripTrailingCommas,
   wrapJsonPrompt,
-} from "../../../src/utils/llm-json";
+} from "@/utils/llm-json";
 
 // ---------------------------------------------------------------------------
 // extractJsonFromMarkdown

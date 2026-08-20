@@ -15,9 +15,9 @@
  * ```
  */
 
-import { DEFAULT_CONFIG } from "../../src/config";
-import type { PipelineContext, RoutingResult } from "../../src/pipeline/types";
-import type { PRD, UserStory } from "../../src/prd/types";
+import { DEFAULT_CONFIG } from "@/config";
+import type { PipelineContext, RoutingResult } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd/types";
 
 export const DEFAULT_TEST_ROUTING: RoutingResult = {
   complexity: "simple",

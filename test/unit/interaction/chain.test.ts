@@ -11,8 +11,8 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { InteractionChain } from "../../../src/interaction/chain";
-import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../../../src/interaction/types";
+import { InteractionChain } from "@/interaction/chain";
+import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "@/interaction/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

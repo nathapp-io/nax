@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { acFailureToFinding, acSentinelToFinding } from "../../../../src/findings";
+import { acFailureToFinding, acSentinelToFinding } from "@/findings";
 
 const BUN_OUTPUT = `
 bun test v1.3.13 (bf2e2cec)

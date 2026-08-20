@@ -13,7 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mapSourceToTests } from "../../../src/verification/smart-runner";
+import { mapSourceToTests } from "@/verification/smart-runner";
 
 function mockFileExists(existingPaths: string[]) {
   // biome-ignore lint/suspicious/noExplicitAny: mocking Bun.file

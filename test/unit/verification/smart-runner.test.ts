@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _gitDeps } from "../../../src/utils/git";
+import { _gitDeps } from "@/utils/git";
 import { withDepsRestore } from "@test/helpers";
 import {
   _gitUtilDeps,
@@ -8,7 +8,7 @@ import {
   getChangedTestFiles,
   importGrepFallback,
   mapSourceToTests,
-} from "../../../src/verification/smart-runner";
+} from "@/verification/smart-runner";
 
 // ---------------------------------------------------------------------------
 // buildSmartTestCommand

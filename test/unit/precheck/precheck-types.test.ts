@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { Check, CheckStatus, CheckTier, PrecheckResult } from "../../../src/precheck/types";
+import type { Check, CheckStatus, CheckTier, PrecheckResult } from "@/precheck/types";
 
 describe("PrecheckResult type structure", () => {
   test("PrecheckResult has blockers array", () => {

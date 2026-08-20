@@ -7,9 +7,9 @@
  */
 
 import { describe, expect, mock, test, afterEach } from "bun:test";
-import { checkAgentCLI, _deps } from "../../../src/precheck/checks-blockers";
+import { checkAgentCLI, _deps } from "@/precheck/checks-blockers";
 import { withDepsRestore } from "@test/helpers";
-import { makeNaxConfig } from "../../helpers";
+import { makeNaxConfig } from "@test/helpers";
 
 // --- helpers ---
 
@@ -109,7 +109,7 @@ describe("checkAgentCLI — --version flag patterns", () => {
 
 describe("checkAgentCLI — no regression on checkClaudeCLI", () => {
   test("checkClaudeCLI still exists and works as before", async () => {
-    const { checkClaudeCLI } = await import("../../../src/precheck/checks-blockers");
+    const { checkClaudeCLI } = await import("@/precheck/checks-blockers");
 
     _deps.spawn = mock((_cmd: string[]) => ({
       exited: Promise.resolve(0),

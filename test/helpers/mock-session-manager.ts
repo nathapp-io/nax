@@ -1,6 +1,6 @@
 import { mock } from "bun:test";
-import type { SessionHandle, TurnResult } from "../../src/agents/types";
-import type { ISessionManager, SessionDescriptor } from "../../src/session/types";
+import type { SessionHandle, TurnResult } from "@/agents/types";
+import type { ISessionManager, SessionDescriptor } from "@/session/types";
 
 /**
  * Minimal ISessionManager mock. All methods are no-op stubs returning sensible defaults.

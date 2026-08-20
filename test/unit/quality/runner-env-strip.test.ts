@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { runQualityCommand, _qualityRunnerDeps } from "../../../src/quality/runner";
+import { runQualityCommand, _qualityRunnerDeps } from "@/quality/runner";
 
 function makeEnvCapturingSpawn(exitCode: number): {
   spawnMock: ReturnType<typeof mock>;

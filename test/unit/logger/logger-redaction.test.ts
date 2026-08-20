@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { Logger, resetLogger } from "../../../src/logger/logger";
+import { Logger, resetLogger } from "@/logger/logger";
 import { makeTempDir, cleanupTempDir } from "@test/helpers";
 
 describe("logger redaction in JSONL output", () => {
