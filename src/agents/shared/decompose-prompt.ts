@@ -4,4 +4,4 @@
  * during the migration period.
  */
 export type { DecomposePromptInput } from "@/prompts/builders/decompose-builder";
-export { buildDecomposePromptSync, buildDecomposePromptAsync } from "../../prompts/builders/decompose-builder";
+export { buildDecomposePromptSync, buildDecomposePromptAsync } from "@/prompts";
