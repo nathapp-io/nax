@@ -38,7 +38,7 @@ Quick rules of thumb:
 
 - Every directory with 2+ exports gets a barrel `index.ts`.
 - Types go in `types.ts` per module directory.
-- Import from barrels (`src/routing`), **never from internal paths** (`src/routing/router`). This prevents singleton fragmentation in Bun's module registry.
+- Import from barrels (`src/routing`), **never from internal paths** (`src/routing/router`) in `src/`, `bin/` and `scripts/`. This keeps each module's public API meaningful. Tests are exempt — see Path Aliases below.
 
 ### Path Aliases
 
@@ -60,13 +60,52 @@ import { makeMockAgentManager } from "@test/helpers";
 // config-patterns.md), since TypeScript erases them at compile time.
 import type { RoutingConfig } from "@/config/selectors";
 
-// Wrong — value import bypasses the barrel; fragments singletons.
+// Wrong — value import from src/ bypasses the barrel.
 import { Router } from "@/routing/router";
 ```
+
+**Tests may reach internals.** Under `test/`, a value import of `@/<dir>/<internal>`
+is allowed: exercising the unit is a unit test's job, and a non-barrelled
+internal would otherwise be untestable — the deep-relative form is rejected by
+the ratchet below and the alias form used to be rejected by the barrel gate
+(GitHub #1647). `@test/<dir>/<internal>` stays forbidden everywhere: shared
+fixtures are a real public API for tests.
+
+```typescript
+// Correct — in test/, exercising a non-barrelled internal directly
+import { applyConfigCompatShims } from "@/config/compat-shims";
+
+// Still wrong, even in test/ — test helpers must go through their barrel
+import { makeConfig } from "@test/helpers/config";
+```
+
+Note that the barrel gate's older justification — that alias-internal imports
+"fragment singletons across Bun's module registry (BUG-035)" — is not correct.
+`@/foo/bar` and `../foo/bar` resolve to the same realpath and therefore the
+same module instance. BUG-035 concerns `mock.module()` interception, and its
+remedy is the `_deps` injection pattern. The gate's real purpose is
+encapsulation, and to stop the alias migration from laundering barrel
+violations past the deep-relative ratchet.
 
 Aliases are not mandatory — relative paths are still fine. Use the alias when it improves readability (typically 3+ levels of `../`). Enforced by `bun run check:alias-internals` (runs as part of `bun run lint`).
 
 **Migration ratchet:** `bun run check:deep-relatives` (also part of `lint`) tracks all 2+ level relative imports against a saved baseline. The count must not increase — new code must use aliases. When you touch a file, convert its deep relatives as you go. When the baseline reaches 0, delete it. To lower the baseline after migrating a batch: `bun run check:deep-relatives:update`.
+
+**Cycle ratchet:** `bun run check:import-cycles` (also part of `lint`) counts
+runtime import cycles in `src/` against a baseline. Routing an import through a
+barrel adds an edge to that barrel, which can close a loop — so migrating onto
+barrels is gated by this check rather than by reviewer intuition. Type-only
+imports are excluded; they are erased and cannot participate in initialisation
+order. When a conversion is rejected, leave the import as a leaf/relative
+import: a deep relative is strictly better than a cycle. To lower the baseline
+after genuinely breaking cycles: `bun run check:import-cycles:update`.
+
+Two imports are deliberately left as deep relatives because barrelling them
+closes a `pipeline` to `execution` loop — `src/pipeline/stages/context.ts`
+(`buildStoryContextFullFromCtx`) and `src/pipeline/subscribers/hooks.ts`
+(`hookCtx`). Two more are left alone because `src/test-runners/detect.ts` and
+`src/test-runners/detect/` both exist, so `@/test-runners/detect` resolves to
+the file and shadows the directory barrel.
 
 ## Logging
 

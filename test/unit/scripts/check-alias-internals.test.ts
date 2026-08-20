@@ -81,8 +81,7 @@ describe("scanFileForAliasInternals", () => {
 
   test("allows type-only imports into internal paths (singleton-safe)", () => {
     const file = join(root, "src", "consumer.ts");
-    const content =
-      'import type { X } from "@/config/selectors";\nexport type { X } from "@/config/selectors";\n';
+    const content = 'import type { X } from "@/config/selectors";\nexport type { X } from "@/config/selectors";\n';
     expect(scanFileForAliasInternals(file, content, barrels, root)).toEqual([]);
   });
 
@@ -125,18 +124,9 @@ describe("findAliasInternalViolations", () => {
   afterEach(() => cleanupTempDir(root));
 
   test("walks src/, test/, and bin/ recursively", () => {
-    writeFileSync(
-      join(root, "src", "a.ts"),
-      'import { Router } from "@/routing/router";\n',
-    );
-    writeFileSync(
-      join(root, "test", "unit", "b.test.ts"),
-      'import { x } from "@test/helpers/inner";\n',
-    );
-    writeFileSync(
-      join(root, "bin", "c.ts"),
-      'import { Router } from "@/routing";\n',
-    );
+    writeFileSync(join(root, "src", "a.ts"), 'import { Router } from "@/routing/router";\n');
+    writeFileSync(join(root, "test", "unit", "b.test.ts"), 'import { x } from "@test/helpers/inner";\n');
+    writeFileSync(join(root, "bin", "c.ts"), 'import { Router } from "@/routing";\n');
 
     const violations = findAliasInternalViolations(root);
     const paths = violations.map((v) => v.file).sort();
@@ -166,5 +156,77 @@ describe("formatAliasViolationReport", () => {
     expect(report).toContain("src/consumer.ts:1");
     expect(report).toContain("@/routing/router");
     expect(report).toContain("@/routing");
+  });
+});
+
+describe("test-importer exemption (GitHub #1647)", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = makeTempDir("nax-alias-check-");
+    setupRepo(root);
+  });
+  afterEach(() => cleanupTempDir(root));
+
+  test("allows a test file to value-import a src internal via @/", () => {
+    const file = join(root, "test", "unit", "router.test.ts");
+    const content = 'import { Router } from "@/routing/router";\n';
+    writeFileSync(file, content);
+
+    const { barrels } = loadBarrels(root);
+    expect(scanFileForAliasInternals(file, content, barrels, root)).toEqual([]);
+  });
+
+  test("allows a test file to dynamically import a src internal via @/", () => {
+    const file = join(root, "test", "unit", "router.test.ts");
+    const content = 'const m = await import("@/routing/router");\n';
+    writeFileSync(file, content);
+
+    const { barrels } = loadBarrels(root);
+    expect(scanFileForAliasInternals(file, content, barrels, root)).toEqual([]);
+  });
+
+  test("still flags the same import from a src file", () => {
+    const file = join(root, "src", "routing", "consumer.ts");
+    const content = 'import { Router } from "@/routing/router";\n';
+    writeFileSync(file, content);
+
+    const { barrels } = loadBarrels(root);
+    const violations = scanFileForAliasInternals(file, content, barrels, root);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.importPath).toBe("@/routing/router");
+  });
+
+  test("still flags the same import from a bin file", () => {
+    const file = join(root, "bin", "cli.ts");
+    const content = 'import { Router } from "@/routing/router";\n';
+    writeFileSync(file, content);
+
+    const { barrels } = loadBarrels(root);
+    expect(scanFileForAliasInternals(file, content, barrels, root)).toHaveLength(1);
+  });
+
+  test("does NOT exempt @test/ internals for test files — fixtures stay barrelled", () => {
+    mkdirSync(join(root, "test", "helpers"), { recursive: true });
+    writeFileSync(join(root, "test", "helpers", "config.ts"), "export const makeConfig = () => ({});\n");
+
+    const file = join(root, "test", "unit", "thing.test.ts");
+    const content = 'import { makeConfig } from "@test/helpers/config";\n';
+    writeFileSync(file, content);
+
+    const { barrels } = loadBarrels(root);
+    const violations = scanFileForAliasInternals(file, content, barrels, root);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.importPath).toBe("@test/helpers/config");
+  });
+
+  test("a directory merely named test-* is not treated as a test importer", () => {
+    mkdirSync(join(root, "src", "test-runners"), { recursive: true });
+    const file = join(root, "src", "test-runners", "runner.ts");
+    const content = 'import { Router } from "@/routing/router";\n';
+    writeFileSync(file, content);
+
+    const { barrels } = loadBarrels(root);
+    expect(scanFileForAliasInternals(file, content, barrels, root)).toHaveLength(1);
   });
 });

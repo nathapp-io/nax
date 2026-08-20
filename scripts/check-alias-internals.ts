@@ -3,28 +3,51 @@
  * CI gate: prevent value-level `@/<dir>/<internal>` imports when
  * `src/<dir>/index.ts` exists.
  *
- * Path aliases (`@/*`, `@test/*`) are allowed, but value imports must point at
- * barrels — never internal files. Aliasing into an internal path is
- * functionally identical to a deep relative import into an internal path: it
- * fragments singletons across Bun's module registry (BUG-035) and bypasses
- * the public API of the module.
+ * Purpose: this guard exists so the path-alias migration (tracked by
+ * `check-deep-relatives.ts`, added in the same change) cannot launder barrel
+ * violations. That ratchet only counts `../../` specifiers, so mechanically
+ * rewriting `../../routing/router` to `@/routing/router` would drop the count
+ * by one while changing nothing — the import still bypasses the barrel. This
+ * check closes that loophole, keeping production code on each module's public
+ * API.
  *
- * Type-only imports (`import type { X } from "@/foo/internal"`) are exempt
- * because TypeScript erases them at compile time, so they cannot fragment
- * runtime singletons. This matches the documented exception for
- * `@/config/selectors` in .claude/rules/config-patterns.md.
+ * NOTE: an earlier version of this comment claimed alias-internal imports
+ * "fragment singletons across Bun's module registry (BUG-035)". That is not
+ * correct — `@/foo/bar` and `../foo/bar` resolve to the same realpath and
+ * therefore the same module instance. BUG-035 is about `mock.module()`
+ * interception, and its remedy is the `_deps` injection pattern (see
+ * `src/review/runner.ts`), not import spelling. The real justification for
+ * this gate is encapsulation, as described above.
+ *
+ * Exemptions:
+ *
+ * 1. Type-only imports (`import type { X } from "@/foo/internal"`) — erased at
+ *    compile time, so they cannot affect runtime module wiring. This matches
+ *    the documented exception for `@/config/selectors` in
+ *    .claude/rules/config-patterns.md.
+ *
+ * 2. Value imports of `@/<dir>/<internal>` from files under `test/` — a unit
+ *    test's job is to exercise the unit, so reaching past a barrel is the
+ *    intended behaviour rather than a violation. Without this, a test of any
+ *    non-barrelled internal is unwritable: the deep-relative form is rejected
+ *    by the ratchet and the alias form was rejected here (GitHub #1647).
+ *    Encapsulation is still enforced for `src/`, `bin/` and `scripts/`.
+ *    `@test/<dir>/<internal>` stays enforced everywhere — shared fixtures are
+ *    a real public API for tests.
  *
  * Allowed:    import { Router } from "@/routing";
  *             import type { RoutingConfig } from "@/config/selectors";
- * Forbidden:  import { Router } from "@/routing/router";
- *             import { selectors } from "@/config/selectors";
+ *             import { applyConfigCompatShims } from "@/config/compat-shims";  // in test/
+ * Forbidden:  import { Router } from "@/routing/router";                       // in src/
+ *             import { selectors } from "@/config/selectors";                  // in src/
+ *             import { makeConfig } from "@test/helpers/config";               // anywhere
  *
  * Same rule applies to `@test/<dir>/...` when `test/<dir>/index.ts` exists.
  *
  * Usage: bun scripts/check-alias-internals.ts
  * Exit 0 if clean, exit 1 if violations found.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 export interface AliasViolation {
@@ -47,10 +70,6 @@ interface BarrelMap {
 const EXEMPT_FILES = new Set<string>([
   "scripts/check-alias-internals.ts",
   "test/unit/scripts/check-alias-internals.test.ts",
-  // US-004: test/unit/context/engine/effectiveness.test.ts must import
-  // from effectiveness.ts directly to verify direct-vs-barrel import
-  // equivalence (AC2), then from the barrel for the re-export check (AC3).
-  "test/unit/context/engine/effectiveness.test.ts",
 ]);
 
 // Captures the import/export prelude in group 1 (so we can detect `type`)
@@ -60,6 +79,19 @@ const DYNAMIC_IMPORT_RE = /import\(\s*["']([^"']+)["']\s*\)/g;
 
 function isTypeOnlyImport(prelude: string): boolean {
   return /^\s*(?:import|export)\s+type\b/.test(prelude);
+}
+
+/**
+ * True when the importing file is a test. Tests may reach `src/` internals
+ * directly (exemption 2 above); they may not bypass `@test/` barrels.
+ */
+export function isTestImporter(fileRelative: string): boolean {
+  return fileRelative === "test" || fileRelative.startsWith("test/");
+}
+
+/** True for a `@/...` specifier, i.e. one pointing into `src/`. */
+function isSrcAlias(spec: string): boolean {
+  return spec.startsWith("@/");
 }
 
 function listBarrelDirs(rootDir: string, subdir: string, prefix: string): Set<string> {
@@ -148,6 +180,7 @@ export function scanFileForAliasInternals(
   rootDir: string,
 ): AliasViolation[] {
   const violations: AliasViolation[] = [];
+  const testImporter = isTestImporter(relative(rootDir, file));
 
   STATIC_IMPORT_RE.lastIndex = 0;
   let staticMatch: RegExpExecArray | null;
@@ -156,6 +189,7 @@ export function scanFileForAliasInternals(
     const spec = staticMatch[2];
     if (!spec || !(spec.startsWith("@/") || spec.startsWith("@test/"))) continue;
     if (isTypeOnlyImport(prelude)) continue;
+    if (testImporter && isSrcAlias(spec)) continue;
     const hit = classify(spec, barrels);
     if (!hit) continue;
     const line = content.slice(0, staticMatch.index).split("\n").length;
@@ -167,6 +201,7 @@ export function scanFileForAliasInternals(
   while ((dynMatch = DYNAMIC_IMPORT_RE.exec(content)) !== null) {
     const spec = dynMatch[1];
     if (!spec || !(spec.startsWith("@/") || spec.startsWith("@test/"))) continue;
+    if (testImporter && isSrcAlias(spec)) continue;
     const hit = classify(spec, barrels);
     if (!hit) continue;
     const line = content.slice(0, dynMatch.index).split("\n").length;
@@ -190,10 +225,7 @@ export function findAliasInternalViolations(rootDir: string): AliasViolation[] {
   return all;
 }
 
-export function formatAliasViolationReport(
-  violations: readonly AliasViolation[],
-  barrelCount: number,
-): string {
+export function formatAliasViolationReport(violations: readonly AliasViolation[], barrelCount: number): string {
   if (violations.length === 0) {
     return `[OK] no alias-into-internal imports (${barrelCount} barrels checked)`;
   }
@@ -225,4 +257,3 @@ export function main(): void {
 if (import.meta.main) {
   main();
 }
-
