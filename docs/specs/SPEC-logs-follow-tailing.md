@@ -36,26 +36,33 @@ Verified symbols and signatures at `b45129617`:
 | `cancellableDelay` | `src/utils/bun-deps.ts:71` | `(ms: number, signal?: AbortSignal) => Promise<void>` — **rejects** on abort |
 | `_logsReaderDeps` | `src/commands/logs-reader.ts:15` | existing `_deps` object in this module family |
 
-**Pattern to mirror — `src/schedule/wait.ts`.** It is the repository's precedent for exactly this shape: a polling loop that must be cancellable and hermetic under test.
+**Pattern to mirror — `waitForSchedule` in `src/schedule/wait.ts`.** Read it before implementing; it is the repository's existing precedent for exactly this shape, a polling loop that must be cancellable and hermetic under test. Nothing in that file is created, modified, or re-declared by this spec — it is reference material only. Described in prose deliberately, so it is not mistaken for an interface to author: it declares a `WaitDeps` interface alongside a module-level `DEFAULT_DEPS` constant whose `delay` member is `cancellableDelay`; `waitForSchedule` takes an options object carrying a required `signal` and an optional `_deps: Partial<WaitDeps>`, merges them as `{ ...DEFAULT_DEPS, ...opts._deps }`, checks `opts.signal.aborted` at the top of each loop iteration and returns early, and wraps its `deps.delay(...)` call in a `try/catch` that converts the abort-rejection into the same early return.
+
+`followLogs` adopts those same three elements: a `Partial<Deps>` override merged over a module-level default, a top-of-loop `signal.aborted` check, and a `try/catch` around the delay that converts an abort-rejection into a normal return.
+
+**Target signature.** The shape US-001 and US-002 must arrive at — the third parameter and both dependency members are what every acceptance criterion below exercises:
 
 ```typescript
-export interface WaitDeps { now, delay, render, log }
-const DEFAULT_DEPS: WaitDeps = { delay: (ms, signal) => cancellableDelay(ms, signal), ... };
-
-export async function waitForSchedule(
-  target: Date,
-  opts: { label: string; quiet: boolean; signal: AbortSignal; _deps?: Partial<WaitDeps> },
-): Promise<WaitOutcome> {
-  const deps: WaitDeps = { ...DEFAULT_DEPS, ...opts._deps };
-  while (...) {
-    if (opts.signal.aborted) return "cancelled";
-    try { await deps.delay(wait, opts.signal); }
-    catch { return "cancelled"; }   // delay rejects on abort
-  }
+export interface FollowLogsDeps {
+  /** Emits one formatted line. Defaults to today's console output. */
+  emit: (line: string) => void;
+  /** Waits between polls. Defaults to cancellableDelay; rejects on abort. */
+  sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** Reads the file from a byte offset to EOF. Added by US-002. */
+  readRange: (filePath: string, start: number) => Promise<string>;
 }
+
+export async function followLogs(
+  filePath: string,
+  options: { json?: boolean; story?: string; level?: LogLevel },
+  opts?: { signal?: AbortSignal; _deps?: Partial<FollowLogsDeps> },
+): Promise<"cancelled">;
+
+// LogsOptions gains an optional `signal`; the return type is unchanged.
+export async function logsCommand(options: LogsOptions): Promise<void>;
 ```
 
-`followLogs` adopts the same three elements: a `Partial<Deps>` override merged over a module-level default, a top-of-loop `signal.aborted` check, and a `try/catch` around the delay that converts an abort-rejection into a normal return.
+US-001 introduces `FollowLogsDeps` with `emit` and `sleep`; US-002 adds `readRange`. The third parameter is optional throughout, so both existing `followLogs` call sites in `src/commands/logs.ts` keep compiling unchanged.
 
 Two behaviours change in the loop body:
 
@@ -151,4 +158,4 @@ Fixtures for every criterion below contain at least one entry whose `message` in
 
 5. `[unit]` When the followed file is rewritten to a shorter length than the offset already observed, `followLogs` resynchronises to the new length and emits an entry appended after that truncation.
 
-6. `[unit]` On the poll following an append, the injected byte-range reader dependency is invoked with a start offset equal to the byte length of the content already consumed, not `0`, confirming the tail reads only the appended range rather than the whole file.
+6. `[unit]` On the poll following an append, the injected `readRange` dependency is invoked with a start offset equal to the byte length of the content already consumed, not `0`, confirming the tail reads only the appended range rather than the whole file.
