@@ -348,11 +348,20 @@ literal path, not just its import specifier.
   Verified against the old script on the §7.2 change: its `--list` mentions
   `review-builder.ts` zero times, while the new one prints the full 8-hop loop
   §7.2 had to trace by hand.
-- **The two rule roots have drifted.** `.claude/rules/project-conventions.md`
-  and `test-architecture.md` are marked auto-generated from `.nax/rules/`, but
-  carry hand-added #1647 content the canonical files lack. Running
-  `nax rules export --agent=claude` today would delete it. Both roots were
-  edited by hand here instead. Reconciling them is separate work.
+- ~~**The two rule roots have drifted.**~~ — **reconciled.**
+  `.claude/rules/project-conventions.md` and `test-architecture.md` are marked
+  auto-generated from `.nax/rules/`, but carried hand-added #1647, #1648 and
+  BUG-035 content the canonical files lacked, so `nax rules export` would have
+  deleted it. Ten of the twelve pairs were already identical once frontmatter
+  is discounted; the two drifted bodies were ported into `.nax/rules/` and the
+  generated files re-exported byte-identically. `test-ratchets.md` was
+  hand-written and existed only under `.claude/rules/` — export warned about it
+  as an orphan — so it now has a canonical source too.
+  `nax rules export --agent=claude --check` reports up to date, and the
+  canonical store carries no agent-specific paths. Note the canonical
+  `project-conventions.md` had also kept the singleton-fragmentation
+  justification for the barrel rule, which the generated file already
+  documented as false; that is now corrected at the source.
 
 ## 8. Why the rules exist
 

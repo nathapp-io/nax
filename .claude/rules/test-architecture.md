@@ -93,5 +93,5 @@ exported from it; reach for the internal path only when it is not.
 `@test/<dir>/<internal>` remains forbidden — shared helpers and fixtures are a
 real public API for tests, so import them from their barrel (`@test/helpers`).
 
-See `.claude/rules/project-conventions.md` for the full path-alias rules and
+See `project-conventions.md` for the full path-alias rules and
 the import-cycle ratchet.

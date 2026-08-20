@@ -17,7 +17,6 @@ stages:
   - "review-semantic"
   - "review-adversarial"
 ---
-
 # Project Conventions
 
 > Concise directives. For detailed rationale, see `docs/architecture/conventions.md` §1–§4 and `docs/architecture/coding-standards.md` §9–§10.
@@ -49,7 +48,13 @@ Quick rules of thumb:
 
 - Every directory with 2+ exports gets a barrel `index.ts`.
 - Types go in `types.ts` per module directory.
-- Import from barrels (`src/routing`), **never from internal paths** (`src/routing/router`). This prevents singleton fragmentation in Bun's module registry.
+- Import from barrels (`src/routing`), **never from internal paths** (`src/routing/router`) in `src/`, `bin/` and `scripts/`. This keeps each module's public API meaningful. Tests are exempt — see Path Aliases below.
+
+**One module per name.** Never place `x.ts` beside `x/index.ts`. Resolution
+prefers the file, so `@/x` never reaches the directory barrel — an export added
+to the barrel is unreachable at that specifier, while still looking correct on
+disk (#1648). `bun run check:alias-internals` fails on the collision. Either
+rename the sibling, or fold it into the barrel and delete it.
 
 ### Path Aliases
 
@@ -71,11 +76,63 @@ import { makeMockAgentManager } from "@test/helpers";
 // config-patterns.md), since TypeScript erases them at compile time.
 import type { RoutingConfig } from "@/config/selectors";
 
-// Wrong — value import bypasses the barrel; fragments singletons.
+// Wrong — value import from src/ bypasses the barrel.
 import { Router } from "@/routing/router";
 ```
 
+**Tests may reach internals.** Under `test/`, a value import of `@/<dir>/<internal>`
+is allowed: exercising the unit is a unit test's job, and a non-barrelled
+internal would otherwise be untestable — the alias form used to be rejected by
+the barrel gate (GitHub #1647). `@test/<dir>/<internal>` stays forbidden
+everywhere: shared fixtures are a real public API for tests.
+
+```typescript
+// Correct — in test/, exercising a non-barrelled internal directly
+import { applyConfigCompatShims } from "@/config/compat-shims";
+
+// Still wrong, even in test/ — test helpers must go through their barrel
+import { makeConfig } from "@test/helpers/config";
+```
+
+Note that the barrel gate's older justification — that alias-internal imports
+"fragment singletons across Bun's module registry (BUG-035)" — is not correct.
+`@/foo/bar` and `../foo/bar` resolve to the same realpath and therefore the
+same module instance. BUG-035 concerns `mock.module()` interception, and its
+remedy is the `_deps` injection pattern. The gate's real purpose is
+encapsulation: production code stays on each module's public API. A module that
+must be reachable from outside its directory without going through the parent
+barrel (usually to avoid a cycle) becomes its own nested barrel — an exact
+alias match like `@/review/runner` is legal, an internal path is not.
+
 Aliases are not mandatory — relative paths are still fine. Use the alias when it improves readability (typically 3+ levels of `../`). Enforced by `bun run check:alias-internals` (runs as part of `bun run lint`).
+
+
+**Cycle ratchet:** `bun run check:import-cycles` (also part of `lint`) counts
+the `src/` modules that sit inside a runtime import cycle, against a baseline
+that also records which modules they are. Routing an import through a barrel
+adds an edge to that barrel, which can close a loop — so migrating onto
+barrels is gated by this check rather than by reviewer intuition. Type-only
+imports are excluded; they are erased and cannot participate in initialisation
+order. A module that becomes newly cyclic fails the check **even if the total
+count drops**, so a change cannot hide one new cycle behind two removed ones.
+To lower the baseline after genuinely breaking cycles:
+`bun run check:import-cycles:update`.
+
+It counts modules rather than loops on purpose. The earlier version enumerated
+simple cycles with a DFS that marked each node done after its first visit, so
+within one strongly connected component only the first loop found was ever
+reported — a module could join an existing component and the check would still
+read clean. Enumerating every loop instead is not viable (`src/`'s largest
+component has 94 modules), so it uses Tarjan's SCC algorithm, which is complete
+and linear.
+
+**When a conversion is rejected**, do not route the import through the barrel.
+Either leave it as a relative import, or — preferably — promote the target to
+its own nested barrel (`x.ts` -> `x/index.ts`) so `@/<dir>/<x>` reaches it
+directly without loading the parent barrel. That satisfies
+`check:alias-internals` without adding the edge that closes the loop; see
+`src/review/{runner,semantic-categories}` and
+`src/execution/{helpers,story-context}`.
 
 ## Logging
 
