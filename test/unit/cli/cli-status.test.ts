@@ -12,7 +12,7 @@ import type { NaxStatusFile } from "../../../src/execution/status-file";
 import type { PRD } from "../../../src/prd";
 // Requires real PID checks — skipped by default, run with FULL=1.
 import { fullTest as skipInCI } from "../../helpers/env";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 describe("displayFeatureStatus", () => {
   let testDir: string;

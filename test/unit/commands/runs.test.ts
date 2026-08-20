@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { _runsCmdDeps as _deps, runsCommand } from "../../../src/commands/runs";
 import type { NaxStatusFile } from "../../../src/execution/status-file";
 import type { MetaJson } from "../../../src/pipeline/subscribers/registry";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

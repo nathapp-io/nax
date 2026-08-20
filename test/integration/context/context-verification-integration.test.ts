@@ -11,7 +11,7 @@ import { buildContext } from "../../../src/context/builder";
 import type { ContextBudget, StoryContext } from "../../../src/context/types";
 import { getContextFiles, getExpectedFiles } from "../../../src/prd";
 import type { PRD, UserStory } from "../../../src/prd";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
   project: "test-project",

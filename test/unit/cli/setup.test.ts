@@ -14,7 +14,7 @@ import type { RepoAnalysis } from "../../../src/cli/setup-types";
 import type { SetupPlan } from "../../../src/operations/setup-generate";
 import type { NaxConfig } from "@/config";
 import type { MonoPackageConfig } from "@/operations/setup-generate";
-import { withTempDir } from "../../helpers/temp";
+import { withTempDir } from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 

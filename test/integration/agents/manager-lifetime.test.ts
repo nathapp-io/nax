@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { AgentManager } from "../../../src/agents/manager";
 import type { AgentResult } from "../../../src/agents/types";
 import type { AdapterFailure, ContextBundle } from "../../../src/context/engine/types";
-import { makeNaxConfig } from "../../helpers/mock-nax-config";
+import { makeNaxConfig } from "@test/helpers";
 
 // adapterFailure that triggers a swap (category: "availability" → shouldSwap() returns true).
 const AUTH_FAILURE: AdapterFailure = {

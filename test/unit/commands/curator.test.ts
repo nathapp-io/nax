@@ -23,7 +23,7 @@ import {
 import type { ResolvedProject } from "../../../src/commands/common";
 import type { Observation } from "../../../src/plugins/builtin/curator/types";
 import { makeNaxConfig } from "../../helpers";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

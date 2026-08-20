@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { makeMockRuntime } from "../../helpers/runtime";
+import { makeMockRuntime } from "@test/helpers";
 import type { NaxConfig } from "../../../src/config";
 import { InteractionChain } from "../../../src/interaction/chain";
 import { pipelineEventBus } from "../../../src/pipeline/event-bus";

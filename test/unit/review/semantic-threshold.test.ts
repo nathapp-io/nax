@@ -16,7 +16,7 @@ import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
 import { makeMockAgentManager } from "../../helpers";
-import { makeMockRuntime } from "../../helpers/runtime";
+import { makeMockRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures

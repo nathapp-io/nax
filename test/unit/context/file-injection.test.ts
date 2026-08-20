@@ -16,7 +16,7 @@ import path from "node:path";
 import { _contextBuilderDeps, buildContext } from "../../../src/context/builder";
 import type { ContextBudget, StoryContext } from "../../../src/context/types";
 import type { PRD, UserStory } from "../../../src/prd";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 // Helper to create a minimal test PRD
 const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({

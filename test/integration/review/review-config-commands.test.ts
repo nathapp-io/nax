@@ -16,7 +16,7 @@ import { join } from "node:path";
 import type { ExecutionConfig } from "../../../src/config/schema";
 import { runReview } from "../../../src/review";
 import type { ReviewConfig } from "../../../src/review";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 describe("Review Config-Driven Commands (US-005)", () => {
   test("uses explicit executionConfig.lintCommand when provided", async () => {

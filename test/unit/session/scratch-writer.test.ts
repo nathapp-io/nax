@@ -9,7 +9,7 @@ import {
   _scratchWriterDeps,
 } from "../../../src/session/scratch-writer";
 import type { ScratchEntry } from "../../../src/session/scratch-writer";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

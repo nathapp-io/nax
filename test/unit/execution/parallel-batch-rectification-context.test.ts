@@ -27,7 +27,7 @@ import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PluginRegistry } from "../../../src/plugins/registry";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import { makePRD, makeStory as makeSharedStory } from "../../helpers";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function makeConflictStory(id: string, opts: Partial<UserStory> = {}): UserStory {
   return makeSharedStory({

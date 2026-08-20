@@ -5,7 +5,7 @@ import {
   formatReport,
   scanForDeepRelatives,
 } from "../../../scripts/check-deep-relatives";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function write(root: string, rel: string, content: string) {
   mkdirSync(join(root, rel.split("/").slice(0, -1).join("/")), { recursive: true });

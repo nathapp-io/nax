@@ -12,7 +12,7 @@ import { generateCommand } from "../../../src/cli/generate";
 import { loadConfig } from "../../../src/config/loader";
 import { generateAll, generateFor } from "../../../src/context/generator";
 import type { AgentType } from "../../../src/context/types";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 describe("nax generate command", () => {
   let tempDir: string;

@@ -11,7 +11,7 @@ import { _planDeps, runReplanLoop } from "../../../src/cli/plan";
 import type { PrecheckResultWithCode } from "../../../src/precheck";
 import type { FlaggedStory } from "../../../src/precheck/story-size-gate";
 import type { PRD } from "../../../src/prd/types";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { makeNaxConfig } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────

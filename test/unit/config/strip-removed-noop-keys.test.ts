@@ -26,7 +26,7 @@ import { stripRemovedNoOpKeys } from "../../../src/config/config-guards";
 import { _clearRootConfigCache, loadConfig, loadConfigForWorkdir } from "../../../src/config/loader";
 import { NaxConfigSchema } from "../../../src/config/schemas";
 import { FIELD_DESCRIPTIONS } from "../../../src/cli/config-descriptions";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const tempDirs: string[] = [];
 

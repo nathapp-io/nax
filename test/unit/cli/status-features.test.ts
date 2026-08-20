@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { _statusFeaturesDeps, displayFeatureStatus } from "../../../src/cli/status-features";
 import type { NaxStatusFile } from "../../../src/execution/status-file";
 import type { PRD } from "../../../src/prd";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 describe("displayFeatureDetails - PostRun Status Display (US-004)", () => {
   let testDir: string;

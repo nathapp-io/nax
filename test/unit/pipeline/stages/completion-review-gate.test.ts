@@ -14,9 +14,9 @@ import type { InteractionPlugin, InteractionResponse } from "../../../../src/int
 import { _completionDeps } from "../../../../src/pipeline/stages/completion";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
-import { withTempDir } from "../../../helpers/temp";
+import { withTempDir } from "@test/helpers";
 import { makeNaxConfig } from "../../../helpers";
-import { makeMockRuntime } from "../../../helpers/runtime";
+import { makeMockRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import { loadPRD, savePRD } from "@/prd";
-import { makeMockRuntime } from "../../helpers/runtime";
+import { makeMockRuntime } from "@test/helpers";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _tierEscalationDeps } from "../../../src/execution/escalation/tier-escalation";
 import type { PRD, UserStory } from "../../../src/prd/types";

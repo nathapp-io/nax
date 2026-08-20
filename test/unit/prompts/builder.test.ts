@@ -11,7 +11,7 @@ import { join } from "node:path";
 import type { UserStory } from "../../../src/prd";
 import { PromptBuilder } from "../../../src/prompts";
 import type { PromptRole } from "../../../src/prompts";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures

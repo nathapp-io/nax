@@ -8,7 +8,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExecutionConfig, NaxConfig } from "../../../src/config";
 import type { PRD, UserStory } from "../../../src/prd/types";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 import {
   checkCanonicalRulesLint,
   checkClaudeCLI,

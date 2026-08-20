@@ -11,7 +11,7 @@ import type { ExecutionConfig, NaxConfig } from "../../../src/config";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import { runEnvironmentPrecheck, runPrecheck } from "../../../src/precheck";
 import { _checkCliDeps } from "../../../src/precheck/checks-cli";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 const createMockConfig = (cwd: string, overrides: Partial<ExecutionConfig> = {}): NaxConfig => ({
   execution: {

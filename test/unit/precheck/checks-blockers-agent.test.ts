@@ -8,7 +8,7 @@
 
 import { describe, expect, mock, test, afterEach } from "bun:test";
 import { checkAgentCLI, _deps } from "../../../src/precheck/checks-blockers";
-import { withDepsRestore } from "../../helpers/deps";
+import { withDepsRestore } from "@test/helpers";
 import { makeNaxConfig } from "../../helpers";
 
 // --- helpers ---

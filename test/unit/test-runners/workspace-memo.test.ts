@@ -11,7 +11,7 @@ import {
   discoverWorkspacePackages,
   _workspaceDeps,
 } from "../../../src/test-runners/detect/workspace";
-import { withTempDir } from "../../helpers/temp";
+import { withTempDir } from "@test/helpers";
 
 describe("discoverWorkspacePackages memoization", () => {
   afterEach(() => clearWorkspaceCache());

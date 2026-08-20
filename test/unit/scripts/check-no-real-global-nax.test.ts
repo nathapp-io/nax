@@ -5,7 +5,7 @@ import {
   findForbiddenGlobalNaxUsages,
   formatGlobalNaxViolationReport,
 } from "../../../scripts/check-no-real-global-nax";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 describe("findForbiddenGlobalNaxUsages", () => {
   let tempDir: string;

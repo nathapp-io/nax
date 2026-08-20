@@ -28,7 +28,7 @@ afterEach(() => {
 
 // biome-ignore lint/style/noNamespaceImport: cleanup after all tests
 import { afterAll } from "bun:test";
-import { makeTempDir } from "../../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 afterAll(() => {
   rmSync(tmpDir, { recursive: true, force: true });
 });

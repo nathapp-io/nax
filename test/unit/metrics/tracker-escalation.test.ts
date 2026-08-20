@@ -30,7 +30,7 @@ import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import type { StoryRouting } from "../../../src/prd/types";
 import { makeNaxConfig } from "../../helpers";
-import { makeMockRuntime } from "../../helpers/runtime";
+import { makeMockRuntime } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-escalation-test-${randomUUID()}`;
 const PRD_PATH = `/tmp/prd-${randomUUID()}.json`;

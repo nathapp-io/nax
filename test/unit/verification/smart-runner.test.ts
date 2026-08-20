@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _gitDeps } from "../../../src/utils/git";
-import { withDepsRestore } from "../../helpers/deps";
+import { withDepsRestore } from "@test/helpers";
 import {
   _gitUtilDeps,
   buildSmartTestCommand,

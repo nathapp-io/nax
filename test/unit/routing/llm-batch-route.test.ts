@@ -3,7 +3,7 @@ import type { UserStory } from "../../../src/prd/types";
 import { _callOpDeps } from "../../../src/operations";
 import { resolveRouting, tryLlmBatchRoute } from "../../../src/routing/router";
 import { makeMockAgentManager, makeNaxConfig, makeStory } from "../../helpers";
-import { makeMockRuntime } from "../../helpers/runtime";
+import { makeMockRuntime } from "@test/helpers";
 import type { DispatchContext } from "../../../src/runtime/dispatch-context";
 import type { NaxRuntime } from "../../../src/runtime";
 

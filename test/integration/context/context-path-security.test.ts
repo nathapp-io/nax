@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MAX_DIRECTORY_DEPTH, isWithinDirectory, validateDirectory, validateFilePath } from "../../../src/config";
 import { findProjectDir } from "../../../src/config/loader";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 // Create a temporary test directory
 const testRoot = makeTempDir("nax-path-test-");

@@ -2,7 +2,7 @@
 import { describe, expect, it } from "bun:test";
 import path from "node:path";
 import { NaxError } from "../../../src/errors";
-import { withTempDir } from "../../helpers/temp";
+import { withTempDir } from "@test/helpers";
 import { detectGeneratedContent, migrateCommand, type MigrateCandidate } from "../../../src/commands/migrate";
 
 describe("detectGeneratedContent", () => {

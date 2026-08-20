@@ -12,7 +12,7 @@ import { _analyzeRepoDeps, analyzeRepo } from "../../../src/cli/setup-analyze";
 import type { RepoAnalysis } from "../../../src/cli/setup-types";
 import type { ProjectProfile } from "../../../src/config";
 import type { DetectionResult } from "../../../src/test-runners/detect";
-import { withTempDir } from "../../helpers/temp";
+import { withTempDir } from "@test/helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 

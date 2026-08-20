@@ -1,6 +1,6 @@
 import { describe, test, expect, mock } from "bun:test";
 import { CostAggregator, _costAggDeps, createNoOpCostAggregator, type CostEvent } from "../../../src/runtime/cost-aggregator";
-import { withTempDir } from "../../helpers/temp";
+import { withTempDir } from "@test/helpers";
 import { join } from "node:path";
 
 function makeEvent(overrides: Partial<CostEvent> = {}): CostEvent {

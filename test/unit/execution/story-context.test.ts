@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { buildStoryContextFull } from "../../../src/execution/story-context";
 import type { PRD, UserStory } from "../../../src/prd";
 import { makeNaxConfig } from "../../helpers";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 function makeStory(id = "US-001"): UserStory {
   return {

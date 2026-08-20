@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { _runPostParseForTest } from "../../../src/operations/call";
 import type { BuildContext, VerifyContext } from "../../../src/operations/types";
-import { withTempDir } from "../../helpers/temp";
+import { withTempDir } from "@test/helpers";
 
 // Minimal build context — verify/recover hooks under test don't use packageView/config.
 const FAKE_CTX = {

@@ -13,7 +13,7 @@ import {
   initContext,
   scanProject,
 } from "../../../src/cli/init-context";
-import { withTempDir } from "../../helpers/temp";
+import { withTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // scanProject — file tree

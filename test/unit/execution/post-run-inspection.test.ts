@@ -26,7 +26,7 @@ import {
   verifierOp,
   verifyScopedOp,
 } from "../../../src/operations";
-import { makeTestContext } from "../../helpers/pipeline-context";
+import { makeTestContext } from "@test/helpers";
 import { SEMANTIC_REVIEW_FINDING, TEST_RUNNER_FINDING, makeInspectionOpts, makePlanResult } from "./_post-run-fixtures";
 
 // ─────────────────────────────────────────────────────────────────────────────

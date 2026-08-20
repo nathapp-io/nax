@@ -9,7 +9,7 @@ import { join } from "node:path";
 import type { NaxConfig } from "../../../src/config";
 import { _generatorDeps, discoverPackages, generateForPackage } from "../../../src/context/generator";
 import { makeNaxConfig } from "../../helpers";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 describe("discoverPackages (MW-004)", () => {
   let tmpDir: string;

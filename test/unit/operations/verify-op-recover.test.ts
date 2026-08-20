@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { verifierOp } from "../../../src/operations";
 
 const STORY = { id: "S1", title: "t", workdir: "" } as any;

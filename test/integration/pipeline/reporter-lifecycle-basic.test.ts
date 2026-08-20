@@ -21,7 +21,7 @@ import type { NaxConfig } from "../../../src/config";
 import { run } from "../../../src/execution/runner";
 import { loadHooksConfig } from "../../../src/hooks";
 import { savePRD } from "../../../src/prd";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 // ============================================================================
 // Mock agent

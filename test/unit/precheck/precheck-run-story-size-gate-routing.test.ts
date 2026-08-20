@@ -14,7 +14,7 @@ import type { PRD, UserStory } from "../../../src/prd/types";
 import { _precheckDeps, runPrecheck } from "../../../src/precheck";
 import type { StorySizeGateResult } from "../../../src/precheck/story-size-gate";
 import { _checkCliDeps } from "../../../src/precheck/checks-cli";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { makeNaxConfig } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -10,7 +10,7 @@ import { _executionDeps, executionStage, routeTddFailure } from "../../../src/pi
 import type { FailureCategory } from "../../../src/tdd";
 import { NaxError } from "../../../src/errors";
 import { makeAgentAdapter, makeNaxConfig } from "../../helpers";
-import { makeTestContext, makeTestStory } from "../../helpers/pipeline-context";
+import { makeTestContext, makeTestStory } from "@test/helpers";
 import type { PipelineContext } from "../../../src/pipeline/types";
 
 // ─────────────────────────────────────────────────────────────────────────────

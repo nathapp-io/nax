@@ -17,7 +17,7 @@ import type { NaxConfig } from "../../../src/config";
 import type { NaxStatusFile } from "../../../src/execution/status-file";
 import { StatusWriter, type StatusWriterContext } from "../../../src/execution/status-writer";
 import type { PRD, UserStory } from "../../../src/prd";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 // ============================================================================
 // Helpers

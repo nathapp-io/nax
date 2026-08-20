@@ -9,7 +9,7 @@ import path from "node:path";
 import { buildContext, formatContextAsMarkdown } from "../../../src/context";
 import type { BuiltContext, ContextBudget, StoryContext } from "../../../src/context/types";
 import type { PRD, UserStory } from "../../../src/prd";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 // Helper to create test PRD
 const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({

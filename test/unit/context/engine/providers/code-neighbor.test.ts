@@ -14,7 +14,7 @@ import type { ContextRequest } from "../../../../../src/context/engine/types";
 import type { NaxIgnoreMatcher, NaxIgnoreIndex } from "../../../../../src/utils/path-filters";
 import type { ResolvedTestPatterns } from "../../../../../src/test-runners/resolver";
 import { extractTestDirs, globsToPathspec, globsToTestRegex } from "../../../../../src/test-runners/conventions";
-import { cleanupTempDir, makeTempDir } from "../../../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 /**
  * Build a ResolvedTestPatterns value from test-file globs.

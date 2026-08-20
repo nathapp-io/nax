@@ -16,7 +16,7 @@ import { buildDecomposePromptAsync } from "@/prompts";
 import type { DecomposeOptions, DecomposedStory } from "../../../src/agents/shared/types-extended";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import { NaxError } from "../../../src/errors";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "../../helpers";
 
 function makeMockDecomposeManager(

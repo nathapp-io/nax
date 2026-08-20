@@ -19,7 +19,7 @@ import {
 } from "../../../src/cli/init-detect";
 import type { StackInfo } from "../../../src/cli/init-detect";
 import { initProject } from "../../../src/cli/init";
-import { withTempDir } from "../../helpers/temp";
+import { withTempDir } from "@test/helpers";
 
 
 // ---------------------------------------------------------------------------

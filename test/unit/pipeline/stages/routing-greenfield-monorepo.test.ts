@@ -18,7 +18,7 @@ import { initLogger, resetLogger } from "../../../../src/logger";
 import { _routingDeps, routingStage } from "../../../../src/pipeline/stages/routing";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { UserStory } from "../../../../src/prd/types";
-import { makeTempDir } from "../../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 // ── Capture originals ─────────────────────────────────────────────────────────
 

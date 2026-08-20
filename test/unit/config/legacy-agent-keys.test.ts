@@ -13,7 +13,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { NaxError } from "../../../src/errors";
 import { _clearRootConfigCache, loadConfig } from "../../../src/config/loader";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const tempDirs: string[] = [];
 

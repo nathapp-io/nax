@@ -12,7 +12,7 @@ import { initLogger, resetLogger } from "../../../src/logger";
 import { acceptanceStage } from "../../../src/pipeline/stages/acceptance";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD } from "../../../src/prd/types";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 let testDir: string;
 let featureDir: string;

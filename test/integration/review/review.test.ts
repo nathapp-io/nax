@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runReview } from "../../../src/review";
 import type { ReviewConfig } from "../../../src/review";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 describe("Review Phase", () => {
   test("runReview - all checks pass", async () => {

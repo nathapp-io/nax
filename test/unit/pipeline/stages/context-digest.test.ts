@@ -11,7 +11,7 @@ import { NaxError } from "@/errors";
 import type { ContextBundle, ContextRequest } from "../../../../src/context/engine";
 import { _contextStageDeps, contextStage } from "../../../../src/pipeline/stages/context";
 import type { PipelineContext } from "../../../../src/pipeline/types";
-import { cleanupTempDir, makeTempDir } from "../../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals (restored per test)

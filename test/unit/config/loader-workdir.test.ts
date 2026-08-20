@@ -7,7 +7,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { _clearRootConfigCache, loadConfigForWorkdir } from "../../../src/config/loader";
 import { getLogger } from "../../../src/logger";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 describe("loadConfigForWorkdir", () => {
   let tempDir: string;

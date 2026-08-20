@@ -13,7 +13,7 @@ import { DEFAULT_CONFIG } from "../../../src/config";
 import { loadPRD, savePRD } from "../../../src/prd";
 import type { PRD } from "../../../src/prd/types";
 import { routeTask } from "../../../src/routing";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 // BUG-004
 describe("PRD Auto-Default — missing fields are defaulted on load", () => {

@@ -5,7 +5,7 @@ import { globalConfigDir } from "../../../../src/config/paths";
 import { PipelineEventBus } from "../../../../src/pipeline/event-bus";
 import { wireEventsWriter } from "../../../../src/pipeline/subscribers/events-writer";
 import { waitForFile } from "../../../../test/helpers/fs";
-import { makeTempDir } from "../../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 // Minimal UserStory stub for event payloads
 const stubStory = { id: "US-001", title: "Test story" } as never;

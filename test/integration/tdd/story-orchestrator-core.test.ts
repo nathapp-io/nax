@@ -5,8 +5,8 @@ import { buildPlanForStrategy } from "../../../src/execution/build-plan-for-stra
 import type { PlanInputs } from "../../../src/execution/plan-inputs";
 import { implementerOp, testWriterOp, verifierOp } from "../../../src/tdd";
 import type { ResolvedTestPatterns } from "../../../src/test-runners";
-import { makeMockCallContext } from "../../helpers/call-context";
-import { makeRuntimeWithFakeAgent } from "../../helpers/runtime";
+import { makeMockCallContext } from "@test/helpers";
+import { makeRuntimeWithFakeAgent } from "@test/helpers";
 import type { UserStory } from "../../../src/prd";
 import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps, stubFullSuiteGateContext } from "./_tdd-test-helpers";
 

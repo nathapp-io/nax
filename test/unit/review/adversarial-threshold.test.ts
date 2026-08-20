@@ -17,7 +17,7 @@ import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import type { AdversarialReviewConfig } from "../../../src/review/types";
 import type { SemanticStory } from "../../../src/review/types";
 import { makeMockAgentManager } from "../../helpers";
-import { makeMockRuntime } from "../../helpers/runtime";
+import { makeMockRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures

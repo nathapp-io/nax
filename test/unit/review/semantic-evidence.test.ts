@@ -27,8 +27,8 @@ import {
 } from "../../../src/review/semantic-evidence";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { LLMFinding } from "../../../src/review/semantic-helpers";
-import { makeLogger, type MockLogger } from "../../helpers/mock-logger";
-import { withTempDir } from "../../helpers/temp";
+import { makeLogger, type MockLogger } from "@test/helpers";
+import { withTempDir } from "@test/helpers";
 
 const STORY_ID = "US-001";
 

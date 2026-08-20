@@ -14,7 +14,7 @@ import type { NaxConfig } from "../../../src/config";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import { collectBatchMetrics, collectStoryMetrics } from "../../../src/metrics/tracker";
-import { makeMockRuntime } from "../../helpers/runtime";
+import { makeMockRuntime } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-tracker-gate-test-${randomUUID()}`;
 

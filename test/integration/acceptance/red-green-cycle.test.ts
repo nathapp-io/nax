@@ -22,7 +22,7 @@ import {
 } from "../../../src/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD } from "../../../src/prd/types";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

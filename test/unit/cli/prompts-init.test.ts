@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { _promptsInitDeps, promptsInitCommand } from "../../../src/cli/prompts";
 import { buildRoleTaskSection } from "../../../src/prompts/sections/role-task";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 
 const TEMPLATE_FILES = [

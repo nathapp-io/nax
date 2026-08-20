@@ -20,7 +20,7 @@ import {
   captureRunStartRef,
   runDeferredReview,
 } from "../../../src/execution/deferred-review";
-import { withDepsRestore } from "../../helpers/deps";
+import { withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

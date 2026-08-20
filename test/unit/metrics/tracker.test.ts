@@ -28,7 +28,7 @@ interface VerifyResult {
   scopeTestFallback?: boolean;
 }
 import { makeNaxConfig } from "../../helpers";
-import { makeMockRuntime } from "../../helpers/runtime";
+import { makeMockRuntime } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-tracker-test-${randomUUID()}`;
 

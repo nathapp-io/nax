@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { fireHook } from "../../../src/hooks/runner";
 import { HOOK_EVENTS } from "../../../src/hooks/types";
 import type { HooksConfig } from "../../../src/hooks/types";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 describe("HookEvent: on-all-stories-complete type registration", () => {
   test("on-all-stories-complete is in the HOOK_EVENTS registry", () => {

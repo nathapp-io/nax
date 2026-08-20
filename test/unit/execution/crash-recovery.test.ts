@@ -17,7 +17,7 @@ import {
   writeExitSummary,
 } from "../../../src/execution/crash-recovery";
 import { StatusWriter } from "../../../src/execution/status-writer";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 let TEST_DIR: string;
 let TEST_JSONL: string;

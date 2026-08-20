@@ -15,7 +15,7 @@ import {
   rectifyMergeFailure,
 } from "../../../src/execution/merge-conflict-rectify";
 import { makeMockAgentManager, makeNaxConfig, makePRD, makeSessionManager, makeStory } from "../../helpers";
-import { makeTestContext } from "../../helpers/pipeline-context";
+import { makeTestContext } from "@test/helpers";
 
 const FAKE_RUNTIME = {
   outputDir: "/tmp/nax-rect-test-output",

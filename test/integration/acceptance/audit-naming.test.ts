@@ -17,7 +17,7 @@ import type { CompleteDispatchEvent } from "../../../src/runtime/dispatch-events
 import { DispatchEventBus } from "../../../src/runtime/dispatch-events";
 import { attachAuditSubscriber } from "../../../src/runtime/middleware/audit";
 import { PromptAuditor } from "../../../src/runtime/prompt-auditor";
-import { withTempDir } from "../../helpers/temp";
+import { withTempDir } from "@test/helpers";
 
 const PERMS = { mode: "approve-reads" as const };
 

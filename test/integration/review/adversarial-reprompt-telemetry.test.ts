@@ -13,8 +13,8 @@ import { _adversarialDeps, runAdversarialReview } from "../../../src/review/adve
 import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import type { ReviewRepromptEvent } from "../../../src/runtime/dispatch-events";
 import type { NaxRuntime } from "../../../src/runtime";
-import { makeMockRuntime } from "../../helpers/runtime";
-import { withTempDir } from "../../helpers/temp";
+import { makeMockRuntime } from "@test/helpers";
+import { withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

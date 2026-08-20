@@ -18,7 +18,7 @@ import {
   runSessionPrompt,
 } from "../../../../src/agents/acp/adapter";
 import type { AcpClient, AcpSession, AcpSessionResponse } from "../../../../src/agents/acp/adapter";
-import { withDepsRestore } from "../../../helpers/deps";
+import { withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ensureAcpSession — cwd existence guard

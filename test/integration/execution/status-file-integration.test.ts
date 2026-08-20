@@ -16,7 +16,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { _registryTestAdapters } from "../../../src/agents/registry";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 import type {
   AgentAdapter,
   AgentCapabilities,

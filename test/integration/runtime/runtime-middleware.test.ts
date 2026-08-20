@@ -5,7 +5,7 @@ import { _promptAuditorDeps } from "../../../src/runtime/prompt-auditor";
 import { _costAggDeps } from "../../../src/runtime/cost-aggregator";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { makeNaxConfig, makeMockAgentManager, makeTestRuntime } from "../../helpers";
-import { withTempDir } from "../../helpers/temp";
+import { withTempDir } from "@test/helpers";
 import type { NaxRuntime } from "../../../src/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];

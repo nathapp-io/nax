@@ -25,7 +25,7 @@ import {
   writeStatusFile,
 } from "../../../src/execution/status-file";
 import type { PRD, UserStory } from "../../../src/prd";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 // ============================================================================
 // Helpers

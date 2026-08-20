@@ -13,7 +13,7 @@ import type { SemanticStory } from "../../../src/review/types";
 import type { AgentResult } from "../../../src/agents/types";
 import type { IAgentManager } from "../../../src/agents/manager-types";
 import { makeMockAgentManager } from "../../helpers";
-import { makeMockRuntime } from "../../helpers/runtime";
+import { makeMockRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures

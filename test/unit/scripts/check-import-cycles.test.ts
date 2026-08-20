@@ -7,7 +7,7 @@ import {
   formatReport,
   resolveSpecifier,
 } from "../../../scripts/check-import-cycles";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function write(root: string, rel: string, content: string): void {
   const full = join(root, rel);

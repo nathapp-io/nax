@@ -10,7 +10,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { exportPromptCommand } from "../../../src/cli/prompts";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 const VALID_ROLES = ["test-writer", "implementer", "verifier", "single-session", "tdd-simple"] as const;
 

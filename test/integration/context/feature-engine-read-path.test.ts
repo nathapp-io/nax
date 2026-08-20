@@ -14,7 +14,7 @@ import { clearFeatureResolverCache } from "../../../src/context/feature-resolver
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { NaxConfig } from "../../../src/config/types";
 import type { UserStory } from "../../../src/prd";
-import { makeTempDir, cleanupTempDir } from "../../helpers/temp";
+import { makeTempDir, cleanupTempDir } from "@test/helpers";
 
 function makeStory(id: string): UserStory {
   return {

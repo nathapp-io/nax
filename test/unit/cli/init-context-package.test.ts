@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generatePackageContextTemplate, initPackage } from "../../../src/cli/init-context";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 describe("generatePackageContextTemplate (MW-005)", () => {
   test("uses the last path segment as package name", () => {

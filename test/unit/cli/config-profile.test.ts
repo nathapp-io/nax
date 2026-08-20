@@ -17,7 +17,7 @@ import {
   profileShowCommand,
   profileUseCommand,
 } from "../../../src/cli/config-profile";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

@@ -13,7 +13,7 @@ import { _manifestStoreDeps } from "../../../src/context/engine/manifest-store";
 import type { ContextManifest } from "../../../src/context/engine/types";
 import { collectStoryMetrics } from "../../../src/metrics/tracker";
 import type { PipelineContext } from "../../../src/pipeline/types";
-import { makeMockRuntime } from "../../helpers/runtime";
+import { makeMockRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals

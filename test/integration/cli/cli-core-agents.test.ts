@@ -10,7 +10,7 @@ import { rm } from "node:fs/promises";
 import { _acpAdapterDeps } from "../../../src/agents/acp/adapter";
 import { agentsListCommand, _cliAgentsDeps } from "../../../src/cli/agents";
 import { DEFAULT_CONFIG } from "../../../src/config";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 describe("agentsListCommand", () => {
   let testDir: string;

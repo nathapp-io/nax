@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { applyPostRunInspection } from "../../../src/execution/post-run";
 
 describe("applyPostRunInspection — TDD verdict cleanup", () => {

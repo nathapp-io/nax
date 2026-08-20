@@ -5,7 +5,7 @@ import { initLogger, resetLogger } from "../../../src/logger";
 import type { LoadedHooksConfig } from "../../../src/hooks";
 import type { PluginRegistry } from "../../../src/plugins";
 import type { PRD, UserStory } from "../../../src/prd/types";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

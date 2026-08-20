@@ -22,7 +22,7 @@ import { executeUnified } from "../../../src/execution/unified-executor";
 import type { PluginRegistry } from "../../../src/plugins";
 import type { IReviewPlugin } from "../../../src/plugins/extensions";
 import type { PRD } from "../../../src/prd/types";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

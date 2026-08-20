@@ -16,7 +16,7 @@ import type { DebateStageConfig } from "../../../src/debate/types";
 import type { CallContext } from "../../../src/operations/types";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { makeMockAgentManager, makeSessionManager } from "../../helpers";
-import { waitForCondition } from "../../helpers/timeout";
+import { waitForCondition } from "@test/helpers";
 
 function makeCallCtx(
   overrides: Partial<CallContext> & { agentManagerOverride?: ReturnType<typeof makeMockAgentManager> } = {},

@@ -15,7 +15,7 @@ import { routingStage } from "../../../src/pipeline/stages/routing";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import { PluginRegistry } from "../../../src/plugins/registry";
 import type { PRD, UserStory } from "../../../src/prd/types";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Helpers

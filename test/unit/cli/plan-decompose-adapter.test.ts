@@ -15,7 +15,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
 import type { DecomposeResult, DecomposedStory } from "../../../src/agents/shared/types-extended";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { makeMockAgentManager, makeNaxConfig, makePRD } from "../../helpers";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import type { NaxConfig } from "../../../src/config";

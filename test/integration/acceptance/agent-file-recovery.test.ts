@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { acceptanceGenerateOp, callOp } from "../../../src/operations";
 import type { AcceptanceGenerateInput, CallContext } from "../../../src/operations";
 import { makeMockAgentManager, makeTestRuntime } from "../../helpers";
-import { withTempDir } from "../../helpers/temp";
+import { withTempDir } from "@test/helpers";
 import type { NaxRuntime } from "../../../src/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];

@@ -18,7 +18,7 @@ import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import { collectStoryMetrics } from "../../../src/metrics/tracker";
 import { makeNaxConfig } from "../../helpers";
-import { makeMockRuntime } from "../../helpers/runtime";
+import { makeMockRuntime } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-test-metrics-${randomUUID()}`;
 const WORKDIR_BATCH = `/tmp/nax-test-metrics-batch-${randomUUID()}`;

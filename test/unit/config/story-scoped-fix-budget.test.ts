@@ -18,7 +18,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_CONFIG } from "@/config";
 import { loadConfig, NaxConfigSchema } from "@/config";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function rectificationConfig(overrides: Record<string, unknown> | undefined) {
   const base = { ...(DEFAULT_CONFIG as Record<string, unknown>) };

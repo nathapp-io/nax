@@ -15,7 +15,7 @@ import { DEFAULT_CONFIG } from "../../../../src/config";
 import { _reconcileDeps, initializeRun } from "../../../../src/execution/lifecycle/run-initialization";
 import type { PRD } from "../../../../src/prd/types";
 import type { ReviewResult } from "../../../../src/review/types";
-import { makeTempDir } from "../../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

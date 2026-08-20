@@ -5,7 +5,7 @@ import {
 } from "../../../../src/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
-import { waitForCondition } from "../../../helpers/timeout";
+import { waitForCondition } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

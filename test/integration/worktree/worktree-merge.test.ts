@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WorktreeManager } from "../../../src/worktree/manager";
 import { MergeEngine } from "../../../src/worktree/merge";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 describe("MergeEngine", () => {
   let testDir: string;

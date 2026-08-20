@@ -9,7 +9,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import type { InteractionRequest } from "../../../src/interaction";
 import { TelegramInteractionPlugin, _telegramPluginDeps } from "../../../src/interaction/plugins/telegram";
 import { WebhookInteractionPlugin, _webhookPluginDeps } from "../../../src/interaction/plugins/webhook";
-import { mockFetch } from "../../helpers/mock-fetch";
+import { mockFetch } from "@test/helpers";
 
 function timeoutResult<T>(value: T, delayMs = 0): Promise<T> {
   return new Promise((resolve) => {

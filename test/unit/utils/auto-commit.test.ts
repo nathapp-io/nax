@@ -6,7 +6,7 @@
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { _gitDeps, autoCommitIfDirty } from "../../../src/utils/git";
-import { withDepsRestore } from "../../helpers/deps";
+import { withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

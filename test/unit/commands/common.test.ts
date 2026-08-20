@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveProject, resolveProjectAsync } from "../../../src/commands/common";
 import { NaxError } from "../../../src/errors";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 describe("resolveProject", () => {
   let testDir: string;

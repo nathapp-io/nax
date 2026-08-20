@@ -5,7 +5,7 @@ import { SessionFailureError, SessionTurnError } from "../../../src/agents/types
 import { AgentStreamEventBus } from "../../../src/runtime/agent-stream-events";
 import { SessionManager } from "../../../src/session/manager";
 import type { OpenSessionRequest, RunInSessionOpts } from "../../../src/session/types";
-import { makeAgentAdapter } from "../../helpers/mock-agent-adapter";
+import { makeAgentAdapter } from "@test/helpers";
 
 const WORKDIR = "/tmp/nax-phase-b-test";
 

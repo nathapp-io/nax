@@ -3,8 +3,8 @@ import { DEFAULT_CONFIG } from "../../../src/config";
 import { buildPlanForStrategy } from "../../../src/execution/build-plan-for-strategy";
 import type { PlanInputs } from "../../../src/execution/plan-inputs";
 import { _fullSuiteGateDeps } from "../../../src/operations/full-suite-gate";
-import { makeMockCallContext } from "../../helpers/call-context";
-import { makeRuntimeWithFakeAgent } from "../../helpers/runtime";
+import { makeMockCallContext } from "@test/helpers";
+import { makeRuntimeWithFakeAgent } from "@test/helpers";
 import type { UserStory } from "../../../src/prd";
 import { type SavedDeps, createMockAgent, mockGitSpawn, restoreDeps, saveDeps, stubFullSuiteGateContext } from "./_tdd-test-helpers";
 

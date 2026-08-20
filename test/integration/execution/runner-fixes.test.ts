@@ -10,7 +10,7 @@ import { mkdir, rename, rm } from "node:fs/promises";
 import { groupStoriesIntoBatches } from "../../../src/execution/runner";
 import type { PRD, UserStory } from "../../../src/prd";
 import { PRD_MAX_FILE_SIZE, loadPRD } from "../../../src/prd";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // Helper to create test stories
 function createStory(

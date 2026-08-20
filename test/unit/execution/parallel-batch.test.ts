@@ -22,7 +22,7 @@ import {
   type RunParallelBatchResult,
 } from "../../../src/execution/parallel-batch";
 import type { ParallelBatchResult } from "../../../src/execution/parallel-worker";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

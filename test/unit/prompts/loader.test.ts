@@ -12,7 +12,7 @@ import type { NaxConfig } from "../../../src/config";
 import { loadOverride } from "../../../src/prompts/loader";
 import type { PromptRole } from "../../../src/prompts/core/types";
 import { fullTest } from "../../helpers/env";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 import { makeNaxConfig } from "../../helpers";
 
 // ---------------------------------------------------------------------------

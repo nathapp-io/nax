@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { PidRegistry } from "../../../src/execution/pid-registry";
 
 describe("PidRegistry concurrent writes", () => {

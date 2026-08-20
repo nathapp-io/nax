@@ -18,7 +18,7 @@ import {
   resolveProfileName,
   resolveProfileNames,
 } from "../../../src/config/profile";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("config/profile", () => {
   let globalDir: string;

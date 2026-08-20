@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { estimateTokens, loadConstitution, truncateToTokens } from "../../../src/constitution";
 import type { ConstitutionConfig } from "../../../src/constitution";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 let TEST_DIR: string;
 

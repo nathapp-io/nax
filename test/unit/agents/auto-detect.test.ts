@@ -8,7 +8,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { autoDetectContextFiles, extractKeywords } from "../../../src/context/auto-detect";
-import { makeTempDir } from "../../helpers/temp";
+import { makeTempDir } from "@test/helpers";
 
 describe("Context Auto-Detection", () => {
   describe("extractKeywords", () => {
