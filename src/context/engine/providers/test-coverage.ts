@@ -15,10 +15,8 @@ import type { TestScanOptions, TestScanResult } from "@/context/test-scanner";
 import { getLogger } from "@/logger";
 import { getContextFiles } from "@/prd";
 import type { UserStory } from "@/prd/types";
-import { coerceSmartRunner } from "@/test-runners";
-import type { ResolvedTestPatterns } from "@/test-runners/resolver";
+import { type ResolvedTestPatterns, coerceSmartRunner, resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
-import { resolveTestFilePatterns } from "../../../test-runners/resolver";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────

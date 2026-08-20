@@ -129,7 +129,7 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   // ADR-009 SSOT: resolve test-file patterns once per request and thread them
   // through so providers never classify test files via inline regex.
   // Failure is non-fatal — providers degrade by skipping sibling-test hinting.
-  let resolvedTestPatterns: import("../../test-runners/resolver").ResolvedTestPatterns | undefined;
+  let resolvedTestPatterns: import("@/test-runners").ResolvedTestPatterns | undefined;
   try {
     // Anchors must match routing.ts:113-115 — resolveTestFilePatterns takes the
     // absolute project ROOT plus a package path RELATIVE to it. In monorepo mode
