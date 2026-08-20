@@ -13,21 +13,42 @@
  * across the separate process-group invocations the wrapper uses, and they add
  * little source coverage over the unit suite.
  *
+ * Per-file floor: the aggregate floor above can hide a single file collapsing
+ * (e.g. 12% -> 0%) inside an 87%-covered repo. A second ratchet, in the same
+ * style as check-file-sizes.ts / check-deep-relatives.ts, tracks every `src/`
+ * file whose unit-suite line coverage sits below PER_FILE_FLOOR. Files already
+ * below it are grandfathered in scripts/baselines/coverage-per-file-baseline.json
+ * at their current pct; the gate then fails if a NEW file drops below the floor,
+ * or a grandfathered file's coverage falls further below its recorded baseline.
+ * It does not require the aggregate-excluded suites (integration/UI/e2e) to be
+ * merged in — it is deliberately blind to coverage those suites alone provide,
+ * same caveat as the aggregate floor.
+ *
  * Usage:
- *   bun scripts/check-coverage.ts            # run + enforce floor (CI mode)
- *   bun scripts/check-coverage.ts --report   # run + print summary, never fail
+ *   bun scripts/check-coverage.ts                   # run + enforce floors (CI mode)
+ *   bun scripts/check-coverage.ts --report          # run + print summary, never fail
+ *   bun scripts/check-coverage.ts --update-baseline # run + save new per-file baseline
+ *   bun scripts/check-coverage.ts --list            # run + print all below-floor files
  *
  * Exit codes:
- *   0 — coverage at/above floor (or --report)
- *   1 — below floor, the test run failed, or lcov.info was not produced
+ *   0 — coverage at/above floor (or --report / --update-baseline / --list)
+ *   1 — below a floor, the test run failed, or lcov.info was not produced
  */
-import { join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 const ROOT = join(import.meta.dir, "..");
 const LCOV_PATH = join(ROOT, "coverage", "lcov.info");
+const PER_FILE_BASELINE_FILE = join(import.meta.dir, "baselines", "coverage-per-file-baseline.json");
 
 /** Enforced floor. Matches the documented 80% rule (.claude/rules/common/testing.md). */
 const FLOOR = { lines: 0.8, functions: 0.8 };
+
+/** Per-file floor and scope for the second ratchet described above. */
+const PER_FILE_FLOOR = 0.8;
+const PER_FILE_SCOPE_PREFIX = "src/";
+/** Baseline comparisons ignore drift below this to absorb run-to-run rounding noise. */
+const PER_FILE_EPSILON = 0.001;
 
 /** Wall-clock cap for the coverage run, in ms. */
 const RUN_TIMEOUT_MS = 300_000;
@@ -126,8 +147,119 @@ function pct(hit: number, found: number): number {
   return found === 0 ? 1 : hit / found;
 }
 
+interface PerFileBaseline {
+  updatedAt: string;
+  /** Map of relative path -> recorded line coverage ratio (0-1) for every grandfathered file. */
+  byFile: Record<string, number>;
+}
+
+/** Parses per-file `SF:`/`LF:`/`LH:` records from an lcov report, scoped to PER_FILE_SCOPE_PREFIX. */
+function parsePerFileLines(text: string): Map<string, number> {
+  const result = new Map<string, number>();
+  let file: string | null = null;
+  let lf = 0;
+  let lh = 0;
+  for (const line of text.split("\n")) {
+    if (line.startsWith("SF:")) {
+      file = line.slice(3);
+      lf = 0;
+      lh = 0;
+    } else if (line.startsWith("LF:")) {
+      lf = Number.parseInt(line.slice(3), 10) || 0;
+    } else if (line.startsWith("LH:")) {
+      lh = Number.parseInt(line.slice(3), 10) || 0;
+    } else if (line.startsWith("end_of_record")) {
+      if (file?.startsWith(PER_FILE_SCOPE_PREFIX)) result.set(file, pct(lh, lf));
+      file = null;
+    }
+  }
+  return result;
+}
+
+function loadPerFileBaseline(): PerFileBaseline | null {
+  try {
+    return JSON.parse(readFileSync(PER_FILE_BASELINE_FILE, "utf8")) as PerFileBaseline;
+  } catch {
+    return null;
+  }
+}
+
+function savePerFileBaseline(byFile: Record<string, number>) {
+  mkdirSync(dirname(PER_FILE_BASELINE_FILE), { recursive: true });
+  const sorted = Object.fromEntries(
+    Object.entries(byFile)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([f, p]) => [f, Math.round(p * 10_000) / 10_000]),
+  );
+  writeFileSync(
+    PER_FILE_BASELINE_FILE,
+    `${JSON.stringify({ updatedAt: new Date().toISOString(), byFile: sorted }, null, 2)}\n`,
+  );
+}
+
+/** Evaluates the per-file ratchet. Returns false and prints details if it should fail the run. */
+function checkPerFile(perFile: Map<string, number>, opts: { list: boolean }): boolean {
+  const belowFloor = [...perFile.entries()].filter(([, p]) => p < PER_FILE_FLOOR).sort(([, a], [, b]) => a - b);
+
+  if (opts.list) {
+    for (const [file, p] of belowFloor) console.log(`${file}  ${(p * 100).toFixed(2)}%`);
+    console.log(`\nTotal below ${(PER_FILE_FLOOR * 100).toFixed(0)}% floor: ${belowFloor.length}`);
+    return true;
+  }
+
+  const baseline = loadPerFileBaseline();
+  if (!baseline) {
+    console.error(`\n[coverage] ERROR: ${PER_FILE_BASELINE_FILE} missing.`);
+    console.error(
+      `Currently below the ${(PER_FILE_FLOOR * 100).toFixed(0)}% per-file floor: ${belowFloor.length} files.`,
+    );
+    console.error("Run 'bun scripts/check-coverage.ts --update-baseline' to initialize.");
+    return false;
+  }
+
+  const newViolations: string[] = [];
+  const grown: string[] = [];
+  for (const [file, p] of belowFloor) {
+    const recorded = baseline.byFile[file];
+    if (recorded === undefined) {
+      newViolations.push(`  ${file}: ${(p * 100).toFixed(2)}% (floor ${(PER_FILE_FLOOR * 100).toFixed(0)}%)`);
+    } else if (p < recorded - PER_FILE_EPSILON) {
+      grown.push(`  ${file}: ${(p * 100).toFixed(2)}% (was ${(recorded * 100).toFixed(2)}%)`);
+    }
+  }
+
+  console.log(
+    `\n── per-file coverage ratchet (${PER_FILE_SCOPE_PREFIX}) ──\n  ${belowFloor.length} files below floor (baseline ${Object.keys(baseline.byFile).length}).`,
+  );
+
+  if (newViolations.length === 0 && grown.length === 0) {
+    const raisable = Object.keys(baseline.byFile).some((f) => {
+      const current = perFile.get(f);
+      return current !== undefined && current >= PER_FILE_FLOOR;
+    });
+    if (raisable)
+      console.log("  Some baselined files now meet the floor — baseline can be lowered with --update-baseline.");
+    return true;
+  }
+
+  console.error("\n[coverage] FAIL — per-file coverage ratchet breached.");
+  if (newViolations.length > 0) {
+    console.error(`\nNew files below the ${(PER_FILE_FLOOR * 100).toFixed(0)}% floor — add tests before merging:`);
+    for (const v of newViolations) console.error(v);
+  }
+  if (grown.length > 0) {
+    console.error("\nGrandfathered files whose coverage DROPPED below their recorded baseline:");
+    for (const v of grown) console.error(v);
+  }
+  console.error("\nIf a file's coverage genuinely improved, lower its baseline with:");
+  console.error("  bun scripts/check-coverage.ts --update-baseline");
+  return false;
+}
+
 async function main() {
   const reportOnly = process.argv.includes("--report");
+  const updateBaseline = process.argv.includes("--update-baseline");
+  const list = process.argv.includes("--list");
 
   const runExit = await runCoverage();
   if (runExit !== 0) {
@@ -141,21 +273,41 @@ async function main() {
     process.exit(1);
   }
 
-  const totals = parseLcov(await lcovFile.text());
+  const lcovText = await lcovFile.text();
+  const totals = parseLcov(lcovText);
   const lines = pct(totals.linesHit, totals.linesFound);
   const functions = pct(totals.fnHit, totals.fnFound);
+  const perFile = parsePerFileLines(lcovText);
 
   const fmt = (n: number) => `${(n * 100).toFixed(2)}%`;
   console.log("\n── coverage gate (test/unit) ──");
   console.log(`  lines:     ${fmt(lines)}  (${totals.linesHit}/${totals.linesFound}, floor ${fmt(FLOOR.lines)})`);
   console.log(`  functions: ${fmt(functions)}  (${totals.fnHit}/${totals.fnFound}, floor ${fmt(FLOOR.functions)})`);
 
-  if (reportOnly) return;
+  if (list) {
+    checkPerFile(perFile, { list: true });
+    return;
+  }
+
+  if (updateBaseline) {
+    const byFile = Object.fromEntries([...perFile.entries()].filter(([, p]) => p < PER_FILE_FLOOR));
+    savePerFileBaseline(byFile);
+    console.log(
+      `\n[coverage] per-file baseline updated: ${Object.keys(byFile).length} files below the ${(PER_FILE_FLOOR * 100).toFixed(0)}% floor.`,
+    );
+    return;
+  }
+
+  if (reportOnly) {
+    checkPerFile(perFile, { list: false });
+    return;
+  }
 
   const failures: string[] = [];
   if (lines < FLOOR.lines) failures.push(`line coverage ${fmt(lines)} < floor ${fmt(FLOOR.lines)}`);
-  if (functions < FLOOR.functions)
-    failures.push(`function coverage ${fmt(functions)} < floor ${fmt(FLOOR.functions)}`);
+  if (functions < FLOOR.functions) failures.push(`function coverage ${fmt(functions)} < floor ${fmt(FLOOR.functions)}`);
+
+  const perFileOk = checkPerFile(perFile, { list: false });
 
   if (failures.length > 0) {
     console.error(`\n[coverage] FAIL — ${failures.join("; ")}`);
@@ -163,6 +315,8 @@ async function main() {
     console.error("if the floor is genuinely too high, adjust FLOOR in scripts/check-coverage.ts.");
     process.exit(1);
   }
+
+  if (!perFileOk) process.exit(1);
 
   console.log("\n[coverage] OK — at or above floor.");
 }
