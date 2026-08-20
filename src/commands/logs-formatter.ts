@@ -9,6 +9,7 @@ import { formatDuration, formatLogEntry, formatRunSummary } from "../log-format/
 import type { LogEntry, LogLevel } from "../logger/types";
 export { formatDuration };
 import type { VerbosityMode } from "../log-format/types";
+import { cancellableDelay } from "../utils/bun-deps";
 import { extractRunSummary } from "./logs-reader";
 
 /**
@@ -98,13 +99,44 @@ export async function displayLogs(
 }
 
 /**
- * Follow logs in real-time (tail -f mode)
+ * Dependencies for {@link followLogs}.
+ *
+ * Mirrors the {@link WaitDeps} pattern from `src/schedule/wait.ts`: a
+ * `Partial<Deps>` override merged over a module-level default at call
+ * time. The defaults preserve today's `console.log` output and the
+ * canonical cancellable inter-poll delay.
+ */
+export interface FollowLogsDeps {
+  /** Emits one formatted line. Defaults to today's console output. */
+  emit: (line: string) => void;
+  /** Waits between polls. Defaults to cancellableDelay; rejects on abort. */
+  sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+}
+
+const DEFAULT_FOLLOW_LOGS_DEPS: FollowLogsDeps = {
+  emit: (line) => console.log(line),
+  sleep: (ms, signal) => cancellableDelay(ms, signal),
+};
+
+/**
+ * Follow logs in real-time (tail -f mode).
+ *
+ * Returns `"cancelled"` when the supplied signal fires — either at the
+ * top of the loop on the next iteration, or via the injected `sleep`
+ * rejecting on abort. Read logic is unchanged from the pre-story
+ * implementation; output and inter-poll delay are routed through
+ * injectable dependencies for testability.
  */
 export async function followLogs(
   filePath: string,
   options: { json?: boolean; story?: string; level?: LogLevel },
-): Promise<void> {
+  opts?: { signal?: AbortSignal; _deps?: Partial<FollowLogsDeps> },
+): Promise<"cancelled"> {
+  const deps: FollowLogsDeps = { ...DEFAULT_FOLLOW_LOGS_DEPS, ...opts?._deps };
+  const signal = opts?.signal;
   const mode: VerbosityMode = options.json ? "json" : "normal";
+
+  if (signal?.aborted) return "cancelled";
 
   const file = Bun.file(filePath);
   const content = await file.text();
@@ -123,7 +155,7 @@ export async function followLogs(
       const formatted = formatLogEntry(entry, { mode, useColor: true });
 
       if (formatted.shouldDisplay && formatted.output) {
-        console.log(formatted.output);
+        deps.emit(formatted.output);
       }
     } catch {
       // Skip invalid JSON lines
@@ -133,7 +165,13 @@ export async function followLogs(
   let lastSize = (await Bun.file(filePath).stat()).size;
 
   while (true) {
-    await Bun.sleep(500);
+    if (signal?.aborted) return "cancelled";
+
+    try {
+      await deps.sleep(500, signal);
+    } catch {
+      return "cancelled";
+    }
 
     const currentSize = (await Bun.file(filePath).stat()).size;
 
@@ -155,7 +193,7 @@ export async function followLogs(
           const formatted = formatLogEntry(entry, { mode, useColor: true });
 
           if (formatted.shouldDisplay && formatted.output) {
-            console.log(formatted.output);
+            deps.emit(formatted.output);
           }
         } catch {
           // Skip invalid JSON lines

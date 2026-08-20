@@ -37,6 +37,8 @@ export interface LogsOptions {
   run?: string;
   /** Output raw JSONL (from --json / -j flag) */
   json?: boolean;
+  /** Abort signal forwarded to follow mode. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -50,7 +52,7 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
       return;
     }
     if (options.follow) {
-      await followLogs(runFile, options);
+      await followLogs(runFile, options, { signal: options.signal });
     } else {
       await displayLogs(runFile, options);
     }
@@ -89,7 +91,7 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
 
   // Handle follow mode
   if (options.follow) {
-    await followLogs(runFile, options);
+    await followLogs(runFile, options, { signal: options.signal });
     return;
   }
 

@@ -196,18 +196,31 @@ describe("logsCommand", () => {
   });
 
   describe("--follow mode (real-time streaming)", () => {
-    // Note: Follow mode tests are skipped in unit tests because they run indefinitely.
-    // They are tested in integration tests (test/integration/cli-logs.test.ts) where we can spawn and kill processes.
-    test.skip("streams new log entries in real-time", async () => {
-      // Skipped: tested in integration tests
+    test("resolves to undefined with an already-aborted signal (AC #6)", async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      const options: LogsOptions = { dir: projectDir, follow: true, signal: controller.signal };
+      await expect(logsCommand(options)).resolves.toBeUndefined();
     });
 
-    test.skip("follows the latest run by default", async () => {
-      // Skipped: tested in integration tests
+    test("resolves to undefined with --run + follow + an already-aborted signal", async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      const options: LogsOptions = {
+        run: "2026-02-27T10-00-00",
+        follow: true,
+        signal: controller.signal,
+      };
+      await expect(logsCommand(options)).resolves.toBeUndefined();
     });
 
-    test.skip("can follow a specific run with --run flag", async () => {
-      // Skipped: tested in integration tests
+    test("aborting the signal mid-flight returns cleanly to undefined", async () => {
+      const controller = new AbortController();
+      const result = logsCommand({ dir: projectDir, follow: true, signal: controller.signal });
+      controller.abort();
+      await expect(result).resolves.toBeUndefined();
     });
   });
 
@@ -219,8 +232,17 @@ describe("logsCommand", () => {
       await expect(logsCommand(options)).resolves.toBeUndefined();
     });
 
-    test.skip("filters work with --follow mode", async () => {
-      // Skipped: tested in integration tests
+    test("--story filter with --follow and an already-aborted signal resolves to undefined", async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      const options: LogsOptions = {
+        dir: projectDir,
+        follow: true,
+        story: "US-001",
+        signal: controller.signal,
+      };
+      await expect(logsCommand(options)).resolves.toBeUndefined();
     });
 
     test("shows empty result when story not found", async () => {
@@ -236,8 +258,17 @@ describe("logsCommand", () => {
       await expect(logsCommand({ dir: projectDir, level })).resolves.toBeUndefined();
     });
 
-    test.skip("filters work with --follow mode", async () => {
-      // Skipped: tested in integration tests
+    test("--level filter with --follow and an already-aborted signal resolves to undefined", async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      const options: LogsOptions = {
+        dir: projectDir,
+        follow: true,
+        level: "error",
+        signal: controller.signal,
+      };
+      await expect(logsCommand(options)).resolves.toBeUndefined();
     });
   });
 
@@ -328,8 +359,17 @@ describe("logsCommand", () => {
       await expect(logsCommand(options)).resolves.toBeUndefined();
     });
 
-    test.skip("works with --follow mode", async () => {
-      // Skipped: tested in integration tests
+    test("--json with --follow and an already-aborted signal resolves to undefined", async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      const options: LogsOptions = {
+        dir: projectDir,
+        follow: true,
+        json: true,
+        signal: controller.signal,
+      };
+      await expect(logsCommand(options)).resolves.toBeUndefined();
     });
   });
 
