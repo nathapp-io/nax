@@ -110,8 +110,8 @@ ${GROUPING_RULES}${acConstraint}`;
 export interface DecomposePromptInput {
   specContent: string;
   codebaseContext: string;
-  targetStory?: import("../../prd/types").UserStory;
-  siblings?: import("../../prd/types").UserStory[];
+  targetStory?: import("@/prd").UserStory;
+  siblings?: import("@/prd").UserStory[];
   maxAcCount?: number | null;
   /** Agent routing profiles to inject as capability cards. Empty array = no cards. */
   profiles?: AgentRoutingProfile[];
