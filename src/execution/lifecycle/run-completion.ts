@@ -9,22 +9,22 @@
  */
 
 import type { IAgentManager } from "@/agents";
+import { resolveDefaultAgent } from "@/agents";
 import type { NaxConfig } from "@/config";
 import { _resetCanonicalRulesCache, purgeStaleManifests } from "@/context/engine";
 import type { HooksConfig } from "@/hooks/types";
+import { getSafeLogger } from "@/logger";
 import type { StoryMetrics } from "@/metrics";
+import { deriveRunFallbackAggregates, saveRunMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline";
 import type { PRD } from "@/prd";
+import { countStories, isComplete, isStalled } from "@/prd";
 import type { DispatchContext } from "@/runtime/dispatch-context";
 import type { ISessionManager } from "@/session";
 import { purgeStaleScratch } from "@/session";
 import { clearWorkspaceCache } from "@/test-runners/detect";
 import { clearGitRootCache } from "@/verification";
-import { resolveDefaultAgent } from "../../agents";
 import { fireHook } from "../../hooks/runner";
-import { getSafeLogger } from "../../logger";
-import { deriveRunFallbackAggregates, saveRunMetrics } from "../../metrics";
-import { countStories, isComplete, isStalled } from "../../prd";
 import { clearLanguageCache } from "../../project/detector";
 import type { DeferredReviewResult } from "../deferred-review";
 import type { ExitReason } from "../executor-types";
@@ -69,7 +69,7 @@ export interface RunCompletionOptions extends DispatchContext {
    */
   projectDir?: string;
   /** Per-run plugin-provider cache (Finding 5 / issue #473). Disposed after session teardown. */
-  pluginProviderCache?: import("../../context/engine").PluginProviderCache;
+  pluginProviderCache?: import("@/context/engine").PluginProviderCache;
   /**
    * Result of the end-of-run deferred plugin review (#1146 G2). Undefined when no
    * IReviewPlugin reviewers are registered. Consumed here: always surfaced; gates

@@ -10,9 +10,9 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { NaxConfig } from "@/config";
 import type { InteractionChain } from "@/interaction/chain";
+import { getSafeLogger } from "@/logger";
 import type { PRD } from "@/prd/types";
 import chalk from "chalk";
-import { getSafeLogger } from "../../logger";
 import type { StatusWriter } from "../status-writer";
 
 export interface PrecheckContext {
@@ -44,7 +44,7 @@ export async function runPrecheckValidation(ctx: PrecheckContext): Promise<void>
 
   logger?.info("precheck", "Running precheck validations...");
 
-  const { runPrecheck } = await import("../../precheck");
+  const { runPrecheck } = await import("@/precheck");
   const precheckResult = await runPrecheck(ctx.config, ctx.prd, {
     workdir: ctx.workdir,
     format: "human",

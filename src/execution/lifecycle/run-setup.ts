@@ -14,24 +14,24 @@
 
 import path from "node:path";
 import type { NaxConfig } from "@/config";
+import { LockAcquisitionError, NaxError } from "@/errors";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { InteractionChain } from "@/interaction";
+import { initInteractionChain } from "@/interaction";
+import { getSafeLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline";
 import type { AgentGetFn } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD } from "@/prd";
+import { countStories, loadPRD, savePRD } from "@/prd";
+import { detectProjectProfile } from "@/project";
+import { type NaxRuntime, createRuntime } from "@/runtime";
+import { SessionManager } from "@/session";
 import { discoverWorkspacePackages, resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
+import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "@/version";
 import { globalConfigDir } from "../../config/paths";
-import { LockAcquisitionError, NaxError } from "../../errors";
-import { initInteractionChain } from "../../interaction";
-import { getSafeLogger } from "../../logger";
 import { loadPlugins } from "../../plugins/loader";
-import { countStories, loadPRD, savePRD } from "../../prd";
-import { detectProjectProfile } from "../../project";
-import { type NaxRuntime, createRuntime } from "../../runtime";
-import { SessionManager } from "../../session";
-import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "../../version";
 import { installCrashHandlers } from "../crash-recovery";
 import { acquireLock, releaseLock } from "../helpers";
 import { closeAllRunSessions } from "../session-manager-runtime";
@@ -51,7 +51,7 @@ export const _runSetupDeps = {
  * no throw.
  */
 export function warnProfileMismatch(
-  prd: import("../../prd").PRD,
+  prd: import("@/prd").PRD,
   config: NaxConfig,
   logger: ReturnType<typeof getSafeLogger>,
 ): void {
@@ -150,9 +150,9 @@ export interface RunSetupOptions {
   /** Protocol-aware agent resolver — passed from runner.ts registry */
   agentGetFn?: AgentGetFn;
   /** Per-run AgentManager (ADR-012). When provided, validateCredentials() is called at run start. */
-  agentManager?: import("../../agents").IAgentManager;
+  agentManager?: import("@/agents").IAgentManager;
   /** Pre-built AgentStreamEventBus to inject into the runtime so external subscribers (e.g. TUI) can receive events. */
-  agentStreamEvents?: import("../../runtime").IAgentStreamEventBus;
+  agentStreamEvents?: import("@/runtime").IAgentStreamEventBus;
 }
 
 export interface RunSetupResult {
@@ -316,7 +316,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
 
   // Claim project identity on first run (no-op if already claimed for this workdir)
   {
-    const { claimProjectIdentity } = await import("../../runtime");
+    const { claimProjectIdentity } = await import("@/runtime");
     let remoteUrl: string | null = null;
     try {
       const gitResult = Bun.spawnSync(["git", "remote", "get-url", "origin"], { cwd: workdir });
