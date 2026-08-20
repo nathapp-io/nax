@@ -14,8 +14,8 @@
 
 import { appendFile, mkdir } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { getSafeLogger } from "../../logger";
-import { getEventsRootDir } from "../../utils/paths";
+import { getSafeLogger } from "@/logger";
+import { getEventsRootDir } from "@/utils/paths";
 import type { PipelineEventBus } from "../event-bus";
 import type { UnsubscribeFn } from "./hooks";
 

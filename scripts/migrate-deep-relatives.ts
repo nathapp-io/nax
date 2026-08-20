@@ -53,11 +53,18 @@ interface Hit {
   klass: Klass;
 }
 
-/** True when the target sits inside a directory that has its own barrel. */
+/** True when the target's path bypasses any ancestor barrel — i.e. the alias would skip a directory barrel between the anchor (src/ or test/) and the target. Walks every parent up to the anchor so nested barrels like src/context/engine/index.ts are detected, not only the immediate parent. */
 function targetDirHasBarrel(fromFile: string, spec: string): boolean {
   const abs = resolve(dirname(resolve(ROOT, fromFile)), spec);
   if (existsSync(abs) && statSync(abs).isDirectory()) return false; // target IS the barrel
-  return existsSync(join(ROOT, dirname(relative(ROOT, abs)), "index.ts"));
+  let dir = dirname(relative(ROOT, abs));
+  while (dir && dir !== "." && dir !== "/") {
+    if (existsSync(join(ROOT, dir, "index.ts"))) return true;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return false;
 }
 
 /**

@@ -17,8 +17,8 @@
 
 import type { NaxConfig } from "@/config";
 import type { InteractionChain } from "@/interaction/chain";
+import { getSafeLogger } from "@/logger";
 import { executeTrigger, isTriggerEnabled } from "../../interaction/triggers";
-import { getSafeLogger } from "../../logger";
 import type { PipelineEventBus, StoryFailedEvent } from "../event-bus";
 import type { UnsubscribeFn } from "./hooks";
 

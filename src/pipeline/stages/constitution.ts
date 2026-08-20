@@ -20,8 +20,8 @@
  */
 
 import { dirname } from "node:path";
-import { loadConstitution } from "../../constitution";
-import { getLogger } from "../../logger";
+import { loadConstitution } from "@/constitution";
+import { getLogger } from "@/logger";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const constitutionStage: PipelineStage = {

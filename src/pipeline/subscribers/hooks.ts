@@ -11,9 +11,9 @@
  * - Returns unsubscribe function for cleanup
  */
 
+import { type LoadedHooksConfig, fireHook } from "@/hooks";
+import { getSafeLogger } from "@/logger";
 import { hookCtx } from "../../execution/story-context";
-import { type LoadedHooksConfig, fireHook } from "../../hooks";
-import { getSafeLogger } from "../../logger";
 import type { PipelineEventBus } from "../event-bus";
 
 export type UnsubscribeFn = () => void;

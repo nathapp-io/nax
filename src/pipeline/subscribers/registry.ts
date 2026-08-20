@@ -13,8 +13,8 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { getSafeLogger } from "../../logger";
-import { getRunsDir } from "../../utils/paths";
+import { getSafeLogger } from "@/logger";
+import { getRunsDir } from "@/utils/paths";
 import type { PipelineEventBus } from "../event-bus";
 import type { UnsubscribeFn } from "./hooks";
 

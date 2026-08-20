@@ -9,19 +9,19 @@
  *   → applyPostRunInspection → decideStageAction.
  */
 
+import { validateAgentForTier } from "@/agents";
 import type { AgentAdapter } from "@/agents/types";
 import { isThreeSessionStrategy } from "@/config";
+import { NaxError } from "@/errors";
 import { buildPlanForStrategy, requiresInitialRefCapture } from "@/execution";
 import type { TddMode } from "@/execution/post-run";
 import type { StoryOrchestratorResult } from "@/execution/story-orchestrator";
+import { getLogger } from "@/logger";
 import type { CallContext } from "@/operations/types";
-import { validateAgentForTier } from "../../agents";
-import { NaxError } from "../../errors";
+import { captureGitRef, getUntrackedPaths } from "@/utils/git";
 import { assemblePlanInputsFromCtx } from "../../execution/plan-inputs";
 import { _postRunDeps, applyPostRunInspection, decideStageAction } from "../../execution/post-run";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
-import { getLogger } from "../../logger";
-import { captureGitRef, getUntrackedPaths } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 // Re-export helpers so existing importers continue to work.
@@ -115,7 +115,7 @@ export const executionStage: PipelineStage = {
     };
 
     // Capture dispatch events for cost/output/tokenUsage
-    let capturedTokenUsage: import("../../agents/cost").TokenUsage | undefined;
+    let capturedTokenUsage: import("@/agents/cost").TokenUsage | undefined;
     let capturedResponse = "";
     let capturedCostUsd = 0;
     const unsubscribe =

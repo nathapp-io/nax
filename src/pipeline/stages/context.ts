@@ -19,27 +19,27 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { featureDir } from "@/config";
 import type { ContextRequest, IContextProvider } from "@/context/engine";
-import type { ContextElement } from "@/context/types";
-import { NaxError } from "@/errors";
-import { packageDirRelative } from "@/utils/paths";
 import {
   NeutralityLintError,
   createDefaultOrchestrator,
   createRunCallCounter,
   deriveProviderWeights,
   loadFeatureManifests,
-} from "../../context/engine";
+} from "@/context/engine";
+import type { ContextElement } from "@/context/types";
+import { NaxError } from "@/errors";
+import { getLogger } from "@/logger";
+import { getContextFiles } from "@/prd";
+import { errorMessage } from "@/utils/errors";
+import { packageDirRelative } from "@/utils/paths";
 import { estimateAvailableBudgetTokens } from "../../context/engine/available-budget";
 import { writeContextManifest } from "../../context/engine/manifest-store";
 import { loadPluginProviders } from "../../context/engine/providers/plugin-loader";
 import { getStageContextConfig } from "../../context/engine/stage-config";
 import { FeatureContextProvider } from "../../context/providers/feature-context";
 import { buildStoryContextFullFromCtx } from "../../execution/helpers";
-import { getLogger } from "../../logger";
-import { getContextFiles } from "../../prd";
 import { readDigestFile, writeDigestFile } from "../../session/scratch-writer";
 import { resolveTestFilePatterns } from "../../test-runners/resolver";
-import { errorMessage } from "../../utils/errors";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 

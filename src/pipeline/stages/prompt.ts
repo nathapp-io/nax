@@ -22,10 +22,10 @@
  */
 
 import { assembleForStage } from "@/context/engine";
+import { getLogger } from "@/logger";
+import { PromptBuilder } from "@/prompts";
 import type { AcceptanceEntry } from "@/prompts/sections/acceptance";
-import { getLogger } from "../../logger";
-import { PromptBuilder } from "../../prompts";
-import { resolveSelfVerificationPromptInput } from "../../quality";
+import { resolveSelfVerificationPromptInput } from "@/quality";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
