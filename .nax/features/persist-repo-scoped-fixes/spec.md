@@ -92,7 +92,7 @@ never the interface to implement.
 - Baseline: `plan.run()` resolves into `planResult`, which is passed to
   `applyPostRunInspection` and `decideStageAction`; `_executionDeps` holds eight keys
   ending at `decideStageAction`.
-- Target: `_executionDeps` gains a `recordRepoScopedFixes` key; `executionStage.run`
+- Target: `_executionDeps` gains a `recordRepoScopedFixes` key; `executionStage.execute`
   calls `_executionDeps.recordRepoScopedFixes(ctx.story, planResult.repoScopedFixes)`
   after the `try`/`catch`/`finally` around `plan.run()` and before
   `applyPostRunInspection`.
@@ -225,7 +225,7 @@ Add `recordRepoScopedFixes(story, records)` to
 `src/execution/story-orchestrator/repo-scoped-fix-record.ts`, mapping each
 `RepoScopedFixRecord` to a `PersistedRepoScopedFix` and appending to
 `story.repoScopedFixes`. Re-export it from the story-orchestrator and execution barrels,
-register it on `_executionDeps`, and call it from `executionStage.run` once `plan.run()`
+register it on `_executionDeps`, and call it from `executionStage.execute` once `plan.run()`
 has resolved.
 
 - **Depends on:** US-001 (`PersistedRepoScopedFix` and the `UserStory` field from `@/prd`).
@@ -256,9 +256,9 @@ None. No existing test pins a closed-world shape this feature changes: neither
 ### Seams
 
 - **`recordRepoScopedFixes` (US-002 producer and consumer, one story).** The symbol is new
-  and its only production caller is `executionStage.run`. US-002 declares a seam AC that
+  and its only production caller is `executionStage.execute`. US-002 declares a seam AC that
   spies `_executionDeps.recordRepoScopedFixes`, triggers the stage at its outermost
-  production entry point — `executionStage.run(ctx)`, above the empty-records guard — and
+  production entry point — `executionStage.execute(ctx)`, above the empty-records guard — and
   asserts the spy was invoked with `ctx.story` and the orchestrator result's records. The
   guard is exercised by a paired AC asserting a result carrying no records leaves the
   field undefined.
@@ -312,23 +312,23 @@ None. No existing test pins a closed-world shape this feature changes: neither
    `Promise` — the recorder is synchronous and performs no awaited persistence.
 8. `[unit]` `recordRepoScopedFixes` is importable from `@/execution` and is usable as a
    function.
-9. `[integration]` Given `executionStage.run(ctx)` with `_executionDeps.buildPlanForStrategy`
+9. `[integration]` Given `executionStage.execute(ctx)` with `_executionDeps.buildPlanForStrategy`
    stubbed to return a plan whose `run()` resolves a `StoryOrchestratorResult` carrying a
    one-element `repoScopedFixes` array, and `_executionDeps.recordRepoScopedFixes`
    replaced by a spy, the spy is invoked exactly once with `ctx.story` as its first
    argument and that same records array as its second.
 10. `[integration]` Given the same stubbed plan with both `_executionDeps.recordRepoScopedFixes`
-    and `_executionDeps.applyPostRunInspection` replaced by spies, `executionStage.run(ctx)`
+    and `_executionDeps.applyPostRunInspection` replaced by spies, `executionStage.execute(ctx)`
     invokes `recordRepoScopedFixes` before `applyPostRunInspection`.
-11. `[integration]` Given `executionStage.run(ctx)` with a stubbed plan whose
+11. `[integration]` Given `executionStage.execute(ctx)` with a stubbed plan whose
     `StoryOrchestratorResult` carries no `repoScopedFixes`, `ctx.story.repoScopedFixes` is
     `undefined` after the stage returns.
-12. `[integration]` Given `executionStage.run(ctx)` with a stubbed plan whose
+12. `[integration]` Given `executionStage.execute(ctx)` with a stubbed plan whose
     `StoryOrchestratorResult` has `success: false` and a one-element `repoScopedFixes`
     array, `ctx.story.repoScopedFixes` has length 1 after the stage returns — records are
     kept on the failure path.
-13. `[integration]` Given `executionStage.run(ctx)` with a stubbed plan whose `run()`
-    rejects, awaiting `executionStage.run(ctx)` rejects with that same error and
+13. `[integration]` Given `executionStage.execute(ctx)` with a stubbed plan whose `run()`
+    rejects, awaiting `executionStage.execute(ctx)` rejects with that same error and
     `ctx.story.repoScopedFixes` is `undefined`.
 
 **Verification note (US-002 barrel wiring):** the re-exports through
