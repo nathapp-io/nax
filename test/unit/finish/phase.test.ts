@@ -298,6 +298,13 @@ test("an undelivered escalation is surfaced on the finish status entry", async (
     escalationReason: "needs a human",
     deliveryError: "gh pr comment failed",
   });
+  // This test's config carries no `interaction.plugin: "telegram"`, so
+  // `telegramCreds()` (src/finish/notify.ts) falls through to ambient
+  // NAX_TELEGRAM_TOKEN / TELEGRAM_BOT_TOKEN / NAX_TELEGRAM_CHAT_ID env vars.
+  // test/preload.ts scrubs those and sentinels the underlying fetch as a
+  // global safety net, but this test must not depend on that for its own
+  // hermeticity — mock the seam directly, like every sibling test above does.
+  _finishPhaseDeps.sendTelegramNotify = async () => false;
   const ctx = {
     ...makeCtx(),
     statusWriter: {
