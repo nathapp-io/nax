@@ -1,0 +1,142 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "Given a PRD story with one `PersistedRepoScopedFix`, when `savePRD` then `loadPRD` run on the same path, then the loaded story's `repoScopedFixes` deep-equals the written array.",
+    "refined": "Write a `UserStory` containing `repoScopedFixes: [{ triggeringTests: [\"a::t\"], filesChanged: [\"x.ts\"], findingsCleared: true }]` to a temp PRD path via `savePRD`. Call `loadPRD` on that path. Assert `loadedStory.repoScopedFixes` is an array of length 1, that `loadedStory.repoScopedFixes[0].triggeringTests` equals `[\"a::t\"]`, `loadedStory.repoScopedFixes[0].filesChanged` equals `[\"x.ts\"]`, and `loadedStory.repoScopedFixes[0].findingsCleared` is `true`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "Given a prd.json whose stories omit `repoScopedFixes`, when `loadPRD` reads it, then each story's `repoScopedFixes` is `undefined`.",
+    "refined": "Write a PRD with one story that has no `repoScopedFixes` key to a temp file. Call `loadPRD` on that path. Assert `loadedStory.repoScopedFixes` is `undefined` (not `[]`, not `null`).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "Given failed stories with `repoScopedFixes`, when `resetFailedStoriesToPending(prd, { resetRef: true })` runs, then every reset story has `repoScopedFixes` set to `undefined`.",
+    "refined": "Create a PRD with two failed stories each having `repoScopedFixes: [{ triggeringTests: [\"a::t\"], filesChanged: [\"x.ts\"], findingsCleared: false }]`. Call `resetFailedStoriesToPending(prd, { resetRef: true })`. Assert both stories' `repoScopedFixes` are `undefined`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Given failed stories with `repoScopedFixes`, when `resetFailedStoriesToPending(prd, { storyIsolation: \"worktree\" })` runs with default `resetRef`, then every reset story has `repoScopedFixes` set to `undefined`.",
+    "refined": "Create a PRD with one failed story having `repoScopedFixes: [{ triggeringTests: [\"b::t\"], filesChanged: [\"y.ts\"], findingsCleared: true }]`. Call `resetFailedStoriesToPending(prd, { storyIsolation: \"worktree\" })` (no `resetRef` property). Assert the failed story's `repoScopedFixes` is `undefined`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "Given a failed story with `repoScopedFixes`, when `resetFailedStoriesToPending(prd, {})` runs, then the story retains its existing `repoScopedFixes`.",
+    "refined": "Create a PRD with one failed story having `repoScopedFixes: [{ triggeringTests: [\"c::t\"], filesChanged: [\"z.ts\"], findingsCleared: false }]`. Call `resetFailedStoriesToPending(prd, {})` (empty options). Assert the failed story's `repoScopedFixes` is an array of length 1 with `triggeringTests` equal to `[\"c::t\"]` and `filesChanged` equal to `[\"z.ts\"]`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given a passed story with `repoScopedFixes`, when `resetFailedStoriesToPending(prd, { resetRef: true })` runs, then the passed story retains its existing `repoScopedFixes`.",
+    "refined": "Create a PRD with one passed story (status `\"passed\"`) having `repoScopedFixes: [{ triggeringTests: [\"d::t\"], filesChanged: [\"w.ts\"], findingsCleared: true }]` and one failed story. Call `resetFailedStoriesToPending(prd, { resetRef: true })`. Assert the passed story's `repoScopedFixes` is an array of length 1 with `triggeringTests` equal to `[\"d::t\"]`, `filesChanged` equal to `[\"w.ts\"]`, and `findingsCleared` equal to `true`; assert the failed story's `repoScopedFixes` is `undefined`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Given one `RepoScopedFixRecord`, when `recordRepoScopedFixes(story, records)` runs, then `story.repoScopedFixes` deep-equals one entry containing the record's `triggeringTests`, `filesChanged`, and `findingsCleared`.",
+    "refined": "Create a `RepoScopedFixRecord` with `triggeringTests: ['test-a.ts']`, `filesChanged: ['file-1.ts']`, `findingsCleared: 3`. Call `recordRepoScopedFixes(story, [record])`. Assert `story.repoScopedFixes` is an array of length 1, `story.repoScopedFixes[0].triggeringTests` deep-equals `['test-a.ts']`, `story.repoScopedFixes[0].filesChanged` deep-equals `['file-1.ts']`, and `story.repoScopedFixes[0].findingsCleared` equals `3`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "Given a `RepoScopedFixRecord` with `declinedReason: \"gave up\"`, when `recordRepoScopedFixes(story, records)` runs, then its persisted entry has exactly `triggeringTests`, `filesChanged`, and `findingsCleared` keys.",
+    "refined": "Create a `RepoScopedFixRecord` with `declinedReason: 'gave up'`, `triggeringTests: ['t1']`, `filesChanged: ['f1']`, `findingsCleared: 1`. Call `recordRepoScopedFixes(story, [record])`. Assert `Object.keys(story.repoScopedFixes[0])` deep-equals `['triggeringTests', 'filesChanged', 'findingsCleared']` and does NOT contain `'declinedReason'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "Given two source records, when `recordRepoScopedFixes(story, records)` runs, then `story.repoScopedFixes` contains two mapped entries in the source order.",
+    "refined": "Create `record1` with `triggeringTests: ['test-1']` and `record2` with `triggeringTests: ['test-2']`. Call `recordRepoScopedFixes(story, [record1, record2])`. Assert `story.repoScopedFixes.length` equals `2`, `story.repoScopedFixes[0].triggeringTests` equals `['test-1']`, and `story.repoScopedFixes[1].triggeringTests` equals `['test-2']`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "Given a story with one persisted entry and one new source record, when `recordRepoScopedFixes(story, records)` runs, then `story.repoScopedFixes` contains the existing entry followed by the mapped new entry.",
+    "refined": "Set `story.repoScopedFixes = [{ triggeringTests: ['existing'], filesChanged: ['ex'], findingsCleared: 1 }]`. Create `newRecord` with `triggeringTests: ['new'], filesChanged: ['nf'], findingsCleared: 2`. Call `recordRepoScopedFixes(story, [newRecord])`. Assert `story.repoScopedFixes.length` equals `2`, `story.repoScopedFixes[0].triggeringTests` equals `['existing']`, and `story.repoScopedFixes[1].triggeringTests` equals `['new']`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given a story without `repoScopedFixes`, when `recordRepoScopedFixes(story, [])` runs, then `story.repoScopedFixes` remains `undefined`.",
+    "refined": "Create a story with `repoScopedFixes: undefined`. Call `recordRepoScopedFixes(story, [])`. Assert `story.repoScopedFixes` is `undefined` (not an empty array).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given a story without `repoScopedFixes`, when `recordRepoScopedFixes(story, undefined)` runs, then `story.repoScopedFixes` remains `undefined`.",
+    "refined": "Create a story with `repoScopedFixes: undefined`. Call `recordRepoScopedFixes(story, undefined)`. Assert `story.repoScopedFixes` is `undefined`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When `recordRepoScopedFixes(story, records)` is called, then it returns `undefined` rather than a Promise.",
+    "refined": "Call `const result = recordRepoScopedFixes(story, records)`. Assert `result` is `undefined` and `Object.prototype.toString.call(result)` is `'[object Undefined]'` (not `'[object Promise]'`).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When `recordRepoScopedFixes` is imported from `@/execution`, then `typeof recordRepoScopedFixes` is `\"function\"`.",
+    "refined": "Import `recordRepoScopedFixes` from `@/execution`. Assert `typeof recordRepoScopedFixes === 'function'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given `executionStage.execute(ctx)` with a plan resolving a one-element `repoScopedFixes` array and a spy replacing `_executionDeps.recordRepoScopedFixes`, when the stage runs, then the spy is called exactly once with `ctx.story` and that same records array.",
+    "refined": "Create a plan with `repoScopedFixes: [{ triggeringTests: ['t'], filesChanged: ['f'], findingsCleared: 1 }]`. Replace `_executionDeps.recordRepoScopedFixes` with a spy. Call `executionStage.execute(ctx)`. Assert `spy.callCount` equals `1`, `spy.calls[0].args[0]` is `ctx.story`, and `spy.calls[0].args[1]` is the same records array reference.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given spies for `_executionDeps.recordRepoScopedFixes` and `_executionDeps.applyPostRunInspection`, when `executionStage.execute(ctx)` runs with plan records, then `recordRepoScopedFixes` is invoked before `applyPostRunInspection`.",
+    "refined": "Replace both `_executionDeps.recordRepoScopedFixes` and `_executionDeps.applyPostRunInspection` with spies. Call `executionStage.execute(ctx)` with plan records. Assert `recordRepoScopedFixesSpy.callCount > 0` before `applyPostRunInspectionSpy.callCount > 0`, and `recordRepoScopedFixesSpy.mock.callOrder < applyPostRunInspectionSpy.mock.callOrder`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given `executionStage.execute(ctx)` with a plan result that has no `repoScopedFixes`, when the stage returns, then `ctx.story.repoScopedFixes` is `undefined`.",
+    "refined": "Create a plan with `repoScopedFixes: undefined`. Execute `executionStage.execute(ctx)` and await. Assert `ctx.story.repoScopedFixes` is `undefined`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given `executionStage.execute(ctx)` with `success: false` and one repo-scoped record, when the stage returns, then `ctx.story.repoScopedFixes` has length 1.",
+    "refined": "Create a plan result with `success: false` and one `repoScopedFixes` entry. Execute `executionStage.execute(ctx)`. Assert `ctx.story.repoScopedFixes.length === 1`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given `executionStage.execute(ctx)` with a plan whose `run()` rejects with an error, when the stage is awaited, then it rejects with that same error.",
+    "refined": "Create a plan whose `run()` method rejects with `new Error('test-error')`. Await `executionStage.execute(ctx)` inside try/catch. Assert the caught error message is `'test-error'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given `executionStage.execute(ctx)` with a plan whose `run()` rejects, when the stage rejects, then `ctx.story.repoScopedFixes` is `undefined`.",
+    "refined": "Create a plan whose `run()` method rejects with an error. Await `executionStage.execute(ctx)` and catch the rejection. Assert `ctx.story.repoScopedFixes` is `undefined`.",
+    "testable": true,
+    "storyId": "US-002"
+  }
+]
