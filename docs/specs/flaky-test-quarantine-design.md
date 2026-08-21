@@ -99,6 +99,71 @@ Every quarantine decision emits a structured log line + a pipeline-bus event —
 landing in the existing review-warning aggregation, the TUI, and the run
 report/JSONL. No cross-run persistence.
 
+#### Skip telemetry (#1657)
+
+Every path where triage is *skipped* — so a flake and a deterministic failure
+are indistinguishable to the `repo-scoped-test-fix` fallthrough (#1656) —
+emits one `flake.triage.skipped` event via `logFlakeTriageSkip`
+(`src/verification/flake-triage-telemetry.ts`):
+
+| `reason` | Emitted from | `candidateBasis` |
+|:---|:---|:---|
+| `max-probes-per-gate` | `triageFlakyFindings` | `probe-eligible` (exact) |
+| `framework-undetected` | `productionTriageSeam`, `runRegressionFlakeTriage` | `gate-findings` (upper bound) |
+| `no-test-command` | `productionTriageSeam` | `gate-findings` |
+| `baseline-diff-unresolved` | `productionTriageSeam`, `runRegressionFlakeTriage` | `gate-findings` |
+| `context-error` | `productionTriageSeam` | `gate-findings` |
+
+`gate-findings` is the raw finding set handed to the seam — unnarrowed by the
+baseline diff and unfiltered by category — so it is an upper bound, never a
+probe count. Only `probe-eligible` is exact.
+
+`flakeDetection.enabled: false` emits nothing — an operator opt-out is not a
+gap in a feature believed to be on.
+
+**`scope` is the field that decides #1657 §3.** Every row carries one of:
+
+| `scope` | Cycle | Can dispatch `repo-scoped-test-fix`? |
+|:---|:---|:---|
+| `blocking-gate` | `triageGateFindings`, once per rectification entry | **Yes** — the only one |
+| `nbf` | `triageNbfGate`, per phase per `runRectify` attempt | No — not registered on that cycle |
+| `regression` | `runRegressionFlakeTriage`, the run-scoped deferred gate | No |
+
+`makeRepoScopedTestFixStrategy` is registered on the blocking cycle only
+(`src/execution/build-plan-for-strategy.ts`). Counting `nbf` rows — which the
+per-attempt revalidation loop multiplies — toward the decision would argue for
+plumbing on traffic that carries none of the risk. The field is required rather
+than defaulted: a mislabeled row cannot be repaired once the data has accrued.
+
+A completed triage emits the matching denominator, `flake.triage.ran`, at
+`debug` (no console lines in a normal run; the JSONL records every level).
+Without it "only if path 1 shows up at a meaningful rate" has no rate.
+
+Read the accrued counter off the run logs:
+
+```bash
+jq -c 'select(.data.event == "flake.triage.skipped" or .data.event == "flake.triage.ran") | .data' \
+  ~/.nax/*/features/*/runs/*.jsonl \
+  | jq -s 'group_by(.scope) | map({
+      scope: .[0].scope,
+      ran: (map(select(.event == "flake.triage.ran")) | length),
+      skipped: (group_by(.reason) | map(select(.[0].reason != null) | {(.[0].reason): length}) | add)
+    })'
+```
+
+Per #1657 the follow-up guard is gated on `max-probes-per-gate` at
+`scope: "blocking-gate"` in particular showing up at a meaningful rate — the
+plumbing is not paid for on speculation.
+
+**If that guard is built, `flakeTriageRan` is the wrong signal for it.**
+`triageFlakyFindings` returns normally on the `max-probes-per-gate` skip, so
+`productionTriageSeam` reports `flakeTriageRan: true` for exactly the path
+#1657 names as mattering most — a guard written against that flag would be
+inert there. Step 3 needs a distinct signal (`probed`, or a `false` on the cap
+path), and changing `flakeTriageRan` itself is not free: `triageNbfGate` feeds
+it into `recordAttempt`, where `false` also changes which keys are marked
+attempted.
+
 ## Config
 
 One new block under `execution` (Zod schema, `src/config/schemas*.ts`):

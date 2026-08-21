@@ -7,12 +7,14 @@
  * seam previously was.
  */
 
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _storyOrchestratorDeps } from "@/execution";
-import type { Finding } from "@/findings";
 import { productionTriageSeam } from "@/execution/story-orchestrator/flake-triage-seam";
+import type { Finding } from "@/findings";
+import { type LogEntry, addSink, initLogger, resetLogger } from "@/logger";
+import { FLAKE_TRIAGE_SKIP_EVENT } from "@/verification";
 import { _flakeTriageDeps } from "@/verification/flake-triage";
 import { cleanupTempDir, makeNaxConfig, makeTempDir, makeTestRuntime } from "@test/helpers";
 
@@ -74,7 +76,11 @@ describe("productionTriageSeam", () => {
     const config = makeNaxConfig({ execution: { flakeDetection: { enabled: false } } });
     const { ctx } = makeCtx(config);
     const findings = [makeFailedTest()];
-    const [result, report] = await productionTriageSeam(findings, { ctx, rawOutput: BUN_FAIL_OUTPUT });
+    const [result, report] = await productionTriageSeam(findings, {
+      ctx,
+      rawOutput: BUN_FAIL_OUTPUT,
+      scope: "blocking-gate",
+    });
     expect(result).toEqual(findings);
     expect(report.quarantinedKeys).toEqual([]);
   });
@@ -83,7 +89,11 @@ describe("productionTriageSeam", () => {
     const config = makeNaxConfig({ execution: { flakeDetection: { enabled: true } } });
     const { ctx } = makeCtx(config);
     const findings = [makeFailedTest()];
-    const [result, report] = await productionTriageSeam(findings, { ctx, rawOutput: "totally unrecognized output" });
+    const [result, report] = await productionTriageSeam(findings, {
+      ctx,
+      rawOutput: "totally unrecognized output",
+      scope: "blocking-gate",
+    });
     expect(result).toEqual(findings);
     expect(report.quarantinedKeys).toEqual([]);
   });
@@ -111,7 +121,7 @@ describe("productionTriageSeam", () => {
     });
     const { ctx } = makeCtx(config);
     const findings = [makeFailedTest({ file: "pre-existing.test.ts" })];
-    const [result] = await productionTriageSeam(findings, { ctx, rawOutput: BUN_FAIL_OUTPUT });
+    const [result] = await productionTriageSeam(findings, { ctx, rawOutput: BUN_FAIL_OUTPUT, scope: "blocking-gate" });
 
     expect(probeCalled).toBe(false);
     expect(result[0]?.category).toBe("failed-test");
@@ -138,7 +148,11 @@ describe("productionTriageSeam", () => {
     });
     const { ctx } = makeCtx(config);
     const findings = [makeFailedTest({ file: "pre-existing.test.ts" })];
-    const [result, report] = await productionTriageSeam(findings, { ctx, rawOutput: BUN_FAIL_OUTPUT });
+    const [result, report] = await productionTriageSeam(findings, {
+      ctx,
+      rawOutput: BUN_FAIL_OUTPUT,
+      scope: "blocking-gate",
+    });
 
     expect(probeCalled).toBe(true);
     expect(result[0]?.category).toBe("flaky-test");
@@ -147,5 +161,162 @@ describe("productionTriageSeam", () => {
 
   test("is wired as the production seam in _storyOrchestratorDeps.triage", () => {
     expect(_storyOrchestratorDeps.triage).toBe(productionTriageSeam);
+  });
+
+  // ── #1657 — skip telemetry ────────────────────────────────────────────────
+  //
+  // Each seam bail-out leaves the surviving findings indistinguishable from
+  // deterministic failures for the repo-scoped-test-fix fallthrough (#1656).
+  // Count them so the decision to thread `flakeTriageRan` through the blocking
+  // cycle can be made on data.
+  describe("skip telemetry (#1657)", () => {
+    let entries: LogEntry[];
+    let unsubscribe: () => void;
+
+    beforeEach(() => {
+      resetLogger();
+      initLogger({ level: "silent" });
+      entries = [];
+      unsubscribe = addSink((entry) => entries.push(entry));
+    });
+
+    afterEach(() => {
+      unsubscribe();
+      resetLogger();
+    });
+
+    function skips(): LogEntry[] {
+      return entries.filter((e) => e.data?.event === FLAKE_TRIAGE_SKIP_EVENT);
+    }
+
+    test("unknown framework emits a framework-undetected counter", async () => {
+      const config = makeNaxConfig({ execution: { flakeDetection: { enabled: true } } });
+      const { ctx } = makeCtx(config);
+      await productionTriageSeam([makeFailedTest(), makeFailedTest({ rule: "shouldBaz" })], {
+        ctx,
+        rawOutput: "totally unrecognized output",
+        scope: "nbf",
+      });
+
+      expect(skips().length).toBe(1);
+      expect(skips()[0]?.data?.reason).toBe("framework-undetected");
+      // The caller's cycle must survive into the row: an nbf skip can never
+      // dispatch repo-scoped-test-fix, so #1657 §3 must be able to exclude it.
+      expect(skips()[0]?.data?.scope).toBe("nbf");
+      expect(skips()[0]?.data?.candidateCount).toBe(2);
+      expect(skips()[0]?.data?.candidateBasis).toBe("gate-findings");
+      expect(skips()[0]?.data?.storyId).toBe("US-003");
+    });
+
+    test("an unresolvable baseline diff emits a baseline-diff-unresolved counter", async () => {
+      // `workdir` is an initialized repo with no commits — `getMergeBase()`
+      // exhausts every fallback, so `resolveFlakeBaselineDiff` returns null.
+      const config = makeNaxConfig({
+        execution: { flakeDetection: { enabled: true } },
+        quality: { commands: { test: "bun test" } },
+      });
+      const { ctx } = makeCtx(config);
+      const [result, report] = await productionTriageSeam([makeFailedTest()], {
+        ctx,
+        rawOutput: BUN_FAIL_OUTPUT,
+        scope: "blocking-gate",
+      });
+
+      expect(report.flakeTriageRan).toBe(false);
+      expect(result[0]?.category).toBe("failed-test");
+      expect(skips().length).toBe(1);
+      expect(skips()[0]?.data?.reason).toBe("baseline-diff-unresolved");
+      expect(skips()[0]?.data?.candidateCount).toBe(1);
+    });
+
+    test("a thrown context resolution emits a context-error counter carrying the message", async () => {
+      const config = makeNaxConfig({
+        execution: { flakeDetection: { enabled: true } },
+        quality: { commands: { test: "bun test" } },
+      });
+      const { ctx } = makeCtx(config);
+      // `packageView` is read before the try block; make the inner resolution throw
+      // by removing the runtime the quality resolver walks.
+      // The point of this test is a ctx the type system forbids: no factory can
+      // produce a runtime-less CallContext.
+      const brokenCtx = { ...ctx, runtime: undefined } as unknown as typeof ctx; // test-ratchet-allow: as-unknown-as
+
+      const [, report] = await productionTriageSeam([makeFailedTest()], {
+        ctx: brokenCtx,
+        rawOutput: BUN_FAIL_OUTPUT,
+        scope: "blocking-gate",
+      });
+
+      expect(report.flakeTriageRan).toBe(false);
+      expect(skips().length).toBe(1);
+      expect(skips()[0]?.data?.reason).toBe("context-error");
+      expect(typeof skips()[0]?.data?.error).toBe("string");
+    });
+
+    // Without this case the `no-test-command` emit could be deleted and the
+    // suite would stay green — the only other reference to it is a direct call
+    // in the telemetry module's own test, which exercises the logger wrapper.
+    test("a package with no resolvable test command emits a no-test-command counter", async () => {
+      await Bun.write(`${workdir}/pre-existing.test.ts`, "test('shouldBar', () => {});\n");
+      git(workdir, "add", ".");
+      git(workdir, "commit", "-q", "-m", "baseline");
+
+      const config = makeNaxConfig({ execution: { flakeDetection: { enabled: true } } });
+      // makeNaxConfig seeds quality.commands.test; unset it so neither the
+      // resolver nor the config fallback yields a base command.
+      const withoutTestCommand = {
+        ...config,
+        quality: { ...config.quality, commands: { ...config.quality?.commands, test: undefined } },
+      };
+      const { ctx } = makeCtx(withoutTestCommand as typeof config);
+
+      const [, report] = await productionTriageSeam([makeFailedTest()], {
+        ctx,
+        rawOutput: BUN_FAIL_OUTPUT,
+        scope: "blocking-gate",
+      });
+
+      expect(report.flakeTriageRan).toBe(false);
+      expect(skips().length).toBe(1);
+      expect(skips()[0]?.data?.reason).toBe("no-test-command");
+      expect(skips()[0]?.data?.scope).toBe("blocking-gate");
+    });
+
+    test("flakeDetection disabled emits nothing — an operator opt-out is not a gap", async () => {
+      const config = makeNaxConfig({ execution: { flakeDetection: { enabled: false } } });
+      const { ctx } = makeCtx(config);
+      await productionTriageSeam([makeFailedTest()], { ctx, rawOutput: BUN_FAIL_OUTPUT, scope: "blocking-gate" });
+
+      expect(skips().length).toBe(0);
+    });
+
+    test("a completed triage emits no skip counter", async () => {
+      await Bun.write(`${workdir}/pre-existing.test.ts`, "test('shouldBar', () => {});\n");
+      git(workdir, "add", ".");
+      git(workdir, "commit", "-q", "-m", "baseline");
+      git(workdir, "checkout", "-q", "-b", "feature");
+      await Bun.write(`${workdir}/unrelated.ts`, "export const x = 1;\n");
+      git(workdir, "add", ".");
+      git(workdir, "commit", "-q", "-m", "story touches something else entirely");
+      _flakeTriageDeps.runFlakeProbe = async () => ({
+        verdict: "consistent-failure",
+        probeRuns: 2,
+        attributableRuns: 2,
+      });
+
+      const config = makeNaxConfig({
+        execution: { flakeDetection: { enabled: true } },
+        quality: { commands: { test: "bun test" } },
+      });
+      const { ctx } = makeCtx(config);
+      const [, report] = await productionTriageSeam([makeFailedTest({ file: "pre-existing.test.ts" })], {
+        ctx,
+        rawOutput: BUN_FAIL_OUTPUT,
+        scope: "blocking-gate",
+      });
+
+      expect(report.flakeTriageRan).toBe(true);
+      expect(skips().length).toBe(0);
+    });
   });
 });

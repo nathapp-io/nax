@@ -25,6 +25,7 @@ import { getSafeLogger } from "../logger";
 import type { Framework } from "../test-runners/detector";
 import type { TestFailure } from "../test-runners/types";
 import { type FlakeProbeInput, runFlakeProbe } from "./flake-probe";
+import { type FlakeTriageScope, logFlakeTriageRan, logFlakeTriageSkip } from "./flake-triage-telemetry";
 
 /** Run-scoped quarantine memo — shared across gates within a single run. */
 export interface QuarantineMemo {
@@ -63,6 +64,17 @@ export interface FlakeTriageInput {
   framework: Framework;
   /** Run-scoped memo so re-probing is skipped for tests already quarantined. */
   quarantineMemo: QuarantineMemo;
+  /**
+   * Which cycle this gate belongs to, for #1657 telemetry only. Required: only
+   * the blocking cycle can dispatch `repo-scoped-test-fix`, so an unlabeled row
+   * cannot be counted toward that decision.
+   */
+  scope: FlakeTriageScope;
+  /**
+   * Story this gate belongs to, for #1657 telemetry only. Absent for
+   * run-scoped callers (the deferred regression gate) that have no story.
+   */
+  storyId?: string;
 }
 
 /** Report of quarantined flakes for logging/events. */
@@ -125,7 +137,7 @@ export const _flakeTriageDeps = {
  * Returns a new findings array; the input is not mutated.
  */
 export async function triageFlakyFindings(input: FlakeTriageInput): Promise<FlakeTriageResult> {
-  const { findings, diff, flakeDetection, baseCommand, cwd, framework, quarantineMemo } = input;
+  const { findings, diff, flakeDetection, baseCommand, cwd, framework, quarantineMemo, scope, storyId } = input;
   const logger = getSafeLogger();
 
   const result: Finding[] = [];
@@ -151,11 +163,17 @@ export async function triageFlakyFindings(input: FlakeTriageInput): Promise<Flak
   const candidates = findings.filter((f) => isProbeCandidate(f, changedTestSet, mappedTestSet));
 
   if (candidates.length > flakeDetection.maxProbesPerGate) {
-    logger?.info(
-      "flake-triage",
-      `Skipping flake triage — ${candidates.length} candidates exceed maxProbesPerGate=${flakeDetection.maxProbesPerGate}`,
-    );
     reasons.push(`skipped: ${candidates.length} candidates exceed maxProbesPerGate=${flakeDetection.maxProbesPerGate}`);
+    // #1657: the wholesale skip is the path that most often leaves a flake
+    // looking deterministic to the repo-scoped-test-fix fallthrough — count it.
+    logFlakeTriageSkip({
+      reason: "max-probes-per-gate",
+      candidateCount: candidates.length,
+      candidateBasis: "probe-eligible",
+      maxProbesPerGate: flakeDetection.maxProbesPerGate,
+      scope,
+      storyId,
+    });
     for (const f of findings) result.push({ ...f });
     return { findings: result, quarantineReport: { keys, reasons } };
   }
@@ -236,6 +254,7 @@ export async function triageFlakyFindings(input: FlakeTriageInput): Promise<Flak
     result.push(copy);
   }
 
+  logFlakeTriageRan({ scope, candidateCount: candidates.length, quarantinedCount: keys.length, storyId });
   return { findings: result, quarantineReport: { keys, reasons } };
 }
 

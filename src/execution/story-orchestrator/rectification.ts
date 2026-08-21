@@ -128,7 +128,9 @@ export async function triageGateFindings(
   let triagedFindings: Finding[];
   let quarantinedKeys: readonly string[];
   try {
-    const [triaged, report] = await triage(findings, { ctx, rawOutput });
+    // scope: the blocking cycle is the only one that can dispatch
+    // repo-scoped-test-fix, so its skips are the ones #1657 §3 is deciding on.
+    const [triaged, report] = await triage(findings, { ctx, rawOutput, scope: "blocking-gate" });
     triagedFindings = triaged;
     quarantinedKeys = report.quarantinedKeys;
   } catch (err) {
