@@ -119,6 +119,28 @@ export interface StoryRouting {
   initialModelTier?: ModelTier;
 }
 
+/**
+ * One repo-scoped repair (#1654) that landed in this story's commits.
+ * Mirrored onto `UserStory.repoScopedFixes` and persisted to `prd.json` so
+ * the durable record survives the run. The JSONL-only `RepoScopedFixRecord`
+ * stays the run-time source of truth; this type is what reaches disk.
+ */
+export interface PersistedRepoScopedFix {
+  /** Failing tests that triggered the dispatch, as `file::testName`. */
+  triggeringTests: string[];
+  /**
+   * Files the dispatch changed, sourced from git. Empty means the dispatch
+   * changed nothing — never that it succeeded.
+   */
+  filesChanged: string[];
+  /**
+   * Were the findings gone after this dispatch? NOT a claim the fix worked —
+   * the verifier-SSOT carve-out also clears findings. `filesChanged` is the
+   * field that discriminates.
+   */
+  findingsCleared: boolean;
+}
+
 /** Escalation attempt tracking */
 export interface EscalationAttempt {
   fromTier: ModelTier;
@@ -231,6 +253,13 @@ export interface UserStory {
    * When absent, semantic review falls back to git merge-base with the default branch.
    */
   storyGitRef?: string;
+  /**
+   * Repo-scoped repairs (#1654) that landed in this story's commits. Written
+   * by the dispatch recorder, persisted via the same `savePRD` that carries
+   * `storyGitRef`, and cleared only by the same reset branch that clears the
+   * ref — see `resetFailedStoriesToPending`.
+   */
+  repoScopedFixes?: PersistedRepoScopedFix[];
 }
 
 // ============================================================================
