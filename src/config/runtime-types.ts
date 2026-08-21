@@ -71,7 +71,7 @@ export interface RectificationConfig {
   rethinkAtAttempt: number;
   /** Per-strategy attempt number at which "final chance before escalation" urgency is added. (default: 3) */
   urgencyAtAttempt: number;
-  /** Register the repo-scoped `regression-fix` fallthrough claimant for failing
+  /** Register the repo-scoped `repo-scoped-test-fix` fallthrough claimant for failing
    * tests the story-scoped rectifier declines as out-of-scope (#1654). (default: true) */
   repoScopedFallback: boolean;
 }

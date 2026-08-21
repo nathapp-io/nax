@@ -207,7 +207,7 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
     // strategy, and the ORDER is load-bearing: selectExecutionGroup takes the
     // first exclusive claimant, so the scoped strategy must be tried first and
     // the fallthrough reached only after it declines.
-    expect(capturedStrategyNames).toEqual(["full-suite-rectify", "regression-fix"]);
+    expect(capturedStrategyNames).toEqual(["full-suite-rectify", "repo-scoped-test-fix"]);
   });
 
   test("#1654: repoScopedFallback: false leaves the story-scoped strategy alone", async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   makeFullSuiteRectifyStrategy,
-  makeRegressionFixStrategy,
+  makeRepoScopedTestFixStrategy,
   fullSuiteRectifyOp,
   makeDeclarationSink,
 } from "@/operations";
@@ -285,21 +285,21 @@ describe("makeFullSuiteRectifyStrategy — mock_structure handoff short-circuit 
   });
 });
 
-// ─── makeRegressionFixStrategy (#1654) ───────────────────────────────────────
+// ─── makeRepoScopedTestFixStrategy (#1654) ───────────────────────────────────────
 //
 // The fallthrough claimant for failing tests the story-scoped rectifier
 // declined. Registered alongside `full-suite-rectify`, it shares that
 // strategy's op but runs it with the scope constraint lifted, under its own
 // session role so it does not inherit the refusal it is meant to overturn.
 
-describe("makeRegressionFixStrategy", () => {
-  const strategy = () => makeRegressionFixStrategy(makeTestStory(), makeDeclarationSink());
+describe("makeRepoScopedTestFixStrategy", () => {
+  const strategy = () => makeRepoScopedTestFixStrategy(makeTestStory(), makeDeclarationSink());
 
-  test("name is regression-fix so it retires independently of full-suite-rectify", () => {
+  test("name is repo-scoped-test-fix so it retires independently of full-suite-rectify", () => {
     // Retirement and attempt caps are both keyed on the strategy name. A shared
     // name would make the story-scoped give-up retire this strategy too, and the
     // fallthrough would never dispatch.
-    expect(strategy().name).toBe("regression-fix");
+    expect(strategy().name).toBe("repo-scoped-test-fix");
     expect(strategy().name).not.toBe(makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig()).name);
   });
 
@@ -313,7 +313,7 @@ describe("makeRegressionFixStrategy", () => {
   });
 
   test("runs under its own session role", () => {
-    expect(strategy().sessionRole).toBe("regression-fix");
+    expect(strategy().sessionRole).toBe("repo-scoped-test-fix");
   });
 
   test("reuses fullSuiteRectifyOp rather than declaring a second op", () => {

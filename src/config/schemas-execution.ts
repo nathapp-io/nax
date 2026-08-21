@@ -81,7 +81,7 @@ export const RectificationConfigSchema = z.object({
   // Under maxAttemptsPerStrategy=3: rethink on attempt 2, urgency on attempt 3 (final).
   rethinkAtAttempt: z.number().int().min(1).default(2),
   urgencyAtAttempt: z.number().int().min(1).default(3),
-  /** Register the repo-scoped `regression-fix` strategy as a fallthrough claimant
+  /** Register the repo-scoped `repo-scoped-test-fix` strategy as a fallthrough claimant
    * for failing tests the story-scoped rectifier declines as out-of-scope (#1654).
    * Without it, a test that is red for reasons outside the story deadlocks every
    * story in the package: the rectifier is asked to fix a test it is forbidden to

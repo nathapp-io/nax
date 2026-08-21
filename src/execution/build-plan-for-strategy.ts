@@ -35,7 +35,7 @@ import {
 } from "../operations";
 import type { DeclarationDiagnostic, TestEditDeclaration } from "../operations";
 import { shouldRunRectification } from "../operations/execution-gates";
-import { makeFullSuiteRectifyStrategy, makeRegressionFixStrategy } from "../operations/full-suite-rectify";
+import { makeFullSuiteRectifyStrategy, makeRepoScopedTestFixStrategy } from "../operations/full-suite-rectify";
 import type { CallContext } from "../operations/types";
 import type { UserStory } from "../prd/types";
 import { resolveTestFilePatterns } from "../test-runners";
@@ -279,7 +279,7 @@ export async function buildPlanForStrategy(
       // not deadlock a story on a finding it cannot fix, so the extra dispatch
       // would buy nothing there.
       if (config.execution.rectification.repoScopedFallback) {
-        strategies.push(makeRegressionFixStrategy(story, sink) as FixStrategy<Finding, unknown, unknown, unknown>);
+        strategies.push(makeRepoScopedTestFixStrategy(story, sink) as FixStrategy<Finding, unknown, unknown, unknown>);
       }
     }
     if (config.quality.autofix?.enabled !== false) {

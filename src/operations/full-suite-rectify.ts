@@ -108,7 +108,7 @@ export function makeFullSuiteRectifyStrategy(
 }
 
 /**
- * Factory for the repo-scoped regression-fix strategy (#1654).
+ * Factory for the repo-scoped test-fix strategy (#1654).
  *
  * Registered alongside `makeFullSuiteRectifyStrategy` as the fallthrough
  * claimant for failing tests it declined. Both claim the same findings, but
@@ -120,7 +120,7 @@ export function makeFullSuiteRectifyStrategy(
  *   - `buildInput` sets `scope: "repo"`, which swaps the mandate for one that
  *     permits editing files outside the story (the test-integrity rules and the
  *     declaration protocol are unchanged — see `repoScopedRectification`).
- *   - `sessionRole: "regression-fix"` gives the dispatch a session of its own.
+ *   - `sessionRole: "repo-scoped-test-fix"` gives the dispatch a session of its own.
  *     Session resume is keyed on the role, so this does not continue the
  *     implementer conversation that just answered UNRESOLVED — the agent is not
  *     asked to reverse a refusal still sitting in its own context, and the
@@ -131,17 +131,17 @@ export function makeFullSuiteRectifyStrategy(
  * Declarations go to the same `sink` as the story-scoped strategy — a test edit
  * made here is subject to the same downstream handling as any other.
  */
-export function makeRegressionFixStrategy(
+export function makeRepoScopedTestFixStrategy(
   story: UserStory,
   sink: DeclarationSink,
 ): FixStrategy<Finding, FullSuiteRectifyInput, FullSuiteRectifyOutput, AutofixConfig> {
   return {
-    name: "regression-fix",
+    name: "repo-scoped-test-fix",
     appliesTo: (finding: Finding): boolean =>
       finding.source === "test-runner" &&
       (finding.category === "failed-test" || finding.category === "execution-failed"),
     fixOp: fullSuiteRectifyOp,
-    sessionRole: "regression-fix",
+    sessionRole: "repo-scoped-test-fix",
     buildInput: (findings) => ({ story, findings, scope: "repo" as const }),
     extractApplied: (output: FullSuiteRectifyOutput) => {
       for (const d of output.testEditDeclarations) {

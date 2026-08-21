@@ -177,6 +177,22 @@ export const PHASE_KIND_TO_STATE_KEY: Record<PhaseKind, keyof InternalBuildState
   "adversarial-review": "adversarialReview",
 };
 
+/**
+ * Shared by `full-suite-rectify` and `repo-scoped-test-fix` (#1654) — the two
+ * strategies that fix failing tests through `fullSuiteRectifyOp`. Named so the
+ * two cannot drift: they run the same op under the same declaration protocol,
+ * so a phase that goes stale for one goes stale for both.
+ */
+const FULL_SUITE_RECTIFY_REVALIDATION: readonly PhaseKind[] = [
+  "lint-check",
+  "typecheck-check",
+  "full-suite-gate",
+  "verifier",
+  "verify-scoped",
+  "semantic-review",
+  "adversarial-review",
+];
+
 export const STRATEGY_TO_REVALIDATION_PHASES: Record<string, readonly PhaseKind[]> = {
   // Mechanical fixes are AST-preserving (import-sort, formatting, unused-var removal).
   // They cannot introduce semantic regressions, so only lint-check needs re-running.
@@ -197,15 +213,17 @@ export const STRATEGY_TO_REVALIDATION_PHASES: Record<string, readonly PhaseKind[
   // included because it specifically judges test quality/coverage: rewriting tests is
   // exactly when its prior verdict goes stale, so it must re-run rather than be read as
   // a pre-rectification pass by the post-rectification resume. (Audit #2.)
-  "full-suite-rectify": [
-    "lint-check",
-    "typecheck-check",
-    "full-suite-gate",
-    "verifier",
-    "verify-scoped",
-    "semantic-review",
-    "adversarial-review",
-  ],
+  "full-suite-rectify": FULL_SUITE_RECTIFY_REVALIDATION,
+  // #1654 — the repo-scoped fallthrough claimant for the same failing-test
+  // findings, through the same op and the same test-edit declaration protocol.
+  // It edits a wider set of FILES, but not a different set of PHASES: the
+  // verifier's verdict and both reviews go stale in exactly the same way.
+  //
+  // Declared rather than left to `phasesToRevalidate`'s unknown-strategy
+  // fallback, which returns ALL phases — and "all" includes `test-writer`,
+  // `greenfield-gate`, and `implementer`, so a strategy that only fixed a
+  // failing test would re-run the story's authoring sessions.
+  "repo-scoped-test-fix": FULL_SUITE_RECTIFY_REVALIDATION,
 };
 
 /**

@@ -57,6 +57,16 @@ function stalledIterations(findings: Finding[], count: number): Iteration<Findin
   return Array.from({ length: count }, (_, index) => iteration(findings, findings, index + 1));
 }
 
+/** An iteration in which every dispatched strategy answered UNRESOLVED — nothing ran. */
+function declinedIteration(findings: Finding[], iterationNum: number): Iteration<Finding> {
+  return {
+    ...iteration(findings, findings, iterationNum),
+    fixesApplied: [
+      { strategyName: "full-suite-rectify", op: "noop", targetFiles: [], summary: "", unresolved: "out of scope" },
+    ],
+  };
+}
+
 describe("withNoProgressBail — US-002", () => {
   test("US-002 AC1: returns a reason for three identical trailing iterations", () => {
     const same = finding("same");
@@ -285,5 +295,46 @@ describe("withNoProgressBail — US-002 AC-2.9/AC-2.10: driven through runRectif
     await runtime.close();
 
     expect(dispatches()).toBeGreaterThan(3);
+  });
+});
+
+// ─── Declined iterations are not evidence of no progress (#1654) ─────────────
+//
+// Before #1654 an all-declined iteration always terminated the cycle, so it
+// could never sit inside a trailing window. Now the cycle falls through to a
+// repo-scoped claimant instead, which put a fake no-progress signal in the
+// window: nothing was dispatched, so "no finding resolved" is trivially true
+// and says nothing about whether progress is possible. Left unhandled, a story
+// already stalled for two iterations bails at the give-up and the fallthrough
+// claimant — the whole point of #1654 — never runs.
+
+describe("withNoProgressBail — declined iterations (#1654)", () => {
+  test("does not count an all-declined iteration toward the no-progress streak", () => {
+    const same = finding("same");
+    const bail = bailWhen(withNoProgressBail([strategy()], true, 3));
+    const iterations = [...stalledIterations([same], 2), declinedIteration([same], 3)];
+    expect(bail(iterations)).toBeNull();
+  });
+
+  test("still bails once real attempts fill the window again", () => {
+    // The exemption must not disable the bail — an all-declined iteration is
+    // skipped, not credited as progress.
+    const same = finding("same");
+    const bail = bailWhen(withNoProgressBail([strategy()], true, 3));
+    const iterations = [...stalledIterations([same], 2), declinedIteration([same], 3), iteration([same], [same], 4)];
+    expect(bail(iterations)).not.toBeNull();
+  });
+
+  test("a partially-declined iteration still counts — a sibling did run", () => {
+    const same = finding("same");
+    const partial: Iteration<Finding> = {
+      ...iteration([same], [same], 3),
+      fixesApplied: [
+        { strategyName: "full-suite-rectify", op: "noop", targetFiles: [], summary: "", unresolved: "out of scope" },
+        { strategyName: "autofix-test-writer", op: "noop", targetFiles: [], summary: "wrote a test" },
+      ],
+    };
+    const bail = bailWhen(withNoProgressBail([strategy()], true, 3));
+    expect(bail([...stalledIterations([same], 2), partial])).not.toBeNull();
   });
 });

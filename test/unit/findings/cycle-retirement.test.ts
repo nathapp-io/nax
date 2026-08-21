@@ -313,11 +313,11 @@ describe("runFixCycle — give-up falls through to a remaining claimant (#1654)"
     const dispatched: string[] = [];
     const cycle = makeCycle(
       [lintA],
-      [scoped("full-suite-rectify", dispatched), unscoped("regression-fix", dispatched)],
+      [scoped("full-suite-rectify", dispatched), unscoped("repo-scoped-test-fix", dispatched)],
       async () => [],
     );
     const r = await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: makeCallOpSpy().fn });
-    expect(dispatched).toEqual(["full-suite-rectify", "regression-fix"]);
+    expect(dispatched).toEqual(["full-suite-rectify", "repo-scoped-test-fix"]);
     expect(r.exitReason).toBe("resolved");
   });
 
@@ -329,7 +329,7 @@ describe("runFixCycle — give-up falls through to a remaining claimant (#1654)"
     const dispatched: string[] = [];
     const cycle = makeCycle(
       [lintA],
-      [scoped("full-suite-rectify", dispatched), unscoped("regression-fix", dispatched)],
+      [scoped("full-suite-rectify", dispatched), unscoped("repo-scoped-test-fix", dispatched)],
       async () => {
         validateCallsBeforeFallthrough.push([...dispatched]);
         return [];
@@ -337,18 +337,18 @@ describe("runFixCycle — give-up falls through to a remaining claimant (#1654)"
     );
     await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: makeCallOpSpy().fn });
     // Exactly one validate, and it happened only after BOTH strategies ran.
-    expect(validateCallsBeforeFallthrough).toEqual([["full-suite-rectify", "regression-fix"]]);
+    expect(validateCallsBeforeFallthrough).toEqual([["full-suite-rectify", "repo-scoped-test-fix"]]);
   });
 
   test("exits agent-gave-up when the fallthrough claimant also gives up", async () => {
     const dispatched: string[] = [];
     const cycle = makeCycle(
       [lintA],
-      [scoped("full-suite-rectify", dispatched), unscoped("regression-fix", dispatched, "cannot fix this either")],
+      [scoped("full-suite-rectify", dispatched), unscoped("repo-scoped-test-fix", dispatched, "cannot fix this either")],
       async () => [lintA],
     );
     const r = await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: makeCallOpSpy().fn });
-    expect(dispatched).toEqual(["full-suite-rectify", "regression-fix"]);
+    expect(dispatched).toEqual(["full-suite-rectify", "repo-scoped-test-fix"]);
     expect(r.exitReason).toBe("agent-gave-up");
     expect(r.unresolvedDetail).toBe("cannot fix this either");
   });
@@ -358,11 +358,11 @@ describe("runFixCycle — give-up falls through to a remaining claimant (#1654)"
     // correct, and must not be turned into an infinite loop by the new check.
     const dispatched: string[] = [];
     const exhausted = makeStrategy({
-      name: "regression-fix",
+      name: "repo-scoped-test-fix",
       coRun: "exclusive",
       maxAttempts: 0,
       extractApplied: () => {
-        dispatched.push("regression-fix");
+        dispatched.push("repo-scoped-test-fix");
         return { summary: "" };
       },
     });
@@ -375,12 +375,12 @@ describe("runFixCycle — give-up falls through to a remaining claimant (#1654)"
   test("still exits agent-gave-up when the remaining claimant does not claim the findings", async () => {
     const dispatched: string[] = [];
     const otherSource = makeStrategy({
-      name: "regression-fix",
+      name: "repo-scoped-test-fix",
       coRun: "exclusive",
       maxAttempts: 1,
       appliesTo: (f: Finding) => f.source === "typecheck",
       extractApplied: () => {
-        dispatched.push("regression-fix");
+        dispatched.push("repo-scoped-test-fix");
         return { summary: "" };
       },
     });
@@ -398,11 +398,11 @@ describe("runFixCycle — strategy.sessionRole isolates the dispatch session", (
     const spy = makeCallOpSpy();
     const cycle = makeCycle(
       [lintA],
-      [makeStrategy({ name: "regression-fix", coRun: "exclusive", sessionRole: "regression-fix" })],
+      [makeStrategy({ name: "repo-scoped-test-fix", coRun: "exclusive", sessionRole: "repo-scoped-test-fix" })],
       async () => [],
     );
     await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: spy.fn });
-    expect(spy.calls[0]?.ctx.sessionOverride?.role).toBe("regression-fix");
+    expect(spy.calls[0]?.ctx.sessionOverride?.role).toBe("repo-scoped-test-fix");
   });
 
   test("leaves sessionOverride unset for a strategy that declares no sessionRole", async () => {
