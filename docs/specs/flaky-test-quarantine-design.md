@@ -99,6 +99,35 @@ Every quarantine decision emits a structured log line + a pipeline-bus event —
 landing in the existing review-warning aggregation, the TUI, and the run
 report/JSONL. No cross-run persistence.
 
+#### Skip telemetry (#1657)
+
+Every path where triage is *skipped* — so a flake and a deterministic failure
+are indistinguishable to the `repo-scoped-test-fix` fallthrough (#1656) —
+emits one `flake.triage.skipped` event via `logFlakeTriageSkip`
+(`src/verification/flake-triage-telemetry.ts`):
+
+| `reason` | Emitted from | `candidateBasis` |
+|:---|:---|:---|
+| `max-probes-per-gate` | `triageFlakyFindings` | `probe-eligible` (exact) |
+| `framework-undetected` | `productionTriageSeam` | `gate-findings` (upper bound) |
+| `no-test-command` | `productionTriageSeam` | `gate-findings` |
+| `baseline-diff-unresolved` | `productionTriageSeam` | `gate-findings` |
+| `context-error` | `productionTriageSeam` | `gate-findings` |
+
+`flakeDetection.enabled: false` emits nothing — an operator opt-out is not a
+gap in a feature believed to be on.
+
+Read the accrued counter off the run logs:
+
+```bash
+jq -c 'select(.data.event == "flake.triage.skipped") | .data' ~/.nax/*/features/*/runs/*.jsonl \
+  | jq -s 'group_by(.reason) | map({reason: .[0].reason, count: length, maxCandidates: (map(.candidateCount) | max)})'
+```
+
+Per #1657 the follow-up guard (requiring `flakeTriageRan` before the
+fallthrough dispatches) is gated on `max-probes-per-gate` in particular showing
+up at a meaningful rate — the plumbing is not paid for on speculation.
+
 ## Config
 
 One new block under `execution` (Zod schema, `src/config/schemas*.ts`):

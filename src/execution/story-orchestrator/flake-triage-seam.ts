@@ -12,7 +12,7 @@ import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
 import { detectFramework } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
-import { type QuarantineMemo, resolveFlakeBaselineDiff, triageFlakyFindings } from "@/verification";
+import { type QuarantineMemo, logFlakeTriageSkip, resolveFlakeBaselineDiff, triageFlakyFindings } from "@/verification";
 
 /** Triage result tuple shape — produced by `_storyOrchestratorDeps.triage`. */
 export type TriageResult = readonly [Finding[], { quarantinedKeys: readonly string[]; flakeTriageRan?: boolean }];
@@ -70,24 +70,43 @@ export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawO
     return [gateFindings, { quarantinedKeys: [], flakeTriageRan: false }];
   }
 
+  // #1657: every bail-out below leaves the surviving findings looking
+  // deterministic to the repo-scoped-test-fix fallthrough. `candidateBasis` is
+  // "gate-findings" and not "probe-eligible" because the baseline diff that
+  // narrows candidates does not exist yet on these paths — the count is an
+  // upper bound. `flakeDetection.enabled: false` is not counted: an operator
+  // opt-out is not a gap in a feature believed to be on.
+  const candidateCount = gateFindings.length;
+  const storyId = ctx.storyId;
+
   const framework = detectFramework(rawOutput);
   if (framework === "unknown") {
+    logFlakeTriageSkip({ reason: "framework-undetected", candidateCount, candidateBasis: "gate-findings", storyId });
     return [gateFindings, { quarantinedKeys: [], flakeTriageRan: false }];
   }
 
-  const workdir = ctx.runtime.workdir;
-  const storyWorkdir = ctx.story?.workdir;
-
   try {
+    // Read inside the try so the catch covers every resolution this seam does,
+    // as its contract above promises — a malformed context must skip triage
+    // with a counter, not throw past the seam.
+    const workdir = ctx.runtime.workdir;
+    const storyWorkdir = ctx.story?.workdir;
     const { resolveQualityTestCommands } = await import("@/quality");
     const { testCommand } = await resolveQualityTestCommands(config, workdir, storyWorkdir);
     const baseCommand = testCommand ?? config.quality?.commands?.test;
     if (!baseCommand) {
+      logFlakeTriageSkip({ reason: "no-test-command", candidateCount, candidateBasis: "gate-findings", storyId });
       return [gateFindings, { quarantinedKeys: [], flakeTriageRan: false }];
     }
 
     const diff = await resolveFlakeBaselineDiff(config, workdir, storyWorkdir);
     if (diff === null) {
+      logFlakeTriageSkip({
+        reason: "baseline-diff-unresolved",
+        candidateCount,
+        candidateBasis: "gate-findings",
+        storyId,
+      });
       return [gateFindings, { quarantinedKeys: [], flakeTriageRan: false }];
     }
 
@@ -99,6 +118,7 @@ export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawO
       cwd: ctx.packageDir,
       framework,
       quarantineMemo: quarantineMemo ?? ctx.runtime.quarantineMemo,
+      storyId,
     });
     return [result.findings, { quarantinedKeys: result.quarantineReport.keys, flakeTriageRan: true }];
   } catch (err) {
@@ -106,10 +126,17 @@ export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawO
       "story-orchestrator",
       "Flake triage seam failed resolving context — keeping findings blocking (no quarantine)",
       {
-        storyId: ctx.storyId,
+        storyId,
         error: errorMessage(err),
       },
     );
+    logFlakeTriageSkip({
+      reason: "context-error",
+      candidateCount,
+      candidateBasis: "gate-findings",
+      storyId,
+      error: errorMessage(err),
+    });
     return [gateFindings, { quarantinedKeys: [], flakeTriageRan: false }];
   }
 };

@@ -11,6 +11,7 @@ export * from "./runners";
 export * from "./rectification";
 export * from "./flake-probe";
 export * from "./flake-triage";
+export * from "./flake-triage-telemetry";
 export * from "./flake-baseline-diff";
 export * from "./mutation";
 export * from "./shell-quote";

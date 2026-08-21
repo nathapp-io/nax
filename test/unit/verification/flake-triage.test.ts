@@ -13,7 +13,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { FlakeDetectionConfig } from "@/config/runtime-types";
 import type { Finding } from "@/findings/types";
-import { type FlakeTriageInput, _flakeTriageDeps, triageFlakyFindings } from "@/verification";
+import { type LogEntry, addSink, initLogger, resetLogger } from "@/logger";
+import { FLAKE_TRIAGE_SKIP_EVENT, type FlakeTriageInput, _flakeTriageDeps, triageFlakyFindings } from "@/verification";
 import type { FlakeProbeVerdict } from "@/verification/flake-probe";
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
@@ -320,6 +321,65 @@ describe("triageFlakyFindings — maxProbesPerGate cap (AC8)", () => {
       expect(f.category).toBe("failed-test");
     }
     expect(result.quarantineReport.reasons.some((r) => r.includes("maxProbesPerGate"))).toBe(true);
+  });
+
+  // #1657 — the skip must be measurable, not just reported in the quarantine
+  // report: this is the path that leaves a flake indistinguishable from a
+  // deterministic failure right before the repo-scoped-test-fix fallthrough.
+  test("#1657 — emits a skip counter tagged with the probe-eligible candidate count", async () => {
+    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 });
+
+    resetLogger();
+    initLogger({ level: "silent" });
+    const entries: LogEntry[] = [];
+    const unsubscribe = addSink((entry) => entries.push(entry));
+
+    try {
+      const findings: Finding[] = [];
+      for (let i = 0; i < 6; i++) {
+        findings.push(makeFinding({ file: `test/unit/foo${i}.test.ts`, rule: `should work ${i}` }));
+      }
+      // One story-touched test is not probe-eligible — the counter must report
+      // the eligible candidates (6), not the raw finding count (7).
+      findings.push(makeFinding({ file: "test/unit/touched.test.ts", rule: "should be excluded" }));
+
+      await triageFlakyFindings(
+        makeInput({
+          findings,
+          diff: { changedTestFiles: ["test/unit/touched.test.ts"], mappedTestFiles: [] },
+          flakeDetection: { ...defaultFlakeConfig, maxProbesPerGate: 2 },
+          storyId: "US-007",
+        }),
+      );
+
+      const skips = entries.filter((e) => e.data?.event === FLAKE_TRIAGE_SKIP_EVENT);
+      expect(skips.length).toBe(1);
+      expect(skips[0]?.data?.reason).toBe("max-probes-per-gate");
+      expect(skips[0]?.data?.candidateCount).toBe(6);
+      expect(skips[0]?.data?.candidateBasis).toBe("probe-eligible");
+      expect(skips[0]?.data?.maxProbesPerGate).toBe(2);
+      expect(skips[0]?.data?.storyId).toBe("US-007");
+    } finally {
+      unsubscribe();
+      resetLogger();
+    }
+  });
+
+  test("#1657 — emits no skip counter when triage actually runs", async () => {
+    _flakeTriageDeps.runFlakeProbe = async () => ({ verdict: "consistent-failure", probeRuns: 1, attributableRuns: 1 });
+
+    resetLogger();
+    initLogger({ level: "silent" });
+    const entries: LogEntry[] = [];
+    const unsubscribe = addSink((entry) => entries.push(entry));
+
+    try {
+      await triageFlakyFindings(makeInput({ findings: [makeFinding()] }));
+      expect(entries.filter((e) => e.data?.event === FLAKE_TRIAGE_SKIP_EVENT).length).toBe(0);
+    } finally {
+      unsubscribe();
+      resetLogger();
+    }
   });
 });
 
