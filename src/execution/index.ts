@@ -74,6 +74,7 @@ export {
   phasePassed,
   toReviewDecisionPayload,
   deriveRepoScopedFixes,
+  recordRepoScopedFixes,
   REPO_SCOPED_STRATEGY_NAME,
   type RepoScopedFixRecord,
   type GateRegressionDetail,
