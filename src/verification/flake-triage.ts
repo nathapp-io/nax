@@ -25,7 +25,7 @@ import { getSafeLogger } from "../logger";
 import type { Framework } from "../test-runners/detector";
 import type { TestFailure } from "../test-runners/types";
 import { type FlakeProbeInput, runFlakeProbe } from "./flake-probe";
-import { logFlakeTriageSkip } from "./flake-triage-telemetry";
+import { type FlakeTriageScope, logFlakeTriageRan, logFlakeTriageSkip } from "./flake-triage-telemetry";
 
 /** Run-scoped quarantine memo — shared across gates within a single run. */
 export interface QuarantineMemo {
@@ -65,7 +65,13 @@ export interface FlakeTriageInput {
   /** Run-scoped memo so re-probing is skipped for tests already quarantined. */
   quarantineMemo: QuarantineMemo;
   /**
-   * Story this gate belongs to, for #1657 skip telemetry only. Absent for
+   * Which cycle this gate belongs to, for #1657 telemetry only. Required: only
+   * the blocking cycle can dispatch `repo-scoped-test-fix`, so an unlabeled row
+   * cannot be counted toward that decision.
+   */
+  scope: FlakeTriageScope;
+  /**
+   * Story this gate belongs to, for #1657 telemetry only. Absent for
    * run-scoped callers (the deferred regression gate) that have no story.
    */
   storyId?: string;
@@ -131,7 +137,7 @@ export const _flakeTriageDeps = {
  * Returns a new findings array; the input is not mutated.
  */
 export async function triageFlakyFindings(input: FlakeTriageInput): Promise<FlakeTriageResult> {
-  const { findings, diff, flakeDetection, baseCommand, cwd, framework, quarantineMemo, storyId } = input;
+  const { findings, diff, flakeDetection, baseCommand, cwd, framework, quarantineMemo, scope, storyId } = input;
   const logger = getSafeLogger();
 
   const result: Finding[] = [];
@@ -165,6 +171,7 @@ export async function triageFlakyFindings(input: FlakeTriageInput): Promise<Flak
       candidateCount: candidates.length,
       candidateBasis: "probe-eligible",
       maxProbesPerGate: flakeDetection.maxProbesPerGate,
+      scope,
       storyId,
     });
     for (const f of findings) result.push({ ...f });
@@ -247,6 +254,7 @@ export async function triageFlakyFindings(input: FlakeTriageInput): Promise<Flak
     result.push(copy);
   }
 
+  logFlakeTriageRan({ scope, candidateCount: candidates.length, quarantinedCount: keys.length, storyId });
   return { findings: result, quarantineReport: { keys, reasons } };
 }
 

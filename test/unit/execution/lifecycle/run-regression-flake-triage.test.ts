@@ -11,7 +11,10 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _regressionDeps, runDeferredRegression } from "@/execution";
 import type { DeferredRegressionOptions } from "@/execution";
 import type { Finding } from "@/findings/types";
+import { type LogEntry, addSink, initLogger, resetLogger } from "@/logger";
 import type { VerificationResult } from "@/verification";
+import { FLAKE_TRIAGE_SKIP_EVENT } from "@/verification";
+import type { FlakeTriageInput, FlakeTriageResult } from "@/verification/flake-triage";
 import type { QuarantineMemo } from "@/verification/flake-triage";
 import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
@@ -298,9 +301,7 @@ describe("runDeferredRegression — shared quarantine memo (AC5)", () => {
       return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
     });
 
-    const result = await runDeferredRegression(
-      makeOptions({ storyIds: ["US-001"], quarantineMemo: memo }),
-    );
+    const result = await runDeferredRegression(makeOptions({ storyIds: ["US-001"], quarantineMemo: memo }));
 
     // No attribution, no fix cycle.
     expect(result.affectedStories).toEqual([]);
@@ -449,5 +450,85 @@ describe("runDeferredRegression — flakeDetection.enabled === false", () => {
     expect(result.quarantineReport).toBeUndefined();
     // Attribution + fix cycles proceeded normally.
     expect(rectifiedStories).toEqual(["US-001"]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #1657 — the deferred regression gate is the second `triageFlakyFindings`
+// caller, and it has the same skip paths as the per-story seam. Uncounted,
+// they read as zero by construction and the §3 decision is made on data
+// missing a whole caller.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runDeferredRegression — skip telemetry (#1657)", () => {
+  let entries: LogEntry[];
+  let unsubscribe: () => void;
+
+  beforeEach(() => {
+    resetLogger();
+    initLogger({ level: "silent" });
+    entries = [];
+    unsubscribe = addSink((entry) => entries.push(entry));
+    _regressionDeps.runFixCycle = mock(async () => ({
+      iterations: [],
+      finalFindings: [],
+      exitReason: "max-attempts-total" as const,
+      costUsd: 0,
+    }));
+    _regressionDeps.parseTestOutput = mock(() => ({
+      passed: 0,
+      failed: 1,
+      failures: [{ file: "a.test.ts", testName: "test a", error: "boom", stackTrace: [] }],
+    }));
+  });
+
+  afterEach(() => {
+    unsubscribe();
+    resetLogger();
+  });
+
+  function skips(): LogEntry[] {
+    return entries.filter((e) => e.data?.event === FLAKE_TRIAGE_SKIP_EVENT);
+  }
+
+  test("an unresolvable baseline diff emits a regression-scoped counter", async () => {
+    _regressionDeps.runVerification = mock(async () => makeVerifyResult());
+    _regressionDeps.resolveFlakeBaselineDiff = mock(async () => null);
+    const triage = mock(
+      async (input: FlakeTriageInput): Promise<FlakeTriageResult> => ({
+        findings: input.findings.map((f) => ({ ...f })),
+        quarantineReport: { keys: [], reasons: [] },
+      }),
+    );
+    _regressionDeps.triageFlakyFindings = triage;
+
+    await runDeferredRegression(makeOptions({ storyIds: ["US-001"] }));
+
+    expect(triage).not.toHaveBeenCalled();
+    expect(skips().length).toBe(1);
+    expect(skips()[0]?.data?.reason).toBe("baseline-diff-unresolved");
+    // Never "blocking-gate" — this gate cannot dispatch repo-scoped-test-fix.
+    expect(skips()[0]?.data?.scope).toBe("regression");
+  });
+
+  test("an undetectable framework emits a counter instead of probing nothing in silence", async () => {
+    // Under an unknown framework `runFlakeProbe` returns "unprobeable" for every
+    // candidate, so triage quarantines nothing either way — the counter is the
+    // only difference between that outcome and a real triage pass.
+    _regressionDeps.runVerification = mock(async () => makeVerifyResult({ output: "totally unrecognized output" }));
+    const triage = mock(
+      async (input: FlakeTriageInput): Promise<FlakeTriageResult> => ({
+        findings: input.findings.map((f) => ({ ...f })),
+        quarantineReport: { keys: [], reasons: [] },
+      }),
+    );
+    _regressionDeps.triageFlakyFindings = triage;
+
+    await runDeferredRegression(makeOptions({ storyIds: ["US-001"] }));
+
+    expect(triage).not.toHaveBeenCalled();
+    expect(skips().length).toBe(1);
+    expect(skips()[0]?.data?.reason).toBe("framework-undetected");
+    expect(skips()[0]?.data?.scope).toBe("regression");
   });
 });

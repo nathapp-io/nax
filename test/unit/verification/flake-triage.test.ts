@@ -14,7 +14,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { FlakeDetectionConfig } from "@/config/runtime-types";
 import type { Finding } from "@/findings/types";
 import { type LogEntry, addSink, initLogger, resetLogger } from "@/logger";
-import { FLAKE_TRIAGE_SKIP_EVENT, type FlakeTriageInput, _flakeTriageDeps, triageFlakyFindings } from "@/verification";
+import {
+  FLAKE_TRIAGE_RAN_EVENT,
+  FLAKE_TRIAGE_SKIP_EVENT,
+  type FlakeTriageInput,
+  _flakeTriageDeps,
+  triageFlakyFindings,
+} from "@/verification";
 import type { FlakeProbeVerdict } from "@/verification/flake-probe";
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
@@ -53,6 +59,7 @@ function makeInput(overrides: Partial<FlakeTriageInput> = {}): FlakeTriageInput 
     cwd: "/tmp/probe",
     framework: "bun",
     quarantineMemo: emptyMemo,
+    scope: "blocking-gate",
     ...overrides,
   };
 }
@@ -348,6 +355,7 @@ describe("triageFlakyFindings — maxProbesPerGate cap (AC8)", () => {
           findings,
           diff: { changedTestFiles: ["test/unit/touched.test.ts"], mappedTestFiles: [] },
           flakeDetection: { ...defaultFlakeConfig, maxProbesPerGate: 2 },
+          scope: "blocking-gate",
           storyId: "US-007",
         }),
       );
@@ -359,6 +367,7 @@ describe("triageFlakyFindings — maxProbesPerGate cap (AC8)", () => {
       expect(skips[0]?.data?.candidateBasis).toBe("probe-eligible");
       expect(skips[0]?.data?.maxProbesPerGate).toBe(2);
       expect(skips[0]?.data?.storyId).toBe("US-007");
+      expect(skips[0]?.data?.scope).toBe("blocking-gate");
     } finally {
       unsubscribe();
       resetLogger();
@@ -376,6 +385,10 @@ describe("triageFlakyFindings — maxProbesPerGate cap (AC8)", () => {
     try {
       await triageFlakyFindings(makeInput({ findings: [makeFinding()] }));
       expect(entries.filter((e) => e.data?.event === FLAKE_TRIAGE_SKIP_EVENT).length).toBe(0);
+      // ... and the denominator fires instead, so a rate is computable (#1657 §2).
+      const ran = entries.filter((e) => e.data?.event === FLAKE_TRIAGE_RAN_EVENT);
+      expect(ran.length).toBe(1);
+      expect(ran[0]?.data?.candidateCount).toBe(1);
     } finally {
       unsubscribe();
       resetLogger();

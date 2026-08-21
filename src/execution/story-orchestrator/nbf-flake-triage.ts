@@ -80,6 +80,9 @@ export async function triageNbfGate(input: TriageNbfGateInput): Promise<void> {
       ctx: input.ctx,
       rawOutput,
       quarantineMemo: input.transaction.memo,
+      // Never "blocking-gate": this runs per phase per runRectify attempt, and
+      // the repo-scoped-test-fix strategy is not registered on this cycle.
+      scope: "nbf",
     });
     const ran = report.flakeTriageRan ?? true;
     if (ran) {

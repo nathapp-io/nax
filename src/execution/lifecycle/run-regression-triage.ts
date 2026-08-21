@@ -13,7 +13,7 @@ import type { Finding } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import { detectFramework } from "@/test-runners";
 import type { TestSummary } from "@/test-runners";
-import type { resolveFlakeBaselineDiff } from "@/verification";
+import { logFlakeTriageSkip, type resolveFlakeBaselineDiff } from "@/verification";
 import type { FlakeQuarantineReport, QuarantineMemo, triageFlakyFindings } from "@/verification/flake-triage";
 import type { DeferredRegressionResult } from "./run-regression";
 
@@ -63,17 +63,48 @@ export async function runRegressionFlakeTriage(params: {
     flakeDetection,
   } = params;
   const logger = getSafeLogger();
-  const baselineDiff = await resolveBaselineDiffFn(config, workdir);
-  if (baselineDiff === null) {
-    // Fail closed: skip triage entirely rather than substituting an empty
-    // diff, which would make every failing test look pre-existing (see
-    // resolveFlakeBaselineDiff's doc comment) — the opposite of fail-closed.
+
+  // #1657: this gate is the second `triageFlakyFindings` caller and it has the
+  // same skip paths as the per-story seam. Counted under `scope: "regression"`
+  // so the §3 decision — which is about the blocking cycle only — can exclude
+  // them, while the paths themselves stop reading as zero by construction.
+  const untriagedFailures = (): RegressionTriageOutcome => {
     const untriaged = regressionFindings.filter((f) => f.category === "failed-test");
     const testFilesInFailures = new Set<string>();
     for (const finding of untriaged) {
       if (finding.file) testFilesInFailures.add(finding.file);
     }
     return { shortCircuit: false, triagedFailedFindings: untriaged, testFilesInFailures, quarantineReport: undefined };
+  };
+  const failedTestCount = regressionFindings.filter((f) => f.category === "failed-test").length;
+
+  const framework = detectFramework(rawOutput);
+  if (framework === "unknown") {
+    // Previously fell through to triage, which probes nothing under an unknown
+    // framework (`runFlakeProbe` returns "unprobeable" for every candidate) and
+    // quarantines nothing. Bailing here makes that identical outcome visible
+    // instead of silent, and matches what `productionTriageSeam` already does.
+    logFlakeTriageSkip({
+      reason: "framework-undetected",
+      candidateCount: failedTestCount,
+      candidateBasis: "gate-findings",
+      scope: "regression",
+    });
+    return untriagedFailures();
+  }
+
+  const baselineDiff = await resolveBaselineDiffFn(config, workdir);
+  if (baselineDiff === null) {
+    // Fail closed: skip triage entirely rather than substituting an empty
+    // diff, which would make every failing test look pre-existing (see
+    // resolveFlakeBaselineDiff's doc comment) — the opposite of fail-closed.
+    logFlakeTriageSkip({
+      reason: "baseline-diff-unresolved",
+      candidateCount: failedTestCount,
+      candidateBasis: "gate-findings",
+      scope: "regression",
+    });
+    return untriagedFailures();
   }
   const triageResult = await triageFn({
     findings: regressionFindings,
@@ -81,8 +112,9 @@ export async function runRegressionFlakeTriage(params: {
     flakeDetection,
     baseCommand: testCommand,
     cwd: workdir,
-    framework: detectFramework(rawOutput),
+    framework,
     quarantineMemo,
+    scope: "regression",
   });
   const quarantineReport = triageResult.quarantineReport.keys.length > 0 ? triageResult.quarantineReport : undefined;
   const triagedFailedFindings = triageResult.findings.filter((f) => f.category === "failed-test");

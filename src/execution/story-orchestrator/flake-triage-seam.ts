@@ -12,7 +12,13 @@ import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
 import { detectFramework } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
-import { type QuarantineMemo, logFlakeTriageSkip, resolveFlakeBaselineDiff, triageFlakyFindings } from "@/verification";
+import {
+  type FlakeTriageScope,
+  type QuarantineMemo,
+  logFlakeTriageSkip,
+  resolveFlakeBaselineDiff,
+  triageFlakyFindings,
+} from "@/verification";
 
 /** Triage result tuple shape — produced by `_storyOrchestratorDeps.triage`. */
 export type TriageResult = readonly [Finding[], { quarantinedKeys: readonly string[]; flakeTriageRan?: boolean }];
@@ -24,6 +30,12 @@ export interface TriageSeamContext {
   readonly rawOutput: string;
   /** Optional transaction-local memo used by ADR-024 NBF revalidation. */
   readonly quarantineMemo?: QuarantineMemo;
+  /**
+   * Which cycle this call belongs to (#1657 telemetry). Required so a `nbf`
+   * emit — multiplied by the per-attempt revalidation loop, and unable to
+   * dispatch `repo-scoped-test-fix` — is never mistaken for a blocking-gate one.
+   */
+  readonly scope: FlakeTriageScope;
 }
 
 /**
@@ -63,7 +75,7 @@ export const defaultTriageSeam: TriageSeam = async (gateFindings) => [
  * findings unchanged (no quarantine) rather than risking a false quarantine.
  * `triageFlakyFindings` itself already fails closed on probe errors.
  */
-export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawOutput, quarantineMemo }) => {
+export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawOutput, quarantineMemo, scope }) => {
   const config = ctx.packageView.config;
   const flakeDetection = config.execution?.flakeDetection;
   if (!flakeDetection?.enabled) {
@@ -72,16 +84,23 @@ export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawO
 
   // #1657: every bail-out below leaves the surviving findings looking
   // deterministic to the repo-scoped-test-fix fallthrough. `candidateBasis` is
-  // "gate-findings" and not "probe-eligible" because the baseline diff that
-  // narrows candidates does not exist yet on these paths — the count is an
-  // upper bound. `flakeDetection.enabled: false` is not counted: an operator
-  // opt-out is not a gap in a feature believed to be on.
+  // "gate-findings", never "probe-eligible": this count is the raw finding set
+  // handed to the seam, unnarrowed by the baseline diff and unfiltered by
+  // category, so it is an upper bound on the candidates.
+  // `flakeDetection.enabled: false` is not counted: an operator opt-out is not
+  // a gap in a feature believed to be on.
   const candidateCount = gateFindings.length;
   const storyId = ctx.storyId;
 
   const framework = detectFramework(rawOutput);
   if (framework === "unknown") {
-    logFlakeTriageSkip({ reason: "framework-undetected", candidateCount, candidateBasis: "gate-findings", storyId });
+    logFlakeTriageSkip({
+      reason: "framework-undetected",
+      candidateCount,
+      candidateBasis: "gate-findings",
+      scope,
+      storyId,
+    });
     return [gateFindings, { quarantinedKeys: [], flakeTriageRan: false }];
   }
 
@@ -95,7 +114,13 @@ export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawO
     const { testCommand } = await resolveQualityTestCommands(config, workdir, storyWorkdir);
     const baseCommand = testCommand ?? config.quality?.commands?.test;
     if (!baseCommand) {
-      logFlakeTriageSkip({ reason: "no-test-command", candidateCount, candidateBasis: "gate-findings", storyId });
+      logFlakeTriageSkip({
+        reason: "no-test-command",
+        candidateCount,
+        candidateBasis: "gate-findings",
+        scope,
+        storyId,
+      });
       return [gateFindings, { quarantinedKeys: [], flakeTriageRan: false }];
     }
 
@@ -105,6 +130,7 @@ export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawO
         reason: "baseline-diff-unresolved",
         candidateCount,
         candidateBasis: "gate-findings",
+        scope,
         storyId,
       });
       return [gateFindings, { quarantinedKeys: [], flakeTriageRan: false }];
@@ -118,8 +144,16 @@ export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawO
       cwd: ctx.packageDir,
       framework,
       quarantineMemo: quarantineMemo ?? ctx.runtime.quarantineMemo,
+      scope,
       storyId,
     });
+    // NOTE (#1657): `flakeTriageRan: true` here is also reported when
+    // `triageFlakyFindings` skipped the gate wholesale on `maxProbesPerGate` —
+    // it returns normally on that path. A step-3 guard written against this
+    // flag would therefore be inert for exactly the skip path #1657 names as
+    // mattering most; it needs a distinct signal. Not changed here: this flag
+    // feeds `triageNbfGate`'s `recordAttempt`, where a `false` also changes
+    // which keys are marked attempted.
     return [result.findings, { quarantinedKeys: result.quarantineReport.keys, flakeTriageRan: true }];
   } catch (err) {
     getSafeLogger()?.warn(
@@ -134,6 +168,7 @@ export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawO
       reason: "context-error",
       candidateCount,
       candidateBasis: "gate-findings",
+      scope,
       storyId,
       error: errorMessage(err),
     });
