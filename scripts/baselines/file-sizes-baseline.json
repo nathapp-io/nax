@@ -1,8 +1,8 @@
 {
-  "updatedAt": "2026-08-16T15:49:00.054Z",
+  "updatedAt": "2026-08-21T02:06:18.666Z",
   "byFile": {
     "src/agents/manager.ts": 789,
-    "src/execution/unified-executor.ts": 768,
+    "src/execution/unified-executor.ts": 764,
     "src/prd/schema.ts": 628,
     "src/prompts/builders/rectifier-builder.ts": 902,
     "src/session/manager.ts": 708,

@@ -31,6 +31,7 @@ import { runIteration } from "./iteration-runner";
 import type { RunParallelBatchOptions, RunParallelBatchResult } from "./parallel-batch";
 import { handlePipelineFailure } from "./pipeline-result-handler";
 import { closeStorySessions } from "./session-manager-runtime";
+import { logStoryStart } from "./story-announce";
 import { resolveRetryCandidate, selectIndependentBatch, selectNextStories } from "./story-selector";
 
 export type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
@@ -256,13 +257,17 @@ export async function executeUnified(
         const selectBatch = _unifiedExecutorDeps.selectIndependentBatch;
         const batch = retryStory ? [retryStory] : selectBatch(readyStories, ctx.parallelCount as number);
         if (batch.length > 1) {
-          // Emit story:started for each batch story before dispatch (AC-5)
-          const batchCounts = countStories(prd);
-          const batchBaseDone = batchCounts.total - batchCounts.pending;
-          for (const [batchIndex, story] of batch.entries()) {
-            // #1575: announce the tier/agent the story will actually run as.
+          // Emit story:started for each batch story before dispatch (AC-5). The
+          // event stays here even for a story the pre-check will refuse — see
+          // story-announce.ts for why the story.start LOG does not (#1653).
+          // #1575: announce the tier/agent the story will actually run as. Recorded
+          // per story and reused by the story.start log below, so the log line can
+          // never disagree with the event it accompanies.
+          const batchAnnouncements = new Map<string, { modelTier: string; agent: string }>();
+          for (const story of batch) {
             const modelTier = buildPreviewRouting(story, ctx.config).modelTier;
             const batchAgent = agentFor(story, ctx);
+            batchAnnouncements.set(story.id, { modelTier, agent: batchAgent });
             pipelineEventBus.emit({
               type: "story:started",
               storyId: story.id,
@@ -271,16 +276,6 @@ export async function executeUnified(
               modelTier,
               agent: batchAgent,
               iteration: iterations,
-            });
-            logger?.info("story.start", `${story.title}`, {
-              storyId: story.id,
-              storyTitle: story.title,
-              complexity: story.routing?.complexity ?? "unknown",
-              modelTier,
-              agent: batchAgent,
-              storyNumber: batchBaseDone + batchIndex + 1,
-              storyTotal: batchCounts.total,
-              attempt: story.attempts + 1,
             });
           }
 
@@ -304,6 +299,15 @@ export async function executeUnified(
           if (batchPreCheck.prdDirty) prdDirty = true;
           if (batchPreCheck.dispatchable.length === 0) {
             continue;
+          }
+          // #1653: announce only the stories that actually dispatch.
+          for (const story of batchPreCheck.dispatchable) {
+            const announcement = batchAnnouncements.get(story.id);
+            logStoryStart(batchPreCheck.prd, story, {
+              complexity: story.routing?.complexity ?? "unknown",
+              modelTier: announcement?.modelTier ?? buildPreviewRouting(story, ctx.config).modelTier,
+              agent: announcement?.agent ?? agentFor(story, ctx),
+            });
           }
           const batchResult = await _unifiedExecutorDeps.runParallelBatch({
             stories: batchPreCheck.dispatchable,
@@ -481,7 +485,6 @@ export async function executeUnified(
 
           const modelTier = singleSelection.routing.modelTier;
           const singleAgent = agentFor(singleStory, ctx);
-          const singleCounts = countStories(prd);
           pipelineEventBus.emit({
             type: "story:started",
             storyId: singleStory.id,
@@ -495,16 +498,6 @@ export async function executeUnified(
             modelTier,
             agent: singleAgent,
             iteration: iterations,
-          });
-          logger?.info("story.start", `${singleStory.title}`, {
-            storyId: singleStory.id,
-            storyTitle: singleStory.title,
-            complexity: singleSelection.routing.complexity ?? "unknown",
-            modelTier,
-            agent: singleAgent,
-            storyNumber: singleCounts.total - singleCounts.pending + 1,
-            storyTotal: singleCounts.total,
-            attempt: singleStory.attempts + 1,
           });
           const singlePre = await _unifiedExecutorDeps.preIterationTierCheck(
             singleStory,
@@ -524,6 +517,13 @@ export async function executeUnified(
             prdDirty = singlePre.prdDirty;
             continue;
           }
+
+          // #1653: announced only after the pre-check clears the attempt to run.
+          logStoryStart(prd, singleStory, {
+            complexity: singleSelection.routing.complexity ?? "unknown",
+            modelTier,
+            agent: singleAgent,
+          });
 
           const singleIter = await _unifiedExecutorDeps.runIteration(
             ctx,
@@ -589,7 +589,6 @@ export async function executeUnified(
 
       const modelTier = selection.routing.modelTier;
       const seqAgent = agentFor(selection.story, ctx);
-      const seqCounts = countStories(prd);
       pipelineEventBus.emit({
         type: "story:started",
         storyId: selection.story.id,
@@ -603,16 +602,6 @@ export async function executeUnified(
         modelTier,
         agent: seqAgent,
         iteration: iterations,
-      });
-      logger?.info("story.start", `${selection.story.title}`, {
-        storyId: selection.story.id,
-        storyTitle: selection.story.title,
-        complexity: selection.routing.complexity ?? "unknown",
-        modelTier,
-        agent: seqAgent,
-        storyNumber: seqCounts.total - seqCounts.pending + 1,
-        storyTotal: seqCounts.total,
-        attempt: selection.story.attempts + 1,
       });
       const seqPre = await _unifiedExecutorDeps.preIterationTierCheck(
         selection.story,
@@ -632,6 +621,13 @@ export async function executeUnified(
         prdDirty = seqPre.prdDirty;
         continue;
       }
+
+      // #1653: announced only after the pre-check clears the attempt to run.
+      logStoryStart(prd, selection.story, {
+        complexity: selection.routing.complexity ?? "unknown",
+        modelTier,
+        agent: seqAgent,
+      });
 
       const iter = await _unifiedExecutorDeps.runIteration(ctx, prd, selection, iterations, totalCost, allStoryMetrics);
       await pipelineEventBus.drain();
