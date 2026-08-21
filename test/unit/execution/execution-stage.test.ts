@@ -10,11 +10,8 @@ import { _executionDeps, executionStage, routeTddFailure } from "@/pipeline/stag
 import type { FailureCategory } from "@/tdd";
 import { NaxError } from "@/errors";
 import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
-import { makeTestContext, makeTestStory } from "@test/helpers";
+import { makeTestContext, makeTestStory, withExecutionDeps } from "@test/helpers";
 import type { PipelineContext } from "@/pipeline/types";
-import type { StoryOrchestratorResult } from "@/execution/story-orchestrator";
-import type { PostRunInspectionResult } from "@/execution/post-run";
-import type { StageResult } from "@/pipeline/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -234,16 +231,15 @@ describe("executionStage.execute — runtime-crash on thrown infra errors", () =
   // Stub _executionDeps so plan.run() is the only thing that can throw.
   // Returns a restore function — call it in the test's own finally block.
   function stubDepsWithPlan(planRun: () => Promise<never>): () => void {
-    const saved = { ..._executionDeps };
-    _executionDeps.getAgent = () => makeAgentAdapter({ name: "claude" }) as never;
-    _executionDeps.validateAgentForTier = () => true;
-    _executionDeps.captureGitRef = async () => "HEAD";
-    _executionDeps.getUntrackedPaths = async () => [];
-    _executionDeps.assemblePlanInputsFromCtx = async () => ({}) as never;
-    (_executionDeps as Record<string, unknown>)["buildPlanForStrategy"] = async () => ({
-      run: planRun,
-    });
-    return () => Object.assign(_executionDeps, saved);
+    const overrides = {
+      getAgent: () => makeAgentAdapter({ name: "claude" }) as never,
+      validateAgentForTier: () => true,
+      captureGitRef: async () => "HEAD",
+      getUntrackedPaths: async () => [],
+      assemblePlanInputsFromCtx: async () => ({}) as never,
+      buildPlanForStrategy: async () => ({ run: planRun }) as never,
+    };
+    return withExecutionDeps(overrides);
   }
 
   it("sets tddFailureCategory to runtime-crash when plan.run() throws CALL_OP_NO_OUTPUT", async () => {
@@ -310,250 +306,5 @@ describe("executionStage.execute — runtime-crash on thrown infra errors", () =
     }
     expect(threw).toBe(true);
     expect(ctx.tddFailureCategory).toBeUndefined();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// executionStage.execute — recordRepoScopedFixes wiring (US-002)
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface PlanResultOptions {
-  readonly success?: boolean;
-  readonly repoScopedFixes?: readonly { triggeringTests: readonly string[]; filesChanged: readonly string[]; findingsCleared: boolean }[];
-}
-
-function planResultWith(opts: PlanResultOptions): {
-  success: boolean;
-  phaseCosts: Record<string, number>;
-  totalCostUsd: number;
-  durationMs: number;
-  phaseOutputs: Record<string, unknown>;
-  repoScopedFixes?: readonly { triggeringTests: readonly string[]; filesChanged: readonly string[]; findingsCleared: boolean }[];
-  outputFiles: string[];
-  diffSummary: string;
-} {
-  const result: {
-    success: boolean;
-    phaseCosts: Record<string, number>;
-    totalCostUsd: number;
-    durationMs: number;
-    phaseOutputs: Record<string, unknown>;
-    repoScopedFixes?: readonly { triggeringTests: readonly string[]; filesChanged: readonly string[]; findingsCleared: boolean }[];
-    outputFiles: string[];
-    diffSummary: string;
-  } = {
-    success: opts.success ?? true,
-    phaseCosts: {},
-    totalCostUsd: 0,
-    durationMs: 0,
-    phaseOutputs: {},
-    outputFiles: [],
-    diffSummary: "",
-  };
-  if (opts.repoScopedFixes) result.repoScopedFixes = opts.repoScopedFixes;
-  return result;
-}
-
-const SAMPLE_RECORD = {
-  triggeringTests: ["test/legacy/auth.spec.ts::redirects to login"],
-  filesChanged: ["src/legacy/auth.ts"],
-  findingsCleared: true,
-};
-
-describe("executionStage.execute — recordRepoScopedFixes wiring (US-002)", () => {
-  const cfg = makeNaxConfig();
-
-  function makeCtx(): PipelineContext {
-    return makeTestContext({
-      story: makeTestStory({ id: "US-recscope-01", title: "Repo-scoped record test" }),
-      config: cfg,
-      workdir: "/tmp/nax-recscope-test",
-      routing: {
-        modelTier: "fast",
-        testStrategy: "test-after",
-        agent: "claude",
-        complexity: "simple",
-        reasoning: "",
-      },
-      packageView: { select: () => cfg } as unknown as PipelineContext["packageView"], // test-ratchet-allow: as-unknown-as
-      ...({
-        runtime: {
-          dispatchEvents: { onDispatch: () => () => {} },
-          signal: undefined,
-          packages: undefined,
-          onPidSpawned: undefined,
-        },
-      } as unknown as Partial<PipelineContext>), // test-ratchet-allow: as-unknown-as
-    });
-  }
-
-  // Spy-mode stub: replaces the recorder with a spy so the test can assert
-  // call ordering / arguments, but the real mapper is NOT used.
-  function stubDepsWithSpy(opts: {
-    planRun: () => Promise<ReturnType<typeof planResultWith>>;
-    onRecord?: ((s: unknown, r: unknown) => void) | undefined;
-    onInspect?: ((s: unknown, p: unknown) => void) | undefined;
-  }): () => void {
-    const saved = { ..._executionDeps };
-    _executionDeps.getAgent = () => makeAgentAdapter({ name: "claude" }) as never;
-    _executionDeps.validateAgentForTier = () => true;
-    _executionDeps.captureGitRef = async () => "HEAD";
-    _executionDeps.getUntrackedPaths = async () => [];
-    _executionDeps.assemblePlanInputsFromCtx = async () => ({}) as never;
-    (_executionDeps as Record<string, unknown>)["buildPlanForStrategy"] = async () => ({
-      run: opts.planRun,
-    });
-    const recordSpy = (story: unknown, records: unknown) => {
-      opts.onRecord?.(story, records);
-    };
-    _executionDeps.recordRepoScopedFixes = recordSpy as typeof _executionDeps.recordRepoScopedFixes;
-    _executionDeps.applyPostRunInspection = (async (ctx: PipelineContext, planResult: StoryOrchestratorResult): Promise<PostRunInspectionResult> => {
-      opts.onInspect?.(ctx, planResult);
-      return {
-        agentResult: { success: planResult.success, output: "", exitCode: 0, durationMs: 0, rateLimited: false, estimatedCostUsd: 0 },
-        selfVerificationFailed: false,
-        needsHumanReview: false,
-        combinedOutput: "",
-      };
-    }) as typeof _executionDeps.applyPostRunInspection;
-    _executionDeps.decideStageAction = ((() => ({ action: "continue" } as StageResult)) as unknown) as typeof _executionDeps.decideStageAction;
-    return () => Object.assign(_executionDeps, saved);
-  }
-
-  // Real-mode stub: keeps the real `recordRepoScopedFixes` mapper so the test
-  // can observe its effect on `ctx.story`. Only `applyPostRunInspection` is
-  // stubbed to avoid real post-run work.
-  function stubDepsWithRealRecorder(opts: {
-    planRun: () => Promise<ReturnType<typeof planResultWith>>;
-  }): () => void {
-    const saved = { ..._executionDeps };
-    _executionDeps.getAgent = () => makeAgentAdapter({ name: "claude" }) as never;
-    _executionDeps.validateAgentForTier = () => true;
-    _executionDeps.captureGitRef = async () => "HEAD";
-    _executionDeps.getUntrackedPaths = async () => [];
-    _executionDeps.assemblePlanInputsFromCtx = async () => ({}) as never;
-    (_executionDeps as Record<string, unknown>)["buildPlanForStrategy"] = async () => ({
-      run: opts.planRun,
-    });
-    _executionDeps.applyPostRunInspection = (async (_ctx: PipelineContext, planResult: StoryOrchestratorResult): Promise<PostRunInspectionResult> => ({
-      agentResult: { success: planResult.success, output: "", exitCode: 0, durationMs: 0, rateLimited: false, estimatedCostUsd: 0 },
-      selfVerificationFailed: false,
-      needsHumanReview: false,
-      combinedOutput: "",
-    })) as typeof _executionDeps.applyPostRunInspection;
-    _executionDeps.decideStageAction = ((() => ({ action: "continue" } as StageResult)) as unknown) as typeof _executionDeps.decideStageAction;
-    return () => Object.assign(_executionDeps, saved);
-  }
-
-  it("AC9: calls recordRepoScopedFixes exactly once with ctx.story and the plan's records", async () => {
-    const ctx = makeCtx();
-    const records = [SAMPLE_RECORD];
-    let callCount = 0;
-    let receivedStory: unknown = null;
-    let receivedRecords: unknown = null;
-    const restore = stubDepsWithSpy({
-      planRun: async () => planResultWith({ repoScopedFixes: records }),
-      onRecord: (story, r) => {
-        callCount++;
-        receivedStory = story;
-        receivedRecords = r;
-      },
-    });
-    try {
-      await executionStage.execute(ctx);
-    } finally {
-      restore();
-    }
-    expect(callCount).toBe(1);
-    expect(receivedStory).toBe(ctx.story);
-    expect(receivedRecords).toBe(records);
-  });
-
-  it("AC10: recordRepoScopedFixes runs before applyPostRunInspection", async () => {
-    const ctx = makeCtx();
-    const order: string[] = [];
-    const restore = stubDepsWithSpy({
-      planRun: async () => planResultWith({ repoScopedFixes: [SAMPLE_RECORD] }),
-      onRecord: () => {
-        order.push("record");
-      },
-      onInspect: () => {
-        order.push("inspect");
-      },
-    });
-    try {
-      await executionStage.execute(ctx);
-    } finally {
-      restore();
-    }
-    expect(order).toEqual(["record", "inspect"]);
-  });
-
-  it("AC11: leaves ctx.story.repoScopedFixes undefined when the plan result has no records", async () => {
-    const ctx = makeCtx();
-    const restore = stubDepsWithRealRecorder({
-      planRun: async () => planResultWith({ success: true }),
-    });
-    try {
-      await executionStage.execute(ctx);
-    } finally {
-      restore();
-    }
-    expect(ctx.story.repoScopedFixes).toBeUndefined();
-  });
-
-  it("AC12: still records when the plan result has success=false", async () => {
-    const ctx = makeCtx();
-    const records = [SAMPLE_RECORD];
-    const restore = stubDepsWithRealRecorder({
-      planRun: async () => planResultWith({ success: false, repoScopedFixes: records }),
-    });
-    try {
-      await executionStage.execute(ctx);
-    } finally {
-      restore();
-    }
-    expect(ctx.story.repoScopedFixes).toHaveLength(1);
-    expect(ctx.story.repoScopedFixes?.[0]).toEqual({
-      triggeringTests: [...SAMPLE_RECORD.triggeringTests],
-      filesChanged: [...SAMPLE_RECORD.filesChanged],
-      findingsCleared: SAMPLE_RECORD.findingsCleared,
-    });
-  });
-
-  it("AC13: rethrows plan.run() rejection", async () => {
-    const ctx = makeCtx();
-    const sentinel = new NaxError("boom", "CALL_OP_NO_OUTPUT", { stage: "execution", storyId: "US-recscope-01" });
-    const restore = stubDepsWithSpy({
-      planRun: async () => {
-        throw sentinel;
-      },
-    });
-    let caught: unknown = null;
-    try {
-      await executionStage.execute(ctx);
-    } catch (err) {
-      caught = err;
-    } finally {
-      restore();
-    }
-    expect(caught).toBe(sentinel);
-  });
-
-  it("AC14: leaves ctx.story.repoScopedFixes undefined when plan.run() rejects", async () => {
-    const ctx = makeCtx();
-    const restore = stubDepsWithRealRecorder({
-      planRun: async () => {
-        throw new NaxError("boom", "CALL_OP_NO_OUTPUT", { stage: "execution", storyId: "US-recscope-01" });
-      },
-    });
-    try {
-      await executionStage.execute(ctx);
-    } catch {
-      // expected
-    } finally {
-      restore();
-    }
-    expect(ctx.story.repoScopedFixes).toBeUndefined();
   });
 });

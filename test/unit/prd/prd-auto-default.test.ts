@@ -11,9 +11,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG } from "@/config";
 import { loadPRD, savePRD } from "@/prd";
-import type { PRD } from "@/prd/types";
+import type { PRD, PersistedRepoScopedFix } from "@/prd/types";
 import { routeTask } from "@/routing";
-import { makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // BUG-004
 describe("PRD Auto-Default — missing fields are defaulted on load", () => {
@@ -350,5 +350,166 @@ describe("Router Tags Defensive Fallback — undefined and null tags handled gra
     expect(result.complexity).toBe("complex");
     expect(result.testStrategy).toBe("three-session-tdd");
     expect(result.reasoning).toContain("security-critical");
+  });
+});
+
+// US-001 / #1654 — PersistedRepoScopedFix round-trip + absent-field
+describe("PersistedRepoScopedFix — savePRD / loadPRD round-trip (AC1/AC2)", () => {
+  let testDir: string;
+  let prdPath: string;
+
+  beforeEach(() => {
+    testDir = makeTempDir("nax-test-prsrf-");
+    prdPath = join(testDir, "prd.json");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(testDir);
+  });
+
+  function makeFix(overrides: Partial<PersistedRepoScopedFix> = {}): PersistedRepoScopedFix {
+    return {
+      triggeringTests: ["src/foo.test.ts::reproduces bug"],
+      filesChanged: ["src/foo.ts"],
+      findingsCleared: true,
+      ...overrides,
+    };
+  }
+
+  test("AC1: savePRD then loadPRD preserves a single PersistedRepoScopedFix deep-equals", async () => {
+    const fix = makeFix();
+    const prd: PRD = {
+      project: "test",
+      feature: "test-feature",
+      branchName: "feature/test",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userStories: [
+        {
+          id: "US-001",
+          title: "Test story",
+          description: "Test description",
+          acceptanceCriteria: [],
+          tags: [],
+          dependencies: [],
+          status: "passed",
+          passes: true,
+          escalations: [],
+          attempts: 0,
+          repoScopedFixes: [fix],
+        },
+      ],
+    };
+
+    await savePRD(prd, prdPath);
+    const loaded = await loadPRD(prdPath);
+
+    expect(loaded.userStories[0].repoScopedFixes).toEqual([fix]);
+  });
+
+  test("AC1: savePRD then loadPRD preserves multiple fixes in order", async () => {
+    const fixA = makeFix({ triggeringTests: ["a.test.ts::t1"], filesChanged: ["src/a.ts"] });
+    const fixB = makeFix({
+      triggeringTests: ["b.test.ts::t2"],
+      filesChanged: ["src/b.ts"],
+      findingsCleared: false,
+    });
+    const prd: PRD = {
+      project: "test",
+      feature: "test-feature",
+      branchName: "feature/test",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userStories: [
+        {
+          id: "US-001",
+          title: "Test story",
+          description: "Test description",
+          acceptanceCriteria: [],
+          tags: [],
+          dependencies: [],
+          status: "passed",
+          passes: true,
+          escalations: [],
+          attempts: 0,
+          repoScopedFixes: [fixA, fixB],
+        },
+      ],
+    };
+
+    await savePRD(prd, prdPath);
+    const loaded = await loadPRD(prdPath);
+
+    expect(loaded.userStories[0].repoScopedFixes).toEqual([fixA, fixB]);
+    expect(loaded.userStories[0].repoScopedFixes?.[1].findingsCleared).toBe(false);
+  });
+
+  test("AC2: loadPRD leaves repoScopedFixes undefined when omitted from disk", async () => {
+    const prd: PRD = {
+      project: "test",
+      feature: "test-feature",
+      branchName: "feature/test",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userStories: [
+        {
+          id: "US-001",
+          title: "Test story",
+          description: "Test description",
+          acceptanceCriteria: [],
+          tags: [],
+          dependencies: [],
+          status: "failed",
+          passes: false,
+          escalations: [],
+          attempts: 0,
+        },
+      ],
+    };
+    await savePRD(prd, prdPath);
+    const loaded = await loadPRD(prdPath);
+
+    expect(loaded.userStories[0].repoScopedFixes).toBeUndefined();
+  });
+
+  test("AC2: loadPRD leaves repoScopedFixes undefined for every story when none carry the field", async () => {
+    const prd: PRD = {
+      project: "test",
+      feature: "test-feature",
+      branchName: "feature/test",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userStories: [
+        {
+          id: "US-001",
+          title: "Test story",
+          description: "Test description",
+          acceptanceCriteria: [],
+          tags: [],
+          dependencies: [],
+          status: "pending",
+          passes: false,
+          escalations: [],
+          attempts: 0,
+        },
+        {
+          id: "US-002",
+          title: "Test story 2",
+          description: "Test description 2",
+          acceptanceCriteria: [],
+          tags: [],
+          dependencies: [],
+          status: "passed",
+          passes: true,
+          escalations: [],
+          attempts: 0,
+        },
+      ],
+    };
+    await savePRD(prd, prdPath);
+    const loaded = await loadPRD(prdPath);
+
+    expect(loaded.userStories[0].repoScopedFixes).toBeUndefined();
+    expect(loaded.userStories[1].repoScopedFixes).toBeUndefined();
   });
 });
