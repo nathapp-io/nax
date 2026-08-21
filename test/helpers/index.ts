@@ -29,6 +29,7 @@ export {
   mockDiffUtilsDeps,
 } from "./review-audit";
 export { withDepsRestore } from "./deps";
+export { withExecutionDeps, type ExecutionDepsOverrides } from "./execution-deps-stub";
 export { waitForCondition, withTimeout } from "./timeout";
 export { makeLinkWithCosts } from "./link-with-costs";
 export { makeMockCallContext } from "./call-context";

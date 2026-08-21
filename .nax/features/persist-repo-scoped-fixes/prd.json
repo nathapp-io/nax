@@ -1,0 +1,138 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "persist-repo-scoped-fixes",
+  "branchName": "feat/persist-repo-scoped-fixes",
+  "createdAt": "2026-08-21T00:00:00.000Z",
+  "updatedAt": "2026-08-21T06:24:54.828Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Persisted repo-scoped fix type and reset invariant",
+      "description": "**Goal** — Add the durable PRD shape for repo-scoped repairs and keep it aligned with the lifecycle of the commits it describes.\n\n**Motivation** — The record dies with the run: `repoScopedFixes` exists only on the in-memory `StoryOrchestratorResult` and in the JSONL story summary, and nothing writes it to `prd.json`, `status.json`, or any other artifact.\n\n**Approach** — A post-hoc annotation on the story object, not a change to any commit path and not a new persistence call.\n\n`story.storyGitRef` establishes the pattern: `iteration-runner.ts:104-118` mutates the live `UserStory` and lets a `savePRD` carry it, and `parallel-worker.ts:53-62` does the same in the worktree path. This feature mirrors it exactly — write onto `ctx.story`, rely on the saves that already run.\n\n**Scope** — In: declare the persisted shape beside `storyGitRef`, export it from the PRD barrel, and clear it only under the same reset branch as `storyGitRef`; cover round-trip, absent-field, and reset behavior. Out: US-002's dispatch recorder, execution-stage dependency wiring, git trailers/notes/amended commits, PR-body rendering, `declinedReason` persistence, and backfill.\n\n**Interface**\n```typescript\n/** One repo-scoped repair (#1654) that landed in this story's commits. */\nexport interface PersistedRepoScopedFix {\n  /** Failing tests that triggered the dispatch, as `file::testName`. */\n  triggeringTests: string[];\n  /**\n   * Files the dispatch changed, sourced from git. Empty means the dispatch\n   * changed nothing — never that it succeeded.\n   */\n  filesChanged: string[];\n  /**\n   * Were the findings gone after this dispatch? NOT a claim the fix worked —\n   * the verifier-SSOT carve-out also clears findings. `filesChanged` is the\n   * field that discriminates.\n   */\n  findingsCleared: boolean;\n}\n\ninterface UserStory {\n  storyGitRef?: string;\n  repoScopedFixes?: PersistedRepoScopedFix[];\n}\n```\n\n**Implementation note** — `resetFailedStoriesToPending` keeps its existing signature and, in the same `if (resetRef || storyIsolation === \"worktree\")` branch that sets `story.storyGitRef = undefined`, additionally sets `story.repoScopedFixes = undefined`. `loadPRD` neither validates against a schema nor strips unknown keys, so no migration or default array is required.",
+      "acceptanceCriteria": [
+        "Given a PRD story with one `PersistedRepoScopedFix`, when `savePRD` then `loadPRD` run on the same path, then the loaded story's `repoScopedFixes` deep-equals the written array.",
+        "Given a prd.json whose stories omit `repoScopedFixes`, when `loadPRD` reads it, then each story's `repoScopedFixes` is `undefined`.",
+        "Given failed stories with `repoScopedFixes`, when `resetFailedStoriesToPending(prd, { resetRef: true })` runs, then every reset story has `repoScopedFixes` set to `undefined`.",
+        "Given failed stories with `repoScopedFixes`, when `resetFailedStoriesToPending(prd, { storyIsolation: \"worktree\" })` runs with default `resetRef`, then every reset story has `repoScopedFixes` set to `undefined`.",
+        "Given a failed story with `repoScopedFixes`, when `resetFailedStoriesToPending(prd, {})` runs, then the story retains its existing `repoScopedFixes`.",
+        "Given a passed story with `repoScopedFixes`, when `resetFailedStoriesToPending(prd, { resetRef: true })` runs, then the passed story retains its existing `repoScopedFixes`."
+      ],
+      "tags": [
+        "feature",
+        "prd",
+        "persistence",
+        "types"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a focused additive type, barrel, loader-round-trip, and reset-path update across two source modules and existing unit suites.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/prd/types.ts",
+        "src/prd/index.ts",
+        "test/unit/prd/prd-reset-failed.test.ts",
+        "test/unit/prd/prd-auto-default.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "44afdbe16836b34e82670e78b99158332ac89ca0"
+    },
+    {
+      "id": "US-002",
+      "title": "Record repo-scoped dispatches on the executing story",
+      "description": "**Goal** — Map each resolved repo-scoped dispatch record onto the live story before the existing persistence paths run.\n\n**Motivation** — Every #1660 carrier needs it on disk: `nax finish` is a separate phase that assembles PR context purely from on-disk artifacts, so the PR-body option is unreachable while records remain in memory.\n\n**Approach** — Write to `ctx.story`, never `ctx.prd`. In parallel mode `buildWorktreePipelineContext` (`parallel-worker.ts:26-30`) deep-clones `prd` via `structuredClone` while passing `story` by reference, so a mutation of `ctx.prd` is discarded and a mutation of `ctx.story` is not. This is the same asymmetry `parallel-worker.ts:61` already depends on for `storyGitRef`.\n\nThe existing saves that carry the write:\n\n| Path | Save point |\n|:---|:---|\n| Sequential, story passed | `completionStage` → `savePRD(ctx.prd, prdPath)` (`stages/completion.ts:200-202`), which runs immediately after `executionStage` in `defaultPipeline` (`stages/index.ts:32-41`) |\n| Sequential, story failed | `handlePipelineFailure` → `markStoryFailed` + `savePRD` (`pipeline-result-handler.ts:337`, `:371`) |\n| Parallel worktree | `reconcileBatchOutcome(prd, batchResult)` + `savePRD(prd, ctx.prdPath)` (`unified-executor.ts:383-384`) — worktree pipelines set `skipPrdPersistence`, so the executor is the single writer |\n\n**Scope** — In: add the synchronous mapper, append mapped entries without `declinedReason`, re-export it through both execution barrels, inject it through `_executionDeps`, and call it after successful `plan.run()` resolution before inspection. Out: US-001's persisted type and reset changes; cross-process or cross-worker synchronisation; narrowing the crash window with a new save; commit annotation; PR-body rendering; repair caps; and fixing `outputFiles`/`diffSummary` persistence.\n\n**Interface**\n```typescript\nexport function recordRepoScopedFixes(\n  story: UserStory,\n  records: readonly RepoScopedFixRecord[] | undefined,\n): void\n```\n\n`repo-scoped-fix-record.ts` imports `UserStory` and `PersistedRepoScopedFix` from the `@/prd` barrel (never a leaf path — `project-conventions.md` § Module Structure), and is re-exported from `src/execution/story-orchestrator/index.ts` and `src/execution/index.ts` alongside the existing `RepoScopedFixRecord` export.\n\n`_executionDeps` gains a `recordRepoScopedFixes` key; `executionStage.execute` calls `_executionDeps.recordRepoScopedFixes(ctx.story, planResult.repoScopedFixes)` after the `try`/`catch`/`finally` around `plan.run()` and before `applyPostRunInspection`.\n\n**Failure handling** — An absent or empty `records` argument is a no-op: `story.repoScopedFixes` is left untouched, and an empty array is never written. The recorder is synchronous and returns `void`, performs no awaited persistence, and relies entirely on existing saves. If `plan.run()` throws, no result is recorded and the existing rethrow is unchanged. A failed story retains records because its worktree and commits remain.\n\n**Design boundary** — Do not reuse `RepoScopedFixRecord` for the disk type: `src/prd` imports nothing from `src/execution`, and the mapper deliberately copies only `triggeringTests`, `filesChanged`, and `findingsCleared` in source order.",
+      "acceptanceCriteria": [
+        "Given one `RepoScopedFixRecord`, when `recordRepoScopedFixes(story, records)` runs, then `story.repoScopedFixes` deep-equals one entry containing the record's `triggeringTests`, `filesChanged`, and `findingsCleared`.",
+        "Given a `RepoScopedFixRecord` with `declinedReason: \"gave up\"`, when `recordRepoScopedFixes(story, records)` runs, then its persisted entry has exactly `triggeringTests`, `filesChanged`, and `findingsCleared` keys.",
+        "Given two source records, when `recordRepoScopedFixes(story, records)` runs, then `story.repoScopedFixes` contains two mapped entries in the source order.",
+        "Given a story with one persisted entry and one new source record, when `recordRepoScopedFixes(story, records)` runs, then `story.repoScopedFixes` contains the existing entry followed by the mapped new entry.",
+        "Given a story without `repoScopedFixes`, when `recordRepoScopedFixes(story, [])` runs, then `story.repoScopedFixes` remains `undefined`.",
+        "Given a story without `repoScopedFixes`, when `recordRepoScopedFixes(story, undefined)` runs, then `story.repoScopedFixes` remains `undefined`.",
+        "When `recordRepoScopedFixes(story, records)` is called, then it returns `undefined` rather than a Promise.",
+        "When `recordRepoScopedFixes` is imported from `@/execution`, then `typeof recordRepoScopedFixes` is `\"function\"`.",
+        "Given `executionStage.execute(ctx)` with a plan resolving a one-element `repoScopedFixes` array and a spy replacing `_executionDeps.recordRepoScopedFixes`, when the stage runs, then the spy is called exactly once with `ctx.story` and that same records array.",
+        "Given spies for `_executionDeps.recordRepoScopedFixes` and `_executionDeps.applyPostRunInspection`, when `executionStage.execute(ctx)` runs with plan records, then `recordRepoScopedFixes` is invoked before `applyPostRunInspection`.",
+        "Given `executionStage.execute(ctx)` with a plan result that has no `repoScopedFixes`, when the stage returns, then `ctx.story.repoScopedFixes` is `undefined`.",
+        "Given `executionStage.execute(ctx)` with `success: false` and one repo-scoped record, when the stage returns, then `ctx.story.repoScopedFixes` has length 1.",
+        "Given `executionStage.execute(ctx)` with a plan whose `run()` rejects with an error, when the stage is awaited, then it rejects with that same error.",
+        "Given `executionStage.execute(ctx)` with a plan whose `run()` rejects, when the stage rejects, then `ctx.story.repoScopedFixes` is `undefined`.",
+        "Given a story with an existing persisted entry, when `recordRepoScopedFixes(story, [])` or `recordRepoScopedFixes(story, undefined)` runs, then the existing entry remains unchanged.",
+        "Given a rejecting `plan.run()` and a spy replacing `_executionDeps.recordRepoScopedFixes`, when `executionStage.execute(ctx)` rejects, then the recorder spy has not been called."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "persistence",
+        "pipeline",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a contained multi-module integration using established mutable dependency and barrel-export patterns, with ordering and failure-path behavior but no new persistence subsystem.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/execution/story-orchestrator/repo-scoped-fix-record.ts",
+        "src/pipeline/stages/execution.ts",
+        "src/execution/story-orchestrator/index.ts",
+        "src/execution/parallel-worker.ts",
+        "test/unit/pipeline/stages/execution-phase-telemetry.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/execution/story-orchestrator/repo-scoped-fix-record.test.ts",
+        "test/unit/pipeline/stages/execution-repo-scoped-fixes.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0fc5de3fd659696cf98f1cb212d59bd3b6cdca6b",
+      "outOfScope": [
+        "Cross-process or cross-worker synchronisation of the write — each story object is mutated by exactly one worker, so no locking is specified.",
+        "Narrowing the crash window between the write and the next `savePRD` — no new save point is added."
+      ]
+    }
+  ],
+  "analysis": "The feature extends existing PRD and execution seams rather than creating persistence infrastructure. `UserStory` currently ends with the optional `storyGitRef` field at `src/prd/types.ts:233`; `src/prd/index.ts:10-22` is the public PRD barrel, and `loadPRD` reads JSON and normalizes only a fixed list of fields at `src/prd/index.ts:53-103`, so an optional unknown field round-trips without a migration or default. `savePRD` serializes the PRD at `src/prd/index.ts:106-109`. `resetFailedStoriesToPending` mutates only failed stories and already clears `storyGitRef` when `resetRef` is true or `storyIsolation === \"worktree\"` at `src/prd/index.ts:319-345`; `repoScopedFixes` must follow this exact reset condition so metadata never outlives the commits it describes. Existing focused coverage is in `test/unit/prd/prd-reset-failed.test.ts:113-136`, while the loader normalization/round-trip suite is `test/unit/prd/prd-auto-default.test.ts:32-299`.\n\nThe in-memory producer is `RepoScopedFixRecord` in `src/execution/story-orchestrator/repo-scoped-fix-record.ts:22-59`; `deriveRepoScopedFixes` builds ordered records at `:62-94`, including the deliberately non-persisted `declinedReason`. The new mapper belongs in this leaf module and must import its PRD types from the `@/prd` barrel to preserve the execution-to-PRD dependency boundary. The story-orchestrator barrel presently exports the producer at `src/execution/story-orchestrator/index.ts:31-32`, and the execution barrel mirrors those symbols at `src/execution/index.ts:70-95`, so both must re-export the new recorder.\n\n`executionStage.execute` obtains `planResult` after `plan.run()` in `src/pipeline/stages/execution.ts:156-181`, catches and rethrows run failures, unsubscribes in `finally`, then invokes `applyPostRunInspection`. Its mutable `_executionDeps` object at `:184-194` is the test seam. Recording must occur after a successful `plan.run()` resolution and before inspection; this retains records when `success` is false, avoids recording when `plan.run()` rejects, stays synchronous/fail-open, and leaves existing error propagation unchanged. `test/unit/pipeline/stages/execution-phase-telemetry.test.ts:69-90` demonstrates snapshotting and restoring `_executionDeps` around injected plan and inspection dependencies.\n\nParallel behavior is safe only if the mutation targets `ctx.story`: `buildWorktreePipelineContext` deep-clones `base.prd` at `src/execution/parallel-worker.ts:25-30`, while the live story reference is used to set `storyGitRef` at `:51-62`. Mutating `ctx.prd` would be discarded in the worktree path. Existing sequential completion/failure and parallel reconciliation saves therefore carry the live-story mutation; do not add a separate persistence call or alter commit paths. Compatibility is additive: old PRDs retain `undefined`, empty record input must not introduce `[]`, and no backfill or schema migration is required. Main risks are accidentally persisting `declinedReason`, replacing rather than appending retries, recording after the inspect/save boundary, or clearing records in shared mode where `storyGitRef` is intentionally retained.",
+  "outOfScope": [
+    "Adding a git trailer, a git note, or an amended commit message to a story's commits is deferred to issue #1660.",
+    "Rendering repo-scoped fix records in the PR body composed by `src/finish/pr/body.ts` is deferred to a follow-up spec.",
+    "The `declinedReason` field of `RepoScopedFixRecord` is deliberately not persisted and stays only in the JSONL run log.",
+    "Fixing the pre-existing loss of `outputFiles` and `diffSummary`, which `handlePipelineSuccess` writes without a following `savePRD`, belongs to its own issue.",
+    "No cap is placed on the number of persisted entries per story; growth is bounded by `execution.rectification.maxAttemptsTotal` and is not managed here.",
+    "Backfilling `repoScopedFixes` onto PRDs from runs that completed before this feature is not attempted.",
+    "Persisting records for stories that never reach the execution stage — skipped, blocked, or queue-aborted — is not attempted.",
+    "US-002 only: cross-process or cross-worker synchronisation of `repoScopedFixes` writes is out of scope, because each story object is written by exactly one worker.",
+    "US-002 only: records written after the last `savePRD` of a run that then crashes are lost; no new save point is added to narrow that window."
+  ],
+  "routingProfile": "cross-agent-mm"
+}

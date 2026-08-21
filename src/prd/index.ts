@@ -18,6 +18,7 @@ export type {
   StructuredFailure,
   TestFailureContext,
   VerificationStage,
+  PersistedRepoScopedFix,
 } from "./types";
 export { isStalled, markStoryAsBlocked, generateHumanHaltSummary, getContextFiles, getExpectedFiles } from "./types";
 export { findSpecDriftViolations } from "./spec-drift";
@@ -284,16 +285,19 @@ export function markStoryFailed(
 /** Options for {@link resetFailedStoriesToPending}. */
 export interface ResetFailedOptions {
   /**
-   * When true, also clears `storyGitRef` so it is re-captured at the next
-   * story start. Prevents cross-story diff pollution when multiple stories
-   * exhausted all tiers across a run and are now re-queued. Default: false.
+   * When true, also clears `storyGitRef` and `repoScopedFixes` so they are
+   * re-captured at the next story start. Prevents cross-story diff pollution
+   * when multiple stories exhausted all tiers across a run and are now
+   * re-queued, and clears the durable repair record so the new run's history
+   * starts clean. Default: false.
    */
   resetRef?: boolean;
   /**
-   * When `"worktree"`, also clears `storyGitRef` for all reset stories
-   * regardless of `resetRef` (each story will get a fresh ref in its new
-   * worktree). Callers are responsible for deleting the old `nax/<storyId>`
-   * branches after this returns.
+   * When `"worktree"`, also clears `storyGitRef` and `repoScopedFixes` for
+   * all reset stories regardless of `resetRef` (each story will get a fresh
+   * ref in its new worktree, and the old worktree's repairs don't follow).
+   * Callers are responsible for deleting the old `nax/<storyId>` branches
+   * after this returns.
    */
   storyIsolation?: "shared" | "worktree";
   /**
@@ -338,6 +342,7 @@ export function resetFailedStoriesToPending(prd: PRD, opts: ResetFailedOptions =
 
     if (resetRef || storyIsolation === "worktree") {
       story.storyGitRef = undefined;
+      story.repoScopedFixes = undefined;
     }
     reset.push(story);
   }

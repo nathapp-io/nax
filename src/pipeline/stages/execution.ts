@@ -19,6 +19,7 @@ import {
   assemblePlanInputsFromCtx,
   buildPlanForStrategy,
   decideStageAction,
+  recordRepoScopedFixes,
   requiresInitialRefCapture,
 } from "@/execution";
 import type { TddMode } from "@/execution/post-run";
@@ -167,6 +168,12 @@ export const executionStage: PipelineStage = {
       unsubscribe();
     }
 
+    // US-002: map the run-time repo-scoped dispatch records onto the live
+    // story so the next `savePRD` carries them to disk. `story` is passed by
+    // reference (parallel worktree pipelines deep-clone `prd`), so the write
+    // reaches the writing worker without racing against others.
+    _executionDeps.recordRepoScopedFixes(ctx.story, planResult.repoScopedFixes);
+
     const opts = {
       capturedTokenUsage,
       capturedResponse,
@@ -188,6 +195,7 @@ export const _executionDeps = {
   getUntrackedPaths,
   assemblePlanInputsFromCtx,
   buildPlanForStrategy,
+  recordRepoScopedFixes,
   applyPostRunInspection,
   decideStageAction,
 };

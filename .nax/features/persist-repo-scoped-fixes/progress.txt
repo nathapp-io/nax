@@ -1,0 +1,2 @@
+[2026-08-21T05:18:27.165Z] US-001 — PASSED — Persisted repo-scoped fix type and reset invariant — Cost: $1.2303
+[2026-08-21T06:21:49.940Z] US-002 — PASSED — Record repo-scoped dispatches on the executing story — Cost: $8.4267

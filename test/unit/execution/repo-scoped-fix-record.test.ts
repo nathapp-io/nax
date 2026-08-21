@@ -15,6 +15,7 @@
 import { describe, expect, test } from "bun:test";
 import { deriveRepoScopedFixes } from "@/execution";
 import type { Finding, Iteration } from "@/findings";
+import { makeStory } from "@test/helpers";
 
 const REPO_SCOPED = "repo-scoped-test-fix";
 const STORY_SCOPED = "full-suite-rectify";

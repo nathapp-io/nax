@@ -10,7 +10,7 @@ import { _executionDeps, executionStage, routeTddFailure } from "@/pipeline/stag
 import type { FailureCategory } from "@/tdd";
 import { NaxError } from "@/errors";
 import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
-import { makeTestContext, makeTestStory } from "@test/helpers";
+import { makeTestContext, makeTestStory, withExecutionDeps } from "@test/helpers";
 import type { PipelineContext } from "@/pipeline/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -231,16 +231,15 @@ describe("executionStage.execute — runtime-crash on thrown infra errors", () =
   // Stub _executionDeps so plan.run() is the only thing that can throw.
   // Returns a restore function — call it in the test's own finally block.
   function stubDepsWithPlan(planRun: () => Promise<never>): () => void {
-    const saved = { ..._executionDeps };
-    _executionDeps.getAgent = () => makeAgentAdapter({ name: "claude" }) as never;
-    _executionDeps.validateAgentForTier = () => true;
-    _executionDeps.captureGitRef = async () => "HEAD";
-    _executionDeps.getUntrackedPaths = async () => [];
-    _executionDeps.assemblePlanInputsFromCtx = async () => ({}) as never;
-    (_executionDeps as Record<string, unknown>)["buildPlanForStrategy"] = async () => ({
-      run: planRun,
-    });
-    return () => Object.assign(_executionDeps, saved);
+    const overrides = {
+      getAgent: () => makeAgentAdapter({ name: "claude" }) as never,
+      validateAgentForTier: () => true,
+      captureGitRef: async () => "HEAD",
+      getUntrackedPaths: async () => [],
+      assemblePlanInputsFromCtx: async () => ({}) as never,
+      buildPlanForStrategy: async () => ({ run: planRun }) as never,
+    };
+    return withExecutionDeps(overrides);
   }
 
   it("sets tddFailureCategory to runtime-crash when plan.run() throws CALL_OP_NO_OUTPUT", async () => {

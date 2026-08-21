@@ -7,7 +7,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { resetFailedStoriesToPending } from "@/prd";
-import type { PRD, UserStory } from "@/prd/types";
+import type { PRD, PersistedRepoScopedFix, UserStory } from "@/prd/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -225,5 +225,132 @@ describe("resetFailedStoriesToPending()", () => {
     expect(story.routing?.modelTier).toBe("fast");
     expect(story.routing?.agent).toBeUndefined();
     expect(story.escalations).toEqual([]);
+  });
+
+  // US-001 / #1654 — repoScopedFixes must clear under the same conditions as storyGitRef
+  describe("repoScopedFixes reset invariant", () => {
+    const fix: PersistedRepoScopedFix = {
+      triggeringTests: ["src/foo.test.ts::reproduces bug"],
+      filesChanged: ["src/foo.ts"],
+      findingsCleared: true,
+    };
+    const fixX: PersistedRepoScopedFix = {
+      triggeringTests: ["x.test.ts::y"],
+      filesChanged: ["src/x.ts"],
+      findingsCleared: false,
+    };
+
+    test("AC3: resetRef=true clears repoScopedFixes on every reset story", () => {
+      const prd = makePrd([
+        makeStory("US-001", {
+          status: "failed",
+          storyGitRef: "abc123",
+          repoScopedFixes: [fix],
+        }),
+        makeStory("US-002", {
+          status: "failed",
+          storyGitRef: "def456",
+          repoScopedFixes: [fixX],
+        }),
+      ]);
+
+      resetFailedStoriesToPending(prd, { resetRef: true });
+
+      expect(prd.userStories[0].repoScopedFixes).toBeUndefined();
+      expect(prd.userStories[0].storyGitRef).toBeUndefined();
+      expect(prd.userStories[1].repoScopedFixes).toBeUndefined();
+      expect(prd.userStories[1].storyGitRef).toBeUndefined();
+    });
+
+    test("AC4: storyIsolation='worktree' with default resetRef clears repoScopedFixes", () => {
+      const prd = makePrd([
+        makeStory("US-001", {
+          status: "failed",
+          storyGitRef: "abc123",
+          repoScopedFixes: [fix],
+        }),
+      ]);
+
+      resetFailedStoriesToPending(prd, { storyIsolation: "worktree" });
+
+      expect(prd.userStories[0].repoScopedFixes).toBeUndefined();
+      expect(prd.userStories[0].storyGitRef).toBeUndefined();
+    });
+
+    test("AC5: empty opts leaves repoScopedFixes untouched on failed stories", () => {
+      const prd = makePrd([
+        makeStory("US-001", {
+          status: "failed",
+          storyGitRef: "abc123",
+          repoScopedFixes: [fix],
+        }),
+      ]);
+
+      resetFailedStoriesToPending(prd, {});
+
+      expect(prd.userStories[0].repoScopedFixes).toEqual([fix]);
+      expect(prd.userStories[0].storyGitRef).toBe("abc123");
+    });
+
+    test("AC5: shared isolation (legacy default) leaves repoScopedFixes untouched", () => {
+      const prd = makePrd([
+        makeStory("US-001", {
+          status: "failed",
+          storyGitRef: "abc123",
+          repoScopedFixes: [fix],
+        }),
+      ]);
+
+      resetFailedStoriesToPending(prd, { storyIsolation: "shared" });
+
+      expect(prd.userStories[0].repoScopedFixes).toEqual([fix]);
+      expect(prd.userStories[0].storyGitRef).toBe("abc123");
+    });
+
+    test("AC6: resetRef=true leaves repoScopedFixes untouched on passed stories", () => {
+      const prd = makePrd([
+        makeStory("US-001", {
+          status: "passed",
+          passes: true,
+          storyGitRef: "abc123",
+          repoScopedFixes: [fix],
+        }),
+        makeStory("US-002", {
+          status: "failed",
+          storyGitRef: "def456",
+          repoScopedFixes: [fix],
+        }),
+      ]);
+
+      resetFailedStoriesToPending(prd, { resetRef: true });
+
+      expect(prd.userStories[0].repoScopedFixes).toEqual([fix]);
+      expect(prd.userStories[0].storyGitRef).toBe("abc123");
+      expect(prd.userStories[1].repoScopedFixes).toBeUndefined();
+      expect(prd.userStories[1].storyGitRef).toBeUndefined();
+    });
+
+    test("worktree isolation leaves repoScopedFixes untouched on passed stories", () => {
+      const prd = makePrd([
+        makeStory("US-001", {
+          status: "passed",
+          passes: true,
+          storyGitRef: "abc123",
+          repoScopedFixes: [fix],
+        }),
+        makeStory("US-002", {
+          status: "failed",
+          storyGitRef: "def456",
+          repoScopedFixes: [fix],
+        }),
+      ]);
+
+      resetFailedStoriesToPending(prd, { storyIsolation: "worktree" });
+
+      expect(prd.userStories[0].repoScopedFixes).toEqual([fix]);
+      expect(prd.userStories[0].storyGitRef).toBe("abc123");
+      expect(prd.userStories[1].repoScopedFixes).toBeUndefined();
+      expect(prd.userStories[1].storyGitRef).toBeUndefined();
+    });
   });
 });
