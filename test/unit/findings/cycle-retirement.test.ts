@@ -16,7 +16,7 @@ import { describe, expect, test } from "bun:test";
 import type { CallOpFn } from "@/findings/cycle";
 import { runFixCycle } from "@/findings";
 import type { Finding } from "@/findings";
-import { lintA, lintB, makeCallOpMock, makeCtx, makeCycle, makeFinding, makeStrategy, typecheckC } from "./_cycle-fixtures";
+import { lintA, lintB, makeCallOpMock, makeCallOpSpy, makeCtx, makeCycle, makeFinding, makeStrategy, typecheckC } from "./_cycle-fixtures";
 
 // ─── runFixCycle — partial give-up in a co-run group (#1369) ─────────────────
 
@@ -269,5 +269,146 @@ describe("runFixCycle — verdict-driven dispatch", () => {
     expect(r.exitReason).toBe("resolved");
     expect(cycle.iterations).toHaveLength(1);
     expect(dispatched.filter((n) => n === "acceptance-source-fix")).toHaveLength(1);
+  });
+});
+
+// ─── runFixCycle — fall through to a later claimant instead of exiting ────────
+//
+// #1654. When every strategy in the dispatched group answers UNRESOLVED, the
+// cycle used to return `agent-gave-up` immediately. That is right only when the
+// group was the last claimant: nothing touched the tree, so revalidating would
+// burn a full suite run to learn nothing. It is wrong when another, NOT-yet-
+// retired strategy still claims the findings — the correct response to "nothing
+// changed" is to dispatch the next claimant, not to end the cycle.
+//
+// This is what lets a story-scoped rectifier decline a failing test as
+// out-of-scope and hand it to a repo-scoped one, rather than deadlocking the
+// story and burning the escalation ladder on a test it was forbidden to touch.
+
+describe("runFixCycle — give-up falls through to a remaining claimant (#1654)", () => {
+  /** Exclusive strategy that always answers UNRESOLVED. */
+  const scoped = (name: string, dispatched: string[]) =>
+    makeStrategy({
+      name,
+      coRun: "exclusive",
+      maxAttempts: 3,
+      extractApplied: () => {
+        dispatched.push(name);
+        return { summary: "", unresolved: "outside this story's scope" };
+      },
+    });
+  /** Exclusive strategy that completes normally. */
+  const unscoped = (name: string, dispatched: string[], unresolved?: string) =>
+    makeStrategy({
+      name,
+      coRun: "exclusive",
+      maxAttempts: 1,
+      extractApplied: () => {
+        dispatched.push(name);
+        return { summary: "", ...(unresolved ? { unresolved } : {}) };
+      },
+    });
+
+  test("dispatches the next claimant rather than exiting agent-gave-up", async () => {
+    const dispatched: string[] = [];
+    const cycle = makeCycle(
+      [lintA],
+      [scoped("full-suite-rectify", dispatched), unscoped("repo-scoped-test-fix", dispatched)],
+      async () => [],
+    );
+    const r = await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: makeCallOpSpy().fn });
+    expect(dispatched).toEqual(["full-suite-rectify", "repo-scoped-test-fix"]);
+    expect(r.exitReason).toBe("resolved");
+  });
+
+  test("does not validate between the give-up and the fallthrough dispatch", async () => {
+    // The early return existed to avoid a pointless suite run. Falling through
+    // must not reintroduce one: nothing touched the tree, so there is still
+    // nothing to observe until the next claimant has actually run.
+    const validateCallsBeforeFallthrough: string[][] = [];
+    const dispatched: string[] = [];
+    const cycle = makeCycle(
+      [lintA],
+      [scoped("full-suite-rectify", dispatched), unscoped("repo-scoped-test-fix", dispatched)],
+      async () => {
+        validateCallsBeforeFallthrough.push([...dispatched]);
+        return [];
+      },
+    );
+    await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: makeCallOpSpy().fn });
+    // Exactly one validate, and it happened only after BOTH strategies ran.
+    expect(validateCallsBeforeFallthrough).toEqual([["full-suite-rectify", "repo-scoped-test-fix"]]);
+  });
+
+  test("exits agent-gave-up when the fallthrough claimant also gives up", async () => {
+    const dispatched: string[] = [];
+    const cycle = makeCycle(
+      [lintA],
+      [scoped("full-suite-rectify", dispatched), unscoped("repo-scoped-test-fix", dispatched, "cannot fix this either")],
+      async () => [lintA],
+    );
+    const r = await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: makeCallOpSpy().fn });
+    expect(dispatched).toEqual(["full-suite-rectify", "repo-scoped-test-fix"]);
+    expect(r.exitReason).toBe("agent-gave-up");
+    expect(r.unresolvedDetail).toBe("cannot fix this either");
+  });
+
+  test("still exits agent-gave-up when the remaining claimant is exhausted", async () => {
+    // A strategy at its cap is not a viable fallthrough target — exiting is
+    // correct, and must not be turned into an infinite loop by the new check.
+    const dispatched: string[] = [];
+    const exhausted = makeStrategy({
+      name: "repo-scoped-test-fix",
+      coRun: "exclusive",
+      maxAttempts: 0,
+      extractApplied: () => {
+        dispatched.push("repo-scoped-test-fix");
+        return { summary: "" };
+      },
+    });
+    const cycle = makeCycle([lintA], [scoped("full-suite-rectify", dispatched), exhausted], async () => [lintA]);
+    const r = await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: makeCallOpSpy().fn });
+    expect(dispatched).toEqual(["full-suite-rectify"]);
+    expect(r.exitReason).toBe("agent-gave-up");
+  });
+
+  test("still exits agent-gave-up when the remaining claimant does not claim the findings", async () => {
+    const dispatched: string[] = [];
+    const otherSource = makeStrategy({
+      name: "repo-scoped-test-fix",
+      coRun: "exclusive",
+      maxAttempts: 1,
+      appliesTo: (f: Finding) => f.source === "typecheck",
+      extractApplied: () => {
+        dispatched.push("repo-scoped-test-fix");
+        return { summary: "" };
+      },
+    });
+    const cycle = makeCycle([lintA], [scoped("full-suite-rectify", dispatched), otherSource], async () => [lintA]);
+    const r = await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: makeCallOpSpy().fn });
+    expect(dispatched).toEqual(["full-suite-rectify"]);
+    expect(r.exitReason).toBe("agent-gave-up");
+  });
+});
+
+// ─── runFixCycle — per-strategy session isolation (#1654) ────────────────────
+
+describe("runFixCycle — strategy.sessionRole isolates the dispatch session", () => {
+  test("forwards sessionRole onto the call context as a sessionOverride", async () => {
+    const spy = makeCallOpSpy();
+    const cycle = makeCycle(
+      [lintA],
+      [makeStrategy({ name: "repo-scoped-test-fix", coRun: "exclusive", sessionRole: "repo-scoped-test-fix" })],
+      async () => [],
+    );
+    await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: spy.fn });
+    expect(spy.calls[0]?.ctx.sessionOverride?.role).toBe("repo-scoped-test-fix");
+  });
+
+  test("leaves sessionOverride unset for a strategy that declares no sessionRole", async () => {
+    const spy = makeCallOpSpy();
+    const cycle = makeCycle([lintA], [makeStrategy({ name: "full-suite-rectify", coRun: "exclusive" })], async () => []);
+    await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: spy.fn });
+    expect(spy.calls[0]?.ctx.sessionOverride).toBeUndefined();
   });
 });

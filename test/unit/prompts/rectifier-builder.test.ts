@@ -10,8 +10,9 @@
 
 import { describe, expect, test } from "bun:test";
 import { makeStory } from "@test/helpers";
-import { RectifierPromptBuilder } from "@/prompts";
+import { RectifierPromptBuilder, repoScopedRectification } from "@/prompts";
 import type { FailureRecord } from "@/prompts";
+import type { Finding } from "@/findings/types";
 import type { ReviewCheckResult } from "@/review/types";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -273,5 +274,81 @@ describe("RectifierPromptBuilder.continuation", () => {
     expect(result).toContain("Rethink your approach");
     expect(result).toContain("URGENT: This is your final attempt");
     expect(result).toMatchSnapshot();
+  });
+});
+
+// ─── repoScopedRectification (#1654) ─────────────────────────────────────────
+//
+// The mandate handed to the fallthrough claimant after the story-scoped
+// rectifier declined a failing test as out-of-scope. Its job is to remove the
+// contradiction that produced the refusal — "fix this test, but do not touch
+// what is broken" — without removing the test-integrity rules alongside it.
+
+describe("repoScopedRectification", () => {
+  const failing: Finding = {
+    source: "test-runner",
+    severity: "error",
+    category: "failed-test",
+    rule: "computes the median",
+    file: "test/unit/stats.test.ts",
+    message: "AssertionError: expected 3 to be 4",
+  };
+
+  test("names the failing test so the agent knows what it is fixing", () => {
+    const prompt = repoScopedRectification([failing], STORY);
+    expect(prompt).toContain("test/unit/stats.test.ts");
+    expect(prompt).toContain("computes the median");
+  });
+
+  test("drops the sibling-scope exception that tells the agent to punt", () => {
+    // Exception 3 instructs the agent to declare `sibling_scope` and continue,
+    // on the grounds that out-of-scope failures do not block the story. That is
+    // the exact instruction this dispatch exists to override; leaving it in
+    // would re-license the refusal we are responding to.
+    const prompt = repoScopedRectification([failing], STORY);
+    expect(prompt).not.toContain("sibling_scope");
+    expect(RectifierPromptBuilder.failingTestRectification([failing], STORY)).toContain("sibling_scope");
+  });
+
+  test("states that out-of-scope is not a reason to decline", () => {
+    const prompt = repoScopedRectification([failing], STORY);
+    expect(prompt.toLowerCase()).toContain("not a reason to decline");
+  });
+
+  test("keeps the UNRESOLVED protocol for genuinely unsatisfiable tests", () => {
+    expect(repoScopedRectification([failing], STORY)).toContain("UNRESOLVED:");
+  });
+
+  test("keeps the prohibition on weakening tests", () => {
+    // An agent authorised to edit any file is precisely the one that must not be
+    // authorised to make a red test green by deleting its assertion.
+    const prompt = repoScopedRectification([failing], STORY);
+    expect(prompt).toContain("TEST_EDIT_REASON");
+    expect(prompt.toLowerCase()).toContain("weaken");
+  });
+
+  test("routes a nondeterministic failure to UNRESOLVED rather than to a fix", () => {
+    // Flake triage normally quarantines these before rectification, but it has
+    // skip paths (probe cap exceeded, unresolvable baseline diff, framework not
+    // detected) that leave a flaky test looking deterministic. An agent
+    // authorised to edit any file and told to make the test pass is the worst
+    // possible reader of a test that fails at random — it will weaken it. Name
+    // the case and give it the terminal channel instead.
+    const prompt = repoScopedRectification([failing], STORY);
+    expect(prompt.toLowerCase()).toContain("flaky");
+  });
+
+  test("the stated exception count matches the exceptions actually present", () => {
+    // buildEscapeHatch interpolates the exception count into its prose and the
+    // headings are numbered literals, so dropping one without adjusting the set
+    // yields a prompt that numbers its exceptions 1, 2, 4 while telling the agent
+    // to check "Exceptions 1-3".
+    const prompt = repoScopedRectification([failing], STORY);
+    const headings = prompt.match(/^### Exception (\d+) —/gm) ?? [];
+    expect(headings.length).toBeGreaterThan(0);
+    expect(prompt).toContain(`Exceptions 1\u2013${headings.length}`);
+    expect(headings.map((h) => h.match(/\d+/)?.[0])).toEqual(
+      Array.from({ length: headings.length }, (_, i) => String(i + 1)),
+    );
   });
 });

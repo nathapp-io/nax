@@ -35,7 +35,7 @@ import {
 } from "../operations";
 import type { DeclarationDiagnostic, TestEditDeclaration } from "../operations";
 import { shouldRunRectification } from "../operations/execution-gates";
-import { makeFullSuiteRectifyStrategy } from "../operations/full-suite-rectify";
+import { makeFullSuiteRectifyStrategy, makeRepoScopedTestFixStrategy } from "../operations/full-suite-rectify";
 import type { CallContext } from "../operations/types";
 import type { UserStory } from "../prd/types";
 import { resolveTestFilePatterns } from "../test-runners";
@@ -269,6 +269,18 @@ export async function buildPlanForStrategy(
           unknown
         >,
       );
+      // #1654 — repo-scoped fallthrough, registered AFTER the story-scoped
+      // strategy so `selectExecutionGroup` (which takes the first exclusive
+      // claimant) always tries the scoped one first. It is reached only once the
+      // scoped strategy has declined these findings and been retired for them,
+      // which is what makes the ordering load-bearing rather than cosmetic.
+      //
+      // Registered on the blocking cycle only. The non-blocking cycle below does
+      // not deadlock a story on a finding it cannot fix, so the extra dispatch
+      // would buy nothing there.
+      if (config.execution.rectification.repoScopedFallback) {
+        strategies.push(makeRepoScopedTestFixStrategy(story, sink) as FixStrategy<Finding, unknown, unknown, unknown>);
+      }
     }
     if (config.quality.autofix?.enabled !== false) {
       // Single-session strategies (tdd-simple / test-after / no-test) have no

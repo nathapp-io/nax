@@ -102,3 +102,89 @@ describe("E2E: full-suite-rectify (success path)", () => {
     expect(result.rectificationExhausted).toBe(true);
   });
 });
+
+// ─── #1654: give-up falls through to the repo-scoped claimant ────────────────
+//
+// The deadlock this fixes: a test that is red for reasons outside the story is
+// handed to a rectifier whose mandate forbids touching what is broken, so it
+// answers UNRESOLVED, the cycle exits `agent-gave-up`, and every story in the
+// package hits the same wall. These lock the end-to-end route from that refusal
+// to a dispatch that is actually allowed to fix it.
+
+describe("E2E: repo-scoped test fix (#1654)", () => {
+  const verifier = () => ({ output: PASSING_VERDICT });
+  /** Story-scoped rectifier: declines the failing test as out of this story's scope. */
+  const decliningImplementer = (attempt: number) =>
+    attempt === 0
+      ? { output: JSON.stringify({ filesChanged: ["src/a.ts"] }) }
+      : { output: "UNRESOLVED: test/legacy/auth.spec.ts is outside this story's scope" };
+
+  test("dispatches repo-scoped-test-fix after the story-scoped rectifier declines", async () => {
+    let repoScopedDispatched = false;
+    const { result } = await runOrchestratorE2E({
+      strategy: "three-session-tdd",
+      agent: {
+        "test-writer": tw,
+        implementer: decliningImplementer,
+        verifier,
+        "repo-scoped-test-fix": () => {
+          repoScopedDispatched = true;
+          return { output: JSON.stringify({ filesChanged: ["src/legacy/auth.ts"] }) };
+        },
+        "reviewer-semantic": PASS_REVIEW,
+        "reviewer-adversarial": PASS_REVIEW,
+      },
+      // Red before the repo-scoped fix, green after it — the shape of a
+      // pre-existing failure nobody in story scope was allowed to touch.
+      gates: {
+        fullSuite: (attempt: number) =>
+          repoScopedDispatched
+            ? { passed: true, failed: 0 }
+            : {
+                passed: false,
+                failed: 1,
+                output: `attempt ${attempt}: legacy auth spec red`,
+                failures: [{ testName: "redirects to login", file: "test/legacy/auth.spec.ts", error: "Invalid URL" }],
+              },
+      },
+    });
+
+    // The dispatch is the discriminating assertion: before #1654 the cycle exited
+    // `agent-gave-up` at the refusal and this role was never opened.
+    expect(repoScopedDispatched).toBe(true);
+    expect(result.success).toBe(true);
+  });
+
+  test("repoScopedFallback: false restores the deadlock", async () => {
+    // Same scenario with the gate off — proves the dispatch above is what changed,
+    // and that the escape hatch actually reaches the strategy registration.
+    let repoScopedDispatched = false;
+    const { result } = await runOrchestratorE2E({
+      strategy: "three-session-tdd",
+      config: { execution: { rectification: { repoScopedFallback: false } } } as Partial<NaxConfig>,
+      agent: {
+        "test-writer": tw,
+        implementer: decliningImplementer,
+        verifier,
+        "repo-scoped-test-fix": () => {
+          repoScopedDispatched = true;
+          return { output: JSON.stringify({ filesChanged: ["src/legacy/auth.ts"] }) };
+        },
+        "reviewer-semantic": PASS_REVIEW,
+        "reviewer-adversarial": PASS_REVIEW,
+      },
+      gates: {
+        fullSuite: () => ({
+          passed: false,
+          failed: 1,
+          output: "legacy auth spec red",
+          failures: [{ testName: "redirects to login", file: "test/legacy/auth.spec.ts", error: "Invalid URL" }],
+        }),
+      },
+    });
+
+    expect(repoScopedDispatched).toBe(false);
+    expect(result.success).toBe(false);
+    expect(result.rectificationExhausted).toBe(true);
+  });
+});

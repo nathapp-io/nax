@@ -10,6 +10,7 @@ export type CanonicalSessionRole =
   | "main"
   | "test-writer"
   | "implementer"
+  | "repo-scoped-test-fix"
   | "verifier"
   | "diagnose"
   | "source-fix"
@@ -41,6 +42,7 @@ export const KNOWN_SESSION_ROLES: readonly CanonicalSessionRole[] = [
   "main",
   "test-writer",
   "implementer",
+  "repo-scoped-test-fix",
   "verifier",
   "diagnose",
   "source-fix",

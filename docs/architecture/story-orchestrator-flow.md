@@ -214,6 +214,7 @@ That subset is the SSOT map **`STRATEGY_TO_REVALIDATION_PHASES`**
 | semantic-review | `semantic-review` | `autofix-implementer` | lint, typecheck, full-suite-gate, semantic, adversarial |
 | adversarial-review (source) | `adversarial-review`, `fixTarget: source` | `autofix-implementer` | lint, typecheck, full-suite-gate, semantic, adversarial |
 | adversarial-review (test) | `adversarial-review`, `fixTarget: test` | `autofix-test-writer` | lint, typecheck, full-suite-gate, adversarial — **excludes semantic & verifier** |
+| full-suite-gate | `test-runner` | `full-suite-rectify` → `repo-scoped-test-fix` | lint, typecheck, full-suite-gate, verifier, verify-scoped, semantic, adversarial |
 
 ```mermaid
 flowchart LR
@@ -245,6 +246,11 @@ flowchart LR
   `lint-check` re-runs (cheapest). `maxAttempts: 1`. (See the soundness assumption in §5.)
 - **Any agent-written code fix** (typecheck / semantic / adversarial-source) can break
   anything, so it re-runs the full downstream chain: style → types → tests → both reviews.
+- **Failing-test fixes** (`full-suite-rectify`, then `repo-scoped-test-fix`) re-run
+  everything downstream *including* the verifier: they may edit test code through the
+  declaration protocol, which legitimately changes the TDD-boundary verdict. Both share
+  one revalidation set (`FULL_SUITE_RECTIFY_REVALIDATION`) because they run the same op
+  — the second edits a wider set of *files*, not a different set of *phases*.
 - **Test rewrites** (`autofix-test-writer`) re-run tests + adversarial re-judgment, but:
   - skip `semantic-review` (semantic review judges *source*, not tests), and
   - skip `verifier` **by intent** — re-running the verifier is an extra agent session
@@ -265,6 +271,14 @@ over a safe default.
 - Exit reasons (`src/execution/story-orchestrator.ts:61`, `EXHAUSTED_EXIT_REASONS`):
   `max-attempts-total`, `max-attempts-per-strategy`, `no-strategy`, `agent-gave-up`,
   `validate-short-circuit`, `bail-when`.
+- **Give-up fallthrough (#1654)**: when every strategy in the dispatched group answers
+  `UNRESOLVED:`, the cycle exits `agent-gave-up` *only if no other claimant remains*.
+  If a non-retired strategy with attempts left still claims the findings, the cycle
+  dispatches it instead — without re-validating first, since nothing touched the tree.
+  This is what routes a failing test the story-scoped rectifier declined as
+  out-of-scope to the repo-scoped `repo-scoped-test-fix`, rather than deadlocking the
+  story on a test it was forbidden to touch. Gated by
+  `execution.rectification.repoScopedFallback` (default `true`).
 - **`agent-gave-up`** fires when a fix-op emits the `UNRESOLVED:` sentinel (the implementer
   signalling a contradiction it cannot resolve — e.g. `full-suite-rectify` and
   `autofix-implementer` both parse it). The sentinel's reason text is carried as

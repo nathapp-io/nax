@@ -230,12 +230,18 @@ describe("E2E: exhaustion + edge", () => {
   });
 
   test("implementer UNRESOLVED on full-suite-rectify → agent-gave-up exhaustion carries unresolvedDetail (US-002)", async () => {
-    // The full-suite gate fails with a test-runner finding → full-suite-rectify is the
-    // sole matching strategy. On the rectification turn the implementer emits an
-    // `UNRESOLVED:` sentinel (the AC5/AC6 relative-URL contradiction). fullSuiteRectifyOp
-    // parses it → extractApplied returns { unresolved } (no test-edit declarations, so the
-    // declaration-priority guard does not suppress it) → the cycle exits "agent-gave-up"
-    // in round 1, threading unresolvedDetail through to StoryOrchestratorResult.
+    // The full-suite gate fails with a test-runner finding → full-suite-rectify claims it.
+    // On the rectification turn the implementer emits an `UNRESOLVED:` sentinel (the
+    // AC5/AC6 relative-URL contradiction). fullSuiteRectifyOp parses it → extractApplied
+    // returns { unresolved } (no test-edit declarations, so the declaration-priority guard
+    // does not suppress it).
+    //
+    // Since #1654 that give-up no longer ends the cycle on its own: `repo-scoped-test-fix`
+    // still claims the finding, so the cycle falls through to it. Here it ALSO gives up —
+    // the AC5/AC6 contradiction is genuinely unsatisfiable, repo scope or not — and only
+    // then, with no claimant left, does the cycle exit "agent-gave-up". `unresolvedDetail`
+    // carries the LAST refusal: the first one ("out of scope") has been superseded, and the
+    // terminal reason is what the escalated tier needs.
     //
     // This exercises the REAL producer→result chain (parse → extractApplied → cycle →
     // rectification spread → execution-plan), complementing the post-run unit test which
@@ -243,6 +249,7 @@ describe("E2E: exhaustion + edge", () => {
     // ran extra rounds, and the diagnosis never surfaced.
     const UNRESOLVED_REASON =
       "AC5/AC6 pass relative loginUrl '/login' to OAuthModule.registerAsync; the library rejects relative URLs (new URL('/login') throws)";
+    const REPO_SCOPED_REASON = "even with repo scope, AC5 and AC6 cannot both hold";
     const tw = () => ({ output: JSON.stringify({ filesChanged: ["test/a.test.ts"] }) });
     const verifier = () => ({ output: PASSING_VERDICT });
     // Per-role attempt counter: attempt 0 = main implementer phase (normal output);
@@ -258,6 +265,7 @@ describe("E2E: exhaustion + edge", () => {
         "test-writer": tw,
         implementer,
         verifier,
+        "repo-scoped-test-fix": () => ({ output: `UNRESOLVED: ${REPO_SCOPED_REASON}` }),
         "reviewer-semantic": PASS_REVIEW,
         "reviewer-adversarial": PASS_REVIEW,
       },
@@ -275,7 +283,7 @@ describe("E2E: exhaustion + edge", () => {
 
     expect(result.success).toBe(false);
     expect(result.rectificationExhausted).toBe(true);
-    // The implementer's diagnosis is threaded through verbatim so the escalated tier knows why.
-    expect(result.unresolvedDetail).toBe(UNRESOLVED_REASON);
+    // The diagnosis is threaded through verbatim so the escalated tier knows why.
+    expect(result.unresolvedDetail).toBe(REPO_SCOPED_REASON);
   });
 });

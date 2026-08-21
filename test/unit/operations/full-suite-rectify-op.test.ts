@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { fullSuiteRectifyOp } from "@/operations";
-import { RectifierPromptBuilder } from "@/prompts";
+import { RectifierPromptBuilder, repoScopedRectification } from "@/prompts";
 import type { Finding } from "@/findings/types";
 import { makeStory } from "@test/helpers";
 
@@ -107,5 +107,49 @@ UNRESOLVED: AC6 cannot be satisfied without changing the assertion.`;
     const result = fullSuiteRectifyOp.parse(output, input, ctx);
     expect(result.testEditDeclarations).toHaveLength(1);
     expect(result.unresolvedReason).toBe("AC6 cannot be satisfied without changing the assertion.");
+  });
+});
+
+// ─── Repo-scoped dispatch (#1654) ────────────────────────────────────────────
+//
+// The same op serves both the story-scoped rectifier and the repo-scoped
+// regression fixer; only the mandate differs. Sharing the op keeps one
+// UNRESOLVED protocol and one declaration parser across both dispatches.
+
+describe("fullSuiteRectifyOp.build — scope: 'repo'", () => {
+  test("uses the repo-scoped mandate, not the story-scoped one", () => {
+    const result = fullSuiteRectifyOp.build({ story, findings: [finding], scope: "repo" }, ctx);
+    expect(result.task.content).toBe(repoScopedRectification([finding], story));
+    expect(result.task.content).not.toBe(RectifierPromptBuilder.failingTestRectification([finding], story));
+  });
+
+  test("omitting scope keeps the story-scoped prompt byte-identical", () => {
+    const withoutScope = fullSuiteRectifyOp.build({ story, findings: [finding] }, ctx);
+    const withStoryScope = fullSuiteRectifyOp.build({ story, findings: [finding], scope: "story" }, ctx);
+    const expected = RectifierPromptBuilder.failingTestRectification([finding], story);
+    expect(withoutScope.task.content).toBe(expected);
+    expect(withStoryScope.task.content).toBe(expected);
+  });
+
+  test("still carries the test-edit declaration protocol", () => {
+    // Lifting the scope constraint must not lift the test-integrity rules — an
+    // agent free to touch any file is exactly the one that must not be free to
+    // delete the failing assertion.
+    const result = fullSuiteRectifyOp.build({ story, findings: [finding], scope: "repo" }, ctx);
+    expect(result.task.content).toContain("TEST_EDIT_REASON");
+  });
+});
+
+describe("fullSuiteRectifyOp.keepOpen — scope: 'repo'", () => {
+  test("repo scope does not keep the session open", () => {
+    // The repo-scoped dispatch runs under its own session role and gets one
+    // attempt; leaving it warm would strand a session nothing resumes.
+    // biome-ignore lint/suspicious/noExplicitAny: buildCtx stub for a resolver that ignores it
+    expect(fullSuiteRectifyOp.keepOpen?.({ story, findings: [finding], scope: "repo" }, {} as any)).toBe(false);
+  });
+
+  test("story scope keeps the warm session the op declares", () => {
+    // biome-ignore lint/suspicious/noExplicitAny: buildCtx stub for a resolver that ignores it
+    expect(fullSuiteRectifyOp.keepOpen?.({ story, findings: [finding] }, {} as any)).toBe(true);
   });
 });

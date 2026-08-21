@@ -41,6 +41,7 @@ export { fenceLangFor, formatTestOutputForFix } from "./builders/acceptance-buil
 
 // Rectifier prompt builder — cross-domain rectification for TDD, verify, and review triggers.
 export { RectifierPromptBuilder, CONTRADICTION_ESCAPE_HATCH } from "./builders/rectifier-builder";
+export { repoScopedRectification } from "./builders/rectifier-builder-helpers";
 export type { RectifierTrigger, FailureRecord, ReviewFinding } from "./builders/rectifier-builder";
 
 // Timeout-retry prompt builder — informed retry prompt conditioned on whether the
