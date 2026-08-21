@@ -104,6 +104,13 @@ export interface E2EResult {
     liteScopeIncomplete?: boolean;
     missingRequiredReviewPhases?: readonly string[];
     unfixedFindings?: readonly unknown[];
+    /** #1658 — one entry per repo-scoped fix dispatch; undefined when none fired. */
+    repoScopedFixes?: readonly {
+      triggeringTests: readonly string[];
+      filesChanged: readonly string[];
+      declinedReason?: string;
+      findingsCleared: boolean;
+    }[];
   };
   phaseLog: string[];
   strategiesFired: string[];

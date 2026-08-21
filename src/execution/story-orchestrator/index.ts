@@ -28,6 +28,8 @@ export {
   withIncreasingFailuresBail,
 } from "./run-phase";
 export { toReviewDecisionPayload } from "./review-decision";
+export { REPO_SCOPED_STRATEGY_NAME, deriveRepoScopedFixes } from "./repo-scoped-fix-record";
+export type { RepoScopedFixRecord } from "./repo-scoped-fix-record";
 export {
   EXHAUSTED_EXIT_REASONS,
   CANONICAL_ORDER,

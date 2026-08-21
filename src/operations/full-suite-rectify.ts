@@ -5,6 +5,7 @@ import type { FixStrategy } from "../findings";
 import type { Finding } from "../findings/types";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
+import { captureGitRef, captureWorkingTreeChanges } from "../utils/git";
 import type { DeclarationSink } from "./declaration-sink";
 import type { FullSuiteRectifyInput, FullSuiteRectifyOutput } from "./full-suite-rectify-op";
 import { fullSuiteRectifyOp } from "./full-suite-rectify-op";
@@ -108,6 +109,19 @@ export function makeFullSuiteRectifyStrategy(
 }
 
 /**
+ * Injectable git seam for repo-scoped change attribution (#1658).
+ *
+ * The files a repo-scoped dispatch changed come from git, not from the agent's
+ * own report: `fullSuiteRectifyOp` emits free-form prose with declaration
+ * markers rather than a `filesChanged` envelope, and a self-report is precisely
+ * what goes stale when the agent is wrong about what it did.
+ */
+export const _repoScopedFixDeps = {
+  captureGitRef,
+  captureWorkingTreeChanges,
+};
+
+/**
  * Factory for the repo-scoped test-fix strategy (#1654).
  *
  * Registered alongside `makeFullSuiteRectifyStrategy` as the fallthrough
@@ -135,6 +149,27 @@ export function makeRepoScopedTestFixStrategy(
   story: UserStory,
   sink: DeclarationSink,
 ): FixStrategy<Finding, FullSuiteRectifyInput, FullSuiteRectifyOutput, AutofixConfig> {
+  // Attribution state for #1658, captured in `buildInput` and read back in
+  // `extractApplied`. `runFixCycle` calls those two around a single awaited
+  // dispatch, sequentially, and this strategy is `coRun: "exclusive"` with
+  // `maxAttempts: 1` — so there is exactly one dispatch in flight and the pair
+  // cannot interleave. Kept in the closure rather than threaded through the
+  // input so the shared `FullSuiteRectifyInput` stays a description of the
+  // request rather than a carrier for bookkeeping.
+  let pendingBaseRef: Promise<string | undefined> | undefined;
+  let dispatchWorkdir: string | undefined;
+
+  /** Files this dispatch changed. Reporting only — never fails the dispatch. */
+  const changedFiles = async (): Promise<string[]> => {
+    try {
+      const baseRef = await pendingBaseRef;
+      if (!baseRef || !dispatchWorkdir) return [];
+      return await _repoScopedFixDeps.captureWorkingTreeChanges(dispatchWorkdir, baseRef);
+    } catch {
+      return [];
+    }
+  };
+
   return {
     name: "repo-scoped-test-fix",
     appliesTo: (finding: Finding): boolean =>
@@ -142,8 +177,14 @@ export function makeRepoScopedTestFixStrategy(
       (finding.category === "failed-test" || finding.category === "execution-failed"),
     fixOp: fullSuiteRectifyOp,
     sessionRole: "repo-scoped-test-fix",
-    buildInput: (findings) => ({ story, findings, scope: "repo" as const }),
-    extractApplied: (output: FullSuiteRectifyOutput) => {
+    buildInput: (findings, _priorIterations, ctx) => {
+      // Fired (not awaited) immediately before the dispatch; it resolves while
+      // the agent works, so attribution costs no extra wall-clock.
+      dispatchWorkdir = ctx.packageDir;
+      pendingBaseRef = _repoScopedFixDeps.captureGitRef(ctx.packageDir).catch(() => undefined);
+      return { story, findings, scope: "repo" as const };
+    },
+    extractApplied: async (output: FullSuiteRectifyOutput) => {
       for (const d of output.testEditDeclarations) {
         if (d.reason !== "mock_structure") sink.testEdits.push(d);
       }
@@ -153,7 +194,7 @@ export function makeRepoScopedTestFixStrategy(
       // give-up: UNRESOLVED here means the cycle is genuinely done.
       const unresolved = output.unresolvedReason;
       return {
-        targetFiles: [],
+        targetFiles: await changedFiles(),
         summary: unresolved ?? "Fixed failing tests (repo scope)",
         ...(unresolved ? { unresolved } : {}),
       };
