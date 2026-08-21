@@ -3,7 +3,7 @@
   "feature": "persist-repo-scoped-fixes",
   "branchName": "feat/persist-repo-scoped-fixes",
   "createdAt": "2026-08-21T00:00:00.000Z",
-  "updatedAt": "2026-08-21T05:18:30.735Z",
+  "updatedAt": "2026-08-21T06:24:54.828Z",
   "userStories": [
     {
       "id": "US-001",
@@ -70,7 +70,9 @@
         "Given `executionStage.execute(ctx)` with a plan result that has no `repoScopedFixes`, when the stage returns, then `ctx.story.repoScopedFixes` is `undefined`.",
         "Given `executionStage.execute(ctx)` with `success: false` and one repo-scoped record, when the stage returns, then `ctx.story.repoScopedFixes` has length 1.",
         "Given `executionStage.execute(ctx)` with a plan whose `run()` rejects with an error, when the stage is awaited, then it rejects with that same error.",
-        "Given `executionStage.execute(ctx)` with a plan whose `run()` rejects, when the stage rejects, then `ctx.story.repoScopedFixes` is `undefined`."
+        "Given `executionStage.execute(ctx)` with a plan whose `run()` rejects, when the stage rejects, then `ctx.story.repoScopedFixes` is `undefined`.",
+        "Given a story with an existing persisted entry, when `recordRepoScopedFixes(story, [])` or `recordRepoScopedFixes(story, undefined)` runs, then the existing entry remains unchanged.",
+        "Given a rejecting `plan.run()` and a spy replacing `_executionDeps.recordRepoScopedFixes`, when `executionStage.execute(ctx)` rejects, then the recorder spy has not been called."
       ],
       "tags": [
         "feature",
@@ -82,8 +84,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -109,10 +111,6 @@
       "expectedFiles": [
         "test/unit/execution/story-orchestrator/repo-scoped-fix-record.test.ts",
         "test/unit/pipeline/stages/execution-repo-scoped-fixes.test.ts"
-      ],
-      "suggestedCriteria": [
-        "Given a story with an existing persisted entry, when `recordRepoScopedFixes(story, [])` or `recordRepoScopedFixes(story, undefined)` runs, then the existing entry remains unchanged.",
-        "Given a rejecting `plan.run()` and a spy replacing `_executionDeps.recordRepoScopedFixes`, when `executionStage.execute(ctx)` rejects, then the recorder spy has not been called."
       ],
       "priorErrors": [],
       "priorFailures": [],
