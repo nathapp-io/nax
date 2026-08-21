@@ -3,7 +3,7 @@
   "feature": "persist-repo-scoped-fixes",
   "branchName": "feat/persist-repo-scoped-fixes",
   "createdAt": "2026-08-21T00:00:00.000Z",
-  "updatedAt": "2026-08-21T04:53:50.623Z",
+  "updatedAt": "2026-08-21T05:10:23.264Z",
   "userStories": [
     {
       "id": "US-001",
@@ -37,14 +37,20 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/prd/types.ts",
         "src/prd/index.ts",
         "test/unit/prd/prd-reset-failed.test.ts",
         "test/unit/prd/prd-auto-default.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "44afdbe16836b34e82670e78b99158332ac89ca0"
     },
     {
       "id": "US-002",
@@ -106,6 +112,9 @@
         "Given a story with an existing persisted entry, when `recordRepoScopedFixes(story, [])` or `recordRepoScopedFixes(story, undefined)` runs, then the existing entry remains unchanged.",
         "Given a rejecting `plan.run()` and a spy replacing `_executionDeps.recordRepoScopedFixes`, when `executionStage.execute(ctx)` rejects, then the recorder spy has not been called."
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
       "outOfScope": [
         "Cross-process or cross-worker synchronisation of the write — each story object is mutated by exactly one worker, so no locking is specified.",
         "Narrowing the crash window between the write and the next `savePRD` — no new save point is added."
