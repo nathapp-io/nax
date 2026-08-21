@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   makeFullSuiteRectifyStrategy,
+  makeRegressionFixStrategy,
   fullSuiteRectifyOp,
   makeDeclarationSink,
 } from "@/operations";
@@ -281,5 +282,66 @@ describe("makeFullSuiteRectifyStrategy — mock_structure handoff short-circuit 
     pushHandoff(sink);
     // A lint finding never matched regardless of handoff state.
     expect(strategy.appliesTo(makeTestFinding({ source: "lint" }))).toBe(false);
+  });
+});
+
+// ─── makeRegressionFixStrategy (#1654) ───────────────────────────────────────
+//
+// The fallthrough claimant for failing tests the story-scoped rectifier
+// declined. Registered alongside `full-suite-rectify`, it shares that
+// strategy's op but runs it with the scope constraint lifted, under its own
+// session role so it does not inherit the refusal it is meant to overturn.
+
+describe("makeRegressionFixStrategy", () => {
+  const strategy = () => makeRegressionFixStrategy(makeTestStory(), makeDeclarationSink());
+
+  test("name is regression-fix so it retires independently of full-suite-rectify", () => {
+    // Retirement and attempt caps are both keyed on the strategy name. A shared
+    // name would make the story-scoped give-up retire this strategy too, and the
+    // fallthrough would never dispatch.
+    expect(strategy().name).toBe("regression-fix");
+    expect(strategy().name).not.toBe(makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig()).name);
+  });
+
+  test("claims the same failing-test findings full-suite-rectify claims", () => {
+    expect(strategy().appliesTo(makeTestFinding({ category: "failed-test" }))).toBe(true);
+    expect(strategy().appliesTo(makeTestFinding({ category: "execution-failed" }))).toBe(true);
+  });
+
+  test("does not claim findings from other sources", () => {
+    expect(strategy().appliesTo(makeTestFinding({ source: "lint", category: "lint-error" }))).toBe(false);
+  });
+
+  test("runs under its own session role", () => {
+    expect(strategy().sessionRole).toBe("regression-fix");
+  });
+
+  test("reuses fullSuiteRectifyOp rather than declaring a second op", () => {
+    expect(strategy().fixOp).toBe(fullSuiteRectifyOp);
+  });
+
+  test("buildInput requests repo scope", () => {
+    const input = strategy().buildInput([makeTestFinding()], [], {} as never) as FullSuiteRectifyInput;
+    expect(input.scope).toBe("repo");
+  });
+
+  test("gets one attempt — it is the last claimant, not another ladder rung", () => {
+    expect(strategy().maxAttempts).toBe(1);
+  });
+
+  test("is exclusive so it does not co-run with the strategy that declined", () => {
+    expect(strategy().coRun).toBe("exclusive");
+  });
+
+  test("propagates UNRESOLVED so the cycle still exits agent-gave-up", async () => {
+    const output = { applied: true, testEditDeclarations: [], unresolvedReason: "tests contradict" } as FullSuiteRectifyOutput;
+    const applied = await strategy().extractApplied?.(output, {} as never);
+    expect(applied?.unresolved).toBe("tests contradict");
+  });
+
+  test("reports no unresolved when the agent fixed the tests", async () => {
+    const output = { applied: true, testEditDeclarations: [] } as FullSuiteRectifyOutput;
+    const applied = await strategy().extractApplied?.(output, {} as never);
+    expect(applied?.unresolved).toBeUndefined();
   });
 });

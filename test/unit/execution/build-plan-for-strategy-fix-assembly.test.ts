@@ -203,6 +203,40 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
     });
     const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
     await plan.run();
+    // #1654 registers the repo-scoped fallthrough alongside the story-scoped
+    // strategy, and the ORDER is load-bearing: selectExecutionGroup takes the
+    // first exclusive claimant, so the scoped strategy must be tried first and
+    // the fallthrough reached only after it declines.
+    expect(capturedStrategyNames).toEqual(["full-suite-rectify", "regression-fix"]);
+  });
+
+  test("#1654: repoScopedFallback: false leaves the story-scoped strategy alone", async () => {
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "verify-scoped") {
+        return {
+          success: false,
+          findings: [
+            { source: "test-runner", severity: "error", category: "failed-test", message: "scoped test failed" },
+          ],
+        };
+      }
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    const story = makeStory();
+    const config = makeNaxConfig({
+      quality: { commands: {}, autofix: { enabled: false } },
+      execution: {
+        rectification: { enabled: true, maxAttemptsTotal: 2, repoScopedFallback: false },
+      },
+    });
+    const ctx = makeCtxWithRuntime(config);
+    const inputs = makeNonTddInputs(story, {
+      verifyScoped: { workdir: "/tmp/test", storyId: story.id },
+      rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+    });
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    await plan.run();
     expect(capturedStrategyNames).toEqual(["full-suite-rectify"]);
   });
 

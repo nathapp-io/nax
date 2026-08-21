@@ -9,6 +9,7 @@
  */
 
 import { mock } from "bun:test";
+import type { CallOpFn } from "@/findings/cycle";
 import type { FixCycle, FixCycleContext, FixStrategy } from "@/findings";
 import type { Finding } from "@/findings";
 import { makeMockAgentManager, makeNaxConfig } from "@test/helpers";
@@ -79,4 +80,23 @@ export function makeCycle(
 
 export function makeCallOpMock(returnValue: unknown = {}): ReturnType<typeof mock> {
   return mock(async () => returnValue);
+}
+
+/**
+ * Typed `callOp` stub that records each dispatch's context and input.
+ *
+ * Prefer this over `makeCallOpMock()` in new tests: it satisfies `CallOpFn`
+ * directly, so call sites need no type assertion at all, and the
+ * recorded `ctx` is readable without reaching into bun's mock internals.
+ */
+export function makeCallOpSpy(returnValue: unknown = {}): {
+  fn: CallOpFn;
+  calls: Array<{ ctx: FixCycleContext; opName: string; input: unknown }>;
+} {
+  const calls: Array<{ ctx: FixCycleContext; opName: string; input: unknown }> = [];
+  const fn: CallOpFn = async (ctx, op, input) => {
+    calls.push({ ctx, opName: op.name, input });
+    return returnValue as never;
+  };
+  return { fn, calls };
 }

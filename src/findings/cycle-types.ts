@@ -9,6 +9,7 @@
  */
 
 import type { Operation } from "@/operations/types";
+import type { SessionRole } from "@/runtime/session-role";
 import type { Finding } from "./types";
 
 // ─── Iteration record ────────────────────────────────────────────────────────
@@ -195,6 +196,18 @@ export interface FixStrategy<
 
   /** Per-strategy attempt cap. Counted via fixesApplied[].strategyName. */
   maxAttempts: number;
+
+  /**
+   * Optional session role for this strategy's dispatches (#1654).
+   *
+   * `runFixCycle` forwards it as `CallContext.sessionOverride.role`, which
+   * `callOp` prefers over `op.session.role`. Because session resume is keyed on
+   * the role, a role no other strategy uses yields a session of its own — so two
+   * strategies can share one `fixOp` without sharing its conversation. Set this
+   * when the second dispatch must not inherit the first one's framing; leave it
+   * unset to keep the op's declared role and its normal reuse.
+   */
+  sessionRole?: SessionRole;
 
   /**
    * Co-run discipline. Default (undefined or "exclusive") means this strategy

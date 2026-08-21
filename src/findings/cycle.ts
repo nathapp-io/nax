@@ -15,6 +15,13 @@ import type { Operation } from "@/operations";
 import { errorMessage } from "@/utils/errors";
 import { recordIteration } from "./cycle-iteration-log";
 import { createDeclineLedger } from "./cycle-retirement";
+import {
+  countStrategyAttempts,
+  countTotalAttempts,
+  hasRemainingClaimant,
+  selectActiveStrategies,
+  selectExecutionGroup,
+} from "./cycle-selection";
 import type {
   FixApplied,
   FixCycle,
@@ -92,47 +99,6 @@ export function classifyOutcome<F extends Finding>(before: F[], after: F[]): Ite
   if (perSource.some((o) => o === "regressed")) return "regressed";
   if (perSource.every((o) => o === "unchanged")) return "unchanged";
   return "partial";
-}
-
-// ─── Strategy selection ───────────────────────────────────────────────────────
-
-function selectActiveStrategies<F extends Finding>(
-  // biome-ignore lint/suspicious/noExplicitAny: heterogeneous strategy array; I/O types are opaque to the cycle
-  strategies: FixStrategy<F, any, any, any>[],
-  findings: F[],
-  verdict: string | undefined,
-  // biome-ignore lint/suspicious/noExplicitAny: see above
-): FixStrategy<F, any, any, any>[] {
-  if (findings.length > 0) {
-    return strategies.filter((s) => findings.some((f) => s.appliesTo(f)));
-  }
-  if (verdict !== undefined) {
-    return strategies.filter((s) => s.appliesToVerdict?.(verdict) ?? false);
-  }
-  return [];
-}
-
-function selectExecutionGroup<F extends Finding>(
-  // biome-ignore lint/suspicious/noExplicitAny: heterogeneous strategy array; I/O types are opaque to the cycle
-  active: FixStrategy<F, any, any, any>[],
-  // biome-ignore lint/suspicious/noExplicitAny: see above
-): FixStrategy<F, any, any, any>[] {
-  const exclusive = active.find((s) => !s.coRun || s.coRun === "exclusive");
-  if (exclusive) return [exclusive];
-  return active.filter((s) => s.coRun === "co-run-sequential");
-}
-
-// ─── Attempt counting ────────────────────────────────────────────────────────
-
-function countStrategyAttempts<F extends Finding>(iterations: readonly Iteration<F>[], strategyName: string): number {
-  return iterations.reduce(
-    (sum, iter) => sum + iter.fixesApplied.filter((fa) => fa.strategyName === strategyName).length,
-    0,
-  );
-}
-
-function countTotalAttempts<F extends Finding>(iterations: readonly Iteration<F>[]): number {
-  return iterations.reduce((sum, iter) => sum + iter.fixesApplied.length, 0);
 }
 
 // ─── runFixCycle ─────────────────────────────────────────────────────────────
@@ -309,6 +275,11 @@ export async function runFixCycle<F extends Finding>(
       const fixCtx: FixCycleContext = {
         ...ctx,
         fixStrategy: { name: strategy.name, findingsBefore: findingsBefore.length },
+        // #1654: a strategy may run under its own session role, which gives it a
+        // session of its own rather than continuing the one the previous
+        // strategy used. `callOp` resolves `sessionOverride.role ?? op.session.role`,
+        // so this isolates the dispatch without the op having to be duplicated.
+        ...(strategy.sessionRole ? { sessionOverride: { role: strategy.sessionRole } } : {}),
       };
       const output = await doCallOp(fixCtx, strategy.fixOp, input);
       const extracted = await (strategy.extractApplied?.(output, input) ?? {});
@@ -377,6 +348,31 @@ export async function runFixCycle<F extends Finding>(
         // Every other exit accumulates the iteration's spend; this one used to
         // return before doing so, reporting costUsd: 0 for real spend (#1369).
         totalCostUsd += fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
+
+        // #1654: exiting here is right only when this group was the LAST claimant.
+        // Skipping validation stays right either way — nothing touched the tree —
+        // but when another strategy still claims these findings, has attempts
+        // left, and has not itself been retired, the answer to "nothing changed"
+        // is to dispatch that strategy, not to end the cycle. Without this, a
+        // story-scoped rectifier declining a failing test as out-of-scope
+        // deadlocks the story even though a repo-scoped strategy is registered
+        // and willing. `declines` already holds this group's give-ups, so the
+        // strategies that just declined cannot be re-selected and loop forever.
+        const historyAfter: readonly Iteration<F>[] = cycle.priorIterations
+          ? [...cycle.priorIterations, ...cycle.iterations]
+          : cycle.iterations;
+        const remains = hasRemainingClaimant(cycle.strategies, cycle.findings, declines, (s) =>
+          countStrategyAttempts(historyAfter, s.name),
+        );
+        if (remains) {
+          logger?.info("findings.cycle", "group gave up — falling through to a remaining claimant", {
+            ...logCtx,
+            strategyName: firstUnresolved.strategyName,
+            unresolvedDetail: firstUnresolved.unresolved,
+          });
+          continue;
+        }
+
         logger?.info("findings.cycle", "cycle exited — agent gave up", {
           ...logCtx,
           reason: "agent-gave-up",

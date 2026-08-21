@@ -91,7 +91,7 @@ export type {
   FullSuiteGateStatus,
   FullSuiteGateDeps,
 } from "./full-suite-gate";
-export { makeFullSuiteRectifyStrategy } from "./full-suite-rectify";
+export { makeFullSuiteRectifyStrategy, makeRegressionFixStrategy } from "./full-suite-rectify";
 export { fullSuiteRectifyOp } from "./full-suite-rectify-op";
 export type { FullSuiteRectifyInput, FullSuiteRectifyOutput } from "./full-suite-rectify-op";
 export { makeAutofixImplementerStrategy } from "./autofix-implementer-strategy";

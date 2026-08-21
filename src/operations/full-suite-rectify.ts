@@ -106,3 +106,59 @@ export function makeFullSuiteRectifyStrategy(
     coRun: "exclusive",
   };
 }
+
+/**
+ * Factory for the repo-scoped regression-fix strategy (#1654).
+ *
+ * Registered alongside `makeFullSuiteRectifyStrategy` as the fallthrough
+ * claimant for failing tests it declined. Both claim the same findings, but
+ * retirement and attempt caps are keyed on the strategy NAME, so the
+ * story-scoped give-up retires only that strategy and `runFixCycle` dispatches
+ * this one instead of exiting `agent-gave-up`.
+ *
+ * Three deliberate differences from the story-scoped strategy:
+ *   - `buildInput` sets `scope: "repo"`, which swaps the mandate for one that
+ *     permits editing files outside the story (the test-integrity rules and the
+ *     declaration protocol are unchanged — see `repoScopedRectification`).
+ *   - `sessionRole: "regression-fix"` gives the dispatch a session of its own.
+ *     Session resume is keyed on the role, so this does not continue the
+ *     implementer conversation that just answered UNRESOLVED — the agent is not
+ *     asked to reverse a refusal still sitting in its own context, and the
+ *     story-scoped framing that is now wrong does not carry over.
+ *   - `maxAttempts: 1`. This is the last claimant, not another escalation rung:
+ *     if it also gives up, the cycle exits `agent-gave-up` as before.
+ *
+ * Declarations go to the same `sink` as the story-scoped strategy — a test edit
+ * made here is subject to the same downstream handling as any other.
+ */
+export function makeRegressionFixStrategy(
+  story: UserStory,
+  sink: DeclarationSink,
+): FixStrategy<Finding, FullSuiteRectifyInput, FullSuiteRectifyOutput, AutofixConfig> {
+  return {
+    name: "regression-fix",
+    appliesTo: (finding: Finding): boolean =>
+      finding.source === "test-runner" &&
+      (finding.category === "failed-test" || finding.category === "execution-failed"),
+    fixOp: fullSuiteRectifyOp,
+    sessionRole: "regression-fix",
+    buildInput: (findings) => ({ story, findings, scope: "repo" as const }),
+    extractApplied: (output: FullSuiteRectifyOutput) => {
+      for (const d of output.testEditDeclarations) {
+        if (d.reason !== "mock_structure") sink.testEdits.push(d);
+      }
+      // No mock-structure handoff is offered at repo scope (the story's
+      // test-writer does not own tests outside the story), so unlike the
+      // story-scoped strategy there is no declaration that can suppress the
+      // give-up: UNRESOLVED here means the cycle is genuinely done.
+      const unresolved = output.unresolvedReason;
+      return {
+        targetFiles: [],
+        summary: unresolved ?? "Fixed failing tests (repo scope)",
+        ...(unresolved ? { unresolved } : {}),
+      };
+    },
+    maxAttempts: 1,
+    coRun: "exclusive",
+  };
+}
