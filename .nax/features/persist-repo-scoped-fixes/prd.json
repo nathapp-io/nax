@@ -3,7 +3,7 @@
   "feature": "persist-repo-scoped-fixes",
   "branchName": "feat/persist-repo-scoped-fixes",
   "createdAt": "2026-08-21T00:00:00.000Z",
-  "updatedAt": "2026-08-21T05:10:23.264Z",
+  "updatedAt": "2026-08-21T05:18:30.735Z",
   "userStories": [
     {
       "id": "US-001",
@@ -24,8 +24,8 @@
         "types"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -95,7 +95,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/story-orchestrator/repo-scoped-fix-record.ts",
@@ -115,6 +117,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "0fc5de3fd659696cf98f1cb212d59bd3b6cdca6b",
       "outOfScope": [
         "Cross-process or cross-worker synchronisation of the write — each story object is mutated by exactly one worker, so no locking is specified.",
         "Narrowing the crash window between the write and the next `savePRD` — no new save point is added."
