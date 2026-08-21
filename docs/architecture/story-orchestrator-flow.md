@@ -279,6 +279,16 @@ over a safe default.
   out-of-scope to the repo-scoped `repo-scoped-test-fix`, rather than deadlocking the
   story on a test it was forbidden to touch. Gated by
   `execution.rectification.repoScopedFallback` (default `true`).
+- **Repo-scoped repair visibility (#1658)**: a `repo-scoped-test-fix` dispatch edits
+  outside story scope by design, and its edits land in **that story's commit**. Each
+  dispatch is recorded on `StoryOrchestratorResult.repoScopedFixes` and logged at `warn`
+  (`"Story commit carries a repo-scoped repair"`) with the failing tests that triggered
+  it, the files it changed, and why the story-scoped rectifier declined. `filesChanged`
+  comes from git (ref captured immediately before the dispatch), not from the agent's
+  self-report. Note `findingsCleared` is **not** a claim that the dispatch fixed
+  anything: the verifier-SSOT carve-out empties the findings too. An empty
+  `filesChanged` on a story that passed means the session was spent, nothing was
+  repaired, and the carve-out carried the story.
 - **`agent-gave-up`** fires when a fix-op emits the `UNRESOLVED:` sentinel (the implementer
   signalling a contradiction it cannot resolve — e.g. `full-suite-rectify` and
   `autofix-implementer` both parse it). The sentinel's reason text is carried as

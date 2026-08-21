@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
   makeFullSuiteRectifyStrategy,
   makeRepoScopedTestFixStrategy,
+  _repoScopedFixDeps,
   fullSuiteRectifyOp,
   makeDeclarationSink,
 } from "@/operations";
@@ -343,5 +344,87 @@ describe("makeRepoScopedTestFixStrategy", () => {
     const output = { applied: true, testEditDeclarations: [] } as FullSuiteRectifyOutput;
     const applied = await strategy().extractApplied?.(output, {} as never);
     expect(applied?.unresolved).toBeUndefined();
+  });
+});
+
+// ─── repo-scoped dispatch records what it changed (#1658) ────────────────────
+//
+// The dispatch's edits land in the STORY's commit, so a story can ship a repair
+// to something it did not break. `targetFiles` is what makes that visible, and
+// it comes from git rather than the agent's own report: the op's output is
+// free-form prose with declaration markers, not a `filesChanged` envelope, and
+// a self-report is exactly the thing that goes stale when the agent is wrong.
+
+describe("makeRepoScopedTestFixStrategy — change attribution", () => {
+  const origDeps = { ..._repoScopedFixDeps };
+  afterEach(() => Object.assign(_repoScopedFixDeps, origDeps));
+
+  const output = { applied: true, testEditDeclarations: [] } as FullSuiteRectifyOutput;
+  // biome-ignore lint/suspicious/noExplicitAny: only packageDir is read by buildInput
+  const ctx = { packageDir: "/repo" } as any;
+
+  test("reports the files changed since the ref captured before the dispatch", async () => {
+    _repoScopedFixDeps.captureGitRef = async () => "abc123";
+    _repoScopedFixDeps.captureWorkingTreeChanges = async (_workdir, baseRef) =>
+      baseRef === "abc123" ? ["src/legacy/auth.ts", "test/legacy/auth.spec.ts"] : [];
+
+    const strategy = makeRepoScopedTestFixStrategy(makeTestStory(), makeDeclarationSink());
+    strategy.buildInput([makeTestFinding()], [], ctx);
+    const applied = await strategy.extractApplied?.(output, {} as never);
+    expect(applied?.targetFiles).toEqual(["src/legacy/auth.ts", "test/legacy/auth.spec.ts"]);
+  });
+
+  test("diffs against the package the dispatch actually ran in", async () => {
+    let seenWorkdir: string | undefined;
+    _repoScopedFixDeps.captureGitRef = async () => "abc123";
+    _repoScopedFixDeps.captureWorkingTreeChanges = async (workdir) => {
+      seenWorkdir = workdir;
+      return [];
+    };
+
+    const strategy = makeRepoScopedTestFixStrategy(makeTestStory(), makeDeclarationSink());
+    strategy.buildInput([makeTestFinding()], [], ctx);
+    await strategy.extractApplied?.(output, {} as never);
+    expect(seenWorkdir).toBe("/repo");
+  });
+
+  test("degrades to an empty list when the ref cannot be read", async () => {
+    // Attribution is a reporting concern — it must never fail the dispatch that
+    // produced it. A detached or absent repo yields no ref and no record.
+    _repoScopedFixDeps.captureGitRef = async () => undefined;
+    _repoScopedFixDeps.captureWorkingTreeChanges = async () => {
+      throw new Error("should not be called without a ref");
+    };
+
+    const strategy = makeRepoScopedTestFixStrategy(makeTestStory(), makeDeclarationSink());
+    strategy.buildInput([makeTestFinding()], [], ctx);
+    const applied = await strategy.extractApplied?.(output, {} as never);
+    expect(applied?.targetFiles).toEqual([]);
+  });
+
+  test("degrades to an empty list when the diff itself throws", async () => {
+    _repoScopedFixDeps.captureGitRef = async () => "abc123";
+    _repoScopedFixDeps.captureWorkingTreeChanges = async () => {
+      throw new Error("git exploded");
+    };
+
+    const strategy = makeRepoScopedTestFixStrategy(makeTestStory(), makeDeclarationSink());
+    strategy.buildInput([makeTestFinding()], [], ctx);
+    const applied = await strategy.extractApplied?.(output, {} as never);
+    expect(applied?.targetFiles).toEqual([]);
+  });
+
+  test("still reports UNRESOLVED alongside the attribution", async () => {
+    _repoScopedFixDeps.captureGitRef = async () => "abc123";
+    _repoScopedFixDeps.captureWorkingTreeChanges = async () => ["src/a.ts"];
+
+    const strategy = makeRepoScopedTestFixStrategy(makeTestStory(), makeDeclarationSink());
+    strategy.buildInput([makeTestFinding()], [], ctx);
+    const applied = await strategy.extractApplied?.(
+      { applied: true, testEditDeclarations: [], unresolvedReason: "cannot fix" } as FullSuiteRectifyOutput,
+      {} as never,
+    );
+    expect(applied?.unresolved).toBe("cannot fix");
+    expect(applied?.targetFiles).toEqual(["src/a.ts"]);
   });
 });

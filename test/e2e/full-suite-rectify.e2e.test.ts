@@ -153,6 +153,59 @@ describe("E2E: repo-scoped test fix (#1654)", () => {
     // `agent-gave-up` at the refusal and this role was never opened.
     expect(repoScopedDispatched).toBe(true);
     expect(result.success).toBe(true);
+
+    // #1658 — the dispatch is recorded on the story result, so a reviewer meeting
+    // an unrelated file in this story's commit can see what caused it.
+    expect(result.repoScopedFixes).toHaveLength(1);
+    expect(result.repoScopedFixes?.[0]?.triggeringTests).toEqual([
+      "test/legacy/auth.spec.ts::redirects to login",
+    ]);
+    expect(result.repoScopedFixes?.[0]?.declinedReason).toBe(
+      "test/legacy/auth.spec.ts is outside this story's scope",
+    );
+    expect(result.repoScopedFixes?.[0]?.findingsCleared).toBe(true);
+  });
+
+  test("records a dispatch that fixed nothing while the story passed anyway (#1658)", async () => {
+    // The case the issue calls out as most worth seeing. The fallthrough fires,
+    // spends a session, does not fix the test — and the story still PASSES,
+    // because the verifier explicitly passed and the verifier-SSOT carve-out
+    // (`shouldSkipPhaseForRectification`) stops a gate failure the story did not
+    // cause from failing it. Without the record, this run is indistinguishable
+    // from one where the fallthrough never ran at all.
+    let repoScopedDispatched = false;
+    const { result } = await runOrchestratorE2E({
+      strategy: "three-session-tdd",
+      agent: {
+        "test-writer": tw,
+        implementer: decliningImplementer,
+        verifier,
+        "repo-scoped-test-fix": () => {
+          repoScopedDispatched = true;
+          return { output: "Looked at it; the failure is environmental." };
+        },
+        "reviewer-semantic": PASS_REVIEW,
+        "reviewer-adversarial": PASS_REVIEW,
+      },
+      // Never goes green — the repo-scoped dispatch changed nothing.
+      gates: {
+        fullSuite: () => ({
+          passed: false,
+          failed: 1,
+          output: "legacy auth spec red",
+          failures: [{ testName: "redirects to login", file: "test/legacy/auth.spec.ts", error: "Invalid URL" }],
+        }),
+      },
+    });
+
+    expect(repoScopedDispatched).toBe(true);
+    expect(result.success).toBe(true);
+    expect(result.repoScopedFixes).toHaveLength(1);
+    // `findingsCleared` is true here and says nothing useful: the carve-out
+    // emptied the findings, not a repair. `filesChanged` is what discriminates —
+    // the dispatch touched nothing, so a passing story means the carve-out
+    // carried it. That combination is precisely what was invisible before.
+    expect(result.repoScopedFixes?.[0]?.filesChanged).toEqual([]);
   });
 
   test("repoScopedFallback: false restores the deadlock", async () => {
@@ -186,5 +239,7 @@ describe("E2E: repo-scoped test fix (#1654)", () => {
     expect(repoScopedDispatched).toBe(false);
     expect(result.success).toBe(false);
     expect(result.rectificationExhausted).toBe(true);
+    // Nothing to report when the fallthrough never fired (#1658).
+    expect(result.repoScopedFixes).toBeUndefined();
   });
 });

@@ -7,6 +7,7 @@ import { triageNbfGate } from "./nbf-flake-triage";
 import { withNoProgressBail } from "./no-progress-bail";
 import { extractPhaseFindings, orderGateLast, phasesToRevalidate } from "./phase-eval";
 import { isQuarantinedFlake, phaseExplicitlyPassed, phasePassed, selectRegressedGateFindings } from "./phase-eval";
+import { deriveRepoScopedFixes } from "./repo-scoped-fix-record";
 import { _storyOrchestratorDeps, runPhase, withIncreasingFailuresBail } from "./run-phase";
 import type { AnySlot, InternalBuildState, InternalPhase, RectificationOverrides, RectificationResult } from "./types";
 import { EXHAUSTED_EXIT_REASONS } from "./types";
@@ -527,8 +528,31 @@ export async function runRectification(
     });
   }
 
+  // #1658 — the repo-scoped strategy edits outside story scope by design, and its
+  // edits land in THIS story's commit. Record and announce that, or a reviewer
+  // meeting an unrelated file in the diff has nothing to explain it. Attached to
+  // every exit below, since the dispatch happened regardless of how the cycle ended.
+  const repoScopedFixes = deriveRepoScopedFixes(cycleResult.iterations);
+  if (repoScopedFixes.length > 0) {
+    for (const fix of repoScopedFixes) {
+      // warn, not info: a story carrying a repair it did not cause is worth a
+      // reader stopping on, and an empty `filesChanged` is the sharper case —
+      // the fallthrough spent a session, touched nothing, and the story may still
+      // pass via the verifier-SSOT carve-out.
+      rectLogger?.warn("story-orchestrator", "Story commit carries a repo-scoped repair", {
+        storyId: ctx.storyId,
+        triggeringTests: fix.triggeringTests,
+        filesChanged: fix.filesChanged,
+        findingsCleared: fix.findingsCleared,
+        ...(fix.declinedReason ? { declinedReason: fix.declinedReason } : {}),
+      });
+    }
+  }
+  const repoScoped = repoScopedFixes.length > 0 ? { repoScopedFixes } : {};
+
   if (EXHAUSTED_EXIT_REASONS.has(cycleResult.exitReason) && cycleResult.finalFindings.length > 0) {
     return {
+      ...repoScoped,
       rectificationExhausted: true,
       unfixedFindings: cycleResult.finalFindings,
       ...(cycleResult.unresolvedDetail ? { unresolvedDetail: cycleResult.unresolvedDetail } : {}),
@@ -536,8 +560,8 @@ export async function runRectification(
   }
   if (cycleResult.exitReason === "validate-short-circuit") {
     // Empty findings — surface the lite-scope-backfill flag so resume can still run.
-    return { liteScopeIncomplete: true };
+    return { ...repoScoped, liteScopeIncomplete: true };
   }
 
-  return {};
+  return repoScoped;
 }

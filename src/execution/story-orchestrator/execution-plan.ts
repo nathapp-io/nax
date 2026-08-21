@@ -491,6 +491,18 @@ export class ExecutionPlan {
       failedPhases: failedPhases.length > 0 ? failedPhases : undefined,
     };
     if (rectResult.rectificationExhausted) summary.rectificationExhausted = true;
+    if (rectResult.repoScopedFixes?.length) {
+      // #1658 — surfaced on the story summary, not only in the rectification log,
+      // because the fact that matters is a property of the finished story: its
+      // commit carries files the story did not set out to change. An empty
+      // `filesChanged` next to `success: true` is the sharpest case — a session
+      // was spent, nothing was repaired, and the story passed on the carve-out.
+      summary.repoScopedFixes = rectResult.repoScopedFixes.map((fix) => ({
+        triggeringTests: fix.triggeringTests,
+        filesChanged: fix.filesChanged,
+        findingsCleared: fix.findingsCleared,
+      }));
+    }
     if (rectResult.unfixedFindings) summary.unfixedFindingsCount = rectResult.unfixedFindings.length;
     if (missingRequiredReviewPhases.length > 0) summary.missingRequiredReviewPhases = missingRequiredReviewPhases;
     if (success) {

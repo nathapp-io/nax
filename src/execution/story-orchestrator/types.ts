@@ -2,6 +2,7 @@ import type { NonBlockingFixConfig } from "@/config/selectors";
 import type { Finding, FixCycleContext, FixStrategy } from "@/findings";
 import type { DeterministicOperation, RunOperation } from "@/operations";
 import type { NbfFlakeTriageTransaction } from "./nbf-flake-triage";
+import type { RepoScopedFixRecord } from "./repo-scoped-fix-record";
 
 export const EXHAUSTED_EXIT_REASONS = new Set<string>([
   "max-attempts-total",
@@ -67,6 +68,13 @@ export interface StoryOrchestratorResult {
   /** When rectification exited via agent-gave-up, the implementer's UNRESOLVED: reason text.
    *  Surfaced into the escalation reason so the next tier's priorErrors carries the diagnosis. */
   readonly unresolvedDetail?: string;
+  /**
+   * One entry per repo-scoped fix dispatch (#1658). Non-empty means this story's
+   * commit may carry a repair to something the story did not break — the
+   * repo-scoped strategy edits outside story scope by design. Undefined when the
+   * fallthrough never fired, which is the overwhelmingly common case.
+   */
+  readonly repoScopedFixes?: readonly RepoScopedFixRecord[];
 }
 
 export type PhaseKind =
@@ -285,6 +293,8 @@ export interface RectificationResult {
   liteScopeIncomplete?: boolean;
   /** Populated when exitReason is "agent-gave-up" — the implementer's UNRESOLVED: reason text. */
   unresolvedDetail?: string;
+  /** One entry per repo-scoped fix dispatch (#1658). Omitted when none fired. */
+  repoScopedFixes?: readonly RepoScopedFixRecord[];
 }
 
 export const STRICT_VERDICT_PHASE_NAMES = new Set<string>([
