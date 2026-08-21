@@ -8,11 +8,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { loadPRD, resetFailedStoriesToPending, savePRD } from "@/prd";
 import type { PRD, PersistedRepoScopedFix, UserStory } from "@/prd/types";
-import { makePRD, makeStory, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -41,7 +40,7 @@ describe("PersistedRepoScopedFix — savePRD / loadPRD round-trip (AC1)", () => 
   });
 
   afterEach(() => {
-    rmSync(testDir, { recursive: true, force: true });
+    cleanupTempDir(testDir);
   });
 
   test("savePRD then loadPRD preserves a single PersistedRepoScopedFix deep-equals", async () => {
@@ -87,7 +86,7 @@ describe("PersistedRepoScopedFix — loadPRD absent-field behavior (AC2)", () =>
   });
 
   afterEach(() => {
-    rmSync(testDir, { recursive: true, force: true });
+    cleanupTempDir(testDir);
   });
 
   test("loadPRD leaves repoScopedFixes undefined when omitted from disk", async () => {
