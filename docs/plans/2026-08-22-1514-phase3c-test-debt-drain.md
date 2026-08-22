@@ -3,6 +3,11 @@
 > Drafted 2026-08-22. Target: `check:test-typecheck` and `check:test-as-unknown-as`
 > baselines to **0**, then wire `tsconfig.test.json` into `bun run typecheck`.
 >
+> **Delegating the sweep?** Hand over
+> [`HANDOFF-1514-cast-sweep.md`](./HANDOFF-1514-cast-sweep.md), not this file. It is
+> self-contained: the loop, the traps, the work queue, and the forbidden list, with no
+> history to filter. This document is the record of how the decisions were reached.
+>
 > **Phase 0 is done** (commits `e8a55d6dc`, `4038a447d`, `20c059774`, `d95e605a0` on
 > `chore/1514-test-debt-drain`). Phases 1–3 are the mechanical handover. Sections
 > below are as-built; the §1 counts are the live post-phase-0 numbers.
