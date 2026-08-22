@@ -2,15 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _runCompletionDeps, handleRunCompletion } from "@/execution/lifecycle/run-completion";
 import type { ISessionManager } from "@/session";
-import { makeMockRuntime } from "@test/helpers";
-
-const makeStatusWriter = () => ({
-  setPrd: mock(() => {}),
-  setCurrentStory: mock(() => {}),
-  setRunStatus: mock(() => {}),
-  setPostRunPhase: mock(() => {}),
-  update: mock(async () => {}),
-});
+import { makeMockRuntime, makeStatusWriter } from "@test/helpers";
 
 const makePrd = () => ({
   project: "test-project",

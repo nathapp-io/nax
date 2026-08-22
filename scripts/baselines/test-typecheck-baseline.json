@@ -1,6 +1,6 @@
 {
-  "count": 1984,
-  "updatedAt": "2026-08-22T13:55:02.322Z",
+  "count": 1969,
+  "updatedAt": "2026-08-22T14:04:58.389Z",
   "byFile": {
     "test/helpers/deps.ts": 2,
     "test/helpers/fake-agent-manager.ts": 3,
@@ -140,7 +140,7 @@
     "test/unit/execution/lifecycle-completion.test.ts": 6,
     "test/unit/execution/lifecycle/acceptance-fix.test.ts": 7,
     "test/unit/execution/lifecycle/acceptance-loop-routing.test.ts": 2,
-    "test/unit/execution/lifecycle/acceptance-loop-skipped-packages.test.ts": 3,
+    "test/unit/execution/lifecycle/acceptance-loop-skipped-packages.test.ts": 2,
     "test/unit/execution/lifecycle/acceptance-loop.test.ts": 4,
     "test/unit/execution/lifecycle/backfill-story-metrics.test.ts": 1,
     "test/unit/execution/lifecycle/mutation-summary-completion.test.ts": 2,
@@ -148,7 +148,7 @@
     "test/unit/execution/lifecycle/run-completion-aggregator.test.ts": 3,
     "test/unit/execution/lifecycle/run-completion-backfill.test.ts": 1,
     "test/unit/execution/lifecycle/run-completion-fallback.test.ts": 1,
-    "test/unit/execution/lifecycle/run-completion-postrun.test.ts": 20,
+    "test/unit/execution/lifecycle/run-completion-postrun.test.ts": 6,
     "test/unit/execution/lifecycle/run-completion-session-close.test.ts": 2,
     "test/unit/execution/lifecycle/run-regression-attribution.test.ts": 6,
     "test/unit/execution/lifecycle/run-regression-flake-triage.test.ts": 10,

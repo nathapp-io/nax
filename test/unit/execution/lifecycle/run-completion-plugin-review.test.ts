@@ -11,7 +11,7 @@ import { type RunCompletionOptions, _runCompletionDeps, handleRunCompletion } fr
 import type { DeferredReviewResult } from "@/execution/deferred-review";
 import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
 import { pipelineEventBus } from "@/pipeline/event-bus";
-import { makeMockRuntime, makeNaxConfig, makePRD } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig, makePRD, makeStatusWriter } from "@test/helpers";
 
 const origDeps = { ..._runCompletionDeps };
 
@@ -20,19 +20,6 @@ afterEach(() => {
   pipelineEventBus.clear();
   mock.restore();
 });
-
-function makeStatusWriter() {
-  const setRunStatus = mock(() => {});
-  return {
-    setRunStatus,
-    setPostRunPhase: mock(() => {}),
-    getPostRunStatus: () => ({}),
-    writeFeatureStatus: mock(async () => {}),
-    setPrd: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    update: mock(async () => {}),
-  };
-}
 
 function makePluginModeConfig(pluginMode: "observational" | "gating"): NaxConfig {
   return makeNaxConfig({
@@ -68,7 +55,7 @@ function makeOpts(
     iterations: 1,
     startTime: Date.now(),
     workdir: "/tmp/x",
-    statusWriter: statusWriter as unknown as RunCompletionOptions["statusWriter"],
+    statusWriter: statusWriter,
     config: makePluginModeConfig(pluginMode),
     deferredReview,
     runtime: makeMockRuntime(),

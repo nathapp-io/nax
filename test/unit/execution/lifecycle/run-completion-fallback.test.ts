@@ -20,7 +20,7 @@ import type { AgentFallbackHop, StoryMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { RunCompletedEvent } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
-import { makeMockRuntime } from "@test/helpers";
+import { makeMockRuntime, makeStatusWriter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -49,17 +49,6 @@ function makePRD(stories: Array<{ id: string; status: UserStory["status"] }>): P
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     userStories: stories.map(({ id, status }) => makeStory(id, status)),
-  };
-}
-
-function makeStatusWriter() {
-  return {
-    setPrd: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    setRunStatus: mock(() => {}),
-    setPostRunPhase: mock((_phase: string, _update: Record<string, unknown>) => {}),
-    update: mock(async () => {}),
-    writeFeatureStatus: mock(async () => {}),
   };
 }
 
@@ -102,7 +91,7 @@ function makeOpts(prd: PRD, allStoryMetrics: StoryMetrics[]): RunCompletionOptio
     iterations: 1,
     startTime: Date.now() - 1000,
     workdir: WORKDIR,
-    statusWriter: makeStatusWriter() as unknown as RunCompletionOptions["statusWriter"],
+    statusWriter: makeStatusWriter(),
     config,
     isSequential: true,
     runtime: makeMockRuntime(),

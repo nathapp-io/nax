@@ -19,7 +19,7 @@ import type { LoadedHooksConfig } from "@/hooks";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import { PluginRegistry } from "@/plugins";
 import type { PRD, UserStory } from "@/prd";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { makeNaxConfig, makeStatusWriter, makeTestRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -61,17 +61,6 @@ function makeConfig(acceptanceEnabled = true): NaxConfig {
       regressionGate: { mode: "disabled" },
     },
   });
-}
-
-function makeStatusWriter() {
-  return {
-    setPrd: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    setRunStatus: mock(() => {}),
-    setPostRunPhase: mock((_phase: string, _update: Record<string, unknown>) => {}),
-    update: mock(async () => {}),
-    writeFeatureStatus: mock(async () => {}),
-  };
 }
 
 const WORKDIR = `/tmp/nax-test-runner-completion-finish-${randomUUID()}`;

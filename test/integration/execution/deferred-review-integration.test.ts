@@ -22,7 +22,7 @@ import { executeUnified } from "@/execution/unified-executor";
 import type { PluginRegistry } from "@/plugins";
 import type { IReviewPlugin } from "@/plugins/extensions";
 import type { PRD } from "@/prd/types";
-import { makeTempDir } from "@test/helpers";
+import { makeStatusWriter, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -71,16 +71,6 @@ function makeRegistry(reviewers: IReviewPlugin[]): PluginRegistry {
     getContextProviders: mock(() => []),
     plugins: [],
   } as unknown as PluginRegistry;
-}
-
-function makeStatusWriter() {
-  return {
-    setPrd: mock(() => {}),
-    setRunStatus: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    update: mock(async () => {}),
-    writeFeatureStatus: mock(async () => {}),
-  };
 }
 
 function makeConfig(pluginMode?: "per-story" | "deferred"): NaxConfig {

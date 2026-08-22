@@ -22,7 +22,7 @@ import {
 import type { StoryMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
-import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -75,17 +75,6 @@ function makeConfig(
   });
 }
 
-function makeStatusWriter() {
-  return {
-    setPrd: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    setRunStatus: mock(() => {}),
-    setPostRunPhase: mock((_phase: string, _update: Record<string, unknown>) => {}),
-    update: mock(async () => {}),
-    writeFeatureStatus: mock(async () => {}),
-  };
-}
-
 function makeStoryMetrics(storyId: string, fullSuiteGatePassed: boolean | undefined): StoryMetrics {
   return {
     storyId,
@@ -123,7 +112,7 @@ function makeOpts(
     iterations: 1,
     startTime: Date.now() - 1000,
     workdir: WORKDIR,
-    statusWriter: (statusWriter ?? makeStatusWriter()) as unknown as RunCompletionOptions["statusWriter"],
+    statusWriter: statusWriter ?? makeStatusWriter(),
     config,
     runtime: makeMockRuntime(),
     ...rest,

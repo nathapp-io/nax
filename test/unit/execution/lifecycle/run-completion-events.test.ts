@@ -16,7 +16,14 @@ import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regress
 import { pipelineEventBus } from "@/pipeline";
 import type { PostRunPhaseCompletedEvent, PostRunPhaseStartedEvent } from "@/pipeline";
 import type { PRD, UserStory } from "@/prd";
-import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
+import {
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeNaxConfig,
+  makeSessionManager,
+  makeStatusWriter,
+  makeStory,
+} from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -50,17 +57,6 @@ function regressionConfig(regressionMode: "deferred" | "per-story" | "disabled" 
   });
 }
 
-function makeStatusWriter() {
-  return {
-    setPrd: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    setRunStatus: mock(() => {}),
-    setPostRunPhase: mock((_phase: string, _update: Record<string, unknown>) => {}),
-    update: mock(async () => {}),
-    writeFeatureStatus: mock(async () => {}),
-  };
-}
-
 const WORKDIR = `/tmp/nax-test-run-completion-events-${randomUUID()}`;
 
 function makeOpts(config: NaxConfig, prd: PRD, overrides?: Partial<RunCompletionOptions>): RunCompletionOptions {
@@ -75,7 +71,7 @@ function makeOpts(config: NaxConfig, prd: PRD, overrides?: Partial<RunCompletion
     iterations: 1,
     startTime: Date.now() - 50,
     workdir: WORKDIR,
-    statusWriter: makeStatusWriter() as unknown as RunCompletionOptions["statusWriter"],
+    statusWriter: makeStatusWriter(),
     config,
     runtime: makeMockRuntime(),
     agentManager: makeMockAgentManager(),

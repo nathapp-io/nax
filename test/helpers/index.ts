@@ -29,6 +29,7 @@ export {
   mockDiffUtilsDeps,
 } from "./review-audit";
 export { makeSpawn, makeSpawnResult } from "./spawn";
+export { makeStatusWriter, type MockStatusWriter } from "./status-writer";
 export type { FakeProcSpec, SpawnCall, SpawnResult, SpawnStub } from "./spawn";
 export { withDepsRestore } from "./deps";
 export { withExecutionDeps, type ExecutionDepsOverrides } from "./execution-deps-stub";

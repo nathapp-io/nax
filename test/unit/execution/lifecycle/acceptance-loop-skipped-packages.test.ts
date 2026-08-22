@@ -34,6 +34,7 @@ import {
   makeMockAgentManager,
   makeMockRuntime,
   makeNaxConfig,
+  makeStatusWriter,
   makeStory,
   makeTempDir,
 } from "@test/helpers";
@@ -79,7 +80,7 @@ function makeAcceptanceCtx(): AcceptanceLoopContext {
     storiesCompleted: 1,
     allStoryMetrics: [],
     pluginRegistry: { getAll: () => [], get: () => undefined } as unknown as AcceptanceLoopContext["pluginRegistry"],
-    statusWriter: { setPostRunPhase: () => {} } as AcceptanceLoopContext["statusWriter"],
+    statusWriter: makeStatusWriter(),
     agentManager: makeMockAgentManager(),
     sessionManager: runtime.sessionManager,
     runtime,
@@ -130,26 +131,13 @@ function makePostRunStatus(
   };
 }
 
-function makeStatusWriter(postRunStatus: PostRunStatus = makePostRunStatus("not-run", "not-run")) {
-  return {
-    setPrd: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    setRunStatus: mock(() => {}),
-    setPostRunPhase: mock((_phase: string, _update: Record<string, unknown>) => {}),
-    update: mock(async () => {}),
-    writeFeatureStatus: mock(async () => {}),
-    getPostRunStatus: mock(() => postRunStatus),
-    resetPostRunStatus: mock(() => {}),
-  };
+function makeWriter(postRunStatus: PostRunStatus = makePostRunStatus("not-run", "not-run")) {
+  return makeStatusWriter({ getPostRunStatus: mock(() => postRunStatus) });
 }
 
 const WORKDIR = `/tmp/nax-us-004-${randomUUID()}`;
 
-function makeOpts(
-  config: NaxConfig,
-  prd: PRD,
-  statusWriter: ReturnType<typeof makeStatusWriter>,
-): RunnerCompletionOptions {
+function makeOpts(config: NaxConfig, prd: PRD, statusWriter: StatusWriter): RunnerCompletionOptions {
   return {
     config,
     hooks: { hooks: {}, _skipGlobal: false } as unknown as LoadedHooksConfig,
@@ -167,7 +155,7 @@ function makeOpts(
     totalCost: 0,
     storiesCompleted: 1,
     iterations: 1,
-    statusWriter: statusWriter as unknown as RunnerCompletionOptions["statusWriter"],
+    statusWriter: statusWriter,
     pluginRegistry: { getAll: () => [], get: () => undefined } as unknown as RunnerCompletionOptions["pluginRegistry"],
     prdPath: `${WORKDIR}/prd.json`,
     runtime: {
@@ -305,7 +293,7 @@ describe("US-004 AC-1: runAcceptanceLoop propagates skippedPackages on missing-t
 
 describe("US-004 AC-2: completion phase reports status=failed and skippedPackages on a missing-package failure", () => {
   test("setPostRunPhase('acceptance', ...) receives status='failed' and skippedPackages=['pkg-a']", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("not-run", "not-run"));
+    const statusWriter = makeWriter(makePostRunStatus("not-run", "not-run"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeTestConfig();
 
@@ -335,7 +323,7 @@ describe("US-004 AC-2: completion phase reports status=failed and skippedPackage
 
 describe("US-004 AC-3: missing-target acceptance failure is never reported as 'passed'", () => {
   test("setPostRunPhase is never called with status='passed' when acceptance fails with missing packages", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("not-run", "not-run"));
+    const statusWriter = makeWriter(makePostRunStatus("not-run", "not-run"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeTestConfig();
 
@@ -364,7 +352,7 @@ describe("US-004 AC-3: missing-target acceptance failure is never reported as 'p
 
 describe("US-004 AC-4: passing acceptance has status='passed' and no skippedPackages", () => {
   test("setPostRunPhase receives status='passed' and skippedPackages is empty/undefined on full pass", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("not-run", "not-run"));
+    const statusWriter = makeWriter(makePostRunStatus("not-run", "not-run"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeTestConfig();
 
@@ -429,9 +417,7 @@ describe("US-004 AC-4: passing acceptance has status='passed' and no skippedPack
         }),
       ) as typeof _runnerCompletionDeps.runAcceptanceLoop;
 
-      await runCompletionPhase(
-        makeOpts(config, prd, realStatusWriter as unknown as RunnerCompletionOptions["statusWriter"]),
-      );
+      await runCompletionPhase(makeOpts(config, prd, realStatusWriter));
 
       const final = realStatusWriter.getPostRunStatus();
       expect(final.acceptance.status).toBe("passed");
@@ -446,7 +432,7 @@ describe("US-004 AC-4: passing acceptance has status='passed' and no skippedPack
 
 describe("US-004 AC-5: a failed status with non-empty skippedPackages re-runs the acceptance loop", () => {
   test("calls runAcceptanceLoop and forwards skippedPackages when resumed with status=failed and skippedPackages=['pkg-a']", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("failed", "not-run", ["pkg-a"]));
+    const statusWriter = makeWriter(makePostRunStatus("failed", "not-run", ["pkg-a"]));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeTestConfig();
 

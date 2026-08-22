@@ -18,7 +18,7 @@ import { type RunnerCompletionOptions, _runnerCompletionDeps, runCompletionPhase
 import type { LoadedHooksConfig } from "@/hooks";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
-import { makeNaxConfig } from "@test/helpers";
+import { makeNaxConfig, makeStatusWriter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -62,17 +62,6 @@ function makeConfig(acceptanceEnabled = true): NaxConfig {
   });
 }
 
-function makeStatusWriter() {
-  return {
-    setPrd: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    setRunStatus: mock(() => {}),
-    setPostRunPhase: mock((_phase: string, _update: Record<string, unknown>) => {}),
-    update: mock(async () => {}),
-    writeFeatureStatus: mock(async () => {}),
-  };
-}
-
 const WORKDIR = `/tmp/nax-test-runner-completion-postrun-${randomUUID()}`;
 
 function makeOpts(
@@ -97,7 +86,7 @@ function makeOpts(
     totalCost: 0,
     storiesCompleted: 1,
     iterations: 1,
-    statusWriter: statusWriter as unknown as RunnerCompletionOptions["statusWriter"],
+    statusWriter: statusWriter,
     pluginRegistry: { getAll: () => [], get: () => undefined } as unknown as RunnerCompletionOptions["pluginRegistry"],
     prdPath: `${WORKDIR}/prd.json`,
   };

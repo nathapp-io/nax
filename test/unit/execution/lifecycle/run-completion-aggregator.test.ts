@@ -24,7 +24,7 @@ import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { RunCompletedEvent } from "@/pipeline/event-bus";
 import type { PRD } from "@/prd";
 import type { CostSnapshot, ICostAggregator } from "@/runtime/cost-aggregator";
-import { makeMockRuntime, makeNaxConfig, makePRD as makePRDHelper, makeStory } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig, makePRD as makePRDHelper, makeStatusWriter, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -66,16 +66,6 @@ function makeMockAggregator(overrides: Partial<ICostAggregator> = {}): ICostAggr
   };
 }
 
-function makeStatusWriter() {
-  return {
-    setPrd: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    setRunStatus: mock(() => {}),
-    setPostRunPhase: mock(() => {}),
-    update: mock(async () => {}),
-  };
-}
-
 const DISABLED_REGRESSION_CONFIG: NaxConfig = makeNaxConfig({
   execution: {
     regressionGate: { enabled: false, mode: "disabled" },
@@ -99,7 +89,7 @@ function makeOpts(prd: PRD, metrics: StoryMetrics[], aggregator: ICostAggregator
     iterations: 1,
     startTime: Date.now() - 1000,
     workdir: WORKDIR,
-    statusWriter: makeStatusWriter() as unknown as RunCompletionOptions["statusWriter"],
+    statusWriter: makeStatusWriter(),
     config: DISABLED_REGRESSION_CONFIG,
     runtime,
   };

@@ -16,7 +16,7 @@ import type { LoadedHooksConfig } from "@/hooks";
 import { pipelineEventBus } from "@/pipeline";
 import type { PostRunPhaseCompletedEvent } from "@/pipeline";
 import type { PRD, UserStory } from "@/prd";
-import { makeNaxConfig, makeStory } from "@test/helpers";
+import { makeNaxConfig, makeStatusWriter, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -50,19 +50,6 @@ function acceptanceConfig(): NaxConfig {
   });
 }
 
-function makeStatusWriter() {
-  return {
-    setPrd: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    setRunStatus: mock(() => {}),
-    setPostRunPhase: mock((_phase: string, _update: Record<string, unknown>) => {}),
-    update: mock(async () => {}),
-    writeFeatureStatus: mock(async () => {}),
-    // Return null so acceptance is not treated as already-passed
-    getPostRunStatus: mock(() => null),
-  };
-}
-
 const WORKDIR = `/tmp/nax-test-runner-completion-events-${randomUUID()}`;
 
 function makeOpts(
@@ -87,7 +74,7 @@ function makeOpts(
     totalCost: 0,
     storiesCompleted: 1,
     iterations: 1,
-    statusWriter: statusWriter as unknown as RunnerCompletionOptions["statusWriter"],
+    statusWriter: statusWriter,
     pluginRegistry: {
       getAll: () => [],
       get: () => undefined,
