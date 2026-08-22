@@ -30,6 +30,7 @@ import { getAllReadyStories } from "./helpers";
 import { runIteration } from "./iteration-runner";
 import type { RunParallelBatchOptions, RunParallelBatchResult } from "./parallel-batch";
 import { handlePipelineFailure } from "./pipeline-result-handler";
+import { drainQueueAtBatchBoundary } from "./queue-handler";
 import { closeStorySessions } from "./session-manager-runtime";
 import { logStoryStart } from "./story-announce";
 import { resolveRetryCandidate, selectIndependentBatch, selectNextStories } from "./story-selector";
@@ -257,12 +258,9 @@ export async function executeUnified(
         const selectBatch = _unifiedExecutorDeps.selectIndependentBatch;
         const batch = retryStory ? [retryStory] : selectBatch(readyStories, ctx.parallelCount as number);
         if (batch.length > 1) {
-          // Emit story:started for each batch story before dispatch (AC-5). The
-          // event stays here even for a story the pre-check will refuse — see
-          // story-announce.ts for why the story.start LOG does not (#1653).
-          // #1575: announce the tier/agent the story will actually run as. Recorded
-          // per story and reused by the story.start log below, so the log line can
-          // never disagree with the event it accompanies.
+          // Emit story:started for each batch story before dispatch (AC-5) — stays here even for a
+          // story the pre-check will refuse (see story-announce.ts, #1653). #1575: also record the
+          // tier/agent so the story.start log below can never disagree with the event it accompanies.
           const batchAnnouncements = new Map<string, { modelTier: string; agent: string }>();
           for (const story of batch) {
             const modelTier = buildPreviewRouting(story, ctx.config).modelTier;
@@ -378,9 +376,9 @@ export async function executeUnified(
             prd = failureResult.prd;
           }
 
-          // Single-writer PRD reconciliation (H-1): worktree pipelines skipped
-          // persistence, so record completed + merge-conflict outcomes here.
+          // Single-writer PRD reconciliation (H-1): worktree pipelines skipped persistence, so record completed + merge-conflict outcomes here.
           reconcileBatchOutcome(prd, batchResult);
+          const queueDrain = await drainQueueAtBatchBoundary(ctx.workdir, prd); // BUG-9
           await savePRD(prd, ctx.prdPath);
           await pipelineEventBus.drain();
           totalCost += batchResult.totalCost;
@@ -456,6 +454,7 @@ export async function executeUnified(
           ctx.statusWriter.setCurrentStory(null);
           await ctx.statusWriter.update(totalCost, iterations);
 
+          if (queueDrain.paused) return buildResult("queue-paused"); // BUG-9: stop dispatching further batches
           // Cost-limit check after parallel batch (AC-7). BUG-6 / D-4: parity via enforceCostLimit.
           const batchCostCheck = await enforceCostLimit(ctx, totalCost, costLimit);
           if (batchCostCheck.stop) return buildResult("cost-limit");

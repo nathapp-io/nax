@@ -20,6 +20,8 @@ export interface WorktreeDependenciesConfig {
   mode: "provision" | "off";
   /** Explicit provisioning command override (valid only in provision mode) */
   setupCommand?: string | null;
+  /** Hard deadline (seconds) for the provisioning spawn (BUG-13) */
+  timeoutSeconds: number;
 }
 
 /** Mutation-check config (US-001) — opt-in mutation-testing spot-check. */

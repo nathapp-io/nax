@@ -68,5 +68,14 @@ export async function runBatchPreChecks(options: BatchPreCheckOptions): Promise<
     }
   }
 
-  return { prd, prdDirty, dispatchable: batch.filter((s) => !skipped.has(s.id)) };
+  // BUG-8: a sibling skip reloads `prd` into a fresh generation of story objects,
+  // but `batch` still holds the pre-reload ones — dispatching those orphans loses
+  // worker mutations (storyGitRef, repo-scoped fix records) written by reference,
+  // since the single-writer save only serialises the new generation. Re-resolve
+  // by id from the fresh PRD so dispatched stories share identity with it.
+  const dispatchable = batch
+    .filter((s) => !skipped.has(s.id))
+    .map((s) => prd.userStories.find((p) => p.id === s.id) ?? s);
+
+  return { prd, prdDirty, dispatchable };
 }

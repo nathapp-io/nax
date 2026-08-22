@@ -171,12 +171,13 @@ describe("queueCheckStage — RETRY / PRIORITY", () => {
   });
 });
 
-describe("queueCheckStage — skipPrdPersistence (BUG-4)", () => {
+describe("queueCheckStage — skipPrdPersistence (BUG-9)", () => {
   // In parallel mode every story's worktree pipeline runs on a structuredClone
-  // of the PRD with skipPrdPersistence: true (CR-1 single-writer rule). This
-  // stage must still apply the in-memory mutation (so ctx.stories / ctx.prd
-  // reflect the command within this pipeline run) but must NOT write the
-  // stale clone over prd.json — the unified executor is the single writer.
+  // of the PRD with skipPrdPersistence: true (CR-1 single-writer rule). A
+  // cloned pipeline must never claim a command it cannot durably persist, so
+  // this stage now refuses to touch the queue file at all when
+  // skipPrdPersistence is set — the coordinator drains it once per parallel
+  // batch boundary instead (see execution/queue-handler.ts).
   let workdir: string;
 
   beforeEach(() => {
@@ -189,7 +190,7 @@ describe("queueCheckStage — skipPrdPersistence (BUG-4)", () => {
     cleanupTempDir(workdir);
   });
 
-  test("RETRY mutates in-memory PRD but does not write prd.json when skipPrdPersistence is true", async () => {
+  test("RETRY is left unclaimed and unapplied when skipPrdPersistence is true", async () => {
     const failedStory = makeStory({ id: "US-001", status: "failed", attempts: 2 });
     const prd = makePRD({ userStories: [failedStory] });
     const ctx = makeCtx(workdir, {
@@ -204,33 +205,36 @@ describe("queueCheckStage — skipPrdPersistence (BUG-4)", () => {
     const result = await queueCheckStage.execute(ctx);
 
     expect(result.action).toBe("continue");
-    expect(ctx.prd.userStories[0].status).toBe("pending");
+    expect(ctx.prd.userStories[0].status).toBe("failed");
+    expect(await Bun.file(join(workdir, ".queue.txt")).exists()).toBe(true);
     expect(await Bun.file(join(workdir, "prd.json")).exists()).toBe(false);
   });
 
-  test("PRIORITY mutates in-memory PRD but does not write prd.json when skipPrdPersistence is true", async () => {
+  test("PRIORITY is left unclaimed and unapplied when skipPrdPersistence is true", async () => {
     const ctx = makeCtx(workdir, { skipPrdPersistence: true });
     await Bun.write(join(workdir, ".queue.txt"), "PRIORITY US-001 7\n");
 
     const result = await queueCheckStage.execute(ctx);
 
     expect(result.action).toBe("continue");
-    expect(ctx.prd.userStories[0].priority).toBe(7);
+    expect(ctx.prd.userStories[0].priority).toBeUndefined();
+    expect(await Bun.file(join(workdir, ".queue.txt")).exists()).toBe(true);
     expect(await Bun.file(join(workdir, "prd.json")).exists()).toBe(false);
   });
 
-  test("SKIP for a known story mutates in-memory PRD but does not write prd.json when skipPrdPersistence is true", async () => {
+  test("SKIP is left unclaimed and unapplied when skipPrdPersistence is true", async () => {
     const ctx = makeCtx(workdir, { skipPrdPersistence: true });
     await Bun.write(join(workdir, ".queue.txt"), "SKIP US-001\n");
 
     const result = await queueCheckStage.execute(ctx);
 
-    expect(result.action).toBe("skip");
-    expect(ctx.prd.userStories[0].status).toBe("skipped");
+    expect(result.action).toBe("continue");
+    expect(ctx.prd.userStories[0].status).toBe("pending");
+    expect(await Bun.file(join(workdir, ".queue.txt")).exists()).toBe(true);
     expect(await Bun.file(join(workdir, "prd.json")).exists()).toBe(false);
   });
 
-  test("ABORT marks stories skipped in-memory but does not write prd.json when skipPrdPersistence is true", async () => {
+  test("ABORT is left unclaimed and unapplied when skipPrdPersistence is true", async () => {
     const s1 = makeStory({ id: "US-001", status: "pending" });
     const s2 = makeStory({ id: "US-002", status: "pending" });
     const prd = makePRD({ userStories: [s1, s2] });
@@ -240,13 +244,14 @@ describe("queueCheckStage — skipPrdPersistence (BUG-4)", () => {
 
     const result = await queueCheckStage.execute(ctx);
 
-    expect(result.action).toBe("pause");
-    expect(ctx.prd.userStories[0].status).toBe("skipped");
-    expect(ctx.prd.userStories[1].status).toBe("skipped");
+    expect(result.action).toBe("continue");
+    expect(ctx.prd.userStories[0].status).toBe("pending");
+    expect(ctx.prd.userStories[1].status).toBe("pending");
+    expect(await Bun.file(join(workdir, ".queue.txt")).exists()).toBe(true);
     expect(await Bun.file(join(workdir, "prd.json")).exists()).toBe(false);
   });
 
-  test("INJECT adds the story in-memory but does not write prd.json when skipPrdPersistence is true", async () => {
+  test("INJECT is left unclaimed and unapplied when skipPrdPersistence is true", async () => {
     const ctx = makeCtx(workdir, { skipPrdPersistence: true });
     await Bun.write(
       join(workdir, "new-story.json"),
@@ -261,7 +266,8 @@ describe("queueCheckStage — skipPrdPersistence (BUG-4)", () => {
     const result = await queueCheckStage.execute(ctx);
 
     expect(result.action).toBe("continue");
-    expect(ctx.prd.userStories).toHaveLength(2);
+    expect(ctx.prd.userStories).toHaveLength(1);
+    expect(await Bun.file(join(workdir, ".queue.txt")).exists()).toBe(true);
     expect(await Bun.file(join(workdir, "prd.json")).exists()).toBe(false);
   });
 
@@ -511,12 +517,12 @@ describe("queueCheckStage — PAUSE/ABORT dropped-command audit", () => {
   });
 });
 
-describe("queueCheckStage — skipPrdPersistence: unpersisted-command audit", () => {
-  // BUG-4 follow-up: in parallel mode (ctx.skipPrdPersistence: true) a queue command
-  // mutates only the worktree's stale PRD clone — savePRD is correctly skipped — but
-  // clearQueueFile still runs, so the command vanishes with no trace once the queue
-  // file is gone. A warn must be logged naming the dropped command whenever
-  // skipPrdPersistence is true, and must NOT be logged in the normal (persisting) path.
+describe("queueCheckStage — skipPrdPersistence never claims the queue file (BUG-9)", () => {
+  // Superseded BUG-4-follow-up behavior: this stage used to claim the queue
+  // file under skipPrdPersistence, apply commands to the stale clone, and log
+  // an "unpersisted" warn as the command vanished. Now it refuses to claim the
+  // file at all, so no such warn is ever emitted, and the queue file survives
+  // for the coordinator to drain at the batch boundary.
   let workdir: string;
   let logFile: string;
 
@@ -533,11 +539,13 @@ describe("queueCheckStage — skipPrdPersistence: unpersisted-command audit", ()
 
   async function readWarnEntries(): Promise<Array<{ stage: string; message: string; data: Record<string, unknown> }>> {
     await getLogger().flush();
-    const lines = (await Bun.file(logFile).text()).trim().split("\n").filter(Boolean);
+    const file = Bun.file(logFile);
+    if (!(await file.exists())) return [];
+    const lines = (await file.text()).trim().split("\n").filter(Boolean);
     return lines.map((l) => JSON.parse(l));
   }
 
-  test("RETRY under skipPrdPersistence logs an unpersisted-command warn", async () => {
+  test("RETRY under skipPrdPersistence logs no unpersisted-command warn and leaves the queue file intact", async () => {
     const failedStory = makeStory({ id: "US-001", status: "failed", attempts: 2 });
     const prd = makePRD({ userStories: [failedStory] });
     const ctx = makeCtx(workdir, {
@@ -551,17 +559,14 @@ describe("queueCheckStage — skipPrdPersistence: unpersisted-command audit", ()
 
     const result = await queueCheckStage.execute(ctx);
     expect(result.action).toBe("continue");
-    // Mutation still applied to the in-memory (stale) clone.
-    expect(ctx.prd.userStories[0].status).toBe("pending");
+    expect(ctx.prd.userStories[0].status).toBe("failed");
+    expect(await Bun.file(join(workdir, ".queue.txt")).exists()).toBe(true);
 
     const entries = await readWarnEntries();
-    const unpersisted = entries.find((e) => e.stage === "queue" && e.message.includes("NOT persisted"));
-    expect(unpersisted).toBeDefined();
-    expect(unpersisted?.data.command).toBe("RETRY");
-    expect(unpersisted?.data.target).toBe("US-001");
+    expect(entries.find((e) => e.message.includes("NOT persisted"))).toBeUndefined();
   });
 
-  test("RETRY in the normal (persisting) path does NOT log an unpersisted-command warn", async () => {
+  test("RETRY in the normal (persisting) path claims and applies the command", async () => {
     const failedStory = makeStory({ id: "US-001", status: "failed", attempts: 2 });
     const prd = makePRD({ userStories: [failedStory] });
     const ctx = makeCtx(workdir, { prd, stories: [failedStory], story: failedStory });
@@ -570,69 +575,8 @@ describe("queueCheckStage — skipPrdPersistence: unpersisted-command audit", ()
 
     const result = await queueCheckStage.execute(ctx);
     expect(result.action).toBe("continue");
-
-    const entries = await readWarnEntries();
-    const unpersisted = entries.find((e) => e.stage === "queue" && e.message.includes("NOT persisted"));
-    expect(unpersisted).toBeUndefined();
-  });
-
-  test("PRIORITY under skipPrdPersistence logs an unpersisted-command warn", async () => {
-    const ctx = makeCtx(workdir, { skipPrdPersistence: true });
-    await Bun.write(join(workdir, ".queue.txt"), "PRIORITY US-001 7\n");
-
-    await queueCheckStage.execute(ctx);
-
-    const entries = await readWarnEntries();
-    const unpersisted = entries.find((e) => e.stage === "queue" && e.message.includes("NOT persisted"));
-    expect(unpersisted).toBeDefined();
-    expect(unpersisted?.data.command).toBe("PRIORITY");
-    expect(unpersisted?.data.target).toBe("US-001");
-  });
-
-  test("INJECT under skipPrdPersistence logs an unpersisted-command warn", async () => {
-    const ctx = makeCtx(workdir, { skipPrdPersistence: true });
-    await Bun.write(
-      join(workdir, "new-story.json"),
-      JSON.stringify({
-        title: "Injected story",
-        description: "A new story",
-        acceptanceCriteria: ["n/a"],
-      }),
-    );
-    await Bun.write(join(workdir, ".queue.txt"), "INJECT new-story.json\n");
-
-    await queueCheckStage.execute(ctx);
-
-    const entries = await readWarnEntries();
-    const unpersisted = entries.find((e) => e.stage === "queue" && e.message.includes("NOT persisted"));
-    expect(unpersisted).toBeDefined();
-    expect(unpersisted?.data.command).toBe("INJECT");
-  });
-
-  test("SKIP under skipPrdPersistence logs an unpersisted-command warn", async () => {
-    const ctx = makeCtx(workdir, { skipPrdPersistence: true, stories: [] });
-    await Bun.write(join(workdir, ".queue.txt"), "SKIP US-001\n");
-
-    await queueCheckStage.execute(ctx);
-
-    const entries = await readWarnEntries();
-    const unpersisted = entries.find((e) => e.stage === "queue" && e.message.includes("NOT persisted"));
-    expect(unpersisted).toBeDefined();
-    expect(unpersisted?.data.command).toBe("SKIP");
-    expect(unpersisted?.data.target).toBe("US-001");
-  });
-
-  test("ABORT under skipPrdPersistence logs an unpersisted-command warn", async () => {
-    const ctx = makeCtx(workdir, { skipPrdPersistence: true });
-    await Bun.write(join(workdir, ".queue.txt"), "ABORT\n");
-
-    const result = await queueCheckStage.execute(ctx);
-    expect(result.action).toBe("pause");
-
-    const entries = await readWarnEntries();
-    const unpersisted = entries.find((e) => e.stage === "queue" && e.message.includes("NOT persisted"));
-    expect(unpersisted).toBeDefined();
-    expect(unpersisted?.data.command).toBe("ABORT");
+    expect(ctx.prd.userStories[0].status).toBe("pending");
+    expect(await Bun.file(join(workdir, ".queue.txt")).exists()).toBe(false);
   });
 });
 

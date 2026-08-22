@@ -118,12 +118,18 @@ let origSpawn: typeof _gitDeps.spawn;
 let origResultSpawn: typeof _resultHandlerDeps.spawn;
 let origMergeEngine: typeof _resultHandlerDeps.mergeEngine;
 let origSavePrd: typeof _tierEscalationDeps.savePRD;
+let origExistsSync: typeof _resultHandlerDeps.existsSync;
 
 beforeEach(() => {
   origSpawn = _gitDeps.spawn;
   origResultSpawn = _resultHandlerDeps.spawn;
   origMergeEngine = _resultHandlerDeps.mergeEngine;
   origSavePrd = _tierEscalationDeps.savePRD;
+  origExistsSync = _resultHandlerDeps.existsSync;
+  // MEM-6: cleanup now keys off real worktree existence rather than config
+  // mode — default to "exists" so unrelated tests exercising worktree-mode
+  // paths keep reaching the removal call without depending on real disk state.
+  _resultHandlerDeps.existsSync = (() => true) as typeof _resultHandlerDeps.existsSync;
 });
 
 afterEach(() => {
@@ -131,6 +137,7 @@ afterEach(() => {
   _resultHandlerDeps.spawn = origResultSpawn;
   _resultHandlerDeps.mergeEngine = origMergeEngine;
   _tierEscalationDeps.savePRD = origSavePrd;
+  _resultHandlerDeps.existsSync = origExistsSync;
   mock.restore();
 });
 
@@ -350,6 +357,9 @@ describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
   test("does NOT call git worktree remove in shared mode on 'fail'", async () => {
     const story = makeStory("US-001", { status: "pending", passes: false, attempts: 2 });
     const ctx = makeCtx(story);
+    // MEM-6: cleanup now keys off worktree existence, not config mode — a
+    // sequential shared-mode run never created one, so simulate that here.
+    _resultHandlerDeps.existsSync = (() => false) as typeof _resultHandlerDeps.existsSync;
 
     const spawnCalls: string[][] = [];
     _resultHandlerDeps.spawn = mock((args: unknown) => {

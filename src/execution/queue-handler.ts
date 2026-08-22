@@ -7,9 +7,14 @@
 
 import { rename, unlink } from "node:fs/promises";
 import path from "node:path";
+import { validateFilePath } from "../config";
+import { NaxError } from "../errors";
 import { getLogger } from "../logger";
+import { injectStory, markStorySkipped, resetStoryToPending, setStoryPriority, validateInjectedStory } from "../prd";
+import type { PRD } from "../prd";
 import { parseQueueFile } from "../queue";
 import type { QueueCommand } from "../queue";
+import { errorMessage } from "../utils/errors";
 import { withQueueFileLock } from "../utils/queue-file-lock";
 
 /**
@@ -167,6 +172,114 @@ export async function processQueueFile<T>(
     }
     throw error;
   }
+}
+
+/** Result of draining the queue at a parallel-batch boundary. */
+export interface BatchQueueDrainResult {
+  /** True when a PAUSE/ABORT command should stop the coordinator from dispatching further batches. */
+  paused: boolean;
+  reason?: string;
+}
+
+/**
+ * BUG-9: apply queued PAUSE/ABORT/RETRY/PRIORITY/INJECT/SKIP commands to the
+ * coordinator's root PRD once per parallel-batch boundary.
+ *
+ * In parallel mode every story's worktree pipeline runs on a stale
+ * `structuredClone` of the PRD (`skipPrdPersistence: true`), so `queueCheckStage`
+ * now refuses to claim commands there — a cloned pipeline could apply a command
+ * and have the queue file cleared underneath it with zero durable effect. This
+ * is the coordinator-owned counterpart: it owns the real PRD and runs between
+ * batches, so claim → apply → clear is safe here.
+ *
+ * Deferred by design (D-15): commands take effect at the batch boundary, not
+ * mid-batch — immediate cancellation of in-flight worker sessions is separate
+ * plumbing. Mutates `prd` in place; the caller is responsible for persisting it
+ * (unified-executor already saves the root PRD once per batch boundary).
+ */
+export async function drainQueueAtBatchBoundary(workdir: string, prd: PRD): Promise<BatchQueueDrainResult> {
+  const logger = getSafeLogger();
+  const result = (await processQueueFile(workdir, (commands) =>
+    applyBatchBoundaryCommands(workdir, prd, commands, logger),
+  )) ?? { paused: false };
+  if (result.paused) {
+    logger?.warn("execution", "Stopping run: queue command applied at batch boundary", { reason: result.reason });
+  }
+  return result;
+}
+
+async function applyBatchBoundaryCommands(
+  workdir: string,
+  prd: PRD,
+  commands: QueueCommand[],
+  logger: ReturnType<typeof getSafeLogger>,
+): Promise<BatchQueueDrainResult> {
+  for (const cmd of commands) {
+    if (cmd.type === "PAUSE") {
+      logger?.warn("queue", "Paused by user (applied at batch boundary)", { command: "PAUSE" });
+      return { paused: true, reason: "User requested pause via .queue.txt" };
+    }
+
+    if (cmd.type === "ABORT") {
+      logger?.warn("queue", "Aborting: marking remaining stories as skipped (applied at batch boundary)", {});
+      for (const s of prd.userStories) {
+        if (s.status === "pending") markStorySkipped(prd, s.id);
+      }
+      return { paused: true, reason: "User requested abort" };
+    }
+
+    if (cmd.type === "RETRY") {
+      logger?.warn("queue", "Retrying story by user request (applied at batch boundary)", { storyId: cmd.storyId });
+      resetStoryToPending(prd, cmd.storyId);
+      continue;
+    }
+
+    if (cmd.type === "PRIORITY") {
+      logger?.warn("queue", "Setting story priority by user request (applied at batch boundary)", {
+        storyId: cmd.storyId,
+        priority: cmd.value,
+      });
+      setStoryPriority(prd, cmd.storyId, cmd.value);
+      continue;
+    }
+
+    if (cmd.type === "SKIP") {
+      if (markStorySkipped(prd, cmd.storyId)) {
+        logger?.warn("queue", "Skipping story by user request (applied at batch boundary)", { storyId: cmd.storyId });
+      } else {
+        logger?.warn("queue", "SKIP names a story that is not in the PRD — ignoring", { storyId: cmd.storyId });
+      }
+      continue;
+    }
+
+    if (cmd.type === "INJECT") {
+      try {
+        if (path.isAbsolute(cmd.storyFile)) {
+          throw new NaxError(
+            `INJECT storyFile must be a relative path within the workspace: ${cmd.storyFile}`,
+            "INJECT_PATH_ABSOLUTE",
+            { stage: "queue-check", storyFile: cmd.storyFile },
+          );
+        }
+        const storyFilePath = validateFilePath(path.join(workdir, cmd.storyFile), workdir);
+        const raw: unknown = await Bun.file(storyFilePath).json();
+        const existingIds = new Set(prd.userStories.map((s) => s.id));
+        const story = validateInjectedStory(raw, existingIds);
+        injectStory(prd, story);
+        logger?.warn("queue", "Injected new story via user request (applied at batch boundary)", {
+          injectedStoryId: story.id,
+          storyFile: cmd.storyFile,
+        });
+      } catch (err) {
+        logger?.error("queue", "Failed to inject story — skipping INJECT command (batch boundary)", {
+          storyFile: cmd.storyFile,
+          error: errorMessage(err),
+        });
+      }
+    }
+  }
+
+  return { paused: false };
 }
 
 /**

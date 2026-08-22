@@ -6,6 +6,7 @@
  * applyCachedRouting: removed (P4-001 — pipeline routing stage is sole source)
  */
 
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pipelineEventBus } from "@/pipeline";
 import type { NaxConfig } from "../config";
@@ -29,10 +30,21 @@ import { appendProgress } from "./progress";
 /** Injectable deps for testability */
 export const _resultHandlerDeps = {
   spawn,
+  existsSync,
   worktreeManager: new WorktreeManager(),
   mergeEngine: new MergeEngine(new WorktreeManager()),
   handleTierEscalation,
 };
+
+/**
+ * MEM-6: parallel-batch dispatch creates a worktree for every story unconditionally,
+ * regardless of `storyIsolation` mode — so cleanup must key off whether one actually
+ * exists, not off the config mode that creation ignored. Sequential shared-mode runs
+ * never create a worktree, so this is false there and behaviour is unchanged.
+ */
+function hasWorktree(projectRoot: string, storyId: string): boolean {
+  return _resultHandlerDeps.existsSync(join(projectRoot, ".nax-wt", storyId));
+}
 
 /**
  * EXEC-002: Remove a worktree directory from git's worktree tracking without deleting
@@ -338,7 +350,7 @@ export async function handlePipelineFailure(
       prdDirty = true;
       logger?.warn("pipeline", "Story paused", { storyId: ctx.story.id, reason: pipelineResult.reason });
       // EXEC-002: Remove worktree directory on pause (keep branch for diagnostics).
-      if (ctx.config.execution.storyIsolation === "worktree") {
+      if (hasWorktree(ctx.workdir, ctx.story.id)) {
         await removeWorktreeDirectory(ctx.workdir, ctx.story.id);
       }
       pipelineEventBus.emit({
@@ -373,7 +385,7 @@ export async function handlePipelineFailure(
       logger?.error("pipeline", "Story failed", { storyId: ctx.story.id, reason: pipelineResult.reason });
       // EXEC-002: All tiers exhausted — remove the worktree directory but keep the branch
       // (nax/<storyId>) so the failed commits are preserved for diagnostics and re-run cleanup.
-      if (ctx.config.execution.storyIsolation === "worktree") {
+      if (hasWorktree(ctx.workdir, ctx.story.id)) {
         await removeWorktreeDirectory(ctx.workdir, ctx.story.id);
         logger?.info("worktree", "Kept failed story branch", {
           storyId: ctx.story.id,
