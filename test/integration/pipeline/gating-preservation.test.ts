@@ -13,7 +13,6 @@ import type { NaxConfig } from "@/config";
 import { _storyOrchestratorDeps, assemblePlanInputsFromCtx, buildPlanForStrategy } from "@/execution";
 import type { Finding } from "@/findings";
 import { makeMechanicalFormatFixStrategy, makeMechanicalLintFixStrategy } from "@/operations";
-import type { CallContext } from "@/operations";
 import type { PipelineContext } from "@/pipeline/types";
 import type { NaxRuntime } from "@/runtime";
 import {
@@ -437,9 +436,7 @@ describe("single-session adversarial-review routing", () => {
 describe("AC6: mechanical fix fixOp.execute returns early when both commands undefined", () => {
   test("makeMechanicalLintFixStrategy: returns {applied:true, exitCode:0} without calling runQualityCommand", async () => {
     const config = makeNaxConfig({ quality: { commands: {} } });
-    const mockCtx = {
-      packageView: { packageDir: "", config, select: (s: any) => s.select(config) },
-    } as unknown as CallContext;
+    const mockCtx = makeMockCallContext({ runtime: makeTestRuntime({ config }) });
     let called = false;
     const mockDeps = {
       runQualityCommand: async () => {
@@ -455,9 +452,7 @@ describe("AC6: mechanical fix fixOp.execute returns early when both commands und
 
   test("makeMechanicalFormatFixStrategy: returns {applied:true, exitCode:0} without calling runQualityCommand", async () => {
     const config = makeNaxConfig({ quality: { commands: {} } });
-    const mockCtx = {
-      packageView: { packageDir: "", config, select: (s: any) => s.select(config) },
-    } as unknown as CallContext;
+    const mockCtx = makeMockCallContext({ runtime: makeTestRuntime({ config }) });
     let called = false;
     const mockDeps = {
       runQualityCommand: async () => {

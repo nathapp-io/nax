@@ -4,16 +4,14 @@ import { PipelinePlanStrategy, _pipelinePlanDeps } from "@/plan";
 import type { PlanModeContext } from "@/plan/strategies/types";
 import type { PackageSummary } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager } from "@test/helpers";
+import { makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 
 function makeRuntime(closeImpl?: () => Promise<void>): NaxRuntime {
-  return {
-    runId: "run-1",
-    configLoader: { current: () => ({}) as never },
-    packages: { resolve: () => ({}) },
+  const runtime = makeMockRuntime({
     agentManager: makeMockAgentManager({ getDefaultAgent: "agent-pipeline" }),
-    close: closeImpl ?? (async () => {}),
-  } as unknown as NaxRuntime;
+  });
+  if (closeImpl) runtime.close = closeImpl;
+  return runtime;
 }
 
 function makeCtx(overrides: Partial<PlanModeContext> = {}): PlanModeContext {

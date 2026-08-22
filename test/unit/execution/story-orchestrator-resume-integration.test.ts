@@ -38,7 +38,7 @@ import {
 } from "@/execution";
 import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { makeMockAgentManager, makeMockCallContext, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 // ===========================================================================
 // Shared ops
@@ -558,14 +558,12 @@ describe("AC7: buildResumePlan invoked once; phaseOutputs seeded", () => {
 // ===========================================================================
 
 function makeCtx(runtime: NaxRuntime, storyId: string, opts: { withFeatureDir?: boolean } = {}): CallContext {
-  return {
+  return makeMockCallContext({
     runtime,
-    packageView: runtime.packages.repo(),
     packageDir: "/tmp",
-    agentName: "claude",
     storyId,
     ...(opts.withFeatureDir ? { featureDir: "/tmp/feature" } : {}),
-  } as unknown as CallContext;
+  });
 }
 
 function makeDeterministic(name: string, result: { success: boolean; findings?: unknown[] }) {

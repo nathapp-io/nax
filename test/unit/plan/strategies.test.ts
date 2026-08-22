@@ -7,7 +7,7 @@ import type { NaxConfig } from "@/config";
 import { assertIsValidPrd, buildPlanModeContext, writeOrRecoverPrd } from "@/plan";
 import type { IPlanStrategy, PlanDeps, PlanModeContext } from "@/plan/strategies";
 import type { PRD } from "@/prd/types";
-import { makeNaxConfig } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 const SAMPLE_PRD: PRD = {
   project: "sample-project",
@@ -142,7 +142,7 @@ describe("buildPlanModeContext", () => {
     });
     const deps = makeDeps();
     // Must have agentManager so createPlanRuntime's isRuntimeWithAgentManager check passes
-    const expectedRuntime = { agentManager: {}, close: async () => {} } as unknown as import("@/runtime").NaxRuntime;
+    const expectedRuntime = makeMockRuntime();
 
     const origCreateRuntime = _planDeps.createRuntime;
     _planDeps.createRuntime = mock(() => expectedRuntime as never);

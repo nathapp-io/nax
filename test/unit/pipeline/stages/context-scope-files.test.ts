@@ -19,7 +19,7 @@ import { _scopeFilesDeps, resolveScopeFiles } from "@/pipeline";
 import { _contextStageDeps, contextStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
-import { makeStory } from "@test/helpers";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals
@@ -76,12 +76,12 @@ function makeBundle(): ContextBundle {
 
 function makeCtx(story: UserStory): PipelineContext {
   return {
-    config: {
+    config: makeNaxConfig({
       context: {
         v2: { enabled: true },
-        featureEngine: { budgetTokens: 8_000 },
+        featureEngine: { enabled: false, budgetTokens: 8_000 },
       },
-    } as unknown as PipelineContext["config"],
+    }),
     rootConfig: {} as PipelineContext["rootConfig"],
     prd: {} as PipelineContext["prd"],
     story,

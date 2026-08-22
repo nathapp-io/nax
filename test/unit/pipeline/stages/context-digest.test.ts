@@ -11,7 +11,7 @@ import type { ContextBundle, ContextRequest } from "@/context/engine";
 import { NaxError } from "@/errors";
 import { _contextStageDeps, contextStage } from "@/pipeline/stages/context";
 import type { PipelineContext } from "@/pipeline/types";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals (restored per test)
@@ -66,12 +66,12 @@ function makeBundle(digest = "bundle digest"): ContextBundle {
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
-    config: {
+    config: makeNaxConfig({
       context: {
         v2: { enabled: true },
-        featureEngine: { budgetTokens: 8_000 },
+        featureEngine: { enabled: false, budgetTokens: 8_000 },
       },
-    } as unknown as PipelineContext["config"],
+    }),
     rootConfig: {} as PipelineContext["rootConfig"],
     prd: {} as PipelineContext["prd"],
     story: { id: "US-001" } as PipelineContext["story"],
@@ -271,12 +271,12 @@ describe("context stage — Phase 2 digest threading", () => {
 describe("contextStage — v2.stages.context overrides", () => {
   function ctxWithStages(stage: { budgetTokens?: number; extraProviderIds?: string[] }): PipelineContext {
     return makeCtx({
-      config: {
+      config: makeNaxConfig({
         context: {
           v2: { enabled: true, stages: { context: stage } },
-          featureEngine: { budgetTokens: 8_000 },
+          featureEngine: { enabled: false, budgetTokens: 8_000 },
         },
-      } as unknown as PipelineContext["config"],
+      }),
     });
   }
 

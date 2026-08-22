@@ -20,7 +20,7 @@ import { StoryOrchestratorBuilder, _storyOrchestratorDeps, describeGateRegressio
 import { deriveTddFailureCategory } from "@/execution";
 import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { makeMockCallContext, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 const testSel = pickSelector("carveout-staleness-selector", "execution");
 
@@ -341,13 +341,7 @@ describe("ExecutionPlan.run — carve-out staleness", () => {
     }) as typeof _storyOrchestratorDeps.runFixCycle;
 
     try {
-      const ctx = {
-        runtime: rt,
-        packageView: rt.packages.repo(),
-        packageDir: "/tmp",
-        agentName: "claude",
-        storyId: "US-t",
-      } as unknown as CallContext;
+      const ctx = makeCtx(rt, "US-t");
       const result = await buildPlan(ctx, gateOp, reviewOp).run();
       // Without the fix the carve-out would exempt the gate → success=true.
       expect(result.success).toBe(false);
@@ -418,13 +412,7 @@ describe("ExecutionPlan.run — carve-out staleness", () => {
     }) as typeof _storyOrchestratorDeps.runFixCycle;
 
     try {
-      const ctx = {
-        runtime: rt,
-        packageView: rt.packages.repo(),
-        packageDir: "/tmp",
-        agentName: "claude",
-        storyId: "US-keyless",
-      } as unknown as CallContext;
+      const ctx = makeCtx(rt, "US-keyless");
       const result = await buildPlan(ctx, gateOp, reviewOp).run();
       // The keyless gate failure is now recognised as a regression — no silent pass.
       expect(result.gateRegressedDuringRect).toBe(true);
@@ -501,13 +489,7 @@ describe("ExecutionPlan.run — carve-out staleness", () => {
     }) as typeof _storyOrchestratorDeps.runFixCycle;
 
     try {
-      const ctx = {
-        runtime: rt,
-        packageView: rt.packages.repo(),
-        packageDir: "/tmp",
-        agentName: "claude",
-        storyId: "US-memo",
-      } as unknown as CallContext;
+      const ctx = makeCtx(rt, "US-memo");
       const result = await buildPlan(ctx, gateOp, reviewOp).run();
       expect(result.gateRegressedDuringRect).toBe(false);
       expect(result.success).toBe(true);
@@ -560,13 +542,7 @@ describe("ExecutionPlan.run — carve-out staleness", () => {
     }) as typeof _storyOrchestratorDeps.runFixCycle;
 
     try {
-      const ctx = {
-        runtime: rt,
-        packageView: rt.packages.repo(),
-        packageDir: "/tmp",
-        agentName: "claude",
-        storyId: "US-t",
-      } as unknown as CallContext;
+      const ctx = makeCtx(rt, "US-t");
       const result = await buildPlan(ctx, gateOp, reviewOp).run();
       expect(result.success).toBe(true);
       expect(result.gateRegressedDuringRect).toBe(false);
@@ -653,13 +629,7 @@ describe("ExecutionPlan.run — completeness guard (configured review must run)"
     }) as typeof _storyOrchestratorDeps.runFixCycle;
 
     try {
-      const ctx = {
-        runtime: rt,
-        packageView: rt.packages.repo(),
-        packageDir: "/tmp",
-        agentName: "claude",
-        storyId: "US-adv",
-      } as unknown as CallContext;
+      const ctx = makeCtx(rt, "US-adv");
 
       const result = await new StoryOrchestratorBuilder()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
@@ -684,3 +654,7 @@ describe("ExecutionPlan.run — completeness guard (configured review must run)"
     }
   });
 });
+
+function makeCtx(rt: NaxRuntime, storyId: string): CallContext {
+  return makeMockCallContext({ runtime: rt, packageDir: "/tmp", storyId });
+}

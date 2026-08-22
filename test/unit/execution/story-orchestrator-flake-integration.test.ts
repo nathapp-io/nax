@@ -29,7 +29,7 @@ import type { Finding, FixCycle, FixCycleContext, FixCycleExitReason } from "@/f
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { CallContext, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeTestRuntime } from "@test/helpers";
+import { makeMockCallContext, makeTestRuntime } from "@test/helpers";
 
 const testSel = pickSelector("flake-triage-integration", "execution");
 
@@ -95,13 +95,11 @@ function makeCtx(): { ctx: CallContext; runtime: NaxRuntime } {
   const runtime = makeTestRuntime();
   return {
     runtime,
-    ctx: {
+    ctx: makeMockCallContext({
       runtime,
-      packageView: runtime.packages.repo(),
       packageDir: "/tmp",
-      agentName: "claude",
       storyId: "US-003",
-    } as unknown as CallContext,
+    }),
   };
 }
 

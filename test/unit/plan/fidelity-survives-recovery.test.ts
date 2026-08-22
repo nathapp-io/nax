@@ -12,8 +12,7 @@ import { describe, expect, test } from "bun:test";
 import { DebatePlanStrategy, RefinePlanStrategy, SinglePlanStrategy, _refinePlanDeps, _singlePlanDeps } from "@/plan";
 import type { PlanDeps, PlanModeContext } from "@/plan/strategies";
 import type { PackageSummary } from "@/prompts";
-import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager } from "@test/helpers";
+import { makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 
 const SPEC = `# SPEC-x
 
@@ -98,14 +97,7 @@ function makeCtx(written: { value: string | null }): PlanModeContext {
     config: { plan: { specGuard: false }, timeoutSeconds: 30 } as never,
     profileName: undefined,
     options: { from: "/tmp/spec.md", feature: "feat-x" },
-    runtime: {
-      runId: "run-1494",
-      configLoader: { current: () => ({}) },
-      packages: { resolve: () => ({}) },
-      sessionManager: { nameFor: () => "session" },
-      agentManager: makeMockAgentManager({ getDefaultAgent: "agent-x" }),
-      close: async () => {},
-    } as unknown as NaxRuntime,
+    runtime: makeMockRuntime({ agentManager: makeMockAgentManager({ getDefaultAgent: "agent-x" }) }),
     interactionChain: null,
     interactionBridge: {} as never,
     deps,

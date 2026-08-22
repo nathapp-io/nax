@@ -15,7 +15,7 @@ import { NeutralityLintError } from "@/context";
 import type { PipelineContext } from "@/pipeline";
 // _contextStageDeps is test-only and not re-exported from the pipeline/stages barrel.
 import { _contextStageDeps, contextStage } from "@/pipeline/stages/context";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 let origCreateOrchestrator: typeof _contextStageDeps.createOrchestrator;
 let origReadDigest: typeof _contextStageDeps.readDigest;
@@ -41,12 +41,12 @@ afterEach(() => {
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
-    config: {
+    config: makeNaxConfig({
       context: {
         v2: { enabled: true },
-        featureEngine: { budgetTokens: 8_000 },
+        featureEngine: { enabled: false, budgetTokens: 8_000 },
       },
-    } as unknown as PipelineContext["config"],
+    }),
     rootConfig: {} as PipelineContext["rootConfig"],
     prd: { userStories: [] } as unknown as PipelineContext["prd"],
     story: { id: "US-001", workdir: "" } as PipelineContext["story"],

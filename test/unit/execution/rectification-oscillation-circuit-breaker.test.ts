@@ -137,13 +137,14 @@ function makePhaseOp(
 let origCallOp: typeof _storyOrchestratorDeps.callOp;
 let origRunFixCycle: typeof _storyOrchestratorDeps.runFixCycle;
 let origCaptureGitRef: typeof _storyOrchestratorDeps.captureGitRef;
-let runtime: NaxRuntime;
+let runtime: NaxRuntime | undefined;
 
 function makeCallCtx(storyId: string): CallContext {
-  runtime = makeTestRuntime();
+  const rt = makeTestRuntime();
+  runtime = rt;
   return {
-    runtime,
-    packageView: runtime.packages.repo(),
+    runtime: rt,
+    packageView: rt.packages.repo(),
     packageDir: "/tmp",
     agentName: "claude",
     storyId,
@@ -187,7 +188,7 @@ afterEach(async () => {
   _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
   _storyOrchestratorDeps.captureGitRef = origCaptureGitRef;
   await runtime?.close();
-  runtime = undefined as unknown as NaxRuntime;
+  runtime = undefined;
 });
 
 describe("AC3: runRectification increments rectificationOscillations on source reappearance", () => {

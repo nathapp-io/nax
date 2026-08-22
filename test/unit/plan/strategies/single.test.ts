@@ -2,8 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { SinglePlanStrategy, _singlePlanDeps } from "@/plan";
 import type { PlanModeContext } from "@/plan/strategies";
 import type { PRD } from "@/prd/types";
-import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeNaxConfig, makePRD } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig, makePRD } from "@test/helpers";
 
 // Minimal PRD returned by the stubbed callOp
 function makePrd(agentProfileId?: string): PRD {
@@ -56,11 +55,7 @@ function makeCtx(overrides: {
     },
   }) as unknown as PlanModeContext["config"];
 
-  const fakeRuntime = {
-    agentManager: makeMockAgentManager(),
-    packages: { resolve: () => ({}) },
-    close: async () => {},
-  } as unknown as NaxRuntime;
+  const fakeRuntime = makeMockRuntime();
 
   return {
     workdir: "/tmp/test",

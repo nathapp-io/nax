@@ -18,7 +18,7 @@ import { acceptanceStage } from "@/pipeline/stages/acceptance";
 import { _acceptanceSetupDeps, acceptanceSetupStage, computeACFingerprint } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
-import { makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -61,16 +61,14 @@ function makeCtx(tmpDir: string, overrides: Partial<PipelineContext> = {}): Pipe
     makeStory("US-002", ["AC-1: third feature works"]),
   ];
   return {
-    config: {
-      ...DEFAULT_CONFIG,
+    config: makeNaxConfig({
       acceptance: {
-        ...DEFAULT_CONFIG.acceptance,
         enabled: true,
         refinement: true,
         redGate: true,
         model: "fast",
       },
-    } as unknown as PipelineContext["config"],
+    }),
     prd: makePrd(stories),
     story: stories[0],
     stories,

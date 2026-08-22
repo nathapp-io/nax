@@ -127,9 +127,9 @@ describe("warnFallbackMisconfiguration — #508-M4 AC-35 pre-flight warning", ()
   test("does not warn when fallback is disabled (enabled: false)", () => {
     const { logger, warns } = makeLogger();
     const agentGetFn = (_name: string) => undefined;
-    const config = {
+    const config = makeNaxConfig({
       agent: { fallback: { enabled: false, map: { claude: ["gemini"] } } },
-    } as unknown as import("@/config").NaxConfig;
+    });
 
     warnFallbackMisconfiguration(
       config,
