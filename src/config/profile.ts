@@ -53,7 +53,7 @@ const SENSITIVE_ENV_KEY_PATTERN = /key|token|secret|password|credential|auth|ses
  * a single non-empty path segment with no separators, NUL, or dot/dot-dot
  * values. Mirrors validatePathSegment in context/fragments/store.ts.
  */
-function validateProfileName(profileName: string): void {
+export function validateProfileName(profileName: string): void {
   if (profileName.length === 0) {
     throw new NaxError("Profile name must be non-empty", "PROFILE_NAME_INVALID", { stage: "config" });
   }

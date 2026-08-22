@@ -9,7 +9,7 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { resolveEnvVars } from "../config/dotenv";
 import { globalConfigDir, projectConfigDir } from "../config/paths";
-import { loadProfile, loadProfileEnv, resolveProfileName } from "../config/profile";
+import { loadProfile, loadProfileEnv, resolveProfileName, validateProfileName } from "../config/profile";
 
 export interface ProfileShowOptions {
   unmask: boolean;
@@ -175,6 +175,10 @@ export async function profileCurrentCommand(startDir: string): Promise<string> {
  * Returns the created file path.
  */
 export async function profileCreateCommand(profileName: string, startDir: string): Promise<string> {
+  // SEC-18: the read side (loadProfile/loadProfileEnv) validates before
+  // joining profileName into a path; the create/write side must too — the
+  // asymmetry let `nax config profile create "../../evil"` escape profilesDir.
+  validateProfileName(profileName);
   const profilesDir = join(projectConfigDir(startDir), "profiles");
   const profilePath = join(profilesDir, `${profileName}.json`);
 
