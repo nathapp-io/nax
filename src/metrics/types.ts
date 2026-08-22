@@ -156,6 +156,8 @@ export interface StoryMetrics {
   source?: "parallel" | "sequential" | "rectification" | "completion-phase" | "execution-failed";
   /** Number of runtime crashes (RUNTIME_CRASH verify status) encountered for this story (BUG-070) */
   runtimeCrashes?: number;
+  /** Count of this story's semantic/adversarial review checks that fail-opened (ENH-20) */
+  reviewsFailedOpen?: number;
   /** Whether TDD full-suite gate passed (only true for TDD strategies when gate passes) */
   fullSuiteGatePassed?: boolean;
   /**

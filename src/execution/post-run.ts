@@ -19,14 +19,14 @@ import { fullSuiteGateOp, implementerOp, testWriterOp, verifierOp, verifyScopedO
 import { routeTddFailure } from "../pipeline/stages/execution-helpers";
 import type { PipelineContext, StageResult } from "../pipeline/types";
 import { parseSelfVerificationMarker } from "../quality";
-// Leaf import (not the `review` barrel) — the barrel pulls formatter.ts which
-// triggers a circular ESM init crash at construction time (see BUG v0.71.0).
+// Leaf import, not the barrel — the barrel pulls formatter.ts, causing a circular ESM init crash (BUG v0.71.0).
 import { isBlockingSeverity } from "../review/severity";
 import { appendScratchEntry } from "../session/scratch-writer";
 import { rollbackToRef } from "../tdd/rollback";
 import { errorMessage } from "../utils/errors";
 import { autoCommitIfDirty, detectMergeConflict } from "../utils/git";
 import { inspectOscillationBreaker } from "./oscillation-breaker";
+import { applyReviewsFailedOpen } from "./post-run-review-summary";
 import { failAndClose } from "./session-manager-runtime";
 import type { StoryOrchestratorResult } from "./story-orchestrator";
 import { deriveTddFailureCategory } from "./tdd-failure-category";
@@ -155,14 +155,14 @@ export async function applyPostRunInspection(
   if (fullSuiteGateOutput?.passed) {
     ctx.fullSuiteGatePassed = true;
   }
-  // Snapshot failing test files from the (post-rectification) gate findings so
-  // deferred-regression blame can attribute a regression to the introducing
-  // story (three-session + deferred). See findResponsibleStoryByTransition.
+  // Snapshot failing test files from the (post-rectification) gate findings so deferred-regression blame can
+  // attribute a regression to the introducing story (three-session + deferred). See findResponsibleStoryByTransition.
   const gateFailingFiles = [
     ...new Set((fullSuiteGateOutput?.findings ?? []).map((f) => f.file).filter((f): f is string => !!f)),
   ];
   if (gateFailingFiles.length > 0) ctx.fullSuiteGateFailingFiles = gateFailingFiles;
 
+  applyReviewsFailedOpen(ctx, planResult.phaseOutputs); // ENH-20
   // Self-verification from implementer output
   ctx.selfVerification = parseSelfVerificationMarker(agentResult.output ?? "", ctx.workdir);
   const selfVerificationFailed = ctx.selfVerification.lint === "fail" || ctx.selfVerification.typecheck === "fail";

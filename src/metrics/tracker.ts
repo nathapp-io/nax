@@ -280,6 +280,7 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
       ? { failingTestFiles: ctx.fullSuiteGateFailingFiles }
       : {}),
     runtimeCrashes: ctx.storyRuntimeCrashes ?? 0,
+    reviewsFailedOpen: ctx.reviewsFailedOpen ?? 0,
     tokens: agentResult?.tokenUsage
       ? new TokenUsage({
           inputTokens: agentResult.tokenUsage.inputTokens,

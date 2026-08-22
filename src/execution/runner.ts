@@ -112,6 +112,13 @@ export interface RunResult {
   storiesCompleted: number;
   totalCost: number;
   durationMs: number;
+  /**
+   * Sum of every story's `StoryMetrics.reviewsFailedOpen` (ENH-20) — review
+   * checks that degraded to a fail-open pass rather than being actually
+   * evaluated. Omitted (not zero) when no story fail-opened, so callers can
+   * gate a summary line on presence rather than a `> 0` check.
+   */
+  reviewsFailedOpen?: number;
 }
 
 /**
@@ -314,12 +321,15 @@ export async function run(options: RunOptions): Promise<RunResult> {
     const { durationMs, acceptancePassed, pluginGateFailed } = completionResult;
     runCompleted = true;
 
+    const reviewsFailedOpen = allStoryMetrics.reduce((sum, m) => sum + (m.reviewsFailedOpen ?? 0), 0);
+
     return {
       success: isComplete(prd) && acceptancePassed && !pluginGateFailed,
       iterations,
       storiesCompleted,
       totalCost,
       durationMs,
+      ...(reviewsFailedOpen > 0 ? { reviewsFailedOpen } : {}),
     };
   } finally {
     const logger = getSafeLogger();

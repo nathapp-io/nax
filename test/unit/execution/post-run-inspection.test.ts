@@ -385,6 +385,46 @@ describe("AC9: applyPostRunInspection ctx field derivations", () => {
     await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
     expect((ctx as any).rectificationIterationCount).toBe(3);
   });
+
+  // ENH-20: a review that fail-opened (LLM dispatch failed, gate degraded to
+  // a pass) must be distinguishable from a review that actually ran.
+  test("ENH-20: sets ctx.reviewsFailedOpen when a review phase returns failOpen:true", async () => {
+    const ctx = makeTestContext();
+    const planResult = makePlanResult({
+      phaseOutputs: {
+        [implementerOp.name]: { success: true },
+        "semantic-review": { success: true, failOpen: true, findings: [] },
+      },
+    });
+    await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
+    expect(ctx.reviewsFailedOpen).toBe(1);
+  });
+
+  test("ENH-20: counts both semantic and adversarial fail-opens", async () => {
+    const ctx = makeTestContext();
+    const planResult = makePlanResult({
+      phaseOutputs: {
+        [implementerOp.name]: { success: true },
+        "semantic-review": { success: true, failOpen: true, findings: [] },
+        "adversarial-review": { success: true, failOpen: true, findings: [] },
+      },
+    });
+    await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
+    expect(ctx.reviewsFailedOpen).toBe(2);
+  });
+
+  test("ENH-20: ctx.reviewsFailedOpen stays unset when reviews genuinely passed", async () => {
+    const ctx = makeTestContext();
+    const planResult = makePlanResult({
+      phaseOutputs: {
+        [implementerOp.name]: { success: true },
+        "semantic-review": { success: true, findings: [] },
+        "adversarial-review": { success: true, findings: [] },
+      },
+    });
+    await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
+    expect(ctx.reviewsFailedOpen).toBeUndefined();
+  });
 });
 
 describe("TDD rollback gating", () => {
