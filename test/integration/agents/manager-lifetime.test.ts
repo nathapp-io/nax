@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { AgentManager } from "@/agents/manager";
 import type { AgentResult } from "@/agents/types";
 import type { AdapterFailure, ContextBundle } from "@/context/engine/types";
-import { makeNaxConfig } from "@test/helpers";
+import { makeContextBundle, makeNaxConfig } from "@test/helpers";
 
 // adapterFailure that triggers a swap (category: "availability" → shouldSwap() returns true).
 const AUTH_FAILURE: AdapterFailure = {
@@ -24,13 +24,11 @@ const AUTH_FAILURE: AdapterFailure = {
 
 // Minimal truthy ContextBundle — only the truthiness (hasBundle=true) matters to shouldSwap.
 // None of the fields are read by the manager; cast satisfies AgentRunRequest.bundle typing.
-const STUB_BUNDLE = {
-  pushMarkdown: "",
+const STUB_BUNDLE = makeContextBundle({
   pullTools: [],
   digest: "",
-  manifest: {},
   chunks: [],
-} as unknown as ContextBundle;
+});
 
 function makeFailResult(): AgentResult {
   return {

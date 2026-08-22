@@ -6,7 +6,7 @@ import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents";
 import type { AdapterFailure, ContextBundle } from "@/context/engine";
 import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
 import type { BuildHopCallbackContext } from "@/operations";
-import { makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
+import { makeContextBundle, makeContextManifest, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -14,18 +14,12 @@ const WORKDIR = "/repo";
 const SESSION_ID = "sess-abc123";
 
 function makeBundle(overrides: Partial<ContextBundle> = {}): ContextBundle {
-  return {
+  return makeContextBundle({
     pullTools: [],
     pushMarkdown: "## Context",
-    manifest: {
-      requestId: "req-1",
-      agentId: "claude",
-      createdAt: new Date(0).toISOString(),
-      chunkIds: [],
-      rebuildInfo: null,
-    },
+    manifest: makeContextManifest({ requestId: "req-1" }),
     ...overrides,
-  } as unknown as ContextBundle;
+  });
 }
 
 function makeHandle(id = "nax-00000000"): SessionHandle {

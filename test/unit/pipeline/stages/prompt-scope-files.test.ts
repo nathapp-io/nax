@@ -18,7 +18,7 @@ import { _scopeFilesDeps, resolveScopeFiles } from "@/pipeline";
 import { promptStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
-import { makeNaxConfig, makeStory } from "@test/helpers";
+import { makeContextBundle, makeNaxConfig, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals
@@ -87,7 +87,7 @@ function captureOrchestratorRequest(): { captured: ContextRequest | null } {
     ({
       async assemble(req: ContextRequest) {
         ref.captured = req;
-        return {
+        return makeContextBundle({
           pushMarkdown: "",
           digest: "stub",
           manifest: {
@@ -101,10 +101,9 @@ function captureOrchestratorRequest(): { captured: ContextRequest | null } {
             digestTokens: 0,
             buildMs: 0,
           },
-          packedChunks: [],
-        } as unknown as ContextBundle;
+        });
       },
-      rebuildForAgent: () => ({}) as unknown as ContextBundle,
+      rebuildForAgent: () => makeContextBundle(),
     }) as unknown as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
   _stageAssemblerDeps.readdir = async () => {
     throw new Error("ENOENT");

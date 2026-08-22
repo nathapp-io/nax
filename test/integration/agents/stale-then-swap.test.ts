@@ -17,7 +17,7 @@ import { AgentManager, SessionFailureError, SessionTurnError } from "@/agents";
 import type { SessionHandle, TurnResult } from "@/agents/types";
 import type { AdapterFailure, ContextBundle } from "@/context/engine";
 import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
+import { makeContextBundle, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
 
 // ─── Stubs ───────────────────────────────────────────────────────────────────
 
@@ -38,13 +38,11 @@ const STALE_FAILURE: AdapterFailure = {
   message: "idle timeout",
 };
 
-const STUB_BUNDLE = {
-  pushMarkdown: "",
+const STUB_BUNDLE = makeContextBundle({
   pullTools: [],
   digest: "",
-  manifest: {},
   chunks: [],
-} as unknown as ContextBundle;
+});
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const STUB_RUN_OPTIONS = {

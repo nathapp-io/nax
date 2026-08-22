@@ -18,7 +18,7 @@ import { AgentManager, SessionFailureError } from "@/agents";
 import type { SessionHandle, TurnResult } from "@/agents";
 import type { AdapterFailure, ContextBundle } from "@/context/engine";
 import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
+import { makeContextBundle, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
 
 const CLAUDE_HANDLE: SessionHandle = { id: "ses_timeout_retry_1", agentName: "claude" };
 
@@ -36,13 +36,11 @@ const STUB_TURN: TurnResult = {
   internalRoundTrips: 1,
 };
 
-const STUB_BUNDLE = {
-  pushMarkdown: "",
+const STUB_BUNDLE = makeContextBundle({
   pullTools: [],
   digest: "",
-  manifest: {},
   chunks: [],
-} as unknown as ContextBundle;
+});
 
 const STUB_RUN_OPTIONS = {
   prompt: "implement the story",

@@ -28,6 +28,7 @@ export {
   makeSpawnMock,
   mockDiffUtilsDeps,
 } from "./review-audit";
+export { makeContextBundle, makeContextManifest } from "./context-bundle";
 export { makeSpawn, makeSpawnResult } from "./spawn";
 export { makeStatusWriter, type MockStatusWriter } from "./status-writer";
 export type { FakeProcSpec, SpawnCall, SpawnResult, SpawnStub } from "./spawn";

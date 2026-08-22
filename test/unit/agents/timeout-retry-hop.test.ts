@@ -23,7 +23,7 @@ import { AgentManager } from "@/agents";
 import type { AgentResult, HopKind } from "@/agents";
 import { DEFAULT_CONFIG } from "@/config";
 import type { AdapterFailure, ContextBundle } from "@/context/engine";
-import { makeNaxConfig } from "@test/helpers";
+import { makeContextBundle, makeNaxConfig } from "@test/helpers";
 
 // Retriable wall-clock timeout — US-001 marked these as retriable=true so a
 // fresh-session retry can extend the effective budget. Category is quality,
@@ -42,13 +42,11 @@ const failStaleRetryable: AdapterFailure = {
   message: "idle timeout",
 };
 
-const STUB_BUNDLE = {
-  pushMarkdown: "",
+const STUB_BUNDLE = makeContextBundle({
   pullTools: [],
   digest: "",
-  manifest: {},
   chunks: [],
-} as unknown as ContextBundle;
+});
 
 const STUB_RUN_OPTIONS = {
   prompt: "p",

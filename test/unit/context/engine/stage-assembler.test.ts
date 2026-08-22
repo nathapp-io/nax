@@ -15,6 +15,7 @@ import {
 } from "@/context/engine/stage-assembler";
 import type { ContextBundle, ContextRequest } from "@/context/engine/types";
 import type { PipelineContext } from "@/pipeline/types";
+import { makeContextBundle } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -267,7 +268,7 @@ function makeMockOrchestrator() {
   const orchestrator = {
     assemble: async (r: ContextRequest): Promise<ContextBundle> => {
       ref.captured = r;
-      return {
+      return makeContextBundle({
         pushMarkdown: "",
         digest: "abc",
         manifest: {
@@ -281,8 +282,7 @@ function makeMockOrchestrator() {
           digestTokens: 0,
           buildMs: 0,
         },
-        packedChunks: [],
-      } as unknown as ContextBundle;
+      });
     },
   };
   return { ref, orchestrator };

@@ -17,7 +17,7 @@ import type { ContextBundle, ContextRequest } from "@/context/engine";
 import { _stageAssemblerDeps, assembleForStage } from "@/context/engine";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
-import { makeStory as makeBaseStory } from "@test/helpers";
+import { makeStory as makeBaseStory, makeContextBundle } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals
@@ -75,7 +75,7 @@ function makeMockOrchestrator() {
   const orchestrator = {
     assemble: async (r: ContextRequest): Promise<ContextBundle> => {
       ref.captured = r;
-      return {
+      return makeContextBundle({
         pushMarkdown: "",
         digest: "abc",
         manifest: {
@@ -89,8 +89,7 @@ function makeMockOrchestrator() {
           digestTokens: 0,
           buildMs: 0,
         },
-        packedChunks: [],
-      } as unknown as ContextBundle;
+      });
     },
   };
   return { ref, orchestrator };
