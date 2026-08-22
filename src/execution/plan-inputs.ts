@@ -340,6 +340,14 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
         });
         return {
           workdir: ctx.workdir,
+          // Anchors evidence-path resolution. Review findings carry repo-root-relative
+          // paths (git emits them that way), while `workdir` is the package dir in a
+          // monorepo — without this, checkFindingEvidence double-counts the package
+          // prefix, reports "unreadable", and every finding fails open (#1668).
+          // Bare `ctx.projectDir` on purpose: it is a required field, and defaulting
+          // to `ctx.workdir` would make repoRoot === workdir, which checkFindingEvidence
+          // collapses back to the single-root lookup — silently restoring the bug.
+          repoRoot: ctx.projectDir,
           story,
           // biome-ignore lint/style/noNonNullAssertion: semanticEnabled guards presence
           semanticConfig: ctx.config.review!.semantic!,
@@ -389,6 +397,8 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
         });
         return {
           workdir: ctx.workdir,
+          // See the semantic input above — same evidence-path anchor (#1668).
+          repoRoot: ctx.projectDir,
           story,
           // biome-ignore lint/style/noNonNullAssertion: adversarialEnabled guards presence
           adversarialConfig: ctx.config.review!.adversarial!,

@@ -209,3 +209,45 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
   });
 });
 
+
+describe("assemblePlanInputsFromCtx — evidence substantiation wiring (#1668)", () => {
+  // `checkFindingEvidence` resolves a finding's file against `repoRoot` first,
+  // falling back to `workdir` as a package-relative path. Review findings carry
+  // repo-root-relative paths (git emits them that way), so in a monorepo — where
+  // `workdir` is the package dir, not the repo root — omitting `repoRoot` makes
+  // every lookup double-count the package prefix, return "unreadable", and
+  // fail open. Substantiation was inert for every monorepo package story.
+  test("semantic review input carries repoRoot so evidence resolves against the repo root", async () => {
+    const ctx = makeCtx({
+      review: { ...DEFAULT_CONFIG.review, enabled: true, checks: ["semantic"] },
+    });
+    ctx.storyGitRef = "abc123";
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.semanticReview).toBeDefined();
+    expect(inputs.semanticReview!.repoRoot).toBe("/tmp/proj");
+  });
+
+  test("adversarial review input carries repoRoot so evidence resolves against the repo root", async () => {
+    const ctx = makeCtx({
+      review: { ...DEFAULT_CONFIG.review, enabled: true, checks: ["adversarial"] },
+    });
+    ctx.storyGitRef = "abc123";
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.adversarialReview).toBeDefined();
+    expect(inputs.adversarialReview!.repoRoot).toBe("/tmp/proj");
+  });
+
+  test("repoRoot is distinct from workdir, so the package prefix is not double-counted", async () => {
+    // Guards the regression directly: if repoRoot were sourced from ctx.workdir
+    // (the package dir) the fallback would resolve <pkg>/<pkg>/<file>.
+    const ctx = makeCtx({
+      review: { ...DEFAULT_CONFIG.review, enabled: true, checks: ["semantic", "adversarial"] },
+    });
+    ctx.storyGitRef = "abc123";
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.semanticReview!.repoRoot).toBeDefined();
+    expect(inputs.adversarialReview!.repoRoot).toBeDefined();
+    expect(inputs.semanticReview!.repoRoot).not.toBe(inputs.semanticReview!.workdir);
+    expect(inputs.adversarialReview!.repoRoot).not.toBe(inputs.adversarialReview!.workdir);
+  });
+});
