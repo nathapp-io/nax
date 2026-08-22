@@ -3,6 +3,17 @@ import type { TreeState } from "./types";
 
 export interface CaptureTreeStateDeps {
   spawn: (cmd: string[], opts: unknown) => unknown;
+  /**
+   * Per-git-call deadline override. Defaults to TREE_CAPTURE_TIMEOUT_MS.
+   * Injectable so the AC8 hang-path test can assert the SIGKILL contract
+   * without burning the full per-call budget once per hung call in wall-clock.
+   */
+  timeoutMs?: number;
+}
+
+/** Resolve the per-call deadline, honouring a test-supplied override. */
+function callTimeoutMs(deps: CaptureTreeStateDeps): number {
+  return deps.timeoutMs ?? TREE_CAPTURE_TIMEOUT_MS;
 }
 
 export interface CaptureTreeStateOptions {
@@ -116,7 +127,7 @@ const UNTRACKED_HASH_TIMEOUT_MS = 250;
 async function untrackedDigestInput(deps: CaptureTreeStateDeps, workdir: string): Promise<string | null> {
   const listed = await spawnWithTimeout(
     spawnGit(deps, ["ls-files", "--others", "--exclude-standard", "-z"], workdir),
-    TREE_CAPTURE_TIMEOUT_MS,
+    callTimeoutMs(deps),
   );
   if (listed.exitCode !== 0) return null;
 
@@ -145,7 +156,7 @@ export async function captureTreeState(workdir: string, options: CaptureTreeStat
 
   try {
     const proc = spawnGit(options._deps, ["rev-parse", "HEAD"], workdir);
-    const { stdout, exitCode } = await spawnWithTimeout(proc, TREE_CAPTURE_TIMEOUT_MS);
+    const { stdout, exitCode } = await spawnWithTimeout(proc, callTimeoutMs(options._deps));
     headSha = exitCode === 0 ? stdout.trim() : captureFailureSentinel();
   } catch {
     headSha = captureFailureSentinel();
@@ -153,7 +164,7 @@ export async function captureTreeState(workdir: string, options: CaptureTreeStat
 
   try {
     const statusProc = spawnGit(options._deps, ["status", "--porcelain"], workdir);
-    const status = await spawnWithTimeout(statusProc, TREE_CAPTURE_TIMEOUT_MS);
+    const status = await spawnWithTimeout(statusProc, callTimeoutMs(options._deps));
     if (status.exitCode === 0) {
       const trimmedStatus = status.stdout.trim();
       if (trimmedStatus) {
@@ -165,9 +176,9 @@ export async function captureTreeState(workdir: string, options: CaptureTreeStat
         // cover TRACKED files only, so untracked content is folded in
         // separately -- see untrackedDigestInput.
         const diffProc = spawnGit(options._deps, ["diff"], workdir);
-        const diff = await spawnWithTimeout(diffProc, TREE_CAPTURE_TIMEOUT_MS);
+        const diff = await spawnWithTimeout(diffProc, callTimeoutMs(options._deps));
         const cachedDiffProc = spawnGit(options._deps, ["diff", "--cached"], workdir);
-        const cachedDiff = await spawnWithTimeout(cachedDiffProc, TREE_CAPTURE_TIMEOUT_MS);
+        const cachedDiff = await spawnWithTimeout(cachedDiffProc, callTimeoutMs(options._deps));
         const untracked = await untrackedDigestInput(options._deps, workdir);
         if (diff.exitCode === 0 && cachedDiff.exitCode === 0 && untracked !== null) {
           const hasher = new Bun.CryptoHasher("sha256");

@@ -17,7 +17,17 @@ afterEach(() => {
 });
 
 describe("sendTelegramNotify — fetch timeout (SEC-4)", () => {
-  test("aborts when fetch never resolves (returns false within 7s)", async () => {
+  /**
+   * The abort deadline under test, shrunk from the production 5s cap so the
+   * hang path costs milliseconds. The contract exercised is identical — the
+   * timer fires, the AbortController aborts the in-flight fetch, and the call
+   * resolves false — and the tightened bound below is strictly stronger.
+   */
+  const TEST_TIMEOUT_MS = 50;
+
+  test("aborts when fetch never resolves", async () => {
+    const origTimeout = _notifyDeps.timeoutMs;
+    _notifyDeps.timeoutMs = TEST_TIMEOUT_MS;
     let observedSignal: AbortSignal | undefined;
     _notifyDeps.fetch = mock(async (_url, init) => {
       observedSignal = init?.signal;
@@ -35,12 +45,17 @@ describe("sendTelegramNotify — fetch timeout (SEC-4)", () => {
     });
 
     const start = Date.now();
-    const ok = await sendTelegramNotify({ token: "tok", chatId: "999" }, "hello");
+    let ok: boolean;
+    try {
+      ok = await sendTelegramNotify({ token: "tok", chatId: "999" }, "hello");
+    } finally {
+      _notifyDeps.timeoutMs = origTimeout;
+    }
     const elapsed = Date.now() - start;
     expect(ok).toBe(false);
-    expect(elapsed).toBeLessThan(7_000);
+    expect(elapsed).toBeLessThan(1_000);
     expect(observedSignal).toBeDefined();
-  }, 10_000);
+  });
 
   test("returns true on a successful response", async () => {
     _notifyDeps.fetch = mock(async () => new Response("{}", { status: 200 }));

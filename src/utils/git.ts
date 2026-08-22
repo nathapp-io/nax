@@ -32,14 +32,16 @@ const AUTO_COMMIT_GIT_TIMEOUT_MS = 30_000;
  * Injectable dependencies for git subprocess calls — allows tests to intercept
  * Bun.spawn without mock.module().
  *
- * `timeoutRetryGitTimeoutMs` is injectable so the hang-path tests can assert the
- * SIGKILL contract without burning the full production timeout in wall-clock.
+ * `gitTimeoutMs` and `timeoutRetryGitTimeoutMs` are injectable so the hang-path
+ * tests can assert the SIGKILL contract without burning the full production
+ * timeout in wall-clock.
  *
  * @internal
  */
 export const _gitDeps = {
   spawn,
   getSafeLogger,
+  gitTimeoutMs: GIT_TIMEOUT_MS,
   timeoutRetryGitTimeoutMs: TIMEOUT_RETRY_GIT_TIMEOUT_MS,
 };
 
@@ -69,7 +71,7 @@ export async function getGitRoot(workdir: string): Promise<string | null> {
 export async function gitWithTimeout(
   args: string[],
   workdir: string,
-  timeoutMs: number = GIT_TIMEOUT_MS,
+  timeoutMs: number = _gitDeps.gitTimeoutMs,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = _gitDeps.spawn(["git", ...args], {
     cwd: workdir,

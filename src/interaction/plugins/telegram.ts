@@ -32,6 +32,8 @@ export const _telegramPluginDeps = {
    */
   basePollBackoffMs: 1000,
   sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+  /** BUG-7 sendMessage abort deadline. Injectable for the same reason as above. */
+  sendTimeoutMs: 5000,
 };
 
 const CALLBACK_API_TIMEOUT_MS = 4000;
@@ -179,13 +181,11 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
         const partLabel = chunks.length > 1 ? `[${i + 1}/${chunks.length}] ` : "";
         const text = `${header}\n${partLabel}${chunks[i]}`;
 
-        // BUG-7: client-side timeout guards against network hangs. sendMessage is
-        // the one Telegram call that previously lacked an AbortController — the
-        // other calls (getUpdates/answerCallbackQuery/clearInlineKeyboard/
-        // sendTimeoutMessage) all use 4-8s timers. A wedged TCP connection at
-        // prompt time stalled the entire run before this fix.
+        // BUG-7: sendMessage is the one Telegram call that previously lacked an
+        // AbortController (the others all use 4-8s timers), so a wedged TCP
+        // connection at prompt time stalled the entire run before this fix.
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 5000);
+        const timer = setTimeout(() => controller.abort(), _telegramPluginDeps.sendTimeoutMs);
 
         let response: Response;
         try {
