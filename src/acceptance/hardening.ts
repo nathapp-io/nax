@@ -203,6 +203,21 @@ async function processPackageGroup(
   const failedACs = parseTestFailures(output);
   const failedSet = new Set(failedACs.map((ac) => ac.toUpperCase()));
 
+  // BUG-14: a command that fails opaquely (timeout kill, missing venv, syntax
+  // error) is INCONCLUSIVE, not a verdict — previously it discarded every
+  // suggested criterion. Keep them; warn so the operator sees the run was
+  // uninformative rather than clean.
+  if (exitCode !== 0 && failedACs.length === 0) {
+    logger?.warn(
+      "acceptance",
+      "Test command failed without parseable AC ids — treating as inconclusive, keeping suggested criteria",
+      {
+        packageDir,
+        exitCode,
+      },
+    );
+  }
+
   // Group refined by storyId to prevent AC index drift (#336 gap 4)
   const refinedByStory = new Map<string, RefinedCriterion[]>();
   for (const r of groupRefined) {
@@ -220,7 +235,10 @@ async function processPackageGroup(
     for (const refined of storyRefined) {
       acIndex++;
       const acId = `AC-${acIndex}`;
-      if (refined.testable === false || failedSet.has(acId) || (exitCode !== 0 && failedACs.length === 0)) {
+      // BUG-14 (D-16): discard only on a definitive verdict — testable:false
+      // or an explicitly failed AC. An inconclusive run (exitCode !== 0 with no
+      // parseable AC ids) no longer discards anything; it is logged above.
+      if (refined.testable === false || failedSet.has(acId)) {
         toDiscard.push(refined.original);
       } else {
         toPromote.push(refined.original);
