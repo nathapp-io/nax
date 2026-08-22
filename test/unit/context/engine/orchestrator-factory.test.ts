@@ -45,7 +45,6 @@ function makeConfig(
   } = {},
 ): NaxConfig {
   return makeNaxConfig({
-    autoMode: { defaultAgent: "claude" },
     context: {
       v2: {
         enabled: true,
@@ -55,7 +54,6 @@ function makeConfig(
         stages: {},
         pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5 },
         rules: { allowLegacyClaudeMd: true },
-        fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
         session: { retentionDays: 7, archiveOnFeatureArchive: true },
         staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
         providers: {
@@ -122,7 +120,7 @@ afterEach(() => {
 
 describe("createDefaultOrchestrator — #508-M7 optional chaining on rules", () => {
   test("does not throw when config.context.v2.rules is undefined", () => {
-    const configNoRules = {
+    const configNoRules = makeNaxConfig({
       ...makeConfig(),
       context: {
         v2: {
@@ -130,7 +128,7 @@ describe("createDefaultOrchestrator — #508-M7 optional chaining on rules", () 
           rules: undefined,
         },
       },
-    } as unknown as NaxConfig;
+    });
 
     expect(() => createDefaultOrchestrator(makeStory(), configNoRules)).not.toThrow();
   });
@@ -226,8 +224,7 @@ describe("createDefaultOrchestrator — TestCoverageProvider registration", () =
   });
 
   function makeConfigWithTestCoverage(enabled: boolean): NaxConfig {
-    return {
-      autoMode: { defaultAgent: "claude" },
+    return makeNaxConfig({
       context: {
         v2: {
           enabled: true,
@@ -237,7 +234,6 @@ describe("createDefaultOrchestrator — TestCoverageProvider registration", () =
           stages: {},
           pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5 },
           rules: { allowLegacyClaudeMd: true },
-          fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
           session: { retentionDays: 7, archiveOnFeatureArchive: true },
           staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
           providers: {
@@ -253,7 +249,7 @@ describe("createDefaultOrchestrator — TestCoverageProvider registration", () =
           scopeToStory: true,
         },
       },
-    } as unknown as NaxConfig;
+    });
   }
 
   test("AC1: TestCoverageProvider is registered in providers array before additionalProviders", async () => {

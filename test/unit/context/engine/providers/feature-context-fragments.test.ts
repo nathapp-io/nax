@@ -22,7 +22,7 @@ import type { NaxConfig } from "@/config/types";
 import { FeatureContextProviderV2, _featureContextV2Deps } from "@/context/engine";
 import type { ContextRequest, RawChunk } from "@/context/engine/types";
 import type { PRD, UserStory } from "@/prd";
-import { makePRD, makeStory } from "@test/helpers";
+import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixture builders
@@ -38,7 +38,7 @@ function prdWith(stories: readonly UserStory[], featureId = "TEST-FEATURE"): PRD
 }
 
 function makeFragmentsConfig(overrides: { decay?: number; maxTokens?: number; enabled?: boolean } = {}): NaxConfig {
-  return {
+  return makeNaxConfig({
     context: {
       v2: {
         fragments: {
@@ -49,7 +49,7 @@ function makeFragmentsConfig(overrides: { decay?: number; maxTokens?: number; en
         },
       },
     },
-  } as unknown as NaxConfig;
+  });
 }
 
 function makeRequest(overrides: Partial<ContextRequest> = {}): ContextRequest {

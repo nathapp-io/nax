@@ -345,7 +345,7 @@ describe("runReplanLoop", () => {
   });
 
   test("AC-4: uses default maxReplanAttempts of 3 when not set in config", async () => {
-    const configNoAttempts = {
+    const configNoAttempts = makeNaxConfig({
       precheck: {
         storySizeGate: {
           enabled: true,
@@ -356,7 +356,7 @@ describe("runReplanLoop", () => {
           // maxReplanAttempts intentionally omitted — must default to 3
         },
       },
-    } as unknown as NaxConfig;
+    });
 
     _planDeps.runPrecheck = mock(async () => makeBlockedPrecheck(["US-001"])) as never;
 

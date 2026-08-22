@@ -25,7 +25,7 @@ import { FeatureContextProviderV2, _featureContextV2Deps } from "@/context/engin
 import type { ContextRequest, RawChunk } from "@/context/engine/types";
 import { renderFragmentBody, writeFragment } from "@/context/fragments";
 import type { UserStory } from "@/prd";
-import { cleanupTempDir, makePRD, makeStory, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 const FEATURE_ID = "feat-readback";
 const FRAGMENT_MAX_TOKENS = 400;
@@ -52,7 +52,7 @@ afterEach(() => {
 });
 
 function makeFragmentsConfig(overrides: { decay?: number; enabled?: boolean } = {}): NaxConfig {
-  return {
+  return makeNaxConfig({
     context: {
       v2: {
         fragments: {
@@ -63,7 +63,7 @@ function makeFragmentsConfig(overrides: { decay?: number; enabled?: boolean } = 
         },
       },
     },
-  } as unknown as NaxConfig;
+  });
 }
 
 function storyWith(id: string, dependencies: readonly string[] = []): UserStory {

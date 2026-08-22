@@ -16,6 +16,7 @@ import { initLogger, resetLogger } from "@/logger";
 import { _routingDeps, routingStage } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
+import { makeNaxConfig } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-test-partial-routing-${randomUUID()}`;
 
@@ -58,12 +59,12 @@ function makeStory(routingOverride?: Partial<UserStory["routing"]>): UserStory {
 
 function makeCtx(story: UserStory): PipelineContext {
   return {
-    config: {
+    config: makeNaxConfig({
       tdd: { greenfieldDetection: false },
       autoMode: { complexityRouting: {} },
       routing: { strategy: "llm", llm: { mode: "per-story" } },
       execution: { agent: "claude" },
-    } as unknown as NaxConfig,
+    }),
     rootConfig: DEFAULT_CONFIG,
     story,
     stories: [story],

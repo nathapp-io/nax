@@ -26,7 +26,7 @@ import {
 } from "@/context/engine/pull-tools";
 import { NaxError } from "@/errors";
 import type { UserStory } from "@/prd";
-import { makeLogger } from "@test/helpers";
+import { makeLogger, makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals for dep injection
@@ -344,7 +344,7 @@ describe("handleQueryFeatureContext", () => {
     passes: false,
   } as unknown as UserStory;
 
-  const CONFIG = {} as unknown as NaxConfig;
+  const CONFIG = makeNaxConfig();
 
   function makeBudget(sessionLimit = 5, runLimit = 50) {
     return new PullToolBudget(sessionLimit, runLimit, createRunCallCounter());

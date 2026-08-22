@@ -18,7 +18,7 @@ import { initLogger, resetLogger } from "@/logger";
 import { _routingDeps, routingStage } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
-import { makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ── Capture originals ─────────────────────────────────────────────────────────
 
@@ -44,15 +44,18 @@ function makeStory(workdir?: string): UserStory {
 
 function makeCtx(story: UserStory, repoRoot: string): PipelineContext {
   return {
-    config: {
+    config: makeNaxConfig({
       routing: { strategy: "llm" },
       tdd: { greenfieldDetection: true },
       autoMode: {
-        defaultAgent: "claude",
         complexityRouting: { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" },
-        escalation: { enabled: false, tierOrder: ["fast", "balanced", "powerful"] },
+        escalation: {
+          enabled: false,
+          tierOrder: [{ tier: "fast" }, { tier: "balanced" }, { tier: "powerful" }],
+          resetMode: "initial",
+        },
       },
-    } as unknown as NaxConfig,
+    }),
     prd: { project: "test", branchName: "feat/test", feature: "cli", userStories: [story] },
     story,
     stories: [story],

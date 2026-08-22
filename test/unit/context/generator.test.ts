@@ -127,7 +127,7 @@ describe("generateForPackage (MW-004)", () => {
     const writeMock = mock(() => Promise.resolve(0));
     _generatorDeps.writeFile = writeMock;
 
-    const config = { generate: { agents: ["claude", "codex"] } } as unknown as NaxConfig;
+    const config = makeNaxConfig({ generate: { agents: ["claude", "codex"] } });
     const results = await generateForPackage("/fake/dir", config, false);
     expect(results).toHaveLength(2);
     const outputFiles = results.map((r) => r.outputFile);
