@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, test, expect } from "bun:test";
-import { startHeartbeat, stopHeartbeat, _heartbeatDeps } from "@/execution/crash-heartbeat";
+import { startHeartbeat, stopHeartbeat, _heartbeatDeps, _isHeartbeatActive } from "@/execution/crash-heartbeat";
 
 let origSleep: typeof _heartbeatDeps.sleep;
 let origGetLogger: typeof _heartbeatDeps.getSafeLogger;
@@ -114,5 +114,32 @@ describe("crash-heartbeat — startHeartbeat", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(warnings).toEqual([]);
+  });
+  test("a stale-generation loop exits at the gen check when its sleep resolves after stopHeartbeat", async () => {
+    // Line-51 guard: the loop re-checks the generation counter AFTER waking, so
+    // a loop whose sleep resolves normally (rather than aborting) still exits
+    // instead of writing status on behalf of a superseded run. Previously this
+    // branch was only ever reached incidentally, by a leaked heartbeat whose
+    // real 60s sleep happened to elapse while the rest of the suite ran — which
+    // stopped happening once the suite got faster than 60s.
+    let releaseSleep: () => void = () => {};
+    let updates = 0;
+
+    // Ignores the abort signal on purpose: this is the resolve-normally path.
+    _heartbeatDeps.sleep = () =>
+      new Promise<void>((resolve) => {
+        releaseSleep = resolve;
+      });
+
+    startHeartbeat({ update: async () => { updates++; } } as any, () => 0, () => 0);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Supersede the loop while it is parked in sleep, then let the sleep resolve.
+    stopHeartbeat();
+    releaseSleep();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(_isHeartbeatActive()).toBe(false);
+    expect(updates).toBe(0);
   });
 });
