@@ -113,9 +113,13 @@ branch refs/heads/nax/US-001
     // @ts-expect-error - accessing private method for testing
     const worktrees = manager.parseWorktreeList(output);
 
-    // First worktree has no branch, should be filtered out
-    expect(worktrees.length).toBe(1);
-    expect(worktrees[0].branch).toBe("nax/US-001");
+    // BUG-24 (D-17): detached-HEAD worktrees are kept with branch: null
+    // rather than silently dropped. Rebase/bisect worktrees would otherwise
+    // vanish from list() and their leaked dirs would compound MEM-6.
+    expect(worktrees).toHaveLength(2);
+    expect(worktrees[0].path).toBe("/path/to/project");
+    expect(worktrees[0].branch).toBeNull();
+    expect(worktrees[1].branch).toBe("nax/US-001");
   });
 
   it("filters incomplete entries missing path", () => {

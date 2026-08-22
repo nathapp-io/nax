@@ -302,16 +302,18 @@ export class WorktreeManager {
         currentWorktree.branch = line.substring("branch ".length).replace("refs/heads/", "");
       } else if (line === "") {
         // Empty line indicates end of worktree entry
-        if (currentWorktree.path && currentWorktree.branch) {
-          worktrees.push(currentWorktree as WorktreeInfo);
+        // BUG-24 (D-17): detached-HEAD worktrees (rebase, bisect) emit no
+        // `branch` line — keep them with branch: null instead of dropping.
+        if (currentWorktree.path) {
+          worktrees.push({ path: currentWorktree.path, branch: currentWorktree.branch ?? null });
         }
         currentWorktree = {};
       }
     }
 
     // Handle last entry if no trailing newline
-    if (currentWorktree.path && currentWorktree.branch) {
-      worktrees.push(currentWorktree as WorktreeInfo);
+    if (currentWorktree.path) {
+      worktrees.push({ path: currentWorktree.path, branch: currentWorktree.branch ?? null });
     }
 
     return worktrees;
