@@ -152,6 +152,7 @@ describe("SpawnAcpClient — onPidSpawned callback (#228)", () => {
     const internals = client as unknown as { env: Record<string, string | undefined> }; // test-ratchet-allow: as-unknown-as
     expect(internals.env.ANTHROPIC_BASE_URL).toBeUndefined();
   });
+
 });
 
 describe("SpawnAcpClient — prompt EPIPE resilience", () => {
