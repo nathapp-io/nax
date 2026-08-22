@@ -1,6 +1,6 @@
 {
-  "count": 2001,
-  "updatedAt": "2026-08-19T07:48:30.457Z",
+  "count": 2003,
+  "updatedAt": "2026-08-22T08:39:11.244Z",
   "byFile": {
     "test/helpers/deps.ts": 2,
     "test/helpers/fake-agent-manager.ts": 3,
@@ -174,6 +174,7 @@
     "test/unit/execution/rectification-oscillation-circuit-breaker.test.ts": 1,
     "test/unit/execution/rectification.test.ts": 2,
     "test/unit/execution/runner-completion-events.test.ts": 1,
+    "test/unit/execution/runner-completion-finish.test.ts": 2,
     "test/unit/execution/runner-completion-postrun.test.ts": 7,
     "test/unit/execution/runner-completion-skip.test.ts": 1,
     "test/unit/execution/session-manager-runtime.test.ts": 15,

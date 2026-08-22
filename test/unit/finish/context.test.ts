@@ -1,6 +1,8 @@
+import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import type { ResolveResult } from "@/cli";
 import { _finishContextDeps, loadFinishContext } from "@/finish";
+import { withTempDir } from "@test/helpers";
 
 type GitResult = { stdout: string; stderr: string; exitCode: number };
 
@@ -165,5 +167,211 @@ describe("loadFinishContext", () => {
 
     expect(ctx.base).toBe("origin/master");
     expect(ctx.route).toBe("proceed");
+  });
+});
+
+describe("loadFinishContext — ledger entry check (#1674 part 1)", () => {
+  test("no ledgerOpts passed: behaves exactly as before (route stays 'proceed')", async () => {
+    _finishContextDeps.git = makeGit({ revList: okGit("3\n") });
+    _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+
+    const ctx = await loadFinishContext("my-feature", "/repo");
+
+    expect(ctx.route).toBe("proceed");
+  });
+
+  test("a ledger hit at the identical HEAD on the same branch routes to already-finished", async () => {
+    await withTempDir(async (dir) => {
+      const auditDir = join(dir, "finish-audit", "my-feature");
+      await Bun.write(
+        join(auditDir, "last.json"),
+        JSON.stringify({
+          branch: "feat/x",
+          headSha: "same-sha",
+          status: "opened",
+          prUrl: "https://example.com/pr/9",
+          runId: "run-0",
+          finishedAt: "2026-08-20T00:00:00.000Z",
+        }),
+      );
+      _finishContextDeps.git = async (args: string[]): Promise<GitResult> => {
+        if (args[0] === "remote" && args[1] === "show") return okGit("  HEAD branch: main\n");
+        if (args[0] === "rev-list") return okGit("3\n");
+        if (args[0] === "rev-parse" && args[1] === "HEAD") return okGit("same-sha\n");
+        if (args[0] === "rev-parse" && args[1] === "--verify") return okGit("abc123\n");
+        throw new Error(`unexpected git call: ${args.join(" ")}`);
+      };
+      _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+
+      const ctx = await loadFinishContext("my-feature", "/repo", {
+        branch: "feat/x",
+        auditDir,
+        rerun: "on-change",
+      });
+
+      expect(ctx.route).toBe("already-finished");
+      expect(ctx.ledgerPrUrl).toBe("https://example.com/pr/9");
+    });
+  });
+
+  test("a ledger miss after a new commit (different HEAD) still proceeds", async () => {
+    await withTempDir(async (dir) => {
+      const auditDir = join(dir, "finish-audit", "my-feature");
+      await Bun.write(
+        join(auditDir, "last.json"),
+        JSON.stringify({
+          branch: "feat/x",
+          headSha: "old-sha",
+          status: "opened",
+          runId: "run-0",
+          finishedAt: "2026-08-20T00:00:00.000Z",
+        }),
+      );
+      _finishContextDeps.git = async (args: string[]): Promise<GitResult> => {
+        if (args[0] === "remote" && args[1] === "show") return okGit("  HEAD branch: main\n");
+        if (args[0] === "rev-list") return okGit("1\n");
+        if (args[0] === "rev-parse" && args[1] === "HEAD") return okGit("new-sha\n");
+        if (args[0] === "rev-parse" && args[1] === "--verify") return okGit("abc123\n");
+        throw new Error(`unexpected git call: ${args.join(" ")}`);
+      };
+      _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+
+      const ctx = await loadFinishContext("my-feature", "/repo", {
+        branch: "feat/x",
+        auditDir,
+        rerun: "on-change",
+      });
+
+      expect(ctx.route).toBe("proceed");
+    });
+  });
+
+  test("an escalated ledger entry at the same HEAD also routes to already-finished (must not re-page)", async () => {
+    await withTempDir(async (dir) => {
+      const auditDir = join(dir, "finish-audit", "my-feature");
+      await Bun.write(
+        join(auditDir, "last.json"),
+        JSON.stringify({
+          branch: "feat/x",
+          headSha: "same-sha",
+          status: "escalated",
+          runId: "run-0",
+          finishedAt: "2026-08-20T00:00:00.000Z",
+        }),
+      );
+      _finishContextDeps.git = async (args: string[]): Promise<GitResult> => {
+        if (args[0] === "remote" && args[1] === "show") return okGit("  HEAD branch: main\n");
+        if (args[0] === "rev-list") return okGit("2\n");
+        if (args[0] === "rev-parse" && args[1] === "HEAD") return okGit("same-sha\n");
+        if (args[0] === "rev-parse" && args[1] === "--verify") return okGit("abc123\n");
+        throw new Error(`unexpected git call: ${args.join(" ")}`);
+      };
+      _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+
+      const ctx = await loadFinishContext("my-feature", "/repo", {
+        branch: "feat/x",
+        auditDir,
+        rerun: "on-change",
+      });
+
+      expect(ctx.route).toBe("already-finished");
+    });
+  });
+
+  test("finish.rerun 'always' bypasses the ledger check entirely", async () => {
+    await withTempDir(async (dir) => {
+      const auditDir = join(dir, "finish-audit", "my-feature");
+      await Bun.write(
+        join(auditDir, "last.json"),
+        JSON.stringify({
+          branch: "feat/x",
+          headSha: "same-sha",
+          status: "opened",
+          runId: "run-0",
+          finishedAt: "2026-08-20T00:00:00.000Z",
+        }),
+      );
+      _finishContextDeps.git = async (args: string[]): Promise<GitResult> => {
+        if (args[0] === "remote" && args[1] === "show") return okGit("  HEAD branch: main\n");
+        if (args[0] === "rev-list") return okGit("2\n");
+        if (args[0] === "rev-parse" && args[1] === "HEAD") return okGit("same-sha\n");
+        if (args[0] === "rev-parse" && args[1] === "--verify") return okGit("abc123\n");
+        throw new Error(`unexpected git call: ${args.join(" ")}`);
+      };
+      _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+
+      const ctx = await loadFinishContext("my-feature", "/repo", {
+        branch: "feat/x",
+        auditDir,
+        rerun: "always",
+      });
+
+      expect(ctx.route).toBe("proceed");
+    });
+  });
+
+  test("a corrupt last.json fails open — finish proceeds rather than throwing", async () => {
+    await withTempDir(async (dir) => {
+      const auditDir = join(dir, "finish-audit", "my-feature");
+      await Bun.write(join(auditDir, "last.json"), "{ not valid json at all");
+      _finishContextDeps.git = makeGit({ revList: okGit("2\n") });
+      _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+
+      const ctx = await loadFinishContext("my-feature", "/repo", {
+        branch: "feat/x",
+        auditDir,
+        rerun: "on-change",
+      });
+
+      expect(ctx.route).toBe("proceed");
+    });
+  });
+
+  test("an absent last.json fails open — finish proceeds rather than throwing", async () => {
+    await withTempDir(async (dir) => {
+      const auditDir = join(dir, "finish-audit", "my-feature");
+      _finishContextDeps.git = makeGit({ revList: okGit("2\n") });
+      _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+
+      const ctx = await loadFinishContext("my-feature", "/repo", {
+        branch: "feat/x",
+        auditDir,
+        rerun: "on-change",
+      });
+
+      expect(ctx.route).toBe("proceed");
+    });
+  });
+
+  test("a ledger entry for a different branch does not skip", async () => {
+    await withTempDir(async (dir) => {
+      const auditDir = join(dir, "finish-audit", "my-feature");
+      await Bun.write(
+        join(auditDir, "last.json"),
+        JSON.stringify({
+          branch: "feat/other",
+          headSha: "same-sha",
+          status: "opened",
+          runId: "run-0",
+          finishedAt: "2026-08-20T00:00:00.000Z",
+        }),
+      );
+      _finishContextDeps.git = async (args: string[]): Promise<GitResult> => {
+        if (args[0] === "remote" && args[1] === "show") return okGit("  HEAD branch: main\n");
+        if (args[0] === "rev-list") return okGit("2\n");
+        if (args[0] === "rev-parse" && args[1] === "HEAD") return okGit("same-sha\n");
+        if (args[0] === "rev-parse" && args[1] === "--verify") return okGit("abc123\n");
+        throw new Error(`unexpected git call: ${args.join(" ")}`);
+      };
+      _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+
+      const ctx = await loadFinishContext("my-feature", "/repo", {
+        branch: "feat/x",
+        auditDir,
+        rerun: "on-change",
+      });
+
+      expect(ctx.route).toBe("proceed");
+    });
   });
 });

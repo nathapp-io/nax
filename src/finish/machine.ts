@@ -17,8 +17,8 @@
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
-import { type AuditTarget, recordRound, writeResult } from "./audit";
-import { buildCommitRound, commitFixes, filesInCommit } from "./commit";
+import { type AuditTarget, type WriteResultOptions, recordRound, writeResult } from "./audit";
+import { buildCommitRound, commitFixes, filesInCommit, headSha } from "./commit";
 import { buildFixCommitMessage } from "./commit-message";
 import type { FinishContext } from "./context";
 import { runAcceptanceGate } from "./gates/acceptance";
@@ -93,17 +93,29 @@ async function doEscalate(
   state.escalationReason = reason;
   state.findings = findings;
 
+  // Stamped onto the escalation result so a re-run at the same HEAD hits the
+  // ledger's `already-finished` route instead of re-paging the same human
+  // (#1674 part 1) — see `FinishResult.headSha`'s doc comment. `null` (no
+  // repo, unborn branch) is dropped rather than written as a false key.
+  const sha = await headSha(state.workdir);
   const base: FinishResult = {
     feature: state.feature,
     status: "escalated",
     escalationReason: reason,
     findings,
+    branch: state.branch,
+    ...(sha ? { headSha: sha } : {}),
   };
   // Written BEFORE delivery is attempted (#1399): "the one path whose job is
   // to say a human is needed was the one path with no fallback". An external
   // kill (Ctrl-C, OOM) part-way through delivery must still leave a result
   // file behind, which writing it afterwards cannot guarantee.
-  await safeWriteResult(deps, base);
+  //
+  // `ledger: false` (post-review CRITICAL fix): at this point delivery has
+  // not even been attempted, so this result must never be mistaken for a
+  // completed escalation by a later run's ledger entry check — see
+  // `updateLedger`'s doc comment (`./audit`) for the full reasoning.
+  await safeWriteResult(deps, base, { ledger: false });
 
   // A run the user cancelled is not an escalation to broadcast -- see
   // `FinishMachineDeps.runSignal`. The result above is still on disk, so the
@@ -145,9 +157,13 @@ async function doEscalate(
  * phase's own status write already record that finish escalated, so a lost
  * result file is worth strictly less than a duplicate page to a human.
  */
-async function safeWriteResult(deps: FinishMachineDeps, result: FinishResult): Promise<void> {
+async function safeWriteResult(
+  deps: FinishMachineDeps,
+  result: FinishResult,
+  options?: WriteResultOptions,
+): Promise<void> {
   try {
-    await writeResult(deps.audit, result);
+    await writeResult(deps.audit, result, options);
   } catch (err) {
     getSafeLogger()?.warn("finish", "Finish result file could not be written", {
       storyId: "_run",
@@ -162,6 +178,23 @@ async function runPreconditions(state: FinishState, deps: FinishMachineDeps): Pr
   const { context } = deps;
   if (context.route === "escalate") {
     return doEscalate(state, deps, context.reason ?? "Finish context could not be resolved.", []);
+  }
+  if (context.route === "already-finished") {
+    // #1674 part 1: the entry check in `loadFinishContext` already confirmed
+    // the ledger's branch/HEAD match this run and its recorded status was
+    // terminal. Reuses `"nothing-to-finish"` as the machine-level status —
+    // there genuinely is nothing new to finish — but sets `skipReason` so
+    // `runFinishPhase` can tell this apart from a real zero-commits preflight
+    // and report `status: "skipped"` rather than `"passed"` on status.json.
+    state.status = "nothing-to-finish";
+    const result: FinishResult = {
+      feature: state.feature,
+      status: "nothing-to-finish",
+      skipReason: "already-finished",
+      ...(context.ledgerPrUrl ? { url: context.ledgerPrUrl } : {}),
+    };
+    await writeResult(deps.audit, result);
+    return result;
   }
   if (context.route === "nothing-to-finish") {
     state.status = "nothing-to-finish";
@@ -437,7 +470,18 @@ async function finishTerminal(state: FinishState, deps: FinishMachineDeps): Prom
   }
   state.status = promoted.status;
   const url = promoted.url ?? state.prUrl;
-  const result: FinishResult = { feature: state.feature, status: promoted.status, ...(url ? { url } : {}) };
+  // Same ledger stamp as `doEscalate` — see its comment. This is the one
+  // path that reaches a genuinely successful terminal status
+  // (opened/promoted/already-ready), so it is the other half of what makes
+  // the ledger's entry check meaningful.
+  const sha = await headSha(state.workdir);
+  const result: FinishResult = {
+    feature: state.feature,
+    status: promoted.status,
+    branch: state.branch,
+    ...(sha ? { headSha: sha } : {}),
+    ...(url ? { url } : {}),
+  };
   await writeResult(deps.audit, result);
   return result;
 }

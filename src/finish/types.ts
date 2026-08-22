@@ -198,6 +198,16 @@ export interface FinishPrBodySettings {
 export interface FinishResult {
   feature: string;
   status: "opened" | "promoted" | "already-ready" | "escalated" | "nothing-to-finish";
+  /**
+   * HEAD sha at the moment this result was written — the finish ledger's key
+   * (#1674 part 1, `./audit`'s `writeResult`). Set on every path that reaches
+   * a terminal outcome after the machine has actually run (`doEscalate`,
+   * `finishTerminal`); absent on a preflight `nothing-to-finish`, which never
+   * gets far enough to have one worth recording.
+   */
+  headSha?: string;
+  /** The branch finish ran on — the ledger's other half of its key, alongside `headSha`. */
+  branch?: string;
   url?: string;
   escalationReason?: string;
   /**
@@ -221,6 +231,15 @@ export interface FinishResult {
    * defects), and it was previously the one case that recorded nothing.
    */
   rounds?: FinishRound[];
+  /**
+   * Set only when `FinishContext.route` was `"already-finished"` (#1674 part
+   * 1): this result is a ledger skip, not a fresh preflight outcome, even
+   * though its `status` reuses `"nothing-to-finish"`. `runFinishPhase` reads
+   * this to report `postRun.finish.status: "skipped"` rather than `"passed"`
+   * on `status.json` — the two are different claims ("there was truly
+   * nothing to do" vs "this exact commit was already finished").
+   */
+  skipReason?: "already-finished";
 }
 
 /** Result of running the feature's acceptance-test gate. */
