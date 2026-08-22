@@ -11,9 +11,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { clearQueueFile, processQueueFile, readQueueFile } from "@/execution";
+import { clearQueueFile, drainQueueAtBatchBoundary, processQueueFile, readQueueFile } from "@/execution";
 import { getLogger, initLogger, resetLogger } from "@/logger";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 async function readWarnLines(
   logFile: string,
@@ -226,5 +226,176 @@ describe("processQueueFile — read/process/clear in one lock (BUG-11)", () => {
 
     expect(applyCount).toBe(1);
     expect(secondResult).toBeUndefined();
+  });
+});
+
+describe("drainQueueAtBatchBoundary (BUG-9)", () => {
+  let workdir: string;
+  let logFile: string;
+
+  beforeEach(() => {
+    workdir = makeTempDir("nax-queue-drain-");
+    logFile = join(workdir, "audit.jsonl");
+    initLogger({ level: "silent", filePath: logFile });
+    writeFileSync(logFile, "");
+  });
+
+  afterEach(() => {
+    resetLogger();
+    cleanupTempDir(workdir);
+  });
+
+  test("no queue file: returns not-paused and leaves the PRD untouched", async () => {
+    const story = makeStory({ id: "US-001", status: "pending" });
+    const prd = makePRD({ userStories: [story] });
+
+    const result = await drainQueueAtBatchBoundary(workdir, prd);
+
+    expect(result).toEqual({ paused: false });
+    expect(prd.userStories[0].status).toBe("pending");
+  });
+
+  test("PAUSE reports paused without mutating the PRD, and clears the queue file", async () => {
+    const story = makeStory({ id: "US-001", status: "pending" });
+    const prd = makePRD({ userStories: [story] });
+    await Bun.write(join(workdir, ".queue.txt"), "PAUSE\n");
+
+    const result = await drainQueueAtBatchBoundary(workdir, prd);
+
+    expect(result.paused).toBe(true);
+    expect(result.reason).toBe("User requested pause via .queue.txt");
+    expect(prd.userStories[0].status).toBe("pending");
+    expect(await Bun.file(join(workdir, ".queue.txt")).exists()).toBe(false);
+  });
+
+  test("ABORT marks all pending stories skipped and reports paused", async () => {
+    const s1 = makeStory({ id: "US-001", status: "pending" });
+    const s2 = makeStory({ id: "US-002", status: "passed" });
+    const prd = makePRD({ userStories: [s1, s2] });
+    await Bun.write(join(workdir, ".queue.txt"), "ABORT\n");
+
+    const result = await drainQueueAtBatchBoundary(workdir, prd);
+
+    expect(result.paused).toBe(true);
+    expect(prd.userStories[0].status).toBe("skipped");
+    // Only pending stories are touched — an already-passed story is untouched.
+    expect(prd.userStories[1].status).toBe("passed");
+  });
+
+  test("RETRY mutates the PRD in place and reports not-paused", async () => {
+    const story = makeStory({ id: "US-001", status: "failed", attempts: 2 });
+    const prd = makePRD({ userStories: [story] });
+    await Bun.write(join(workdir, ".queue.txt"), "RETRY US-001\n");
+
+    const result = await drainQueueAtBatchBoundary(workdir, prd);
+
+    expect(result).toEqual({ paused: false });
+    expect(prd.userStories[0].status).toBe("pending");
+    expect(prd.userStories[0].attempts).toBe(0);
+  });
+
+  test("PRIORITY sets a story's priority", async () => {
+    const story = makeStory({ id: "US-001", status: "pending" });
+    const prd = makePRD({ userStories: [story] });
+    await Bun.write(join(workdir, ".queue.txt"), "PRIORITY US-001 9\n");
+
+    const result = await drainQueueAtBatchBoundary(workdir, prd);
+
+    expect(result).toEqual({ paused: false });
+    expect(prd.userStories[0].priority).toBe(9);
+  });
+
+  test("SKIP marks a known story skipped", async () => {
+    const story = makeStory({ id: "US-001", status: "pending" });
+    const prd = makePRD({ userStories: [story] });
+    await Bun.write(join(workdir, ".queue.txt"), "SKIP US-001\n");
+
+    const result = await drainQueueAtBatchBoundary(workdir, prd);
+
+    expect(result).toEqual({ paused: false });
+    expect(prd.userStories[0].status).toBe("skipped");
+  });
+
+  test("SKIP naming an unknown story is a no-op, not a crash", async () => {
+    const story = makeStory({ id: "US-001", status: "pending" });
+    const prd = makePRD({ userStories: [story] });
+    await Bun.write(join(workdir, ".queue.txt"), "SKIP US-999\n");
+
+    const result = await drainQueueAtBatchBoundary(workdir, prd);
+
+    expect(result).toEqual({ paused: false });
+    expect(prd.userStories[0].status).toBe("pending");
+  });
+
+  test("INJECT adds a validated story from a relative workspace file", async () => {
+    const story = makeStory({ id: "US-001", status: "pending" });
+    const prd = makePRD({ userStories: [story] });
+    await Bun.write(
+      join(workdir, "new-story.json"),
+      JSON.stringify({
+        title: "Add caching layer",
+        description: "Cache expensive lookups behind a TTL.",
+        acceptanceCriteria: ["Cache hits avoid the DB call"],
+      }),
+    );
+    await Bun.write(join(workdir, ".queue.txt"), "INJECT new-story.json\n");
+
+    const result = await drainQueueAtBatchBoundary(workdir, prd);
+
+    expect(result).toEqual({ paused: false });
+    expect(prd.userStories).toHaveLength(2);
+    expect(prd.userStories[1].title).toBe("Add caching layer");
+  });
+
+  test("INJECT rejects an absolute path outside the workspace without crashing", async () => {
+    const story = makeStory({ id: "US-001", status: "pending" });
+    const prd = makePRD({ userStories: [story] });
+    const outsideDir = makeTempDir("nax-queue-drain-outside-");
+    try {
+      const outsidePath = join(outsideDir, "outside-story.json");
+      await Bun.write(
+        outsidePath,
+        JSON.stringify({ title: "Escaped", description: "n/a", acceptanceCriteria: ["n/a"] }),
+      );
+      await Bun.write(join(workdir, ".queue.txt"), `INJECT ${outsidePath}\n`);
+
+      const result = await drainQueueAtBatchBoundary(workdir, prd);
+
+      expect(result).toEqual({ paused: false });
+      expect(prd.userStories).toHaveLength(1);
+    } finally {
+      cleanupTempDir(outsideDir);
+    }
+  });
+
+  test("multiple commands in one batch: RETRY and PRIORITY both apply before returning not-paused", async () => {
+    const s1 = makeStory({ id: "US-001", status: "failed" });
+    const s2 = makeStory({ id: "US-002", status: "pending" });
+    const prd = makePRD({ userStories: [s1, s2] });
+    await Bun.write(join(workdir, ".queue.txt"), "RETRY US-001\nPRIORITY US-002 5\n");
+
+    const result = await drainQueueAtBatchBoundary(workdir, prd);
+
+    expect(result).toEqual({ paused: false });
+    expect(prd.userStories[0].status).toBe("pending");
+    expect(prd.userStories[1].priority).toBe(5);
+  });
+
+  test("PAUSE followed by an unprocessed RETRY logs a warn recording the dropped command", async () => {
+    const story = makeStory({ id: "US-001", status: "pending" });
+    const prd = makePRD({ userStories: [story] });
+    await Bun.write(join(workdir, ".queue.txt"), "PAUSE\nRETRY US-001\n");
+
+    const result = await drainQueueAtBatchBoundary(workdir, prd);
+
+    expect(result.paused).toBe(true);
+    // The RETRY after PAUSE is never applied — the whole point of this test.
+    expect(prd.userStories[0].status).toBe("pending");
+
+    const warns = await readWarnLines(logFile);
+    const dropped = warns.find((e) => e.message.includes("Dropped unprocessed queue commands"));
+    expect(dropped).toBeDefined();
+    expect(dropped?.data?.droppedCount).toBe(1);
+    expect(dropped?.data?.droppedTypes).toEqual(["RETRY"]);
   });
 });

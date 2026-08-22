@@ -199,13 +199,30 @@ export interface BatchQueueDrainResult {
  */
 export async function drainQueueAtBatchBoundary(workdir: string, prd: PRD): Promise<BatchQueueDrainResult> {
   const logger = getSafeLogger();
-  const result = (await processQueueFile(workdir, (commands) =>
-    applyBatchBoundaryCommands(workdir, prd, commands, logger),
-  )) ?? { paused: false };
-  if (result.paused) {
-    logger?.warn("execution", "Stopping run: queue command applied at batch boundary", { reason: result.reason });
-  }
-  return result;
+  return (
+    (await processQueueFile(workdir, (commands) => applyBatchBoundaryCommands(workdir, prd, commands, logger))) ?? {
+      paused: false,
+    }
+  );
+}
+
+/**
+ * PAUSE and ABORT stop processing mid-loop; any commands still unprocessed
+ * after the current index are lost once the queue batch is cleared. That
+ * control flow is intentional, but the loss must be auditable — mirrors
+ * `logDroppedCommands` in `pipeline/stages/queue-check.ts`.
+ */
+function logDroppedCommands(
+  logger: ReturnType<typeof getSafeLogger>,
+  commands: readonly { type: string }[],
+  currentIndex: number,
+): void {
+  const dropped = commands.slice(currentIndex + 1);
+  if (dropped.length === 0) return;
+  logger?.warn("queue", "Dropped unprocessed queue commands at batch boundary", {
+    droppedCount: dropped.length,
+    droppedTypes: dropped.map((c) => c.type),
+  });
 }
 
 async function applyBatchBoundaryCommands(
@@ -214,9 +231,10 @@ async function applyBatchBoundaryCommands(
   commands: QueueCommand[],
   logger: ReturnType<typeof getSafeLogger>,
 ): Promise<BatchQueueDrainResult> {
-  for (const cmd of commands) {
+  for (const [index, cmd] of commands.entries()) {
     if (cmd.type === "PAUSE") {
       logger?.warn("queue", "Paused by user (applied at batch boundary)", { command: "PAUSE" });
+      logDroppedCommands(logger, commands, index);
       return { paused: true, reason: "User requested pause via .queue.txt" };
     }
 
@@ -225,6 +243,7 @@ async function applyBatchBoundaryCommands(
       for (const s of prd.userStories) {
         if (s.status === "pending") markStorySkipped(prd, s.id);
       }
+      logDroppedCommands(logger, commands, index);
       return { paused: true, reason: "User requested abort" };
     }
 
@@ -258,7 +277,7 @@ async function applyBatchBoundaryCommands(
           throw new NaxError(
             `INJECT storyFile must be a relative path within the workspace: ${cmd.storyFile}`,
             "INJECT_PATH_ABSOLUTE",
-            { stage: "queue-check", storyFile: cmd.storyFile },
+            { stage: "queue-batch-boundary", storyFile: cmd.storyFile },
           );
         }
         const storyFilePath = validateFilePath(path.join(workdir, cmd.storyFile), workdir);

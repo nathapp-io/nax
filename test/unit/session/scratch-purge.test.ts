@@ -205,6 +205,26 @@ describe("purgeStaleScratch", () => {
     expect(removed).toHaveLength(0);
   });
 
+  test("BUG-11: keeps session dir when lastActivityAt is present but unparseable (NaN)", async () => {
+    _scratchPurgeDeps.now = () => NOW_MS;
+    _scratchPurgeDeps.listSessionDirs = async () => ["sess-corrupt-date"];
+    _scratchPurgeDeps.fileExists = async () => true;
+    _scratchPurgeDeps.readFile = async () => JSON.stringify({ lastActivityAt: "not-a-date" });
+    const removed: string[] = [];
+    _scratchPurgeDeps.remove = async (path: string) => {
+      removed.push(path);
+    };
+    _scratchPurgeDeps.move = async () => {};
+
+    const count = await purgeStaleScratch(PROJECT_DIR, FEATURE, 7);
+
+    // `new Date("not-a-date").getTime()` is NaN, and `NaN >= cutoffMs` is
+    // false — without the Number.isFinite guard this would fall through and
+    // delete the directory despite the descriptor being corrupt, not stale.
+    expect(count).toBe(0);
+    expect(removed).toHaveLength(0);
+  });
+
   test("processes only sessions older than retentionDays — mixed batch", async () => {
     const removed: string[] = [];
     setupDeps(

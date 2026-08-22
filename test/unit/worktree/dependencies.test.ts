@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { prepareWorktreeDependencies, WorktreeDependencyPreparationError, _worktreeDependencyDeps } from "@/worktree/dependencies";
 import type { NaxConfig } from "@/config";
+import {
+  WorktreeDependencyPreparationError,
+  _worktreeDependencyDeps,
+  prepareWorktreeDependencies,
+} from "@/worktree/dependencies";
 import { makeNaxConfig } from "@test/helpers";
 
 function textStream(text = ""): ReadableStream<Uint8Array> {
@@ -51,7 +55,9 @@ describe("prepareWorktreeDependencies", () => {
       worktreeRoot: "/repo/.nax-wt/US-002",
       storyId: "US-002",
       storyWorkdir: "packages/web",
-      config: makeNaxConfig({ execution: { worktreeDependencies: { mode: "provision", setupCommand: "bun install --frozen-lockfile" } } }),
+      config: makeNaxConfig({
+        execution: { worktreeDependencies: { mode: "provision", setupCommand: "bun install --frozen-lockfile" } },
+      }),
     });
 
     expect(result).toEqual({ cwd: "/repo/.nax-wt/US-002/packages/web" });
@@ -73,4 +79,42 @@ describe("prepareWorktreeDependencies", () => {
     ).rejects.toThrow(WorktreeDependencyPreparationError);
   });
 
+  // BUG-13: a hung install (registry/NFS stall) must not block the story
+  // forever — unlike every git call (routed through gitWithTimeout), this
+  // spawn previously had no deadline at all.
+  test("provision times out and SIGKILLs a hung install", async () => {
+    let killed = false;
+    let resolveExited: (code: number) => void;
+    const exited = new Promise<number>((resolve) => {
+      resolveExited = resolve;
+    });
+    const spawnMock = mock(() => ({
+      exited,
+      stdout: textStream(),
+      stderr: textStream(),
+      pid: 456,
+      // Simulates real Bun.spawn behaviour: killing the process resolves `exited`.
+      kill: (_signal?: string) => {
+        killed = true;
+        resolveExited(137); // 128 + SIGKILL(9)
+      },
+    }));
+    _worktreeDependencyDeps.spawn = spawnMock as unknown as typeof _worktreeDependencyDeps.spawn; // test-ratchet-allow: as-unknown-as
+
+    await expect(
+      prepareWorktreeDependencies({
+        projectRoot: "/repo",
+        worktreeRoot: "/repo/.nax-wt/US-004",
+        storyId: "US-004",
+        storyWorkdir: "packages/hung",
+        // Schema minimum (1s) — the contract under test is "arms a timer,
+        // SIGKILLs on expiry, throws" not the production 300s default.
+        config: makeNaxConfig({
+          execution: { worktreeDependencies: { mode: "provision", setupCommand: "bun install", timeoutSeconds: 1 } },
+        }),
+      }),
+    ).rejects.toThrow(/timed out after 1s/);
+
+    expect(killed).toBe(true);
+  });
 });
