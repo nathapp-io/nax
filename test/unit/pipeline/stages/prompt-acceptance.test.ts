@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { _promptStageDeps, promptStage } from "@/pipeline/stages/prompt";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
-import { makeSparseNaxConfig, makeStory } from "@test/helpers";
+import { makeSparseNaxConfig, makeStory, makeTestContext } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-prompt-acceptance-${randomUUID()}`;
 
@@ -31,7 +31,7 @@ function makePRD(): PRD {
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   const story = makeStory({ status: "in-progress", passes: false, attempts: 0, acceptanceCriteria: ["AC1"] });
-  return {
+  return makeTestContext({
     config: makeSparseNaxConfig({
       agent: { default: "test-agent" },
       models: {},
@@ -64,9 +64,8 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
       reasoning: "",
     },
     workdir: WORKDIR,
-    hooks: {} as PipelineContext["hooks"],
     ...overrides,
-  } as unknown as PipelineContext;
+  } as Partial<PipelineContext>);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

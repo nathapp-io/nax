@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import { promptStage } from "@/pipeline/stages/prompt";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
-import { makeNaxConfig } from "@test/helpers";
+import { makeNaxConfig, makeTestContext } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-test-prompt-batch-${randomUUID()}`;
 
@@ -51,7 +51,7 @@ function makeCtx(
   testStrategy: "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite" = "tdd-simple",
   overrides: Partial<PipelineContext> = {},
 ): PipelineContext {
-  return {
+  return makeTestContext({
     config: makeNaxConfig({ quality: { commands: { test: "bun test" } } }),
     prd: makePRD(stories),
     story: stories[0],
@@ -65,9 +65,8 @@ function makeCtx(
     rootConfig: makeNaxConfig(),
     workdir: WORKDIR,
     projectDir: WORKDIR,
-    hooks: {} as PipelineContext["hooks"],
     ...overrides,
-  } as unknown as PipelineContext;
+  } as Partial<PipelineContext>);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

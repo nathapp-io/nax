@@ -18,7 +18,7 @@ import { _completionDeps, completionStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
 import { errorMessage } from "@/utils/errors";
-import { makeMockRuntime, makeNaxConfig, makePRD, makeStory, withTempDir } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig, makePRD, makeStory, makeTestContext, withTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration
@@ -82,23 +82,33 @@ function makeCtx(
   overrides: Partial<PipelineContext> = {},
 ): PipelineContext {
   const story = prd.userStories[0]!;
-  return {
-    config,
-    rootConfig: makeNaxConfig(),
-    prd,
-    story,
-    stories: [story],
-    routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-    workdir: tempDir,
-    projectDir: tempDir,
-    featureDir: tempDir,
-    prdPath: `${tempDir}/prd.json`,
-    agentResult: { success: true, estimatedCostUsd: 0.01, output: "", stderr: "", exitCode: 0, rateLimited: false },
-    hooks: {} as PipelineContext["hooks"],
-    storyStartTime: new Date().toISOString(),
-    runtime: makeMockRuntime(),
-    ...overrides,
-  } as unknown as PipelineContext;
+  return Object.assign(
+    makeTestContext({
+      config,
+      rootConfig: makeNaxConfig(),
+      prd,
+      story,
+      stories: [story],
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+      workdir: tempDir,
+      projectDir: tempDir,
+    }),
+    {
+      featureDir: tempDir,
+      prdPath: `${tempDir}/prd.json`,
+      agentResult: {
+        success: true,
+        estimatedCostUsd: 0.01,
+        output: "",
+        stderr: "",
+        exitCode: 0,
+        rateLimited: false,
+      },
+      storyStartTime: new Date().toISOString(),
+      runtime: makeMockRuntime(),
+    },
+    overrides,
+  );
 }
 
 beforeEach(() => {

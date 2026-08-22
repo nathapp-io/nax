@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { PipelineContext } from "@/pipeline";
 import { _scopeFilesDeps, resolveScopeFiles } from "@/pipeline";
 import type { UserStory } from "@/prd/types";
-import { makeStory } from "@test/helpers";
+import { makeStory, makeTestContext } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals (restored per test)
@@ -43,11 +43,7 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function makeCtx(story: UserStory, workdir = "/repo"): PipelineContext {
-  return {
-    story,
-    workdir,
-    projectDir: workdir,
-  } as unknown as PipelineContext;
+  return makeTestContext({ story, workdir, projectDir: workdir });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

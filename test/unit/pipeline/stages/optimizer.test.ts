@@ -9,17 +9,14 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { _optimizerDeps, optimizerStage } from "@/pipeline/stages/optimizer";
 import type { PipelineContext } from "@/pipeline/types";
+import { makeTestContext } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 function makeMinimalCtx(prompt: string | undefined): PipelineContext {
-  return {
-    prompt,
-    config: {},
-    plugins: [],
-  } as unknown as PipelineContext;
+  return { ...makeTestContext(), prompt } as PipelineContext;
 }
 
 const originalGetLogger = _optimizerDeps.getLogger;

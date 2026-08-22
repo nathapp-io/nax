@@ -13,8 +13,7 @@ import type { ContextManifest } from "@/context/engine/types";
 import { collectStoryMetrics } from "@/metrics/tracker";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
-import { makeStory } from "@test/helpers";
-import { makeMockRuntime } from "@test/helpers";
+import { makeMockRuntime, makeStory, makeTestContext } from "@test/helpers";
 
 const PROJECT_DIR = "/repo";
 const FEATURE = "test-feature";
@@ -22,7 +21,7 @@ const STORY_ID = "US-001";
 
 function makeCtx(overrides?: Partial<PipelineContext>): PipelineContext {
   const story = makeStory({ id: STORY_ID, status: "passed", passes: true, attempts: 1 });
-  return {
+  const ctx = makeTestContext({
     config: DEFAULT_CONFIG,
     prd: {
       project: "test",
@@ -37,11 +36,12 @@ function makeCtx(overrides?: Partial<PipelineContext>): PipelineContext {
     routing: { complexity: "medium", modelTier: "balanced", testStrategy: "test-after", reasoning: "test" },
     workdir: PROJECT_DIR,
     projectDir: PROJECT_DIR,
-    hooks: { hooks: {} },
+    ...overrides,
+  });
+  return Object.assign(ctx, {
     agentResult: { success: true, output: "", estimatedCostUsd: 0.01, durationMs: 5000 },
     runtime: makeMockRuntime(),
-    ...overrides,
-  } as unknown as PipelineContext;
+  });
 }
 
 function makeManifest(overrides?: Partial<ContextManifest>): ContextManifest {

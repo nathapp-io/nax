@@ -11,19 +11,12 @@ import { join } from "node:path";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import { queueCheckStage } from "@/pipeline";
 import type { PipelineContext } from "@/pipeline";
-import { cleanupTempDir, makePRD, makeStory, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makePRD, makeStory, makeTempDir, makeTestContext } from "@test/helpers";
 
 function makeCtx(workdir: string, overrides: Partial<PipelineContext> = {}): PipelineContext {
   const story = makeStory({ id: "US-001", status: "pending" });
   const prd = makePRD({ userStories: [story] });
-  return {
-    workdir,
-    featureDir: workdir,
-    prd,
-    stories: [story],
-    story,
-    ...overrides,
-  } as unknown as PipelineContext;
+  return Object.assign(makeTestContext({ workdir, prd, stories: [story], story }), { featureDir: workdir }, overrides);
 }
 
 describe("queueCheckStage — RETRY / PRIORITY", () => {
@@ -457,13 +450,7 @@ describe("queueCheckStage — PAUSE/ABORT dropped-command audit", () => {
   test("PAUSE followed by an unprocessed RETRY logs a warn recording the dropped command", async () => {
     const story = makeStory({ id: "US-001", status: "pending" });
     const prd = makePRD({ userStories: [story] });
-    const ctx = {
-      workdir,
-      featureDir: workdir,
-      prd,
-      stories: [story],
-      story,
-    } as unknown as PipelineContext;
+    const ctx = Object.assign(makeTestContext({ workdir, prd, stories: [story], story }), { featureDir: workdir });
 
     await Bun.write(join(workdir, ".queue.txt"), "PAUSE\nRETRY US-002\n");
 
@@ -489,13 +476,7 @@ describe("queueCheckStage — PAUSE/ABORT dropped-command audit", () => {
     const story = makeStory({ id: "US-001", status: "pending" });
     const other = makeStory({ id: "US-002", status: "failed" });
     const prd = makePRD({ userStories: [story, other] });
-    const ctx = {
-      workdir,
-      featureDir: workdir,
-      prd,
-      stories: [story],
-      story,
-    } as unknown as PipelineContext;
+    const ctx = Object.assign(makeTestContext({ workdir, prd, stories: [story], story }), { featureDir: workdir });
 
     await Bun.write(join(workdir, ".queue.txt"), "SKIP US-001\nRETRY US-002\n");
 

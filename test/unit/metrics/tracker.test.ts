@@ -13,6 +13,7 @@ import { collectStoryMetrics } from "@/metrics/tracker";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
 import type { StoryRouting } from "@/prd/types";
+import { makeMockRuntime, makeNaxConfig, makeTestContext } from "@test/helpers";
 // VerifyResult inlined after orchestrator-types.ts deletion (issue #1116).
 interface VerifyResult {
   success: boolean;
@@ -27,8 +28,6 @@ interface VerifyResult {
   countsTowardEscalation: boolean;
   scopeTestFallback?: boolean;
 }
-import { makeNaxConfig } from "@test/helpers";
-import { makeMockRuntime } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-tracker-test-${randomUUID()}`;
 
@@ -69,7 +68,7 @@ function makeCtx(
   routingOverrides?: Partial<PipelineContext["routing"]>,
   verifyResult?: VerifyResult,
 ): PipelineContext {
-  return {
+  const ctx = makeTestContext({
     config: makeNaxConfig(),
     prd: makePRD(story),
     story,
@@ -82,7 +81,8 @@ function makeCtx(
       ...routingOverrides,
     },
     workdir: WORKDIR,
-    hooks: { hooks: {} },
+  });
+  return Object.assign(ctx, {
     agentResult: {
       success: true,
       output: "",
@@ -91,7 +91,7 @@ function makeCtx(
     },
     verifyResult,
     runtime: makeMockRuntime(),
-  } as unknown as PipelineContext;
+  });
 }
 
 // ---------------------------------------------------------------------------

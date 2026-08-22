@@ -17,6 +17,7 @@ import type { PRD, UserStory } from "@/prd";
 import { withTempDir } from "@test/helpers";
 import { makeNaxConfig } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
+import { makeTestContext } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration
@@ -96,22 +97,32 @@ function makeCtx(
   tempDir: string,
   interaction?: InteractionChain,
 ): PipelineContext {
-  return {
-    config,
-    prd: makePRD(),
-    story: makeStory(),
-    stories: [makeStory()],
-    routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-    rootConfig: makeNaxConfig(),
-    workdir: tempDir,
-    projectDir: tempDir,
-    featureDir: tempDir,
-    agentResult: { success: true, estimatedCostUsd: 0.01, output: "", stderr: "", exitCode: 0, rateLimited: false },
-    hooks: {} as PipelineContext["hooks"],
-    interaction,
-    storyStartTime: new Date().toISOString(),
-    runtime: makeMockRuntime(),
-  } as unknown as PipelineContext;
+  return Object.assign(
+    makeTestContext({
+      config,
+      prd: makePRD(),
+      story: makeStory(),
+      stories: [makeStory()],
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+      rootConfig: makeNaxConfig(),
+      workdir: tempDir,
+      projectDir: tempDir,
+    }),
+    {
+      featureDir: tempDir,
+      agentResult: {
+        success: true,
+        estimatedCostUsd: 0.01,
+        output: "",
+        stderr: "",
+        exitCode: 0,
+        rateLimited: false,
+      },
+      interaction,
+      storyStartTime: new Date().toISOString(),
+      runtime: makeMockRuntime(),
+    },
+  );
 }
 
 afterEach(() => {

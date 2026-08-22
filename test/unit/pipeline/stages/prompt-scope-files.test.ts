@@ -18,7 +18,7 @@ import { _scopeFilesDeps, resolveScopeFiles } from "@/pipeline";
 import { promptStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
-import { makeContextBundle, makeNaxConfig, makeStory } from "@test/helpers";
+import { makeContextBundle, makeNaxConfig, makeStory, makeTestContext } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals
@@ -63,7 +63,7 @@ function makePRD(story: UserStory): PRD {
 
 function makeCtx(story: UserStory): PipelineContext {
   const prd = makePRD(story);
-  return {
+  return makeTestContext({
     config: makeNaxConfig({ context: { v2: { enabled: true, pluginProviders: [] } } }),
     rootConfig: makeNaxConfig(),
     prd,
@@ -72,8 +72,7 @@ function makeCtx(story: UserStory): PipelineContext {
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "tdd-simple", reasoning: "" },
     projectDir: "/repo",
     workdir: "/repo",
-    hooks: {} as PipelineContext["hooks"],
-  } as unknown as PipelineContext;
+  } as Partial<PipelineContext>);
 }
 
 /**

@@ -11,8 +11,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { pipelineEventBus } from "@/pipeline";
 import { _completionDeps, completionStage } from "@/pipeline/stages/completion";
 import type { PipelineContext } from "@/pipeline/types";
-import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
-import { makeMockRuntime } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig, makePRD, makeStory, makeTestContext } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration
@@ -30,22 +29,32 @@ const origSpawn = _completionDeps.spawn;
 function makeCtx(overrides: Partial<PipelineContext>): PipelineContext {
   const story = makeStory({ id: "US-001", status: "in-progress" });
   const prd = makePRD({ userStories: [story] });
-  return {
-    config: makeNaxConfig(),
-    rootConfig: makeNaxConfig(),
-    prd,
-    story,
-    stories: [story],
-    routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-    workdir: "/tmp/x",
-    projectDir: "/tmp/x",
-    prdPath: "/tmp/x/prd.json",
-    agentResult: { success: true, estimatedCostUsd: 0.01, output: "", stderr: "", exitCode: 0, rateLimited: false },
-    hooks: {} as PipelineContext["hooks"],
-    storyStartTime: new Date().toISOString(),
-    runtime: makeMockRuntime(),
-    ...overrides,
-  } as unknown as PipelineContext;
+  return Object.assign(
+    makeTestContext({
+      config: makeNaxConfig(),
+      rootConfig: makeNaxConfig(),
+      prd,
+      story,
+      stories: [story],
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+      workdir: "/tmp/x",
+      projectDir: "/tmp/x",
+    }),
+    {
+      prdPath: "/tmp/x/prd.json",
+      agentResult: {
+        success: true,
+        estimatedCostUsd: 0.01,
+        output: "",
+        stderr: "",
+        exitCode: 0,
+        rateLimited: false,
+      },
+      storyStartTime: new Date().toISOString(),
+      runtime: makeMockRuntime(),
+    },
+    overrides,
+  );
 }
 
 afterEach(() => {

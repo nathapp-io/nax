@@ -18,7 +18,7 @@ import { initLogger, resetLogger } from "@/logger";
 import { _routingDeps, routingStage } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
-import { makeNaxConfig, makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makePRD, makeTempDir, makeTestContext } from "@test/helpers";
 
 // ── Capture originals ─────────────────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ function makeStory(workdir?: string): UserStory {
 }
 
 function makeCtx(story: UserStory, repoRoot: string): PipelineContext {
-  return {
+  return makeTestContext({
     config: makeNaxConfig({
       routing: { strategy: "llm" },
       tdd: { greenfieldDetection: true },
@@ -56,7 +56,7 @@ function makeCtx(story: UserStory, repoRoot: string): PipelineContext {
         },
       },
     }),
-    prd: { project: "test", branchName: "feat/test", feature: "cli", userStories: [story] },
+    prd: makePRD({ project: "test", branchName: "feat/test", feature: "cli", userStories: [story] }),
     story,
     stories: [story],
     rootConfig: DEFAULT_CONFIG,
@@ -64,8 +64,7 @@ function makeCtx(story: UserStory, repoRoot: string): PipelineContext {
     workdir: story.workdir ? join(repoRoot, story.workdir) : repoRoot,
     projectDir: repoRoot,
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "three-session-tdd", reasoning: "" },
-    hooks: {},
-  } as unknown as PipelineContext;
+  });
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

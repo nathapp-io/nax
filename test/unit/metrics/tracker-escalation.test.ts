@@ -26,8 +26,7 @@ import { collectStoryMetrics } from "@/metrics/tracker";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
 import type { StoryRouting } from "@/prd/types";
-import { makeNaxConfig } from "@test/helpers";
-import { makeMockRuntime } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig, makeTestContext } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-escalation-test-${randomUUID()}`;
 const PRD_PATH = `/tmp/prd-${randomUUID()}.json`;
@@ -67,42 +66,45 @@ function makePRD(stories: UserStory[]): PRD {
 
 /** Build a minimal PipelineContext. Cast lets overrides include future fix fields. */
 function makeCtx(story: UserStory, overrides: Record<string, unknown> = {}): PipelineContext {
-  return {
-    config: makeNaxConfig({
-      autoMode: {
-        escalation: {
-          enabled: true,
-          tierOrder: [
-            { tier: "fast", attempts: 1 },
-            { tier: "balanced", attempts: 3 },
-            { tier: "powerful", attempts: 2 },
-          ],
-          escalateEntireBatch: false,
+  return Object.assign(
+    makeTestContext({
+      config: makeNaxConfig({
+        autoMode: {
+          escalation: {
+            enabled: true,
+            tierOrder: [
+              { tier: "fast", attempts: 1 },
+              { tier: "balanced", attempts: 3 },
+              { tier: "powerful", attempts: 2 },
+            ],
+            escalateEntireBatch: false,
+          },
         },
+      }),
+      prd: makePRD([story]),
+      story,
+      stories: [story],
+      routing: {
+        complexity: "medium",
+        modelTier: "balanced",
+        testStrategy: "test-after",
+        reasoning: "test",
       },
+      workdir: WORKDIR,
     }),
-    prd: makePRD([story]),
-    story,
-    stories: [story],
-    routing: {
-      complexity: "medium",
-      modelTier: "balanced",
-      testStrategy: "test-after",
-      reasoning: "test",
+    {
+      agentResult: {
+        success: true,
+        exitCode: 0,
+        output: "",
+        rateLimited: false,
+        estimatedCostUsd: 0.1,
+        durationMs: 5000,
+      },
+      runtime: makeMockRuntime(),
     },
-    workdir: WORKDIR,
-    hooks: { hooks: {} },
-    agentResult: {
-      success: true,
-      exitCode: 0,
-      output: "",
-      rateLimited: false,
-      estimatedCostUsd: 0.1,
-      durationMs: 5000,
-    },
-    runtime: makeMockRuntime(),
-    ...overrides,
-  } as unknown as PipelineContext;
+    overrides,
+  );
 }
 
 // ---------------------------------------------------------------------------
