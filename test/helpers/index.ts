@@ -28,6 +28,7 @@ export {
   makeSpawnMock,
   mockDiffUtilsDeps,
 } from "./review-audit";
+export { makeAgentResult } from "./agent-result";
 export { makeContextBundle, makeContextManifest } from "./context-bundle";
 export { makePluginRegistry, type MockPluginRegistry } from "./plugin-registry";
 export { makeSpawn, makeSpawnResult } from "./spawn";

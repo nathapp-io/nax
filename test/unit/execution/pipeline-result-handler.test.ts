@@ -17,7 +17,7 @@ import { PluginRegistry } from "@/plugins/registry";
 import { loadPRD, savePRD } from "@/prd";
 import type { PRD, UserStory } from "@/prd/types";
 import { _gitDeps } from "@/utils/git";
-import { makeMockRuntime } from "@test/helpers";
+import { makeAgentResult, makeMockRuntime, makeTestContext } from "@test/helpers";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
@@ -55,10 +55,10 @@ function makeMinimalResult(): PipelineRunResult {
   return {
     success: true,
     finalAction: "complete",
-    context: {
-      agentResult: { estimatedCostUsd: 0 },
+    context: makeTestContext({
+      agentResult: makeAgentResult(),
       storyMetrics: [],
-    } as unknown as PipelineRunResult["context"],
+    }),
   };
 }
 
@@ -378,7 +378,7 @@ describe("handlePipelineFailure — story:skipped event", () => {
       success: false,
       finalAction: "skip",
       reason: "Dependency not met",
-      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"],
+      context: makeTestContext({ agentResult: makeAgentResult() }),
     };
 
     await handlePipelineFailure(ctx, skipResult);
@@ -397,7 +397,7 @@ describe("handlePipelineFailure — story:skipped event", () => {
       success: false,
       finalAction: "skip",
       reason: undefined,
-      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"],
+      context: makeTestContext({ agentResult: makeAgentResult() }),
     };
 
     await handlePipelineFailure(ctx, skipResult);
@@ -415,7 +415,7 @@ describe("handlePipelineFailure — story:skipped event", () => {
       success: false,
       finalAction: "fail",
       reason: "Tests failed",
-      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"],
+      context: makeTestContext({ agentResult: makeAgentResult() }),
     };
 
     await handlePipelineFailure(ctx, failResult);
@@ -577,10 +577,10 @@ describe("handlePipelineFailure — runtime-crash derives retry-same (US-002)", 
       success: false,
       finalAction: "escalate",
       reason: "Bun runtime crash",
-      context: {
-        agentResult: { estimatedCostUsd: 0 },
+      context: makeTestContext({
+        agentResult: makeAgentResult(),
         tddFailureCategory: "runtime-crash",
-      } as unknown as PipelineRunResult["context"],
+      }),
     };
 
     const result = await handlePipelineFailure(ctx, escalateResult);
@@ -613,10 +613,10 @@ describe("handlePipelineFailure — runtime-crash derives retry-same (US-002)", 
       success: false,
       finalAction: "escalate",
       reason: "Bun runtime crash",
-      context: {
-        agentResult: { estimatedCostUsd: 0 },
+      context: makeTestContext({
+        agentResult: makeAgentResult(),
         tddFailureCategory: "runtime-crash",
-      } as unknown as PipelineRunResult["context"],
+      }),
     };
 
     const result = await handlePipelineFailure(ctx, escalateResult);
@@ -653,10 +653,10 @@ describe("handlePipelineFailure — runtime-crash derives retry-same (US-002)", 
       success: false,
       finalAction: "escalate",
       reason: "Bun runtime crash",
-      context: {
-        agentResult: { estimatedCostUsd: 0 },
+      context: makeTestContext({
+        agentResult: makeAgentResult(),
         tddFailureCategory: "runtime-crash",
-      } as unknown as PipelineRunResult["context"],
+      }),
     };
 
     const result = await handlePipelineFailure(ctx, escalateResult);
@@ -689,10 +689,10 @@ describe("handlePipelineFailure — runtime-crash derives retry-same (US-002)", 
       success: false,
       finalAction: "escalate",
       reason: "Tests failed",
-      context: {
-        agentResult: { estimatedCostUsd: 0 },
+      context: makeTestContext({
+        agentResult: makeAgentResult(),
         tddFailureCategory: "tests-failing",
-      } as unknown as PipelineRunResult["context"],
+      }),
     };
 
     const result = await handlePipelineFailure(ctx, escalateResult);

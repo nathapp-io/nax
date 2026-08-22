@@ -2,9 +2,9 @@
   "counts": {
     "asAny": 1399,
     "tsSuppress": 54,
-    "ratchetAllow": 128
+    "ratchetAllow": 120
   },
-  "updatedAt": "2026-08-22T13:36:35.497Z",
+  "updatedAt": "2026-08-22T14:15:28.971Z",
   "byFile": {
     "test/helpers/mock-agent-manager.ts": {
       "asAny": 1
@@ -201,7 +201,7 @@
       "asAny": 1
     },
     "test/unit/execution/pipeline-result-handler-bug12.test.ts": {
-      "ratchetAllow": 6
+      "ratchetAllow": 5
     },
     "test/unit/execution/unified-executor-tier-budget.test.ts": {
       "ratchetAllow": 1
@@ -255,7 +255,7 @@
       "asAny": 3
     },
     "test/unit/execution/pipeline-result-handler-worktree-cleanup.test.ts": {
-      "ratchetAllow": 6
+      "ratchetAllow": 2
     },
     "test/unit/execution/story-orchestrator-logs.test.ts": {
       "asAny": 22
@@ -264,7 +264,7 @@
       "asAny": 7
     },
     "test/unit/execution/pipeline-result-handler-pause-reason.test.ts": {
-      "ratchetAllow": 4
+      "ratchetAllow": 1
     },
     "test/unit/execution/pid-registry.test.ts": {
       "ratchetAllow": 2

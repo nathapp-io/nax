@@ -20,7 +20,7 @@ import {
 import type { PipelineRunResult } from "@/pipeline/runner";
 import { PluginRegistry } from "@/plugins/registry";
 import type { UserStory } from "@/prd/types";
-import { makeMockRuntime, makePRD, makeStory } from "@test/helpers";
+import { makeAgentResult, makeMockRuntime, makePRD, makeStory, makeTestContext } from "@test/helpers";
 
 function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = {}): PipelineHandlerContext {
   const prd = makePRD({ userStories: [story] });
@@ -109,7 +109,7 @@ describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
       success: false,
       finalAction: "fail",
       reason: "Tests failed",
-      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"], // test-ratchet-allow: as-unknown-as
+      context: makeTestContext({ agentResult: makeAgentResult() }),
     };
 
     await handlePipelineFailure(ctx, failResult);
@@ -132,7 +132,7 @@ describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
       success: false,
       finalAction: "fail",
       reason: "Tests failed",
-      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"], // test-ratchet-allow: as-unknown-as
+      context: makeTestContext({ agentResult: makeAgentResult() }),
     };
 
     await handlePipelineFailure(ctx, failResult);
@@ -153,7 +153,7 @@ describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
       success: false,
       finalAction: "pause",
       reason: "Semantic review paused",
-      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"], // test-ratchet-allow: as-unknown-as
+      context: makeTestContext({ agentResult: makeAgentResult() }),
     };
 
     await handlePipelineFailure(ctx, pauseResult);
@@ -173,7 +173,7 @@ describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
       success: false,
       finalAction: "pause",
       reason: "Semantic review paused",
-      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"], // test-ratchet-allow: as-unknown-as
+      context: makeTestContext({ agentResult: makeAgentResult() }),
     };
 
     await handlePipelineFailure(ctx, pauseResult);

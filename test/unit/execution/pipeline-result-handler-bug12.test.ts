@@ -13,7 +13,7 @@ import * as loggerModule from "@/logger";
 import type { PipelineRunResult } from "@/pipeline";
 import { PluginRegistry } from "@/plugins";
 import type { UserStory } from "@/prd";
-import { makeLogger, makeMockRuntime, makePRD, makeStory } from "@test/helpers";
+import { makeAgentResult, makeLogger, makeMockRuntime, makePRD, makeStory, makeTestContext } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -52,7 +52,7 @@ const failResult: PipelineRunResult = {
   success: false,
   finalAction: "fail",
   reason: "Tests failed",
-  context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"], // test-ratchet-allow: as-unknown-as
+  context: makeTestContext({ agentResult: makeAgentResult() }),
 };
 
 let origResultSpawn: typeof _resultHandlerDeps.spawn;
