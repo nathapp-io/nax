@@ -27,6 +27,7 @@ import { gitWithTimeout } from "../utils/git";
 import { NAX_VERSION } from "../version";
 import { applyRecordGreenDeps, applyResumeModeDeps } from "./checkpoint";
 import { stopHeartbeat } from "./crash-recovery";
+import { sumReviewsFailedOpen } from "./post-run-review-summary";
 import { runCompletionPhase } from "./runner-completion";
 import { runExecutionPhase } from "./runner-execution";
 import { runSetupPhase } from "./runner-setup";
@@ -321,7 +322,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     const { durationMs, acceptancePassed, pluginGateFailed } = completionResult;
     runCompleted = true;
 
-    const reviewsFailedOpen = allStoryMetrics.reduce((sum, m) => sum + (m.reviewsFailedOpen ?? 0), 0);
+    const reviewsFailedOpen = sumReviewsFailedOpen(allStoryMetrics);
 
     return {
       success: isComplete(prd) && acceptancePassed && !pluginGateFailed,
@@ -329,7 +330,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       storiesCompleted,
       totalCost,
       durationMs,
-      ...(reviewsFailedOpen > 0 ? { reviewsFailedOpen } : {}),
+      ...(reviewsFailedOpen !== undefined ? { reviewsFailedOpen } : {}),
     };
   } finally {
     const logger = getSafeLogger();
