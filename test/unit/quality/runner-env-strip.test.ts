@@ -1,31 +1,6 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _qualityRunnerDeps, runQualityCommand } from "@/quality/runner";
-
-function makeEnvCapturingSpawn(exitCode: number): {
-  spawnMock: ReturnType<typeof mock>;
-  getLastEnv: () => Record<string, string | undefined>;
-} {
-  let lastEnv: Record<string, string | undefined> = {};
-  const spawnMock = mock((_args: unknown) => {
-    const args = _args as { env?: Record<string, string | undefined> };
-    lastEnv = args.env ?? {};
-    return {
-      exited: Promise.resolve(exitCode),
-      stdout: new ReadableStream({
-        start(c) {
-          c.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(c) {
-          c.close();
-        },
-      }),
-      kill: mock(() => {}),
-    } as unknown as ReturnType<typeof Bun.spawn>;
-  });
-  return { spawnMock, getLastEnv: () => lastEnv };
-}
+import { makeSpawn } from "@test/helpers";
 
 describe("runQualityCommand env stripping", () => {
   let originalSpawn: typeof _qualityRunnerDeps.spawn;
@@ -42,8 +17,8 @@ describe("runQualityCommand env stripping", () => {
 
   test("removes configured secret vars from the spawned env", async () => {
     process.env.AWS_SECRET_ACCESS_KEY = "leak-me";
-    const { spawnMock, getLastEnv } = makeEnvCapturingSpawn(0);
-    _qualityRunnerDeps.spawn = spawnMock as unknown as typeof Bun.spawn;
+    const { spawn, lastEnv } = makeSpawn();
+    _qualityRunnerDeps.spawn = spawn;
 
     await runQualityCommand({
       commandName: "lint",
@@ -52,13 +27,13 @@ describe("runQualityCommand env stripping", () => {
       stripEnvVars: ["AWS_SECRET_ACCESS_KEY"],
     });
 
-    expect(getLastEnv().AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    expect(lastEnv().AWS_SECRET_ACCESS_KEY).toBeUndefined();
   });
 
   test("passes env unchanged when no stripEnvVars provided", async () => {
     process.env.MY_VAR = "keep-me";
-    const { spawnMock, getLastEnv } = makeEnvCapturingSpawn(0);
-    _qualityRunnerDeps.spawn = spawnMock as unknown as typeof Bun.spawn;
+    const { spawn, lastEnv } = makeSpawn();
+    _qualityRunnerDeps.spawn = spawn;
 
     await runQualityCommand({
       commandName: "lint",
@@ -66,14 +41,14 @@ describe("runQualityCommand env stripping", () => {
       workdir: "/tmp",
     });
 
-    expect(getLastEnv().MY_VAR).toBe("keep-me");
+    expect(lastEnv().MY_VAR).toBe("keep-me");
   });
 
   test("strips multiple vars when multiple are configured", async () => {
     process.env.AWS_SECRET_ACCESS_KEY = "secret1";
     process.env.MY_VAR = "secret2";
-    const { spawnMock, getLastEnv } = makeEnvCapturingSpawn(0);
-    _qualityRunnerDeps.spawn = spawnMock as unknown as typeof Bun.spawn;
+    const { spawn, lastEnv } = makeSpawn();
+    _qualityRunnerDeps.spawn = spawn;
 
     await runQualityCommand({
       commandName: "lint",
@@ -82,14 +57,14 @@ describe("runQualityCommand env stripping", () => {
       stripEnvVars: ["AWS_SECRET_ACCESS_KEY", "MY_VAR"],
     });
 
-    expect(getLastEnv().AWS_SECRET_ACCESS_KEY).toBeUndefined();
-    expect(getLastEnv().MY_VAR).toBeUndefined();
+    expect(lastEnv().AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    expect(lastEnv().MY_VAR).toBeUndefined();
   });
 
   test("env override still applies after stripping", async () => {
     process.env.AWS_SECRET_ACCESS_KEY = "leak-me";
-    const { spawnMock, getLastEnv } = makeEnvCapturingSpawn(0);
-    _qualityRunnerDeps.spawn = spawnMock as unknown as typeof Bun.spawn;
+    const { spawn, lastEnv } = makeSpawn();
+    _qualityRunnerDeps.spawn = spawn;
 
     await runQualityCommand({
       commandName: "lint",
@@ -99,7 +74,7 @@ describe("runQualityCommand env stripping", () => {
       env: { OVERRIDE_VAR: "override-value" },
     });
 
-    expect(getLastEnv().AWS_SECRET_ACCESS_KEY).toBeUndefined();
-    expect(getLastEnv().OVERRIDE_VAR).toBe("override-value");
+    expect(lastEnv().AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    expect(lastEnv().OVERRIDE_VAR).toBe("override-value");
   });
 });

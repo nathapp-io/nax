@@ -10,6 +10,7 @@ import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { IReviewAuditor, ReviewAuditDecision } from "@/runtime";
 import { makeAgentAdapter } from "./mock-agent-adapter";
 import { makeMockAgentManager } from "./mock-agent-manager";
+import { makeSpawn } from "./spawn";
 
 export function captureAuditDecisions(): { auditor: IReviewAuditor; decisions: ReviewAuditDecision[] } {
   const decisions: ReviewAuditDecision[] = [];
@@ -25,21 +26,7 @@ export function captureAuditDecisions(): { auditor: IReviewAuditor; decisions: R
 }
 
 export function makeSpawnMock(stdout = "diff output", exitCode = 0) {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(c) {
-        c.enqueue(new TextEncoder().encode(stdout));
-        c.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(c) {
-        c.close();
-      },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(() => ({ stdout, exitCode })).spawn;
 }
 
 /** Mock `_diffUtilsDeps` for tests that call diff-producing reviewers. Returns a teardown function. */

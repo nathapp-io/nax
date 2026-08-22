@@ -6,42 +6,11 @@
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { _gitDeps, autoCommitIfDirty } from "@/utils/git";
-import { withDepsRestore } from "@test/helpers";
+import { makeSpawn, withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-type SpawnResult = {
-  stdout: ReadableStream<Uint8Array>;
-  stderr: ReadableStream<Uint8Array>;
-  stdin: { write: () => number; end: () => void; flush: () => void };
-  exited: Promise<number>;
-  pid: number;
-  kill: () => void;
-};
-
-function makeProc(stdout: string, exitCode = 0): SpawnResult {
-  const encoder = new TextEncoder();
-  const bytes = encoder.encode(stdout);
-  return {
-    stdout: new ReadableStream({
-      start(c) {
-        c.enqueue(bytes);
-        c.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(c) {
-        c.close();
-      },
-    }),
-    stdin: { write: () => 0, end: () => {}, flush: () => {} },
-    exited: Promise.resolve(exitCode),
-    pid: 1,
-    kill: () => {},
-  };
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
@@ -57,12 +26,12 @@ describe("autoCommitIfDirty", () => {
 
   test("commits when workdir is the git root", async () => {
     const gitRoot = "/repo";
-    _gitDeps.spawn = mock((cmd: string[], opts?: { cwd?: string }) => {
-      calls.push({ cmd, cwd: opts?.cwd });
-      if (cmd.includes("rev-parse")) return makeProc(`${gitRoot}\n`);
-      if (cmd.includes("status")) return makeProc(" M src/foo.ts\n");
-      return makeProc("");
-    }) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(({ cmd, opts }) => {
+      calls.push({ cmd, cwd: opts.cwd as string | undefined });
+      if (cmd.includes("rev-parse")) return `${gitRoot}\n`;
+      if (cmd.includes("status")) return " M src/foo.ts\n";
+      return "";
+    }).spawn;
 
     await autoCommitIfDirty(gitRoot, "tdd", "implementer", "US-001");
 
@@ -78,12 +47,12 @@ describe("autoCommitIfDirty", () => {
     // escalations in the review dirty-file check.
     const gitRoot = "/repo";
     const workdir = "/repo/apps/cli";
-    _gitDeps.spawn = mock((cmd: string[], opts?: { cwd?: string }) => {
-      calls.push({ cmd, cwd: opts?.cwd });
-      if (cmd.includes("rev-parse")) return makeProc(`${gitRoot}\n`);
-      if (cmd.includes("status")) return makeProc(" M src/config.ts\n");
-      return makeProc("");
-    }) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(({ cmd, opts }) => {
+      calls.push({ cmd, cwd: opts.cwd as string | undefined });
+      if (cmd.includes("rev-parse")) return `${gitRoot}\n`;
+      if (cmd.includes("status")) return " M src/config.ts\n";
+      return "";
+    }).spawn;
 
     await autoCommitIfDirty(workdir, "tdd", "implementer", "US-004");
 
@@ -95,12 +64,12 @@ describe("autoCommitIfDirty", () => {
 
   test("uses 'git add -A' from gitRoot when workdir is the repo root", async () => {
     const gitRoot = "/repo";
-    _gitDeps.spawn = mock((cmd: string[], opts?: { cwd?: string }) => {
-      calls.push({ cmd, cwd: opts?.cwd });
-      if (cmd.includes("rev-parse")) return makeProc(`${gitRoot}\n`);
-      if (cmd.includes("status")) return makeProc(" M src/index.ts\n");
-      return makeProc("");
-    }) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(({ cmd, opts }) => {
+      calls.push({ cmd, cwd: opts.cwd as string | undefined });
+      if (cmd.includes("rev-parse")) return `${gitRoot}\n`;
+      if (cmd.includes("status")) return " M src/index.ts\n";
+      return "";
+    }).spawn;
 
     await autoCommitIfDirty(gitRoot, "tdd", "test-writer", "US-001");
 
@@ -112,11 +81,11 @@ describe("autoCommitIfDirty", () => {
   test("skips commit when workdir is unrelated to git root", async () => {
     const gitRoot = "/other-repo";
     const workdir = "/my-project";
-    _gitDeps.spawn = mock((cmd: string[], opts?: { cwd?: string }) => {
-      calls.push({ cmd, cwd: opts?.cwd });
-      if (cmd.includes("rev-parse")) return makeProc(`${gitRoot}\n`);
-      return makeProc("");
-    }) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(({ cmd, opts }) => {
+      calls.push({ cmd, cwd: opts.cwd as string | undefined });
+      if (cmd.includes("rev-parse")) return `${gitRoot}\n`;
+      return "";
+    }).spawn;
 
     await autoCommitIfDirty(workdir, "tdd", "implementer", "US-001");
 
@@ -125,12 +94,12 @@ describe("autoCommitIfDirty", () => {
 
   test("skips commit when working tree is clean", async () => {
     const gitRoot = "/repo";
-    _gitDeps.spawn = mock((cmd: string[], opts?: { cwd?: string }) => {
-      calls.push({ cmd, cwd: opts?.cwd });
-      if (cmd.includes("rev-parse")) return makeProc(`${gitRoot}\n`);
-      if (cmd.includes("status")) return makeProc(""); // clean
-      return makeProc("");
-    }) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(({ cmd, opts }) => {
+      calls.push({ cmd, cwd: opts.cwd as string | undefined });
+      if (cmd.includes("rev-parse")) return `${gitRoot}\n`;
+      if (cmd.includes("status")) return ""; // clean
+      return "";
+    }).spawn;
 
     await autoCommitIfDirty(gitRoot, "tdd", "implementer", "US-001");
 
@@ -140,12 +109,12 @@ describe("autoCommitIfDirty", () => {
   // Issue 5 (#369): warn→debug when auto-committing after agent session
   test("logs at debug level (not warn) when auto-committing dirty files", async () => {
     const gitRoot = "/repo";
-    _gitDeps.spawn = mock((cmd: string[], opts?: { cwd?: string }) => {
-      calls.push({ cmd, cwd: opts?.cwd });
-      if (cmd.includes("rev-parse")) return makeProc(`${gitRoot}\n`);
-      if (cmd.includes("status")) return makeProc(" M src/foo.ts\n");
-      return makeProc("");
-    }) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(({ cmd, opts }) => {
+      calls.push({ cmd, cwd: opts.cwd as string | undefined });
+      if (cmd.includes("rev-parse")) return `${gitRoot}\n`;
+      if (cmd.includes("status")) return " M src/foo.ts\n";
+      return "";
+    }).spawn;
 
     let warnCalled = false;
     let debugCalled = false;
