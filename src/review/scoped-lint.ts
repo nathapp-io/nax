@@ -4,6 +4,7 @@ import { getSafeLogger } from "../logger";
 import { type UserStory, getContextFiles } from "../prd";
 import { type QualityCommandResult, runQualityCommand } from "../quality";
 import { findPackageDir } from "../test-runners/resolver";
+import { gitWithTimeout } from "../utils/git";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { shellQuoteArg } from "../verification/shell-quote";
 import { formatDiagnosticsOutput, parseLintOutput } from "./lint-parsing";
@@ -59,23 +60,25 @@ function appendFilesToCommand(command: string, files: readonly string[]): string
 }
 
 async function listChangedFiles(workdir: string, baseRef: string): Promise<string[] | null> {
-  const proc = Bun.spawn({
-    // --relative: git emits paths relative to the repo root by default, even when run
-    // from a subdirectory. In a monorepo `workdir` is the package dir, and
-    // filterFilesToScope() below does `join(workdir, relPath)` — without --relative
-    // that double-prefixes every path (e.g. packages/api/packages/api/src/foo.ts),
-    // so every file fails the existence check and the scope comes back empty — a
-    // false-green "lint skipped" with zero lint actually run (BUG-31).
-    cmd: ["git", "diff", "--relative", "--name-only", `${baseRef}..HEAD`],
-    cwd: workdir,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  // Drain stdout concurrently with exited to avoid pipe-buffer deadlock on
-  // large changesets (git blocks writing when the ~64KB OS buffer fills).
-  const [exitCode, output] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+  // BUG-31: route through gitWithTimeout so a wedged git (NFS / lock
+  // contention) cannot stall the review's lint scope enumeration.
+  const { stdout, exitCode } = await gitWithTimeout(
+    [
+      // --relative: git emits paths relative to the repo root by default, even when run
+      // from a subdirectory. In a monorepo `workdir` is the package dir, and
+      // filterFilesToScope() below does `join(workdir, relPath)` — without --relative
+      // that double-prefixes every path (e.g. packages/api/packages/api/src/foo.ts),
+      // so every file fails the existence check and the scope comes back empty — a
+      // false-green "lint skipped" with zero lint actually run (BUG-31).
+      "diff",
+      "--relative",
+      "--name-only",
+      `${baseRef}..HEAD`,
+    ],
+    workdir,
+  );
   if (exitCode !== 0) return null;
-  return output
+  return stdout
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
