@@ -85,11 +85,23 @@ export function useKeyboard({ focus, currentStory, onAction, disabled = false }:
       return;
     }
 
+    // BUG-4: `onAction` (App.tsx's handleKeyboardAction) is async and awaits
+    // fallible FS writes, but `useInput`'s callback is synchronous and Ink
+    // never observes the returned promise. A rejection (e.g. an unwritable
+    // queue file) would otherwise escape as an unhandled rejection, which
+    // the crash handler treats as a fatal run crash. `onAction` itself is
+    // responsible for catching and surfacing failures inline (App.tsx); this
+    // is a backstop so a caller that forgets to catch cannot take the run
+    // down for want of a `.catch()`.
+    const dispatch = (action: KeyboardAction) => {
+      Promise.resolve(onAction(action)).catch(() => {});
+    };
+
     // When Agent panel is focused, only Ctrl+] escapes back to TUI
     if (focus === PanelFocus.Agent) {
       // Ctrl+] is key.ctrl === true and input === ']'
       if (key.ctrl && input === "]") {
-        onAction({ type: "ESCAPE_AGENT" });
+        dispatch({ type: "ESCAPE_AGENT" });
       }
       // All other keys are ignored while the Agent panel is focused; shortcuts
       // resume once focus returns to the Stories panel.
@@ -99,13 +111,13 @@ export function useKeyboard({ focus, currentStory, onAction, disabled = false }:
     // Stories panel is focused — handle TUI shortcuts
     // Tab key toggles focus
     if (key.tab) {
-      onAction({ type: "TOGGLE_FOCUS" });
+      dispatch({ type: "TOGGLE_FOCUS" });
       return;
     }
 
     // Esc closes overlays
     if (key.escape) {
-      onAction({ type: "CLOSE_OVERLAY" });
+      dispatch({ type: "CLOSE_OVERLAY" });
       return;
     }
 
@@ -122,28 +134,28 @@ export function useKeyboard({ focus, currentStory, onAction, disabled = false }:
     // Character-based shortcuts
     switch (input.toLowerCase()) {
       case "p":
-        onAction({ type: "PAUSE" });
+        dispatch({ type: "PAUSE" });
         break;
       case "a":
-        onAction({ type: "ABORT" });
+        dispatch({ type: "ABORT" });
         break;
       case "s":
         // Skip requires a current story
         if (currentStory) {
-          onAction({ type: "SKIP", storyId: currentStory.id });
+          dispatch({ type: "SKIP", storyId: currentStory.id });
         }
         break;
       case "q":
-        onAction({ type: "QUIT" });
+        dispatch({ type: "QUIT" });
         break;
       case "?":
-        onAction({ type: "SHOW_HELP" });
+        dispatch({ type: "SHOW_HELP" });
         break;
       case "c":
-        onAction({ type: "SHOW_COST" });
+        dispatch({ type: "SHOW_COST" });
         break;
       case "r":
-        onAction({ type: "RETRY" });
+        dispatch({ type: "RETRY" });
         break;
       default:
         // Ignore unrecognized keys

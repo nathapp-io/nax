@@ -12,6 +12,8 @@ export interface StatusBarProps {
   runComplete?: boolean;
   isParallel?: boolean;
   activeCount?: number;
+  /** BUG-4: transient "couldn't pause/abort/skip" message from a failed queue write. */
+  errorMessage?: string;
 }
 
 export function StatusBar({
@@ -22,6 +24,7 @@ export function StatusBar({
   runComplete,
   isParallel,
   activeCount = 0,
+  errorMessage,
 }: StatusBarProps) {
   const hints = runComplete ? "q quit  c cost  ? help" : "p pause  a abort  s skip  c cost  ? help";
 
@@ -42,7 +45,7 @@ export function StatusBar({
   return (
     <Box paddingX={1} borderStyle="single" borderColor="gray" justifyContent="space-between">
       <Text dimColor>{hints}</Text>
-      <Text dimColor>{context}</Text>
+      {errorMessage ? <Text color="red">{errorMessage}</Text> : <Text dimColor>{context}</Text>}
     </Box>
   );
 }
