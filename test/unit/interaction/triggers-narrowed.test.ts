@@ -1,27 +1,29 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { NaxConfig } from "@/config";
 import type { InteractionChain } from "@/interaction/chain";
-import type { TriggerName } from "@/interaction/types";
 import {
-  isTriggerEnabled,
-  getTriggerConfig,
-  createTriggerRequest,
-  executeTrigger,
-  checkSecurityReview,
+  type TriggerContext,
   checkCostExceeded,
-  checkMergeConflict,
   checkCostWarning,
   checkMaxRetries,
+  checkMergeConflict,
   checkPreMerge,
   checkReviewGate,
-  type TriggerContext,
+  checkSecurityReview,
+  createTriggerRequest,
+  executeTrigger,
+  getTriggerConfig,
+  isTriggerEnabled,
 } from "@/interaction/triggers";
+import type { TriggerName } from "@/interaction/types";
 
-const makeSlicedConfig = (triggers: Partial<Record<TriggerName, unknown>>, defaults: Record<string, unknown> = {}): NaxConfig =>
-  ({ interaction: { triggers: triggers as Record<string, unknown>, defaults } } as NaxConfig);
+const makeSlicedConfig = (
+  triggers: Partial<Record<TriggerName, unknown>>,
+  defaults: Record<string, unknown> = {},
+): NaxConfig => ({ interaction: { triggers: triggers as Record<string, unknown>, defaults } }) as NaxConfig;
 
 const mockChain = {
-  prompt: async () => ({ action: "approve" } as const),
+  prompt: async () => ({ action: "approve" }) as const,
   applyFallback: (_r: unknown, _f: string) => "approve" as const,
 } as unknown as InteractionChain;
 
@@ -30,8 +32,12 @@ describe("triggers — narrowed config (Pick<NaxConfig, 'interaction'>)", () => 
     test("false when not configured or disabled; true when boolean true or {enabled:true}", () => {
       expect(isTriggerEnabled("security-review", makeSlicedConfig({}))).toBe(false);
       expect(isTriggerEnabled("security-review", makeSlicedConfig({ "security-review": true }))).toBe(true);
-      expect(isTriggerEnabled("security-review", makeSlicedConfig({ "security-review": { enabled: true } }))).toBe(true);
-      expect(isTriggerEnabled("security-review", makeSlicedConfig({ "security-review": { enabled: false } }))).toBe(false);
+      expect(isTriggerEnabled("security-review", makeSlicedConfig({ "security-review": { enabled: true } }))).toBe(
+        true,
+      );
+      expect(isTriggerEnabled("security-review", makeSlicedConfig({ "security-review": { enabled: false } }))).toBe(
+        false,
+      );
     });
   });
 
@@ -40,9 +46,39 @@ describe("triggers — narrowed config (Pick<NaxConfig, 'interaction'>)", () => 
       const r1 = getTriggerConfig("security-review", makeSlicedConfig({}, { timeout: 30000, fallback: "approve" }));
       expect(r1.timeout).toBe(30000);
       expect(r1.fallback).toBe("abort");
-      const r2 = getTriggerConfig("security-review", makeSlicedConfig({ "security-review": { timeout: 60000, fallback: "escalate" } }, { timeout: 30000, fallback: "approve" }));
+      const r2 = getTriggerConfig(
+        "security-review",
+        makeSlicedConfig(
+          { "security-review": { timeout: 60000, fallback: "escalate" } },
+          { timeout: 30000, fallback: "approve" },
+        ),
+      );
       expect(r2.timeout).toBe(60000);
       expect(r2.fallback).toBe("escalate");
+    });
+
+    // BUG-48 (D-9): interaction.defaults.fallback is the documented migration
+    // path for the removed "auto" plugin — it must actually take effect for
+    // non-red triggers, and must never override a red-tier gate's abort.
+    test("honours interaction.defaults.fallback for a non-red trigger", () => {
+      const r = getTriggerConfig("cost-warning", makeSlicedConfig({}, { fallback: "abort" }));
+      expect(r.fallback).toBe("abort");
+    });
+
+    test("red-tier gate ignores a global fallback:continue and keeps its metadata abort", () => {
+      const r = getTriggerConfig("security-review", makeSlicedConfig({}, { fallback: "continue" }));
+      expect(r.fallback).toBe("abort");
+    });
+
+    // The schema no longer bakes a default into interaction.defaults.fallback
+    // (a schema-level default would be indistinguishable from an explicit
+    // operator choice and silently override every trigger's own metadata
+    // default). An unconfigured non-red trigger must keep its own default.
+    test("unconfigured non-red trigger keeps its own metadata default, not a baked-in global default", () => {
+      const maxRetries = getTriggerConfig("max-retries", makeSlicedConfig({}, {}));
+      expect(maxRetries.fallback).toBe("skip");
+      const reviewGate = getTriggerConfig("review-gate", makeSlicedConfig({}, {}));
+      expect(reviewGate.fallback).toBe("continue");
     });
   });
 
@@ -52,7 +88,11 @@ describe("triggers — narrowed config (Pick<NaxConfig, 'interaction'>)", () => 
       const r1 = createTriggerRequest("security-review", ctx, makeSlicedConfig({}));
       expect(r1.id.startsWith("trigger-security-review-")).toBe(true);
       expect(r1.type).toBe("confirm");
-      const r2 = createTriggerRequest("security-review", ctx, makeSlicedConfig({}, { timeout: 60000, fallback: "escalate" }));
+      const r2 = createTriggerRequest(
+        "security-review",
+        ctx,
+        makeSlicedConfig({}, { timeout: 60000, fallback: "escalate" }),
+      );
       expect(r2.timeout).toBe(60000);
       expect(r2.fallback).toBe("abort");
     });

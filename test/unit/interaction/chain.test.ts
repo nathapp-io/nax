@@ -181,3 +181,32 @@ describe("InteractionChain.send() — fallback cascade (BUG-7)", () => {
     expect(secondary.send).not.toHaveBeenCalled();
   });
 });
+
+describe("InteractionChain.applyFallback() — fail-closed default (SEC-3)", () => {
+  const chain = new InteractionChain({ defaultTimeout: 5000, defaultFallback: "abort" });
+  const timeoutResponse = {
+    requestId: "r1",
+    action: "approve",
+    respondedBy: "timeout",
+    respondedAt: Date.now(),
+  } as const;
+
+  test.each(["continue", "skip", "escalate", "abort"] as const)(
+    "known fallback %s maps to a defined action",
+    (fallback) => {
+      expect(chain.applyFallback(timeoutResponse, fallback)).toBeDefined();
+    },
+  );
+
+  // The switch is exhaustive over the *declared* InteractionFallback union, so
+  // this can only be reached via an unchecked cast reaching past validation —
+  // exactly the path SEC-3 closes at the schema. The switch's own `default`
+  // arm is defence-in-depth: it must return "abort", never `undefined` (which
+  // every red-tier caller reads as "proceed").
+  test("an unrecognized fallback value fails closed to 'abort', not undefined", () => {
+    // Simulates a value that reaches applyFallback via an unchecked cast — the
+    // exact path SEC-3's schema fix closes at config load.
+    const bogus = "abrt" as unknown as "continue" | "skip" | "escalate" | "abort"; // test-ratchet-allow: as-unknown-as
+    expect(chain.applyFallback(timeoutResponse, bogus)).toBe("abort");
+  });
+});

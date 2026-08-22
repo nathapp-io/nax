@@ -160,7 +160,13 @@ export const InteractionConfigSchema = z.object({
   config: z.record(z.string(), z.unknown()).optional(),
   defaults: z.object({
     timeout: z.number().int().min(1000).max(3600000).default(600000),
-    fallback: z.enum(["continue", "skip", "escalate", "abort"]).default("escalate"),
+    // No `.default()` here (BUG-48 / D-9): the field must stay undefined when
+    // the operator hasn't set it, so getTriggerConfig can tell "unset — use
+    // this trigger's own metadata default" apart from "explicitly configured".
+    // A schema-level default would make every trigger's fallback identical,
+    // silently overriding e.g. max-retries's "skip" and review-gate's
+    // "continue" with whatever the schema default happened to be.
+    fallback: z.enum(["continue", "skip", "escalate", "abort"]).optional(),
   }),
   triggers: z
     .record(
@@ -169,8 +175,8 @@ export const InteractionConfigSchema = z.object({
         z.boolean(),
         z.object({
           enabled: z.boolean(),
-          fallback: z.string().optional(),
-          timeout: z.number().optional(),
+          fallback: z.enum(["continue", "skip", "escalate", "abort"]).optional(),
+          timeout: z.number().int().positive().optional(),
         }),
       ]),
     )

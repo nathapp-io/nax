@@ -192,6 +192,12 @@ export class InteractionChain {
         return "approve"; // proceed but escalate tier
       case "abort":
         return "abort";
+      // SEC-3: fail-closed defence-in-depth. The Zod enum now rejects an
+      // unrecognized fallback at config load, but this switch must not
+      // silently return `undefined` (read as "proceed") for any value that
+      // reaches it by another path.
+      default:
+        return "abort";
     }
   }
 }

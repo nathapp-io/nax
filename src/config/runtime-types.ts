@@ -350,12 +350,26 @@ export interface InteractionConfig {
   defaults: {
     /** Default timeout in milliseconds (default: 600000 = 10 minutes) */
     timeout: number;
-    /** Default fallback behavior (default: "escalate") */
-    fallback: "continue" | "skip" | "escalate" | "abort";
+    /**
+     * Global fallback override. Undefined unless the operator explicitly set
+     * it (BUG-48 / D-9) — a schema-level default here would make every
+     * trigger's fallback identical, silently overriding each trigger's own
+     * metadata default (see TRIGGER_METADATA). Ignored for red-tier triggers.
+     */
+    fallback?: "continue" | "skip" | "escalate" | "abort";
   };
   /** Enable/disable built-in triggers */
   triggers: Partial<
-    Record<string, boolean | { enabled: boolean; fallback?: string; timeout?: number; threshold?: number }>
+    Record<
+      string,
+      | boolean
+      | {
+          enabled: boolean;
+          fallback?: "continue" | "skip" | "escalate" | "abort";
+          timeout?: number;
+          threshold?: number;
+        }
+    >
   >;
 }
 
