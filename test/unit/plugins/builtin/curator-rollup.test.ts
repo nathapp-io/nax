@@ -41,6 +41,30 @@ describe("appendToRollup", () => {
     });
   });
 
+  // RACE-46 (D-29): concurrent appendToRollup() vs pruneRollup() used to
+  // lose observations appended between GC's read pass and its
+  // rename(tmpPath, rollupPath). The shared path-file-lock serializes
+  // them; an interleaved append must land AFTER the rename completes
+  // (so on the new inode), not get destroyed by it.
+  test("RACE-46: appendToRollup does not leave a stale lock candidate behind", async () => {
+    await withTempDir(async (dir) => {
+      const rollupPath = path.join(dir, "rollup.jsonl");
+      await appendToRollup([baseObservation], rollupPath);
+
+      // After the call, no lock candidate must remain — the lock is
+      // released in its `finally` block on the success path.
+      const entries = await Array.fromAsync(
+        new Bun.Glob(`${"rollup.jsonl"}.lock.*`).scan({ cwd: dir }),
+      );
+      expect(entries.length).toBe(0);
+
+      // Subsequent calls still work (lock isn't held by a zombie).
+      await appendToRollup([baseObservation], rollupPath);
+      const content = await Bun.file(rollupPath).text();
+      expect(content.split("\n").filter((l) => l.trim()).length).toBe(2);
+    });
+  });
+
   test("appends one JSON line per observation", async () => {
     await withTempDir(async (dir) => {
       const rollupPath = path.join(dir, "rollup.jsonl");
