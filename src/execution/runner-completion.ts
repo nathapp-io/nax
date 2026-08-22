@@ -474,19 +474,34 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
  * The three counts `shouldRunFinish` gates on, in the shape the plugin's own
  * gate read them.
  *
- * `completed` is `options.storiesCompleted`, **not** `countStories(prd).passed`.
- * `buildPostRunContext` (`src/execution/lifecycle/run-cleanup.ts:151-156`)
- * builds `PostRunContext.storySummary.completed` from the runner's
- * `storiesCompleted` counter and takes only `failed`/`skipped`/`paused` from
- * `countStories`. Substituting `passed` here would silently change the gate
- * the native phase inherits.
+ * `completed` is `options.storiesCompleted` — **not** `countStories(prd).passed`
+ * — for every run that actually executed a story. `buildPostRunContext`
+ * (`src/execution/lifecycle/run-cleanup.ts:151-156`) builds
+ * `PostRunContext.storySummary.completed` from the runner's `storiesCompleted`
+ * counter and takes only `failed`/`skipped`/`paused` from `countStories`.
+ * Substituting `passed` here would silently change the gate the native phase
+ * inherits.
+ *
+ * The one narrow exception (#1671): a *resumed* run whose PRD is already
+ * fully complete executes no story at all, so `storiesCompleted` stays 0 even
+ * though the completion phase just did real work (deferred review, cleanup).
+ * `unified-executor.ts:171` takes that exact "all stories already complete"
+ * branch behind `isComplete(prd)` — the same predicate used below — so when
+ * `storiesCompleted === 0` and `isComplete(prd)` is true, the fallback reports
+ * `counts.passed` instead. `isComplete` rather than `counts.passed > 0`
+ * because it additionally rules out any `pending`/`blocked` story; a run that
+ * merely has one passed story among others still unstarted must not look
+ * complete to `shouldRunFinish`. Any run that executed at least one story
+ * keeps its own `storiesCompleted` count untouched.
  *
  * `countStories().failed` already folds in `regression-failed`, matching the
  * classification the deferred regression gate uses.
  */
 function finishStorySummary(options: RunnerCompletionOptions): { completed: number; failed: number; paused: number } {
   const counts = countStories(options.prd);
-  return { completed: options.storiesCompleted, failed: counts.failed, paused: counts.paused };
+  const completed =
+    options.storiesCompleted === 0 && isComplete(options.prd) ? counts.passed : options.storiesCompleted;
+  return { completed, failed: counts.failed, paused: counts.paused };
 }
 
 /**
