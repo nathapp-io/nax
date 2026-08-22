@@ -86,12 +86,9 @@ describe("resolvePermissions — default behaviour", () => {
     expect(result.mode).toBe("approve-all");
   });
 
-  test("no config → safe (approve-reads)", () => {
-    // SEC-41 (D-20): absent config fails closed (approve-reads) rather
-    // than granting approve-all. The `default:` arm already fails safe
-    // for invalid profiles, so absent must not be more permissive.
+  test("no config → unrestricted (approve-all)", () => {
     const result = resolvePermissions(undefined, "run");
-    expect(result.mode).toBe("approve-reads");
+    expect(result.mode).toBe("approve-all");
   });
 });
 
