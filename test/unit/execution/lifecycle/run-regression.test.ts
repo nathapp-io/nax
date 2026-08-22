@@ -15,10 +15,10 @@ import type { NaxConfig } from "@/config";
 import { _regressionDeps, runDeferredRegression } from "@/execution";
 import type { DeferredRegressionOptions } from "@/execution";
 import type { Finding, FixCycleResult } from "@/findings";
-import type { PRD } from "@/prd";
+import type { PRD, UserStory } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
 import type { VerificationResult } from "@/verification";
-import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig, makePRD } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -111,9 +111,9 @@ function makeConfig(): NaxConfig {
 }
 
 function makePrd(storyIds: string[]): PRD {
-  return {
-    userStories: storyIds.map((id) => ({ id, status: "passed", title: id })),
-  } as unknown as PRD;
+  return makePRD({
+    userStories: storyIds.map((id) => ({ id, status: "passed", title: id })) as unknown as UserStory[],
+  });
 }
 
 function failuresFor(storyIds: string[]) {

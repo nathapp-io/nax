@@ -22,7 +22,7 @@ import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineContext, PipelineRunResult } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD, UserStory } from "@/prd/types";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makePRD, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -46,14 +46,12 @@ function makeStory(id: string, opts: Partial<UserStory> = {}): UserStory {
 }
 
 function makePrd(stories: UserStory[]): PRD {
-  return {
+  return makePRD({
     project: "test",
     feature: "test-feature",
     branchName: "feat/test",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
     userStories: stories,
-  } as unknown as PRD;
+  });
 }
 
 function makePipelineRunResult(success: boolean, reason?: string): PipelineRunResult {

@@ -15,7 +15,7 @@ import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineEvent, RunCompletedEvent } from "@/pipeline/event-bus";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd/types";
-import { makePluginRegistry, makeStatusWriter } from "@test/helpers";
+import { makePRD, makePluginRegistry, makeStatusWriter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -37,14 +37,12 @@ function makeStory(id: string, status: UserStory["status"] = "passed"): UserStor
 }
 
 function makeCompletePRD(stories: UserStory[] = [makeStory("US-001", "passed")]): PRD {
-  return {
+  return makePRD({
     project: "test-project",
     feature: "test-feature",
     branchName: "test-branch",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
     userStories: stories,
-  } as unknown as PRD;
+  });
 }
 
 const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };

@@ -11,6 +11,7 @@
 import { describe, expect, test } from "bun:test";
 import { countStories, isComplete, isStalled } from "@/prd";
 import type { PRD, StoryStatus, UserStory } from "@/prd";
+import { makePRD as makePRDHelper } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -32,14 +33,12 @@ function makeStory(id: string, status: StoryStatus): UserStory {
 }
 
 function makePRD(stories: UserStory[]): PRD {
-  return {
+  return makePRDHelper({
     project: "test",
     feature: "test-feature",
     branchName: "test-branch",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
     userStories: stories,
-  } as unknown as PRD;
+  });
 }
 
 // ---------------------------------------------------------------------------

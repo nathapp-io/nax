@@ -17,6 +17,7 @@ import { describe, expect, test } from "bun:test";
 import { checkAcAnchored, checkClaimsCited, checkFilesExist, checkNoContradictions, checkSpecCoverage } from "@/debate";
 import type { FactsManifest } from "@/debate/facts-manifest";
 import type { PRD } from "@/prd/types";
+import { makePRD } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -36,10 +37,7 @@ const makeStory = (overrides: Partial<PRD["userStories"][0]> = {}): PRD["userSto
   ...overrides,
 });
 
-const makePrd = (stories: PRD["userStories"] = [makeStory()]): PRD =>
-  ({
-    userStories: stories,
-  }) as unknown as PRD;
+const makePrd = (stories: PRD["userStories"] = [makeStory()]): PRD => makePRD({ userStories: stories });
 
 const makeManifest = (overrides: Partial<FactsManifest> = {}): FactsManifest => ({
   repoFacts: [],

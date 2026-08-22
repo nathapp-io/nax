@@ -3,16 +3,14 @@ import { SinglePlanStrategy, _singlePlanDeps } from "@/plan";
 import type { PlanModeContext } from "@/plan/strategies";
 import type { PRD } from "@/prd/types";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeNaxConfig } from "@test/helpers";
+import { makeMockAgentManager, makeNaxConfig, makePRD } from "@test/helpers";
 
 // Minimal PRD returned by the stubbed callOp
 function makePrd(agentProfileId?: string): PRD {
-  return {
+  return makePRD({
     project: "p",
     feature: "my-feature",
     branchName: "feat/my-feature",
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
     userStories: [
       {
         id: "US-001",
@@ -33,7 +31,7 @@ function makePrd(agentProfileId?: string): PRD {
         },
       },
     ],
-  } as unknown as PRD;
+  });
 }
 
 // Minimal PlanModeContext builder

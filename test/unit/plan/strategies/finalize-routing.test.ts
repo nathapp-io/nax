@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { AgentRoutingConfig } from "@/config";
 import { finalizePrdRouting } from "@/plan";
 import type { PRD } from "@/prd/types";
+import { makePRD } from "@test/helpers";
 
 const agentRouting: AgentRoutingConfig = {
   enabled: true,
@@ -14,12 +15,10 @@ const agentRouting: AgentRoutingConfig = {
 };
 
 function prdWith(routing: Record<string, unknown>): PRD {
-  return {
+  return makePRD({
     project: "p",
     feature: "f",
     branchName: "feat/f",
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
     userStories: [
       {
         id: "US-001",
@@ -35,7 +34,7 @@ function prdWith(routing: Record<string, unknown>): PRD {
         routing: { complexity: "medium", testStrategy: "tdd-simple", reasoning: "r", ...routing },
       },
     ],
-  } as unknown as PRD;
+  });
 }
 
 describe("finalizePrdRouting", () => {
