@@ -8,7 +8,7 @@
 import { spawn } from "bun";
 import { getSafeLogger } from "../logger";
 import { isTestFile } from "../test-runners";
-import { getMergeBase, isGitRefValid } from "../utils/git";
+import { GIT_TIMEOUT_MS, getMergeBase, isGitRefValid } from "../utils/git";
 import { type NaxIgnoreIndex, filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../utils/path-filters";
 
 /** Maximum diff size in bytes before truncation. 50KB keeps prompts within LLM context. */
@@ -37,6 +37,59 @@ export const _diffUtilsDeps = {
   getMergeBase,
 };
 
+// BUG-31: route every git spawn through this helper so a wedged git
+// (NFS / lock contention) cannot stall the review stage indefinitely.
+// The convention `gitWithTimeout` (`src/utils/git.ts`) exists for the
+// exact same reason — diff-utils predates that convention and bypassed
+// it; this wrapper applies the same deadline + drain-on-exit semantics
+// to the existing tests' mocked `_diffUtilsDeps.spawn`.
+async function runGitWithTimeout(
+  cmd: string[],
+  workdir: string,
+  timeoutMs: number = GIT_TIMEOUT_MS,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const proc = _diffUtilsDeps.spawn({
+    cmd,
+    cwd: workdir,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  type RunResult = { kind: "exit"; code: number } | { kind: "timeout" };
+  let resolveTimeout: (v: RunResult) => void = () => {};
+  const exitPromise = proc.exited.then<RunResult>((code) => ({ kind: "exit", code }));
+  const timeoutPromise = new Promise<RunResult>((resolve) => {
+    resolveTimeout = resolve;
+    // SIGKILL on timeout so a wedged git releases its pipes and proc.exited
+    // can settle. Best-effort — kill may fail if the process is already gone.
+    setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        // Process may have already exited
+      }
+      resolveTimeout({ kind: "timeout" });
+    }, timeoutMs);
+  });
+
+  // Drain stdout/stderr concurrently — a process that fills either pipe's
+  // OS buffer (>64KB) before being read would otherwise block on the write
+  // and never reach `exited`, defeating the timeout's own SIGKILL.
+  const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
+  const stderrPromise = new Response(proc.stderr).text().catch(() => "");
+
+  const result = await Promise.race([exitPromise, timeoutPromise]);
+
+  if (result.kind === "timeout") {
+    // Don't await the drain promises here — a SIGKILL'd process's pipes
+    // may never close in test mocks and are irrelevant anyway.
+    return { stdout: "", stderr: "", exitCode: 1 };
+  }
+
+  const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
+  return { stdout, stderr, exitCode: result.code };
+}
+
 export interface TestInventory {
   addedTestFiles: string[];
   newSourceFilesWithoutTests: string[];
@@ -55,19 +108,12 @@ export async function collectDiff(
 ): Promise<string | null> {
   const naxIgnoreExcludes = await resolveNaxIgnorePathspecExcludes(workdir, options);
   const merged = [...new Set([...excludePatterns, ...naxIgnoreExcludes, ...ALWAYS_EXCLUDED])];
-  const cmd = ["git", "diff", "--unified=3", `${storyGitRef}..HEAD`, "--", ".", ...merged];
-  const proc = _diffUtilsDeps.spawn({
-    cmd,
-    cwd: workdir,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  const [exitCode, stdout, stderr] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
+  // BUG-31: route through runGitWithTimeout — a wedged git (NFS / lock
+  // contention) must not stall the review stage indefinitely.
+  const { stdout, stderr, exitCode } = await runGitWithTimeout(
+    ["git", "diff", "--unified=3", `${storyGitRef}..HEAD`, "--", ".", ...merged],
+    workdir,
+  );
 
   if (exitCode !== 0) {
     getSafeLogger()?.warn("diff-utils", "git diff failed — skipping review diff", { storyGitRef, stderr });
@@ -88,18 +134,11 @@ export async function collectDiffStat(
 ): Promise<string> {
   const naxIgnoreExcludes = await resolveNaxIgnorePathspecExcludes(workdir, options);
   const merged = [...new Set([...naxIgnoreExcludes, ...ALWAYS_EXCLUDED])];
-  const proc = _diffUtilsDeps.spawn({
-    cmd: ["git", "diff", "--stat", `${storyGitRef}..HEAD`, "--", ".", ...merged],
-    cwd: workdir,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  const [exitCode, stdout] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
+  // BUG-31: route through runGitWithTimeout — same convention as collectDiff.
+  const { stdout, exitCode } = await runGitWithTimeout(
+    ["git", "diff", "--stat", `${storyGitRef}..HEAD`, "--", ".", ...merged],
+    workdir,
+  );
 
   return exitCode === 0 ? stdout.trim() : "";
 }
@@ -202,18 +241,10 @@ export async function computeTestInventory(
   testFilePatterns?: readonly string[],
   options?: DiffIgnoreOptions,
 ): Promise<TestInventory> {
-  const proc = _diffUtilsDeps.spawn({
-    cmd: ["git", "diff", "--name-only", "--diff-filter=A", `${storyGitRef}..HEAD`],
-    cwd: workdir,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  const [exitCode, stdout] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
+  const { stdout, exitCode } = await runGitWithTimeout(
+    ["git", "diff", "--name-only", "--diff-filter=A", `${storyGitRef}..HEAD`],
+    workdir,
+  );
 
   if (exitCode !== 0) {
     return { addedTestFiles: [], newSourceFilesWithoutTests: [] };
@@ -262,18 +293,11 @@ export async function collectDiffFileList(
 ): Promise<string[] | undefined> {
   const naxIgnoreExcludes = await resolveNaxIgnorePathspecExcludes(workdir, options);
   const merged = [...new Set([...naxIgnoreExcludes, ...ALWAYS_EXCLUDED])];
-  const proc = _diffUtilsDeps.spawn({
-    cmd: ["git", "diff", "--name-only", `${storyGitRef}..HEAD`, "--", ".", ...merged],
-    cwd: workdir,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  const [exitCode, stdout] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
+  // BUG-31: route through runGitWithTimeout.
+  const { stdout, exitCode } = await runGitWithTimeout(
+    ["git", "diff", "--name-only", `${storyGitRef}..HEAD`, "--", ".", ...merged],
+    workdir,
+  );
 
   if (exitCode !== 0) return undefined;
   return stdout
