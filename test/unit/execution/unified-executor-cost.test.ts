@@ -468,3 +468,110 @@ describe("BUG-13 — parallel batch updates statusWriter after batch completion"
     expect(setCurrentStoryCalls[0]?.[0]).toBeNull();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG-7 — parallel batch dispatch has no pre-dispatch cost-limit gate
+// (asymmetric with the single-story path, which gates BEFORE spending)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("BUG-7 — pre-dispatch cost gate on the parallel batch path", () => {
+  let deps: Record<string, unknown>;
+  let origRunParallelBatch: unknown;
+  let origSelectIndependentBatch: unknown;
+
+  beforeEach(async () => {
+    const mod = await import("@/execution/unified-executor");
+    deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
+    origRunParallelBatch = deps.runParallelBatch;
+    origSelectIndependentBatch = deps.selectIndependentBatch;
+  });
+
+  afterEach(() => {
+    if (deps) {
+      deps.runParallelBatch = origRunParallelBatch;
+      deps.selectIndependentBatch = origSelectIndependentBatch;
+    }
+    mock.restore();
+  });
+
+  test("does not dispatch the batch when current cost already exceeds the limit — runParallelBatch is never called", async () => {
+    const story1 = makePendingStory("US-001");
+    const story2 = makePendingStory("US-002");
+
+    deps.selectIndependentBatch = mock(() => [story1, story2]);
+    const runParallelBatchMock = mock(async () => ({
+      completed: [story1, story2],
+      failed: [],
+      mergeConflicts: [],
+      storyCosts: new Map<string, number>(),
+      totalCost: 0,
+    }));
+    deps.runParallelBatch = runParallelBatchMock;
+
+    const { executeUnified } = await import("@/execution/unified-executor");
+    const prd = makePrd([story1, story2]);
+    const baseCtx = makeCtx({ parallelCount: 2 });
+    const ctx = {
+      ...baseCtx,
+      config: {
+        ...baseCtx.config,
+        execution: { ...baseCtx.config.execution, costLimit: 5, maxIterations: 1 },
+      },
+      runtime: {
+        ...baseCtx.runtime,
+        costAggregator: {
+          ...baseCtx.runtime.costAggregator,
+          snapshot: () => ({ ...baseCtx.runtime.costAggregator.snapshot(), totalCostUsd: 10 }),
+        },
+      },
+    };
+
+    const result = await executeUnified(ctx as never, prd as never);
+
+    expect(result.exitReason).toBe("cost-limit");
+    expect(runParallelBatchMock).not.toHaveBeenCalled();
+  });
+
+  test("dispatches the batch when current cost is below the limit — pre-gate passes through", async () => {
+    const story1 = makePendingStory("US-001");
+    const story2 = makePendingStory("US-002");
+
+    deps.selectIndependentBatch = mock(() => [story1, story2]);
+    const runParallelBatchMock = mock(async () => ({
+      completed: [story1, story2],
+      failed: [],
+      mergeConflicts: [],
+      storyCosts: new Map<string, number>([
+        [story1.id, 1],
+        [story2.id, 1],
+      ]),
+      totalCost: 2,
+    }));
+    deps.runParallelBatch = runParallelBatchMock;
+
+    const { executeUnified } = await import("@/execution/unified-executor");
+    const prd = makePrd([story1, story2]);
+    const baseCtx = makeCtx({ parallelCount: 2 });
+    const ctx = {
+      ...baseCtx,
+      config: {
+        ...baseCtx.config,
+        execution: { ...baseCtx.config.execution, costLimit: 5, maxIterations: 1 },
+      },
+      runtime: {
+        ...baseCtx.runtime,
+        costAggregator: {
+          ...baseCtx.runtime.costAggregator,
+          snapshot: () => ({ ...baseCtx.runtime.costAggregator.snapshot(), totalCostUsd: 3 }),
+        },
+      },
+    };
+
+    const result = await executeUnified(ctx as never, prd as never).catch(
+      () => ({ exitReason: "error" }) as { exitReason: string },
+    );
+
+    expect(result.exitReason).not.toBe("cost-limit");
+    expect(runParallelBatchMock).toHaveBeenCalled();
+  });
+});
