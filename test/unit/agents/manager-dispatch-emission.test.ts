@@ -14,9 +14,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { AgentManager } from "@/agents/manager";
 import { _acpAdapterDeps } from "@/agents/acp/adapter";
-import { makeClient, makeSession } from "./acp/adapter.test";
+import { AgentManager } from "@/agents/manager";
 import type { SessionHandle, TurnResult } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config";
 import { NaxConfigSchema } from "@/config/schemas";
@@ -30,6 +29,7 @@ import { DispatchEventBus } from "@/runtime/dispatch-events";
 import { runTrackedSession } from "@/session/manager-run";
 import type { SessionManagerState } from "@/session/manager-run";
 import type { SessionDescriptor } from "@/session/types";
+import { makeClient, makeSession } from "./acp/adapter.test";
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
 
@@ -202,16 +202,18 @@ describe("runAsSession — dispatch emission", () => {
   test("emits DispatchErrorEvent on sendPrompt throw, then re-throws", async () => {
     const bus = new DispatchEventBus();
     const manager = new AgentManager(DEFAULT_CONFIG, undefined, {
-      sendPrompt: mock(async () => { throw new Error("network failure"); }),
+      sendPrompt: mock(async () => {
+        throw new Error("network failure");
+      }),
       dispatchEvents: bus,
     });
 
     const errors: string[] = [];
     bus.onDispatchError((e) => errors.push(e.errorMessage));
 
-    await expect(
-      manager.runAsSession("claude", makeHandle(), "prompt", { pipelineStage: "run" }),
-    ).rejects.toThrow("network failure");
+    await expect(manager.runAsSession("claude", makeHandle(), "prompt", { pipelineStage: "run" })).rejects.toThrow(
+      "network failure",
+    );
 
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("network failure");
@@ -360,7 +362,9 @@ describe("runWithFallback — multi-hop dispatch emission", () => {
 
     const sessionTurns: SessionTurnDispatchEvent[] = [];
     const opCompleted: OperationCompletedEvent[] = [];
-    bus.onDispatch((e) => { if (e.kind === "session-turn") sessionTurns.push(e); });
+    bus.onDispatch((e) => {
+      if (e.kind === "session-turn") sessionTurns.push(e);
+    });
     bus.onOperationCompleted((e) => opCompleted.push(e));
 
     // shouldSwap requires hasBundle:true — provide a minimal stub bundle.
@@ -408,7 +412,14 @@ describe("runWithFallback — multi-hop dispatch emission", () => {
           };
         }
         return {
-          result: { success: true, exitCode: 0, output: turn.output, rateLimited: false, durationMs: 20, estimatedCostUsd: 0 },
+          result: {
+            success: true,
+            exitCode: 0,
+            output: turn.output,
+            rateLimited: false,
+            durationMs: 20,
+            estimatedCostUsd: 0,
+          },
           bundle: fakeBundle,
           prompt: "do work",
         };

@@ -8,9 +8,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { DEFAULT_CONFIG } from "@/config";
 import { _acceptanceSetupDeps, acceptanceSetupStage } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
-import { DEFAULT_CONFIG } from "@/config";
 import type { UserStory } from "@/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,9 +44,7 @@ function makePrd(stories: UserStory[]) {
 }
 
 function makeCtx(acceptanceOverrides: Record<string, unknown> = {}): PipelineContext {
-  const stories = [
-    makeStory("US-001", ["renders correctly", "shows expected output"]),
-  ];
+  const stories = [makeStory("US-001", ["renders correctly", "shows expected output"])];
   return {
     config: {
       ...DEFAULT_CONFIG,

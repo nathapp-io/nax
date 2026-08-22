@@ -2,12 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { _mutationCheckDeps, mutationCheckOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import {
-  cleanupTempDir,
-  makeMutationCheckCtx,
-  makeMutationCheckDeps as fakeDeps,
-  makeTempDir,
-} from "@test/helpers";
+import { cleanupTempDir, makeMutationCheckDeps as fakeDeps, makeMutationCheckCtx, makeTempDir } from "@test/helpers";
 
 const FAKE_STORY = { id: "US-004", title: "mutation-check op" } as any;
 
@@ -220,7 +215,10 @@ describe("mutationCheckOp — US-004 runtime collection", () => {
 
   test("US-004 AC4: records checked true with zero candidates when changed ranges are unavailable", async () => {
     const mutationSummaries = new Map();
-    const ctx = ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }, { mutationSummaries });
+    const ctx = ctxWithConfig(
+      { mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } },
+      { mutationSummaries },
+    );
     const deps = fakeDeps({ getChangedLineRanges: async () => null });
 
     await mutationCheckOp.execute(
@@ -657,7 +655,10 @@ describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
       });
 
       const mutationSummaries = new Map();
-      const ctx = ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }, { mutationSummaries });
+      const ctx = ctxWithConfig(
+        { mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } },
+        { mutationSummaries },
+      );
       const out = await mutationCheckOp.execute(
         {
           story: FAKE_STORY,
@@ -738,4 +739,3 @@ describe("mutationCheckOp — AC8: forwards storyGitRef + configured command; re
     }
   });
 });
-

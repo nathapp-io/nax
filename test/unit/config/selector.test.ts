@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { pickSelector, reshapeSelector } from "@/config/selector";
 import type { NaxConfig } from "@/config/types";
 
@@ -34,8 +34,7 @@ describe("ConfigSelector", () => {
   describe("reshapeSelector", () => {
     test("applies transform fn", () => {
       const sel = reshapeSelector("flat", (c: NaxConfig) => ({
-        strategy: (c as unknown as { routing: { strategy: string } }).routing
-          .strategy,
+        strategy: (c as unknown as { routing: { strategy: string } }).routing.strategy,
       }));
       const cfg = { routing: { strategy: "llm" } } as unknown as NaxConfig;
       expect(sel.select(cfg).strategy).toBe("llm");
@@ -48,9 +47,7 @@ describe("ConfigSelector", () => {
 
     test("returns arbitrary shape", () => {
       const sel = reshapeSelector("custom", (c: NaxConfig) => ({
-        isParallel: (
-          c as unknown as { execution: { parallel: boolean } }
-        ).execution.parallel,
+        isParallel: (c as unknown as { execution: { parallel: boolean } }).execution.parallel,
         agentName: "test",
       }));
       const cfg = {

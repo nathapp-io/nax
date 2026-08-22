@@ -6,6 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { DEFAULT_CONFIG } from "@/config";
 import {
   type AcceptanceMeta,
   _acceptanceSetupDeps,
@@ -13,7 +14,6 @@ import {
   computeACFingerprint,
 } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
-import { DEFAULT_CONFIG } from "@/config";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -138,8 +138,12 @@ describe("acceptance-setup: regenerates when meta is missing (P2-A)", () => {
 
     _acceptanceSetupDeps.fileExists = async () => true;
     _acceptanceSetupDeps.readMeta = async () => null; // no meta
-    _acceptanceSetupDeps.copyFile = async () => { copyFileCalled = true; };
-    _acceptanceSetupDeps.deleteFile = async () => { deleteFileCalled = true; };
+    _acceptanceSetupDeps.copyFile = async () => {
+      copyFileCalled = true;
+    };
+    _acceptanceSetupDeps.deleteFile = async () => {
+      deleteFileCalled = true;
+    };
     _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
       if (op.name === "acceptance-generate") {
         generateCalled = true;
@@ -434,7 +438,9 @@ describe("acceptance-setup: writes acceptance-meta.json (P2-B, AC-15)", () => {
       throw new Error(`unexpected op: ${op.name}`);
     };
     _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.writeMeta = async (_path, meta) => { writtenMeta = meta; };
+    _acceptanceSetupDeps.writeMeta = async (_path, meta) => {
+      writtenMeta = meta;
+    };
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
     const ctx = makeCtx();

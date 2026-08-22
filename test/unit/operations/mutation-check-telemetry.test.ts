@@ -19,8 +19,8 @@ import type { MutationCheckDeps } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 import {
   cleanupTempDir,
-  makeMutationCheckCtx,
   makeMutationCheckDeps as fakeDeps,
+  makeMutationCheckCtx,
   makeTempDir,
   withInfoSpy,
 } from "@test/helpers";

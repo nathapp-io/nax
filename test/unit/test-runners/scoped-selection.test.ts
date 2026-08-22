@@ -1,5 +1,5 @@
-import { describe, test, expect, afterEach } from "bun:test";
-import { selectScopedTests, _scopedSelectionDeps } from "@/test-runners";
+import { afterEach, describe, expect, test } from "bun:test";
+import { _scopedSelectionDeps, selectScopedTests } from "@/test-runners";
 
 function makeFakeDeps(overrides: Partial<typeof _scopedSelectionDeps> = {}) {
   return {

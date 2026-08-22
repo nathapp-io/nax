@@ -90,4 +90,3 @@ describe("TS-001: LLM routing derives tdd-simple for simple stories", () => {
     expect(decision.testStrategy as string).toBe("tdd-simple");
   });
 });
-

@@ -7,16 +7,16 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { _executionDeps, executionStage } from "@/pipeline/stages/execution";
 import { NaxError } from "@/errors";
+import type { RepoScopedFixRecord } from "@/execution";
+import type { PostRunInspectionResult } from "@/execution/post-run";
+import type { StoryOrchestratorResult } from "@/execution/story-orchestrator";
+import { _executionDeps, executionStage } from "@/pipeline/stages/execution";
+import type { PipelineContext } from "@/pipeline/types";
+import type { StageResult } from "@/pipeline/types";
 import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 import { makeTestContext, makeTestStory } from "@test/helpers";
 import { withExecutionDeps } from "@test/helpers";
-import type { PipelineContext } from "@/pipeline/types";
-import type { RepoScopedFixRecord } from "@/execution";
-import type { StoryOrchestratorResult } from "@/execution/story-orchestrator";
-import type { PostRunInspectionResult } from "@/execution/post-run";
-import type { StageResult } from "@/pipeline/types";
 
 interface PlanResultOptions {
   readonly success?: boolean;
@@ -96,14 +96,28 @@ describe("executionStage.execute — recordRepoScopedFixes wiring (US-002)", () 
     });
   }
 
-  function spyRecord(planRun: () => Promise<ReturnType<typeof planResultWith>>, onRecord?: (s: unknown, r: unknown) => void, onInspect?: (s: unknown, p: unknown) => void): () => void {
+  function spyRecord(
+    planRun: () => Promise<ReturnType<typeof planResultWith>>,
+    onRecord?: (s: unknown, r: unknown) => void,
+    onInspect?: (s: unknown, p: unknown) => void,
+  ): () => void {
     const recordSpy = (story: unknown, records: unknown) => {
       onRecord?.(story, records);
     };
-    const inspectSpy = async (ctx: PipelineContext, planResult: StoryOrchestratorResult): Promise<PostRunInspectionResult> => {
+    const inspectSpy = async (
+      ctx: PipelineContext,
+      planResult: StoryOrchestratorResult,
+    ): Promise<PostRunInspectionResult> => {
       onInspect?.(ctx, planResult);
       return {
-        agentResult: { success: planResult.success, output: "", exitCode: 0, durationMs: 0, rateLimited: false, estimatedCostUsd: 0 },
+        agentResult: {
+          success: planResult.success,
+          output: "",
+          exitCode: 0,
+          durationMs: 0,
+          rateLimited: false,
+          estimatedCostUsd: 0,
+        },
         selfVerificationFailed: false,
         needsHumanReview: false,
         combinedOutput: "",
@@ -114,13 +128,23 @@ describe("executionStage.execute — recordRepoScopedFixes wiring (US-002)", () 
       buildPlanForStrategy: async () => ({ run: planRun }) as never,
       recordRepoScopedFixes: recordSpy as never,
       applyPostRunInspection: inspectSpy as never,
-      decideStageAction: (() => ({ action: "continue" } as StageResult)) as never,
+      decideStageAction: (() => ({ action: "continue" }) as StageResult) as never,
     });
   }
 
   function realRecorder(planRun: () => Promise<ReturnType<typeof planResultWith>>): () => void {
-    const inspectStub = async (_ctx: PipelineContext, planResult: StoryOrchestratorResult): Promise<PostRunInspectionResult> => ({
-      agentResult: { success: planResult.success, output: "", exitCode: 0, durationMs: 0, rateLimited: false, estimatedCostUsd: 0 },
+    const inspectStub = async (
+      _ctx: PipelineContext,
+      planResult: StoryOrchestratorResult,
+    ): Promise<PostRunInspectionResult> => ({
+      agentResult: {
+        success: planResult.success,
+        output: "",
+        exitCode: 0,
+        durationMs: 0,
+        rateLimited: false,
+        estimatedCostUsd: 0,
+      },
       selfVerificationFailed: false,
       needsHumanReview: false,
       combinedOutput: "",
@@ -129,7 +153,7 @@ describe("executionStage.execute — recordRepoScopedFixes wiring (US-002)", () 
       ...baseOverrides,
       buildPlanForStrategy: async () => ({ run: planRun }) as never,
       applyPostRunInspection: inspectStub as never,
-      decideStageAction: (() => ({ action: "continue" } as StageResult)) as never,
+      decideStageAction: (() => ({ action: "continue" }) as StageResult) as never,
     });
   }
 

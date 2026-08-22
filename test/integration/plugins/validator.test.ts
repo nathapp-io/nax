@@ -205,46 +205,119 @@ describe("validatePlugin", () => {
       ["empty provides", { name: "test", version: "1.0.0", provides: [], extensions: {} }],
       ["invalid provides type", { name: "test", version: "1.0.0", provides: ["invalid-type"], extensions: {} }],
       ["missing extensions", { name: "test", version: "1.0.0", provides: ["optimizer"] }],
-      ["non-object extensions", { name: "test", version: "1.0.0", provides: ["optimizer"], extensions: "not an object" }],
+      [
+        "non-object extensions",
+        { name: "test", version: "1.0.0", provides: ["optimizer"], extensions: "not an object" },
+      ],
       ["missing required extension", { name: "test", version: "1.0.0", provides: ["optimizer"], extensions: {} }],
     ])("rejects %s", (_label, plugin) => {
       expect(validatePlugin(plugin)).toBeNull();
     });
 
     test("rejects invalid optimizer (missing name or missing optimize)", () => {
-      expect(validatePlugin({
-        name: "test", version: "1.0.0", provides: ["optimizer"],
-        extensions: { optimizer: { async optimize(input: any) { return { optimizedPrompt: input.prompt, estimatedTokens: input.estimatedTokens, tokensSaved: 0, appliedStrategies: [] }; } } },
-      })).toBeNull();
-      expect(validatePlugin({
-        name: "test", version: "1.0.0", provides: ["optimizer"],
-        extensions: { optimizer: { name: "test" } },
-      })).toBeNull();
+      expect(
+        validatePlugin({
+          name: "test",
+          version: "1.0.0",
+          provides: ["optimizer"],
+          extensions: {
+            optimizer: {
+              async optimize(input: any) {
+                return {
+                  optimizedPrompt: input.prompt,
+                  estimatedTokens: input.estimatedTokens,
+                  tokensSaved: 0,
+                  appliedStrategies: [],
+                };
+              },
+            },
+          },
+        }),
+      ).toBeNull();
+      expect(
+        validatePlugin({
+          name: "test",
+          version: "1.0.0",
+          provides: ["optimizer"],
+          extensions: { optimizer: { name: "test" } },
+        }),
+      ).toBeNull();
     });
 
     test("rejects invalid router (missing name or missing route)", () => {
-      expect(validatePlugin({
-        name: "test", version: "1.0.0", provides: ["router"],
-        extensions: { router: { route(_story: any, _context: any) { return null; } } },
-      })).toBeNull();
-      expect(validatePlugin({
-        name: "test", version: "1.0.0", provides: ["router"],
-        extensions: { router: { name: "test" } },
-      })).toBeNull();
+      expect(
+        validatePlugin({
+          name: "test",
+          version: "1.0.0",
+          provides: ["router"],
+          extensions: {
+            router: {
+              route(_story: any, _context: any) {
+                return null;
+              },
+            },
+          },
+        }),
+      ).toBeNull();
+      expect(
+        validatePlugin({
+          name: "test",
+          version: "1.0.0",
+          provides: ["router"],
+          extensions: { router: { name: "test" } },
+        }),
+      ).toBeNull();
     });
 
     test("rejects invalid reviewer (missing name, description, or check)", () => {
       const check = async (_w: string, _f: string[]) => ({ passed: true, output: "OK" });
-      expect(validatePlugin({ name: "test", version: "1.0.0", provides: ["reviewer"], extensions: { reviewer: { description: "test", check } } })).toBeNull();
-      expect(validatePlugin({ name: "test", version: "1.0.0", provides: ["reviewer"], extensions: { reviewer: { name: "test", check } } })).toBeNull();
-      expect(validatePlugin({ name: "test", version: "1.0.0", provides: ["reviewer"], extensions: { reviewer: { name: "test", description: "test" } } })).toBeNull();
+      expect(
+        validatePlugin({
+          name: "test",
+          version: "1.0.0",
+          provides: ["reviewer"],
+          extensions: { reviewer: { description: "test", check } },
+        }),
+      ).toBeNull();
+      expect(
+        validatePlugin({
+          name: "test",
+          version: "1.0.0",
+          provides: ["reviewer"],
+          extensions: { reviewer: { name: "test", check } },
+        }),
+      ).toBeNull();
+      expect(
+        validatePlugin({
+          name: "test",
+          version: "1.0.0",
+          provides: ["reviewer"],
+          extensions: { reviewer: { name: "test", description: "test" } },
+        }),
+      ).toBeNull();
     });
 
     test("rejects invalid context-provider (missing name or getContext) and invalid reporter (missing name)", () => {
       const getContext = async (_s: any) => ({ content: "test", estimatedTokens: 100, label: "Test" });
-      expect(validatePlugin({ name: "test", version: "1.0.0", provides: ["context-provider"], extensions: { contextProvider: { getContext } } })).toBeNull();
-      expect(validatePlugin({ name: "test", version: "1.0.0", provides: ["context-provider"], extensions: { contextProvider: { name: "test" } } })).toBeNull();
-      expect(validatePlugin({ name: "test", version: "1.0.0", provides: ["reporter"], extensions: { reporter: {} } })).toBeNull();
+      expect(
+        validatePlugin({
+          name: "test",
+          version: "1.0.0",
+          provides: ["context-provider"],
+          extensions: { contextProvider: { getContext } },
+        }),
+      ).toBeNull();
+      expect(
+        validatePlugin({
+          name: "test",
+          version: "1.0.0",
+          provides: ["context-provider"],
+          extensions: { contextProvider: { name: "test" } },
+        }),
+      ).toBeNull();
+      expect(
+        validatePlugin({ name: "test", version: "1.0.0", provides: ["reporter"], extensions: { reporter: {} } }),
+      ).toBeNull();
     });
 
     test("rejects plugin with invalid agent (missing required fields)", () => {
@@ -263,9 +336,32 @@ describe("validatePlugin", () => {
     });
 
     test("rejects plugin with non-function setup or teardown", () => {
-      const ext = { optimizer: { name: "test", async optimize(input: any) { return { prompt: input.prompt, originalTokens: 100, optimizedTokens: 100, savings: 0, appliedRules: [] }; } } };
-      expect(validatePlugin({ name: "test", version: "1.0.0", provides: ["optimizer"], setup: "not a function", extensions: ext })).toBeNull();
-      expect(validatePlugin({ name: "test", version: "1.0.0", provides: ["optimizer"], teardown: "not a function", extensions: ext })).toBeNull();
+      const ext = {
+        optimizer: {
+          name: "test",
+          async optimize(input: any) {
+            return { prompt: input.prompt, originalTokens: 100, optimizedTokens: 100, savings: 0, appliedRules: [] };
+          },
+        },
+      };
+      expect(
+        validatePlugin({
+          name: "test",
+          version: "1.0.0",
+          provides: ["optimizer"],
+          setup: "not a function",
+          extensions: ext,
+        }),
+      ).toBeNull();
+      expect(
+        validatePlugin({
+          name: "test",
+          version: "1.0.0",
+          provides: ["optimizer"],
+          teardown: "not a function",
+          extensions: ext,
+        }),
+      ).toBeNull();
     });
   });
 });

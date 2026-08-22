@@ -112,11 +112,7 @@ describe("makeMechanicalLintFixStrategy — AC5: execute invokes runQualityComma
       runQualityCommand: async () => ({ ...passedResult, exitCode: 0 }),
     });
 
-    const output = await (strategy.fixOp as any).execute(
-      { workdir: "/tmp", storyId: "US-004" },
-      ctxWithLintFix,
-      deps,
-    );
+    const output = await (strategy.fixOp as any).execute({ workdir: "/tmp", storyId: "US-004" }, ctxWithLintFix, deps);
     expect(output.applied).toBe(true);
     expect(output.exitCode).toBe(0);
   });

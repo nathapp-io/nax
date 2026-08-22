@@ -412,7 +412,10 @@ describe("WebhookInteractionPlugin - Capacity & Startup Recovery", () => {
     await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
 
     // Reaching private plugin state — no public accessor.
-    const internals = plugin as unknown as { registeredRequestIds: Set<string>; pendingResponses: Map<string, unknown> }; // test-ratchet-allow: as-unknown-as
+    const internals = plugin as unknown as {
+      registeredRequestIds: Set<string>;
+      pendingResponses: Map<string, unknown>;
+    }; // test-ratchet-allow: as-unknown-as
 
     // Fill the early-pickup store to MAX_PENDING_RESPONSES (500) with
     // registered-but-unclaimed IDs, then deliver one more.
@@ -547,8 +550,7 @@ describe("WebhookInteractionPlugin - Payload Security", () => {
       duplex: "half",
     } as RequestInit & { duplex: string });
 
-    const handleRequest = (plugin as unknown as { handleRequest: (req: Request) => Promise<Response> }) // test-ratchet-allow: as-unknown-as
-      .handleRequest;
+    const handleRequest = (plugin as unknown as { handleRequest: (req: Request) => Promise<Response> }).handleRequest; // test-ratchet-allow: as-unknown-as
     const response = await handleRequest.call(plugin, req);
 
     expect(response.status).toBe(413);

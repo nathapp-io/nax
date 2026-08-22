@@ -7,9 +7,9 @@
  * Kept in a separate file because static-rules.test.ts exceeds 400 lines.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { StaticRulesProvider, _staticRulesDeps } from "@/context/engine/providers/static-rules";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { NaxConfigSchema } from "@/config/schemas";
+import { StaticRulesProvider, _staticRulesDeps } from "@/context/engine/providers/static-rules";
 import type { ContextRequest } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────

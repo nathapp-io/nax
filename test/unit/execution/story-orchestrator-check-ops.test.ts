@@ -8,11 +8,11 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { pickSelector } from "@/config";
-import { DEFAULT_CONFIG } from "@/config";
-import { makeTestRuntime } from "@test/helpers";
+import type { DEFAULT_CONFIG } from "@/config";
 import { StoryOrchestratorBuilder } from "@/execution";
-import type { RunOperation, DeterministicOperation, CallContext } from "@/operations";
+import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
+import { makeTestRuntime } from "@test/helpers";
 
 const testSel = pickSelector("test-orchestrator-sel", "execution");
 
@@ -22,17 +22,28 @@ const mockImplementerOp: RunOperation<{ code: string }, { success: boolean }, ty
   stage: "run",
   config: testSel,
   session: { role: "implementer", lifetime: "warm" },
-  build: () => ({ role: { id: "r", content: "impl", overridable: false }, task: { id: "t", content: "", overridable: false } }),
+  build: () => ({
+    role: { id: "r", content: "impl", overridable: false },
+    task: { id: "t", content: "", overridable: false },
+  }),
   parse: () => ({ success: true }),
 };
 
-function makeCheckOp(name: string): DeterministicOperation<{ workdir: string; storyId: string }, { success: boolean; findings: never[]; durationMs: number }, typeof DEFAULT_CONFIG> {
+function makeCheckOp(
+  name: string,
+): DeterministicOperation<
+  { workdir: string; storyId: string },
+  { success: boolean; findings: never[]; durationMs: number },
+  typeof DEFAULT_CONFIG
+> {
   return {
     kind: "deterministic",
     name,
     stage: "review",
     config: testSel,
-    async execute() { return { success: true, findings: [], durationMs: 0 }; },
+    async execute() {
+      return { success: true, findings: [], durationMs: 0 };
+    },
   };
 }
 

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { ContextOrchestrator, _orchestratorDeps } from "@/context/engine";
 import type { ContextProviderResult, ContextRequest, IContextProvider } from "@/context/engine";
-import { makeLogger, type MockLogger } from "@test/helpers";
+import { type MockLogger, makeLogger } from "@test/helpers";
 
 const BASE_REQUEST: ContextRequest = {
   storyId: "US-002",
@@ -15,15 +15,17 @@ const BASE_REQUEST: ContextRequest = {
 
 function makeProvider(): IContextProvider {
   const result: ContextProviderResult = {
-    chunks: [{
-      id: "c:1",
-      kind: "feature",
-      scope: "feature",
-      role: ["implementer"],
-      content: "feature context content",
-      tokens: 200,
-      rawScore: 1,
-    }],
+    chunks: [
+      {
+        id: "c:1",
+        kind: "feature",
+        scope: "feature",
+        role: ["implementer"],
+        content: "feature context content",
+        tokens: 200,
+        rawScore: 1,
+      },
+    ],
     pullTools: [],
   };
   return { id: "p1", kind: "feature", fetch: async () => result };
@@ -58,10 +60,13 @@ describe("US-002 — ContextOrchestrator.assemble() agent framing", () => {
     expect(bundle.pushMarkdown).toContain("## Feature Context");
   });
 
-  test.each(["unknown-agent", ""])("AC-4: unregistered agent %p renders conservative bracket framing", async (agentId) => {
-    const bundle = await new ContextOrchestrator([makeProvider()]).assemble({ ...BASE_REQUEST, agentId });
-    expect(bundle.pushMarkdown).toContain("[Feature Context]");
-  });
+  test.each(["unknown-agent", ""])(
+    "AC-4: unregistered agent %p renders conservative bracket framing",
+    async (agentId) => {
+      const bundle = await new ContextOrchestrator([makeProvider()]).assemble({ ...BASE_REQUEST, agentId });
+      expect(bundle.pushMarkdown).toContain("[Feature Context]");
+    },
+  );
 
   test("AC-5: unknown agent emits a warning naming the agent id", async () => {
     const originalGetLogger = _orchestratorDeps.getLogger;

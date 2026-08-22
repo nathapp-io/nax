@@ -126,20 +126,14 @@ describe("OneShotPromptBuilder — section content", () => {
   });
 
   test("candidates section includes tier names", () => {
-    const result = OneShotPromptBuilder.for("router")
-      .instructions(INSTRUCTIONS)
-      .candidates(CANDIDATES)
-      .build();
+    const result = OneShotPromptBuilder.for("router").instructions(INSTRUCTIONS).candidates(CANDIDATES).build();
     for (const c of CANDIDATES) {
       expect(result).toContain(c.tier);
     }
   });
 
   test("jsonSchema section includes schema name and example", () => {
-    const result = OneShotPromptBuilder.for("router")
-      .instructions(INSTRUCTIONS)
-      .jsonSchema(SCHEMA)
-      .build();
+    const result = OneShotPromptBuilder.for("router").instructions(INSTRUCTIONS).jsonSchema(SCHEMA).build();
     expect(result).toContain(SCHEMA.name);
     expect(result).toContain(JSON.stringify(SCHEMA.example, null, 2));
   });

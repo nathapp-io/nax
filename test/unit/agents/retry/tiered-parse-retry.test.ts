@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeTieredParseRetryStrategy, ParseValidationError } from "@/agents";
+import { ParseValidationError, makeTieredParseRetryStrategy } from "@/agents";
 import type { RetryContext, RetryStrategy } from "@/agents";
 
 // AC-1 & AC-2: Non-ParseValidationError and missing lastOutput should return { retry: false }
@@ -140,11 +140,7 @@ describe("makeTieredParseRetryStrategy — AC-3: retry with inspection and retry
       exhaustedFallback: () => ({ fallback: "value" }),
     });
 
-    const result = strategy.shouldRetry(
-      new ParseValidationError("probe"),
-      0,
-      makeCtx({ lastOutput: "bad output" }),
-    );
+    const result = strategy.shouldRetry(new ParseValidationError("probe"), 0, makeCtx({ lastOutput: "bad output" }));
 
     expect(result).toEqual({
       retry: true,
@@ -262,11 +258,7 @@ describe("makeTieredParseRetryStrategy — real impl: ok:true short-circuits ret
       exhaustedFallback: () => ({ findings: ["should-not-appear"] }),
     });
 
-    const result = strategy.shouldRetry(
-      new ParseValidationError("probe"),
-      1,
-      makeCtx({ lastOutput: "valid" }),
-    );
+    const result = strategy.shouldRetry(new ParseValidationError("probe"), 1, makeCtx({ lastOutput: "valid" }));
 
     expect(result).toEqual({ retry: false });
     expect("fallback" in result && result.fallback).toBeFalsy();
@@ -290,8 +282,7 @@ function makeTieredParseRetryStrategyMock(opts: {
   const reviewerKind = opts.reviewerKind ?? "reviewer";
   const maxAttempts = opts.maxAttempts ?? 2;
   const inspect = opts.inspect ?? (() => ({ ok: false }));
-  const buildRetryPrompt =
-    opts.buildRetryPrompt ?? (() => "please retry");
+  const buildRetryPrompt = opts.buildRetryPrompt ?? (() => "please retry");
   const exhaustedFallback = opts.exhaustedFallback ?? (() => undefined);
   const logger = opts._logger;
 
@@ -321,16 +312,12 @@ function makeTieredParseRetryStrategyMock(opts: {
       const isTruncated = ctx.lastOutput.length > 100_000; // placeholder check
       const nextPrompt = buildRetryPrompt(inspection, isTruncated);
 
-      (logger ?? getSafeLoggerMock())?.warn(
-        reviewerKind,
-        `Parse retry — ${(inspection as any)?.kind ?? "unknown"}`,
-        {
-          storyId: ctx.storyId,
-          kind: (inspection as any)?.kind,
-          isTruncated,
-          originalByteSize: ctx.lastOutput.length,
-        },
-      );
+      (logger ?? getSafeLoggerMock())?.warn(reviewerKind, `Parse retry — ${(inspection as any)?.kind ?? "unknown"}`, {
+        storyId: ctx.storyId,
+        kind: (inspection as any)?.kind,
+        isTruncated,
+        originalByteSize: ctx.lastOutput.length,
+      });
 
       return { retry: true, delayMs: 0, nextPrompt };
     },

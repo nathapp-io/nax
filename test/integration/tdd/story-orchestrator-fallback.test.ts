@@ -3,11 +3,19 @@ import { mkdir, rm } from "node:fs/promises";
 import { DEFAULT_CONFIG } from "@/config";
 import { buildPlanForStrategy } from "@/execution/build-plan-for-strategy";
 import type { PlanInputs } from "@/execution/plan-inputs";
+import type { UserStory } from "@/prd";
 import type { ResolvedTestPatterns } from "@/test-runners";
 import { makeMockCallContext } from "@test/helpers";
 import { makeRuntimeWithFakeAgent } from "@test/helpers";
-import type { UserStory } from "@/prd";
-import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps, stubFullSuiteGateContext } from "./_tdd-test-helpers";
+import {
+  type SavedDeps,
+  createMockAgent,
+  mockAllSpawn,
+  mockGitSpawn,
+  restoreDeps,
+  saveDeps,
+  stubFullSuiteGateContext,
+} from "./_tdd-test-helpers";
 
 let saved: SavedDeps;
 
@@ -54,7 +62,6 @@ function makePlanInputsNoGreenfield(storyArg: UserStory = story): PlanInputs {
   };
 }
 
-
 describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
   test("zero-file scenario returns success=false when greenfield gate is configured", async () => {
     // BUG-010: Zero test files → greenfield-gate stops the pipeline. No auto-fallback occurs.
@@ -63,15 +70,10 @@ describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
 
     try {
       mockGitSpawn({
-        diffFiles: [
-          ["requirements.md"],
-          ["requirements.md"],
-        ],
+        diffFiles: [["requirements.md"], ["requirements.md"]],
       });
 
-      const agent = createMockAgent([
-        { success: true, estimatedCostUsd: 0.01 },
-      ]);
+      const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
 
       const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
       const callCtx = makeMockCallContext({ runtime });
@@ -131,10 +133,7 @@ describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
 
     try {
       mockGitSpawn({
-        diffFiles: [
-          ["requirements.md"],
-          ["requirements.md"],
-        ],
+        diffFiles: [["requirements.md"], ["requirements.md"]],
       });
 
       const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
@@ -169,13 +168,7 @@ describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
 
     try {
       mockGitSpawn({
-        diffFiles: [
-          ["test/user.test.ts"],
-          ["test/user.test.ts"],
-          ["src/user.ts"],
-          ["src/user.ts"],
-          ["src/user.ts"],
-        ],
+        diffFiles: [["test/user.test.ts"], ["test/user.test.ts"], ["src/user.ts"], ["src/user.ts"], ["src/user.ts"]],
       });
 
       const agent = createMockAgent([

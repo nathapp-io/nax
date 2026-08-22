@@ -6,9 +6,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { NaxConfigSchema } from "@/config/schemas";
-import { DEFAULT_CONFIG } from "@/config/defaults";
 import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { NaxConfigSchema } from "@/config/schemas";
 
 // Minimal valid base config — debate key intentionally absent
 const baseConfig = {
@@ -58,7 +58,13 @@ const baseConfig = {
   plan: { model: "balanced", outputPath: "spec.md" },
   acceptance: { enabled: false, maxRetries: 0, testPath: "acceptance.test.ts" },
   context: {
-    testCoverage: { enabled: false, detail: "names-only", maxTokens: 100, testPattern: "**/*.test.ts", scopeToStory: false },
+    testCoverage: {
+      enabled: false,
+      detail: "names-only",
+      maxTokens: 100,
+      testPattern: "**/*.test.ts",
+      scopeToStory: false,
+    },
     autoDetect: { enabled: false, maxFiles: 5, traceImports: false },
   },
 };
@@ -132,7 +138,10 @@ describe("debate config schema — AC-1: defaults when debate key is absent", ()
 
 describe("debate config schema — AC-2: no agent/model fields when not specified", () => {
   test.each([
-    ["resolver.agent", (d: NonNullable<ReturnType<typeof NaxConfigSchema.parse>["debate"]>) => d.stages.plan.resolver.agent],
+    [
+      "resolver.agent",
+      (d: NonNullable<ReturnType<typeof NaxConfigSchema.parse>["debate"]>) => d.stages.plan.resolver.agent,
+    ],
     ["debaters array", (d: NonNullable<ReturnType<typeof NaxConfigSchema.parse>["debate"]>) => d.stages.plan.debaters],
   ])("%s is undefined when not specified", (_label, getField) => {
     const result = NaxConfigSchema.safeParse(baseConfig);

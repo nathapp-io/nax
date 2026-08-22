@@ -82,7 +82,9 @@ describe("SpawnAcpSession — onPidSpawned callback", () => {
 
   test("onPidSpawned receives the process PID", async () => {
     let capturedPid: number | null = null;
-    const session = makeSession((pid: number) => { capturedPid = pid; });
+    const session = makeSession((pid: number) => {
+      capturedPid = pid;
+    });
 
     await session.prompt("test");
 
@@ -92,7 +94,9 @@ describe("SpawnAcpSession — onPidSpawned callback", () => {
   test("onPidSpawned fires BEFORE prompt() resolves", async () => {
     const order: string[] = [];
     let resolveExit!: (code: number) => void;
-    const exitPromise = new Promise<number>((r) => { resolveExit = r; });
+    const exitPromise = new Promise<number>((r) => {
+      resolveExit = r;
+    });
 
     _spawnClientDeps.spawn = mock(() => ({
       ...makeSpawnResult(0, JSON.stringify({ result: "done", stopReason: "end_turn" })),
@@ -105,7 +109,10 @@ describe("SpawnAcpSession — onPidSpawned callback", () => {
     });
 
     // Start prompt but resolve exit after the callback should have fired
-    const promptPromise = session.prompt("test").then((r: unknown) => { order.push("resolved"); return r; });
+    const promptPromise = session.prompt("test").then((r: unknown) => {
+      order.push("resolved");
+      return r;
+    });
     // Give the microtask queue a turn so spawn fires
     await Promise.resolve();
     order.push("pre-exit");
@@ -204,9 +211,7 @@ describe("SpawnAcpClient — propagates onPidSpawned to sessions", () => {
 
   beforeEach(() => {
     // Make trackedSpawn return a valid session-ensure response
-    _spawnClientDeps.spawn = mock(() =>
-      makeSpawnResult(0, JSON.stringify({ sessionId: "sess-1", recordId: "rec-1" })),
-    );
+    _spawnClientDeps.spawn = mock(() => makeSpawnResult(0, JSON.stringify({ sessionId: "sess-1", recordId: "rec-1" })));
   });
 
   test("createSession passes onPidSpawned to the returned SpawnAcpSession", async () => {
@@ -218,9 +223,7 @@ describe("SpawnAcpClient — propagates onPidSpawned to sessions", () => {
     expect(pids).toHaveLength(1);
 
     // Now swap spawn to return a prompt response
-    _spawnClientDeps.spawn = mock(() =>
-      makeSpawnResult(0, JSON.stringify({ result: "done", stopReason: "end_turn" })),
-    );
+    _spawnClientDeps.spawn = mock(() => makeSpawnResult(0, JSON.stringify({ result: "done", stopReason: "end_turn" })));
 
     await session.prompt("hello");
     // prompt() fires onPidSpawned once more
@@ -232,9 +235,7 @@ describe("SpawnAcpClient — propagates onPidSpawned to sessions", () => {
     const client = makeClient(undefined);
     const session = await client.createSession({ agentName: "claude", permissionMode: "approve-all" });
 
-    _spawnClientDeps.spawn = mock(() =>
-      makeSpawnResult(0, JSON.stringify({ result: "ok", stopReason: "end_turn" })),
-    );
+    _spawnClientDeps.spawn = mock(() => makeSpawnResult(0, JSON.stringify({ result: "ok", stopReason: "end_turn" })));
 
     const result = await session.prompt("test");
     expect(result.stopReason).toBe("end_turn");
@@ -247,25 +248,18 @@ describe("SpawnAcpClient — propagates onPidSpawned to sessions", () => {
 
 describe("createSpawnAcpClient factory", () => {
   test("accepts onPidSpawned as fourth argument and threads it to sessions", async () => {
-    _spawnClientDeps.spawn = mock(() =>
-      makeSpawnResult(0, JSON.stringify({ sessionId: "sid-99", recordId: null })),
-    );
+    _spawnClientDeps.spawn = mock(() => makeSpawnResult(0, JSON.stringify({ sessionId: "sid-99", recordId: null })));
 
     const pids: number[] = [];
-    const client = createSpawnAcpClient(
-      "acpx --model claude-haiku claude",
-      "/tmp/test",
-      30,
-      (pid: number) => { pids.push(pid); },
-    );
+    const client = createSpawnAcpClient("acpx --model claude-haiku claude", "/tmp/test", 30, (pid: number) => {
+      pids.push(pid);
+    });
     const session = await client.createSession({ agentName: "claude", permissionMode: "approve-all" });
 
     // createSession fires onPidSpawned once (tracked acpx sessions ensure)
     expect(pids).toHaveLength(1);
 
-    _spawnClientDeps.spawn = mock(() =>
-      makeSpawnResult(0, JSON.stringify({ result: "done", stopReason: "end_turn" })),
-    );
+    _spawnClientDeps.spawn = mock(() => makeSpawnResult(0, JSON.stringify({ result: "done", stopReason: "end_turn" })));
     await session.prompt("go");
 
     // prompt() fires onPidSpawned once more
@@ -274,8 +268,6 @@ describe("createSpawnAcpClient factory", () => {
   });
 
   test("accepts undefined onPidSpawned without error", () => {
-    expect(() =>
-      createSpawnAcpClient("acpx --model claude-haiku claude", "/tmp/test", 30, undefined),
-    ).not.toThrow();
+    expect(() => createSpawnAcpClient("acpx --model claude-haiku claude", "/tmp/test", 30, undefined)).not.toThrow();
   });
 });

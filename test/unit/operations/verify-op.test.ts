@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import type { NaxConfig } from "@/config";
 import { verifierOp } from "@/operations";
 import type { RunOperation } from "@/operations";
-import type { NaxConfig } from "@/config";
 
 /**
  * Tests for verifierOp — the full RunOperation shape for the verifier role.
@@ -31,10 +31,7 @@ describe("verifierOp — RunOperation shape", () => {
     expect(verifierOp.session.lifetime).toBe("fresh");
   });
 
-  test.each([
-    ["name" as const],
-    ["stage" as const],
-  ])("verifierOp has a non-empty %s string", async (field) => {
+  test.each([["name" as const], ["stage" as const]])("verifierOp has a non-empty %s string", async (field) => {
     const { verifierOp } = await import("@/operations");
     expect(typeof verifierOp[field]).toBe("string");
     expect(verifierOp[field]).toBeTruthy();
@@ -45,10 +42,7 @@ describe("verifierOp — RunOperation shape", () => {
     expect(verifierOp.config).toBeDefined();
   });
 
-  test.each([
-    ["build" as const],
-    ["parse" as const],
-  ])("verifierOp has a %s function", async (method) => {
+  test.each([["build" as const], ["parse" as const]])("verifierOp has a %s function", async (method) => {
     const { verifierOp } = await import("@/operations");
     expect(typeof verifierOp[method]).toBe("function");
   });

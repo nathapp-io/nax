@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { makeTempDir } from "@test/helpers";
 import {
-  parseTestFile,
   findDeadImports,
   findDeadTestReferences,
   generateDeadTestsReport,
+  parseTestFile,
   scanTestDirectory,
 } from "@scripts/report-dead-tests";
+import { makeTempDir } from "@test/helpers";
 
 describe("parseTestFile", () => {
   test("extracts import paths from test file", () => {
@@ -230,10 +230,7 @@ describe("scanTestDirectory", () => {
     // Create test structure with a good test
     mkdirSync(join(tempDir, "test", "unit"), { recursive: true });
     mkdirSync(join(tempDir, "src", "config"), { recursive: true });
-    writeFileSync(
-      join(tempDir, "src", "config", "loader.ts"),
-      "export const loader = {};"
-    );
+    writeFileSync(join(tempDir, "src", "config", "loader.ts"), "export const loader = {};");
     writeFileSync(
       join(tempDir, "test", "unit", "good.test.ts"),
       `
@@ -241,7 +238,7 @@ describe("scanTestDirectory", () => {
       describe("loader", () => {
         test("loads config", () => {});
       });
-    `
+    `,
     );
   });
 
@@ -256,7 +253,7 @@ describe("scanTestDirectory", () => {
       `
       import { missing } from "src/config/missing";
       test("test", () => {});
-    `
+    `,
     );
 
     const result = scanTestDirectory(join(tempDir, "test"), tempDir);
@@ -271,7 +268,7 @@ describe("scanTestDirectory", () => {
       `
       import { missing } from "src/config/missing";
       test("test", () => {});
-    `
+    `,
     );
 
     const result = scanTestDirectory(join(tempDir, "test"), tempDir);
@@ -287,7 +284,7 @@ describe("scanTestDirectory", () => {
       describe("tdd-orchestrator-prompts integration", () => {
         test("test", () => {});
       });
-    `
+    `,
     );
 
     const result = scanTestDirectory(join(tempDir, "test"), tempDir);

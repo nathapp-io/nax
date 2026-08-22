@@ -1,12 +1,12 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
+  _scratchWriterDeps,
   appendScratchEntry,
   digestFilePath,
   readDigestFile,
   scratchFilePath,
   writeDigestFile,
-  _scratchWriterDeps,
 } from "@/session/scratch-writer";
 import type { ScratchEntry } from "@/session/scratch-writer";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
@@ -157,8 +157,14 @@ describe("appendScratchEntry — #508-M8 append-atomic dep injection", () => {
 
     const origAppend = deps.appendFile;
     const origWrite = _scratchWriterDeps.writeFile;
-    deps.appendFile = async (_path: string, content: string) => { appendPayload = content; return 0; };
-    _scratchWriterDeps.writeFile = async () => { writeCalled = true; return 0; };
+    deps.appendFile = async (_path: string, content: string) => {
+      appendPayload = content;
+      return 0;
+    };
+    _scratchWriterDeps.writeFile = async () => {
+      writeCalled = true;
+      return 0;
+    };
 
     try {
       const scratchDir = join(tmpDir, "m8-atomic");
@@ -174,7 +180,9 @@ describe("appendScratchEntry — #508-M8 append-atomic dep injection", () => {
 
   test("appendFile error propagates out of appendScratchEntry", async () => {
     const origAppend = deps.appendFile;
-    deps.appendFile = async () => { throw new Error("disk full (append)"); };
+    deps.appendFile = async () => {
+      throw new Error("disk full (append)");
+    };
 
     try {
       let threw = false;
@@ -290,9 +298,7 @@ describe("appendScratchEntry — US-001 tool-diagnostics entry", () => {
       kind: "tool-diagnostics",
       timestamp: "2026-02-02T00:00:00.000Z",
       storyId: "US-099",
-      diagnostics: [
-        { file: "src/foo.ts", line: 3, severity: "error", message: "x", tool: "tsc" },
-      ],
+      diagnostics: [{ file: "src/foo.ts", line: 3, severity: "error", message: "x", tool: "tsc" }],
     };
     await expect(appendScratchEntry(scratchDir, entry)).resolves.toBeUndefined();
   });
@@ -327,9 +333,7 @@ describe("appendScratchEntry — US-001 tool-diagnostics entry", () => {
       kind: "tool-diagnostics",
       timestamp: "2026-01-01T00:01:00.000Z",
       storyId: "US-001",
-      diagnostics: [
-        { file: "src/d.ts", severity: "warning", message: "d", tool: "biome" },
-      ],
+      diagnostics: [{ file: "src/d.ts", severity: "warning", message: "d", tool: "biome" }],
     };
     await appendScratchEntry(scratchDir, entryA);
     await appendScratchEntry(scratchDir, entryB);

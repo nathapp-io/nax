@@ -108,7 +108,10 @@ describe("describeGateRegression — verdict", () => {
     const out = { success: true, passed: true, findings: [] };
     expect(describeGateRegression({ gateOutput: out, baselineKeys: new Set(), gateName: GATE }).regressed).toBe(false);
     // Even with a non-empty baseline (pre-existing failures the verifier blessed).
-    expect(describeGateRegression({ gateOutput: out, baselineKeys: new Set(["foo.test.ts::t-a"]), gateName: GATE }).regressed).toBe(false);
+    expect(
+      describeGateRegression({ gateOutput: out, baselineKeys: new Set(["foo.test.ts::t-a"]), gateName: GATE })
+        .regressed,
+    ).toBe(false);
   });
 
   test("structured failure that is a SUBSET of baseline → not regressed (carve-out preserved)", () => {
@@ -126,16 +129,26 @@ describe("describeGateRegression — verdict", () => {
   test("TIMEOUT (failing, findings: []) → regressed even though there is no key to diff (#3)", () => {
     // Before #3 this returned false: empty key set ⇒ [].some(...) ⇒ false ⇒ laundered.
     const timeoutOut = { success: false, passed: false, status: "timeout", findings: [] };
-    expect(describeGateRegression({ gateOutput: timeoutOut, baselineKeys: new Set(["foo.test.ts::t-a"]), gateName: GATE }).regressed).toBe(true);
+    expect(
+      describeGateRegression({ gateOutput: timeoutOut, baselineKeys: new Set(["foo.test.ts::t-a"]), gateName: GATE })
+        .regressed,
+    ).toBe(true);
     // Even when the baseline was already failing with structured keys.
-    expect(describeGateRegression({ gateOutput: timeoutOut, baselineKeys: new Set(), gateName: GATE }).regressed).toBe(true);
+    expect(describeGateRegression({ gateOutput: timeoutOut, baselineKeys: new Set(), gateName: GATE }).regressed).toBe(
+      true,
+    );
   });
 
   test("EXECUTION-FAILURE (failing, synth key '::') → regressed even if baseline also had '::' (#3)", () => {
     // Before #3: '::' ∈ baseline ⇒ not "new" ⇒ false ⇒ a story-caused suite crash laundered.
     const out = { success: false, passed: false, status: "execution-failed", findings: [execFailFinding] };
-    expect(describeGateRegression({ gateOutput: out, baselineKeys: new Set(["::"]), gateName: GATE }).regressed).toBe(true);
-    expect(describeGateRegression({ gateOutput: out, baselineKeys: new Set(["foo.test.ts::t-a"]), gateName: GATE }).regressed).toBe(true);
+    expect(describeGateRegression({ gateOutput: out, baselineKeys: new Set(["::"]), gateName: GATE }).regressed).toBe(
+      true,
+    );
+    expect(
+      describeGateRegression({ gateOutput: out, baselineKeys: new Set(["foo.test.ts::t-a"]), gateName: GATE })
+        .regressed,
+    ).toBe(true);
   });
 });
 
@@ -166,7 +179,11 @@ describe("describeGateRegression", () => {
 
   test("NEW structured key → regressed, and the key is named", () => {
     const out = { success: false, passed: false, findings: [testFinding("new.test.ts", "t-new")] };
-    const detail = describeGateRegression({ gateOutput: out, baselineKeys: new Set(["foo.test.ts::t-a"]), gateName: GATE });
+    const detail = describeGateRegression({
+      gateOutput: out,
+      baselineKeys: new Set(["foo.test.ts::t-a"]),
+      gateName: GATE,
+    });
     expect(detail.regressed).toBe(true);
     expect(detail.regressedKeys).toEqual(["new.test.ts::t-new"]);
     expect(detail.baselineKeySize).toBe(1);
@@ -186,7 +203,11 @@ describe("describeGateRegression", () => {
 
   test("TIMEOUT (failing, findings: []) → regressed and flagged keyless", () => {
     const out = { success: false, passed: false, status: "timeout", findings: [] };
-    const detail = describeGateRegression({ gateOutput: out, baselineKeys: new Set(["foo.test.ts::t-a"]), gateName: GATE });
+    const detail = describeGateRegression({
+      gateOutput: out,
+      baselineKeys: new Set(["foo.test.ts::t-a"]),
+      gateName: GATE,
+    });
     expect(detail.regressed).toBe(true);
     expect(detail.keyless).toBe(true);
     expect(detail.regressedKeys).toEqual([]);
@@ -201,9 +222,10 @@ describe("describeGateRegression", () => {
 
   test("undefined gateName → not regressed (no gate to compare)", () => {
     const out = { success: false, passed: false, findings: [testFinding("new.test.ts", "t-new")] };
-    expect(describeGateRegression({ gateOutput: out, baselineKeys: new Set(), gateName: undefined }).regressed).toBe(false);
+    expect(describeGateRegression({ gateOutput: out, baselineKeys: new Set(), gateName: undefined }).regressed).toBe(
+      false,
+    );
   });
-
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

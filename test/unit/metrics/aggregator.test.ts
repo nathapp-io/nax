@@ -56,8 +56,8 @@ describe("calculateAggregateMetrics - complexityAccuracy uses initialComplexity"
     // Story originally predicted as 'simple' but escalated (finalTier = 'powerful')
     const story = makeStoryMetrics({
       storyId: "US-001",
-      complexity: "medium",          // post-escalation complexity
-      initialComplexity: "simple",   // original prediction
+      complexity: "medium", // post-escalation complexity
+      initialComplexity: "simple", // original prediction
       modelTier: "fast",
       finalTier: "powerful",
       attempts: 2,
@@ -143,8 +143,8 @@ describe("calculateAggregateMetrics - complexityAccuracy uses initialComplexity"
     const runs = [makeRun([modernStory, legacyStory])];
     const aggregate = calculateAggregateMetrics(runs);
 
-    expect(aggregate.complexityAccuracy["simple"]).toBeDefined();   // from initialComplexity
-    expect(aggregate.complexityAccuracy["complex"]).toBeDefined();  // from complexity fallback
+    expect(aggregate.complexityAccuracy["simple"]).toBeDefined(); // from initialComplexity
+    expect(aggregate.complexityAccuracy["complex"]).toBeDefined(); // from complexity fallback
     expect(aggregate.complexityAccuracy["medium"]).toBeUndefined(); // NOT used (initialComplexity takes over)
   });
 
@@ -152,7 +152,12 @@ describe("calculateAggregateMetrics - complexityAccuracy uses initialComplexity"
     const stories = [
       makeStoryMetrics({ storyId: "US-001", complexity: "medium", initialComplexity: "simple", finalTier: "balanced" }),
       makeStoryMetrics({ storyId: "US-002", complexity: "medium", initialComplexity: "simple", finalTier: "balanced" }),
-      makeStoryMetrics({ storyId: "US-003", complexity: "complex", initialComplexity: "complex", finalTier: "powerful" }),
+      makeStoryMetrics({
+        storyId: "US-003",
+        complexity: "complex",
+        initialComplexity: "complex",
+        finalTier: "powerful",
+      }),
     ];
 
     const runs = [makeRun(stories)];

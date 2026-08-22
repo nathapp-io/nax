@@ -1,7 +1,7 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { NaxConfig } from "@/config/types";
 import { FeatureContextProviderV2, _featureContextV2Deps } from "@/context/engine/providers/feature-context";
 import type { ContextRequest } from "@/context/engine/types";
-import type { NaxConfig } from "@/config/types";
 import type { UserStory } from "@/prd";
 
 // ─────────────────────────────────────────────────────────────────────────────

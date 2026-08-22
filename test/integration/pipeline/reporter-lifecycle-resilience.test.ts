@@ -11,12 +11,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { _registryTestAdapters } from "@/agents/registry";
-import type {
-  AgentAdapter,
-  AgentCapabilities,
-  AgentResult,
-  AgentRunOptions,
-} from "@/agents/types";
+import type { AgentAdapter, AgentCapabilities, AgentResult, AgentRunOptions } from "@/agents/types";
 import type { NaxConfig } from "@/config";
 import { run } from "@/execution/runner";
 import { loadHooksConfig } from "@/hooks";
@@ -226,10 +221,7 @@ describe("Reporter Lifecycle Events — resilience (US-004)", () => {
 
     const config = {
       ...makeBaseConfig(),
-      plugins: [
-        { module: path.join(pluginDir, "reporter-1.ts") },
-        { module: path.join(pluginDir, "reporter-2.ts") },
-      ],
+      plugins: [{ module: path.join(pluginDir, "reporter-1.ts") }, { module: path.join(pluginDir, "reporter-2.ts") }],
     } as NaxConfig;
 
     await savePRD(minimalPrd(), prdPath);

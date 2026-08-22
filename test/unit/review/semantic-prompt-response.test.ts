@@ -33,7 +33,16 @@ const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
   resetRefOnRerun: false,
   rules: [],
   timeoutMs: 60_000,
-  excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/", ":!.nax/", ":!.nax-pids"],
+  excludePatterns: [
+    ":!test/",
+    ":!tests/",
+    ":!*_test.go",
+    ":!*.test.ts",
+    ":!*.spec.ts",
+    ":!**/__tests__/",
+    ":!.nax/",
+    ":!.nax-pids",
+  ],
 };
 
 function makeAgentManager(llmResponse: string, cost = 0) {
@@ -49,8 +58,22 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       agentFallbacks: [],
     }),
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
-    runWithFallbackFn: async () => ({ result: { success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCostUsd: cost, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] }),
+    runWithFallbackFn: async () => ({
+      result: {
+        success: true,
+        exitCode: 0,
+        output: llmResponse,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCostUsd: cost,
+        agentFallbacks: [],
+      },
+      fallbacks: [],
+    }),
+    completeWithFallbackFn: async () => ({
+      result: { output: llmResponse, costUsd: cost, source: "mock" },
+      fallbacks: [],
+    }),
     runAsFn: async (_agent, opts) => ({
       success: true,
       exitCode: 0,
@@ -132,7 +155,14 @@ describe("runSemanticReview — LLM prompt construction", () => {
     (agentManager.runWithFallback as ReturnType<typeof mock>).mockImplementation(async (req) => {
       capturedPrompt = req.runOptions?.prompt ?? "";
       return {
-        result: { success: true, exitCode: 0, output: PASSING_LLM_RESPONSE, rateLimited: false, durationMs: 100, estimatedCostUsd: 0 } as AgentResult,
+        result: {
+          success: true,
+          exitCode: 0,
+          output: PASSING_LLM_RESPONSE,
+          rateLimited: false,
+          durationMs: 100,
+          estimatedCostUsd: 0,
+        } as AgentResult,
         fallbacks: [],
       };
     });
@@ -188,7 +218,6 @@ describe("runSemanticReview — LLM prompt construction", () => {
     const prompt = await capturePrompt(STORY, DEFAULT_SEMANTIC_CONFIG);
     expect(prompt.length).toBeGreaterThan(100);
   });
-
 });
 
 // ---------------------------------------------------------------------------
@@ -264,8 +293,24 @@ describe("runSemanticReview — LLM response parsing (passed=false)", () => {
     const multiFindings = JSON.stringify({
       passed: false,
       findings: [
-        { severity: "error", file: "src/a.ts", line: 1, issue: "storyGitRef missing on a", suggestion: "Fix A", acQuote: "storyGitRef", acIndex: 1 },
-        { severity: "error", file: "src/b.ts", line: 99, issue: "git diff not called for b", suggestion: "Fix B", acQuote: "git diff", acIndex: 2 },
+        {
+          severity: "error",
+          file: "src/a.ts",
+          line: 1,
+          issue: "storyGitRef missing on a",
+          suggestion: "Fix A",
+          acQuote: "storyGitRef",
+          acIndex: 1,
+        },
+        {
+          severity: "error",
+          file: "src/b.ts",
+          line: 99,
+          issue: "git diff not called for b",
+          suggestion: "Fix B",
+          acQuote: "git diff",
+          acIndex: 2,
+        },
       ],
     });
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
@@ -353,7 +398,8 @@ describe("runSemanticReview — fail-closed on truncated JSON with passed:false 
 
   test("returns success=false when truncated JSON contains passed:false", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
-    const truncatedResponse = '```json\n{"passed": false, "findings": [{"severity": "error", "file": "test.ts", "line": 1, "issue": "Test file is 78';
+    const truncatedResponse =
+      '```json\n{"passed": false, "findings": [{"severity": "error", "file": "test.ts", "line": 1, "issue": "Test file is 78';
     const agentManager = makeAgentManager(truncatedResponse);
     const result = await runSemanticReview({
       workdir: "/tmp/wd",
@@ -441,7 +487,17 @@ describe("runSemanticReview — markdown fence stripping (BUG-090)", () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const payload = {
       passed: false,
-      findings: [{ severity: "error", file: "src/foo.ts", line: 1, issue: "storyGitRef bad code in foo", suggestion: "fix it", acQuote: "storyGitRef", acIndex: 1 }],
+      findings: [
+        {
+          severity: "error",
+          file: "src/foo.ts",
+          line: 1,
+          issue: "storyGitRef bad code in foo",
+          suggestion: "fix it",
+          acQuote: "storyGitRef",
+          acIndex: 1,
+        },
+      ],
     };
     const fencedResponse = "```json\n" + JSON.stringify(payload) + "\n```";
     const agentManager = makeAgentManager(fencedResponse);

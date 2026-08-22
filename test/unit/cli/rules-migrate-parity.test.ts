@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _rulesCLIDeps, rulesMigrateCommand, type MigrationOutcome } from "@/cli";
+import { type MigrationOutcome, _rulesCLIDeps, rulesMigrateCommand } from "@/cli";
 
 let origReadFile: typeof _rulesCLIDeps.readFile;
 let origWriteFile: typeof _rulesCLIDeps.writeFile;

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { runOrchestratorE2E } from "@test/helpers";
 import type { NaxConfig } from "@/config";
+import { runOrchestratorE2E } from "@test/helpers";
 
 const PASS_SEMANTIC = () => ({ output: JSON.stringify({ passed: true, findings: [] }) });
 
@@ -156,7 +156,9 @@ describe("E2E: non-blocking fix (ADR-024)", () => {
             : {
                 passed: false,
                 failed: 1,
-                failures: [{ testName: "regressed by nbf best-effort fix", file: "test/a.test.ts", error: "AssertionError" }],
+                failures: [
+                  { testName: "regressed by nbf best-effort fix", file: "test/a.test.ts", error: "AssertionError" },
+                ],
               },
       },
     });

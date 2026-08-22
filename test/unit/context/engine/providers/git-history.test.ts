@@ -5,7 +5,7 @@
  * No real git process is spawned.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { GitHistoryProvider, _gitHistoryDeps } from "@/context/engine/providers/git-history";
 import type { GitHistoryProviderOptions } from "@/context/engine/providers/git-history";
 import type { ContextRequest } from "@/context/engine/types";
@@ -88,9 +88,7 @@ describe("GitHistoryProvider", () => {
 
   test("returns one chunk with git history when a file has history", async () => {
     mockGit(
-      new Map([
-        ["src/foo.ts", { stdout: "abc1234 fix: add null check\ndef5678 feat: initial impl", exitCode: 0 }],
-      ]),
+      new Map([["src/foo.ts", { stdout: "abc1234 fix: add null check\ndef5678 feat: initial impl", exitCode: 0 }]]),
     );
     const result = await provider.fetch(makeRequest({ touchedFiles: ["src/foo.ts"] }));
     expect(result.chunks).toHaveLength(1);
@@ -261,9 +259,7 @@ describe("GitHistoryProvider — US-001 scope attribution", () => {
         ["src/baz.ts", { stdout: "ghi9abc refactor: baz", exitCode: 0 }],
       ]),
     );
-    const result = await provider.fetch(
-      makeRequest({ touchedFiles: ["src/foo.ts", "src/bar.ts", "src/baz.ts"] }),
-    );
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/foo.ts", "src/bar.ts", "src/baz.ts"] }));
     expect(result.chunks).toHaveLength(1);
     expect(result.chunks[0]?.scopePaths).toEqual(["src/foo.ts", "src/bar.ts", "src/baz.ts"]);
   });
@@ -277,9 +273,7 @@ describe("GitHistoryProvider — US-001 scope attribution", () => {
         ["src/c.ts", { stdout: "c feat: c", exitCode: 0 }],
       ]),
     );
-    const result = await provider.fetch(
-      makeRequest({ touchedFiles: ["src/a.ts", "src/b.ts", "src/c.ts"] }),
-    );
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/a.ts", "src/b.ts", "src/c.ts"] }));
     expect(result.chunks[0]?.scopePaths).toEqual(["src/a.ts", "src/c.ts"]);
   });
 
@@ -424,10 +418,7 @@ describe("GitHistoryProvider — cooperative cancellation (PERF-2)", () => {
     controller.abort();
 
     const p = new GitHistoryProvider();
-    const result = await p.fetch(
-      makeRequest({ touchedFiles: ["src/a.ts", "src/b.ts"] }),
-      controller.signal,
-    );
+    const result = await p.fetch(makeRequest({ touchedFiles: ["src/a.ts", "src/b.ts"] }), controller.signal);
 
     expect(result.chunks).toHaveLength(0);
     expect(gitCalls).toBe(0);
@@ -446,10 +437,7 @@ describe("GitHistoryProvider — cooperative cancellation (PERF-2)", () => {
     };
 
     const p = new GitHistoryProvider();
-    await p.fetch(
-      makeRequest({ touchedFiles: ["src/a.ts", "src/b.ts", "src/c.ts"] }),
-      controller.signal,
-    );
+    await p.fetch(makeRequest({ touchedFiles: ["src/a.ts", "src/b.ts", "src/c.ts"] }), controller.signal);
 
     // The first spawn aborts the signal; no further files are queried.
     expect(queried).toEqual(["src/a.ts"]);

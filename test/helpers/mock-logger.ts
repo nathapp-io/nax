@@ -1,6 +1,11 @@
 import { mock } from "bun:test";
 
-export type LogCall = { level: "error" | "warn" | "info" | "debug"; stage: string; message: string; data?: Record<string, unknown> };
+export type LogCall = {
+  level: "error" | "warn" | "info" | "debug";
+  stage: string;
+  message: string;
+  data?: Record<string, unknown>;
+};
 
 export interface MockLogger {
   error: ReturnType<typeof mock>;

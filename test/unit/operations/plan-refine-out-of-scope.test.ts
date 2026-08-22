@@ -191,7 +191,10 @@ describe("planRefineOp.verify — story-local hoist demotion (#1446)", () => {
 
   test("demotes a hoisted story-local block onto its owning story, and warns", async () => {
     await withWarnSpy(async (warnSpy) => {
-      const hoisted = makePrd(["An interactive Ink TUI", "body-size limits on the import endpoint, deferred to arc 3."]);
+      const hoisted = makePrd([
+        "An interactive Ink TUI",
+        "body-size limits on the import endpoint, deferred to arc 3.",
+      ]);
 
       const result = await planRefineOp.verify!(hoisted, input as never, makeVerifyCtx() as never);
 

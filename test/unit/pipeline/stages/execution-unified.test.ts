@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeStory, makeMockAgentManager } from "@test/helpers";
+import { makeMockAgentManager, makeNaxConfig, makeStory } from "@test/helpers";
 import type { PipelineContext } from "@test/src/pipeline";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -49,10 +49,10 @@ function makePipelineContext(overrides: Partial<PipelineContext> = {}): Pipeline
     },
     agentManager,
     sessionManager: {
-      openSession: async () => ({ sessionId: "test-session" } as any),
-      sendPrompt: async () => ({ output: "test" } as any),
+      openSession: async () => ({ sessionId: "test-session" }) as any,
+      sendPrompt: async () => ({ output: "test" }) as any,
       closeSession: async () => {},
-      runInSession: async () => ({ output: "test" } as any),
+      runInSession: async () => ({ output: "test" }) as any,
       handoff: async () => {},
       nameFor: () => "test-session",
     } as any,
@@ -75,15 +75,14 @@ function makePipelineContext(overrides: Partial<PipelineContext> = {}): Pipeline
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("Unified Execution Stage — AC1: Single plan build and run", () => {
-  test.each([
-    "test-after",
-    "three-session-tdd",
-    "three-session-tdd-lite",
-  ] as const)("builds exactly one plan for %s strategy", (testStrategy) => {
-    const ctx = makePipelineContext({ routing: { testStrategy } as any });
-    expect(ctx.story.id).toBeDefined();
-    expect(ctx.routing.testStrategy).toBe(testStrategy);
-  });
+  test.each(["test-after", "three-session-tdd", "three-session-tdd-lite"] as const)(
+    "builds exactly one plan for %s strategy",
+    (testStrategy) => {
+      const ctx = makePipelineContext({ routing: { testStrategy } as any });
+      expect(ctx.story.id).toBeDefined();
+      expect(ctx.routing.testStrategy).toBe(testStrategy);
+    },
+  );
 
   test("executes plan.run() exactly once regardless of strategy", () => {
     const ctx = makePipelineContext();
@@ -96,13 +95,13 @@ describe("Unified Execution Stage — AC1: Single plan build and run", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("Unified Execution Stage — AC2: No strategy branching", () => {
-  test.each([
-    "test-after",
-    "three-session-tdd",
-  ] as const)("uses unified path for %s strategy (not direct orchestration)", (testStrategy) => {
-    const ctx = makePipelineContext({ routing: { testStrategy } as any });
-    expect(ctx.routing.testStrategy).toBe(testStrategy);
-  });
+  test.each(["test-after", "three-session-tdd"] as const)(
+    "uses unified path for %s strategy (not direct orchestration)",
+    (testStrategy) => {
+      const ctx = makePipelineContext({ routing: { testStrategy } as any });
+      expect(ctx.routing.testStrategy).toBe(testStrategy);
+    },
+  );
 
   test("does not branch on ctx.routing.testStrategy at stage level", () => {
     const ctx = makePipelineContext();
@@ -194,7 +193,11 @@ describe("Unified Execution Stage — Error handling", () => {
 
   test("placeholder — plan.run() and interaction.send() failure handling covered in integration tests", () => {
     const ctx = makePipelineContext({
-      interaction: { send: async () => { throw new Error("Notification failed"); } } as any,
+      interaction: {
+        send: async () => {
+          throw new Error("Notification failed");
+        },
+      } as any,
     });
     expect(ctx.runtime).toBeDefined();
     expect(ctx.interaction).toBeDefined();

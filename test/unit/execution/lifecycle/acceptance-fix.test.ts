@@ -7,12 +7,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import {
-  _diagnosisDeps,
-  resolveAcceptanceDiagnosis,
-} from "@/execution/lifecycle/acceptance-fix";
 import type { DiagnosisResult, SemanticVerdict } from "@/acceptance/types";
 import type { NaxConfig } from "@/config/schema";
+import { _diagnosisDeps, resolveAcceptanceDiagnosis } from "@/execution/lifecycle/acceptance-fix";
 import type { AcceptanceLoopContext } from "@/execution/lifecycle/acceptance-loop";
 import { makeNaxConfig } from "@test/helpers";
 
@@ -83,7 +80,10 @@ afterEach(() => {
 describe("resolveAcceptanceDiagnosis() — fast paths", () => {
   test("implement-only strategy → source_bug, no callOp invoked", async () => {
     let callOpCalled = false;
-    _diagnosisDeps.callOp = async () => { callOpCalled = true; return {} as unknown as DiagnosisResult; };
+    _diagnosisDeps.callOp = async () => {
+      callOpCalled = true;
+      return {} as unknown as DiagnosisResult;
+    };
 
     const result = await resolveAcceptanceDiagnosis({
       ctx: makeAcceptanceCtx(),
@@ -100,7 +100,10 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
 
   test("all semantic verdicts passed → test_bug, no callOp invoked", async () => {
     let callOpCalled = false;
-    _diagnosisDeps.callOp = async () => { callOpCalled = true; return {} as unknown as DiagnosisResult; };
+    _diagnosisDeps.callOp = async () => {
+      callOpCalled = true;
+      return {} as unknown as DiagnosisResult;
+    };
 
     const verdicts: SemanticVerdict[] = [
       { storyId: "US-001", passed: true, timestamp: "2026-01-01T00:00:00Z", acCount: 5, findings: [] },
@@ -122,11 +125,17 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
 
   test(">80% ACs failed → test_bug, no callOp invoked", async () => {
     let callOpCalled = false;
-    _diagnosisDeps.callOp = async () => { callOpCalled = true; return {} as unknown as DiagnosisResult; };
+    _diagnosisDeps.callOp = async () => {
+      callOpCalled = true;
+      return {} as unknown as DiagnosisResult;
+    };
 
     const result = await resolveAcceptanceDiagnosis({
       ctx: makeAcceptanceCtx(),
-      failures: { failedACs: ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8", "AC-9"], testOutput: "fail" },
+      failures: {
+        failedACs: ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8", "AC-9"],
+        testOutput: "fail",
+      },
       totalACs: 10,
       strategy: "diagnose-first",
       semanticVerdicts: [],
@@ -140,7 +149,10 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
 
   test("AC-ERROR sentinel → test_bug, no callOp invoked", async () => {
     let callOpCalled = false;
-    _diagnosisDeps.callOp = async () => { callOpCalled = true; return {} as unknown as DiagnosisResult; };
+    _diagnosisDeps.callOp = async () => {
+      callOpCalled = true;
+      return {} as unknown as DiagnosisResult;
+    };
 
     const result = await resolveAcceptanceDiagnosis({
       ctx: makeAcceptanceCtx(),
@@ -162,7 +174,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     };
 
     const result = await resolveAcceptanceDiagnosis({
-      ctx: makeAcceptanceCtx(true),  // runtime required for slow path
+      ctx: makeAcceptanceCtx(true), // runtime required for slow path
       failures: { failedACs: ["AC-1", "AC-2"], testOutput: "(fail) AC-1\n(fail) AC-2" },
       totalACs: 10,
       strategy: "diagnose-first",

@@ -13,12 +13,14 @@ import { inspectOscillationBreaker, recordOscillations } from "@/execution";
 import type { PipelineContext } from "@/runtime";
 import { makeTestContext, makeTestRuntime } from "@test/helpers";
 
-function makeCtx(overrides: {
-  storyId?: string;
-  store?: Map<string, number> | undefined;
-  conflictDetection?: { enabled: boolean; maxOscillations?: number } | undefined;
-  omitRuntime?: boolean;
-} = {}): PipelineContext {
+function makeCtx(
+  overrides: {
+    storyId?: string;
+    store?: Map<string, number> | undefined;
+    conflictDetection?: { enabled: boolean; maxOscillations?: number } | undefined;
+    omitRuntime?: boolean;
+  } = {},
+): PipelineContext {
   const storyId = overrides.storyId ?? "US-osc-1";
   const ctx = makeTestContext({
     story: { id: storyId, title: "Breaker unit" } as never,
@@ -174,8 +176,9 @@ describe("inspectOscillationBreaker — reason text", () => {
 
 describe("DEFAULT_CONFIG — sanity", () => {
   test("DEFAULT_CONFIG has conflictDetection default-on with maxOscillations=2", () => {
-    const conflictDetection = (DEFAULT_CONFIG as { review?: { conflictDetection?: { enabled: boolean; maxOscillations: number } } })
-      .review?.conflictDetection;
+    const conflictDetection = (
+      DEFAULT_CONFIG as { review?: { conflictDetection?: { enabled: boolean; maxOscillations: number } } }
+    ).review?.conflictDetection;
     expect(conflictDetection?.enabled).toBe(true);
     expect(conflictDetection?.maxOscillations).toBe(2);
   });

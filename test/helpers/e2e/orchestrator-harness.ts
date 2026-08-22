@@ -216,10 +216,13 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
       rollbackToRef: async () => {},
       measureSourceDiff: async () => opts.nonBlockingFixDiff ?? { fileCount: 0, sourceLineCount: 0 },
     };
-    const out = await origRunNbf(nbfArgs as Parameters<typeof origRunNbf>[0], {
-      ...(nbfDeps as object),
-      ...stubDeps,
-    } as Parameters<typeof origRunNbf>[1]);
+    const out = await origRunNbf(
+      nbfArgs as Parameters<typeof origRunNbf>[0],
+      {
+        ...(nbfDeps as object),
+        ...stubDeps,
+      } as Parameters<typeof origRunNbf>[1],
+    );
     nonBlockingFix = { ran: out.ran, kept: out.kept, restored: out.restored };
     return out;
   };

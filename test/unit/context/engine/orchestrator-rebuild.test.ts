@@ -9,13 +9,13 @@
  * 400-line file limit; split is by describe block concern.
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { ContextOrchestrator } from "@/context/engine/orchestrator";
 import type {
   AdapterFailure,
   ContextBundle,
-  ContextRequest,
   ContextProviderResult,
+  ContextRequest,
   IContextProvider,
 } from "@/context/engine/types";
 
@@ -114,7 +114,10 @@ describe("rebuildForAgent — failure note injection", () => {
   test("failure note includes prior and new agent id", async () => {
     const orch = new ContextOrchestrator([]);
     const original = await orch.assemble(BASE_REQUEST);
-    const rebuilt = orch.rebuildForAgent({ ...original, agentId: "claude" }, { newAgentId: "codex", failure: AVAILABILITY_FAILURE });
+    const rebuilt = orch.rebuildForAgent(
+      { ...original, agentId: "claude" },
+      { newAgentId: "codex", failure: AVAILABILITY_FAILURE },
+    );
     expect(rebuilt.pushMarkdown).toContain("claude");
     expect(rebuilt.pushMarkdown).toContain("codex");
   });
@@ -258,7 +261,10 @@ describe("rebuildForAgent — rendering style dispatch", () => {
     const provider: IContextProvider = {
       id: "p1",
       kind: "feature",
-      fetch: async () => { fetchCount++; return makeChunkResult(); },
+      fetch: async () => {
+        fetchCount++;
+        return makeChunkResult();
+      },
     };
     const orch = new ContextOrchestrator([provider]);
     const original = await orch.assemble({ ...BASE_REQUEST, providerIds: ["p1"] });
@@ -321,13 +327,45 @@ describe("rebuildForAgent — #508-M2 session-chunk re-neutralization on swap", 
     const prior = makeSessionBundle("I used the Read tool to inspect.", "claude");
 
     // Same-agent rebuild
-    expect(orch.rebuildForAgent(prior, { newAgentId: "claude", failure: AVAILABILITY_FAILURE }).pushMarkdown).toContain("the Read tool");
+    expect(orch.rebuildForAgent(prior, { newAgentId: "claude", failure: AVAILABILITY_FAILURE }).pushMarkdown).toContain(
+      "the Read tool",
+    );
     // Plain re-render (no newAgentId)
     expect(orch.rebuildForAgent(prior).pushMarkdown).toContain("the Read tool");
 
     // Non-session (feature) chunks not altered
-    const featurePrior: ContextBundle = { pushMarkdown: "", pullTools: [], digest: "", agentId: "claude", chunks: [{ id: "feature:abc", providerId: "feature-context", kind: "feature" as const, scope: "feature" as const, role: ["all"], content: "Feature: use the Read tool pattern.", tokens: 10, score: 0.8 }], manifest: { requestId: "req-x", stage: "tdd-implementer", totalBudgetTokens: 8_000, usedTokens: 50, includedChunks: ["feature:abc"], excludedChunks: [], floorItems: [], digestTokens: 5, buildMs: 1 } };
-    expect(orch.rebuildForAgent(featurePrior, { newAgentId: "codex", failure: AVAILABILITY_FAILURE }).pushMarkdown).toContain("the Read tool");
+    const featurePrior: ContextBundle = {
+      pushMarkdown: "",
+      pullTools: [],
+      digest: "",
+      agentId: "claude",
+      chunks: [
+        {
+          id: "feature:abc",
+          providerId: "feature-context",
+          kind: "feature" as const,
+          scope: "feature" as const,
+          role: ["all"],
+          content: "Feature: use the Read tool pattern.",
+          tokens: 10,
+          score: 0.8,
+        },
+      ],
+      manifest: {
+        requestId: "req-x",
+        stage: "tdd-implementer",
+        totalBudgetTokens: 8_000,
+        usedTokens: 50,
+        includedChunks: ["feature:abc"],
+        excludedChunks: [],
+        floorItems: [],
+        digestTokens: 5,
+        buildMs: 1,
+      },
+    };
+    expect(
+      orch.rebuildForAgent(featurePrior, { newAgentId: "codex", failure: AVAILABILITY_FAILURE }).pushMarkdown,
+    ).toContain("the Read tool");
   });
 });
 

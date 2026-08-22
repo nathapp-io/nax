@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { verifierOp } from "@/operations";
-import { makeTempDir, cleanupTempDir } from "@test/helpers";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const VALID_VERDICT = {
   version: 1,
@@ -53,7 +53,12 @@ describe("verifierOp.parse — success: returns VerifierOutput for valid verdict
     const failedJson = JSON.stringify({
       ...VALID_VERDICT,
       approved: false,
-      testModifications: { detected: true, files: ["foo.test.ts"], legitimate: false, reasoning: "weakened assertions" },
+      testModifications: {
+        detected: true,
+        files: ["foo.test.ts"],
+        legitimate: false,
+        reasoning: "weakened assertions",
+      },
     });
     const out = verifierOp.parse(failedJson, INPUT, makeCtx("/tmp"));
     expect(out.success).toBe(false);

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { buildPlanForStrategy, _storyOrchestratorDeps } from "@/execution";
+import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
 import type { PlanInputs } from "@/execution";
 import type { UserStory } from "@/prd/types";
 import type { NaxRuntime } from "@/runtime";
@@ -84,7 +84,11 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
     }) as typeof _storyOrchestratorDeps.callOp;
     _storyOrchestratorDeps.runFixCycle = mock(
       async (cycle: {
-        strategies: Array<{ name: string; buildInput: (...args: never[]) => unknown; appliesTo: (f: never) => boolean }>;
+        strategies: Array<{
+          name: string;
+          buildInput: (...args: never[]) => unknown;
+          appliesTo: (f: never) => boolean;
+        }>;
       }) => {
         capturedStrategyNamesByCall.push(cycle.strategies.map((s) => s.name));
         capturedStrategiesByCall.push(cycle.strategies);
@@ -149,7 +153,13 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
           timeoutMs: 600_000,
           parallel: false,
           maxConcurrentSessions: 2,
-          nonBlockingFix: { enabled: true, scope, regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } },
+          nonBlockingFix: {
+            enabled: true,
+            scope,
+            regressionAttempts: 1,
+            verifierGuard: true,
+            sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+          },
         },
       },
     });
@@ -187,7 +197,13 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
           success: true,
           passed: true,
           advisoryFindings: [
-            { source: "adversarial-review", severity: "info", category: "test-gap", message: "advisory gap", fixTarget: "test" },
+            {
+              source: "adversarial-review",
+              severity: "info",
+              category: "test-gap",
+              message: "advisory gap",
+              fixTarget: "test",
+            },
           ],
         };
       }

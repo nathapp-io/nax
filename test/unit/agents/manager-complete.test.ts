@@ -26,9 +26,7 @@ function makeConfig() {
   });
 }
 
-function makeRegistry(
-  results: Record<string, { output: string; failure?: typeof availFailure; throws?: unknown }>,
-) {
+function makeRegistry(results: Record<string, { output: string; failure?: typeof availFailure; throws?: unknown }>) {
   return {
     getAgent: (name: string) => {
       const r = results[name];
@@ -38,7 +36,9 @@ function makeRegistry(
           if (r.throws !== undefined) throw r.throws;
           return {
             output: r.output,
-            tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.01, exactCostUsd: 0.01,
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0.01,
+            exactCostUsd: 0.01,
             adapterFailure: r.failure,
           };
         }),
@@ -71,7 +71,11 @@ describe("AgentManager PID lifecycle — configureRuntime", () => {
 
     m.configureRuntime({ pidRegistry: patchedRegistry });
 
-    await m.completeWithFallback("prompt", { modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} }, workdir: "/tmp/test", resolvedPermissions: { mode: "approve-reads" as const } });
+    await m.completeWithFallback("prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      resolvedPermissions: { mode: "approve-reads" as const },
+    });
 
     expect(capturedOptions?.onPidSpawned).toBeDefined();
     expect(capturedOptions?.onPidExited).toBeDefined();
@@ -95,7 +99,11 @@ describe("AgentManager PID lifecycle — configureRuntime", () => {
     } as unknown as AgentRegistry;
 
     const m = new AgentManager(makeNaxConfig(), registry);
-    await m.completeWithFallback("prompt", { modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} }, workdir: "/tmp/test", resolvedPermissions: { mode: "approve-reads" as const } });
+    await m.completeWithFallback("prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      resolvedPermissions: { mode: "approve-reads" as const },
+    });
 
     expect(capturedOptions?.onPidSpawned).toBeUndefined();
     expect(capturedOptions?.onPidExited).toBeUndefined();
@@ -105,7 +113,11 @@ describe("AgentManager PID lifecycle — configureRuntime", () => {
 describe("AgentManager.completeWithFallback (#567)", () => {
   test("returns output on success", async () => {
     const m = new AgentManager(makeConfig(), makeRegistry({ claude: { output: "hello" } }));
-    const outcome = await m.completeWithFallback("prompt", { modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} }, workdir: "/tmp/test", resolvedPermissions: { mode: "approve-reads" as const } });
+    const outcome = await m.completeWithFallback("prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      resolvedPermissions: { mode: "approve-reads" as const },
+    });
     expect(outcome.result.output).toBe("hello");
     expect(outcome.fallbacks).toHaveLength(0);
   });
@@ -116,7 +128,11 @@ describe("AgentManager.completeWithFallback (#567)", () => {
       codex: { output: "from codex" },
     });
     const m = new AgentManager(makeConfig(), registry);
-    const outcome = await m.completeWithFallback("prompt", { modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} }, workdir: "/tmp/test", resolvedPermissions: { mode: "approve-reads" as const } });
+    const outcome = await m.completeWithFallback("prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      resolvedPermissions: { mode: "approve-reads" as const },
+    });
     expect(outcome.result.output).toBe("from codex");
     expect(outcome.fallbacks).toHaveLength(1);
     expect(outcome.fallbacks[0].priorAgent).toBe("claude");
@@ -134,11 +150,12 @@ describe("AgentManager.completeWithFallback (#567)", () => {
         },
       },
     });
-    const m = new AgentManager(
-      config,
-      makeRegistry({ claude: { output: "", failure: availFailure } }),
-    );
-    const outcome = await m.completeWithFallback("prompt", { modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} }, workdir: "/tmp/test", resolvedPermissions: { mode: "approve-reads" as const } });
+    const m = new AgentManager(config, makeRegistry({ claude: { output: "", failure: availFailure } }));
+    const outcome = await m.completeWithFallback("prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      resolvedPermissions: { mode: "approve-reads" as const },
+    });
     expect(outcome.result.adapterFailure?.outcome).toBe("fail-auth");
   });
 });

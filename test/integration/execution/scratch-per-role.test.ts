@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { applyPostRunInspection } from "@/execution/post-run";
 import { testWriterOp, verifierOp } from "@/operations";
-import { makeMockAgentManager, cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeMockAgentManager, makeTempDir } from "@test/helpers";
 
 describe("applyPostRunInspection — per-role scratch entries", () => {
   test("writes tdd-session entries for test-writer and verifier roles", async () => {

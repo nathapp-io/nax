@@ -15,11 +15,11 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  type MigrationOutcome,
   _rulesCLIDeps,
   rulesMigrateCommand,
   translateLegacyFrontmatter,
   withReviewNotice,
-  type MigrationOutcome,
 } from "@/cli";
 import { withTempDir } from "@test/helpers";
 

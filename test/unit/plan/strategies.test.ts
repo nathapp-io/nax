@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
+import type { SourceRoot } from "@/analyze";
 import { _planDeps, detectProjectName } from "@/cli";
 import { DEFAULT_CONFIG, planConfigSelector } from "@/config";
 import type { NaxConfig } from "@/config";
-import type { SourceRoot } from "@/analyze";
 import { assertIsValidPrd, buildPlanModeContext, writeOrRecoverPrd } from "@/plan";
 import type { IPlanStrategy, PlanDeps, PlanModeContext } from "@/plan/strategies";
 import type { PRD } from "@/prd/types";
@@ -179,7 +179,12 @@ describe("buildPlanModeContext", () => {
       initInteractionChain: mock(async () => null),
     });
 
-    const ctx = await buildPlanModeContext(SAMPLE_WORKDIR, fullConfig, { from: SAMPLE_SPEC_PATH, feature: SAMPLE_FEATURE }, deps);
+    const ctx = await buildPlanModeContext(
+      SAMPLE_WORKDIR,
+      fullConfig,
+      { from: SAMPLE_SPEC_PATH, feature: SAMPLE_FEATURE },
+      deps,
+    );
 
     expect(ctx.interactionChain).toBeNull();
     expect(deps.initInteractionChain).toHaveBeenCalledWith(fullConfig, !process.stdin.isTTY);
@@ -193,7 +198,12 @@ describe("writeOrRecoverPrd", () => {
 
   test("writes the prd JSON to the output path and returns the path", async () => {
     const deps = makeDeps();
-    const ctx = await buildPlanModeContext(SAMPLE_WORKDIR, makeNaxConfig(), { from: SAMPLE_SPEC_PATH, feature: SAMPLE_FEATURE }, deps);
+    const ctx = await buildPlanModeContext(
+      SAMPLE_WORKDIR,
+      makeNaxConfig(),
+      { from: SAMPLE_SPEC_PATH, feature: SAMPLE_FEATURE },
+      deps,
+    );
 
     const result = await writeOrRecoverPrd(ctx, SAMPLE_PRD);
 
@@ -210,7 +220,12 @@ describe("writeOrRecoverPrd", () => {
 
   test("recovers by reading the written file when plan generation fails after write", async () => {
     const deps = makeDeps();
-    const ctx = await buildPlanModeContext(SAMPLE_WORKDIR, makeNaxConfig(), { from: SAMPLE_SPEC_PATH, feature: SAMPLE_FEATURE }, deps);
+    const ctx = await buildPlanModeContext(
+      SAMPLE_WORKDIR,
+      makeNaxConfig(),
+      { from: SAMPLE_SPEC_PATH, feature: SAMPLE_FEATURE },
+      deps,
+    );
     const err = new Error("plan failed");
 
     const result = await writeOrRecoverPrd(ctx, null, err);
@@ -232,7 +247,12 @@ describe("writeOrRecoverPrd", () => {
         throw new Error("ENOENT");
       }),
     });
-    const ctx = await buildPlanModeContext(SAMPLE_WORKDIR, makeNaxConfig(), { from: SAMPLE_SPEC_PATH, feature: SAMPLE_FEATURE }, deps);
+    const ctx = await buildPlanModeContext(
+      SAMPLE_WORKDIR,
+      makeNaxConfig(),
+      { from: SAMPLE_SPEC_PATH, feature: SAMPLE_FEATURE },
+      deps,
+    );
     const err = new Error("plan failed");
 
     await expect(writeOrRecoverPrd(ctx, null, err)).rejects.toBe(err);

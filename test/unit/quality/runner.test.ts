@@ -16,22 +16,25 @@ import { _qualityRunnerDeps, runQualityCommand } from "@/quality/runner";
 // ---------------------------------------------------------------------------
 
 function makeSpawnMock(exitCode: number, stdout = "", stderr = "") {
-  return mock((_args: unknown) => ({
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(controller) {
-        if (stdout) controller.enqueue(new TextEncoder().encode(stdout));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(controller) {
-        if (stderr) controller.enqueue(new TextEncoder().encode(stderr));
-        controller.close();
-      },
-    }),
-    kill: mock(() => {}),
-  } as unknown as ReturnType<typeof Bun.spawn>));
+  return mock(
+    (_args: unknown) =>
+      ({
+        exited: Promise.resolve(exitCode),
+        stdout: new ReadableStream({
+          start(controller) {
+            if (stdout) controller.enqueue(new TextEncoder().encode(stdout));
+            controller.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(controller) {
+            if (stderr) controller.enqueue(new TextEncoder().encode(stderr));
+            controller.close();
+          },
+        }),
+        kill: mock(() => {}),
+      }) as unknown as ReturnType<typeof Bun.spawn>,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -159,13 +162,24 @@ describe("runQualityCommand — timeout flow", () => {
       if (signal === "SIGTERM") resolveExited(143);
     }) as typeof process.kill;
 
-    _qualityRunnerDeps.spawn = mock((_args: unknown) => ({
-      pid: 1234, // Provide explicit PID for killProcessGroup
-      exited: exitedPromise,
-      stdout: new ReadableStream({ start(c) { c.close(); } }),
-      stderr: new ReadableStream({ start(c) { c.close(); } }),
-      kill: mock(() => {}), // Not called anymore, but keep for safety
-    } as unknown as ReturnType<typeof Bun.spawn>)) as typeof Bun.spawn;
+    _qualityRunnerDeps.spawn = mock(
+      (_args: unknown) =>
+        ({
+          pid: 1234, // Provide explicit PID for killProcessGroup
+          exited: exitedPromise,
+          stdout: new ReadableStream({
+            start(c) {
+              c.close();
+            },
+          }),
+          stderr: new ReadableStream({
+            start(c) {
+              c.close();
+            },
+          }),
+          kill: mock(() => {}), // Not called anymore, but keep for safety
+        }) as unknown as ReturnType<typeof Bun.spawn>,
+    ) as typeof Bun.spawn;
 
     const result = await runQualityCommand({
       commandName: "lint",

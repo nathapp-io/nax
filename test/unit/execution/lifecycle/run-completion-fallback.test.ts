@@ -8,12 +8,12 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config/defaults";
 import {
+  type RunCompletionOptions,
   _runCompletionDeps,
   handleRunCompletion,
-  type RunCompletionOptions,
 } from "@/execution/lifecycle/run-completion";
 import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
 import type { AgentFallbackHop, StoryMetrics } from "@/metrics";
@@ -83,10 +83,7 @@ function makeStoryMetrics(storyId: string, success: boolean, hops: AgentFallback
 
 const WORKDIR = `/tmp/nax-test-pr2-fallback-${randomUUID()}`;
 
-function makeOpts(
-  prd: PRD,
-  allStoryMetrics: StoryMetrics[],
-): RunCompletionOptions {
+function makeOpts(prd: PRD, allStoryMetrics: StoryMetrics[]): RunCompletionOptions {
   const config: NaxConfig = {
     ...DEFAULT_CONFIG,
     execution: {

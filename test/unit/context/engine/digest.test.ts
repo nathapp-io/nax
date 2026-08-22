@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { buildDigest, digestTokens } from "@/context/engine/digest";
 import type { PackedChunk } from "@/context/engine/packing";
 
@@ -83,7 +83,7 @@ describe("buildDigest", () => {
       makePacked({ id: `c:${i}`, scope: "project", content: longContent }),
     );
     const digest = buildDigest(chunks);
-    expect(digest.length).toBeLessThanOrEqual(1003);  // 1000 + "..."
+    expect(digest.length).toBeLessThanOrEqual(1003); // 1000 + "..."
     expect(digest.endsWith("...")).toBe(true);
   });
 

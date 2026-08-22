@@ -9,13 +9,13 @@
  * original bug.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { NeutralityLintError } from "@/context";
 import type { PipelineContext } from "@/pipeline";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 // _contextStageDeps is test-only and not re-exported from the pipeline/stages barrel.
-import { contextStage, _contextStageDeps } from "@/pipeline/stages/context";
+import { _contextStageDeps, contextStage } from "@/pipeline/stages/context";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 let origCreateOrchestrator: typeof _contextStageDeps.createOrchestrator;
 let origReadDigest: typeof _contextStageDeps.readDigest;
@@ -67,7 +67,13 @@ describe("context stage — rules-integrity fallback", () => {
       ({
         async assemble() {
           throw new NeutralityLintError([
-            { file: "curator-suggestions.md", lineNumber: 1, line: "IMPORTANT:", ruleId: "important-shouting", pattern: "shouting-style IMPORTANT:" },
+            {
+              file: "curator-suggestions.md",
+              lineNumber: 1,
+              line: "IMPORTANT:",
+              ruleId: "important-shouting",
+              pattern: "shouting-style IMPORTANT:",
+            },
           ]);
         },
         rebuildForAgent: () => {

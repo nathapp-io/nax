@@ -4,14 +4,14 @@
  * Covers parseFrontmatter and RulesFrontmatterError from the split.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { _canonicalLoaderDeps, loadCanonicalRules } from "@/context/rules/canonical-loader";
 import {
   FRONTMATTER_PRIORITY_DEFAULT,
   KNOWN_FRONTMATTER_KEYS,
-  parseFrontmatter,
   RulesFrontmatterError,
+  parseFrontmatter,
 } from "@/context/rules/rules-frontmatter";
-import { loadCanonicalRules, _canonicalLoaderDeps } from "@/context/rules/canonical-loader";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC1: parseFrontmatter() returns priority 100 when content has no frontmatter block
@@ -108,36 +108,24 @@ describe("KNOWN_FRONTMATTER_KEYS", () => {
 
 describe("parseFrontmatter", () => {
   test("parses priority from frontmatter", () => {
-    const result = parseFrontmatter(
-      "---\npriority: 35\n---\nRule content.",
-      "/project/.nax/rules/test.md",
-    );
+    const result = parseFrontmatter("---\npriority: 35\n---\nRule content.", "/project/.nax/rules/test.md");
     expect(result.priority).toBe(35);
   });
 
   test("parses paths as array from frontmatter", () => {
-    const result = parseFrontmatter(
-      '---\npaths:\n  - "apps/api"\n---\nRule content.',
-      "/project/.nax/rules/test.md",
-    );
+    const result = parseFrontmatter('---\npaths:\n  - "apps/api"\n---\nRule content.', "/project/.nax/rules/test.md");
     expect(result.paths).toEqual(["apps/api"]);
   });
 
   test("parses paths as string from frontmatter", () => {
-    const result = parseFrontmatter(
-      '---\npaths: "apps/api"\n---\nRule content.',
-      "/project/.nax/rules/test.md",
-    );
+    const result = parseFrontmatter('---\npaths: "apps/api"\n---\nRule content.', "/project/.nax/rules/test.md");
     expect(result.paths).toEqual(["apps/api"]);
   });
 
   test("throws RulesFrontmatterError for unknown frontmatter keys", () => {
     let threw: unknown;
     try {
-      parseFrontmatter(
-        "---\npriority: 50\nunknownKey: value\n---\nRule content.",
-        "/project/.nax/rules/test.md",
-      );
+      parseFrontmatter("---\npriority: 50\nunknownKey: value\n---\nRule content.", "/project/.nax/rules/test.md");
     } catch (e) {
       threw = e;
     }
@@ -146,18 +134,12 @@ describe("parseFrontmatter", () => {
   });
 
   test("handles CRLF line endings", () => {
-    const result = parseFrontmatter(
-      "---\r\npriority: 50\r\n---\r\nRule content.\r\n",
-      "/project/.nax/rules/test.md",
-    );
+    const result = parseFrontmatter("---\r\npriority: 50\r\n---\r\nRule content.\r\n", "/project/.nax/rules/test.md");
     expect(result.priority).toBe(50);
   });
 
   test("strips frontmatter and returns body content", () => {
-    const result = parseFrontmatter(
-      "---\npriority: 50\n---\nRule body.",
-      "/project/.nax/rules/test.md",
-    );
+    const result = parseFrontmatter("---\npriority: 50\n---\nRule body.", "/project/.nax/rules/test.md");
     expect(result.content).toBe("Rule body.");
   });
 });
@@ -381,7 +363,10 @@ describe("loadCanonicalRules — AC7 stages propagation", () => {
     origGetLogger = _canonicalLoaderDeps.getLogger;
     _canonicalLoaderDeps.globInDir = () => [];
     _canonicalLoaderDeps.readFile = async () => "";
-    _canonicalLoaderDeps.getLogger = () => ({ warn: () => {}, debug: () => {}, info: () => {}, error: () => {} }) as unknown as ReturnType<typeof _canonicalLoaderDeps.getLogger>;
+    _canonicalLoaderDeps.getLogger = () =>
+      ({ warn: () => {}, debug: () => {}, info: () => {}, error: () => {} }) as unknown as ReturnType<
+        typeof _canonicalLoaderDeps.getLogger
+      >;
   });
 
   afterEach(() => {
@@ -421,7 +406,10 @@ describe("loadCanonicalRules — AC13 displaced-frontmatter warning propagation"
     origGetLogger = _canonicalLoaderDeps.getLogger;
     _canonicalLoaderDeps.globInDir = () => [];
     _canonicalLoaderDeps.readFile = async () => "";
-    _canonicalLoaderDeps.getLogger = () => ({ warn: () => {}, debug: () => {}, info: () => {}, error: () => {} }) as unknown as ReturnType<typeof _canonicalLoaderDeps.getLogger>;
+    _canonicalLoaderDeps.getLogger = () =>
+      ({ warn: () => {}, debug: () => {}, info: () => {}, error: () => {} }) as unknown as ReturnType<
+        typeof _canonicalLoaderDeps.getLogger
+      >;
   });
 
   afterEach(() => {
@@ -677,11 +665,7 @@ describe("loadCanonicalRules — US-006 real .nax/rules store stage scoping", ()
   // tokens of freight per prompt. They must still be declared, still exclude
   // plan, and still cover execution — an empty list would exclude plan while
   // reaching no agent at all.
-  for (const fileName of [
-    "forbidden-patterns-source.md",
-    "forbidden-patterns-tests.md",
-    "project-conventions.md",
-  ]) {
+  for (const fileName of ["forbidden-patterns-source.md", "forbidden-patterns-tests.md", "project-conventions.md"]) {
     test(`[US-006 AC 2] returns ${fileName} with stages that exclude plan`, async () => {
       const rules = await loadCanonicalRules(process.cwd());
       const rule = rules.find((r) => r.path === fileName || r.fileName === fileName);

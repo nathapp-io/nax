@@ -95,9 +95,7 @@ describe("stage-config — test-coverage provider registration (AC3, AC4, AC5, A
         }
       }
 
-      const tcStages = Object.entries(STAGE_CONTEXT_MAP).filter(([, cfg]) =>
-        cfg.providerIds.includes("test-coverage"),
-      );
+      const tcStages = Object.entries(STAGE_CONTEXT_MAP).filter(([, cfg]) => cfg.providerIds.includes("test-coverage"));
       expect(tcStages.length).toBeGreaterThan(0);
     });
   });

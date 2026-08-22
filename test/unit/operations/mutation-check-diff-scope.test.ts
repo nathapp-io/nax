@@ -10,13 +10,8 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import * as loggerModule from "@/logger";
 import { mutationCheckOp } from "@/operations";
-import {
-  cleanupTempDir,
-  makeMutationCheckCtx,
-  makeMutationCheckDeps as fakeDeps,
-  makeTempDir,
-} from "@test/helpers";
 import * as mutationModule from "@/verification/mutation";
+import { cleanupTempDir, makeMutationCheckDeps as fakeDeps, makeMutationCheckCtx, makeTempDir } from "@test/helpers";
 
 const FAKE_STORY = { id: "US-003", title: "scope mutation candidates" } as any;
 
@@ -221,9 +216,7 @@ describe("mutationCheckOp — US-003 AC11: unmapped file emits a debug log with 
       );
 
       const calls = debugSpy!.mock.calls as Array<[string, string, Record<string, unknown>]>;
-      const matching = calls.filter(
-        ([, , data]) => data?.storyId === "US-003" && data?.file === file,
-      );
+      const matching = calls.filter(([, , data]) => data?.storyId === "US-003" && data?.file === file);
       expect(matching.length).toBeGreaterThan(0);
     } finally {
       cleanupTempDir(dir);
@@ -396,8 +389,7 @@ describe("mutationCheckOp — US-003 AC15: file with no mutable content emits no
 
       const calls = warnSpy!.mock.calls as Array<[string, string, Record<string, unknown>]>;
       const matching = calls.filter(
-        ([, message, data]) =>
-          data?.storyId === "US-003" && data?.file === file && typeof message === "string",
+        ([, message, data]) => data?.storyId === "US-003" && data?.file === file && typeof message === "string",
       );
       expect(matching).toHaveLength(0);
     } finally {

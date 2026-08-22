@@ -1,6 +1,6 @@
 // test/unit/execution/rectification-overrides.test.ts
 import { describe, expect, test } from "bun:test";
-import { phasesToRevalidate, StoryOrchestratorBuilder } from "@/execution";
+import { StoryOrchestratorBuilder, phasesToRevalidate } from "@/execution";
 import type { FixCycleContext } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
 
@@ -17,9 +17,15 @@ describe("review-stripped revalidation", () => {
       mk("semantic-review"),
       mk("adversarial-review"),
     ];
-    const stripped = all.filter((p) => !["semantic-review", "adversarial-review"].includes((p as { kind: string }).kind));
+    const stripped = all.filter(
+      (p) => !["semantic-review", "adversarial-review"].includes((p as { kind: string }).kind),
+    );
     const selected = phasesToRevalidate(["autofix-implementer"], stripped);
-    expect(selected.map((p) => (p as { kind: string }).kind)).toEqual(["lint-check", "typecheck-check", "full-suite-gate"]);
+    expect(selected.map((p) => (p as { kind: string }).kind)).toEqual([
+      "lint-check",
+      "typecheck-check",
+      "full-suite-gate",
+    ]);
   });
 });
 
@@ -30,7 +36,13 @@ describe("RectificationOverrides.postValidate — addNonBlockingFix stores nbPos
     const nbPostValidate = async (findings: Finding[], _ctx: FixCycleContext): Promise<Finding[]> => findings;
     expect(() =>
       new StoryOrchestratorBuilder().addNonBlockingFix(
-        { enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: false, sourceDiffCap: { maxFiles: 10, maxLines: 500 } },
+        {
+          enabled: true,
+          scope: "both",
+          regressionAttempts: 1,
+          verifierGuard: false,
+          sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+        },
         [],
         nbPostValidate,
       ),
@@ -40,7 +52,13 @@ describe("RectificationOverrides.postValidate — addNonBlockingFix stores nbPos
   test("addNonBlockingFix without postValidate is backwards-compatible (postValidate omitted)", () => {
     expect(() =>
       new StoryOrchestratorBuilder().addNonBlockingFix(
-        { enabled: true, scope: "source", regressionAttempts: 1, verifierGuard: false, sourceDiffCap: { maxFiles: 10, maxLines: 500 } },
+        {
+          enabled: true,
+          scope: "source",
+          regressionAttempts: 1,
+          verifierGuard: false,
+          sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+        },
         [],
       ),
     ).not.toThrow();

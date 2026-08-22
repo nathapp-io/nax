@@ -7,9 +7,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "@/config/defaults";
-import { routingStage, _routingDeps } from "@/pipeline/stages/routing";
-import type { PRD, UserStory } from "@/prd";
+import { _routingDeps, routingStage } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd";
 import type { StoryRouting } from "@/prd/types";
 import { makeNaxConfig, makeStory } from "@test/helpers";
 
@@ -75,15 +75,13 @@ describe("routingStage - first classification persists routing to prd.json", () 
     mock.restore();
     // Restore original deps after each test
     if (origRoutingDeps) {
-      const { _routingDeps } = require("../../../../src/pipeline/stages/routing");
+      const { _routingDeps } = require("@/pipeline/stages/routing");
       Object.assign(_routingDeps, origRoutingDeps);
     }
   });
 
   test("calls savePRD with updated prd when story.routing is undefined", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 
@@ -104,9 +102,7 @@ describe("routingStage - first classification persists routing to prd.json", () 
   });
 
   test("persists correct prdPath to savePRD on first classification", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 
@@ -128,9 +124,7 @@ describe("routingStage - first classification persists routing to prd.json", () 
   });
 
   test("story.routing is populated on prd after fresh classification", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 
@@ -155,9 +149,7 @@ describe("routingStage - first classification persists routing to prd.json", () 
   });
 
   test("ctx.story.routing is set to fresh classification result", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 
@@ -192,15 +184,13 @@ describe("routingStage - skips savePRD when story.routing already set", () => {
   afterEach(() => {
     mock.restore();
     if (origRoutingDeps) {
-      const { _routingDeps } = require("../../../../src/pipeline/stages/routing");
+      const { _routingDeps } = require("@/pipeline/stages/routing");
       Object.assign(_routingDeps, origRoutingDeps);
     }
   });
 
   test("does NOT call savePRD when story.routing is already populated", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 
@@ -234,9 +224,7 @@ describe("routingStage - skips savePRD when story.routing already set", () => {
   });
 
   test("uses persisted complexity/testStrategy (not re-classified values) when story.routing exists", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 
@@ -279,15 +267,13 @@ describe("routingStage - escalation overwrites modelTier even after persistence"
   afterEach(() => {
     mock.restore();
     if (origRoutingDeps) {
-      const { _routingDeps } = require("../../../../src/pipeline/stages/routing");
+      const { _routingDeps } = require("@/pipeline/stages/routing");
       Object.assign(_routingDeps, origRoutingDeps);
     }
   });
 
   test("uses escalated modelTier from story.routing when explicitly set", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 
@@ -321,9 +307,7 @@ describe("routingStage - escalation overwrites modelTier even after persistence"
   });
 
   test("savePRD is NOT called during escalation (routing already persisted)", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 

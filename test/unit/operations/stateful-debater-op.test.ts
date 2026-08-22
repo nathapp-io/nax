@@ -33,11 +33,20 @@ interface StatefulDebaterOp {
   readonly session: { readonly role: string; readonly lifetime: "fresh" | "warm" };
   readonly config: unknown;
   readonly model?: (input: StatefulDebaterInput) => { readonly agent: string; readonly model: string };
-  readonly build: (input: StatefulDebaterInput, ctx: unknown) => {
+  readonly build: (
+    input: StatefulDebaterInput,
+    ctx: unknown,
+  ) => {
     readonly role: { readonly id: string; readonly content: string; readonly overridable: boolean };
     readonly task: { readonly id: string; readonly content: string; readonly overridable: boolean };
   };
-  readonly hopBody?: (initialPrompt: string, ctx: { readonly send: (prompt: string) => Promise<{ readonly output: string }>; readonly input: StatefulDebaterInput }) => Promise<{ readonly output: string }>;
+  readonly hopBody?: (
+    initialPrompt: string,
+    ctx: {
+      readonly send: (prompt: string) => Promise<{ readonly output: string }>;
+      readonly input: StatefulDebaterInput;
+    },
+  ) => Promise<{ readonly output: string }>;
   readonly parse: (output: string, input: StatefulDebaterInput, ctx: unknown) => StatefulDebaterOutput;
 }
 

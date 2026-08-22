@@ -8,7 +8,6 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { InteractionChain } from "@/interaction/chain";
-import type { InteractionPlugin, InteractionResponse } from "@/interaction/types";
 import {
   checkCostExceeded,
   checkCostWarning,
@@ -19,6 +18,7 @@ import {
   isTriggerEnabled,
   substituteTemplate,
 } from "@/interaction/triggers";
+import type { InteractionPlugin, InteractionResponse } from "@/interaction/types";
 import { makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -30,12 +30,14 @@ function makeChain(action: InteractionResponse["action"]): InteractionChain {
   const plugin: InteractionPlugin = {
     name: "test",
     send: mock(async () => {}),
-    receive: mock(async (id: string): Promise<InteractionResponse> => ({
-      requestId: id,
-      action,
-      respondedBy: "user",
-      respondedAt: Date.now(),
-    })),
+    receive: mock(
+      async (id: string): Promise<InteractionResponse> => ({
+        requestId: id,
+        action,
+        respondedBy: "user",
+        respondedAt: Date.now(),
+      }),
+    ),
   };
   chain.register(plugin);
   return chain;
@@ -52,12 +54,14 @@ function makeTimeoutChain(): InteractionChain {
   const plugin: InteractionPlugin = {
     name: "test",
     send: mock(async () => {}),
-    receive: mock(async (id: string): Promise<InteractionResponse> => ({
-      requestId: id,
-      action: "skip",
-      respondedBy: "timeout",
-      respondedAt: Date.now(),
-    })),
+    receive: mock(
+      async (id: string): Promise<InteractionResponse> => ({
+        requestId: id,
+        action: "skip",
+        respondedBy: "timeout",
+        respondedAt: Date.now(),
+      }),
+    ),
   };
   chain.register(plugin);
   return chain;

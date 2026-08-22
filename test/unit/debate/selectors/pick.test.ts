@@ -7,8 +7,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { DebateStageConfig, ResolverType } from "@/debate/types";
 import { pickSelectorKind } from "@/debate";
+import type { DebateStageConfig, ResolverType } from "@/debate/types";
 
 describe("pickSelectorKind dispatcher (US-003 AC4-5)", () => {
   const makeStageConfig = (overrides?: Partial<DebateStageConfig>): DebateStageConfig => ({

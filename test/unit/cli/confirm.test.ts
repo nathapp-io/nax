@@ -25,7 +25,10 @@ function makeStdin(isTTY = true) {
     on: (event, listener) => listeners.set(event, [...(listeners.get(event) ?? []), listener]),
     once: (event, listener) => listeners.set(event, [...(listeners.get(event) ?? []), listener as () => void]),
     removeListener: (event, listener) =>
-      listeners.set(event, (listeners.get(event) ?? []).filter((l) => l !== (listener as unknown))),
+      listeners.set(
+        event,
+        (listeners.get(event) ?? []).filter((l) => l !== (listener as unknown)),
+      ),
   };
   return {
     stdin,

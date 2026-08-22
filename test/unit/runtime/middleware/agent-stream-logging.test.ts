@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { initLogger, getLogger, resetLogger } from "@/logger";
+import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 import { AgentStreamEventBus } from "@/runtime/agent-stream-events";
 import type { AgentStreamEvent } from "@/runtime/agent-stream-events";

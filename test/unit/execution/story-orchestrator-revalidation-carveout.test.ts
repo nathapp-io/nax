@@ -144,13 +144,15 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
 
     await runRectification(
       ctx,
-      makeRectifyState([{
-        name: "strategy",
-        appliesTo: () => true,
-        fixOp: mockImplementerOp,
-        buildInput: () => ({ story: "US-002" }),
-        maxAttempts: 12,
-      }]),
+      makeRectifyState([
+        {
+          name: "strategy",
+          appliesTo: () => true,
+          fixOp: mockImplementerOp,
+          buildInput: () => ({ story: "US-002" }),
+          maxAttempts: 12,
+        },
+      ]),
       {},
       greenBefore(),
       { initialFindings: before },

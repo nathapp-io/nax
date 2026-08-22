@@ -15,9 +15,7 @@ describe("fetchWithTimeout", () => {
           // never resolves on its own
         }),
     };
-    await expect(
-      fetchWithTimeout(slowProvider as any, {} as any, 20)
-    ).rejects.toThrow(/timed out/);
+    await expect(fetchWithTimeout(slowProvider as any, {} as any, 20)).rejects.toThrow(/timed out/);
     // Give the abort event a tick to fire
     await new Promise((r) => setTimeout(r, 5));
     expect(aborted).toBe(true);
@@ -39,7 +37,20 @@ describe("ContextOrchestrator — configurable provider timeout", () => {
       kind: "retrieved" as const,
       fetch: async () => {
         await new Promise((r) => setTimeout(r, delayMs));
-        return { chunks: [{ id: "slow:1", kind: "retrieved", scope: "retrieved", role: ["all"], content: "x", tokens: 1, rawScore: 1 }], pullTools: [] };
+        return {
+          chunks: [
+            {
+              id: "slow:1",
+              kind: "retrieved",
+              scope: "retrieved",
+              role: ["all"],
+              content: "x",
+              tokens: 1,
+              rawScore: 1,
+            },
+          ],
+          pullTools: [],
+        };
       },
     };
   }

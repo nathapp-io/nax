@@ -8,9 +8,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { PostDebateVerifierContext, PostDebateVerifierResult } from "@/debate/verifiers/types";
 import type { SelectorResult } from "@/debate/selectors/types";
 import type { DebateStageConfig } from "@/debate/types";
+import type { PostDebateVerifierContext, PostDebateVerifierResult } from "@/debate/verifiers/types";
 import type { CallContext } from "@/operations/types";
 
 // Stub implementation placeholder
@@ -74,7 +74,7 @@ describe("reviewGroundingFilterVerifier (US-003 AC6)", () => {
 
       const selectorResult: SelectorResult = {
         outcome: "passed",
-        };
+      };
 
       const ctx = makeVerifierContext({
         selectorResult: {
@@ -150,7 +150,7 @@ describe("reviewGroundingFilterVerifier (US-003 AC6)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-            } as SelectorResult,
+        } as SelectorResult,
       });
 
       // Expected result: { outcome: "failed", ... }
@@ -178,7 +178,7 @@ describe("reviewGroundingFilterVerifier (US-003 AC6)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-            } as SelectorResult,
+        } as SelectorResult,
       });
 
       // Expected result: { outcome: "passed", findings: [] }

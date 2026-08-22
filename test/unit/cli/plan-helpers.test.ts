@@ -5,8 +5,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { buildSourceRootsSection } from "@/cli";
 import type { SourceRoot } from "@/analyze/types";
+import { buildSourceRootsSection } from "@/cli";
 
 describe("buildSourceRootsSection", () => {
   // ──────────────────────────────────────────────────────────────────────────
@@ -44,17 +44,13 @@ describe("buildSourceRootsSection", () => {
   });
 
   test("AC-2: renders empty framework and test runner as '—'", () => {
-    const roots: SourceRoot[] = [
-      { path: "python-pkg", language: "python", framework: "", testRunner: "" },
-    ];
+    const roots: SourceRoot[] = [{ path: "python-pkg", language: "python", framework: "", testRunner: "" }];
     const result = buildSourceRootsSection(roots);
     expect(result).toContain("- python-pkg  (python, framework: —, tests: —)");
   });
 
   test("AC-2: renders undefined language as 'unknown'", () => {
-    const roots: SourceRoot[] = [
-      { path: "ambiguous", language: undefined, framework: "", testRunner: "" },
-    ];
+    const roots: SourceRoot[] = [{ path: "ambiguous", language: undefined, framework: "", testRunner: "" }];
     const result = buildSourceRootsSection(roots);
     expect(result).toContain("- ambiguous  (unknown, framework: —, tests: —)");
   });

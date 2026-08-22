@@ -67,11 +67,7 @@ describe("runPostParse — VerifyContext filesystem helpers", () => {
 
       let capturedCtx: VerifyContext<unknown> | null = null;
       const op = {
-        verify: async (
-          _parsed: string,
-          _input: unknown,
-          ctx: VerifyContext<unknown>,
-        ): Promise<string | null> => {
+        verify: async (_parsed: string, _input: unknown, ctx: VerifyContext<unknown>): Promise<string | null> => {
           capturedCtx = ctx;
           return null;
         },
@@ -94,11 +90,7 @@ describe("runPostParse — VerifyContext filesystem helpers", () => {
 
       let capturedCtx: VerifyContext<unknown> | null = null;
       const op = {
-        verify: async (
-          _parsed: string,
-          _input: unknown,
-          ctx: VerifyContext<unknown>,
-        ): Promise<string | null> => {
+        verify: async (_parsed: string, _input: unknown, ctx: VerifyContext<unknown>): Promise<string | null> => {
           capturedCtx = ctx;
           return null;
         },

@@ -12,15 +12,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { NaxConfig } from "@/config";
-import {
-  _curatorCmdDeps as _deps,
-  curatorCommit,
-  curatorDryrun,
-  curatorGc,
-  curatorStatus,
-} from "@/commands/curator";
 import type { ResolvedProject } from "@/commands/common";
+import { _curatorCmdDeps as _deps, curatorCommit, curatorDryrun, curatorGc, curatorStatus } from "@/commands/curator";
+import type { NaxConfig } from "@/config";
 import type { Observation } from "@/plugins/builtin/curator/types";
 import { makeNaxConfig } from "@test/helpers";
 import { makeTempDir } from "@test/helpers";
@@ -224,7 +218,6 @@ describe("curatorStatus", () => {
       expect(out2.toLowerCase()).toMatch(/not found|does not exist|missing/);
     });
   });
-
 
   describe("proposal markdown", () => {
     test("prints proposal markdown when file exists; reports no proposals when absent", async () => {
@@ -697,7 +690,14 @@ describe("curatorDryrun", () => {
           stage: "review",
           ts: "2026-01-01T00:00:00.000Z",
           kind: "review-finding",
-          payload: { ruleId: "no-any", category: "convention", severity: "HIGH", file: "src/foo.ts", line: 1, message: "explicit any is not allowed in public APIs" },
+          payload: {
+            ruleId: "no-any",
+            category: "convention",
+            severity: "HIGH",
+            file: "src/foo.ts",
+            line: 1,
+            message: "explicit any is not allowed in public APIs",
+          },
         } as Observation,
         {
           schemaVersion: 1,
@@ -707,15 +707,26 @@ describe("curatorDryrun", () => {
           stage: "review",
           ts: "2026-01-01T00:00:00.000Z",
           kind: "review-finding",
-          payload: { ruleId: "no-any", category: "convention", severity: "HIGH", file: "src/foo.ts", line: 5, message: "explicit any is not allowed in public APIs" },
+          payload: {
+            ruleId: "no-any",
+            category: "convention",
+            severity: "HIGH",
+            file: "src/foo.ts",
+            line: 5,
+            message: "explicit any is not allowed in public APIs",
+          },
         } as Observation,
       ];
       writeObservations(runDir, obs);
 
       let writeCalled = false;
       let appendCalled = false;
-      _deps.writeFile = mock(async (_p: string, _content: string) => { writeCalled = true; });
-      _deps.appendFile = mock(async (_p: string, _content: string) => { appendCalled = true; });
+      _deps.writeFile = mock(async (_p: string, _content: string) => {
+        writeCalled = true;
+      });
+      _deps.appendFile = mock(async (_p: string, _content: string) => {
+        appendCalled = true;
+      });
 
       await curatorDryrun({ run: "run-001" });
       const out = capturedOutput.join("\n");
@@ -775,6 +786,5 @@ describe("curatorDryrun", () => {
       // H1 should not fire with threshold 3 and only 2 observations
       expect(out).not.toContain("H1");
     });
-
   });
 });

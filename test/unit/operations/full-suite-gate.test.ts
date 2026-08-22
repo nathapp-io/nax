@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { _newPackageSetupDeps, markNewPackageDirs } from "@/execution";
-import { fullSuiteGateOp, _fullSuiteGateDeps } from "@/operations";
+import { _fullSuiteGateDeps, fullSuiteGateOp } from "@/operations";
 import { _commandDefaultsDeps, clearCommandDefaultsCache } from "@/quality";
 
 function ctxWithConfig(config: any = {}, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
@@ -56,11 +56,7 @@ describe("fullSuiteGateOp — DeterministicOperation shape", () => {
 
 describe("fullSuiteGateOp — test execution logic (US-006)", () => {
   test("returns success=true, status=passed, findings=[] when tests pass", async () => {
-    const out = await fullSuiteGateOp.execute(
-      { story: { id: "US-001" } as any, workdir: "/tmp" },
-      mockCtx,
-      makeDeps(),
-    );
+    const out = await fullSuiteGateOp.execute({ story: { id: "US-001" } as any, workdir: "/tmp" }, mockCtx, makeDeps());
     expect(out.success).toBe(true);
     expect(out.status).toBe("passed");
     expect(out.passed).toBe(true);
@@ -136,7 +132,7 @@ describe("fullSuiteGateOp — test execution logic (US-006)", () => {
   });
 
   test("no runRectificationLoop dep exists on _fullSuiteGateDeps (AC-3)", () => {
-    expect(((_fullSuiteGateDeps as any).runRectificationLoop)).toBeUndefined();
+    expect((_fullSuiteGateDeps as any).runRectificationLoop).toBeUndefined();
   });
 
   test("rectificationEnabled field is not read (removed from FullSuiteGateInput)", async () => {
@@ -159,11 +155,7 @@ describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)",
       execution: { regressionGate: { enabled: false } },
       quality: { commands: { test: "bun test" } },
     });
-    const result = await fullSuiteGateOp.execute(
-      { story: { id: "S-1" } as any, workdir: "/r" },
-      ctx,
-      makeDeps(),
-    );
+    const result = await fullSuiteGateOp.execute({ story: { id: "S-1" } as any, workdir: "/r" }, ctx, makeDeps());
     expect(result.status).toBe("skipped");
     expect(result.success).toBe(true);
     expect(result.passed).toBe(true);
@@ -251,14 +243,16 @@ describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)",
       }),
       runTests: async (_input: any, gateCtx: any) => {
         capturedTimeout = gateCtx.fullSuiteTimeout;
-        return { passed: true, failed: 0, output: "", parsedSummary: { passed: 1, failed: 0, failures: [] }, timedOut: false };
+        return {
+          passed: true,
+          failed: 0,
+          output: "",
+          parsedSummary: { passed: 1, failed: 0, failures: [] },
+          timedOut: false,
+        };
       },
     });
-    await fullSuiteGateOp.execute(
-      { story: { id: "S-1" } as any, workdir: "/r" },
-      mockCtx,
-      deps,
-    );
+    await fullSuiteGateOp.execute({ story: { id: "S-1" } as any, workdir: "/r" }, mockCtx, deps);
     expect(capturedTimeout).toBe(999);
   });
 
@@ -273,14 +267,16 @@ describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)",
       }),
       runTests: async (_input: any, gateCtx: any) => {
         seenWorkdir = gateCtx.cmdWorkdir;
-        return { passed: true, failed: 0, output: "", parsedSummary: { passed: 1, failed: 0, failures: [] }, timedOut: false };
+        return {
+          passed: true,
+          failed: 0,
+          output: "",
+          parsedSummary: { passed: 1, failed: 0, failures: [] },
+          timedOut: false,
+        };
       },
     });
-    await fullSuiteGateOp.execute(
-      { story: { id: "S-1" } as any, workdir: "/repo/packages/app" },
-      mockCtx,
-      deps,
-    );
+    await fullSuiteGateOp.execute({ story: { id: "S-1" } as any, workdir: "/repo/packages/app" }, mockCtx, deps);
     expect(seenWorkdir).toBe("/repo");
   });
 });

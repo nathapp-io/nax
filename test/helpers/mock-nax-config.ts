@@ -14,9 +14,15 @@ function deepMerge<T>(base: T, override: DeepPartial<T>): T {
   const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
   for (const [k, v] of Object.entries(override as Record<string, unknown>)) {
     const baseVal = (base as Record<string, unknown>)[k];
-    out[k] = typeof baseVal === "object" && baseVal !== null && !Array.isArray(baseVal) && typeof v === "object" && v !== null && !isEmptyObject(v)
-      ? deepMerge(baseVal, v as DeepPartial<typeof baseVal>)
-      : v;
+    out[k] =
+      typeof baseVal === "object" &&
+      baseVal !== null &&
+      !Array.isArray(baseVal) &&
+      typeof v === "object" &&
+      v !== null &&
+      !isEmptyObject(v)
+        ? deepMerge(baseVal, v as DeepPartial<typeof baseVal>)
+        : v;
   }
   return out as T;
 }

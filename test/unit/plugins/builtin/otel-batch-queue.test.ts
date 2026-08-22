@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { waitForCondition, withTimerSpy, withWarnSpy } from "@test/helpers";
 import { type BatchQueue, createBatchQueue } from "@/plugins/builtin/otel-reporter/batch-queue";
+import { waitForCondition, withTimerSpy, withWarnSpy } from "@test/helpers";
 
 interface Span {
   id: string;

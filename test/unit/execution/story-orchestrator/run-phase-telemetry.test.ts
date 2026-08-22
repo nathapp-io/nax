@@ -69,9 +69,7 @@ describe("runPhase: phaseTelemetry → story:phase:completed", () => {
         tier: "balanced",
       },
     });
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("implementer"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("implementer"), {}, {}));
     expect(event?.sessionModel).toBe("three-session");
   });
 
@@ -84,9 +82,7 @@ describe("runPhase: phaseTelemetry → story:phase:completed", () => {
         tier: "balanced",
       },
     });
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("implementer"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("implementer"), {}, {}));
     expect(event?.testStrategy).toBe("three-session-tdd");
   });
 
@@ -99,9 +95,7 @@ describe("runPhase: phaseTelemetry → story:phase:completed", () => {
         tier: "fast",
       },
     });
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("implementer"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("implementer"), {}, {}));
     expect(event?.sessionModel).toBe("single-session");
   });
 
@@ -114,17 +108,13 @@ describe("runPhase: phaseTelemetry → story:phase:completed", () => {
         tier: "fast", // post-clamp value written by executionStage
       },
     });
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("implementer"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("implementer"), {}, {}));
     expect(event?.tier).toBe("fast");
   });
 
   test("AC4 boundary: tier is absent in event when phaseTelemetry is not set on ctx", async () => {
     const ctx = makeMockCallContext(); // no phaseTelemetry
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("implementer"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("implementer"), {}, {}));
     expect(event?.tier).toBeUndefined();
   });
 
@@ -139,9 +129,7 @@ describe("runPhase: phaseTelemetry → story:phase:completed", () => {
     });
     // runFixCycle wraps runPhase(cycleCtx, …) where cycleCtx = ctx as FixCycleContext.
     // phaseTelemetry lives on CallContext so it survives the cast unchanged.
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("implementer"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("implementer"), {}, {}));
     expect(event?.sessionModel).toBe("three-session");
   });
 
@@ -153,9 +141,7 @@ describe("runPhase: phaseTelemetry → story:phase:completed", () => {
         tier: "balanced",
       },
     });
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("implementer"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("implementer"), {}, {}));
     expect(event?.sessionModel).toBe("single-session");
   });
 });

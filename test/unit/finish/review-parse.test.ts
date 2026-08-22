@@ -59,14 +59,18 @@ describe("parseReviewReport", () => {
   });
 
   test("recognises the No findings. sentinel", () => {
-    const r = parseReviewReport("## TOUCHPOINTS\n- none — one-line docstring diff\n\n## WALK\nAC-1 Covered\n\n## FINDINGS\nNo findings.\n");
+    const r = parseReviewReport(
+      "## TOUCHPOINTS\n- none — one-line docstring diff\n\n## WALK\nAC-1 Covered\n\n## FINDINGS\nNo findings.\n",
+    );
     expect(r.sawNoFindings).toBe(true);
     expect(r.findings).toEqual([]);
     expect(r.touchpoints).toEqual([{ path: "none", note: "one-line docstring diff" }]);
   });
 
   test("salvages findings from a reply with no headings at all", () => {
-    const r = parseReviewReport("Here is what I found.\n[MEDIUM] Leaky handle\n  Problem: a.ts:3 never closes it.\n  Fix: close it.\n");
+    const r = parseReviewReport(
+      "Here is what I found.\n[MEDIUM] Leaky handle\n  Problem: a.ts:3 never closes it.\n  Fix: close it.\n",
+    );
     expect(r.findings).toHaveLength(1);
     expect(r.sawTouchpointsSection).toBe(false);
     expect(r.sawWalkSection).toBe(false);

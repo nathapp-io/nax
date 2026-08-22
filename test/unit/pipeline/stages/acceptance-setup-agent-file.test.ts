@@ -14,9 +14,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { DEFAULT_CONFIG } from "@/config";
 import { _acceptanceSetupDeps, acceptanceSetupStage } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
-import { DEFAULT_CONFIG } from "@/config";
 import { makePRD, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
@@ -104,10 +104,7 @@ afterEach(() => {
 // No disk-reading needed — recovery now lives inside callOp/verify (ADR-020 Wave 3).
 // ---------------------------------------------------------------------------
 
-function makeCallOpDeps(
-  writtenFiles: Array<{ path: string; content: string }>,
-  testCodeResult: string | null,
-) {
+function makeCallOpDeps(writtenFiles: Array<{ path: string; content: string }>, testCodeResult: string | null) {
   _acceptanceSetupDeps.readMeta = async () => null;
   _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
     if (op.name === "acceptance-refine") {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_SECTION_ALIASES, type BodySection, mergeTemplate } from "@/forge";
+import { type BodySection, DEFAULT_SECTION_ALIASES, mergeTemplate } from "@/forge";
 import { TEMPLATE_BY_NAME, TEMPLATE_FIXTURES, UNPARSEABLE_FIXTURE_NAMES } from "@test/fixtures/pr-templates";
 
 /**

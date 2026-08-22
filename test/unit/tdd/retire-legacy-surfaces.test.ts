@@ -145,20 +145,12 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
 
       const legacyGateName = ["runFull", "SuiteGate"].join("");
       const hasOldApiOnly =
-        ("runThreeSessionTdd" in tddIndex || legacyGateName in tddIndex) &&
-        !("testWriterOp" in tddIndex);
+        ("runThreeSessionTdd" in tddIndex || legacyGateName in tddIndex) && !("testWriterOp" in tddIndex);
       expect(hasOldApiOnly).toBe(false);
     });
 
     test("All consolidated operations are exported for use in orchestration", () => {
-      const ops = [
-        "testWriterOp",
-        "implementerOp",
-        "verifierOp",
-        "writeTddTestOp",
-        "implementTddOp",
-        "verifyTddOp",
-      ];
+      const ops = ["testWriterOp", "implementerOp", "verifierOp", "writeTddTestOp", "implementTddOp", "verifyTddOp"];
 
       for (const op of ops) {
         const hasOp = op in tddIndex;

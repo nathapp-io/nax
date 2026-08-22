@@ -4,11 +4,13 @@ import { pickSelector } from "@/config";
 import type { DEFAULT_CONFIG } from "@/config";
 import { callOp } from "@/operations";
 import type { RunOperation } from "@/operations/types";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 let runtime: NaxRuntime | undefined;
-afterEach(async () => { await runtime?.close(); });
+afterEach(async () => {
+  await runtime?.close();
+});
 
 const testSel = pickSelector("routing-op-test", "routing");
 

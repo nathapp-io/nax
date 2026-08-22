@@ -1,18 +1,28 @@
 import { describe, expect, test } from "bun:test";
-import { runOrchestratorE2E } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import type { QualityCommandResult } from "@/quality/runner";
+import { runOrchestratorE2E } from "@test/helpers";
 
 const PASS_REVIEW = () => ({ output: JSON.stringify({ passed: true, findings: [] }) });
 const impl = () => ({ output: JSON.stringify({ filesChanged: ["src/a.ts"] }) });
 
 const PASS_TC: QualityCommandResult = {
-  commandName: "typecheck", command: "tc", success: true, exitCode: 0,
-  output: "", durationMs: 1, timedOut: false,
+  commandName: "typecheck",
+  command: "tc",
+  success: true,
+  exitCode: 0,
+  output: "",
+  durationMs: 1,
+  timedOut: false,
 };
 const FAIL_TC: QualityCommandResult = {
-  commandName: "typecheck", command: "tc", success: false, exitCode: 1,
-  output: "TS2304: Cannot find name 'x'", durationMs: 1, timedOut: false,
+  commandName: "typecheck",
+  command: "tc",
+  success: false,
+  exitCode: 1,
+  output: "TS2304: Cannot find name 'x'",
+  durationMs: 1,
+  timedOut: false,
 };
 
 const PASSING_VERDICT = JSON.stringify({
@@ -33,7 +43,7 @@ describe("E2E: agent-fix", () => {
       strategy: "test-after",
       agent: { implementer: impl, "reviewer-semantic": PASS_REVIEW, "reviewer-adversarial": PASS_REVIEW },
       gates: {
-        typecheck: () => tcCall++ === 0 ? FAIL_TC : PASS_TC,
+        typecheck: () => (tcCall++ === 0 ? FAIL_TC : PASS_TC),
       },
     });
 
@@ -134,19 +144,21 @@ describe("E2E: agent-fix", () => {
 
     const failingAdversarial = JSON.stringify({
       passed: false,
-      findings: [{
-        severity: "warning",
-        category: "test-gap",
-        file: "test/a.test.ts",
-        line: 1,
-        issue: "missing edge-case test for null input",
-        suggestion: "add test for null handling",
-        // verifiedBy.observed makes checkFindingEvidence return "unreadable" (file
-        // doesn't exist in the temp workdir) rather than "missing-observed".
-        // "unreadable" is not downgraded in substantiateAdversarialFindings, so the
-        // "warning" finding stays blocking when blockingThreshold="warning".
-        verifiedBy: { file: "test/a.test.ts", observed: "expect(fn(null))" },
-      }],
+      findings: [
+        {
+          severity: "warning",
+          category: "test-gap",
+          file: "test/a.test.ts",
+          line: 1,
+          issue: "missing edge-case test for null input",
+          suggestion: "add test for null handling",
+          // verifiedBy.observed makes checkFindingEvidence return "unreadable" (file
+          // doesn't exist in the temp workdir) rather than "missing-observed".
+          // "unreadable" is not downgraded in substantiateAdversarialFindings, so the
+          // "warning" finding stays blocking when blockingThreshold="warning".
+          verifiedBy: { file: "test/a.test.ts", observed: "expect(fn(null))" },
+        },
+      ],
     });
     const passingAdversarial = JSON.stringify({ passed: true, findings: [] });
 
@@ -223,15 +235,17 @@ describe("E2E: agent-fix", () => {
     // which flips fixTarget test→source and therefore the fix lane test-writer→implementer.
     const failingAdversarial = JSON.stringify({
       passed: false,
-      findings: [{
-        severity: "warning",
-        category: "error-path",
-        file: "src/a.ts",
-        line: 1,
-        issue: "unaligned variance check bypasses the near-zero guard on shared dates",
-        suggestion: "compute variance on the aligned window before applying the threshold",
-        verifiedBy: { file: "src/a.ts", observed: "bm_var = benchmark_returns.var()" },
-      }],
+      findings: [
+        {
+          severity: "warning",
+          category: "error-path",
+          file: "src/a.ts",
+          line: 1,
+          issue: "unaligned variance check bypasses the near-zero guard on shared dates",
+          suggestion: "compute variance on the aligned window before applying the threshold",
+          verifiedBy: { file: "src/a.ts", observed: "bm_var = benchmark_returns.var()" },
+        },
+      ],
     });
     const passingAdversarial = JSON.stringify({ passed: true, findings: [] });
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import type { Finding } from "@/findings/types";
 import { fullSuiteRectifyOp } from "@/operations";
 import { RectifierPromptBuilder, repoScopedRectification } from "@/prompts";
-import type { Finding } from "@/findings/types";
 import { makeStory } from "@test/helpers";
 
 const finding: Finding = {

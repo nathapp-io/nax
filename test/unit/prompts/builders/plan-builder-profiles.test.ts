@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { PlanPromptBuilder } from "@/prompts";
 import type { AgentRoutingProfile } from "@/config";
+import { PlanPromptBuilder } from "@/prompts";
 
 const profiles: AgentRoutingProfile[] = [
   {

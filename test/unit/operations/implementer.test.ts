@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { implementerOp, testWriterOp } from "@/operations";
 import { resolveConfiguredModel } from "@/config";
-import type { RunOperation } from "@/operations";
 import type { NaxConfig } from "@/config";
+import { implementerOp, testWriterOp } from "@/operations";
+import type { RunOperation } from "@/operations";
 import type { UserStory } from "@/prd";
 
 /**
@@ -39,10 +39,7 @@ describe("implementerOp — RunOperation shape", () => {
     expect(implementerOp.session.lifetime).toBe("warm");
   });
 
-  test.each([
-    ["name" as const],
-    ["stage" as const],
-  ])("implementerOp has a non-empty %s string", async (field) => {
+  test.each([["name" as const], ["stage" as const]])("implementerOp has a non-empty %s string", async (field) => {
     const { implementerOp } = await import("@/operations");
     expect(typeof implementerOp[field]).toBe("string");
     expect(implementerOp[field]).toBeTruthy();
@@ -53,10 +50,7 @@ describe("implementerOp — RunOperation shape", () => {
     expect(implementerOp.config).toBeDefined();
   });
 
-  test.each([
-    ["build" as const],
-    ["parse" as const],
-  ])("implementerOp has a %s function", async (method) => {
+  test.each([["build" as const], ["parse" as const]])("implementerOp has a %s function", async (method) => {
     const { implementerOp } = await import("@/operations");
     expect(typeof implementerOp[method]).toBe("function");
   });

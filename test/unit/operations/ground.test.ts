@@ -62,11 +62,17 @@ describe("groundOp — parse", () => {
 
   test("parse returns FactsManifest for empty, entries-filled, and markdown-fenced JSON", () => {
     const ctx = makeBuildCtx();
-    expect(groundOp.parse(JSON.stringify({ repoFacts: [], specClaims: [], gaps: [] }), inp, ctx)).toMatchObject({ repoFacts: [], specClaims: [], gaps: [] });
+    expect(groundOp.parse(JSON.stringify({ repoFacts: [], specClaims: [], gaps: [] }), inp, ctx)).toMatchObject({
+      repoFacts: [],
+      specClaims: [],
+      gaps: [],
+    });
 
     const manifest = {
       repoFacts: [{ id: "F-001", kind: "file", evidence: "e", summary: "s" }],
-      specClaims: [{ id: "S-001", specSpan: "span", claim: "claim", kind: "factual", verification: { status: "verified" } }],
+      specClaims: [
+        { id: "S-001", specSpan: "span", claim: "claim", kind: "factual", verification: { status: "verified" } },
+      ],
       gaps: [{ id: "G-001", kind: "missing-context", note: "note" }],
     };
     const r = groundOp.parse(JSON.stringify(manifest), inp, makeBuildCtx());
@@ -86,7 +92,11 @@ describe("groundOp — parse", () => {
     ];
     for (const bad of invalids) {
       let caught: unknown;
-      try { groundOp.parse(bad, inp, makeBuildCtx()); } catch (err) { caught = err; }
+      try {
+        groundOp.parse(bad, inp, makeBuildCtx());
+      } catch (err) {
+        caught = err;
+      }
       expect(caught instanceof NaxError, bad).toBe(true);
       if (caught instanceof NaxError) expect(caught.code, bad).toBe("GROUNDER_PARSE_FAILED");
     }
@@ -98,22 +108,40 @@ describe("groundOp — retry", () => {
 
   test("retry has shouldRetry; returns retry=true for invalid JSON and for schema-invalid JSON with null fields", () => {
     const ctx = makeBuildCtx();
-    const retryResult = (typeof groundOp.retry === "function" ? groundOp.retry(input, ctx) : groundOp.retry) as RetryStrategy | undefined;
+    const retryResult = (typeof groundOp.retry === "function" ? groundOp.retry(input, ctx) : groundOp.retry) as
+      | RetryStrategy
+      | undefined;
     expect(retryResult).toBeDefined();
     expect(typeof retryResult?.shouldRetry).toBe("function");
 
     const base = { site: "run" as const, agentName: "claude", stage: "plan" as const, storyId: "US-001" };
-    expect(retryResult?.shouldRetry(new ParseValidationError("probe"), 0, { ...base, lastOutput: "not json" })).toEqual({
-      retry: true, delayMs: 0, nextPrompt: expect.stringContaining("Response was not valid JSON"),
-    });
+    expect(retryResult?.shouldRetry(new ParseValidationError("probe"), 0, { ...base, lastOutput: "not json" })).toEqual(
+      {
+        retry: true,
+        delayMs: 0,
+        nextPrompt: expect.stringContaining("Response was not valid JSON"),
+      },
+    );
 
     const invalidManifest = JSON.stringify({
       repoFacts: [{ id: "F-001", kind: "file", evidence: "src/x.ts:1", summary: "summary" }],
-      specClaims: [{ id: "S-001", specSpan: "span", claim: "claim", kind: "factual", verification: { status: "verified", factId: null, evidence: null } }],
+      specClaims: [
+        {
+          id: "S-001",
+          specSpan: "span",
+          claim: "claim",
+          kind: "factual",
+          verification: { status: "verified", factId: null, evidence: null },
+        },
+      ],
       gaps: [{ id: "G-001", kind: "missing-context", note: "note", evidence: null }],
     });
-    expect(retryResult?.shouldRetry(new ParseValidationError("probe"), 0, { ...base, lastOutput: invalidManifest })).toEqual({
-      retry: true, delayMs: 0, nextPrompt: expect.stringContaining("Do NOT use null"),
+    expect(
+      retryResult?.shouldRetry(new ParseValidationError("probe"), 0, { ...base, lastOutput: invalidManifest }),
+    ).toEqual({
+      retry: true,
+      delayMs: 0,
+      nextPrompt: expect.stringContaining("Do NOT use null"),
     });
   });
 });
@@ -126,7 +154,10 @@ describe("groundOp — build", () => {
     expect(r1.task).toBeTruthy();
     expect(r1.task.content).toBeTruthy();
 
-    const r2 = groundOp.build({ specContent: "UNIQUE_SPEC_CONTENT", codebaseContext: "ctx", workdir: "/tmp" }, makeBuildCtx());
+    const r2 = groundOp.build(
+      { specContent: "UNIQUE_SPEC_CONTENT", codebaseContext: "ctx", workdir: "/tmp" },
+      makeBuildCtx(),
+    );
     expect(r2.role.content + r2.task.content).toContain("UNIQUE_SPEC_CONTENT");
   });
 });

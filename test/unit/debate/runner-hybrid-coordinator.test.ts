@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/helpers";
-import { NaxError } from "@/errors";
-import { DebatePromptBuilder } from "@/prompts";
-import * as callModule from "@/operations";
 import { runHybrid } from "@/debate/runner-hybrid";
-import type { DebateStageConfig } from "@/debate/types";
 import type { HybridCtx } from "@/debate/runner-hybrid";
+import type { DebateStageConfig } from "@/debate/types";
+import { NaxError } from "@/errors";
+import * as callModule from "@/operations";
 import type { DebateHybridInput } from "@/operations/debate-hybrid";
+import { DebatePromptBuilder } from "@/prompts";
+import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/helpers";
 
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -108,11 +108,7 @@ describe("runHybrid coordinator", () => {
     expect(proposalPromptSpy).toHaveBeenCalledTimes(3);
     expect(proposalPromptSpy.mock.calls.map(([index]) => index)).toEqual([0, 1, 2]);
     expect(result.proposals).toHaveLength(3);
-    expect(result.proposals.map((proposal) => proposal.output)).toEqual([
-      `rebut-2-0`,
-      `rebut-2-1`,
-      `rebut-2-2`,
-    ]);
+    expect(result.proposals.map((proposal) => proposal.output)).toEqual([`rebut-2-0`, `rebut-2-1`, `rebut-2-2`]);
     expect(result.rebuttals).toEqual([
       { debater: { agent: "claude", model: "fast" }, round: 1, output: "rebut-1-0" },
       { debater: { agent: "opencode", model: "fast" }, round: 1, output: "rebut-1-1" },

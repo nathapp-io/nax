@@ -12,7 +12,5 @@
  * If a test exercises a fetch feature beyond that, add another
  * method here rather than casting the mock.
  */
-export const mockFetch = (
-  impl: (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>,
-): typeof fetch =>
+export const mockFetch = (impl: (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>): typeof fetch =>
   Object.assign(impl, { preconnect: () => undefined }) as typeof fetch;

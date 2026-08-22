@@ -7,8 +7,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { expandExtglob, expandExtglobAll } from "@/test-runners/detect/extglob";
 import { globsToTestRegex } from "@/test-runners/conventions";
+import { expandExtglob, expandExtglobAll } from "@/test-runners/detect/extglob";
 
 describe("expandExtglob — passthrough cases", () => {
   test("returns plain pattern unchanged when no extglob/brace syntax is present", () => {
@@ -102,10 +102,7 @@ describe("expandExtglobAll — multi-pattern de-duplication", () => {
 
 describe("regression — expanded globs work with globsToTestRegex", () => {
   test("Jest defaults expanded → globsToTestRegex matches real test paths", () => {
-    const expanded = expandExtglobAll([
-      "**/__tests__/**/*.[jt]s?(x)",
-      "**/?(*.)+(spec|test).[jt]s?(x)",
-    ]);
+    const expanded = expandExtglobAll(["**/__tests__/**/*.[jt]s?(x)", "**/?(*.)+(spec|test).[jt]s?(x)"]);
     const regexes = globsToTestRegex(expanded);
 
     // The whole point of FEAT-015 fix: real Jest test files must classify as test files.

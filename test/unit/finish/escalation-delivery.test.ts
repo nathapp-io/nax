@@ -20,6 +20,8 @@
  *   detected) and pins the one case where it legitimately does deliver.
  */
 import { afterEach, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { AcceptanceGroupResult, ResolveResult } from "@/cli";
 import { DEFAULT_CONFIG } from "@/config";
 import {
@@ -34,8 +36,6 @@ import {
 } from "@/finish";
 import type { AuditTarget, FinishContext, FinishMachineDeps, FinishOps, FinishState } from "@/finish";
 import { withTempDir } from "@test/helpers";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 
 const originalGit = _finishGitDeps.git;
 const originalContextGit = _finishContextDeps.git;

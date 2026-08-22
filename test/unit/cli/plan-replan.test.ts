@@ -8,9 +8,9 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _planDeps, runReplanLoop } from "@/cli/plan";
+import type { PRD } from "@/prd/types";
 import type { PrecheckResultWithCode } from "@/precheck";
 import type { FlaggedStory } from "@/precheck/story-size-gate";
-import type { PRD } from "@/prd/types";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { makeNaxConfig } from "@test/helpers";
 
@@ -247,11 +247,10 @@ describe("runReplanLoop", () => {
       prdPath,
     });
 
-    expect(_planDeps.planDecompose).toHaveBeenCalledWith(
-      tmpDir,
-      expect.anything(),
-      { feature: "test-feature", storyId: "US-001" },
-    );
+    expect(_planDeps.planDecompose).toHaveBeenCalledWith(tmpDir, expect.anything(), {
+      feature: "test-feature",
+      storyId: "US-001",
+    });
   });
 
   // ── AC-2: PRD reloaded and precheck re-run after each decompose ───────────

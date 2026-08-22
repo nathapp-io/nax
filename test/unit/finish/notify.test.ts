@@ -8,7 +8,7 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { _notifyDeps, sendTelegramNotify, telegramCreds, isTelegramConfigured } from "@/finish";
+import { _notifyDeps, isTelegramConfigured, sendTelegramNotify, telegramCreds } from "@/finish";
 
 const orig = _notifyDeps.fetch;
 
@@ -92,7 +92,9 @@ describe("telegramCreds", () => {
 
 describe("isTelegramConfigured", () => {
   test("returns true when creds are available", () => {
-    const result = isTelegramConfigured({ interaction: { plugin: "telegram", config: { botToken: "t", chatId: "c" } } });
+    const result = isTelegramConfigured({
+      interaction: { plugin: "telegram", config: { botToken: "t", chatId: "c" } },
+    });
     expect(result).toBe(true);
   });
 

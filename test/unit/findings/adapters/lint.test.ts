@@ -46,15 +46,14 @@ describe("lintDiagnosticToFinding", () => {
     expect(finding.severity).toBe("warning");
   });
 
-  test.each([
-    ["error" as const],
-    ["warning" as const],
-    ["info" as const],
-  ])("passes through severity '%s'", (severity) => {
-    const d: LintDiagnostic = { ...baseDiagnostic, severity };
-    const finding = lintDiagnosticToFinding(d, WORKDIR, "biome");
-    expect(finding.severity).toBe(severity);
-  });
+  test.each([["error" as const], ["warning" as const], ["info" as const]])(
+    "passes through severity '%s'",
+    (severity) => {
+      const d: LintDiagnostic = { ...baseDiagnostic, severity };
+      const finding = lintDiagnosticToFinding(d, WORKDIR, "biome");
+      expect(finding.severity).toBe(severity);
+    },
+  );
 
   test("omits column when absent", () => {
     const d: LintDiagnostic = { ...baseDiagnostic, column: undefined };

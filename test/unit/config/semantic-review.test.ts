@@ -21,10 +21,7 @@ describe("ReviewCheckName type", () => {
     expect(checkName).toBe("semantic");
   });
 
-  test.each([
-    [["typecheck", "lint", "semantic"]],
-    [["semantic"]],
-  ])("schema accepts %j in review.checks", (checks) => {
+  test.each([[["typecheck", "lint", "semantic"]], [["semantic"]]])("schema accepts %j in review.checks", (checks) => {
     const config = { ...DEFAULT_CONFIG, review: { ...DEFAULT_CONFIG.review, checks } };
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
@@ -37,7 +34,7 @@ describe("SemanticReviewConfig", () => {
       model: "balanced",
       diffMode: "embedded",
       recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
-        resetRefOnRerun: false,
+      resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
       substantiation: { requote: true, maxRequotes: 5 },
@@ -52,7 +49,7 @@ describe("SemanticReviewConfig", () => {
       model: { agent: "codex", model: "gpt-5.4" },
       diffMode: "embedded",
       recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
-        resetRefOnRerun: false,
+      resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
       substantiation: { requote: true, maxRequotes: 5 },
@@ -66,7 +63,7 @@ describe("SemanticReviewConfig", () => {
       model: "balanced",
       diffMode: "embedded",
       recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
-        resetRefOnRerun: false,
+      resetRefOnRerun: false,
       rules: ["rule1", "rule2"],
       timeoutMs: 600_000,
       substantiation: { requote: true, maxRequotes: 5 },
@@ -258,7 +255,7 @@ describe("DEFAULT_CONFIG.review.semantic", () => {
       model: "balanced",
       diffMode: "ref",
       recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
-        resetRefOnRerun: false,
+      resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
       demandInspectionTrail: true,
@@ -310,17 +307,17 @@ describe("demandInspectionTrail (#3A) — configurable on both reviewers", () =>
     expect(parsed.review.adversarial?.demandInspectionTrail).toBe(true);
   });
 
-  test.each([
-    ["semantic" as const],
-    ["adversarial" as const],
-  ])("an explicit false survives parse on the %s reviewer", (reviewer) => {
-    const result = NaxConfigSchema.safeParse({
-      ...DEFAULT_CONFIG,
-      review: { ...DEFAULT_CONFIG.review, [reviewer]: { demandInspectionTrail: false } },
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.review[reviewer]?.demandInspectionTrail).toBe(false);
-    }
-  });
+  test.each([["semantic" as const], ["adversarial" as const]])(
+    "an explicit false survives parse on the %s reviewer",
+    (reviewer) => {
+      const result = NaxConfigSchema.safeParse({
+        ...DEFAULT_CONFIG,
+        review: { ...DEFAULT_CONFIG.review, [reviewer]: { demandInspectionTrail: false } },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.review[reviewer]?.demandInspectionTrail).toBe(false);
+      }
+    },
+  );
 });

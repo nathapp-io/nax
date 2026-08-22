@@ -7,13 +7,13 @@
  * Run RED first (verify() is undefined), then implement in Task 10.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { adversarialReviewOp } from "@/operations/adversarial-review";
 import type { AdversarialReviewInput, AdversarialReviewOutput } from "@/operations/adversarial-review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
-import { makeTestRuntime, withTempDir } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeTestRuntime, withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

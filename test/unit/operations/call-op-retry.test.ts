@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { RetryPreset } from "@/agents/retry";
+import type { CompleteResult } from "@/agents/types";
+import type { DEFAULT_CONFIG } from "@/config";
+import { pickSelector } from "@/config";
 import { _callOpDeps, callOp } from "@/operations";
 import type { CompleteOperation, RunOperation } from "@/operations";
-import type { RetryPreset } from "@/agents/retry";
-import { DEFAULT_CONFIG } from "@/config";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
-import { pickSelector } from "@/config";
-import type { CompleteResult } from "@/agents/types";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 const testSel = pickSelector("retry-op-test", "routing");
 
@@ -102,7 +102,11 @@ describe("callOp retry loop (kind:complete)", () => {
       completeAsFn: async () => {
         callCount++;
         if (callCount === 1) throw new Error("transient");
-        return { output: "pong", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 } satisfies CompleteResult;
+        return {
+          output: "pong",
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+        } satisfies CompleteResult;
       },
     });
     const runtime = makeTestRuntime({ agentManager });
@@ -405,7 +409,15 @@ describe("callOp retry loop (kind:run) — op.recover on parse exhaustion (#993)
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (_req) => ({
-        result: { success: true, exitCode: 0, output: "File already valid.", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        result: {
+          success: true,
+          exitCode: 0,
+          output: "File already valid.",
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCostUsd: 0,
+          agentFallbacks: [],
+        },
         fallbacks: [],
       }),
     });
@@ -425,7 +437,9 @@ describe("callOp retry loop (kind:run) — op.recover on parse exhaustion (#993)
         role: { id: "role", content: "", overridable: false },
         task: { id: "task", content: input, overridable: false },
       }),
-      parse: (_output) => { throw new Error("cannot parse chat ack"); },
+      parse: (_output) => {
+        throw new Error("cannot parse chat ack");
+      },
       retry: {
         shouldRetry: (_failure, attempt) =>
           attempt < 2 ? { retry: true, delayMs: 0, nextPrompt: "retry" } : { retry: false },

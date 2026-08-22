@@ -9,8 +9,8 @@ import { chmodSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { promptLoaderConfigSelector } from "@/config";
 import type { NaxConfig } from "@/config";
-import { loadOverride } from "@/prompts/loader";
 import type { PromptRole } from "@/prompts/core/types";
+import { loadOverride } from "@/prompts/loader";
 import { fullTest, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
@@ -268,7 +268,10 @@ describe("NaxConfig.prompts type shape", () => {
   });
 
   test("loadOverride accepts a Pick<NaxConfig, 'prompts'> literal (no NaxConfig cast)", async () => {
-    const config = { prompts: { overrides: {}, behavioralGuardrails: "lite" as const } } satisfies Pick<NaxConfig, "prompts">;
+    const config = { prompts: { overrides: {}, behavioralGuardrails: "lite" as const } } satisfies Pick<
+      NaxConfig,
+      "prompts"
+    >;
     const result = await loadOverride("test-writer", "/tmp/nonexistent-loader-test", config);
     expect(result).toBeNull();
   });

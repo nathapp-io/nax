@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { runOrchestratorE2E } from "@test/helpers";
 import type { NaxConfig } from "@/config";
+import { runOrchestratorE2E } from "@test/helpers";
 
 const PASS_REVIEW = () => ({ output: JSON.stringify({ passed: true, findings: [] }) });
 const impl = () => ({ output: JSON.stringify({ filesChanged: ["src/a.ts"] }) });
@@ -157,12 +157,8 @@ describe("E2E: repo-scoped test fix (#1654)", () => {
     // #1658 — the dispatch is recorded on the story result, so a reviewer meeting
     // an unrelated file in this story's commit can see what caused it.
     expect(result.repoScopedFixes).toHaveLength(1);
-    expect(result.repoScopedFixes?.[0]?.triggeringTests).toEqual([
-      "test/legacy/auth.spec.ts::redirects to login",
-    ]);
-    expect(result.repoScopedFixes?.[0]?.declinedReason).toBe(
-      "test/legacy/auth.spec.ts is outside this story's scope",
-    );
+    expect(result.repoScopedFixes?.[0]?.triggeringTests).toEqual(["test/legacy/auth.spec.ts::redirects to login"]);
+    expect(result.repoScopedFixes?.[0]?.declinedReason).toBe("test/legacy/auth.spec.ts is outside this story's scope");
     expect(result.repoScopedFixes?.[0]?.findingsCleared).toBe(true);
   });
 

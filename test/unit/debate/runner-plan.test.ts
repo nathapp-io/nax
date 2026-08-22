@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
+import { _runPlanDeps } from "@/debate";
 import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
-import { _runPlanDeps } from "@/debate";
+import type { DebateStageConfig } from "@/debate/types";
 import * as callModule from "@/operations";
 import type { CallContext } from "@/operations/types";
-import type { DebateStageConfig } from "@/debate/types";
 import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -262,7 +262,10 @@ describe("DebateRunner.runPlan()", () => {
       return { success: true, rebut: "ok" } as never;
     });
 
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 3, maxConcurrentDebaters: 3 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 3, maxConcurrentDebaters: 3 },
+    } as unknown as NaxConfig;
     const sm = makeSessionManager();
     const agentManager = makeMockAgentManager();
 
@@ -292,11 +295,14 @@ describe("DebateRunner.runPlan()", () => {
     // debater and collects the rebuttal from the rebuttalBarrier propagated by the .then() handler.
     const mockSM = makeSessionManager();
     const agentManager = makeMockAgentManager();
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 },
+    } as unknown as NaxConfig;
 
     let callIdx = 0;
-    spyOn(callModule, "callOp").mockImplementation(async () =>
-      ({ success: true, rebut: `rebut-${callIdx++}` }) as never,
+    spyOn(callModule, "callOp").mockImplementation(
+      async () => ({ success: true, rebut: `rebut-${callIdx++}` }) as never,
     );
 
     const runner = new DebateRunner({
@@ -351,7 +357,10 @@ describe("DebateRunner.runPlan()", () => {
 
     _debateSessionDeps.readFile = mock(async () => "{}");
 
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 },
+    } as unknown as NaxConfig;
 
     const runner = new DebateRunner({
       ctx: makeCallCtxWithIds("plan-panel-test", agentManager, sm, config),
@@ -393,7 +402,10 @@ describe("DebateRunner.runPlan()", () => {
 
     _debateSessionDeps.readFile = mock(async () => "{}");
 
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 },
+    } as unknown as NaxConfig;
     const agentManager = makeMockAgentManager();
 
     const runner = new DebateRunner({
@@ -422,9 +434,16 @@ describe("DebateRunner.runPlan()", () => {
 
   test("synthesis prompt includes spec anchor when specContent provided, omits when not", async () => {
     let capturedSynthesisPrompt = "";
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 },
+    } as unknown as NaxConfig;
     const sm = makeSessionManager({
-      runInSession: mock(async () => ({ output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 })) as any,
+      runInSession: mock(async () => ({
+        output: "ok",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      })) as any,
       nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
     });
     const agentManager = makeMockAgentManager({
@@ -436,14 +455,15 @@ describe("DebateRunner.runPlan()", () => {
     _debateSessionDeps.readFile = mock(async () => '{"userStories":[]}');
 
     const specContent = `# My Feature\n## Stories\n### US-001\n**AC:**\n- AC one\n- AC two`;
-    const makeRunner = (storyId: string) => new DebateRunner({
-      ctx: makeCallCtxWithIds(storyId, agentManager, sm, config),
-      stage: "plan",
-      stageConfig: makePlanStageConfig({ resolver: { type: "synthesis", agent: "opencode" } }),
-      config,
-      workdir: "/tmp/workdir",
-      sessionManager: sm,
-    });
+    const makeRunner = (storyId: string) =>
+      new DebateRunner({
+        ctx: makeCallCtxWithIds(storyId, agentManager, sm, config),
+        stage: "plan",
+        stageConfig: makePlanStageConfig({ resolver: { type: "synthesis", agent: "opencode" } }),
+        config,
+        workdir: "/tmp/workdir",
+        sessionManager: sm,
+      });
 
     await makeRunner("spec-anchor-test").runPlan("task context", "output format", {
       workdir: "/tmp/workdir",
@@ -475,11 +495,16 @@ describe("DebateRunner.runPlan()", () => {
       if (op?.name !== "debate-plan") return origCallOp(_ctx, op, input);
       const idx = input.index as number;
       startedOrder.push(idx);
-      await new Promise<void>((resolve) => { resolvers[idx] = resolve; });
+      await new Promise<void>((resolve) => {
+        resolvers[idx] = resolve;
+      });
       return { success: true, rebut: "ok" } as never;
     });
 
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 },
+    } as unknown as NaxConfig;
     const sm = makeSessionManager();
     const agentManager = makeMockAgentManager();
 
@@ -517,17 +542,21 @@ describe("DebateRunner.runPlan()", () => {
       return { success: true, rebut: "ok" } as never;
     });
 
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 },
+    } as unknown as NaxConfig;
     const sm = makeSessionManager();
     const agentManager = makeMockAgentManager();
-    const makeRunner = (storyId: string) => new DebateRunner({
-      ctx: makeCallCtxWithIds(storyId, agentManager, sm, config),
-      stage: "plan",
-      stageConfig: makePlanStageConfig(),
-      config,
-      workdir: "/tmp/workdir",
-      sessionManager: sm,
-    });
+    const makeRunner = (storyId: string) =>
+      new DebateRunner({
+        ctx: makeCallCtxWithIds(storyId, agentManager, sm, config),
+        stage: "plan",
+        stageConfig: makePlanStageConfig(),
+        config,
+        workdir: "/tmp/workdir",
+        sessionManager: sm,
+      });
 
     await makeRunner("manifest-thread-test").runPlan("task context", "output format", {
       workdir: "/tmp/workdir",
@@ -578,12 +607,19 @@ describe("runner-plan — preDebatePhase invocation", () => {
     }) as any;
 
     const sm = makeSessionManager({
-      runInSession: mock(async () => ({ output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 })) as any,
+      runInSession: mock(async () => ({
+        output: "ok",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      })) as any,
       nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
     });
     _debateSessionDeps.readFile = mock(async () => "{}");
 
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 },
+    } as unknown as NaxConfig;
     const agentManager = makeMockAgentManager();
 
     const runner = new DebateRunner({
@@ -611,21 +647,26 @@ describe("runner-plan — preDebatePhase invocation", () => {
     } as any;
     let receivedPackageView: unknown;
 
-    _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) =>
-      async (preCtx) => {
-        receivedPackageView = preCtx.ctx.packageView;
-        preCtx.ctx.packageView.select(() => DEFAULT_CONFIG);
-        return { manifestSection: "## Grounded Facts\n- F-001", costUsd: 0 };
-      },
-    ) as any;
+    _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) => async (preCtx) => {
+      receivedPackageView = preCtx.ctx.packageView;
+      preCtx.ctx.packageView.select(() => DEFAULT_CONFIG);
+      return { manifestSection: "## Grounded Facts\n- F-001", costUsd: 0 };
+    }) as any;
 
     const sm = makeSessionManager({
-      runInSession: mock(async () => ({ output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 })) as any,
+      runInSession: mock(async () => ({
+        output: "ok",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      })) as any,
       nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
     });
     _debateSessionDeps.readFile = mock(async () => "{}");
 
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 },
+    } as unknown as NaxConfig;
     const agentManager = makeMockAgentManager();
     const ctx = makeCallCtxWithIds("package-view-test", agentManager, sm, config);
     ctx.packageView = packageView;
@@ -650,9 +691,10 @@ describe("runner-plan — preDebatePhase invocation", () => {
   });
 
   test("AC-3: prepends prePhase manifestSection to proposal taskContext", async () => {
-    _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) =>
-      async () => ({ manifestSection: "## Grounded Facts\n- F-001: critical fact", costUsd: 0 }),
-    ) as any;
+    _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) => async () => ({
+      manifestSection: "## Grounded Facts\n- F-001: critical fact",
+      costUsd: 0,
+    })) as any;
 
     const capturedPrompts: string[] = [];
     spyOn(callModule, "callOp").mockImplementation(async (_ctx, op: any, input: any) => {
@@ -661,7 +703,10 @@ describe("runner-plan — preDebatePhase invocation", () => {
       return { success: true, rebut: "ok" } as never;
     });
 
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 },
+    } as unknown as NaxConfig;
     const sm = makeSessionManager();
     const agentManager = makeMockAgentManager();
 
@@ -695,17 +740,23 @@ describe("runner-plan — preDebatePhase invocation", () => {
       error: () => {},
     })) as unknown as typeof _debateSessionDeps.getSafeLogger;
 
-    _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) =>
-      async () => { throw new Error("grounder failed"); },
-    ) as any;
+    _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) => async () => {
+      throw new Error("grounder failed");
+    }) as any;
 
     let debaterCallCount = 0;
     spyOn(callModule, "callOp").mockImplementation(async (_ctx, op: any, input: any) => {
-      if (op?.name === "debate-plan") { debaterCallCount++; return { success: true, rebut: "ok" } as never; }
+      if (op?.name === "debate-plan") {
+        debaterCallCount++;
+        return { success: true, rebut: "ok" } as never;
+      }
       return origCallOp(_ctx, op, input);
     });
 
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 },
+    } as unknown as NaxConfig;
     const sm = makeSessionManager();
     const agentManager = makeMockAgentManager();
 
@@ -727,24 +778,35 @@ describe("runner-plan — preDebatePhase invocation", () => {
     // Proposers should still run despite pre-phase failure
     expect(debaterCallCount).toBeGreaterThan(0);
     // Warning logged about the pre-phase failure
-    expect(warnings.some((w) => w.includes("grounder") || w.includes("pre-phase") || w.includes("degrade") || w.includes("failed"))).toBe(true);
+    expect(
+      warnings.some(
+        (w) => w.includes("grounder") || w.includes("pre-phase") || w.includes("degrade") || w.includes("failed"),
+      ),
+    ).toBe(true);
     // A result was returned (not an exception), regardless of selector outcome
     expect(result).toBeDefined();
     expect(result.storyId).toBe("degrade-test");
   });
 
   test("AC-3: onFailure block — returns failed before any proposer runs when prePhase throws", async () => {
-    _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) =>
-      async () => { throw new Error("grounder blocked"); },
-    ) as any;
+    _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) => async () => {
+      throw new Error("grounder blocked");
+    }) as any;
 
     const sm = makeSessionManager({
-      runInSession: mock(async () => ({ output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 })) as any,
+      runInSession: mock(async () => ({
+        output: "ok",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      })) as any,
       nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
     });
     _debateSessionDeps.readFile = mock(async () => "{}");
 
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 },
+    } as unknown as NaxConfig;
     const agentManager = makeMockAgentManager();
 
     const runner = new DebateRunner({
@@ -777,7 +839,10 @@ describe("runner-plan — stateful session lifecycle", () => {
   beforeEach(() => {
     origResolvePreDebatePhase = _runPlanDeps.resolvePreDebatePhase;
     origResolvePostDebateVerifier = _runPlanDeps.resolvePostDebateVerifier;
-    _runPlanDeps.resolvePostDebateVerifier = mock(() => async () => ({ outcome: "passed" as const, costUsd: 0 })) as any;
+    _runPlanDeps.resolvePostDebateVerifier = mock(() => async () => ({
+      outcome: "passed" as const,
+      costUsd: 0,
+    })) as any;
   });
 
   afterEach(() => {
@@ -796,7 +861,10 @@ describe("runner-plan — stateful session lifecycle", () => {
 
     const sm = makeSessionManager();
     const agentManager = makeMockAgentManager();
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 },
+    } as unknown as NaxConfig;
 
     const runner = new DebateRunner({
       ctx: makeCallCtxWithIds("stateful-open-test", agentManager, sm, config),
@@ -834,7 +902,10 @@ describe("runner-plan — stateful session lifecycle", () => {
 
     const sm = makeSessionManager();
     const agentManager = makeMockAgentManager();
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 },
+    } as unknown as NaxConfig;
 
     const runner = new DebateRunner({
       ctx: makeCallCtxWithIds("stateful-runAsSession-test", agentManager, sm, config),
@@ -863,13 +934,16 @@ describe("runner-plan — stateful session lifecycle", () => {
   test("AC-4: completes successfully with both debaters when sessionMode is stateful", async () => {
     // Verifies coordinator returns a valid result after both stateful callOps complete.
     // Session lifecycle (open/close) is now managed internally by callOp/buildHopCallback.
-    spyOn(callModule, "callOp").mockImplementation(async (_ctx, _op, input: any) =>
-      ({ success: true, rebut: `output-${input.index}` }) as never,
+    spyOn(callModule, "callOp").mockImplementation(
+      async (_ctx, _op, input: any) => ({ success: true, rebut: `output-${input.index}` }) as never,
     );
 
     const sm = makeSessionManager();
     const agentManager = makeMockAgentManager();
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 },
+    } as unknown as NaxConfig;
 
     const runner = new DebateRunner({
       ctx: makeCallCtxWithIds("stateful-close-test", agentManager, sm, config),
@@ -913,7 +987,11 @@ describe("runner-plan — postDebateVerifier and tag-expert rewrite", () => {
   });
 
   // BUG-15: no file-read fallback anymore — stub both debaters' proposals directly.
-  const stubDebatePlanOp = (output: string) => spyOn(callModule, "callOp").mockImplementation(async (_c, op: any) => (op?.name === "debate-plan" ? { success: true, rebut: output } : Promise.reject(new Error(op?.name))) as never);
+  const stubDebatePlanOp = (output: string) =>
+    spyOn(callModule, "callOp").mockImplementation(
+      async (_c, op: any) =>
+        (op?.name === "debate-plan" ? { success: true, rebut: output } : Promise.reject(new Error(op?.name))) as never,
+    );
   function makeRunWithVerifier(verifierFn: () => Promise<{ outcome: string; costUsd: number }>) {
     const verifierCalled: string[] = [];
     _runPlanDeps.resolvePostDebateVerifier = mock((_kind: string) => {
@@ -922,7 +1000,11 @@ describe("runner-plan — postDebateVerifier and tag-expert rewrite", () => {
     }) as any;
 
     const sm = makeSessionManager({
-      runInSession: mock(async () => ({ output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 })) as any,
+      runInSession: mock(async () => ({
+        output: "ok",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      })) as any,
       nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
     });
 
@@ -934,7 +1016,10 @@ describe("runner-plan — postDebateVerifier and tag-expert rewrite", () => {
     });
     _debateSessionDeps.readFile = mock(async () => prdOutput);
 
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 },
+    } as unknown as NaxConfig;
     const agentManager = makeMockAgentManager();
 
     const runner = new DebateRunner({
@@ -951,11 +1036,19 @@ describe("runner-plan — postDebateVerifier and tag-expert rewrite", () => {
 
   test("AC-5: invokes resolvePostDebateVerifier and propagates its outcome to DebateResult", async () => {
     const { runner: passRunner, verifierCalled } = makeRunWithVerifier(async () => ({ outcome: "passed", costUsd: 0 }));
-    await passRunner.runPlan("task context", "output format", { workdir: "/tmp/workdir", feature: "verifier-test", outputDir: "/tmp/out" });
+    await passRunner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "verifier-test",
+      outputDir: "/tmp/out",
+    });
     expect(verifierCalled).toEqual(["plan-checklist"]);
 
     const { runner: failRunner } = makeRunWithVerifier(async () => ({ outcome: "failed", costUsd: 0 }));
-    const result = await failRunner.runPlan("task context", "output format", { workdir: "/tmp/workdir", feature: "verifier-test", outputDir: "/tmp/out" });
+    const result = await failRunner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "verifier-test",
+      outputDir: "/tmp/out",
+    });
     expect(result.outcome).toBe("failed");
   });
 
@@ -968,20 +1061,25 @@ describe("runner-plan — postDebateVerifier and tag-expert rewrite", () => {
     });
 
     // Verifier returns passed + blocker findings — this is the plan-checklist tag-expert signal
-    _runPlanDeps.resolvePostDebateVerifier = mock((_kind: string) =>
-      async () => ({
-        outcome: "passed" as const,
-        findings: [{ checklistItem: "files-exist", severity: "blocker", message: "file missing" }],
-        costUsd: 0,
-      }),
-    ) as any;
+    _runPlanDeps.resolvePostDebateVerifier = mock((_kind: string) => async () => ({
+      outcome: "passed" as const,
+      findings: [{ checklistItem: "files-exist", severity: "blocker", message: "file missing" }],
+      costUsd: 0,
+    })) as any;
 
     const sm = makeSessionManager({
-      runInSession: mock(async () => ({ output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 })) as any,
+      runInSession: mock(async () => ({
+        output: "ok",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      })) as any,
       nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
     });
     stubDebatePlanOp(prdOutput);
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 },
+    } as unknown as NaxConfig;
     const agentManager = makeMockAgentManager();
 
     const runner = new DebateRunner({
@@ -1011,16 +1109,25 @@ describe("runner-plan — postDebateVerifier and tag-expert rewrite", () => {
       userStories: [{ id: "US-001", routing: { complexity: "simple" } }],
     });
 
-    _runPlanDeps.resolvePostDebateVerifier = mock((_kind: string) =>
-      async () => ({ outcome: "passed" as const, findings: [], costUsd: 0 }),
-    ) as any;
+    _runPlanDeps.resolvePostDebateVerifier = mock((_kind: string) => async () => ({
+      outcome: "passed" as const,
+      findings: [],
+      costUsd: 0,
+    })) as any;
 
     const sm = makeSessionManager({
-      runInSession: mock(async () => ({ output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 })) as any,
+      runInSession: mock(async () => ({
+        output: "ok",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      })) as any,
       nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
     });
     stubDebatePlanOp(prdOutput);
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const config = {
+      ...TEST_CONFIG,
+      debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 },
+    } as unknown as NaxConfig;
     const agentManager = makeMockAgentManager();
 
     const runner = new DebateRunner({

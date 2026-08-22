@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
-import { _planRefineDeps, callOp, normalizeCreatedContextFiles, planRefineOp } from "@/operations";
 import type { AgentRunRequest } from "@/agents/manager-types";
-import { PlanPromptBuilder } from "@/prompts";
+import { _planRefineDeps, callOp, normalizeCreatedContextFiles, planRefineOp } from "@/operations";
 import { planInteractiveOp } from "@/operations";
 import type { VerifyContext } from "@/operations";
+import type { HopBodyContext } from "@/operations/types";
+import { PlanPromptBuilder } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
 import { makeMockAgentManager, makeSessionManager, makeTestRuntime, withTempDir, withWarnSpy } from "@test/helpers";
-import type { HopBodyContext } from "@/operations/types";
 
 const createdRuntimes: NaxRuntime[] = [];
 
@@ -289,10 +289,6 @@ describe("planRefineOp.hopBody()", () => {
   });
 });
 
-
-
-
-
 describe("planRefineOp.hopBody — specGuard spec-drift repair turn", () => {
   const SPEC = "# Spec\n- [unit] does a thing";
 
@@ -309,7 +305,14 @@ describe("planRefineOp.hopBody — specGuard spec-drift repair turn", () => {
     });
     return {
       ctx: {
-        input: { specContent: SPEC, codebaseContext: "", featureName: "f", branchName: "feat/f", outputPath: "/tmp/p.json", specGuard },
+        input: {
+          specContent: SPEC,
+          codebaseContext: "",
+          featureName: "f",
+          branchName: "feat/f",
+          outputPath: "/tmp/p.json",
+          specGuard,
+        },
         send,
         sendWithParseRetry,
       } as unknown as Parameters<NonNullable<typeof planRefineOp.hopBody>>[1],
@@ -321,7 +324,12 @@ describe("planRefineOp.hopBody — specGuard spec-drift repair turn", () => {
     const base = makeValidPrd("f", "feat/f");
     return {
       ...base,
-      userStories: [{ ...base.userStories[0], acceptanceCriteria: ["- [grep] `grep -rn foo src/` returns 0", "handler rejects invalid input"] }],
+      userStories: [
+        {
+          ...base.userStories[0],
+          acceptanceCriteria: ["- [grep] `grep -rn foo src/` returns 0", "handler rejects invalid input"],
+        },
+      ],
     };
   }
 
@@ -378,11 +386,25 @@ describe("planRefineOp.verify — specGuard warnOnSpecDrift", () => {
     };
   }
 
-  const input = { specContent: "# Spec", codebaseContext: "", featureName: "f", branchName: "feat/f", outputPath: "/tmp/x.json" };
+  const input = {
+    specContent: "# Spec",
+    codebaseContext: "",
+    featureName: "f",
+    branchName: "feat/f",
+    outputPath: "/tmp/x.json",
+  };
 
   function makeDriftPrd() {
     const base = makeValidPrd("f", "feat/f");
-    return { ...base, userStories: [{ ...base.userStories[0], acceptanceCriteria: ["- [grep] `grep foo` returns 0", "handler rejects invalid input"] }] };
+    return {
+      ...base,
+      userStories: [
+        {
+          ...base.userStories[0],
+          acceptanceCriteria: ["- [grep] `grep foo` returns 0", "handler rejects invalid input"],
+        },
+      ],
+    };
   }
 
   test("emits spec-drift warning when specGuard=true and violations remain", async () => {
@@ -551,9 +573,7 @@ describe("normalizeCreatedContextFiles — move absent reads to expectedFiles", 
       const s = story0(out as never);
       expect(s.contextFiles).toEqual([{ path: "src/cited.ts", factId: "F-001" }]); // kept
       expect(s.expectedFiles ?? []).toEqual([]); // NOT moved
-      const warns = warnSpy.mock.calls.filter(
-        (c) => c[0] === "plan" && String(c[1]).includes("cites a manifest fact"),
-      );
+      const warns = warnSpy.mock.calls.filter((c) => c[0] === "plan" && String(c[1]).includes("cites a manifest fact"));
       expect(warns.length).toBe(1);
     });
   });

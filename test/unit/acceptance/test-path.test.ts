@@ -234,9 +234,30 @@ describe("resolveSuggestedTestFile()", () => {
 
 describe("resolveSuggestedPackageFeatureTestPath()", () => {
   test.each([
-    ["monorepo path", "/project/apps/api", "auth-feature", undefined as string | undefined, undefined as string | undefined, "/project/apps/api/.nax/features/auth-feature/.nax-suggested.test.ts"],
-    ["language", "/project", "feat", undefined as string | undefined, "go", "/project/.nax/features/feat/.nax-suggested_test.go"],
-    ["config override", "/project", "feat", "custom.test.ts", undefined as string | undefined, "/project/.nax/features/feat/custom.test.ts"],
+    [
+      "monorepo path",
+      "/project/apps/api",
+      "auth-feature",
+      undefined as string | undefined,
+      undefined as string | undefined,
+      "/project/apps/api/.nax/features/auth-feature/.nax-suggested.test.ts",
+    ],
+    [
+      "language",
+      "/project",
+      "feat",
+      undefined as string | undefined,
+      "go",
+      "/project/.nax/features/feat/.nax-suggested_test.go",
+    ],
+    [
+      "config override",
+      "/project",
+      "feat",
+      "custom.test.ts",
+      undefined as string | undefined,
+      "/project/.nax/features/feat/custom.test.ts",
+    ],
   ])("respects %s", (_label, pkg, feature, override, lang, expected) => {
     expect(resolveSuggestedPackageFeatureTestPath(pkg, feature, override, lang)).toBe(expected);
   });

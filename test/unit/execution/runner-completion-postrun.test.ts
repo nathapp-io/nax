@@ -11,17 +11,13 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { pipelineEventBus } from "@/pipeline/event-bus";
-import {
-  _runnerCompletionDeps,
-  runCompletionPhase,
-  type RunnerCompletionOptions,
-} from "@/execution/runner-completion";
+import type { NaxConfig } from "@/config";
 import type { AcceptanceLoopResult } from "@/execution/lifecycle/acceptance-loop";
 import type { RunCompletionResult } from "@/execution/lifecycle/run-completion";
-import type { NaxConfig } from "@/config";
-import type { PRD, UserStory } from "@/prd";
+import { type RunnerCompletionOptions, _runnerCompletionDeps, runCompletionPhase } from "@/execution/runner-completion";
 import type { LoadedHooksConfig } from "@/hooks";
+import { pipelineEventBus } from "@/pipeline/event-bus";
+import type { PRD, UserStory } from "@/prd";
 import { makeNaxConfig } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
@@ -175,9 +171,7 @@ describe("runCompletionPhase - AC1: sets acceptance running before runAcceptance
 
     await runCompletionPhase(makeOpts(config, prd, statusWriter));
 
-    const acceptanceCalls = statusWriter.setPostRunPhase.mock.calls.filter(
-      (c: unknown[]) => c[0] === "acceptance",
-    );
+    const acceptanceCalls = statusWriter.setPostRunPhase.mock.calls.filter((c: unknown[]) => c[0] === "acceptance");
     expect(acceptanceCalls.length).toBe(0);
   });
 
@@ -193,9 +187,7 @@ describe("runCompletionPhase - AC1: sets acceptance running before runAcceptance
 
     await runCompletionPhase(makeOpts(config, prd, statusWriter));
 
-    const acceptanceCalls = statusWriter.setPostRunPhase.mock.calls.filter(
-      (c: unknown[]) => c[0] === "acceptance",
-    );
+    const acceptanceCalls = statusWriter.setPostRunPhase.mock.calls.filter((c: unknown[]) => c[0] === "acceptance");
     expect(acceptanceCalls.length).toBe(0);
   });
 });
@@ -215,14 +207,16 @@ describe("runCompletionPhase - AC2: sets acceptance passed when loop succeeds", 
       }
     });
 
-    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
-      success: true,
-      prd: makePRD([{ id: "US-001", status: "passed" }]),
-      totalCost: 0,
-      iterations: 1,
-      storiesCompleted: 1,
-      prdDirty: false,
-    }));
+    _runnerCompletionDeps.runAcceptanceLoop = mock(
+      async (): Promise<AcceptanceLoopResult> => ({
+        success: true,
+        prd: makePRD([{ id: "US-001", status: "passed" }]),
+        totalCost: 0,
+        iterations: 1,
+        storiesCompleted: 1,
+        prdDirty: false,
+      }),
+    );
 
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
@@ -246,14 +240,16 @@ describe("runCompletionPhase - AC2: sets acceptance passed when loop succeeds", 
       }
     });
 
-    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
-      success: true,
-      prd: makePRD([{ id: "US-001", status: "passed" }]),
-      totalCost: 0,
-      iterations: 1,
-      storiesCompleted: 1,
-      prdDirty: false,
-    }));
+    _runnerCompletionDeps.runAcceptanceLoop = mock(
+      async (): Promise<AcceptanceLoopResult> => ({
+        success: true,
+        prd: makePRD([{ id: "US-001", status: "passed" }]),
+        totalCost: 0,
+        iterations: 1,
+        storiesCompleted: 1,
+        prdDirty: false,
+      }),
+    );
 
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
@@ -279,16 +275,18 @@ describe("runCompletionPhase - AC3: sets acceptance failed when loop fails", () 
       }
     });
 
-    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
-      success: false,
-      prd: makePRD([{ id: "US-001", status: "passed" }]),
-      totalCost: 0,
-      iterations: 1,
-      storiesCompleted: 1,
-      prdDirty: false,
-      failedACs: ["AC-1", "AC-2"],
-      retries: 3,
-    }));
+    _runnerCompletionDeps.runAcceptanceLoop = mock(
+      async (): Promise<AcceptanceLoopResult> => ({
+        success: false,
+        prd: makePRD([{ id: "US-001", status: "passed" }]),
+        totalCost: 0,
+        iterations: 1,
+        storiesCompleted: 1,
+        prdDirty: false,
+        failedACs: ["AC-1", "AC-2"],
+        retries: 3,
+      }),
+    );
 
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
@@ -311,16 +309,18 @@ describe("runCompletionPhase - AC3: sets acceptance failed when loop fails", () 
       }
     });
 
-    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
-      success: false,
-      prd: makePRD([{ id: "US-001", status: "passed" }]),
-      totalCost: 0,
-      iterations: 1,
-      storiesCompleted: 1,
-      prdDirty: false,
-      failedACs: ["AC-3", "AC-5"],
-      retries: 2,
-    }));
+    _runnerCompletionDeps.runAcceptanceLoop = mock(
+      async (): Promise<AcceptanceLoopResult> => ({
+        success: false,
+        prd: makePRD([{ id: "US-001", status: "passed" }]),
+        totalCost: 0,
+        iterations: 1,
+        storiesCompleted: 1,
+        prdDirty: false,
+        failedACs: ["AC-3", "AC-5"],
+        retries: 2,
+      }),
+    );
 
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
@@ -341,16 +341,18 @@ describe("runCompletionPhase - AC3: sets acceptance failed when loop fails", () 
       }
     });
 
-    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
-      success: false,
-      prd: makePRD([{ id: "US-001", status: "passed" }]),
-      totalCost: 0,
-      iterations: 1,
-      storiesCompleted: 1,
-      prdDirty: false,
-      failedACs: ["AC-1"],
-      retries: 2,
-    }));
+    _runnerCompletionDeps.runAcceptanceLoop = mock(
+      async (): Promise<AcceptanceLoopResult> => ({
+        success: false,
+        prd: makePRD([{ id: "US-001", status: "passed" }]),
+        totalCost: 0,
+        iterations: 1,
+        storiesCompleted: 1,
+        prdDirty: false,
+        failedACs: ["AC-1"],
+        retries: 2,
+      }),
+    );
 
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
@@ -371,16 +373,18 @@ describe("runCompletionPhase - AC3: sets acceptance failed when loop fails", () 
       }
     });
 
-    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
-      success: false,
-      prd: makePRD([{ id: "US-001", status: "passed" }]),
-      totalCost: 0,
-      iterations: 1,
-      storiesCompleted: 1,
-      prdDirty: false,
-      failedACs: ["AC-1"],
-      retries: 1,
-    }));
+    _runnerCompletionDeps.runAcceptanceLoop = mock(
+      async (): Promise<AcceptanceLoopResult> => ({
+        success: false,
+        prd: makePRD([{ id: "US-001", status: "passed" }]),
+        totalCost: 0,
+        iterations: 1,
+        storiesCompleted: 1,
+        prdDirty: false,
+        failedACs: ["AC-1"],
+        retries: 1,
+      }),
+    );
 
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
@@ -681,4 +685,3 @@ describe("runCompletionPhase - forwards parallel mode as isSequential", () => {
     expect(captured?.isSequential).toBe(expectedIsSequential);
   });
 });
-

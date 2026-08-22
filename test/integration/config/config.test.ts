@@ -40,7 +40,9 @@ describe("Config Validation", () => {
       const result = NaxConfigSchema.safeParse(config);
       expect(result.success).toBe(false);
       if (!result.success && val === "") {
-        expect(result.error.issues.map((e) => e.message).some((msg) => msg.includes("agent.default must be non-empty"))).toBe(true);
+        expect(
+          result.error.issues.map((e) => e.message).some((msg) => msg.includes("agent.default must be non-empty")),
+        ).toBe(true);
       }
     }
   });
@@ -120,9 +122,18 @@ describe("Config Validation", () => {
 
   test("complexityRouting accepts non-empty string and rejects empty string", () => {
     const base = { ...DEFAULT_CONFIG, autoMode: { ...DEFAULT_CONFIG.autoMode } };
-    const accepts = NaxConfigSchema.safeParse({ ...base, autoMode: { ...base.autoMode, complexityRouting: { ...DEFAULT_CONFIG.autoMode.complexityRouting, simple: "custom-tier" } } });
+    const accepts = NaxConfigSchema.safeParse({
+      ...base,
+      autoMode: {
+        ...base.autoMode,
+        complexityRouting: { ...DEFAULT_CONFIG.autoMode.complexityRouting, simple: "custom-tier" },
+      },
+    });
     expect(accepts.success).toBe(true);
-    const rejects = NaxConfigSchema.safeParse({ ...base, autoMode: { ...base.autoMode, complexityRouting: { ...DEFAULT_CONFIG.autoMode.complexityRouting, simple: "" } } });
+    const rejects = NaxConfigSchema.safeParse({
+      ...base,
+      autoMode: { ...base.autoMode, complexityRouting: { ...DEFAULT_CONFIG.autoMode.complexityRouting, simple: "" } },
+    });
     expect(rejects.success).toBe(false);
   });
 

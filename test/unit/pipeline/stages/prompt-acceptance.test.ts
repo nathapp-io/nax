@@ -32,8 +32,28 @@ function makePRD(): PRD {
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   const story = makeStory({ status: "in-progress", passes: false, attempts: 0, acceptanceCriteria: ["AC1"] });
   return {
-    config: makeSparseNaxConfig({ agent: { default: "test-agent" }, models: {}, execution: { sessionTimeoutSeconds: 60, dangerouslySkipPermissions: false, costLimit: 10, maxIterations: 10, rectification: { maxAttemptsTotal: 3 } } }),
-    rootConfig: makeSparseNaxConfig({ agent: { default: "test-agent" }, models: {}, execution: { sessionTimeoutSeconds: 60, dangerouslySkipPermissions: false, costLimit: 10, maxIterations: 10, rectification: { maxAttemptsTotal: 3 } } }),
+    config: makeSparseNaxConfig({
+      agent: { default: "test-agent" },
+      models: {},
+      execution: {
+        sessionTimeoutSeconds: 60,
+        dangerouslySkipPermissions: false,
+        costLimit: 10,
+        maxIterations: 10,
+        rectification: { maxAttemptsTotal: 3 },
+      },
+    }),
+    rootConfig: makeSparseNaxConfig({
+      agent: { default: "test-agent" },
+      models: {},
+      execution: {
+        sessionTimeoutSeconds: 60,
+        dangerouslySkipPermissions: false,
+        costLimit: 10,
+        maxIterations: 10,
+        rectification: { maxAttemptsTotal: 3 },
+      },
+    }),
     prd: makePRD(),
     story,
     stories: [story],
@@ -129,9 +149,7 @@ describe("promptStage.execute() — reads acceptanceTestPaths files", () => {
     }));
 
     const ctx = makeCtx({
-      acceptanceTestPaths: [
-        { testPath: "/feature/acceptance.test.ts", packageDir: "/feature" },
-      ],
+      acceptanceTestPaths: [{ testPath: "/feature/acceptance.test.ts", packageDir: "/feature" }],
     });
     await promptStage.execute(ctx);
 
@@ -145,9 +163,7 @@ describe("promptStage.execute() — reads acceptanceTestPaths files", () => {
     }));
 
     const ctx = makeCtx({
-      acceptanceTestPaths: [
-        { testPath: "/feature/acceptance.test.ts", packageDir: "/feature" },
-      ],
+      acceptanceTestPaths: [{ testPath: "/feature/acceptance.test.ts", packageDir: "/feature" }],
     });
     await promptStage.execute(ctx);
 

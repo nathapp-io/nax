@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { debateConfigSelector, DEFAULT_CONFIG } from "@/config";
+import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
+import type { Debater } from "@/debate/types";
 import { NaxError } from "@/errors";
 import * as operationsModule from "@/operations";
-import type { Debater } from "@/debate/types";
 
 interface PromiseWithResolvers<T> {
   readonly promise: Promise<T>;
@@ -35,7 +35,10 @@ interface DebateHybridOp {
   readonly session: { readonly role: string; readonly lifetime: "fresh" };
   readonly config: unknown;
   readonly model?: (input: DebateHybridInput) => { readonly agent: string; readonly model: string };
-  readonly build: (input: DebateHybridInput, ctx: unknown) => {
+  readonly build: (
+    input: DebateHybridInput,
+    ctx: unknown,
+  ) => {
     readonly role: { readonly id: string; readonly content: string; readonly overridable: boolean };
     readonly task: { readonly id: string; readonly content: string; readonly overridable: boolean };
   };

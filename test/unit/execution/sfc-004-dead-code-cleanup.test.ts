@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { RunOptions } from "@/execution/runner";
 import { DEFAULT_CONFIG } from "@/config";
+import type { RunOptions } from "@/execution/runner";
 
 describe("SFC-004: Dead code cleanup — Acceptance Criteria", () => {
   test("AC-1: RunOptions.statusFile is required (not optional)", () => {

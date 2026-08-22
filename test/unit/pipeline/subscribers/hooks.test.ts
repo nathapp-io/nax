@@ -1,8 +1,8 @@
 // RE-ARCH: keep
-import { describe, expect, test, mock } from "bun:test";
-import { wireHooks } from "@/pipeline/subscribers/hooks";
-import { PipelineEventBus } from "@/pipeline/event-bus";
+import { describe, expect, mock, test } from "bun:test";
 import type { LoadedHooksConfig } from "@/hooks";
+import { PipelineEventBus } from "@/pipeline/event-bus";
+import { wireHooks } from "@/pipeline/subscribers/hooks";
 
 const EMPTY_HOOKS: LoadedHooksConfig = {};
 
@@ -12,7 +12,15 @@ describe("wireHooks", () => {
     wireHooks(bus, EMPTY_HOOKS, "/tmp", "test-feature");
 
     // Single-subscriber events
-    const singleSubEvents = ["run:started", "story:started", "story:paused", "run:paused", "run:completed", "run:resumed", "run:errored"] as const;
+    const singleSubEvents = [
+      "run:started",
+      "story:started",
+      "story:paused",
+      "run:paused",
+      "run:completed",
+      "run:resumed",
+      "run:errored",
+    ] as const;
     for (const ev of singleSubEvents) {
       expect(bus.subscriberCount(ev)).toBe(1);
     }
@@ -42,7 +50,13 @@ describe("wireHooks", () => {
 
     // Should not throw
     expect(() =>
-      bus.emit({ type: "story:completed", storyId: "US-001", story: { id: "US-001" } as any, passed: true, durationMs: 100 }),
+      bus.emit({
+        type: "story:completed",
+        storyId: "US-001",
+        story: { id: "US-001" } as any,
+        passed: true,
+        durationMs: 100,
+      }),
     ).not.toThrow();
   });
 
@@ -50,9 +64,7 @@ describe("wireHooks", () => {
     const bus = new PipelineEventBus();
     wireHooks(bus, EMPTY_HOOKS, "/tmp", "test-feature");
 
-    expect(() =>
-      bus.emit({ type: "run:resumed", feature: "test-feature" }),
-    ).not.toThrow();
+    expect(() => bus.emit({ type: "run:resumed", feature: "test-feature" })).not.toThrow();
   });
 
   test("on-session-end: story:completed triggers on-session-end with status passed (fire-and-forget, no throw)", () => {
@@ -60,7 +72,13 @@ describe("wireHooks", () => {
     wireHooks(bus, EMPTY_HOOKS, "/tmp", "test-feature");
 
     expect(() =>
-      bus.emit({ type: "story:completed", storyId: "US-001", story: { id: "US-001" } as any, passed: true, durationMs: 100 }),
+      bus.emit({
+        type: "story:completed",
+        storyId: "US-001",
+        story: { id: "US-001" } as any,
+        passed: true,
+        durationMs: 100,
+      }),
     ).not.toThrow();
   });
 
@@ -69,7 +87,13 @@ describe("wireHooks", () => {
     wireHooks(bus, EMPTY_HOOKS, "/tmp", "test-feature");
 
     expect(() =>
-      bus.emit({ type: "story:failed", storyId: "US-001", story: { id: "US-001" } as any, reason: "test failure", countsTowardEscalation: true }),
+      bus.emit({
+        type: "story:failed",
+        storyId: "US-001",
+        story: { id: "US-001" } as any,
+        reason: "test failure",
+        countsTowardEscalation: true,
+      }),
     ).not.toThrow();
   });
 
@@ -77,8 +101,6 @@ describe("wireHooks", () => {
     const bus = new PipelineEventBus();
     wireHooks(bus, EMPTY_HOOKS, "/tmp", "test-feature");
 
-    expect(() =>
-      bus.emit({ type: "run:errored", reason: "SIGTERM", feature: "test-feature" }),
-    ).not.toThrow();
+    expect(() => bus.emit({ type: "run:errored", reason: "SIGTERM", feature: "test-feature" })).not.toThrow();
   });
 });

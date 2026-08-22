@@ -7,8 +7,8 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { _fillScriptsDeps, fillScripts } from "@/cli/setup-fill";
 import { _analyzeRepoDeps, analyzeRepo } from "@/cli/setup-analyze";
+import { _fillScriptsDeps, fillScripts } from "@/cli/setup-fill";
 import type { RepoAnalysis } from "@/cli/setup-types";
 import type { ProjectProfile } from "@/config";
 import type { DetectionResult } from "@/test-runners/detect";
@@ -26,9 +26,7 @@ const SINGLE_MISSING_TYPE_CHECK: RepoAnalysis = {
 
 const MONO_TURBO_MISSING: RepoAnalysis = {
   shape: "mono",
-  packages: [
-    { relativeDir: "packages/a", testFramework: "bun", testFilePatterns: [], missingScripts: ["type-check"] },
-  ],
+  packages: [{ relativeDir: "packages/a", testFramework: "bun", testFilePatterns: [], missingScripts: ["type-check"] }],
   pmRunPrefix: "bun run",
   pmDlx: "bunx",
   orchestrator: "turbo",
@@ -53,9 +51,12 @@ afterEach(() => {
 
 describe("fillScripts — AC1: writes type-check script into package.json", () => {
   test("AC1: writes type-check equal to 'tsc --noEmit -p tsconfig.json'", async () => {
-    _fillScriptsDeps.readJson = mock(async () => ({
-      scripts: { build: "tsc", test: "bun test" },
-    } as Record<string, unknown>));
+    _fillScriptsDeps.readJson = mock(
+      async () =>
+        ({
+          scripts: { build: "tsc", test: "bun test" },
+        }) as Record<string, unknown>,
+    );
 
     const written = new Map<string, string>();
     _fillScriptsDeps.writeFile = mock(async (path: string, content: string) => {
@@ -71,9 +72,12 @@ describe("fillScripts — AC1: writes type-check script into package.json", () =
   });
 
   test("AC1: existing scripts are preserved after fill", async () => {
-    _fillScriptsDeps.readJson = mock(async () => ({
-      scripts: { build: "tsc", test: "bun test" },
-    } as Record<string, unknown>));
+    _fillScriptsDeps.readJson = mock(
+      async () =>
+        ({
+          scripts: { build: "tsc", test: "bun test" },
+        }) as Record<string, unknown>,
+    );
 
     const written = new Map<string, string>();
     _fillScriptsDeps.writeFile = mock(async (path: string, content: string) => {
@@ -92,9 +96,12 @@ describe("fillScripts — AC1: writes type-check script into package.json", () =
 
 describe("fillScripts — AC2: idempotent on repeated runs", () => {
   test("AC2: writeFile is not called when type-check already present in the file", async () => {
-    _fillScriptsDeps.readJson = mock(async () => ({
-      scripts: { "type-check": "tsc --noEmit -p tsconfig.json", build: "tsc" },
-    } as Record<string, unknown>));
+    _fillScriptsDeps.readJson = mock(
+      async () =>
+        ({
+          scripts: { "type-check": "tsc --noEmit -p tsconfig.json", build: "tsc" },
+        }) as Record<string, unknown>,
+    );
 
     await fillScripts("/work", SINGLE_MISSING_TYPE_CHECK);
 
@@ -180,7 +187,7 @@ describe("fillScripts — AC3: mono+turbo writes turbo.json and root passthrough
 
 describe("fillScripts — AC4: single shape writes to root package.json only", () => {
   test("AC4: writes exactly one file and it is root package.json", async () => {
-    _fillScriptsDeps.readJson = mock(async () => ({ scripts: {} } as Record<string, unknown>));
+    _fillScriptsDeps.readJson = mock(async () => ({ scripts: {} }) as Record<string, unknown>);
 
     const writtenPaths: string[] = [];
     _fillScriptsDeps.writeFile = mock(async (path: string) => {
@@ -194,7 +201,7 @@ describe("fillScripts — AC4: single shape writes to root package.json only", (
   });
 
   test("AC4: does not write turbo.json for single shape", async () => {
-    _fillScriptsDeps.readJson = mock(async () => ({ scripts: {} } as Record<string, unknown>));
+    _fillScriptsDeps.readJson = mock(async () => ({ scripts: {} }) as Record<string, unknown>);
 
     const writtenPaths: string[] = [];
     _fillScriptsDeps.writeFile = mock(async (path: string) => {

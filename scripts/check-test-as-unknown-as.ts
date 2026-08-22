@@ -17,8 +17,9 @@
  *   0 — no new casts (count <= baseline)
  *   1 — ratchet breached (count > baseline) or baseline missing
  *
- * Allow-list a single occurrence by appending `// test-ratchet-allow: as-unknown-as`
- * (added only if a wave gets stuck on legitimate uses).
+ * Allow-list an occurrence with `// test-ratchet-allow: as-unknown-as`, appended
+ * to the line or placed on either neighbouring line (added only if a wave gets
+ * stuck on legitimate uses).
  */
 import { Glob } from "bun";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -71,13 +72,22 @@ export async function scanAsUnknownAs(
     if (EXEMPT_FILES.has(rel)) continue;
     const text = await Bun.file(join(rootDir, rel)).text();
     const lines = text.split("\n");
-    for (const line of lines) {
+    for (const [i, line] of lines.entries()) {
       // `String.match` with a /g/ pattern ignores lastIndex, so the shared
       // regex stays safe to reuse across lines.
       const matches = line.match(PATTERN);
       if (matches === null) continue;
       // The marker suppresses the whole line, however many casts it carries.
-      if (line.includes(ALLOW_MARKER)) continue;
+      // Either neighbouring line counts too: the formatter reflows long lines
+      // and pushes a trailing comment onto its own line, which would otherwise
+      // silently un-suppress a deliberately allowed cast.
+      if (
+        line.includes(ALLOW_MARKER) ||
+        lines[i - 1]?.includes(ALLOW_MARKER) ||
+        lines[i + 1]?.includes(ALLOW_MARKER)
+      ) {
+        continue;
+      }
       byFile[rel] = (byFile[rel] ?? 0) + matches.length;
       count += matches.length;
     }

@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import type { DebateStageConfig } from "@/debate/types";
+import type { InteractionBridge } from "@/interaction/bridge-builder";
 import { planInteractiveOp } from "@/operations";
 import * as operationsModule from "@/operations";
 import { DebatePlanStrategy, _debatePlanDeps } from "@/plan";
 import type { PlanDeps, PlanModeContext } from "@/plan/strategies";
-import type { DebateStageConfig } from "@/debate/types";
-import type { InteractionBridge } from "@/interaction/bridge-builder";
-import type { NaxRuntime } from "@/runtime";
 import type { PRD } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
+import type { NaxRuntime } from "@/runtime";
 import { makeMockAgentManager } from "@test/helpers";
 
 const MOCK_FULL_CONFIG = {} as never;
@@ -52,7 +52,7 @@ function makeDeps(overrides: Partial<PlanDeps> = {}): PlanDeps {
       detectQuestion: async () => false,
       onQuestionDetected: async () => "",
     })),
-    createDebateRunner: mock(() => ({ runPlan: mock(async () => ({ outcome: "failed" })) } as never)),
+    createDebateRunner: mock(() => ({ runPlan: mock(async () => ({ outcome: "failed" })) }) as never),
     ...overrides,
   };
 }
@@ -76,7 +76,16 @@ function makeContext(overrides: Partial<PlanModeContext> = {}): PlanModeContext 
     codebaseContext: "## Codebase Context\n- src/app.ts",
     normalizedRoots: [],
     relativePackages: ["packages/api"],
-    packageDetails: [{ path: "packages/api", name: "@acme/api", runtime: "bun", framework: "oak", testRunner: "bun:test", keyDeps: [] }],
+    packageDetails: [
+      {
+        path: "packages/api",
+        name: "@acme/api",
+        runtime: "bun",
+        framework: "oak",
+        testRunner: "bun:test",
+        keyDeps: [],
+      },
+    ],
     projectName: "acme",
     branchName: "feat/feat-debate",
     timeoutSeconds: 90,
@@ -169,7 +178,17 @@ describe("DebatePlanStrategy", () => {
     expect(_debatePlanDeps.buildPlanComposition).toHaveBeenCalledWith(ctx.config.debate.stages.plan);
     expect(createDebateRunnerMock).toHaveBeenCalledTimes(1);
 
-    const [runnerOptions] = createDebateRunnerMock.mock.calls[0] as unknown as [{ stage: string; stageConfig: DebateStageConfig; config: unknown; workdir: string; featureName: string; timeoutSeconds: number; sessionManager: unknown }];
+    const [runnerOptions] = createDebateRunnerMock.mock.calls[0] as unknown as [
+      {
+        stage: string;
+        stageConfig: DebateStageConfig;
+        config: unknown;
+        workdir: string;
+        featureName: string;
+        timeoutSeconds: number;
+        sessionManager: unknown;
+      },
+    ];
     expect(runnerOptions.stage).toBe("plan");
     expect(runnerOptions.stageConfig).toEqual({
       enabled: true,
@@ -184,7 +203,11 @@ describe("DebatePlanStrategy", () => {
     expect(runnerOptions.sessionManager).toBe(ctx.runtime.sessionManager);
 
     expect(runPlanMock).toHaveBeenCalledTimes(1);
-    const [taskContext, outputFormat, runOpts] = runPlanMock.mock.calls[0] as unknown as [string, string, Record<string, unknown>];
+    const [taskContext, outputFormat, runOpts] = runPlanMock.mock.calls[0] as unknown as [
+      string,
+      string,
+      Record<string, unknown>,
+    ];
     expect(taskContext).toBe("TASK_CONTEXT");
     expect(outputFormat).toBe("OUTPUT_FORMAT");
     expect(runOpts).toEqual({
@@ -221,7 +244,11 @@ describe("DebatePlanStrategy", () => {
 
       expect(result.outputPath).toBe(ctx.outputPath);
       expect(callOpSpy).toHaveBeenCalledTimes(1);
-      const [callCtx, op, input] = callOpSpy.mock.calls[0] as [Record<string, unknown>, unknown, Record<string, unknown>];
+      const [callCtx, op, input] = callOpSpy.mock.calls[0] as [
+        Record<string, unknown>,
+        unknown,
+        Record<string, unknown>,
+      ];
       expect(op).toBe(planInteractiveOp);
       expect(callCtx.runtime).toBe(ctx.runtime);
       expect(callCtx.packageDir).toBe(ctx.workdir);

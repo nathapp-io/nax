@@ -60,11 +60,7 @@ function makeCtx(overrides: Partial<SelectorContext> = {}): SelectorContext {
 describe("majorityFailClosedSelector", () => {
   test("returns outcome 'passed' when strict majority pass", async () => {
     const ctx = makeCtx({
-      proposals: makeProposals([
-        '{"passed": true}',
-        '{"passed": true}',
-        '{"passed": false}',
-      ]),
+      proposals: makeProposals(['{"passed": true}', '{"passed": true}', '{"passed": false}']),
     });
     const result = await majorityFailClosedSelector(ctx);
     expect(result.outcome).toBe("passed");
@@ -72,10 +68,7 @@ describe("majorityFailClosedSelector", () => {
 
   test("returns outcome 'failed' on tie (fail-closed)", async () => {
     const ctx = makeCtx({
-      proposals: makeProposals([
-        '{"passed": true}',
-        '{"passed": false}',
-      ]),
+      proposals: makeProposals(['{"passed": true}', '{"passed": false}']),
     });
     const result = await majorityFailClosedSelector(ctx);
     expect(result.outcome).toBe("failed");
@@ -101,10 +94,7 @@ describe("majorityFailClosedSelector", () => {
 describe("majorityFailOpenSelector", () => {
   test("returns outcome 'passed' on tie (fail-open)", async () => {
     const ctx = makeCtx({
-      proposals: makeProposals([
-        '{"passed": true}',
-        '{"passed": false}',
-      ]),
+      proposals: makeProposals(['{"passed": true}', '{"passed": false}']),
     });
     const result = await majorityFailOpenSelector(ctx);
     expect(result.outcome).toBe("passed");

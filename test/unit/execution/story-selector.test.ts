@@ -4,13 +4,13 @@
  * Tests selectIndependentBatch() and groupStoriesByDependencies() functions
  */
 
-import { describe, test, expect } from "bun:test";
-import { selectIndependentBatch, groupStoriesByDependencies, selectNextStories } from "@/execution/story-selector";
-import type { UserStory } from "@/prd/types";
-import type { StoryBatch } from "@/execution/batching";
-import { markStoryFailed, markStoryPassed } from "@/prd";
-import { makePRD, makeStory } from "@test/helpers";
+import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
+import type { StoryBatch } from "@/execution/batching";
+import { groupStoriesByDependencies, selectIndependentBatch, selectNextStories } from "@/execution/story-selector";
+import { markStoryFailed, markStoryPassed } from "@/prd";
+import type { UserStory } from "@/prd/types";
+import { makePRD, makeStory } from "@test/helpers";
 
 /**
  * Helper to create a minimal UserStory for testing
@@ -162,11 +162,7 @@ describe("selectIndependentBatch", () => {
 
 describe("groupStoriesByDependencies", () => {
   test("returns single batch for stories with no dependencies", () => {
-    const stories = [
-      createStory("US-001", []),
-      createStory("US-002", []),
-      createStory("US-003", []),
-    ];
+    const stories = [createStory("US-001", []), createStory("US-002", []), createStory("US-003", [])];
 
     const batches = groupStoriesByDependencies(stories);
     expect(batches).toHaveLength(1);
@@ -174,11 +170,7 @@ describe("groupStoriesByDependencies", () => {
   });
 
   test("groups stories into dependency-ordered batches", () => {
-    const stories = [
-      createStory("US-001", []),
-      createStory("US-002", ["US-001"]),
-      createStory("US-003", ["US-002"]),
-    ];
+    const stories = [createStory("US-001", []), createStory("US-002", ["US-001"]), createStory("US-003", ["US-002"])];
 
     const batches = groupStoriesByDependencies(stories);
     expect(batches).toHaveLength(3);
@@ -188,11 +180,7 @@ describe("groupStoriesByDependencies", () => {
   });
 
   test("groups parallel-ready stories in same batch", () => {
-    const stories = [
-      createStory("US-001", []),
-      createStory("US-002", ["US-001"]),
-      createStory("US-003", ["US-001"]),
-    ];
+    const stories = [createStory("US-001", []), createStory("US-002", ["US-001"]), createStory("US-003", ["US-001"])];
 
     const batches = groupStoriesByDependencies(stories);
     expect(batches).toHaveLength(2);
@@ -208,19 +196,13 @@ describe("groupStoriesByDependencies", () => {
   });
 
   test("throws error on circular dependency", () => {
-    const stories = [
-      createStory("US-001", ["US-002"]),
-      createStory("US-002", ["US-001"]),
-    ];
+    const stories = [createStory("US-001", ["US-002"]), createStory("US-002", ["US-001"])];
 
     expect(() => groupStoriesByDependencies(stories)).toThrow("Circular dependency or missing dependency detected");
   });
 
   test("handles external dependencies (dependencies not in story list)", () => {
-    const stories = [
-      createStory("US-001", ["EXTERNAL-DEP"]),
-      createStory("US-002", ["US-001"]),
-    ];
+    const stories = [createStory("US-001", ["EXTERNAL-DEP"]), createStory("US-002", ["US-001"])];
 
     const batches = groupStoriesByDependencies(stories);
     expect(batches).toHaveLength(2);

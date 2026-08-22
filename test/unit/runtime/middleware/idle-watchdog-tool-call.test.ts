@@ -38,12 +38,14 @@ async function emitToolCallUpdatesForDuration(
 
 type ActivityKind = "message_update" | "thinking_update" | "usage_update" | "tool_call_update";
 
-function makeWatchdogConfig(overrides: {
-  mode?: "off" | "observe" | "warn-then-cancel" | "cancel";
-  idleTimeoutSeconds?: number;
-  toolCallOnlyIdleTimeoutSeconds?: number;
-  activityKinds?: ActivityKind[];
-} = {}) {
+function makeWatchdogConfig(
+  overrides: {
+    mode?: "off" | "observe" | "warn-then-cancel" | "cancel";
+    idleTimeoutSeconds?: number;
+    toolCallOnlyIdleTimeoutSeconds?: number;
+    activityKinds?: ActivityKind[];
+  } = {},
+) {
   return makeNaxConfig({
     agent: {
       idleWatchdog: {

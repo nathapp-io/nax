@@ -16,8 +16,6 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
-import type { ForgeDeps } from "@/forge";
-import type { CallContext } from "@/operations";
 import {
   _acceptanceGateDeps,
   _finishGitDeps,
@@ -30,6 +28,8 @@ import {
   runFinishMachine,
 } from "@/finish";
 import type { FinishContext, FinishMachineDeps, FinishState } from "@/finish";
+import type { ForgeDeps } from "@/forge";
+import type { CallContext } from "@/operations";
 import { withTempDir } from "@test/helpers";
 
 const PR_URL = "https://forge.example/pr/1";

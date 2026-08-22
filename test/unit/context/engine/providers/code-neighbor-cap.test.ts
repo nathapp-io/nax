@@ -5,7 +5,7 @@
  * All filesystem I/O is intercepted via _codeNeighborDeps injection.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { CodeNeighborProvider, _codeNeighborDeps } from "@/context/engine/providers/code-neighbor";
 import type { ContextRequest } from "@/context/engine/types";
 import { extractTestDirs, globsToPathspec, globsToTestRegex } from "@/test-runners/conventions";
@@ -83,8 +83,12 @@ function spyGlob() {
     return { files: [], truncated: false };
   };
   return {
-    get pattern() { return capturedPattern; },
-    get cap() { return capturedCap; },
+    get pattern() {
+      return capturedPattern;
+    },
+    get cap() {
+      return capturedCap;
+    },
   };
 }
 
@@ -116,7 +120,10 @@ describe("CodeNeighborProvider — language-aware glob and cap (#895)", () => {
 
   test("respects sourceGlob override — does not call detectLanguage", async () => {
     let detectCalled = false;
-    _codeNeighborDeps.detectLanguage = async () => { detectCalled = true; return "typescript"; };
+    _codeNeighborDeps.detectLanguage = async () => {
+      detectCalled = true;
+      return "typescript";
+    };
     const spy = spyGlob();
     await new CodeNeighborProvider({ sourceGlob: "lib/**/*.ts" }).fetch(makeRequest({ touchedFiles: ["src/a.ts"] }));
     expect(detectCalled).toBe(false);

@@ -9,13 +9,13 @@
  * - AC6: onBlocker policy behavior
  */
 
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { planChecklistVerifier, _planChecklistDeps, resolvePostDebateVerifier } from "@/debate";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { _planChecklistDeps, planChecklistVerifier, resolvePostDebateVerifier } from "@/debate";
 import type { PostDebateVerifierContext } from "@/debate";
+import type { FactsManifest } from "@/debate/facts-manifest";
 import type { SelectorResult } from "@/debate/selectors/types";
 import type { DebateStageConfig } from "@/debate/types";
 import type { CallContext } from "@/operations/types";
-import type { FactsManifest } from "@/debate/facts-manifest";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -66,8 +66,7 @@ const makeVerifierContext = (overrides: Partial<PostDebateVerifierContext> = {})
   ...overrides,
 });
 
-const EXPECTED_ARTIFACT_PATH =
-  "/test/workdir/.nax/runs/test-run-001/plan/US-001/spec-deltas.md";
+const EXPECTED_ARTIFACT_PATH = "/test/workdir/.nax/runs/test-run-001/plan/US-001/spec-deltas.md";
 
 // ---------------------------------------------------------------------------
 // Dep mocking
@@ -119,7 +118,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-                output: "not valid json at all",
+          output: "not valid json at all",
         } as SelectorResult,
       });
       const result = await planChecklistVerifier(ctx);
@@ -130,7 +129,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-                output: JSON.stringify({ notAPrd: true }),
+          output: JSON.stringify({ notAPrd: true }),
         } as SelectorResult,
       });
       const result = await planChecklistVerifier(ctx);
@@ -141,7 +140,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-                output: JSON.stringify({ project: "test", feature: "test" }),
+          output: JSON.stringify({ project: "test", feature: "test" }),
         } as SelectorResult,
       });
       const result = await planChecklistVerifier(ctx);
@@ -157,17 +156,13 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-                    output: makeValidPRDJson([
-              makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
-            ]),
+            output: makeValidPRDJson([makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] })]),
           } as SelectorResult,
         });
 
         const result = await planChecklistVerifier(ctx);
         const findings = result.findings as Array<Record<string, unknown>>;
-        const filesExist = findings?.filter(
-          (f) => f.checklistItem === "files-exist" && f.severity === "blocker",
-        );
+        const filesExist = findings?.filter((f) => f.checklistItem === "files-exist" && f.severity === "blocker");
         expect(filesExist?.length).toBeGreaterThan(0);
         expect(filesExist?.[0].path).toBe("src/missing.ts");
       });
@@ -178,7 +173,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-                    output: makeValidPRDJson([
+            output: makeValidPRDJson([
               makeValidStory({
                 contextFiles: [{ path: "src/exists.ts" }],
                 verifiedBy: { kind: "test", anchor: "test-anchor", factIds: [] },
@@ -199,15 +194,13 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-                    output: makeValidPRDJson([makeValidStory()]), // no verifiedBy, no intent
+            output: makeValidPRDJson([makeValidStory()]), // no verifiedBy, no intent
           } as SelectorResult,
         });
 
         const result = await planChecklistVerifier(ctx);
         const findings = result.findings as Array<Record<string, unknown>>;
-        const acAnchored = findings?.filter(
-          (f) => f.checklistItem === "ac-anchored" && f.severity === "major",
-        );
+        const acAnchored = findings?.filter((f) => f.checklistItem === "ac-anchored" && f.severity === "major");
         expect(acAnchored?.length).toBeGreaterThan(0);
       });
 
@@ -215,7 +208,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-                    output: makeValidPRDJson([
+            output: makeValidPRDJson([
               makeValidStory({ verifiedBy: { kind: "test", anchor: "test-name", factIds: [] } }),
             ]),
           } as SelectorResult,
@@ -231,7 +224,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-                    output: makeValidPRDJson([makeValidStory({ intent: true })]),
+            output: makeValidPRDJson([makeValidStory({ intent: true })]),
           } as SelectorResult,
         });
 
@@ -267,17 +260,13 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-                    output: makeValidPRDJson([
-              makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } }),
-            ]),
+            output: makeValidPRDJson([makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } })]),
           } as SelectorResult,
         });
 
         const result = await planChecklistVerifier(ctx);
         const findings = result.findings as Array<Record<string, unknown>>;
-        const claimsCited = findings?.filter(
-          (f) => f.checklistItem === "claims-cited" && f.severity === "major",
-        );
+        const claimsCited = findings?.filter((f) => f.checklistItem === "claims-cited" && f.severity === "major");
         expect(claimsCited?.length).toBeGreaterThan(0);
       });
 
@@ -305,9 +294,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-                    output: makeValidPRDJson([
-              makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } }),
-            ]),
+            output: makeValidPRDJson([makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } })]),
           } as SelectorResult,
         });
 
@@ -336,7 +323,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-                    output: makeValidPRDJson([
+            output: makeValidPRDJson([
               makeValidStory({
                 contextFiles: [{ path: "src/file.ts", factId: "S-001" }],
                 verifiedBy: { kind: "test", anchor: "t", factIds: [] },
@@ -371,9 +358,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-                    output: makeValidPRDJson([
-              makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } }),
-            ]),
+            output: makeValidPRDJson([makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } })]),
           } as SelectorResult,
         });
 
@@ -402,9 +387,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-                    output: makeValidPRDJson([
-              makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } }),
-            ]),
+            output: makeValidPRDJson([makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } })]),
           } as SelectorResult,
         });
 
@@ -433,17 +416,13 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-                    output: makeValidPRDJson([
-              makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } }),
-            ]),
+            output: makeValidPRDJson([makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } })]),
           } as SelectorResult,
         });
 
         const result = await planChecklistVerifier(ctx);
         const findings = result.findings as Array<Record<string, unknown>>;
-        const coverage = findings?.filter(
-          (f) => f.checklistItem === "spec-coverage" && f.specId === "S-001",
-        );
+        const coverage = findings?.filter((f) => f.checklistItem === "spec-coverage" && f.specId === "S-001");
         expect(coverage?.length ?? 0).toBe(0);
       });
     });
@@ -454,9 +433,7 @@ describe("planChecklistVerifier (US-004)", () => {
       existsSyncImpl = () => false; // triggers files-exist blocker
       const blockerSelectorResult = {
         outcome: "passed",
-        output: makeValidPRDJson([
-          makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
-        ]),
+        output: makeValidPRDJson([makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] })]),
       } as SelectorResult;
 
       // Sub-scenario 1: explicit onBlocker: "block"
@@ -493,9 +470,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-                output: makeValidPRDJson([
-            makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } }),
-          ]),
+          output: makeValidPRDJson([makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } })]),
         } as SelectorResult,
       });
 
@@ -511,9 +486,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const blockerCtx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-                output: makeValidPRDJson([
-            makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
-          ]),
+          output: makeValidPRDJson([makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] })]),
         } as SelectorResult,
       });
       const result1 = await planChecklistVerifier(blockerCtx);
@@ -527,9 +500,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const noBlockerCtx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-                output: makeValidPRDJson([
-            makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } }),
-          ]),
+          output: makeValidPRDJson([makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } })]),
         } as SelectorResult,
       });
       await planChecklistVerifier(noBlockerCtx);
@@ -544,9 +515,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-                output: makeValidPRDJson([
-            makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
-          ]),
+          output: makeValidPRDJson([makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] })]),
         } as SelectorResult,
         stageConfig: {
           enabled: true,

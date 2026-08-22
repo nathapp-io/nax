@@ -66,9 +66,7 @@ describe("Pass 1: mapSourceToTests (path convention)", () => {
 
   test("never maps a source file to itself with packagePrefix (monorepo)", async () => {
     mockFileExists(["/repo/apps/api/src/stock_api/_agent.py"]);
-    const result = await mapSourceToTests(["apps/api/src/stock_api/_agent.py"], "/repo", "apps/api", [
-      "tests/**/*.py",
-    ]);
+    const result = await mapSourceToTests(["apps/api/src/stock_api/_agent.py"], "/repo", "apps/api", ["tests/**/*.py"]);
     expect(result).toEqual([]);
   });
 
@@ -174,11 +172,7 @@ describe("Pass 2: importGrepFallback", () => {
       "/repo/test/unit/routing.test.ts": `import { route } from "../../../src/routing/strategies/llm";`,
     });
 
-    const result = await importGrepFallback(
-      ["src/routing/strategies/llm.ts"],
-      "/repo",
-      ["test/**/*.test.ts"],
-    );
+    const result = await importGrepFallback(["src/routing/strategies/llm.ts"], "/repo", ["test/**/*.test.ts"]);
 
     expect(result).toEqual(["/repo/test/unit/routing.test.ts"]);
   });
@@ -189,11 +183,7 @@ describe("Pass 2: importGrepFallback", () => {
       "/repo/test/unit/routing.test.ts": `import something from "../../../routing/strategies/llm";`,
     });
 
-    const result = await importGrepFallback(
-      ["src/routing/strategies/llm.ts"],
-      "/repo",
-      ["test/**/*.test.ts"],
-    );
+    const result = await importGrepFallback(["src/routing/strategies/llm.ts"], "/repo", ["test/**/*.test.ts"]);
 
     expect(result).toEqual(["/repo/test/unit/routing.test.ts"]);
   });
@@ -204,11 +194,7 @@ describe("Pass 2: importGrepFallback", () => {
       "/repo/test/unit/other.test.ts": `import { something } from "../../../src/other/module";`,
     });
 
-    const result = await importGrepFallback(
-      ["src/routing/strategies/llm.ts"],
-      "/repo",
-      ["test/**/*.test.ts"],
-    );
+    const result = await importGrepFallback(["src/routing/strategies/llm.ts"], "/repo", ["test/**/*.test.ts"]);
 
     expect(result).toEqual([]);
   });
@@ -220,11 +206,7 @@ describe("Pass 2: importGrepFallback", () => {
       "/repo/test/unit/b.test.ts": `import { fn } from "../../../src/utils/helper";`,
     });
 
-    const result = await importGrepFallback(
-      ["src/utils/helper.ts"],
-      "/repo",
-      ["test/**/*.test.ts"],
-    );
+    const result = await importGrepFallback(["src/utils/helper.ts"], "/repo", ["test/**/*.test.ts"]);
 
     expect(result).toContain("/repo/test/unit/a.test.ts");
     expect(result).toContain("/repo/test/unit/b.test.ts");
@@ -242,11 +224,7 @@ describe("Pass 2: importGrepFallback", () => {
       },
     });
 
-    const result = await importGrepFallback(
-      ["src/utils/helper.ts"],
-      "/repo",
-      ["test/**/*.test.ts"],
-    );
+    const result = await importGrepFallback(["src/utils/helper.ts"], "/repo", ["test/**/*.test.ts"]);
 
     // broken.test.ts is skipped, ok.test.ts matches
     expect(result).toEqual(["/repo/test/unit/ok.test.ts"]);
@@ -259,11 +237,7 @@ describe("Pass 2: importGrepFallback", () => {
       "/repo/test/unit/routing.test.ts": `import { classify } from "../../../src/routing/strategies/llm";`,
     });
 
-    const result = await importGrepFallback(
-      ["src/routing/strategies/llm.ts"],
-      "/repo",
-      ["test/**/*.test.ts"],
-    );
+    const result = await importGrepFallback(["src/routing/strategies/llm.ts"], "/repo", ["test/**/*.test.ts"]);
 
     expect(result).toHaveLength(1);
   });
@@ -295,17 +269,17 @@ describe("Pass 3: full-suite fallback (empty return from both passes)", () => {
       scan(_workdir: string): AsyncIterable<string> {
         return {
           [Symbol.asyncIterator]() {
-            return { async next() { return { value: undefined as unknown as string, done: true }; } };
+            return {
+              async next() {
+                return { value: undefined as unknown as string, done: true };
+              },
+            };
           },
         };
       }
     };
 
-    const result = await importGrepFallback(
-      ["src/foo/bar.ts"],
-      "/repo",
-      ["test/**/*.test.ts"],
-    );
+    const result = await importGrepFallback(["src/foo/bar.ts"], "/repo", ["test/**/*.test.ts"]);
 
     expect(result).toEqual([]);
   });
@@ -319,7 +293,10 @@ describe("Pass 3: full-suite fallback (empty return from both passes)", () => {
           [Symbol.asyncIterator]() {
             return {
               async next() {
-                if (!done) { done = true; return { value: "test/unit/unrelated.test.ts", done: false }; }
+                if (!done) {
+                  done = true;
+                  return { value: "test/unit/unrelated.test.ts", done: false };
+                }
                 return { value: undefined as unknown as string, done: true };
               },
             };
@@ -332,11 +309,7 @@ describe("Pass 3: full-suite fallback (empty return from both passes)", () => {
       text: () => Promise.resolve(`import { x } from "../../../src/completely/different";`),
     });
 
-    const result = await importGrepFallback(
-      ["src/foo/bar.ts"],
-      "/repo",
-      ["test/**/*.test.ts"],
-    );
+    const result = await importGrepFallback(["src/foo/bar.ts"], "/repo", ["test/**/*.test.ts"]);
 
     expect(result).toEqual([]);
   });
@@ -368,17 +341,17 @@ describe("Custom testFilePatterns", () => {
       scan(_workdir: string): AsyncIterable<string> {
         return {
           [Symbol.asyncIterator]() {
-            return { async next() { return { value: undefined as unknown as string, done: true }; } };
+            return {
+              async next() {
+                return { value: undefined as unknown as string, done: true };
+              },
+            };
           },
         };
       }
     };
 
-    await importGrepFallback(
-      ["src/foo/bar.ts"],
-      "/repo",
-      ["test/unit/**/*.spec.ts", "test/integration/**/*.spec.ts"],
-    );
+    await importGrepFallback(["src/foo/bar.ts"], "/repo", ["test/unit/**/*.spec.ts", "test/integration/**/*.spec.ts"]);
 
     expect(capturedPatterns).toContain("test/unit/**/*.spec.ts");
     expect(capturedPatterns).toContain("test/integration/**/*.spec.ts");
@@ -392,17 +365,21 @@ describe("Custom testFilePatterns", () => {
         scanCount++;
         return {
           [Symbol.asyncIterator]() {
-            return { async next() { return { value: undefined as unknown as string, done: true }; } };
+            return {
+              async next() {
+                return { value: undefined as unknown as string, done: true };
+              },
+            };
           },
         };
       }
     };
 
-    await importGrepFallback(
-      ["src/foo/bar.ts"],
-      "/repo",
-      ["test/unit/**/*.test.ts", "test/integration/**/*.test.ts", "test/e2e/**/*.test.ts"],
-    );
+    await importGrepFallback(["src/foo/bar.ts"], "/repo", [
+      "test/unit/**/*.test.ts",
+      "test/integration/**/*.test.ts",
+      "test/e2e/**/*.test.ts",
+    ]);
 
     expect(scanCount).toBe(3);
   });

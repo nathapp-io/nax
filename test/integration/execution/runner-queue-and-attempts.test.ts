@@ -14,7 +14,6 @@ import { resolveMaxAttemptsOutcome } from "@/execution/runner";
 import type { UserStory } from "@/prd";
 import type { FailureCategory } from "@/tdd/types";
 
-
 describe("Queue Commands Before Batch Execution", () => {
   test("SKIP command should filter story from batch before execution", () => {
     // Simulate a batch of 3 simple stories: [US-001, US-002, US-003]
@@ -337,7 +336,6 @@ describe("Queue Commands Before Batch Execution", () => {
     // In actual runner, these would be marked as skipped via markStorySkipped()
   });
 });
-
 
 describe("TDD escalation attempts counting", () => {
   const defaultTiers = [

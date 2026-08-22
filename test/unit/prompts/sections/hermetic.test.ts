@@ -80,18 +80,17 @@ describe("buildHermeticSection", () => {
     });
 
     test("TypeScript, undefined profile, and unsupported language all fall back to injectable deps", () => {
-      expect(buildHermeticSection("test-writer", undefined, undefined, { language: "typescript" })).toContain("injectable deps");
+      expect(buildHermeticSection("test-writer", undefined, undefined, { language: "typescript" })).toContain(
+        "injectable deps",
+      );
       expect(buildHermeticSection("test-writer", undefined, undefined, undefined)).toContain("injectable deps");
-      expect(buildHermeticSection("test-writer", undefined, undefined, { language: "ruby" as any })).toContain("injectable deps");
+      expect(buildHermeticSection("test-writer", undefined, undefined, { language: "ruby" as any })).toContain(
+        "injectable deps",
+      );
     });
 
     test("explicit mockGuidance overrides language-derived guidance", () => {
-      const result = buildHermeticSection(
-        "test-writer",
-        undefined,
-        "Use ioredis-mock",
-        { language: "go" }
-      );
+      const result = buildHermeticSection("test-writer", undefined, "Use ioredis-mock", { language: "go" });
       expect(result).toContain("Use ioredis-mock");
       expect(result).not.toContain("Define interfaces for external dependencies");
     });
@@ -102,12 +101,7 @@ describe("buildHermeticSection", () => {
     });
 
     test("language-aware guidance combines with externalBoundaries", () => {
-      const result = buildHermeticSection(
-        "test-writer",
-        ["redis", "claude"],
-        undefined,
-        { language: "go" }
-      );
+      const result = buildHermeticSection("test-writer", ["redis", "claude"], undefined, { language: "go" });
       expect(result).toContain("Define interfaces for external dependencies");
       expect(result).toContain("`redis`");
       expect(result).toContain("`claude`");
@@ -116,11 +110,7 @@ describe("buildHermeticSection", () => {
 
   describe("combined fields", () => {
     test("includes both boundaries and guidance when both provided", () => {
-      const result = buildHermeticSection(
-        "test-writer",
-        ["claude", "redis"],
-        "Use ioredis-mock for Redis",
-      );
+      const result = buildHermeticSection("test-writer", ["claude", "redis"], "Use ioredis-mock for Redis");
       expect(result).toContain("`claude`");
       expect(result).toContain("`redis`");
       expect(result).toContain("ioredis-mock");
@@ -140,10 +130,7 @@ describe("PromptBuilder hermetic integration", () => {
   });
 
   test("hermetic section injected when hermeticConfig has hermetic=true", async () => {
-    const prompt = await PromptBuilder.for("tdd-simple")
-      .story(makeStory())
-      .hermeticConfig({ hermetic: true })
-      .build();
+    const prompt = await PromptBuilder.for("tdd-simple").story(makeStory()).hermeticConfig({ hermetic: true }).build();
     expect(prompt).toContain("# Hermetic Test Requirement");
   });
 
@@ -154,9 +141,7 @@ describe("PromptBuilder hermetic integration", () => {
       .build();
     expect(promptFalse).not.toContain("# Hermetic Test Requirement");
 
-    const promptNone = await PromptBuilder.for("tdd-simple")
-      .story(makeStory())
-      .build();
+    const promptNone = await PromptBuilder.for("tdd-simple").story(makeStory()).build();
     expect(promptNone).not.toContain("# Hermetic Test Requirement");
 
     const promptVerifier = await PromptBuilder.for("verifier")
@@ -181,10 +166,7 @@ describe("PromptBuilder hermetic integration", () => {
   });
 
   test("hermetic section appears after isolation rules", async () => {
-    const prompt = await PromptBuilder.for("tdd-simple")
-      .story(makeStory())
-      .hermeticConfig({ hermetic: true })
-      .build();
+    const prompt = await PromptBuilder.for("tdd-simple").story(makeStory()).hermeticConfig({ hermetic: true }).build();
     const isolationIdx = prompt.indexOf("# Isolation Rules");
     const hermeticIdx = prompt.indexOf("# Hermetic Test Requirement");
     expect(isolationIdx).toBeGreaterThanOrEqual(0);

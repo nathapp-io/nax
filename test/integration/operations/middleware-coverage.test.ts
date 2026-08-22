@@ -17,12 +17,12 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { AgentManager } from "@/agents/manager";
 import type { SessionHandle, TurnResult } from "@/agents/types";
-import { DEFAULT_CONFIG, pickSelector } from "@/config";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import { callOp } from "@/operations/call";
 import type { RunOperation } from "@/operations/types";
+import type { NaxRuntime } from "@/runtime";
 import type { SessionTurnDispatchEvent } from "@/runtime/dispatch-events";
 import { makeNaxConfig, makeSessionManager, makeTestRuntime } from "@test/helpers";
-import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -58,12 +58,14 @@ describe("callOp dispatch coverage (ADR-018 Wave 2 + ADR-019 §5, migrated by AD
 
     const sessionManager = makeSessionManager({
       openSession: mock(async () => ({ id: "test-handle", agentName: "claude" }) as SessionHandle),
-      sendPrompt: mock(async (_handle: SessionHandle, prompt: string): Promise<TurnResult> => ({
-        output: `runOp says: ${prompt}`,
-        tokenUsage: { inputTokens: 10, outputTokens: 5 },
-        internalRoundTrips: 1,
-        estimatedCostUsd: 0.001,
-      })),
+      sendPrompt: mock(
+        async (_handle: SessionHandle, prompt: string): Promise<TurnResult> => ({
+          output: `runOp says: ${prompt}`,
+          tokenUsage: { inputTokens: 10, outputTokens: 5 },
+          internalRoundTrips: 1,
+          estimatedCostUsd: 0.001,
+        }),
+      ),
     });
 
     const runtime = makeTestRuntime({ agentManager: realManager, sessionManager });
@@ -101,12 +103,14 @@ describe("callOp dispatch coverage (ADR-018 Wave 2 + ADR-019 §5, migrated by AD
 
     const sessionManager = makeSessionManager({
       openSession: mock(async () => ({ id: "test-handle", agentName: "claude" }) as SessionHandle),
-      sendPrompt: mock(async (_handle: SessionHandle, prompt: string): Promise<TurnResult> => ({
-        output: `noFallback says: ${prompt}`,
-        tokenUsage: { inputTokens: 5, outputTokens: 5 },
-        internalRoundTrips: 1,
-        estimatedCostUsd: 0.0005,
-      })),
+      sendPrompt: mock(
+        async (_handle: SessionHandle, prompt: string): Promise<TurnResult> => ({
+          output: `noFallback says: ${prompt}`,
+          tokenUsage: { inputTokens: 5, outputTokens: 5 },
+          internalRoundTrips: 1,
+          estimatedCostUsd: 0.0005,
+        }),
+      ),
     });
 
     const runtime = makeTestRuntime({ agentManager: realManager, sessionManager });

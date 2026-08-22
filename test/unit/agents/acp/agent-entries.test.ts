@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { AcpAgentAdapter, ACP_ADAPTER_NAMES } from "@/agents/acp";
 import { KNOWN_AGENT_NAMES } from "@/agents";
+import { ACP_ADAPTER_NAMES, AcpAgentAdapter } from "@/agents/acp";
 
 describe("ACP agent entries", () => {
   test("every adapter entry is also a known agent name", () => {
@@ -24,10 +24,6 @@ describe("ACP agent entries", () => {
   });
 
   test("pi advertises all three model tiers so tier routing can select a model", () => {
-    expect([...new AcpAgentAdapter("pi").capabilities.supportedTiers].sort()).toEqual([
-      "balanced",
-      "fast",
-      "powerful",
-    ]);
+    expect([...new AcpAgentAdapter("pi").capabilities.supportedTiers].sort()).toEqual(["balanced", "fast", "powerful"]);
   });
 });

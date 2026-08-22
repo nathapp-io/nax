@@ -21,7 +21,9 @@ describe("captureSnapshotRef", () => {
 
   test("commits dirty state then returns HEAD sha plus the untracked-paths snapshot (BUG-07)", async () => {
     const calls: string[][] = [];
-    _rollbackDeps.autoCommitIfDirty = async () => { calls.push(["autoCommitIfDirty"]); };
+    _rollbackDeps.autoCommitIfDirty = async () => {
+      calls.push(["autoCommitIfDirty"]);
+    };
     _rollbackDeps.spawn = ((args: string[]) => {
       calls.push(args);
       return { stdout: new Response("cafebabecafebabecafebabecafebabecafebabe\n").body, exited: Promise.resolve(0) };

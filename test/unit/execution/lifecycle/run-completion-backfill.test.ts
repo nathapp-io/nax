@@ -22,7 +22,7 @@ import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regress
 import type { StoryMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD } from "@/prd";
-import { makeNaxConfig, makeMockRuntime, makePRD as makePRDHelper, makeStory } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig, makePRD as makePRDHelper, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

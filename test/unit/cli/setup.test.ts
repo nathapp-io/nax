@@ -6,13 +6,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _setupDeps, setupCommand } from "@/cli/setup";
 import { setupCommand as barrelSetupCommand } from "@/cli";
-import { DEFAULT_CONFIG, NaxConfigSchema } from "@/config";
-import { NaxError } from "@/errors";
+import { _setupDeps, setupCommand } from "@/cli/setup";
 import type { RepoAnalysis } from "@/cli/setup-types";
-import type { SetupPlan } from "@/operations/setup-generate";
+import { DEFAULT_CONFIG, NaxConfigSchema } from "@/config";
 import type { NaxConfig } from "@/config";
+import { NaxError } from "@/errors";
+import type { SetupPlan } from "@/operations/setup-generate";
 import type { MonoPackageConfig } from "@/operations/setup-generate";
 import { withTempDir } from "@test/helpers";
 
@@ -254,8 +254,9 @@ describe("setupCommand — AC5: exits 1 when generateSetupPlan rejects with SETU
 
 describe("setupCommand — AC6: collision refusal without --force", () => {
   test("AC6: exits non-zero when .nax/config.json exists and force is not set", async () => {
-    _setupDeps.fileExists = mock(async (path: string) =>
-      path.endsWith(".nax/config.json") || path.includes(".nax") && path.endsWith("config.json"),
+    _setupDeps.fileExists = mock(
+      async (path: string) =>
+        path.endsWith(".nax/config.json") || (path.includes(".nax") && path.endsWith("config.json")),
     );
 
     await withTempDir(async (dir) => {
@@ -354,9 +355,7 @@ describe("setupCommand — AC8: gap warnings emitted on stderr, exits 0", () => 
 
     await withTempDir(async (dir) => {
       await runSetup({ dir });
-      const gapMessages = stderrMessages.filter((m) =>
-        planWithGaps.gaps.some((g) => m.includes(g)),
-      );
+      const gapMessages = stderrMessages.filter((m) => planWithGaps.gaps.some((g) => m.includes(g)));
       expect(gapMessages.length).toBeGreaterThanOrEqual(3);
     });
   });

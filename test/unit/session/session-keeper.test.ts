@@ -6,14 +6,14 @@
  * transport-retry → bindHandle pattern used in rectification loops.
  */
 
-import { describe, test, expect, mock } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
+import type { RetryDecision, RetryStrategy } from "@/agents/retry";
 import type { SessionHandle, TurnResult } from "@/agents/types";
 import { SessionTurnError } from "@/agents/types";
 import type { ModelDef } from "@/config/schema";
-import type { RetryStrategy, RetryDecision } from "@/agents/retry";
-import { makeSessionManager, makeMockAgentManager } from "@test/helpers";
 import { SessionKeeper } from "@/session/session-keeper";
 import type { SessionKeeperOptions } from "@/session/session-keeper";
+import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 function makeOpts(overrides: Partial<SessionKeeperOptions> = {}): SessionKeeperOptions {
   return {
@@ -370,19 +370,19 @@ describe("SessionKeeper.bindProtocolIds()", () => {
         protocolIds,
       });
 
-      let bindHandleCalledWith: {
-        id: string;
-        name: string;
-        protocolIds: { recordId: string | null; sessionId: string | null };
-      } | undefined;
+      let bindHandleCalledWith:
+        | {
+            id: string;
+            name: string;
+            protocolIds: { recordId: string | null; sessionId: string | null };
+          }
+        | undefined;
 
       const sessionManager = makeSessionManager({
-        bindHandle: mock(
-          (id: string, name: string, pids: { recordId: string | null; sessionId: string | null }) => {
-            bindHandleCalledWith = { id, name, protocolIds: pids };
-            return { id, state: "RUNNING" } as any;
-          },
-        ),
+        bindHandle: mock((id: string, name: string, pids: { recordId: string | null; sessionId: string | null }) => {
+          bindHandleCalledWith = { id, name, protocolIds: pids };
+          return { id, state: "RUNNING" } as any;
+        }),
         getLiveHandle: mock(() => heldHandle),
         openSession: mock(async () => heldHandle),
         closeSession: mock(async () => {}),
@@ -473,4 +473,3 @@ describe("SessionKeeper.close()", () => {
     });
   });
 });
-

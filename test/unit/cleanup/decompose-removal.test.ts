@@ -67,15 +67,13 @@ describe("AC2-AC3: src/pipeline/stages/routing.ts — decompose references remov
     expect(content).not.toContain("from '../../decompose/");
   });
 
-  test.each([
-    ["runDecompose"],
-    ["applyDecomposition"],
-    ["checkStoryOversized"],
-    ["decomposeConfig"],
-  ])("does not contain %s reference", async (needle) => {
-    const content = await fileContent(ROUTING);
-    expect(content).not.toContain(needle);
-  });
+  test.each([["runDecompose"], ["applyDecomposition"], ["checkStoryOversized"], ["decomposeConfig"]])(
+    "does not contain %s reference",
+    async (needle) => {
+      const content = await fileContent(ROUTING);
+      expect(content).not.toContain(needle);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -137,10 +135,7 @@ describe("AC7: src/pipeline/subscribers/hooks.ts — story:decomposed handler re
 // ---------------------------------------------------------------------------
 
 describe("AC8: src/interaction/triggers.ts — checkStoryOversized removed", () => {
-  test.each([
-    ["checkStoryOversized"],
-    ["story-oversized"],
-  ])("does not contain %s", async (needle) => {
+  test.each([["checkStoryOversized"], ["story-oversized"]])("does not contain %s", async (needle) => {
     const content = await fileContent("src/interaction/triggers.ts");
     expect(content).not.toContain(needle);
   });

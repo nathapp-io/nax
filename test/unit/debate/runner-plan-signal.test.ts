@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeNaxConfig } from "@test/helpers";
-import * as callModule from "@/operations";
 import { _debateSessionDeps } from "@/debate";
 import { runPlan } from "@/debate/runner-plan";
+import * as callModule from "@/operations";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeSessionManager } from "@test/helpers";
 
 interface PlanCallInput {
   readonly debater?: { readonly agent: string; readonly model?: string };
@@ -73,7 +73,7 @@ beforeEach(() => {
     warn: mock(() => {}),
     error: mock(() => {}),
   }));
-  _debateSessionDeps.readFile = mock(async () => "{\"passed\":true}");
+  _debateSessionDeps.readFile = mock(async () => '{"passed":true}');
 });
 
 afterEach(() => {
@@ -170,8 +170,8 @@ describe("runPlan coordinator", () => {
       selector: undefined,
     };
 
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: any) =>
-      ({ success: true, rebut: `rebut-1-${input.index}` }) as never,
+    spyOn(callModule, "callOp").mockImplementation(
+      async (_callCtx, _op, input: any) => ({ success: true, rebut: `rebut-1-${input.index}` }) as never,
     );
 
     const result = await runPlan(ctx, "task context", "output format", {

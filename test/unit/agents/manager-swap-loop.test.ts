@@ -4,7 +4,12 @@ import type { HopKind } from "@/agents";
 import type { ContextBundle } from "@/context/engine";
 import { makeNaxConfig } from "@test/helpers";
 
-const availFailure = { category: "availability" as const, outcome: "fail-auth" as const, retriable: false, message: "" };
+const availFailure = {
+  category: "availability" as const,
+  outcome: "fail-auth" as const,
+  retriable: false,
+  message: "",
+};
 const mockBundle = {} as ContextBundle;
 
 function makeConfig(map: Record<string, string[]> = { claude: ["codex"] }) {
@@ -26,24 +31,25 @@ function makeConfig(map: Record<string, string[]> = { claude: ["codex"] }) {
 function makeRunHop(results: Record<string, boolean>) {
   return async (name: string) => ({
     prompt: `prompt-${name}`,
-    result: (results[name] ?? false)
-      ? {
-          success: true,
-          exitCode: 0,
-          output: "ok",
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCostUsd: 0,
-        }
-      : {
-          success: false,
-          exitCode: 1,
-          output: "auth failure",
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCostUsd: 0,
-          adapterFailure: availFailure,
-        },
+    result:
+      (results[name] ?? false)
+        ? {
+            success: true,
+            exitCode: 0,
+            output: "ok",
+            rateLimited: false,
+            durationMs: 1,
+            estimatedCostUsd: 0,
+          }
+        : {
+            success: false,
+            exitCode: 1,
+            output: "auth failure",
+            rateLimited: false,
+            durationMs: 1,
+            estimatedCostUsd: 0,
+            adapterFailure: availFailure,
+          },
   });
 }
 
@@ -177,7 +183,9 @@ describe("AgentManager.runWithFallback — rate-limit backoff (no swap candidate
 
   test("backs off with exponential delay on rate-limit when no swap candidate", async () => {
     const sleepCalls: number[] = [];
-    _agentManagerDeps.sleep = mock(async (ms: number) => { sleepCalls.push(ms); });
+    _agentManagerDeps.sleep = mock(async (ms: number) => {
+      sleepCalls.push(ms);
+    });
 
     let attempts = 0;
     const rateLimitFailure = {
@@ -187,7 +195,11 @@ describe("AgentManager.runWithFallback — rate-limit backoff (no swap candidate
       message: "",
     };
     // No fallback map — swap is never attempted, backoff kicks in
-    const config = makeNaxConfig({ agent: { fallback: { enabled: false, map: {}, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: false } } });
+    const config = makeNaxConfig({
+      agent: {
+        fallback: { enabled: false, map: {}, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: false },
+      },
+    });
     const m = new AgentManager(config, undefined, {
       runHop: async () => {
         attempts++;
@@ -243,7 +255,15 @@ describe("AgentManager.runWithFallback — fail-stale retry", () => {
           prompt: `prompt-${attempts}`,
           result:
             attempts === 1
-              ? { success: false, exitCode: 1, output: "stale", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, adapterFailure: staleFailure }
+              ? {
+                  success: false,
+                  exitCode: 1,
+                  output: "stale",
+                  rateLimited: false,
+                  durationMs: 1,
+                  estimatedCostUsd: 0,
+                  adapterFailure: staleFailure,
+                }
               : { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 1, estimatedCostUsd: 0 },
         };
       },
@@ -268,10 +288,21 @@ describe("AgentManager.runWithFallback — fail-stale retry", () => {
         if (agent === "claude") {
           return {
             prompt: `prompt-${attempts}`,
-            result: { success: false, exitCode: 1, output: "stale", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, adapterFailure: staleFailure },
+            result: {
+              success: false,
+              exitCode: 1,
+              output: "stale",
+              rateLimited: false,
+              durationMs: 1,
+              estimatedCostUsd: 0,
+              adapterFailure: staleFailure,
+            },
           };
         }
-        return { prompt: `prompt-${attempts}`, result: { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 1, estimatedCostUsd: 0 } };
+        return {
+          prompt: `prompt-${attempts}`,
+          result: { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 1, estimatedCostUsd: 0 },
+        };
       },
     });
 
@@ -286,17 +317,29 @@ describe("AgentManager.runWithFallback — fail-stale retry", () => {
   test("fail-stale with no fallback agent returns terminal failure without backoff sleep", async () => {
     const origSleep = _agentManagerDeps.sleep;
     const sleepCalls: number[] = [];
-    _agentManagerDeps.sleep = async (ms: number) => { sleepCalls.push(ms); };
+    _agentManagerDeps.sleep = async (ms: number) => {
+      sleepCalls.push(ms);
+    };
 
     try {
       // No fallback map — only claude
       const noFallbackConfig = makeNaxConfig({
-        agent: { fallback: { enabled: false, map: {}, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: false } },
+        agent: {
+          fallback: { enabled: false, map: {}, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: false },
+        },
       });
       const m = new AgentManager(noFallbackConfig, undefined, {
         runHop: async () => ({
           prompt: "prompt",
-          result: { success: false, exitCode: 1, output: "stale", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, adapterFailure: staleFailure },
+          result: {
+            success: false,
+            exitCode: 1,
+            output: "stale",
+            rateLimited: false,
+            durationMs: 1,
+            estimatedCostUsd: 0,
+            adapterFailure: staleFailure,
+          },
         }),
       });
 

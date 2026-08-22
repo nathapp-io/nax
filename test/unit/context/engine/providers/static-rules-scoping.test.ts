@@ -10,8 +10,8 @@
  * test-architecture.md — static-rules.test.ts is at 783/800 lines.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { StaticRulesProvider, _staticRulesDeps, ContextOrchestrator } from "@/context/engine";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { ContextOrchestrator, StaticRulesProvider, _staticRulesDeps } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
 
@@ -234,9 +234,7 @@ describe("StaticRulesProvider — zero-rule exits", () => {
   test("stage filtering to empty reports the stage cause, not a budget cause", async () => {
     // Conflating the two sends an operator to tune a budget that was never the
     // problem.
-    setupCanonical([
-      { id: "review-only", fileName: "review-only.md", content: "## R\nbody", stages: ["review"] },
-    ]);
+    setupCanonical([{ id: "review-only", fileName: "review-only.md", content: "## R\nbody", stages: ["review"] }]);
 
     const result = await new StaticRulesProvider({ enforceBudget: true }).fetch({
       ...BASE_REQUEST,

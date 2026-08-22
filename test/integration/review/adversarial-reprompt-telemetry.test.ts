@@ -7,12 +7,12 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { adversarialReviewOp } from "@/operations/adversarial-review";
+import type { adversarialReviewOp } from "@/operations/adversarial-review";
 import type { AdversarialReviewOutput } from "@/operations/adversarial-review";
 import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
 import { _diffUtilsDeps } from "@/review/diff-utils";
-import type { ReviewRepromptEvent } from "@/runtime/dispatch-events";
 import type { NaxRuntime } from "@/runtime";
+import type { ReviewRepromptEvent } from "@/runtime/dispatch-events";
 import { makeMockRuntime } from "@test/helpers";
 import { withTempDir } from "@test/helpers";
 
@@ -85,14 +85,8 @@ const SECOND_TURN_GROUNDED = JSON.stringify({
 // Second turn (parse-failed path): invalid JSON
 const SECOND_TURN_INVALID = "not valid json at all";
 
-type SavedAdversarialDeps = Pick<
-  typeof _adversarialDeps,
-  "callOp" | "collectDiffFileList" | "writeReviewAudit"
->;
-type SavedDiffUtilsDeps = Pick<
-  typeof _diffUtilsDeps,
-  "isGitRefValid" | "getMergeBase" | "spawn"
->;
+type SavedAdversarialDeps = Pick<typeof _adversarialDeps, "callOp" | "collectDiffFileList" | "writeReviewAudit">;
+type SavedDiffUtilsDeps = Pick<typeof _diffUtilsDeps, "isGitRefValid" | "getMergeBase" | "spawn">;
 
 function saveDeps(): { adversarial: SavedAdversarialDeps; diffUtils: SavedDiffUtilsDeps } {
   return {
@@ -127,7 +121,11 @@ function makeMockedCallOpWithSendTracking(opts: {
   secondTurnOutput: string;
   onSendCount: (count: number) => void;
 }) {
-  return async (_ctx: unknown, op: typeof adversarialReviewOp, input: import("@/operations/adversarial-review").AdversarialReviewInput) => {
+  return async (
+    _ctx: unknown,
+    op: typeof adversarialReviewOp,
+    input: import("@/operations/adversarial-review").AdversarialReviewInput,
+  ) => {
     let sendCount = 0;
 
     const mockSend = async () => {
@@ -141,7 +139,10 @@ function makeMockedCallOpWithSendTracking(opts: {
       };
     };
 
-    const hopFn = op.hopBody as (prompt: string, ctx: unknown) => Promise<{ output: string; estimatedCostUsd?: number }>;
+    const hopFn = op.hopBody as (
+      prompt: string,
+      ctx: unknown,
+    ) => Promise<{ output: string; estimatedCostUsd?: number }>;
     const hopResult = await hopFn("initial prompt", {
       send: mockSend,
       sendWithParseRetry: mockSend,
@@ -150,9 +151,17 @@ function makeMockedCallOpWithSendTracking(opts: {
 
     opts.onSendCount(sendCount);
 
-    const parseFn = op.parse as (output: string, input: import("@/operations/adversarial-review").AdversarialReviewInput, ctx: unknown) => AdversarialReviewOutput;
+    const parseFn = op.parse as (
+      output: string,
+      input: import("@/operations/adversarial-review").AdversarialReviewInput,
+      ctx: unknown,
+    ) => AdversarialReviewOutput;
     const parsed = parseFn(hopResult.output, input, {});
-    const verifyFn = op.verify as (parsed: AdversarialReviewOutput, input: import("@/operations/adversarial-review").AdversarialReviewInput, ctx: unknown) => Promise<AdversarialReviewOutput>;
+    const verifyFn = op.verify as (
+      parsed: AdversarialReviewOutput,
+      input: import("@/operations/adversarial-review").AdversarialReviewInput,
+      ctx: unknown,
+    ) => Promise<AdversarialReviewOutput>;
     const verified = await verifyFn(parsed, input, {});
     return verified;
   };
@@ -173,7 +182,12 @@ describe("AC4 + AC5: reprompt with grounded second turn", () => {
       _diffUtilsDeps.getMergeBase = mock(async () => undefined);
       _diffUtilsDeps.spawn = mock((_opts: unknown) => ({
         exited: Promise.resolve(0),
-        stdout: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("1 file changed")); c.close(); } }),
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(new TextEncoder().encode("1 file changed"));
+            c.close();
+          },
+        }),
         stderr: new ReadableStream({ start: (c) => c.close() }),
         kill: () => {},
       })) as unknown as typeof _diffUtilsDeps.spawn;
@@ -181,7 +195,9 @@ describe("AC4 + AC5: reprompt with grounded second turn", () => {
       _adversarialDeps.writeReviewAudit = async () => {};
       _adversarialDeps.callOp = makeMockedCallOpWithSendTracking({
         secondTurnOutput: SECOND_TURN_GROUNDED,
-        onSendCount: (n) => { capturedSendCount = n; },
+        onSendCount: (n) => {
+          capturedSendCount = n;
+        },
       }) as typeof _adversarialDeps.callOp;
 
       const runtime = makeRuntime(workdir);
@@ -217,7 +233,12 @@ describe("AC4 + AC5: reprompt with grounded second turn", () => {
       _diffUtilsDeps.getMergeBase = mock(async () => undefined);
       _diffUtilsDeps.spawn = mock((_opts: unknown) => ({
         exited: Promise.resolve(0),
-        stdout: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("1 file changed")); c.close(); } }),
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(new TextEncoder().encode("1 file changed"));
+            c.close();
+          },
+        }),
         stderr: new ReadableStream({ start: (c) => c.close() }),
         kill: () => {},
       })) as unknown as typeof _diffUtilsDeps.spawn;
@@ -242,9 +263,7 @@ describe("AC4 + AC5: reprompt with grounded second turn", () => {
       // Result must be either passed (success:true) or failed with at least one finding in output
       const isPassed = result.success === true;
       const isFailedWithFindings =
-        result.success === false &&
-        typeof result.output === "string" &&
-        result.output.length > 0;
+        result.success === false && typeof result.output === "string" && result.output.length > 0;
       expect(isPassed || isFailedWithFindings).toBe(true);
     });
   });
@@ -263,7 +282,12 @@ describe("AC6: parse-failed outcome when second turn is invalid JSON", () => {
       _diffUtilsDeps.getMergeBase = mock(async () => undefined);
       _diffUtilsDeps.spawn = mock((_opts: unknown) => ({
         exited: Promise.resolve(0),
-        stdout: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("1 file changed")); c.close(); } }),
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(new TextEncoder().encode("1 file changed"));
+            c.close();
+          },
+        }),
         stderr: new ReadableStream({ start: (c) => c.close() }),
         kill: () => {},
       })) as unknown as typeof _diffUtilsDeps.spawn;

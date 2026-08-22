@@ -4,8 +4,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { z } from "zod";
 import { DebateConfigSchema } from "@/config";
+import { z } from "zod";
 
 // ─── AC 1: DebateStageConfigSchema defaults ───────────────────────────────────
 
@@ -35,12 +35,7 @@ describe("DebateStageConfigSchema — parse({})", () => {
 // ─── AC 2: selector discriminated union ──────────────────────────────────────
 
 describe("DebateStageConfigSchema — selector field", () => {
-  const VALID_KINDS = [
-    "synthesis",
-    "majority-fail-closed",
-    "majority-fail-open",
-    "judge",
-  ] as const;
+  const VALID_KINDS = ["synthesis", "majority-fail-closed", "majority-fail-open", "judge"] as const;
 
   for (const kind of VALID_KINDS) {
     it(`accepts selector.kind = '${kind}'`, () => {
@@ -191,13 +186,16 @@ describe("DebateStageConfigSchema — verifier-pick selector (Phase 2 AC1)", () 
 // ─── AC 2 (Phase 2): onBlocker / onFailure ───────────────────────────────────
 
 describe("DebateStageConfigSchema — onBlocker / onFailure (Phase 2 AC2)", () => {
-  it.each(["block", "tag-expert"] as const)("accepts postDebateVerifier.kind 'plan-checklist' with onBlocker '%s'", (onBlocker) => {
-    const result = DebateConfigSchema.parse({
-      stages: { plan: { postDebateVerifier: { kind: "plan-checklist", onBlocker } } },
-    });
-    expect(result.stages.plan.postDebateVerifier?.kind).toBe("plan-checklist");
-    expect((result.stages.plan.postDebateVerifier as { onBlocker?: string })?.onBlocker).toBe(onBlocker);
-  });
+  it.each(["block", "tag-expert"] as const)(
+    "accepts postDebateVerifier.kind 'plan-checklist' with onBlocker '%s'",
+    (onBlocker) => {
+      const result = DebateConfigSchema.parse({
+        stages: { plan: { postDebateVerifier: { kind: "plan-checklist", onBlocker } } },
+      });
+      expect(result.stages.plan.postDebateVerifier?.kind).toBe("plan-checklist");
+      expect((result.stages.plan.postDebateVerifier as { onBlocker?: string })?.onBlocker).toBe(onBlocker);
+    },
+  );
 
   it("rejects invalid postDebateVerifier.onBlocker value with ZodError", () => {
     expect(() =>
@@ -234,15 +232,11 @@ describe("DebateConfigSchema — evidenceMode (Phase 2 AC3)", () => {
   });
 
   it("rejects unknown evidenceMode value with ZodError", () => {
-    expect(() =>
-      DebateConfigSchema.parse({ stages: { plan: { evidenceMode: "backwards" } } }),
-    ).toThrow(z.ZodError);
+    expect(() => DebateConfigSchema.parse({ stages: { plan: { evidenceMode: "backwards" } } })).toThrow(z.ZodError);
   });
 
   it("throws when evidenceMode is set on non-plan stage (plan-stage-only field)", () => {
     // evidenceMode is plan-stage-only — review/acceptance/etc. must reject it
-    expect(() =>
-      DebateConfigSchema.parse({ stages: { review: { evidenceMode: "asymmetric" } } }),
-    ).toThrow(z.ZodError);
+    expect(() => DebateConfigSchema.parse({ stages: { review: { evidenceMode: "asymmetric" } } })).toThrow(z.ZodError);
   });
 });

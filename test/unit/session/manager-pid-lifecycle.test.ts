@@ -95,5 +95,4 @@ describe("SessionManager PID lifecycle — configureRuntime", () => {
     expect(capturedOnPidSpawned).toBeUndefined();
     expect(capturedOnPidExited).toBeUndefined();
   });
-
 });

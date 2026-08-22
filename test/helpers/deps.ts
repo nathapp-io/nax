@@ -29,19 +29,19 @@
  * @param keys  - Keys to save/restore. Omit to save all enumerable keys.
  */
 export function withDepsRestore<T extends Record<string, unknown>>(deps: T, keys?: (keyof T)[]): void {
-	const saved: Partial<T> = {};
+  const saved: Partial<T> = {};
 
-	beforeEach(() => {
-		const keysToSave = keys ?? (Object.keys(deps) as (keyof T)[]);
-		for (const key of keysToSave) {
-			saved[key] = deps[key];
-		}
-	});
+  beforeEach(() => {
+    const keysToSave = keys ?? (Object.keys(deps) as (keyof T)[]);
+    for (const key of keysToSave) {
+      saved[key] = deps[key];
+    }
+  });
 
-	afterEach(() => {
-		for (const key of Object.keys(saved) as (keyof T)[]) {
-			deps[key] = saved[key] as T[keyof T];
-			delete saved[key];
-		}
-	});
+  afterEach(() => {
+    for (const key of Object.keys(saved) as (keyof T)[]) {
+      deps[key] = saved[key] as T[keyof T];
+      delete saved[key];
+    }
+  });
 }

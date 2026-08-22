@@ -15,8 +15,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { ContextBundle, ContextRequest } from "@/context/engine";
-import { _contextStageDeps, contextStage } from "@/pipeline/stages";
 import { _scopeFilesDeps, resolveScopeFiles } from "@/pipeline";
+import { _contextStageDeps, contextStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
 import { makeStory } from "@test/helpers";

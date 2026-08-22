@@ -6,16 +6,12 @@
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import {
-  _runCompletionDeps,
-  handleRunCompletion,
-  type RunCompletionOptions,
-} from "@/execution";
-import type { DeferredReviewResult } from "@/execution/deferred-review";
 import type { NaxConfig } from "@/config";
-import { makeNaxConfig, makeMockRuntime, makePRD } from "@test/helpers";
-import { pipelineEventBus } from "@/pipeline/event-bus";
+import { type RunCompletionOptions, _runCompletionDeps, handleRunCompletion } from "@/execution";
+import type { DeferredReviewResult } from "@/execution/deferred-review";
 import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
+import { pipelineEventBus } from "@/pipeline/event-bus";
+import { makeMockRuntime, makeNaxConfig, makePRD } from "@test/helpers";
 
 const origDeps = { ..._runCompletionDeps };
 

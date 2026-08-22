@@ -117,7 +117,8 @@ function depsView() {
   // dispatch/logging test files. The actual field is added by the
   // implementer; until then the read returns `undefined` and the write
   // installs a stub the source never calls.
-  return require("../../../src/execution/unified-executor") as unknown as { // test-ratchet-allow: as-unknown-as
+  return require("../../../src/execution/unified-executor") as unknown as {
+    // test-ratchet-allow: as-unknown-as
     _unifiedExecutorDeps: Record<string, unknown>;
     executeUnified: typeof executeUnified;
   };
@@ -155,15 +156,17 @@ describe("US-003 AC-9: sequential executor invokes preIterationTierCheck once be
       callOrder.push(`preIterationTierCheck:${s.id}`);
       return { shouldSkipIteration: false, prdDirty: false, prd: makePrd([s]) };
     });
-    const runIterationMock = mock(async (_ctx: unknown, _prd: unknown, selection: { story: ReturnType<typeof makePendingStory> }) => {
-      callOrder.push(`runIteration:${selection.story.id}`);
-      return {
-        prd: makePrd([]),
-        storiesCompletedDelta: 1,
-        costDelta: 0,
-        prdDirty: false,
-      };
-    });
+    const runIterationMock = mock(
+      async (_ctx: unknown, _prd: unknown, selection: { story: ReturnType<typeof makePendingStory> }) => {
+        callOrder.push(`runIteration:${selection.story.id}`);
+        return {
+          prd: makePrd([]),
+          storiesCompletedDelta: 1,
+          costDelta: 0,
+          prdDirty: false,
+        };
+      },
+    );
 
     const deps = depsView()._unifiedExecutorDeps;
     deps["preIterationTierCheck"] = preIterationTierCheckMock;

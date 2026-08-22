@@ -148,10 +148,7 @@ describe("mapDecomposedStoriesToUserStories — direct field mapping", () => {
 
 describe("mapDecomposedStoriesToUserStories — workdir inheritance", () => {
   test("sub-stories inherit parentWorkdir when provided", () => {
-    const stories = [
-      makeDecomposedStory({ id: "US-002-A" }),
-      makeDecomposedStory({ id: "US-002-B" }),
-    ];
+    const stories = [makeDecomposedStory({ id: "US-002-A" }), makeDecomposedStory({ id: "US-002-B" })];
     const result = mapDecomposedStoriesToUserStories(stories, "US-002", "apps/api");
     expect(result[0].workdir).toBe("apps/api");
     expect(result[1].workdir).toBe("apps/api");
@@ -186,7 +183,9 @@ describe("mapDecomposedStoriesToUserStories — agent routing (ADR-025 inheritan
   test("story-level routing fields are preserved as baseline when no parentRouting", () => {
     // story.routing is the fallback when parentRouting is not supplied (pre-ADR-025 behaviour,
     // required by the routing-profile-tier pipeline stage which reads profileModelTier).
-    const story = makeDecomposedStory({ routing: { agent: "opencode", agentProfileId: "fast-coder", profileModelTier: "fast" } });
+    const story = makeDecomposedStory({
+      routing: { agent: "opencode", agentProfileId: "fast-coder", profileModelTier: "fast" },
+    });
     const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
     expect(result.routing?.agent).toBe("opencode");
     expect(result.routing?.agentProfileId).toBe("fast-coder");
@@ -195,7 +194,9 @@ describe("mapDecomposedStoriesToUserStories — agent routing (ADR-025 inheritan
 
   test("parentRouting overrides story-level routing fields when both are present", () => {
     // ADR-025: parentRouting wins over story.routing.
-    const story = makeDecomposedStory({ routing: { agent: "opencode", agentProfileId: "fast-coder", profileModelTier: "fast" } });
+    const story = makeDecomposedStory({
+      routing: { agent: "opencode", agentProfileId: "fast-coder", profileModelTier: "fast" },
+    });
     const [result] = mapDecomposedStoriesToUserStories([story], "US-001", undefined, {
       agent: "claude",
       agentProfileId: "claude-final",
@@ -213,22 +214,20 @@ describe("mapDecomposedStoriesToUserStories — agent routing (ADR-025 inheritan
   });
 
   test("parentRouting.profileModelTier='balanced' is propagated correctly", () => {
-    const [result] = mapDecomposedStoriesToUserStories(
-      [makeDecomposedStory()],
-      "US-001",
-      undefined,
-      { agent: "claude", agentProfileId: "quality-agent", profileModelTier: "balanced" },
-    );
+    const [result] = mapDecomposedStoriesToUserStories([makeDecomposedStory()], "US-001", undefined, {
+      agent: "claude",
+      agentProfileId: "quality-agent",
+      profileModelTier: "balanced",
+    });
     expect(result.routing?.profileModelTier).toBe("balanced");
   });
 
   test("parentRouting.profileModelTier='powerful' is propagated correctly", () => {
-    const [result] = mapDecomposedStoriesToUserStories(
-      [makeDecomposedStory()],
-      "US-001",
-      undefined,
-      { agent: "claude", agentProfileId: "expert-agent", profileModelTier: "powerful" },
-    );
+    const [result] = mapDecomposedStoriesToUserStories([makeDecomposedStory()], "US-001", undefined, {
+      agent: "claude",
+      agentProfileId: "expert-agent",
+      profileModelTier: "powerful",
+    });
     expect(result.routing?.profileModelTier).toBe("powerful");
   });
 });
@@ -257,7 +256,15 @@ describe("mapDecomposedStoriesToUserStories — validation: missing id", () => {
   test.each<[string, DecomposedStory[], number]>([
     ["first", [makeDecomposedStory({ id: "" })], 0],
     ["second", [makeDecomposedStory({ id: "US-001-A" }), makeDecomposedStory({ id: "" })], 1],
-    ["third", [makeDecomposedStory({ id: "US-001-A" }), makeDecomposedStory({ id: "US-001-B" }), makeDecomposedStory({ id: "" })], 2],
+    [
+      "third",
+      [
+        makeDecomposedStory({ id: "US-001-A" }),
+        makeDecomposedStory({ id: "US-001-B" }),
+        makeDecomposedStory({ id: "" }),
+      ],
+      2,
+    ],
   ])("includes entry index in error context for %s entry with missing id", (_pos, stories, expectedIndex) => {
     let caught: NaxError | undefined;
     try {
@@ -370,12 +377,11 @@ describe("mapDecomposedStoriesToUserStories — parent routing inheritance (ADR-
   });
 
   test("initialAgent and initialProfileId fall through from parentRouting when not already set", () => {
-    const subs = mapDecomposedStoriesToUserStories(
-      [makeDecomposedStory({ id: "US-001-A" })],
-      "US-001",
-      undefined,
-      { agent: "opencode", agentProfileId: "oc-fast", profileModelTier: "fast" },
-    );
+    const subs = mapDecomposedStoriesToUserStories([makeDecomposedStory({ id: "US-001-A" })], "US-001", undefined, {
+      agent: "opencode",
+      agentProfileId: "oc-fast",
+      profileModelTier: "fast",
+    });
     const routing = (subs[0] as NonNullable<(typeof subs)[0]>).routing as NonNullable<(typeof subs)[0]["routing"]>;
     expect(routing.initialAgent).toBe("opencode");
     expect(routing.initialProfileId).toBe("oc-fast");

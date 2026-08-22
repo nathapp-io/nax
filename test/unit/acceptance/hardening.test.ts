@@ -25,11 +25,18 @@ function makeCtx(overrides: Partial<HardeningContext> = {}): HardeningContext {
     config: TEST_CONFIG,
     agentManager: agentManager as any,
     sessionManager: {
-      openSession: mock(async () => ({ id: "test-session", role: "test" } as any)),
+      openSession: mock(async () => ({ id: "test-session", role: "test" }) as any),
       closeSession: mock(async () => {}),
       getSession: mock(() => undefined),
       listSessions: mock(() => []),
-      sendMessage: mock(async () => ({ success: true, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] })),
+      sendMessage: mock(async () => ({
+        success: true,
+        output: "",
+        rateLimited: false,
+        durationMs: 0,
+        estimatedCostUsd: 0,
+        agentFallbacks: [],
+      })),
       on: mock(() => {}),
       off: mock(() => {}),
     } as any,
@@ -41,7 +48,7 @@ function makeCtx(overrides: Partial<HardeningContext> = {}): HardeningContext {
       },
       agentManager: runtimeAgentManager,
       sessionManager: {
-        openSession: mock(async () => ({ id: "test-session", role: "test" } as any)),
+        openSession: mock(async () => ({ id: "test-session", role: "test" }) as any),
         closeSession: mock(async () => {}),
       },
       projectDir: "/tmp",
@@ -82,24 +89,42 @@ afterEach(() => {
 // ─── Spawn helpers ───────────────────────────────────────────────────────────
 
 function passingSpawn() {
-  return mock(() => ({
-    exited: Promise.resolve(0),
-    stdout: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-    stderr: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-  } as ReturnType<typeof Bun.spawn>));
+  return mock(
+    () =>
+      ({
+        exited: Promise.resolve(0),
+        stdout: new ReadableStream({
+          start(ctrl) {
+            ctrl.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(ctrl) {
+            ctrl.close();
+          },
+        }),
+      }) as ReturnType<typeof Bun.spawn>,
+  );
 }
 
 function failingSpawn(output: string) {
-  return mock(() => ({
-    exited: Promise.resolve(1),
-    stdout: new ReadableStream({
-      start(ctrl) {
-        ctrl.enqueue(new TextEncoder().encode(output));
-        ctrl.close();
-      },
-    }),
-    stderr: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-  } as ReturnType<typeof Bun.spawn>));
+  return mock(
+    () =>
+      ({
+        exited: Promise.resolve(1),
+        stdout: new ReadableStream({
+          start(ctrl) {
+            ctrl.enqueue(new TextEncoder().encode(output));
+            ctrl.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(ctrl) {
+            ctrl.close();
+          },
+        }),
+      }) as ReturnType<typeof Bun.spawn>,
+  );
 }
 
 function mockCallOp(refineReturn: object[], generateReturn: object): typeof _hardeningDeps.callOp {
@@ -140,16 +165,23 @@ describe("runHardeningPass()", () => {
     );
     _hardeningDeps.writeFile = mock(async () => {});
     _hardeningDeps.savePRD = mock(async () => {});
-    _hardeningDeps.spawn = mock(() => ({
-      exited: Promise.resolve(0),
-      stdout: new ReadableStream({
-        start(ctrl) {
-          ctrl.enqueue(new TextEncoder().encode("(pass) AC-1: suggested edge case\n"));
-          ctrl.close();
-        },
-      }),
-      stderr: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-    } as ReturnType<typeof Bun.spawn>));
+    _hardeningDeps.spawn = mock(
+      () =>
+        ({
+          exited: Promise.resolve(0),
+          stdout: new ReadableStream({
+            start(ctrl) {
+              ctrl.enqueue(new TextEncoder().encode("(pass) AC-1: suggested edge case\n"));
+              ctrl.close();
+            },
+          }),
+          stderr: new ReadableStream({
+            start(ctrl) {
+              ctrl.close();
+            },
+          }),
+        }) as ReturnType<typeof Bun.spawn>,
+    );
 
     const result = await runHardeningPass(ctx);
 
@@ -230,7 +262,14 @@ describe("runHardeningPass()", () => {
     const ctx = makeCtx({ prd: makePRD({ userStories: [story] }) });
 
     _hardeningDeps.callOp = mockCallOp(
-      [{ original: "cli.ts contains an import of writeFileSync", refined: "cli.ts contains an import of writeFileSync", testable: false, storyId: "US-001" }],
+      [
+        {
+          original: "cli.ts contains an import of writeFileSync",
+          refined: "cli.ts contains an import of writeFileSync",
+          testable: false,
+          storyId: "US-001",
+        },
+      ],
       { testCode: 'test("AC-1", () => { expect(true).toBe(true); })' },
     );
     _hardeningDeps.writeFile = mock(async () => {});
@@ -259,7 +298,12 @@ describe("runHardeningPass()", () => {
     _hardeningDeps.callOp = mockCallOp(
       [
         { original: "behavioral edge case", refined: "behavioral edge case", testable: true, storyId: "US-001" },
-        { original: "cli.ts contains an import", refined: "cli.ts contains an import", testable: false, storyId: "US-001" },
+        {
+          original: "cli.ts contains an import",
+          refined: "cli.ts contains an import",
+          testable: false,
+          storyId: "US-001",
+        },
       ],
       { testCode: 'test("AC-1", () => {})\ntest("AC-2", () => { expect(true).toBe(true); })' },
     );
@@ -338,7 +382,12 @@ describe("runHardeningPass()", () => {
 
     _hardeningDeps.callOp = mockCallOp(
       [
-        { original: "already promoted criterion", refined: "already promoted criterion", testable: true, storyId: "US-001" },
+        {
+          original: "already promoted criterion",
+          refined: "already promoted criterion",
+          testable: true,
+          storyId: "US-001",
+        },
         { original: "new criterion", refined: "new criterion", testable: true, storyId: "US-001" },
       ],
       { testCode: 'test("AC-1", () => {})\ntest("AC-2", () => {})' },
@@ -434,7 +483,9 @@ describe("runHardeningPass()", () => {
       [{ original: "edge case", refined: "edge case", testable: true, storyId: "US-001" }],
       { testCode: 'test("AC-1", () => {})' },
     );
-    _hardeningDeps.writeFile = mock(async (p: string) => { writtenPaths.push(p); });
+    _hardeningDeps.writeFile = mock(async (p: string) => {
+      writtenPaths.push(p);
+    });
     _hardeningDeps.savePRD = mock(async () => {});
     _hardeningDeps.spawn = passingSpawn();
 

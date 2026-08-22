@@ -16,11 +16,11 @@
  *   - runAsSessionFn controls what the underlying send returns (stateful via counter)
  */
 import { describe, expect, test } from "bun:test";
+import type { TurnResult } from "@/agents/types";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import { callOp } from "@/operations";
 import type { RunOperation } from "@/operations";
-import { DEFAULT_CONFIG, pickSelector } from "@/config";
 import { makeMockAgentManager, makeMockCallContext, makeMockRuntime, makeSessionManager } from "@test/helpers";
-import type { TurnResult } from "@/agents/types";
 
 const sel = pickSelector("run-empty-output-retry-test", "routing");
 
@@ -89,11 +89,7 @@ describe("AC3: run-kind empty-output → runWithFallback retry (same agent)", ()
 
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
 
-    const result = await callOp(
-      makeMockCallContext({ runtime }),
-      makeRunOp("retry-happy-path"),
-      "hello",
-    );
+    const result = await callOp(makeMockCallContext({ runtime }), makeRunOp("retry-happy-path"), "hello");
 
     expect(result).toBe("success on retry");
     expect(hopCallCount).toBe(2);
@@ -109,12 +105,7 @@ describe("AC3: run-kind empty-output → runWithFallback retry (same agent)", ()
 
         for (let attempt = 1; attempt <= 2; attempt++) {
           if (lastHop.result.adapterFailure?.outcome !== "fail-stale") break;
-          lastHop = await req.executeHop!(
-            "claude",
-            undefined,
-            { kind: "stale-retry", attempt },
-            req.runOptions,
-          );
+          lastHop = await req.executeHop!("claude", undefined, { kind: "stale-retry", attempt }, req.runOptions);
         }
 
         return { result: { ...lastHop.result, agentFallbacks: [] }, fallbacks: [] };
@@ -130,11 +121,7 @@ describe("AC3: run-kind empty-output → runWithFallback retry (same agent)", ()
 
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
 
-    const result = await callOp(
-      makeMockCallContext({ runtime }),
-      makeRunOp("retry-two-failures"),
-      "hello",
-    );
+    const result = await callOp(makeMockCallContext({ runtime }), makeRunOp("retry-two-failures"), "hello");
 
     expect(result).toBe("eventual success");
     expect(hopCallCount).toBe(3);
@@ -157,12 +144,7 @@ describe("AC3: run-kind empty-output — all retries exhausted → CALL_OP_NO_OU
 
         for (let attempt = 1; attempt <= 2; attempt++) {
           if (lastHop.result.adapterFailure?.outcome !== "fail-stale") break;
-          lastHop = await req.executeHop!(
-            "claude",
-            undefined,
-            { kind: "stale-retry", attempt },
-            req.runOptions,
-          );
+          lastHop = await req.executeHop!("claude", undefined, { kind: "stale-retry", attempt }, req.runOptions);
         }
 
         // All retries exhausted — pass empty result back to callOp.
@@ -176,7 +158,7 @@ describe("AC3: run-kind empty-output — all retries exhausted → CALL_OP_NO_OU
 
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
 
-    let thrown: Error & { code?: string } | null = null;
+    let thrown: (Error & { code?: string }) | null = null;
     try {
       await callOp(makeMockCallContext({ runtime }), makeRunOp("exhaust-retries"), "hello");
     } catch (err) {
@@ -206,7 +188,7 @@ describe("AC3: run-kind empty-output — all retries exhausted → CALL_OP_NO_OU
 
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
 
-    let thrown: Error & { code?: string } | null = null;
+    let thrown: (Error & { code?: string }) | null = null;
     try {
       await callOp(makeMockCallContext({ runtime }), makeRunOp("zero-retries"), "hello");
     } catch (err) {
@@ -245,7 +227,9 @@ describe("AC3: sendWithFileOutput synthesises fail-stale on empty run-kind outpu
       // expected CALL_OP_NO_OUTPUT — we only care about the synthesised failure shape
     }
 
-    const f = capturedAdapterFailure as { outcome?: string; category?: string; retriable?: boolean; reason?: string } | undefined;
+    const f = capturedAdapterFailure as
+      | { outcome?: string; category?: string; retriable?: boolean; reason?: string }
+      | undefined;
     expect(f?.outcome).toBe("fail-stale");
     expect(f?.category).toBe("availability");
     expect(f?.retriable).toBe(true);

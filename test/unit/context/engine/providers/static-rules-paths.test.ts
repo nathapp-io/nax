@@ -5,7 +5,7 @@
  * Split from static-rules.test.ts (479 lines) per test-architecture.md §Placement Rules.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { StaticRulesProvider, _staticRulesDeps } from "@/context/engine/providers/static-rules";
 import type { ContextRequest } from "@/context/engine/types";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
@@ -81,9 +81,7 @@ describe("StaticRulesProvider — paths: frontmatter package-scope filter", () =
   });
 
   test("rule with matching paths: is included for that package", async () => {
-    setupCanonical([
-      { fileName: "api.md", content: "API rule.", paths: ["packages/api/**"] },
-    ]);
+    setupCanonical([{ fileName: "api.md", content: "API rule.", paths: ["packages/api/**"] }]);
     const provider = new StaticRulesProvider();
     const result = await provider.fetch(MONOREPO_REQUEST);
     expect(result.chunks).toHaveLength(1);
@@ -91,9 +89,7 @@ describe("StaticRulesProvider — paths: frontmatter package-scope filter", () =
   });
 
   test("rule with non-matching paths: is excluded for this package", async () => {
-    setupCanonical([
-      { fileName: "web.md", content: "Web-only rule.", paths: ["packages/web/**"] },
-    ]);
+    setupCanonical([{ fileName: "web.md", content: "Web-only rule.", paths: ["packages/web/**"] }]);
     const provider = new StaticRulesProvider();
     const result = await provider.fetch(MONOREPO_REQUEST);
     expect(result.chunks).toHaveLength(0);
@@ -153,9 +149,7 @@ describe("StaticRulesProvider — paths: frontmatter package-scope filter", () =
 
 describe("StaticRulesProvider — #558 differentiated empty-merge log", () => {
   test("emits 'none apply to this package' when repo rules exist but all filtered by paths:", async () => {
-    setupCanonical([
-      { fileName: "web.md", content: "Web-only rule.", paths: ["packages/web/**"] },
-    ]);
+    setupCanonical([{ fileName: "web.md", content: "Web-only rule.", paths: ["packages/web/**"] }]);
     const warnMessages: string[] = [];
     const origConsole = console.warn;
     // Capture via _staticRulesDeps.loadCanonicalRules — inspect logger via spy on provider
@@ -168,9 +162,7 @@ describe("StaticRulesProvider — #558 differentiated empty-merge log", () => {
   });
 
   test("returns empty chunks (no fallback to legacy) when repo rules exist but none match package", async () => {
-    setupCanonical([
-      { fileName: "web.md", content: "Web rule.", paths: ["packages/web/**"] },
-    ]);
+    setupCanonical([{ fileName: "web.md", content: "Web rule.", paths: ["packages/web/**"] }]);
     _staticRulesDeps.fileExists = async () => true;
     _staticRulesDeps.readFile = async () => "Legacy CLAUDE.md";
     const provider = new StaticRulesProvider({ allowLegacyClaudeMd: true });

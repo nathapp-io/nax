@@ -1,12 +1,12 @@
-import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
-import { buildHopCallback, _buildHopCallbackDeps } from "@/operations";
-import type { BuildHopCallbackContext } from "@/operations";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { HopKind } from "@/agents";
-import { makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
 import type { IAgentManager, RunAsSessionOpts } from "@/agents";
 import { SessionFailureError } from "@/agents";
 import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents";
 import type { AdapterFailure, ContextBundle } from "@/context/engine";
+import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
+import type { BuildHopCallbackContext } from "@/operations";
+import { makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -37,7 +37,7 @@ function makeStubTurnResult(output = "agent output"): TurnResult {
     output,
     tokenUsage: { inputTokens: 10, outputTokens: 20 },
     internalRoundTrips: 1,
-    estimatedCostUsd: 0.001 ,
+    estimatedCostUsd: 0.001,
     exactCostUsd: 0.002,
     protocolIds: { recordId: "rec-turn", sessionId: "sess-turn" },
   };
@@ -127,7 +127,9 @@ describe("buildHopCallback — primary hop (no failure)", () => {
     const turnResult = makeStubTurnResult("hello from agent");
     const agentManager = makeAgentManagerStub(() => Promise.resolve(turnResult));
     const sessionManager = makeSessionManager({ openSession: mock(async () => makeHandle("nax-test-handle")) });
-    _buildHopCallbackDeps.rebuildForAgent = mock(() => { throw new Error("should not rebuild on primary hop"); });
+    _buildHopCallbackDeps.rebuildForAgent = mock(() => {
+      throw new Error("should not rebuild on primary hop");
+    });
 
     const ctx = makeCtx({ agentManager, sessionManager });
     const baseOptions = makeBaseOptions("do the work", ctx.config);
@@ -140,7 +142,11 @@ describe("buildHopCallback — primary hop (no failure)", () => {
     expect(sessionManager.closeSession).toHaveBeenCalledTimes(1);
     expect(agentManager.runAsSession).toHaveBeenCalledTimes(1);
 
-    const [agentArg, , promptArg] = (agentManager.runAsSession as ReturnType<typeof mock>).mock.calls[0] as [string, SessionHandle, string];
+    const [agentArg, , promptArg] = (agentManager.runAsSession as ReturnType<typeof mock>).mock.calls[0] as [
+      string,
+      SessionHandle,
+      string,
+    ];
     expect(agentArg).toBe("claude");
     expect(promptArg).toBe("do the work");
 
@@ -241,7 +247,7 @@ describe("buildHopCallback — failure hop (fallback)", () => {
     const rebuiltBundle = makeBundle({ pushMarkdown: "## Rebuilt context" });
     _buildHopCallbackDeps.rebuildForAgent = mock(() => rebuiltBundle);
 
-    const handoffMock = mock(() => ({} as never));
+    const handoffMock = mock(() => ({}) as never);
     const sessionManager = makeSessionManager({ handoff: handoffMock });
     const agentManager = makeAgentManagerStub();
     const ctx = makeCtx({ sessionManager, agentManager });
@@ -250,12 +256,7 @@ describe("buildHopCallback — failure hop (fallback)", () => {
 
     const hop = await cb("codex", makeBundle(), { kind: "swap", failure } satisfies HopKind, baseOptions);
 
-    expect(_buildHopCallbackDeps.rebuildForAgent).toHaveBeenCalledWith(
-      expect.anything(),
-      "codex",
-      failure,
-      "US-001",
-    );
+    expect(_buildHopCallbackDeps.rebuildForAgent).toHaveBeenCalledWith(expect.anything(), "codex", failure, "US-001");
     expect(handoffMock).toHaveBeenCalledWith(SESSION_ID, "codex", failure.outcome);
     expect(sessionManager.openSession).toHaveBeenCalledTimes(1);
     expect(sessionManager.closeSession).toHaveBeenCalledTimes(1);
@@ -324,9 +325,7 @@ describe("buildHopCallback — failure classification (Finding 3)", () => {
       message: "rate limited by upstream",
       retriable: true,
     };
-    const agentManager = makeAgentManagerStub(() =>
-      Promise.reject(new SessionFailureError("rate limit", failure)),
-    );
+    const agentManager = makeAgentManagerStub(() => Promise.reject(new SessionFailureError("rate limit", failure)));
     const sessionManager = makeSessionManager();
     const ctx = makeCtx({ agentManager, sessionManager });
     const baseOptions = makeBaseOptions("p", ctx.config);
@@ -348,9 +347,7 @@ describe("buildHopCallback — failure classification (Finding 3)", () => {
       message: "missing credentials",
       retriable: false,
     };
-    const agentManager = makeAgentManagerStub(() =>
-      Promise.reject(new SessionFailureError("auth fail", failure)),
-    );
+    const agentManager = makeAgentManagerStub(() => Promise.reject(new SessionFailureError("auth fail", failure)));
     const ctx = makeCtx({ agentManager });
     const baseOptions = makeBaseOptions("p", ctx.config);
     const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
@@ -433,7 +430,9 @@ describe("buildHopCallback — hopBody (multi-prompt within one hop)", () => {
 describe("buildHopCallback — openSession throws", () => {
   test("no runAsSession call; no closeSession call; error propagates", async () => {
     const sessionManager = makeSessionManager({
-      openSession: mock(async () => { throw new Error("adapter unavailable"); }),
+      openSession: mock(async () => {
+        throw new Error("adapter unavailable");
+      }),
     });
     const agentManager = makeAgentManagerStub();
     const ctx = makeCtx({ agentManager, sessionManager });
@@ -563,10 +562,7 @@ describe("buildHopCallback — timeoutRetry wiring (AC6/AC7)", () => {
     const origCaptureGitRef = _buildHopCallbackDeps.captureGitRef;
     const origCaptureWorkingTreeChanges = _buildHopCallbackDeps.captureWorkingTreeChanges;
     const captureGitRefMock = mock(async (_workdir: string) => "deadbeef");
-    const captureWorkingTreeChangesMock = mock(async (_workdir: string, _ref: string) => [
-      "src/foo.ts",
-      "src/bar.ts",
-    ]);
+    const captureWorkingTreeChangesMock = mock(async (_workdir: string, _ref: string) => ["src/foo.ts", "src/bar.ts"]);
     _buildHopCallbackDeps.captureGitRef = captureGitRefMock as typeof _buildHopCallbackDeps.captureGitRef;
     _buildHopCallbackDeps.captureWorkingTreeChanges =
       captureWorkingTreeChangesMock as typeof _buildHopCallbackDeps.captureWorkingTreeChanges;
@@ -612,9 +608,7 @@ describe("buildHopCallback — timeoutRetry wiring (AC6/AC7)", () => {
     const origCaptureGitRef = _buildHopCallbackDeps.captureGitRef;
     const origCaptureWorkingTreeChanges = _buildHopCallbackDeps.captureWorkingTreeChanges;
     const captureGitRefMock = mock(async (_workdir: string) => undefined as string | undefined);
-    const captureWorkingTreeChangesMock = mock(async (_workdir: string, _ref: string) => [
-      "should-not-appear.ts",
-    ]);
+    const captureWorkingTreeChangesMock = mock(async (_workdir: string, _ref: string) => ["should-not-appear.ts"]);
     _buildHopCallbackDeps.captureGitRef = captureGitRefMock as typeof _buildHopCallbackDeps.captureGitRef;
     _buildHopCallbackDeps.captureWorkingTreeChanges =
       captureWorkingTreeChangesMock as typeof _buildHopCallbackDeps.captureWorkingTreeChanges;

@@ -13,16 +13,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "@/config";
-import {
-  _runnerCompletionDeps,
-  runCompletionPhase,
-  type RunnerCompletionOptions,
-} from "@/execution/runner-completion";
 import type { RunCompletionResult } from "@/execution/lifecycle/run-completion";
+import { type RunnerCompletionOptions, _runnerCompletionDeps, runCompletionPhase } from "@/execution/runner-completion";
 import type { LoadedHooksConfig } from "@/hooks";
 import { pipelineEventBus } from "@/pipeline/event-bus";
-import type { PRD, UserStory } from "@/prd";
 import { PluginRegistry } from "@/plugins";
+import type { PRD, UserStory } from "@/prd";
 import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
@@ -162,7 +158,11 @@ describe("finish phase", () => {
       order.push("finish");
       return null;
     });
-    const opts = makeOptsWithRuntime(makeConfig(false), makePRD([{ id: "US-001", status: "passed" }]), makeStatusWriter());
+    const opts = makeOptsWithRuntime(
+      makeConfig(false),
+      makePRD([{ id: "US-001", status: "passed" }]),
+      makeStatusWriter(),
+    );
     // Wrap the runtime's own close so the ordering is observed, not asserted
     // from a fake: makeOptsWithRuntime builds a real tracked runtime.
     const close = opts.runtime.close.bind(opts.runtime);

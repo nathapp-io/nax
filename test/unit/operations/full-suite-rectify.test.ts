@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import type { Finding } from "@/findings";
 import {
-  makeFullSuiteRectifyStrategy,
-  makeRepoScopedTestFixStrategy,
   _repoScopedFixDeps,
   fullSuiteRectifyOp,
   makeDeclarationSink,
+  makeFullSuiteRectifyStrategy,
+  makeRepoScopedTestFixStrategy,
 } from "@/operations";
 import type { FullSuiteRectifyInput, FullSuiteRectifyOutput } from "@/operations";
 import type { TestEditDeclaration } from "@/operations";
-import type { Finding } from "@/findings";
 import type { UserStory } from "@/prd";
 import { makeNaxConfig } from "@test/helpers";
 
@@ -335,7 +335,11 @@ describe("makeRepoScopedTestFixStrategy", () => {
   });
 
   test("propagates UNRESOLVED so the cycle still exits agent-gave-up", async () => {
-    const output = { applied: true, testEditDeclarations: [], unresolvedReason: "tests contradict" } as FullSuiteRectifyOutput;
+    const output = {
+      applied: true,
+      testEditDeclarations: [],
+      unresolvedReason: "tests contradict",
+    } as FullSuiteRectifyOutput;
     const applied = await strategy().extractApplied?.(output, {} as never);
     expect(applied?.unresolved).toBe("tests contradict");
   });

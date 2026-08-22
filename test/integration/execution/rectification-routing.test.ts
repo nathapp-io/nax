@@ -10,14 +10,14 @@
  * causing autofix-implementer (not full-suite-rectify) to be selected.
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _storyOrchestratorDeps, StoryOrchestratorBuilder } from "@/execution";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import { StoryOrchestratorBuilder, _storyOrchestratorDeps } from "@/execution";
 import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
-import { pickSelector, DEFAULT_CONFIG } from "@/config";
-import { makeTestRuntime, makeStory, makeNaxConfig } from "@test/helpers";
 import { makeAutofixImplementerStrategy, makeFullSuiteRectifyStrategy } from "@/operations";
+import type { CallContext, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import type { RunOperation, CallContext } from "@/operations";
+import { makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -171,8 +171,14 @@ describe("AC2.5: rectification routing — gate failure halts loop, gate finding
     _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
       if (op.name === "implementer") return { success: true };
       if (op.name === "full-suite-gate") return { success: false, findings: gateFindings };
-      if (op.name === "verifier") { verifierCalled = true; return { success: true, findings: [] }; }
-      if (op.name === "semantic-review") { semanticCalled = true; return { success: false, passed: false, findings: [] }; }
+      if (op.name === "verifier") {
+        verifierCalled = true;
+        return { success: true, findings: [] };
+      }
+      if (op.name === "semantic-review") {
+        semanticCalled = true;
+        return { success: false, passed: false, findings: [] };
+      }
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
@@ -224,9 +230,7 @@ describe("AC2.5: rectification routing — gate failure halts loop, gate finding
     expect(allTestRunner).toBe(true);
 
     // AC2.5c: the first matching strategy for test-runner findings is full-suite-rectify
-    const matchingStrategies = cycle.strategies.filter((s) =>
-      cycle.findings.some((f) => s.appliesTo(f)),
-    );
+    const matchingStrategies = cycle.strategies.filter((s) => cycle.findings.some((f) => s.appliesTo(f)));
     expect(matchingStrategies.length).toBeGreaterThan(0);
     expect(matchingStrategies[0]?.name).toBe("full-suite-rectify");
   });

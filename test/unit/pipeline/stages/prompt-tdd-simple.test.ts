@@ -49,8 +49,7 @@ function makePRD(): PRD {
   };
 }
 
-function makeConfig() {
-}
+function makeConfig() {}
 
 function makeCtx(
   testStrategy: "no-test" | "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite",

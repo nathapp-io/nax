@@ -18,17 +18,17 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { pipelineEventBus } from "@/pipeline";
-import { _runAcceptanceTestsOnceDeps, runAcceptanceLoop, type AcceptanceLoopContext } from "@/execution/lifecycle";
-import { _runnerCompletionDeps, runCompletionPhase, type RunnerCompletionOptions } from "@/execution";
-import type { AcceptanceLoopResult } from "@/execution/lifecycle";
 import type { NaxConfig } from "@/config";
-import type { LoadedHooksConfig } from "@/hooks";
-import type { PRD, UserStory } from "@/prd";
-import type { PostRunStatus } from "@/execution/status-file";
+import { type RunnerCompletionOptions, _runnerCompletionDeps, runCompletionPhase } from "@/execution";
+import { StatusWriter } from "@/execution";
+import { type AcceptanceLoopContext, _runAcceptanceTestsOnceDeps, runAcceptanceLoop } from "@/execution/lifecycle";
+import type { AcceptanceLoopResult } from "@/execution/lifecycle";
 import { _runCompletionDeps } from "@/execution/lifecycle";
 import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
-import { StatusWriter } from "@/execution";
+import type { PostRunStatus } from "@/execution/status-file";
+import type { LoadedHooksConfig } from "@/hooks";
+import { pipelineEventBus } from "@/pipeline";
+import type { PRD, UserStory } from "@/prd";
 import {
   cleanupTempDir,
   makeMockAgentManager,
@@ -130,9 +130,7 @@ function makePostRunStatus(
   };
 }
 
-function makeStatusWriter(
-  postRunStatus: PostRunStatus = makePostRunStatus("not-run", "not-run"),
-) {
+function makeStatusWriter(postRunStatus: PostRunStatus = makePostRunStatus("not-run", "not-run")) {
   return {
     setPrd: mock(() => {}),
     setCurrentStory: mock(() => {}),
@@ -218,9 +216,7 @@ const origRunnerDeps = { ..._runnerCompletionDeps };
 const origRunDeps = { ..._runCompletionDeps };
 
 beforeEach(() => {
-  _runnerCompletionDeps.runAcceptanceLoop = mock(
-    async (): Promise<AcceptanceLoopResult> => defaultAcceptanceResult,
-  );
+  _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => defaultAcceptanceResult);
   _runCompletionDeps.runDeferredRegression = mock(
     async (): Promise<DeferredRegressionResult> => defaultRegressionResult,
   );
@@ -267,9 +263,7 @@ describe("US-004 AC-1: runAcceptanceLoop propagates skippedPackages on missing-t
 
     const ctx = makeAcceptanceCtx();
     ctx.featureDir = undefined;
-    ctx.acceptanceTestPaths = [
-      { testPath: "/tmp/test.ts", packageDir: "/tmp/workdir" },
-    ];
+    ctx.acceptanceTestPaths = [{ testPath: "/tmp/test.ts", packageDir: "/tmp/workdir" }];
     // Disable fix cycles by giving the loop a context that returns continue/fail without
     // trying to run fix logic. Use a low maxRetries so the first fail returns immediately.
     ctx.config = makeNaxConfig({ acceptance: { maxRetries: 1 } });
@@ -330,9 +324,7 @@ describe("US-004 AC-2: completion phase reports status=failed and skippedPackage
 
     await runCompletionPhase(makeOpts(config, prd, statusWriter));
 
-    const acceptanceCalls = statusWriter.setPostRunPhase.mock.calls.filter(
-      (c: unknown[]) => c[0] === "acceptance",
-    );
+    const acceptanceCalls = statusWriter.setPostRunPhase.mock.calls.filter((c: unknown[]) => c[0] === "acceptance");
     const failedCall = acceptanceCalls.find((c: unknown[]) => (c[1] as { status?: string })?.status === "failed");
     expect(failedCall).toBeDefined();
     expect((failedCall?.[1] as { skippedPackages?: string[] }).skippedPackages).toEqual(["pkg-a"]);
@@ -362,12 +354,8 @@ describe("US-004 AC-3: missing-target acceptance failure is never reported as 'p
 
     await runCompletionPhase(makeOpts(config, prd, statusWriter));
 
-    const acceptanceCalls = statusWriter.setPostRunPhase.mock.calls.filter(
-      (c: unknown[]) => c[0] === "acceptance",
-    );
-    const passedCall = acceptanceCalls.find(
-      (c: unknown[]) => (c[1] as { status?: string })?.status === "passed",
-    );
+    const acceptanceCalls = statusWriter.setPostRunPhase.mock.calls.filter((c: unknown[]) => c[0] === "acceptance");
+    const passedCall = acceptanceCalls.find((c: unknown[]) => (c[1] as { status?: string })?.status === "passed");
     expect(passedCall).toBeUndefined();
   });
 });
@@ -393,15 +381,10 @@ describe("US-004 AC-4: passing acceptance has status='passed' and no skippedPack
 
     await runCompletionPhase(makeOpts(config, prd, statusWriter));
 
-    const acceptanceCalls = statusWriter.setPostRunPhase.mock.calls.filter(
-      (c: unknown[]) => c[0] === "acceptance",
-    );
-    const passedCall = acceptanceCalls.find(
-      (c: unknown[]) => (c[1] as { status?: string })?.status === "passed",
-    );
+    const acceptanceCalls = statusWriter.setPostRunPhase.mock.calls.filter((c: unknown[]) => c[0] === "acceptance");
+    const passedCall = acceptanceCalls.find((c: unknown[]) => (c[1] as { status?: string })?.status === "passed");
     expect(passedCall).toBeDefined();
-    const skipped = (passedCall?.[1] as { skippedPackages?: string[] } | undefined)
-      ?.skippedPackages;
+    const skipped = (passedCall?.[1] as { skippedPackages?: string[] } | undefined)?.skippedPackages;
     expect(skipped === undefined || (Array.isArray(skipped) && skipped.length === 0)).toBe(true);
   });
 
@@ -446,7 +429,9 @@ describe("US-004 AC-4: passing acceptance has status='passed' and no skippedPack
         }),
       ) as typeof _runnerCompletionDeps.runAcceptanceLoop;
 
-      await runCompletionPhase(makeOpts(config, prd, realStatusWriter as unknown as RunnerCompletionOptions["statusWriter"]));
+      await runCompletionPhase(
+        makeOpts(config, prd, realStatusWriter as unknown as RunnerCompletionOptions["statusWriter"]),
+      );
 
       const final = realStatusWriter.getPostRunStatus();
       expect(final.acceptance.status).toBe("passed");
@@ -461,9 +446,7 @@ describe("US-004 AC-4: passing acceptance has status='passed' and no skippedPack
 
 describe("US-004 AC-5: a failed status with non-empty skippedPackages re-runs the acceptance loop", () => {
   test("calls runAcceptanceLoop and forwards skippedPackages when resumed with status=failed and skippedPackages=['pkg-a']", async () => {
-    const statusWriter = makeStatusWriter(
-      makePostRunStatus("failed", "not-run", ["pkg-a"]),
-    );
+    const statusWriter = makeStatusWriter(makePostRunStatus("failed", "not-run", ["pkg-a"]));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeTestConfig();
 

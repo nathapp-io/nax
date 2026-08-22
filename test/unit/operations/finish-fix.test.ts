@@ -1,3 +1,4 @@
+import { afterEach, describe, expect, test } from "bun:test";
 /**
  * The phase-parameterised finish fix operation — `src/finish/operations/fix-op.ts`.
  * Modeled on `test/unit/finish/op-review.test.ts`: op shape, then
@@ -6,12 +7,11 @@
  */
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "bun:test";
 import type { ConfigSelector } from "@/config";
 import type { FinishConfig } from "@/config/selectors";
+import type { Finding } from "@/finish";
 import type { FinishFixInput } from "@/operations";
 import { finishFixOp } from "@/operations";
-import type { Finding } from "@/finish";
 import type { NaxRuntime } from "@/runtime";
 import { makeTestRuntime, withTempDir } from "@test/helpers";
 

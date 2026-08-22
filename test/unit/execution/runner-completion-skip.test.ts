@@ -13,20 +13,14 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "@/config";
-import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { AcceptanceLoopResult } from "@/execution/lifecycle/acceptance-loop";
-import {
-  _runnerCompletionDeps,
-  runCompletionPhase,
-  type RunnerCompletionOptions,
-} from "@/execution/runner-completion";
-import {
-  _runCompletionDeps,
-} from "@/execution/lifecycle/run-completion";
+import { _runCompletionDeps } from "@/execution/lifecycle/run-completion";
 import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
-import type { LoadedHooksConfig } from "@/hooks";
-import type { PRD, UserStory } from "@/prd";
+import { type RunnerCompletionOptions, _runnerCompletionDeps, runCompletionPhase } from "@/execution/runner-completion";
 import type { PostRunStatus } from "@/execution/status-file";
+import type { LoadedHooksConfig } from "@/hooks";
+import { pipelineEventBus } from "@/pipeline/event-bus";
+import type { PRD, UserStory } from "@/prd";
 import { makeNaxConfig } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
@@ -135,7 +129,14 @@ function makeOpts(
       outputDir: `${WORKDIR}/output`,
       close: async () => {},
       costAggregator: {
-        snapshot: () => ({ totalCostUsd: 0, totalEstimatedCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }),
+        snapshot: () => ({
+          totalCostUsd: 0,
+          totalEstimatedCostUsd: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          callCount: 0,
+          errorCount: 0,
+        }),
         byStage: () => ({}),
         byStory: () => ({}),
         byAgent: () => ({}),
@@ -171,7 +172,9 @@ const origRunDeps = { ..._runCompletionDeps };
 
 beforeEach(() => {
   _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => defaultAcceptanceResult);
-  _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => defaultRegressionResult);
+  _runCompletionDeps.runDeferredRegression = mock(
+    async (): Promise<DeferredRegressionResult> => defaultRegressionResult,
+  );
 });
 
 afterEach(() => {

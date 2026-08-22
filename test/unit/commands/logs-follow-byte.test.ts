@@ -14,8 +14,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir, waitForCondition, withTimeout } from "@test/helpers";
 import { type FollowLogsDeps, followLogs } from "@/commands/logs";
+import { cleanupTempDir, makeTempDir, waitForCondition, withTimeout } from "@test/helpers";
 
 describe("--follow mode byte-offset tailing (US-002)", () => {
   let followDir: string;
@@ -75,8 +75,7 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
           appendedOnce = true;
         }
       },
-      readRange: async (path, start) =>
-        Buffer.from(await Bun.file(path).slice(start).arrayBuffer()).toString("utf8"),
+      readRange: async (path, start) => Buffer.from(await Bun.file(path).slice(start).arrayBuffer()).toString("utf8"),
     };
     const controller = new AbortController();
 
@@ -117,8 +116,7 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
         }
         sleepCalls++;
       },
-      readRange: async (path, start) =>
-        Buffer.from(await Bun.file(path).slice(start).arrayBuffer()).toString("utf8"),
+      readRange: async (path, start) => Buffer.from(await Bun.file(path).slice(start).arrayBuffer()).toString("utf8"),
     };
     const controller = new AbortController();
 
@@ -176,8 +174,7 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
           await appendEntry(filePath, appendedB);
         }
       },
-      readRange: async (path, start) =>
-        Buffer.from(await Bun.file(path).slice(start).arrayBuffer()).toString("utf8"),
+      readRange: async (path, start) => Buffer.from(await Bun.file(path).slice(start).arrayBuffer()).toString("utf8"),
     };
     const controller = new AbortController();
 
@@ -189,9 +186,7 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
     // Wait until both appended entries have been emitted.
     try {
       await waitForCondition(
-        () =>
-          emitted.some((l) => l.includes("append A ✓")) &&
-          emitted.some((l) => l.includes("append B ✓")),
+        () => emitted.some((l) => l.includes("append A ✓")) && emitted.some((l) => l.includes("append B ✓")),
         1000,
         5,
       );
@@ -226,8 +221,7 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
           appendFileSync(filePath, encodeLine(validB));
         }
       },
-      readRange: async (path, start) =>
-        Buffer.from(await Bun.file(path).slice(start).arrayBuffer()).toString("utf8"),
+      readRange: async (path, start) => Buffer.from(await Bun.file(path).slice(start).arrayBuffer()).toString("utf8"),
     };
     const controller = new AbortController();
 
@@ -270,8 +264,7 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
           await appendEntry(filePath, appendedEntry);
         }
       },
-      readRange: async (path, start) =>
-        Buffer.from(await Bun.file(path).slice(start).arrayBuffer()).toString("utf8"),
+      readRange: async (path, start) => Buffer.from(await Bun.file(path).slice(start).arrayBuffer()).toString("utf8"),
     };
     const controller = new AbortController();
 
@@ -318,9 +311,7 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
       },
       readRange: async (_path, start) => {
         readRangeCalls.push(start);
-        return Buffer.from(await Bun.file(filePath).slice(start).arrayBuffer()).toString(
-          "utf8",
-        );
+        return Buffer.from(await Bun.file(filePath).slice(start).arrayBuffer()).toString("utf8");
       },
     };
     const controller = new AbortController();
@@ -370,8 +361,7 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
           appendFileSync(filePath, secondHalf);
         }
       },
-      readRange: async (path, start) =>
-        Buffer.from(await Bun.file(path).slice(start).arrayBuffer()).toString("utf8"),
+      readRange: async (path, start) => Buffer.from(await Bun.file(path).slice(start).arrayBuffer()).toString("utf8"),
     };
     const controller = new AbortController();
 
@@ -420,8 +410,7 @@ describe("--follow mode byte-offset tailing (US-002)", () => {
           appendFileSync(filePath, partialSecondHalf);
         }
       },
-      readRange: async (path, start) =>
-        Buffer.from(await Bun.file(path).slice(start).arrayBuffer()).toString("utf8"),
+      readRange: async (path, start) => Buffer.from(await Bun.file(path).slice(start).arrayBuffer()).toString("utf8"),
     };
     const controller = new AbortController();
 

@@ -7,8 +7,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import {
-  _isolationDeps,
   LITE_STUB_ADDED_LINES_CEILING,
+  _isolationDeps,
   isSourceFile,
   verifyTestWriterIsolation,
 } from "@/tdd/isolation";
@@ -181,13 +181,7 @@ describe("verifyTestWriterIsolation: strict vs. lite mode", () => {
       if (args.includes("--name-only")) return "packages/foo/src/foo.py\n";
       return "10\t0\tpackages/foo/src/foo.py\n";
     });
-    const result = await verifyTestWriterIsolation(
-      "/tmp",
-      "HEAD",
-      ["packages/*/tests/**"],
-      ["**/test_*.py"],
-      "strict",
-    );
+    const result = await verifyTestWriterIsolation("/tmp", "HEAD", ["packages/*/tests/**"], ["**/test_*.py"], "strict");
     expect(result.passed).toBe(false);
     expect(result.violations).toContain("packages/foo/src/foo.py");
     expect(result.softViolations ?? []).not.toContain("packages/foo/src/foo.py");
@@ -199,13 +193,7 @@ describe("verifyTestWriterIsolation: strict vs. lite mode", () => {
       if (args.includes("--name-only")) return "packages/foo/src/__init__.py\n";
       return `${added}\t0\tpackages/foo/src/__init__.py\n`;
     });
-    const result = await verifyTestWriterIsolation(
-      "/tmp",
-      "HEAD",
-      ["packages/*/tests/**"],
-      ["**/test_*.py"],
-      "lite",
-    );
+    const result = await verifyTestWriterIsolation("/tmp", "HEAD", ["packages/*/tests/**"], ["**/test_*.py"], "lite");
     expect(result.passed).toBe(true);
     expect(result.violations).toEqual([]);
     expect(result.softViolations).toContain("packages/foo/src/__init__.py");
@@ -217,13 +205,7 @@ describe("verifyTestWriterIsolation: strict vs. lite mode", () => {
       if (args.includes("--name-only")) return "packages/foo/src/big.py\n";
       return `${added}\t0\tpackages/foo/src/big.py\n`;
     });
-    const result = await verifyTestWriterIsolation(
-      "/tmp",
-      "HEAD",
-      ["packages/*/tests/**"],
-      ["**/test_*.py"],
-      "lite",
-    );
+    const result = await verifyTestWriterIsolation("/tmp", "HEAD", ["packages/*/tests/**"], ["**/test_*.py"], "lite");
     expect(result.passed).toBe(false);
     expect(result.violations).toContain("packages/foo/src/big.py");
   });
@@ -233,13 +215,7 @@ describe("verifyTestWriterIsolation: strict vs. lite mode", () => {
       if (args.includes("--name-only")) return "src/index.ts\n";
       return "999\t0\tsrc/index.ts\n";
     });
-    const result = await verifyTestWriterIsolation(
-      "/tmp",
-      "HEAD",
-      ["src/index.ts"],
-      ["**/*.test.ts"],
-      "lite",
-    );
+    const result = await verifyTestWriterIsolation("/tmp", "HEAD", ["src/index.ts"], ["**/*.test.ts"], "lite");
     expect(result.passed).toBe(true);
     expect(result.softViolations).toContain("src/index.ts");
   });

@@ -82,7 +82,9 @@ describe("config/merger", () => {
   describe("array replacement", () => {
     test("replaces arrays (flat, nested, and empty) instead of merging", () => {
       expect(deepMergeConfig({ items: [1, 2, 3] }, { items: [4, 5] })).toEqual({ items: [4, 5] });
-      expect(deepMergeConfig({ config: { tiers: ["fast", "balanced"] } }, { config: { tiers: ["powerful"] } })).toEqual({ config: { tiers: ["powerful"] } });
+      expect(deepMergeConfig({ config: { tiers: ["fast", "balanced"] } }, { config: { tiers: ["powerful"] } })).toEqual(
+        { config: { tiers: ["powerful"] } },
+      );
       expect(deepMergeConfig({ items: [1, 2, 3] }, { items: [] })).toEqual({ items: [] });
     });
   });

@@ -19,27 +19,10 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import {
-  _effectivenessDeps,
-  buildEvidenceTerms,
-  classifyWithTerms,
-} from "@/context/engine/effectiveness";
-import {
-  type Classifier,
-  type LabelCase,
-  loadLabelSet,
-  scoreEffectiveness,
-} from "@/context/engine/effectiveness-eval";
+import { _effectivenessDeps, buildEvidenceTerms, classifyWithTerms } from "@/context/engine/effectiveness";
+import { type Classifier, type LabelCase, loadLabelSet, scoreEffectiveness } from "@/context/engine/effectiveness-eval";
 
-const COMMITTED_FIXTURE = join(
-  import.meta.dir,
-  "..",
-  "..",
-  "..",
-  "fixtures",
-  "effectiveness",
-  "labels.sample.json",
-);
+const COMMITTED_FIXTURE = join(import.meta.dir, "..", "..", "..", "fixtures", "effectiveness", "labels.sample.json");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Whole-diff classifier (pre-change behaviour) — three+ shared terms with the
@@ -101,9 +84,7 @@ describe("effectiveness gate (AC11)", () => {
     // declare that large-diff case as followed — Spearman correlation
     // between diff size and "followed" drops relative to the whole-diff
     // baseline.
-    expect(Math.abs(scopedReport.sizeCorrelation)).toBeLessThan(
-      Math.abs(wholeDiffReport.sizeCorrelation),
-    );
+    expect(Math.abs(scopedReport.sizeCorrelation)).toBeLessThan(Math.abs(wholeDiffReport.sizeCorrelation));
   });
 
   test("[AC11, boundary] added-lines-only attribution reduces size correlation even without scopePaths", async () => {
@@ -120,9 +101,7 @@ describe("effectiveness gate (AC11)", () => {
     const wholeDiffReport = scoreEffectiveness(casesNoScope, makeWholeDiffClassifier());
     const scopedReport = scoreEffectiveness(casesNoScope, makeScopedClassifier());
 
-    expect(Math.abs(scopedReport.sizeCorrelation)).toBeLessThan(
-      Math.abs(wholeDiffReport.sizeCorrelation),
-    );
+    expect(Math.abs(scopedReport.sizeCorrelation)).toBeLessThan(Math.abs(wholeDiffReport.sizeCorrelation));
   });
 });
 

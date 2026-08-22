@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { Debater } from "@/debate/types";
 import { DEFAULT_CONFIG } from "@/config";
+import type { Debater } from "@/debate/types";
 import { debateProposeOp } from "@/operations/debate-propose";
 
 function makeBuildCtx() {

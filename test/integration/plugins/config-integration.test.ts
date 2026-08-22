@@ -153,7 +153,10 @@ export default {
     const globalPluginsDir = path.join(projectRoot, ".nax", "plugins");
     const projectPluginsDir = path.join(projectRoot, ".nax", "plugins");
 
-    const registry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, projectRoot, ["nax-curator", "nax-auto-pr"]);
+    const registry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, projectRoot, [
+      "nax-curator",
+      "nax-auto-pr",
+    ]);
 
     // Verify both plugins loaded
     expect(registry.plugins).toHaveLength(2);

@@ -22,10 +22,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
 import { stripRemovedNoOpKeys } from "@/config/config-guards";
 import { _clearRootConfigCache, loadConfig, loadConfigForWorkdir } from "@/config/loader";
 import { NaxConfigSchema } from "@/config/schemas";
-import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const tempDirs: string[] = [];
@@ -86,10 +86,7 @@ describe("stripRemovedNoOpKeys — direct unit", () => {
   });
 
   test("AC-4: retains other tdd fields when stripping tdd.autoVerifyIsolation", () => {
-    const result = stripRemovedNoOpKeys(
-      { tdd: { autoVerifyIsolation: false, maxRetries: 5 } },
-      () => {},
-    );
+    const result = stripRemovedNoOpKeys({ tdd: { autoVerifyIsolation: false, maxRetries: 5 } }, () => {});
 
     const tdd = result.tdd as Record<string, unknown>;
     expect(tdd.maxRetries).toBe(5);
@@ -97,10 +94,7 @@ describe("stripRemovedNoOpKeys — direct unit", () => {
   });
 
   test("AC-5: retains other acceptance fields when stripping acceptance.generateTests", () => {
-    const result = stripRemovedNoOpKeys(
-      { acceptance: { generateTests: false, enabled: true } },
-      () => {},
-    );
+    const result = stripRemovedNoOpKeys({ acceptance: { generateTests: false, enabled: true } }, () => {});
 
     const acceptance = result.acceptance as Record<string, unknown>;
     expect(acceptance.enabled).toBe(true);
@@ -113,7 +107,8 @@ describe("stripRemovedNoOpKeys — direct unit", () => {
       () => {},
     );
 
-    const rectification = ((result.execution as Record<string, unknown>).rectification as Record<string, unknown>) ?? {};
+    const rectification =
+      ((result.execution as Record<string, unknown>).rectification as Record<string, unknown>) ?? {};
     expect(rectification.abortOnNoProgress).toBe(true);
     expect(rectification.escalateOnExhaustion).toBeUndefined();
   });
@@ -142,10 +137,7 @@ describe("stripRemovedNoOpKeys — direct unit", () => {
 
   test("AC-9: warns and strips when tdd.autoVerifyIsolation is a string", () => {
     const captured: string[] = [];
-    const result = stripRemovedNoOpKeys(
-      { tdd: { autoVerifyIsolation: "yes" } },
-      (msg) => captured.push(msg),
-    );
+    const result = stripRemovedNoOpKeys({ tdd: { autoVerifyIsolation: "yes" } }, (msg) => captured.push(msg));
 
     expect(captured.length).toBe(1);
     expect(captured[0]).toContain("tdd.autoVerifyIsolation");

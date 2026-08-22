@@ -406,9 +406,7 @@ describeWithClaude("precheck orchestrator behavior (US-002)", () => {
     mkdirSync(join(testDir, "node_modules"));
 
     const config = createMockConfig(testDir);
-    const prd = createMockPRD([
-      createMockStory({ id: "", title: "", description: "" }),
-    ]);
+    const prd = createMockPRD([createMockStory({ id: "", title: "", description: "" })]);
 
     const { exitCode } = await runPrecheck(config, prd, { workdir: testDir, format: "human" });
 

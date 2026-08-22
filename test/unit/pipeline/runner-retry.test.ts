@@ -16,7 +16,10 @@ function makeCtx(): PipelineContext {
   };
 }
 
-function stage(name: string, action: () => import("@/pipeline").StageResult | Promise<import("@/pipeline").StageResult>): PipelineStage {
+function stage(
+  name: string,
+  action: () => import("@/pipeline").StageResult | Promise<import("@/pipeline").StageResult>,
+): PipelineStage {
   return { name, enabled: () => true, execute: async () => action() };
 }
 
@@ -26,15 +29,24 @@ describe("runPipeline retry action", () => {
     let attempt = 0;
 
     const stages = [
-      stage("a", () => { order.push("a"); return { action: "continue" }; }),
-      stage("b", () => { order.push("b"); return { action: "continue" }; }),
+      stage("a", () => {
+        order.push("a");
+        return { action: "continue" };
+      }),
+      stage("b", () => {
+        order.push("b");
+        return { action: "continue" };
+      }),
       stage("c", () => {
         order.push("c");
         attempt++;
         if (attempt < 2) return { action: "retry", fromStage: "b" };
         return { action: "continue" };
       }),
-      stage("d", () => { order.push("d"); return { action: "continue" }; }),
+      stage("d", () => {
+        order.push("d");
+        return { action: "continue" };
+      }),
     ];
 
     const result = await runPipeline(stages, makeCtx());
@@ -46,8 +58,13 @@ describe("runPipeline retry action", () => {
   test("retry escalates after MAX_STAGE_RETRIES exceeded", async () => {
     let calls = 0;
     const stages = [
-      stage("verify", () => { return { action: "continue" }; }),
-      stage("rectify", () => { calls++; return { action: "retry", fromStage: "verify" }; }),
+      stage("verify", () => {
+        return { action: "continue" };
+      }),
+      stage("rectify", () => {
+        calls++;
+        return { action: "retry", fromStage: "verify" };
+      }),
     ];
 
     const result = await runPipeline(stages, makeCtx());
@@ -90,9 +107,7 @@ describe("runPipeline retry action", () => {
   });
 
   test("retry to unknown stage escalates", async () => {
-    const stages = [
-      stage("a", () => ({ action: "retry", fromStage: "nonexistent" })),
-    ];
+    const stages = [stage("a", () => ({ action: "retry", fromStage: "nonexistent" }))];
 
     const result = await runPipeline(stages, makeCtx());
     expect(result.finalAction).toBe("escalate");
@@ -136,8 +151,18 @@ describe("runPipeline retry action", () => {
     let attempt = 0;
 
     const stages = [
-      stage("verify", () => { order.push("verify"); return { action: "continue" }; }),
-      { name: "disabled", enabled: () => false, execute: async () => { order.push("disabled"); return { action: "continue" as const }; } },
+      stage("verify", () => {
+        order.push("verify");
+        return { action: "continue" };
+      }),
+      {
+        name: "disabled",
+        enabled: () => false,
+        execute: async () => {
+          order.push("disabled");
+          return { action: "continue" as const };
+        },
+      },
       stage("rectify", () => {
         order.push("rectify");
         attempt++;

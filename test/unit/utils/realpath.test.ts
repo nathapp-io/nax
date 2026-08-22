@@ -7,9 +7,9 @@
  * producing zero mutation candidates.
  */
 
+import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, symlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { afterEach, describe, expect, test } from "bun:test";
 import { isInside, realOrRaw } from "@/utils/realpath";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 

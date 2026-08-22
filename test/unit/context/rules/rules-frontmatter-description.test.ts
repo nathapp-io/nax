@@ -6,13 +6,9 @@
  * 800-line file-size limit.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import {
-  KNOWN_FRONTMATTER_KEYS,
-  parseFrontmatter,
-  RulesFrontmatterError,
-} from "@/context/rules/rules-frontmatter";
-import { loadCanonicalRules, _canonicalLoaderDeps } from "@/context/rules/canonical-loader";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { _canonicalLoaderDeps, loadCanonicalRules } from "@/context/rules/canonical-loader";
+import { KNOWN_FRONTMATTER_KEYS, RulesFrontmatterError, parseFrontmatter } from "@/context/rules/rules-frontmatter";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // US-001: Canonical rules accept and carry an optional single-line description.
@@ -53,7 +49,7 @@ describe("parseFrontmatter — US-001 description validation", () => {
   });
 
   test("[AC4] throws RulesFrontmatterError containing 'frontmatter.description cannot be empty' when description is empty", () => {
-    const content = ["---", "description: \"\"", "---", "", "Body."].join("\n");
+    const content = ["---", 'description: ""', "---", "", "Body."].join("\n");
     let threw: unknown;
     try {
       parseFrontmatter(content, "/project/.nax/rules/empty-desc.md");
@@ -65,7 +61,7 @@ describe("parseFrontmatter — US-001 description validation", () => {
   });
 
   test("[AC4] throws RulesFrontmatterError containing 'frontmatter.description cannot be empty' when description is whitespace-only", () => {
-    const content = ["---", "description: \"   \"", "---", "", "Body."].join("\n");
+    const content = ["---", 'description: "   "', "---", "", "Body."].join("\n");
     let threw: unknown;
     try {
       parseFrontmatter(content, "/project/.nax/rules/ws-desc.md");

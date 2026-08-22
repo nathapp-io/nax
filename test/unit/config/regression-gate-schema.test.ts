@@ -7,9 +7,9 @@
  * rejectLegacyRectificationKeys in src/config/loader.ts for the migration guard.
  */
 
-import { describe, test, expect } from "bun:test";
-import { NaxConfigSchema } from "@/config/schemas";
+import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
+import { NaxConfigSchema } from "@/config/schemas";
 
 // ---------------------------------------------------------------------------
 // Helper: build a full NaxConfig-shaped object with a custom regressionGate

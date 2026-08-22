@@ -1,14 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import type { UserStory } from "@/prd/types";
-import {
-  buildBatchStorySection,
-  buildStoryReminderSection,
-  buildStorySection,
-} from "@/prompts/sections/story";
+import { buildBatchStorySection, buildStoryReminderSection, buildStorySection } from "@/prompts/sections/story";
 import { makeStory } from "@test/helpers";
 
 describe("buildStorySection", () => {
-  const mockStory = makeStory({ id: "STORY-001", title: "Test Story", description: "This is a test story", acceptanceCriteria: ["Criterion 1", "Criterion 2", "Criterion 3"] });
+  const mockStory = makeStory({
+    id: "STORY-001",
+    title: "Test Story",
+    description: "This is a test story",
+    acceptanceCriteria: ["Criterion 1", "Criterion 2", "Criterion 3"],
+  });
 
   test("includes story title", () => {
     const result = buildStorySection(mockStory);
@@ -164,7 +165,10 @@ describe("out-of-scope rendering", () => {
   });
 
   test("buildBatchStorySection renders each story's own exclusions", () => {
-    const result = buildBatchStorySection([withExclusions(), makeStory({ id: "STORY-002", outOfScope: ["No caching"] })]);
+    const result = buildBatchStorySection([
+      withExclusions(),
+      makeStory({ id: "STORY-002", outOfScope: ["No caching"] }),
+    ]);
     expect(result).toContain("- An interactive Ink TUI");
     expect(result).toContain("- No caching");
   });

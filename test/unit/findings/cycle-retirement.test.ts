@@ -13,10 +13,20 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { CallOpFn } from "@/findings/cycle";
 import { runFixCycle } from "@/findings";
 import type { Finding } from "@/findings";
-import { lintA, lintB, makeCallOpMock, makeCallOpSpy, makeCtx, makeCycle, makeFinding, makeStrategy, typecheckC } from "./_cycle-fixtures";
+import type { CallOpFn } from "@/findings/cycle";
+import {
+  lintA,
+  lintB,
+  makeCallOpMock,
+  makeCallOpSpy,
+  makeCtx,
+  makeCycle,
+  makeFinding,
+  makeStrategy,
+  typecheckC,
+} from "./_cycle-fixtures";
 
 // ─── runFixCycle — partial give-up in a co-run group (#1369) ─────────────────
 
@@ -344,7 +354,10 @@ describe("runFixCycle — give-up falls through to a remaining claimant (#1654)"
     const dispatched: string[] = [];
     const cycle = makeCycle(
       [lintA],
-      [scoped("full-suite-rectify", dispatched), unscoped("repo-scoped-test-fix", dispatched, "cannot fix this either")],
+      [
+        scoped("full-suite-rectify", dispatched),
+        unscoped("repo-scoped-test-fix", dispatched, "cannot fix this either"),
+      ],
       async () => [lintA],
     );
     const r = await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: makeCallOpSpy().fn });
@@ -407,7 +420,11 @@ describe("runFixCycle — strategy.sessionRole isolates the dispatch session", (
 
   test("leaves sessionOverride unset for a strategy that declares no sessionRole", async () => {
     const spy = makeCallOpSpy();
-    const cycle = makeCycle([lintA], [makeStrategy({ name: "full-suite-rectify", coRun: "exclusive" })], async () => []);
+    const cycle = makeCycle(
+      [lintA],
+      [makeStrategy({ name: "full-suite-rectify", coRun: "exclusive" })],
+      async () => [],
+    );
     await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: spy.fn });
     expect(spy.calls[0]?.ctx.sessionOverride).toBeUndefined();
   });

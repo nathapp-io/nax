@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { ModelDef } from "@/config/schema";
 import type { AcpSessionResponse, InteractionExchange } from "@/agents";
 import { buildTurnResult } from "@/agents";
+import type { ModelDef } from "@/config/schema";
 
 const MODEL: ModelDef = { provider: "anthropic", model: "claude-sonnet-4-5", env: {} };
 
@@ -87,9 +87,7 @@ describe("buildTurnResult — AC1: wall-clock timeout surfaces timedOut=true", (
   });
 
   test("emits interactions array only when present (matching legacy contract)", () => {
-    const interactions: InteractionExchange[] = [
-      { turnIndex: 1, question: "q?", reply: "a" },
-    ];
+    const interactions: InteractionExchange[] = [{ turnIndex: 1, question: "q?", reply: "a" }];
     const withInter = buildTurnResult({
       lastResponse: makeResponse({ messages: [{ role: "assistant", content: "x" }] }),
       totalTokenUsage: { inputTokens: 0, outputTokens: 0 },

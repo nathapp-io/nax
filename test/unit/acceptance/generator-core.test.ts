@@ -8,11 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import {
-  acceptanceTestFilename,
-  buildAcceptanceRunCommand,
-  parseAcceptanceCriteria,
-} from "@/acceptance";
+import { acceptanceTestFilename, buildAcceptanceRunCommand, parseAcceptanceCriteria } from "@/acceptance";
 
 describe("acceptanceTestFilename", () => {
   test.each([
@@ -39,7 +35,12 @@ describe("buildAcceptanceRunCommand", () => {
   });
 
   test.each([
-    ["vitest", "/pkg/.nax-acceptance.test.ts", "vitest" as const, ["npx", "vitest", "run", "/pkg/.nax-acceptance.test.ts"]],
+    [
+      "vitest",
+      "/pkg/.nax-acceptance.test.ts",
+      "vitest" as const,
+      ["npx", "vitest", "run", "/pkg/.nax-acceptance.test.ts"],
+    ],
     ["jest", "/pkg/.nax-acceptance.test.ts", "jest" as const, ["npx", "jest", "/pkg/.nax-acceptance.test.ts"]],
     ["pytest", "/pkg/.nax-acceptance.test.py", "pytest" as const, ["pytest", "/pkg/.nax-acceptance.test.py"]],
     ["go-test", "/pkg/.nax-acceptance_test.go", "go-test" as const, ["go", "test", "/pkg/.nax-acceptance_test.go"]],

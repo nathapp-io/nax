@@ -10,5 +10,16 @@
     "indentStyle": "space",
     "indentWidth": 2,
     "lineWidth": 120
-  }
+  },
+  "overrides": [
+    {
+      "include": ["test/**"],
+      "linter": {
+        "rules": {
+          "suspicious": { "noExplicitAny": "off" },
+          "style": { "noNonNullAssertion": "off" }
+        }
+      }
+    }
+  ]
 }

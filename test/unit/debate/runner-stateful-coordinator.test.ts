@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/helpers";
-import * as callModule from "@/operations";
 import { runStateful } from "@/debate/runner-stateful";
+import * as callModule from "@/operations";
+import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/helpers";
 
 interface PromiseWithResolvers<T> {
   readonly promise: Promise<T>;
@@ -171,7 +171,11 @@ describe("runStateful coordinator", () => {
     ]);
     expect(result.rebuttals).toEqual([
       { debater: { agent: "claude", model: "fast" }, round: 1, output: "rebut-0:proposal-0|proposal-1|proposal-2" },
-      { debater: { agent: "opencode", model: "balanced" }, round: 1, output: "rebut-1:proposal-0|proposal-1|proposal-2" },
+      {
+        debater: { agent: "opencode", model: "balanced" },
+        round: 1,
+        output: "rebut-1:proposal-0|proposal-1|proposal-2",
+      },
       { debater: { agent: "gemini", model: "powerful" }, round: 1, output: "rebut-2:proposal-0|proposal-1|proposal-2" },
     ]);
   });

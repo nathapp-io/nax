@@ -1,7 +1,7 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import type { NaxConfig } from "@/config";
 import { createConfigLoader } from "@/config/loader-runtime";
 import { pickSelector } from "@/config/selector";
-import type { NaxConfig } from "@/config";
 
 const minConfig = { routing: { strategy: "keyword" } } as unknown as NaxConfig;
 const routingSel = pickSelector("routing-test", "routing");

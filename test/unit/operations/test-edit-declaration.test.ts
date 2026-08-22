@@ -19,7 +19,7 @@ Trailing prose.`;
     expect(declarations[0]).toEqual({
       reason: "prd_contract",
       file: "apps/api/test/unit/code-intel/impact-analysis.service.spec.ts",
-      prdQuote: 'getChangeImpact(repoId: string, sha: string): Promise<ImpactReport>',
+      prdQuote: "getChangeImpact(repoId: string, sha: string): Promise<ImpactReport>",
       testBefore: "service.getChangeImpact(repoId)",
       testAfter: "service.getChangeImpact(repoId, sha)",
     });
@@ -142,8 +142,16 @@ REASON: Some reason.`;
 
 describe("validatePrdQuote", () => {
   test.each<[string, ReturnType<typeof makeStory>, string]>([
-    ["verbatim in description", makeStory({ description: "Implement getChangeImpact(repoId: string, sha: string): Promise<ImpactReport>" }), "getChangeImpact(repoId: string, sha: string): Promise<ImpactReport>"],
-    ["in acceptance criterion", makeStory({ acceptanceCriteria: ["AC-1: API exposes `fnA(x: number): void`", "AC-2: returns void"] }), "fnA(x: number): void"],
+    [
+      "verbatim in description",
+      makeStory({ description: "Implement getChangeImpact(repoId: string, sha: string): Promise<ImpactReport>" }),
+      "getChangeImpact(repoId: string, sha: string): Promise<ImpactReport>",
+    ],
+    [
+      "in acceptance criterion",
+      makeStory({ acceptanceCriteria: ["AC-1: API exposes `fnA(x: number): void`", "AC-2: returns void"] }),
+      "fnA(x: number): void",
+    ],
   ])("returns true when quote appears %s", (_label, story, quote) => {
     expect(validatePrdQuote(quote, story)).toBe(true);
   });
@@ -156,7 +164,11 @@ describe("validatePrdQuote", () => {
   });
 
   test.each<[string, ReturnType<typeof makeStory>, string]>([
-    ["fabricated quote", makeStory({ description: "fnA(): void", acceptanceCriteria: ["AC-1: API does X"] }), "fnB(y: string): boolean"],
+    [
+      "fabricated quote",
+      makeStory({ description: "fnA(): void", acceptanceCriteria: ["AC-1: API does X"] }),
+      "fnB(y: string): boolean",
+    ],
     ["empty quote", makeStory(), ""],
   ])("returns false when %s", (_label, story, quote) => {
     expect(validatePrdQuote(quote, story)).toBe(false);

@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
-import { initLogger, resetLogger } from "@/logger";
 import type { LoadedHooksConfig } from "@/hooks";
+import { initLogger, resetLogger } from "@/logger";
 import type { PluginRegistry } from "@/plugins";
 import type { PRD, UserStory } from "@/prd/types";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
@@ -72,8 +72,9 @@ describe("AC-6: runParallelBatch rectification success", () => {
     const origMerge = _parallelBatchDeps.createMergeEngine;
     const origRectify = _parallelBatchDeps.rectifyConflictedStory;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
+    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createMergeEngine = async () =>
+      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],
@@ -119,8 +120,9 @@ describe("AC-6: runParallelBatch rectification success", () => {
     const origMerge = _parallelBatchDeps.createMergeEngine;
     const origRectify = _parallelBatchDeps.rectifyConflictedStory;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
+    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createMergeEngine = async () =>
+      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],
@@ -169,8 +171,9 @@ describe("AC-7: runParallelBatch rectification failure", () => {
     const origMerge = _parallelBatchDeps.createMergeEngine;
     const origRectify = _parallelBatchDeps.rectifyConflictedStory;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
+    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createMergeEngine = async () =>
+      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],
@@ -179,7 +182,9 @@ describe("AC-7: runParallelBatch rectification failure", () => {
       mergeConflicts: [{ storyId: "US-001", conflictFiles: [], originalCost: 0.5 }],
       storyCosts: new Map([["US-001", 0.5]]),
     });
-    _parallelBatchDeps.rectifyConflictedStory = async () => { throw new Error("rectification error"); };
+    _parallelBatchDeps.rectifyConflictedStory = async () => {
+      throw new Error("rectification error");
+    };
 
     try {
       const result = await runParallelBatch({
@@ -202,7 +207,6 @@ describe("AC-7: runParallelBatch rectification failure", () => {
       _parallelBatchDeps.rectifyConflictedStory = origRectify;
     }
   });
-
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -228,16 +232,15 @@ describe("AC-8: merge-conflict-rectify exports", () => {
 
 describe("AC-9: import sites updated", () => {
   test("parallel-batch.ts imports from merge-conflict-rectify", async () => {
-    const source = await Bun.file(
-      join(import.meta.dir, "../../../src/execution/parallel-batch.ts"),
-    ).text().catch(() => "");
+    const source = await Bun.file(join(import.meta.dir, "../../../src/execution/parallel-batch.ts"))
+      .text()
+      .catch(() => "");
     if (source) {
       expect(source).toContain('import("./merge-conflict-rectify")');
     } else {
       expect(true).toBe(true);
     }
   });
-
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -250,5 +253,4 @@ describe("AC-10: rectification-pass deleted", () => {
     const exists = await Bun.file(filePath).exists();
     expect(exists).toBe(false);
   });
-
 });

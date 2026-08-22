@@ -5,8 +5,8 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { computeAcpHandle } from "@/agents/acp/adapter";
-import type { AgentResult } from "@/agents/types";
 import type { IAgentManager } from "@/agents/manager-types";
+import type { AgentResult } from "@/agents/types";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import { runSemanticReview } from "@/review/semantic";
 import type { SemanticStory } from "@/review/semantic";
@@ -33,7 +33,16 @@ const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
   resetRefOnRerun: false,
   rules: [],
   timeoutMs: 60_000,
-  excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/", ":!.nax/", ":!.nax-pids"],
+  excludePatterns: [
+    ":!test/",
+    ":!tests/",
+    ":!*_test.go",
+    ":!*.test.ts",
+    ":!*.spec.ts",
+    ":!**/__tests__/",
+    ":!.nax/",
+    ":!.nax-pids",
+  ],
 };
 
 function makeAgentManager(llmResponse: string, cost = 0): IAgentManager {
@@ -321,7 +330,9 @@ describe("runSemanticReview — uses agent.run() instead of agent.complete() (US
     await callRunSemanticReviewWithFeature(agentManager, featureName);
 
     expect(agentManager.runWithFallback).toHaveBeenCalled();
-    const req = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0][0] as { runOptions: Record<string, unknown> };
+    const req = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0][0] as {
+      runOptions: Record<string, unknown>;
+    };
     const runOptions = req.runOptions;
     expect(runOptions.sessionRole).toBe("reviewer-semantic");
     expect(runOptions.featureName).toBe(featureName);
@@ -333,7 +344,9 @@ describe("runSemanticReview — uses agent.run() instead of agent.complete() (US
     const agentManager = makeRunAgentManager(PASSING_LLM_RESPONSE);
     await callRunSemanticReview(agentManager);
     expect(agentManager.runWithFallback).toHaveBeenCalled();
-    const req = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0][0] as { runOptions: Record<string, unknown> };
+    const req = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0][0] as {
+      runOptions: Record<string, unknown>;
+    };
     // Legacy keepOpen option is not present in the ADR-019 runtime path;
     // session lifecycle is owned by buildHopCallback.
     expect(req.runOptions.keepOpen).toBeUndefined();
@@ -358,7 +371,9 @@ describe("runSemanticReview — uses agent.run() instead of agent.complete() (US
     await callRunSemanticReviewWithFeature(agentManager, featureName);
 
     expect(agentManager.runWithFallback).toHaveBeenCalled();
-    const req = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0][0] as { runOptions: Record<string, unknown> };
+    const req = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0][0] as {
+      runOptions: Record<string, unknown>;
+    };
     expect(req.runOptions.featureName).toBe(featureName);
   });
 
@@ -377,7 +392,9 @@ describe("runSemanticReview — uses agent.run() instead of agent.complete() (US
     });
 
     expect(agentManager.runWithFallback).toHaveBeenCalled();
-    const req = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0][0] as { runOptions: Record<string, unknown> };
+    const req = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0][0] as {
+      runOptions: Record<string, unknown>;
+    };
     expect(req.runOptions.storyId).toBe("US-999");
   });
 
@@ -430,6 +447,6 @@ describe("runSemanticReview — uses agent.run() instead of agent.complete() (US
     const result = await callRunSemanticReview(agentManager);
     expect(result.findings).toBeDefined();
     expect(Array.isArray(result.findings)).toBe(true);
-    expect((result.findings?.length ?? 0)).toBeGreaterThan(0);
+    expect(result.findings?.length ?? 0).toBeGreaterThan(0);
   });
 });

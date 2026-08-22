@@ -37,11 +37,13 @@ function makeStory(): UserStory {
   };
 }
 
-function makeConfig(providerOverrides: {
-  historyScope?: "repo" | "package";
-  neighborScope?: "repo" | "package";
-  crossPackageDepth?: number;
-} = {}): NaxConfig {
+function makeConfig(
+  providerOverrides: {
+    historyScope?: "repo" | "package";
+    neighborScope?: "repo" | "package";
+    crossPackageDepth?: number;
+  } = {},
+): NaxConfig {
   return makeNaxConfig({
     autoMode: { defaultAgent: "claude" },
     context: {
@@ -206,14 +208,15 @@ describe("createDefaultOrchestrator — TestCoverageProvider registration", () =
     origResolvePatterns = _testCoverageProviderDeps.resolveTestFilePatterns;
     origGetContextFiles = _testCoverageProviderDeps.getContextFiles;
     _testCoverageProviderDeps.getContextFiles = () => [];
-    _testCoverageProviderDeps.generateTestCoverageSummary = async () => ({
-      summary: "test coverage summary",
-      tokens: 100,
-      files: [],
-      totalTests: 5,
-    } as any);
+    _testCoverageProviderDeps.generateTestCoverageSummary = async () =>
+      ({
+        summary: "test coverage summary",
+        tokens: 100,
+        files: [],
+        totalTests: 5,
+      }) as any;
     _testCoverageProviderDeps.resolveTestFilePatterns = async () =>
-      ({ patterns: ["**/*.test.ts"], strategy: "glob" } as any);
+      ({ patterns: ["**/*.test.ts"], strategy: "glob" }) as any;
   });
 
   afterEach(() => {
@@ -258,9 +261,7 @@ describe("createDefaultOrchestrator — TestCoverageProvider registration", () =
     const orchestrator = createDefaultOrchestrator(makeStory(), config);
     const request = makeRequest({ providerIds: ["test-coverage"] });
     const bundle = await orchestrator.assemble(request);
-    const testCoverageResult = bundle.manifest.providerResults?.find(
-      (p) => p.providerId === "test-coverage",
-    );
+    const testCoverageResult = bundle.manifest.providerResults?.find((p) => p.providerId === "test-coverage");
     expect(testCoverageResult).toBeDefined();
   });
 
@@ -322,9 +323,7 @@ describe("createDefaultOrchestrator — ToolDiagnosticsProvider registration (US
     });
     const bundle = await orchestrator.assemble(request);
 
-    const tdResult = bundle.manifest.providerResults?.find(
-      (p) => p.providerId === "tool-diagnostics",
-    );
+    const tdResult = bundle.manifest.providerResults?.find((p) => p.providerId === "tool-diagnostics");
     expect(tdResult).toBeDefined();
     expect(tdResult?.providerId).toBe("tool-diagnostics");
   });
@@ -340,7 +339,9 @@ describe("createDefaultOrchestrator — ToolDiagnosticsProvider registration (US
         kind: "tool-diagnostics",
         timestamp: "2026-01-01T00:00:00.000Z",
         storyId: "US-001",
-        diagnostics: [{ file: "src/a.ts", line: 12, severity: "error", message: "Cannot find name 'foo'.", tool: "tsc" }],
+        diagnostics: [
+          { file: "src/a.ts", line: 12, severity: "error", message: "Cannot find name 'foo'.", tool: "tsc" },
+        ],
       })}\n`;
 
     const config = makeConfig();

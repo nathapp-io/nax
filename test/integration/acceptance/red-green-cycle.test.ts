@@ -15,11 +15,7 @@ import path from "node:path";
 import { DEFAULT_CONFIG } from "@/config";
 import { initLogger, resetLogger } from "@/logger";
 import { acceptanceStage } from "@/pipeline/stages/acceptance";
-import {
-  _acceptanceSetupDeps,
-  acceptanceSetupStage,
-  computeACFingerprint,
-} from "@/pipeline/stages/acceptance-setup";
+import { _acceptanceSetupDeps, acceptanceSetupStage, computeACFingerprint } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
 import { makeTempDir } from "@test/helpers";
@@ -359,9 +355,7 @@ describe("edge case: already-passing tests trigger skip", () => {
 
   test("skip result includes a human-readable reason explaining the warning", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.callOp = makeDefaultCallOp(
-      'import { test } from "bun:test"; test("AC-1", () => {});',
-    );
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp('import { test } from "bun:test"; test("AC-1", () => {});');
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 0, output: "1 passed" });
 

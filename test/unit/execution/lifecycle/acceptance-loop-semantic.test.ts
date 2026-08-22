@@ -12,8 +12,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { isTestLevelFailure } from "@/execution/lifecycle/acceptance-helpers";
 import type { SemanticVerdict } from "@/acceptance/types";
+import { isTestLevelFailure } from "@/execution/lifecycle/acceptance-helpers";
 
 function makePassingVerdict(storyId: string): SemanticVerdict {
   return { storyId, passed: true, timestamp: new Date().toISOString(), acCount: 2, findings: [] };

@@ -278,7 +278,11 @@ describe("formatProgress", () => {
 
   it("calculates ETA correctly; handles zero elapsed time", () => {
     // 5 completed in 600000ms = ~10 min remaining for 5 more
-    expect(formatProgress({ total: 10, passed: 5, failed: 0, pending: 5 }, 1.0, 5.0, 600000, 10)).toContain("~10 min remaining");
-    expect(formatProgress({ total: 10, passed: 1, failed: 0, pending: 9 }, 0.1, 5.0, 0, 10)).toContain("~0 min remaining");
+    expect(formatProgress({ total: 10, passed: 5, failed: 0, pending: 5 }, 1.0, 5.0, 600000, 10)).toContain(
+      "~10 min remaining",
+    );
+    expect(formatProgress({ total: 10, passed: 1, failed: 0, pending: 9 }, 0.1, 5.0, 0, 10)).toContain(
+      "~0 min remaining",
+    );
   });
 });

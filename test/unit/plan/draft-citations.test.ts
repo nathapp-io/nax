@@ -8,8 +8,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { validateDraftCitations } from "@/plan";
 import type { FactsManifest } from "@/debate/facts-manifest";
+import { validateDraftCitations } from "@/plan";
 
 const emptyManifest: FactsManifest = { repoFacts: [], specClaims: [], gaps: [] };
 
@@ -20,11 +20,9 @@ const emptyManifest: FactsManifest = { repoFacts: [], specClaims: [], gaps: [] }
 describe("validateDraftCitations — ok === true (AC10)", () => {
   test("returns ok=true when all paragraphs have factId citations and rate >= threshold", () => {
     // Three paragraphs, each citing a factId → rate = 1.0 >= 0.5
-    const output = [
-      "First claim citing [F-001].",
-      "Second claim citing [F-002].",
-      "Third claim citing [F-003].",
-    ].join("\n\n");
+    const output = ["First claim citing [F-001].", "Second claim citing [F-002].", "Third claim citing [F-003]."].join(
+      "\n\n",
+    );
 
     const result = validateDraftCitations(output, emptyManifest, 0.5);
 
@@ -59,11 +57,7 @@ describe("validateDraftCitations — ok === true (AC10)", () => {
 describe("validateDraftCitations — ok === false (AC11)", () => {
   test("returns ok=false when citation rate is below threshold", () => {
     // Three paragraphs: only first cited → rate 0.333 < 0.5
-    const output = [
-      "Cited paragraph [F-001].",
-      "Uncited paragraph one.",
-      "Uncited paragraph two.",
-    ].join("\n\n");
+    const output = ["Cited paragraph [F-001].", "Uncited paragraph one.", "Uncited paragraph two."].join("\n\n");
 
     const result = validateDraftCitations(output, emptyManifest, 0.5);
 
@@ -73,11 +67,7 @@ describe("validateDraftCitations — ok === false (AC11)", () => {
   });
 
   test("uncitedCount reflects the number of uncited paragraphs", () => {
-    const output = [
-      "Cited [F-001].",
-      "Uncited one.",
-      "Uncited two.",
-    ].join("\n\n");
+    const output = ["Cited [F-001].", "Uncited one.", "Uncited two."].join("\n\n");
 
     const result = validateDraftCitations(output, emptyManifest, 0.5);
 
@@ -90,7 +80,7 @@ describe("validateDraftCitations — ok === false (AC11)", () => {
 // ---------------------------------------------------------------------------
 
 describe("validateDraftCitations — empty input (AC12)", () => {
-  test('returns { ok: false, rate: 0, threshold: 0.5, uncitedCount: 0 } for empty string', () => {
+  test("returns { ok: false, rate: 0, threshold: 0.5, uncitedCount: 0 } for empty string", () => {
     const result = validateDraftCitations("", emptyManifest, 0.5);
 
     expect(result).toEqual({ ok: false, rate: 0, threshold: 0.5, uncitedCount: 0 });

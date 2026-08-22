@@ -19,8 +19,7 @@ beforeEach(() => {
   _timeSeq = 0;
   _sessionManagerDeps.uuid = () =>
     `00000000-0000-0000-0000-${String(++_uuidSeq).padStart(12, "0")}` as `${string}-${string}-${string}-${string}-${string}`;
-  _sessionManagerDeps.now = () =>
-    `2025-01-01T00:${String(_timeSeq++).padStart(2, "0")}:00.000Z`;
+  _sessionManagerDeps.now = () => `2025-01-01T00:${String(_timeSeq++).padStart(2, "0")}:00.000Z`;
   // Suppress disk writes during unit tests
   _sessionManagerDeps.writeDescriptor = async () => {};
 });
@@ -48,8 +47,20 @@ describe("SessionManager.resume()", () => {
   });
 
   test.each([
-    ["COMPLETED", (mgr: SessionManager, id: string) => { mgr.transition(id, "RUNNING"); mgr.closeStory("US-001"); }],
-    ["FAILED", (mgr: SessionManager, id: string) => { mgr.transition(id, "RUNNING"); mgr.transition(id, "FAILED"); }],
+    [
+      "COMPLETED",
+      (mgr: SessionManager, id: string) => {
+        mgr.transition(id, "RUNNING");
+        mgr.closeStory("US-001");
+      },
+    ],
+    [
+      "FAILED",
+      (mgr: SessionManager, id: string) => {
+        mgr.transition(id, "RUNNING");
+        mgr.transition(id, "FAILED");
+      },
+    ],
   ])("returns null for %s sessions", (_state, setupFn) => {
     const mgr = new SessionManager();
     const desc = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });

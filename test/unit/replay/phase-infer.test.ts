@@ -12,8 +12,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { inferPhases } from "@/replay";
 import type { LogEntry } from "@/logger/types";
+import { inferPhases } from "@/replay";
 
 function entry(partial: Partial<LogEntry>): LogEntry {
   return {
@@ -52,9 +52,7 @@ describe("inferPhases — barrel export", () => {
 
 describe("inferPhases — AC2: phase pass signal", () => {
   test("AC2: returns a phase with name 'implementer' and status 'pass'", () => {
-    const entries: LogEntry[] = [
-      phaseEntry("US-002", "pass", "implementer"),
-    ];
+    const entries: LogEntry[] = [phaseEntry("US-002", "pass", "implementer")];
 
     const result = inferPhases(entries, "US-002");
 
@@ -62,9 +60,7 @@ describe("inferPhases — AC2: phase pass signal", () => {
   });
 
   test("AC2 boundary: ignores 'Phase passed: implementer' for a different storyId", () => {
-    const entries: LogEntry[] = [
-      phaseEntry("US-OTHER", "pass", "implementer"),
-    ];
+    const entries: LogEntry[] = [phaseEntry("US-OTHER", "pass", "implementer")];
 
     const result = inferPhases(entries, "US-002");
 
@@ -106,9 +102,7 @@ describe("inferPhases — AC3: phase order", () => {
 
 describe("inferPhases — AC4: phase fail signal", () => {
   test("AC4: returns a phase with name 'full-suite-gate' and status 'fail'", () => {
-    const entries: LogEntry[] = [
-      phaseEntry("US-002", "fail", "full-suite-gate"),
-    ];
+    const entries: LogEntry[] = [phaseEntry("US-002", "fail", "full-suite-gate")];
 
     const result = inferPhases(entries, "US-002");
 
@@ -143,9 +137,7 @@ describe("inferPhases — AC5: escalation signal", () => {
   });
 
   test("AC5 boundary: escalations list is empty when no fail-stale markers are present", () => {
-    const entries: LogEntry[] = [
-      phaseEntry("US-002", "pass", "implementer"),
-    ];
+    const entries: LogEntry[] = [phaseEntry("US-002", "pass", "implementer")];
 
     const result = inferPhases(entries, "US-002");
 

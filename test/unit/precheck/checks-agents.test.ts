@@ -6,8 +6,8 @@
  */
 
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
-import { _checkAgentsDeps, checkMultiAgentHealth } from "@/precheck/checks-agents";
 import type { AgentVersionInfo } from "@/agents/shared/version-detection";
+import { _checkAgentsDeps, checkMultiAgentHealth } from "@/precheck/checks-agents";
 
 const MOCK_VERSIONS: AgentVersionInfo[] = [
   { name: "claude", displayName: "Claude Code", version: "v1.2.3", installed: true },

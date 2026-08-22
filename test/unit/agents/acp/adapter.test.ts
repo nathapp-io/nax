@@ -47,17 +47,21 @@ export interface MockAcpClient {
 // Shared helpers — also used by adapter-run.test.ts
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function makeSession(overrides: {
-  promptFn?: (text: string) => Promise<AcpSessionResponse>;
-  closeFn?: (opts?: { forceTerminate?: boolean }) => Promise<void>;
-  cancelFn?: () => Promise<void>;
-} = {}): MockAcpSession {
+export function makeSession(
+  overrides: {
+    promptFn?: (text: string) => Promise<AcpSessionResponse>;
+    closeFn?: (opts?: { forceTerminate?: boolean }) => Promise<void>;
+    cancelFn?: () => Promise<void>;
+  } = {},
+): MockAcpSession {
   return {
-    prompt: overrides.promptFn ?? (async (_: string) => ({
-      messages: [{ role: "assistant", content: "Task completed successfully." }],
-      stopReason: "end_turn",
-      cumulative_token_usage: { input_tokens: 100, output_tokens: 50 },
-    })),
+    prompt:
+      overrides.promptFn ??
+      (async (_: string) => ({
+        messages: [{ role: "assistant", content: "Task completed successfully." }],
+        stopReason: "end_turn",
+        cumulative_token_usage: { input_tokens: 100, output_tokens: 50 },
+      })),
     close: overrides.closeFn ?? (async () => {}),
     cancelActivePrompt: overrides.cancelFn ?? (async () => {}),
   };
@@ -67,7 +71,11 @@ export function makeClient(
   session: MockAcpSession,
   overrides: {
     startFn?: () => Promise<void>;
-    createSessionFn?: (opts: { agentName: string; permissionMode: string; sessionName?: string }) => Promise<MockAcpSession>;
+    createSessionFn?: (opts: {
+      agentName: string;
+      permissionMode: string;
+      sessionName?: string;
+    }) => Promise<MockAcpSession>;
     loadSessionFn?: (name: string, agentName: string, permissionMode: string) => Promise<MockAcpSession | null>;
   } = {},
 ): MockAcpClient {
@@ -83,7 +91,9 @@ export function makeClient(
 const ACP_WORKDIR = `/tmp/nax-acp-test-${randomUUID()}`;
 
 /** Default CompleteOptions with required primitives for unit tests. */
-function makeCompleteOptions(overrides: Record<string, unknown> = {}): import("@/agents/types").ResolvedCompleteOptions {
+function makeCompleteOptions(
+  overrides: Record<string, unknown> = {},
+): import("@/agents/types").ResolvedCompleteOptions {
   return {
     modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
     workdir: ACP_WORKDIR,
@@ -110,7 +120,9 @@ export function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentR
 describe("AcpAgentAdapter interface compliance", () => {
   let adapter: AcpAgentAdapter;
 
-  beforeEach(() => { adapter = new AcpAgentAdapter("claude"); });
+  beforeEach(() => {
+    adapter = new AcpAgentAdapter("claude");
+  });
 
   test("name is set from constructor agentName", () => {
     expect(adapter.name).toBe("claude");
@@ -146,7 +158,10 @@ describe("isInstalled()", () => {
 
   test("checks a binary name derived from the agent name", async () => {
     const checked: string[] = [];
-    _acpAdapterDeps.which = mock((name: string) => { checked.push(name); return "/bin/" + name; });
+    _acpAdapterDeps.which = mock((name: string) => {
+      checked.push(name);
+      return "/bin/" + name;
+    });
     await new AcpAgentAdapter("claude").isInstalled();
     expect(checked.length).toBeGreaterThan(0);
   });
@@ -156,8 +171,7 @@ describe("isInstalled()", () => {
 // buildCommand()
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("buildCommand()", () => {
-});
+describe("buildCommand()", () => {});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // complete()
@@ -215,7 +229,9 @@ describe("complete()", () => {
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    await expect(new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions())).rejects.toBeInstanceOf(CompleteError);
+    await expect(new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions())).rejects.toBeInstanceOf(
+      CompleteError,
+    );
   });
 
   // BUG-1: the CompleteError built for a stop-reason-error response must carry the
@@ -264,12 +280,18 @@ describe("complete()", () => {
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    await expect(new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions())).rejects.toBeInstanceOf(CompleteError);
+    await expect(new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions())).rejects.toBeInstanceOf(
+      CompleteError,
+    );
   });
 
   test("closes the session after one-shot completion", async () => {
     let closeCalled = false;
-    const session = makeSession({ closeFn: async () => { closeCalled = true; } });
+    const session = makeSession({
+      closeFn: async () => {
+        closeCalled = true;
+      },
+    });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
     await new AcpAgentAdapter("claude").complete("Quick question", makeCompleteOptions());
@@ -289,7 +311,9 @@ describe("complete()", () => {
 
   test("returns adapterFailure for rate-limit error instead of throwing", async () => {
     const session = makeSession({
-      promptFn: async (_: string) => { throw new Error('{"statusCode":429}'); },
+      promptFn: async (_: string) => {
+        throw new Error('{"statusCode":429}');
+      },
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
@@ -302,13 +326,15 @@ describe("complete()", () => {
 
   test("still throws for unknown (non-classifiable) errors", async () => {
     const session = makeSession({
-      promptFn: async (_: string) => { throw new Error("unexpected internal error"); },
+      promptFn: async (_: string) => {
+        throw new Error("unexpected internal error");
+      },
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    await expect(
-      new AcpAgentAdapter("claude").complete("Unknown fail", makeCompleteOptions()),
-    ).rejects.toThrow(/unexpected internal error/);
+    await expect(new AcpAgentAdapter("claude").complete("Unknown fail", makeCompleteOptions())).rejects.toThrow(
+      /unexpected internal error/,
+    );
   });
 
   // SIGINT-orphan fix — see docs/findings/2026-04-29-sigint-cleanup-rectification-and-adversarial-loops.md
@@ -360,7 +386,9 @@ describe("complete()", () => {
   test("force-terminates the session on successful completion (kills queue-owner)", async () => {
     let capturedCloseOpts: { forceTerminate?: boolean } | undefined;
     const session = makeSession({
-      closeFn: async (opts) => { capturedCloseOpts = opts; },
+      closeFn: async (opts) => {
+        capturedCloseOpts = opts;
+      },
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
@@ -372,13 +400,15 @@ describe("complete()", () => {
     let capturedCloseOpts: { forceTerminate?: boolean } | undefined;
     const session = makeSession({
       promptFn: async (_: string) => ({ messages: [], stopReason: "error" }),
-      closeFn: async (opts) => { capturedCloseOpts = opts; },
+      closeFn: async (opts) => {
+        capturedCloseOpts = opts;
+      },
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
-    await expect(
-      new AcpAgentAdapter("claude").complete("fail", makeCompleteOptions()),
-    ).rejects.toBeInstanceOf(CompleteError);
+    await expect(new AcpAgentAdapter("claude").complete("fail", makeCompleteOptions())).rejects.toBeInstanceOf(
+      CompleteError,
+    );
     expect(capturedCloseOpts?.forceTerminate).toBe(true);
   });
 
@@ -467,9 +497,12 @@ describe("complete() — modelDef primitive consumption", () => {
       return makePassClient() as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
     });
 
-    await new AcpAgentAdapter("claude").complete("test", makeCompleteOptions({
-      modelDef: { provider: "anthropic", model: "claude-haiku-4-5-20250514", env: {} },
-    }));
+    await new AcpAgentAdapter("claude").complete(
+      "test",
+      makeCompleteOptions({
+        modelDef: { provider: "anthropic", model: "claude-haiku-4-5-20250514", env: {} },
+      }),
+    );
     expect(capturedCmd).toContain("--model claude-haiku-4-5-20250514");
   });
 
@@ -479,16 +512,21 @@ describe("complete() — modelDef primitive consumption", () => {
     const client = makePassClient();
     _acpAdapterDeps.createClient = mock((_cmd: string) => {
       const origCreate = client.createSession.bind(client);
-      (client as Record<string, unknown>).createSession = mock(async (opts: { agentName: string; permissionMode: string }) => {
-        capturedPermissionMode = opts.permissionMode;
-        return origCreate(opts);
-      });
+      (client as Record<string, unknown>).createSession = mock(
+        async (opts: { agentName: string; permissionMode: string }) => {
+          capturedPermissionMode = opts.permissionMode;
+          return origCreate(opts);
+        },
+      );
       return client as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
     });
 
-    await new AcpAgentAdapter("claude").complete("test", makeCompleteOptions({
-      resolvedPermissions: { mode: "approve-all" as const },
-    }));
+    await new AcpAgentAdapter("claude").complete(
+      "test",
+      makeCompleteOptions({
+        resolvedPermissions: { mode: "approve-all" as const },
+      }),
+    );
     expect(capturedPermissionMode).toBe("approve-all");
   });
 
@@ -512,9 +550,12 @@ describe("complete() — modelDef primitive consumption", () => {
       return makePassClient() as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
     });
 
-    await new AcpAgentAdapter("claude").complete("test", makeCompleteOptions({
-      modelDef: { provider: "anthropic", model: "claude-default", env: {} },
-    }));
+    await new AcpAgentAdapter("claude").complete(
+      "test",
+      makeCompleteOptions({
+        modelDef: { provider: "anthropic", model: "claude-default", env: {} },
+      }),
+    );
     expect(capturedCmd).toContain("--model claude-default");
   });
 });

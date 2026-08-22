@@ -36,9 +36,7 @@ describe("webhook.ts does not install the compat shim at module scope (SEC-06)",
     // merely by being imported, e.g. via the plugin registry, even when the
     // webhook plugin is never configured). It must now be called only from
     // inside startServer(), not at module scope.
-    const source = await Bun.file(
-      new URL("../../../../src/interaction/plugins/webhook.ts", import.meta.url),
-    ).text();
+    const source = await Bun.file(new URL("../../../../src/interaction/plugins/webhook.ts", import.meta.url)).text();
     const topLevelCall = /^installServePortZeroCompat\(\);\s*$/m;
     expect(topLevelCall.test(source)).toBe(false);
     expect(source).toContain("installServePortZeroCompat();");

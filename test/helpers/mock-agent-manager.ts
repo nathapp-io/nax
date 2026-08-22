@@ -44,11 +44,50 @@ export interface MockAgentManagerOptions {
   getDefaultAgent?: string;
   unavailableAgents?: Set<string>;
   getAgentFn?: (name: string) => AgentAdapter | undefined;
-  runFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCostUsd: number; agentFallbacks: unknown[] }>;
+  runFn?: (
+    agentName: string,
+    opts: AgentRunOptions,
+  ) => Promise<{
+    success: boolean;
+    exitCode: number;
+    output: string;
+    rateLimited: boolean;
+    durationMs: number;
+    estimatedCostUsd: number;
+    agentFallbacks: unknown[];
+  }>;
   completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
-  runWithFallbackFn?: (req: AgentRunRequest, primaryAgentOverride?: string) => Promise<{ result: { success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCostUsd: number; agentFallbacks: unknown[] }; fallbacks: unknown[] }>;
-  completeWithFallbackFn?: (prompt: string, opts?: CompleteOptions) => Promise<{ result: CompleteResult; fallbacks: unknown[] }>;
-  runAsFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCostUsd: number; agentFallbacks: unknown[] }>;
+  runWithFallbackFn?: (
+    req: AgentRunRequest,
+    primaryAgentOverride?: string,
+  ) => Promise<{
+    result: {
+      success: boolean;
+      exitCode: number;
+      output: string;
+      rateLimited: boolean;
+      durationMs: number;
+      estimatedCostUsd: number;
+      agentFallbacks: unknown[];
+    };
+    fallbacks: unknown[];
+  }>;
+  completeWithFallbackFn?: (
+    prompt: string,
+    opts?: CompleteOptions,
+  ) => Promise<{ result: CompleteResult; fallbacks: unknown[] }>;
+  runAsFn?: (
+    agentName: string,
+    opts: AgentRunOptions,
+  ) => Promise<{
+    success: boolean;
+    exitCode: number;
+    output: string;
+    rateLimited: boolean;
+    durationMs: number;
+    estimatedCostUsd: number;
+    agentFallbacks: unknown[];
+  }>;
   completeAsFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
   /**
    * Callback-style runAsSession override. When provided, the mock's runWithFallback
@@ -90,7 +129,13 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
 
   const completeFn = opts.completeFn
     ? mock((prompt: string, completeOpts?: CompleteOptions) => opts.completeFn!("claude", prompt, completeOpts))
-    : mock(() => Promise.resolve({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 } satisfies CompleteResult));
+    : mock(() =>
+        Promise.resolve({
+          output: "",
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+        } satisfies CompleteResult),
+      );
 
   // buildRunWithFallback priority: runWithFallbackFn > runAsSessionFn > default.
   // runWithFallbackFn must take priority because it wires req.executeHop, which
@@ -134,7 +179,9 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
     shouldSwap: () => false,
     nextCandidate: () => null,
     runWithFallback: buildRunWithFallback(),
-    completeWithFallback: opts.completeWithFallbackFn ? mock((prompt: string, completeOpts?: CompleteOptions) => opts.completeWithFallbackFn!(prompt, completeOpts)) : mock(() => Promise.resolve({ result: DEFAULT_COMPLETE_RESULT, fallbacks: [] })),
+    completeWithFallback: opts.completeWithFallbackFn
+      ? mock((prompt: string, completeOpts?: CompleteOptions) => opts.completeWithFallbackFn!(prompt, completeOpts))
+      : mock(() => Promise.resolve({ result: DEFAULT_COMPLETE_RESULT, fallbacks: [] })),
     run: runFn,
     complete: completeFn,
     getAgent: opts.getAgentFn ?? ((name: string) => (unavailable.has(name) ? undefined : defaultAdapter)),
@@ -143,33 +190,44 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
       ? mock((agentName: string, request: AgentRunRequest) => opts.runAsFn!(agentName, request.runOptions))
       : opts.runFn
         ? mock((agentName: string, request: AgentRunRequest) => opts.runFn!(agentName, request.runOptions))
-        : mock((name: string, _req: AgentRunRequest) => Promise.resolve({
-            success: true,
-            exitCode: 0,
-            output: `output from ${name}`,
-            rateLimited: false,
-            durationMs: 1,
-            estimatedCostUsd: 0.01,
-            agentFallbacks: [],
-          })),
+        : mock((name: string, _req: AgentRunRequest) =>
+            Promise.resolve({
+              success: true,
+              exitCode: 0,
+              output: `output from ${name}`,
+              rateLimited: false,
+              durationMs: 1,
+              estimatedCostUsd: 0.01,
+              agentFallbacks: [],
+            }),
+          ),
     completeAs: opts.completeAsFn
-      ? mock((name: string, prompt: string, completeOpts?: CompleteOptions) => opts.completeAsFn!(name, prompt, completeOpts))
+      ? mock((name: string, prompt: string, completeOpts?: CompleteOptions) =>
+          opts.completeAsFn!(name, prompt, completeOpts),
+        )
       : opts.completeFn
-        ? mock((name: string, prompt: string, completeOpts?: CompleteOptions) => opts.completeFn!(name, prompt, completeOpts))
-        : mock((name: string, _p: string, _o?: CompleteOptions) => Promise.resolve({ output: `output from ${name}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 } satisfies CompleteResult)),
+        ? mock((name: string, prompt: string, completeOpts?: CompleteOptions) =>
+            opts.completeFn!(name, prompt, completeOpts),
+          )
+        : mock((name: string, _p: string, _o?: CompleteOptions) =>
+            Promise.resolve({
+              output: `output from ${name}`,
+              tokenUsage: { inputTokens: 0, outputTokens: 0 },
+              estimatedCostUsd: 0,
+            } satisfies CompleteResult),
+          ),
     runAsSession: opts.runAsSessionFn
       ? mock((agentName: string, handle: SessionHandle, prompt: string, sessionOpts: RunAsSessionOpts) =>
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (opts.runAsSessionFn as any)(agentName, handle, prompt, sessionOpts),
         )
-      : mock(
-          (_agentName: string, _handle: SessionHandle, _prompt: string, _sessionOpts: RunAsSessionOpts) =>
-            Promise.resolve({
-              output: "",
-              tokenUsage: { inputTokens: 0, outputTokens: 0 },
-              estimatedCostUsd: 0,
-              internalRoundTrips: 0,
-            } satisfies TurnResult),
+      : mock((_agentName: string, _handle: SessionHandle, _prompt: string, _sessionOpts: RunAsSessionOpts) =>
+          Promise.resolve({
+            output: "",
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0,
+            internalRoundTrips: 0,
+          } satisfies TurnResult),
         ),
     close: () => {},
   } as IAgentManager;

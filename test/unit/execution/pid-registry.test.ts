@@ -4,8 +4,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { PidRegistry, _pidRegistryDeps } from "@/execution";
 import { withDepsRestore } from "@test/helpers";
 
@@ -309,8 +309,7 @@ describe("PidRegistry", () => {
         const pid = cmd[4];
         if (pid === "172552") {
           lookup172552 += 1;
-          const output =
-            lookup172552 < 2 ? "172469 Thu May 15 11:52:47 2026\n" : "999999 Thu May 15 11:59:59 2026\n";
+          const output = lookup172552 < 2 ? "172469 Thu May 15 11:52:47 2026\n" : "999999 Thu May 15 11:59:59 2026\n";
           return {
             pid: 2000,
             stdout: makeStream(output),

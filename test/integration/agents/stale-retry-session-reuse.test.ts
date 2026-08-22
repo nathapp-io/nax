@@ -14,9 +14,9 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { AgentManager, SessionFailureError } from "@/agents";
-import { buildHopCallback, _buildHopCallbackDeps } from "@/operations";
 import type { SessionHandle, TurnResult } from "@/agents/types";
 import type { AdapterFailure, ContextBundle } from "@/context/engine";
+import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
 import { makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
 
 // ─── Stubs ───────────────────────────────────────────────────────────────────

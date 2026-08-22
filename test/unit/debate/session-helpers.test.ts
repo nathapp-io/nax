@@ -9,17 +9,17 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { join } from "node:path";
 import { readdirSync } from "node:fs";
+import { join } from "node:path";
 
-import { _debateSessionDeps, resolveOutcome } from "@/debate/session-helpers";
-import type { DebateSessionOptions } from "@/debate/session-helpers";
-import type { SelectorContext } from "@/debate/selectors";
 import { computeAcpHandle } from "@/agents/acp/adapter";
 import type { CompleteOptions } from "@/agents/types";
-import type { CallContext } from "@/operations/types";
+import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
+import type { SelectorContext } from "@/debate/selectors";
+import { _debateSessionDeps, resolveOutcome } from "@/debate/session-helpers";
+import type { DebateSessionOptions } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
-import { debateConfigSelector, DEFAULT_CONFIG } from "@/config";
+import type { CallContext } from "@/operations/types";
 import { makeMockAgentManager } from "@test/helpers";
 
 const DEFAULT_DEBATE_CONFIG = debateConfigSelector.select(DEFAULT_CONFIG);
@@ -33,17 +33,12 @@ import type { DebateSessionOptions as BarrelDebateSessionOptions } from "@/debat
 describe("src/debate/ file size constraint (AC1)", () => {
   test("no TypeScript source file in src/debate/ exceeds 400 lines", async () => {
     const debateDir = join(process.cwd(), "src", "debate");
-    const tsFiles = readdirSync(debateDir).filter(
-      (f) => f.endsWith(".ts") && !f.endsWith(".d.ts"),
-    );
+    const tsFiles = readdirSync(debateDir).filter((f) => f.endsWith(".ts") && !f.endsWith(".d.ts"));
 
     for (const filename of tsFiles) {
       const content = await Bun.file(join(debateDir, filename)).text();
       const lineCount = content.split("\n").length;
-      expect(
-        lineCount,
-        `${filename} has ${lineCount} lines — must be ≤ 400`,
-      ).toBeLessThanOrEqual(400);
+      expect(lineCount, `${filename} has ${lineCount} lines — must be ≤ 400`).toBeLessThanOrEqual(400);
     }
   });
 
@@ -76,21 +71,46 @@ describe("DebateSessionOptions type export from session-helpers.ts (AC7)", () =>
     const opts1: DebateSessionOptions = {
       storyId: "US-000",
       stage: "review",
-      stageConfig: { enabled: true, resolver: { type: "majority-fail-closed" }, sessionMode: "one-shot", rounds: 1, debaters: [{ agent: "claude" }], timeoutSeconds: 60 },
+      stageConfig: {
+        enabled: true,
+        resolver: { type: "majority-fail-closed" },
+        sessionMode: "one-shot",
+        rounds: 1,
+        debaters: [{ agent: "claude" }],
+        timeoutSeconds: 60,
+      },
     } as any;
     expect(opts1.storyId).toBe("US-000");
     expect(opts1.stageConfig.rounds).toBe(1);
 
     const opts2: DebateSessionOptions = {
-      storyId: "US-000", stage: "plan",
-      stageConfig: { enabled: true, resolver: { type: "synthesis" }, sessionMode: "stateful", rounds: 2, debaters: [{ agent: "claude" }], timeoutSeconds: 120 },
-      workdir: "/tmp/workspace", featureName: "my-feature", timeoutSeconds: 300,
+      storyId: "US-000",
+      stage: "plan",
+      stageConfig: {
+        enabled: true,
+        resolver: { type: "synthesis" },
+        sessionMode: "stateful",
+        rounds: 2,
+        debaters: [{ agent: "claude" }],
+        timeoutSeconds: 120,
+      },
+      workdir: "/tmp/workspace",
+      featureName: "my-feature",
+      timeoutSeconds: 300,
     } as any;
     expect(opts2.workdir).toBe("/tmp/workspace");
 
     const opts3: BarrelDebateSessionOptions = {
-      storyId: "US-000", stage: "review",
-      stageConfig: { enabled: true, resolver: { type: "majority-fail-closed" }, sessionMode: "one-shot", rounds: 1, debaters: [{ agent: "claude" }], timeoutSeconds: 60 },
+      storyId: "US-000",
+      stage: "review",
+      stageConfig: {
+        enabled: true,
+        resolver: { type: "majority-fail-closed" },
+        sessionMode: "one-shot",
+        rounds: 1,
+        debaters: [{ agent: "claude" }],
+        timeoutSeconds: 60,
+      },
     } as any;
     expect(opts3.storyId).toBe("US-000");
   });
@@ -112,10 +132,7 @@ function makeResolveStageConfig(
   } as DebateStageConfig;
 }
 
-function makeCaptureManager(
-  captured: { opts?: CompleteOptions }[],
-  output = "resolved",
-) {
+function makeCaptureManager(captured: { opts?: CompleteOptions }[], output = "resolved") {
   return makeMockAgentManager({
     completeFn: async (_agentName: string, _prompt: string, opts?: CompleteOptions) => {
       captured.push({ opts });
@@ -171,12 +188,30 @@ describe("resolveOutcome() — synthesis resolver sessionHandle (US-004 AC2)", (
 
     const captured1: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.agentManager = makeCaptureManager(captured1);
-    await resolveOutcome(["proposal-a", "proposal-b"], ["critique-a"], stageConfig, DEFAULT_DEBATE_CONFIG, makeMinimalCallCtx(), storyId, 30_000, workdir, featureName);
+    await resolveOutcome(
+      ["proposal-a", "proposal-b"],
+      ["critique-a"],
+      stageConfig,
+      DEFAULT_DEBATE_CONFIG,
+      makeMinimalCallCtx(),
+      storyId,
+      30_000,
+      workdir,
+      featureName,
+    );
     expect(captured1[0]?.opts?.sessionName).toBe(computeAcpHandle(workdir, featureName, storyId, "synthesis"));
 
     const captured2: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.agentManager = makeCaptureManager(captured2);
-    await resolveOutcome(["proposal-a", "proposal-b"], ["critique-a"], stageConfig, DEFAULT_DEBATE_CONFIG, makeMinimalCallCtx(), "US-004", 30_000);
+    await resolveOutcome(
+      ["proposal-a", "proposal-b"],
+      ["critique-a"],
+      stageConfig,
+      DEFAULT_DEBATE_CONFIG,
+      makeMinimalCallCtx(),
+      "US-004",
+      30_000,
+    );
     expect(captured2[0]?.opts?.sessionName).toBeUndefined();
   });
 });
@@ -203,12 +238,30 @@ describe("resolveOutcome() — custom/judge resolver sessionHandle (US-004 AC3)"
 
     const captured1: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.agentManager = makeCaptureManager(captured1);
-    await resolveOutcome(["proposal-a"], ["critique-a"], stageConfig, DEFAULT_DEBATE_CONFIG, makeMinimalCallCtx(), storyId, 30_000, workdir, featureName);
+    await resolveOutcome(
+      ["proposal-a"],
+      ["critique-a"],
+      stageConfig,
+      DEFAULT_DEBATE_CONFIG,
+      makeMinimalCallCtx(),
+      storyId,
+      30_000,
+      workdir,
+      featureName,
+    );
     expect(captured1[0]?.opts?.sessionName).toBe(computeAcpHandle(workdir, featureName, storyId, "judge"));
 
     const captured2: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.agentManager = makeCaptureManager(captured2);
-    await resolveOutcome(["proposal-a"], ["critique-a"], stageConfig, DEFAULT_DEBATE_CONFIG, makeMinimalCallCtx(), "US-004", 30_000);
+    await resolveOutcome(
+      ["proposal-a"],
+      ["critique-a"],
+      stageConfig,
+      DEFAULT_DEBATE_CONFIG,
+      makeMinimalCallCtx(),
+      "US-004",
+      30_000,
+    );
     expect(captured2[0]?.opts?.sessionName).toBeUndefined();
   });
 });
@@ -230,16 +283,31 @@ describe("resolveOutcome() — majority resolver warns when workdir provided (US
   test("emits warn for majority-fail-closed and majority-fail-open when workdir is defined", async () => {
     const makeWarnCapture = () => {
       const warnCalls: Array<{ stage: string; message: string }> = [];
-      _debateSessionDeps.getSafeLogger = mock(() => ({
-        warn: (stage: string, message: string) => warnCalls.push({ stage, message }),
-        info: () => {}, debug: () => {}, error: () => {},
-      }) as unknown as ReturnType<typeof _debateSessionDeps.getSafeLogger>);
+      _debateSessionDeps.getSafeLogger = mock(
+        () =>
+          ({
+            warn: (stage: string, message: string) => warnCalls.push({ stage, message }),
+            info: () => {},
+            debug: () => {},
+            error: () => {},
+          }) as unknown as ReturnType<typeof _debateSessionDeps.getSafeLogger>,
+      );
       return warnCalls;
     };
 
     for (const resolverType of ["majority-fail-closed", "majority-fail-open"] as const) {
       const warnCalls = makeWarnCapture();
-      await resolveOutcome(['{"passed": true}'], [], makeResolveStageConfig(resolverType), undefined, makeMinimalCallCtx(), "US-004", 30_000, "/tmp/workdir", "my-feature");
+      await resolveOutcome(
+        ['{"passed": true}'],
+        [],
+        makeResolveStageConfig(resolverType),
+        undefined,
+        makeMinimalCallCtx(),
+        "US-004",
+        30_000,
+        "/tmp/workdir",
+        "my-feature",
+      );
       expect(warnCalls.length).toBeGreaterThan(0);
       expect(warnCalls[0].message).toContain("majority resolver does not support implementer session resumption");
     }
@@ -319,16 +387,39 @@ describe("resolveOutcome() — callContext parameter (AC2)", () => {
     const callCtx = makeMinimalCallCtx();
 
     const r1 = await resolveOutcome(
-      ['{"passed": true}', '{"passed": true}'], [], makeResolveStageConfig("majority-fail-closed"),
-      DEFAULT_DEBATE_CONFIG, callCtx, "US-ac2", 30_000, undefined, undefined, undefined, undefined, undefined, undefined, makeMockAgentManager(),
+      ['{"passed": true}', '{"passed": true}'],
+      [],
+      makeResolveStageConfig("majority-fail-closed"),
+      DEFAULT_DEBATE_CONFIG,
+      callCtx,
+      "US-ac2",
+      30_000,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      makeMockAgentManager(),
     );
     expect(r1.outcome).toBe("passed");
 
     const captured: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.agentManager = makeCaptureManager(captured, '{"passed": true}');
     const r2 = await resolveOutcome(
-      ["proposal-a"], [], makeResolveStageConfig("synthesis"),
-      DEFAULT_DEBATE_CONFIG, callCtx, "US-ac2b", 30_000, undefined, undefined, undefined, undefined, undefined, undefined,
+      ["proposal-a"],
+      [],
+      makeResolveStageConfig("synthesis"),
+      DEFAULT_DEBATE_CONFIG,
+      callCtx,
+      "US-ac2b",
+      30_000,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
       _debateSessionDeps.agentManager as NonNullable<typeof _debateSessionDeps.agentManager>,
     );
     expect(r2).toBeDefined();

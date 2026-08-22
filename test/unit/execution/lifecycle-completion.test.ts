@@ -9,11 +9,7 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "@/config";
 import { purgeStaleManifests } from "@/context/engine";
-import {
-  type RunCompletionOptions,
-  _runCompletionDeps,
-  handleRunCompletion,
-} from "@/execution/lifecycle";
+import { type RunCompletionOptions, _runCompletionDeps, handleRunCompletion } from "@/execution/lifecycle";
 import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
 import * as loggerModule from "@/logger";
 import type { StoryMetrics } from "@/metrics";

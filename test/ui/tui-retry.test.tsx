@@ -8,13 +8,13 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { render } from "ink-testing-library";
-import React, { act } from "react";
 import { PipelineEventEmitter, pipelineEventBus } from "@/pipeline";
 import { parseQueueFile } from "@/queue";
-import { App } from "@/tui/App";
 import type { StoryDisplayState } from "@/tui";
+import { App } from "@/tui/App";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { render } from "ink-testing-library";
+import React, { act } from "react";
 import { waitForFile } from "../helpers/fs";
 
 function makeStory(id: string): StoryDisplayState {

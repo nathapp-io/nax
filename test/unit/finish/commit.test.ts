@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { NaxError } from "@/errors";
 import {
+  PUSH_TIMEOUT_MS,
   _finishGitDeps,
   buildCommitRound,
   commitAndPush,
   commitFixes,
   commitRoundOutcome,
   filesInCommit,
-  PUSH_TIMEOUT_MS,
 } from "@/finish";
 
 type GitCall = { args: string[]; workdir: string; timeoutMs?: number };

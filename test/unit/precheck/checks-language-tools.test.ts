@@ -5,9 +5,9 @@
  * for a detected language are missing. Non-blocking: run continues regardless.
  */
 
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { ProjectProfile } from "@/config/runtime-types";
-import { checkLanguageTools, _languageToolsDeps } from "@/precheck/checks-warnings";
+import { _languageToolsDeps, checkLanguageTools } from "@/precheck/checks-warnings";
 
 describe("checkLanguageTools", () => {
   let originalWhich: typeof Bun.which;

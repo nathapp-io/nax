@@ -39,7 +39,10 @@ describe("NAX_GITIGNORE_ENTRIES", () => {
     const produced = dirname(fragmentPath("/repo", "my-feature", "US-001"));
     // The `**/` prefix makes the rule reach a monorepo package's own .nax/;
     // strip it to compare against the repo-root path fragmentPath produces.
-    const expanded = (ignored ?? "").replace(/^\*\*\//, "").replace("*", "my-feature").replace(/\/$/, "");
+    const expanded = (ignored ?? "")
+      .replace(/^\*\*\//, "")
+      .replace("*", "my-feature")
+      .replace(/\/$/, "");
 
     expect(produced).toBe(join("/repo", expanded));
   });

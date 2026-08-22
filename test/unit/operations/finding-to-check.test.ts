@@ -2,8 +2,8 @@
  * findingsToFailedChecks — unit tests (AC2.1, AC2.2)
  */
 import { describe, expect, test } from "bun:test";
-import { findingsToFailedChecks } from "@/operations";
 import type { Finding } from "@/findings/types";
+import { findingsToFailedChecks } from "@/operations";
 
 const SEMANTIC_FINDING: Finding = {
   source: "semantic-review",

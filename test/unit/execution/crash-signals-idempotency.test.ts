@@ -11,10 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import {
-  type SignalHandlerContext,
-  installSignalHandlers,
-} from "@/execution/crash-signals";
+import { type SignalHandlerContext, installSignalHandlers } from "@/execution/crash-signals";
 import type { StatusWriter } from "@/execution/status-writer";
 
 const noopStatusWriter = {

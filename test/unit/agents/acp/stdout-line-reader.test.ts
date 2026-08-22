@@ -95,7 +95,10 @@ describe("readStreamTail (MEM-1)", () => {
 
   function streamOf(content: string): ReadableStream<Uint8Array> {
     return new ReadableStream<Uint8Array>({
-      start(c) { c.enqueue(enc.encode(content)); c.close(); },
+      start(c) {
+        c.enqueue(enc.encode(content));
+        c.close();
+      },
     });
   }
 

@@ -28,9 +28,7 @@ function formatNormal(e: LogEntry): string {
 
 describe("formatLogEntry — default line enrichment (normal mode)", () => {
   test("surfaces agent name and model on agent-call lines", () => {
-    const out = formatNormal(
-      entry({ data: { storyId: "s-1", agentName: "claude", model: "claude-sonnet-4-6" } }),
-    );
+    const out = formatNormal(entry({ data: { storyId: "s-1", agentName: "claude", model: "claude-sonnet-4-6" } }));
     expect(out).toContain("claude");
     expect(out).toContain("claude-sonnet-4-6");
     // composed as agentName·model, not two separate dumps
@@ -44,9 +42,7 @@ describe("formatLogEntry — default line enrichment (normal mode)", () => {
   });
 
   test("renders session role as a tag", () => {
-    const out = formatNormal(
-      entry({ stage: "tdd", message: "Session complete", sessionRole: "verifier" }),
-    );
+    const out = formatNormal(entry({ stage: "tdd", message: "Session complete", sessionRole: "verifier" }));
     expect(out).toContain("verifier");
   });
 
@@ -132,7 +128,13 @@ describe("formatLogEntry — story start enrichment", () => {
   }
 
   test("renders story progress counter and agent in normal mode", () => {
-    const out = storyStart({ complexity: "complex", modelTier: "fast", agent: "claude", storyNumber: 1, storyTotal: 3 });
+    const out = storyStart({
+      complexity: "complex",
+      modelTier: "fast",
+      agent: "claude",
+      storyNumber: 1,
+      storyTotal: 3,
+    });
     expect(out).toContain("1/3");
     expect(out).toContain("claude");
     expect(out).toContain("complex");
@@ -272,19 +274,19 @@ describe("formatAdvisorySummary", () => {
 // screen, or write to the clipboard (OSC 52) in the user's terminal.
 describe("formatLogEntry — ANSI/control-char sanitization (SEC-09)", () => {
   test("strips a CSI sequence embedded in the message", () => {
-    const { output } = formatLogEntry(
-      entry({ stage: "execution", message: "before\x1b[2Jafter" }),
-      { mode: "normal", useColor: false },
-    );
+    const { output } = formatLogEntry(entry({ stage: "execution", message: "before\x1b[2Jafter" }), {
+      mode: "normal",
+      useColor: false,
+    });
     expect(output).not.toContain("\x1b[2J");
     expect(output).toContain("beforeafter");
   });
 
   test("strips an OSC 52 clipboard-write sequence embedded in storyId", () => {
-    const { output } = formatLogEntry(
-      entry({ stage: "execution", storyId: "US-\x1b]52;c;evil\x07001" }),
-      { mode: "normal", useColor: false },
-    );
+    const { output } = formatLogEntry(entry({ stage: "execution", storyId: "US-\x1b]52;c;evil\x07001" }), {
+      mode: "normal",
+      useColor: false,
+    });
     expect(output).not.toContain("\x1b]52");
     expect(output).toContain("US-001");
   });

@@ -14,8 +14,8 @@ import {
   isStubTestFile,
   isTestLevelFailure,
   loadAcceptanceTestContent,
-  resolveAcceptanceFixTarget,
   regenerateAcceptanceTest,
+  resolveAcceptanceFixTarget,
 } from "@/execution/lifecycle/acceptance-loop";
 import type { AgentGetFn, PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd";
@@ -56,7 +56,10 @@ function makePrd(): PRD {
 
 describe("isStubTestFile", () => {
   test.each([
-    ["expect(true).toBe(false)", `\nimport { test, expect } from "bun:test";\ntest("AC-1: something", async () => {\n  expect(true).toBe(false); // Replace with actual test\n});`],
+    [
+      "expect(true).toBe(false)",
+      `\nimport { test, expect } from "bun:test";\ntest("AC-1: something", async () => {\n  expect(true).toBe(false); // Replace with actual test\n});`,
+    ],
     ["expect(true).toBe(true)", `\ntest("AC-1: something", async () => {\n  expect(true).toBe(true);\n});`],
     ["extra whitespace in expression", "expect( true ).toBe( false );"],
   ])("returns true for %s", (_label, content) => {
@@ -105,7 +108,7 @@ test("AC-1: something", async () => {
 describe("isTestLevelFailure", () => {
   test.each([
     ["AC-ERROR sentinel", ["AC-ERROR"], 10],
-    [">80% of ACs fail (9/10)", ["AC-1","AC-2","AC-3","AC-4","AC-5","AC-6","AC-7","AC-8","AC-9"], 10],
+    [">80% of ACs fail (9/10)", ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8", "AC-9"], 10],
     ["exactly 28/31 case (partial-pass scenario)", Array.from({ length: 28 }, (_, i) => `AC-${i + 1}`), 31],
     ["AC-ERROR mixed with other failures", ["AC-1", "AC-ERROR", "AC-3"], 10],
   ] as const)("returns true when %s", (_label, failedACs, totalACs) => {
@@ -113,8 +116,8 @@ describe("isTestLevelFailure", () => {
   });
 
   test.each([
-    ["<=80% of ACs fail (8/10)", ["AC-1","AC-2","AC-3","AC-4","AC-5","AC-6","AC-7","AC-8"], 10],
-    ["typical partial failure (3/10)", ["AC-1","AC-2","AC-3"], 10],
+    ["<=80% of ACs fail (8/10)", ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8"], 10],
+    ["typical partial failure (3/10)", ["AC-1", "AC-2", "AC-3"], 10],
     ["totalACs is 0", ["AC-1"], 0],
     ["empty failedACs", [], 10],
   ] as const)("returns false when %s", (_label, failedACs, totalACs) => {
@@ -253,9 +256,7 @@ describe("loadAcceptanceTestContent — testPaths parameter", () => {
     const pkgTest = join(tmpDir, "pkg.test.ts");
     await Bun.write(pkgTest, "// pkg content");
 
-    const result = await loadAcceptanceTestContent(tmpDir, [
-      { testPath: pkgTest, packageDir: pkgDir },
-    ]);
+    const result = await loadAcceptanceTestContent(tmpDir, [{ testPath: pkgTest, packageDir: pkgDir }]);
 
     expect(result).toHaveLength(1);
     expect(result[0].content).toBe("// pkg content");
@@ -272,7 +273,14 @@ describe("loadAcceptanceTestContent — testPaths parameter", () => {
 
 describe("AcceptanceLoopContext — acceptanceTestPaths field", () => {
   test("AcceptanceLoopContext acceptanceTestPaths is optional: set and unset variants", () => {
-    const paths = [{ testPath: "/feature/a.test.ts", packageDir: "/feature", commandOverride: "npx jest --config jest.nax.config.js {{FILE}}", testFramework: "jest" }];
+    const paths = [
+      {
+        testPath: "/feature/a.test.ts",
+        packageDir: "/feature",
+        commandOverride: "npx jest --config jest.nax.config.js {{FILE}}",
+        testFramework: "jest",
+      },
+    ];
     const withPaths: Partial<AcceptanceLoopContext> = { acceptanceTestPaths: paths };
     expect(withPaths.acceptanceTestPaths).toEqual(paths);
     expect(withPaths.acceptanceTestPaths?.[0]?.commandOverride).toBe("npx jest --config jest.nax.config.js {{FILE}}");
@@ -315,10 +323,22 @@ describe("resolveAcceptanceFixTarget", () => {
     });
     const result = resolveAcceptanceFixTarget(
       [
-        { testPath: "/repo/apps/api/.nax-acceptance.test.ts", packageDir: "/repo/apps/api", commandOverride: "npx jest {{FILE}}" },
-        { testPath: "/repo/apps/web/.nax-acceptance.test.ts", packageDir: "/repo/apps/web", commandOverride: "pnpm vitest run {{FILE}}" },
+        {
+          testPath: "/repo/apps/api/.nax-acceptance.test.ts",
+          packageDir: "/repo/apps/api",
+          commandOverride: "npx jest {{FILE}}",
+        },
+        {
+          testPath: "/repo/apps/web/.nax-acceptance.test.ts",
+          packageDir: "/repo/apps/web",
+          commandOverride: "pnpm vitest run {{FILE}}",
+        },
       ],
-      { testPath: "/repo/apps/web/.nax-acceptance.test.ts", packageDir: "/repo/apps/web", commandOverride: "pnpm vitest run {{FILE}}" },
+      {
+        testPath: "/repo/apps/web/.nax-acceptance.test.ts",
+        packageDir: "/repo/apps/web",
+        commandOverride: "pnpm vitest run {{FILE}}",
+      },
       config,
     );
     expect(result.acceptanceTestPath).toBe("/repo/apps/web/.nax-acceptance.test.ts");
@@ -439,7 +459,8 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
     await regenerateAcceptanceTest(testPath, ctx);
 
     expect(spawnMock).toHaveBeenCalledTimes(1);
-    const [calledWorkdir, calledRef] = (spawnMock as unknown as { mock: { calls: Array<[string, string]> } }).mock.calls[0];
+    const [calledWorkdir, calledRef] = (spawnMock as unknown as { mock: { calls: Array<[string, string]> } }).mock
+      .calls[0];
     expect(calledWorkdir).toBe(tmpDir);
     expect(calledRef).toBe("abc1234");
   });
@@ -498,9 +519,11 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
 
     // Capture what implementationContext is passed to acceptanceSetupExecute
     let capturedCtx: PipelineContext | null = null;
-    (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = mock(async (ctx: PipelineContext) => {
-      capturedCtx = ctx;
-    });
+    (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = mock(
+      async (ctx: PipelineContext) => {
+        capturedCtx = ctx;
+      },
+    );
 
     const ctx = makeMinimalPipelineContext({
       workdir: tmpDir,
@@ -526,9 +549,11 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
     (_regenerateDeps as { readFile: unknown }).readFile = mock(async () => "export function add() {}");
 
     let capturedCtx: PipelineContext | null = null;
-    (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = mock(async (ctx: PipelineContext) => {
-      capturedCtx = ctx;
-    });
+    (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = mock(
+      async (ctx: PipelineContext) => {
+        capturedCtx = ctx;
+      },
+    );
 
     const ctx = makeMinimalPipelineContext({
       workdir: tmpDir,
@@ -539,7 +564,9 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
 
     expect(capturedCtx).not.toBeNull();
     // The context passed to acceptanceSetupExecute must carry implementationContext
-    const passed = capturedCtx as PipelineContext & { implementationContext?: Array<{ path: string; content: string }> };
+    const passed = capturedCtx as PipelineContext & {
+      implementationContext?: Array<{ path: string; content: string }>;
+    };
     expect(passed.implementationContext).toBeDefined();
     expect(passed.implementationContext).toHaveLength(1);
     expect(passed.implementationContext?.[0].path).toBe("src/add.ts");

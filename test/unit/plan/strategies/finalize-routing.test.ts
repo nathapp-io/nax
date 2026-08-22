@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { finalizePrdRouting } from "@/plan";
 import type { AgentRoutingConfig } from "@/config";
+import { finalizePrdRouting } from "@/plan";
 import type { PRD } from "@/prd/types";
 
 const agentRouting: AgentRoutingConfig = {

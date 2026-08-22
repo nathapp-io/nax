@@ -121,8 +121,20 @@ describe("DiagnosisResult interface validation", () => {
       reasoning: "Full result",
       confidence: 0.95,
       findings: [
-        { source: "acceptance-diagnose", severity: "error", category: "test", message: "Test issue 1", fixTarget: "test" },
-        { source: "acceptance-diagnose", severity: "error", category: "source", message: "Source issue 1", fixTarget: "source" },
+        {
+          source: "acceptance-diagnose",
+          severity: "error",
+          category: "test",
+          message: "Test issue 1",
+          fixTarget: "test",
+        },
+        {
+          source: "acceptance-diagnose",
+          severity: "error",
+          category: "source",
+          message: "Source issue 1",
+          fixTarget: "source",
+        },
       ],
     };
     expect(full.findings?.length).toBe(2);

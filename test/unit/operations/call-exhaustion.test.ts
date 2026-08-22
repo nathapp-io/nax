@@ -17,12 +17,18 @@
  *   - makeTestRuntime for tests that use the real AgentManager
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import type { TurnResult } from "@/agents/types";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import { callOp } from "@/operations";
 import type { CompleteOperation, RunOperation } from "@/operations";
-import { DEFAULT_CONFIG, pickSelector } from "@/config";
-import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
-import type { TurnResult } from "@/agents/types";
+import {
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeNaxConfig,
+  makeSessionManager,
+  makeTestRuntime,
+} from "@test/helpers";
 
 const sel = pickSelector("call-exhaustion-test", "routing");
 
@@ -173,8 +179,8 @@ describe("AC7: complete-kind — all retries exhaust → parse receives empty st
         };
       },
     };
-    (rt.agentManager as unknown as { _resolveRegistry: () => { getAgent: () => typeof adapter } })
-      ._resolveRegistry = () => ({ getAgent: () => adapter });
+    (rt.agentManager as unknown as { _resolveRegistry: () => { getAgent: () => typeof adapter } })._resolveRegistry =
+      () => ({ getAgent: () => adapter });
 
     // complete-kind: completeWithFallback exhausts, completeAs returns empty output,
     // callOp calls op.parse("") → returns "" (trim of empty string).
@@ -211,8 +217,8 @@ describe("AC7: complete-kind — all retries exhaust → parse receives empty st
         estimatedCostUsd: 0,
       }),
     };
-    (rt.agentManager as unknown as { _resolveRegistry: () => { getAgent: () => typeof adapter } })
-      ._resolveRegistry = () => ({ getAgent: () => adapter });
+    (rt.agentManager as unknown as { _resolveRegistry: () => { getAgent: () => typeof adapter } })._resolveRegistry =
+      () => ({ getAgent: () => adapter });
 
     // Op that throws on empty output (no retry strategy)
     const rejectEmptyOp: CompleteOperation<string, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {

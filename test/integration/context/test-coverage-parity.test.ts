@@ -12,10 +12,10 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { TestCoverageProvider, _testCoverageProviderDeps } from "@/context/engine/providers/test-coverage";
+import { generateTestCoverageSummary } from "@/context/test-scanner";
 import { withTempDir } from "@test/helpers";
 import { makeNaxConfig, makeStory } from "@test/helpers";
-import { generateTestCoverageSummary } from "@/context/test-scanner";
-import { TestCoverageProvider, _testCoverageProviderDeps } from "@/context/engine/providers/test-coverage";
 
 const STORY = makeStory({ id: "story-001", title: "Test Story" });
 const BASE_CONFIG = makeNaxConfig({
@@ -45,8 +45,6 @@ async function writeTestFile(dir: string, filename: string, content: string): Pr
   await Bun.write(join(dir, "test", filename), content);
 }
 
-
-
 describe("test-coverage-parity", () => {
   let origDeps: typeof _testCoverageProviderDeps;
 
@@ -61,15 +59,26 @@ describe("test-coverage-parity", () => {
   describe("default detail 'names-and-counts'", () => {
     test("v1 and v2 emit byte-equal content", async () => {
       await withTempDir(async (dir) => {
-        await writeTestFile(dir,"foo.test.ts", [
-          'describe("foo suite", () => {',
-          '  test("foo test 1", () => {});',
-          '  test("foo test 2", () => {});',
-          '});',
-        ].join("\n"));
+        await writeTestFile(
+          dir,
+          "foo.test.ts",
+          [
+            'describe("foo suite", () => {',
+            '  test("foo test 1", () => {});',
+            '  test("foo test 2", () => {});',
+            "});",
+          ].join("\n"),
+        );
 
         _testCoverageProviderDeps.resolveTestFilePatterns = async () =>
-          ({ globs: ["**/*.test.ts"], patterns: ["**/*.test.ts"], testDirs: ["test"], pathspec: [], regex: [], resolution: "fallback" as const } as any);
+          ({
+            globs: ["**/*.test.ts"],
+            patterns: ["**/*.test.ts"],
+            testDirs: ["test"],
+            pathspec: [],
+            regex: [],
+            resolution: "fallback" as const,
+          }) as any;
 
         _testCoverageProviderDeps.generateTestCoverageSummary = generateTestCoverageSummary as any;
         _testCoverageProviderDeps.getContextFiles = () => [];
@@ -93,19 +102,26 @@ describe("test-coverage-parity", () => {
   describe("scopeToStory=true with contextFiles filtering", () => {
     test("v1 and v2 emit byte-equal content filtered to matching test files", async () => {
       await withTempDir(async (dir) => {
-        await writeTestFile(dir,"foo.test.ts", [
-          'describe("foo suite", () => {',
-          '  test("foo test", () => {});',
-          '});',
-        ].join("\n"));
-        await writeTestFile(dir,"bar.test.ts", [
-          'describe("bar suite", () => {',
-          '  test("bar test", () => {});',
-          '});',
-        ].join("\n"));
+        await writeTestFile(
+          dir,
+          "foo.test.ts",
+          ['describe("foo suite", () => {', '  test("foo test", () => {});', "});"].join("\n"),
+        );
+        await writeTestFile(
+          dir,
+          "bar.test.ts",
+          ['describe("bar suite", () => {', '  test("bar test", () => {});', "});"].join("\n"),
+        );
 
         _testCoverageProviderDeps.resolveTestFilePatterns = async () =>
-          ({ globs: ["**/*.test.ts"], patterns: ["**/*.test.ts"], testDirs: ["test"], pathspec: [], regex: [], resolution: "fallback" as const } as any);
+          ({
+            globs: ["**/*.test.ts"],
+            patterns: ["**/*.test.ts"],
+            testDirs: ["test"],
+            pathspec: [],
+            regex: [],
+            resolution: "fallback" as const,
+          }) as any;
 
         _testCoverageProviderDeps.generateTestCoverageSummary = generateTestCoverageSummary as any;
         _testCoverageProviderDeps.getContextFiles = () => ["src/foo.ts"];
@@ -137,20 +153,31 @@ describe("test-coverage-parity", () => {
   describe("scopeToStory=false full scan", () => {
     test("v1 and v2 emit byte-equal content scanning all test files", async () => {
       await withTempDir(async (dir) => {
-        await writeTestFile(dir,"alpha.test.ts", [
-          'describe("alpha suite", () => {',
-          '  test("alpha test 1", () => {});',
-          '  test("alpha test 2", () => {});',
-          '});',
-        ].join("\n"));
-        await writeTestFile(dir,"beta.test.ts", [
-          'describe("beta suite", () => {',
-          '  test("beta test", () => {});',
-          '});',
-        ].join("\n"));
+        await writeTestFile(
+          dir,
+          "alpha.test.ts",
+          [
+            'describe("alpha suite", () => {',
+            '  test("alpha test 1", () => {});',
+            '  test("alpha test 2", () => {});',
+            "});",
+          ].join("\n"),
+        );
+        await writeTestFile(
+          dir,
+          "beta.test.ts",
+          ['describe("beta suite", () => {', '  test("beta test", () => {});', "});"].join("\n"),
+        );
 
         _testCoverageProviderDeps.resolveTestFilePatterns = async () =>
-          ({ globs: ["**/*.test.ts"], patterns: ["**/*.test.ts"], testDirs: ["test"], pathspec: [], regex: [], resolution: "fallback" as const } as any);
+          ({
+            globs: ["**/*.test.ts"],
+            patterns: ["**/*.test.ts"],
+            testDirs: ["test"],
+            pathspec: [],
+            regex: [],
+            resolution: "fallback" as const,
+          }) as any;
 
         _testCoverageProviderDeps.generateTestCoverageSummary = generateTestCoverageSummary as any;
         _testCoverageProviderDeps.getContextFiles = () => [];
@@ -183,7 +210,14 @@ describe("test-coverage-parity", () => {
         Bun.spawnSync(["mkdir", "-p", join(dir, "test")]);
 
         _testCoverageProviderDeps.resolveTestFilePatterns = async () =>
-          ({ globs: ["**/*.test.ts"], patterns: ["**/*.test.ts"], testDirs: ["test"], pathspec: [], regex: [], resolution: "fallback" as const } as any);
+          ({
+            globs: ["**/*.test.ts"],
+            patterns: ["**/*.test.ts"],
+            testDirs: ["test"],
+            pathspec: [],
+            regex: [],
+            resolution: "fallback" as const,
+          }) as any;
 
         _testCoverageProviderDeps.generateTestCoverageSummary = generateTestCoverageSummary as any;
         _testCoverageProviderDeps.getContextFiles = () => [];

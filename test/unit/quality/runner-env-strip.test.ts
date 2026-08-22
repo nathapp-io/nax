@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { runQualityCommand, _qualityRunnerDeps } from "@/quality/runner";
+import { _qualityRunnerDeps, runQualityCommand } from "@/quality/runner";
 
 function makeEnvCapturingSpawn(exitCode: number): {
   spawnMock: ReturnType<typeof mock>;
@@ -11,8 +11,16 @@ function makeEnvCapturingSpawn(exitCode: number): {
     lastEnv = args.env ?? {};
     return {
       exited: Promise.resolve(exitCode),
-      stdout: new ReadableStream({ start(c) { c.close(); } }),
-      stderr: new ReadableStream({ start(c) { c.close(); } }),
+      stdout: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
+      stderr: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
       kill: mock(() => {}),
     } as unknown as ReturnType<typeof Bun.spawn>;
   });

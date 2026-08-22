@@ -81,7 +81,11 @@ describe("SinglePlanStrategy", () => {
       const result = await strategy.execute(ctx);
       expect(result.outputPath).toBe(ctx.outputPath);
       expect(callOpMock).toHaveBeenCalledTimes(1);
-      const [callCtx, operation, input] = callOpMock.mock.calls[0] as [Record<string, unknown>, unknown, Record<string, unknown>];
+      const [callCtx, operation, input] = callOpMock.mock.calls[0] as [
+        Record<string, unknown>,
+        unknown,
+        Record<string, unknown>,
+      ];
       expect(callCtx.runtime).toBe(ctx.runtime);
       expect(callCtx.packageDir).toBe(ctx.workdir);
       expect(callCtx.agentName).toBe("agent-single");

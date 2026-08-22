@@ -8,8 +8,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { type MigrationPlanEntry, type PlanMigrationOptions, planMigration } from "@/cli";
 import { NaxError } from "@/errors";
-import { planMigration, type MigrationPlanEntry, type PlanMigrationOptions } from "@/cli";
 
 const TARGET_DIR = "/target";
 

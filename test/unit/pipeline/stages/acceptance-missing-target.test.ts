@@ -7,10 +7,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { acceptanceStage } from "@/pipeline/stages";
-import type { PipelineContext } from "@/pipeline/types";
 import { DEFAULT_CONFIG } from "@/config";
 import { addSink, initLogger, resetLogger } from "@/logger";
+import { acceptanceStage } from "@/pipeline/stages";
+import type { PipelineContext } from "@/pipeline/types";
 import { _executorDeps } from "@/verification";
 import { makeStory } from "@test/helpers";
 
@@ -272,8 +272,12 @@ describe("US-003: missing acceptance target fails the run", () => {
           c.close();
         },
       }),
-      stderr: new ReadableStream({ start(c) { c.close(); } }),
-    })) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
+      stderr: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
+    })) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
     try {
       const ctx = makeCtx({
         acceptanceTestPaths: [
@@ -305,8 +309,12 @@ describe("US-003: missing acceptance target fails the run", () => {
           c.close();
         },
       }),
-      stderr: new ReadableStream({ start(c) { c.close(); } }),
-    })) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
+      stderr: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
+    })) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
     try {
       const ctx = makeCtx({
         acceptanceTestPaths: [

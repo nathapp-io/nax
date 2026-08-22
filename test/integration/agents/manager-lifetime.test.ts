@@ -24,7 +24,13 @@ const AUTH_FAILURE: AdapterFailure = {
 
 // Minimal truthy ContextBundle — only the truthiness (hasBundle=true) matters to shouldSwap.
 // None of the fields are read by the manager; cast satisfies AgentRunRequest.bundle typing.
-const STUB_BUNDLE = { pushMarkdown: "", pullTools: [], digest: "", manifest: {}, chunks: [] } as unknown as ContextBundle;
+const STUB_BUNDLE = {
+  pushMarkdown: "",
+  pullTools: [],
+  digest: "",
+  manifest: {},
+  chunks: [],
+} as unknown as ContextBundle;
 
 function makeFailResult(): AgentResult {
   return {

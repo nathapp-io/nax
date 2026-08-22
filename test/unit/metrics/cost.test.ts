@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  COST_RATES,
-  estimateCost,
-  estimateCostByDuration,
-  formatCostWithConfidence,
-} from "@/agents/cost";
+import { COST_RATES, estimateCost, estimateCostByDuration, formatCostWithConfidence } from "@/agents/cost";
 
 describe("estimateCost", () => {
   test.each([
@@ -50,7 +45,11 @@ describe("formatCostWithConfidence", () => {
   test.each([
     ["exact confidence without prefix", { cost: 0.12, confidence: "exact" as const }, "$0.12"],
     ["estimated confidence with tilde prefix", { cost: 0.15, confidence: "estimated" as const }, "~$0.15"],
-    ["fallback confidence with tilde and label", { cost: 0.05, confidence: "fallback" as const }, "~$0.05 (duration-based)"],
+    [
+      "fallback confidence with tilde and label",
+      { cost: 0.05, confidence: "fallback" as const },
+      "~$0.05 (duration-based)",
+    ],
   ])("formats %s", (_label, estimate, expected) => {
     expect(formatCostWithConfidence(estimate)).toBe(expected);
   });

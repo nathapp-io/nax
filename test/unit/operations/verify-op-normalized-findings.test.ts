@@ -8,7 +8,11 @@
 
 import { describe, expect, test } from "bun:test";
 
-type ParseFn = (output: string, input: unknown, ctx: unknown) => { normalizedFindings: readonly unknown[] } & Record<string, unknown>;
+type ParseFn = (
+  output: string,
+  input: unknown,
+  ctx: unknown,
+) => { normalizedFindings: readonly unknown[] } & Record<string, unknown>;
 
 // Minimal context passed to parse — mirrors how tests in verify-op.test.ts invoke it.
 const makeCtx = async () => {

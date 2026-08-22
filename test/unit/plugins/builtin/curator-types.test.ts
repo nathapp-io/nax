@@ -258,7 +258,7 @@ describe("Observation Types", () => {
     const observations: Observation[] = [
       {
         schemaVersion: 1,
-      projectKey: "TEST",
+        projectKey: "TEST",
         runId: "run-123",
         featureId: "feature-1",
         storyId: "story-1",
@@ -269,7 +269,7 @@ describe("Observation Types", () => {
       },
       {
         schemaVersion: 1,
-      projectKey: "TEST",
+        projectKey: "TEST",
         runId: "run-123",
         featureId: "feature-1",
         storyId: "story-1",

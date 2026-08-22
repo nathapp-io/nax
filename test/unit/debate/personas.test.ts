@@ -9,24 +9,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import {
-  PERSONA_FRAGMENTS,
-  buildDebaterLabel,
-  buildPersonaBlock,
-  resolvePersonas,
-} from "@/debate/personas";
+import { PERSONA_FRAGMENTS, buildDebaterLabel, buildPersonaBlock, resolvePersonas } from "@/debate/personas";
 import type { Debater, DebaterPersona } from "@/debate/types";
 
 // ─── PERSONA_FRAGMENTS ───────────────────────────────────────────────────────
 
 describe("PERSONA_FRAGMENTS", () => {
-  const EXPECTED_PRESETS: DebaterPersona[] = [
-    "challenger",
-    "pragmatist",
-    "completionist",
-    "security",
-    "testability",
-  ];
+  const EXPECTED_PRESETS: DebaterPersona[] = ["challenger", "pragmatist", "completionist", "security", "testability"];
 
   test("has all 5 expected presets", () => {
     for (const preset of EXPECTED_PRESETS) {
@@ -106,11 +95,7 @@ describe("resolvePersonas()", () => {
   });
 
   test("explicit persona is never overwritten by auto-assignment", () => {
-    const debaters: Debater[] = [
-      { agent: "claude", persona: "security" },
-      { agent: "claude" },
-      { agent: "claude" },
-    ];
+    const debaters: Debater[] = [{ agent: "claude", persona: "security" }, { agent: "claude" }, { agent: "claude" }];
     const result = resolvePersonas(debaters, "plan", true);
     // First keeps explicit "security"
     expect(result[0]?.persona).toBe("security");

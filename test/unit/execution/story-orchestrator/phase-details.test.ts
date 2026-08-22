@@ -18,9 +18,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _storyOrchestratorDeps, runPhase } from "@/execution";
 import type { AnySlot } from "@/execution";
+import type { FindingSeverity } from "@/findings";
 import { pipelineEventBus } from "@/pipeline";
 import type { StoryPhaseCompletedEvent } from "@/pipeline/event-bus";
-import type { FindingSeverity } from "@/findings";
 import { makeMockCallContext, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 // ─── fixtures ────────────────────────────────────────────────────────────────
@@ -93,9 +93,7 @@ describe("adversarial-review PhaseDetails", () => {
   test("AC6: details.kind is review for adversarial-review op", async () => {
     _storyOrchestratorDeps.callOp = (async () => makeAdversarialOutput([])) as any;
     const ctx = makeMockCallContext();
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("adversarial-review"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("adversarial-review"), {}, {}));
     const details = event?.details as Record<string, unknown> | undefined;
     expect(details?.kind).toBe("review");
   });
@@ -103,9 +101,7 @@ describe("adversarial-review PhaseDetails", () => {
   test("AC6 boundary: reviewer field is adversarial for adversarial-review op", async () => {
     _storyOrchestratorDeps.callOp = (async () => makeAdversarialOutput([])) as any;
     const ctx = makeMockCallContext();
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("adversarial-review"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("adversarial-review"), {}, {}));
     const details = event?.details as Record<string, unknown> | undefined;
     expect(details?.reviewer).toBe("adversarial");
   });
@@ -119,11 +115,10 @@ describe("adversarial-review PhaseDetails", () => {
     ];
     _storyOrchestratorDeps.callOp = (async () => makeAdversarialOutput(findings)) as any;
     const ctx = makeMockCallContext();
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("adversarial-review"), {}, {}),
-    );
-    const bySeverity = (event?.details as Record<string, unknown> | undefined)
-      ?.bySeverity as Record<string, number> | undefined;
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("adversarial-review"), {}, {}));
+    const bySeverity = (event?.details as Record<string, unknown> | undefined)?.bySeverity as
+      | Record<string, number>
+      | undefined;
     expect(bySeverity?.critical).toBe(1);
     expect(bySeverity?.error).toBe(2);
     expect(bySeverity?.warning).toBe(1);
@@ -136,11 +131,10 @@ describe("adversarial-review PhaseDetails", () => {
   test("AC7 boundary: bySeverity is all-zero when no findings", async () => {
     _storyOrchestratorDeps.callOp = (async () => makeAdversarialOutput([])) as any;
     const ctx = makeMockCallContext();
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("adversarial-review"), {}, {}),
-    );
-    const bySeverity = (event?.details as Record<string, unknown> | undefined)
-      ?.bySeverity as Record<string, number> | undefined;
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("adversarial-review"), {}, {}));
+    const bySeverity = (event?.details as Record<string, unknown> | undefined)?.bySeverity as
+      | Record<string, number>
+      | undefined;
     expect(bySeverity?.critical).toBe(0);
     expect(bySeverity?.error).toBe(0);
     expect(bySeverity?.warning).toBe(0);
@@ -151,15 +145,13 @@ describe("adversarial-review PhaseDetails", () => {
     // warning and info are advisory.
     const findings = [
       { severity: "critical" as FindingSeverity }, // blocking
-      { severity: "error" as FindingSeverity },    // blocking
-      { severity: "warning" as FindingSeverity },  // advisory
-      { severity: "info" as FindingSeverity },     // advisory
+      { severity: "error" as FindingSeverity }, // blocking
+      { severity: "warning" as FindingSeverity }, // advisory
+      { severity: "info" as FindingSeverity }, // advisory
     ];
     _storyOrchestratorDeps.callOp = (async () => makeAdversarialOutput(findings)) as any;
     const ctx = makeMockCallContext();
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("adversarial-review"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("adversarial-review"), {}, {}));
     const details = event?.details as Record<string, unknown> | undefined;
     expect(details?.blockingCount).toBe(2);
     expect(details?.advisoryCount).toBe(2);
@@ -173,9 +165,7 @@ describe("adversarial-review PhaseDetails", () => {
     ];
     _storyOrchestratorDeps.callOp = (async () => makeAdversarialOutput(findings)) as any;
     const ctx = makeMockCallContext();
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("adversarial-review"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("adversarial-review"), {}, {}));
     const details = event?.details as Record<string, unknown> | undefined;
     expect(details?.blockingCount).toBe(0);
     expect(details?.advisoryCount).toBe(3);
@@ -191,9 +181,7 @@ describe("adversarial-review PhaseDetails", () => {
     })) as any;
     const runtime = makeTestRuntime({ config: makeNaxConfig({ reporters: { otel: { detail: "verbose" } } }) });
     const ctx = makeMockCallContext({ runtime, packageView: runtime.packages.repo() });
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("adversarial-review"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("adversarial-review"), {}, {}));
     const details = event?.details as Record<string, unknown> | undefined;
     const items = details?.items as Array<{ message: string }> | undefined;
     expect(items?.map((i) => i.message)).toContain("missing-null-check");
@@ -203,28 +191,33 @@ describe("adversarial-review PhaseDetails", () => {
   test("AC16: verbose detail's items carry each finding's severity (and rule/file when present)", async () => {
     _storyOrchestratorDeps.callOp = (async () => ({
       normalizedFindings: [
-        { severity: "error", source: "adversarial-review", message: "missing-null-check", rule: "no-null", file: "src/foo.ts" },
+        {
+          severity: "error",
+          source: "adversarial-review",
+          message: "missing-null-check",
+          rule: "no-null",
+          file: "src/foo.ts",
+        },
       ],
       advisoryFindings: [],
     })) as any;
     const runtime = makeTestRuntime({ config: makeNaxConfig({ reporters: { otel: { detail: "verbose" } } }) });
     const ctx = makeMockCallContext({ runtime, packageView: runtime.packages.repo() });
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("adversarial-review"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("adversarial-review"), {}, {}));
     const details = event?.details as Record<string, unknown> | undefined;
-    const items = details?.items as Array<{ message: string; severity: string; rule?: string; file?: string }> | undefined;
+    const items = details?.items as
+      | Array<{ message: string; severity: string; rule?: string; file?: string }>
+      | undefined;
     expect(items?.[0]?.severity).toBe("error");
     expect(items?.[0]?.rule).toBe("no-null");
     expect(items?.[0]?.file).toBe("src/foo.ts");
   });
 
   test("AC16 boundary: counts detail (default) omits items", async () => {
-    _storyOrchestratorDeps.callOp = (async () => makeAdversarialOutput([{ severity: "error" as FindingSeverity }])) as any;
+    _storyOrchestratorDeps.callOp = (async () =>
+      makeAdversarialOutput([{ severity: "error" as FindingSeverity }])) as any;
     const ctx = makeMockCallContext(); // default detail = "counts"
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("adversarial-review"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("adversarial-review"), {}, {}));
     const details = event?.details as Record<string, unknown> | undefined;
     expect(details).not.toHaveProperty("items");
   });
@@ -353,9 +346,7 @@ describe("full-suite-gate PhaseDetails", () => {
       findings: [makeNormalizedFinding("error", 0)],
     })) as any;
     const ctx = makeMockCallContext();
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("full-suite-gate"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("full-suite-gate"), {}, {}));
     const details = event?.details as Record<string, unknown> | undefined;
     expect(details?.kind).toBe("gate");
   });
@@ -367,9 +358,7 @@ describe("full-suite-gate PhaseDetails", () => {
       findings: [],
     })) as any;
     const ctx = makeMockCallContext();
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("full-suite-gate"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("full-suite-gate"), {}, {}));
     const details = event?.details as Record<string, unknown> | undefined;
     expect(details?.kind).toBe("gate");
   });
@@ -381,9 +370,7 @@ describe("full-suite-gate PhaseDetails", () => {
       findings: [],
     })) as any;
     const ctx = makeMockCallContext();
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("full-suite-gate"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("full-suite-gate"), {}, {}));
     const details = event?.details as Record<string, unknown> | undefined;
     expect(details?.gate).toBe("full-suite");
   });
@@ -395,9 +382,7 @@ describe("full-suite-gate PhaseDetails", () => {
       findings: [],
     })) as any;
     const ctx = makeMockCallContext();
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("full-suite-gate"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("full-suite-gate"), {}, {}));
     const details = event?.details as Record<string, unknown> | undefined;
     expect(details?.failureCount).toBe(5);
   });
@@ -409,9 +394,7 @@ describe("full-suite-gate PhaseDetails", () => {
       findings: [],
     })) as any;
     const ctx = makeMockCallContext();
-    const event = await capturePhaseEvent(() =>
-      runPhase(ctx, makeSlot("full-suite-gate"), {}, {}),
-    );
+    const event = await capturePhaseEvent(() => runPhase(ctx, makeSlot("full-suite-gate"), {}, {}));
     const details = event?.details as Record<string, unknown> | undefined;
     expect(details?.failureCount).toBe(0);
   });

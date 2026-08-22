@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
-  AgentStreamEventBus,
   type AgentCallEndedEvent,
   type AgentCallStartedEvent,
   type AgentStreamEvent,
+  AgentStreamEventBus,
 } from "@/runtime/agent-stream-events";
 
 function makeCallStartedEvent(overrides: Partial<AgentCallStartedEvent> = {}): AgentCallStartedEvent {
@@ -124,7 +124,9 @@ describe("AgentStreamEventBus", () => {
     test("throwing listener does not prevent other listeners from receiving the event", () => {
       const bus = new AgentStreamEventBus();
       const received: AgentStreamEvent[] = [];
-      bus.onAgentStream(() => { throw new Error("listener boom"); });
+      bus.onAgentStream(() => {
+        throw new Error("listener boom");
+      });
       bus.onAgentStream((e) => received.push(e));
 
       const event = makeCallStartedEvent();
@@ -138,7 +140,9 @@ describe("AgentStreamEventBus", () => {
       const a: AgentStreamEvent[] = [];
       const b: AgentStreamEvent[] = [];
       bus.onAgentStream((e) => a.push(e));
-      bus.onAgentStream(() => { throw new Error("middle throws"); });
+      bus.onAgentStream(() => {
+        throw new Error("middle throws");
+      });
       bus.onAgentStream((e) => b.push(e));
 
       bus.emitAgentStream(makeCallStartedEvent());

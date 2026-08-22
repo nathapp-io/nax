@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { applyTestEditDeclarations, makeAutofixImplementerStrategy, makeDeclarationSink } from "@/operations";
 import type { Finding } from "@/findings";
+import { applyTestEditDeclarations, makeAutofixImplementerStrategy, makeDeclarationSink } from "@/operations";
 import type { TestEditDeclaration } from "@/operations";
 import { makeNaxConfig, makeStory } from "@test/helpers";
 
@@ -20,10 +20,10 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
 describe("applyTestEditDeclarations", () => {
   describe("prd_contract — valid quote", () => {
     test("re-tags matching finding from source to test", () => {
-      const story = makeStory({ description: "The function getChangeImpact(repoId: string) must return Promise<ImpactReport>" });
-      const findings: Finding[] = [
-        makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" }),
-      ];
+      const story = makeStory({
+        description: "The function getChangeImpact(repoId: string) must return Promise<ImpactReport>",
+      });
+      const findings: Finding[] = [makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" })];
       const decl: TestEditDeclaration = {
         reason: "prd_contract",
         file: "test/unit/foo.test.ts",
@@ -40,9 +40,7 @@ describe("applyTestEditDeclarations", () => {
 
     test("attaches prdContractDeclaration to meta", () => {
       const story = makeStory({ description: "The function doSomething() is required" });
-      const findings: Finding[] = [
-        makeFinding({ file: "test/unit/bar.test.ts", fixTarget: "source" }),
-      ];
+      const findings: Finding[] = [makeFinding({ file: "test/unit/bar.test.ts", fixTarget: "source" })];
       const decl: TestEditDeclaration = {
         reason: "prd_contract",
         file: "test/unit/bar.test.ts",
@@ -81,9 +79,7 @@ describe("applyTestEditDeclarations", () => {
 
     test("does not re-tag finding with different file", () => {
       const story = makeStory({ description: "Call processItem() for each entry" });
-      const findings: Finding[] = [
-        makeFinding({ file: "test/unit/other.test.ts", fixTarget: "source" }),
-      ];
+      const findings: Finding[] = [makeFinding({ file: "test/unit/other.test.ts", fixTarget: "source" })];
       const decl: TestEditDeclaration = {
         reason: "prd_contract",
         file: "test/unit/foo.test.ts",
@@ -100,9 +96,7 @@ describe("applyTestEditDeclarations", () => {
 
     test("does not re-tag findings that are already fixTarget: test", () => {
       const story = makeStory({ description: "Use renderWidget() in the UI" });
-      const findings: Finding[] = [
-        makeFinding({ file: "test/unit/widget.test.ts", fixTarget: "test" }),
-      ];
+      const findings: Finding[] = [makeFinding({ file: "test/unit/widget.test.ts", fixTarget: "test" })];
       const decl: TestEditDeclaration = {
         reason: "prd_contract",
         file: "test/unit/widget.test.ts",
@@ -121,9 +115,7 @@ describe("applyTestEditDeclarations", () => {
   describe("prd_contract — invalid quote", () => {
     test("reports a diagnostic without adding a finding when quote not found in story", () => {
       const story = makeStory({ description: "This is a story about widgets" });
-      const findings: Finding[] = [
-        makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" }),
-      ];
+      const findings: Finding[] = [makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" })];
       const decl: TestEditDeclaration = {
         reason: "prd_contract",
         file: "test/unit/foo.test.ts",
@@ -167,9 +159,7 @@ describe("applyTestEditDeclarations", () => {
 
     test("does not re-tag finding when quote is invalid", () => {
       const story = makeStory({ description: "A story without the quote" });
-      const findings: Finding[] = [
-        makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" }),
-      ];
+      const findings: Finding[] = [makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" })];
       const decl: TestEditDeclaration = {
         reason: "prd_contract",
         file: "test/unit/foo.test.ts",
@@ -187,9 +177,7 @@ describe("applyTestEditDeclarations", () => {
   describe("lint_only", () => {
     test("passthrough — no changes to findings", () => {
       const story = makeStory();
-      const findings: Finding[] = [
-        makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" }),
-      ];
+      const findings: Finding[] = [makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" })];
       const decl: TestEditDeclaration = {
         reason: "lint_only",
         file: "test/unit/foo.test.ts",
@@ -206,9 +194,7 @@ describe("applyTestEditDeclarations", () => {
   describe("sibling_scope", () => {
     test("passthrough — no changes to findings", () => {
       const story = makeStory();
-      const findings: Finding[] = [
-        makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" }),
-      ];
+      const findings: Finding[] = [makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" })];
       const decl: TestEditDeclaration = {
         reason: "sibling_scope",
         file: "test/unit/other.test.ts",
@@ -233,7 +219,9 @@ describe("applyTestEditDeclarations", () => {
         reasonDetail: "Mock setup is wrong",
       };
 
-      const { findings: result, diagnostics } = applyTestEditDeclarations(findings, [], story, { invalidMockStructure: [invalidDecl] });
+      const { findings: result, diagnostics } = applyTestEditDeclarations(findings, [], story, {
+        invalidMockStructure: [invalidDecl],
+      });
 
       // The invalid handoff is already stripped by the caller before the
       // test-writer sees it — there is no fix to queue here (#1327).
@@ -278,7 +266,9 @@ describe("applyTestEditDeclarations", () => {
         { reason: "mock_structure", file: "test/unit/b.test.ts", reasonDetail: "b" },
       ];
 
-      const { findings: result, diagnostics } = applyTestEditDeclarations([], [], story, { invalidMockStructure: invalid });
+      const { findings: result, diagnostics } = applyTestEditDeclarations([], [], story, {
+        invalidMockStructure: invalid,
+      });
 
       expect(result).toHaveLength(0);
       expect(diagnostics.map((d) => d.file)).toEqual(["test/unit/a.test.ts", "test/unit/b.test.ts"]);
@@ -370,7 +360,9 @@ describe("applyTestEditDeclarations", () => {
         reasonDetail: "bad handoff",
       };
 
-      const { findings: result, diagnostics } = applyTestEditDeclarations([], [decl], story, { invalidMockStructure: [invalidDecl] });
+      const { findings: result, diagnostics } = applyTestEditDeclarations([], [decl], story, {
+        invalidMockStructure: [invalidDecl],
+      });
 
       expect(result).toHaveLength(0);
       expect(diagnostics).toHaveLength(2);
@@ -483,9 +475,7 @@ describe("applyTestEditDeclarations", () => {
   describe("immutability", () => {
     test("does not mutate input findings array", () => {
       const story = makeStory({ description: "Call doWork() somewhere" });
-      const original: Finding[] = [
-        makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" }),
-      ];
+      const original: Finding[] = [makeFinding({ file: "test/unit/foo.test.ts", fixTarget: "source" })];
       const originalRef = original[0];
       const decl: TestEditDeclaration = {
         reason: "prd_contract",

@@ -18,8 +18,8 @@ import * as loggerModule from "@/logger";
 import { PluginRegistry } from "@/plugins/registry";
 import type { NaxPlugin } from "@/plugins/types";
 import type { UserStory } from "@/prd/types";
-import { routeStory } from "@/routing/router";
 import type { RoutingContext, RoutingDecision, RoutingStrategy } from "@/routing";
+import { routeStory } from "@/routing/router";
 
 // ============================================================================
 // Test Helpers
@@ -69,7 +69,6 @@ function createMockPlugin(pluginName: string, router?: RoutingStrategy): NaxPlug
 
   return plugin;
 }
-
 
 describe("Plugin router error handling", () => {
   test("error in plugin router is caught and next router is tried", async () => {

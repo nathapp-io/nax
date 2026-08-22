@@ -152,7 +152,6 @@ describe("SpawnAcpClient — onPidSpawned callback (#228)", () => {
     const internals = client as unknown as { env: Record<string, string | undefined> }; // test-ratchet-allow: as-unknown-as
     expect(internals.env.ANTHROPIC_BASE_URL).toBeUndefined();
   });
-
 });
 
 describe("SpawnAcpClient — prompt EPIPE resilience", () => {
@@ -168,12 +167,21 @@ describe("SpawnAcpClient — prompt EPIPE resilience", () => {
 
       // Second call: acpx exits immediately, stdin.write throws EPIPE
       return {
-        stdout: new ReadableStream<Uint8Array>({ start(c) { c.close(); } }),
+        stdout: new ReadableStream<Uint8Array>({
+          start(c) {
+            c.close();
+          },
+        }),
         stderr: new ReadableStream<Uint8Array>({
-          start(c) { c.enqueue(enc.encode("connection failed")); c.close(); }
+          start(c) {
+            c.enqueue(enc.encode("connection failed"));
+            c.close();
+          },
         }),
         stdin: {
-          write: () => { throw new Error("EPIPE: broken pipe"); },
+          write: () => {
+            throw new Error("EPIPE: broken pipe");
+          },
           end: () => {},
           flush: () => {},
         },
@@ -202,13 +210,22 @@ describe("SpawnAcpClient — prompt EPIPE resilience", () => {
 
       const enc = new TextEncoder();
       return {
-        stdout: new ReadableStream<Uint8Array>({ start(c) { c.close(); } }),
+        stdout: new ReadableStream<Uint8Array>({
+          start(c) {
+            c.close();
+          },
+        }),
         stderr: new ReadableStream<Uint8Array>({
-          start(c) { c.enqueue(enc.encode("write error")); c.close(); }
+          start(c) {
+            c.enqueue(enc.encode("write error"));
+            c.close();
+          },
         }),
         stdin: {
           write: () => 0,
-          end: () => { throw new Error("EPIPE: broken pipe"); },
+          end: () => {
+            throw new Error("EPIPE: broken pipe");
+          },
           flush: () => {},
         },
         exited: Promise.resolve(1),
@@ -237,10 +254,15 @@ describe("SpawnAcpClient — stream drain resilience", () => {
 
       // stdout emits an error mid-stream (e.g. acpx runtime crash)
       const errStream = new ReadableStream<Uint8Array>({
-        start(c) { c.error(new Error("stream error")); },
+        start(c) {
+          c.error(new Error("stream error"));
+        },
       });
       const stderrStream = new ReadableStream<Uint8Array>({
-        start(c) { c.enqueue(enc.encode("acpx crashed")); c.close(); },
+        start(c) {
+          c.enqueue(enc.encode("acpx crashed"));
+          c.close();
+        },
       });
       return {
         stdout: errStream,
@@ -272,10 +294,18 @@ describe("SpawnAcpClient — stream drain resilience", () => {
       if (callCount === 1) return makeSpawnResult(0); // ensure session
 
       // stdout never closes — simulates Bun stream hang after SIGTERM
-      const hangingStream = new ReadableStream<Uint8Array>({ start() { /* never closes */ } });
+      const hangingStream = new ReadableStream<Uint8Array>({
+        start() {
+          /* never closes */
+        },
+      });
       return {
         stdout: hangingStream,
-        stderr: new ReadableStream<Uint8Array>({ start(c) { c.close(); } }),
+        stderr: new ReadableStream<Uint8Array>({
+          start(c) {
+            c.close();
+          },
+        }),
         stdin: { write: () => 0, end: () => {}, flush: () => {} },
         exited: Promise.resolve(1),
         pid: 99999999,
@@ -373,8 +403,17 @@ describe("SpawnAcpSession — success-path response fidelity (BUG-1/BUG-2)", () 
           resolvePromptExit = resolve;
         });
         return {
-          stdout: new ReadableStream<Uint8Array>({ start(c) { c.enqueue(enc.encode(stdout)); c.close(); } }),
-          stderr: new ReadableStream<Uint8Array>({ start(c) { c.close(); } }),
+          stdout: new ReadableStream<Uint8Array>({
+            start(c) {
+              c.enqueue(enc.encode(stdout));
+              c.close();
+            },
+          }),
+          stderr: new ReadableStream<Uint8Array>({
+            start(c) {
+              c.close();
+            },
+          }),
           stdin: { write: () => 0, end: () => {}, flush: () => {} },
           exited,
           pid: 99999999,
@@ -447,8 +486,16 @@ describe("SpawnAcpSession — process-tree cleanup (ORPHAN-1)", () => {
           resolvePromptExit = resolve;
         });
         return {
-          stdout: new ReadableStream<Uint8Array>({ start(c) { c.close(); } }),
-          stderr: new ReadableStream<Uint8Array>({ start(c) { c.close(); } }),
+          stdout: new ReadableStream<Uint8Array>({
+            start(c) {
+              c.close();
+            },
+          }),
+          stderr: new ReadableStream<Uint8Array>({
+            start(c) {
+              c.close();
+            },
+          }),
           stdin: { write: () => 0, end: () => {}, flush: () => {} },
           exited,
           pid: 99999999,
@@ -649,8 +696,7 @@ describe("SpawnAcpClient — loadSession (SEC-3)", () => {
   withDepsRestore(_spawnClientDeps, ["spawn"]);
 
   test("loadSession returns a session when ensure succeeds", async () => {
-    _spawnClientDeps.spawn = (_cmd, _opts) =>
-      makeSpawnResult(0);
+    _spawnClientDeps.spawn = (_cmd, _opts) => makeSpawnResult(0);
 
     const client = new SpawnAcpClient("acpx --model claude-sonnet-4-5 claude", "/tmp");
     const session = await client.loadSession("test-session", "claude", "approve-reads");
@@ -658,8 +704,7 @@ describe("SpawnAcpClient — loadSession (SEC-3)", () => {
   });
 
   test("loadSession returns null when ensure fails", async () => {
-    _spawnClientDeps.spawn = (_cmd, _opts) =>
-      makeSpawnResult(1);
+    _spawnClientDeps.spawn = (_cmd, _opts) => makeSpawnResult(1);
 
     const client = new SpawnAcpClient("acpx --model claude-sonnet-4-5 claude", "/tmp");
     const session = await client.loadSession("test-session", "claude", "approve-reads");

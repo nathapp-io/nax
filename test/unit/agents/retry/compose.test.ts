@@ -67,7 +67,7 @@ describe("composeRetry", () => {
   });
 
   test("strategies are consulted in order until first match", () => {
-    let callOrder: number[] = [];
+    const callOrder: number[] = [];
     const s0: RetryStrategy = {
       shouldRetry(): RetryDecision {
         callOrder.push(0);
@@ -94,7 +94,7 @@ describe("composeRetry", () => {
   });
 
   test("stops consulting after first retry=true decision", () => {
-    let callOrder: number[] = [];
+    const callOrder: number[] = [];
     const s0: RetryStrategy = {
       shouldRetry(): RetryDecision {
         callOrder.push(0);
@@ -121,7 +121,7 @@ describe("composeRetry", () => {
   });
 
   test("passes failure, attempt, and context through to each strategy", () => {
-    let receivedArgs: [any, number, RetryContext][] = [];
+    const receivedArgs: [any, number, RetryContext][] = [];
     const s0: RetryStrategy = {
       shouldRetry(failure, attempt, c): RetryDecision {
         receivedArgs.push([failure, attempt, c]);

@@ -19,15 +19,15 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import {
   _evidenceDeps,
   checkFindingEvidence,
   downgradeUnsubstantiatedFinding,
   substantiateSemanticEvidence,
 } from "@/review/semantic-evidence";
-import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { LLMFinding } from "@/review/semantic-helpers";
-import { makeLogger, type MockLogger } from "@test/helpers";
+import { type MockLogger, makeLogger } from "@test/helpers";
 import { withTempDir } from "@test/helpers";
 
 const STORY_ID = "US-001";
@@ -97,10 +97,7 @@ describe("substantiateSemanticEvidence — ref mode", () => {
   test("downgrades error finding when observed is prose, not a verbatim excerpt", async () => {
     await withTempDir(async (workdir) => {
       mkdirSync(join(workdir, "src"), { recursive: true });
-      writeFileSync(
-        join(workdir, "src/foo.ts"),
-        "function hasContentChanged(a, b) { return a.label !== b.label; }\n",
-      );
+      writeFileSync(join(workdir, "src/foo.ts"), "function hasContentChanged(a, b) { return a.label !== b.label; }\n");
 
       const finding = makeFinding({
         line: 1,
@@ -262,14 +259,7 @@ describe("substantiateSemanticEvidence — ref mode", () => {
         },
       });
 
-      const result = await substantiateSemanticEvidence(
-        [finding],
-        "ref",
-        packageDir,
-        STORY_ID,
-        "error",
-        repoRoot,
-      );
+      const result = await substantiateSemanticEvidence([finding], "ref", packageDir, STORY_ID, "error", repoRoot);
 
       expect(result[0].severity).toBe("unverifiable");
       expect(logger.calls.find((c) => c.message.includes("Downgraded"))).toBeDefined();

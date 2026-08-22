@@ -8,7 +8,7 @@ describe("resolveDefaultAgent in acceptance context", () => {
       resolveDefaultAgent({
         ...DEFAULT_CONFIG,
         agent: { ...DEFAULT_CONFIG.agent, default: "claude" },
-      } as never)
+      } as never),
     ).toBe("claude");
   });
 });

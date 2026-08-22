@@ -29,7 +29,10 @@ describe("detectMergeConflict", () => {
     ["<<<<<<< conflict marker", "<<<<<<< HEAD\nconst x = 1;\n=======\nconst x = 2;\n>>>>>>> feature"],
     [">>>>>>> conflict marker", ">>>>>>> feature-branch"],
     ["Merge conflict in <file> message", "Merge conflict in src/index.ts"],
-    ["typical merge output with CONFLICT", "Auto-merging src/index.ts\nCONFLICT (content): Merge conflict in src/index.ts\nAutomatic merge failed; fix conflicts and then commit the result."],
+    [
+      "typical merge output with CONFLICT",
+      "Auto-merging src/index.ts\nCONFLICT (content): Merge conflict in src/index.ts\nAutomatic merge failed; fix conflicts and then commit the result.",
+    ],
     ["combined stderr output", "stdout: commit abc123\nstderr: CONFLICT (content): Merge conflict in src/foo.ts"],
   ])("returns true for %s", (_label, output) => {
     expect(detectMergeConflict(output)).toBe(true);
@@ -57,8 +60,17 @@ function mockSpawnOutput(output: string, exitCode = 0): typeof _gitDeps.spawn {
   return mock((_args: string[], _opts: unknown) => {
     const bytes = new TextEncoder().encode(output);
     return {
-      stdout: new ReadableStream({ start(c) { c.enqueue(bytes); c.close(); } }),
-      stderr: new ReadableStream({ start(c) { c.close(); } }),
+      stdout: new ReadableStream({
+        start(c) {
+          c.enqueue(bytes);
+          c.close();
+        },
+      }),
+      stderr: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
       exited: Promise.resolve(exitCode),
       kill: mock(() => {}),
     };
@@ -100,8 +112,17 @@ describe("captureOutputFiles", () => {
       capturedArgs = args as string[];
       const bytes = new TextEncoder().encode("src/a.ts\n");
       return {
-        stdout: new ReadableStream({ start(c) { c.enqueue(bytes); c.close(); } }),
-        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
         exited: Promise.resolve(0),
         kill: mock(() => {}),
       };
@@ -116,8 +137,17 @@ describe("captureOutputFiles", () => {
       capturedArgs = args as string[];
       const bytes = new TextEncoder().encode("apps/api/src/index.ts\n");
       return {
-        stdout: new ReadableStream({ start(c) { c.enqueue(bytes); c.close(); } }),
-        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
         exited: Promise.resolve(0),
         kill: mock(() => {}),
       };
@@ -129,7 +159,9 @@ describe("captureOutputFiles", () => {
   });
 
   test("returns empty array on git spawn failure (non-fatal)", async () => {
-    _gitDeps.spawn = mock(() => { throw new Error("git not found"); });
+    _gitDeps.spawn = mock(() => {
+      throw new Error("git not found");
+    });
     const result = await captureOutputFiles("/tmp/repo", "abc123");
     expect(result).toEqual([]);
   });
@@ -178,8 +210,17 @@ function mockSequentialSpawn(outputs: string[]): typeof _gitDeps.spawn {
     const out = outputs[callIdx++] ?? "";
     const bytes = new TextEncoder().encode(out);
     return {
-      stdout: new ReadableStream({ start(c) { c.enqueue(bytes); c.close(); } }),
-      stderr: new ReadableStream({ start(c) { c.close(); } }),
+      stdout: new ReadableStream({
+        start(c) {
+          c.enqueue(bytes);
+          c.close();
+        },
+      }),
+      stderr: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
       exited: Promise.resolve(0),
       kill: mock(() => {}),
     };
@@ -213,11 +254,7 @@ describe("captureWorkingTreeChanges", () => {
     // Committed: src/committed.ts
     // Uncommitted tracked: src/modified.ts (also in committed — dup)
     // Untracked: src/new.ts
-    _gitDeps.spawn = mockSequentialSpawn([
-      "src/committed.ts\nsrc/modified.ts\n",
-      "src/modified.ts\n",
-      "src/new.ts\n",
-    ]);
+    _gitDeps.spawn = mockSequentialSpawn(["src/committed.ts\nsrc/modified.ts\n", "src/modified.ts\n", "src/new.ts\n"]);
     const result = await captureWorkingTreeChanges("/tmp/repo", "abc123");
     expect(result).toEqual(["src/committed.ts", "src/modified.ts", "src/new.ts"]);
   });
@@ -231,12 +268,20 @@ describe("captureWorkingTreeChanges", () => {
   });
 
   test("scopes to scopePrefix when provided", async () => {
-    let capturedArgs: string[][] = [];
+    const capturedArgs: string[][] = [];
     _gitDeps.spawn = mock((args: string[], _opts: unknown) => {
       capturedArgs.push(args as string[]);
       return {
-        stdout: new ReadableStream({ start(c) { c.close(); } }),
-        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        stdout: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
         exited: Promise.resolve(0),
         kill: mock(() => {}),
       };
@@ -266,8 +311,16 @@ describe("captureWorkingTreeChanges", () => {
     _gitDeps.spawn = mock((_args: unknown[], _opts: unknown) => {
       let resolveExited: (code: number) => void = () => {};
       const proc = {
-        stdout: new ReadableStream({ start(c) { /* never closes */ } }),
-        stderr: new ReadableStream({ start(c) { /* never closes */ } }),
+        stdout: new ReadableStream({
+          start(c) {
+            /* never closes */
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            /* never closes */
+          },
+        }),
         exited: new Promise<number>((r) => {
           resolveExited = r;
         }),
@@ -313,9 +366,7 @@ describe("parsePorcelainForNaxPaths", () => {
 
   test("returns a deleted .nax/ path as protected", () => {
     const output = " D apps/web/.nax/features/f/.nax-acceptance.test.tsx\n";
-    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([
-      "apps/web/.nax/features/f/.nax-acceptance.test.tsx",
-    ]);
+    expect(paths(parsePorcelainForNaxPaths(output))).toEqual(["apps/web/.nax/features/f/.nax-acceptance.test.tsx"]);
   });
 
   test("returns a staged-deleted .nax/ path (D ) as protected", () => {
@@ -324,9 +375,7 @@ describe("parsePorcelainForNaxPaths", () => {
     // to ` D`. The auto-commit runs `git add -A`, which keeps a staged
     // deletion staged, so a missed `D ` line would still be lost.
     const output = "D  apps/web/.nax/features/f/.nax-acceptance.test.tsx\n";
-    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([
-      "apps/web/.nax/features/f/.nax-acceptance.test.tsx",
-    ]);
+    expect(paths(parsePorcelainForNaxPaths(output))).toEqual(["apps/web/.nax/features/f/.nax-acceptance.test.tsx"]);
   });
 
   test("flags a staged-deleted .nax/ path with staged=true", () => {
@@ -349,18 +398,14 @@ describe("parsePorcelainForNaxPaths", () => {
 
   test("returns a double-delete .nax/ path (DD) as protected", () => {
     const output = "DD apps/web/.nax/features/f/.nax-acceptance.test.tsx\n";
-    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([
-      "apps/web/.nax/features/f/.nax-acceptance.test.tsx",
-    ]);
+    expect(paths(parsePorcelainForNaxPaths(output))).toEqual(["apps/web/.nax/features/f/.nax-acceptance.test.tsx"]);
   });
 
   test("returns the OLD path when a rename moves a file out of .nax/", () => {
     // Rename: status 'R ', then "old -> new". We restore the old path because
     // that is where the agent last saw the file in HEAD.
     const output = " R .nax/features/f/.nax-acceptance.test.tsx -> src/orphan.test.tsx\n";
-    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([
-      ".nax/features/f/.nax-acceptance.test.tsx",
-    ]);
+    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([".nax/features/f/.nax-acceptance.test.tsx"]);
   });
 
   test("returns no protected paths for a modified .nax/ file", () => {
@@ -380,9 +425,7 @@ describe("parsePorcelainForNaxPaths", () => {
     // and escaping backslashes/quotes inside. We must unquote before the
     // `git checkout <path>` call so the path resolves correctly.
     const output = ' D ".nax/features/f name/file.tsx"\n';
-    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([
-      ".nax/features/f name/file.tsx",
-    ]);
+    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([".nax/features/f name/file.tsx"]);
   });
 
   test("decodes octal escapes for a deleted .nax/ path with non-ASCII bytes", () => {
@@ -395,7 +438,12 @@ describe("parsePorcelainForNaxPaths", () => {
     const result = paths(parsePorcelainForNaxPaths(output));
     expect(result).toHaveLength(1);
     // .nax/café/file.tsx in UTF-8: 'caf' + 0xC3 0xA9 + '/file.tsx'
-    expect(result[0]).toBe(Buffer.from([0x2e, 0x6e, 0x61, 0x78, 0x2f, 0x63, 0x61, 0x66, 0xc3, 0xa9, 0x2f, 0x66, 0x69, 0x6c, 0x65, 0x2e, 0x74, 0x73, 0x78]).toString());
+    expect(result[0]).toBe(
+      Buffer.from([
+        0x2e, 0x6e, 0x61, 0x78, 0x2f, 0x63, 0x61, 0x66, 0xc3, 0xa9, 0x2f, 0x66, 0x69, 0x6c, 0x65, 0x2e, 0x74, 0x73,
+        0x78,
+      ]).toString(),
+    );
     // The decoded path must contain the literal `.nax` segment (octal-decoded
     // bytes must not leak into the structural check).
     expect(result[0]).toContain(".nax/");
@@ -408,18 +456,14 @@ describe("parsePorcelainForNaxPaths", () => {
     // the arrow inside the filename. Here the OLD path is literally
     // `foo -> bar.txt`; truncating at the first ` -> ` would yield `foo`.
     const output = ' R ".nax/features/f/foo -> bar.txt" -> src/elsewhere.txt\n';
-    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([
-      ".nax/features/f/foo -> bar.txt",
-    ]);
+    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([".nax/features/f/foo -> bar.txt"]);
   });
 
   test("skips an uninterpretable line and still returns a deleted .nax/ path", () => {
     // Defensive: malformed status (single char) is not a deletion/rename, so
     // we ignore it. A subsequent deleted .nax/ path must still be parsed.
     const output = "??bogus\n D .nax/features/f/file.tsx\n";
-    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([
-      ".nax/features/f/file.tsx",
-    ]);
+    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([".nax/features/f/file.tsx"]);
   });
 
   test("returns empty array on empty porcelain output", () => {
@@ -475,8 +519,18 @@ function captureSpawn(outputs: Array<{ output: string; exitCode?: number; stderr
     const bytes = new TextEncoder().encode(spec.output);
     const stderrBytes = new TextEncoder().encode(spec.stderr ?? "");
     return {
-      stdout: new ReadableStream({ start(c) { c.enqueue(bytes); c.close(); } }),
-      stderr: new ReadableStream({ start(c) { c.enqueue(stderrBytes); c.close(); } }),
+      stdout: new ReadableStream({
+        start(c) {
+          c.enqueue(bytes);
+          c.close();
+        },
+      }),
+      stderr: new ReadableStream({
+        start(c) {
+          c.enqueue(stderrBytes);
+          c.close();
+        },
+      }),
       exited: Promise.resolve(spec.exitCode ?? 0),
       kill: mock(() => {}),
     };
@@ -503,15 +557,9 @@ describe("autoCommitIfDirty .nax/ restore", () => {
     await autoCommitIfDirty("/tmp/repo", "test", "implementer", "US-002");
 
     // Order matters: checkout MUST come before add
-    const checkoutIdx = calls.findIndex((c) =>
-      c.args[0] === "git" && c.args[1] === "checkout"
-    );
-    const addIdx = calls.findIndex((c) =>
-      c.args[0] === "git" && c.args[1] === "add"
-    );
-    const commitIdx = calls.findIndex((c) =>
-      c.args[0] === "git" && c.args[1] === "commit"
-    );
+    const checkoutIdx = calls.findIndex((c) => c.args[0] === "git" && c.args[1] === "checkout");
+    const addIdx = calls.findIndex((c) => c.args[0] === "git" && c.args[1] === "add");
+    const commitIdx = calls.findIndex((c) => c.args[0] === "git" && c.args[1] === "commit");
     expect(checkoutIdx).toBeGreaterThanOrEqual(0);
     expect(addIdx).toBeGreaterThan(checkoutIdx);
     expect(commitIdx).toBeGreaterThan(addIdx);
@@ -622,14 +670,10 @@ describe("autoCommitIfDirty .nax/ restore", () => {
 
     await autoCommitIfDirty("/tmp/repo", "test", "implementer", "US-002");
 
-    const checkoutCalls = calls.filter((c) =>
-      c.args[0] === "git" && c.args[1] === "checkout"
-    );
+    const checkoutCalls = calls.filter((c) => c.args[0] === "git" && c.args[1] === "checkout");
     expect(checkoutCalls.length).toBe(0);
     // But commit still runs
-    const commitCalls = calls.filter((c) =>
-      c.args[0] === "git" && c.args[1] === "commit"
-    );
+    const commitCalls = calls.filter((c) => c.args[0] === "git" && c.args[1] === "commit");
     expect(commitCalls.length).toBe(1);
   });
 
@@ -645,12 +689,8 @@ describe("autoCommitIfDirty .nax/ restore", () => {
 
     await autoCommitIfDirty("/tmp/repo", "test", "implementer", "US-002");
 
-    const addCalls = calls.filter((c) =>
-      c.args[0] === "git" && c.args[1] === "add"
-    );
-    const commitCalls = calls.filter((c) =>
-      c.args[0] === "git" && c.args[1] === "commit"
-    );
+    const addCalls = calls.filter((c) => c.args[0] === "git" && c.args[1] === "add");
+    const commitCalls = calls.filter((c) => c.args[0] === "git" && c.args[1] === "commit");
     expect(addCalls.length).toBe(1);
     expect(commitCalls.length).toBe(1);
   });
@@ -672,9 +712,7 @@ describe("autoCommitIfDirty .nax/ restore", () => {
 
     await autoCommitIfDirty("/tmp/repo", "test", "implementer", "US-002");
 
-    const checkoutCall = calls.find((c) =>
-      c.args[0] === "git" && c.args[1] === "checkout"
-    );
+    const checkoutCall = calls.find((c) => c.args[0] === "git" && c.args[1] === "checkout");
     expect(checkoutCall).toBeDefined();
     // The `HEAD` token MUST appear so the index-level deletion is bypassed.
     expect(checkoutCall!.args).toContain("HEAD");
@@ -696,9 +734,7 @@ describe("autoCommitIfDirty .nax/ restore", () => {
 
     await autoCommitIfDirty("/tmp/repo", "test", "implementer", "US-002");
 
-    const checkoutCall = calls.find((c) =>
-      c.args[0] === "git" && c.args[1] === "checkout"
-    );
+    const checkoutCall = calls.find((c) => c.args[0] === "git" && c.args[1] === "checkout");
     expect(checkoutCall).toBeDefined();
     expect(checkoutCall!.args).toContain("HEAD");
     // Restoring the OLD path (not the new one)
@@ -720,9 +756,7 @@ describe("autoCommitIfDirty .nax/ restore", () => {
 
     await autoCommitIfDirty("/tmp/repo", "test", "implementer", "US-002");
 
-    const checkoutCall = calls.find((c) =>
-      c.args[0] === "git" && c.args[1] === "checkout"
-    );
+    const checkoutCall = calls.find((c) => c.args[0] === "git" && c.args[1] === "checkout");
     expect(checkoutCall).toBeDefined();
     expect(checkoutCall!.args).not.toContain("HEAD");
     expect(checkoutCall!.args).toContain("--");
@@ -774,4 +808,3 @@ describe("getUntrackedPaths", () => {
     expect(await getUntrackedPaths("/tmp/repo")).toBeNull();
   });
 });
-

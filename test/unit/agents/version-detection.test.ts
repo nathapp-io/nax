@@ -7,11 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import {
-  _versionDetectionDeps,
-  getAgentVersion,
-  getAgentVersions,
-} from "@/agents/shared/version-detection";
+import { _versionDetectionDeps, getAgentVersion, getAgentVersions } from "@/agents/shared/version-detection";
 import type { AgentAdapter } from "@/agents/types";
 
 // ---------------------------------------------------------------------------
@@ -65,7 +61,9 @@ afterEach(() => {
 
 describe("getAgentVersion", () => {
   test("returns parsed version when exit code is 0", async () => {
-    _versionDetectionDeps.spawn = mock(() => makeMockProc("git version 2.39.0\n", 0)) as typeof _versionDetectionDeps.spawn;
+    _versionDetectionDeps.spawn = mock(() =>
+      makeMockProc("git version 2.39.0\n", 0),
+    ) as typeof _versionDetectionDeps.spawn;
 
     const version = await getAgentVersion("git");
     expect(version).toBe("2.39.0");

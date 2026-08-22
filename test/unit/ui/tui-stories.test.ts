@@ -8,12 +8,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { render } from "ink-testing-library";
-import { createElement } from "react";
 import type { UserStory } from "@/prd/types";
 import { StatusBar } from "@/tui/components/StatusBar";
 import { StoriesPanel } from "@/tui/components/StoriesPanel";
 import type { StoryDisplayState } from "@/tui/types";
+import { render } from "ink-testing-library";
+import { createElement } from "react";
 
 // Helper to create mock stories
 function createMockStory(id: string, status: StoryDisplayState["status"]): StoryDisplayState {
@@ -54,9 +54,7 @@ describe("StoriesPanel", () => {
     ["paused" as const, "⏸️"],
   ])("renders %s story with %s icon", (status, icon) => {
     const stories = [createMockStory("US-001", status)];
-    const { lastFrame } = render(
-      createElement(StoriesPanel, { stories, width: 30 }),
-    );
+    const { lastFrame } = render(createElement(StoriesPanel, { stories, width: 30 }));
     expect(lastFrame()).toContain(`${icon} US-001`);
   });
 
@@ -107,10 +105,12 @@ describe("StoriesPanel", () => {
   });
 
   test("displays failure sub-line for failed story", () => {
-    const stories = [{
-      ...createMockStory("US-001", "failed"),
-      failureReason: "Tests failed to pass",
-    }];
+    const stories = [
+      {
+        ...createMockStory("US-001", "failed"),
+        failureReason: "Tests failed to pass",
+      },
+    ];
 
     const { lastFrame } = render(
       createElement(StoriesPanel, {
@@ -171,23 +171,17 @@ describe("StatusBar", () => {
   });
 
   test("displays done context when run is complete", () => {
-    const { lastFrame } = render(
-      createElement(StatusBar, { runComplete: true }),
-    );
+    const { lastFrame } = render(createElement(StatusBar, { runComplete: true }));
     expect(lastFrame()).toContain("done");
   });
 
   test("displays run paused context", () => {
-    const { lastFrame } = render(
-      createElement(StatusBar, { runPaused: true }),
-    );
+    const { lastFrame } = render(createElement(StatusBar, { runPaused: true }));
     expect(lastFrame()).toContain("run paused");
   });
 
   test("displays parallel mode with active count", () => {
-    const { lastFrame } = render(
-      createElement(StatusBar, { isParallel: true, activeCount: 3 }),
-    );
+    const { lastFrame } = render(createElement(StatusBar, { isParallel: true, activeCount: 3 }));
     expect(lastFrame()).toContain("parallel");
     expect(lastFrame()).toContain("3");
   });

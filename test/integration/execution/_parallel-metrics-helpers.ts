@@ -5,7 +5,7 @@
  */
 
 import { mock } from "bun:test";
-import type { UserStory, PRD } from "@/prd/types";
+import type { PRD, UserStory } from "@/prd/types";
 
 export function makePendingStory(id: string): UserStory {
   return {
@@ -77,7 +77,14 @@ export function makeCtx(overrides: { parallelCount?: number; costLimit?: number;
     runtime: {
       outputDir: "/tmp/nax-test-parallel-metrics-output",
       costAggregator: {
-        snapshot: () => ({ totalCostUsd: 0, totalEstimatedCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }),
+        snapshot: () => ({
+          totalCostUsd: 0,
+          totalEstimatedCostUsd: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          callCount: 0,
+          errorCount: 0,
+        }),
         byStage: () => ({}),
         byStory: () => ({}),
         byAgent: () => ({}),

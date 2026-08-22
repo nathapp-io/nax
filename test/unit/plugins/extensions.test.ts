@@ -5,11 +5,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import type {
-  IPostRunAction,
-  PostRunActionResult,
-  PostRunContext,
-} from "@/plugins/extensions";
+import type { IPostRunAction, PostRunActionResult, PostRunContext } from "@/plugins/extensions";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // IPostRunAction interface tests

@@ -232,8 +232,16 @@ describe("reconcileState", () => {
     _reconcileDeps.spawn = mock((args: unknown) => {
       spawnCalls.push(args as string[]);
       return {
-        stdout: new ReadableStream({ start(c) { c.close(); } }),
-        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        stdout: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
         exited: Promise.resolve(0),
         kill: () => {},
       };
@@ -274,8 +282,16 @@ describe("reconcileState", () => {
     _reconcileDeps.spawn = mock((args: unknown) => {
       spawnCalls.push(args as string[]);
       return {
-        stdout: new ReadableStream({ start(c) { c.close(); } }),
-        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        stdout: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
         exited: Promise.resolve(0),
         kill: () => {},
       };
@@ -284,9 +300,7 @@ describe("reconcileState", () => {
     const prd = makePrd({ status: "failed", failureStage: "execution" });
     await runReconcile(prd, "-shared");
 
-    const branchDeleteCalls = spawnCalls.filter(
-      (a) => a.includes("branch") && a.includes("-D"),
-    );
+    const branchDeleteCalls = spawnCalls.filter((a) => a.includes("branch") && a.includes("-D"));
     expect(branchDeleteCalls.length).toBe(0);
   });
 

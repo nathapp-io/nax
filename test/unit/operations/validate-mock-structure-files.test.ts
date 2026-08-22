@@ -29,12 +29,9 @@ describe("validateMockStructureFiles", () => {
         testAfter: "new",
       };
 
-      const { valid, invalid } = await validateMockStructureFiles(
-        [decl],
-        testPatterns,
-        "/repo",
-        { fileExists: makeFileExists([]) },
-      );
+      const { valid, invalid } = await validateMockStructureFiles([decl], testPatterns, "/repo", {
+        fileExists: makeFileExists([]),
+      });
 
       expect(valid).toHaveLength(1);
       expect(invalid).toHaveLength(0);
@@ -48,12 +45,9 @@ describe("validateMockStructureFiles", () => {
         finding: "no-non-null-assertion",
       };
 
-      const { valid, invalid } = await validateMockStructureFiles(
-        [decl],
-        testPatterns,
-        "/repo",
-        { fileExists: makeFileExists([]) },
-      );
+      const { valid, invalid } = await validateMockStructureFiles([decl], testPatterns, "/repo", {
+        fileExists: makeFileExists([]),
+      });
 
       expect(valid).toHaveLength(1);
       expect(invalid).toHaveLength(0);
@@ -66,12 +60,9 @@ describe("validateMockStructureFiles", () => {
         finding: "TS2304",
       };
 
-      const { valid, invalid } = await validateMockStructureFiles(
-        [decl],
-        testPatterns,
-        "/repo",
-        { fileExists: makeFileExists([]) },
-      );
+      const { valid, invalid } = await validateMockStructureFiles([decl], testPatterns, "/repo", {
+        fileExists: makeFileExists([]),
+      });
 
       expect(valid).toHaveLength(1);
       expect(invalid).toHaveLength(0);
@@ -87,17 +78,9 @@ describe("validateMockStructureFiles", () => {
         reasonDetail: "mock setup",
       };
 
-      const { valid, invalid } = await validateMockStructureFiles(
-        [decl],
-        testPatterns,
-        "/repo",
-        {
-          fileExists: makeFileExists([
-            "/repo/test/unit/foo.test.ts",
-            "/repo/test/unit/bar.test.ts",
-          ]),
-        },
-      );
+      const { valid, invalid } = await validateMockStructureFiles([decl], testPatterns, "/repo", {
+        fileExists: makeFileExists(["/repo/test/unit/foo.test.ts", "/repo/test/unit/bar.test.ts"]),
+      });
 
       expect(valid).toHaveLength(1);
       expect(invalid).toHaveLength(0);
@@ -112,17 +95,12 @@ describe("validateMockStructureFiles", () => {
         reasonDetail: "mock setup",
       };
 
-      const { valid, invalid } = await validateMockStructureFiles(
-        [decl],
-        testPatterns,
-        "/repo",
-        {
-          fileExists: makeFileExists([
-            "/repo/test/unit/foo.test.ts",
-            // missing.test.ts does NOT exist
-          ]),
-        },
-      );
+      const { valid, invalid } = await validateMockStructureFiles([decl], testPatterns, "/repo", {
+        fileExists: makeFileExists([
+          "/repo/test/unit/foo.test.ts",
+          // missing.test.ts does NOT exist
+        ]),
+      });
 
       expect(valid).toHaveLength(0);
       expect(invalid).toHaveLength(1);
@@ -137,14 +115,9 @@ describe("validateMockStructureFiles", () => {
         reasonDetail: "not a test file",
       };
 
-      const { valid, invalid } = await validateMockStructureFiles(
-        [decl],
-        testPatterns,
-        "/repo",
-        {
-          fileExists: makeFileExists(["/repo/src/utils.ts"]),
-        },
-      );
+      const { valid, invalid } = await validateMockStructureFiles([decl], testPatterns, "/repo", {
+        fileExists: makeFileExists(["/repo/src/utils.ts"]),
+      });
 
       expect(valid).toHaveLength(0);
       expect(invalid).toHaveLength(1);
@@ -158,14 +131,9 @@ describe("validateMockStructureFiles", () => {
         reasonDetail: "only one file",
       };
 
-      const { valid, invalid } = await validateMockStructureFiles(
-        [decl],
-        testPatterns,
-        "/repo",
-        {
-          fileExists: makeFileExists(["/repo/test/unit/only.test.ts"]),
-        },
-      );
+      const { valid, invalid } = await validateMockStructureFiles([decl], testPatterns, "/repo", {
+        fileExists: makeFileExists(["/repo/test/unit/only.test.ts"]),
+      });
 
       expect(valid).toHaveLength(1);
       expect(invalid).toHaveLength(0);
@@ -179,12 +147,9 @@ describe("validateMockStructureFiles", () => {
         reasonDetail: "deleted file",
       };
 
-      const { valid, invalid } = await validateMockStructureFiles(
-        [decl],
-        testPatterns,
-        "/repo",
-        { fileExists: makeFileExists([]) },
-      );
+      const { valid, invalid } = await validateMockStructureFiles([decl], testPatterns, "/repo", {
+        fileExists: makeFileExists([]),
+      });
 
       expect(valid).toHaveLength(0);
       expect(invalid).toHaveLength(1);
@@ -208,12 +173,9 @@ describe("validateMockStructureFiles", () => {
         reasonDetail: "relative path check",
       };
 
-      const { valid } = await validateMockStructureFiles(
-        [decl],
-        patterns,
-        "/repo",
-        { fileExists: makeFileExists(["/repo/test/unit/foo.test.ts"]) },
-      );
+      const { valid } = await validateMockStructureFiles([decl], patterns, "/repo", {
+        fileExists: makeFileExists(["/repo/test/unit/foo.test.ts"]),
+      });
 
       expect(valid).toHaveLength(1);
     });
@@ -232,15 +194,10 @@ describe("validateMockStructureFiles", () => {
         reasonDetail: "invalid one",
       };
 
-      const { valid, invalid } = await validateMockStructureFiles(
-        [validDecl, invalidDecl],
-        testPatterns,
-        "/repo",
-        {
-          fileExists: makeFileExists(["/repo/test/unit/good.test.ts"]),
-          // bad.test.ts does not exist
-        },
-      );
+      const { valid, invalid } = await validateMockStructureFiles([validDecl, invalidDecl], testPatterns, "/repo", {
+        fileExists: makeFileExists(["/repo/test/unit/good.test.ts"]),
+        // bad.test.ts does not exist
+      });
 
       expect(valid).toHaveLength(1);
       expect(invalid).toHaveLength(1);
@@ -311,7 +268,7 @@ describe("validateMockStructureFiles", () => {
         globs: ["tests/**/*.py"],
         pathspec: [],
         testDirs: ["tests"],
-      resolution: "detected",
+        resolution: "detected",
         resolution: "detected",
       };
 
@@ -390,7 +347,7 @@ describe("validateMockStructureFiles", () => {
         globs: ["tests/**/*.py"],
         pathspec: [],
         testDirs: ["tests"],
-      resolution: "detected",
+        resolution: "detected",
         resolution: "detected",
       };
       const probed: string[] = [];

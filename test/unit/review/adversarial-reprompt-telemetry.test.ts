@@ -15,12 +15,12 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { IAgentManager } from "@/agents";
-import { _diffUtilsDeps } from "@/review/diff-utils";
 import { runAdversarialReview } from "@/review/adversarial";
+import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
-import { makeAgentAdapter, makeMockRuntime, makeMockAgentManager } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
 import type { ReviewRepromptEvent } from "@/runtime/dispatch-events";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 
 const STORY: SemanticStory = {
   id: "STORY-REP-01",
@@ -108,7 +108,7 @@ function makeAgentManager(llmResponse: string): IAgentManager {
 }
 
 describe("review-reprompt-on-drop telemetry integration", () => {
-  let createdRuntimes: NaxRuntime[] = [];
+  const createdRuntimes: NaxRuntime[] = [];
   let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
   let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
   let origSpawn: typeof _diffUtilsDeps.spawn;
@@ -293,7 +293,9 @@ describe("review-reprompt-on-drop telemetry integration", () => {
     expect(sessionSendCount).toBe(2);
     expect(repromptEvents).toHaveLength(1);
     expect(repromptEvents[0].repromptOutcome).toBe("recovered-blocking");
-    expect(result.success === true || (result.success === false && result.findings && result.findings.length > 0)).toBe(true);
+    expect(result.success === true || (result.success === false && result.findings && result.findings.length > 0)).toBe(
+      true,
+    );
   });
 
   test("no reprompt: acRegroundOnDrop === false → zero events", async () => {

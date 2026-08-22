@@ -1,7 +1,7 @@
-import { describe, test, expect, beforeEach } from "bun:test";
-import { ContextOrchestrator, _orchestratorDeps } from "@/context/engine/orchestrator";
+import { beforeEach, describe, expect, test } from "bun:test";
 import { NeutralityLintError } from "@/context";
-import type { ContextRequest, IContextProvider, ContextProviderResult } from "@/context/engine/types";
+import { ContextOrchestrator, _orchestratorDeps } from "@/context/engine/orchestrator";
+import type { ContextProviderResult, ContextRequest, IContextProvider } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -38,25 +38,29 @@ function makeProvider(id: string, result: Partial<ContextProviderResult> = {}): 
   };
 }
 
-function makeChunkResult(overrides: {
-  id: string;
-  kind?: string;
-  scope?: string;
-  content?: string;
-  tokens?: number;
-  rawScore?: number;
-  role?: ("implementer" | "reviewer" | "tdd" | "all")[];
-} = { id: "chunk:abc" }): ContextProviderResult {
+function makeChunkResult(
+  overrides: {
+    id: string;
+    kind?: string;
+    scope?: string;
+    content?: string;
+    tokens?: number;
+    rawScore?: number;
+    role?: ("implementer" | "reviewer" | "tdd" | "all")[];
+  } = { id: "chunk:abc" },
+): ContextProviderResult {
   return {
-    chunks: [{
-      id: overrides.id,
-      kind: overrides.kind ?? "feature",
-      scope: overrides.scope ?? "feature",
-      role: overrides.role ?? ["implementer"],
-      content: overrides.content ?? "feature context content",
-      tokens: overrides.tokens ?? 200,
-      rawScore: overrides.rawScore ?? 1.0,
-    }],
+    chunks: [
+      {
+        id: overrides.id,
+        kind: overrides.kind ?? "feature",
+        scope: overrides.scope ?? "feature",
+        role: overrides.role ?? ["implementer"],
+        content: overrides.content ?? "feature context content",
+        tokens: overrides.tokens ?? 200,
+        rawScore: overrides.rawScore ?? 1.0,
+      },
+    ],
     pullTools: [],
   };
 }
@@ -124,10 +128,13 @@ describe("ContextOrchestrator.assemble()", () => {
   });
 
   test("role-filtered chunks excluded and recorded in manifest", async () => {
-    const provider = makeProvider("p1", makeChunkResult({
-      id: "reviewer:chunk",
-      role: ["reviewer"],
-    }));
+    const provider = makeProvider(
+      "p1",
+      makeChunkResult({
+        id: "reviewer:chunk",
+        role: ["reviewer"],
+      }),
+    );
     const orch = new ContextOrchestrator([provider]);
     const bundle = await orch.assemble({ ...BASE_REQUEST, role: "implementer" });
     expect(bundle.chunks).toHaveLength(0);
@@ -140,7 +147,9 @@ describe("ContextOrchestrator.assemble()", () => {
     const timeoutProvider: IContextProvider = {
       id: "timeout-sim",
       kind: "feature",
-      fetch: async () => { throw new Error("simulated timeout"); },
+      fetch: async () => {
+        throw new Error("simulated timeout");
+      },
     };
     const goodProvider = makeProvider("good", makeChunkResult({ id: "good:1" }));
     const orch = new ContextOrchestrator([timeoutProvider, goodProvider]);
@@ -158,7 +167,15 @@ describe("ContextOrchestrator.assemble()", () => {
       id: "static-rules",
       kind: "static",
       fetch: async () => {
-        throw new NeutralityLintError([{ file: "x.md", lineNumber: 1, line: "IMPORTANT:", ruleId: "important-shouting", pattern: "shouting-style IMPORTANT:" }]);
+        throw new NeutralityLintError([
+          {
+            file: "x.md",
+            lineNumber: 1,
+            line: "IMPORTANT:",
+            ruleId: "important-shouting",
+            pattern: "shouting-style IMPORTANT:",
+          },
+        ]);
       },
     };
     const goodProvider = makeProvider("good", makeChunkResult({ id: "good:1" }));
@@ -175,7 +192,9 @@ describe("ContextOrchestrator.assemble()", () => {
     const flakyRules: IContextProvider = {
       id: "static-rules",
       kind: "static",
-      fetch: async () => { throw new Error("simulated I/O error"); },
+      fetch: async () => {
+        throw new Error("simulated I/O error");
+      },
     };
     const goodProvider = makeProvider("good", makeChunkResult({ id: "good:1" }));
     const orch = new ContextOrchestrator([flakyRules, goodProvider]);
@@ -218,15 +237,17 @@ describe("ContextOrchestrator.assemble()", () => {
   test("test-coverage chunks are floor-included when score is below minScore", async () => {
     // AC6: test-coverage kind is always packed regardless of score (budget floor wins)
     const provider = makeProvider("p1", {
-      chunks: [{
-        id: "tc:1",
-        kind: "test-coverage" as const,
-        scope: "feature",
-        role: ["implementer"],
-        content: "coverage data",
-        tokens: 200,
-        rawScore: 0.05,
-      }],
+      chunks: [
+        {
+          id: "tc:1",
+          kind: "test-coverage" as const,
+          scope: "feature",
+          role: ["implementer"],
+          content: "coverage data",
+          tokens: 200,
+          rawScore: 0.05,
+        },
+      ],
       pullTools: [],
     });
     const orch = new ContextOrchestrator([provider]);
@@ -293,7 +314,12 @@ describe("ContextOrchestrator.assemble() — agent profile ceiling (AC-32)", () 
 
 describe("ContextOrchestrator.assemble() — pull tool capability gate (AC-33)", () => {
   test("conservative profile (unknown agent) surfaces 0 pull tools; claude profile surfaces configured pull tools", async () => {
-    const base = { ...BASE_REQUEST, stage: "tdd-test-writer" as const, providerIds: [], pullConfig: { enabled: true, allowedTools: [] as string[], maxCallsPerSession: 5 } };
+    const base = {
+      ...BASE_REQUEST,
+      stage: "tdd-test-writer" as const,
+      providerIds: [],
+      pullConfig: { enabled: true, allowedTools: [] as string[], maxCallsPerSession: 5 },
+    };
     const conservative = await new ContextOrchestrator([]).assemble({ ...base, agentId: "some-unknown-agent" });
     expect(conservative.pullTools).toHaveLength(0);
     const claudeBundle = await new ContextOrchestrator([]).assemble({ ...base, agentId: "claude" });
@@ -311,7 +337,10 @@ describe("ContextOrchestrator.rebuildForAgent()", () => {
     const provider: IContextProvider = {
       id: "p1",
       kind: "feature",
-      fetch: async () => { fetchCount++; return makeChunkResult({ id: "c:1" }); },
+      fetch: async () => {
+        fetchCount++;
+        return makeChunkResult({ id: "c:1" });
+      },
     };
     const orch = new ContextOrchestrator([provider]);
     const original = await orch.assemble(BASE_REQUEST);
@@ -340,8 +369,13 @@ describe("ContextOrchestrator — repoRoot + packageDir (Amendment C AC-54/AC-60
   test("AC-54/AC-60/AC-61: manifest records repoRoot+packageDir for monorepo and non-monorepo", async () => {
     // Monorepo: packageDir differs from repoRoot
     const monoBundle = await new ContextOrchestrator([]).assemble({
-      storyId: "US-001", repoRoot: "/repo", packageDir: "/repo/packages/api",
-      stage: "execution", role: "implementer", budgetTokens: 4_000, providerIds: [],
+      storyId: "US-001",
+      repoRoot: "/repo",
+      packageDir: "/repo/packages/api",
+      stage: "execution",
+      role: "implementer",
+      budgetTokens: 4_000,
+      providerIds: [],
     });
     expect(monoBundle.manifest.repoRoot).toBe("/repo");
     expect(monoBundle.manifest.packageDir).toBe("/repo/packages/api");
@@ -349,8 +383,13 @@ describe("ContextOrchestrator — repoRoot + packageDir (Amendment C AC-54/AC-60
     // Non-monorepo: packageDir equals repoRoot
     const provider = makeProvider("p1", makeChunkResult({ id: "chunk:nm" }));
     const singleBundle = await new ContextOrchestrator([provider]).assemble({
-      storyId: "US-001", repoRoot: "/repo", packageDir: "/repo",
-      stage: "execution", role: "implementer", budgetTokens: 4_000, providerIds: ["p1"],
+      storyId: "US-001",
+      repoRoot: "/repo",
+      packageDir: "/repo",
+      stage: "execution",
+      role: "implementer",
+      budgetTokens: 4_000,
+      providerIds: ["p1"],
     });
     expect(singleBundle.manifest.repoRoot).toBe("/repo");
     expect(singleBundle.manifest.packageDir).toBe("/repo");
@@ -392,8 +431,14 @@ describe("US-001 — ContextOrchestrator budget arithmetic", () => {
     const orch = new ContextOrchestrator([
       makeProvider("p1", makeChunkResult({ id: "floor:1", kind: FLOOR_KIND, tokens: 50, content: "rules content a" })),
       makeProvider("p2", makeChunkResult({ id: "floor:2", kind: "feature", tokens: 50, content: "rules content b" })),
-      makeProvider("p3", makeChunkResult({ id: "non-floor:1", kind: "session", tokens: 200, content: "sess content a" })),
-      makeProvider("p4", makeChunkResult({ id: "non-floor:2", kind: "history", tokens: 1_600, content: "hist content a" })),
+      makeProvider(
+        "p3",
+        makeChunkResult({ id: "non-floor:1", kind: "session", tokens: 200, content: "sess content a" }),
+      ),
+      makeProvider(
+        "p4",
+        makeChunkResult({ id: "non-floor:2", kind: "history", tokens: 1_600, content: "hist content a" }),
+      ),
     ]);
     const stageBudget = 2_000;
     // BASE_REQUEST.providerIds omits p1-p4 — override explicitly so all four
@@ -525,7 +570,7 @@ describe("US-001 — ContextOrchestrator budget arithmetic", () => {
       id: `sess:${i}`,
       kind: "session" as const,
       scope: "feature" as const,
-      role: ["implementer"] as ("implementer")[],
+      role: ["implementer"] as "implementer"[],
       content: `chunk ${i} bytes ${String.fromCharCode(65 + (i % 26)).repeat(8 + (i % 3))}`,
       tokens: 5,
       rawScore: 0.9 - i * 0.005,
@@ -569,7 +614,7 @@ describe("US-001 — ContextOrchestrator budget arithmetic", () => {
             kind: "session",
             scope: "feature",
             role: ["implementer"],
-            content: "z".repeat(1_200),  // ~300 tokens
+            content: "z".repeat(1_200), // ~300 tokens
             tokens: 300,
             rawScore: 0.9,
           },
@@ -633,7 +678,11 @@ describe("US-001 — ContextOrchestrator budget arithmetic", () => {
       rawScore: 0.5,
     };
     const orch = new ContextOrchestrator([
-      { id: "p1", kind: "feature", fetch: async () => ({ chunks: [...scopeA, ...scopeB, marginal], pullTools: [] }) } as IContextProvider,
+      {
+        id: "p1",
+        kind: "feature",
+        fetch: async () => ({ chunks: [...scopeA, ...scopeB, marginal], pullTools: [] }),
+      } as IContextProvider,
     ]);
     const stageBudget = 374;
     const bundle = await orch.assemble({ ...BASE_REQUEST, budgetTokens: stageBudget, providerIds: ["p1"] });

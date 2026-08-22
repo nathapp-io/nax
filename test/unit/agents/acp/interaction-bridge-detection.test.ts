@@ -8,12 +8,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { AcpInteractionBridge, type BridgeConfig, type SessionNotification } from "@/agents/acp/interaction-bridge";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "@/interaction/types";
-import {
-  AcpInteractionBridge,
-  type BridgeConfig,
-  type SessionNotification,
-} from "@/agents/acp/interaction-bridge";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -29,20 +25,26 @@ function makeNotification(content: string, overrides: Partial<SessionNotificatio
   };
 }
 
-function makePlugin(overrides: {
-  sendFn?: (req: InteractionRequest) => Promise<void>;
-  receiveFn?: (requestId: string, timeout?: number) => Promise<InteractionResponse>;
-} = {}): InteractionPlugin {
+function makePlugin(
+  overrides: {
+    sendFn?: (req: InteractionRequest) => Promise<void>;
+    receiveFn?: (requestId: string, timeout?: number) => Promise<InteractionResponse>;
+  } = {},
+): InteractionPlugin {
   return {
     name: "mock-plugin",
     send: overrides.sendFn ?? mock(async (_req: InteractionRequest) => {}),
-    receive: overrides.receiveFn ?? mock(async (_requestId: string, _timeout?: number): Promise<InteractionResponse> => ({
-      requestId: _requestId,
-      action: "input",
-      value: "Continue with the default approach.",
-      respondedBy: "user",
-      respondedAt: Date.now(),
-    })),
+    receive:
+      overrides.receiveFn ??
+      mock(
+        async (_requestId: string, _timeout?: number): Promise<InteractionResponse> => ({
+          requestId: _requestId,
+          action: "input",
+          value: "Continue with the default approach.",
+          respondedBy: "user",
+          respondedAt: Date.now(),
+        }),
+      ),
   };
 }
 
@@ -91,8 +93,14 @@ describe("AcpInteractionBridge — question pattern detection", () => {
     ["code output", "function hello() { return 42; }"],
     ["progress report", "Wrote 3 files to disk."],
     ["empty content", ""],
-    ["BUG-097: nullish coalescing in code snippet", "Here's what was changed:\n\n**AC-2 fix**: Replaced with `batchResult.storyDurations?.get(story.id) ?? 0`"],
-    ["BUG-097: optional chaining in status update", "Updated src/foo.ts to use config?.timeout instead of hardcoded value."],
+    [
+      "BUG-097: nullish coalescing in code snippet",
+      "Here's what was changed:\n\n**AC-2 fix**: Replaced with `batchResult.storyDurations?.get(story.id) ?? 0`",
+    ],
+    [
+      "BUG-097: optional chaining in status update",
+      "Updated src/foo.ts to use config?.timeout instead of hardcoded value.",
+    ],
   ])("non-question ignored: %s", (_label, content) => {
     const notification = makeNotification(content);
     expect(bridge.isQuestion(notification)).toBe(false);
@@ -118,7 +126,9 @@ describe("AcpInteractionBridge — onSessionUpdate forwards questions", () => {
   test("calls plugin.send with an InteractionRequest when a question is detected", async () => {
     const sent: InteractionRequest[] = [];
     const plugin = makePlugin({
-      sendFn: async (req) => { sent.push(req); },
+      sendFn: async (req) => {
+        sent.push(req);
+      },
     });
     const bridge = new AcpInteractionBridge(plugin, makeBridgeConfig());
 
@@ -131,7 +141,9 @@ describe("AcpInteractionBridge — onSessionUpdate forwards questions", () => {
   test("InteractionRequest contains the agent question as summary", async () => {
     const sent: InteractionRequest[] = [];
     const plugin = makePlugin({
-      sendFn: async (req) => { sent.push(req); },
+      sendFn: async (req) => {
+        sent.push(req);
+      },
     });
     const bridge = new AcpInteractionBridge(plugin, makeBridgeConfig());
 
@@ -143,7 +155,11 @@ describe("AcpInteractionBridge — onSessionUpdate forwards questions", () => {
 
   test("InteractionRequest stage is 'execution'", async () => {
     const sent: InteractionRequest[] = [];
-    const plugin = makePlugin({ sendFn: async (req) => { sent.push(req); } });
+    const plugin = makePlugin({
+      sendFn: async (req) => {
+        sent.push(req);
+      },
+    });
     const bridge = new AcpInteractionBridge(plugin, makeBridgeConfig());
 
     await bridge.onSessionUpdate(makeNotification("unclear — should I continue?"));
@@ -153,7 +169,11 @@ describe("AcpInteractionBridge — onSessionUpdate forwards questions", () => {
 
   test("InteractionRequest includes featureName and storyId from config", async () => {
     const sent: InteractionRequest[] = [];
-    const plugin = makePlugin({ sendFn: async (req) => { sent.push(req); } });
+    const plugin = makePlugin({
+      sendFn: async (req) => {
+        sent.push(req);
+      },
+    });
     const config = makeBridgeConfig({ featureName: "my-feature", storyId: "FEAT-007" });
     const bridge = new AcpInteractionBridge(plugin, config);
 
@@ -165,7 +185,11 @@ describe("AcpInteractionBridge — onSessionUpdate forwards questions", () => {
 
   test("InteractionRequest fallback is 'continue'", async () => {
     const sent: InteractionRequest[] = [];
-    const plugin = makePlugin({ sendFn: async (req) => { sent.push(req); } });
+    const plugin = makePlugin({
+      sendFn: async (req) => {
+        sent.push(req);
+      },
+    });
     const bridge = new AcpInteractionBridge(plugin, makeBridgeConfig());
 
     await bridge.onSessionUpdate(makeNotification("should I add error handling?"));
@@ -175,7 +199,11 @@ describe("AcpInteractionBridge — onSessionUpdate forwards questions", () => {
 
   test("does not call plugin.send when message is not a question", async () => {
     const sent: InteractionRequest[] = [];
-    const plugin = makePlugin({ sendFn: async (req) => { sent.push(req); } });
+    const plugin = makePlugin({
+      sendFn: async (req) => {
+        sent.push(req);
+      },
+    });
     const bridge = new AcpInteractionBridge(plugin, makeBridgeConfig());
 
     await bridge.onSessionUpdate(makeNotification("Task completed successfully."));
@@ -185,7 +213,11 @@ describe("AcpInteractionBridge — onSessionUpdate forwards questions", () => {
 
   test("does not call plugin.send for non-assistant messages", async () => {
     const sent: InteractionRequest[] = [];
-    const plugin = makePlugin({ sendFn: async (req) => { sent.push(req); } });
+    const plugin = makePlugin({
+      sendFn: async (req) => {
+        sent.push(req);
+      },
+    });
     const bridge = new AcpInteractionBridge(plugin, makeBridgeConfig());
 
     await bridge.onSessionUpdate(makeNotification("which approach?", { role: "user" }));

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { AcceptanceRefineInput } from "@/operations/acceptance-refine";
-import type { BuildContext } from "@/operations/types";
 import { acceptanceConfigSelector } from "@/config";
 import type { AcceptanceConfig } from "@/config/selectors";
+import type { AcceptanceRefineInput } from "@/operations/acceptance-refine";
+import type { BuildContext } from "@/operations/types";
 import type { NaxRuntime } from "@/runtime";
 import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
@@ -57,7 +57,10 @@ describe("acceptanceRefineOp shape", () => {
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
     const ctx: BuildContext<AcceptanceConfig> = { packageView: view, config: view.select(acceptanceConfigSelector) };
-    const modelResolver = acceptanceRefineOp.model as (input: AcceptanceRefineInput, ctx: BuildContext<AcceptanceConfig>) => unknown;
+    const modelResolver = acceptanceRefineOp.model as (
+      input: AcceptanceRefineInput,
+      ctx: BuildContext<AcceptanceConfig>,
+    ) => unknown;
 
     expect(modelResolver(SAMPLE_INPUT, ctx)).toEqual({
       agent: "opencode",
@@ -76,7 +79,10 @@ describe("acceptanceRefineOp shape", () => {
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
     const ctx: BuildContext<AcceptanceConfig> = { packageView: view, config: view.select(acceptanceConfigSelector) };
-    const modelResolver = acceptanceRefineOp.model as (input: AcceptanceRefineInput, ctx: BuildContext<AcceptanceConfig>) => unknown;
+    const modelResolver = acceptanceRefineOp.model as (
+      input: AcceptanceRefineInput,
+      ctx: BuildContext<AcceptanceConfig>,
+    ) => unknown;
 
     expect(modelResolver(SAMPLE_INPUT, ctx)).toEqual({
       agent: "opencode",
@@ -94,7 +100,10 @@ describe("acceptanceRefineOp shape", () => {
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
     const ctx: BuildContext<AcceptanceConfig> = { packageView: view, config: view.select(acceptanceConfigSelector) };
-    const modelResolver = acceptanceRefineOp.model as (input: AcceptanceRefineInput, ctx: BuildContext<AcceptanceConfig>) => unknown;
+    const modelResolver = acceptanceRefineOp.model as (
+      input: AcceptanceRefineInput,
+      ctx: BuildContext<AcceptanceConfig>,
+    ) => unknown;
 
     expect(modelResolver(SAMPLE_INPUT, ctx)).toEqual({
       agent: "opencode",

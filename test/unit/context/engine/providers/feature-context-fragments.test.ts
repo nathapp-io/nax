@@ -17,10 +17,10 @@
  * distinguish from the new fragment chunks (different id prefix).
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { NaxConfig } from "@/config/types";
 import { FeatureContextProviderV2, _featureContextV2Deps } from "@/context/engine";
 import type { ContextRequest, RawChunk } from "@/context/engine/types";
-import type { NaxConfig } from "@/config/types";
 import type { PRD, UserStory } from "@/prd";
 import { makePRD, makeStory } from "@test/helpers";
 
@@ -445,7 +445,9 @@ describe("FeatureContextProviderV2 US-003 — fragment dependency walk", () => {
     const provider = new FeatureContextProviderV2(a, makeFragmentsConfig());
     const result = await provider.fetch(makeRequest({ storyId: "US-001" }));
 
-    const ids = fragmentChunks(result.chunks).map((chunk) => chunk.id).sort();
+    const ids = fragmentChunks(result.chunks)
+      .map((chunk) => chunk.id)
+      .sort();
     expect(ids).toEqual(["feature-fragment:US-002"]);
   });
 
@@ -466,7 +468,9 @@ describe("FeatureContextProviderV2 US-003 — fragment dependency walk", () => {
     const provider = new FeatureContextProviderV2(a, makeFragmentsConfig());
     const result = await provider.fetch(makeRequest({ storyId: "US-001" }));
 
-    const ids = fragmentChunks(result.chunks).map((chunk) => chunk.id).sort();
+    const ids = fragmentChunks(result.chunks)
+      .map((chunk) => chunk.id)
+      .sort();
     expect(ids).toEqual(["feature-fragment:US-002", "feature-fragment:US-003"]);
   });
 });

@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { resolveRunProfileOverride } from "@/cli";
 
 const readReturning = (value: unknown) => () => Promise.resolve(value);
-const profilesAvailable = (...names: string[]) => () => Promise.resolve(names);
+const profilesAvailable =
+  (...names: string[]) =>
+  () =>
+    Promise.resolve(names);
 
 describe("resolveRunProfileOverride", () => {
   test("CLI --profile wins over PRD routingProfile", async () => {

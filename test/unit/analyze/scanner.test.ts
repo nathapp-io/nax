@@ -2,9 +2,9 @@
  * Unit tests for src/analyze/scanner.ts — scanSourceRoots()
  */
 
-import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { mock } from "bun:test";
+import { join } from "node:path";
 import { _scannerDeps, scanSourceRoots } from "@/analyze";
 import type { Logger } from "@/logger";
 import { makeLogger, withDepsRestore, withTempDir } from "@test/helpers";
@@ -69,9 +69,7 @@ describe("scanSourceRoots — workspace packages", () => {
       );
       await Bun.write(join(dir, "packages/backend/go.mod"), "module example.com/backend\n\ngo 1.21\n");
 
-      _scannerDeps.discoverWorkspacePackages = mock(() =>
-        Promise.resolve(["packages/api", "packages/backend"]),
-      );
+      _scannerDeps.discoverWorkspacePackages = mock(() => Promise.resolve(["packages/api", "packages/backend"]));
 
       const roots = await scanSourceRoots(dir);
 
@@ -103,7 +101,7 @@ describe("scanSourceRoots — Go single package", () => {
 describe("scanSourceRoots — Python single package", () => {
   test("returns [{ path: '.', language: 'python', framework: '', testRunner: 'pytest' }]", async () => {
     await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "pyproject.toml"), "[project]\nname = \"my-app\"\n");
+      await Bun.write(join(dir, "pyproject.toml"), '[project]\nname = "my-app"\n');
       const roots = await scanSourceRoots(dir);
       expect(roots).toEqual([{ path: ".", language: "python", framework: "", testRunner: "pytest" }]);
     });

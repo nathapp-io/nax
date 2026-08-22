@@ -31,11 +31,9 @@ describe("classifyWithTerms with buildEvidenceTerms", () => {
     buildEvidenceTerms(agentOutput, diffText, findingMessages);
 
   test("US-004 AC1: returns 'contradicted' when review finding shares >=3 significant terms", () => {
-    const evidence = makeEvidence(
-      "",
-      "",
-      ["JWT authentication tokens should not be stored in cookies — use Bearer headers"],
-    );
+    const evidence = makeEvidence("", "", [
+      "JWT authentication tokens should not be stored in cookies — use Bearer headers",
+    ]);
     const result = classifyWithTerms(
       "Use JWT authentication tokens stored in secure cookies for session management",
       evidence,
@@ -49,10 +47,7 @@ describe("classifyWithTerms with buildEvidenceTerms", () => {
       "-old hash\n+argon2 password hashing authentication",
       [],
     );
-    const result = classifyWithTerms(
-      "Use argon2 for password hashing in authentication module",
-      evidence,
-    );
+    const result = classifyWithTerms("Use argon2 for password hashing in authentication module", evidence);
     expect(result.signal).toBe("followed");
   });
 
@@ -81,19 +76,14 @@ describe("classifyWithTerms with buildEvidenceTerms", () => {
       "-old\n+jwt authentication session management",
       ["JWT authentication tokens are no longer valid for session management validation"],
     );
-    const result = classifyWithTerms(
-      "Use JWT authentication tokens for session management validation",
-      evidence,
-    );
+    const result = classifyWithTerms("Use JWT authentication tokens for session management validation", evidence);
     expect(result.signal).toBe("contradicted");
   });
 
   test("US-004 AC1: includes evidence string when signal is not unknown", () => {
-    const evidence = makeEvidence(
-      "",
-      "",
-      ["JWT authentication tokens should not be stored in cookies — use Bearer headers"],
-    );
+    const evidence = makeEvidence("", "", [
+      "JWT authentication tokens should not be stored in cookies — use Bearer headers",
+    ]);
     const result = classifyWithTerms(
       "Use JWT authentication tokens stored in secure cookies for session management",
       evidence,
@@ -127,11 +117,9 @@ describe("US-004 AC2: classifyWithTerms barrel vs direct import", () => {
 
   test("barrel-exported classifyWithTerms returns identical evidence as direct import", () => {
     const summary = "Use JWT authentication tokens stored in secure cookies for session management";
-    const evidence = buildEvidenceTerms(
-      "",
-      "",
-      ["JWT authentication tokens should not be stored in cookies — use Bearer headers"],
-    );
+    const evidence = buildEvidenceTerms("", "", [
+      "JWT authentication tokens should not be stored in cookies — use Bearer headers",
+    ]);
 
     const directResult = classifyWithTermsDirect(summary, evidence);
     const barrelResult = EngineBarrel.classifyWithTerms(summary, evidence);
@@ -198,7 +186,7 @@ describe("annotateManifestEffectiveness — #506 catch block logging", () => {
     _manifestStoreDeps.readFile = async () => {
       readCount++;
       if (readCount === 1) return VALID_MANIFEST; // loadContextManifests pass
-      throw new Error("disk full");               // read-modify-write fails
+      throw new Error("disk full"); // read-modify-write fails
     };
 
     await annotateManifestEffectiveness("/repo", "feat", "US-001", {
@@ -218,10 +206,7 @@ describe("annotateManifestEffectiveness — #506 catch block logging", () => {
 
     const written: string[] = [];
     let readCount = 0;
-    _manifestStoreDeps.listManifestFiles = async () => [
-      "context-manifest-execution.json",
-      "context-manifest-tdd.json",
-    ];
+    _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-execution.json", "context-manifest-tdd.json"];
     _manifestStoreDeps.fileExists = async () => true;
     _manifestStoreDeps.readFile = async (path: string) => {
       readCount++;

@@ -38,9 +38,7 @@ describe("findSpecDriftViolations", () => {
 
   describe("shell-pattern detection", () => {
     test("flags shell pipe with a known command keyword on either side", () => {
-      const violations = findSpecDriftViolations(
-        prdWithAcs("- [unit] `grep -rn foo src/ | wc -l` returns 0"),
-      );
+      const violations = findSpecDriftViolations(prdWithAcs("- [unit] `grep -rn foo src/ | wc -l` returns 0"));
       expect(violations).toHaveLength(1);
       expect(violations[0].reason).toBe("shell-pattern");
     });
@@ -76,9 +74,7 @@ describe("findSpecDriftViolations", () => {
 
   describe("deprecated-tag takes priority over shell-pattern", () => {
     test("AC with both deprecated tag and shell pattern reports deprecated-tag", () => {
-      const violations = findSpecDriftViolations(
-        prdWithAcs("- [grep] `grep -rn foo src/ | wc -l` returns 0"),
-      );
+      const violations = findSpecDriftViolations(prdWithAcs("- [grep] `grep -rn foo src/ | wc -l` returns 0"));
       expect(violations).toHaveLength(1);
       expect(violations[0].reason).toBe("deprecated-tag");
     });
@@ -90,17 +86,11 @@ describe("findSpecDriftViolations", () => {
         userStories: [
           makeStory({
             id: "US-001",
-            acceptanceCriteria: [
-              "- [unit] login works",
-              "- [grep] `grep foo` returns 0",
-            ],
+            acceptanceCriteria: ["- [unit] login works", "- [grep] `grep foo` returns 0"],
           }),
           makeStory({
             id: "US-002",
-            acceptanceCriteria: [
-              "- [unit] signup works",
-              "`find src/ -name '*.ts' | wc -l` returns less than 100",
-            ],
+            acceptanceCriteria: ["- [unit] signup works", "`find src/ -name '*.ts' | wc -l` returns less than 100"],
           }),
         ],
       });

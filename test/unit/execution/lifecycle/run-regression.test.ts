@@ -14,11 +14,11 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "@/config";
 import { _regressionDeps, runDeferredRegression } from "@/execution";
 import type { DeferredRegressionOptions } from "@/execution";
-import type { FixCycleResult, Finding } from "@/findings";
+import type { Finding, FixCycleResult } from "@/findings";
 import type { PRD } from "@/prd";
-import type { VerificationResult } from "@/verification";
-import { makeNaxConfig, makeMockRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import type { VerificationResult } from "@/verification";
+import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -64,7 +64,14 @@ function makeFixCycleResult(succeeded: boolean, costUsd = 0, iterationCount = 1)
       costUsd,
     };
   }
-  const finding: Finding = { source: "test-runner", severity: "error", category: "failed-test", rule: "t", message: "fail", fixTarget: "source" };
+  const finding: Finding = {
+    source: "test-runner",
+    severity: "error",
+    category: "failed-test",
+    rule: "t",
+    message: "fail",
+    fixTarget: "source",
+  };
   return {
     iterations: Array.from({ length: iterationCount }, (_, i) => ({
       iterationNum: i + 1,

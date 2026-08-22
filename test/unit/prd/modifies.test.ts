@@ -88,12 +88,7 @@ describe("extractSpecModifiedFiles", () => {
   });
 
   test("accepts a parenthetical heading suffix and the `Modified Files` spelling", () => {
-    const spec = [
-      "### Modified Files (per story)",
-      "",
-      "**US-003**",
-      "- `src/a.ts` — reason a",
-    ].join("\n");
+    const spec = ["### Modified Files (per story)", "", "**US-003**", "- `src/a.ts` — reason a"].join("\n");
 
     const entries = extractSpecModifiedFiles(spec);
 
@@ -263,13 +258,7 @@ describe("applyModifiedFiles", () => {
   });
 
   test("rejects an escaping path while still attaching the safe entries beside it", () => {
-    const spec = [
-      "### Modifies",
-      "",
-      "**US-001**",
-      "- `/etc/passwd` — rejected",
-      "- `src/safe.ts` — kept",
-    ].join("\n");
+    const spec = ["### Modifies", "", "**US-001**", "- `/etc/passwd` — rejected", "- `src/safe.ts` — kept"].join("\n");
 
     const { prd, invalidPaths } = applyModifiedFiles(prdWithTwoStories(), spec);
 

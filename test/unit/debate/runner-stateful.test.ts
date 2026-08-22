@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { computeAcpHandle } from "@/agents/acp/adapter";
+import { DEFAULT_CONFIG } from "@/config";
 import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import * as callModule from "@/operations";
 import type { DebateStatefulInput } from "@/operations/debate-stateful";
 import type { CallContext } from "@/operations/types";
-import { DEFAULT_CONFIG } from "@/config";
-import { computeAcpHandle } from "@/agents/acp/adapter";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
@@ -307,7 +307,11 @@ describe("DebateRunner.run() — stateful mode uses runAsSession SSOT", () => {
     const agentManager = makeMockAgentManager({
       runAsSessionFn: async (agentName, handle, prompt) => {
         runAsSessionCalls.push({ agentName, prompt, handleId: handle.id });
-        return { output: `proposal-${agentName}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+        return {
+          output: `proposal-${agentName}`,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          internalRoundTrips: 0,
+        };
       },
     });
 
@@ -371,14 +375,21 @@ describe("DebateRunner.run() — stateful mode uses runAsSession SSOT", () => {
 
   test("falls back to single-agent passed when only one proposal run succeeds", async () => {
     const mockSM = makeSessionManager({
-      openSession: mock(async (name: string) => ({ id: name, agentName: name.includes("opencode") ? "opencode" : "claude" })),
+      openSession: mock(async (name: string) => ({
+        id: name,
+        agentName: name.includes("opencode") ? "opencode" : "claude",
+      })),
       closeSession: mock(async () => {}),
     });
 
     const agentManager = makeMockAgentManager({
       runAsSessionFn: async (agentName, _handle, _prompt) => {
         if (agentName === "opencode") throw new Error("opencode failed");
-        return { output: `proposal-${agentName}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+        return {
+          output: `proposal-${agentName}`,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          internalRoundTrips: 0,
+        };
       },
     });
 
@@ -431,27 +442,31 @@ describe("runStateful() — resolveOutcome receives workdir and featureName (US-
     });
 
     const resolverCalls: Array<{ workdir: string; featureName: string; role?: string }> = [];
-    spyOn(callModule, "callOp").mockImplementation(async (callCtx, op, input: DebateStatefulInput | Record<string, unknown>) => {
-      if (op.name === "debate-synthesis") {
-        resolverCalls.push({
-          workdir: callCtx.packageDir,
-          featureName: callCtx.featureName ?? "",
-          role: callCtx.sessionOverride?.role,
-        });
-        return "synthesis resolved";
-      }
+    spyOn(callModule, "callOp").mockImplementation(
+      async (callCtx, op, input: DebateStatefulInput | Record<string, unknown>) => {
+        if (op.name === "debate-synthesis") {
+          resolverCalls.push({
+            workdir: callCtx.packageDir,
+            featureName: callCtx.featureName ?? "",
+            role: callCtx.sessionOverride?.role,
+          });
+          return "synthesis resolved";
+        }
 
-      const statefulInput = input as DebateStatefulInput;
-      statefulInput.proposalBarriers[0]?.resolve('{"passed": true}');
-      return { success: true, rebut: '{"passed": true}' };
-    });
+        const statefulInput = input as DebateStatefulInput;
+        statefulInput.proposalBarriers[0]?.resolve('{"passed": true}');
+        return { success: true, rebut: '{"passed": true}' };
+      },
+    );
 
     await runner.run("review prompt");
 
     const synthesisCall = resolverCalls[0];
     expect(synthesisCall).toBeDefined();
     const expectedSessionName = computeAcpHandle(workdir, featureName, storyId, "synthesis");
-    expect(computeAcpHandle(synthesisCall?.workdir ?? "", synthesisCall?.featureName ?? "", storyId, "synthesis")).toBe(expectedSessionName);
+    expect(computeAcpHandle(synthesisCall?.workdir ?? "", synthesisCall?.featureName ?? "", storyId, "synthesis")).toBe(
+      expectedSessionName,
+    );
     expect(synthesisCall?.role).toBe("synthesis");
   });
 });
@@ -471,7 +486,12 @@ describe("DebateRunner.run() — one-shot mode unchanged", () => {
       },
       completeFn: async () => {
         completeCount += 1;
-        return { output: '{"passed": true}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.1, exactCostUsd: 0.1 };
+        return {
+          output: '{"passed": true}',
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0.1,
+          exactCostUsd: 0.1,
+        };
       },
     });
 
@@ -583,7 +603,7 @@ describe("runStateful() — two-scope cost tracking (US-005)", () => {
   });
 
   test("AC6: totalCostUsd = debaterScope (0.10) + resolverScope (0.02) = 0.12", async () => {
-    const costAgg = makeScopedCostAgg(0.10, 0.02);
+    const costAgg = makeScopedCostAgg(0.1, 0.02);
     const ctx = makeCtxWithCostAgg(costAgg);
     spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input) => {
       (input as DebateStatefulInput).proposalBarriers[0]?.resolve("ok");

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { verifierOp } from "@/operations";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const STORY = { id: "S1", title: "t", workdir: "" } as any;
 
@@ -21,7 +21,12 @@ describe("verifierOp.recover", () => {
         version: 1,
         approved: false,
         tests: { allPassing: true, passCount: 5, failCount: 0 },
-        testModifications: { detected: true, files: ["a.test.ts"], legitimate: false, reasoning: "weakened assertions" },
+        testModifications: {
+          detected: true,
+          files: ["a.test.ts"],
+          legitimate: false,
+          reasoning: "weakened assertions",
+        },
         acceptanceCriteria: { allMet: true, criteria: [] },
         quality: { rating: "good", issues: [] },
         fixes: [],

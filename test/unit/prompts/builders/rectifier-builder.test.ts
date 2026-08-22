@@ -12,10 +12,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeStory } from "@test/helpers";
+import type { Finding } from "@/findings";
 import { RectifierPromptBuilder } from "@/prompts";
 import type { ReviewCheckResult } from "@/review";
-import type { Finding } from "@/findings";
+import { makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -60,10 +60,7 @@ const DEFAULTS = {
 
 describe("RectifierPromptBuilder.firstAttemptDelta", () => {
   test("contains failed check output, check name/exit code, UNRESOLVED/fix instructions, excludes story sections, handles multiple checks", () => {
-    const checks = [
-      makeCheck("lint", "lint error output"),
-      makeCheck("typecheck", "typecheck error output"),
-    ];
+    const checks = [makeCheck("lint", "lint error output"), makeCheck("typecheck", "typecheck error output")];
     const prompt = RectifierPromptBuilder.firstAttemptDelta(checks, 2);
     // Content
     expect(prompt).toContain("lint error output");
@@ -71,7 +68,10 @@ describe("RectifierPromptBuilder.firstAttemptDelta", () => {
     expect(prompt).toContain("### lint");
     expect(prompt).toContain("### typecheck");
     // Single-check header format with exit code
-    const singlePrompt = RectifierPromptBuilder.firstAttemptDelta([makeCheck("typecheck", "Unexpected token at line 10", 2)], 2);
+    const singlePrompt = RectifierPromptBuilder.firstAttemptDelta(
+      [makeCheck("typecheck", "Unexpected token at line 10", 2)],
+      2,
+    );
     expect(singlePrompt).toContain("Unexpected token at line 10");
     expect(singlePrompt).toContain("### typecheck (exit 2)");
     // UNRESOLVED + fix instructions + exclusions
@@ -96,10 +96,7 @@ describe("RectifierPromptBuilder.firstAttemptDelta", () => {
 
   test("truncates long output to 4000 chars per check", () => {
     const longOutput = "Q".repeat(10_000);
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheck("lint", longOutput)],
-      2,
-    );
+    const prompt = RectifierPromptBuilder.firstAttemptDelta([makeCheck("lint", longOutput)], 2);
 
     const qCount = (prompt.match(/Q/g) ?? []).length;
     expect(qCount).toBeLessThanOrEqual(4010); // +10 slack: CONTRADICTION_ESCAPE_HATCH contains "PRD_QUOTE" (one uppercase Q)
@@ -109,7 +106,10 @@ describe("RectifierPromptBuilder.firstAttemptDelta", () => {
   });
 
   test("includes structured findings when present; omits section when absent", () => {
-    const withFindings = RectifierPromptBuilder.firstAttemptDelta([makeCheckWithFindings("semantic", "Semantic review failed")], 2);
+    const withFindings = RectifierPromptBuilder.firstAttemptDelta(
+      [makeCheckWithFindings("semantic", "Semantic review failed")],
+      2,
+    );
     expect(withFindings).toContain("Structured findings:");
     expect(withFindings).toContain("[error] src/foo.ts:42 — Missing implementation for AC-1");
 
@@ -124,7 +124,10 @@ describe("RectifierPromptBuilder.continuation", () => {
       makeCheck("lint", "error TS2345: Argument of type 'string' is not assignable", 2),
       makeCheck("typecheck", "src/index.ts(10,3): error TS2304: Cannot find name 'foo'"),
     ];
-    const prompt = RectifierPromptBuilder.continuation(checks, ...Object.values(DEFAULTS) as [number, number, number]);
+    const prompt = RectifierPromptBuilder.continuation(
+      checks,
+      ...(Object.values(DEFAULTS) as [number, number, number]),
+    );
     expect(prompt).toContain("Your previous fix attempt did not resolve all issues");
     expect(prompt).toContain("error TS2345: Argument of type 'string' is not assignable");
     expect(prompt).toContain("src/index.ts(10,3): error TS2304: Cannot find name 'foo'");
@@ -135,7 +138,10 @@ describe("RectifierPromptBuilder.continuation", () => {
     ["present", [makeCheckWithFindings("semantic", "Semantic review failed")], true],
     ["absent", [makeCheck("lint", "some lint error")], false],
   ] as const)("structured findings when %s", (_label, checks, shouldInclude) => {
-    const prompt = RectifierPromptBuilder.continuation(checks as any, ...Object.values(DEFAULTS) as [number, number, number]);
+    const prompt = RectifierPromptBuilder.continuation(
+      checks as any,
+      ...(Object.values(DEFAULTS) as [number, number, number]),
+    );
     if (shouldInclude) {
       expect(prompt).toContain("Structured findings:");
       expect(prompt).toContain("[error] src/foo.ts:42 — Missing implementation for AC-1");
@@ -171,8 +177,12 @@ describe("RectifierPromptBuilder.continuation", () => {
     expect(RectifierPromptBuilder.continuation([makeCheck("lint", "error")], 3, 2, 3)).toContain("final attempt");
 
     const multiPrompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "lint error output"), makeCheck("typecheck", "typecheck error output"), makeCheck("semantic", "semantic error output")],
-      ...Object.values(DEFAULTS) as [number, number, number],
+      [
+        makeCheck("lint", "lint error output"),
+        makeCheck("typecheck", "typecheck error output"),
+        makeCheck("semantic", "semantic error output"),
+      ],
+      ...(Object.values(DEFAULTS) as [number, number, number]),
     );
     expect(multiPrompt).toContain("### lint");
     expect(multiPrompt).toContain("### typecheck");
@@ -186,7 +196,7 @@ describe("RectifierPromptBuilder.continuation", () => {
   ])("continuation prompt does NOT contain %s", (_label, pattern) => {
     const prompt = RectifierPromptBuilder.continuation(
       [makeCheck("lint", "error")],
-      ...Object.values(DEFAULTS) as [number, number, number],
+      ...(Object.values(DEFAULTS) as [number, number, number]),
     );
     expect(prompt).not.toMatch(pattern);
   });
@@ -195,7 +205,7 @@ describe("RectifierPromptBuilder.continuation", () => {
     const longOutput = "z".repeat(10_000);
     const prompt = RectifierPromptBuilder.continuation(
       [makeCheck("lint", longOutput)],
-      ...Object.values(DEFAULTS) as [number, number, number],
+      ...(Object.values(DEFAULTS) as [number, number, number]),
     );
 
     // The truncated output slice should not contain the full 10000 chars
@@ -265,7 +275,12 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
 
   test.each([
     ["without workdir", undefined, "Only modify test files", "Do NOT touch source implementation files"],
-    ["with workdir packages/api", "packages/api", "Only modify test files within `packages/api/`", "Do NOT touch source files"],
+    [
+      "with workdir packages/api",
+      "packages/api",
+      "Only modify test files within `packages/api/`",
+      "Do NOT touch source files",
+    ],
   ] as const)("constraint %s", (_label, workdir, expectedConstraint, expectedNoTouch) => {
     const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
     const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory({ workdir }));
@@ -275,7 +290,11 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
 
   test("contains AC list, story id/title, no-delete constraint, and commit instruction", () => {
     const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const story = makeStory({ id: "US-409", title: "Resolve deadlock", acceptanceCriteria: ["AC-1: First criterion", "AC-2: Second criterion"] });
+    const story = makeStory({
+      id: "US-409",
+      title: "Resolve deadlock",
+      acceptanceCriteria: ["AC-1: First criterion", "AC-2: Second criterion"],
+    });
     const prompt = RectifierPromptBuilder.testWriterRectification(checks, story);
     expect(prompt).toContain("1. AC-1: First criterion");
     expect(prompt).toContain("2. AC-2: Second criterion");
@@ -314,7 +333,6 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
     const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
     expect(prompt).toContain(expected);
   });
-
 });
 
 // D2 — write-failing-test mode (#897)
@@ -372,9 +390,30 @@ describe("RectifierPromptBuilder.testWriterRectification — write-failing-test 
         output: "Adversarial review failed",
         durationMs: 100,
         findings: [
-          { severity: "error", file: "src/svc.ts", line: 1, message: "real bug", category: "", source: "adversarial-review" },
-          { severity: "warning", file: "src/svc.ts", line: 2, message: "advisory warning", category: "", source: "adversarial-review" },
-          { severity: "info", file: "src/svc.ts", line: 3, message: "fyi note", category: "", source: "adversarial-review" },
+          {
+            severity: "error",
+            file: "src/svc.ts",
+            line: 1,
+            message: "real bug",
+            category: "",
+            source: "adversarial-review",
+          },
+          {
+            severity: "warning",
+            file: "src/svc.ts",
+            line: 2,
+            message: "advisory warning",
+            category: "",
+            source: "adversarial-review",
+          },
+          {
+            severity: "info",
+            file: "src/svc.ts",
+            line: 3,
+            message: "fyi note",
+            category: "",
+            source: "adversarial-review",
+          },
         ],
       },
     ];
@@ -400,9 +439,7 @@ describe("buildEscapeHatch({ includeMockHandoff: true }) — Exception 4", () =>
   test("includes Exception 4 title, required fields, and UNRESOLVED handoff rule", () => {
     expect(tddHatch).toContain("Exception 4 — Mock-structure handoff");
     expect(tddHatch).toContain("TEST_EDIT_REASON: mock_structure");
-    expect(tddHatch).toContain(
-      "Do NOT also emit `UNRESOLVED:` in the same turn — this declaration IS the handoff.",
-    );
+    expect(tddHatch).toContain("Do NOT also emit `UNRESOLVED:` in the same turn — this declaration IS the handoff.");
   });
 
   test.each(["FILES:", "REASON:"])("lists %s as a required field", (field) => {
@@ -444,22 +481,22 @@ describe("RectifierPromptBuilder.testWriterRectification — mock-restructure mo
     ["acceptance criteria heading", "Acceptance Criteria"],
     ["first AC", "AC-1: Mocks align with dispatch shape"],
   ])("mock-restructure: includes %s", (_label, expected) => {
-    const prompt = RectifierPromptBuilder.testWriterRectification(
-      [makeCheck("adversarial", "output")],
-      makeStory(),
-      { mode: "mock-restructure", handoffReason: "reason", handoffFiles: ["test/unit/foo.test.ts"] },
-    );
+    const prompt = RectifierPromptBuilder.testWriterRectification([makeCheck("adversarial", "output")], makeStory(), {
+      mode: "mock-restructure",
+      handoffReason: "reason",
+      handoffFiles: ["test/unit/foo.test.ts"],
+    });
     expect(prompt).toContain(expected);
   });
 
   test("returned prompt contains verbatim handoffReason and lists every handoffFile under heading", () => {
     const handoffReason = "Mocks reference primitives the new code bypasses via callOp dispatch";
     const handoffFiles = ["test/unit/agents/adapter.test.ts", "test/unit/pipeline/stages/autofix.test.ts"];
-    const prompt = RectifierPromptBuilder.testWriterRectification(
-      [makeCheck("adversarial", "output")],
-      makeStory(),
-      { mode: "mock-restructure", handoffReason, handoffFiles },
-    );
+    const prompt = RectifierPromptBuilder.testWriterRectification([makeCheck("adversarial", "output")], makeStory(), {
+      mode: "mock-restructure",
+      handoffReason,
+      handoffFiles,
+    });
     expect(prompt).toContain(handoffReason);
     expect(prompt).toContain("Files to rewrite (only these)");
     for (const file of handoffFiles) {
@@ -468,21 +505,14 @@ describe("RectifierPromptBuilder.testWriterRectification — mock-restructure mo
   });
 
   test("returned prompt references assertion keywords to indicate assertion sites are forbidden", () => {
-    const prompt = RectifierPromptBuilder.testWriterRectification(
-      [makeCheck("adversarial", "output")],
-      makeStory(),
-      {
-        mode: "mock-restructure",
-        handoffReason: "reason",
-        handoffFiles: ["test/unit/foo.test.ts"],
-      },
-    );
+    const prompt = RectifierPromptBuilder.testWriterRectification([makeCheck("adversarial", "output")], makeStory(), {
+      mode: "mock-restructure",
+      handoffReason: "reason",
+      handoffFiles: ["test/unit/foo.test.ts"],
+    });
 
     const hasAssertionKeyword =
-      prompt.includes("expect(") ||
-      prompt.includes("toBe") ||
-      prompt.includes("toEqual") ||
-      prompt.includes("toThrow");
+      prompt.includes("expect(") || prompt.includes("toBe") || prompt.includes("toEqual") || prompt.includes("toThrow");
     expect(hasAssertionKeyword).toBe(true);
   });
 
@@ -497,7 +527,6 @@ describe("RectifierPromptBuilder.testWriterRectification — mock-restructure mo
 
     expect(withoutMode).toBe(withExplicitDefault);
   });
-
 });
 
 describe("RectifierPromptBuilder.reviewRectification — blocking-only defensive filter", () => {
@@ -561,14 +590,23 @@ describe("RectifierPromptBuilder.reviewRectification — scope guidance (package
     const prompt = RectifierPromptBuilder.reviewRectification(failedChecks, story);
     expect(prompt).toContain("smallest package-local fix is required");
     expect(prompt).toContain("TEST_EDIT_REASON: sibling_scope");
-    expect(prompt).not.toContain("When a lint or typecheck error is in a file you did NOT create or modify in this turn");
+    expect(prompt).not.toContain(
+      "When a lint or typecheck error is in a file you did NOT create or modify in this turn",
+    );
   });
 });
 
 describe("RectifierPromptBuilder.failingTestContext", () => {
   test("returns string with failure details; handles empty array gracefully", () => {
     const findings: Finding[] = [
-      { source: "test-runner", severity: "error", category: "failed-test", rule: "should handle edge case", file: "test/unit/foo.test.ts", message: "Expected 1 but got 0" },
+      {
+        source: "test-runner",
+        severity: "error",
+        category: "failed-test",
+        rule: "should handle edge case",
+        file: "test/unit/foo.test.ts",
+        message: "Expected 1 but got 0",
+      },
     ];
     const result = RectifierPromptBuilder.failingTestContext(findings);
     expect(typeof result).toBe("string");

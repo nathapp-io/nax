@@ -28,7 +28,7 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_CONFIG, pickSelector } from "@/config";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import { _storyOrchestratorDeps, runRectification } from "@/execution";
 import type { DeterministicOperation, InternalBuildState } from "@/execution";
 import { getStoryFixState, storyFixKey } from "@/findings";
@@ -64,7 +64,12 @@ const nrGateOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> 
   name: "full-suite-gate",
   stage: "verify",
   config: testSel as never,
-  execute: async () => ({ success: false, findings: [GATE_FINDING], normalizedFindings: [GATE_FINDING], estimatedCostUsd: 0 }),
+  execute: async () => ({
+    success: false,
+    findings: [GATE_FINDING],
+    normalizedFindings: [GATE_FINDING],
+    estimatedCostUsd: 0,
+  }),
 };
 
 const nrFixOp: RunOperation<{ story: string }, { applied: boolean }, typeof DEFAULT_CONFIG> = {
@@ -112,11 +117,7 @@ function nrSeedPhaseOutputs(): Record<string, unknown> {
   };
 }
 
-function nrCtx(
-  runtime: NaxRuntime,
-  storyId: string | undefined,
-  tier?: string,
-): CallContext {
+function nrCtx(runtime: NaxRuntime, storyId: string | undefined, tier?: string): CallContext {
   return {
     runtime,
     packageView: runtime.packages.repo(),
@@ -174,10 +175,7 @@ interface NrRunResult {
   result: unknown;
 }
 
-async function nrRun(
-  runtime: NaxRuntime,
-  opts: NrRunOptions,
-): Promise<NrRunResult> {
+async function nrRun(runtime: NaxRuntime, opts: NrRunOptions): Promise<NrRunResult> {
   const { storyId, tier, maxAttempts = 3, resolveAfterCalls = Number.POSITIVE_INFINITY, overrides } = opts;
   let dispatchCount = 0;
   let gateCalls = 0;
@@ -230,9 +228,7 @@ describe("US-005b AC1: nbf runRectification does not record state in storyFixHis
     // could still record state for the story under another tier or the
     // default key while a single-key assertion passed. Scan every key the
     // storyFixHistory could plausibly hold for this storyId.
-    const keysForStory = Array.from(runtime.storyFixHistory.keys()).filter((k) =>
-      k.startsWith(`${storyId}::`),
-    );
+    const keysForStory = Array.from(runtime.storyFixHistory.keys()).filter((k) => k.startsWith(`${storyId}::`));
     expect(keysForStory).toEqual([]);
     expect(runtime.storyFixHistory.size).toBe(0);
   });
@@ -468,9 +464,7 @@ describe("US-005b AC4: phase output iterationCount reports this cycle's count, n
       exitReason: "resolved",
     });
 
-    const phaseOutput = second.phaseOutputs.rectification as
-      | { iterationCount: number }
-      | undefined;
+    const phaseOutput = second.phaseOutputs.rectification as { iterationCount: number } | undefined;
     expect(phaseOutput?.iterationCount).toBe(1);
   });
 
@@ -502,9 +496,7 @@ describe("US-005b AC4: phase output iterationCount reports this cycle's count, n
     // Per-cycle output remained at this cycle's count (1), not the
     // cumulative 3. Reading from the accumulated array would surface
     // 3 — that's the regression this test pins against.
-    const phaseOutput = second.phaseOutputs.rectification as
-      | { iterationCount: number }
-      | undefined;
+    const phaseOutput = second.phaseOutputs.rectification as { iterationCount: number } | undefined;
     expect(phaseOutput?.iterationCount).toBe(1);
   });
 });

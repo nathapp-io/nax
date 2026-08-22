@@ -5,12 +5,12 @@
  * Evidence substantiation and AC-grounding behaviour is proven via mocked fs reads.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { semanticReviewOp } from "@/operations/semantic-review";
 import type { SemanticReviewInput, SemanticReviewOutput } from "@/operations/semantic-review";
-import { makeTestRuntime, withTempDir } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeTestRuntime, withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

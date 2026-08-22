@@ -8,11 +8,11 @@
  *        (mirrors semantic side, uses AdversarialReviewPromptBuilder.requoteVerbatim)
  */
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { adversarialReviewOp } from "@/operations/adversarial-review";
-import { makeTestRuntime, withTempDir } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeTestRuntime, withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -52,7 +52,6 @@ describe("adversarialReviewOp.hopBody — existence (AC15)", () => {
   test("hopBody is an async function", () => {
     expect(typeof adversarialReviewOp.hopBody).toBe("function");
   });
-
 });
 
 // ---------------------------------------------------------------------------
@@ -174,9 +173,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
 
       const parsed = JSON.parse(result.output);
       expect(parsed.findings[0].verifiedBy.observed).toContain("db.rawQuery");
-      expect(parsed.acks).toEqual([
-        { priorFinding: "src/old.ts:3", status: "addressed", note: "fixed in this diff" },
-      ]);
+      expect(parsed.acks).toEqual([{ priorFinding: "src/old.ts:3", status: "addressed", note: "fixed in this diff" }]);
     });
   });
 

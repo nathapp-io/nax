@@ -42,12 +42,8 @@ describe("AgentConfigSchema", () => {
   });
 
   test("rejects maxHopsPerStory out of range", () => {
-    expect(() =>
-      NaxConfigSchema.parse({ agent: { fallback: { maxHopsPerStory: 0 } } }),
-    ).toThrow();
-    expect(() =>
-      NaxConfigSchema.parse({ agent: { fallback: { maxHopsPerStory: 11 } } }),
-    ).toThrow();
+    expect(() => NaxConfigSchema.parse({ agent: { fallback: { maxHopsPerStory: 0 } } })).toThrow();
+    expect(() => NaxConfigSchema.parse({ agent: { fallback: { maxHopsPerStory: 11 } } })).toThrow();
   });
 
   test("agent.acp.promptRetries defaults to 0", () => {
@@ -244,21 +240,22 @@ describe("AgentConfigSchema", () => {
   });
 
   test("agent.idleWatchdog accepts all valid activityKinds combinations", () => {
-    const validCombinations: Array<Array<"message_update" | "thinking_update" | "usage_update" | "tool_call_update">> = [
-      [],
-      ["message_update"],
-      ["thinking_update"],
-      ["usage_update"],
-      ["tool_call_update"],
-      ["message_update", "thinking_update"],
-      ["message_update", "usage_update"],
-      ["thinking_update", "usage_update"],
-      ["message_update", "tool_call_update"],
-      ["thinking_update", "tool_call_update"],
-      ["usage_update", "tool_call_update"],
-      ["message_update", "thinking_update", "usage_update"],
-      ["message_update", "thinking_update", "usage_update", "tool_call_update"],
-    ];
+    const validCombinations: Array<Array<"message_update" | "thinking_update" | "usage_update" | "tool_call_update">> =
+      [
+        [],
+        ["message_update"],
+        ["thinking_update"],
+        ["usage_update"],
+        ["tool_call_update"],
+        ["message_update", "thinking_update"],
+        ["message_update", "usage_update"],
+        ["thinking_update", "usage_update"],
+        ["message_update", "tool_call_update"],
+        ["thinking_update", "tool_call_update"],
+        ["usage_update", "tool_call_update"],
+        ["message_update", "thinking_update", "usage_update"],
+        ["message_update", "thinking_update", "usage_update", "tool_call_update"],
+      ];
 
     for (const kinds of validCombinations) {
       const result = NaxConfigSchema.parse({

@@ -8,8 +8,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _acceptanceSetupDeps, acceptanceSetupStage } from "@/pipeline/stages/acceptance-setup";
 import { DEFAULT_CONFIG } from "@/config";
+import { _acceptanceSetupDeps, acceptanceSetupStage } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
 
 // ---------------------------------------------------------------------------
@@ -107,8 +107,13 @@ function setupFingerprintMatchDeps(
 // ---------------------------------------------------------------------------
 
 let savedDeps: typeof _acceptanceSetupDeps;
-beforeEach(() => { savedDeps = { ..._acceptanceSetupDeps }; });
-afterEach(() => { Object.assign(_acceptanceSetupDeps, savedDeps); mock.restore(); });
+beforeEach(() => {
+  savedDeps = { ..._acceptanceSetupDeps };
+});
+afterEach(() => {
+  Object.assign(_acceptanceSetupDeps, savedDeps);
+  mock.restore();
+});
 
 // ---------------------------------------------------------------------------
 // Tests

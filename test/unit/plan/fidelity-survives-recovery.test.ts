@@ -9,13 +9,7 @@
  * `### Modifies` authority still reaches disk.
  */
 import { describe, expect, test } from "bun:test";
-import {
-  DebatePlanStrategy,
-  RefinePlanStrategy,
-  SinglePlanStrategy,
-  _refinePlanDeps,
-  _singlePlanDeps,
-} from "@/plan";
+import { DebatePlanStrategy, RefinePlanStrategy, SinglePlanStrategy, _refinePlanDeps, _singlePlanDeps } from "@/plan";
 import type { PlanDeps, PlanModeContext } from "@/plan/strategies";
 import type { PackageSummary } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
@@ -125,7 +119,9 @@ function expectModifiedFilesSurvived(written: { value: string | null }): void {
     "src/alpha.ts",
     "src/beta.ts",
   ]);
-  expect(persisted.userStories[1].modifiedFiles?.map((entry: { path: string }) => entry.path)).toEqual(["src/gamma.ts"]);
+  expect(persisted.userStories[1].modifiedFiles?.map((entry: { path: string }) => entry.path)).toEqual([
+    "src/gamma.ts",
+  ]);
 }
 
 describe("#1494 — fidelity repairs survive the disk-recovery path", () => {

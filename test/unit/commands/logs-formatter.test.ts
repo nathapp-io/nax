@@ -145,11 +145,7 @@ describe("followLogs", () => {
         },
       };
 
-      const outcome = await followLogs(
-        fixture,
-        { story: "US-001" },
-        { signal: controller.signal, _deps: deps },
-      );
+      const outcome = await followLogs(fixture, { story: "US-001" }, { signal: controller.signal, _deps: deps });
 
       expect(outcome).toBe("cancelled");
       expect(emitted.length).toBe(1);

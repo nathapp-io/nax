@@ -35,9 +35,7 @@ function makeStory(overrides: Partial<UserStory> = {}): UserStory {
 
 describe("PromptBuilder.acceptanceContext() — fluent API", () => {
   test("acceptanceContext() returns PromptBuilder instance (chainable)", () => {
-    const builder = PromptBuilder.for("implementer")
-      .story(makeStory())
-      .acceptanceContext([]);
+    const builder = PromptBuilder.for("implementer").story(makeStory()).acceptanceContext([]);
     expect(builder).toBeInstanceOf(PromptBuilder);
   });
 
@@ -91,9 +89,7 @@ describe("PromptBuilder.build() — with acceptanceContext()", () => {
   test("build() output contains the test content when acceptanceContext() is called", async () => {
     const prompt = await PromptBuilder.for("implementer")
       .story(makeStory())
-      .acceptanceContext([
-        { testPath: "acceptance.test.ts", content: "ACCEPTANCE_CONTENT_MARKER" },
-      ])
+      .acceptanceContext([{ testPath: "acceptance.test.ts", content: "ACCEPTANCE_CONTENT_MARKER" }])
       .build();
 
     expect(prompt).toContain("ACCEPTANCE_CONTENT_MARKER");
@@ -165,10 +161,7 @@ describe("PromptBuilder.build() — without acceptanceContext()", () => {
     const story = makeStory({ title: "EMPTY_ENTRIES_STORY" });
 
     const withoutMethod = await PromptBuilder.for("tdd-simple").story(story).build();
-    const withEmpty = await PromptBuilder.for("tdd-simple")
-      .story(story)
-      .acceptanceContext([])
-      .build();
+    const withEmpty = await PromptBuilder.for("tdd-simple").story(story).acceptanceContext([]).build();
 
     expect(withoutMethod).toBe(withEmpty);
   });

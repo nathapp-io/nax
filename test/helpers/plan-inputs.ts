@@ -1,3 +1,4 @@
+import type { NaxConfig } from "@/config";
 /**
  * Mock PlanInputs factory for unit tests.
  *
@@ -7,9 +8,8 @@
  * the slots relevant to the test.
  */
 import type { PlanInputs } from "@/execution/plan-inputs";
-import type { ResolvedTestPatterns } from "@/test-runners";
 import type { UserStory } from "@/prd/types";
-import type { NaxConfig } from "@/config";
+import type { ResolvedTestPatterns } from "@/test-runners";
 import { makeNaxConfig } from "./mock-nax-config";
 import { makeStory } from "./mock-story";
 

@@ -8,11 +8,7 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { rmSync } from "node:fs";
-import {
-  _runSetupDeps,
-  warnFallbackMisconfiguration,
-  warnProfileMismatch,
-} from "@/execution/lifecycle/run-setup";
+import { _runSetupDeps, warnFallbackMisconfiguration, warnProfileMismatch } from "@/execution/lifecycle/run-setup";
 import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -220,11 +216,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
       },
     });
 
-    warnProfileMismatch(
-      prd,
-      config,
-      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
-    );
+    warnProfileMismatch(prd, config, logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>);
 
     expect(warns).toHaveLength(1);
     const [stage, msg, ctx] = warns[0]!;
@@ -264,11 +256,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
       },
     });
 
-    warnProfileMismatch(
-      prd,
-      config,
-      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
-    );
+    warnProfileMismatch(prd, config, logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>);
 
     expect(warns).toHaveLength(0);
   });
@@ -301,11 +289,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
       },
     });
 
-    warnProfileMismatch(
-      prd,
-      config,
-      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
-    );
+    warnProfileMismatch(prd, config, logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>);
 
     expect(warns).toHaveLength(0);
   });
@@ -315,11 +299,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
     const prd = makePRD({ userStories: [], routingProfile: "aggressive" });
     const config = makeNaxConfig({ profile: "cheap" });
 
-    warnProfileMismatch(
-      prd,
-      config,
-      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
-    );
+    warnProfileMismatch(prd, config, logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>);
 
     expect(warns).toHaveLength(1);
     const [stage, msg, ctx] = warns[0]!;
@@ -335,11 +315,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
     const prd = makePRD({ userStories: [], routingProfile: "shared" });
     const config = { ...makeNaxConfig(), profile: "shared" };
 
-    warnProfileMismatch(
-      prd,
-      config,
-      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
-    );
+    warnProfileMismatch(prd, config, logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>);
 
     expect(warns).toHaveLength(0);
   });
@@ -362,11 +338,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
     });
     const config = makeNaxConfig({ models: { claude: { fast: "m" } } });
 
-    warnProfileMismatch(
-      prd,
-      config,
-      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
-    );
+    warnProfileMismatch(prd, config, logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>);
 
     const agentWarns = warns.filter(
       ([, msg, ctx]) => /agent "ghost".*not defined in config\.models/i.test(msg) && ctx.storyId === "US-1",

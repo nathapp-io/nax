@@ -6,12 +6,12 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { _executionDeps, executionStage, routeTddFailure } from "@/pipeline/stages/execution";
-import type { FailureCategory } from "@/tdd";
 import { NaxError } from "@/errors";
+import { _executionDeps, executionStage, routeTddFailure } from "@/pipeline/stages/execution";
+import type { PipelineContext } from "@/pipeline/types";
+import type { FailureCategory } from "@/tdd";
 import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 import { makeTestContext, makeTestStory, withExecutionDeps } from "@test/helpers";
-import type { PipelineContext } from "@/pipeline/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -214,7 +214,13 @@ describe("executionStage.execute — runtime-crash on thrown infra errors", () =
       story: makeTestStory({ id: "US-crash-01", title: "Crash test" }),
       config: cfg,
       workdir: "/tmp/nax-crash-test",
-      routing: { modelTier: "fast", testStrategy: "three-session-tdd", agent: "claude", complexity: "simple", reasoning: "" },
+      routing: {
+        modelTier: "fast",
+        testStrategy: "three-session-tdd",
+        agent: "claude",
+        complexity: "simple",
+        reasoning: "",
+      },
       packageView: { select: () => cfg } as unknown as PipelineContext["packageView"],
       // runtime lives on the DispatchContext parent — cast to satisfy Partial<PipelineContext>
       ...({

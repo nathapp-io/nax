@@ -29,9 +29,7 @@ describe("createTestFileClassifier", () => {
   });
 
   test("returns true when any regex matches (multiple patterns)", () => {
-    const isTest = createTestFileClassifier(
-      makeResolved({ regex: [/\.test\.ts$/, /\.spec\.ts$/] }),
-    );
+    const isTest = createTestFileClassifier(makeResolved({ regex: [/\.test\.ts$/, /\.spec\.ts$/] }));
     expect(isTest("src/foo.spec.ts")).toBe(true);
     expect(isTest("src/foo.test.ts")).toBe(true);
     expect(isTest("src/foo.ts")).toBe(false);

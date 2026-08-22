@@ -1,13 +1,13 @@
-import { describe, expect, test, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import {
   ReviewAuditor,
-  createNoOpReviewAuditor,
-  writeReviewAudit,
-  toPersistedEntry,
   _reviewAuditDeps,
+  createNoOpReviewAuditor,
+  toPersistedEntry,
+  writeReviewAudit,
 } from "@/review/review-audit";
 import type { ReviewAuditEntry } from "@/review/review-audit";
-import { NAX_VERSION, NAX_COMMIT } from "@/version";
+import { NAX_COMMIT, NAX_VERSION } from "@/version";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -159,7 +159,9 @@ describe("writeReviewAudit", () => {
 
   test("never throws when writeFile errors", async () => {
     const { deps } = makeDeps();
-    deps.writeFile = async () => { throw new Error("disk full"); };
+    deps.writeFile = async () => {
+      throw new Error("disk full");
+    };
     Object.assign(_reviewAuditDeps, deps);
 
     // Should not throw
@@ -169,7 +171,9 @@ describe("writeReviewAudit", () => {
 
   test("never throws when mkdir errors", async () => {
     const { deps } = makeDeps();
-    deps.mkdir = async () => { throw new Error("permission denied"); };
+    deps.mkdir = async () => {
+      throw new Error("permission denied");
+    };
     Object.assign(_reviewAuditDeps, deps);
 
     await writeReviewAudit(makeEntry());
@@ -416,7 +420,10 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
       parsed: true,
       passed: true,
       result: { passed: true, findings: [] },
-      advisoryFindings: [{ severity: "warning", issue: "b" }, { severity: "warning", issue: "c" }],
+      advisoryFindings: [
+        { severity: "warning", issue: "b" },
+        { severity: "warning", issue: "c" },
+      ],
     });
     await auditor.flush();
     Object.assign(_reviewAuditDeps, saved);

@@ -35,11 +35,7 @@ describe("detectRuntimeCrash — panic(main thread)", () => {
   });
 
   test("returns true when pattern appears in multi-line output", () => {
-    const output = [
-      "Running tests...",
-      "panic(main thread)",
-      "runtime error: index out of range",
-    ].join("\n");
+    const output = ["Running tests...", "panic(main thread)", "runtime error: index out of range"].join("\n");
     expect(detectRuntimeCrash(output)).toBe(true);
   });
 
@@ -94,11 +90,7 @@ describe("detectRuntimeCrash — oh no: Bun has crashed", () => {
   });
 
   test("returns true in full crash banner", () => {
-    const output = [
-      "oh no: Bun has crashed",
-      "version: 1.3.7 (7e4501e8)",
-      "platform: linux x64",
-    ].join("\n");
+    const output = ["oh no: Bun has crashed", "version: 1.3.7 (7e4501e8)", "platform: linux x64"].join("\n");
     expect(detectRuntimeCrash(output)).toBe(true);
   });
 

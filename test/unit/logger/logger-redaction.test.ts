@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Logger, resetLogger } from "@/logger/logger";
-import { makeTempDir, cleanupTempDir } from "@test/helpers";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("logger redaction in JSONL output", () => {
   let tempDir: string;
@@ -88,7 +88,10 @@ describe("logger redaction in JSONL output", () => {
     expect(content).not.toContain("npm_ABCDEFGH12345678");
     expect(content).not.toContain("ghp_ABCDEFGHIJKLMNOP1234567890");
 
-    const [first, second] = content.trim().split("\n").map((l) => JSON.parse(l));
+    const [first, second] = content
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
     expect(first.message).toContain("[REDACTED]");
     expect(first.message).toContain("command failed:");
     expect(second.message).toContain("[REDACTED]");
@@ -134,9 +137,7 @@ describe("logger redaction in JSONL output", () => {
 
     const lines = readFileSync(logPath, "utf8").trim().split("\n");
     expect(lines).toHaveLength(200);
-    expect(lines.map((l) => JSON.parse(l).message)).toEqual(
-      Array.from({ length: 200 }, (_, i) => `entry-${i}`),
-    );
+    expect(lines.map((l) => JSON.parse(l).message)).toEqual(Array.from({ length: 200 }, (_, i) => `entry-${i}`));
   });
 
   // Batched appends must stay small writes: crash-writer.ts appendFileSync()s
@@ -154,9 +155,7 @@ describe("logger redaction in JSONL output", () => {
 
     const lines = readFileSync(logPath, "utf8").trim().split("\n");
     expect(lines).toHaveLength(400);
-    expect(lines.map((l) => JSON.parse(l).message)).toEqual(
-      Array.from({ length: 400 }, (_, i) => `entry-${i}`),
-    );
+    expect(lines.map((l) => JSON.parse(l).message)).toEqual(Array.from({ length: 400 }, (_, i) => `entry-${i}`));
     // Every line must be complete JSON — a split batch would leave a torn line.
     expect(() => lines.forEach((l) => JSON.parse(l))).not.toThrow();
   });

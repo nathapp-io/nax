@@ -9,12 +9,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { _cacheDeps } from "@/test-runners/detect/cache";
 import { _directoryScanDeps } from "@/test-runners/detect/directory-scan";
 import { _fileScanDeps } from "@/test-runners/detect/file-scan";
 import { _frameworkConfigDeps } from "@/test-runners/detect/framework-configs";
 import { _frameworkDefaultsDeps } from "@/test-runners/detect/framework-defaults";
 import { detectTestFilePatterns, detectTestFilePatternsForWorkspace } from "@/test-runners/detect/index";
-import { _cacheDeps } from "@/test-runners/detect/cache";
 
 // ─── Save/restore helpers ─────────────────────────────────────────────────────
 
@@ -67,7 +67,9 @@ beforeEach(() => {
     dirSpawn: _directoryScanDeps.spawn,
   };
   // Default: cache miss, write is no-op
-  _cacheDeps.readJson = mock(async () => { throw new Error("not found"); });
+  _cacheDeps.readJson = mock(async () => {
+    throw new Error("not found");
+  });
   _cacheDeps.writeJson = mock(async () => {});
   _cacheDeps.fileMtime = mock(async () => null);
   // Default: no directories exist, no go.mod/Cargo.toml
@@ -329,12 +331,7 @@ describe("Tier 2 — framework defaults from manifests", () => {
     // Jest defaults are expanded from extglob to simple globs so downstream
     // regex classification (globsToTestRegex) works correctly.
     expect(result.patterns).toEqual(
-      expect.arrayContaining([
-        "**/__tests__/**/*.js",
-        "**/__tests__/**/*.ts",
-        "**/*.spec.ts",
-        "**/*.test.tsx",
-      ]),
+      expect.arrayContaining(["**/__tests__/**/*.js", "**/__tests__/**/*.ts", "**/*.spec.ts", "**/*.test.tsx"]),
     );
     // Must not contain unexpanded extglob patterns.
     expect(result.patterns).not.toContain("**/?(*.)+(spec|test).[jt]s?(x)");
@@ -399,9 +396,7 @@ describe("Tier 3 — file scan", () => {
 
     const testFiles = Array.from({ length: 6 }, (_, i) => `src/module${i}.test.ts`).join("\n");
     const allFiles = `${testFiles}\nsrc/app.ts\nsrc/index.ts\n`;
-    _fileScanDeps.spawn = mock((..._args: unknown[]) =>
-      spawnWithOutput(allFiles),
-    ) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput(allFiles)) as unknown as typeof Bun.spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("low");
@@ -413,9 +408,7 @@ describe("Tier 3 — file scan", () => {
     _frameworkConfigDeps.readText = mock(async () => null);
     _frameworkDefaultsDeps.readText = mock(async () => null);
 
-    const files =
-      "src/a.test.ts\nsrc/b.test.ts\n" +
-      Array.from({ length: 50 }, (_, i) => `src/f${i}.ts`).join("\n");
+    const files = "src/a.test.ts\nsrc/b.test.ts\n" + Array.from({ length: 50 }, (_, i) => `src/f${i}.ts`).join("\n");
     _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput(files)) as unknown as typeof Bun.spawn;
     _directoryScanDeps.dirExists = mock(async () => false);
 

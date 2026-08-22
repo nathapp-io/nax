@@ -156,18 +156,59 @@ describe("Pipeline Runner", () => {
 
     test("stops pipeline when stage returns skip, fail, escalate, or pause", async () => {
       const scenarios = [
-        { action: "skip" as const, name: "skipStage", stageReturn: { action: "skip" as const, reason: "Story already completed" }, expectedReason: "Story already completed" },
-        { action: "fail" as const, name: "failStage", stageReturn: { action: "fail" as const, reason: "Tests failed" }, expectedReason: "Tests failed" },
-        { action: "escalate" as const, name: "escalateStage", stageReturn: { action: "escalate" as const }, expectedReason: "Stage requested escalation to higher tier" },
-        { action: "pause" as const, name: "pauseStage", stageReturn: { action: "pause" as const, reason: "User intervention required" }, expectedReason: "User intervention required" },
+        {
+          action: "skip" as const,
+          name: "skipStage",
+          stageReturn: { action: "skip" as const, reason: "Story already completed" },
+          expectedReason: "Story already completed",
+        },
+        {
+          action: "fail" as const,
+          name: "failStage",
+          stageReturn: { action: "fail" as const, reason: "Tests failed" },
+          expectedReason: "Tests failed",
+        },
+        {
+          action: "escalate" as const,
+          name: "escalateStage",
+          stageReturn: { action: "escalate" as const },
+          expectedReason: "Stage requested escalation to higher tier",
+        },
+        {
+          action: "pause" as const,
+          name: "pauseStage",
+          stageReturn: { action: "pause" as const, reason: "User intervention required" },
+          expectedReason: "User intervention required",
+        },
       ];
 
       for (const { action, name, stageReturn, expectedReason } of scenarios) {
         const executedStages: string[] = [];
         const stages: PipelineStage[] = [
-          { name: "stage1", enabled: () => true, execute: async () => { executedStages.push("stage1"); return { action: "continue" }; } },
-          { name, enabled: () => true, execute: async () => { executedStages.push(name); return stageReturn as never; } },
-          { name: "stage3", enabled: () => true, execute: async () => { executedStages.push("stage3"); return { action: "continue" }; } },
+          {
+            name: "stage1",
+            enabled: () => true,
+            execute: async () => {
+              executedStages.push("stage1");
+              return { action: "continue" };
+            },
+          },
+          {
+            name,
+            enabled: () => true,
+            execute: async () => {
+              executedStages.push(name);
+              return stageReturn as never;
+            },
+          },
+          {
+            name: "stage3",
+            enabled: () => true,
+            execute: async () => {
+              executedStages.push("stage3");
+              return { action: "continue" };
+            },
+          },
         ];
         const result = await runPipeline(stages, createTestContext());
         expect(result.success, action).toBe(false);
@@ -181,9 +222,30 @@ describe("Pipeline Runner", () => {
     test("handles stage execution errors and non-Error exceptions", async () => {
       const executedStages: string[] = [];
       const stages: PipelineStage[] = [
-        { name: "stage1", enabled: () => true, execute: async () => { executedStages.push("stage1"); return { action: "continue" }; } },
-        { name: "errorStage", enabled: () => true, execute: async () => { executedStages.push("errorStage"); throw new Error("Stage execution failed"); } },
-        { name: "stage3", enabled: () => true, execute: async () => { executedStages.push("stage3"); return { action: "continue" }; } },
+        {
+          name: "stage1",
+          enabled: () => true,
+          execute: async () => {
+            executedStages.push("stage1");
+            return { action: "continue" };
+          },
+        },
+        {
+          name: "errorStage",
+          enabled: () => true,
+          execute: async () => {
+            executedStages.push("errorStage");
+            throw new Error("Stage execution failed");
+          },
+        },
+        {
+          name: "stage3",
+          enabled: () => true,
+          execute: async () => {
+            executedStages.push("stage3");
+            return { action: "continue" };
+          },
+        },
       ];
       const r1 = await runPipeline(stages, createTestContext());
       expect(r1.success).toBe(false);
@@ -194,7 +256,15 @@ describe("Pipeline Runner", () => {
       expect(executedStages).toEqual(["stage1", "errorStage"]);
 
       const r2 = await runPipeline(
-        [{ name: "throwStringStage", enabled: () => true, execute: async () => { throw "String error message"; } }],
+        [
+          {
+            name: "throwStringStage",
+            enabled: () => true,
+            execute: async () => {
+              throw "String error message";
+            },
+          },
+        ],
         createTestContext(),
       );
       expect(r2.success).toBe(false);
@@ -297,8 +367,20 @@ describe("Pipeline Runner", () => {
       expect(r1.finalAction).toBe("complete");
 
       const stages: PipelineStage[] = [
-        { name: "disabled1", enabled: () => false, execute: async () => { throw new Error("Should not execute"); } },
-        { name: "disabled2", enabled: () => false, execute: async () => { throw new Error("Should not execute"); } },
+        {
+          name: "disabled1",
+          enabled: () => false,
+          execute: async () => {
+            throw new Error("Should not execute");
+          },
+        },
+        {
+          name: "disabled2",
+          enabled: () => false,
+          execute: async () => {
+            throw new Error("Should not execute");
+          },
+        },
       ];
       const r2 = await runPipeline(stages, createTestContext());
       expect(r2.success).toBe(true);

@@ -40,7 +40,9 @@ function baseStrategy(): FixStrategy<Finding, unknown, unknown, unknown> {
   };
 }
 
-function bailOf(strategies: FixStrategy<Finding, unknown, unknown, unknown>[]): (iters: Iteration<Finding>[]) => string | null {
+function bailOf(
+  strategies: FixStrategy<Finding, unknown, unknown, unknown>[],
+): (iters: Iteration<Finding>[]) => string | null {
   const fn = strategies[0]?.bailWhen;
   if (!fn) throw new Error("expected bailWhen to be wrapped");
   return fn;

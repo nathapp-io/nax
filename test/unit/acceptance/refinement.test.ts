@@ -9,8 +9,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { parseRefinementResponse, refinementWouldFallback } from "@/acceptance/refinement";
-import { AcceptancePromptBuilder } from "@/prompts";
 import type { RefinedCriterion } from "@/acceptance/types";
+import { AcceptancePromptBuilder } from "@/prompts";
 
 const buildRefinementPrompt = (
   criteria: string[],
@@ -128,7 +128,10 @@ describe("parseRefinementResponse", () => {
       expect(empty[i].original).toBe(SAMPLE_CRITERIA[i]);
     }
 
-    const falseTestable = parseRefinementResponse(makeLLMResponse(SAMPLE_CRITERIA, STORY_ID, false).output, SAMPLE_CRITERIA);
+    const falseTestable = parseRefinementResponse(
+      makeLLMResponse(SAMPLE_CRITERIA, STORY_ID, false).output,
+      SAMPLE_CRITERIA,
+    );
     for (const item of falseTestable) {
       expect(item.testable).toBe(false);
     }
@@ -207,8 +210,8 @@ describe("buildRefinementPrompt — strategy-specific instructions", () => {
     expect(
       buildRefinementPrompt(SAMPLE_CRITERIA, "", { testStrategy: "component", testFramework: "ink-testing-library" }),
     ).toContain("ink-testing-library");
-    expect(
-      buildRefinementPrompt(SAMPLE_CRITERIA, "", { testStrategy: "snapshot", testFramework: "jest" }),
-    ).toContain("TEST FRAMEWORK: jest");
+    expect(buildRefinementPrompt(SAMPLE_CRITERIA, "", { testStrategy: "snapshot", testFramework: "jest" })).toContain(
+      "TEST FRAMEWORK: jest",
+    );
   });
 });

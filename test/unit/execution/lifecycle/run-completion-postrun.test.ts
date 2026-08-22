@@ -12,17 +12,17 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import type { NaxConfig } from "@/config";
 import {
+  type DeferredRegressionResult,
+  type RunCompletionOptions,
   _runCompletionDeps,
   handleRunCompletion,
-  type RunCompletionOptions,
-  type DeferredRegressionResult,
 } from "@/execution";
 import type { StoryMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline/event-bus";
-import type { NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd";
-import { makeNaxConfig, makeMockRuntime } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -169,7 +169,14 @@ describe("handleRunCompletion - AC4: sets regression running before runDeferredR
 
     _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => {
       callOrder.push("runDeferredRegression");
-      return { success: true, failedTests: 0, failedTestFiles: [], passedTests: 5, rectificationAttempts: 0, affectedStories: [] };
+      return {
+        success: true,
+        failedTests: 0,
+        failedTestFiles: [],
+        passedTests: 5,
+        rectificationAttempts: 0,
+        affectedStories: [],
+      };
     });
 
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
@@ -191,9 +198,7 @@ describe("handleRunCompletion - AC4: sets regression running before runDeferredR
 
     await handleRunCompletion(makeOpts(config, prd, { statusWriter }));
 
-    const regressionCalls = statusWriter.setPostRunPhase.mock.calls.filter(
-      (c: unknown[]) => c[0] === "regression",
-    );
+    const regressionCalls = statusWriter.setPostRunPhase.mock.calls.filter((c: unknown[]) => c[0] === "regression");
     expect(regressionCalls.length).toBe(0);
   });
 
@@ -205,9 +210,7 @@ describe("handleRunCompletion - AC4: sets regression running before runDeferredR
     await handleRunCompletion(makeOpts(config, prd, { statusWriter }));
 
     expect(_runCompletionDeps.runDeferredRegression).toHaveBeenCalled();
-    const regressionCalls = statusWriter.setPostRunPhase.mock.calls.filter(
-      (c: unknown[]) => c[0] === "regression",
-    );
+    const regressionCalls = statusWriter.setPostRunPhase.mock.calls.filter((c: unknown[]) => c[0] === "regression");
     expect(regressionCalls.length).toBeGreaterThan(0);
   });
 
@@ -230,9 +233,7 @@ describe("handleRunCompletion - AC4: sets regression running before runDeferredR
 
     await handleRunCompletion(makeOpts(config, prd, { statusWriter }));
 
-    const regressionCalls = statusWriter.setPostRunPhase.mock.calls.filter(
-      (c: unknown[]) => c[0] === "regression",
-    );
+    const regressionCalls = statusWriter.setPostRunPhase.mock.calls.filter((c: unknown[]) => c[0] === "regression");
     expect(regressionCalls.length).toBe(0);
   });
 });
@@ -252,14 +253,16 @@ describe("handleRunCompletion - AC5: sets regression passed on success", () => {
       }
     });
 
-    _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => ({
-      success: true,
-      failedTests: 0,
-      failedTestFiles: [],
-      passedTests: 10,
-      rectificationAttempts: 0,
-      affectedStories: [],
-    }));
+    _runCompletionDeps.runDeferredRegression = mock(
+      async (): Promise<DeferredRegressionResult> => ({
+        success: true,
+        failedTests: 0,
+        failedTestFiles: [],
+        passedTests: 10,
+        rectificationAttempts: 0,
+        affectedStories: [],
+      }),
+    );
 
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig("deferred", "bun test");
@@ -308,14 +311,16 @@ describe("handleRunCompletion - AC6: sets regression failed on failure", () => {
       }
     });
 
-    _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => ({
-      success: false,
-      failedTests: 3,
-      failedTestFiles: [],
-      passedTests: 7,
-      rectificationAttempts: 2,
-      affectedStories: ["US-001", "US-002"],
-    }));
+    _runCompletionDeps.runDeferredRegression = mock(
+      async (): Promise<DeferredRegressionResult> => ({
+        success: false,
+        failedTests: 3,
+        failedTestFiles: [],
+        passedTests: 7,
+        rectificationAttempts: 2,
+        affectedStories: ["US-001", "US-002"],
+      }),
+    );
 
     const prd = makePRD([
       { id: "US-001", status: "passed" },
@@ -341,14 +346,16 @@ describe("handleRunCompletion - AC6: sets regression failed on failure", () => {
       }
     });
 
-    _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => ({
-      success: false,
-      failedTests: 2,
-      failedTestFiles: [],
-      passedTests: 5,
-      rectificationAttempts: 1,
-      affectedStories: ["US-003", "US-004"],
-    }));
+    _runCompletionDeps.runDeferredRegression = mock(
+      async (): Promise<DeferredRegressionResult> => ({
+        success: false,
+        failedTests: 2,
+        failedTestFiles: [],
+        passedTests: 5,
+        rectificationAttempts: 1,
+        affectedStories: ["US-003", "US-004"],
+      }),
+    );
 
     const prd = makePRD([
       { id: "US-003", status: "passed" },
@@ -372,14 +379,16 @@ describe("handleRunCompletion - AC6: sets regression failed on failure", () => {
       }
     });
 
-    _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => ({
-      success: false,
-      failedTests: 2,
-      failedTestFiles: ["test/unit/foo.test.ts", "test/unit/bar.test.ts"],
-      passedTests: 5,
-      rectificationAttempts: 1,
-      affectedStories: ["US-005"],
-    }));
+    _runCompletionDeps.runDeferredRegression = mock(
+      async (): Promise<DeferredRegressionResult> => ({
+        success: false,
+        failedTests: 2,
+        failedTestFiles: ["test/unit/foo.test.ts", "test/unit/bar.test.ts"],
+        passedTests: 5,
+        rectificationAttempts: 1,
+        affectedStories: ["US-005"],
+      }),
+    );
 
     const prd = makePRD([{ id: "US-005", status: "passed" }]);
     const config = makeConfig("deferred", "bun test");
@@ -400,14 +409,16 @@ describe("handleRunCompletion - AC6: sets regression failed on failure", () => {
       }
     });
 
-    _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => ({
-      success: false,
-      failedTests: 1,
-      failedTestFiles: [],
-      passedTests: 5,
-      rectificationAttempts: 0,
-      affectedStories: ["US-001"],
-    }));
+    _runCompletionDeps.runDeferredRegression = mock(
+      async (): Promise<DeferredRegressionResult> => ({
+        success: false,
+        failedTests: 1,
+        failedTestFiles: [],
+        passedTests: 5,
+        rectificationAttempts: 0,
+        affectedStories: ["US-001"],
+      }),
+    );
 
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig("deferred", "bun test");
@@ -422,14 +433,16 @@ describe("handleRunCompletion - AC6: sets regression failed on failure", () => {
   test("resets story.passes to false for affected stories, not just status (issue #1292)", async () => {
     const statusWriter = makeStatusWriter();
 
-    _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => ({
-      success: false,
-      failedTests: 1,
-      failedTestFiles: [],
-      passedTests: 5,
-      rectificationAttempts: 0,
-      affectedStories: ["US-001"],
-    }));
+    _runCompletionDeps.runDeferredRegression = mock(
+      async (): Promise<DeferredRegressionResult> => ({
+        success: false,
+        failedTests: 1,
+        failedTestFiles: [],
+        passedTests: 5,
+        rectificationAttempts: 0,
+        affectedStories: ["US-001"],
+      }),
+    );
 
     const prd = makePRD([
       { id: "US-001", status: "passed" },
@@ -491,7 +504,14 @@ describe("handleRunCompletion - AC7: deferred regression is not smart-skipped", 
     let capturedArgs: Record<string, unknown> | undefined;
     _runCompletionDeps.runDeferredRegression = mock(async (opts) => {
       capturedArgs = opts as unknown as Record<string, unknown>;
-      return { success: true, failedTests: 0, failedTestFiles: [], passedTests: 0, rectificationAttempts: 0, affectedStories: [] };
+      return {
+        success: true,
+        failedTests: 0,
+        failedTestFiles: [],
+        passedTests: 0,
+        rectificationAttempts: 0,
+        affectedStories: [],
+      };
     });
 
     const mockRuntime = makeMockRuntime();

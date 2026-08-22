@@ -5,11 +5,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { aiderGenerator } from "@/context/generators/aider";
 import { claudeGenerator } from "@/context/generators/claude";
-import { opencodeGenerator } from "@/context/generators/opencode";
 import { codexGenerator } from "@/context/generators/codex";
 import { geminiGenerator } from "@/context/generators/gemini";
-import { aiderGenerator } from "@/context/generators/aider";
+import { opencodeGenerator } from "@/context/generators/opencode";
 import type { ContextContent } from "@/context/types";
 
 const sampleContext: ContextContent = {
@@ -71,7 +71,6 @@ describe("Context Generators", () => {
       expect(result).toContain("DO NOT EDIT MANUALLY");
       expect(result).toContain("## Architecture");
     });
-
   });
 
   describe("Codex Generator", () => {
@@ -198,7 +197,9 @@ describe("Context Generators", () => {
 
       const generatorNames = ["codex", "opencode", "gemini", "aider"];
       for (const name of generatorNames) {
-        expect([codexGenerator.name, opencodeGenerator.name, geminiGenerator.name, aiderGenerator.name]).toContain(name);
+        expect([codexGenerator.name, opencodeGenerator.name, geminiGenerator.name, aiderGenerator.name]).toContain(
+          name,
+        );
       }
     });
   });

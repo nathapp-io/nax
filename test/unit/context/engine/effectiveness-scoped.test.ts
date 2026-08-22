@@ -28,8 +28,8 @@ import {
   splitDiffByFile,
 } from "@/context/engine/effectiveness";
 import { _manifestStoreDeps } from "@/context/engine/manifest-store";
-import { withDepsRestore, makeLogger } from "@test/helpers";
 import type { ChunkEffectiveness } from "@/context/engine/types";
+import { makeLogger, withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC1 — splitDiffByFile: each post-image path maps to its own section
@@ -216,8 +216,7 @@ describe("splitDiffByFile — quoted paths", () => {
 // touched file (AC4) or restricts the slice (AC5).
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SHARED_CHUNK_SUMMARY =
-  "JWT authentication tokens stored in secure cookies for session management";
+const SHARED_CHUNK_SUMMARY = "JWT authentication tokens stored in secure cookies for session management";
 
 function diffFor(filePath: string, addedLines: string): string {
   return [
@@ -237,7 +236,10 @@ function diffFor(filePath: string, addedLines: string): string {
 
 describe("classifyWithTerms (AC4) — scope excludes diff file", () => {
   test("[AC4] returns 'ignored' when scopePaths excludes the diff file despite >=3 shared terms", () => {
-    const diffText = diffFor("src/cli/context.ts", "jwt authentication tokens stored in secure cookies for session management");
+    const diffText = diffFor(
+      "src/cli/context.ts",
+      "jwt authentication tokens stored in secure cookies for session management",
+    );
 
     const evidence = buildEvidenceTerms("", diffText, []);
     const result = classifyWithTerms(SHARED_CHUNK_SUMMARY, evidence, {
@@ -249,7 +251,10 @@ describe("classifyWithTerms (AC4) — scope excludes diff file", () => {
   });
 
   test("[AC4, boundary] empty scopePaths array behaves the same as an excluding scope (returns 'ignored')", () => {
-    const diffText = diffFor("src/cli/context.ts", "jwt authentication tokens stored in secure cookies for session management");
+    const diffText = diffFor(
+      "src/cli/context.ts",
+      "jwt authentication tokens stored in secure cookies for session management",
+    );
 
     const evidence = buildEvidenceTerms("", diffText, []);
     const result = classifyWithTerms(SHARED_CHUNK_SUMMARY, evidence, {
@@ -315,7 +320,10 @@ describe("classifyWithTerms (AC5) — scope matches subset of diff files", () =>
 
 describe("classifyWithTerms (AC6) — scopePaths absent", () => {
   test("[AC6] when scopePaths is absent, classification considers the whole diff", () => {
-    const diffText = diffFor("src/cli/context.ts", "jwt authentication tokens stored in secure cookies for session management");
+    const diffText = diffFor(
+      "src/cli/context.ts",
+      "jwt authentication tokens stored in secure cookies for session management",
+    );
 
     const evidence = buildEvidenceTerms("", diffText, []);
     const result = classifyWithTerms(SHARED_CHUNK_SUMMARY, evidence);

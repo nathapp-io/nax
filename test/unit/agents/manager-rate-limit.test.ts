@@ -16,8 +16,12 @@ const baseConfig = {
 };
 
 let origSleep: typeof _agentManagerDeps.sleep;
-beforeEach(() => { origSleep = _agentManagerDeps.sleep; });
-afterEach(() => { _agentManagerDeps.sleep = origSleep; });
+beforeEach(() => {
+  origSleep = _agentManagerDeps.sleep;
+});
+afterEach(() => {
+  _agentManagerDeps.sleep = origSleep;
+});
 
 describe("AgentManager — injectable retryStrategy", () => {
   test("uses injected strategy instead of hardcoded logic when no swap candidates", async () => {
@@ -30,14 +34,32 @@ describe("AgentManager — injectable retryStrategy", () => {
     };
 
     const sleepCalls: number[] = [];
-    _agentManagerDeps.sleep = async (ms: number) => { sleepCalls.push(ms); };
+    _agentManagerDeps.sleep = async (ms: number) => {
+      sleepCalls.push(ms);
+    };
 
     const manager = new AgentManager(baseConfig as never, undefined, { retryStrategy: neverRetry });
 
     const outcome = await manager.runWithFallback({
-      runOptions: { prompt: "test", workdir: "/tmp", modelTier: "fast", modelDef: { provider: "anthropic", model: "claude-haiku-4-5" }, timeoutSeconds: 30, config: baseConfig as never, pipelineStage: "run" },
+      runOptions: {
+        prompt: "test",
+        workdir: "/tmp",
+        modelTier: "fast",
+        modelDef: { provider: "anthropic", model: "claude-haiku-4-5" },
+        timeoutSeconds: 30,
+        config: baseConfig as never,
+        pipelineStage: "run",
+      },
       executeHop: async () => ({
-        result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, adapterFailure: rateLimitFailure },
+        result: {
+          success: false,
+          exitCode: 1,
+          output: "",
+          rateLimited: false,
+          durationMs: 0,
+          estimatedCostUsd: 0,
+          adapterFailure: rateLimitFailure,
+        },
         bundle: undefined,
         prompt: undefined,
       }),
@@ -51,14 +73,32 @@ describe("AgentManager — injectable retryStrategy", () => {
 
   test("defaultRetryStrategy fires 3 sleeps with exponential backoff", async () => {
     const sleepCalls: number[] = [];
-    _agentManagerDeps.sleep = async (ms: number) => { sleepCalls.push(ms); };
+    _agentManagerDeps.sleep = async (ms: number) => {
+      sleepCalls.push(ms);
+    };
 
     const manager = new AgentManager(baseConfig as never);
 
     await manager.runWithFallback({
-      runOptions: { prompt: "test", workdir: "/tmp", modelTier: "fast", modelDef: { provider: "anthropic", model: "claude-haiku-4-5" }, timeoutSeconds: 30, config: baseConfig as never, pipelineStage: "run" },
+      runOptions: {
+        prompt: "test",
+        workdir: "/tmp",
+        modelTier: "fast",
+        modelDef: { provider: "anthropic", model: "claude-haiku-4-5" },
+        timeoutSeconds: 30,
+        config: baseConfig as never,
+        pipelineStage: "run",
+      },
       executeHop: async () => ({
-        result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, adapterFailure: rateLimitFailure },
+        result: {
+          success: false,
+          exitCode: 1,
+          output: "",
+          rateLimited: false,
+          durationMs: 0,
+          estimatedCostUsd: 0,
+          adapterFailure: rateLimitFailure,
+        },
         bundle: undefined,
         prompt: undefined,
       }),

@@ -49,7 +49,9 @@ describe("manifest-store", () => {
       ],
     });
 
-    const persistedRaw = writes.get("/repo/.nax/features/feat-auth/stories/US-001/context-manifest-review-semantic.json");
+    const persistedRaw = writes.get(
+      "/repo/.nax/features/feat-auth/stories/US-001/context-manifest-review-semantic.json",
+    );
     const persisted = JSON.parse(persistedRaw ?? "{}") as { repoRoot?: string; packageDir?: string };
     expect(persisted.repoRoot).toBe(".");
     expect(persisted.packageDir).toBe("apps/api");

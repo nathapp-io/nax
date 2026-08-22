@@ -26,7 +26,9 @@ describe("readFinishConfig", () => {
   });
 
   test("a null reviewer is omitted, not passed as null", () => {
-    const s = readFinishConfig({ finish: { enabled: true, reviewers: { spec: null, quality: null, narrative: null, fix: null } } });
+    const s = readFinishConfig({
+      finish: { enabled: true, reviewers: { spec: null, quality: null, narrative: null, fix: null } },
+    });
     expect("reviewSpec" in s.models).toBe(false);
   });
 

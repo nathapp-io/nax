@@ -89,9 +89,11 @@ function makeCtx(id: string, featureId: string): PipelineContext {
 
 describe("AC-25: provider cost accounting in StoryMetrics", () => {
   test("costUsd is absent when provider reports no cost", async () => {
-    setupManifest("feat-1", "US-001", makeManifest([
-      { providerId: "git-history", status: "ok", chunkCount: 1, durationMs: 10, tokensProduced: 200 },
-    ]));
+    setupManifest(
+      "feat-1",
+      "US-001",
+      makeManifest([{ providerId: "git-history", status: "ok", chunkCount: 1, durationMs: 10, tokensProduced: 200 }]),
+    );
     const metrics = await collectStoryMetrics(makeCtx("US-001", "feat-1"), new Date().toISOString());
     const prov = metrics.context?.providers["git-history"];
     expect(prov).toBeDefined();
@@ -99,9 +101,20 @@ describe("AC-25: provider cost accounting in StoryMetrics", () => {
   });
 
   test("costUsd is aggregated when provider reports cost", async () => {
-    setupManifest("feat-1", "US-001", makeManifest([
-      { providerId: "llm-provider", status: "ok", chunkCount: 1, durationMs: 10, tokensProduced: 200, costUsd: 0.0025 },
-    ]));
+    setupManifest(
+      "feat-1",
+      "US-001",
+      makeManifest([
+        {
+          providerId: "llm-provider",
+          status: "ok",
+          chunkCount: 1,
+          durationMs: 10,
+          tokensProduced: 200,
+          costUsd: 0.0025,
+        },
+      ]),
+    );
     const metrics = await collectStoryMetrics(makeCtx("US-001", "feat-1"), new Date().toISOString());
     const prov = metrics.context?.providers["llm-provider"];
     expect(prov?.costUsd).toBeCloseTo(0.0025, 6);
@@ -111,13 +124,26 @@ describe("AC-25: provider cost accounting in StoryMetrics", () => {
     const manifest1 = makeManifest([
       { providerId: "llm-provider", status: "ok", chunkCount: 1, durationMs: 10, tokensProduced: 200, costUsd: 0.001 },
     ]);
-    const manifest2: ContextManifest = { ...makeManifest([
-      { providerId: "llm-provider", status: "ok", chunkCount: 1, durationMs: 12, tokensProduced: 150, costUsd: 0.002 },
-    ]), stage: "execution" };
+    const manifest2: ContextManifest = {
+      ...makeManifest([
+        {
+          providerId: "llm-provider",
+          status: "ok",
+          chunkCount: 1,
+          durationMs: 12,
+          tokensProduced: 150,
+          costUsd: 0.002,
+        },
+      ]),
+      stage: "execution",
+    };
 
     let callCount = 0;
     _manifestStoreDeps.listFeatureDirs = async () => ["feat-1"];
-    _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-verify.json", "context-manifest-execution.json"];
+    _manifestStoreDeps.listManifestFiles = async () => [
+      "context-manifest-verify.json",
+      "context-manifest-execution.json",
+    ];
     _manifestStoreDeps.fileExists = async () => true;
     _manifestStoreDeps.readFile = async () => {
       return JSON.stringify(callCount++ === 0 ? manifest1 : manifest2);
@@ -128,28 +154,47 @@ describe("AC-25: provider cost accounting in StoryMetrics", () => {
   });
 
   test("costUsd is summed across multiple providers independently", async () => {
-    setupManifest("feat-1", "US-001", makeManifest([
-      { providerId: "provider-a", status: "ok", chunkCount: 1, durationMs: 5, tokensProduced: 100, costUsd: 0.001 },
-      { providerId: "provider-b", status: "ok", chunkCount: 1, durationMs: 5, tokensProduced: 100, costUsd: 0.004 },
-    ]));
+    setupManifest(
+      "feat-1",
+      "US-001",
+      makeManifest([
+        { providerId: "provider-a", status: "ok", chunkCount: 1, durationMs: 5, tokensProduced: 100, costUsd: 0.001 },
+        { providerId: "provider-b", status: "ok", chunkCount: 1, durationMs: 5, tokensProduced: 100, costUsd: 0.004 },
+      ]),
+    );
     const metrics = await collectStoryMetrics(makeCtx("US-001", "feat-1"), new Date().toISOString());
     expect(metrics.context?.providers["provider-a"]?.costUsd).toBeCloseTo(0.001, 6);
     expect(metrics.context?.providers["provider-b"]?.costUsd).toBeCloseTo(0.004, 6);
   });
 
   test("costUsd zero is treated as absent (not set)", async () => {
-    setupManifest("feat-1", "US-001", makeManifest([
-      { providerId: "git-history", status: "ok", chunkCount: 1, durationMs: 5, tokensProduced: 100, costUsd: 0 },
-    ]));
+    setupManifest(
+      "feat-1",
+      "US-001",
+      makeManifest([
+        { providerId: "git-history", status: "ok", chunkCount: 1, durationMs: 5, tokensProduced: 100, costUsd: 0 },
+      ]),
+    );
     const metrics = await collectStoryMetrics(makeCtx("US-001", "feat-1"), new Date().toISOString());
     expect(metrics.context?.providers["git-history"]?.costUsd).toBeUndefined();
   });
 
   test("mixed providers: only LLM provider gets costUsd", async () => {
-    setupManifest("feat-1", "US-001", makeManifest([
-      { providerId: "git-history", status: "ok", chunkCount: 1, durationMs: 5, tokensProduced: 100 },
-      { providerId: "llm-provider", status: "ok", chunkCount: 1, durationMs: 20, tokensProduced: 300, costUsd: 0.005 },
-    ]));
+    setupManifest(
+      "feat-1",
+      "US-001",
+      makeManifest([
+        { providerId: "git-history", status: "ok", chunkCount: 1, durationMs: 5, tokensProduced: 100 },
+        {
+          providerId: "llm-provider",
+          status: "ok",
+          chunkCount: 1,
+          durationMs: 20,
+          tokensProduced: 300,
+          costUsd: 0.005,
+        },
+      ]),
+    );
     const metrics = await collectStoryMetrics(makeCtx("US-001", "feat-1"), new Date().toISOString());
     expect(metrics.context?.providers["git-history"]?.costUsd).toBeUndefined();
     expect(metrics.context?.providers["llm-provider"]?.costUsd).toBeCloseTo(0.005, 6);
@@ -173,8 +218,26 @@ describe("AC-25: orchestrator aggregates chunk costUsd into providerResults", ()
       kind: "feature" as const,
       fetch: async () => ({
         chunks: [
-          { id: "llm-provider:c1", kind: "feature" as const, scope: "feature" as const, role: ["implementer" as const], content: "chunk 1", tokens: 100, rawScore: 1.0, costUsd: 0.001 },
-          { id: "llm-provider:c2", kind: "feature" as const, scope: "feature" as const, role: ["implementer" as const], content: "chunk 2", tokens: 100, rawScore: 1.0, costUsd: 0.002 },
+          {
+            id: "llm-provider:c1",
+            kind: "feature" as const,
+            scope: "feature" as const,
+            role: ["implementer" as const],
+            content: "chunk 1",
+            tokens: 100,
+            rawScore: 1.0,
+            costUsd: 0.001,
+          },
+          {
+            id: "llm-provider:c2",
+            kind: "feature" as const,
+            scope: "feature" as const,
+            role: ["implementer" as const],
+            content: "chunk 2",
+            tokens: 100,
+            rawScore: 1.0,
+            costUsd: 0.002,
+          },
         ],
       }),
     };
@@ -206,7 +269,15 @@ describe("AC-25: orchestrator aggregates chunk costUsd into providerResults", ()
       kind: "feature" as const,
       fetch: async () => ({
         chunks: [
-          { id: "git-history:c1", kind: "feature" as const, scope: "feature" as const, role: ["implementer" as const], content: "commit history", tokens: 200, rawScore: 1.0 },
+          {
+            id: "git-history:c1",
+            kind: "feature" as const,
+            scope: "feature" as const,
+            role: ["implementer" as const],
+            content: "commit history",
+            tokens: 200,
+            rawScore: 1.0,
+          },
         ],
       }),
     };

@@ -10,10 +10,10 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { initLogger, resetLogger } from "@/logger";
-import { _routingDeps, routingStage } from "@/pipeline/stages/routing";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
+import { initLogger, resetLogger } from "@/logger";
+import { _routingDeps, routingStage } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
 
@@ -109,7 +109,12 @@ describe("routing stage — resolveRouting integration (BUG-032 + FIX-001)", () 
 
   test("(2) escalated modelTier from story.routing is preserved (BUG-032)", async () => {
     // Simulate escalation: story.routing.modelTier was bumped to "powerful"
-    const story = makeStory({ modelTier: "powerful", complexity: "medium", testStrategy: "three-session-tdd", reasoning: "escalated" });
+    const story = makeStory({
+      modelTier: "powerful",
+      complexity: "medium",
+      testStrategy: "three-session-tdd",
+      reasoning: "escalated",
+    });
     const ctx = makeCtx(story);
 
     await routingStage.execute(ctx);

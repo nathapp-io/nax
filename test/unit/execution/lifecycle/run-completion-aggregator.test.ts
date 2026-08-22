@@ -19,12 +19,12 @@ import {
   _runCompletionDeps,
   handleRunCompletion,
 } from "@/execution/lifecycle/run-completion";
-import type { ICostAggregator, CostSnapshot } from "@/runtime/cost-aggregator";
 import type { StoryMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { RunCompletedEvent } from "@/pipeline/event-bus";
 import type { PRD } from "@/prd";
-import { makeNaxConfig, makeMockRuntime, makePRD as makePRDHelper, makeStory } from "@test/helpers";
+import type { CostSnapshot, ICostAggregator } from "@/runtime/cost-aggregator";
+import { makeMockRuntime, makeNaxConfig, makePRD as makePRDHelper, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -42,7 +42,14 @@ function makePRD(ids: string[]): PRD {
 }
 
 function makeEmptySnapshot(): CostSnapshot {
-  return { totalCostUsd: 0, totalEstimatedCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 };
+  return {
+    totalCostUsd: 0,
+    totalEstimatedCostUsd: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    callCount: 0,
+    errorCount: 0,
+  };
 }
 
 function makeMockAggregator(overrides: Partial<ICostAggregator> = {}): ICostAggregator {
@@ -77,12 +84,7 @@ const DISABLED_REGRESSION_CONFIG: NaxConfig = makeNaxConfig({
 
 const WORKDIR = `/tmp/nax-test-aggregator-${randomUUID()}`;
 
-function makeOpts(
-  prd: PRD,
-  metrics: StoryMetrics[],
-  aggregator: ICostAggregator,
-  totalCost = 0,
-): RunCompletionOptions {
+function makeOpts(prd: PRD, metrics: StoryMetrics[], aggregator: ICostAggregator, totalCost = 0): RunCompletionOptions {
   const runtime = makeMockRuntime();
   // Override costAggregator with our controlled mock
   Object.defineProperty(runtime, "costAggregator", { value: aggregator, writable: true });
@@ -125,7 +127,9 @@ describe("handleRunCompletion — Bug 909: aggregator-driven totalCost reporting
     });
 
     let capturedEvent: RunCompletedEvent | undefined;
-    pipelineEventBus.on("run:completed", (e) => { capturedEvent = e; });
+    pipelineEventBus.on("run:completed", (e) => {
+      capturedEvent = e;
+    });
 
     await handleRunCompletion(makeOpts(prd, [], aggregator, 0));
 
@@ -138,7 +142,7 @@ describe("handleRunCompletion — Bug 909: aggregator-driven totalCost reporting
       snapshot: () => ({ ...makeEmptySnapshot(), totalCostUsd: 2.81, callCount: 3 }),
       byStory: () => ({
         "US-001": { ...makeEmptySnapshot(), totalCostUsd: 2.71, callCount: 2 },
-        "US-007": { ...makeEmptySnapshot(), totalCostUsd: 0.10, callCount: 1 },
+        "US-007": { ...makeEmptySnapshot(), totalCostUsd: 0.1, callCount: 1 },
       }),
     });
 
@@ -150,7 +154,7 @@ describe("handleRunCompletion — Bug 909: aggregator-driven totalCost reporting
     expect(us001?.cost).toBeCloseTo(2.71, 2);
     expect(us001?.source).toBe("completion-phase");
     const us007 = metrics.find((m) => m.storyId === "US-007");
-    expect(us007?.cost).toBeCloseTo(0.10, 2);
+    expect(us007?.cost).toBeCloseTo(0.1, 2);
     expect(us007?.source).toBe("completion-phase");
   });
 
@@ -175,21 +179,23 @@ describe("handleRunCompletion — Bug 909: aggregator-driven totalCost reporting
       byStory: () => ({ "US-001": { ...makeEmptySnapshot(), totalCostUsd: 3.5, callCount: 3 } }),
     });
 
-    const existingMetrics: StoryMetrics[] = [{
-      storyId: "US-001",
-      complexity: "medium",
-      modelTier: "balanced",
-      modelUsed: "claude",
-      attempts: 1,
-      finalTier: "balanced",
-      success: true,
-      cost: 1.0,
-      durationMs: 2000,
-      firstPassSuccess: true,
-      startedAt: new Date().toISOString(),
-      completedAt: new Date().toISOString(),
-      runtimeCrashes: 0,
-    }];
+    const existingMetrics: StoryMetrics[] = [
+      {
+        storyId: "US-001",
+        complexity: "medium",
+        modelTier: "balanced",
+        modelUsed: "claude",
+        attempts: 1,
+        finalTier: "balanced",
+        success: true,
+        cost: 1.0,
+        durationMs: 2000,
+        firstPassSuccess: true,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        runtimeCrashes: 0,
+      },
+    ];
 
     await handleRunCompletion(makeOpts(prd, existingMetrics, aggregator, 1.0));
 
@@ -208,21 +214,23 @@ describe("handleRunCompletion — Bug 909: aggregator-driven totalCost reporting
       byStory: () => ({ "US-001": { ...makeEmptySnapshot(), totalCostUsd: 0.5, callCount: 1 } }),
     });
 
-    const existingMetrics: StoryMetrics[] = [{
-      storyId: "US-001",
-      complexity: "medium",
-      modelTier: "balanced",
-      modelUsed: "claude",
-      attempts: 1,
-      finalTier: "balanced",
-      success: true,
-      cost: 1.0,
-      durationMs: 2000,
-      firstPassSuccess: true,
-      startedAt: new Date().toISOString(),
-      completedAt: new Date().toISOString(),
-      runtimeCrashes: 0,
-    }];
+    const existingMetrics: StoryMetrics[] = [
+      {
+        storyId: "US-001",
+        complexity: "medium",
+        modelTier: "balanced",
+        modelUsed: "claude",
+        attempts: 1,
+        finalTier: "balanced",
+        success: true,
+        cost: 1.0,
+        durationMs: 2000,
+        firstPassSuccess: true,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        runtimeCrashes: 0,
+      },
+    ];
 
     await handleRunCompletion(makeOpts(prd, existingMetrics, aggregator, 1.0));
 
@@ -239,7 +247,9 @@ describe("handleRunCompletion — Bug 909: aggregator-driven totalCost reporting
     });
 
     let capturedEvent: RunCompletedEvent | undefined;
-    pipelineEventBus.on("run:completed", (e) => { capturedEvent = e; });
+    pipelineEventBus.on("run:completed", (e) => {
+      capturedEvent = e;
+    });
 
     await handleRunCompletion(makeOpts(prd, [], aggregator, 0));
 

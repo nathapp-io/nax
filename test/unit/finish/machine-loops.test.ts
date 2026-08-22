@@ -9,11 +9,11 @@ import type { AcceptanceGroupResult } from "@/cli";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
 import {
+  MAX_INCOMPLETE_ATTEMPTS,
   _acceptanceGateDeps,
   _finishGitDeps,
   _qualityGateDeps,
   createFinishState,
-  MAX_INCOMPLETE_ATTEMPTS,
   runFinishMachine,
 } from "@/finish";
 import type { AuditTarget, Finding, FinishContext, FinishMachineDeps, FinishOps, FinishState } from "@/finish";
@@ -38,7 +38,12 @@ function configWithCommands(commands: NaxConfig["quality"]["commands"]): NaxConf
 }
 
 function baseContext(overrides: Partial<FinishContext> = {}): FinishContext {
-  const group: AcceptanceGroupResult = { packageDir: "", testPath: "test/acceptance/feat.test.ts", exists: true, cwd: "" };
+  const group: AcceptanceGroupResult = {
+    packageDir: "",
+    testPath: "test/acceptance/feat.test.ts",
+    exists: true,
+    cwd: "",
+  };
   return {
     base: "origin/main",
     specPath: ".nax/features/feat/spec.md",
@@ -131,7 +136,15 @@ function installQualityGateStub(trail: string[], commands: NaxConfig["quality"][
   _qualityGateDeps.loadPackageOverride = async () => null;
   _qualityGateDeps.run = async (o: QualityCommandOptions): Promise<QualityCommandResult> => {
     trail.push(`quality-run:${o.commandName}`);
-    return { commandName: o.commandName, command: o.command, success: true, exitCode: 0, output: "ok", durationMs: 1, timedOut: false };
+    return {
+      commandName: o.commandName,
+      command: o.command,
+      success: true,
+      exitCode: 0,
+      output: "ok",
+      durationMs: 1,
+      timedOut: false,
+    };
   };
 }
 

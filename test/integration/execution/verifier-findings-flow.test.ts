@@ -13,17 +13,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import {
-  _storyOrchestratorDeps,
-  StoryOrchestratorBuilder,
-} from "@/execution";
-import type { Finding } from "@/findings/types";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import { StoryOrchestratorBuilder, _storyOrchestratorDeps } from "@/execution";
 import type { FixStrategy } from "@/findings";
-import { pickSelector, DEFAULT_CONFIG } from "@/config";
-import { makeTestRuntime, makeStory, makeNaxConfig } from "@test/helpers";
+import type { Finding } from "@/findings/types";
 import { makeAutofixImplementerStrategy, makeDeclarationSink } from "@/operations";
+import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import type { RunOperation, DeterministicOperation, CallContext } from "@/operations";
+import { makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

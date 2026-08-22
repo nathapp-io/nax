@@ -67,7 +67,9 @@ describe("runPlanCritic (US-005)", () => {
       // It imports the function and expects it to handle mechanical checks.
       const { runPlanCritic } = await import("@/plan");
 
-      const prd = makePRD({ userStories: [makeStory({ contextFiles: [{ path: "nonexistent-file.ts", factId: "F-001" }] })] });
+      const prd = makePRD({
+        userStories: [makeStory({ contextFiles: [{ path: "nonexistent-file.ts", factId: "F-001" }] })],
+      });
       const manifest = makeFactsManifest();
       const config = makeNaxConfig();
       runtime = makeTestRuntime();
@@ -119,7 +121,9 @@ describe("runPlanCritic (US-005)", () => {
     test("emits spec-deltas.md to correct path", async () => {
       const { runPlanCritic } = await import("@/plan");
 
-      const prd = makePRD({ userStories: [makeStory({ contextFiles: [{ path: "nonexistent-file.ts", factId: "F-001" }] })] });
+      const prd = makePRD({
+        userStories: [makeStory({ contextFiles: [{ path: "nonexistent-file.ts", factId: "F-001" }] })],
+      });
       const manifest = makeFactsManifest();
       const config = makeNaxConfig();
       runtime = makeTestRuntime();
@@ -164,7 +168,9 @@ describe("runPlanCritic (US-005)", () => {
       // The implementation should skip the LLM judgment stage.
 
       const { runPlanCritic } = await import("@/plan");
-      const prd = makePRD({ userStories: [makeStory({ contextFiles: [{ path: "nonexistent-file.ts", factId: "F-001" }] })] });
+      const prd = makePRD({
+        userStories: [makeStory({ contextFiles: [{ path: "nonexistent-file.ts", factId: "F-001" }] })],
+      });
       const manifest = makeFactsManifest();
       const config = makeNaxConfig();
 
@@ -173,7 +179,18 @@ describe("runPlanCritic (US-005)", () => {
       const agentManager = makeMockAgentManager({
         runWithFallbackFn: async (req) => {
           runWithFallbackSpy(req.runOptions.sessionRole);
-          return { result: { success: true, exitCode: 0, output: JSON.stringify({ findings: [] }), rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          return {
+            result: {
+              success: true,
+              exitCode: 0,
+              output: JSON.stringify({ findings: [] }),
+              rateLimited: false,
+              durationMs: 0,
+              estimatedCostUsd: 0,
+              agentFallbacks: [],
+            },
+            fallbacks: [],
+          };
         },
       });
       runtime = makeTestRuntime({ agentManager });
@@ -225,7 +242,18 @@ describe("runPlanCritic (US-005)", () => {
         runWithFallbackFn: async (req) => {
           const role = req.runOptions.sessionRole;
           const output = role === "plan-critic" ? JSON.stringify({ findings: [] }) : "";
-          return { result: { success: true, exitCode: 0, output, rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          return {
+            result: {
+              success: true,
+              exitCode: 0,
+              output,
+              rateLimited: false,
+              durationMs: 0,
+              estimatedCostUsd: 0,
+              agentFallbacks: [],
+            },
+            fallbacks: [],
+          };
         },
       });
       runtime = makeTestRuntime({ agentManager });
@@ -277,7 +305,18 @@ describe("runPlanCritic (US-005)", () => {
         runWithFallbackFn: async (req) => {
           const role = req.runOptions.sessionRole;
           const output = role === "plan-critic" ? JSON.stringify({ findings: [makeMajorFinding()] }) : "";
-          return { result: { success: true, exitCode: 0, output, rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          return {
+            result: {
+              success: true,
+              exitCode: 0,
+              output,
+              rateLimited: false,
+              durationMs: 0,
+              estimatedCostUsd: 0,
+              agentFallbacks: [],
+            },
+            fallbacks: [],
+          };
         },
       });
       runtime = makeTestRuntime({ agentManager });
@@ -331,11 +370,33 @@ describe("runPlanCritic (US-005)", () => {
         runWithFallbackFn: async (req) => {
           const role = req.runOptions.sessionRole;
           if (role === "plan-critic") {
-            return { result: { success: true, exitCode: 0, output: JSON.stringify({ findings: llmBlockers }), rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+            return {
+              result: {
+                success: true,
+                exitCode: 0,
+                output: JSON.stringify({ findings: llmBlockers }),
+                rateLimited: false,
+                durationMs: 0,
+                estimatedCostUsd: 0,
+                agentFallbacks: [],
+              },
+              fallbacks: [],
+            };
           }
           // Draft revision call
           draftCallCount++;
-          return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          return {
+            result: {
+              success: true,
+              exitCode: 0,
+              output: "",
+              rateLimited: false,
+              durationMs: 0,
+              estimatedCostUsd: 0,
+              agentFallbacks: [],
+            },
+            fallbacks: [],
+          };
         },
       });
       runtime = makeTestRuntime({ agentManager });
@@ -393,17 +454,34 @@ describe("runPlanCritic (US-005)", () => {
         branchName: "feat/test",
         createdAt: new Date(0).toISOString(),
         updatedAt: new Date(0).toISOString(),
-        userStories: [{ id: "US-001", title: "Test story", description: "A test story", acceptanceCriteria: ["AC-1: works"], complexity: "simple" }],
+        userStories: [
+          {
+            id: "US-001",
+            title: "Test story",
+            description: "A test story",
+            acceptanceCriteria: ["AC-1: works"],
+            complexity: "simple",
+          },
+        ],
       });
 
       // planCriticLlmOp and planDraftOp are both kind:"run" — go through runWithFallback
       const agentManager = makeMockAgentManager({
         runWithFallbackFn: async (req) => {
           const role = req.runOptions.sessionRole;
-          const output = role === "plan-critic"
-            ? JSON.stringify({ findings: llmBlockers })
-            : validRevisionPrd;
-          return { result: { success: true, exitCode: 0, output, rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          const output = role === "plan-critic" ? JSON.stringify({ findings: llmBlockers }) : validRevisionPrd;
+          return {
+            result: {
+              success: true,
+              exitCode: 0,
+              output,
+              rateLimited: false,
+              durationMs: 0,
+              estimatedCostUsd: 0,
+              agentFallbacks: [],
+            },
+            fallbacks: [],
+          };
         },
       });
       runtime = makeTestRuntime({ agentManager });
@@ -460,7 +538,16 @@ describe("runPlanCritic (US-005)", () => {
         branchName: "feat/test",
         createdAt: new Date(0).toISOString(),
         updatedAt: new Date(0).toISOString(),
-        userStories: [{ id: "US-001", title: "Test story", description: "A test story", acceptanceCriteria: ["AC-1: works"], complexity: "simple", contextFiles: [{ path: "nonexistent-revised.ts", factId: "F-001" }] }],
+        userStories: [
+          {
+            id: "US-001",
+            title: "Test story",
+            description: "A test story",
+            acceptanceCriteria: ["AC-1: works"],
+            complexity: "simple",
+            contextFiles: [{ path: "nonexistent-revised.ts", factId: "F-001" }],
+          },
+        ],
       });
 
       // planCriticLlmOp and planDraftOp are both kind:"run" — go through runWithFallback
@@ -470,10 +557,32 @@ describe("runPlanCritic (US-005)", () => {
           const role = req.runOptions.sessionRole;
           if (role === "plan-critic") {
             criticCallCount++;
-            return { result: { success: true, exitCode: 0, output: JSON.stringify({ findings: llmBlockers }), rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+            return {
+              result: {
+                success: true,
+                exitCode: 0,
+                output: JSON.stringify({ findings: llmBlockers }),
+                rateLimited: false,
+                durationMs: 0,
+                estimatedCostUsd: 0,
+                agentFallbacks: [],
+              },
+              fallbacks: [],
+            };
           }
           // Draft revision: returns PRD that still has mechanical blockers
-          return { result: { success: true, exitCode: 0, output: revisionWithBlockers, rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          return {
+            result: {
+              success: true,
+              exitCode: 0,
+              output: revisionWithBlockers,
+              rateLimited: false,
+              durationMs: 0,
+              estimatedCostUsd: 0,
+              agentFallbacks: [],
+            },
+            fallbacks: [],
+          };
         },
       });
       runtime = makeTestRuntime({ agentManager });
@@ -528,7 +637,18 @@ describe("runPlanCritic (US-005)", () => {
           if (req.runOptions.sessionRole === "plan-critic") {
             throw new Error("LLM service unavailable");
           }
-          return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          return {
+            result: {
+              success: true,
+              exitCode: 0,
+              output: "",
+              rateLimited: false,
+              durationMs: 0,
+              estimatedCostUsd: 0,
+              agentFallbacks: [],
+            },
+            fallbacks: [],
+          };
         },
       });
       runtime = makeTestRuntime({ agentManager });

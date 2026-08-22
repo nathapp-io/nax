@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import type { AcceptanceDiagnoseInput } from "@/operations/acceptance-diagnose";
 import type { NaxRuntime } from "@/runtime";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -14,9 +14,7 @@ const SAMPLE_INPUT: AcceptanceDiagnoseInput = {
   testOutput: "FAIL: expected 1 but got 2",
   testFileContent: "test('x', () => expect(fn()).toBe(1))",
   sourceFiles: [{ path: "src/fn.ts", content: "export function fn() { return 2; }" }],
-  semanticVerdicts: [
-    { storyId: "US-001", passed: true, timestamp: "2026-01-01T00:00:00Z", acCount: 2, findings: [] },
-  ],
+  semanticVerdicts: [{ storyId: "US-001", passed: true, timestamp: "2026-01-01T00:00:00Z", acCount: 2, findings: [] }],
 };
 
 function makeBuildCtx() {
@@ -120,12 +118,22 @@ describe("acceptanceDiagnoseOp.parse()", () => {
       reasoning: "test imports wrong",
       confidence: 0.85,
       findings: [
-        { fixTarget: "test", category: "import-path", message: "wrong relative path", file: "test/foo.test.ts", line: 3 },
+        {
+          fixTarget: "test",
+          category: "import-path",
+          message: "wrong relative path",
+          file: "test/foo.test.ts",
+          line: 3,
+        },
       ],
     });
     const result = acceptanceDiagnoseOp.parse(json, SAMPLE_INPUT, ctx);
     expect(result.findings?.length).toBe(1);
-    expect(result.findings?.[0]).toMatchObject({ fixTarget: "test", category: "import-path", message: "wrong relative path" });
+    expect(result.findings?.[0]).toMatchObject({
+      fixTarget: "test",
+      category: "import-path",
+      message: "wrong relative path",
+    });
   });
   test("falls back gracefully when findings[] is empty array", () => {
     const ctx = makeBuildCtx();

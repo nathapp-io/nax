@@ -93,8 +93,8 @@ describe("waitForSchedule", () => {
       _deps: deps,
     });
     expect(outcome).toBe("fired");
-    expect(lines.length).toBe(0);              // still no render lines
-    expect(logs.length).toBe(1);               // exactly one structured line
+    expect(lines.length).toBe(0); // still no render lines
+    expect(logs.length).toBe(1); // exactly one structured line
     expect(logs[0].data.targetIso).toBe(target.toISOString());
     expect(logs[0].data.label).toBe("feat-x");
   });

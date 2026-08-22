@@ -7,11 +7,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _debateSessionDeps, resolveOutcome } from "@/debate";
 import type { CompleteOptions } from "@/agents";
+import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
+import { _debateSessionDeps, resolveOutcome } from "@/debate";
 import type { DebateStageConfig } from "@/debate";
 import type { CallContext } from "@/operations";
-import { debateConfigSelector, DEFAULT_CONFIG } from "@/config";
 import { makeMockAgentManager } from "@test/helpers";
 
 function makeCallCtx(): CallContext {
@@ -33,10 +33,7 @@ function makeCallCtx(): CallContext {
 
 const DEFAULT_DEBATE_CONFIG = debateConfigSelector.select(DEFAULT_CONFIG);
 
-function makeStageConfig(
-  resolverType: "synthesis" | "custom",
-  resolverModel?: string,
-): DebateStageConfig {
+function makeStageConfig(resolverType: "synthesis" | "custom", resolverModel?: string): DebateStageConfig {
   return {
     enabled: true,
     resolver: { type: resolverType, agent: "claude", model: resolverModel },
@@ -74,7 +71,22 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
     const captured: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
-    await resolveOutcome(["proposal-a", "proposal-b"], [], makeStageConfig("synthesis", "powerful"), DEFAULT_DEBATE_CONFIG, makeCallCtx(), "US-352", 30_000, undefined, undefined, undefined, undefined, undefined, undefined, undefined as unknown as import("@/agents").IAgentManager);
+    await resolveOutcome(
+      ["proposal-a", "proposal-b"],
+      [],
+      makeStageConfig("synthesis", "powerful"),
+      DEFAULT_DEBATE_CONFIG,
+      makeCallCtx(),
+      "US-352",
+      30_000,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined as unknown as import("@/agents").IAgentManager,
+    );
 
     expect(captured.length).toBeGreaterThan(0);
     expect(captured[0]?.opts?.modelDef?.model).toBeDefined();
@@ -86,7 +98,22 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
     const captured: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
-    await resolveOutcome(["proposal-a", "proposal-b"], [], makeStageConfig("synthesis"), DEFAULT_DEBATE_CONFIG, makeCallCtx(), "US-352", 30_000, undefined, undefined, undefined, undefined, undefined, undefined, undefined as unknown as import("@/agents").IAgentManager);
+    await resolveOutcome(
+      ["proposal-a", "proposal-b"],
+      [],
+      makeStageConfig("synthesis"),
+      DEFAULT_DEBATE_CONFIG,
+      makeCallCtx(),
+      "US-352",
+      30_000,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined as unknown as import("@/agents").IAgentManager,
+    );
 
     expect(captured.length).toBeGreaterThan(0);
     expect(captured[0]?.opts?.modelDef?.model).toBeDefined();
@@ -97,7 +124,22 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
     const captured: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
-    await resolveOutcome(["proposal-a", "proposal-b"], [], makeStageConfig("synthesis", "sonnet"), DEFAULT_DEBATE_CONFIG, makeCallCtx(), "US-352", 30_000, undefined, undefined, undefined, undefined, undefined, undefined, undefined as unknown as import("@/agents").IAgentManager);
+    await resolveOutcome(
+      ["proposal-a", "proposal-b"],
+      [],
+      makeStageConfig("synthesis", "sonnet"),
+      DEFAULT_DEBATE_CONFIG,
+      makeCallCtx(),
+      "US-352",
+      30_000,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined as unknown as import("@/agents").IAgentManager,
+    );
 
     expect(captured.length).toBeGreaterThan(0);
     expect(captured[0]?.opts?.modelDef?.model).toBeDefined();
@@ -123,7 +165,22 @@ describe("resolveOutcome() custom/judge — resolver.model → modelDef (#352)",
     const captured: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
-    await resolveOutcome(["proposal-a"], [], makeStageConfig("custom", "powerful"), DEFAULT_DEBATE_CONFIG, makeCallCtx(), "US-352", 30_000, undefined, undefined, undefined, undefined, undefined, undefined, undefined as unknown as import("@/agents").IAgentManager);
+    await resolveOutcome(
+      ["proposal-a"],
+      [],
+      makeStageConfig("custom", "powerful"),
+      DEFAULT_DEBATE_CONFIG,
+      makeCallCtx(),
+      "US-352",
+      30_000,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined as unknown as import("@/agents").IAgentManager,
+    );
 
     expect(captured.length).toBeGreaterThan(0);
     expect(captured[0]?.opts?.modelDef?.model).toBeDefined();
@@ -134,7 +191,22 @@ describe("resolveOutcome() custom/judge — resolver.model → modelDef (#352)",
     const captured: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.agentManager = makeCaptureManager(captured);
 
-    await resolveOutcome(["proposal-a"], [], makeStageConfig("custom"), DEFAULT_DEBATE_CONFIG, makeCallCtx(), "US-352", 30_000, undefined, undefined, undefined, undefined, undefined, undefined, undefined as unknown as import("@/agents").IAgentManager);
+    await resolveOutcome(
+      ["proposal-a"],
+      [],
+      makeStageConfig("custom"),
+      DEFAULT_DEBATE_CONFIG,
+      makeCallCtx(),
+      "US-352",
+      30_000,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined as unknown as import("@/agents").IAgentManager,
+    );
 
     expect(captured.length).toBeGreaterThan(0);
     expect(captured[0]?.opts?.modelDef?.model).toBeDefined();

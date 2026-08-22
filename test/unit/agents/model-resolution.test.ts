@@ -49,7 +49,12 @@ describe("resolveBalancedModelDef()", () => {
   test("falls back to adapterDefault when config has no balanced model", () => {
     const adapterDefault: ModelDef = { provider: "anthropic", model: "fallback-model", env: {} };
 
-    const result = resolveBalancedModelDef({ agent: { default: "claude" }, models: { claude: {} } } as unknown as Parameters<typeof resolveBalancedModelDef>[0], adapterDefault);
+    const result = resolveBalancedModelDef(
+      { agent: { default: "claude" }, models: { claude: {} } } as unknown as Parameters<
+        typeof resolveBalancedModelDef
+      >[0],
+      adapterDefault,
+    );
 
     expect(result.model).toBe("fallback-model");
   });
@@ -63,9 +68,9 @@ describe("resolveBalancedModelDef()", () => {
   });
 
   test("throws when neither config.models.balanced nor adapterDefault is provided", () => {
-    expect(() =>
-      resolveBalancedModelDef({} as Parameters<typeof resolveBalancedModelDef>[0]),
-    ).toThrow(/no balanced model configured/i);
+    expect(() => resolveBalancedModelDef({} as Parameters<typeof resolveBalancedModelDef>[0])).toThrow(
+      /no balanced model configured/i,
+    );
   });
 
   test("throws when config has no balanced tier and adapterDefault is undefined", () => {

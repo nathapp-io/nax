@@ -111,7 +111,14 @@ describe("formatContextInspect", () => {
   test("shows failed provider status", () => {
     const entry = makeEntry("verify", {
       providerResults: [
-        { providerId: "git-history", status: "failed", chunkCount: 0, durationMs: 5, tokensProduced: 0, error: "timeout exceeded" },
+        {
+          providerId: "git-history",
+          status: "failed",
+          chunkCount: 0,
+          durationMs: 5,
+          tokensProduced: 0,
+          error: "timeout exceeded",
+        },
       ],
     });
     const output = lines(formatContextInspect("US-001", [entry]));
@@ -171,7 +178,7 @@ describe("formatContextInspect", () => {
       floorOverageItems: ["static:chunk-1"],
     });
     const output = lines(formatContextInspect("US-001", [entry]));
-    expect(output.join("\n")).toContain("overage");  // shown in floor line
+    expect(output.join("\n")).toContain("overage"); // shown in floor line
   });
 
   test("shows digestTokens", () => {
@@ -182,7 +189,14 @@ describe("formatContextInspect", () => {
   test("shows provider error message when present", () => {
     const entry = makeEntry("verify", {
       providerResults: [
-        { providerId: "git-history", status: "failed", chunkCount: 0, durationMs: 5, tokensProduced: 0, error: "ENOENT: file not found" },
+        {
+          providerId: "git-history",
+          status: "failed",
+          chunkCount: 0,
+          durationMs: 5,
+          tokensProduced: 0,
+          error: "ENOENT: file not found",
+        },
       ],
     });
     const output = lines(formatContextInspect("US-001", [entry]));

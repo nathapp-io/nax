@@ -183,14 +183,11 @@ describe("AC-9 — parallel-executor.ts deleted", () => {
   });
 
   test("no file in src/ imports from parallel-executor", async () => {
-    const proc = Bun.spawn(
-      ["grep", "-r", "parallel-executor", "--include=*.ts", "-l", join(SRC)],
-      { stdout: "pipe", stderr: "pipe" },
-    );
-    const [_exitCode, stdout] = await Promise.all([
-      proc.exited,
-      new Response(proc.stdout).text(),
-    ]);
+    const proc = Bun.spawn(["grep", "-r", "parallel-executor", "--include=*.ts", "-l", join(SRC)], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [_exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
     const matchingFiles = stdout.trim().split("\n").filter(Boolean);
     expect(matchingFiles).toHaveLength(0);
   });
@@ -207,14 +204,11 @@ describe("AC-10 — lifecycle/parallel-lifecycle.ts deleted", () => {
   });
 
   test("no file in src/ imports from parallel-lifecycle", async () => {
-    const proc = Bun.spawn(
-      ["grep", "-r", "parallel-lifecycle", "--include=*.ts", "-l", join(SRC)],
-      { stdout: "pipe", stderr: "pipe" },
-    );
-    const [_exitCode, stdout] = await Promise.all([
-      proc.exited,
-      new Response(proc.stdout).text(),
-    ]);
+    const proc = Bun.spawn(["grep", "-r", "parallel-lifecycle", "--include=*.ts", "-l", join(SRC)], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [_exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
     const matchingFiles = stdout.trim().split("\n").filter(Boolean);
     expect(matchingFiles).toHaveLength(0);
   });

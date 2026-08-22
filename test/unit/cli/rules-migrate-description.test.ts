@@ -59,9 +59,7 @@ afterEach(() => {
 
 describe("rulesMigrateCommand + loadCanonicalRules — US-001 AC9 description round-trips through migrate", () => {
   test("[AC9] loadCanonicalRules does not throw and the loaded rule's description equals the original legacy value", async () => {
-    const { _canonicalLoaderDeps, loadCanonicalRules } = await import(
-      "../../../src/context/rules/canonical-loader"
-    );
+    const { _canonicalLoaderDeps, loadCanonicalRules } = await import("@/context/rules/canonical-loader");
     const legacyPath = "/repo/.claude/rules/ctrl-rule.md";
     const targetPath = "/repo/.nax/rules/ctrl-rule.md";
     _rulesCLIDeps.globInDir = () => [legacyPath];

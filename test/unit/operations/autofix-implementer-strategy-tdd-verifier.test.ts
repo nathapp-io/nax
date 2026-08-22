@@ -50,7 +50,9 @@ describe("AC4: IMPLEMENTER_SOURCES includes tdd-verifier", () => {
     const matches = content
       .split("\n")
       .filter((line) =>
-        /^const IMPLEMENTER_SOURCES = new Set\(\["lint", "typecheck", "semantic-review", "tdd-verifier"\]\);$/.test(line),
+        /^const IMPLEMENTER_SOURCES = new Set\(\["lint", "typecheck", "semantic-review", "tdd-verifier"\]\);$/.test(
+          line,
+        ),
       );
     expect(matches.length).toBe(1);
   });

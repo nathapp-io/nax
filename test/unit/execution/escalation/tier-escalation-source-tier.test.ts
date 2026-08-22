@@ -17,7 +17,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleTierEscalation, preIterationTierCheck, _tierEscalationDeps } from "@/execution/escalation";
+import { _tierEscalationDeps, handleTierEscalation, preIterationTierCheck } from "@/execution/escalation";
 import { collectObservations } from "@/plugins/builtin/curator";
 import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
 import { makeInProgressStory, makeLogger } from "@test/helpers";
@@ -118,8 +118,7 @@ function installDeps(opts: {
 }): void {
   const deps = _tierEscalationDeps;
   deps.savePRD = opts.savePRD ?? (() => Promise.resolve());
-  deps.getSafeLogger =
-    opts.getSafeLogger ?? (deps.getSafeLogger as TierEscalationDeps["getSafeLogger"]);
+  deps.getSafeLogger = opts.getSafeLogger ?? (deps.getSafeLogger as TierEscalationDeps["getSafeLogger"]);
 }
 
 // ---------------------------------------------------------------------------
@@ -164,9 +163,7 @@ describe("US-001: handleTierEscalation routes logger through _tierEscalationDeps
     expect(depCallCount).toBeGreaterThan(0);
 
     // The captured logger received the escalation log line.
-    const escalationLogs = mockLogger.calls.filter(
-      (c) => c.stage === "escalation" && c.message.includes("Escalating"),
-    );
+    const escalationLogs = mockLogger.calls.filter((c) => c.stage === "escalation" && c.message.includes("Escalating"));
     expect(escalationLogs.length).toBeGreaterThan(0);
   });
 });
@@ -206,15 +203,11 @@ describe("US-001: handleTierEscalation logs fromTier and nextTier (AC-2, AC-3)",
     expect(result.outcome).toBe("escalated");
 
     // The escalation warn emitted by handleTierEscalation carries the fromTier and nextTier fields.
-    const escalationLogs = mockLogger.calls.filter(
-      (c) => c.stage === "escalation" && c.message.includes("Escalating"),
-    );
+    const escalationLogs = mockLogger.calls.filter((c) => c.stage === "escalation" && c.message.includes("Escalating"));
     expect(escalationLogs.length).toBeGreaterThan(0);
 
     // At least one of those calls must record the fast → balanced jump.
-    const fastToBalanced = escalationLogs.find(
-      (c) => c.data?.fromTier === "fast" && c.data?.nextTier === "balanced",
-    );
+    const fastToBalanced = escalationLogs.find((c) => c.data?.fromTier === "fast" && c.data?.nextTier === "balanced");
     expect(fastToBalanced).toBeDefined();
   });
 });

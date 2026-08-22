@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { ContextOrchestrator, DIGEST_RESERVE_TOKENS, FIXED_RENDER_OVERHEAD_TOKENS, _orchestratorDeps } from "@/context";
 import type { ContextProviderResult, ContextRequest, IContextProvider } from "@/context/engine/types";
-import { makeLogger, type MockLogger } from "@test/helpers";
+import { type MockLogger, makeLogger } from "@test/helpers";
 
 const BASE_REQUEST: ContextRequest = {
   storyId: "US-001",
@@ -77,8 +77,24 @@ describe("ContextOrchestrator.assemble() — US-003 floor overage warn log (AC-4
     const orch = new ContextOrchestrator([
       makeProvider("test-provider", {
         chunks: [
-          { id: "feat:big", kind: "feature", scope: "feature", role: ["implementer"], content: "x".repeat(36_000), tokens: 9_000, rawScore: 1.0 },
-          { id: "sess:1", kind: "session", scope: "feature", role: ["implementer"], content: "y".repeat(800), tokens: 200, rawScore: 0.9 },
+          {
+            id: "feat:big",
+            kind: "feature",
+            scope: "feature",
+            role: ["implementer"],
+            content: "x".repeat(36_000),
+            tokens: 9_000,
+            rawScore: 1.0,
+          },
+          {
+            id: "sess:1",
+            kind: "session",
+            scope: "feature",
+            role: ["implementer"],
+            content: "y".repeat(800),
+            tokens: 200,
+            rawScore: 0.9,
+          },
         ],
         pullTools: [],
       }),
@@ -131,7 +147,15 @@ describe("ContextOrchestrator.assemble() — US-003 floor overage warn log (AC-4
     const orch = new ContextOrchestrator([
       makeProvider("test-provider", {
         chunks: [
-          { id: "feat:1", kind: "feature", scope: "feature", role: ["implementer"], content: "x".repeat(1200), tokens: 300, rawScore: 1.0 },
+          {
+            id: "feat:1",
+            kind: "feature",
+            scope: "feature",
+            role: ["implementer"],
+            content: "x".repeat(1200),
+            tokens: 300,
+            rawScore: 1.0,
+          },
         ],
         pullTools: [],
       }),

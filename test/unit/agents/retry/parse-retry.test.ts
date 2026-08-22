@@ -26,7 +26,10 @@ describe("makeParseRetryStrategy", () => {
   describe("AC-1: non-ParseValidationError falls through", () => {
     test.each([
       ["plain Error", plainError],
-      ["AdapterFailure-shaped error", Object.assign(new Error("adapter"), { kind: "adapter-failure", retriable: false })],
+      [
+        "AdapterFailure-shaped error",
+        Object.assign(new Error("adapter"), { kind: "adapter-failure", retriable: false }),
+      ],
     ])("returns { retry: false } for %s", (_label, err) => {
       const strategy = makeParseRetryStrategy({
         validate: () => false,
@@ -98,7 +101,9 @@ describe("makeParseRetryStrategy", () => {
       const strategy = makeParseRetryStrategy({
         validate: () => false,
         reviewerKind: "test",
-        parse: () => { throw new Error("parse error"); },
+        parse: () => {
+          throw new Error("parse error");
+        },
         looksTruncated: () => false,
         prompts: { invalid: () => "invalid-prompt", truncated: () => "truncated-prompt" },
       });
@@ -166,7 +171,10 @@ describe("makeParseRetryStrategy", () => {
     test("parses valid JSON and calls validate with it", () => {
       let capturedParsed: unknown;
       const strategy = makeParseRetryStrategy({
-        validate: (v: unknown) => { capturedParsed = v; return true; },
+        validate: (v: unknown) => {
+          capturedParsed = v;
+          return true;
+        },
         reviewerKind: "test",
         prompts: { invalid: () => "invalid", truncated: () => "truncated" },
         // parse omitted — should default to tryParseLLMJson

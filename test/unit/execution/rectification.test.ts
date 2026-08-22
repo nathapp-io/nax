@@ -5,10 +5,10 @@
 
 import { describe, expect, test } from "bun:test";
 import type { RectificationConfig } from "@/config";
-import { RectifierPromptBuilder } from "@/prompts";
-import { type RectificationState, shouldRetryRectification } from "@/verification/rectification";
-import type { TestFailure } from "@/test-runners";
 import type { UserStory } from "@/prd";
+import { RectifierPromptBuilder } from "@/prompts";
+import type { TestFailure } from "@/test-runners";
+import { type RectificationState, shouldRetryRectification } from "@/verification/rectification";
 
 describe("shouldRetryRectification", () => {
   const baseConfig: RectificationConfig = {
@@ -24,10 +24,26 @@ describe("shouldRetryRectification", () => {
 
   test("returns true when attempt < maxRetries and failures exist, decreased, stable, or increased with abort=false", () => {
     const trueScenarios: Array<{ state: RectificationState; config: RectificationConfig; label: string }> = [
-      { state: { attempt: 0, initialFailures: 5, currentFailures: 3 }, config: baseConfig, label: "attempt 0, failures decreasing" },
-      { state: { attempt: 1, initialFailures: 5, currentFailures: 2 }, config: baseConfig, label: "attempt 1, progress" },
-      { state: { attempt: 1, initialFailures: 5, currentFailures: 5 }, config: baseConfig, label: "attempt 1, failures same" },
-      { state: { attempt: 1, initialFailures: 3, currentFailures: 5 }, config: { ...baseConfig, abortOnIncreasingFailures: false }, label: "increased but abort=false" },
+      {
+        state: { attempt: 0, initialFailures: 5, currentFailures: 3 },
+        config: baseConfig,
+        label: "attempt 0, failures decreasing",
+      },
+      {
+        state: { attempt: 1, initialFailures: 5, currentFailures: 2 },
+        config: baseConfig,
+        label: "attempt 1, progress",
+      },
+      {
+        state: { attempt: 1, initialFailures: 5, currentFailures: 5 },
+        config: baseConfig,
+        label: "attempt 1, failures same",
+      },
+      {
+        state: { attempt: 1, initialFailures: 3, currentFailures: 5 },
+        config: { ...baseConfig, abortOnIncreasingFailures: false },
+        label: "increased but abort=false",
+      },
     ];
     for (const { state, config, label } of trueScenarios) {
       expect(shouldRetryRectification(state, config), label).toBe(true);
@@ -36,18 +52,37 @@ describe("shouldRetryRectification", () => {
 
   test("returns false when attempt >= maxRetries, no failures, increasing failures with abort=true, or maxRetries=0", () => {
     const falseScenarios: Array<{ state: RectificationState; config: RectificationConfig; label: string }> = [
-      { state: { attempt: 2, initialFailures: 5, currentFailures: 3 }, config: baseConfig, label: "attempt >= maxRetries" },
-      { state: { attempt: 0, initialFailures: 5, currentFailures: 0 }, config: baseConfig, label: "currentFailures = 0" },
-      { state: { attempt: 1, initialFailures: 3, currentFailures: 5 }, config: baseConfig, label: "failures increased with abort=true" },
-      { state: { attempt: 2, initialFailures: 5, currentFailures: 1 }, config: baseConfig, label: "at maxRetries even if failures exist" },
-      { state: { attempt: 0, initialFailures: 5, currentFailures: 5 }, config: { ...baseConfig, maxAttemptsTotal: 0 }, label: "maxAttemptsTotal=0" },
+      {
+        state: { attempt: 2, initialFailures: 5, currentFailures: 3 },
+        config: baseConfig,
+        label: "attempt >= maxRetries",
+      },
+      {
+        state: { attempt: 0, initialFailures: 5, currentFailures: 0 },
+        config: baseConfig,
+        label: "currentFailures = 0",
+      },
+      {
+        state: { attempt: 1, initialFailures: 3, currentFailures: 5 },
+        config: baseConfig,
+        label: "failures increased with abort=true",
+      },
+      {
+        state: { attempt: 2, initialFailures: 5, currentFailures: 1 },
+        config: baseConfig,
+        label: "at maxRetries even if failures exist",
+      },
+      {
+        state: { attempt: 0, initialFailures: 5, currentFailures: 5 },
+        config: { ...baseConfig, maxAttemptsTotal: 0 },
+        label: "maxAttemptsTotal=0",
+      },
     ];
     for (const { state, config, label } of falseScenarios) {
       expect(shouldRetryRectification(state, config), label).toBe(false);
     }
   });
 });
-
 
 describe("createEscalatedRectificationPrompt", () => {
   const mockStory: UserStory = {
@@ -167,19 +202,49 @@ describe("createEscalatedRectificationPrompt", () => {
     const prompt = RectifierPromptBuilder.escalated(manyFailures, mockStory, 1, "balanced", "powerful", smallConfig);
     expect(prompt).toMatch(/truncated/i);
 
-    const promptInstr = RectifierPromptBuilder.escalated(mockFailures, mockStory, 1, "balanced", "powerful", baseConfig);
+    const promptInstr = RectifierPromptBuilder.escalated(
+      mockFailures,
+      mockStory,
+      1,
+      "balanced",
+      "powerful",
+      baseConfig,
+    );
     expect(promptInstr.toLowerCase()).toMatch(/fix|implement|correct/);
   });
 
   test("uses configured testCommand in NEVER run filter; neutral instruction when no testCommand provided", () => {
-    const promptWithCmd = RectifierPromptBuilder.escalated(mockFailures, mockStory, 1, "balanced", "powerful", baseConfig, "jest");
+    const promptWithCmd = RectifierPromptBuilder.escalated(
+      mockFailures,
+      mockStory,
+      1,
+      "balanced",
+      "powerful",
+      baseConfig,
+      "jest",
+    );
     expect(promptWithCmd).toContain("NEVER run `jest` without a file filter");
     expect(promptWithCmd).not.toContain("NEVER run `bun test`");
 
-    const promptGoCmd = RectifierPromptBuilder.escalated(mockFailures, mockStory, 1, "balanced", "powerful", baseConfig, "go test");
+    const promptGoCmd = RectifierPromptBuilder.escalated(
+      mockFailures,
+      mockStory,
+      1,
+      "balanced",
+      "powerful",
+      baseConfig,
+      "go test",
+    );
     expect(promptGoCmd).toContain("NEVER run `go test` without a file filter");
 
-    const promptNoCmd = RectifierPromptBuilder.escalated(mockFailures, mockStory, 1, "balanced", "powerful", baseConfig);
+    const promptNoCmd = RectifierPromptBuilder.escalated(
+      mockFailures,
+      mockStory,
+      1,
+      "balanced",
+      "powerful",
+      baseConfig,
+    );
     expect(promptNoCmd).toContain("never run the full test suite without a file filter");
     expect(promptNoCmd).not.toContain("bun test");
   });

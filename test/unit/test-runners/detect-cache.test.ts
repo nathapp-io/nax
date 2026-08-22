@@ -55,12 +55,14 @@ beforeEach(() => {
     dirExists: _directoryScanDeps.dirExists,
     dirSpawn: _directoryScanDeps.spawn,
   };
-  _cacheDeps.readJson = mock(async () => { throw new Error("not found"); });
+  _cacheDeps.readJson = mock(async () => {
+    throw new Error("not found");
+  });
   _cacheDeps.writeJson = mock(async () => {});
   _cacheDeps.fileMtime = mock(async () => null);
   _directoryScanDeps.dirExists = mock(async () => false);
-  _directoryScanDeps.spawn = mock((..._args: unknown[]) =>
-    ({ exited: Promise.resolve(1), stdout: null } as unknown as ReturnType<typeof Bun.spawn>),
+  _directoryScanDeps.spawn = mock(
+    (..._args: unknown[]) => ({ exited: Promise.resolve(1), stdout: null }) as unknown as ReturnType<typeof Bun.spawn>,
   ) as unknown as typeof Bun.spawn;
   _frameworkDefaultsDeps.fileExists = mock(async () => false);
 });
@@ -84,9 +86,7 @@ describe("cache", () => {
     const cached: DetectionResult = {
       patterns: ["**/*.cached.ts"],
       confidence: "high",
-      sources: [
-        { type: "framework-config", path: "/fake/workdir/vitest.config.ts", patterns: ["**/*.cached.ts"] },
-      ],
+      sources: [{ type: "framework-config", path: "/fake/workdir/vitest.config.ts", patterns: ["**/*.cached.ts"] }],
     };
 
     _cacheDeps.readJson = mock(async () => ({
@@ -106,7 +106,9 @@ describe("cache", () => {
   });
 
   test("writes result to cache after detection", async () => {
-    _cacheDeps.readJson = mock(async () => { throw new Error("miss"); });
+    _cacheDeps.readJson = mock(async () => {
+      throw new Error("miss");
+    });
     _cacheDeps.fileMtime = mock(async () => null);
 
     const written: Array<[string, unknown]> = [];
@@ -129,7 +131,9 @@ describe("cache", () => {
   });
 
   test("treats corrupt cache as miss, rebuilds without throwing", async () => {
-    _cacheDeps.readJson = mock(async () => { throw new SyntaxError("bad json"); });
+    _cacheDeps.readJson = mock(async () => {
+      throw new SyntaxError("bad json");
+    });
     _cacheDeps.fileMtime = mock(async () => null);
     _cacheDeps.writeJson = mock(async () => {});
 

@@ -7,10 +7,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { AgentAdapter, IAgentManager } from "@/agents";
 import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
-import type { AgentAdapter, IAgentManager } from "@/agents";
 import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
@@ -54,7 +54,10 @@ function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
       estimatedCostUsd: cost,
       internalRoundTrips: 0,
     }),
-    completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] }),
+    completeWithFallbackFn: async () => ({
+      result: { output: llmResponse, costUsd: cost, source: "mock" },
+      fallbacks: [],
+    }),
     completeAsFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
     getAgentFn: () => makeAgentAdapter(),
   });
@@ -241,12 +244,12 @@ const ALL_LOCUS_MISMATCH_RESPONSE = JSON.stringify({
     {
       severity: "error",
       category: "error-path",
-      file: "src/process-handler.ts",   // locus keywords: process, handler
+      file: "src/process-handler.ts", // locus keywords: process, handler
       line: 10,
-      issue: "Process exit not triggered on failure",  // extra keywords: exit
+      issue: "Process exit not triggered on failure", // extra keywords: exit
       suggestion: "Call process.exit(1)",
-      acQuote: "Users can",             // IS a substring of "Users can log in"
-      acIndex: 1,                       // valid index
+      acQuote: "Users can", // IS a substring of "Users can log in"
+      acIndex: 1, // valid index
       // "users can" contains none of: process, handler, exit → ac_quote_does_not_constrain_locus
       verifiedBy: { file: "src/log.ts", observed: "login handler stub" },
     },
@@ -651,7 +654,7 @@ describe("runAdversarialReview — fail-open when modelResolver returns null", (
 
   afterEach(restoreAllDeps);
 
-test("returns success=true when modelResolver returns null", async () => {
+  test("returns success=true when modelResolver returns null", async () => {
     const result = await runAdversarialReview({
       workdir: "/tmp/wd",
       storyGitRef: "abc123",

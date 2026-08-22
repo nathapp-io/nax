@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { mapSourceToTests, _bunDeps } from "@/verification/smart-runner";
+import { _bunDeps, mapSourceToTests } from "@/verification/smart-runner";
 
 describe("mapSourceToTests", () => {
   test("runs candidate existence checks concurrently", async () => {
-    let active = 0, maxActive = 0;
+    let active = 0,
+      maxActive = 0;
     const origFile = _bunDeps.file;
     _bunDeps.file = ((p: string) => ({
       async exists() {
@@ -13,7 +14,9 @@ describe("mapSourceToTests", () => {
         active--;
         return p.includes("foo");
       },
-      async text() { return ""; },
+      async text() {
+        return "";
+      },
     })) as any;
     try {
       await mapSourceToTests(["src/foo.ts", "src/bar.ts", "src/baz.ts"], "/repo");

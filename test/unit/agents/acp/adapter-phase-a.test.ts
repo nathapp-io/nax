@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { AcpAgentAdapter, AcpSessionHandleImpl, _acpAdapterDeps } from "@/agents/acp/adapter";
-import { NO_OP_INTERACTION_HANDLER } from "@/agents/interaction-handler";
 import { SessionTurnError } from "@/agents";
+import { AcpAgentAdapter, type AcpSessionHandleImpl, _acpAdapterDeps } from "@/agents/acp/adapter";
+import { NO_OP_INTERACTION_HANDLER } from "@/agents/interaction-handler";
 import type { OpenSessionOpts } from "@/agents/types";
 import { makeClient, makeSession } from "./adapter.test";
 
@@ -447,9 +447,9 @@ describe("sendTurn()", () => {
     });
     const handle = await openHandle(session);
 
-    await expect(
-      adapter.sendTurn(handle, "prompt", { interactionHandler: NO_OP_INTERACTION_HANDLER }),
-    ).rejects.toThrow("stop reason: error");
+    await expect(adapter.sendTurn(handle, "prompt", { interactionHandler: NO_OP_INTERACTION_HANDLER })).rejects.toThrow(
+      "stop reason: error",
+    );
   });
 
   test("accumulates token usage across multiple turns", async () => {
@@ -695,8 +695,17 @@ describe("closeSession(handle)", () => {
     // Scenario 1: both close calls execute
     const closedSessions: string[] = [];
     const closedClients: string[] = [];
-    const session1 = makeSession({ closeFn: async () => { closedSessions.push("session"); } });
-    const client1 = { ...makeClient(session1), close: async () => { closedClients.push("client"); } };
+    const session1 = makeSession({
+      closeFn: async () => {
+        closedSessions.push("session");
+      },
+    });
+    const client1 = {
+      ...makeClient(session1),
+      close: async () => {
+        closedClients.push("client");
+      },
+    };
     _acpAdapterDeps.createClient = mock(() => client1 as any);
     const handle1 = await adapter.openSession("nax-close-test", makeOpenSessionOpts());
     await adapter.closeSession(handle1);
@@ -705,15 +714,29 @@ describe("closeSession(handle)", () => {
 
     // Scenario 2: client.close() throws → resolves anyway (best-effort)
     const session2 = makeSession();
-    const client2 = { ...makeClient(session2), close: async () => { throw new Error("client close failed"); } };
+    const client2 = {
+      ...makeClient(session2),
+      close: async () => {
+        throw new Error("client close failed");
+      },
+    };
     _acpAdapterDeps.createClient = mock(() => client2 as any);
     const handle2 = await adapter.openSession("nax-close-err", makeOpenSessionOpts());
     await expect(adapter.closeSession(handle2)).resolves.toBeUndefined();
 
     // Scenario 3: session.close() throws → client.close() still runs
     const closedClients3: string[] = [];
-    const session3 = makeSession({ closeFn: async () => { throw new Error("session close failed"); } });
-    const client3 = { ...makeClient(session3), close: async () => { closedClients3.push("client"); } };
+    const session3 = makeSession({
+      closeFn: async () => {
+        throw new Error("session close failed");
+      },
+    });
+    const client3 = {
+      ...makeClient(session3),
+      close: async () => {
+        closedClients3.push("client");
+      },
+    };
     _acpAdapterDeps.createClient = mock(() => client3 as any);
     const handle3 = await adapter.openSession("nax-close-session-err", makeOpenSessionOpts());
     await expect(adapter.closeSession(handle3)).resolves.toBeUndefined();

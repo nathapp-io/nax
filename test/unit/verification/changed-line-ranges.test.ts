@@ -8,9 +8,9 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import * as path from "node:path";
-import { withDepsRestore } from "@test/helpers";
-import { _changedLineRangesDeps, getChangedLineRanges } from "@/verification/changed-line-ranges";
 import { _gitDeps } from "@/utils/git";
+import { _changedLineRangesDeps, getChangedLineRanges } from "@/verification/changed-line-ranges";
+import { withDepsRestore } from "@test/helpers";
 
 describe("getChangedLineRanges", () => {
   withDepsRestore(_gitDeps, ["spawn"]);
@@ -69,7 +69,7 @@ describe("getChangedLineRanges", () => {
   // AC2 — explicit baseRef flows into git args in expected order
   // ---------------------------------------------------------------------------
 
-  test("AC2: passes [\"diff\", \"--unified=0\", baseRef] in order to git runner", async () => {
+  test('AC2: passes ["diff", "--unified=0", baseRef] in order to git runner', async () => {
     let capturedArgs: string[] = [];
     // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock((args: string[], _opts: unknown) => {

@@ -392,8 +392,12 @@ describe("AC5: describeGateRegression ignores flaky-test diffs", () => {
       ],
     };
     expect(
-      describeGateRegression({ gateOutput: finalGateOutput, baselineKeys: baseline, gateName: GATE_NAME, storyId: "US-003" })
-        .regressed,
+      describeGateRegression({
+        gateOutput: finalGateOutput,
+        baselineKeys: baseline,
+        gateName: GATE_NAME,
+        storyId: "US-003",
+      }).regressed,
     ).toBe(false);
   });
 
@@ -409,8 +413,12 @@ describe("AC5: describeGateRegression ignores flaky-test diffs", () => {
       ],
     };
     expect(
-      describeGateRegression({ gateOutput: finalGateOutput, baselineKeys: baseline, gateName: GATE_NAME, storyId: "US-003" })
-        .regressed,
+      describeGateRegression({
+        gateOutput: finalGateOutput,
+        baselineKeys: baseline,
+        gateName: GATE_NAME,
+        storyId: "US-003",
+      }).regressed,
     ).toBe(true);
   });
 });
@@ -524,9 +532,7 @@ describe("F3: triage seam is awaited and its throw is caught", () => {
     expect(triageStub.mock.calls.length).toBeGreaterThanOrEqual(1);
     expect(capturedCycle).not.toBeNull();
     const cycleFindings = (capturedCycle as unknown as FixCycle<Finding>).findings;
-    expect(cycleFindings.some((f) => f.file === "test/unit/foo.test.ts" && f.category === "failed-test")).toBe(
-      true,
-    );
+    expect(cycleFindings.some((f) => f.file === "test/unit/foo.test.ts" && f.category === "failed-test")).toBe(true);
     // Story completes (does not crash on the seam throw) — success is false
     // because the un-triaged failed-test finding remains blocking, not because
     // of an unhandled error.
@@ -573,9 +579,7 @@ describe("F5: triage visibility — skipped path is surfaced", () => {
     await plan.run();
 
     const triageErrorWarns = warnSpy.mock.calls.filter(
-      (c) =>
-        String(c[0]) === "story-orchestrator" &&
-        String(c[1]).includes("Flake triage threw"),
+      (c) => String(c[0]) === "story-orchestrator" && String(c[1]).includes("Flake triage threw"),
     );
     expect(triageErrorWarns.length).toBeGreaterThanOrEqual(1);
     const data = triageErrorWarns[0]?.[2] as { storyId?: string; gateName?: string; error?: string } | undefined;
@@ -736,9 +740,7 @@ describe("runRectification — seeded findings do not invoke initial gate triage
     const { ctx } = makeCtx();
     const phaseOutputs: Record<string, unknown> = failingGateOutput();
     await runRectification(ctx, makeRectifyState(), {}, phaseOutputs, {
-      initialFindings: [
-        { source: "adversarial-review", severity: "warning", category: "style", message: "advisory" },
-      ],
+      initialFindings: [{ source: "adversarial-review", severity: "warning", category: "style", message: "advisory" }],
     });
     expect(triageCalls).toBe(0);
   });

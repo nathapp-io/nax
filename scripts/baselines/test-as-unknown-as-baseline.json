@@ -1,6 +1,6 @@
 {
-  "count": 820,
-  "updatedAt": "2026-08-22T13:15:08.141Z",
+  "count": 819,
+  "updatedAt": "2026-08-22T13:20:47.937Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": 1,
     "test/helpers/review-audit.ts": 1,
@@ -34,7 +34,7 @@
     "test/unit/interaction/human-review-trigger.test.ts": 1,
     "test/unit/interaction/triggers-narrowed.test.ts": 2,
     "test/unit/interaction/telegram-timeout.test.ts": 1,
-    "test/unit/interaction/interaction-network-failures.test.ts": 15,
+    "test/unit/interaction/interaction-network-failures.test.ts": 16,
     "test/unit/interaction/plugins/telegram.test.ts": 1,
     "test/unit/tdd/capture-snapshot-ref.test.ts": 2,
     "test/unit/tdd/rollback.test.ts": 1,
@@ -94,7 +94,7 @@
     "test/unit/execution/iteration-runner-worktree.test.ts": 2,
     "test/unit/execution/story-orchestrator-flake-integration.test.ts": 5,
     "test/unit/execution/unified-executor-abort.test.ts": 1,
-    "test/unit/execution/pid-registry.test.ts": 10,
+    "test/unit/execution/pid-registry.test.ts": 8,
     "test/unit/execution/crash-signals-idempotency.test.ts": 2,
     "test/unit/execution/execution-stage.test.ts": 2,
     "test/unit/execution/rectification-oscillation-circuit-breaker.test.ts": 1,

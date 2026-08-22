@@ -7,9 +7,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "@/config/defaults";
-import type { PRD, UserStory } from "@/prd";
-import type { PipelineContext } from "@/pipeline/types";
 import type { _routingDeps as RoutingDeps } from "@/pipeline/stages/routing";
+import type { PipelineContext } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd";
 import { makeNaxConfig, makeStory } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-routing-test-${randomUUID()}`;
@@ -68,23 +68,19 @@ describe("routingStage - savePRD called exactly once per story (not per iteratio
   afterEach(() => {
     mock.restore();
     if (origRoutingDeps) {
-      const { _routingDeps } = require("../../../../src/pipeline/stages/routing");
+      const { _routingDeps } = require("@/pipeline/stages/routing");
       Object.assign(_routingDeps, origRoutingDeps);
     }
   });
 
   test("calling routingStage twice with routing already set only triggers savePRD once (first call)", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 
     let savePRDCallCount = 0;
 
-    _routingDeps.routeStory = mock(() =>
-      Promise.resolve({ ...FRESH_ROUTING_RESULT }),
-    );
+    _routingDeps.routeStory = mock(() => Promise.resolve({ ...FRESH_ROUTING_RESULT }));
     _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
     _routingDeps.savePRD = mock((_prd: PRD, _path: string) => {
       savePRDCallCount++;
@@ -111,9 +107,7 @@ describe("routingStage - savePRD called exactly once per story (not per iteratio
 
 describe("routingStage - _routingDeps exposes savePRD", () => {
   test("_routingDeps has a savePRD function", async () => {
-    const { _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { _routingDeps } = await import("@/pipeline/stages/routing");
     expect(typeof _routingDeps.savePRD).toBe("function");
   });
 });
@@ -128,27 +122,36 @@ describe("routingStage - unknown previousTier is not escalated", () => {
   afterEach(() => {
     mock.restore();
     if (origRoutingDeps) {
-      const { _routingDeps } = require("../../../../src/pipeline/stages/routing");
+      const { _routingDeps } = require("@/pipeline/stages/routing");
       Object.assign(_routingDeps, origRoutingDeps);
     }
   });
 
   test("uses derivedTier when previousTier is an unknown string", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 
     _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
     _routingDeps.savePRD = mock(() => Promise.resolve());
     _routingDeps.resolveRouting = mock(() =>
-      Promise.resolve({ modelTier: "fast" as const, complexity: "simple" as const, testStrategy: "test-after" as const, agent: "claude", reasoning: "test" }),
+      Promise.resolve({
+        modelTier: "fast" as const,
+        complexity: "simple" as const,
+        testStrategy: "test-after" as const,
+        agent: "claude",
+        reasoning: "test",
+      }),
     );
 
     // Story with a garbage tier persisted from a corrupted prd.json
     const story = makeStory({
-      routing: { modelTier: "ultra-mega" as any, complexity: "medium" as any, testStrategy: "test-after" as any, reasoning: "corrupted" },
+      routing: {
+        modelTier: "ultra-mega" as any,
+        complexity: "medium" as any,
+        testStrategy: "test-after" as any,
+        reasoning: "corrupted",
+      },
       status: "in-progress",
       passes: false,
       attempts: 0,

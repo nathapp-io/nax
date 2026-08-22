@@ -10,11 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import {
-  _manifestPurgeDeps,
-  MAX_MANIFEST_SCAN,
-  purgeStaleManifests,
-} from "@/context/engine";
+import { MAX_MANIFEST_SCAN, _manifestPurgeDeps, purgeStaleManifests } from "@/context/engine";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals
@@ -179,9 +175,7 @@ describe("purgeStaleManifests", () => {
   test("AC-9: leaves a manifest on disk when statMtime throws", async () => {
     const unlinked: string[] = [];
     setupDefaults([]);
-    _manifestPurgeDeps.scan = async () => [
-      ".nax/features/feat-a/stories/US-001/context-manifest-context.json",
-    ];
+    _manifestPurgeDeps.scan = async () => [".nax/features/feat-a/stories/US-001/context-manifest-context.json"];
     _manifestPurgeDeps.statMtime = async () => {
       throw new Error("EACCES");
     };
@@ -255,11 +249,7 @@ describe("purgeStaleManifests", () => {
     const debugLogs: Array<{ stage: string; message: string; data?: unknown }> = [];
     const seen: string[] = [];
     _manifestPurgeDeps.now = () => NOW_MS;
-    _manifestPurgeDeps.scan = async (
-      _pattern: string,
-      _cwd: string,
-      _cap: number,
-    ): Promise<string[]> => {
+    _manifestPurgeDeps.scan = async (_pattern: string, _cwd: string, _cap: number): Promise<string[]> => {
       const results: string[] = [];
       for (let i = 0; i < MAX_MANIFEST_SCAN + 10; i++) {
         const rel = `.nax/features/feat-a/stories/US-${String(i).padStart(3, "0")}/context-manifest-context.json`;

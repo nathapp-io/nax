@@ -1,10 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { _gitDeps } from "@/utils/git";
-import {
-  getChangedTestFiles,
-  _gitUtilDeps,
-  clearGitRootCache,
-} from "@/verification/smart-runner";
+import { _gitUtilDeps, clearGitRootCache, getChangedTestFiles } from "@/verification/smart-runner";
 
 function makeProc(stdout: string, exitCode: number) {
   return {

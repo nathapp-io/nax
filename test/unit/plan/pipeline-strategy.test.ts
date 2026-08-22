@@ -9,7 +9,7 @@ import { makeMockAgentManager } from "@test/helpers";
 function makeRuntime(closeImpl?: () => Promise<void>): NaxRuntime {
   return {
     runId: "run-1",
-    configLoader: { current: () => ({} as never) },
+    configLoader: { current: () => ({}) as never },
     packages: { resolve: () => ({}) },
     agentManager: makeMockAgentManager({ getDefaultAgent: "agent-pipeline" }),
     close: closeImpl ?? (async () => {}),
@@ -137,7 +137,9 @@ describe("PipelinePlanStrategy", () => {
       } as never,
       deps: {
         readFile: async () => "",
-        writeFile: async (_path: string, content: string) => { writtenContent = content; },
+        writeFile: async (_path: string, content: string) => {
+          writtenContent = content;
+        },
         mkdirp: async () => {},
         existsSync: () => false,
         readPackageJson: async () => null,
@@ -158,10 +160,18 @@ describe("PipelinePlanStrategy", () => {
         prd: {
           userStories: [
             {
-              id: "s1", title: "story 1", description: "", acceptanceCriteria: [],
-              status: "pending", passes: false, escalations: [], attempts: 0,
+              id: "s1",
+              title: "story 1",
+              description: "",
+              acceptanceCriteria: [],
+              status: "pending",
+              passes: false,
+              escalations: [],
+              attempts: 0,
               routing: {
-                complexity: "low", testStrategy: "test-after", reasoning: "",
+                complexity: "low",
+                testStrategy: "test-after",
+                reasoning: "",
                 agentProfileId: "senior",
               },
             },
@@ -174,10 +184,18 @@ describe("PipelinePlanStrategy", () => {
       prd: {
         userStories: [
           {
-            id: "s1", title: "story 1", description: "", acceptanceCriteria: [],
-            status: "pending", passes: false, escalations: [], attempts: 0,
+            id: "s1",
+            title: "story 1",
+            description: "",
+            acceptanceCriteria: [],
+            status: "pending",
+            passes: false,
+            escalations: [],
+            attempts: 0,
             routing: {
-              complexity: "low", testStrategy: "test-after", reasoning: "",
+              complexity: "low",
+              testStrategy: "test-after",
+              reasoning: "",
               agentProfileId: "senior",
             },
           },

@@ -32,7 +32,11 @@ describe("parseAudienceTags", () => {
   // role. A bracket group immediately followed by '(' is link text, not a tag.
   test.each([
     ["untagged headline ending in a markdown link defaults to [all]", "- **API docs** — [docs](url)", ["all"]],
-    ["a real tag earlier in the line is not shadowed by a trailing link", "- [implementer] — see [docs](url)", ["implementer"]],
+    [
+      "a real tag earlier in the line is not shadowed by a trailing link",
+      "- [implementer] — see [docs](url)",
+      ["implementer"],
+    ],
     ["multiple trailing links still fall back to [all]", "- See [one](url1) and [two](url2)", ["all"]],
   ])("BUG-57: %s", (_label, input, expected) => {
     expect(parseAudienceTags(input)).toEqual(expected);
@@ -64,33 +68,21 @@ describe("shouldIncludeEntry", () => {
     },
   );
 
-  test.each(["test-writer", "verifier", "reviewer-semantic"])(
-    "[implementer] excluded for %s",
-    (role) => {
-      expect(shouldIncludeEntry(["implementer"], role)).toBe(false);
-    },
-  );
+  test.each(["test-writer", "verifier", "reviewer-semantic"])("[implementer] excluded for %s", (role) => {
+    expect(shouldIncludeEntry(["implementer"], role)).toBe(false);
+  });
 
-  test.each(["test-writer", "single-session", "tdd-simple", "batch"])(
-    "[test-writer] included for %s",
-    (role) => {
-      expect(shouldIncludeEntry(["test-writer"], role)).toBe(true);
-    },
-  );
+  test.each(["test-writer", "single-session", "tdd-simple", "batch"])("[test-writer] included for %s", (role) => {
+    expect(shouldIncludeEntry(["test-writer"], role)).toBe(true);
+  });
 
-  test.each(["implementer", "verifier", "reviewer-semantic"])(
-    "[test-writer] excluded for %s",
-    (role) => {
-      expect(shouldIncludeEntry(["test-writer"], role)).toBe(false);
-    },
-  );
+  test.each(["implementer", "verifier", "reviewer-semantic"])("[test-writer] excluded for %s", (role) => {
+    expect(shouldIncludeEntry(["test-writer"], role)).toBe(false);
+  });
 
-  test.each(["reviewer-semantic", "reviewer-adversarial"])(
-    "[reviewer] included for %s",
-    (role) => {
-      expect(shouldIncludeEntry(["reviewer"], role)).toBe(true);
-    },
-  );
+  test.each(["reviewer-semantic", "reviewer-adversarial"])("[reviewer] included for %s", (role) => {
+    expect(shouldIncludeEntry(["reviewer"], role)).toBe(true);
+  });
 
   test("[reviewer-semantic] included for reviewer-semantic only", () => {
     expect(shouldIncludeEntry(["reviewer-semantic"], "reviewer-semantic")).toBe(true);

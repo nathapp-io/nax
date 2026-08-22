@@ -51,9 +51,7 @@ function makeStaticRegistry(agentName: string, outputSequence: string[]) {
   };
 }
 
-function makeMultiAgentRegistry(
-  agents: Record<string, { outputs: string[] }>,
-) {
+function makeMultiAgentRegistry(agents: Record<string, { outputs: string[] }>) {
   const mocks: Record<string, ReturnType<typeof mock>> = {};
   const callCounts: Record<string, number> = {};
 
@@ -181,7 +179,7 @@ describe("completeWithFallback retry success (AC6)", () => {
 
   test("AC6b: exhausted retries + fallback configured → swaps to fallback agent", async () => {
     const { registry, callCounts } = makeMultiAgentRegistry({
-      claude: { outputs: ["", "", "", ""] },  // 4 empties: initial + 3 retries
+      claude: { outputs: ["", "", "", ""] }, // 4 empties: initial + 3 retries
       codex: { outputs: ["from codex"] },
     });
     const m = new AgentManager(naxConfigWith(3), registry);
@@ -231,10 +229,11 @@ describe("completeWithFallback — BUG-4 missing adapter regression", () => {
     // Pre-fix this resolved to `{ output: "", tokenUsage: {0,0}, ...}` with
     // no adapterFailure — silently producing empty success on every
     // complete() path. Post-fix it throws instead.
-    const callCompleteAs = () => m.completeAs("unregistered-agent", "prompt", {
-      ...baseOptions,
-      resolvedPermissions: baseOptions.resolvedPermissions,
-    });
+    const callCompleteAs = () =>
+      m.completeAs("unregistered-agent", "prompt", {
+        ...baseOptions,
+        resolvedPermissions: baseOptions.resolvedPermissions,
+      });
 
     await expect(callCompleteAs()).rejects.toMatchObject({ code: "AGENT_NOT_FOUND" });
   });

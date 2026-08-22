@@ -49,9 +49,7 @@ describe("AC8: behavior-preservation — strategy composition scenarios", () => 
   test("AC8a: no agent strategies present when autofix is disabled", () => {
     const strategies = assembleStrategies({ lintFix: "bun run lint:fix", autofixEnabled: false });
 
-    const agentNames = strategies.filter(
-      (s) => s.name === "autofix-implementer" || s.name === "autofix-test-writer",
-    );
+    const agentNames = strategies.filter((s) => s.name === "autofix-implementer" || s.name === "autofix-test-writer");
     expect(agentNames).toHaveLength(0);
   });
 

@@ -21,20 +21,20 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Command } from "commander";
 import {
+  type ReplayCommandDeps,
   _replayCmdDeps,
   registerReplayCommand as registerReplayCommandFromCmd,
   runReplay,
-  type ReplayCommandDeps,
 } from "@/commands";
 import { NaxError } from "@/errors";
-import { registerReplayCommand } from "@/replay";
-import type { MetaJson } from "@/pipeline/subscribers/registry";
 import type { LogEntry } from "@/logger/types";
 import type { RunMetrics } from "@/metrics";
+import type { MetaJson } from "@/pipeline/subscribers/registry";
+import { registerReplayCommand } from "@/replay";
 import type { RunTimeline } from "@/replay";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { Command } from "commander";
 
 function writeRunDir(
   runsDir: string,
@@ -81,7 +81,11 @@ function buildTimeline(): RunTimeline {
   };
 }
 
-function buildDiscovered(runsDir: string, runId: string, feature: string): {
+function buildDiscovered(
+  runsDir: string,
+  runId: string,
+  feature: string,
+): {
   meta: MetaJson;
   jsonlPath: string;
 } {
@@ -107,9 +111,7 @@ function makeBaseDeps(
   overrides: Partial<ReplayCommandDeps> = {},
 ): ReplayCommandDeps {
   return {
-    discoverRun: mock(async (query?: string) =>
-      buildDiscovered(runsDir, query ?? "run-known", "feat-known"),
-    ),
+    discoverRun: mock(async (query?: string) => buildDiscovered(runsDir, query ?? "run-known", "feat-known")),
     readJsonl: mock(async () => []),
     readMetrics: mock(async () => undefined),
     readStatus: mock(async () => undefined),
@@ -326,12 +328,7 @@ describe("runReplay — AC9: malformed-line tolerance", () => {
       storyId: "US-002",
     })}\n`;
 
-    writeRunDir(
-      runsDir,
-      "demo-feat-mix-run-mix",
-      { runId: "run-mix", feature: "feat-mix" },
-      jsonl,
-    );
+    writeRunDir(runsDir, "demo-feat-mix-run-mix", { runId: "run-mix", feature: "feat-mix" }, jsonl);
 
     const deps = makeBaseDeps(runsDir, stdoutWrites, stderrWrites, {
       discoverRun: mock(async (query?: string) => buildDiscovered(runsDir, query ?? "run-mix", "feat-mix")),
@@ -422,9 +419,7 @@ describe("runReplay — AC10: crashed-run end-to-end", () => {
     );
 
     const deps = makeBaseDeps(runsDir, stdoutWrites, stderrWrites, {
-      discoverRun: mock(async (query?: string) =>
-        buildDiscovered(runsDir, query ?? "run-crash-x", "feat-x"),
-      ),
+      discoverRun: mock(async (query?: string) => buildDiscovered(runsDir, query ?? "run-crash-x", "feat-x")),
       readJsonl: mock(async (path: string) => {
         const content = await Bun.file(path).text();
         const lines = content.split("\n");
@@ -457,7 +452,9 @@ describe("runReplay — AC10: crashed-run end-to-end", () => {
         inferred: true,
         stories: [],
       })) as ReplayCommandDeps["reconstructTimeline"],
-      renderReport: mock(() => "=== nax replay ===\nRun: run-crash-x\nFeature: feat-x\nStatus: CRASHED") as ReplayCommandDeps["renderReport"],
+      renderReport: mock(
+        () => "=== nax replay ===\nRun: run-crash-x\nFeature: feat-x\nStatus: CRASHED",
+      ) as ReplayCommandDeps["renderReport"],
     });
 
     const exit = await runReplay("run-crash-x", {}, deps);

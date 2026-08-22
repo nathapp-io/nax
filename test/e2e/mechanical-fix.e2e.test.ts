@@ -1,17 +1,27 @@
 import { describe, expect, test } from "bun:test";
-import { runOrchestratorE2E } from "@test/helpers";
 import type { QualityCommandResult } from "@/quality/runner";
+import { runOrchestratorE2E } from "@test/helpers";
 
 const PASS_REVIEW = () => ({ output: JSON.stringify({ passed: true, findings: [] }) });
 const impl = () => ({ output: JSON.stringify({ filesChanged: ["src/a.ts"] }) });
 
 const PASS_LINT: QualityCommandResult = {
-  commandName: "lint", command: "lint", success: true, exitCode: 0,
-  output: "", durationMs: 1, timedOut: false,
+  commandName: "lint",
+  command: "lint",
+  success: true,
+  exitCode: 0,
+  output: "",
+  durationMs: 1,
+  timedOut: false,
 };
 const FAIL_LINT: QualityCommandResult = {
-  commandName: "lint", command: "lint", success: false, exitCode: 1,
-  output: "lint error: unexpected token", durationMs: 1, timedOut: false,
+  commandName: "lint",
+  command: "lint",
+  success: false,
+  exitCode: 1,
+  output: "lint error: unexpected token",
+  durationMs: 1,
+  timedOut: false,
 };
 
 describe("E2E: mechanical lint-fix", () => {
@@ -21,7 +31,7 @@ describe("E2E: mechanical lint-fix", () => {
       strategy: "test-after",
       agent: { implementer: impl, "reviewer-semantic": PASS_REVIEW, "reviewer-adversarial": PASS_REVIEW },
       gates: {
-        lint: () => lintCalls++ === 0 ? FAIL_LINT : PASS_LINT,
+        lint: () => (lintCalls++ === 0 ? FAIL_LINT : PASS_LINT),
       },
     });
 

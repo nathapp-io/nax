@@ -5,12 +5,8 @@
  * and getAgentProfile() lookup with known and unknown agent ids.
  */
 
-import { describe, test, expect } from "bun:test";
-import {
-  AGENT_PROFILES,
-  CONSERVATIVE_DEFAULT_PROFILE,
-  getAgentProfile,
-} from "@/context/engine/agent-profiles";
+import { describe, expect, test } from "bun:test";
+import { AGENT_PROFILES, CONSERVATIVE_DEFAULT_PROFILE, getAgentProfile } from "@/context/engine/agent-profiles";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AGENT_PROFILES registry

@@ -9,8 +9,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "@/config/defaults";
-import { type SequentialExecutionContext, executeUnified } from "@/execution/unified-executor";
 import { _runCompletionDeps, handleRunCompletion } from "@/execution/lifecycle/run-completion";
+import { type SequentialExecutionContext, executeUnified } from "@/execution/unified-executor";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineEvent, RunCompletedEvent } from "@/pipeline/event-bus";
 import { pipelineEventBus } from "@/pipeline/event-bus";
@@ -95,7 +95,14 @@ function makeMinimalContext(): SequentialExecutionContext {
     runtime: {
       outputDir: "/tmp/nax-test-rl002-output",
       costAggregator: {
-        snapshot: () => ({ totalCostUsd: 0, totalEstimatedCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }),
+        snapshot: () => ({
+          totalCostUsd: 0,
+          totalEstimatedCostUsd: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          callCount: 0,
+          errorCount: 0,
+        }),
         byStage: () => ({}),
         byStory: () => ({}),
         byAgent: () => ({}),
@@ -143,9 +150,7 @@ describe("RL-002: unified-executor does not emit run:completed", () => {
 
     expect(result.exitReason).toBe("completed");
 
-    const runCompletedEvents = capturedEvents.filter(
-      (ev): ev is RunCompletedEvent => ev.type === "run:completed",
-    );
+    const runCompletedEvents = capturedEvents.filter((ev): ev is RunCompletedEvent => ev.type === "run:completed");
     // AC #2: unified-executor must NOT emit run:completed
     expect(runCompletedEvents).toHaveLength(0);
   });

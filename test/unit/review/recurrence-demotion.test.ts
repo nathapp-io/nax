@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import type { Iteration } from "@/findings";
 import {
+  classifyRecurrence,
+  countPriorAppearances,
   fingerprintFor,
   normalizeIssueText,
-  countPriorAppearances,
-  classifyRecurrence,
   tagCoverageGap,
 } from "@/review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
-import type { Iteration } from "@/findings";
 
 function iter(
   num: number,
@@ -65,13 +65,25 @@ describe("normalizeIssueText", () => {
 
 describe("fingerprintFor", () => {
   test("stable across line-shift and tail rephrase", () => {
-    const a = fingerprintFor("lib/store.ts", "assumption", "window expiry is non-atomic because findFirst runs before upsert");
-    const b = fingerprintFor("lib/store.ts", "assumption", "Window expiry is non-atomic because findFirst runs before upsert — and one more clause");
+    const a = fingerprintFor(
+      "lib/store.ts",
+      "assumption",
+      "window expiry is non-atomic because findFirst runs before upsert",
+    );
+    const b = fingerprintFor(
+      "lib/store.ts",
+      "assumption",
+      "Window expiry is non-atomic because findFirst runs before upsert — and one more clause",
+    );
     expect(a).toBe(b);
   });
   test("distinct across file and category", () => {
-    expect(fingerprintFor("a.ts", "input", "same text here padded padded padded")).not.toBe(fingerprintFor("b.ts", "input", "same text here padded padded padded"));
-    expect(fingerprintFor("a.ts", "input", "same text here padded padded padded")).not.toBe(fingerprintFor("a.ts", "assumption", "same text here padded padded padded"));
+    expect(fingerprintFor("a.ts", "input", "same text here padded padded padded")).not.toBe(
+      fingerprintFor("b.ts", "input", "same text here padded padded padded"),
+    );
+    expect(fingerprintFor("a.ts", "input", "same text here padded padded padded")).not.toBe(
+      fingerprintFor("a.ts", "assumption", "same text here padded padded padded"),
+    );
   });
   test("normalizes backslash paths to forward slashes", () => {
     expect(fingerprintFor("lib\\store.ts", "x", "text")).toBe(fingerprintFor("lib/store.ts", "x", "text"));
@@ -115,8 +127,12 @@ describe("countPriorAppearances", () => {
   test("counts one per iteration containing the fingerprint; tracks most-recent severity", () => {
     const fp = fingerprintFor("lib/store.ts", "assumption", "window expiry non-atomic");
     const priors = [
-      iter(1, [{ file: "lib/store.ts", category: "assumption", message: "window expiry non-atomic", severity: "error" }]),
-      iter(2, [{ file: "lib/store.ts", category: "assumption", message: "window expiry non-atomic", severity: "warning" }]),
+      iter(1, [
+        { file: "lib/store.ts", category: "assumption", message: "window expiry non-atomic", severity: "error" },
+      ]),
+      iter(2, [
+        { file: "lib/store.ts", category: "assumption", message: "window expiry non-atomic", severity: "warning" },
+      ]),
     ];
     const m = countPriorAppearances(priors);
     expect(m.get(fp)).toEqual({ count: 2, lastSeverity: "warning" });
@@ -151,17 +167,27 @@ const noTest = (_f: string) => false;
 const isTest = (_f: string) => true;
 
 function adv(sev: string, over: Partial<AdversarialLLMFinding> = {}): AdversarialLLMFinding {
-  return { severity: sev, category: "assumption", file: "lib/store.ts", line: 1, issue: "window expiry non-atomic", suggestion: "fix", ...over };
+  return {
+    severity: sev,
+    category: "assumption",
+    file: "lib/store.ts",
+    line: 1,
+    issue: "window expiry non-atomic",
+    suggestion: "fix",
+    ...over,
+  };
 }
 function priorAdv(sev: string, n: number): Iteration[] {
-  return Array.from({ length: n }, (_v, i) => iter(i + 1, [{ file: "lib/store.ts", category: "assumption", message: "window expiry non-atomic", severity: sev }]));
+  return Array.from({ length: n }, (_v, i) =>
+    iter(i + 1, [{ file: "lib/store.ts", category: "assumption", message: "window expiry non-atomic", severity: sev }]),
+  );
 }
 
 describe("classifyRecurrence", () => {
   test("stable error: blocks at n=1 and n=2, demotes at n=3", () => {
-    expect(classifyRecurrence([adv("error")], [], CFG, noTest, "error").blocking.length).toBe(1);       // n=1
+    expect(classifyRecurrence([adv("error")], [], CFG, noTest, "error").blocking.length).toBe(1); // n=1
     expect(classifyRecurrence([adv("error")], priorAdv("error", 1), CFG, noTest, "error").blocking.length).toBe(1); // n=2, prev=error
-    const r3 = classifyRecurrence([adv("error")], priorAdv("error", 2), CFG, noTest, "error");           // n=3
+    const r3 = classifyRecurrence([adv("error")], priorAdv("error", 2), CFG, noTest, "error"); // n=3
     expect(r3.blocking.length).toBe(0);
     expect(r3.demoted.length).toBe(1);
   });
@@ -192,9 +218,7 @@ describe("classifyRecurrence", () => {
 
   test("prose-only current finding still matches AC-anchored priors", () => {
     const priors = [1, 2].map((n) =>
-      iter(n, [
-        { file: REPLAY_STORE, category: "input", message: "identical prose", severity: "error", acIndex: 3 },
-      ]),
+      iter(n, [{ file: REPLAY_STORE, category: "input", message: "identical prose", severity: "error", acIndex: 3 }]),
     );
     const current = adv("error", { file: REPLAY_STORE, category: "input", issue: "identical prose" });
     expect(classifyRecurrence([current], priors, CFG, noTest, "error").demoted.length).toBe(1);
@@ -217,7 +241,11 @@ describe("classifyRecurrence", () => {
 
   test("oscillating w,e,w,e: never blocks (entry guard)", () => {
     // this round is error, n=2, prev sighting was warning
-    const priors = [iter(1, [{ file: "lib/store.ts", category: "assumption", message: "window expiry non-atomic", severity: "warning" }])];
+    const priors = [
+      iter(1, [
+        { file: "lib/store.ts", category: "assumption", message: "window expiry non-atomic", severity: "warning" },
+      ]),
+    ];
     const r = classifyRecurrence([adv("error")], priors, CFG, noTest, "error");
     expect(r.blocking.length).toBe(0);
     expect(r.advisory.length + r.demoted.length).toBe(1);
@@ -245,14 +273,24 @@ describe("classifyRecurrence", () => {
   test("test-gap on a source path is reclassified → subject to recurrence demotion", () => {
     const f = adv("error", { category: "test-gap", file: "lib/store.ts" });
     // n=3 via priors under the SAME fingerprint (category test-gap)
-    const priors = Array.from({ length: 2 }, (_v, i) => iter(i + 1, [{ file: "lib/store.ts", category: "test-gap", message: "window expiry non-atomic", severity: "error" }]));
+    const priors = Array.from({ length: 2 }, (_v, i) =>
+      iter(i + 1, [
+        { file: "lib/store.ts", category: "test-gap", message: "window expiry non-atomic", severity: "error" },
+      ]),
+    );
     const r = classifyRecurrence([f], priors, CFG, noTest, "error");
     expect(r.blocking.length).toBe(0);
     expect(r.demoted.length).toBe(1);
   });
 
   test("enabled:false → legacy behavior (all error accepted findings block, no demotion)", () => {
-    const r = classifyRecurrence([adv("error"), adv("warning")], priorAdv("error", 9), { enabled: false, maxBlockingRounds: 2 }, noTest, "error");
+    const r = classifyRecurrence(
+      [adv("error"), adv("warning")],
+      priorAdv("error", 9),
+      { enabled: false, maxBlockingRounds: 2 },
+      noTest,
+      "error",
+    );
     expect(r.blocking.length).toBe(1);
     expect(r.advisory.length).toBe(1);
     expect(r.demoted.length).toBe(0);
@@ -261,10 +299,7 @@ describe("classifyRecurrence", () => {
 
 describe("tagCoverageGap", () => {
   test("stamps meta.coverageGap: true on every finding", () => {
-    const findings = [
-      { file: "a.ts", meta: { issue: "x" } },
-      { file: "b.ts" },
-    ];
+    const findings = [{ file: "a.ts", meta: { issue: "x" } }, { file: "b.ts" }];
     const tagged = tagCoverageGap(findings);
     expect(tagged[0]?.meta).toEqual({ issue: "x", coverageGap: true });
     expect(tagged[1]?.meta).toEqual({ coverageGap: true });
@@ -321,14 +356,7 @@ describe("classifyRecurrence — semantic source (F1b)", () => {
 
   test("counts semantic-source priors and demotes on the third sighting", () => {
     const priors = [semanticIter(1, AC3_KEY_FORMAT[0], 3), semanticIter(2, AC3_KEY_FORMAT[1], 3)];
-    const r = classifyRecurrence(
-      [semFinding(AC3_KEY_FORMAT[2], 3)],
-      priors,
-      CFG,
-      noTest,
-      "error",
-      "semantic-review",
-    );
+    const r = classifyRecurrence([semFinding(AC3_KEY_FORMAT[2], 3)], priors, CFG, noTest, "error", "semantic-review");
     expect(r.demoted.length).toBe(1);
     expect(r.blocking.length).toBe(0);
   });

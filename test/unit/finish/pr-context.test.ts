@@ -54,7 +54,12 @@ describe("loadFinishPrContext", () => {
     await mkdir(featureDirPath, { recursive: true });
     await writeFile(
       join(featureDirPath, "prd.json"),
-      JSON.stringify({ userStories: [{ id: 7, title: "Bad" }, { id: "US-002", title: "Good" }] }),
+      JSON.stringify({
+        userStories: [
+          { id: 7, title: "Bad" },
+          { id: "US-002", title: "Good" },
+        ],
+      }),
     );
     _finishPrDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: "" });
 

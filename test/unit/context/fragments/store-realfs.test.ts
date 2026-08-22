@@ -12,9 +12,9 @@
  * not add dep injection here — that would reintroduce the blind spot.
  */
 
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   listFragmentStoryIds,
   readFragment,

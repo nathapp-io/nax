@@ -11,8 +11,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { NaxError } from "@/errors";
 import { _clearRootConfigCache, loadConfig } from "@/config/loader";
+import { NaxError } from "@/errors";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const tempDirs: string[] = [];
@@ -104,11 +104,7 @@ describe("ADR-012 Phase 6 — legacy config key guard", () => {
       expect(e.message).toContain("autoMode.fallbackOrder");
       expect(e.message).toContain("context.v2.fallback");
       const ctx = e.context as { legacyKeys?: string[] } | undefined;
-      expect(ctx?.legacyKeys).toEqual([
-        "autoMode.defaultAgent",
-        "autoMode.fallbackOrder",
-        "context.v2.fallback",
-      ]);
+      expect(ctx?.legacyKeys).toEqual(["autoMode.defaultAgent", "autoMode.fallbackOrder", "context.v2.fallback"]);
     }
   });
 

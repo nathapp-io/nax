@@ -11,12 +11,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { DEFAULT_CONFIG } from "@/config/defaults";
-import {
-  _isHeartbeatActive,
-  resetCrashHandlers,
-  startHeartbeat,
-  stopHeartbeat,
-} from "@/execution/crash-recovery";
+import { _isHeartbeatActive, resetCrashHandlers, startHeartbeat, stopHeartbeat } from "@/execution/crash-recovery";
 import { type SequentialExecutionContext, executeUnified } from "@/execution/unified-executor";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { PRD, UserStory } from "@/prd/types";

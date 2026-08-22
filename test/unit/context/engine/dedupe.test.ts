@@ -1,5 +1,5 @@
-import { describe, test, expect } from "bun:test";
-import { dedupeChunks, SIMILARITY_THRESHOLD } from "@/context/engine/dedupe";
+import { describe, expect, test } from "bun:test";
+import { SIMILARITY_THRESHOLD, dedupeChunks } from "@/context/engine/dedupe";
 import type { ScoredChunk } from "@/context/engine/scoring";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ describe("dedupeChunks", () => {
     const base = "The configuration object must include a valid timeout value greater than zero.";
     const chunks = [
       makeScored({ id: "a:1", score: 0.9, content: base }),
-      makeScored({ id: "b:1", score: 0.7, content: base + " " }),  // trivially different
+      makeScored({ id: "b:1", score: 0.7, content: base + " " }), // trivially different
     ];
     const result = dedupeChunks(chunks);
     expect(result.kept).toHaveLength(1);
@@ -76,10 +76,7 @@ describe("dedupeChunks", () => {
   });
 
   test("short/empty content chunks: each treated independently", () => {
-    const chunks = [
-      makeScored({ id: "a:1", content: "" }),
-      makeScored({ id: "b:1", content: "" }),
-    ];
+    const chunks = [makeScored({ id: "a:1", content: "" }), makeScored({ id: "b:1", content: "" })];
     // Both are empty — both have similarity 1.0 → second is dropped
     const result = dedupeChunks(chunks);
     expect(result.kept).toHaveLength(1);

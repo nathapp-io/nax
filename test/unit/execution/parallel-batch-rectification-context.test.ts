@@ -15,13 +15,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
-import {
-  _parallelBatchDeps,
-  runParallelBatch,
-  type ParallelBatchCtx,
-} from "@/execution/parallel-batch";
-import type { ParallelBatchResult } from "@/execution/parallel-worker";
 import type { RectifyConflictedStoryOptions } from "@/execution/merge-conflict-rectify";
+import { type ParallelBatchCtx, _parallelBatchDeps, runParallelBatch } from "@/execution/parallel-batch";
+import type { ParallelBatchResult } from "@/execution/parallel-worker";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";

@@ -7,11 +7,7 @@
 import { describe, expect, it } from "bun:test";
 
 // Import directly from the barrel to verify re-exports
-import type {
-  IPostRunAction,
-  PostRunActionResult,
-  PostRunContext,
-} from "@/plugins";
+import type { IPostRunAction, PostRunActionResult, PostRunContext } from "@/plugins";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Index barrel exports tests

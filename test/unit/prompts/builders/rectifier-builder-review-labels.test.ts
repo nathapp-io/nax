@@ -139,10 +139,7 @@ describe("RectifierPromptBuilder.reviewRectification — semantic + adversarial"
 
 describe("RectifierPromptBuilder.reviewRectification — adversarial + mechanical", () => {
   test("does NOT say 'Semantic Review Findings (AC Compliance)' when adversarial + lint both fail", () => {
-    const checks = [
-      makeCheck("adversarial", "Missing error handling"),
-      makeCheck("lint", "Unused variable"),
-    ];
+    const checks = [makeCheck("adversarial", "Missing error handling"), makeCheck("lint", "Unused variable")];
     const prompt = RectifierPromptBuilder.reviewRectification(checks, STORY);
 
     expect(prompt).not.toContain("Semantic Review Findings (AC Compliance)");
@@ -150,20 +147,14 @@ describe("RectifierPromptBuilder.reviewRectification — adversarial + mechanica
   });
 
   test("uses 'LLM Review Findings' section for the adversarial part", () => {
-    const checks = [
-      makeCheck("adversarial", "Missing error handling"),
-      makeCheck("lint", "Unused variable"),
-    ];
+    const checks = [makeCheck("adversarial", "Missing error handling"), makeCheck("lint", "Unused variable")];
     const prompt = RectifierPromptBuilder.reviewRectification(checks, STORY);
 
     expect(prompt).toContain("Adversarial Review Findings");
   });
 
   test("includes both lint and adversarial output in mixed prompt", () => {
-    const checks = [
-      makeCheck("adversarial", "Missing error handling"),
-      makeCheck("lint", "Unused variable"),
-    ];
+    const checks = [makeCheck("adversarial", "Missing error handling"), makeCheck("lint", "Unused variable")];
     const prompt = RectifierPromptBuilder.reviewRectification(checks, STORY);
 
     expect(prompt).toContain("Missing error handling");

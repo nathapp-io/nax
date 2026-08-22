@@ -143,7 +143,13 @@ describe("buildPlanForStrategy — cost + duration aggregation", () => {
     });
 
     const callCtx = makeMockCallContext({ runtime });
-    const plan = await buildPlanForStrategy(callCtx, story, config, "three-session-tdd", makePlanInputsNoGreenfield(story, config));
+    const plan = await buildPlanForStrategy(
+      callCtx,
+      story,
+      config,
+      "three-session-tdd",
+      makePlanInputsNoGreenfield(story, config),
+    );
     const result = await plan.run();
 
     // totalCostUsd should be non-negative (may be 0 if agent doesn't emit costs in test mode)
@@ -166,7 +172,13 @@ describe("buildPlanForStrategy — cost + duration aggregation", () => {
     });
 
     const callCtx = makeMockCallContext({ runtime });
-    const plan = await buildPlanForStrategy(callCtx, story, config, "three-session-tdd", makePlanInputsNoGreenfield(story, config));
+    const plan = await buildPlanForStrategy(
+      callCtx,
+      story,
+      config,
+      "three-session-tdd",
+      makePlanInputsNoGreenfield(story, config),
+    );
     const result = await plan.run();
 
     expect(typeof result.durationMs).toBe("number");
@@ -188,7 +200,13 @@ describe("buildPlanForStrategy — cost + duration aggregation", () => {
     });
 
     const callCtx = makeMockCallContext({ runtime });
-    const plan = await buildPlanForStrategy(callCtx, story, config, "three-session-tdd", makePlanInputsNoGreenfield(story, config));
+    const plan = await buildPlanForStrategy(
+      callCtx,
+      story,
+      config,
+      "three-session-tdd",
+      makePlanInputsNoGreenfield(story, config),
+    );
     const result = await plan.run();
 
     // phaseCosts should have entries for at least the executed phases

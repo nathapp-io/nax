@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import { callOp } from "@/operations";
 import type { RunOperation } from "@/operations";
-import { DEFAULT_CONFIG, pickSelector } from "@/config";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
-import type { NaxRuntime } from "@/runtime";
 import { _callOpDeps } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
+import { makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
 
 // End-to-end test: a timed-out turn flows through sendWithFileOutput and
 // surfaces an AdapterFailure with outcome "fail-timeout" to the manager.

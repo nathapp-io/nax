@@ -8,8 +8,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import type { DecomposedStory } from "@/agents/shared/types-extended";
+import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
@@ -20,9 +20,17 @@ function makeMockDecomposeManager(
     completeAsFn: decomposeFn
       ? async (name: string, _prompt: string, opts?: any) => {
           const result = await decomposeFn(name, opts ?? {});
-          return { output: JSON.stringify(result.stories), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+          return {
+            output: JSON.stringify(result.stories),
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0,
+          };
         }
-      : async () => ({ output: JSON.stringify([]), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+      : async () => ({
+          output: JSON.stringify([]),
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+        }),
   });
 }
 
@@ -42,7 +50,13 @@ function makePrd(stories: UserStory[] = [makeStory()]): PRD {
 
 function makeSubStory(id: string, overrides: Partial<UserStory> = {}): UserStory {
   return {
-    ...makeStory({ id, title: `Sub-story ${id}`, description: `Description for ${id}`, contextFiles: ["src/foo.ts"], routing: { complexity: "simple", testStrategy: "test-after", reasoning: "simple", modelTier: "balanced" } }),
+    ...makeStory({
+      id,
+      title: `Sub-story ${id}`,
+      description: `Description for ${id}`,
+      contextFiles: ["src/foo.ts"],
+      routing: { complexity: "simple", testStrategy: "test-after", reasoning: "simple", modelTier: "balanced" },
+    }),
     acceptanceCriteria: ["AC-1: Does something"],
     tags: ["feature"],
     ...overrides,
@@ -103,10 +117,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
   let tmpDir: string;
   let capturedWriteArgs: Array<[string, string]>;
 
-  function setupDeps(
-    prd: PRD,
-    stories: UserStory[] = [makeSubStory("US-001-A"), makeSubStory("US-001-B")],
-  ) {
+  function setupDeps(prd: PRD, stories: UserStory[] = [makeSubStory("US-001-A"), makeSubStory("US-001-B")]) {
     const prdPath = join(tmpDir, ".nax", "features", FEATURE, "prd.json");
 
     _planDeps.existsSync = mock((path: string) => path === prdPath);
@@ -266,11 +277,10 @@ describe("planDecomposeCommand — PRD write-back", () => {
       },
     };
 
-    await planDecomposeCommand(
-      tmpDir,
-      makeNaxConfig({ debate: debateConfig as never }),
-      { feature: FEATURE, storyId: "US-001" },
-    );
+    await planDecomposeCommand(tmpDir, makeNaxConfig({ debate: debateConfig as never }), {
+      feature: FEATURE,
+      storyId: "US-001",
+    });
 
     expect(_planDeps.createDebateRunner).toHaveBeenCalledTimes(1);
     expect(capturedDebateOpts[0]).toMatchObject({ stage: "decompose" });
@@ -281,19 +291,22 @@ describe("planDecomposeCommand — PRD write-back", () => {
     const prd = makePrd();
     setupDeps(prd, stories);
 
-    _planDeps.createDebateRunner = mock(() => ({
-      run: mock(async () => ({
-        storyId: "US-001",
-        stage: "decompose",
-        outcome: "passed" as const,
-        rounds: 1,
-        debaters: ["claude"],
-        resolverType: "synthesis" as const,
-        proposals: [],
-        totalCostUsd: 0,
-        output: makeDecomposeResponse(stories),
-      })),
-    }) as never);
+    _planDeps.createDebateRunner = mock(
+      () =>
+        ({
+          run: mock(async () => ({
+            storyId: "US-001",
+            stage: "decompose",
+            outcome: "passed" as const,
+            rounds: 1,
+            debaters: ["claude"],
+            resolverType: "synthesis" as const,
+            proposals: [],
+            totalCostUsd: 0,
+            output: makeDecomposeResponse(stories),
+          })),
+        }) as never,
+    );
 
     const adapterDecomposeCalls: unknown[] = [];
     _planDeps.createRuntime = mock(() =>
@@ -316,11 +329,10 @@ describe("planDecomposeCommand — PRD write-back", () => {
       },
     };
 
-    await planDecomposeCommand(
-      tmpDir,
-      makeNaxConfig({ debate: debateConfig as never }),
-      { feature: FEATURE, storyId: "US-001" },
-    );
+    await planDecomposeCommand(tmpDir, makeNaxConfig({ debate: debateConfig as never }), {
+      feature: FEATURE,
+      storyId: "US-001",
+    });
 
     // When debate succeeds, adapter.decompose() should NOT be called
     expect(adapterDecomposeCalls).toHaveLength(0);

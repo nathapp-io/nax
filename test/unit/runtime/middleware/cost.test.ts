@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { type CostErrorEvent, type CostEvent, createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 import { DispatchEventBus } from "@/runtime/dispatch-events";
 import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "@/runtime/dispatch-events";
 import { COST_ROW_SCHEMA_VERSION, attachCostSubscriber } from "@/runtime/middleware/cost";
-import { createNoOpCostAggregator, type CostEvent, type CostErrorEvent } from "@/runtime/cost-aggregator";
 
 const PERMS = { mode: "approve-reads" as const };
 
@@ -289,7 +289,7 @@ describe("attachCostSubscriber", () => {
     expect(recorded[0].modelTier).toBe("fast");
   });
 
-  test("#1433: model falls back to \"unknown\" only when the event carries none", () => {
+  test('#1433: model falls back to "unknown" only when the event carries none', () => {
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
     const bus = new DispatchEventBus();
@@ -432,9 +432,7 @@ describe("attachCostSubscriber", () => {
     const bus = new DispatchEventBus();
     attachCostSubscriber(bus, agg, "r-001");
 
-    bus.emitDispatch(
-      makeSessionTurnEvent({ model: "haiku", exactCostUsd: undefined, estimatedCostUsd: 0.01 }),
-    );
+    bus.emitDispatch(makeSessionTurnEvent({ model: "haiku", exactCostUsd: undefined, estimatedCostUsd: 0.01 }));
 
     expect(recorded[0].confidence).toBe("estimated");
     expect(recorded[0].pricingSource).toBe("model-rates");

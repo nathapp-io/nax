@@ -1,13 +1,9 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import type { PromptSection, SectionSlot } from "@/prompts";
 import { composeSections, join } from "@/prompts/compose";
 import type { ComposeInput } from "@/prompts/compose";
-import type { PromptSection, SectionSlot } from "@/prompts";
 
-function makeSection(
-  id: string,
-  content: string,
-  slot?: SectionSlot,
-): PromptSection {
+function makeSection(id: string, content: string, slot?: SectionSlot): PromptSection {
   return { id, content, overridable: false, slot };
 }
 

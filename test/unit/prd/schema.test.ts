@@ -131,8 +131,19 @@ describe("validatePlanOutput — complexity validation", () => {
 
 describe("validatePlanOutput — dependency validation", () => {
   test("throws for non-existent dependency ID; valid cross-story deps pass", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ id: "ST-001", dependencies: ["ST-999"] })]), "feat", "branch")).toThrow(/ST-999/);
-    expect(() => validatePlanOutput(makeInput([makeStory({ id: "ST-001", dependencies: [] }), makeStory({ id: "ST-002", dependencies: ["ST-001"] })]), "feat", "branch")).not.toThrow();
+    expect(() =>
+      validatePlanOutput(makeInput([makeStory({ id: "ST-001", dependencies: ["ST-999"] })]), "feat", "branch"),
+    ).toThrow(/ST-999/);
+    expect(() =>
+      validatePlanOutput(
+        makeInput([
+          makeStory({ id: "ST-001", dependencies: [] }),
+          makeStory({ id: "ST-002", dependencies: ["ST-001"] }),
+        ]),
+        "feat",
+        "branch",
+      ),
+    ).not.toThrow();
   });
 
   // BUG-01: dependencies are validated against normalizeStoryId(id) but were previously
@@ -221,21 +232,13 @@ describe("validatePlanOutput — dependency validation", () => {
 describe("validatePlanOutput — duplicate story id validation", () => {
   test("BUG-02: throws when two stories share the same normalized id", () => {
     expect(() =>
-      validatePlanOutput(
-        makeInput([makeStory({ id: "ST-001" }), makeStory({ id: "ST-001" })]),
-        "feat",
-        "branch",
-      ),
+      validatePlanOutput(makeInput([makeStory({ id: "ST-001" }), makeStory({ id: "ST-001" })]), "feat", "branch"),
     ).toThrow(/duplicate/i);
   });
 
   test("BUG-02: throws when two stories share the same id after normalization (e.g. 'ST001' vs 'ST-001')", () => {
     expect(() =>
-      validatePlanOutput(
-        makeInput([makeStory({ id: "ST-001" }), makeStory({ id: "ST001" })]),
-        "feat",
-        "branch",
-      ),
+      validatePlanOutput(makeInput([makeStory({ id: "ST-001" }), makeStory({ id: "ST001" })]), "feat", "branch"),
     ).toThrow(/duplicate/i);
   });
 });
@@ -307,14 +310,17 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
   });
 
   test.each([
-    ["substantive reasoning is preserved", "Single module with clear interfaces and low risk.", "Single module with clear interfaces and low risk."],
+    [
+      "substantive reasoning is preserved",
+      "Single module with clear interfaces and low risk.",
+      "Single module with clear interfaces and low risk.",
+    ],
     ["whitespace is trimmed", "  Single module with clear interfaces.  ", "Single module with clear interfaces."],
     ["empty string falls back to placeholder", "", "validated from LLM output"],
     ["missing reasoning falls back to placeholder", undefined, "validated from LLM output"],
   ] as const)("routing.reasoning: %s", (_label, input, expected) => {
-    const overrides: Record<string, unknown> = input !== undefined
-      ? { routing: { complexity: "simple", testStrategy: "tdd-simple", reasoning: input } }
-      : {};
+    const overrides: Record<string, unknown> =
+      input !== undefined ? { routing: { complexity: "simple", testStrategy: "tdd-simple", reasoning: input } } : {};
     const prd = validatePlanOutput(makeInput([makeStory(overrides)]), "feat", "branch");
     expect(prd.userStories[0]!.routing?.reasoning).toBe(expected);
   });
@@ -339,7 +345,11 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
 
   test.each<[string, string, string]>([
     ["valid \\uXXXX", "\\u0041\\u0042\\u0043", "ABC"],
-    ["valid JSON escapes \\n \\t \\\" \\\\ \\/ \\r", "line1\\nline2\\ttab\\u0022quote\\\\backslash\\/slash\\rCR", 'line1\nline2\ttab"quote\\backslash/slash\rCR'],
+    [
+      'valid JSON escapes \\n \\t \\" \\\\ \\/ \\r',
+      "line1\\nline2\\ttab\\u0022quote\\\\backslash\\/slash\\rCR",
+      'line1\nline2\ttab"quote\\backslash/slash\rCR',
+    ],
     ["\\\\( regex — regression for sanitizeInvalidEscapes", "regex /expect\\\\(|foo/", "regex /expect\\(|foo/"],
   ])("preserves %s unchanged in description", (_label, escaped, expected) => {
     const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
@@ -407,7 +417,11 @@ describe("validatePlanOutput — invalid JSON parse errors (AC-8)", () => {
 describe("validatePlanOutput — ENH-006 analysis and contextFiles", () => {
   test("preserves top-level analysis field and trims whitespace", () => {
     const input = makeInput([makeStory()]);
-    const prd = validatePlanOutput({ ...input, analysis: "Codebase analysis: auth uses passport-jwt" }, "feat", "feat/feat");
+    const prd = validatePlanOutput(
+      { ...input, analysis: "Codebase analysis: auth uses passport-jwt" },
+      "feat",
+      "feat/feat",
+    );
     expect(prd.analysis).toBe("Codebase analysis: auth uses passport-jwt");
     const prdTrimmed = validatePlanOutput({ ...input, analysis: "  some analysis  " }, "feat", "feat/feat");
     expect(prdTrimmed.analysis).toBe("some analysis");
@@ -555,7 +569,9 @@ describe("suggestedCriteria", () => {
     ["absent", makeStory()],
     ["empty array", makeStory({ suggestedCriteria: [] })],
   ])("omits suggestedCriteria when %s", (_label, story) => {
-    expect(validatePlanOutput(makeInput([story]), "feat", "feat/feat").userStories[0].suggestedCriteria).toBeUndefined();
+    expect(
+      validatePlanOutput(makeInput([story]), "feat", "feat/feat").userStories[0].suggestedCriteria,
+    ).toBeUndefined();
   });
 
   test("valid string[] — passes through", () => {
@@ -565,7 +581,14 @@ describe("suggestedCriteria", () => {
   });
 
   test.each([
-    ["{criterion, rationale} objects", [{ criterion: "edge case A", rationale: "debater suggested" }, { criterion: "edge case B", rationale: "another reason" }], ["edge case A", "edge case B"]],
+    [
+      "{criterion, rationale} objects",
+      [
+        { criterion: "edge case A", rationale: "debater suggested" },
+        { criterion: "edge case B", rationale: "another reason" },
+      ],
+      ["edge case A", "edge case B"],
+    ],
     ["mixed strings and objects", ["plain string", { criterion: "from object" }], ["plain string", "from object"]],
   ])("coerces %s to plain strings", (_label, suggestedCriteria, expected) => {
     const prd = validatePlanOutput(makeInput([makeStory({ suggestedCriteria })]), "feat", "feat/feat");
@@ -602,7 +625,12 @@ describe("validatePlanOutput — Phase 2 citation fields (AC4-AC6)", () => {
   });
 
   test.each([
-    ["verifiedBy", makeStory({ verifiedBy: { kind: "test", anchor: "src/foo.test.ts#should work", factIds: ["fact-001"] } }), (s: any) => s.verifiedBy, { kind: "test", anchor: "src/foo.test.ts#should work", factIds: ["fact-001"] }],
+    [
+      "verifiedBy",
+      makeStory({ verifiedBy: { kind: "test", anchor: "src/foo.test.ts#should work", factIds: ["fact-001"] } }),
+      (s: any) => s.verifiedBy,
+      { kind: "test", anchor: "src/foo.test.ts#should work", factIds: ["fact-001"] },
+    ],
     ["intent", makeStory({ intent: true }), (s: any) => s.intent, true],
   ])("AC5: preserves %s when present", (_label, story, getField, expected) => {
     const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
@@ -611,11 +639,7 @@ describe("validatePlanOutput — Phase 2 citation fields (AC4-AC6)", () => {
 
   test("AC5: preserves contextFiles[].factId when present", () => {
     const story = makeStory({
-      contextFiles: [
-        { path: "src/auth.ts", factId: "fact-001" },
-        { path: "src/utils.ts" },
-        "src/plain.ts",
-      ],
+      contextFiles: [{ path: "src/auth.ts", factId: "fact-001" }, { path: "src/utils.ts" }, "src/plain.ts"],
     });
     const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
     const files = prd.userStories[0]!.contextFiles!;
@@ -631,7 +655,6 @@ describe("validatePlanOutput — Phase 2 citation fields (AC4-AC6)", () => {
     });
     expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(/verifiedBy.*kind/i);
   });
-
 });
 
 describe("validatePlanOutput — outOfScope normalization", () => {
@@ -670,9 +693,7 @@ describe("validatePlanOutput — outOfScope normalization", () => {
 
   test("deduplicates and caps at MAX_OUT_OF_SCOPE_ITEMS", () => {
     const many = Array.from({ length: MAX_OUT_OF_SCOPE_ITEMS + 10 }, (_, i) => `item ${i}`);
-    expect(validatePlanOutput({ ...base, outOfScope: many }, "f", "b").outOfScope).toHaveLength(
-      MAX_OUT_OF_SCOPE_ITEMS,
-    );
+    expect(validatePlanOutput({ ...base, outOfScope: many }, "f", "b").outOfScope).toHaveLength(MAX_OUT_OF_SCOPE_ITEMS);
     expect(validatePlanOutput({ ...base, outOfScope: ["dup", "dup", "DUP"] }, "f", "b").outOfScope).toEqual(["dup"]);
   });
 

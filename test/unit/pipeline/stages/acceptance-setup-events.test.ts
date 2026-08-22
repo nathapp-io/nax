@@ -8,17 +8,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import {
-  acceptanceSetupStage,
-  _acceptanceSetupDeps,
-  pipelineEventBus,
-} from "@/pipeline";
-import type { PipelineContext } from "@/pipeline";
-import type {
-  PostRunPhaseStartedEvent,
-  PostRunPhaseCompletedEvent,
-} from "@/pipeline";
 import { DEFAULT_CONFIG } from "@/config";
+import { _acceptanceSetupDeps, acceptanceSetupStage, pipelineEventBus } from "@/pipeline";
+import type { PipelineContext } from "@/pipeline";
+import type { PostRunPhaseCompletedEvent, PostRunPhaseStartedEvent } from "@/pipeline";
 import { makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
@@ -116,7 +109,9 @@ afterEach(() => {
 describe("acceptance-setup events — AC1: postrun:phase:started before generation", () => {
   test("AC1: emits postrun:phase:started with phase 'acceptance-setup'", async () => {
     const started: PostRunPhaseStartedEvent[] = [];
-    pipelineEventBus.on("postrun:phase:started", (e) => { started.push(e); });
+    pipelineEventBus.on("postrun:phase:started", (e) => {
+      started.push(e);
+    });
 
     wireDeps(1);
     await acceptanceSetupStage.execute(makeCtx());

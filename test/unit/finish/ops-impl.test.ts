@@ -77,11 +77,7 @@ describe("ops-impl", () => {
 
   test("review passes the phase's re-review window and gap notice through", async () => {
     let seenInput: { since?: string; gaps?: string[] } | undefined;
-    _finishOpsDeps.callOp = (async (
-      _ctx: CallContext,
-      _op: unknown,
-      input: { since?: string; gaps?: string[] },
-    ) => {
+    _finishOpsDeps.callOp = (async (_ctx: CallContext, _op: unknown, input: { since?: string; gaps?: string[] }) => {
       seenInput = input;
       return { findings: [], gaps: [], touchpoints: [], walk: [] };
     }) as typeof _finishOpsDeps.callOp;
@@ -300,7 +296,10 @@ describe("ops-impl", () => {
   });
 
   test("narrate rewrites the body when this run committed a fix, even if already-ready", async () => {
-    _finishOpsDeps.callOp = (async () => ({ narrative: "new narrative", title: "new title" })) as typeof _finishOpsDeps.callOp;
+    _finishOpsDeps.callOp = (async () => ({
+      narrative: "new narrative",
+      title: "new title",
+    })) as typeof _finishOpsDeps.callOp;
     const committed = freshState({ committedThisRun: true, status: "already-ready" });
     const { deps, calls } = baseDeps();
     await createFinishOps(deps).narrate?.(committed);
@@ -308,7 +307,10 @@ describe("ops-impl", () => {
   });
 
   test("narrate rewrites the body when this run opened or promoted the PR, regardless of commits", async () => {
-    _finishOpsDeps.callOp = (async () => ({ narrative: "new narrative", title: "new title" })) as typeof _finishOpsDeps.callOp;
+    _finishOpsDeps.callOp = (async () => ({
+      narrative: "new narrative",
+      title: "new title",
+    })) as typeof _finishOpsDeps.callOp;
     const opened = freshState({ committedThisRun: false, status: "opened" });
     const { deps, calls } = baseDeps();
     await createFinishOps(deps).narrate?.(opened);

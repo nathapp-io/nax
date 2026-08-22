@@ -6,12 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import {
-  type CanonicalRule,
-  type ContextRequest,
-  StaticRulesProvider,
-  _staticRulesDeps,
-} from "@/context/engine";
+import { type CanonicalRule, type ContextRequest, StaticRulesProvider, _staticRulesDeps } from "@/context/engine";
 
 let origReadFile: typeof _staticRulesDeps.readFile;
 let origFileExists: typeof _staticRulesDeps.fileExists;
@@ -191,10 +186,7 @@ describe("StaticRulesProvider — US-003 per-stage rules budget derivation", () 
     // composes: all sections returned, overageTokens = total − budget,
     // droppedIds empty.
     const origApply = _staticRulesDeps.applySectionBudget;
-    _staticRulesDeps.applySectionBudget = ((
-      sections: Parameters<typeof origApply>[0],
-      budgetTokens: number,
-    ) => {
+    _staticRulesDeps.applySectionBudget = ((sections: Parameters<typeof origApply>[0], budgetTokens: number) => {
       const totalTokens = sections.reduce((sum, s) => sum + s.tokens, 0);
       return {
         retainedSections: [...sections],

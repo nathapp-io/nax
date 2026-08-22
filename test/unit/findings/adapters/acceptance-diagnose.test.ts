@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  acceptanceDiagnoseRawArrayToFindings,
-  acceptanceDiagnoseRawToFinding,
-} from "@/findings";
+import { acceptanceDiagnoseRawArrayToFindings, acceptanceDiagnoseRawToFinding } from "@/findings";
 
 describe("acceptanceDiagnoseRawToFinding", () => {
   test("maps well-formed minimal record with default severity", () => {

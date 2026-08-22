@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { buildTddLanguageSection } from "@/prompts/sections/tdd-conventions";
-import { PromptBuilder } from "@/prompts";
 import type { NaxConfig } from "@/config/types";
+import { PromptBuilder } from "@/prompts";
+import { buildTddLanguageSection } from "@/prompts/sections/tdd-conventions";
 
 describe("buildTddLanguageSection", () => {
   describe("go", () => {
@@ -90,18 +90,14 @@ describe("PromptBuilder — language-aware TDD convention integration", () => {
 
   test("build() contains Go TDD convention when config.project.language is 'go'", async () => {
     const config = makeConfig("go");
-    const prompt = await PromptBuilder.for("test-writer")
-      .withLoader("/tmp/fake-workdir", config)
-      .build();
+    const prompt = await PromptBuilder.for("test-writer").withLoader("/tmp/fake-workdir", config).build();
 
     expect(prompt).toContain("_test.go");
   });
 
   test("build() contains no Go convention when language is 'typescript'", async () => {
     const config = makeConfig("typescript");
-    const prompt = await PromptBuilder.for("test-writer")
-      .withLoader("/tmp/fake-workdir", config)
-      .build();
+    const prompt = await PromptBuilder.for("test-writer").withLoader("/tmp/fake-workdir", config).build();
 
     // Should not inject Go conventions for TypeScript projects
     expect(prompt).not.toContain("_test.go");
@@ -109,9 +105,7 @@ describe("PromptBuilder — language-aware TDD convention integration", () => {
 
   test("build() contains no language convention when project is undefined", async () => {
     const config = { version: 1 } as NaxConfig;
-    const prompt = await PromptBuilder.for("test-writer")
-      .withLoader("/tmp/fake-workdir", config)
-      .build();
+    const prompt = await PromptBuilder.for("test-writer").withLoader("/tmp/fake-workdir", config).build();
 
     expect(prompt).not.toContain("_test.go");
     expect(prompt).not.toContain("#[cfg(test)]");

@@ -88,7 +88,10 @@ describe("planDraftOp — AC-5: identity properties", () => {
 describe("planDraftOp.build — AC-6 & AC-7: draft prompt construction", () => {
   test("AC-6: build without revisionFindings returns ComposeInput with role, task, manifestSection, intent, and no revision header", () => {
     const ctx = makeBuildCtx();
-    const result = planDraftOp.build(makeDraftInput({ manifestSection: "UNIQUE_MANIFEST_MARKER", revisionFindings: undefined }), ctx as any);
+    const result = planDraftOp.build(
+      makeDraftInput({ manifestSection: "UNIQUE_MANIFEST_MARKER", revisionFindings: undefined }),
+      ctx as any,
+    );
     expect(result).toBeDefined();
     expect(typeof result).toBe("object");
     expect(result.role).toBeDefined();
@@ -219,11 +222,10 @@ describe("planDraftOp.retry — AC-17: retry strategy wiring", () => {
   });
 
   test("returns { retry: true, nextPrompt } on first failure with not-json output", () => {
-    const decision = retry.shouldRetry(
-      new ParseValidationError("not json"),
-      0,
-      { lastOutput: "not valid json", storyId: "s1" },
-    );
+    const decision = retry.shouldRetry(new ParseValidationError("not json"), 0, {
+      lastOutput: "not valid json",
+      storyId: "s1",
+    });
     expect(decision.retry).toBe(true);
     expect(typeof decision.nextPrompt).toBe("string");
     expect(decision.nextPrompt.length).toBeGreaterThan(0);
@@ -241,11 +243,10 @@ describe("planDraftOp.retry — AC-17: retry strategy wiring", () => {
   });
 
   test("exhaustedFallback returns FAIL_OPEN_DRAFT when partial is absent (not-json output)", () => {
-    const decision = retry.shouldRetry(
-      new ParseValidationError("bad"),
-      1,
-      { lastOutput: "not valid json", storyId: "s1" },
-    );
+    const decision = retry.shouldRetry(new ParseValidationError("bad"), 1, {
+      lastOutput: "not valid json",
+      storyId: "s1",
+    });
     expect(decision.retry).toBe(false);
     expect((decision.fallback as any).advisory).toBe(true);
     expect((decision.fallback as any).citationRate).toBe(0);

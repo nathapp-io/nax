@@ -12,14 +12,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { _deferredReviewDeps, captureRunStartRef, runDeferredReview } from "@/execution/deferred-review";
 import type { PluginRegistry } from "@/plugins";
 import type { IReviewPlugin } from "@/plugins/extensions";
 import type { ReviewConfig } from "@/review/types";
-import {
-  _deferredReviewDeps,
-  captureRunStartRef,
-  runDeferredReview,
-} from "@/execution/deferred-review";
 import { withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,7 +33,11 @@ function makeSpawnForRef(ref: string) {
         c.close();
       },
     }),
-    stderr: new ReadableStream({ start(c) { c.close(); } }),
+    stderr: new ReadableStream({
+      start(c) {
+        c.close();
+      },
+    }),
   }));
 }
 
@@ -50,7 +50,11 @@ function makeSpawnForDiff(files: string[]) {
         c.close();
       },
     }),
-    stderr: new ReadableStream({ start(c) { c.close(); } }),
+    stderr: new ReadableStream({
+      start(c) {
+        c.close();
+      },
+    }),
   }));
 }
 
@@ -162,7 +166,10 @@ describe("runDeferredReview — skips when conditions are not met", () => {
 
 describe("runDeferredReview — runs reviewers with full diff when deferred", () => {
   beforeEach(() => {
-    _deferredReviewDeps.spawn = makeSpawnForDiff(["src/foo.ts", "src/bar.ts"]) as unknown as typeof _deferredReviewDeps.spawn;
+    _deferredReviewDeps.spawn = makeSpawnForDiff([
+      "src/foo.ts",
+      "src/bar.ts",
+    ]) as unknown as typeof _deferredReviewDeps.spawn;
   });
 
   test("calls each registered reviewer exactly once", async () => {
@@ -296,7 +303,9 @@ describe("runDeferredReview — plugin failures do NOT fail the run", () => {
     const failingReviewer: IReviewPlugin = {
       name: "crashing",
       description: "Throws",
-      check: mock(async () => { throw new Error("crash"); }),
+      check: mock(async () => {
+        throw new Error("crash");
+      }),
     };
     const passingReviewer = makeReviewer("passing", true);
     const registry = makeRegistry([failingReviewer, passingReviewer]);

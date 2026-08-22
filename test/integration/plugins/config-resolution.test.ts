@@ -21,14 +21,16 @@ import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const DISABLE_BUILTIN_PLUGINS = ["nax-curator", "nax-auto-pr"];
 
-function loadPlugins(
-  ...args: Parameters<typeof loadPluginsWithBuiltins>
-): ReturnType<typeof loadPluginsWithBuiltins> {
+function loadPlugins(...args: Parameters<typeof loadPluginsWithBuiltins>): ReturnType<typeof loadPluginsWithBuiltins> {
   const [globalDir, projectDir, configPlugins, projectRoot, disabledPlugins, isTestFile] = args;
-  return loadPluginsWithBuiltins(globalDir, projectDir, configPlugins, projectRoot, [
-    ...DISABLE_BUILTIN_PLUGINS,
-    ...(disabledPlugins ?? []),
-  ], isTestFile);
+  return loadPluginsWithBuiltins(
+    globalDir,
+    projectDir,
+    configPlugins,
+    projectRoot,
+    [...DISABLE_BUILTIN_PLUGINS, ...(disabledPlugins ?? [])],
+    isTestFile,
+  );
 }
 
 // Test fixture helpers
@@ -584,12 +586,7 @@ describe("Plugin config path resolution (US-007)", () => {
     _setPluginErrorSink((message) => errors.push(String(message)));
 
     try {
-      const registry = await loadPlugins(
-        path.join(tempDir, "nonexistent-global"),
-        projectPlugins,
-        [],
-        tempDir,
-      );
+      const registry = await loadPlugins(path.join(tempDir, "nonexistent-global"), projectPlugins, [], tempDir);
 
       expect(registry.plugins).toHaveLength(0);
       expect(errors).toContainEqual(expect.stringContaining("Plugin validation failed"));

@@ -16,9 +16,9 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { StaticRulesProvider, _staticRulesDeps } from "@/context/engine";
-import type { RuleSection } from "@/context/rules/rule-sections";
-import type { CanonicalRule } from "@/context/rules/canonical-loader";
 import type { ContextRequest } from "@/context/engine/types";
+import type { CanonicalRule } from "@/context/rules/canonical-loader";
+import type { RuleSection } from "@/context/rules/rule-sections";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep save/restore
@@ -70,7 +70,10 @@ const BASE_REQUEST: ContextRequest = {
   budgetTokens: 8_000,
 };
 
-function sectionOf(rule: CanonicalRule, partial: Partial<RuleSection> & { slug: string; content: string }): RuleSection {
+function sectionOf(
+  rule: CanonicalRule,
+  partial: Partial<RuleSection> & { slug: string; content: string },
+): RuleSection {
   return {
     ruleId: rule.id ?? rule.fileName.replace(/\.md$/i, ""),
     rulePath: rule.path ?? rule.fileName,
@@ -118,7 +121,12 @@ describe("StaticRulesProvider — US-002 AC2: scopePaths from appliesTo frontmat
     };
     setupCanonical([rule]);
     setupSingleSectionPerRule([
-      sectionOf(rule, { slug: "agent-coding", content: "## Agent Coding\n\nbody", heading: "Agent Coding", ordinal: 0 }),
+      sectionOf(rule, {
+        slug: "agent-coding",
+        content: "## Agent Coding\n\nbody",
+        heading: "Agent Coding",
+        ordinal: 0,
+      }),
     ]);
 
     const provider = new StaticRulesProvider();

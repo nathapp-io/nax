@@ -31,7 +31,11 @@ function makeProc(stdout: string, exitCode = 0): SpawnResult {
         c.close();
       },
     }),
-    stderr: new ReadableStream({ start(c) { c.close(); } }),
+    stderr: new ReadableStream({
+      start(c) {
+        c.close();
+      },
+    }),
     stdin: { write: () => 0, end: () => {}, flush: () => {} },
     exited: Promise.resolve(exitCode),
     pid: 1,
@@ -147,8 +151,12 @@ describe("autoCommitIfDirty", () => {
     let debugCalled = false;
     const origGetSafeLogger = _gitDeps.getSafeLogger;
     _gitDeps.getSafeLogger = mock(() => ({
-      warn: () => { warnCalled = true; },
-      debug: () => { debugCalled = true; },
+      warn: () => {
+        warnCalled = true;
+      },
+      debug: () => {
+        debugCalled = true;
+      },
     })) as unknown as typeof _gitDeps.getSafeLogger;
 
     try {

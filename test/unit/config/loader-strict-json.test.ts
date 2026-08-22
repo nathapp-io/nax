@@ -13,8 +13,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { NaxError } from "@/errors";
 import { loadConfig } from "@/config/loader";
+import { NaxError } from "@/errors";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("loadConfig — corrupt config.json fails fast (SEC-5)", () => {
@@ -53,10 +53,7 @@ describe("loadConfig — corrupt config.json fails fast (SEC-5)", () => {
   });
 
   test("a well-formed project config.json still loads normally", async () => {
-    await Bun.write(
-      join(tempDir, ".nax", "config.json"),
-      JSON.stringify({ execution: { permissionProfile: "safe" } }),
-    );
+    await Bun.write(join(tempDir, ".nax", "config.json"), JSON.stringify({ execution: { permissionProfile: "safe" } }));
     const config = await loadConfig(tempDir);
     expect(config.execution.permissionProfile).toBe("safe");
   });

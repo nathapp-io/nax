@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  formatReport,
-  scanForDeepRelatives,
-} from "@scripts/check-deep-relatives";
+import { formatReport, scanForDeepRelatives } from "@scripts/check-deep-relatives";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function write(root: string, rel: string, content: string) {

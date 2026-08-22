@@ -12,11 +12,11 @@ import { describe, expect, mock, test } from "bun:test";
 import type { DiagnosisResult } from "@/acceptance/types";
 import type { AgentAdapter, AgentResult } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config/defaults";
-import { makeAgentAdapter } from "@test/helpers";
 import type { AcceptanceFixConfig, NaxConfig } from "@/config/schema";
 import type { PipelineEventEmitter } from "@/pipeline/events";
 import type { AgentGetFn } from "@/pipeline/types";
 import type { PRD } from "@/prd";
+import { makeAgentAdapter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

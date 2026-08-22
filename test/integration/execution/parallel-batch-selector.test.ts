@@ -116,11 +116,7 @@ describe("AC-13: selectIndependentBatch maxCount cap", () => {
   test("respects maxCount=1", async () => {
     try {
       const { selectIndependentBatch } = await import("@/execution/story-selector");
-      const stories = [
-        makeStory("US-001", []),
-        makeStory("US-002", []),
-        makeStory("US-003", []),
-      ];
+      const stories = [makeStory("US-001", []), makeStory("US-002", []), makeStory("US-003", [])];
       const result = selectIndependentBatch(stories, 1);
       expect(result.length).toBe(1);
     } catch {
@@ -152,10 +148,7 @@ describe("AC-14: selectIndependentBatch dependency-free only", () => {
   test("excludes stories with unmet dependencies", async () => {
     try {
       const { selectIndependentBatch } = await import("@/execution/story-selector");
-      const stories = [
-        makeStory("US-001", [], "pending"),
-        makeStory("US-002", ["US-001"], "pending"),
-      ];
+      const stories = [makeStory("US-001", [], "pending"), makeStory("US-002", ["US-001"], "pending")];
       const result = selectIndependentBatch(stories, 5);
       const ids = result.map((s) => s.id);
       expect(ids).not.toContain("US-002");
@@ -190,9 +183,9 @@ describe("AC-16: SequentialExecutionContext.parallelCount", () => {
       await import("@/execution/executor-types");
       expect(true).toBe(true);
     } catch {
-      const source = await Bun.file(
-        join(import.meta.dir, "../../../src/execution/executor-types.ts"),
-      ).text().catch(() => "");
+      const source = await Bun.file(join(import.meta.dir, "../../../src/execution/executor-types.ts"))
+        .text()
+        .catch(() => "");
       if (source) {
         expect(source).toContain("parallelCount");
       } else {
@@ -215,7 +208,6 @@ describe("AC-17: groupStoriesByDependencies accessibility", () => {
       expect(true).toBe(true);
     }
   });
-
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -227,5 +219,4 @@ describe("AC-18: executeUnified function", () => {
     const { executeUnified } = await import("@/execution/unified-executor");
     expect(typeof executeUnified).toBe("function");
   });
-
 });

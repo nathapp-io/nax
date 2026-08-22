@@ -22,12 +22,9 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
-import {
-  ToolDiagnosticsProvider,
-  _toolDiagnosticsDeps,
-} from "@/context/engine";
+import { join } from "node:path";
+import { ToolDiagnosticsProvider, _toolDiagnosticsDeps } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
 import { scratchFilePath } from "@/session";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
@@ -140,14 +137,12 @@ describe("ToolDiagnosticsProvider — AC6 nonexistent scratch dir", () => {
   test("returns empty chunks without throwing when scratch file is absent", async () => {
     mockNoFile();
     const provider = new ToolDiagnosticsProvider();
-    const result = await provider.fetch(
-      makeRequest({ storyScratchDirs: ["/sess/nonexistent"] }),
-    );
+    const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/nonexistent"] }));
     expect(result.chunks).toHaveLength(0);
   });
 
   test("skips a nonexistent dir but emits chunks for a present dir in the same request", async () => {
-    let existsPaths: string[] = [];
+    const existsPaths: string[] = [];
     _toolDiagnosticsDeps.fileExists = async (path) => {
       existsPaths.push(path);
       return path.includes("present");
@@ -191,9 +186,7 @@ describe("ToolDiagnosticsProvider — AC7 malformed JSONL tolerance", () => {
     mockScratchFile(`garbage\nmore-garbage\n${DIAG_ENTRY("src/a.ts", "msg")}\n`);
 
     const provider = new ToolDiagnosticsProvider();
-    await expect(
-      provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"] })),
-    ).resolves.toBeDefined();
+    await expect(provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"] }))).resolves.toBeDefined();
   });
 });
 
@@ -323,9 +316,7 @@ describe("ToolDiagnosticsProvider — AC10 returned chunk shape", () => {
     };
 
     const provider = new ToolDiagnosticsProvider();
-    const result = await provider.fetch(
-      makeRequest({ storyScratchDirs: ["/sess/dir-a", "/sess/dir-b"] }),
-    );
+    const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir-a", "/sess/dir-b"] }));
 
     expect(result.chunks).toHaveLength(2);
     expect(calls).toHaveLength(2);
@@ -435,9 +426,7 @@ describe("ToolDiagnosticsProvider — adversarial-rectification defensive tolera
     };
 
     const provider = new ToolDiagnosticsProvider();
-    const result = await provider.fetch(
-      makeRequest({ storyScratchDirs: ["/sess/vanished", "/sess/present"] }),
-    );
+    const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/vanished", "/sess/present"] }));
 
     expect(result.chunks).toHaveLength(1);
     expect(result.chunks[0].content).toContain("src/ok.ts");

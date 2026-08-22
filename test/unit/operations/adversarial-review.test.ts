@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { callOp } from "@/operations";
 import { adversarialReviewOp } from "@/operations/adversarial-review";
 import type { AdversarialReviewInput } from "@/operations/adversarial-review";
-import { callOp } from "@/operations";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -95,7 +95,9 @@ describe("adversarialReviewOp.build()", () => {
         {
           iterationNum: 1,
           findingsBefore: [],
-          fixesApplied: [{ strategyName: "source-fix", op: "source-fix", targetFiles: ["src/session.ts"], summary: "", costUsd: 0 }],
+          fixesApplied: [
+            { strategyName: "source-fix", op: "source-fix", targetFiles: ["src/session.ts"], summary: "", costUsd: 0 },
+          ],
           findingsAfter: [
             {
               source: "adversarial-review" as const,
@@ -139,7 +141,9 @@ describe("adversarialReviewOp.parse()", () => {
     const ctx = makeBuildCtx();
     const json = JSON.stringify({
       passed: false,
-      findings: [{ severity: "error", file: "src/session.ts", line: 5, issue: "error swallowed", suggestion: "re-throw" }],
+      findings: [
+        { severity: "error", file: "src/session.ts", line: 5, issue: "error swallowed", suggestion: "re-throw" },
+      ],
     });
     const result = adversarialReviewOp.parse(json, SAMPLE_INPUT, ctx);
     expect(result.passed).toBe(false);
@@ -168,7 +172,14 @@ describe("adversarialReviewOp.parse()", () => {
       passed: false,
       findings: [
         { severity: "error", category: "logic-bug", file: "src/a.ts", line: 1, issue: "real", suggestion: "fix" },
-        { severity: "warning", category: "style", file: "src/b.ts", line: 2, issue: "advisory", suggestion: "consider" },
+        {
+          severity: "warning",
+          category: "style",
+          file: "src/b.ts",
+          line: 2,
+          issue: "advisory",
+          suggestion: "consider",
+        },
       ],
     });
     const result = adversarialReviewOp.parse(json, inputWithThreshold, ctx);
@@ -178,9 +189,7 @@ describe("adversarialReviewOp.parse()", () => {
   });
   test("normalizedFindings is [] on looksLikeFail / no-findings paths", () => {
     const ctx = makeBuildCtx();
-    expect(
-      adversarialReviewOp.parse('{"passed":false}', SAMPLE_INPUT, ctx).normalizedFindings,
-    ).toEqual([]);
+    expect(adversarialReviewOp.parse('{"passed":false}', SAMPLE_INPUT, ctx).normalizedFindings).toEqual([]);
     expect(
       adversarialReviewOp.parse(JSON.stringify({ passed: true, findings: [] }), SAMPLE_INPUT, ctx).normalizedFindings,
     ).toEqual([]);

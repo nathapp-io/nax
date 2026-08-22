@@ -3,13 +3,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { IAgentManager } from "@/agents";
 import { judgeSelector } from "@/debate";
 import type { SelectorContext } from "@/debate/selectors/types";
 import type { SuccessfulProposal } from "@/debate/session-helpers";
+import type { CallContext } from "@/operations/types";
 import { DebatePromptBuilder } from "@/prompts";
 import { makeMockAgentManager, makeMockRuntime } from "@test/helpers";
-import type { IAgentManager } from "@/agents";
-import type { CallContext } from "@/operations/types";
 
 function makeProposals(outputs: string[]): SuccessfulProposal[] {
   return outputs.map((output) => ({

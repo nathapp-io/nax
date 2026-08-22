@@ -14,13 +14,13 @@
 /* biome-ignore lint/suspicious/noExplicitAny: test mocking and type compatibility */
 
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import * as loggerModule from "@/logger";
 import type { AgentRunRequest } from "@/agents";
 import { ParseValidationError } from "@/agents";
-import { _callOpDeps, callOp, adversarialReviewOp, type CallContext } from "@/operations";
+import * as loggerModule from "@/logger";
+import { type CallContext, _callOpDeps, adversarialReviewOp, callOp } from "@/operations";
 import type { AdversarialReviewInput } from "@/operations/adversarial-review";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeMockAgentManager, makeNaxConfig, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -110,11 +110,7 @@ describe("AC3: retry behavior — truncated JSON response", () => {
       lastOutput: truncatedOutput,
     };
 
-    const result = strategy.shouldRetry(
-      new ParseValidationError("JSON shape validation failed"),
-      0,
-      retryCtx,
-    );
+    const result = strategy.shouldRetry(new ParseValidationError("JSON shape validation failed"), 0, retryCtx);
 
     expect(result.retry).toBe(true);
     expect(result.delayMs).toBeDefined();
@@ -126,17 +122,13 @@ describe("AC3: retry behavior — truncated JSON response", () => {
     const opCtx = { packageView: ctx.packageView, config: ctx.config };
     const strategy = (adversarialReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
 
-    const result = strategy.shouldRetry(
-      new ParseValidationError("parse failed"),
-      0,
-      {
-        site: "complete" as const,
-        agentName: "claude",
-        stage: "review" as const,
-        storyId: SAMPLE_STORY.id,
-        lastOutput: '{"passed": false, "findings": [{"severity": "error", "issue": "cut',
-      },
-    );
+    const result = strategy.shouldRetry(new ParseValidationError("parse failed"), 0, {
+      site: "complete" as const,
+      agentName: "claude",
+      stage: "review" as const,
+      storyId: SAMPLE_STORY.id,
+      lastOutput: '{"passed": false, "findings": [{"severity": "error", "issue": "cut',
+    });
 
     expect(result.retry).toBe(true);
     expect(result.nextPrompt).toContain("truncated");
@@ -161,11 +153,7 @@ describe("AC4: retry behavior — invalid but non-truncated response", () => {
       lastOutput: shortInvalidOutput,
     };
 
-    const result = strategy.shouldRetry(
-      new ParseValidationError("JSON parsing failed"),
-      0,
-      retryCtx,
-    );
+    const result = strategy.shouldRetry(new ParseValidationError("JSON parsing failed"), 0, retryCtx);
 
     expect(result.retry).toBe(true);
     expect(result.nextPrompt).not.toContain("truncated");
@@ -303,8 +291,8 @@ describe("AC7: logging — storyId is first key in data object", () => {
       const strategy = (adversarialReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
 
       // Unfinished JSON — an object opened and never closed, which is what
-    // looksLikeTruncatedJson() detects now that nothing truncates by length.
-    const truncatedOutput = `{"passed": false, "findings": [{"severity": "error", "issue": "cut`;
+      // looksLikeTruncatedJson() detects now that nothing truncates by length.
+      const truncatedOutput = `{"passed": false, "findings": [{"severity": "error", "issue": "cut`;
 
       const retryCtx = {
         site: "complete" as const,
@@ -314,11 +302,7 @@ describe("AC7: logging — storyId is first key in data object", () => {
         lastOutput: truncatedOutput,
       };
 
-      const result = strategy.shouldRetry(
-        new ParseValidationError("JSON parse failed"),
-        0,
-        retryCtx,
-      );
+      const result = strategy.shouldRetry(new ParseValidationError("JSON parse failed"), 0, retryCtx);
 
       expect(result.retry).toBe(true);
     } finally {

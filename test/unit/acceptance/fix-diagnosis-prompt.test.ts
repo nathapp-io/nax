@@ -10,8 +10,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { AcceptancePromptBuilder } from "@/prompts";
 import type { SemanticVerdict } from "@/acceptance/types";
+import { AcceptancePromptBuilder } from "@/prompts";
 
 const builder = new AcceptancePromptBuilder();
 const buildDiagnosisPrompt = (opts: Parameters<AcceptancePromptBuilder["buildDiagnosisPrompt"]>[0]) =>
@@ -71,7 +71,8 @@ describe("buildDiagnosisPrompt — partial semantic verdicts section (AC-3)", ()
       prompt.includes("US-001") &&
       (prompt.toLowerCase().includes("likely test bug") ||
         prompt.toLowerCase().includes("likely a test bug") ||
-        prompt.toLowerCase().includes("test bug") && prompt.indexOf("US-001") < prompt.toLowerCase().indexOf("likely"));
+        (prompt.toLowerCase().includes("test bug") &&
+          prompt.indexOf("US-001") < prompt.toLowerCase().indexOf("likely")));
     expect(hasContextualMention).toBe(true);
   });
 

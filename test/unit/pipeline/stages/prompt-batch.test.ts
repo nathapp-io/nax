@@ -20,7 +20,7 @@ const WORKDIR = `/tmp/nax-test-prompt-batch-${randomUUID()}`;
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeStory(id: string = "US-001", title: string = "Implement login button"): UserStory {
+function makeStory(id = "US-001", title = "Implement login button"): UserStory {
   return {
     id,
     title,

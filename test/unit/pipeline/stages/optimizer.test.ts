@@ -38,8 +38,12 @@ describe("optimizerStage — no-prompt path logs at debug not warn", () => {
     let debugCalled = false;
 
     _optimizerDeps.getLogger = mock(() => ({
-      warn: (_stage: string, _msg: string) => { warnCalled = true; },
-      debug: (_stage: string, _msg: string) => { debugCalled = true; },
+      warn: (_stage: string, _msg: string) => {
+        warnCalled = true;
+      },
+      debug: (_stage: string, _msg: string) => {
+        debugCalled = true;
+      },
       info: () => {},
       error: () => {},
     })) as unknown as typeof _optimizerDeps.getLogger;
@@ -56,8 +60,12 @@ describe("optimizerStage — no-prompt path logs at debug not warn", () => {
     let debugCalled = false;
 
     _optimizerDeps.getLogger = mock(() => ({
-      warn: (_stage: string, _msg: string) => { warnCalled = true; },
-      debug: (_stage: string, _msg: string) => { debugCalled = true; },
+      warn: (_stage: string, _msg: string) => {
+        warnCalled = true;
+      },
+      debug: (_stage: string, _msg: string) => {
+        debugCalled = true;
+      },
       info: () => {},
       error: () => {},
     })) as unknown as typeof _optimizerDeps.getLogger;

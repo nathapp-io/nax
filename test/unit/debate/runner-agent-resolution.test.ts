@@ -10,11 +10,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { DEFAULT_CONFIG } from "@/config";
 import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import type { CallContext } from "@/operations/types";
-import { DEFAULT_CONFIG } from "@/config";
 import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 import { waitForCondition } from "@test/helpers";
 
@@ -309,7 +309,11 @@ describe("DebateRunner.run() — single-agent fallback", () => {
   test("returns the one successful proposal when only 1 debater succeeds", async () => {
     const agentManager = makeMockAgentManager({
       unavailableAgents: new Set(["missing-1", "missing-2"]),
-      completeAsFn: async () => ({ output: "the single successful proposal", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+      completeAsFn: async () => ({
+        output: "the single successful proposal",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
     });
 
     const runner = new DebateRunner({

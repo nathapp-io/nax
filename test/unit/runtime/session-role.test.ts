@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isSessionRole, KNOWN_SESSION_ROLES } from "@/runtime/session-role";
+import { KNOWN_SESSION_ROLES, isSessionRole } from "@/runtime/session-role";
 import type { SessionRole } from "@/runtime/session-role";
 
 describe("SessionRole", () => {
@@ -22,31 +22,39 @@ describe("SessionRole", () => {
 
   describe("isSessionRole", () => {
     test.each([
-      "main", "test-writer", "implementer", "verifier",
-      "diagnose", "source-fix", "test-fix",
-      "reviewer-semantic", "reviewer-adversarial",
-      "plan", "plan-draft", "plan-revise", "plan-critic", "plan-refine", "decompose",
-      "acceptance-gen", "refine", "fix-gen",
-      "auto", "synthesis", "judge",
+      "main",
+      "test-writer",
+      "implementer",
+      "verifier",
+      "diagnose",
+      "source-fix",
+      "test-fix",
+      "reviewer-semantic",
+      "reviewer-adversarial",
+      "plan",
+      "plan-draft",
+      "plan-revise",
+      "plan-critic",
+      "plan-refine",
+      "decompose",
+      "acceptance-gen",
+      "refine",
+      "fix-gen",
+      "auto",
+      "synthesis",
+      "judge",
     ] as SessionRole[])("returns true for canonical role: %s", (role) => {
       expect(isSessionRole(role)).toBe(true);
     });
 
-    test.each([
-      "debate-plan",
-      "debate-round-1",
-      "debate-adversarial-review",
-    ])("returns true for debate-prefixed role: %s", (role) => {
-      expect(isSessionRole(role)).toBe(true);
-    });
+    test.each(["debate-plan", "debate-round-1", "debate-adversarial-review"])(
+      "returns true for debate-prefixed role: %s",
+      (role) => {
+        expect(isSessionRole(role)).toBe(true);
+      },
+    );
 
-    test.each([
-      "unknown-role",
-      "MAIN",
-      "runner",
-      "",
-      "debate",
-    ])("returns false for non-role string: %s", (nonRole) => {
+    test.each(["unknown-role", "MAIN", "runner", "", "debate"])("returns false for non-role string: %s", (nonRole) => {
       expect(isSessionRole(nonRole)).toBe(false);
     });
   });

@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { acceptanceGenerateOp, _acceptanceGenerateDeps } from "@/operations";
-import type { AcceptanceGenerateInput } from "@/operations/acceptance-generate";
-import type { BuildContext, HopBodyContext, VerifyContext } from "@/operations/types";
 import type { TurnResult } from "@/agents/types";
 import { acceptanceGenConfigSelector } from "@/config";
 import type { AcceptanceGenConfig } from "@/config/selectors";
+import { _acceptanceGenerateDeps, acceptanceGenerateOp } from "@/operations";
+import type { AcceptanceGenerateInput } from "@/operations/acceptance-generate";
+import type { BuildContext, HopBodyContext, VerifyContext } from "@/operations/types";
+import type { NaxRuntime } from "@/runtime";
 import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import { withTempDir } from "@test/helpers";
-import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -30,10 +30,12 @@ function makeBuildCtx() {
   return { packageView: view, config: view.select(acceptanceGenConfigSelector) };
 }
 
-function makeVerifyCtx(overrides: {
-  readFile?: (path: string) => Promise<string | null>;
-  fileExists?: (path: string) => Promise<boolean>;
-} = {}): VerifyContext<AcceptanceGenConfig> {
+function makeVerifyCtx(
+  overrides: {
+    readFile?: (path: string) => Promise<string | null>;
+    fileExists?: (path: string) => Promise<boolean>;
+  } = {},
+): VerifyContext<AcceptanceGenConfig> {
   const runtime = makeTestRuntime();
   createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
@@ -65,8 +67,14 @@ describe("acceptanceGenerateOp shape", () => {
     const runtime = makeTestRuntime({ config });
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
-    const ctx: BuildContext<AcceptanceGenConfig> = { packageView: view, config: view.select(acceptanceGenConfigSelector) };
-    const modelResolver = acceptanceGenerateOp.model as (input: AcceptanceGenerateInput, ctx: BuildContext<AcceptanceGenConfig>) => unknown;
+    const ctx: BuildContext<AcceptanceGenConfig> = {
+      packageView: view,
+      config: view.select(acceptanceGenConfigSelector),
+    };
+    const modelResolver = acceptanceGenerateOp.model as (
+      input: AcceptanceGenerateInput,
+      ctx: BuildContext<AcceptanceGenConfig>,
+    ) => unknown;
 
     expect(modelResolver(SAMPLE_INPUT, ctx)).toEqual({
       agent: "opencode",
@@ -84,8 +92,14 @@ describe("acceptanceGenerateOp shape", () => {
     const runtime = makeTestRuntime({ config });
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
-    const ctx: BuildContext<AcceptanceGenConfig> = { packageView: view, config: view.select(acceptanceGenConfigSelector) };
-    const modelResolver = acceptanceGenerateOp.model as (input: AcceptanceGenerateInput, ctx: BuildContext<AcceptanceGenConfig>) => unknown;
+    const ctx: BuildContext<AcceptanceGenConfig> = {
+      packageView: view,
+      config: view.select(acceptanceGenConfigSelector),
+    };
+    const modelResolver = acceptanceGenerateOp.model as (
+      input: AcceptanceGenerateInput,
+      ctx: BuildContext<AcceptanceGenConfig>,
+    ) => unknown;
 
     expect(modelResolver(SAMPLE_INPUT, ctx)).toEqual({
       agent: "claude",
@@ -102,8 +116,14 @@ describe("acceptanceGenerateOp shape", () => {
     const runtime = makeTestRuntime({ config });
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
-    const ctx: BuildContext<AcceptanceGenConfig> = { packageView: view, config: view.select(acceptanceGenConfigSelector) };
-    const modelResolver = acceptanceGenerateOp.model as (input: AcceptanceGenerateInput, ctx: BuildContext<AcceptanceGenConfig>) => unknown;
+    const ctx: BuildContext<AcceptanceGenConfig> = {
+      packageView: view,
+      config: view.select(acceptanceGenConfigSelector),
+    };
+    const modelResolver = acceptanceGenerateOp.model as (
+      input: AcceptanceGenerateInput,
+      ctx: BuildContext<AcceptanceGenConfig>,
+    ) => unknown;
 
     expect(modelResolver(SAMPLE_INPUT, ctx)).toEqual({
       agent: "opencode",
@@ -131,7 +151,8 @@ describe("acceptanceGenerateOp.build()", () => {
 describe("acceptanceGenerateOp.parse()", () => {
   test("extracts code from typescript fenced block", () => {
     const ctx = makeBuildCtx();
-    const output = "Here is the test:\n```typescript\ndescribe('x', () => {\n  test('y', () => expect(1).toBe(1));\n});\n```";
+    const output =
+      "Here is the test:\n```typescript\ndescribe('x', () => {\n  test('y', () => expect(1).toBe(1));\n});\n```";
     const result = acceptanceGenerateOp.parse(output, SAMPLE_INPUT, ctx);
     expect(result.testCode).toContain("describe");
   });
@@ -178,7 +199,8 @@ describe("acceptanceGenerateOp.verify()", () => {
   test("Tier 2: returns disk content when it looks like test source (no fenced block)", async () => {
     await withTempDir(async (dir) => {
       const testPath = join(dir, "acceptance.test.ts");
-      const diskCode = "import { describe, test, expect } from 'bun:test';\ndescribe('x', () => { test('y', () => expect(1).toBe(1)); });";
+      const diskCode =
+        "import { describe, test, expect } from 'bun:test';\ndescribe('x', () => { test('y', () => expect(1).toBe(1)); });";
       await Bun.write(testPath, diskCode);
 
       const input = { ...SAMPLE_INPUT, targetTestFilePath: testPath };
@@ -196,8 +218,14 @@ describe("acceptanceGenerateOp.verify()", () => {
 
   test.each([
     ["disk file is missing", async () => null as string | null],
-    ["disk content is stub-shaped (raw, no fence)", async () => "describe('x', () => { test('y', () => expect(true).toBe(false)); });"],
-    ["fenced block contains stub-shaped code (Tier 1 stub guard)", async () => "```typescript\ndescribe('x', () => { test('y', () => expect(true).toBe(false)); });\n```"],
+    [
+      "disk content is stub-shaped (raw, no fence)",
+      async () => "describe('x', () => { test('y', () => expect(true).toBe(false)); });",
+    ],
+    [
+      "fenced block contains stub-shaped code (Tier 1 stub guard)",
+      async () => "```typescript\ndescribe('x', () => { test('y', () => expect(true).toBe(false)); });\n```",
+    ],
     ["disk content has no test markers", async () => "just some random text"],
   ])("returns null when %s", async (_label, readFile) => {
     const ctx = makeVerifyCtx({ readFile });

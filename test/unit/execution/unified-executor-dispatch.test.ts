@@ -78,7 +78,14 @@ function makeCtx(overrides: { parallelCount?: number } = {}) {
     runtime: {
       outputDir: "/tmp/nax-test-dispatch-output",
       costAggregator: {
-        snapshot: () => ({ totalCostUsd: 0, totalEstimatedCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }),
+        snapshot: () => ({
+          totalCostUsd: 0,
+          totalEstimatedCostUsd: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          callCount: 0,
+          errorCount: 0,
+        }),
         byStage: () => ({}),
         byStory: () => ({}),
         byAgent: () => ({}),
@@ -295,7 +302,10 @@ describe("AC-5 — story:started per-batch story via _deps injection", () => {
         completed: [story1, story2],
         failed: [],
         mergeConflicts: [],
-        storyCosts: new Map([[story1.id, 0], [story2.id, 0]]),
+        storyCosts: new Map([
+          [story1.id, 0],
+          [story2.id, 0],
+        ]),
         totalCost: 0,
       };
     });
@@ -508,26 +518,33 @@ describe("useBatch scheduling refresh", () => {
             : story,
         ),
       };
-      return { prd: nextPrd, storiesCompletedDelta: selection.story.id === "US-000" ? 0 : 1, costDelta: 0, prdDirty: false };
+      return {
+        prd: nextPrd,
+        storiesCompletedDelta: selection.story.id === "US-000" ? 0 : 1,
+        costDelta: 0,
+        prdDirty: false,
+      };
     });
 
-    deps.preIterationTierCheck = mock(async (story: { id: string }, _routing: unknown, _config: unknown, prd: typeof initialPrd) => {
-      if (story.id !== "US-000") {
-        return { shouldSkipIteration: false, prdDirty: false, prd };
-      }
-      tierCheckCallsForUs000++;
-      // First check (before US-000 has failed yet): still has budget, proceed.
-      if (tierCheckCallsForUs000 === 1) {
-        return { shouldSkipIteration: false, prdDirty: false, prd };
-      }
-      // Second check (the retry attempt, after US-000 already failed once):
-      // tier ladder exhausted — markStoryFailed's real effect, status stays
-      // "failed" and the run must move on instead of retrying forever.
-      // prdDirty:false (unlike production, which saves to real disk and
-      // reloads) — prd already carries the failed status from the runIteration
-      // mock above, so no reload is needed here.
-      return { shouldSkipIteration: true, prdDirty: false, prd };
-    });
+    deps.preIterationTierCheck = mock(
+      async (story: { id: string }, _routing: unknown, _config: unknown, prd: typeof initialPrd) => {
+        if (story.id !== "US-000") {
+          return { shouldSkipIteration: false, prdDirty: false, prd };
+        }
+        tierCheckCallsForUs000++;
+        // First check (before US-000 has failed yet): still has budget, proceed.
+        if (tierCheckCallsForUs000 === 1) {
+          return { shouldSkipIteration: false, prdDirty: false, prd };
+        }
+        // Second check (the retry attempt, after US-000 already failed once):
+        // tier ladder exhausted — markStoryFailed's real effect, status stays
+        // "failed" and the run must move on instead of retrying forever.
+        // prdDirty:false (unlike production, which saves to real disk and
+        // reloads) — prd already carries the failed status from the runIteration
+        // mock above, so no reload is needed here.
+        return { shouldSkipIteration: true, prdDirty: false, prd };
+      },
+    );
 
     const { executeUnified } = await import("@/execution/unified-executor");
     const baseCtx = makeCtx();

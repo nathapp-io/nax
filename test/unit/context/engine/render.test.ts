@@ -1,6 +1,6 @@
-import { describe, test, expect } from "bun:test";
-import { renderChunks } from "@/context/engine/render";
+import { describe, expect, test } from "bun:test";
 import type { PackedChunk } from "@/context/engine/packing";
+import { renderChunks } from "@/context/engine/render";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -109,6 +109,6 @@ describe("renderChunks", () => {
     const chunk = makePacked({ scope: "project", content: "  trimmed  \n\n" });
     const md = renderChunks([chunk]);
     expect(md).toContain("trimmed");
-    expect(md).not.toMatch(/  trimmed  /);
+    expect(md).not.toMatch(/ {2}trimmed {2}/);
   });
 });

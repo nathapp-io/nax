@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
-import { assemblePlanInputsFromCtx } from "@/execution/plan-inputs";
 import type { NaxConfig } from "@/config/schema";
+import { assemblePlanInputsFromCtx } from "@/execution/plan-inputs";
 import { _diffUtilsDeps } from "@/review";
 
 // ─── Spawn mock for diff-utils used inside prepare-inputs ──────────────────────
@@ -163,7 +163,6 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     expect(inputs.adversarialReview!.refExcludePatterns?.length ?? 0).toBeGreaterThan(0);
   });
 
-
   test("AC#4 (#1120): resolveTestFilePatterns result is shared between semantic and adversarial helpers via resolvedTestPatterns", async () => {
     // Both checks enabled — two prepare-inputs calls. plan-inputs.ts resolves patterns
     // once and forwards resolvedTestPatterns to both helpers, preventing double resolution.
@@ -208,7 +207,6 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     expect(adversarialExcludes).toContain(SENTINEL_DIR_PATHSPEC);
   });
 });
-
 
 describe("assemblePlanInputsFromCtx — evidence substantiation wiring (#1668)", () => {
   // `checkFindingEvidence` resolves a finding's file against `repoRoot` first,

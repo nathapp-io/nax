@@ -5,16 +5,11 @@
  * with initProject. All tests must fail until init-detect.ts is implemented.
  */
 
-import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import {
-  buildInitConfig,
-  buildQualityCommands,
-  detectProjectStack,
-} from "@/cli/init-detect";
+import { join } from "node:path";
 import { initProject } from "@/cli/init";
+import { buildInitConfig, buildQualityCommands, detectProjectStack } from "@/cli/init-detect";
 import { withTempDir } from "@test/helpers";
-
 
 // ---------------------------------------------------------------------------
 // detectProjectStack — runtime detection
@@ -199,7 +194,12 @@ describe("buildQualityCommands — bun + typescript", () => {
     ["biome", "lint", "biome check ."],
     ["eslint", "lint", "eslint ."],
   ])("linter=%s: %s command", (linter: string, cmd: string, expected: string) => {
-    const commands = buildQualityCommands({ runtime: "bun", language: "typescript", linter: linter as any, monorepo: "none" });
+    const commands = buildQualityCommands({
+      runtime: "bun",
+      language: "typescript",
+      linter: linter as any,
+      monorepo: "none",
+    });
     expect((commands as any)[cmd]).toBe(expected);
   });
 });
@@ -212,13 +212,23 @@ describe("buildQualityCommands — node + typescript", () => {
     ["biome", "lint", "biome check ."],
     ["eslint", "lint", "eslint ."],
   ])("linter=%s: %s command", (linter: string, cmd: string, expected: string) => {
-    const commands = buildQualityCommands({ runtime: "node", language: "typescript", linter: linter as any, monorepo: "none" });
+    const commands = buildQualityCommands({
+      runtime: "node",
+      language: "typescript",
+      linter: linter as any,
+      monorepo: "none",
+    });
     expect((commands as any)[cmd]).toBe(expected);
   });
 });
 
 describe("buildQualityCommands — python", () => {
-  const PYTHON_STACK = { runtime: "unknown" as const, language: "python" as const, linter: "unknown" as const, monorepo: "none" as const };
+  const PYTHON_STACK = {
+    runtime: "unknown" as const,
+    language: "python" as const,
+    linter: "unknown" as const,
+    monorepo: "none" as const,
+  };
 
   test.each([
     ["lint", "ruff check ."],
@@ -231,7 +241,12 @@ describe("buildQualityCommands — python", () => {
 });
 
 describe("buildQualityCommands — rust", () => {
-  const RUST_STACK = { runtime: "unknown" as const, language: "rust" as const, linter: "unknown" as const, monorepo: "none" as const };
+  const RUST_STACK = {
+    runtime: "unknown" as const,
+    language: "rust" as const,
+    linter: "unknown" as const,
+    monorepo: "none" as const,
+  };
 
   test.each([
     ["typecheck", "cargo check"],
@@ -243,7 +258,12 @@ describe("buildQualityCommands — rust", () => {
 });
 
 describe("buildQualityCommands — go", () => {
-  const GO_STACK = { runtime: "unknown" as const, language: "go" as const, linter: "unknown" as const, monorepo: "none" as const };
+  const GO_STACK = {
+    runtime: "unknown" as const,
+    language: "go" as const,
+    linter: "unknown" as const,
+    monorepo: "none" as const,
+  };
 
   test.each([
     ["typecheck", "go vet ./..."],

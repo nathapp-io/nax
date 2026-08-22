@@ -79,18 +79,39 @@ describe("acceptanceStage.enabled", () => {
     });
     expect(acceptanceStage.enabled(ctxDisabled)).toBe(false);
 
-    const ctxPending = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "pending" }]));
+    const ctxPending = createTestContext(
+      createTestPRD([
+        { id: "US-001", status: "passed" },
+        { id: "US-002", status: "pending" },
+      ]),
+    );
     expect(acceptanceStage.enabled(ctxPending)).toBe(false);
 
-    const ctxInProgress = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "in-progress" }]));
+    const ctxInProgress = createTestContext(
+      createTestPRD([
+        { id: "US-001", status: "passed" },
+        { id: "US-002", status: "in-progress" },
+      ]),
+    );
     expect(acceptanceStage.enabled(ctxInProgress)).toBe(false);
   });
 
   test("enabled when all stories are terminal (passed/failed/skipped)", () => {
-    const ctxMixed = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "failed" }, { id: "US-003", status: "skipped" }]));
+    const ctxMixed = createTestContext(
+      createTestPRD([
+        { id: "US-001", status: "passed" },
+        { id: "US-002", status: "failed" },
+        { id: "US-003", status: "skipped" },
+      ]),
+    );
     expect(acceptanceStage.enabled(ctxMixed)).toBe(true);
 
-    const ctxAllPassed = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "passed" }]));
+    const ctxAllPassed = createTestContext(
+      createTestPRD([
+        { id: "US-001", status: "passed" },
+        { id: "US-002", status: "passed" },
+      ]),
+    );
     expect(acceptanceStage.enabled(ctxAllPassed)).toBe(true);
   });
 });
@@ -367,11 +388,15 @@ describe("test-feature", () => {
     );
 
     // AC-3: {{FILE}} is substituted
-    const ctx3 = createTestContext(prd, { acceptance: { ...DEFAULT_CONFIG.acceptance, command: "bun test {{FILE}} --timeout=60000" } });
+    const ctx3 = createTestContext(prd, {
+      acceptance: { ...DEFAULT_CONFIG.acceptance, command: "bun test {{FILE}} --timeout=60000" },
+    });
     expect((await acceptanceStage.execute(ctx3)).action).toBe("continue");
 
     // AC-4: no {{FILE}} — executed verbatim with absolute path
-    const ctx4 = createTestContext(prd, { acceptance: { ...DEFAULT_CONFIG.acceptance, command: `bun test ${testPath} --timeout=60000` } });
+    const ctx4 = createTestContext(prd, {
+      acceptance: { ...DEFAULT_CONFIG.acceptance, command: `bun test ${testPath} --timeout=60000` },
+    });
     expect((await acceptanceStage.execute(ctx4)).action).toBe("continue");
   });
 });

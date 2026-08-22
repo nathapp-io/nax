@@ -7,12 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import {
-  _reviewGitDeps,
-  _reviewRunnerDeps,
-  resolveCommand,
-  resolveLanguageCommand,
-} from "@/review/runner";
+import { _reviewGitDeps, _reviewRunnerDeps, resolveCommand, resolveLanguageCommand } from "@/review/runner";
 import type { ReviewConfig } from "@/review/types";
 
 /** Minimal ReviewConfig with no explicit commands — lets fallback logic run */
@@ -75,9 +70,27 @@ describe("resolveLanguageCommand — language command table", () => {
     });
 
     test("returns null for missing binary, unsupported language, or empty language string", () => {
-      expect(resolveLanguageCommand("python", "lint", mock((_name: string) => null))).toBeNull();
-      expect(resolveLanguageCommand("ruby", "test", mock((_name: string) => "/usr/bin/ruby"))).toBeNull();
-      expect(resolveLanguageCommand("", "test", mock((_name: string) => "/usr/bin/something"))).toBeNull();
+      expect(
+        resolveLanguageCommand(
+          "python",
+          "lint",
+          mock((_name: string) => null),
+        ),
+      ).toBeNull();
+      expect(
+        resolveLanguageCommand(
+          "ruby",
+          "test",
+          mock((_name: string) => "/usr/bin/ruby"),
+        ),
+      ).toBeNull();
+      expect(
+        resolveLanguageCommand(
+          "",
+          "test",
+          mock((_name: string) => "/usr/bin/something"),
+        ),
+      ).toBeNull();
     });
   });
 });
@@ -138,7 +151,9 @@ describe("resolveCommand — language-aware fallback (US-004)", () => {
   test("AC-2: returns null when binary not found; null when no profile provided (no regression)", async () => {
     _reviewRunnerDeps.which = mock((_name: string) => null);
     mockNoPackageJson();
-    expect(await resolveCommand("lint", emptyConfig, undefined, "/tmp/workdir", undefined, { language: "go" })).toBeNull();
+    expect(
+      await resolveCommand("lint", emptyConfig, undefined, "/tmp/workdir", undefined, { language: "go" }),
+    ).toBeNull();
 
     mockNoPackageJson();
     expect(await resolveCommand("test", emptyConfig, undefined, "/tmp/workdir", undefined, undefined)).toBeNull();
@@ -200,5 +215,4 @@ describe("resolveCommand — language-aware fallback (US-004)", () => {
 
     expect(result).toBe("make test");
   });
-
 });

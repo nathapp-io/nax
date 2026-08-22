@@ -13,12 +13,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { _cacheDeps } from "@/test-runners/detect/cache";
 import { _directoryScanDeps } from "@/test-runners/detect/directory-scan";
 import { _fileScanDeps } from "@/test-runners/detect/file-scan";
 import { _frameworkConfigDeps } from "@/test-runners/detect/framework-configs";
 import { _frameworkDefaultsDeps } from "@/test-runners/detect/framework-defaults";
 import { detectTestFilePatterns } from "@/test-runners/detect/index";
-import { _cacheDeps } from "@/test-runners/detect/cache";
 
 // ─── Save/restore helpers ─────────────────────────────────────────────────────
 
@@ -68,7 +68,9 @@ beforeEach(() => {
     dirExists: _directoryScanDeps.dirExists,
     dirSpawn: _directoryScanDeps.spawn,
   };
-  _cacheDeps.readJson = mock(async () => { throw new Error("not found"); });
+  _cacheDeps.readJson = mock(async () => {
+    throw new Error("not found");
+  });
   _cacheDeps.writeJson = mock(async () => {});
   _cacheDeps.fileMtime = mock(async () => null);
   _directoryScanDeps.dirExists = mock(async () => false);

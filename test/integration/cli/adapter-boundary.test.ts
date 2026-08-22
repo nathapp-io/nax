@@ -17,8 +17,8 @@ const SRC_DIR = join(process.cwd(), "src");
 // source files must go through IAgentManager or ISessionManager. Keep in sync with
 // .claude/rules/adapter-wiring.md §"Phase 5 Constraint".
 const ALLOWED_FILES = new Set([
-  "agents/manager.ts",  // IAgentManager implementation
-  "agents/utils.ts",    // wrapAdapterAsManager() — wraps bare adapter as IAgentManager
+  "agents/manager.ts", // IAgentManager implementation
+  "agents/utils.ts", // wrapAdapterAsManager() — wraps bare adapter as IAgentManager
   "session/manager.ts", // ADR-019 Phase B: openSession/sendTurn/closeSession wiring layer
 ]);
 
@@ -32,10 +32,7 @@ const FORBIDDEN_PATTERNS = [
 ];
 
 // Patterns that are allowed (IAgentManager methods via the manager)
-const ALLOWED_PATTERNS = [
-  /agentManager\.(runAs|completeAs)\s*\(/,
-  /manager\.(runAs|completeAs)\s*\(/,
-];
+const ALLOWED_PATTERNS = [/agentManager\.(runAs|completeAs)\s*\(/, /manager\.(runAs|completeAs)\s*\(/];
 
 interface Violation {
   file: string;
@@ -48,8 +45,8 @@ interface Violation {
 // All other source files must obtain an IAgentManager via createAgentManager() or parameter threading.
 // Enforced here per SPEC-agent-manager-lifetime.md §2.4 and ADR-013 Phase 6.
 const NEW_AGENT_MANAGER_ALLOWED = new Set([
-  "agents/manager.ts",  // class AgentManager definition
-  "agents/factory.ts",  // createAgentManager() — the sole construction point
+  "agents/manager.ts", // class AgentManager definition
+  "agents/factory.ts", // createAgentManager() — the sole construction point
 ]);
 
 describe("ADR-013 Phase 6 — new AgentManager() confinement", () => {
@@ -147,9 +144,7 @@ describe("ADR-013 Phase 5 — adapter boundary enforcement", () => {
 
   test("no direct adapter.run/complete/plan/decompose/openSession/sendTurn/closeSession calls outside permitted wiring layer", () => {
     if (violations.length > 0) {
-      const msg = violations
-        .map((v) => `  ${v.file}:${v.line}: ${v.code}`)
-        .join("\n");
+      const msg = violations.map((v) => `  ${v.file}:${v.line}: ${v.code}`).join("\n");
       throw new Error(`Found ${violations.length} direct adapter call(s):\n${msg}`);
     }
     expect(violations).toEqual([]);

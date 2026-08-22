@@ -50,9 +50,7 @@ const TOOL_DIAGNOSTICS_ENTRY = JSON.stringify({
   kind: "tool-diagnostics",
   timestamp: "2026-01-01T00:00:00.000Z",
   storyId: "US-001",
-  diagnostics: [
-    { file: "src/a.ts", line: 12, severity: "error", message: "Cannot find name 'foo'.", tool: "tsc" },
-  ],
+  diagnostics: [{ file: "src/a.ts", line: 12, severity: "error", message: "Cannot find name 'foo'.", tool: "tsc" }],
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -120,9 +118,7 @@ describe("SessionScratchProvider — AC10: pre-cap filtering of tool-diagnostics
           kind: "tool-diagnostics",
           timestamp: `2026-01-01T00:${String(i).padStart(2, "0")}:00.000Z`,
           storyId: "US-001",
-          diagnostics: [
-            { file: `src/diag-${i}.ts`, line: 1, severity: "error", message: `m-${i}`, tool: "tsc" },
-          ],
+          diagnostics: [{ file: `src/diag-${i}.ts`, line: 1, severity: "error", message: `m-${i}`, tool: "tsc" }],
         }),
       );
     }

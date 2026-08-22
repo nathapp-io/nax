@@ -15,7 +15,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { mutationCheckOp, _mutationCheckDeps } from "@/operations";
+import { _mutationCheckDeps, mutationCheckOp } from "@/operations";
 import {
   cleanupTempDir,
   makeMutationCheckCtx as ctxWithConfig,

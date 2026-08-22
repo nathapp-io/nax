@@ -48,7 +48,14 @@ function makePrd(stories: UserStory[] = [makeStory()]): PRD {
 }
 
 function makeSubStory(id: string, overrides: Partial<UserStory> = {}): UserStory {
-  return makeStory({ id, title: `Sub-story ${id}`, description: `Description for ${id}`, contextFiles: ["src/foo.ts"], routing: { complexity: "simple", testStrategy: "test-after", reasoning: "simple", modelTier: "balanced" }, ...overrides });
+  return makeStory({
+    id,
+    title: `Sub-story ${id}`,
+    description: `Description for ${id}`,
+    contextFiles: ["src/foo.ts"],
+    routing: { complexity: "simple", testStrategy: "test-after", reasoning: "simple", modelTier: "balanced" },
+    ...overrides,
+  });
 }
 
 function toDecomposedStory(story: UserStory): DecomposedStory {
@@ -115,10 +122,7 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
   let capturedWriteArgs: Array<[string, string]>;
   let capturedCompleteArgs: string[];
 
-  function setupDeps(
-    prd: PRD,
-    stories: UserStory[] = [makeSubStory("US-001-A"), makeSubStory("US-001-B")],
-  ) {
+  function setupDeps(prd: PRD, stories: UserStory[] = [makeSubStory("US-001-A"), makeSubStory("US-001-B")]) {
     const prdPath = join(tmpDir, ".nax", "features", FEATURE, "prd.json");
     _planDeps.existsSync = mock((path: string) => path === prdPath);
     _planDeps.readFile = mock(async (path: string) => {
@@ -138,7 +142,11 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
       makeMockAgentManager({
         completeAsFn: async (_name: string, prompt: string) => {
           capturedCompleteArgs.push(prompt);
-          return { output: JSON.stringify(stories.map(toDecomposedStory)), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+          return {
+            output: JSON.stringify(stories.map(toDecomposedStory)),
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0,
+          };
         },
       }),
     );
@@ -250,9 +258,7 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
   test("AC-5: completeAs() receives workdir and storyId context options", async () => {
     const prd = makePrd();
     const capturedDecomposeOpts: unknown[] = [];
-    _planDeps.existsSync = mock((path: string) =>
-      path === join(tmpDir, ".nax", "features", FEATURE, "prd.json"),
-    );
+    _planDeps.existsSync = mock((path: string) => path === join(tmpDir, ".nax", "features", FEATURE, "prd.json"));
     _planDeps.readFile = mock(async () => JSON.stringify(prd));
     _planDeps.writeFile = mock(async (path: string, content: string) => {
       capturedWriteArgs.push([path, content]);
@@ -267,7 +273,11 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
       makeMockAgentManager({
         completeAsFn: async (_name: string, _prompt: string, opts?: any) => {
           capturedDecomposeOpts.push(opts ?? {});
-          return { output: JSON.stringify([makeSubStory("US-001-A"), makeSubStory("US-001-B")].map(toDecomposedStory)), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+          return {
+            output: JSON.stringify([makeSubStory("US-001-A"), makeSubStory("US-001-B")].map(toDecomposedStory)),
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0,
+          };
         },
       }),
     );
@@ -338,9 +348,9 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     const tooManyAcs = Array.from({ length: 7 }, (_, i) => `AC-${i + 1}: criterion`);
     const prd = makePrd();
     setupDeps(prd, [makeSubStory("US-001-A", { acceptanceCriteria: tooManyAcs })]);
-    await expect(
-      planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" }),
-    ).rejects.toMatchObject({ code: "DECOMPOSE_VALIDATION_FAILED" });
+    await expect(planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" })).rejects.toMatchObject({
+      code: "DECOMPOSE_VALIDATION_FAILED",
+    });
   });
 
   test("AC-8: accepts sub-story with exactly maxAcCount acceptance criteria", async () => {
@@ -348,8 +358,6 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     const exactAcs = Array.from({ length: 6 }, (_, i) => `AC-${i + 1}: criterion`);
     const prd = makePrd();
     setupDeps(prd, [makeSubStory("US-001-A", { acceptanceCriteria: exactAcs }), makeSubStory("US-001-B")]);
-    await expect(
-      planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" }),
-    ).resolves.not.toThrow();
+    await expect(planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" })).resolves.not.toThrow();
   });
 });

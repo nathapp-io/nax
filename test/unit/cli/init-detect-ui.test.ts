@@ -11,16 +11,12 @@
  * All tests must fail (RED) until the implementation is complete.
  */
 
-import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import {
-  buildInitConfig,
-  detectStack,
-} from "@/cli/init-detect";
-import type { StackInfo } from "@/cli/init-detect";
+import { join } from "node:path";
 import { initProject } from "@/cli/init";
+import { buildInitConfig, detectStack } from "@/cli/init-detect";
+import type { StackInfo } from "@/cli/init-detect";
 import { withTempDir } from "@test/helpers";
-
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -48,13 +44,16 @@ async function writePackageJson(
 // ---------------------------------------------------------------------------
 
 describe("StackInfo type — shape contracts", () => {
-  test.each(["ink", "react", "vue", "svelte", undefined])(
-    "StackInfo accepts uiFramework: %s",
-    (uiFramework) => {
-      const info: StackInfo = { runtime: "bun", language: "typescript", linter: "unknown", monorepo: "none", uiFramework: uiFramework as any };
-      expect(info.uiFramework).toBe(uiFramework);
-    },
-  );
+  test.each(["ink", "react", "vue", "svelte", undefined])("StackInfo accepts uiFramework: %s", (uiFramework) => {
+    const info: StackInfo = {
+      runtime: "bun",
+      language: "typescript",
+      linter: "unknown",
+      monorepo: "none",
+      uiFramework: uiFramework as any,
+    };
+    expect(info.uiFramework).toBe(uiFramework);
+  });
 
   test.each([true, false])("StackInfo accepts hasBin: %s", (hasBin) => {
     const info: StackInfo = { runtime: "bun", language: "typescript", linter: "unknown", monorepo: "none", hasBin };
@@ -75,17 +74,14 @@ describe("detectStack() — ink detection", () => {
     });
   });
 
-  test.each(["devDependencies", "peerDependencies"])(
-    "returns uiFramework: ink when ink is in %s",
-    async (depField) => {
-      await withTempDir(async (dir) => {
-        const pkg = { name: "test", version: "0.0.1", [depField]: { ink: "^4.0.0" } };
-        await Bun.write(join(dir, "package.json"), JSON.stringify(pkg, null, 2));
-        const stack = detectStack(dir);
-        expect(stack.uiFramework).toBe("ink");
-      });
-    },
-  );
+  test.each(["devDependencies", "peerDependencies"])("returns uiFramework: ink when ink is in %s", async (depField) => {
+    await withTempDir(async (dir) => {
+      const pkg = { name: "test", version: "0.0.1", [depField]: { ink: "^4.0.0" } };
+      await Bun.write(join(dir, "package.json"), JSON.stringify(pkg, null, 2));
+      const stack = detectStack(dir);
+      expect(stack.uiFramework).toBe("ink");
+    });
+  });
 });
 
 describe("detectStack() — react detection", () => {
@@ -102,10 +98,7 @@ describe("detectStack() — react detection", () => {
 });
 
 describe("detectStack() — vue detection", () => {
-  test.each([
-    [{ vue: "^3.0.0" }],
-    [{ nuxt: "^3.0.0" }],
-  ])("returns vue when %s is in dependencies", async (deps) => {
+  test.each([[{ vue: "^3.0.0" }], [{ nuxt: "^3.0.0" }]])("returns vue when %s is in dependencies", async (deps) => {
     await withTempDir(async (dir) => {
       await writePackageJson(dir, deps);
       const stack = detectStack(dir);
@@ -115,16 +108,16 @@ describe("detectStack() — vue detection", () => {
 });
 
 describe("detectStack() — svelte detection", () => {
-  test.each([
-    [{ svelte: "^4.0.0" }],
-    [{ "@sveltejs/kit": "^2.0.0" }],
-  ])("returns svelte when %s is in dependencies", async (deps) => {
-    await withTempDir(async (dir) => {
-      await writePackageJson(dir, deps);
-      const stack = detectStack(dir);
-      expect(stack.uiFramework).toBe("svelte");
-    });
-  });
+  test.each([[{ svelte: "^4.0.0" }], [{ "@sveltejs/kit": "^2.0.0" }]])(
+    "returns svelte when %s is in dependencies",
+    async (deps) => {
+      await withTempDir(async (dir) => {
+        await writePackageJson(dir, deps);
+        const stack = detectStack(dir);
+        expect(stack.uiFramework).toBe("svelte");
+      });
+    },
+  );
 });
 
 describe("detectStack() — no UI framework", () => {
@@ -209,7 +202,13 @@ describe("buildInitConfig — acceptance section for ink", () => {
     ["testStrategy", "component"],
     ["testFramework", "ink-testing-library"],
   ])("includes acceptance.%s for ink stack", (field, expected) => {
-    const config = buildInitConfig({ runtime: "bun", language: "typescript", linter: "unknown", monorepo: "none", uiFramework: "ink" }) as Record<string, unknown>;
+    const config = buildInitConfig({
+      runtime: "bun",
+      language: "typescript",
+      linter: "unknown",
+      monorepo: "none",
+      uiFramework: "ink",
+    }) as Record<string, unknown>;
     const acceptance = config.acceptance as Record<string, unknown>;
     expect(acceptance?.[field]).toBe(expected);
   });
@@ -220,7 +219,13 @@ describe("buildInitConfig — acceptance section for react", () => {
     ["testStrategy", "component"],
     ["testFramework", "@testing-library/react"],
   ])("includes acceptance.%s for react stack", (field, expected) => {
-    const config = buildInitConfig({ runtime: "node", language: "typescript", linter: "unknown", monorepo: "none", uiFramework: "react" }) as Record<string, unknown>;
+    const config = buildInitConfig({
+      runtime: "node",
+      language: "typescript",
+      linter: "unknown",
+      monorepo: "none",
+      uiFramework: "react",
+    }) as Record<string, unknown>;
     const acceptance = config.acceptance as Record<string, unknown>;
     expect(acceptance?.[field]).toBe(expected);
   });
@@ -231,7 +236,13 @@ describe("buildInitConfig — acceptance section for bin-only CLI project", () =
     ["testStrategy", "cli"],
     ["testFramework", "bun:test"],
   ])("includes acceptance.%s for bin-only project", (field, expected) => {
-    const config = buildInitConfig({ runtime: "bun", language: "typescript", linter: "unknown", monorepo: "none", hasBin: true }) as Record<string, unknown>;
+    const config = buildInitConfig({
+      runtime: "bun",
+      language: "typescript",
+      linter: "unknown",
+      monorepo: "none",
+      hasBin: true,
+    }) as Record<string, unknown>;
     const acceptance = config.acceptance as Record<string, unknown>;
     expect(acceptance?.[field]).toBe(expected);
   });

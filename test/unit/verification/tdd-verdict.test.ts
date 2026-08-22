@@ -3,7 +3,6 @@ import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   VERDICT_FILE,
   type VerifierVerdict,
@@ -12,6 +11,7 @@ import {
   coerceVerdict,
   readVerdict,
 } from "@/tdd/verdict";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -103,16 +103,86 @@ describe("readVerdict", () => {
   });
 
   test.each([
-    ["version missing", (d: any) => { delete d.version; }, (r: VerifierVerdict) => r.version, 1],
-    ["approved missing", (d: any) => { d.approved = undefined; }, (r: VerifierVerdict) => r.approved, false],
-    ["tests missing", (d: any) => { d.tests = undefined; }, (r: VerifierVerdict) => r.tests.passCount, 0],
-    ["tests.allPassing missing", (d: any) => { d.tests.allPassing = undefined; }, (r: VerifierVerdict) => r.tests.passCount, 10],
-    ["testModifications missing", (d: any) => { d.testModifications = undefined; }, (r: VerifierVerdict) => r.testModifications.detected, false],
-    ["acceptanceCriteria missing", (d: any) => { d.acceptanceCriteria = undefined; }, (r: VerifierVerdict) => r.acceptanceCriteria.criteria, []],
-    ["quality missing", (d: any) => { d.quality = undefined; }, (r: VerifierVerdict) => r.quality.rating, "acceptable"],
-    ["quality.rating invalid", (d: any) => { d.quality.rating = "excellent"; }, (r: VerifierVerdict) => r.quality.rating, "acceptable"],
-    ["fixes missing", (d: any) => { d.fixes = undefined; }, (r: VerifierVerdict) => r.fixes, []],
-    ["reasoning missing", (d: any) => { d.reasoning = undefined; }, (r: VerifierVerdict) => r.version, 1],
+    [
+      "version missing",
+      (d: any) => {
+        delete d.version;
+      },
+      (r: VerifierVerdict) => r.version,
+      1,
+    ],
+    [
+      "approved missing",
+      (d: any) => {
+        d.approved = undefined;
+      },
+      (r: VerifierVerdict) => r.approved,
+      false,
+    ],
+    [
+      "tests missing",
+      (d: any) => {
+        d.tests = undefined;
+      },
+      (r: VerifierVerdict) => r.tests.passCount,
+      0,
+    ],
+    [
+      "tests.allPassing missing",
+      (d: any) => {
+        d.tests.allPassing = undefined;
+      },
+      (r: VerifierVerdict) => r.tests.passCount,
+      10,
+    ],
+    [
+      "testModifications missing",
+      (d: any) => {
+        d.testModifications = undefined;
+      },
+      (r: VerifierVerdict) => r.testModifications.detected,
+      false,
+    ],
+    [
+      "acceptanceCriteria missing",
+      (d: any) => {
+        d.acceptanceCriteria = undefined;
+      },
+      (r: VerifierVerdict) => r.acceptanceCriteria.criteria,
+      [],
+    ],
+    [
+      "quality missing",
+      (d: any) => {
+        d.quality = undefined;
+      },
+      (r: VerifierVerdict) => r.quality.rating,
+      "acceptable",
+    ],
+    [
+      "quality.rating invalid",
+      (d: any) => {
+        d.quality.rating = "excellent";
+      },
+      (r: VerifierVerdict) => r.quality.rating,
+      "acceptable",
+    ],
+    [
+      "fixes missing",
+      (d: any) => {
+        d.fixes = undefined;
+      },
+      (r: VerifierVerdict) => r.fixes,
+      [],
+    ],
+    [
+      "reasoning missing",
+      (d: any) => {
+        d.reasoning = undefined;
+      },
+      (r: VerifierVerdict) => r.version,
+      1,
+    ],
   ])("coerces when %s", async (_label, mutate, getField, expected) => {
     const data = makeVerdict() as any;
     mutate(data);

@@ -11,7 +11,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { AgentManager } from "@/agents";
-import type { HopKind, AgentResult } from "@/agents";
+import type { AgentResult, HopKind } from "@/agents";
 import type { AdapterFailure, ContextBundle } from "@/context/engine";
 import { makeNaxConfig } from "@test/helpers";
 
@@ -194,8 +194,10 @@ describe("runWithFallback — HopKind routing", () => {
         agents.push(agentName);
         calls++;
         let result: AgentResult;
-        if (calls === 1) result = makeFailResult(STALE_FAILURE); // primary → stale
-        else if (calls === 2) result = makeFailResult(STALE_FAILURE); // stale-retry → stale again (exhausted)
+        if (calls === 1)
+          result = makeFailResult(STALE_FAILURE); // primary → stale
+        else if (calls === 2)
+          result = makeFailResult(STALE_FAILURE); // stale-retry → stale again (exhausted)
         else result = makeSuccessResult(); // swap → success
         return { result, bundle: _bundle };
       },

@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { llmFindingToReviewFinding, llmFindingsToReviewFindings, toAdversarialReviewFindings } from "@/review";
+import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 // LLMFinding / AdversarialLLMFinding are import-type only (erased at compile
 // time) so leaf-path imports here do not cause singleton fragmentation.
 import type { LLMFinding } from "@/review/semantic-helpers";
-import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 
 describe("llmFindingToReviewFinding", () => {
   test("joins issue and suggestion into message with arrow separator", () => {
@@ -55,24 +55,40 @@ describe("llmFindingToReviewFinding", () => {
 
   test("ruleId clusters semantically-related findings (same category, same first 6 tokens)", () => {
     const a: AdversarialLLMFinding = {
-      severity: "error", category: "input", file: "a.ts", line: 1,
-      issue: "Listener arg not validated as function in handler", suggestion: "",
+      severity: "error",
+      category: "input",
+      file: "a.ts",
+      line: 1,
+      issue: "Listener arg not validated as function in handler",
+      suggestion: "",
     };
     const b: AdversarialLLMFinding = {
-      severity: "error", category: "input", file: "b.ts", line: 9,
-      issue: "Listener arg not validated as function elsewhere", suggestion: "",
+      severity: "error",
+      category: "input",
+      file: "b.ts",
+      line: 9,
+      issue: "Listener arg not validated as function elsewhere",
+      suggestion: "",
     };
     expect(llmFindingToReviewFinding(a).ruleId).toBe(llmFindingToReviewFinding(b).ruleId);
   });
 
   test("ruleId distinguishes different issues within the same category", () => {
     const a: AdversarialLLMFinding = {
-      severity: "error", category: "input", file: "a.ts", line: 1,
-      issue: "Listener arg not validated", suggestion: "",
+      severity: "error",
+      category: "input",
+      file: "a.ts",
+      line: 1,
+      issue: "Listener arg not validated",
+      suggestion: "",
     };
     const b: AdversarialLLMFinding = {
-      severity: "error", category: "input", file: "b.ts", line: 9,
-      issue: "Timeout value missing upper bound", suggestion: "",
+      severity: "error",
+      category: "input",
+      file: "b.ts",
+      line: 9,
+      issue: "Timeout value missing upper bound",
+      suggestion: "",
     };
     expect(llmFindingToReviewFinding(a).ruleId).not.toBe(llmFindingToReviewFinding(b).ruleId);
   });
@@ -161,8 +177,12 @@ describe("llmFindingToReviewFinding", () => {
 
   test("punctuation-only issue also produces 'unspecified' slug", () => {
     const f: AdversarialLLMFinding = {
-      severity: "warning", category: "input", file: "x.ts", line: 1,
-      issue: "???", suggestion: "",
+      severity: "warning",
+      category: "input",
+      file: "x.ts",
+      line: 1,
+      issue: "???",
+      suggestion: "",
     };
     const rf = llmFindingToReviewFinding(f);
     expect(rf.ruleId).toBe("input:unspecified");
@@ -170,8 +190,11 @@ describe("llmFindingToReviewFinding", () => {
 
   test("slug truncates at exactly 6 tokens regardless of input length", () => {
     const f: LLMFinding = {
-      severity: "info", file: "x.ts", line: 1,
-      issue: "a b c d e f g", suggestion: "",
+      severity: "info",
+      file: "x.ts",
+      line: 1,
+      issue: "a b c d e f g",
+      suggestion: "",
     };
     const rf = llmFindingToReviewFinding(f);
     const slug = rf.ruleId.split(":")[1] ?? "";

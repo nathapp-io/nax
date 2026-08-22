@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import type { Finding } from "@/findings";
 import { lintCheckOp } from "@/operations";
 import type { LintCheckDeps } from "@/operations";
-import type { Finding } from "@/findings";
 
 function ctxWithQuality(quality?: Record<string, unknown>, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
   const config = { quality, execution: {} } as any;
@@ -119,12 +119,13 @@ describe("lintCheckOp — AC3: execute returns success=true when command exits 0
 describe("lintCheckOp — AC6: skip-with-warning when no lint command configured", () => {
   test("skips with success+warning when no lint command is configured (no false command)", async () => {
     let called = false;
-    const deps = makeDeps({ runQualityCommand: async () => { called = true; return passedResult; } });
-    const out = await lintCheckOp.execute(
-      { workdir: "/w", storyId: "US-003" },
-      ctxWithQuality({ commands: {} }),
-      deps,
-    );
+    const deps = makeDeps({
+      runQualityCommand: async () => {
+        called = true;
+        return passedResult;
+      },
+    });
+    const out = await lintCheckOp.execute({ workdir: "/w", storyId: "US-003" }, ctxWithQuality({ commands: {} }), deps);
     expect(called).toBe(false);
     expect(out.success).toBe(true);
     expect(out.status).toBe("skipped");
@@ -135,7 +136,12 @@ describe("lintCheckOp — AC6: skip-with-warning when no lint command configured
 describe("lintCheckOp — AC10: per-package config override", () => {
   test("runs the lint command resolved from packageView", async () => {
     let seen = "";
-    const deps = makeDeps({ runQualityCommand: async (o) => { seen = o.command; return passedResult; } });
+    const deps = makeDeps({
+      runQualityCommand: async (o) => {
+        seen = o.command;
+        return passedResult;
+      },
+    });
     await lintCheckOp.execute(
       { workdir: "/w", storyId: "US-003" },
       ctxWithQuality({ commands: { lint: "ruff check packages/agent" } }),
@@ -148,7 +154,12 @@ describe("lintCheckOp — AC10: per-package config override", () => {
 describe("lintCheckOp — workdir routing: repoRoot vs packageDir", () => {
   test("uses repoRoot as cwd when no per-package override (root config fallback)", async () => {
     let seenWorkdir = "";
-    const deps = makeDeps({ runQualityCommand: async (o) => { seenWorkdir = o.workdir; return passedResult; } });
+    const deps = makeDeps({
+      runQualityCommand: async (o) => {
+        seenWorkdir = o.workdir;
+        return passedResult;
+      },
+    });
     await lintCheckOp.execute(
       { workdir: "/repo/packages/app", storyId: "US-003" },
       ctxWithQuality({ commands: { lint: "bun run lint" } }, { hasOverride: false, repoRoot: "/repo" }),
@@ -159,7 +170,12 @@ describe("lintCheckOp — workdir routing: repoRoot vs packageDir", () => {
 
   test("uses input.workdir (packageDir) as cwd when per-package override exists", async () => {
     let seenWorkdir = "";
-    const deps = makeDeps({ runQualityCommand: async (o) => { seenWorkdir = o.workdir; return passedResult; } });
+    const deps = makeDeps({
+      runQualityCommand: async (o) => {
+        seenWorkdir = o.workdir;
+        return passedResult;
+      },
+    });
     await lintCheckOp.execute(
       { workdir: "/repo/packages/lib", storyId: "US-003" },
       ctxWithQuality({ commands: { lint: "echo ok" } }, { hasOverride: true, repoRoot: "/repo" }),

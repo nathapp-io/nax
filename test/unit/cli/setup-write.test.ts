@@ -91,8 +91,12 @@ describe("writeSetupConfig — AC2: single-package calls mkdir for .nax", () => 
   test("AC2 boundary: mkdir is called before writeFile", async () => {
     const callOrder: string[] = [];
     const deps: WriteDeps = {
-      mkdir: mock(async () => { callOrder.push("mkdir"); }),
-      writeFile: mock(async () => { callOrder.push("writeFile"); }),
+      mkdir: mock(async () => {
+        callOrder.push("mkdir");
+      }),
+      writeFile: mock(async () => {
+        callOrder.push("writeFile");
+      }),
     };
     await writeSetupConfig(WORKDIR, BASE_CONFIG, NO_MONO, undefined, deps);
     expect(callOrder.indexOf("mkdir")).toBeLessThan(callOrder.indexOf("writeFile"));

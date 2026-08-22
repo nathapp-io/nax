@@ -14,9 +14,9 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { AgentManager, SessionFailureError, SessionTurnError } from "@/agents";
-import { buildHopCallback, _buildHopCallbackDeps } from "@/operations";
 import type { SessionHandle, TurnResult } from "@/agents/types";
 import type { AdapterFailure, ContextBundle } from "@/context/engine";
+import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
 import { makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
 
 // ─── Stubs ───────────────────────────────────────────────────────────────────
@@ -119,9 +119,7 @@ describe("stale-then-swap — full runWithFallback loop", () => {
 
     const handoff = mock(() => ({ id: "sess-001", state: "RUNNING" }) as any);
     const getLiveHandle = mock((_name: string) => CLAUDE_HANDLE);
-    const openSession = mock(async (name: string) =>
-      name.includes("codex") ? CODEX_HANDLE : CLAUDE_HANDLE,
-    );
+    const openSession = mock(async (name: string) => (name.includes("codex") ? CODEX_HANDLE : CLAUDE_HANDLE));
     const sessionMgr = makeSessionManager({ handoff, getLiveHandle, openSession });
 
     let sendCallCount = 0;
@@ -156,9 +154,7 @@ describe("stale-then-swap — full runWithFallback loop", () => {
 
     const closeSession = mock(async () => {});
     const getLiveHandle = mock((_name: string) => CLAUDE_HANDLE);
-    const openSession = mock(async (name: string) =>
-      name.includes("codex") ? CODEX_HANDLE : CLAUDE_HANDLE,
-    );
+    const openSession = mock(async (name: string) => (name.includes("codex") ? CODEX_HANDLE : CLAUDE_HANDLE));
     const sessionMgr = makeSessionManager({ closeSession, getLiveHandle, openSession });
 
     let sendCallCount = 0;
@@ -233,7 +229,7 @@ describe("fail-adapter-error retry — QUEUE_DISCONNECTED_BEFORE_COMPLETION (#10
     const config = makeAdapterErrorConfig(2);
     const manager = new AgentManager(config);
 
-    const openSession = mock(async () => ({ id: "ses_01", agentName: "claude" } as SessionHandle));
+    const openSession = mock(async () => ({ id: "ses_01", agentName: "claude" }) as SessionHandle);
     const sessionMgr = makeSessionManager({ openSession });
 
     let callCount = 0;
@@ -270,7 +266,7 @@ describe("fail-adapter-error retry — QUEUE_DISCONNECTED_BEFORE_COMPLETION (#10
     const config = makeAdapterErrorConfig(2);
     const manager = new AgentManager(config);
 
-    const openSession = mock(async () => ({ id: "ses_01", agentName: "claude" } as SessionHandle));
+    const openSession = mock(async () => ({ id: "ses_01", agentName: "claude" }) as SessionHandle);
     const sessionMgr = makeSessionManager({ openSession });
 
     let callCount = 0;
@@ -308,8 +304,8 @@ describe("fail-adapter-error retry — QUEUE_DISCONNECTED_BEFORE_COMPLETION (#10
     const config = makeAdapterErrorConfig(1);
     const manager = new AgentManager(config);
 
-    const openSession = mock(async () => ({ id: "ses_01", agentName: "claude" } as SessionHandle));
-    const getLiveHandle = mock((_name: string) => ({ id: "ses_01", agentName: "claude" } as SessionHandle));
+    const openSession = mock(async () => ({ id: "ses_01", agentName: "claude" }) as SessionHandle);
+    const getLiveHandle = mock((_name: string) => ({ id: "ses_01", agentName: "claude" }) as SessionHandle);
     const sessionMgr = makeSessionManager({ openSession, getLiveHandle });
 
     let callCount = 0;

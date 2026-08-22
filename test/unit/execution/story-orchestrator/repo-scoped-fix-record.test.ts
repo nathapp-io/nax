@@ -40,9 +40,11 @@ describe("recordRepoScopedFixes (US-002)", () => {
     recordRepoScopedFixes(story, [makeRecord({ declinedReason: "gave up" })]);
 
     expect(story.repoScopedFixes).toHaveLength(1);
-    expect(Object.keys(story.repoScopedFixes?.[0] ?? {}).sort()).toEqual(
-      ["filesChanged", "findingsCleared", "triggeringTests"],
-    );
+    expect(Object.keys(story.repoScopedFixes?.[0] ?? {}).sort()).toEqual([
+      "filesChanged",
+      "findingsCleared",
+      "triggeringTests",
+    ]);
   });
 
   test("AC3: preserves source order across two records", () => {

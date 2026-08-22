@@ -12,12 +12,12 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import { DEFAULT_CONFIG } from "@/config";
 import { NaxError } from "@/errors";
-import { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "@/execution";
+import { type PlanInputs, assemblePlanInputs, assemblePlanInputsFromCtx } from "@/execution";
 import { _diffUtilsDeps } from "@/review";
 import type { ResolvedTestPatterns } from "@/test-runners";
-import { makeStory, makeNaxConfig } from "@test/helpers";
-import { DEFAULT_CONFIG } from "@/config";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 
 // Helper: stub git-diff spawn so review-input prep can resolve stat. The orchestrator
 // path calls collectDiffStat before constructing review inputs; tests that assert
@@ -106,7 +106,9 @@ describe("assemblePlanInputs validation", () => {
   ])("throws NaxError when %s", (_label, storyOverrides) => {
     const story = makeStory(storyOverrides as any);
     const config = makeNaxConfig();
-    expect(() => { assemblePlanInputs(story, config); }).toThrow(NaxError);
+    expect(() => {
+      assemblePlanInputs(story, config);
+    }).toThrow(NaxError);
   });
 });
 
@@ -207,16 +209,19 @@ describe("assemblePlanInputs - NaxError contract", () => {
     ["story id", { id: "" }, undefined, "STORY_ID_INVALID"],
     ["story title", { id: "US-001", title: "" }, undefined, "STORY_TITLE_MISSING"],
     ["config", { id: "US-001" }, { agent: { default: "", fallback: { map: {} } } }, "CONFIG_INVALID"],
-  ])("NaxError has machine-readable code on %s failure", (_label: string, storyOverrides: any, configOverrides: any, expectedCode: string) => {
-    const story = makeStory(storyOverrides as any);
-    const config = configOverrides ? makeNaxConfig(configOverrides) : makeNaxConfig();
-    try {
-      assemblePlanInputs(story, config);
-      expect.unreachable("Should have thrown");
-    } catch (err) {
-      expect((err as NaxError).code).toBe(expectedCode);
-    }
-  });
+  ])(
+    "NaxError has machine-readable code on %s failure",
+    (_label: string, storyOverrides: any, configOverrides: any, expectedCode: string) => {
+      const story = makeStory(storyOverrides as any);
+      const config = configOverrides ? makeNaxConfig(configOverrides) : makeNaxConfig();
+      try {
+        assemblePlanInputs(story, config);
+        expect.unreachable("Should have thrown");
+      } catch (err) {
+        expect((err as NaxError).code).toBe(expectedCode);
+      }
+    },
+  );
 
   test("NaxError context has stage+storyId; code is UPPER_SNAKE_CASE; message is human-readable", () => {
     const story = makeStory({ id: "" });
@@ -354,11 +359,19 @@ describe("PlanInputs — AC1: new optional slots (US-005)", () => {
     ["deferred", "deferred" as const, "deferred"],
     ["per-story", "per-story" as const, "per-story"],
     ["disabled (maps to deferred)", "disabled" as const, "deferred"],
-  ])("AC1: verifyScoped.regressionMode when regressionGate.mode=%s", async (_label, gateMode, expectedRegressionMode) => {
-    const ctx = makeNonTddCtx({ execution: { ...DEFAULT_CONFIG.execution, regressionGate: { ...DEFAULT_CONFIG.execution.regressionGate, mode: gateMode } } });
-    const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.verifyScoped?.regressionMode).toBe(expectedRegressionMode);
-  });
+  ])(
+    "AC1: verifyScoped.regressionMode when regressionGate.mode=%s",
+    async (_label, gateMode, expectedRegressionMode) => {
+      const ctx = makeNonTddCtx({
+        execution: {
+          ...DEFAULT_CONFIG.execution,
+          regressionGate: { ...DEFAULT_CONFIG.execution.regressionGate, mode: gateMode },
+        },
+      });
+      const inputs = await assemblePlanInputsFromCtx(ctx);
+      expect(inputs.verifyScoped?.regressionMode).toBe(expectedRegressionMode);
+    },
+  );
 
   test("AC1: assemblePlanInputsFromCtx populates lintCheck when 'lint' in review.checks and lint command configured", async () => {
     const ctx = makeNonTddCtx({
@@ -484,7 +497,9 @@ describe("assemblePlanInputs - complete scenario", () => {
 
   test("fails fast on first validation error — story id or config agent.default", () => {
     expect(() => assemblePlanInputs(makeStory({ id: "" }), makeNaxConfig())).toThrow(NaxError);
-    expect(() => assemblePlanInputs(makeStory({ id: "US-001" }), makeNaxConfig({ agent: { default: "", fallback: { map: {} } } }))).toThrow(NaxError);
+    expect(() =>
+      assemblePlanInputs(makeStory({ id: "US-001" }), makeNaxConfig({ agent: { default: "", fallback: { map: {} } } })),
+    ).toThrow(NaxError);
   });
 
   test("returned PlanInputs has correct structure for downstream assembly", () => {

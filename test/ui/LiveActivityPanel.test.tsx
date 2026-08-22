@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { render } from "ink-testing-library";
-import React from "react";
+import type { RunCompletedEvent } from "@/pipeline/event-bus";
 import { LiveActivityPanel } from "@/tui/components/LiveActivityPanel";
 import type { ActiveCallState } from "@/tui/hooks/useAgentStreamEvents";
-import type { RunCompletedEvent } from "@/pipeline/event-bus";
 import type { EscalationEntry } from "@/tui/hooks/usePipelineBusEvents";
+import { render } from "ink-testing-library";
+import React from "react";
 
 function makeCall(overrides: Partial<ActiveCallState> = {}): ActiveCallState {
   return {
@@ -60,9 +60,7 @@ describe("LiveActivityPanel", () => {
   });
 
   test("shows error banner when runErrored is set", () => {
-    const { lastFrame } = render(
-      React.createElement(LiveActivityPanel, { runErrored: "config load failed" })
-    );
+    const { lastFrame } = render(React.createElement(LiveActivityPanel, { runErrored: "config load failed" }));
     expect(lastFrame()).toContain("config load failed");
   });
 
@@ -71,9 +69,7 @@ describe("LiveActivityPanel", () => {
     const escalationLog: EscalationEntry[] = [
       { storyId: "US-001", fromTier: "fast", toTier: "balanced", at: Date.now() },
     ];
-    const { lastFrame } = render(
-      React.createElement(LiveActivityPanel, { activeCalls: calls, escalationLog })
-    );
+    const { lastFrame } = render(React.createElement(LiveActivityPanel, { activeCalls: calls, escalationLog }));
     const frame = lastFrame() ?? "";
     expect(frame).toContain("fast");
     expect(frame).toContain("balanced");

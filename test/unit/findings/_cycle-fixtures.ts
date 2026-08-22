@@ -9,9 +9,9 @@
  */
 
 import { mock } from "bun:test";
-import type { CallOpFn } from "@/findings/cycle";
 import type { FixCycle, FixCycleContext, FixStrategy } from "@/findings";
 import type { Finding } from "@/findings";
+import type { CallOpFn } from "@/findings/cycle";
 import { makeMockAgentManager, makeNaxConfig } from "@test/helpers";
 
 export function makeFinding(overrides: Partial<Finding> & Pick<Finding, "source" | "message">): Finding {
@@ -20,7 +20,12 @@ export function makeFinding(overrides: Partial<Finding> & Pick<Finding, "source"
 
 export const lintA = makeFinding({ source: "lint", message: "unused var", file: "src/a.ts", line: 1 });
 export const lintB = makeFinding({ source: "lint", message: "missing semicolon", file: "src/b.ts", line: 5 });
-export const typecheckC = makeFinding({ source: "typecheck", message: "TS2304: Cannot find name", file: "src/c.ts", line: 3 });
+export const typecheckC = makeFinding({
+  source: "typecheck",
+  message: "TS2304: Cannot find name",
+  file: "src/c.ts",
+  line: 3,
+});
 
 export function makeCtx(): FixCycleContext {
   const config = makeNaxConfig();

@@ -42,4 +42,3 @@ CHANGE: a! → a?`;
     expect(out.testEditDeclarations).toHaveLength(1);
   });
 });
-

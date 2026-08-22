@@ -14,9 +14,9 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "@/config";
+import { collectStoryMetrics } from "@/metrics/tracker";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
-import { collectStoryMetrics } from "@/metrics/tracker";
 import { makeNaxConfig } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
 

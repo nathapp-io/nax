@@ -6,12 +6,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { IAgentManager } from "@/agents/manager-types";
+import type { AgentResult } from "@/agents/types";
 import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { AdversarialReviewConfig } from "@/review/types";
 import type { SemanticStory } from "@/review/types";
-import type { AgentResult } from "@/agents/types";
-import type { IAgentManager } from "@/agents/manager-types";
 import { makeMockAgentManager } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
 
@@ -55,7 +55,18 @@ function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
       agentFallbacks: [] as unknown[],
     }),
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" as const }),
-    runWithFallbackFn: async () => ({ result: { success: true as const, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCostUsd: cost, agentFallbacks: [] as unknown[] }, fallbacks: [] }),
+    runWithFallbackFn: async () => ({
+      result: {
+        success: true as const,
+        exitCode: 0,
+        output: llmResponse,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCostUsd: cost,
+        agentFallbacks: [] as unknown[],
+      },
+      fallbacks: [],
+    }),
   });
 }
 
@@ -305,10 +316,22 @@ describe("runAdversarialReview — review audit gate", () => {
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({
       agentManager,
-      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), getAdvisoryFindings: () => [], async flush() {} },
+      reviewAuditor: {
+        recordDispatch() {},
+        recordDecision: (entry) => auditCalls.push(entry),
+        getAdvisoryFindings: () => [],
+        async flush() {},
+      },
     });
 
-    await runAdversarialReview({ workdir: "/tmp/wd", storyGitRef: "abc123", story: STORY, adversarialConfig: ADVERSARIAL_CONFIG, agentManager, runtime });
+    await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
+      agentManager,
+      runtime,
+    });
 
     expect(auditCalls).toHaveLength(1);
     expect((auditCalls[0] as any).parsed).toBe(true);
@@ -320,11 +343,24 @@ describe("runAdversarialReview — review audit gate", () => {
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({
       agentManager,
-      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), getAdvisoryFindings: () => [], async flush() {} },
+      reviewAuditor: {
+        recordDispatch() {},
+        recordDecision: (entry) => auditCalls.push(entry),
+        getAdvisoryFindings: () => [],
+        async flush() {},
+      },
     });
     const naxConfig = { review: { audit: { enabled: true } } } as any;
 
-    await runAdversarialReview({ workdir: "/tmp/wd", storyGitRef: "abc123", story: STORY, adversarialConfig: ADVERSARIAL_CONFIG, agentManager, naxConfig, runtime });
+    await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
+      agentManager,
+      naxConfig,
+      runtime,
+    });
 
     expect(auditCalls).toHaveLength(1);
     expect((auditCalls[0] as any).parsed).toBe(true);
@@ -337,11 +373,24 @@ describe("runAdversarialReview — review audit gate", () => {
     const agentManager = makeAgentManager("not json at all");
     const runtime = makeMockRuntime({
       agentManager,
-      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), getAdvisoryFindings: () => [], async flush() {} },
+      reviewAuditor: {
+        recordDispatch() {},
+        recordDecision: (entry) => auditCalls.push(entry),
+        getAdvisoryFindings: () => [],
+        async flush() {},
+      },
     });
     const naxConfig = { review: { audit: { enabled: true } } } as any;
 
-    await runAdversarialReview({ workdir: "/tmp/wd", storyGitRef: "abc123", story: STORY, adversarialConfig: ADVERSARIAL_CONFIG, agentManager, naxConfig, runtime });
+    await runAdversarialReview({
+      workdir: "/tmp/wd",
+      storyGitRef: "abc123",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
+      agentManager,
+      naxConfig,
+      runtime,
+    });
 
     expect(auditCalls).toHaveLength(1);
     expect((auditCalls[0] as any).parsed).toBe(false);

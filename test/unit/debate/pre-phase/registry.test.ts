@@ -4,8 +4,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { NaxError } from "@/errors";
 import { resolvePreDebatePhase } from "@/debate";
+import { NaxError } from "@/errors";
 
 describe("resolvePreDebatePhase", () => {
   it("throws NaxError with code PRE_DEBATE_PHASE_UNKNOWN for unknown kind", () => {

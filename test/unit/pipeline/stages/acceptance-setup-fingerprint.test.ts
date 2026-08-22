@@ -1,11 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import {
-  acceptanceSetupStage,
-  _acceptanceSetupDeps,
-  computeACFingerprint,
-} from "@/pipeline/stages/acceptance-setup";
-import type { PipelineContext } from "@/pipeline/types";
 import { DEFAULT_CONFIG } from "@/config";
+import { _acceptanceSetupDeps, acceptanceSetupStage, computeACFingerprint } from "@/pipeline/stages/acceptance-setup";
+import type { PipelineContext } from "@/pipeline/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -167,8 +163,12 @@ describe("US-004: fingerprint reuse logging (staleness detection)", () => {
       acCount: 3,
       generator: "nax",
     });
-    _acceptanceSetupDeps.copyFile = async () => { copyFileCalled = true; };
-    _acceptanceSetupDeps.deleteFile = async () => { deleteFileCalled = true; };
+    _acceptanceSetupDeps.copyFile = async () => {
+      copyFileCalled = true;
+    };
+    _acceptanceSetupDeps.deleteFile = async () => {
+      deleteFileCalled = true;
+    };
     _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
@@ -225,7 +225,9 @@ describe("US-001: per-package test file generation by workdir", () => {
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.callOp = makeDefaultCallOp();
-    _acceptanceSetupDeps.writeFile = async (p) => { if (p.endsWith(".nax-acceptance.test.ts")) writtenPaths.push(p); };
+    _acceptanceSetupDeps.writeFile = async (p) => {
+      if (p.endsWith(".nax-acceptance.test.ts")) writtenPaths.push(p);
+    };
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
@@ -242,7 +244,9 @@ describe("US-001: per-package test file generation by workdir", () => {
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.callOp = makeDefaultCallOp();
-    _acceptanceSetupDeps.writeFile = async (p) => { if (p.endsWith(".nax-acceptance.test.ts")) writtenPaths.push(p); };
+    _acceptanceSetupDeps.writeFile = async (p) => {
+      if (p.endsWith(".nax-acceptance.test.ts")) writtenPaths.push(p);
+    };
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
@@ -378,7 +382,9 @@ describe("US-003: semantic-verdicts cleared on fingerprint mismatch", () => {
     });
     _acceptanceSetupDeps.copyFile = async () => {};
     _acceptanceSetupDeps.deleteFile = async () => {};
-    _acceptanceSetupDeps.deleteSemanticVerdicts = async () => { deleteSemanticVerdictsCalled = true; };
+    _acceptanceSetupDeps.deleteSemanticVerdicts = async () => {
+      deleteSemanticVerdictsCalled = true;
+    };
     _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
@@ -402,7 +408,9 @@ describe("US-003: semantic-verdicts cleared on fingerprint mismatch", () => {
     });
     _acceptanceSetupDeps.copyFile = async () => {};
     _acceptanceSetupDeps.deleteFile = async () => {};
-    _acceptanceSetupDeps.deleteSemanticVerdicts = async (featureDir) => { capturedFeatureDir = featureDir; };
+    _acceptanceSetupDeps.deleteSemanticVerdicts = async (featureDir) => {
+      capturedFeatureDir = featureDir;
+    };
     _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
@@ -428,7 +436,9 @@ describe("US-003: semantic-verdicts cleared on fingerprint mismatch", () => {
       acCount: 3,
       generator: "nax",
     });
-    _acceptanceSetupDeps.deleteSemanticVerdicts = async () => { deleteSemanticVerdictsCalled = true; };
+    _acceptanceSetupDeps.deleteSemanticVerdicts = async () => {
+      deleteSemanticVerdictsCalled = true;
+    };
     _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op) => {
       throw new Error(`callOp should not be called on fingerprint match: ${op.name}`);
     };

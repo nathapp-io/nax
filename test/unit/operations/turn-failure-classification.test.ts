@@ -86,9 +86,7 @@ describe("classifyEmptyOutputFailure — non-empty output", () => {
 
   test("returns null when output is non-empty even if timedOut is true (timeout yields empty output)", () => {
     // Defensive: when output is non-empty the helper must not synthesise a failure.
-    const failure = classifyEmptyOutputFailure(
-      makeTurnResult({ output: "content", timedOut: true }),
-    );
+    const failure = classifyEmptyOutputFailure(makeTurnResult({ output: "content", timedOut: true }));
     expect(failure).toBeNull();
   });
 });
@@ -120,7 +118,9 @@ describe("classifyProviderRefusalFailure (BUG-62)", () => {
     // A refusal is the whole message; prose that merely mentions the phrase later
     // (e.g. an implementer's summary, or a reviewer discussing it) must not match.
     expect(
-      classifyProviderRefusalFailure("I checked the retry handling and confirmed selected model is at capacity errors are now handled."),
+      classifyProviderRefusalFailure(
+        "I checked the retry handling and confirmed selected model is at capacity errors are now handled.",
+      ),
     ).toBeNull();
   });
 

@@ -116,11 +116,7 @@ describe("stripTrailingCommas", () => {
 // ---------------------------------------------------------------------------
 
 describe("extractJsonObject", () => {
-  test.each([
-    ["just plain text, no JSON here"],
-    ["{ no closing brace"],
-    [""],
-  ])("returns null for %j", (input) => {
+  test.each([["just plain text, no JSON here"], ["{ no closing brace"], [""]])("returns null for %j", (input) => {
     expect(extractJsonObject(input)).toBeNull();
   });
 

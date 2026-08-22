@@ -33,12 +33,14 @@ function makeChain(action: InteractionResponse["action"]): InteractionChain {
   const plugin: InteractionPlugin = {
     name: "test",
     send: mock(async () => {}),
-    receive: mock(async (id: string): Promise<InteractionResponse> => ({
-      requestId: id,
-      action,
-      respondedBy: "user",
-      respondedAt: Date.now(),
-    })),
+    receive: mock(
+      async (id: string): Promise<InteractionResponse> => ({
+        requestId: id,
+        action,
+        respondedBy: "user",
+        respondedAt: Date.now(),
+      }),
+    ),
   };
   chain.register(plugin);
   return chain;
@@ -89,7 +91,11 @@ function makePRD(): PRD {
   };
 }
 
-function makeCtx(config: ReturnType<typeof makeNaxConfig>, tempDir: string, interaction?: InteractionChain): PipelineContext {
+function makeCtx(
+  config: ReturnType<typeof makeNaxConfig>,
+  tempDir: string,
+  interaction?: InteractionChain,
+): PipelineContext {
   return {
     config,
     prd: makePRD(),

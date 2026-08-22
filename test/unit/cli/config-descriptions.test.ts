@@ -48,7 +48,6 @@ describe("FIELD_DESCRIPTIONS.models (US-001-4)", () => {
   });
 });
 
-
 describe("FIELD_DESCRIPTIONS.precheck.storySizeGate action and maxReplanAttempts (US-001)", () => {
   test("precheck.storySizeGate.action description exists", () => {
     expect(FIELD_DESCRIPTIONS["precheck.storySizeGate.action"]).toBeDefined();

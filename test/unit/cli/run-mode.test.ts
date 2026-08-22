@@ -3,15 +3,15 @@ import { resolveUseHeadless } from "@/cli/run-mode";
 
 describe("resolveUseHeadless (BUG-23)", () => {
   test("TTY + normal formatter → TUI (not headless)", () => {
-    expect(
-      resolveUseHeadless({ isTTY: true, headlessFlag: false, headlessEnv: false, formatterMode: "normal" }),
-    ).toBe(false);
+    expect(resolveUseHeadless({ isTTY: true, headlessFlag: false, headlessEnv: false, formatterMode: "normal" })).toBe(
+      false,
+    );
   });
 
   test("non-TTY → headless regardless of formatter", () => {
-    expect(
-      resolveUseHeadless({ isTTY: false, headlessFlag: false, headlessEnv: false, formatterMode: "normal" }),
-    ).toBe(true);
+    expect(resolveUseHeadless({ isTTY: false, headlessFlag: false, headlessEnv: false, formatterMode: "normal" })).toBe(
+      true,
+    );
   });
 
   test("--headless flag forces headless on a TTY", () => {
@@ -40,11 +40,11 @@ describe("resolveUseHeadless (BUG-23)", () => {
   });
 
   test("verbose/quiet formatter on a TTY does not force headless", () => {
-    expect(
-      resolveUseHeadless({ isTTY: true, headlessFlag: false, headlessEnv: false, formatterMode: "verbose" }),
-    ).toBe(false);
-    expect(
-      resolveUseHeadless({ isTTY: true, headlessFlag: false, headlessEnv: false, formatterMode: "quiet" }),
-    ).toBe(false);
+    expect(resolveUseHeadless({ isTTY: true, headlessFlag: false, headlessEnv: false, formatterMode: "verbose" })).toBe(
+      false,
+    );
+    expect(resolveUseHeadless({ isTTY: true, headlessFlag: false, headlessEnv: false, formatterMode: "quiet" })).toBe(
+      false,
+    );
   });
 });

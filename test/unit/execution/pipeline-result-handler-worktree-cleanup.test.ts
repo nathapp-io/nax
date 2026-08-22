@@ -12,7 +12,11 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
-import { _resultHandlerDeps, handlePipelineFailure, type PipelineHandlerContext } from "@/execution/pipeline-result-handler";
+import {
+  type PipelineHandlerContext,
+  _resultHandlerDeps,
+  handlePipelineFailure,
+} from "@/execution/pipeline-result-handler";
 import type { PipelineRunResult } from "@/pipeline/runner";
 import { PluginRegistry } from "@/plugins/registry";
 import type { UserStory } from "@/prd/types";

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { ReviewFinding } from "@/plugins/types";
 import { pluginToFinding } from "@/findings";
+import type { ReviewFinding } from "@/plugins/types";
 
 const WORKDIR = "/repo";
 

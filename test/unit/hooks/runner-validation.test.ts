@@ -2,7 +2,7 @@
  * Hook validation test — ensure ReDoS vulnerability is fixed
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { validateHookCommand } from "@/hooks/runner";
 
 describe("validateHookCommand - ReDoS Protection", () => {

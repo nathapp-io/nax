@@ -20,8 +20,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { Command, Option } from "commander";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { Command, Option } from "commander";
 
 const RESUME_UNSET = "__UNSET__";
 
@@ -51,7 +51,9 @@ function buildRunCommand(): {
     .requiredOption("-f, --feature <name>", "Feature name")
     .option("-d, --dir <path>", "Working directory", process.cwd())
     .option("--fresh", "Ignore any existing checkpoint.jsonl and re-run every incomplete story from scratch", false)
-    .addOption(new Option("--no-resume", "Alias for --fresh: never auto-resume from a prior checkpoint").default(RESUME_UNSET))
+    .addOption(
+      new Option("--no-resume", "Alias for --fresh: never auto-resume from a prior checkpoint").default(RESUME_UNSET),
+    )
     .action(async (options: ParsedRunOptions) => {
       captured.options = options;
     });

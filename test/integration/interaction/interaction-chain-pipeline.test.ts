@@ -12,17 +12,17 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { makeMockRuntime } from "@test/helpers";
 import type { NaxConfig } from "@/config";
+import type { SequentialExecutionContext } from "@/execution/unified-executor";
 import { InteractionChain } from "@/interaction/chain";
-import { pipelineEventBus } from "@/pipeline/event-bus";
-import { wireInteraction } from "@/pipeline/subscribers/interaction";
 import { CLIInteractionPlugin } from "@/interaction/plugins/cli";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse, TriggerName } from "@/interaction/types";
 import { TRIGGER_METADATA } from "@/interaction/types";
+import { pipelineEventBus } from "@/pipeline/event-bus";
+import { wireInteraction } from "@/pipeline/subscribers/interaction";
 import type { PipelineContext } from "@/pipeline/types";
-import type { SequentialExecutionContext } from "@/execution/unified-executor";
 import type { PRD, UserStory } from "@/prd/types";
+import { makeMockRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -72,12 +72,14 @@ function buildCapturingPlugin(): { plugin: InteractionPlugin; sentRequests: Inte
     send: mock(async (req: InteractionRequest) => {
       sentRequests.push(req);
     }),
-    receive: mock(async (requestId: string): Promise<InteractionResponse> => ({
-      requestId,
-      action: "skip",
-      respondedBy: "user",
-      respondedAt: Date.now(),
-    })),
+    receive: mock(
+      async (requestId: string): Promise<InteractionResponse> => ({
+        requestId,
+        action: "skip",
+        respondedBy: "user",
+        respondedAt: Date.now(),
+      }),
+    ),
   };
   return { plugin, sentRequests };
 }
@@ -174,7 +176,12 @@ describe("SequentialExecutionContext accepts interactionChain", () => {
       dryRun: true,
       useBatch: false,
       pluginRegistry: { plugins: [], getReporters: () => [], teardownAll: async () => {} } as any,
-      statusWriter: { setPrd: () => {}, setCurrentStory: () => {}, setRunStatus: () => {}, update: async () => {} } as any,
+      statusWriter: {
+        setPrd: () => {},
+        setCurrentStory: () => {},
+        setRunStatus: () => {},
+        update: async () => {},
+      } as any,
       logFilePath: undefined,
       runId: "run-test-001",
       startTime: Date.now(),
@@ -200,7 +207,12 @@ describe("SequentialExecutionContext accepts interactionChain", () => {
       dryRun: true,
       useBatch: false,
       pluginRegistry: { plugins: [], getReporters: () => [], teardownAll: async () => {} } as any,
-      statusWriter: { setPrd: () => {}, setCurrentStory: () => {}, setRunStatus: () => {}, update: async () => {} } as any,
+      statusWriter: {
+        setPrd: () => {},
+        setCurrentStory: () => {},
+        setRunStatus: () => {},
+        update: async () => {},
+      } as any,
       logFilePath: undefined,
       runId: "run-test-002",
       startTime: Date.now(),
@@ -283,9 +295,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
     );
 
     // FAILS: human-review trigger is not currently called in handlePipelineFailure
-    const humanReviewRequests = sentRequests.filter(
-      (r) => (r.metadata?.trigger as string) === "human-review",
-    );
+    const humanReviewRequests = sentRequests.filter((r) => (r.metadata?.trigger as string) === "human-review");
     expect(humanReviewRequests.length).toBeGreaterThan(0);
   });
 
@@ -355,9 +365,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
     );
 
     // human-review request should have the correct storyId
-    const humanReviewRequests = sentRequests.filter(
-      (r) => (r.metadata?.trigger as string) === "human-review",
-    );
+    const humanReviewRequests = sentRequests.filter((r) => (r.metadata?.trigger as string) === "human-review");
     expect(humanReviewRequests.length).toBeGreaterThan(0);
     expect(humanReviewRequests[0].storyId).toBe("US-FAILING");
   });
@@ -368,12 +376,14 @@ describe("AC2: max retries triggers human-review interaction", () => {
     const plugin: InteractionPlugin = {
       name: "skip-responder",
       send: mock(async () => {}),
-      receive: mock(async (requestId: string): Promise<InteractionResponse> => ({
-        requestId,
-        action: "skip",
-        respondedBy: "user",
-        respondedAt: Date.now(),
-      })),
+      receive: mock(
+        async (requestId: string): Promise<InteractionResponse> => ({
+          requestId,
+          action: "skip",
+          respondedBy: "user",
+          respondedAt: Date.now(),
+        }),
+      ),
     };
     chain.register(plugin, 10);
 

@@ -27,14 +27,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
 import type { TierConfig } from "@/config";
 import { DEFAULT_CONFIG, NaxConfigSchema } from "@/config";
-import {
-  calculateMaxIterations,
-  preIterationTierCheck,
-  _tierEscalationDeps,
-} from "@/execution/escalation";
+import { _tierEscalationDeps, calculateMaxIterations, preIterationTierCheck } from "@/execution/escalation";
+import { makeNaxConfig } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Shared scaffolding
@@ -116,7 +112,18 @@ async function runPreIter(
   prd: ReturnType<typeof makePrd>,
   prdPath: string,
 ) {
-  return await preIterationTierCheck(asStory(story), { modelTier: story.routing.modelTier }, asConfig(config), asPrd(prd), prdPath, undefined, asHooks(), "f", 0, "/tmp");
+  return await preIterationTierCheck(
+    asStory(story),
+    { modelTier: story.routing.modelTier },
+    asConfig(config),
+    asPrd(prd),
+    prdPath,
+    undefined,
+    asHooks(),
+    "f",
+    0,
+    "/tmp",
+  );
 }
 
 let origSavePRD: typeof _tierEscalationDeps.savePRD;

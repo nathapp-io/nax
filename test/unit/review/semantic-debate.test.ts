@@ -8,10 +8,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { pickBaseSelectorKind } from "@/debate";
 import type { AgentResult } from "@/agents/types";
 import type { AgentAdapter } from "@/agents/types";
 import type { NaxConfig } from "@/config";
+import { pickBaseSelectorKind } from "@/debate";
 import type { DebateResult } from "@/debate/types";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "@/review/semantic";
@@ -60,11 +60,7 @@ const DEBATE_REVIEW_ENABLED_CONFIG: NaxConfig = {
         resolver: { type: "majority-fail-closed" },
         sessionMode: "one-shot",
         rounds: 1,
-        debaters: [
-          { agent: "claude" },
-          { agent: "opencode" },
-          { agent: "gemini" },
-        ],
+        debaters: [{ agent: "claude" }, { agent: "opencode" }, { agent: "gemini" }],
       },
       acceptance: {
         enabled: false,
@@ -266,8 +262,22 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       agentFallbacks: [],
     }),
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "exact" as const }),
-    runWithFallbackFn: async () => ({ result: { success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCostUsd: cost, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: cost, source: "exact" as const }, fallbacks: [] }),
+    runWithFallbackFn: async () => ({
+      result: {
+        success: true,
+        exitCode: 0,
+        output: llmResponse,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCostUsd: cost,
+        agentFallbacks: [],
+      },
+      fallbacks: [],
+    }),
+    completeWithFallbackFn: async () => ({
+      result: { output: llmResponse, costUsd: cost, source: "exact" as const },
+      fallbacks: [],
+    }),
     runAsFn: async (_agent, opts) => ({
       success: true,
       exitCode: 0,
@@ -311,7 +321,9 @@ describe("runSemanticReview — debate integration (US-004)", () => {
 
   test("AC3: createDebateRunner is called when debate.stages.review.enabled=true", async () => {
     const runMock = mock(async () => DEBATE_MAJORITY_PASS_RESULT);
-    _semanticDeps.createDebateRunner = mock(() => ({ run: runMock })) as unknown as typeof _semanticDeps.createDebateRunner;
+    _semanticDeps.createDebateRunner = mock(() => ({
+      run: runMock,
+    })) as unknown as typeof _semanticDeps.createDebateRunner;
 
     const agentManager = makeAgentManager(PROPOSAL_PASS);
     const runtime = makeMockRuntime({ agentManager });
@@ -331,7 +343,9 @@ describe("runSemanticReview — debate integration (US-004)", () => {
 
   test("AC3: DebateSession.run() is called with the semantic review prompt", async () => {
     const runMock = mock(async (_prompt: string) => DEBATE_MAJORITY_PASS_RESULT);
-    _semanticDeps.createDebateRunner = mock(() => ({ run: runMock })) as unknown as typeof _semanticDeps.createDebateRunner;
+    _semanticDeps.createDebateRunner = mock(() => ({
+      run: runMock,
+    })) as unknown as typeof _semanticDeps.createDebateRunner;
 
     const agentManager = makeAgentManager(PROPOSAL_PASS);
     const runtime = makeMockRuntime({ agentManager });
@@ -354,7 +368,9 @@ describe("runSemanticReview — debate integration (US-004)", () => {
 
   test("AC3: agent.complete() is NOT called when debate is enabled and debate runs", async () => {
     const runMock = mock(async () => DEBATE_MAJORITY_PASS_RESULT);
-    _semanticDeps.createDebateRunner = mock(() => ({ run: runMock })) as unknown as typeof _semanticDeps.createDebateRunner;
+    _semanticDeps.createDebateRunner = mock(() => ({
+      run: runMock,
+    })) as unknown as typeof _semanticDeps.createDebateRunner;
 
     const agentManager = makeAgentManager(PROPOSAL_PASS);
     const runtime = makeMockRuntime({ agentManager });
@@ -450,7 +466,12 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     const agentManager = makeAgentManager(PROPOSAL_PASS);
     const runtime = makeMockRuntime({
       agentManager,
-      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), getAdvisoryFindings: () => [], async flush() {} },
+      reviewAuditor: {
+        recordDispatch() {},
+        recordDecision: (entry) => auditCalls.push(entry),
+        getAdvisoryFindings: () => [],
+        async flush() {},
+      },
     });
 
     const result = await runSemanticReview({

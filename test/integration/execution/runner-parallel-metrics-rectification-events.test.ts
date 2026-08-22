@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { initLogger, resetLogger } from "@/logger";
 import type { StoryMetrics } from "@/metrics";
 import type { UserStory } from "@/prd/types";
-import { makePendingStory, makePrd, makeCtx } from "./_parallel-metrics-helpers";
+import { makeCtx, makePendingStory, makePrd } from "./_parallel-metrics-helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lifecycle
@@ -230,10 +230,7 @@ describe("AC-4 — story:started emitted with correct storyId for each batch sto
 
     try {
       const { executeUnified } = await import("@/execution/unified-executor");
-      await executeUnified(
-        makeCtx({ parallelCount: 3 }) as never,
-        makePrd([story1, story2, story3]) as never,
-      );
+      await executeUnified(makeCtx({ parallelCount: 3 }) as never, makePrd([story1, story2, story3]) as never);
     } finally {
       pipelineEventBus.emit = origEmit;
     }

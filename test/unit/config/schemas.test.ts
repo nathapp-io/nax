@@ -196,18 +196,36 @@ describe("StorySizeGateConfigSchema — action and maxReplanAttempts (US-001)", 
   }
 
   test("action defaults to 'block' and maxReplanAttempts defaults to 3 when omitted", () => {
-    const withoutAction = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, maxReplanAttempts: 3 });
+    const withoutAction = basePrecheckConfig({
+      enabled: true,
+      maxAcCount: 10,
+      maxDescriptionLength: 3000,
+      maxBulletPoints: 12,
+      maxReplanAttempts: 3,
+    });
     const r1 = NaxConfigSchema.safeParse(withoutAction);
     expect(r1.success).toBe(true);
     if (!r1.success) return;
-    const ssg1 = ((r1.data as Record<string, unknown>).precheck as Record<string, unknown>).storySizeGate as Record<string, unknown>;
+    const ssg1 = ((r1.data as Record<string, unknown>).precheck as Record<string, unknown>).storySizeGate as Record<
+      string,
+      unknown
+    >;
     expect(ssg1.action).toBe("block");
 
-    const withoutMax = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block" });
+    const withoutMax = basePrecheckConfig({
+      enabled: true,
+      maxAcCount: 10,
+      maxDescriptionLength: 3000,
+      maxBulletPoints: 12,
+      action: "block",
+    });
     const r2 = NaxConfigSchema.safeParse(withoutMax);
     expect(r2.success).toBe(true);
     if (!r2.success) return;
-    const ssg2 = ((r2.data as Record<string, unknown>).precheck as Record<string, unknown>).storySizeGate as Record<string, unknown>;
+    const ssg2 = ((r2.data as Record<string, unknown>).precheck as Record<string, unknown>).storySizeGate as Record<
+      string,
+      unknown
+    >;
     expect(ssg2.maxReplanAttempts).toBe(3);
   });
 
@@ -225,10 +243,24 @@ describe("StorySizeGateConfigSchema — action and maxReplanAttempts (US-001)", 
   });
 
   test("action rejects invalid values; maxReplanAttempts rejects 0 (must be >= 1)", () => {
-    const badAction = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, maxReplanAttempts: 3, action: "invalid" });
+    const badAction = basePrecheckConfig({
+      enabled: true,
+      maxAcCount: 10,
+      maxDescriptionLength: 3000,
+      maxBulletPoints: 12,
+      maxReplanAttempts: 3,
+      action: "invalid",
+    });
     expect(NaxConfigSchema.safeParse(badAction).success).toBe(false);
 
-    const badMax = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 0 });
+    const badMax = basePrecheckConfig({
+      enabled: true,
+      maxAcCount: 10,
+      maxDescriptionLength: 3000,
+      maxBulletPoints: 12,
+      action: "block",
+      maxReplanAttempts: 0,
+    });
     expect(NaxConfigSchema.safeParse(badMax).success).toBe(false);
   });
 });
@@ -373,10 +405,7 @@ describe("NaxConfigSchema — superRefine: tierOrder agent cross-section validat
     claude: { balanced: "sonnet", powerful: "opus" },
   };
 
-  function withTierOrder(
-    tierOrder: Array<{ tier: string; agent?: string; attempts: number }>,
-    models?: unknown,
-  ) {
+  function withTierOrder(tierOrder: Array<{ tier: string; agent?: string; attempts: number }>, models?: unknown) {
     return NaxConfigSchema.safeParse({
       ...(DEFAULT_CONFIG as Record<string, unknown>),
       ...(models !== undefined ? { models } : {}),
@@ -403,28 +432,20 @@ describe("NaxConfigSchema — superRefine: tierOrder agent cross-section validat
   });
 
   test("unknown agent in tierOrder produces exactly one issue (not two)", () => {
-    const result = withTierOrder(
-      [{ tier: "balanced", agent: "nonexistent", attempts: 3 }],
-      MODELS,
-    );
+    const result = withTierOrder([{ tier: "balanced", agent: "nonexistent", attempts: 3 }], MODELS);
     expect(result.success).toBe(false);
     if (result.success) return;
-    const agentIssues = result.error.issues.filter((e) =>
-      e.message.includes("nonexistent"),
-    );
+    const agentIssues = result.error.issues.filter((e) => e.message.includes("nonexistent"));
     expect(agentIssues).toHaveLength(1);
     expect(agentIssues[0].message).toMatch(/not defined in config\.models/);
   });
 
   test("valid agent but unknown tier produces one issue on the tier path", () => {
-    const result = withTierOrder(
-      [{ tier: "powerful", agent: "opencode", attempts: 2 }],
-      MODELS,
-    );
+    const result = withTierOrder([{ tier: "powerful", agent: "opencode", attempts: 2 }], MODELS);
     expect(result.success).toBe(false);
     if (result.success) return;
-    const tierIssues = result.error.issues.filter((e) =>
-      e.message.includes('"powerful"') && e.message.includes('"opencode"'),
+    const tierIssues = result.error.issues.filter(
+      (e) => e.message.includes('"powerful"') && e.message.includes('"opencode"'),
     );
     expect(tierIssues).toHaveLength(1);
     expect(tierIssues[0].message).toMatch(/not defined for agent/);
@@ -447,9 +468,7 @@ describe("NaxConfigSchema — superRefine: tierOrder agent cross-section validat
         agents: {
           enabled: true,
           strategy: "off",
-          profiles: [
-            { id: "oc-bal", target: { agent: "opencode", model: "balanced" }, strengths: ["impl"] },
-          ],
+          profiles: [{ id: "oc-bal", target: { agent: "opencode", model: "balanced" }, strengths: ["impl"] }],
         },
       },
       // DEFAULT_CONFIG tierOrder is tier-only: fast/balanced/powerful with no agent fields

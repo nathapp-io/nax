@@ -2,7 +2,7 @@ import { afterEach } from "bun:test";
 import type { AgentAdapter, IAgentManager } from "@/agents";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
-import { createRuntime, type CreateRuntimeOptions, type NaxRuntime } from "@/runtime";
+import { type CreateRuntimeOptions, type NaxRuntime, createRuntime } from "@/runtime";
 import type { IReviewAuditor } from "@/runtime";
 import type { ISessionManager } from "@/session/types";
 import { fakeAgentManager } from "./fake-agent-manager";
@@ -44,10 +44,12 @@ export interface TestRuntimeOptions extends CreateRuntimeOptions {
 }
 
 export function makeTestRuntime(opts?: TestRuntimeOptions): NaxRuntime {
-  return trackRuntime(createRuntime(opts?.config ?? DEFAULT_CONFIG, opts?.workdir ?? "/tmp/test", {
-    ...opts,
-    featureName: opts?.featureName ?? "_test",
-  }));
+  return trackRuntime(
+    createRuntime(opts?.config ?? DEFAULT_CONFIG, opts?.workdir ?? "/tmp/test", {
+      ...opts,
+      featureName: opts?.featureName ?? "_test",
+    }),
+  );
 }
 
 /**

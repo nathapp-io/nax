@@ -129,7 +129,15 @@ describe("StatusWriter setters", () => {
     const path = join(dir, "status.json");
     const sw = new StatusWriter(path, makeConfig(), makeCtx());
     sw.setPrd(makePrd());
-    sw.setCurrentStory({ storyId: "US-001", title: "Test story", complexity: "simple", tddStrategy: "test-after", model: "balanced", attempt: 1, phase: "routing" });
+    sw.setCurrentStory({
+      storyId: "US-001",
+      title: "Test story",
+      complexity: "simple",
+      tddStrategy: "test-after",
+      model: "balanced",
+      attempt: 1,
+      phase: "routing",
+    });
     await sw.update(0, 0);
     const content = JSON.parse(await Bun.file(path).text()) as NaxStatusFile;
     expect(content.current?.storyId).toBe("US-001");

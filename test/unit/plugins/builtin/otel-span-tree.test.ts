@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import type { PhaseCompleteEvent } from "@/plugins/types";
 import { attr } from "@/plugins/builtin/otel-reporter/otlp";
 import {
   PHASE_COST_BOUNDS,
@@ -7,6 +6,7 @@ import {
   createPhaseMetricsAggregator,
   createSpanTree,
 } from "@/plugins/builtin/otel-reporter/span-tree";
+import type { PhaseCompleteEvent } from "@/plugins/types";
 
 function makePhaseEvent(overrides: Partial<PhaseCompleteEvent> = {}): PhaseCompleteEvent {
   return {

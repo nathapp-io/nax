@@ -11,16 +11,24 @@ import type { AcceptanceGroupResult } from "@/cli";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
 import {
+  MAX_FIX_ATTEMPTS,
   _acceptanceGateDeps,
   _finishGitDeps,
   _qualityGateDeps,
   createFinishState,
   gateCommitRoute,
-  MAX_FIX_ATTEMPTS,
   readRounds,
   runFinishMachine,
 } from "@/finish";
-import type { AuditTarget, Finding, FinishContext, FinishMachineDeps, FinishOps, FinishState, ReviewOutcome } from "@/finish";
+import type {
+  AuditTarget,
+  Finding,
+  FinishContext,
+  FinishMachineDeps,
+  FinishOps,
+  FinishState,
+  ReviewOutcome,
+} from "@/finish";
 import type { QualityCommandOptions, QualityCommandResult } from "@/quality";
 import { withTempDir } from "@test/helpers";
 
@@ -42,7 +50,12 @@ function configWithCommands(commands: NaxConfig["quality"]["commands"]): NaxConf
 }
 
 function baseContext(overrides: Partial<FinishContext> = {}): FinishContext {
-  const group: AcceptanceGroupResult = { packageDir: "", testPath: "test/acceptance/feat.test.ts", exists: true, cwd: "" };
+  const group: AcceptanceGroupResult = {
+    packageDir: "",
+    testPath: "test/acceptance/feat.test.ts",
+    exists: true,
+    cwd: "",
+  };
   return {
     base: "origin/main",
     specPath: ".nax/features/feat/spec.md",
@@ -113,7 +126,8 @@ function installGitStub(trail: string[], handlers: GitHandlers = {}): void {
       handlers.onCommit?.();
       return { stdout: "", stderr: "", exitCode: 0 };
     }
-    if (cmd === "show") return { stdout: (handlers.filesInCommit ?? ["src/prod.ts"]).join("\n"), stderr: "", exitCode: 0 };
+    if (cmd === "show")
+      return { stdout: (handlers.filesInCommit ?? ["src/prod.ts"]).join("\n"), stderr: "", exitCode: 0 };
     if (cmd === "push") return { stdout: "", stderr: "", exitCode: 0 };
     return { stdout: "", stderr: "", exitCode: 0 };
   };
@@ -312,7 +326,10 @@ test("I5 — acceptance runs again inside the quality-gate step, before any repo
   await withTempDir(async (dir) => {
     const { deps, trail } = makeDeps({ auditDir: dir });
     await runFinishMachine(baseState(), deps);
-    const acceptanceIndices = trail.map((e, i) => ({ e, i })).filter((x) => x.e === "acceptance-run").map((x) => x.i);
+    const acceptanceIndices = trail
+      .map((e, i) => ({ e, i }))
+      .filter((x) => x.e === "acceptance-run")
+      .map((x) => x.i);
     const qualityIdx = trail.indexOf("quality-run:test");
     // First acceptance-run is step 2; the second is gate zero, and must
     // precede the repo gate command.

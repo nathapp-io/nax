@@ -100,7 +100,11 @@ describe("killProcessTree — BUG-6", () => {
 describe("runTrackedSpawn — MEM-19 normal-exit drain deadline", () => {
   test("normal-exit stdout that never EOFs resolves via the drain timeout instead of hanging", async () => {
     const hangStream = new ReadableStream({ start() {} }); // never enqueues, never closes
-    const closedStream = new ReadableStream({ start(ctrl) { ctrl.close(); } });
+    const closedStream = new ReadableStream({
+      start(ctrl) {
+        ctrl.close();
+      },
+    });
     const spawn = mock(() => ({
       pid: FAKE_PID,
       exited: Promise.resolve(0),

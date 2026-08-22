@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
 type PartialConfig = {
-  agent?: { fallback?: { enabled?: boolean; map?: Record<string, string[]>; maxHopsPerStory?: number; onQualityFailure?: boolean } };
+  agent?: {
+    fallback?: {
+      enabled?: boolean;
+      map?: Record<string, string[]>;
+      maxHopsPerStory?: number;
+      onQualityFailure?: boolean;
+    };
+  };
 };
 
 // ADR-012 Phase 5: context.v2.fallback removed. agent.fallback is the sole source.

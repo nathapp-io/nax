@@ -4,14 +4,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { DebateResult, DebateRunner } from "@/debate";
 import { reviewConfigSelector } from "@/config/selectors";
-import type { NaxRuntime, ReviewAuditDecision } from "@/runtime";
+import type { DebateResult, DebateRunner } from "@/debate";
 import { MAX_ACKS } from "@/review";
 import { runSemanticDebate } from "@/review/semantic-debate";
 import type { SemanticReviewConfig } from "@/review/types";
 import type { SemanticStory } from "@/review/types";
-import { makeNaxConfig, makeMockAgentManager, makeMockRuntime, captureAuditDecisions } from "@test/helpers";
+import type { NaxRuntime, ReviewAuditDecision } from "@/runtime";
+import { captureAuditDecisions, makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -127,7 +127,7 @@ describe("semantic-debate reviewer audit shape (#942 AC-1 / AC-2)", () => {
     const finding = findings!.find((f) => f.line === 10)!;
     expect(finding.message).toContain("Listener callback errors are not handled");
     expect(finding.message).toContain("→ Wrap the listener call");
-    expect((finding.ruleId as string)).toContain(":");
+    expect(finding.ruleId as string).toContain(":");
   });
 
   test("ruleId is non-coarse — slug has multiple tokens", async () => {

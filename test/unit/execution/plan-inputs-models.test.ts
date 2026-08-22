@@ -8,7 +8,7 @@
  * Kept separate from plan-inputs.test.ts (concern-based split per test-architecture.md).
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { NaxError } from "@/errors";
 import { assemblePlanInputs } from "@/execution";
 import { makeNaxConfig, makeSparseNaxConfig, makeStory } from "@test/helpers";

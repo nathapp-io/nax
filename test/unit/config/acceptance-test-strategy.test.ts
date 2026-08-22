@@ -12,10 +12,10 @@
 
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
-import { NaxConfigSchema } from "@/config/schemas";
 import type { AcceptanceConfig } from "@/config/runtime-types";
 // AC1: AcceptanceTestStrategy must be importable from src/config/runtime-types
 import type { AcceptanceTestStrategy } from "@/config/runtime-types";
+import { NaxConfigSchema } from "@/config/schemas";
 
 const BASE_ACCEPTANCE = DEFAULT_CONFIG.acceptance;
 
@@ -56,21 +56,17 @@ describe("AcceptanceConfig interface — optional fields", () => {
 });
 
 describe("AcceptanceConfigSchema — testStrategy validation", () => {
-  test.each([
-    ["unit"],
-    ["component"],
-    ["cli"],
-    ["e2e"],
-    ["snapshot"],
-    [undefined],
-  ])("accepts testStrategy %j (success=true)", (testStrategy) => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      acceptance: testStrategy !== undefined ? { ...BASE_ACCEPTANCE, testStrategy } : { ...BASE_ACCEPTANCE },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-  });
+  test.each([["unit"], ["component"], ["cli"], ["e2e"], ["snapshot"], [undefined]])(
+    "accepts testStrategy %j (success=true)",
+    (testStrategy) => {
+      const config = {
+        ...DEFAULT_CONFIG,
+        acceptance: testStrategy !== undefined ? { ...BASE_ACCEPTANCE, testStrategy } : { ...BASE_ACCEPTANCE },
+      };
+      const result = NaxConfigSchema.safeParse(config);
+      expect(result.success).toBe(true);
+    },
+  );
 
   test("rejects unknown testStrategy value", () => {
     const config = {
@@ -83,11 +79,7 @@ describe("AcceptanceConfigSchema — testStrategy validation", () => {
 });
 
 describe("AcceptanceConfigSchema — testFramework validation", () => {
-  test.each([
-    ["jest"],
-    ["bun:test"],
-    [undefined],
-  ])("accepts testFramework %j (success=true)", (testFramework) => {
+  test.each([["jest"], ["bun:test"], [undefined]])("accepts testFramework %j (success=true)", (testFramework) => {
     const config = {
       ...DEFAULT_CONFIG,
       acceptance: testFramework !== undefined ? { ...BASE_ACCEPTANCE, testFramework } : { ...BASE_ACCEPTANCE },
@@ -107,12 +99,12 @@ describe("AcceptanceConfigSchema — testFramework validation", () => {
 });
 
 describe("DEFAULT_CONFIG acceptance defaults", () => {
-  test.each([
-    ["testStrategy" as const],
-    ["testFramework" as const],
-  ])("default acceptance config does not set %s", (field) => {
-    expect(DEFAULT_CONFIG.acceptance[field]).toBeUndefined();
-  });
+  test.each([["testStrategy" as const], ["testFramework" as const]])(
+    "default acceptance config does not set %s",
+    (field) => {
+      expect(DEFAULT_CONFIG.acceptance[field]).toBeUndefined();
+    },
+  );
 });
 
 describe("backward compatibility — NaxConfigSchema accepts existing acceptance config", () => {

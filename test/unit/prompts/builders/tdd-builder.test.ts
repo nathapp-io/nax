@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeStory } from "@test/helpers";
 import { TddPromptBuilder } from "@/prompts/builders/tdd-builder";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 
 describe("TddPromptBuilder.buildForRole", () => {
   test("builds a non-empty prompt for test-writer", async () => {
@@ -131,10 +131,7 @@ describe("AC-21: when behavioralGuardrails='off', acc.add not called for guardra
       prompts: { behavioralGuardrails: "strict" },
     });
 
-    const prompt = await TddPromptBuilder.for("verifier", {})
-      .story(story)
-      .withLoader("/tmp", config)
-      .build();
+    const prompt = await TddPromptBuilder.for("verifier", {}).story(story).withLoader("/tmp", config).build();
 
     expect(prompt).not.toContain("# Behavioral Guardrails");
   });
@@ -145,10 +142,7 @@ describe("AC-21: when behavioralGuardrails='off', acc.add not called for guardra
       prompts: { behavioralGuardrails: "strict" },
     });
 
-    const prompt = await TddPromptBuilder.for("no-test", {})
-      .story(story)
-      .withLoader("/tmp", config)
-      .build();
+    const prompt = await TddPromptBuilder.for("no-test", {}).story(story).withLoader("/tmp", config).build();
 
     expect(prompt).not.toContain("# Behavioral Guardrails");
   });
@@ -176,10 +170,7 @@ describe("AC-7/AC-8: TddPromptBuilder includes .nax/ immutability text", () => {
   test("test-writer prompt includes .nax/ immutability text (moved, renamed, deleted)", async () => {
     const story = makeStory();
     const config = makeNaxConfig({});
-    const prompt = await TddPromptBuilder.for("test-writer", {})
-      .story(story)
-      .withLoader("/tmp", config)
-      .build();
+    const prompt = await TddPromptBuilder.for("test-writer", {}).story(story).withLoader("/tmp", config).build();
 
     expect(prompt).toContain(".nax/");
     const lower = prompt.toLowerCase();
@@ -191,10 +182,7 @@ describe("AC-7/AC-8: TddPromptBuilder includes .nax/ immutability text", () => {
   test("verifier prompt includes .nax/ immutability text (moved, renamed, deleted)", async () => {
     const story = makeStory();
     const config = makeNaxConfig({});
-    const prompt = await TddPromptBuilder.for("verifier", {})
-      .story(story)
-      .withLoader("/tmp", config)
-      .build();
+    const prompt = await TddPromptBuilder.for("verifier", {}).story(story).withLoader("/tmp", config).build();
 
     expect(prompt).toContain(".nax/");
     const lower = prompt.toLowerCase();
@@ -207,10 +195,7 @@ describe("AC-7/AC-8: TddPromptBuilder includes .nax/ immutability text", () => {
     const story = makeStory();
     // Even with guardrails off, the .nax/ section must still render.
     const config = makeNaxConfig({ prompts: { behavioralGuardrails: "off" } });
-    const prompt = await TddPromptBuilder.for("test-writer", {})
-      .story(story)
-      .withLoader("/tmp", config)
-      .build();
+    const prompt = await TddPromptBuilder.for("test-writer", {}).story(story).withLoader("/tmp", config).build();
 
     expect(prompt).toContain(".nax/");
   });

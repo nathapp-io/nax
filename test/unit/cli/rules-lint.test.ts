@@ -550,7 +550,11 @@ describe("US-002 rulesLintCommand — AC2 inert-paths warning", () => {
     await rulesLintCommandFromRules({ dir: tempDir });
 
     const inert = calls.find(
-      (c) => c.level === "warn" && c.stage === "rules-lint" && c.data?.file === absolutePath && c.data?.code === "INERT_PATHS",
+      (c) =>
+        c.level === "warn" &&
+        c.stage === "rules-lint" &&
+        c.data?.file === absolutePath &&
+        c.data?.code === "INERT_PATHS",
     );
     expect(inert).toBeDefined();
   });

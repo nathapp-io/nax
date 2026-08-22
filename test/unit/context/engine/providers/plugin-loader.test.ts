@@ -10,14 +10,14 @@
  * Uses _pluginLoaderDeps injection — no real module I/O.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { ContextPluginProviderConfig } from "@/config/runtime-types";
+import type { ContextProviderResult, IContextProvider } from "@/context/engine";
 import {
+  _pluginLoaderDeps,
   loadPluginProviders,
   resolveModuleSpecifier,
-  _pluginLoaderDeps,
 } from "@/context/engine/providers/plugin-loader";
-import type { IContextProvider, ContextProviderResult } from "@/context/engine";
-import type { ContextPluginProviderConfig } from "@/config/runtime-types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -31,10 +31,7 @@ function makeProvider(id: string, kind: IContextProvider["kind"] = "rag"): ICont
   };
 }
 
-function makeConfig(
-  module: string,
-  overrides: Partial<ContextPluginProviderConfig> = {},
-): ContextPluginProviderConfig {
+function makeConfig(module: string, overrides: Partial<ContextPluginProviderConfig> = {}): ContextPluginProviderConfig {
   return { module, enabled: true, ...overrides };
 }
 
@@ -43,8 +40,12 @@ function makeConfig(
 // ─────────────────────────────────────────────────────────────────────────────
 
 let origDynamicImport: typeof _pluginLoaderDeps.dynamicImport;
-beforeEach(() => { origDynamicImport = _pluginLoaderDeps.dynamicImport; });
-afterEach(() => { _pluginLoaderDeps.dynamicImport = origDynamicImport; });
+beforeEach(() => {
+  origDynamicImport = _pluginLoaderDeps.dynamicImport;
+});
+afterEach(() => {
+  _pluginLoaderDeps.dynamicImport = origDynamicImport;
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // resolveModuleSpecifier
@@ -68,9 +69,7 @@ describe("resolveModuleSpecifier", () => {
   });
 
   test("throws when ../ escapes the workdir boundary", () => {
-    expect(() => resolveModuleSpecifier("../escape.js", "/repo")).toThrow(
-      /escapes project workdir/,
-    );
+    expect(() => resolveModuleSpecifier("../escape.js", "/repo")).toThrow(/escapes project workdir/);
   });
 
   test("nested relative path is resolved correctly", () => {
@@ -117,7 +116,12 @@ describe("loadPluginProviders — empty / disabled", () => {
 describe("loadPluginProviders — load failures (non-fatal)", () => {
   test("skips provider when import throws, bad export, id-but-no-fetch, or null", async () => {
     const scenarios: [string, () => Promise<unknown>][] = [
-      ["import throws", async () => { throw new Error("module not found"); }],
+      [
+        "import throws",
+        async () => {
+          throw new Error("module not found");
+        },
+      ],
       ["bad export", async () => ({ default: { notAProvider: true } })],
       ["id but no fetch", async () => ({ default: { id: "p1", kind: "rag" } })],
       ["null import", async () => null],
@@ -172,7 +176,10 @@ describe("loadPluginProviders — export shape variants", () => {
     expect((await loadPluginProviders([makeConfig("pkg")], "/repo"))[0].id).toBe("named-export");
 
     // Named 'provider' preferred over default
-    _pluginLoaderDeps.dynamicImport = async () => ({ provider: makeProvider("named"), default: makeProvider("default") });
+    _pluginLoaderDeps.dynamicImport = async () => ({
+      provider: makeProvider("named"),
+      default: makeProvider("default"),
+    });
     expect((await loadPluginProviders([makeConfig("pkg")], "/repo"))[0].id).toBe("named");
 
     // CommonJS-style (module-as-provider)
@@ -190,7 +197,9 @@ describe("loadPluginProviders — init() lifecycle", () => {
     const captured: Record<string, unknown>[] = [];
     const provider = {
       ...makeProvider("initable"),
-      init: async (cfg: Record<string, unknown>) => { captured.push(cfg); },
+      init: async (cfg: Record<string, unknown>) => {
+        captured.push(cfg);
+      },
     };
     _pluginLoaderDeps.dynamicImport = async () => ({ default: provider });
     const cfg: ContextPluginProviderConfig = {
@@ -207,7 +216,9 @@ describe("loadPluginProviders — init() lifecycle", () => {
     let initCalled = false;
     const provider = {
       ...makeProvider("initable"),
-      init: async () => { initCalled = true; },
+      init: async () => {
+        initCalled = true;
+      },
     };
     _pluginLoaderDeps.dynamicImport = async () => ({ default: provider });
     const cfg: ContextPluginProviderConfig = { module: "pkg", enabled: true };
@@ -218,7 +229,9 @@ describe("loadPluginProviders — init() lifecycle", () => {
   test("skips provider when init() throws", async () => {
     const provider = {
       ...makeProvider("bad-init"),
-      init: async () => { throw new Error("init failure"); },
+      init: async () => {
+        throw new Error("init failure");
+      },
     };
     _pluginLoaderDeps.dynamicImport = async () => ({ default: provider });
     const cfg: ContextPluginProviderConfig = {
@@ -237,13 +250,11 @@ describe("loadPluginProviders — init() lifecycle", () => {
 
 describe("loadPluginProviders — parallel loading", () => {
   test("loads multiple providers in parallel", async () => {
-    const providers = ["rag", "graph", "kb"].map((id) =>
-      makeProvider(id, id as IContextProvider["kind"]),
-    );
+    const providers = ["rag", "graph", "kb"].map((id) => makeProvider(id, id as IContextProvider["kind"]));
     let callCount = 0;
     _pluginLoaderDeps.dynamicImport = async (path) => {
       callCount++;
-      const idx = parseInt(path.split("-")[1] ?? "0", 10);
+      const idx = Number.parseInt(path.split("-")[1] ?? "0", 10);
       return { default: providers[idx] };
     };
     const configs = providers.map((_, i) => makeConfig(`pkg-${i}`));

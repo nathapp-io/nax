@@ -6,11 +6,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import {
-  clearWorkspaceCache,
-  discoverWorkspacePackages,
-  _workspaceDeps,
-} from "@/test-runners/detect/workspace";
+import { _workspaceDeps, clearWorkspaceCache, discoverWorkspacePackages } from "@/test-runners/detect/workspace";
 import { withTempDir } from "@test/helpers";
 
 describe("discoverWorkspacePackages memoization", () => {

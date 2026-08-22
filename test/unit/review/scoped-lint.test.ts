@@ -227,7 +227,9 @@ describe("runScopedLintCheck", () => {
 
     expect(result.success).toBe(true);
     expect(result.lintScope?.status).toBe("out_of_scope");
-    expect(result.lintScope?.packageGroups).toEqual([{ packageDir: "packages/api", files: ["packages/api/src/in.ts"] }]);
+    expect(result.lintScope?.packageGroups).toEqual([
+      { packageDir: "packages/api", files: ["packages/api/src/in.ts"] },
+    ]);
     expect(result.output).toContain("out of story scope");
   });
 

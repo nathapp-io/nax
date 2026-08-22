@@ -3,15 +3,15 @@
  * Covers: newCorrelationId() format/uniqueness, callId stamping in
  * completeOptions and runOptions, caller-supplied callId preservation.
  */
-import { afterEach, describe, test, expect } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import type { mock } from "bun:test";
+import type { CompleteResult } from "@/agents/types";
+import { pickSelector } from "@/config";
+import type { DEFAULT_CONFIG } from "@/config";
 import { callOp, newCorrelationId } from "@/operations";
 import type { CompleteOperation, RunOperation } from "@/operations";
-import { pickSelector } from "@/config";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
-import { DEFAULT_CONFIG } from "@/config";
-import type { CompleteResult } from "@/agents/types";
 import type { NaxRuntime } from "@/runtime";
-import { mock } from "bun:test";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 let runtime: NaxRuntime | undefined;
 afterEach(async () => {

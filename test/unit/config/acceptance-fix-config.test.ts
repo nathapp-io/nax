@@ -66,18 +66,12 @@ describe("DiagnosisResult interface (US-001)", () => {
     expect(result.confidence).toBe(0.85);
   });
 
-  test.each([
-    ["test_bug" as const],
-    ["both" as const],
-  ])("verdict accepts '%s'", (verdict) => {
+  test.each([["test_bug" as const], ["both" as const]])("verdict accepts '%s'", (verdict) => {
     const result: DiagnosisResult = { verdict, reasoning: "test", confidence: 0.9 };
     expect(result.verdict).toBe(verdict);
   });
 
-  test.each([
-    [0 as const],
-    [1 as const],
-  ])("confidence accepts %s", (confidence) => {
+  test.each([[0 as const], [1 as const]])("confidence accepts %s", (confidence) => {
     const result: DiagnosisResult = { verdict: "source_bug", reasoning: "test", confidence };
     expect(result.confidence).toBe(confidence);
   });
@@ -97,7 +91,13 @@ describe("DiagnosisResult interface (US-001)", () => {
       reasoning: "Test bug found",
       confidence: 0.8,
       findings: [
-        { source: "acceptance-diagnose", severity: "error", category: "import-path", message: "Wrong import", fixTarget: "test" },
+        {
+          source: "acceptance-diagnose",
+          severity: "error",
+          category: "import-path",
+          message: "Wrong import",
+          fixTarget: "test",
+        },
       ],
     };
     expect(result.findings?.length).toBe(1);

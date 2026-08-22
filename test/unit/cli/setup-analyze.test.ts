@@ -8,8 +8,8 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _analyzeRepoDeps, analyzeRepo } from "@/cli/setup-analyze";
-import type { DetectionResult } from "@/test-runners/detect";
 import type { ProjectProfile } from "@/config";
+import type { DetectionResult } from "@/test-runners/detect";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
