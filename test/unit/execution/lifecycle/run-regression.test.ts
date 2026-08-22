@@ -394,10 +394,11 @@ describe("runDeferredRegression — test output context forwarding", () => {
       return makePassResult(); // mid-loop after US-002 → early exit
     });
 
-    _regressionDeps.parseTestOutput = mock((output) => {
+    const parseTestOutput: typeof _regressionDeps.parseTestOutput = (output) => {
       capturedParseArgs.push(output);
       return { passed: 0, failed: 92, failures: failuresFor(["US-001", "US-002"]) };
-    }) as unknown as typeof _regressionDeps.parseTestOutput;
+    };
+    _regressionDeps.parseTestOutput = parseTestOutput;
     _regressionDeps.runFixCycle = mock(async () => makeFixCycleResult(true, 0.1));
 
     await runDeferredRegression(makeOptions(["US-001", "US-002"]));

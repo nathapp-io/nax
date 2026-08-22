@@ -342,8 +342,8 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
     _regressionDeps.parseTestOutput = mock(() => ({
       failed: 1,
       passed: 5,
-      failures: [{ testName: "some test", error: "boom" }],
-    })) as unknown as typeof _regressionDeps.parseTestOutput;
+      failures: [{ file: "test/some.test.ts", testName: "some test", error: "boom", stackTrace: [] }],
+    }));
 
     _regressionDeps.runFixCycle = mock(async () => ({
       iterations: [],

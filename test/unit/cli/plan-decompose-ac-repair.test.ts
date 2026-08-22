@@ -16,7 +16,7 @@ import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import { NaxError } from "@/errors";
 import type { PRD, UserStory } from "@/prd/types";
 import { buildDecomposePromptAsync } from "@/prompts";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeMockRuntime, makeTempDir } from "@test/helpers";
 import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 function makeMockDecomposeManager(
@@ -151,14 +151,16 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
 
     let callCount = 0;
     _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
-      makeMockDecomposeManager(async () => {
-        callCount++;
-        if (callCount === 1) {
-          return { stories: [makeOversizedSubStory("US-001-A", 6), makeValidSubStory("US-001-B")] };
-        }
-        return { stories: [makeValidSubStory("US-001-A"), makeValidSubStory("US-001-B")] };
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async () => {
+          callCount++;
+          if (callCount === 1) {
+            return { stories: [makeOversizedSubStory("US-001-A", 6), makeValidSubStory("US-001-B")] };
+          }
+          return { stories: [makeValidSubStory("US-001-A"), makeValidSubStory("US-001-B")] };
+        }),
       }),
-    ) as unknown as typeof _planDeps.createRuntime;
+    );
 
     expect(
       planDecomposeCommand(
@@ -194,11 +196,13 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
 
     let callCount = 0;
     _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
-      makeMockDecomposeManager(async () => {
-        callCount++;
-        return { stories: [makeOversizedSubStory("US-001-A", 8)] };
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async () => {
+          callCount++;
+          return { stories: [makeOversizedSubStory("US-001-A", 8)] };
+        }),
       }),
-    ) as unknown as typeof _planDeps.createRuntime;
+    );
 
     const config = makeNaxConfig({
       precheck: {
@@ -226,11 +230,13 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
 
     let callCount = 0;
     _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
-      makeMockDecomposeManager(async () => {
-        callCount++;
-        return { stories: [makeOversizedSubStory("US-001-A", 8)] };
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async () => {
+          callCount++;
+          return { stories: [makeOversizedSubStory("US-001-A", 8)] };
+        }),
       }),
-    ) as unknown as typeof _planDeps.createRuntime;
+    );
 
     const config = makeNaxConfig({
       precheck: {
@@ -262,14 +268,16 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     setupBaseDeps(prd);
 
     _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
-      makeMockDecomposeManager(async () => ({
-        stories: [
-          makeOversizedSubStory("US-001-A", 8),
-          makeOversizedSubStory("US-001-B", 7),
-          makeValidSubStory("US-001-C"),
-        ],
-      })),
-    ) as unknown as typeof _planDeps.createRuntime;
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async () => ({
+          stories: [
+            makeOversizedSubStory("US-001-A", 8),
+            makeOversizedSubStory("US-001-B", 7),
+            makeValidSubStory("US-001-C"),
+          ],
+        })),
+      }),
+    );
 
     let caught: NaxError | undefined;
     try {
@@ -309,10 +317,12 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     setupBaseDeps(prd);
 
     _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
-      makeMockDecomposeManager(async () => ({
-        stories: [makeOversizedSubStory("US-001-A", 9)],
-      })),
-    ) as unknown as typeof _planDeps.createRuntime;
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async () => ({
+          stories: [makeOversizedSubStory("US-001-A", 9)],
+        })),
+      }),
+    );
 
     let caught: NaxError | undefined;
     try {
@@ -353,22 +363,24 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     let callCount = 0;
 
     _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
-      makeMockAgentManager({
-        completeAsFn: async (_name: string, prompt: string) => {
-          capturedPrompts.push(prompt);
-          callCount++;
-          const stories =
-            callCount === 1
-              ? [makeOversizedSubStory("US-001-A", 6)]
-              : [makeValidSubStory("US-001-A"), makeValidSubStory("US-001-B")];
-          return {
-            output: JSON.stringify(stories),
-            tokenUsage: { inputTokens: 0, outputTokens: 0 },
-            estimatedCostUsd: 0,
-          };
-        },
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          completeAsFn: async (_name: string, prompt: string) => {
+            capturedPrompts.push(prompt);
+            callCount++;
+            const stories =
+              callCount === 1
+                ? [makeOversizedSubStory("US-001-A", 6)]
+                : [makeValidSubStory("US-001-A"), makeValidSubStory("US-001-B")];
+            return {
+              output: JSON.stringify(stories),
+              tokenUsage: { inputTokens: 0, outputTokens: 0 },
+              estimatedCostUsd: 0,
+            };
+          },
+        }),
       }),
-    ) as unknown as typeof _planDeps.createRuntime;
+    );
 
     await planDecomposeCommand(
       tmpDir,
