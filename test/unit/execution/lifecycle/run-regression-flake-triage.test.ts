@@ -12,11 +12,12 @@ import { _regressionDeps, runDeferredRegression } from "@/execution";
 import type { DeferredRegressionOptions } from "@/execution";
 import type { Finding } from "@/findings/types";
 import { type LogEntry, addSink, initLogger, resetLogger } from "@/logger";
+import type { PRD } from "@/prd";
 import type { VerificationResult } from "@/verification";
 import { FLAKE_TRIAGE_SKIP_EVENT } from "@/verification";
 import type { FlakeTriageInput, FlakeTriageResult } from "@/verification/flake-triage";
 import type { QuarantineMemo } from "@/verification/flake-triage";
-import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 function makeVerifyResult(overrides: Partial<VerificationResult> = {}): VerificationResult {
   return {
@@ -30,10 +31,8 @@ function makeVerifyResult(overrides: Partial<VerificationResult> = {}): Verifica
   };
 }
 
-function makePrd(storyIds: string[]): { userStories: { id: string; status: string; title: string }[] } {
-  return {
-    userStories: storyIds.map((id) => ({ id, status: "passed", title: id })),
-  };
+function makePrd(storyIds: string[]): PRD {
+  return makePRD({ userStories: storyIds.map((id) => makeStory({ id, status: "passed", title: id })) });
 }
 
 const TEST_CONFIG = makeNaxConfig({
@@ -62,7 +61,7 @@ function makeOptions(opts: {
 }): DeferredRegressionOptions {
   return {
     config: TEST_CONFIG,
-    prd: makePrd(opts.storyIds) as unknown as DeferredRegressionOptions["prd"],
+    prd: makePrd(opts.storyIds),
     workdir: "/tmp/test-workdir",
     runtime: makeMockRuntime(),
     ...(opts.quarantineMemo ? { quarantineMemo: opts.quarantineMemo } : {}),
