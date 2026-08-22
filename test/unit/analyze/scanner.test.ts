@@ -143,7 +143,7 @@ describe("scanSourceRoots — package count exceeds 30", () => {
       _scannerDeps.discoverWorkspacePackages = mock(() => Promise.resolve(packages));
       _scannerDeps.detectLanguage = mock(() => Promise.resolve(undefined));
       _scannerDeps.readPackageJson = mock(() => Promise.resolve(null));
-      _scannerDeps.logger = () => logger as unknown as Logger;
+      _scannerDeps.logger = () => logger;
 
       await scanSourceRoots(dir);
 
@@ -164,7 +164,7 @@ describe("scanSourceRoots — discoverWorkspacePackages rejects", () => {
       _scannerDeps.discoverWorkspacePackages = mock(() => Promise.reject(new Error("network error")));
       _scannerDeps.detectLanguage = mock(() => Promise.resolve(undefined));
       _scannerDeps.readPackageJson = mock(() => Promise.resolve(null));
-      _scannerDeps.logger = () => ({ warn: () => {} }) as unknown as Logger;
+      _scannerDeps.logger = () => ({ warn: () => {} });
 
       const roots = await scanSourceRoots(dir);
       expect(roots).toHaveLength(1);
@@ -179,7 +179,7 @@ describe("scanSourceRoots — discoverWorkspacePackages rejects", () => {
       _scannerDeps.discoverWorkspacePackages = mock(() => Promise.reject(new Error(errorMessage)));
       _scannerDeps.detectLanguage = mock(() => Promise.resolve(undefined));
       _scannerDeps.readPackageJson = mock(() => Promise.resolve(null));
-      _scannerDeps.logger = () => logger as unknown as Logger;
+      _scannerDeps.logger = () => logger;
 
       await scanSourceRoots(dir);
 

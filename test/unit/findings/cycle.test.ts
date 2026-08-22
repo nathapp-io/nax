@@ -627,7 +627,7 @@ describe("runFixCycle — lite validate on terminal exhausted", () => {
 
     await runFixCycle(cycle, makeCtx(), "my-cycle", {
       callOp: callOpMock,
-      logger: mockLogger as unknown as Logger,
+      logger: mockLogger,
     });
 
     const warnCall = mockLogger.calls.find((c) => c.level === "warn" && c.stage === "findings.cycle");
@@ -674,7 +674,7 @@ describe("runFixCycle — lite validate on terminal exhausted", () => {
 
       await runFixCycle(cycle, makeCtx(), "my-cycle", {
         callOp: callOpMock,
-        logger: mockLogger as unknown as Logger,
+        logger: mockLogger,
       });
 
       const infoCall = mockLogger.calls.find(
@@ -819,7 +819,7 @@ describe("runFixCycle — iteration-completed log emission", () => {
 
     const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
       callOp: makeCallOpMock(),
-      logger: mockLogger as unknown as Logger,
+      logger: mockLogger,
     });
     expect(result.exitReason).toBe("agent-gave-up");
 
@@ -835,7 +835,7 @@ describe("runFixCycle — iteration-completed log emission", () => {
 
     const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
       callOp: makeCallOpMock(),
-      logger: mockLogger as unknown as Logger,
+      logger: mockLogger,
     });
     expect(result.exitReason).toBe("resolved");
 
@@ -851,7 +851,7 @@ describe("runFixCycle — iteration-completed log emission", () => {
 
     const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
       callOp: makeCallOpMock(),
-      logger: mockLogger as unknown as Logger,
+      logger: mockLogger,
     });
     expect(result.exitReason).toBe("validate-short-circuit");
 
@@ -868,7 +868,7 @@ describe("runFixCycle — iteration-completed log emission", () => {
 
     const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
       callOp: makeCallOpMock(),
-      logger: mockLogger as unknown as Logger,
+      logger: mockLogger,
     });
     expect(result.exitReason).toBe("max-attempts-per-strategy");
 
@@ -883,7 +883,7 @@ describe("runFixCycle — iteration-completed log emission", () => {
 
     const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
       callOp: makeCallOpMock(),
-      logger: mockLogger as unknown as Logger,
+      logger: mockLogger,
     });
     expect(result.exitReason).toBe("resolved");
 
@@ -905,7 +905,7 @@ describe("runFixCycle — iteration-completed log emission", () => {
 
     const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
       callOp: makeCallOpMock(),
-      logger: mockLogger as unknown as Logger,
+      logger: mockLogger,
     });
     expect(result.exitReason).toBe("resolved");
     expect(result.iterations).toHaveLength(3);
@@ -922,7 +922,7 @@ describe("runFixCycle — iteration-completed log emission", () => {
 
     const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
       callOp: makeCallOpMock(),
-      logger: mockLogger as unknown as Logger,
+      logger: mockLogger,
     });
     expect(result.exitReason).toBe("agent-gave-up");
 
