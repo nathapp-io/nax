@@ -8,8 +8,9 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { resolveMaxAttemptsOutcome } from "@/execution";
+import type { EscalationHandlerContext } from "@/execution/escalation/tier-escalation";
 import { pipelineEventBus } from "@/pipeline";
-import { makeLogger, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { makeLogger, makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // shouldRetrySameTier — pure predicate (BUG-070)
@@ -108,13 +109,14 @@ describe("handleTierEscalation — tier escalation regression guard", () => {
         routing: { complexity: "simple", reasoning: "", modelTier: "fast", testStrategy: "test-after" },
       });
 
-      const ctx = {
+      const ctx: EscalationHandlerContext = {
         story,
+        agentManager: makeMockAgentManager(),
         storiesToExecute: [story],
         isBatchExecution: false,
         routing: { modelTier: "fast", testStrategy: "test-after" },
         pipelineResult: { reason: "Tests failed", context: {} },
-        config: {
+        config: makeNaxConfig({
           autoMode: {
             escalation: {
               enabled: true,
@@ -123,29 +125,27 @@ describe("handleTierEscalation — tier escalation regression guard", () => {
                 { tier: "balanced", attempts: 2 },
               ],
               escalateEntireBatch: false,
+              resetMode: "initial",
             },
           },
           routing: { llm: { mode: "per-story" }, strategy: "keyword" },
           models: {},
-        },
-        prd: {
+        }),
+        prd: makePRD({
           project: "test",
           feature: "f",
           branchName: "b",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
           userStories: [story],
-        },
+        }),
         prdPath: "/tmp/test-prd.json",
         featureDir: undefined,
         hooks: { hooks: {} },
         feature: "f",
         totalCost: 0,
         workdir: "/tmp",
-        verifyResult: { status: "TEST_FAILURE", success: false },
       };
 
-      const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]);
+      const result = await handleTierEscalation(ctx);
 
       // TEST_FAILURE must still escalate — existing behaviour preserved
       expect(result.outcome).toBe("escalated");
@@ -171,35 +171,29 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
     _tierEscalationDeps.savePRD = () => Promise.resolve();
 
     try {
-      const story = {
+      const story = makeStory({
         id: "US-001",
         title: "Story",
         description: "Test",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "in-progress" as const,
-        passes: false,
-        escalations: [],
-        attempts: 0,
+        status: "in-progress",
         routing: {
+          complexity: "medium",
+          reasoning: "",
           modelTier: "fast",
           testStrategy: "test-after",
           agent: "claude",
-          complexity: "medium",
-          reasoning: "",
         },
-      };
+      });
 
-      const ctx = {
+      const ctx: EscalationHandlerContext = {
         story,
+        agentManager: makeMockAgentManager(),
         storiesToExecute: [story],
         isBatchExecution: false,
-        routing: { modelTier: "fast", testStrategy: "test-after", agent: "claude" },
+        routing: { modelTier: "fast", testStrategy: "test-after" },
         pipelineResult: { reason: "Tests failed", context: {} },
-        config: {
+        config: makeNaxConfig({
           autoMode: {
-            defaultAgent: "claude",
             escalation: {
               enabled: true,
               tierOrder: [
@@ -208,29 +202,27 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
                 { tier: "fast", agent: "codex", attempts: 2 },
               ],
               escalateEntireBatch: false,
+              resetMode: "initial",
             },
           },
           routing: { llm: { mode: "per-story" }, strategy: "keyword" },
           models: {},
-        },
-        prd: {
+        }),
+        prd: makePRD({
           project: "test",
           feature: "f",
           branchName: "b",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
           userStories: [story],
-        },
+        }),
         prdPath: "/tmp/test-prd.json",
         featureDir: undefined,
         hooks: { hooks: {} },
         feature: "f",
         totalCost: 0,
         workdir: "/tmp",
-        verifyResult: { status: "TEST_FAILURE", success: false },
       };
 
-      const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]);
+      const result = await handleTierEscalation(ctx);
 
       expect(result.outcome).toBe("escalated");
       const updatedStory = result.prd.userStories.find((s) => s.id === "US-001");
@@ -250,35 +242,29 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
     _tierEscalationDeps.savePRD = () => Promise.resolve();
 
     try {
-      const story = {
+      const story = makeStory({
         id: "US-001",
         title: "Story",
         description: "Test",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "in-progress" as const,
-        passes: false,
-        escalations: [],
-        attempts: 0,
+        status: "in-progress",
         routing: {
+          complexity: "medium",
+          reasoning: "",
           modelTier: "balanced",
           testStrategy: "test-after",
           agent: "claude",
-          complexity: "medium",
-          reasoning: "",
         },
-      };
+      });
 
-      const ctx = {
+      const ctx: EscalationHandlerContext = {
         story,
+        agentManager: makeMockAgentManager(),
         storiesToExecute: [story],
         isBatchExecution: false,
-        routing: { modelTier: "balanced", testStrategy: "test-after", agent: "claude" },
+        routing: { modelTier: "balanced", testStrategy: "test-after" },
         pipelineResult: { reason: "Tests failed", context: {} },
-        config: {
+        config: makeNaxConfig({
           autoMode: {
-            defaultAgent: "claude",
             escalation: {
               enabled: true,
               tierOrder: [
@@ -287,29 +273,27 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
                 { tier: "fast", agent: "codex", attempts: 2 },
               ],
               escalateEntireBatch: false,
+              resetMode: "initial",
             },
           },
           routing: { llm: { mode: "per-story" }, strategy: "keyword" },
           models: {},
-        },
-        prd: {
+        }),
+        prd: makePRD({
           project: "test",
           feature: "f",
           branchName: "b",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
           userStories: [story],
-        },
+        }),
         prdPath: "/tmp/test-prd.json",
         featureDir: undefined,
         hooks: { hooks: {} },
         feature: "f",
         totalCost: 0,
         workdir: "/tmp",
-        verifyResult: { status: "TEST_FAILURE", success: false },
       };
 
-      const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]);
+      const result = await handleTierEscalation(ctx);
 
       expect(result.outcome).toBe("escalated");
       const updatedStory = result.prd.userStories.find((s) => s.id === "US-001");
@@ -338,15 +322,15 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
         routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "" },
       });
 
-      const ctx = {
+      const ctx: EscalationHandlerContext = {
         story,
+        agentManager: makeMockAgentManager(),
         storiesToExecute: [story],
         isBatchExecution: false,
         routing: { modelTier: "fast", testStrategy: "test-after" },
         pipelineResult: { reason: "Tests failed", context: {} },
-        config: {
+        config: makeNaxConfig({
           autoMode: {
-            defaultAgent: "claude",
             escalation: {
               enabled: true,
               tierOrder: [
@@ -354,29 +338,27 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
                 { tier: "balanced", attempts: 2 },
               ],
               escalateEntireBatch: false,
+              resetMode: "initial",
             },
           },
           routing: { llm: { mode: "per-story" }, strategy: "keyword" },
           models: {},
-        },
-        prd: {
+        }),
+        prd: makePRD({
           project: "test",
           feature: "f",
           branchName: "b",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
           userStories: [story],
-        },
+        }),
         prdPath: "/tmp/test-prd.json",
         featureDir: undefined,
         hooks: { hooks: {} },
         feature: "f",
         totalCost: 0,
         workdir: "/tmp",
-        verifyResult: { status: "TEST_FAILURE", success: false },
       };
 
-      const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]);
+      const result = await handleTierEscalation(ctx);
 
       expect(result.outcome).toBe("escalated");
       const updatedStory = result.prd.userStories.find((s) => s.id === "US-001");
@@ -570,13 +552,14 @@ describe("handleTierEscalation — story:escalated event emission", () => {
         routing: { complexity: "simple", reasoning: "", modelTier: "fast", testStrategy: "test-after" },
       });
 
-      const ctx = {
+      const ctx: EscalationHandlerContext = {
         story,
+        agentManager: makeMockAgentManager(),
         storiesToExecute: [story],
         isBatchExecution: false,
         routing: { modelTier: "fast", testStrategy: "test-after" },
         pipelineResult: { reason: "Tests failed", context: {} },
-        config: {
+        config: makeNaxConfig({
           autoMode: {
             escalation: {
               enabled: true,
@@ -585,19 +568,18 @@ describe("handleTierEscalation — story:escalated event emission", () => {
                 { tier: "balanced", attempts: 2 },
               ],
               escalateEntireBatch: false,
+              resetMode: "initial",
             },
           },
           routing: { llm: { mode: "per-story" }, strategy: "keyword" },
           models: {},
-        },
-        prd: {
+        }),
+        prd: makePRD({
           project: "test",
           feature: "f",
           branchName: "b",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
           userStories: [story],
-        },
+        }),
         prdPath: "/tmp/test-prd-escalated.json",
         featureDir: undefined,
         hooks: { hooks: {} },
@@ -606,7 +588,7 @@ describe("handleTierEscalation — story:escalated event emission", () => {
         workdir: "/tmp",
       };
 
-      const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]);
+      const result = await handleTierEscalation(ctx);
 
       expect(result.outcome).toBe("escalated");
       expect(capturedEvents).toHaveLength(1);
@@ -816,35 +798,29 @@ describe("handleTierEscalation — ADR-025 gap #2: cross-agent escalation proven
     };
 
     try {
-      const story = {
+      const story = makeStory({
         id: "US-provenance-001",
         title: "Story",
         description: "Test",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "in-progress" as const,
-        passes: false,
-        escalations: [],
-        attempts: 0,
+        status: "in-progress",
         routing: {
-          modelTier: "balanced",
-          testStrategy: "test-after" as const,
-          agent: "claude",
-          complexity: "medium" as const,
+          complexity: "medium",
           reasoning: "",
+          modelTier: "balanced",
+          testStrategy: "test-after",
+          agent: "claude",
         },
-      };
+      });
 
-      const ctx = {
+      const ctx: EscalationHandlerContext = {
         story,
+        agentManager: makeMockAgentManager(),
         storiesToExecute: [story],
         isBatchExecution: false,
-        routing: { modelTier: "balanced", testStrategy: "test-after", agent: "claude" },
+        routing: { modelTier: "balanced", testStrategy: "test-after" },
         pipelineResult: { reason: "Tests failed", context: {} },
-        config: {
+        config: makeNaxConfig({
           autoMode: {
-            defaultAgent: "claude",
             escalation: {
               enabled: true,
               tierOrder: [
@@ -853,29 +829,27 @@ describe("handleTierEscalation — ADR-025 gap #2: cross-agent escalation proven
                 { tier: "fast", agent: "codex", attempts: 2 },
               ],
               escalateEntireBatch: false,
+              resetMode: "initial",
             },
           },
           routing: { llm: { mode: "per-story" }, strategy: "keyword" },
           models: {},
-        },
-        prd: {
+        }),
+        prd: makePRD({
           project: "test",
           feature: "f",
           branchName: "b",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
           userStories: [story],
-        },
+        }),
         prdPath: "/tmp/test-prd-provenance.json",
         featureDir: undefined,
         hooks: { hooks: {} },
         feature: "f",
         totalCost: 0,
         workdir: "/tmp",
-        verifyResult: { status: "TEST_FAILURE", success: false },
       };
 
-      const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]);
+      const result = await handleTierEscalation(ctx);
 
       expect(result.outcome).toBe("escalated");
 
@@ -932,13 +906,14 @@ describe("handleTierEscalation — runtime-crash retry-same (US-002)", () => {
         routing: { complexity: "simple", reasoning: "", modelTier: "fast", testStrategy: "test-after" },
       });
 
-      const ctx = {
+      const ctx: EscalationHandlerContext = {
         story,
+        agentManager: makeMockAgentManager(),
         storiesToExecute: [story],
         isBatchExecution: false,
         routing: { modelTier: "fast", testStrategy: "test-after" },
         pipelineResult: { reason: "Bun runtime crash", context: { tddFailureCategory: "runtime-crash" } },
-        config: {
+        config: makeNaxConfig({
           autoMode: {
             escalation: {
               enabled: true,
@@ -946,19 +921,18 @@ describe("handleTierEscalation — runtime-crash retry-same (US-002)", () => {
                 { tier: "fast", attempts: 2 },
                 { tier: "balanced", attempts: 3 },
               ],
+              resetMode: "initial",
             },
           },
           routing: { llm: { mode: "per-story" }, strategy: "keyword" },
           models: {},
-        },
-        prd: {
+        }),
+        prd: makePRD({
           project: "test",
           feature: "f",
           branchName: "b",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
           userStories: [story],
-        },
+        }),
         prdPath: "/tmp/test-prd-us002-retry-1.json",
         featureDir: undefined,
         hooks: { hooks: {} },
@@ -968,7 +942,7 @@ describe("handleTierEscalation — runtime-crash retry-same (US-002)", () => {
         runtimeCrashResult: { status: "RUNTIME_CRASH", success: false },
       };
 
-      const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]);
+      const result = await handleTierEscalation(ctx);
 
       expect(result.outcome).toBe("retry-same");
       // retry-same must not write to disk — a save here would corrupt the
@@ -1005,13 +979,14 @@ describe("handleTierEscalation — runtime-crash retry-same (US-002)", () => {
         userStories: [story],
       };
 
-      const ctx = {
+      const ctx: EscalationHandlerContext = {
         story,
+        agentManager: makeMockAgentManager(),
         storiesToExecute: [story],
         isBatchExecution: false,
         routing: { modelTier: "balanced", testStrategy: "test-after" },
         pipelineResult: { reason: "Runtime crash", context: {} },
-        config: {
+        config: makeNaxConfig({
           autoMode: {
             escalation: {
               enabled: true,
@@ -1019,11 +994,12 @@ describe("handleTierEscalation — runtime-crash retry-same (US-002)", () => {
                 { tier: "fast", attempts: 2 },
                 { tier: "balanced", attempts: 3 },
               ],
+              resetMode: "initial",
             },
           },
           routing: { llm: { mode: "per-story" }, strategy: "keyword" },
           models: {},
-        },
+        }),
         prd: originalPrd,
         prdPath: "/tmp/test-prd-us002-retry-2.json",
         featureDir: undefined,
@@ -1034,7 +1010,7 @@ describe("handleTierEscalation — runtime-crash retry-same (US-002)", () => {
         runtimeCrashResult: { status: "RUNTIME_CRASH", success: false },
       };
 
-      const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]);
+      const result = await handleTierEscalation(ctx);
 
       expect(result.outcome).toBe("retry-same");
       expect(result.prdDirty).toBe(false);

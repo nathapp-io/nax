@@ -17,7 +17,7 @@ import { PluginRegistry } from "@/plugins/registry";
 import { loadPRD, savePRD } from "@/prd";
 import type { PRD, UserStory } from "@/prd/types";
 import { _gitDeps } from "@/utils/git";
-import { makeAgentResult, makeMockRuntime, makeTestContext } from "@test/helpers";
+import { makeAgentResult, makeMockRuntime, makeSpawn, makeTestContext } from "@test/helpers";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
@@ -468,23 +468,10 @@ describe("handlePipelineSuccess — a failed worktree merge is not a passed stor
 
   function stubSpawn(): string[][] {
     const calls: string[][] = [];
-    _resultHandlerDeps.spawn = mock((args: unknown) => {
-      calls.push(args as string[]);
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
-    }) as unknown as typeof _resultHandlerDeps.spawn;
+    _resultHandlerDeps.spawn = makeSpawn(({ cmd }) => {
+      calls.push(cmd);
+      return "";
+    }).spawn;
     return calls;
   }
 

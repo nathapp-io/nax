@@ -22,7 +22,7 @@ import { executeUnified } from "@/execution/unified-executor";
 import type { PluginRegistry } from "@/plugins";
 import type { IReviewPlugin } from "@/plugins/extensions";
 import type { PRD } from "@/prd/types";
-import { makePluginRegistry, makeStatusWriter, makeTempDir } from "@test/helpers";
+import { makePluginRegistry, makeSpawn, makeStatusWriter, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -107,24 +107,9 @@ beforeEach(() => {
   prdPath = join(workdir, "prd.json");
 
   // Default: spawn always returns the HEAD ref for git rev-parse, and diff files for getChangedFiles
-  _deferredReviewDeps.spawn = mock((opts: { cmd: string[] }) => {
-    const isRevParse = opts.cmd.includes("rev-parse");
-    const output = isRevParse ? HEAD_REF : "src/changed.ts\nsrc/other.ts";
-    return {
-      exited: Promise.resolve(0),
-      stdout: new ReadableStream({
-        start(c) {
-          c.enqueue(new TextEncoder().encode(`${output}\n`));
-          c.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(c) {
-          c.close();
-        },
-      }),
-    };
-  }) as unknown as typeof _deferredReviewDeps.spawn;
+  _deferredReviewDeps.spawn = makeSpawn(({ cmd }) =>
+    cmd.includes("rev-parse") ? `${HEAD_REF}\n` : "src/changed.ts\nsrc/other.ts\n",
+  ).spawn;
 });
 
 afterEach(() => {
@@ -262,28 +247,14 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     const captureOrder: string[] = [];
 
     // Track spawn calls to verify rev-parse happens before diff
-    _deferredReviewDeps.spawn = mock((opts: { cmd: string[] }) => {
-      if (opts.cmd.includes("rev-parse")) {
+    _deferredReviewDeps.spawn = makeSpawn(({ cmd }) => {
+      if (cmd.includes("rev-parse")) {
         captureOrder.push("rev-parse");
-      } else if (opts.cmd.includes("diff")) {
+      } else if (cmd.includes("diff")) {
         captureOrder.push("diff");
       }
-      const output = opts.cmd.includes("rev-parse") ? HEAD_REF : "src/file.ts";
-      return {
-        exited: Promise.resolve(0),
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(new TextEncoder().encode(`${output}\n`));
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-      };
-    }) as unknown as typeof _deferredReviewDeps.spawn;
+      return cmd.includes("rev-parse") ? `${HEAD_REF}\n` : "src/file.ts\n";
+    }).spawn;
 
     const reviewer = makeReviewer("semgrep", true);
     const registry = makeRegistry([reviewer]);

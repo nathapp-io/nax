@@ -11,7 +11,15 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { pipelineEventBus } from "@/pipeline";
 import { _completionDeps, completionStage } from "@/pipeline/stages/completion";
 import type { PipelineContext } from "@/pipeline/types";
-import { makeMockRuntime, makeNaxConfig, makePRD, makeStory, makeTestContext } from "@test/helpers";
+import {
+  makeMockRuntime,
+  makeNaxConfig,
+  makePRD,
+  makeSpawn,
+  makeSpawnResult,
+  makeStory,
+  makeTestContext,
+} from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration
@@ -160,21 +168,19 @@ describe("completionStage bounded stream reading", () => {
   test("getDiffText retains 8,000 characters and drains stderr", async () => {
     const encoder = new TextEncoder();
     let stderrPulls = 0;
-    _completionDeps.spawn = (() => ({
-      stdout: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(encoder.encode("x".repeat(9_000)));
-          controller.close();
-        },
-      }),
-      stderr: new ReadableStream<Uint8Array>({
-        pull(controller) {
-          if (stderrPulls++ === 0) controller.enqueue(encoder.encode("warning"));
-          else controller.close();
-        },
-      }),
-      exited: Promise.resolve(0),
-    })) as unknown as typeof _completionDeps.spawn;
+    _completionDeps.spawn = makeSpawn(() => {
+      const proc = makeSpawnResult({ stdout: "x".repeat(9_000) });
+      // Pull-based stderr so the test can observe that getDiffText drains it.
+      Object.defineProperty(proc, "stderr", {
+        value: new ReadableStream<Uint8Array>({
+          pull(controller) {
+            if (stderrPulls++ === 0) controller.enqueue(encoder.encode("warning"));
+            else controller.close();
+          },
+        }),
+      });
+      return proc;
+    }).spawn;
 
     const output = await _completionDeps.getDiffText("/repo", "base-ref");
 
@@ -188,20 +194,7 @@ describe("completionStage bounded stream reading", () => {
     // preserved verbatim.
     const encoder = new TextEncoder();
     const diff = "diff --git a/src/foo.ts b/src/foo.ts\n--- a/src/foo.ts\n+++ b/src/foo.ts\n@@ -1 +1 @@\n-x\n+y\n";
-    _completionDeps.spawn = (() => ({
-      stdout: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(encoder.encode(diff));
-          controller.close();
-        },
-      }),
-      stderr: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.close();
-        },
-      }),
-      exited: Promise.resolve(0),
-    })) as unknown as typeof _completionDeps.spawn;
+    _completionDeps.spawn = makeSpawn(() => diff).spawn;
 
     const output = await _completionDeps.getDiffText("/repo", "base-ref");
 

@@ -15,7 +15,7 @@ import { DEFAULT_CONFIG } from "@/config";
 import { _reconcileDeps, initializeRun } from "@/execution/lifecycle/run-initialization";
 import type { PRD } from "@/prd/types";
 import type { ReviewResult } from "@/review/types";
-import { makeTempDir } from "@test/helpers";
+import { makeSpawn, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -229,23 +229,10 @@ describe("reconcileState", () => {
     _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
 
     const spawnCalls: string[][] = [];
-    _reconcileDeps.spawn = mock((args: unknown) => {
-      spawnCalls.push(args as string[]);
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: () => {},
-      };
-    }) as unknown as typeof _reconcileDeps.spawn;
+    _reconcileDeps.spawn = makeSpawn(({ cmd }) => {
+      spawnCalls.push(cmd);
+      return "";
+    }).spawn;
 
     const prd = makePrd({ status: "failed", failureStage: "execution", storyGitRef: "abc123" });
     const prdPath = join(tmpDir, "prd-worktree.json");
@@ -279,23 +266,10 @@ describe("reconcileState", () => {
     _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
 
     const spawnCalls: string[][] = [];
-    _reconcileDeps.spawn = mock((args: unknown) => {
-      spawnCalls.push(args as string[]);
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: () => {},
-      };
-    }) as unknown as typeof _reconcileDeps.spawn;
+    _reconcileDeps.spawn = makeSpawn(({ cmd }) => {
+      spawnCalls.push(cmd);
+      return "";
+    }).spawn;
 
     const prd = makePrd({ status: "failed", failureStage: "execution" });
     await runReconcile(prd, "-shared");

@@ -18,7 +18,16 @@ import { _completionDeps, completionStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
 import { errorMessage } from "@/utils/errors";
-import { makeMockRuntime, makeNaxConfig, makePRD, makeStory, makeTestContext, withTempDir } from "@test/helpers";
+import {
+  makeMockRuntime,
+  makeNaxConfig,
+  makePRD,
+  makeSpawn,
+  makeSpawnResult,
+  makeStory,
+  makeTestContext,
+  withTempDir,
+} from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration
@@ -428,20 +437,7 @@ describe("completionStage — getDiffFilePaths reads --name-only output in full 
     );
     expect(output.length).toBeGreaterThan(1_048_576);
 
-    _completionDeps.spawn = (() => ({
-      stdout: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(encoder.encode(output));
-          controller.close();
-        },
-      }),
-      stderr: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.close();
-        },
-      }),
-      exited: Promise.resolve(0),
-    })) as unknown as typeof _completionDeps.spawn;
+    _completionDeps.spawn = makeSpawn(() => output).spawn;
 
     const paths = await _completionDeps.getDiffFilePaths("/repo", "base-ref");
 
@@ -460,21 +456,22 @@ describe("completionStage — getDiffFilePaths reads --name-only output in full 
     for (let i = 0; i < bytes.length; i += 7) chunks.push(bytes.slice(i, i + 7));
 
     let chunkIndex = 0;
-    _completionDeps.spawn = (() => ({
-      stdout: new ReadableStream<Uint8Array>({
-        pull(controller) {
-          const chunk = chunks[chunkIndex++];
-          if (chunk) controller.enqueue(chunk);
-          else controller.close();
-        },
-      }),
-      stderr: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.close();
-        },
-      }),
-      exited: Promise.resolve(0),
-    })) as unknown as typeof _completionDeps.spawn;
+    _completionDeps.spawn = makeSpawn(() => {
+      const proc = makeSpawnResult();
+      // Pull-based stdout emitting fixed-size chunks so every path is split
+      // across at least one read, exercising the partial-line carry-over in
+      // the streaming reader.
+      Object.defineProperty(proc, "stdout", {
+        value: new ReadableStream<Uint8Array>({
+          pull(controller) {
+            const chunk = chunks[chunkIndex++];
+            if (chunk) controller.enqueue(chunk);
+            else controller.close();
+          },
+        }),
+      });
+      return proc;
+    }).spawn;
 
     const result = await _completionDeps.getDiffFilePaths("/repo", "base-ref");
 
