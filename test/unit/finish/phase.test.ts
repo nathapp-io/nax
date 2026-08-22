@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { _finishPhaseDeps, runFinishPhase, shouldRunFinish } from "@/finish";
+import { _finishPhaseDeps, finishSkipReason, runFinishPhase, shouldRunFinish } from "@/finish";
 import type { FinishPhaseContext } from "@/finish";
 import type { FinishContext } from "@/finish";
 import { pipelineEventBus } from "@/pipeline";
-import { makeTestRuntime } from "@test/helpers";
+import { makeTestRuntime, withInfoSpy } from "@test/helpers";
 
 describe("shouldRunFinish", () => {
   const base = { enabled: true, branch: "feat/x", storySummary: { completed: 2, failed: 0, paused: 0 } };
@@ -27,6 +27,30 @@ describe("shouldRunFinish", () => {
     expect(shouldRunFinish({ ...base, branch: "main" })).toBe(false);
     expect(shouldRunFinish({ ...base, branch: "master" })).toBe(false);
     expect(shouldRunFinish({ ...base, branch: "" })).toBe(false);
+  });
+});
+
+describe("finishSkipReason", () => {
+  const base = { enabled: true, branch: "feat/x", storySummary: { completed: 2, failed: 0, paused: 0 } };
+
+  test("a clean run passes with null", () => {
+    expect(finishSkipReason(base)).toBeNull();
+  });
+  test("disabled reports 'enabled'", () => {
+    expect(finishSkipReason({ ...base, enabled: false })).toBe("enabled");
+  });
+  test("zero completed reports 'completed'", () => {
+    expect(finishSkipReason({ ...base, storySummary: { completed: 0, failed: 0, paused: 0 } })).toBe("completed");
+  });
+  test("a failed story reports 'failed'", () => {
+    expect(finishSkipReason({ ...base, storySummary: { completed: 2, failed: 1, paused: 0 } })).toBe("failed");
+  });
+  test("a paused story reports 'paused'", () => {
+    expect(finishSkipReason({ ...base, storySummary: { completed: 2, failed: 0, paused: 1 } })).toBe("paused");
+  });
+  test("main/master report 'branch'", () => {
+    expect(finishSkipReason({ ...base, branch: "main" })).toBe("branch");
+    expect(finishSkipReason({ ...base, branch: "master" })).toBe("branch");
   });
 });
 
@@ -320,4 +344,111 @@ test("an undelivered escalation is surfaced on the finish status entry", async (
   } finally {
     Object.assign(_finishPhaseDeps, restore);
   }
+});
+
+describe("runFinishPhase — gate skip observability (#1671)", () => {
+  test("a failing clause (not disabled) logs the reason and records a skipped status entry", async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const ctx = {
+      ...makeCtx(),
+      storySummary: { completed: 2, failed: 1, paused: 0 },
+      statusWriter: {
+        setPostRunPhase: (_phase: "finish", update: Record<string, unknown>) => {
+          updates.push(update);
+        },
+      },
+    };
+    const result = await withInfoSpy(async (infoSpy) => {
+      const r = await runFinishPhase(ctx);
+      const call = infoSpy.mock.calls.find((c: unknown[]) => c[0] === "finish");
+      expect(call).toBeDefined();
+      expect((call?.[2] as { reason: string }).reason).toBe("failed");
+      return r;
+    });
+    expect(result).toBeNull();
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({ status: "skipped", reason: "failed" });
+  });
+
+  test("the disabled case is logged but writes no status entry", async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const ctx = {
+      ...makeCtx(),
+      config: { finish: { enabled: false } },
+      statusWriter: {
+        setPostRunPhase: (_phase: "finish", update: Record<string, unknown>) => {
+          updates.push(update);
+        },
+      },
+    };
+    const result = await withInfoSpy(async (infoSpy) => {
+      const r = await runFinishPhase(ctx);
+      const call = infoSpy.mock.calls.find((c: unknown[]) => c[0] === "finish");
+      expect(call).toBeDefined();
+      expect((call?.[2] as { reason: string }).reason).toBe("enabled");
+      return r;
+    });
+    expect(result).toBeNull();
+    expect(updates).toHaveLength(0);
+  });
+});
+
+describe("runFinishPhase — ledger skip observability (#1674 part 1)", () => {
+  test("a machine result with skipReason 'already-finished' writes status: skipped, not passed", async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const restore = { ..._finishPhaseDeps };
+    _finishPhaseDeps.loadFinishContext = async () => proceedContext();
+    _finishPhaseDeps.detectForge = async () => null;
+    _finishPhaseDeps.runFinishMachine = async () => ({
+      feature: "f",
+      status: "nothing-to-finish",
+      skipReason: "already-finished",
+      url: "https://forge.example/pr/3",
+    });
+    const ctx = {
+      ...makeCtx(),
+      statusWriter: {
+        setPostRunPhase: (_phase: "finish", update: Record<string, unknown>) => {
+          updates.push(update);
+        },
+      },
+    };
+    try {
+      const result = await withInfoSpy(async (infoSpy) => {
+        const r = await runFinishPhase(ctx);
+        const call = infoSpy.mock.calls.find(
+          (c: unknown[]) => c[0] === "finish" && (c[1] as string)?.includes("already finished"),
+        );
+        expect(call).toBeDefined();
+        return r;
+      });
+      expect(result?.status).toBe("nothing-to-finish");
+      const terminal = updates[updates.length - 1];
+      expect(terminal).toMatchObject({
+        status: "skipped",
+        reason: "already-finished",
+        url: "https://forge.example/pr/3",
+      });
+    } finally {
+      Object.assign(_finishPhaseDeps, restore);
+    }
+  });
+
+  test("loadFinishContext receives the branch, audit dir, and finish.rerun setting", async () => {
+    const restore = { ..._finishPhaseDeps };
+    let seenOpts: unknown;
+    _finishPhaseDeps.loadFinishContext = async (_feature, _workdir, opts) => {
+      seenOpts = opts;
+      return proceedContext();
+    };
+    _finishPhaseDeps.detectForge = async () => null;
+    _finishPhaseDeps.runFinishMachine = async () => ({ feature: "f", status: "already-ready" });
+    try {
+      await runFinishPhase(makeCtx());
+      expect(seenOpts).toMatchObject({ branch: "feat/x", rerun: "on-change" });
+      expect((seenOpts as { auditDir: string }).auditDir).toContain("finish-audit/f");
+    } finally {
+      Object.assign(_finishPhaseDeps, restore);
+    }
+  });
 });

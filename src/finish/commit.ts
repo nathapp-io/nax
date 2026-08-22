@@ -56,8 +56,16 @@ async function isDirty(repoRoot: string): Promise<boolean> {
   return status.stdout.trim().length > 0;
 }
 
-/** Current HEAD sha, or null outside a repo / on an unborn branch. */
-async function headSha(repoRoot: string): Promise<string | null> {
+/**
+ * Current HEAD sha, or null outside a repo / on an unborn branch.
+ *
+ * Exported (beyond this module's own use in `commitFixes`) for the finish
+ * ledger (#1674 part 1): `machine.ts` stamps every terminal `FinishResult`
+ * with the HEAD it finished at, so a later run's entry check
+ * (`context.ts`'s `already-finished` route) can compare it against the
+ * ledger without duplicating this call.
+ */
+export async function headSha(repoRoot: string): Promise<string | null> {
   const res = await _finishGitDeps.git(["rev-parse", "HEAD"], repoRoot);
   return res.exitCode === 0 ? res.stdout.trim() || null : null;
 }

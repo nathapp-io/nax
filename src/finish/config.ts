@@ -26,6 +26,12 @@ export interface FinishSettings {
   };
   escalate: { telegram: boolean };
   notify: { mode: "escalation" | "always" | "off" };
+  /**
+   * Cross-run idempotency (#1674 part 1). `on-change` (default) skips the
+   * phase when the ledger's branch/HEAD already match a terminal outcome;
+   * `always` bypasses the ledger entirely, matching pre-ledger behaviour.
+   */
+  rerun: "on-change" | "always";
   timeouts: { acceptanceMs: number; gateMs: number; flowMs: number; stepMs: number | null };
 }
 
@@ -35,6 +41,7 @@ const DEFAULTS: Omit<FinishSettings, "models"> = {
   prBody: { template: "merge", sectionMap: {} },
   escalate: { telegram: true },
   notify: { mode: "escalation" },
+  rerun: "on-change",
   timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
 };
 
@@ -76,6 +83,7 @@ export function readFinishConfig(config: unknown): FinishSettings {
     models: modelsOf(finish.reviewers),
     escalate: { telegram: finish.escalate?.telegram !== false },
     notify: { mode: finish.notify?.mode ?? DEFAULTS.notify.mode },
+    rerun: finish.rerun ?? DEFAULTS.rerun,
     timeouts: {
       acceptanceMs: finish.timeouts?.acceptanceMs ?? DEFAULTS.timeouts.acceptanceMs,
       gateMs: finish.timeouts?.gateMs ?? DEFAULTS.timeouts.gateMs,

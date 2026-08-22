@@ -10,8 +10,17 @@
  * `_acceptanceSetupDeps`) — tests reach them through this barrel rather than
  * a deep relative import.
  */
-export { appendRound, readRounds, recordRound, resultPath, roundsPath, writeResult } from "./audit";
-export type { AuditTarget } from "./audit";
+export {
+  appendRound,
+  ledgerPath,
+  readLedger,
+  readRounds,
+  recordRound,
+  resultPath,
+  roundsPath,
+  writeResult,
+} from "./audit";
+export type { AuditTarget, FinishLedgerEntry } from "./audit";
 export { readFinishConfig } from "./config";
 export type { FinishSettings } from "./config";
 export {
@@ -21,18 +30,19 @@ export {
   commitFixes,
   commitRoundOutcome,
   filesInCommit,
+  headSha,
   PUSH_TIMEOUT_MS,
 } from "./commit";
 export { buildFixCommitMessage } from "./commit-message";
 export type { CommitMessageCtx } from "./commit-message";
 export { _finishContextDeps, loadFinishContext } from "./context";
-export type { FinishContext } from "./context";
+export type { FinishContext, LoadFinishContextOptions } from "./context";
 export { _acceptanceGateDeps, runAcceptanceGate } from "./gates/acceptance";
 export { _qualityGateDeps, resolveGateCommands, runQualityGates } from "./gates/quality";
 export { runFinishMachine } from "./machine";
 export type { FinishMachineDeps } from "./machine";
-export { _finishPhaseDeps, runFinishPhase, shouldRunFinish } from "./phase";
-export type { FinishPhaseContext } from "./phase";
+export { _finishPhaseDeps, finishSkipReason, runFinishPhase, shouldRunFinish } from "./phase";
+export type { FinishPhaseContext, FinishSkipReason } from "./phase";
 export type { FinishOps, FixOutcome, FixRequest, ReviewRequest } from "./ops";
 export { _finishOpsDeps, createFinishOps } from "./ops-impl";
 export type { FinishOpsDeps } from "./ops-impl";

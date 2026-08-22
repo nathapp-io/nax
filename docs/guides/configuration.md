@@ -523,6 +523,7 @@ never merges.
     "reviewers": { "spec": "balanced", "quality": "balanced" },
     "escalate": { "telegram": true },
     "notify": { "mode": "escalation" },
+    "rerun": "on-change",
     "timeouts": { "acceptanceMs": 600000, "gateMs": 900000, "flowMs": 5400000 }
   }
 }
@@ -537,6 +538,7 @@ never merges.
 | `reviewers.spec` / `reviewers.quality` / `reviewers.narrative` / `reviewers.fix` | `null` | A model tier name (e.g. `"balanced"`) or `{ agent, model }` object, resolved the same way every other operation's model is. `null` falls through to the op's own default. |
 | `escalate.telegram` | `true` | Prefer Telegram for escalations when `interaction.plugin` is `telegram` (or `NAX_TELEGRAM_TOKEN` + `NAX_TELEGRAM_CHAT_ID` are set). With no credentials it falls back to a PR/MR comment. |
 | `notify.mode` | `"escalation"` | `escalation` preserves escalation-only reporting; `always` also reports clean outcomes and crashes; `off` disables Telegram and uses the escalation comment fallback. |
+| `rerun` | `"on-change"` | Cross-run idempotency. `on-change` skips the whole phase when the finish ledger's branch/HEAD already match a terminal outcome (opened/promoted/already-ready/escalated) from a previous run — a re-run on an unchanged branch costs one `git rev-parse`, not a repeat of every review and gate. `always` bypasses the ledger and re-runs the phase every time, matching pre-ledger behaviour. |
 | `timeouts.acceptanceMs` | 10 min | Cap per acceptance-test group. |
 | `timeouts.gateMs` | 15 min | Cap per quality gate (build / typecheck / lint / test). |
 | `timeouts.flowMs` | 90 min | Whole-phase deadline, enforced as an `AbortSignal`. |
@@ -558,10 +560,13 @@ than no gate. `gh` or `glab` must be authenticated for the PR/MR step.
 | Findings with a clear recommended fix | Applies them, re-runs acceptance / re-reviews, up to 3 attempts per phase. |
 | Spec conflicts, contradictions, design calls, or anything it can't get green | Commits and pushes what it fixed, then escalates via Telegram or a PR/MR comment. No ready PR. |
 | Branch has no commits ahead of base | Reports `nothing-to-finish` and stops. |
+| Branch/HEAD already match a terminal outcome from a previous finish (`rerun: "on-change"`, the default) | Skips the phase entirely, logs it, and records `status: "skipped"` — see `rerun` above. |
 
 The phase's audit trail — one line per fix round, plus the terminal state — is
 written to `~/.nax/<project>/finish-audit/<feature>/`, beside `prompt-audit/`
-and `review-audit/`.
+and `review-audit/`. That directory also holds `last.json`, the cross-run
+ledger `rerun: "on-change"` reads on entry: the most recent terminal result's
+branch, HEAD sha, status and PR url.
 
 **Migrating from `finish.autoFlow`:** the old acpx-subprocess flow was removed
 along with `flowPath` and `defaultAgent` — those two keys, plus `model`, are

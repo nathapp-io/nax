@@ -16,7 +16,7 @@ import type { PRD } from "../prd";
 // ============================================================================
 
 /** Shared status values for post-run phases */
-export type PostRunPhaseStatus = "not-run" | "running" | "passed" | "failed";
+export type PostRunPhaseStatus = "not-run" | "running" | "passed" | "failed" | "skipped";
 
 /** Status of the acceptance test phase during post-run */
 export interface AcceptancePhaseStatus {
@@ -61,6 +61,15 @@ export interface FinishPhaseStatus {
   url?: string;
   /** Why finish stopped, when `result` is "escalated" */
   escalationReason?: string;
+  /** Set when an escalation could not be delivered to its channel. */
+  deliveryError?: string;
+  /**
+   * Why the phase was skipped without running — the failing gate clause
+   * (#1671: "enabled" | "completed" | "failed" | "paused" | "branch") or the
+   * ledger hit that stood it down (#1674 part 1: "already-finished"). Absent
+   * on every other status.
+   */
+  reason?: string;
 }
 
 /** Aggregate post-run phase statuses */

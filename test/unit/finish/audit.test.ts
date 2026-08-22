@@ -1,10 +1,12 @@
 import { existsSync } from "node:fs";
-import { chmod } from "node:fs/promises";
+import { chmod, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import {
   appendRound,
   createFinishState,
+  ledgerPath,
+  readLedger,
   readRounds,
   recordRound,
   resultPath,
@@ -171,6 +173,110 @@ describe("recordRound — F3 regression: one monotonic attempt counter per phase
       const rounds = await readRounds(t);
       expect(rounds.map((r) => r.attempt)).toEqual([1, 2]);
       expect(state.phases.spec.rounds).toBe(2);
+    });
+  });
+});
+
+describe("ledger — writeResult updates last.json for terminal statuses (#1674 part 1)", () => {
+  test("an 'opened' result with headSha/branch writes a ledger entry", async () => {
+    await withTempDir(async (dir) => {
+      const t = { auditDir: join(dir, "finish-audit", "feat"), runId: "run-1" };
+      const result: FinishResult = {
+        feature: "feat",
+        status: "opened",
+        headSha: "abc123",
+        branch: "feat/x",
+        url: "https://example.com/pr/1",
+      };
+      await writeResult(t, result);
+
+      const ledger = await readLedger(t.auditDir);
+      expect(ledger).toEqual({
+        branch: "feat/x",
+        headSha: "abc123",
+        status: "opened",
+        prUrl: "https://example.com/pr/1",
+        runId: "run-1",
+        finishedAt: expect.any(String),
+      });
+    });
+  });
+
+  test("'escalated' also updates the ledger (a re-run must not re-page)", async () => {
+    await withTempDir(async (dir) => {
+      const t = { auditDir: join(dir, "finish-audit", "feat"), runId: "run-1" };
+      const result: FinishResult = {
+        feature: "feat",
+        status: "escalated",
+        headSha: "def456",
+        branch: "feat/x",
+        escalationReason: "needs a human",
+      };
+      await writeResult(t, result);
+
+      const ledger = await readLedger(t.auditDir);
+      expect(ledger?.status).toBe("escalated");
+      expect(ledger?.headSha).toBe("def456");
+    });
+  });
+
+  test("'nothing-to-finish' (no headSha/branch) leaves the ledger untouched", async () => {
+    await withTempDir(async (dir) => {
+      const t = { auditDir: join(dir, "finish-audit", "feat"), runId: "run-1" };
+      const result: FinishResult = { feature: "feat", status: "nothing-to-finish" };
+      await writeResult(t, result);
+
+      expect(await readLedger(t.auditDir)).toBeNull();
+    });
+  });
+
+  test("a second terminal result overwrites the ledger with the newer HEAD", async () => {
+    await withTempDir(async (dir) => {
+      const t = { auditDir: join(dir, "finish-audit", "feat"), runId: "run-1" };
+      await writeResult(t, { feature: "feat", status: "opened", headSha: "sha-1", branch: "feat/x" });
+      await writeResult(t, { feature: "feat", status: "promoted", headSha: "sha-2", branch: "feat/x" });
+
+      const ledger = await readLedger(t.auditDir);
+      expect(ledger?.headSha).toBe("sha-2");
+      expect(ledger?.status).toBe("promoted");
+    });
+  });
+
+  test("readLedger returns null when last.json does not exist", async () => {
+    await withTempDir(async (dir) => {
+      expect(await readLedger(join(dir, "finish-audit", "feat"))).toBeNull();
+    });
+  });
+
+  test("readLedger fails open on corrupt JSON rather than throwing", async () => {
+    await withTempDir(async (dir) => {
+      const auditDir = join(dir, "finish-audit", "feat");
+      await Bun.write(ledgerPath(auditDir), "{ not valid json");
+      await expect(readLedger(auditDir)).resolves.toBeNull();
+    });
+  });
+
+  test("readLedger fails open on a well-formed JSON object missing required fields", async () => {
+    await withTempDir(async (dir) => {
+      const auditDir = join(dir, "finish-audit", "feat");
+      await Bun.write(ledgerPath(auditDir), JSON.stringify({ status: "opened" }));
+      await expect(readLedger(auditDir)).resolves.toBeNull();
+    });
+  });
+
+  test("a ledger write failure is fail-soft — writeResult still resolves and still wrote result.json", async () => {
+    await withTempDir(async (dir) => {
+      const auditDir = join(dir, "finish-audit", "feat");
+      // Force the ledger write specifically to fail (EISDIR) while leaving
+      // the audit dir itself, and result.json's own path, writable — proving
+      // this is the ledger update that is fail-soft, not writeResult's own
+      // (still-throwing) result.json write.
+      await mkdir(ledgerPath(auditDir), { recursive: true });
+      const t = { auditDir, runId: "run-1" };
+      await expect(
+        writeResult(t, { feature: "feat", status: "opened", headSha: "sha-1", branch: "feat/x" }),
+      ).resolves.toBeUndefined();
+      expect(await Bun.file(resultPath(t)).exists()).toBe(true);
     });
   });
 });

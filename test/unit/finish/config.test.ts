@@ -33,4 +33,12 @@ describe("readFinishConfig", () => {
   test("narrative: false disables the narrative op", () => {
     expect(readFinishConfig({ finish: { enabled: true, narrative: false } }).narrative).toBe(false);
   });
+
+  test("an absent finish block defaults rerun to 'on-change'", () => {
+    expect(readFinishConfig({}).rerun).toBe("on-change");
+  });
+
+  test("rerun: 'always' is read through", () => {
+    expect(readFinishConfig({ finish: { enabled: true, rerun: "always" } }).rerun).toBe("always");
+  });
 });
