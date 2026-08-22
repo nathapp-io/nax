@@ -31,6 +31,7 @@ export {
 export { makeAgentRegistry } from "./agent-registry";
 export { makeAgentResult } from "./agent-result";
 export { makeContextBundle, makeContextManifest } from "./context-bundle";
+export { makeEscalationContext } from "./escalation-context";
 export { makePluginRegistry, type MockPluginRegistry } from "./plugin-registry";
 export { makeSpawn, makeSpawnResult } from "./spawn";
 export { makeStatusWriter, type MockStatusWriter } from "./status-writer";

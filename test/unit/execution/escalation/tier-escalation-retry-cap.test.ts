@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeEscalationContext, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 describe("handleTierEscalation — runtime-crash retry cap", () => {
   test("pauses the story once the runtime-crash retry cap is exceeded, instead of looping forever", async () => {
@@ -27,63 +28,40 @@ describe("handleTierEscalation — runtime-crash retry cap", () => {
     _runtimeCrashRetryCounts.delete(storyId);
 
     try {
-      const story = {
+      const story = makeStory({
         id: storyId,
-        title: "Story",
-        description: "Test",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "in-progress" as const,
-        passes: false,
-        escalations: [],
+        status: "in-progress",
         attempts: 1,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
-      };
-
-      const prd = {
-        project: "test",
-        feature: "f",
-        branchName: "b",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        userStories: [story],
-      };
-
-      const buildCtx = () => ({
-        story,
-        storiesToExecute: [story],
-        isBatchExecution: false,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
-        pipelineResult: { reason: "Bun runtime crash", context: { tddFailureCategory: "runtime-crash" } },
-        config: {
-          autoMode: {
-            escalation: {
-              enabled: true,
-              tierOrder: [
-                { tier: "fast", attempts: 2 },
-                { tier: "balanced", attempts: 3 },
-              ],
-            },
-          },
-          routing: { llm: { mode: "per-story" }, strategy: "keyword" },
-          models: {},
-        },
-        prd,
-        prdPath: "/tmp/test-prd-us002-retry-cap.json",
-        featureDir: undefined,
-        hooks: { hooks: {} },
-        feature: "f",
-        totalCost: 0,
-        workdir: "/tmp",
-        runtimeCrashResult: { status: "RUNTIME_CRASH", success: false },
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
       });
+
+      const prd = makePRD({ feature: "f", userStories: [story] });
+
+      const buildCtx = () =>
+        makeEscalationContext({
+          story,
+          pipelineResult: { reason: "Bun runtime crash", context: { tddFailureCategory: "runtime-crash" } },
+          config: makeNaxConfig({
+            autoMode: {
+              escalation: {
+                enabled: true,
+                tierOrder: [
+                  { tier: "fast", attempts: 2 },
+                  { tier: "balanced", attempts: 3 },
+                ],
+              },
+            },
+            routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+          }),
+          prd,
+          prdPath: "/tmp/test-prd-us002-retry-cap.json",
+          feature: "f",
+          runtimeCrashResult: { status: "RUNTIME_CRASH", success: false },
+        });
 
       // Retry up to the cap: still retry-same, still no disk write.
       for (let i = 0; i < RUNTIME_CRASH_RETRY_CAP; i++) {
-        const result = await handleTierEscalation(
-          buildCtx() as unknown as Parameters<typeof handleTierEscalation>[0], // test-ratchet-allow: as-unknown-as
-        );
+        const result = await handleTierEscalation(buildCtx());
         expect(result.outcome).toBe("retry-same");
       }
       expect(saveCalls).toBe(0);
@@ -92,9 +70,7 @@ describe("handleTierEscalation — runtime-crash retry cap", () => {
       // forever. The pause path writes via tier-outcome.ts's own savePRD
       // import (not _tierEscalationDeps), so saveCalls stays 0 here — the
       // retry-same branch's own no-write invariant is what saveCalls proves.
-      const finalResult = await handleTierEscalation(
-        buildCtx() as unknown as Parameters<typeof handleTierEscalation>[0], // test-ratchet-allow: as-unknown-as
-      );
+      const finalResult = await handleTierEscalation(buildCtx());
       expect(finalResult.outcome).toBe("paused");
       expect(finalResult.prdDirty).toBe(true);
       expect(saveCalls).toBe(0);
@@ -114,27 +90,13 @@ describe("handleTierEscalation — runtime-crash retry cap", () => {
     _runtimeCrashRetryCounts.delete(storyId);
 
     try {
-      const story = {
+      const story = makeStory({
         id: storyId,
-        title: "Story",
-        description: "Test",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "in-progress" as const,
-        passes: false,
-        escalations: [],
+        status: "in-progress",
         attempts: 1,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
-      };
-      const prd = {
-        project: "test",
-        feature: "f",
-        branchName: "b",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        userStories: [story],
-      };
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
+      });
+      const prd = makePRD({ feature: "f", userStories: [story] });
       const buildCtx = (runtimeCrash: boolean) => ({
         story,
         storiesToExecute: [story],
@@ -202,28 +164,14 @@ describe("handleTierEscalation — runtime-crash retry cap", () => {
     _runtimeCrashRetryCounts.delete(storyId);
 
     try {
-      const story = {
+      const story = makeStory({
         id: storyId,
-        title: "Story",
-        description: "Test",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "in-progress" as const,
-        passes: false,
-        escalations: [],
+        status: "in-progress",
         attempts: 1,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
-      };
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
+      });
 
-      const prd = {
-        project: "test",
-        feature: "f",
-        branchName: "b",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        userStories: [story],
-      };
+      const prd = makePRD({ feature: "f", userStories: [story] });
 
       const buildCtx = () => ({
         story,

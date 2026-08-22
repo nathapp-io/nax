@@ -2,9 +2,9 @@
   "counts": {
     "asAny": 1399,
     "tsSuppress": 54,
-    "ratchetAllow": 118
+    "ratchetAllow": 116
   },
-  "updatedAt": "2026-08-22T14:19:36.427Z",
+  "updatedAt": "2026-08-22T14:22:45.901Z",
   "byFile": {
     "test/helpers/mock-agent-manager.ts": {
       "asAny": 1
@@ -276,7 +276,7 @@
       "asAny": 2
     },
     "test/unit/execution/escalation/tier-escalation-retry-cap.test.ts": {
-      "ratchetAllow": 5
+      "ratchetAllow": 3
     },
     "test/unit/execution/escalation/tier-escalation-source-tier.test.ts": {
       "asAny": 1,
