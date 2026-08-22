@@ -1,6 +1,6 @@
 {
-  "count": 811,
-  "updatedAt": "2026-08-22T13:50:11.359Z",
+  "count": 748,
+  "updatedAt": "2026-08-22T13:53:06.465Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": 1,
     "test/helpers/spawn.ts": 4,
@@ -128,10 +128,9 @@
     "test/unit/execution/lifecycle/run-completion-session-close.test.ts": 1,
     "test/unit/execution/lifecycle/acceptance-fix.test.ts": 9,
     "test/unit/execution/lifecycle/run-regression-attribution.test.ts": 5,
-    "test/unit/findings/cycle-retirement.test.ts": 10,
-    "test/unit/findings/_cycle-fixtures.ts": 4,
-    "test/unit/findings/cycle.test.ts": 51,
-    "test/unit/findings/cycle-prior-iterations.test.ts": 19,
+    "test/unit/findings/_cycle-fixtures.ts": 5,
+    "test/unit/findings/cycle.test.ts": 14,
+    "test/unit/findings/cycle-prior-iterations.test.ts": 2,
     "test/unit/bakeoff/coordinator.test.ts": 16,
     "test/unit/bakeoff/run-action.test.ts": 13,
     "test/unit/bakeoff/contestant.test.ts": 5,

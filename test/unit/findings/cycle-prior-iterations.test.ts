@@ -82,7 +82,7 @@ describe("US-002 AC1 — priorIterations saturate the per-strategy cap", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("max-attempts-per-strategy");
@@ -110,7 +110,7 @@ describe("US-002 AC1 — priorIterations saturate the per-strategy cap", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(callOpMock).toHaveBeenCalledTimes(1);
@@ -140,7 +140,7 @@ describe("US-002 AC2 — two prior dispatches consume two of three cap slots", (
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(callOpMock).toHaveBeenCalledTimes(1);
@@ -160,7 +160,7 @@ describe("US-002 AC2 — two prior dispatches consume two of three cap slots", (
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     // 1 prior + 1 live = 2 used; cap not yet hit. After the first live dispatch,
@@ -201,7 +201,7 @@ describe("US-002 AC3 — priorIterations saturate maxAttemptsTotal", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("max-attempts-total");
@@ -238,7 +238,7 @@ describe("US-002 AC3 — priorIterations saturate maxAttemptsTotal", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     // 3 priors < cap of 4: one live dispatch happens, then on the next iteration
@@ -287,7 +287,7 @@ describe("US-002 AC4/AC5 — bailWhen predicates read carried history", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("bail-when");
@@ -307,7 +307,7 @@ describe("US-002 AC4/AC5 — bailWhen predicates read carried history", () => {
     const logger = makeLogger();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
       logger: logger as unknown as Parameters<typeof runFixCycle>[3]["logger"],
     });
 
@@ -325,7 +325,7 @@ describe("US-002 AC4/AC5 — bailWhen predicates read carried history", () => {
     const logger = makeLogger();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
       logger: logger as unknown as Parameters<typeof runFixCycle>[3]["logger"],
     });
 
@@ -348,7 +348,7 @@ describe("US-002 AC4/AC5 — bailWhen predicates read carried history", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("resolved");
@@ -365,7 +365,7 @@ describe("US-002 AC4/AC5 — bailWhen predicates read carried history", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("bail-when");
@@ -382,13 +382,13 @@ describe("US-002 AC6 — omission preserves current behaviour", () => {
     const dispatched: string[] = [];
     const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 3 });
     const cycle = makeCycle([lintA], [strategy], async () => [lintA]);
-    const callOpMock = mock(async () => {
+    const callOpMock = makeCallOpMock(() => {
       dispatched.push("lint-fix");
       return {};
     });
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(dispatched).toHaveLength(3);
@@ -406,7 +406,7 @@ describe("US-002 AC6 — omission preserves current behaviour", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(callOpMock).toHaveBeenCalledTimes(3);
@@ -431,7 +431,7 @@ describe("US-002 AC7/AC8 — FixCycleResult contract preserved under carried his
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.iterations).toHaveLength(1);
@@ -459,7 +459,7 @@ describe("US-002 AC7/AC8 — FixCycleResult contract preserved under carried his
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.iterations).toHaveLength(2);
@@ -563,7 +563,7 @@ describe("US-002 composite — carried history composes with runFixCycle end-to-
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("max-attempts-per-strategy");
@@ -585,7 +585,7 @@ describe("US-002 composite — carried history composes with runFixCycle end-to-
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     // 'lint-fix' is below its cap of 2 (0 prior iterations of its own name),

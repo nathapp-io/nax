@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { classifyOutcome, runFixCycle } from "@/findings";
-import type { FixCycle, FixStrategy, Iteration, ValidateResult } from "@/findings";
+import type { FixCycle, FixCycleContext, FixStrategy, Iteration, ValidateResult } from "@/findings";
 import type { Finding } from "@/findings";
-import type { CallOpFn } from "@/findings/cycle";
+
 import type { Logger } from "@/logger";
 import { makeLogger } from "@test/helpers";
 import {
@@ -70,8 +70,7 @@ describe("runFixCycle — bail: no-strategy", () => {
       makeCtx(),
       "test-cycle",
       {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        callOp: makeCallOpMock() as unknown as CallOpFn,
+        callOp: makeCallOpMock(),
       },
     );
     expect(r1.exitReason).toBe("resolved");
@@ -86,8 +85,7 @@ describe("runFixCycle — bail: no-strategy", () => {
       makeCtx(),
       "test-cycle",
       {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        callOp: makeCallOpMock() as unknown as CallOpFn,
+        callOp: makeCallOpMock(),
       },
     );
     expect(r2.exitReason).toBe("no-strategy");
@@ -112,8 +110,7 @@ describe("runFixCycle — bail: no-strategy", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("resolved");
@@ -154,8 +151,7 @@ describe("runFixCycle — bail: max-attempts-per-strategy", () => {
 
     const callOpMock = makeCallOpMock();
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("max-attempts-per-strategy");
@@ -192,8 +188,7 @@ describe("runFixCycle — bail: max-attempts-total", () => {
 
     const callOpMock = makeCallOpMock();
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("max-attempts-total");
@@ -226,8 +221,7 @@ describe("runFixCycle — bail: bail-when", () => {
 
     const callOpMock = makeCallOpMock();
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("bail-when");
@@ -250,8 +244,7 @@ describe("runFixCycle — skip validate on final allowed attempt", () => {
       makeCtx(),
       "test-cycle",
       {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        callOp: makeCallOpMock() as unknown as CallOpFn,
+        callOp: makeCallOpMock(),
       },
     );
     expect(validateCalls1).toHaveLength(1);
@@ -269,8 +262,7 @@ describe("runFixCycle — skip validate on final allowed attempt", () => {
       makeCtx(),
       "test-cycle",
       {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        callOp: makeCallOpMock() as unknown as CallOpFn,
+        callOp: makeCallOpMock(),
       },
     );
     expect(validateCalls2).toHaveLength(1);
@@ -291,7 +283,7 @@ describe("runFixCycle — skip validate on final allowed attempt", () => {
       makeCtx(),
       "test-cycle",
       {
-        callOp: makeCallOpMock() as unknown as CallOpFn,
+        callOp: makeCallOpMock(),
       },
     );
     expect(r.exitReason).toBe("max-attempts-per-strategy");
@@ -317,7 +309,7 @@ describe("runFixCycle — skip validate on final allowed attempt", () => {
     });
     const cycle = makeCycle([lintA], [exclusive, companion], async () => ({ findings: [lintA], shortCircuited: true }));
     const r = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
     });
     // One attempt each, $1 apiece — never 3 (which is what double-counting the
     // first iteration would produce).
@@ -342,8 +334,7 @@ describe("runFixCycle — bail: agent-gave-up", () => {
       makeCtx(),
       "test-cycle",
       {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        callOp: makeCallOpMock() as unknown as CallOpFn,
+        callOp: makeCallOpMock(),
       },
     );
     expect(r1.exitReason).toBe("agent-gave-up");
@@ -367,8 +358,7 @@ describe("runFixCycle — bail: agent-gave-up", () => {
       makeCtx(),
       "test-cycle",
       {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        callOp: makeCallOpMock() as unknown as CallOpFn,
+        callOp: makeCallOpMock(),
       },
     );
     expect(r2.exitReason).toBe("agent-gave-up");
@@ -386,7 +376,7 @@ describe("runFixCycle — bail: agent-gave-up", () => {
       makeCtx(),
       "test-cycle",
       {
-        callOp: makeCallOpMock() as unknown as CallOpFn,
+        callOp: makeCallOpMock(),
       },
     );
     expect(r.exitReason).toBe("agent-gave-up");
@@ -406,8 +396,7 @@ describe("runFixCycle — bail: validator-error", () => {
     });
     const callOpMock = makeCallOpMock();
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
     expect(result.exitReason).toBe("validator-error");
     expect(validateCallCount).toBe(2);
@@ -426,8 +415,7 @@ describe("runFixCycle — bail: validator-error", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("resolved");
@@ -448,8 +436,7 @@ describe("runFixCycle — success paths", () => {
     const cycle = makeCycle([lintA], [strategy], async () => []);
     const callOpMock = makeCallOpMock({ output: "done" });
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
     expect(result.exitReason).toBe("resolved");
     expect(result.finalFindings).toHaveLength(0);
@@ -472,15 +459,14 @@ describe("runFixCycle — success paths", () => {
       coRun: "co-run-sequential",
     });
 
-    const callOpMock = mock(async (_ctx: unknown, op: { name: string }) => {
-      called.push(op.name);
+    const callOpMock = makeCallOpMock(({ opName }) => {
+      called.push(opName);
       return {};
     });
 
     const cycle = makeCycle([lintA], [exclusiveStrategy, coRunStrategy], async () => []);
     await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(called).toHaveLength(1);
@@ -502,15 +488,14 @@ describe("runFixCycle — success paths", () => {
       coRun: "co-run-sequential",
     });
 
-    const callOpMock = mock(async (_ctx: unknown, op: { name: string }) => {
-      called.push(op.name);
+    const callOpMock = makeCallOpMock(({ opName }) => {
+      called.push(opName);
       return {};
     });
 
     const cycle = makeCycle([lintA], [strategyA, strategyB], async () => []);
     await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(called).toEqual(["op-a", "op-b"]);
@@ -529,8 +514,7 @@ describe("runFixCycle — success paths", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("resolved");
@@ -555,8 +539,7 @@ describe("runFixCycle — validate mode opts", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("resolved");
@@ -575,8 +558,7 @@ describe("runFixCycle — lite validate on terminal exhausted", () => {
       makeCtx(),
       "test-cycle",
       {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        callOp: makeCallOpMock() as unknown as CallOpFn,
+        callOp: makeCallOpMock(),
       },
     );
     expect(emptyResult.exitReason).toBe("resolved");
@@ -588,8 +570,7 @@ describe("runFixCycle — lite validate on terminal exhausted", () => {
       makeCtx(),
       "test-cycle",
       {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        callOp: makeCallOpMock() as unknown as CallOpFn,
+        callOp: makeCallOpMock(),
       },
     );
     expect(nonEmptyResult.exitReason).toBe("max-attempts-per-strategy");
@@ -603,8 +584,7 @@ describe("runFixCycle — lite validate on terminal exhausted", () => {
     const cycle = makeCycle([lintA], [strategy], async () => [lintB]);
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
     });
 
     expect(result.iterations).toHaveLength(1);
@@ -627,8 +607,7 @@ describe("runFixCycle — lite validate on terminal exhausted", () => {
     );
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
     });
 
     expect(result.exitReason).toBe("max-attempts-per-strategy");
@@ -647,8 +626,7 @@ describe("runFixCycle — lite validate on terminal exhausted", () => {
     const callOpMock = makeCallOpMock();
 
     await runFixCycle(cycle, makeCtx(), "my-cycle", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
       logger: mockLogger as unknown as Logger,
     });
 
@@ -695,8 +673,7 @@ describe("runFixCycle — lite validate on terminal exhausted", () => {
       const callOpMock = makeCallOpMock();
 
       await runFixCycle(cycle, makeCtx(), "my-cycle", {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        callOp: callOpMock as unknown as CallOpFn,
+        callOp: callOpMock,
         logger: mockLogger as unknown as Logger,
       });
 
@@ -734,11 +711,10 @@ describe("runFixCycle — exclusive strategy exhausted with uncapped companion",
     });
 
     const callOrder: string[] = [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const callOpMock = (async (_ctx: any, op: any) => {
-      callOrder.push(op.name as string);
+    const callOpMock = makeCallOpMock(({ opName }) => {
+      callOrder.push(opName);
       return {};
-    }) as unknown as CallOpFn;
+    });
 
     let validateCall = 0;
     const cycle = makeCycle([lintA], [exclusiveStrategy, companionStrategy], async () => {
@@ -768,8 +744,7 @@ describe("runFixCycle — exclusive strategy exhausted with uncapped companion",
     const cycle = makeCycle([lintA], [exclusiveOnly], async () => validateResult as unknown as Finding[]);
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
     });
 
     expect(result.exitReason).toBe("validate-short-circuit");
@@ -787,8 +762,7 @@ describe("runFixCycle — ValidateResult short-circuit flag", () => {
     const cycle = makeCycle([lintA], [strategy], async () => validateResult as unknown as Finding[]);
 
     const result = await runFixCycle(cycle, makeCtx(), "sc-cycle", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
     });
 
     expect(result.exitReason).toBe("validate-short-circuit");
@@ -802,8 +776,7 @@ describe("runFixCycle — ValidateResult short-circuit flag", () => {
     const cycle = makeCycle([lintA], [strategy], async () => validateResult as unknown as Finding[]);
 
     const result = await runFixCycle(cycle, makeCtx(), "sc-cycle", {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
     });
 
     expect(result.exitReason).toBe("resolved");
@@ -823,7 +796,7 @@ describe("runFixCycle — ValidateResult short-circuit flag", () => {
     const cycle = makeCycle([lintA], [strategy], async () => validateResult as unknown as Finding[]); // test-ratchet-allow: as-unknown-as
 
     const result = await runFixCycle(cycle, makeCtx(), "sc-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn, // test-ratchet-allow: as-unknown-as
+      callOp: makeCallOpMock(), // test-ratchet-allow: as-unknown-as
     });
 
     expect(result.exitReason).toBe("validate-short-circuit");
@@ -845,7 +818,7 @@ describe("runFixCycle — iteration-completed log emission", () => {
     const cycle = makeCycle([lintA], [strategy], async () => []);
 
     const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
       logger: mockLogger as unknown as Logger,
     });
     expect(result.exitReason).toBe("agent-gave-up");
@@ -861,7 +834,7 @@ describe("runFixCycle — iteration-completed log emission", () => {
     const cycle = makeCycle([lintA], [strategy], async () => []);
 
     const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
       logger: mockLogger as unknown as Logger,
     });
     expect(result.exitReason).toBe("resolved");
@@ -877,7 +850,7 @@ describe("runFixCycle — iteration-completed log emission", () => {
     const cycle = makeCycle([lintA], [strategy], async () => validateResult as unknown as Finding[]);
 
     const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
       logger: mockLogger as unknown as Logger,
     });
     expect(result.exitReason).toBe("validate-short-circuit");
@@ -894,7 +867,7 @@ describe("runFixCycle — iteration-completed log emission", () => {
     });
 
     const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
       logger: mockLogger as unknown as Logger,
     });
     expect(result.exitReason).toBe("max-attempts-per-strategy");
@@ -909,7 +882,7 @@ describe("runFixCycle — iteration-completed log emission", () => {
     const cycle = makeCycle([lintA], [strategy], async () => []);
 
     const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
       logger: mockLogger as unknown as Logger,
     });
     expect(result.exitReason).toBe("resolved");
@@ -931,7 +904,7 @@ describe("runFixCycle — iteration-completed log emission", () => {
     });
 
     const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
       logger: mockLogger as unknown as Logger,
     });
     expect(result.exitReason).toBe("resolved");
@@ -948,7 +921,7 @@ describe("runFixCycle — iteration-completed log emission", () => {
     const cycle = makeCycle([lintA], [strategy], async () => []);
 
     const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
       logger: mockLogger as unknown as Logger,
     });
     expect(result.exitReason).toBe("agent-gave-up");
