@@ -21,6 +21,8 @@ export interface TrackedSpawnDeps {
   trackedSpawnDeadlineMs: number;
   /** SIGTERM->SIGKILL escalation grace period for the timeout/abort kill path. */
   killTreeGraceMs: number;
+  /** Bounded wait for stream drain after proc.exited (MEM-19) — shared with prompt(). */
+  streamDrainTimeoutMs: number;
 }
 
 /** Cancel handle returned by killProcessTree — lets a later kill-tree call for
@@ -28,6 +30,22 @@ export interface TrackedSpawnDeps {
  * duplicate (BUG-6). */
 export interface KillTreeHandle {
   cancel(): void;
+}
+
+/**
+ * Bounded drain timer for a stream read (MEM-19). Races the caller's
+ * `.text()`/parse promise; the timer side resolves to `""` so a pipe that
+ * never EOFs (grandchild inherited the fd, Bun bug) cannot hang the caller.
+ * The timer is always cleared when the race settles, so no uncancellable
+ * timer survives across calls.
+ */
+export function makeStreamDrain(ms: number): { promise: Promise<string>; cancel: () => void } {
+  let id: ReturnType<typeof setTimeout> | undefined;
+  const promise = new Promise<string>((resolve) => {
+    id = setTimeout(() => resolve(""), ms);
+  });
+  // Promise executor runs synchronously — id is set before return.
+  return { promise, cancel: () => clearTimeout(id) };
 }
 
 // BUG-6: one escalation timer per pid. A second killProcessTree() call for the
@@ -189,9 +207,15 @@ export async function runTrackedSpawn(
       return { exitCode: -1, stdout: "", stderr: "" };
     }
 
+    // MEM-19: the normal-exit drain has the same missing-EOF hazard as the
+    // timeout path — a grandchild inheriting the pipe fd and outliving acpx
+    // keeps the stream open forever, and the pre-fix `Response(...).text()`
+    // awaited it with no bound (the PERF-1 deadline bounds `exited`, not the
+    // drain). Race each stream against the shared drain timer, exactly like
+    // prompt() does; the drain winning returns "" for that stream.
     const [stdout, stderr] = await Promise.all([
-      new Response(proc.stdout).text().catch(() => ""),
-      new Response(proc.stderr).text().catch(() => ""),
+      drainStream(proc.stdout, deps.streamDrainTimeoutMs),
+      drainStream(proc.stderr, deps.streamDrainTimeoutMs),
     ]);
     return { exitCode: raced.code, stdout, stderr };
   } finally {
@@ -200,4 +224,26 @@ export async function runTrackedSpawn(
     deadlineController.abort();
     signal?.removeEventListener("abort", forwardAbort);
   }
+}
+
+/**
+ * MEM-19: drain a process stream with a bounded wait. Returns the full text
+ * when the stream EOFs promptly; returns "" (and cancels the stream reader so
+ * its pending read settles — MEM-38 hygiene) when the drain timer wins.
+ */
+async function drainStream(stream: ReadableStream<Uint8Array> | null, timeoutMs: number): Promise<string> {
+  if (!stream) return "";
+  const textPromise = new Response(stream).text().catch(() => "");
+  const drain = makeStreamDrain(timeoutMs);
+  const winner = await Promise.race([
+    textPromise.then((text) => ({ fromStream: true as const, text })),
+    drain.promise.then(() => ({ fromStream: false as const, text: "" })),
+  ]).finally(() => drain.cancel());
+  if (!winner.fromStream) {
+    // The drain won — cancel the reader so its pending read settles
+    // (MEM-38 hygiene). The stream is locked by the Response body reader,
+    // so the cancel rejects rather than throwing synchronously.
+    stream.cancel().catch(() => {});
+  }
+  return winner.text;
 }

@@ -16,7 +16,7 @@ import type { PipelineStage } from "@/config";
 import { getSafeLogger } from "@/logger";
 import type { AgentStreamEvent } from "@/runtime";
 import { _spawnClientDeps } from "./spawn-client-deps";
-import { killProcessTree, runTrackedSpawn } from "./spawn-client-process";
+import { killProcessTree, makeStreamDrain, runTrackedSpawn } from "./spawn-client-process";
 import { readAndParseLines, readStreamTail } from "./stdout-line-reader";
 
 export class SpawnAcpSession implements AcpSession {
@@ -249,17 +249,10 @@ export class SpawnAcpSession implements AcpSession {
       // Bun bug: piped streams may not close after kill (e.g. cancelActivePrompt SIGTERM).
       // Race each stream against its own cancellable drain timer so prompt() always resolves
       // instead of hanging. Timers are cancelled as soon as the stream resolves to avoid
-      // keeping uncancellable timers alive across multi-turn sessions.
-      const makeDrain = (ms: number): { promise: Promise<string>; cancel: () => void } => {
-        let id: ReturnType<typeof setTimeout> | undefined;
-        const promise = new Promise<string>((resolve) => {
-          id = setTimeout(() => resolve(""), ms);
-        });
-        // Promise executor runs synchronously — id is set before return.
-        return { promise, cancel: () => clearTimeout(id) };
-      };
-      const drainA = makeDrain(_spawnClientDeps.streamDrainTimeoutMs);
-      const drainB = makeDrain(_spawnClientDeps.streamDrainTimeoutMs);
+      // keeping uncancellable timers alive across multi-turn sessions. (Shared helper —
+      // MEM-19 uses the same one for runTrackedSpawn's normal-exit drain.)
+      const drainA = makeStreamDrain(_spawnClientDeps.streamDrainTimeoutMs);
+      const drainB = makeStreamDrain(_spawnClientDeps.streamDrainTimeoutMs);
       const stdoutRaceResult = Promise.race([
         parsePromise.then(() => "parsed" as const),
         drainA.promise.then(() => "drain" as const),
