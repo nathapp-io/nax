@@ -262,6 +262,26 @@ describe("collectDiffFileList", () => {
 // stage indefinitely. The runGitWithTimeout wrapper applies a SIGKILL
 // deadline so collectDiff resolves with null rather than blocking forever.
 describe("collectDiff() — BUG-31: hung git returns rather than blocking", () => {
+  /**
+   * The SIGKILL deadline under test, shrunk from the production GIT_TIMEOUT_MS
+   * (10s) so the hang path costs milliseconds instead of ten seconds. The
+   * contract exercised is identical — the timer fires, git is SIGKILLed, and
+   * collectDiff resolves null — and the tightened bound below is strictly
+   * stronger than the 60s one it replaces.
+   */
+  const TEST_TIMEOUT_MS = 50;
+
+  let origTimeout: number;
+
+  beforeEach(() => {
+    origTimeout = _diffUtilsDeps.timeoutMs;
+    _diffUtilsDeps.timeoutMs = TEST_TIMEOUT_MS;
+  });
+
+  afterEach(() => {
+    _diffUtilsDeps.timeoutMs = origTimeout;
+  });
+
   test("returns null within the deadline when proc.exited never resolves", async () => {
     const hungSpawn = mock((_opts: unknown) => ({
       // Promise that never resolves — the timeout must save us.
@@ -281,12 +301,12 @@ describe("collectDiff() — BUG-31: hung git returns rather than blocking", () =
     _diffUtilsDeps.spawn = hungSpawn;
 
     const start = Date.now();
-    const out = await collectDiff("/workdir", "abc123", [], undefined);
+    const out = await collectDiff("/workdir", "abc123", []);
     const elapsed = Date.now() - start;
 
     expect(out).toBeNull();
-    // 30s is the GIT_TIMEOUT_MS in test config; assert the call returned
-    // rather than blocking indefinitely.
-    expect(elapsed).toBeLessThan(60_000);
-  }, { timeout: 30_000 });
+    // Assert the call returned on the timeout path rather than blocking
+    // indefinitely (pre-fix: hangs forever on the never-resolving `exited`).
+    expect(elapsed).toBeLessThan(1_000);
+  });
 });

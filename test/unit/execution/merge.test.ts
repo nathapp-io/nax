@@ -465,26 +465,38 @@ describe("worktree barrel", () => {
 // ---------------------------------------------------------------------------
 
 describe("MergeEngine — BUG-5 git-with-timeout regression", () => {
+  /**
+   * The SIGKILL deadline under test, shrunk from the production GIT_TIMEOUT_MS
+   * (10s) so the hang path costs milliseconds of wall-clock instead of ten
+   * seconds. What the test asserts is unchanged — that a wedged git is bounded
+   * by _gitDeps.gitTimeoutMs and SIGKILLed — and the tighter bound below makes
+   * the assertion strictly stronger than the old 15s one.
+   */
+  const TEST_GIT_TIMEOUT_MS = 50;
+
   let origSpawn: typeof _gitDeps.spawn;
+  let origTimeout: number;
 
   beforeEach(() => {
     origSpawn = _gitDeps.spawn;
+    origTimeout = _gitDeps.gitTimeoutMs;
+    _gitDeps.gitTimeoutMs = TEST_GIT_TIMEOUT_MS;
   });
 
   afterEach(() => {
     _gitDeps.spawn = origSpawn;
+    _gitDeps.gitTimeoutMs = origTimeout;
   });
 
-  // Slow regression: GIT_TIMEOUT_MS = 10_000ms in production. Pre-fix the
-  // mock would hang indefinitely; post-fix the SIGKILL timer at GIT_TIMEOUT_MS
-  // bounds the call. The test asserts the call returns within (timeout + slack)
-  // and SIGKILL was issued (proc.kill called).
+  // Pre-fix the mock would hang indefinitely; post-fix the SIGKILL timer at
+  // _gitDeps.gitTimeoutMs bounds the call. The test asserts the call returns
+  // within (timeout + slack) and SIGKILL was issued (proc.kill called).
   it("isMidMerge does not hang when the MERGE_HEAD probe never exits", async () => {
     let resolveExited: (code: number) => void = () => {};
     let killInvoked = false;
     // Only the FIRST MERGE_HEAD probe hangs to exercise the SIGKILL path;
     // subsequent probes and the merge attempt return quickly so the test
-    // only spends GIT_TIMEOUT_MS once. Pre-fix the entire batch hangs
+    // only spends the timeout once. Pre-fix the entire batch hangs
     // indefinitely — that is the regression we want to catch.
     let probeCount = 0;
     _gitDeps.spawn = mock((...args: unknown[]) => {
@@ -532,13 +544,13 @@ describe("MergeEngine — BUG-5 git-with-timeout regression", () => {
     const result = await engine.merge("/repo", "US-001");
     const elapsed = Date.now() - start;
 
-    // GIT_TIMEOUT_MS = 10_000 + slack. Pre-fix: hangs forever. Post-fix:
+    // TEST_GIT_TIMEOUT_MS + slack. Pre-fix: hangs forever. Post-fix:
     // SIGKILL fires at the timeout (killInvoked=true), isMidMerge returns
     // false, the subsequent git merge attempt exits 1, merge() returns
     // {success: false, failureKind: "error"}.
-    expect(elapsed).toBeLessThan(15_000);
+    expect(elapsed).toBeLessThan(1_000);
     expect(killInvoked).toBe(true);
     expect(result.success).toBe(false);
     expect(result.failureKind).toBe("error");
-  }, 20_000);
+  });
 });

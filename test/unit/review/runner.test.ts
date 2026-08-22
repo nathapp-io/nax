@@ -548,8 +548,17 @@ describe("runReview — semantic check integration (AC-9)", () => {
 // ---------------------------------------------------------------------------
 
 describe("getUncommittedFilesImpl — BUG-1 pipe-drain regression", () => {
+  /**
+   * The SIGKILL deadline under test, shrunk from the production GIT_TIMEOUT_MS
+   * (10s) so the never-closing-pipe path costs milliseconds rather than ten
+   * seconds of wall-clock. The contract is unchanged: gitWithTimeout must bound
+   * the call and return empty rather than deadlocking on the undrained pipe.
+   */
+  const TEST_GIT_TIMEOUT_MS = 50;
+
   let originalGetUncommittedFiles: typeof _deps.getUncommittedFiles;
   let originalSpawn: typeof _gitDeps.spawn;
+  let originalTimeout: number;
 
   beforeEach(() => {
     // Capture the impl reference at test start — previous describe blocks mock
@@ -559,11 +568,14 @@ describe("getUncommittedFilesImpl — BUG-1 pipe-drain regression", () => {
     // captured here, so this is robust to test-run order.
     originalGetUncommittedFiles = _deps.getUncommittedFiles;
     originalSpawn = _gitDeps.spawn;
+    originalTimeout = _gitDeps.gitTimeoutMs;
+    _gitDeps.gitTimeoutMs = TEST_GIT_TIMEOUT_MS;
   });
 
   afterEach(() => {
     _deps.getUncommittedFiles = originalGetUncommittedFiles;
     _gitDeps.spawn = originalSpawn;
+    _gitDeps.gitTimeoutMs = originalTimeout;
     mock.restore();
   });
 
@@ -662,11 +674,11 @@ describe("getUncommittedFilesImpl — BUG-1 pipe-drain regression", () => {
     const result = await originalGetUncommittedFiles("/tmp/repo");
     const elapsed = Date.now() - start;
 
-    // GIT_TIMEOUT_MS = 10_000 + slack. The call must return in finite time —
+    // TEST_GIT_TIMEOUT_MS + slack. The call must return in finite time —
     // a hang here means the fix is broken or someone reintroduced the
     // "await proc.exited before draining stdout" pattern.
-    expect(elapsed).toBeLessThan(15_000);
+    expect(elapsed).toBeLessThan(1_000);
     expect(killInvoked).toBe(true);
     expect(result).toEqual([]);
-  }, 20_000);
+  });
 });

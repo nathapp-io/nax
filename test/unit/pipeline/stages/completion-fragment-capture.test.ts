@@ -486,7 +486,32 @@ describe("completionStage — getDiffFilePaths reads --name-only output in full 
 // stdout/stderr streams never close.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Scaled-down stand-ins for the production STREAM_DRAIN_DEADLINE_MS (2s) and
+ * GIT_TIMEOUT_MS (10s). Both BUG-13 and BUG-31 turn on the ORDERING of the two
+ * deadlines relative to how slowly the process produces output, not on their
+ * absolute values, so the pair is shrunk by the same factor (50x) — preserving
+ * drain < slow-but-healthy < SIGKILL — to keep these tests off the wall clock.
+ */
+const TEST_DRAIN_DEADLINE_MS = 40;
+const TEST_GIT_TIMEOUT_MS = 200;
+
 describe("completionStage — getDiffText/getDiffFilePaths bound the stream drain (BUG-13)", () => {
+  let origDrain: number;
+  let origGitTimeout: number;
+
+  beforeEach(() => {
+    origDrain = _completionDeps.streamDrainDeadlineMs;
+    origGitTimeout = _completionDeps.gitTimeoutMs;
+    _completionDeps.streamDrainDeadlineMs = TEST_DRAIN_DEADLINE_MS;
+    _completionDeps.gitTimeoutMs = TEST_GIT_TIMEOUT_MS;
+  });
+
+  afterEach(() => {
+    _completionDeps.streamDrainDeadlineMs = origDrain;
+    _completionDeps.gitTimeoutMs = origGitTimeout;
+  });
+
   test("getDiffText does not hang when the process exits but its streams never close", async () => {
     _completionDeps.spawn = (() => ({
       stdout: new ReadableStream<Uint8Array>({
@@ -508,9 +533,9 @@ describe("completionStage — getDiffText/getDiffFilePaths bound the stream drai
     const elapsedMs = Date.now() - start;
 
     expect(output).toBe("");
-    // Bounded by STREAM_DRAIN_DEADLINE_MS (2s), far under GIT_TIMEOUT_MS (10s)
-    // — generous slack for CI.
-    expect(elapsedMs).toBeLessThan(8_000);
+    // Bounded by the drain deadline, far under the SIGKILL timeout — the same
+    // relationship the production 2s / 10s pair has, at 1/50th the wall-clock.
+    expect(elapsedMs).toBeLessThan(1_000);
   });
 
   test("getDiffFilePaths does not hang when the process exits but its streams never close", async () => {
@@ -534,7 +559,7 @@ describe("completionStage — getDiffText/getDiffFilePaths bound the stream drai
     const elapsedMs = Date.now() - start;
 
     expect(paths).toEqual(new Set());
-    expect(elapsedMs).toBeLessThan(8_000);
+    expect(elapsedMs).toBeLessThan(1_000);
   });
 });
 
@@ -550,7 +575,28 @@ describe("completionStage — getDiffText/getDiffFilePaths bound the stream drai
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("completionStage — getDiffText/getDiffFilePaths do not truncate a slow-but-healthy process (BUG-31)", () => {
-  const SLOW_BUT_HEALTHY_MS = 2_500;
+  /**
+   * Sits strictly between the drain deadline and the SIGKILL timeout, exactly
+   * as the production 2.5s did between 2s and 10s. The ORDERING is what these
+   * tests assert; the absolute values are scaled down together to keep the
+   * wall-clock cost in milliseconds.
+   */
+  const SLOW_BUT_HEALTHY_MS = 50;
+
+  let origDrain: number;
+  let origGitTimeout: number;
+
+  beforeEach(() => {
+    origDrain = _completionDeps.streamDrainDeadlineMs;
+    origGitTimeout = _completionDeps.gitTimeoutMs;
+    _completionDeps.streamDrainDeadlineMs = TEST_DRAIN_DEADLINE_MS;
+    _completionDeps.gitTimeoutMs = TEST_GIT_TIMEOUT_MS;
+  });
+
+  afterEach(() => {
+    _completionDeps.streamDrainDeadlineMs = origDrain;
+    _completionDeps.gitTimeoutMs = origGitTimeout;
+  });
 
   test("getDiffText returns full output for a diff slower than the drain deadline but faster than GIT_TIMEOUT_MS", async () => {
     const content = "diff --git a/big.txt b/big.txt\n+".repeat(50);
@@ -579,7 +625,7 @@ describe("completionStage — getDiffText/getDiffFilePaths do not truncate a slo
     const output = await _completionDeps.getDiffText("/repo", "base-ref");
 
     expect(output).toBe(content);
-  }, 8_000);
+  });
 
   test("getDiffFilePaths returns full paths for a diff slower than the drain deadline but faster than GIT_TIMEOUT_MS", async () => {
     const paths = ["src/a.ts", "src/b.ts"];
@@ -608,5 +654,5 @@ describe("completionStage — getDiffText/getDiffFilePaths do not truncate a slo
     const result = await _completionDeps.getDiffFilePaths("/repo", "base-ref");
 
     expect(result).toEqual(new Set(paths));
-  }, 8_000);
+  });
 });

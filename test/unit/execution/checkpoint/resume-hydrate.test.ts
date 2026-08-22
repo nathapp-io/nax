@@ -288,9 +288,9 @@ describe("captureTreeState (AC8)", () => {
     // via an unresolvable proc — the helper must return within a bounded
     // budget. captureTreeState makes two sequential git calls before the hung
     // status hides the diff calls (rev-parse HEAD, then status --porcelain),
-    // each bounded by TREE_CAPTURE_TIMEOUT_MS (1000ms — VER-4 raised this
-    // from 75ms), so up to ~2000ms is expected; the race ceiling gives
-    // headroom above that. Either the helper runs its own kill timer (true
+    // each bounded by the per-call deadline (TEST_CALL_TIMEOUT_MS below,
+    // standing in for the production TREE_CAPTURE_TIMEOUT_MS), so up to
+    // ~2 x that is expected; the race ceiling gives headroom above it. Either the helper runs its own kill timer (true
     // positive) or hangs forever and the test's own timeout trips (true
     // negative). With the source fix, the helper's internal timeout-aborted
     // proc.exited resolves and the outer Promise.all completes; without it,
@@ -317,15 +317,16 @@ describe("captureTreeState (AC8)", () => {
     });
 
     const start = Date.now();
-    // Race the helper against a 200 ms budget — captured by Promise.race.
-    // If the helper hasn't returned by then, this test times out (Bun's
-    // default per-test timeout is much larger, so the runner will report
-    // the test as failed rather than deadlocking the suite). The race
-    // gives us a deterministic failure mode even if the fix is missing.
-    const RACE_CEILING_MS = 2500;
+    // Shrink the per-call deadline from the production TREE_CAPTURE_TIMEOUT_MS
+    // (1s) so the two sequential hung calls cost ~100ms rather than ~2s. The
+    // contract is unchanged — each call must run its own SIGKILL timer — and
+    // the ceiling below scales with it, staying strictly above the 2 x 50ms
+    // the helper is allowed to spend.
+    const TEST_CALL_TIMEOUT_MS = 50;
+    const RACE_CEILING_MS = 1000;
     const timedCapture = async (): Promise<TreeState | "TIMEOUT"> => {
       return Promise.race<Promise<TreeState> | Promise<"TIMEOUT">>([
-        captureTreeState(tempDir!, { _deps: _gitDeps }),
+        captureTreeState(tempDir!, { _deps: { ..._gitDeps, timeoutMs: TEST_CALL_TIMEOUT_MS } }),
         new Promise<"TIMEOUT">((resolve) => setTimeout(() => resolve("TIMEOUT"), RACE_CEILING_MS)),
       ]);
     };

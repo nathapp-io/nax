@@ -286,7 +286,7 @@ async function readDiffFilePaths(stream: ReadableStream<Uint8Array>): Promise<Se
  * both.
  */
 async function drainAfterExit<T>(streamPromise: Promise<T>, empty: T): Promise<T> {
-  const result = await raceWithDeadline(streamPromise, STREAM_DRAIN_DEADLINE_MS);
+  const result = await raceWithDeadline(streamPromise, _completionDeps.streamDrainDeadlineMs);
   return result === DRAIN_TIMEOUT ? empty : result;
 }
 
@@ -311,7 +311,7 @@ async function getDiffText(workdir: string, baseRef: string | undefined): Promis
       } catch {
         // Process may have already exited
       }
-    }, GIT_TIMEOUT_MS);
+    }, _completionDeps.gitTimeoutMs);
 
     // Rule 07: stream reads start immediately, concurrently with awaiting
     // proc.exited, to avoid pipe-buffer deadlock on large diffs. They are
@@ -361,7 +361,7 @@ async function getDiffFilePaths(workdir: string, baseRef: string | undefined): P
       } catch {
         // Process may have already exited
       }
-    }, GIT_TIMEOUT_MS);
+    }, _completionDeps.gitTimeoutMs);
 
     // `--name-only` output is one path per line, bounded by file count — not
     // content size — so it is streamed in full. Capping it (as getDiffText
@@ -401,4 +401,14 @@ export const _completionDeps = {
   writeFragment,
   renderFragmentBody,
   spawn: Bun.spawn,
+  /**
+   * The two deadlines bounding a git diff, injectable so the BUG-13 / BUG-31
+   * tests can exercise both sides of the contract without burning seconds of
+   * wall-clock. Their ORDERING is the invariant under test — the post-exit
+   * drain deadline must fire well before the hard SIGKILL, so a slow-but-healthy
+   * process is never truncated while a wedged one is still bounded. Tests that
+   * shrink one must shrink the other by the same factor.
+   */
+  streamDrainDeadlineMs: STREAM_DRAIN_DEADLINE_MS,
+  gitTimeoutMs: GIT_TIMEOUT_MS,
 };

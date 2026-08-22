@@ -814,20 +814,20 @@ describe("TelegramInteractionPlugin - fetch deps seam", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // BUG-7: sendMessage must enforce a client-side timeout via AbortController
 // so a hung Telegram API doesn't stall the run.
-// ---------------------------------------------------------------------------
-
 describe("TelegramInteractionPlugin - sendMessage timeout (BUG-7)", () => {
   const originalFetch = _telegramPluginDeps.fetch;
+  const originalSendTimeout = _telegramPluginDeps.sendTimeoutMs;
 
   afterEach(() => {
     mock.restore();
     _telegramPluginDeps.fetch = originalFetch;
+    _telegramPluginDeps.sendTimeoutMs = originalSendTimeout;
   });
 
   test("aborts sendMessage via AbortController when fetch never resolves", async () => {
+    _telegramPluginDeps.sendTimeoutMs = 50; // shrunk from the 5s production cap
     let observedSignal: AbortSignal | undefined;
     _telegramPluginDeps.fetch = mock(async (_url: string | URL | Request, init?: RequestInit) => {
       observedSignal = init?.signal ?? undefined;
@@ -864,9 +864,8 @@ describe("TelegramInteractionPlugin - sendMessage timeout (BUG-7)", () => {
       } as InteractionRequest),
     ).rejects.toThrow();
     const elapsed = Date.now() - start;
-    // Bound: 5s abort + 1s buffer. Without the AbortController, this would
-    // ride OS TCP timeout (~75s+) or hang indefinitely.
-    expect(elapsed).toBeLessThan(7000);
+    // Without the AbortController this rides OS TCP timeout (~75s+) or hangs.
+    expect(elapsed).toBeLessThan(1000);
     expect(observedSignal).toBeDefined();
-  }, 10000);
+  });
 });

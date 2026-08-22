@@ -71,12 +71,21 @@ export function buildEscalationMessage(
   return `${head}${lines.join("")}${omitted > 0 ? `\n…and ${omitted} more` : ""}`;
 }
 
-/** Module-level deps for testability (`_deps` pattern). */
-export const _notifyDeps: { fetch: FetchFn } = { fetch: (...a) => fetch(...a) };
-
 /** SEC-4: 5s client-side cap for the notify fetch. Matches the interaction
  *  plugin's sendMessage pattern (src/interaction/plugins/telegram.ts:188). */
 const NOTIFY_FETCH_TIMEOUT_MS = 5_000;
+
+/**
+ * Module-level deps for testability (`_deps` pattern).
+ *
+ * `timeoutMs` is injectable so the SEC-4 hang-path test can assert the abort
+ * contract without burning the full 5s cap in wall-clock — the same convention
+ * as `_gitDeps.gitTimeoutMs` (`src/utils/git.ts`).
+ */
+export const _notifyDeps: { fetch: FetchFn; timeoutMs: number } = {
+  fetch: (...a) => fetch(...a),
+  timeoutMs: NOTIFY_FETCH_TIMEOUT_MS,
+};
 
 /**
  * POST a plain-text message to a Telegram chat via the Bot API.
@@ -97,7 +106,7 @@ const NOTIFY_FETCH_TIMEOUT_MS = 5_000;
  */
 export async function sendTelegramNotify(cfg: { token: string; chatId: string }, text: string): Promise<boolean> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), NOTIFY_FETCH_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), _notifyDeps.timeoutMs);
   try {
     const res = await _notifyDeps.fetch(`https://api.telegram.org/bot${cfg.token}/sendMessage`, {
       method: "POST",
