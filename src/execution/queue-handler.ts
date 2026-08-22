@@ -198,6 +198,16 @@ export interface BatchQueueDrainResult {
  * (unified-executor already saves the root PRD once per batch boundary).
  */
 export async function drainQueueAtBatchBoundary(workdir: string, prd: PRD): Promise<BatchQueueDrainResult> {
+  // No queue file: nothing to claim, and skipping avoids withQueueFileLock's
+  // lock-file creation — this call site runs on every parallel-batch boundary
+  // regardless of whether the surrounding run ever writes to `workdir` for
+  // real (many callers/tests exercise this path against a workdir that is
+  // never touched on disk otherwise). A user's queue file can still race this
+  // check; that only defers the command to the next boundary, matching the
+  // existing "deferred by design" (D-15) semantics.
+  if (!(await Bun.file(path.join(workdir, ".queue.txt")).exists())) {
+    return { paused: false };
+  }
   const logger = getSafeLogger();
   return (
     (await processQueueFile(workdir, (commands) => applyBatchBoundaryCommands(workdir, prd, commands, logger))) ?? {

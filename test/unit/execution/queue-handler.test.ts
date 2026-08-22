@@ -255,6 +255,22 @@ describe("drainQueueAtBatchBoundary (BUG-9)", () => {
     expect(prd.userStories[0].status).toBe("pending");
   });
 
+  test("no queue file AND a nonexistent workdir: does not attempt to acquire a queue-file lock", async () => {
+    // This is the shape every unified-executor unit test exercises: a fake
+    // workdir that is never touched on disk. Before this guard, drainQueueAtBatchBoundary
+    // unconditionally called processQueueFile -> withQueueFileLock, which tries
+    // to create a lock file inside `workdir` even when there's nothing to
+    // claim — throwing ENOENT when the directory doesn't exist at all.
+    const story = makeStory({ id: "US-001", status: "pending" });
+    const prd = makePRD({ userStories: [story] });
+    const nonexistentWorkdir = join(workdir, "does-not-exist");
+
+    const result = await drainQueueAtBatchBoundary(nonexistentWorkdir, prd);
+
+    expect(result).toEqual({ paused: false });
+    expect(prd.userStories[0].status).toBe("pending");
+  });
+
   test("PAUSE reports paused without mutating the PRD, and clears the queue file", async () => {
     const story = makeStory({ id: "US-001", status: "pending" });
     const prd = makePRD({ userStories: [story] });
