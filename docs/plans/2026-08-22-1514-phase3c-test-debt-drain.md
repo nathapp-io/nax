@@ -2,7 +2,10 @@
 
 > Drafted 2026-08-22. Target: `check:test-typecheck` and `check:test-as-unknown-as`
 > baselines to **0**, then wire `tsconfig.test.json` into `bun run typecheck`.
-> Phase 0 is **not** delegable. Phases 1–3 are mechanical and are the handover.
+>
+> **Phase 0 is done** (commits `e8a55d6dc`, `4038a447d`, `20c059774`, `d95e605a0` on
+> `chore/1514-test-debt-drain`). Phases 1–3 are the mechanical handover. Sections
+> below are as-built; the §1 counts are the live post-phase-0 numbers.
 
 ## 0. Where these gates actually live
 
@@ -34,12 +37,19 @@ permanently retires the **`as any`** escape hatch (§2). See §3.
 
 ## 1. Current state (measured 2026-08-22)
 
-| Ratchet | Baseline | Live | Files |
+| Ratchet | Baseline (start) | After phase 0 | Files |
 |:--|--:|--:|--:|
-| `check:test-typecheck` | 2009 | 2008 | 365 |
-| `check:test-as-unknown-as` | 815 | 815 | 253 |
+| `check:test-typecheck` | 2009 | **1999** | 365 |
+| `check:test-as-unknown-as` | 815 (per-line) | **819** (per-match) | 254 |
+| `check:test-escape-hatches` — `asAny` | — | **1399** | |
+| `check:test-escape-hatches` — `tsSuppress` | — | **54** | |
+| `check:test-escape-hatches` — `ratchetAllow` | — | **128** | |
 
-Union: **514 files**, 2826 items. 104 files carry both kinds.
+Union: **514 files**, ~2820 items. 104 files carry both kinds.
+
+The cast number went *up* because phase 0 fixed the counter, not because casts were
+added: it now counts per match rather than per line. Nine typecheck errors went away
+with the eight shadowed-import fixes (TS2440) that Biome's `noRedeclare` surfaced.
 
 Concentration is mild — top 10 files = 13%, top 50 = 41%, top 100 = 60%. There is
 no small set of files that clears this; it is a long grind. What *is* concentrated
@@ -135,7 +145,59 @@ them. **Both baselines can reach 0 with the test tree no better typed than today
 
 Phase 0 closes this before anyone is handed the grind.
 
-## 3. Phase 0 — close the hatches (do NOT delegate)
+## 3. Phase 0 — close the hatches (DONE)
+
+Landed as four commits. What actually happened, including the parts the plan got
+wrong, is in the commit bodies; the short version:
+
+| Step | Commit | Outcome |
+|:--|:--|:--|
+| 0a-bis | `e8a55d6dc` | cast ratchet counts per match; re-baselined 815 → 820 |
+| 0a | `4038a447d` | biome override + safe autofix, 785 files |
+| 0a | `20c059774` | `lint` extended to `test/`; 4432 findings → 0 |
+| 0b/0c | `d95e605a0` | escape-hatch ratchet + rules rewrite |
+
+Four surprises worth carrying forward, all of the same kind — **line-based scanners
+drift when the formatter reflows code**:
+
+1. Biome 1.9.4 splits `as unknown as import("x").T` into a trailing-comma
+   `import(
+ "x",
+)` that TypeScript will not parse. tsc aborts on the parse
+   error, so `check:test-typecheck` read **1** instead of 2008 — a passing number
+   that meant the tree no longer compiled. Any drain commit that makes the
+   typecheck count fall implausibly far should be treated as a broken parse until
+   proven otherwise.
+2. The formatter detaches a trailing `test-ratchet-allow` comment from its cast.
+   The marker is now honoured on either neighbouring line.
+3. Joining a split `await import(
+ "../../../../src/x"
+)` exposed 43 real
+   deep-relative imports that `check:deep-relatives` (baseline pinned at 0) had
+   never matched. Converted to aliases.
+4. Reflowing grew `test/` by ~5.5k lines, breaching `check:file-sizes` on 8 files.
+   Baseline bumped — the growth is formatting, not code.
+
+Two findings were suppressed with a note rather than fixed, and belong to the
+per-file drain in §5:
+
+- `test/unit/agents/acp/adapter.test.ts` exports helpers that three sibling tests
+  import. Moving them to `_test-helpers.ts` changes which module first initialises
+  `@/agents/acp` and breaks 22 tests — a real module-init-order problem, not a
+  mechanical move.
+- `test/integration/review/adversarial-reprompt-telemetry.test.ts` registers
+  `afterEach` hooks from inside three test bodies. They belong at describe level.
+
+Three Biome rules are off for `test/**` (`biome.json`): `noExplicitAny` (deferred,
+counted by the escape-hatch ratchet, turns on in phase 3), `noNonNullAssertion`
+(off for good — `!` is idiomatic in tests), and `noDelete` (off for good; its
+autofix turns `delete process.env.X` into `process.env.X = undefined`, which leaves
+the key present and so does not unset it).
+
+<details>
+<summary>Original phase-0 plan, as written before execution</summary>
+
+### Phase 0 — close the hatches (do NOT delegate)
 
 Biome has no baseline mechanism, so `test/` cannot simply be added to `lint` at
 3211 errors. Turn it on with the one unaffordable rule disabled, and ratchet that
@@ -215,6 +277,8 @@ Commits: `chore(test): lint test/ with biome (noExplicitAny deferred) (#1514)`,
 then `ci(test): ratchet test/ escape hatches (#1514 phase 3c prep)`.
 
 Only after these land is the drain safe to hand over.
+
+</details>
 
 ## 4. Phase 1 — fixture type tightening (highest leverage, ~280 casts + ~600 tc errors)
 
@@ -375,9 +439,7 @@ complete the mock.
 
 | Phase | Unit | Est. items cleared |
 |:--|:--|--:|
-| 0a | biome on test/ minus `noExplicitAny` | 1189 auto + ~380 hand |
-| 0a-bis | cast-counter fix + re-baseline 814→820 | 0 (unblocks 0a) |
-| 0b–c | 1 script + tests + rules edit | 0 (enables the rest) |
+| 0 | ~~done~~ | 4432 biome findings cleared; typecheck 2009 → 1999 |
 | 1 | ~16 fixtures + 1 import commit | ~280 casts, ~700 tc errors |
 | 2 | ~500 files, 5–15 per commit | remainder |
 | 3 | gate flip | 0 |
