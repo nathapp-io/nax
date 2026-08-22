@@ -6,7 +6,7 @@
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { _gitDeps, autoCommitIfDirty } from "@/utils/git";
-import { makeSpawn, withDepsRestore } from "@test/helpers";
+import { makeLogger, makeSpawn, withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -116,22 +116,14 @@ describe("autoCommitIfDirty", () => {
       return "";
     }).spawn;
 
-    let warnCalled = false;
-    let debugCalled = false;
+    const logger = makeLogger();
     const origGetSafeLogger = _gitDeps.getSafeLogger;
-    _gitDeps.getSafeLogger = mock(() => ({
-      warn: () => {
-        warnCalled = true;
-      },
-      debug: () => {
-        debugCalled = true;
-      },
-    })) as unknown as typeof _gitDeps.getSafeLogger;
+    _gitDeps.getSafeLogger = () => logger;
 
     try {
       await autoCommitIfDirty(gitRoot, "tdd", "implementer", "US-001");
-      expect(warnCalled).toBe(false);
-      expect(debugCalled).toBe(true);
+      expect(logger.calls.some((c) => c.level === "warn")).toBe(false);
+      expect(logger.calls.some((c) => c.level === "debug")).toBe(true);
     } finally {
       _gitDeps.getSafeLogger = origGetSafeLogger;
     }

@@ -7,7 +7,7 @@ import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import * as callModule from "@/operations";
 import type { CallContext } from "@/operations/types";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/helpers";
+import { makeLogger, makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -390,13 +390,9 @@ describe("DebateRunner.runPlan()", () => {
   });
 
   test("warns and skips rebuttal when mode=hybrid but sessionMode=one-shot", async () => {
-    const warnings: string[] = [];
-    _debateSessionDeps.getSafeLogger = mock(() => ({
-      warn: (_stage: string, msg: string) => warnings.push(msg),
-      info: () => {},
-      debug: () => {},
-      error: () => {},
-    })) as unknown as typeof _debateSessionDeps.getSafeLogger;
+    const logger = makeLogger();
+    const warnings = () => logger.calls.filter((c) => c.level === "warn").map((c) => c.message);
+    _debateSessionDeps.getSafeLogger = () => logger;
 
     const sm = makeSessionManager({
       runInSession: mock(async () => ({
@@ -431,7 +427,7 @@ describe("DebateRunner.runPlan()", () => {
       outputDir: "/tmp/out",
     });
 
-    expect(warnings.some((w) => w.includes("hybrid") && w.includes("stateful"))).toBe(true);
+    expect(warnings().some((w) => w.includes("hybrid") && w.includes("stateful"))).toBe(true);
     expect(result.rebuttals).toBeUndefined();
     expect(result.rounds).toBe(1);
   });
@@ -718,13 +714,9 @@ describe("runner-plan — preDebatePhase invocation", () => {
   });
 
   test("AC-3: onFailure degrade — continues with empty manifestSection and logs warning when prePhase throws", async () => {
-    const warnings: string[] = [];
-    _debateSessionDeps.getSafeLogger = mock(() => ({
-      warn: (_stage: string, msg: string) => warnings.push(msg),
-      info: () => {},
-      debug: () => {},
-      error: () => {},
-    })) as unknown as typeof _debateSessionDeps.getSafeLogger;
+    const logger = makeLogger();
+    const warnings = () => logger.calls.filter((c) => c.level === "warn").map((c) => c.message);
+    _debateSessionDeps.getSafeLogger = () => logger;
 
     _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) => async () => {
       throw new Error("grounder failed");
@@ -762,7 +754,7 @@ describe("runner-plan — preDebatePhase invocation", () => {
     expect(debaterCallCount).toBeGreaterThan(0);
     // Warning logged about the pre-phase failure
     expect(
-      warnings.some(
+      warnings().some(
         (w) => w.includes("grounder") || w.includes("pre-phase") || w.includes("degrade") || w.includes("failed"),
       ),
     ).toBe(true);

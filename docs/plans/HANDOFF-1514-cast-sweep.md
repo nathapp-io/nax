@@ -94,16 +94,16 @@ bun scripts/report-cast-buckets.ts
 
 | Bucket | Casts (start) | Casts (current) | Δ | Who |
 |:--|--:|--:|--:|:--|
-| §3a Shape A — factory exists | **169** | **92** | -77 | you |
-| §3b seam sweeps — helper exists, example committed | **157** | **157** | 0 | you |
-| §3c-i typed dep stubs | **23** | **23** | 0 | you |
+| §3a Shape A — factory exists | **169** | **24** | -145 | you |
+| §3b seam sweeps — helper exists, example committed | **157** | **5** | -152 | you |
+| §3c-i typed dep stubs | **23** | **10** | -13 | you |
 | §3c-ii dep members returning a class | 31 | 31 | 0 | escalate |
 | §3d leave alone | 61 | 61 | 0 | nobody |
 | §3e private-member reach-ins | 49 | 49 | 0 | escalate |
-| tail — everything under 4 per cluster | **191** | **193** | +2 | you, with the resolution habit |
-| **Total** | **681** | **606** | **-75** | |
+| tail — everything under 4 per cluster | **191** | **172** | -19 | you, with the resolution habit |
+| **Total** | **681** | **352** | **-329** | |
 
-**Last verified:** ratchet = 606, typecheck errors = 1967 (was 1969; **−2**).
+**Last verified:** ratchet = 352, typecheck errors = 1963 (was 1969; **−6**).
 
 **349 casts are yours with no judgement required** (3a + 3b + 3c-i). Do those first
 and in that order; the tail is where you will slow down.

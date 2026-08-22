@@ -1,6 +1,6 @@
 {
-  "count": 352,
-  "updatedAt": "2026-08-22T19:31:37.201Z",
+  "count": 346,
+  "updatedAt": "2026-08-22T19:38:23.830Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": 1,
     "test/helpers/status-writer.ts": 1,
@@ -98,11 +98,8 @@
     "test/unit/operations/build-hop-callback.test.ts": 5,
     "test/unit/operations/call.test.ts": 1,
     "test/unit/operations/call-exhausted-fallback.test.ts": 1,
-    "test/unit/debate/runner-plan.test.ts": 2,
     "test/unit/debate/session-helpers-resolver-model.test.ts": 5,
-    "test/unit/debate/runner-agent-resolution.test.ts": 1,
     "test/unit/cli/rules-migrate-description.test.ts": 1,
-    "test/unit/utils/auto-commit.test.ts": 1,
     "test/unit/agents/manager-narrowed.test.ts": 1,
     "test/unit/agents/manager.test.ts": 3,
     "test/unit/agents/phase4-registry-cleanup.test.ts": 2,
@@ -138,7 +135,6 @@
     "test/unit/context/rules/rules-frontmatter.test.ts": 3,
     "test/unit/context/rules/rules-frontmatter-description.test.ts": 1,
     "test/unit/pipeline/stages/context-scope-files.test.ts": 1,
-    "test/unit/pipeline/stages/optimizer.test.ts": 2,
     "test/unit/pipeline/stages/execution-phase-telemetry.test.ts": 1,
     "test/unit/pipeline/stages/prompt-scope-files.test.ts": 1,
     "test/unit/pipeline/stages/context-digest.test.ts": 3,
