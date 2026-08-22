@@ -162,6 +162,31 @@ describe("markStoryAsBlocked - AC6: resetPostRunStatus when story was passed", (
   });
 });
 
+// MEM-23: markStoryAsBlocked() appends to priorErrors unboundedly — every
+// entry is later injected into the resumed agent's context (builder.ts:125),
+// so a flapping dependency that re-blocks the same story across cycles will
+// inflate the PRD linearly. The sibling markStoryPaused() already dedupes
+// (prd/index.ts:441) — mirror the same guard here.
+describe("markStoryAsBlocked - MEM-23: priorErrors dedupe", () => {
+  test("repeated calls with the same reason append only once", () => {
+    const prd = makePRD([makeStory("US-001", "pending")]);
+    markStoryAsBlocked(prd, "US-001", "deps broken");
+    markStoryAsBlocked(prd, "US-001", "deps broken");
+    markStoryAsBlocked(prd, "US-001", "deps broken");
+    expect(prd.userStories[0].priorErrors?.filter((e) => e === "BLOCKED: deps broken")).toHaveLength(1);
+  });
+
+  test("distinct reasons still accumulate", () => {
+    const prd = makePRD([makeStory("US-001", "pending")]);
+    markStoryAsBlocked(prd, "US-001", "deps broken");
+    markStoryAsBlocked(prd, "US-001", "permission denied");
+    expect(prd.userStories[0].priorErrors).toEqual([
+      "BLOCKED: deps broken",
+      "BLOCKED: permission denied",
+    ]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // AC7: markStoryPassed() — forward transition does NOT trigger reset
 // ---------------------------------------------------------------------------

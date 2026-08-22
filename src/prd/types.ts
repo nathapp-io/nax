@@ -351,7 +351,14 @@ export function markStoryAsBlocked(
       statusWriter?.resetPostRunStatus();
     }
     story.status = "blocked";
-    story.priorErrors = [...(story.priorErrors || []), `BLOCKED: ${reason}`];
+    // MEM-23: skip the append when the tail is already this entry so a
+    // flapping dependency that re-blocks the same story across cycles does
+    // not grow priorErrors unboundedly. Every entry is injected into the
+    // resumed agent's context (src/context/builder.ts:125) — mirrors the
+    // dedupe guard in markStoryPaused (prd/index.ts:441).
+    const entry = `BLOCKED: ${reason}`;
+    const prior = story.priorErrors ?? [];
+    if (prior.at(-1) !== entry) story.priorErrors = [...prior, entry];
   }
 }
 
