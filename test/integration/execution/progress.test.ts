@@ -40,17 +40,26 @@ describe("appendProgress", () => {
 
 describe("appendProgress — unwritable featureDir (BUG-09)", () => {
   let workdir: string;
+  let logDir: string;
   let logFile: string;
 
   beforeEach(() => {
     workdir = makeTempDir("nax-progress-unwritable-");
-    logFile = join(workdir, "audit.jsonl");
+    // The audit log must NOT live inside the read-only workdir: whether the
+    // logger's async appendFile open() syscall lands before or after the
+    // chmod-restore below races per platform / Bun fs backend (macOS
+    // threadpool timing always wins, Linux CI intermittently loses), making
+    // the assertion non-deterministic. A writable sibling dir removes the
+    // race while keeping the assertion semantics identical.
+    logDir = makeTempDir("nax-progress-log-");
+    logFile = join(logDir, "audit.jsonl");
     initLogger({ level: "silent", filePath: logFile });
   });
 
   afterEach(() => {
     resetLogger();
     cleanupTempDir(workdir);
+    cleanupTempDir(logDir);
   });
 
   test("does not throw when featureDir cannot be created (parent is read-only)", async () => {
