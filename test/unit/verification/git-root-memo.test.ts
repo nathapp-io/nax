@@ -1,23 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { _gitDeps } from "@/utils/git";
 import { _gitUtilDeps, clearGitRootCache, getChangedTestFiles } from "@/verification/smart-runner";
-
-function makeProc(stdout: string, exitCode: number) {
-  return {
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(stdout));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(controller) {
-        controller.close();
-      },
-    }),
-  };
-}
+import { makeSpawn } from "@test/helpers";
 
 describe("git-root memoization", () => {
   test("getGitRoot is computed once per workdir across multiple classifier calls", async () => {
@@ -30,7 +14,7 @@ describe("git-root memoization", () => {
       return "/repo";
     };
     // Make git diff succeed with empty output so we reach the getGitRoot call
-    _gitDeps.spawn = mock(() => makeProc("", 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn().spawn;
 
     try {
       // Both calls use the same workdir — should only compute git root once
@@ -53,7 +37,7 @@ describe("git-root memoization", () => {
       callCount++;
       return "/repo";
     };
-    _gitDeps.spawn = mock(() => makeProc("", 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn().spawn;
 
     try {
       // First call populates cache

@@ -13,7 +13,7 @@ import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { NaxRuntime } from "@/runtime";
 import type { ReviewRepromptEvent } from "@/runtime/dispatch-events";
-import { makeMockRuntime } from "@test/helpers";
+import { makeMockRuntime, makeSpawn } from "@test/helpers";
 import { withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -180,17 +180,7 @@ describe("AC4 + AC5: reprompt with grounded second turn", () => {
       let capturedSendCount = 0;
       _diffUtilsDeps.isGitRefValid = mock(async () => true);
       _diffUtilsDeps.getMergeBase = mock(async () => undefined);
-      _diffUtilsDeps.spawn = mock((_opts: unknown) => ({
-        exited: Promise.resolve(0),
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(new TextEncoder().encode("1 file changed"));
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({ start: (c) => c.close() }),
-        kill: () => {},
-      })) as unknown as typeof _diffUtilsDeps.spawn;
+      _diffUtilsDeps.spawn = makeSpawn(() => "1 file changed").spawn;
       _adversarialDeps.collectDiffFileList = async () => ["src/auth.ts"] as never;
       _adversarialDeps.writeReviewAudit = async () => {};
       _adversarialDeps.callOp = makeMockedCallOpWithSendTracking({
@@ -232,17 +222,7 @@ describe("AC4 + AC5: reprompt with grounded second turn", () => {
 
       _diffUtilsDeps.isGitRefValid = mock(async () => true);
       _diffUtilsDeps.getMergeBase = mock(async () => undefined);
-      _diffUtilsDeps.spawn = mock((_opts: unknown) => ({
-        exited: Promise.resolve(0),
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(new TextEncoder().encode("1 file changed"));
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({ start: (c) => c.close() }),
-        kill: () => {},
-      })) as unknown as typeof _diffUtilsDeps.spawn;
+      _diffUtilsDeps.spawn = makeSpawn(() => "1 file changed").spawn;
       _adversarialDeps.collectDiffFileList = async () => ["src/auth.ts"] as never;
       _adversarialDeps.writeReviewAudit = async () => {};
       _adversarialDeps.callOp = makeMockedCallOpWithSendTracking({
@@ -281,17 +261,7 @@ describe("AC6: parse-failed outcome when second turn is invalid JSON", () => {
 
       _diffUtilsDeps.isGitRefValid = mock(async () => true);
       _diffUtilsDeps.getMergeBase = mock(async () => undefined);
-      _diffUtilsDeps.spawn = mock((_opts: unknown) => ({
-        exited: Promise.resolve(0),
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(new TextEncoder().encode("1 file changed"));
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({ start: (c) => c.close() }),
-        kill: () => {},
-      })) as unknown as typeof _diffUtilsDeps.spawn;
+      _diffUtilsDeps.spawn = makeSpawn(() => "1 file changed").spawn;
       _adversarialDeps.collectDiffFileList = async () => ["src/auth.ts"] as never;
       _adversarialDeps.writeReviewAudit = async () => {};
       _adversarialDeps.callOp = makeMockedCallOpWithSendTracking({

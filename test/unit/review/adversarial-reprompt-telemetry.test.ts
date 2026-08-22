@@ -20,7 +20,7 @@ import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
 import type { NaxRuntime } from "@/runtime";
 import type { ReviewRepromptEvent } from "@/runtime/dispatch-events";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
 
 const STORY: SemanticStory = {
   id: "STORY-REP-01",
@@ -73,21 +73,7 @@ function makeAcceptedFinding(overrides: Record<string, unknown> = {}): Record<st
 const STAT_OUTPUT = "src/auth.ts | 5 +++++\n 1 file changed, 5 insertions(+)";
 
 function makeSpawnMock(stdout: string, exitCode = 0) {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(stdout));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(controller) {
-        controller.close();
-      },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(() => ({ exitCode, stdout })).spawn;
 }
 
 function makeAgentManager(llmResponse: string): IAgentManager {

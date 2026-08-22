@@ -17,7 +17,7 @@ import { _diffUtilsDeps } from "@/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "@/review/semantic";
 import type { SemanticStory } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -105,21 +105,7 @@ async function callRunSemanticReview(
 }
 
 function makeSpawnMock(stdout = "diff output", exitCode = 0) {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(c) {
-        c.enqueue(new TextEncoder().encode(stdout));
-        c.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(c) {
-        c.close();
-      },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(() => ({ exitCode, stdout })).spawn;
 }
 
 // ---------------------------------------------------------------------------

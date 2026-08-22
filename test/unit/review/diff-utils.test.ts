@@ -20,48 +20,21 @@ import {
   resolveEffectiveRef,
   truncateDiff,
 } from "@/review";
+import { makeSpawn } from "@test/helpers";
 
 // ─── Mock helpers ──────────────────────────────────────────────────────────────
 
 /** Build a mock spawn that returns the provided stdout with the given exit code. */
 function makeSpawnMock(stdout: string, exitCode = 0) {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(stdout));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(controller) {
-        controller.close();
-      },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(() => ({ exitCode, stdout })).spawn;
 }
 
 /** Build a mock spawn that captures cmd args and returns stdout. */
 function makeCapturingSpawnMock(stdout: string, capturedCmd: { value?: string[] }) {
-  return mock((opts: unknown) => {
-    capturedCmd.value = (opts as { cmd: string[] }).cmd;
-    return {
-      exited: Promise.resolve(0),
-      stdout: new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode(stdout));
-          controller.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(controller) {
-          controller.close();
-        },
-      }),
-      kill: () => {},
-    };
-  }) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(({ cmd }) => {
+    capturedCmd.value = cmd;
+    return stdout;
+  }).spawn;
 }
 
 // ─── Dep originals ─────────────────────────────────────────────────────────────
@@ -283,21 +256,10 @@ describe("collectDiff() — BUG-31: hung git returns rather than blocking", () =
   });
 
   test("returns null within the deadline when proc.exited never resolves", async () => {
-    const hungSpawn = mock((_opts: unknown) => ({
+    const hungSpawn = makeSpawn(() => ({
       // Promise that never resolves — the timeout must save us.
-      exited: new Promise<number>(() => {}),
-      stdout: new ReadableStream({
-        start(controller) {
-          controller.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(controller) {
-          controller.close();
-        },
-      }),
-      kill: () => {},
-    })) as unknown as typeof _diffUtilsDeps.spawn;
+      hang: true,
+    })).spawn;
     _diffUtilsDeps.spawn = hungSpawn;
 
     const start = Date.now();

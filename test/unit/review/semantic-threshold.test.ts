@@ -15,7 +15,7 @@ import { _diffUtilsDeps } from "@/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "@/review/semantic";
 import type { SemanticStory } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
-import { makeMockAgentManager } from "@test/helpers";
+import { makeMockAgentManager, makeSpawn } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
@@ -110,21 +110,7 @@ function makeAgentManager(llmResponse: string, cost = 0) {
 }
 
 function makeSpawnMock(stdout = "src/foo.ts | 2 ++") {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(0),
-    stdout: new ReadableStream({
-      start(c) {
-        c.enqueue(new TextEncoder().encode(stdout));
-        c.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(c) {
-        c.close();
-      },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(() => stdout).spawn;
 }
 
 // ---------------------------------------------------------------------------

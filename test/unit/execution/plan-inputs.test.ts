@@ -17,26 +17,13 @@ import { NaxError } from "@/errors";
 import { type PlanInputs, assemblePlanInputs, assemblePlanInputsFromCtx } from "@/execution";
 import { _diffUtilsDeps } from "@/review";
 import type { ResolvedTestPatterns } from "@/test-runners";
-import { makeNaxConfig, makeStory } from "@test/helpers";
+import { makeNaxConfig, makeSpawn, makeStory } from "@test/helpers";
 
 // Helper: stub git-diff spawn so review-input prep can resolve stat. The orchestrator
 // path calls collectDiffStat before constructing review inputs; tests that assert
 // the slots populate must provide a non-empty stat or the slot is correctly skipped.
 function makeStatSpawn(stat: string) {
-  return mock(
-    (_opts: unknown) =>
-      ({
-        exited: Promise.resolve(0),
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(new TextEncoder().encode(stat));
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({ start: (c) => c.close() }),
-        kill: () => {},
-      }) as unknown,
-  ) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(() => stat).spawn;
 }
 
 const FAKE_PATTERNS: ResolvedTestPatterns = {

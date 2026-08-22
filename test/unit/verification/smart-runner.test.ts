@@ -8,7 +8,7 @@ import {
   importGrepFallback,
   mapSourceToTests,
 } from "@/verification/smart-runner";
-import { withDepsRestore } from "@test/helpers";
+import { makeSpawn, withDepsRestore } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // buildSmartTestCommand
@@ -158,23 +158,6 @@ describe("buildSmartTestCommand", () => {
 // Helpers to mock Bun.spawn (used internally via the "bun" import alias)
 // ---------------------------------------------------------------------------
 
-function makeProc(stdout: string, exitCode: number) {
-  return {
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(stdout));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(controller) {
-        controller.close();
-      },
-    }),
-  };
-}
-
 // ---------------------------------------------------------------------------
 // mapSourceToTests
 // ---------------------------------------------------------------------------
@@ -298,7 +281,7 @@ describe("getChangedNonTestFiles", () => {
       "src/config/schema.ts",
     ].join("\n");
 
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => gitOutput).spawn;
 
     const result = await getChangedNonTestFiles("/fake/repo", undefined, undefined, [/\.test\.ts$/]);
 
@@ -317,15 +300,15 @@ describe("getChangedNonTestFiles", () => {
     [
       "exits with non-zero code",
       () => {
-        (_gitDeps as any).spawn = mock(() => makeProc("", 128));
+        (_gitDeps as any).spawn = makeSpawn(() => ({ exitCode: 128, stdout: "" })).spawn;
       },
     ],
     [
       "throws (not a repo)",
       () => {
-        (_gitDeps as any).spawn = mock(() => {
+        (_gitDeps as any).spawn = makeSpawn(() => {
           throw new Error("git not found");
-        });
+        }).spawn;
       },
     ],
   ])("returns empty array when git %s", async (_label, setup) => {
@@ -337,7 +320,7 @@ describe("getChangedNonTestFiles", () => {
   test("returns all changed files when testFileRegex is empty", async () => {
     const gitOutput = ["src/foo.js", "pkg/bar.rs", "src/baz.ts"].join("\n");
 
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => gitOutput).spawn;
 
     const result = await getChangedNonTestFiles("/fake/repo");
 
@@ -345,7 +328,7 @@ describe("getChangedNonTestFiles", () => {
   });
 
   test("returns empty array when no files changed", async () => {
-    (_gitDeps as any).spawn = mock(() => makeProc("", 0));
+    (_gitDeps as any).spawn = makeSpawn(() => "").spawn;
 
     const result = await getChangedNonTestFiles("/fake/repo");
 
@@ -361,7 +344,7 @@ describe("getChangedNonTestFiles", () => {
       "packages/web/src/app.ts",
     ].join("\n");
 
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => gitOutput).spawn;
 
     const result = await getChangedNonTestFiles("/fake/repo", undefined, "packages/api");
 
@@ -371,7 +354,7 @@ describe("getChangedNonTestFiles", () => {
   test("returns all files when packagePrefix is undefined", async () => {
     const gitOutput = ["src/index.ts", "packages/api/src/auth.ts"].join("\n");
 
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => gitOutput).spawn;
 
     const result = await getChangedNonTestFiles("/fake/repo", undefined, undefined);
 
@@ -381,7 +364,7 @@ describe("getChangedNonTestFiles", () => {
   test("returns empty when packagePrefix does not match any changed files", async () => {
     const gitOutput = ["src/index.ts", "packages/web/src/app.ts"].join("\n");
 
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => gitOutput).spawn;
 
     const result = await getChangedNonTestFiles("/fake/repo", undefined, "packages/api");
 
@@ -392,7 +375,7 @@ describe("getChangedNonTestFiles", () => {
   test("excludes co-located test files when testFileRegex is provided", async () => {
     const gitOutput = ["packages/lib/src/util.ts", "packages/lib/src/util.test.ts"].join("\n");
 
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => gitOutput).spawn;
 
     const result = await getChangedNonTestFiles("/fake/repo", undefined, "packages/lib", [/\.test\.ts$/]);
 
@@ -404,7 +387,7 @@ describe("getChangedNonTestFiles", () => {
       "\n",
     );
 
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => gitOutput).spawn;
 
     const result = await getChangedNonTestFiles("/fake/repo", undefined, "packages/lib");
 
@@ -418,16 +401,13 @@ describe("getChangedNonTestFiles", () => {
   test("filters correctly when project root is nested inside git root; behavior unchanged when roots are equal", async () => {
     // Scenario 1: nax-dogfood is the git root, fixtures/monorepo-tiny is the project root.
     _gitUtilDeps.getGitRoot = mock(async () => "/big-repo");
-    _gitDeps.spawn = mock(() =>
-      makeProc(
-        [
-          "fixtures/monorepo-tiny/packages/lib/src/util.ts",
-          "fixtures/monorepo-tiny/packages/lib/src/util.test.ts",
-          "other-package/src/index.ts",
-        ].join("\n"),
-        0,
-      ),
-    ) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() =>
+      [
+        "fixtures/monorepo-tiny/packages/lib/src/util.ts",
+        "fixtures/monorepo-tiny/packages/lib/src/util.test.ts",
+        "other-package/src/index.ts",
+      ].join("\n"),
+    ).spawn;
     expect(
       await getChangedNonTestFiles(
         "/big-repo/fixtures/monorepo-tiny",
@@ -441,9 +421,7 @@ describe("getChangedNonTestFiles", () => {
 
     // Scenario 2: project root equals git root — no offset
     _gitUtilDeps.getGitRoot = mock(async (_wd: string) => null);
-    _gitDeps.spawn = mock(() =>
-      makeProc(["packages/lib/src/util.ts", "packages/lib/src/util.test.ts"].join("\n"), 0),
-    ) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => ["packages/lib/src/util.ts", "packages/lib/src/util.test.ts"].join("\n")).spawn;
     expect(
       await getChangedNonTestFiles("/fake/repo", undefined, "packages/lib", [/\.test\.ts$/], undefined, "/fake/repo"),
     ).toEqual(["packages/lib/src/util.ts"]);
@@ -470,23 +448,21 @@ describe("getChangedTestFiles", () => {
   const TS_TEST_REGEX = [/\.test\.ts$/, /\.spec\.ts$/];
 
   test("returns absolute paths of co-located, separated, and both test file layouts", async () => {
-    _gitDeps.spawn = mock(() =>
-      makeProc(["packages/lib/src/util.ts", "packages/lib/src/util.test.ts"].join("\n"), 0),
-    ) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => ["packages/lib/src/util.ts", "packages/lib/src/util.test.ts"].join("\n")).spawn;
     expect(
       await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", TS_TEST_REGEX),
     ).toEqual(["/fake/repo/packages/lib/src/util.test.ts"]);
 
-    _gitDeps.spawn = mock(() =>
-      makeProc(["packages/lib/src/util.ts", "packages/lib/test/unit/util.test.ts"].join("\n"), 0),
-    ) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() =>
+      ["packages/lib/src/util.ts", "packages/lib/test/unit/util.test.ts"].join("\n"),
+    ).spawn;
     expect(
       await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", TS_TEST_REGEX),
     ).toEqual(["/fake/repo/packages/lib/test/unit/util.test.ts"]);
 
-    _gitDeps.spawn = mock(() =>
-      makeProc(["packages/lib/src/util.test.ts", "packages/lib/test/unit/other.test.ts"].join("\n"), 0),
-    ) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() =>
+      ["packages/lib/src/util.test.ts", "packages/lib/test/unit/other.test.ts"].join("\n"),
+    ).spawn;
     const both = await getChangedTestFiles(
       "/fake/repo/packages/lib",
       "/fake/repo",
@@ -502,7 +478,7 @@ describe("getChangedTestFiles", () => {
   test("scopes to packagePrefix — ignores test files from other packages", async () => {
     const gitOutput = ["packages/lib/src/util.test.ts", "packages/app/src/index.test.ts"].join("\n");
 
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => gitOutput).spawn;
 
     const result = await getChangedTestFiles(
       "/fake/repo/packages/lib",
@@ -519,7 +495,7 @@ describe("getChangedTestFiles", () => {
     [
       "no test files changed",
       () => {
-        (_gitDeps as any).spawn = mock(() => makeProc("packages/lib/src/util.ts", 0));
+        (_gitDeps as any).spawn = makeSpawn(() => "packages/lib/src/util.ts").spawn;
       },
       "packages/lib" as const,
       TS_TEST_REGEX,
@@ -527,7 +503,7 @@ describe("getChangedTestFiles", () => {
     [
       "testFileRegex is empty",
       () => {
-        (_gitDeps as any).spawn = mock(() => makeProc("packages/lib/src/util.test.ts", 0));
+        (_gitDeps as any).spawn = makeSpawn(() => "packages/lib/src/util.test.ts").spawn;
       },
       "packages/lib" as const,
       [] as RegExp[],
@@ -535,7 +511,7 @@ describe("getChangedTestFiles", () => {
     [
       "git exits with non-zero code",
       () => {
-        (_gitDeps as any).spawn = mock(() => makeProc("", 128));
+        (_gitDeps as any).spawn = makeSpawn(() => ({ exitCode: 128, stdout: "" })).spawn;
       },
       undefined as const,
       TS_TEST_REGEX,
@@ -550,7 +526,7 @@ describe("getChangedTestFiles", () => {
   test("works without packagePrefix for single-package repos", async () => {
     const gitOutput = ["src/util.ts", "test/unit/util.test.ts"].join("\n");
 
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => gitOutput).spawn;
 
     const result = await getChangedTestFiles("/repo", "/repo", undefined, undefined, TS_TEST_REGEX);
 
@@ -560,7 +536,7 @@ describe("getChangedTestFiles", () => {
   test("is language-agnostic — detects Go test files via regex", async () => {
     const gitOutput = ["packages/backend/pkg/auth/auth.go", "packages/backend/pkg/auth/auth_test.go"].join("\n");
 
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => gitOutput).spawn;
 
     const result = await getChangedTestFiles("/repo/packages/backend", "/repo", undefined, "packages/backend", [
       /_test\.go$/,
@@ -573,16 +549,13 @@ describe("getChangedTestFiles", () => {
   test("filters correctly when project root is nested inside git root; behavior unchanged when roots are equal", async () => {
     // Scenario 1: git root differs from project root — paths include extra prefix
     _gitUtilDeps.getGitRoot = mock(async () => "/big-repo");
-    _gitDeps.spawn = mock(() =>
-      makeProc(
-        [
-          "fixtures/monorepo-tiny/packages/lib/src/util.ts",
-          "fixtures/monorepo-tiny/packages/lib/src/util.test.ts",
-          "other/src/index.test.ts",
-        ].join("\n"),
-        0,
-      ),
-    ) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() =>
+      [
+        "fixtures/monorepo-tiny/packages/lib/src/util.ts",
+        "fixtures/monorepo-tiny/packages/lib/src/util.test.ts",
+        "other/src/index.test.ts",
+      ].join("\n"),
+    ).spawn;
     expect(
       await getChangedTestFiles(
         "/big-repo/fixtures/monorepo-tiny",
@@ -595,9 +568,7 @@ describe("getChangedTestFiles", () => {
 
     // Scenario 2: project root equals git root — no offset
     _gitUtilDeps.getGitRoot = mock(async (_wd: string) => null);
-    _gitDeps.spawn = mock(() =>
-      makeProc(["packages/lib/src/util.ts", "packages/lib/src/util.test.ts"].join("\n"), 0),
-    ) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => ["packages/lib/src/util.ts", "packages/lib/src/util.test.ts"].join("\n")).spawn;
     expect(await getChangedTestFiles("/fake/repo", "/fake/repo", undefined, "packages/lib", [/\.test\.ts$/])).toEqual([
       "/fake/repo/packages/lib/src/util.test.ts",
     ]);

@@ -14,7 +14,7 @@ import type { DeferredRegressionOptions, StorySnapshot } from "@/execution";
 import type { Finding } from "@/findings/types";
 import type { PRD } from "@/prd";
 import { _gitDeps } from "@/utils/git";
-import { makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig, makePRD, makeSpawn, makeStory } from "@test/helpers";
 
 function snap(storyId: string, completedAt: string, failingTestFiles?: string[]): StorySnapshot {
   return { storyId, completedAt, failingTestFiles };
@@ -223,12 +223,7 @@ describe("runDeferredRegression — transition attribution", () => {
     }));
 
     const originalSpawn = _gitDeps.spawn;
-    _gitDeps.spawn = mock(() => ({
-      exited: Promise.resolve(0),
-      stdout: "abc1234 chore(US-004): unrelated passing story",
-      stderr: "",
-      kill: () => {},
-    })) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => "abc1234 chore(US-004): unrelated passing story").spawn;
 
     try {
       const result = await runDeferredRegression({

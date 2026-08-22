@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import * as path from "node:path";
 import { _gitDeps } from "@/utils/git";
 import { _changedLineRangesDeps, getChangedLineRanges } from "@/verification/changed-line-ranges";
-import { withDepsRestore } from "@test/helpers";
+import { makeSpawn, withDepsRestore } from "@test/helpers";
 
 describe("getChangedLineRanges", () => {
   withDepsRestore(_gitDeps, ["spawn"]);
@@ -28,24 +28,6 @@ describe("getChangedLineRanges", () => {
     mock.restore();
   });
 
-  function makeProc(stdout: string, exitCode: number) {
-    const bytes = new TextEncoder().encode(stdout);
-    return {
-      exited: Promise.resolve(exitCode),
-      stdout: new ReadableStream({
-        start(c) {
-          c.enqueue(bytes);
-          c.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(c) {
-          c.close();
-        },
-      }),
-    };
-  }
-
   // ---------------------------------------------------------------------------
   // AC1 — successful git response resolves to a Map
   // ---------------------------------------------------------------------------
@@ -58,7 +40,7 @@ describe("getChangedLineRanges", () => {
 -x
 +y
 `;
-    _gitDeps.spawn = mock(() => makeProc(diff, 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => diff).spawn;
 
     const result = await getChangedLineRanges("/workdir");
     expect(result).toBeInstanceOf(Map);
@@ -70,10 +52,10 @@ describe("getChangedLineRanges", () => {
 
   test('AC2: passes ["diff", "--unified=0", baseRef] in order to git runner', async () => {
     let capturedArgs: string[] = [];
-    _gitDeps.spawn = mock((args: string[], _opts: unknown) => {
-      capturedArgs = args as string[];
-      return makeProc("", 0);
-    }) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      capturedArgs = cmd;
+      return "";
+    }).spawn;
 
     await getChangedLineRanges("/workdir", "abc123");
 
@@ -86,10 +68,10 @@ describe("getChangedLineRanges", () => {
 
   test("AC3: defaults baseRef to HEAD~1 when not provided", async () => {
     let capturedArgs: string[] = [];
-    _gitDeps.spawn = mock((args: string[], _opts: unknown) => {
-      capturedArgs = args as string[];
-      return makeProc("", 0);
-    }) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      capturedArgs = cmd;
+      return "";
+    }).spawn;
 
     await getChangedLineRanges("/workdir");
 
@@ -101,7 +83,7 @@ describe("getChangedLineRanges", () => {
   // ---------------------------------------------------------------------------
 
   test("AC4: resolves to null on non-zero git exit code", async () => {
-    _gitDeps.spawn = mock(() => makeProc("", 128)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => ({ exitCode: 128, stdout: "" })).spawn;
 
     const result = await getChangedLineRanges("/workdir", "abc123");
     expect(result).toBeNull();
@@ -112,9 +94,9 @@ describe("getChangedLineRanges", () => {
   // ---------------------------------------------------------------------------
 
   test("AC5: resolves to null when git runner throws", async () => {
-    _gitDeps.spawn = mock(() => {
+    _gitDeps.spawn = makeSpawn(() => {
       throw new Error("spawn failed");
-    }) as unknown as typeof _gitDeps.spawn;
+    }).spawn;
 
     const result = await getChangedLineRanges("/workdir", "abc123");
     expect(result).toBeNull();
@@ -125,7 +107,7 @@ describe("getChangedLineRanges", () => {
   // ---------------------------------------------------------------------------
 
   test("AC6: resolves to an empty Map (not null) on empty stdout", async () => {
-    _gitDeps.spawn = mock(() => makeProc("", 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await getChangedLineRanges("/workdir", "abc123");
     expect(result).toBeInstanceOf(Map);
@@ -145,7 +127,7 @@ describe("getChangedLineRanges", () => {
 -x
 +y
 `;
-    _gitDeps.spawn = mock(() => makeProc(diff, 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => diff).spawn;
 
     const result = await getChangedLineRanges("/workdir", "abc123");
     expect(result).not.toBeNull();
@@ -165,7 +147,7 @@ describe("getChangedLineRanges", () => {
 -x
 +y
 `;
-    _gitDeps.spawn = mock(() => makeProc(diff, 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => diff).spawn;
 
     const result = await getChangedLineRanges("/workdir", "abc123");
     expect(result).not.toBeNull();
@@ -187,7 +169,7 @@ new file mode 100644
 +line2
 +line3
 `;
-    _gitDeps.spawn = mock(() => makeProc(diff, 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => diff).spawn;
 
     const result = await getChangedLineRanges("/workdir", "abc123");
     expect(result).not.toBeNull();
@@ -208,7 +190,7 @@ new file mode 100644
 -x
 +y
 `;
-    _gitDeps.spawn = mock(() => makeProc(diff, 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => diff).spawn;
 
     const result = await getChangedLineRanges("/workdir", "abc123");
     expect(result).not.toBeNull();
@@ -225,7 +207,7 @@ new file mode 100644
 -x
 +y
 `;
-    _gitDeps.spawn = mock(() => makeProc(diff, 0)) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => diff).spawn;
 
     const result = await getChangedLineRanges("relative/workdir", "abc123");
     expect(result).not.toBeNull();

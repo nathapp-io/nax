@@ -16,7 +16,7 @@ import {
 } from "@/review/runner";
 import type { ReviewConfig } from "@/review/types";
 import { _gitDeps } from "@/utils/git";
-import { makeSpawn } from "@test/helpers";
+import { makeSpawn, makeSpawnResult } from "@test/helpers";
 
 /** Minimal ReviewConfig with typecheck enabled but command set to disable via executionConfig */
 const typecheckConfig: ReviewConfig = {
@@ -526,56 +526,21 @@ describe("getUncommittedFilesImpl — BUG-1 pipe-drain regression", () => {
     // _gitDeps.spawn had no effect and the test would call the real Bun.spawn.
     // Post-fix: the impl delegates to gitWithTimeout, which uses _gitDeps.spawn,
     // and we can intercept the call here.
-    let capturedArgs: unknown[] | undefined;
-    let capturedOpts: unknown;
-    _gitDeps.spawn = mock((args: unknown[], opts: unknown) => {
-      capturedArgs = args;
-      capturedOpts = opts;
-      const bytes = new TextEncoder().encode("src/foo.ts\nsrc/bar.ts\n");
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
-    }) as unknown as typeof _gitDeps.spawn;
+    const stub = makeSpawn(() => "src/foo.ts\nsrc/bar.ts\n");
+    _gitDeps.spawn = stub.spawn;
 
     // Call whatever impl the test captured — relies on beforeEach ordering
     // (other suites' afterEach restore the impl by this point in the run).
     const result = await originalGetUncommittedFiles("/tmp/repo");
 
-    expect(capturedArgs).toEqual(["git", "diff", "--name-only", "HEAD"]);
-    expect((capturedOpts as { cwd?: string } | undefined)?.cwd).toBe("/tmp/repo");
-    expect((capturedOpts as { stdout?: unknown } | undefined)?.stdout).toBe("pipe");
+    expect(stub.calls[0]?.cmd).toEqual(["git", "diff", "--name-only", "HEAD"]);
+    expect(stub.calls[0]?.opts.cwd).toBe("/tmp/repo");
+    expect(stub.calls[0]?.opts.stdout).toBe("pipe");
     expect(result).toEqual(["src/foo.ts", "src/bar.ts"]);
   });
 
   test("returns empty array on non-zero exit (gitWithTimeout contract)", async () => {
-    _gitDeps.spawn = mock((_args: unknown[], _opts: unknown) => {
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(1),
-        kill: mock(() => {}),
-      };
-    }) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => ({ exitCode: 1 })).spawn;
 
     const result = await originalGetUncommittedFiles("/tmp/repo");
 
@@ -590,27 +555,22 @@ describe("getUncommittedFilesImpl — BUG-1 pipe-drain regression", () => {
     // is wedged writing more than 64KB.
     let resolveExited: (code: number) => void = () => {};
     let killInvoked = false;
-    _gitDeps.spawn = mock((_args: unknown[], _opts: unknown) => {
-      return {
-        stdout: new ReadableStream({
-          start() {
-            /* never closes */
-          },
-        }),
-        stderr: new ReadableStream({
-          start() {
-            /* never closes */
-          },
-        }),
-        exited: new Promise<number>((r) => {
+    _gitDeps.spawn = makeSpawn(() => {
+      const proc = makeSpawnResult();
+      Object.defineProperty(proc, "exited", {
+        value: new Promise<number>((r) => {
           resolveExited = r;
         }),
-        kill: mock(() => {
+      });
+      // The SIGKILL from gitWithTimeout is what settles `exited`.
+      Object.defineProperty(proc, "kill", {
+        value: () => {
           killInvoked = true;
           resolveExited(137);
-        }),
-      };
-    }) as unknown as typeof _gitDeps.spawn;
+        },
+      });
+      return proc;
+    }).spawn;
 
     const start = Date.now();
     const result = await originalGetUncommittedFiles("/tmp/repo");

@@ -15,6 +15,7 @@
  *     cmd.includes("rev-parse") ? "/repo\n" : "",
  *   ).spawn;
  */
+import { mock } from "bun:test";
 import type { Subprocess } from "bun";
 
 /** What `Bun.spawn` returns, as the source code consumes it. */
@@ -102,7 +103,7 @@ export function makeSpawnResult(result: FakeProcSpec | string = {}): SpawnResult
  */
 export function makeSpawn(handler: (call: SpawnCall) => FakeProcSpec | string | SpawnResult = () => ""): SpawnStub {
   const calls: SpawnCall[] = [];
-  const impl = (...args: unknown[]): SpawnResult => {
+  const impl = mock((...args: unknown[]): SpawnResult => {
     // Bun.spawn takes either (cmd, opts) or a single options object with `cmd`.
     const first = args[0];
     const call: SpawnCall = Array.isArray(first)
@@ -114,7 +115,7 @@ export function makeSpawn(handler: (call: SpawnCall) => FakeProcSpec | string | 
     calls.push(call);
     const result = handler(call);
     return typeof result === "string" || !("exited" in result) ? makeSpawnResult(result) : result;
-  };
+  });
   return {
     // The one cast for the function shape: `typeof Bun.spawn` is a set of
     // generic overloads no plain function literal can satisfy.

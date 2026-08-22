@@ -12,7 +12,7 @@ import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { AdversarialReviewConfig } from "@/review/types";
 import type { SemanticStory } from "@/review/types";
-import { makeMockAgentManager } from "@test/helpers";
+import { makeMockAgentManager, makeSpawn } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -96,21 +96,7 @@ function restoreAllDeps() {
 function setupHappyPathDeps(statContent = STAT_OUTPUT) {
   _diffUtilsDeps.isGitRefValid = mock(async () => true);
   _diffUtilsDeps.getMergeBase = mock(async () => undefined);
-  _diffUtilsDeps.spawn = mock((_opts: unknown) => ({
-    exited: Promise.resolve(0),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(statContent));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(controller) {
-        controller.close();
-      },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  _diffUtilsDeps.spawn = makeSpawn(() => statContent).spawn;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

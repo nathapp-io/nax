@@ -16,7 +16,14 @@ import { _diffUtilsDeps } from "@/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "@/review/semantic";
 import type { SemanticStory } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime, withTempDir } from "@test/helpers";
+import {
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeSessionManager,
+  makeSpawn,
+  makeTestRuntime,
+  withTempDir,
+} from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -98,21 +105,7 @@ function restoreAllDeps() {
 function setupHappyPathDeps() {
   _diffUtilsDeps.isGitRefValid = mock(async () => true);
   _diffUtilsDeps.getMergeBase = mock(async () => undefined);
-  _diffUtilsDeps.spawn = mock((_opts: unknown) => ({
-    exited: Promise.resolve(0),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode("src/foo.ts | 5 +++++\n 1 file changed, 5 insertions(+)"));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(controller) {
-        controller.close();
-      },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  _diffUtilsDeps.spawn = makeSpawn(() => "src/foo.ts | 5 +++++\n 1 file changed, 5 insertions(+)").spawn;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

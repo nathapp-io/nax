@@ -3,26 +3,17 @@ import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { NaxConfig } from "@/config/schema";
 import { assemblePlanInputsFromCtx } from "@/execution/plan-inputs";
 import { _diffUtilsDeps } from "@/review";
+import { makeSpawn } from "@test/helpers";
 
 // ─── Spawn mock for diff-utils used inside prepare-inputs ──────────────────────
 
 function makeSpawnSequence(outputs: string[]) {
   let i = 0;
-  return mock((_opts: unknown) => {
+  return makeSpawn(() => {
     const out = outputs[i] ?? "";
     i += 1;
-    return {
-      exited: Promise.resolve(0),
-      stdout: new ReadableStream({
-        start(c) {
-          c.enqueue(new TextEncoder().encode(out));
-          c.close();
-        },
-      }),
-      stderr: new ReadableStream({ start: (c) => c.close() }),
-      kill: () => {},
-    };
-  }) as unknown as typeof _diffUtilsDeps.spawn;
+    return out;
+  }).spawn;
 }
 
 const STAT_OUT = " src/foo.ts | 5 +-\n 1 file changed, 5 insertions(+)\n";

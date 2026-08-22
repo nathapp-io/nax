@@ -16,7 +16,7 @@ import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { AdversarialReviewConfig } from "@/review/types";
 import type { SemanticStory } from "@/review/types";
-import { makeMockAgentManager } from "@test/helpers";
+import { makeMockAgentManager, makeSpawn } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
@@ -173,21 +173,7 @@ function makeAgentManager(llmResponse: string, cost = 0): IAgentManager {
 }
 
 function makeSpawnMock(stdout = STAT_OUTPUT) {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(0),
-    stdout: new ReadableStream({
-      start(c) {
-        c.enqueue(new TextEncoder().encode(stdout));
-        c.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(c) {
-        c.close();
-      },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(() => stdout).spawn;
 }
 
 // ---------------------------------------------------------------------------

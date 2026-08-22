@@ -14,7 +14,14 @@ import { substantiateAdversarialFindings } from "@/review";
 import { _adversarialDeps, _diffUtilsDeps, _evidenceDeps, runAdversarialReview } from "@/review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
-import { makeAgentAdapter, makeLogger, makeMockAgentManager, makeMockRuntime, withTempDir } from "@test/helpers";
+import {
+  makeAgentAdapter,
+  makeLogger,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeSpawn,
+  withTempDir,
+} from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -68,21 +75,7 @@ function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
 }
 
 function makeSpawnMock(stdout: string, exitCode = 0) {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(stdout));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(controller) {
-        controller.close();
-      },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(() => ({ exitCode, stdout })).spawn;
 }
 
 // ---------------------------------------------------------------------------
