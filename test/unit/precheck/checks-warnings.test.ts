@@ -11,16 +11,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { NaxConfig } from "@/config/types";
 import { checkGitignoreCoversNax, checkPromptOverrideFiles } from "@/precheck";
-import { makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makeTempDir } from "@test/helpers";
 
 function makeTmpDir(): string {
   return makeTempDir("nax-test-");
 }
 
 function makeMinimalConfig(overrides?: Record<string, string>): NaxConfig {
-  return {
+  return makeNaxConfig({
     prompts: overrides ? { overrides } : undefined,
-  } as unknown as NaxConfig;
+  });
 }
 
 describe("checkPromptOverrideFiles", () => {
@@ -168,15 +168,14 @@ describe("checkGitignoreCoversNax", () => {
 import { checkBuildCommandInReviewChecks } from "@/precheck";
 
 function makeBugConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
-  return {
+  return makeNaxConfig({
     review: {
       checks: ["typecheck", "lint"],
       commands: {},
-      semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000, excludePatterns: [] },
     },
     quality: { commands: {} },
     ...overrides,
-  } as unknown as NaxConfig;
+  });
 }
 
 describe("checkBuildCommandInReviewChecks (BUG-092)", () => {

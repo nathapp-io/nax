@@ -21,13 +21,14 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import { _bakeoffCliDeps, handleRunAction, pipeline, runBakeoff, runContestant } from "@/bakeoff";
 import type { BakeoffCliDeps, BakeoffResult, ContestantRunnerDeps, HandleRunActionOptions } from "@/bakeoff";
 import type { NaxConfig } from "@/config";
+import { makeNaxConfig } from "@test/helpers";
 
 function baseOptions(overrides: Partial<HandleRunActionOptions> = {}): HandleRunActionOptions {
   return {
     feature: "test-feature",
     projectRoot: "/tmp/proj",
     outputDir: "/tmp/out",
-    config: {} as unknown as NaxConfig,
+    config: makeNaxConfig(),
     ...overrides,
   };
 }

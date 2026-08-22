@@ -23,6 +23,7 @@ import type {
   ContestantRunnerDeps,
 } from "@/bakeoff";
 import type { NaxConfig } from "@/config";
+import { makeNaxConfig } from "@test/helpers";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ function baseOptions(overrides: Partial<BakeoffOptions> = {}): BakeoffOptions {
     feature: "test-feature",
     projectRoot: "/tmp/proj",
     outputDir: "/tmp/out",
-    config: {} as unknown as NaxConfig,
+    config: makeNaxConfig(),
     ...overrides,
   };
 }

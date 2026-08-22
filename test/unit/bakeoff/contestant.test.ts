@@ -18,11 +18,12 @@ import type {
 } from "@/bakeoff";
 import type { ContestantResult } from "@/bakeoff/types";
 import type { NaxConfig } from "@/config";
+import { makeNaxConfig } from "@test/helpers";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function baseConfig(): NaxConfig {
-  return {
+  return makeNaxConfig({
     agent: {
       default: "claude",
       fallback: {
@@ -31,7 +32,7 @@ function baseConfig(): NaxConfig {
         maxHopsPerStory: 2,
       },
     },
-  } as unknown as NaxConfig;
+  });
 }
 
 function baseOptions(overrides: Partial<ContestantOptions> = {}): ContestantOptions {

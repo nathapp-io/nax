@@ -14,22 +14,24 @@ import { InteractionChain } from "@/interaction/chain";
 import { createTriggerRequest, executeTrigger } from "@/interaction/triggers";
 import type { InteractionPlugin, InteractionResponse, TriggerName } from "@/interaction/types";
 import { TRIGGER_METADATA } from "@/interaction/types";
+import { makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
-const minimalConfig = {
+const minimalConfig: NaxConfig = makeNaxConfig({
   interaction: {
+    plugin: "cli",
     triggers: {
       "human-review": { enabled: true },
     },
     defaults: {
       timeout: 30000,
-      fallback: "skip" as const,
+      fallback: "skip",
     },
   },
-} as unknown as NaxConfig;
+});
 
 function makeSkipPlugin(requestId: string): InteractionPlugin {
   return {
