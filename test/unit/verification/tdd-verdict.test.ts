@@ -288,6 +288,32 @@ describe("coerceVerdict", () => {
   test("'PASSED' is accepted as an approval token", () => {
     expect(coerceVerdict({ verdict: "PASSED" })?.approved).toBe(true);
   });
+
+  // BUG-1: negated "ALL ACCEPTANCE CRITERIA MET" must not be read as approval.
+  test("does not approve a negated 'NOT ALL ACCEPTANCE CRITERIA MET'", () => {
+    const result = coerceVerdict({ verdict: "NOT ALL ACCEPTANCE CRITERIA MET" });
+    expect(result?.approved).toBe(false);
+  });
+
+  // BUG-1: the pass/fail keyword must be captured, not discarded — a ratio
+  // where passCount === total but the word is FAIL must not read as all-passing.
+  test("a same-count FAIL ratio ('5/5 FAIL') is not reported as all-passing", () => {
+    const result = coerceVerdict({
+      verdict: "FAIL",
+      verification_summary: { test_results: "5/5 FAIL" },
+    });
+    expect(result?.tests.allPassing).toBe(false);
+  });
+
+  // BUG-1: allPassing must never be seeded from `approved` with zero test
+  // evidence — an approval-only verdict with no parseable test data must not
+  // certify tests as passing.
+  test("allPassing requires actual test evidence, not just an approval token", () => {
+    const result = coerceVerdict({ verdict: "NOT ALL ACCEPTANCE CRITERIA MET" });
+    expect(result?.tests.allPassing).toBe(false);
+    expect(result?.tests.passCount).toBe(0);
+    expect(result?.tests.failCount).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
