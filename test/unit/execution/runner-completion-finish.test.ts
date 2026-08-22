@@ -22,6 +22,7 @@ import type { RunCompletionResult } from "@/execution/lifecycle/run-completion";
 import type { LoadedHooksConfig } from "@/hooks";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
+import { PluginRegistry } from "@/plugins";
 import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
@@ -86,7 +87,7 @@ function makeOpts(
 ): RunnerCompletionOptions {
   return {
     config,
-    hooks: { hooks: {}, _skipGlobal: false } as unknown as LoadedHooksConfig,
+    hooks: { hooks: {}, _skipGlobal: false } satisfies LoadedHooksConfig,
     feature: "test-feature",
     workdir: WORKDIR,
     statusFile: `${WORKDIR}/status.json`,
@@ -101,8 +102,8 @@ function makeOpts(
     totalCost: 0,
     storiesCompleted: 1,
     iterations: 1,
-    statusWriter: statusWriter as unknown as RunnerCompletionOptions["statusWriter"],
-    pluginRegistry: { getAll: () => [], get: () => undefined } as unknown as RunnerCompletionOptions["pluginRegistry"],
+    statusWriter,
+    pluginRegistry: new PluginRegistry([]),
     prdPath: `${WORKDIR}/prd.json`,
   };
 }

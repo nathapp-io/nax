@@ -96,7 +96,7 @@ describe("getAgentVersion", () => {
   // VERSION_DETECTION_TIMEOUT_MS — getAgentVersion returns null. The test
   // takes the full 5s because that's what the timeout guarantees, so the
   // runner's per-test timeout needs to be extended.
-  test("PERF-32: returns null when proc.exited never resolves (hung binary)", { timeout: 30_000 }, async () => {
+  test("PERF-32: returns null when proc.exited never resolves (hung binary)", async () => {
     const hungProc = {
       exited: new Promise<number>(() => {}),
       stdout: new ReadableStream({
@@ -121,7 +121,7 @@ describe("getAgentVersion", () => {
     expect(v).toBeNull();
     // Version timeout is 5s; assert it returned rather than blocked.
     expect(elapsed).toBeLessThan(30_000);
-  });
+  }, { timeout: 30_000 });
 });
 
 // ---------------------------------------------------------------------------
