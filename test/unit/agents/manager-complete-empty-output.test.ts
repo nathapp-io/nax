@@ -186,8 +186,8 @@ describe("completeWithFallback retry success (AC6)", () => {
     const outcome = await m.completeWithFallback("prompt", baseOptions, "claude");
     expect(outcome.result.output).toBe("from codex");
     expect(outcome.fallbacks.length).toBeGreaterThan(0);
-    expect(callCounts["claude"]).toBe(4);
-    expect(callCounts["codex"]).toBe(1);
+    expect(callCounts.claude).toBe(4);
+    expect(callCounts.codex).toBe(1);
   });
 });
 

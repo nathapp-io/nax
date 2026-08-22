@@ -120,7 +120,6 @@ describe("finishFixOp.verify()", () => {
           { index: 2, disposition: "rejected" as const, evidence: "missing.ts:1" },
         ],
       };
-      // biome-ignore lint/style/noNonNullAssertion: verify is declared on the op
       const result = await finishFixOp.verify!(
         parsed,
         { ...SPEC_INPUT, workdir: dir },
@@ -140,7 +139,6 @@ describe("finishFixOp.recover()", () => {
   test("returns an empty dispositions array rather than throwing", async () => {
     await withTempDir(async (dir) => {
       const ctx = makeCtx();
-      // biome-ignore lint/style/noNonNullAssertion: recover is declared on the op
       const result = await finishFixOp.recover!(
         { ...SPEC_INPUT, workdir: dir },
         {

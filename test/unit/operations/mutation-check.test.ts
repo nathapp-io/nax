@@ -583,7 +583,7 @@ describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
     try {
       const file = join(dir, "src", "foo.ts");
       // 5 candidate mutants — every line has a comparison.
-      await Bun.write(file, ["a == b", "c == d", "e == f", "g == h", "i == j"].join("\n") + "\n");
+      await Bun.write(file, `${["a == b", "c == d", "e == f", "g == h", "i == j"].join("\n")}\n`);
 
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [file],
@@ -632,8 +632,8 @@ describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
       const fileA = join(dir, "src", "a.ts");
       const fileB = join(dir, "src", "b.ts");
       // 4 candidate mutants per file, 2 files → 8 candidates total.
-      await Bun.write(fileA, ["a == b", "c == d", "e == f", "g == h"].join("\n") + "\n");
-      await Bun.write(fileB, ["i == j", "k == l", "m == n", "o == p"].join("\n") + "\n");
+      await Bun.write(fileA, `${["a == b", "c == d", "e == f", "g == h"].join("\n")}\n`);
+      await Bun.write(fileB, `${["i == j", "k == l", "m == n", "o == p"].join("\n")}\n`);
 
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [fileA, fileB],

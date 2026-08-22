@@ -12,7 +12,7 @@ import { handleMaxAttemptsReached, handleNoTierAvailable } from "@/execution/esc
 import type { EscalationHandlerContext } from "@/execution/escalation";
 import { cleanupTempDir, makePRD, makeStory, makeTempDir } from "@test/helpers";
 
-function makeCtx(overrides: Partial<EscalationHandlerContext> = {}, prdPath: string): EscalationHandlerContext {
+function makeCtx(overrides: Partial<EscalationHandlerContext>, prdPath: string): EscalationHandlerContext {
   const story = makeStory({ id: "US-001", status: "in-progress" });
   const prd = makePRD({ userStories: [story] });
   return {

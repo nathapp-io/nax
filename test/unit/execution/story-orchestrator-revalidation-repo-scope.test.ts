@@ -28,7 +28,6 @@ const ALL_PHASE_KINDS: PhaseKind[] = [
   "adversarial-review",
 ];
 
-// biome-ignore lint/suspicious/noExplicitAny: only `kind` is read by phasesToRevalidate
 const allPhases = ALL_PHASE_KINDS.map((kind) => ({ kind }) as any);
 
 describe("repo-scoped-test-fix revalidation mapping (#1654)", () => {

@@ -105,7 +105,7 @@ function mockGitAndTest(opts: {
         diffCount++;
         return {
           exited: Promise.resolve(0),
-          stdout: new Response(f.join("\n") + "\n").body,
+          stdout: new Response(`${f.join("\n")}\n`).body,
           stderr: new Response("").body,
         };
       }

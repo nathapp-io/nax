@@ -80,7 +80,7 @@ describe("groundOp — parse", () => {
     expect(r.specClaims[0]?.id).toBe("S-001");
     expect(r.gaps[0]?.id).toBe("G-001");
 
-    const fenced = "```json\n" + JSON.stringify({ repoFacts: [], specClaims: [], gaps: [] }) + "\n```";
+    const fenced = `\`\`\`json\n${JSON.stringify({ repoFacts: [], specClaims: [], gaps: [] })}\n\`\`\``;
     expect(groundOp.parse(fenced, inp, makeBuildCtx()).repoFacts).toEqual([]);
   });
 

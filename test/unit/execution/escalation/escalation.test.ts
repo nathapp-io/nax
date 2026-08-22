@@ -107,11 +107,9 @@ describe("escalateTier", () => {
     const step1 = escalateTier({ tier: "balanced", agent: "opencode" }, tierOrder);
     expect(step1).toEqual({ tier: "balanced", agent: "claude" });
 
-    // biome-ignore lint/style/noNonNullAssertion: checked above
     const step2 = escalateTier({ tier: step1!.tier, agent: step1!.agent }, tierOrder);
     expect(step2).toEqual({ tier: "powerful", agent: "claude" });
 
-    // biome-ignore lint/style/noNonNullAssertion: checked above
     const step3 = escalateTier({ tier: step2!.tier, agent: step2!.agent }, tierOrder);
     expect(step3).toBeNull();
   });

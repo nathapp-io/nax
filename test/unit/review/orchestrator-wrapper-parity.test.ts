@@ -451,7 +451,6 @@ describe("Recurrence-demotion parity: op verify() vs wrapper recomputation", () 
         message: "No error handling on login",
       },
     ],
-    // biome-ignore lint/suspicious/noExplicitAny: minimal Iteration/Finding shape for fingerprint matching
   })) as any;
 
   const STAT_OUTPUT = "src/log.ts | 5 +++++\n 1 file changed, 5 insertions(+)";
@@ -471,7 +470,6 @@ describe("Recurrence-demotion parity: op verify() vs wrapper recomputation", () 
         },
       }),
       kill: () => {},
-      // biome-ignore lint/suspicious/noExplicitAny: minimal Bun.spawn-shaped mock
     })) as any;
   }
 
@@ -540,7 +538,6 @@ describe("Recurrence-demotion parity: op verify() vs wrapper recomputation", () 
       findings: [RECURRING_FINDING],
       normalizedFindings: [],
       acDropped: [],
-      // biome-ignore lint/suspicious/noExplicitAny: minimal AdversarialLLMFinding shape
     } as any;
     const opResult = await adversarialReviewOp.verify!(opParsed, opInput, opCtx);
 

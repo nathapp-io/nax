@@ -187,12 +187,10 @@ describe("mapSourceToTests", () => {
   });
 
   afterEach(() => {
-    // biome-ignore lint/suspicious/noExplicitAny: restoring original
     (Bun as any).file = originalFile;
   });
 
   function mockFileExists(existingPaths: string[]) {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking
     (Bun as any).file = (path: string) => ({
       exists: () => Promise.resolve(existingPaths.includes(path)),
     });
@@ -253,22 +251,17 @@ describe("importGrepFallback", () => {
   });
 
   afterEach(() => {
-    // biome-ignore lint/suspicious/noExplicitAny: restoring original
     (Bun as any).Glob = originalGlob;
-    // biome-ignore lint/suspicious/noExplicitAny: restoring original
     (Bun as any).file = originalFile;
   });
 
   test("matches nested monorepo src imports after stripping prefix before src/", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking Bun.Glob
     (Bun as any).Glob = class {
-      constructor(_pattern: string) {}
       async *scan(_workdir: string) {
         yield "test/unit/auth/service.test.ts";
       }
     };
 
-    // biome-ignore lint/suspicious/noExplicitAny: mocking Bun.file
     (Bun as any).file = (path: string) => ({
       text: async () =>
         path === "/repo/test/unit/auth/service.test.ts" ? "import { service } from '../../src/auth/service';" : "",
@@ -305,7 +298,6 @@ describe("getChangedNonTestFiles", () => {
       "src/config/schema.ts",
     ].join("\n");
 
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedNonTestFiles("/fake/repo", undefined, undefined, [/\.test\.ts$/]);
@@ -345,7 +337,6 @@ describe("getChangedNonTestFiles", () => {
   test("returns all changed files when testFileRegex is empty", async () => {
     const gitOutput = ["src/foo.js", "pkg/bar.rs", "src/baz.ts"].join("\n");
 
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedNonTestFiles("/fake/repo");
@@ -354,7 +345,6 @@ describe("getChangedNonTestFiles", () => {
   });
 
   test("returns empty array when no files changed", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     (_gitDeps as any).spawn = mock(() => makeProc("", 0));
 
     const result = await getChangedNonTestFiles("/fake/repo");
@@ -371,7 +361,6 @@ describe("getChangedNonTestFiles", () => {
       "packages/web/src/app.ts",
     ].join("\n");
 
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedNonTestFiles("/fake/repo", undefined, "packages/api");
@@ -382,7 +371,6 @@ describe("getChangedNonTestFiles", () => {
   test("returns all files when packagePrefix is undefined", async () => {
     const gitOutput = ["src/index.ts", "packages/api/src/auth.ts"].join("\n");
 
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedNonTestFiles("/fake/repo", undefined, undefined);
@@ -393,7 +381,6 @@ describe("getChangedNonTestFiles", () => {
   test("returns empty when packagePrefix does not match any changed files", async () => {
     const gitOutput = ["src/index.ts", "packages/web/src/app.ts"].join("\n");
 
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedNonTestFiles("/fake/repo", undefined, "packages/api");
@@ -405,7 +392,6 @@ describe("getChangedNonTestFiles", () => {
   test("excludes co-located test files when testFileRegex is provided", async () => {
     const gitOutput = ["packages/lib/src/util.ts", "packages/lib/src/util.test.ts"].join("\n");
 
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedNonTestFiles("/fake/repo", undefined, "packages/lib", [/\.test\.ts$/]);
@@ -418,7 +404,6 @@ describe("getChangedNonTestFiles", () => {
       "\n",
     );
 
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedNonTestFiles("/fake/repo", undefined, "packages/lib");
@@ -433,7 +418,6 @@ describe("getChangedNonTestFiles", () => {
   test("filters correctly when project root is nested inside git root; behavior unchanged when roots are equal", async () => {
     // Scenario 1: nax-dogfood is the git root, fixtures/monorepo-tiny is the project root.
     _gitUtilDeps.getGitRoot = mock(async () => "/big-repo");
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() =>
       makeProc(
         [
@@ -457,7 +441,6 @@ describe("getChangedNonTestFiles", () => {
 
     // Scenario 2: project root equals git root — no offset
     _gitUtilDeps.getGitRoot = mock(async (_wd: string) => null);
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() =>
       makeProc(["packages/lib/src/util.ts", "packages/lib/src/util.test.ts"].join("\n"), 0),
     ) as unknown as typeof _gitDeps.spawn;
@@ -487,7 +470,6 @@ describe("getChangedTestFiles", () => {
   const TS_TEST_REGEX = [/\.test\.ts$/, /\.spec\.ts$/];
 
   test("returns absolute paths of co-located, separated, and both test file layouts", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() =>
       makeProc(["packages/lib/src/util.ts", "packages/lib/src/util.test.ts"].join("\n"), 0),
     ) as unknown as typeof _gitDeps.spawn;
@@ -495,7 +477,6 @@ describe("getChangedTestFiles", () => {
       await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", TS_TEST_REGEX),
     ).toEqual(["/fake/repo/packages/lib/src/util.test.ts"]);
 
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() =>
       makeProc(["packages/lib/src/util.ts", "packages/lib/test/unit/util.test.ts"].join("\n"), 0),
     ) as unknown as typeof _gitDeps.spawn;
@@ -503,7 +484,6 @@ describe("getChangedTestFiles", () => {
       await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", TS_TEST_REGEX),
     ).toEqual(["/fake/repo/packages/lib/test/unit/util.test.ts"]);
 
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() =>
       makeProc(["packages/lib/src/util.test.ts", "packages/lib/test/unit/other.test.ts"].join("\n"), 0),
     ) as unknown as typeof _gitDeps.spawn;
@@ -522,7 +502,6 @@ describe("getChangedTestFiles", () => {
   test("scopes to packagePrefix — ignores test files from other packages", async () => {
     const gitOutput = ["packages/lib/src/util.test.ts", "packages/app/src/index.test.ts"].join("\n");
 
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedTestFiles(
@@ -571,7 +550,6 @@ describe("getChangedTestFiles", () => {
   test("works without packagePrefix for single-package repos", async () => {
     const gitOutput = ["src/util.ts", "test/unit/util.test.ts"].join("\n");
 
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedTestFiles("/repo", "/repo", undefined, undefined, TS_TEST_REGEX);
@@ -582,7 +560,6 @@ describe("getChangedTestFiles", () => {
   test("is language-agnostic — detects Go test files via regex", async () => {
     const gitOutput = ["packages/backend/pkg/auth/auth.go", "packages/backend/pkg/auth/auth_test.go"].join("\n");
 
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedTestFiles("/repo/packages/backend", "/repo", undefined, "packages/backend", [
@@ -596,7 +573,6 @@ describe("getChangedTestFiles", () => {
   test("filters correctly when project root is nested inside git root; behavior unchanged when roots are equal", async () => {
     // Scenario 1: git root differs from project root — paths include extra prefix
     _gitUtilDeps.getGitRoot = mock(async () => "/big-repo");
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() =>
       makeProc(
         [
@@ -619,7 +595,6 @@ describe("getChangedTestFiles", () => {
 
     // Scenario 2: project root equals git root — no offset
     _gitUtilDeps.getGitRoot = mock(async (_wd: string) => null);
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() =>
       makeProc(["packages/lib/src/util.ts", "packages/lib/src/util.test.ts"].join("\n"), 0),
     ) as unknown as typeof _gitDeps.spawn;

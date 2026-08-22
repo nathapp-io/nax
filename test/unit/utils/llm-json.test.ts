@@ -28,25 +28,25 @@ describe("extractJsonFromMarkdown", () => {
   });
 
   test.each<[string, string]>([
-    ["```json", "```json\n" + JSON_FIXTURE + "\n```"],
-    ["```", "```\n" + JSON_FIXTURE + "\n```"],
+    ["```json", `\`\`\`json\n${JSON_FIXTURE}\n\`\`\``],
+    ["```", `\`\`\`\n${JSON_FIXTURE}\n\`\`\``],
   ])("extracts JSON from %s fence", (_fenceType, input) => {
     expect(extractJsonFromMarkdown(input)).toBe(JSON_FIXTURE);
   });
 
   test("handles preamble text before fence (failure mode 2)", () => {
-    const input = "I'll verify each AC by reading the implementation files.\n```json\n" + JSON_FIXTURE + "\n```";
+    const input = `I'll verify each AC by reading the implementation files.\n\`\`\`json\n${JSON_FIXTURE}\n\`\`\``;
     expect(extractJsonFromMarkdown(input)).toBe(JSON_FIXTURE);
   });
 
   test("handles trailing text after closing fence", () => {
-    const input = "```json\n" + JSON_FIXTURE + "\n```\nAll ACs are met.";
+    const input = `\`\`\`json\n${JSON_FIXTURE}\n\`\`\`\nAll ACs are met.`;
     expect(extractJsonFromMarkdown(input)).toBe(JSON_FIXTURE);
   });
 
   test("handles both preamble and trailing text", () => {
     const json = '{"passed":false,"findings":[]}';
-    const input = "Let me check.\n```json\n" + json + "\n```\nThat's my analysis.";
+    const input = `Let me check.\n\`\`\`json\n${json}\n\`\`\`\nThat's my analysis.`;
     expect(extractJsonFromMarkdown(input)).toBe(json);
   });
 
@@ -57,7 +57,7 @@ describe("extractJsonFromMarkdown", () => {
 
   test("handles multiline JSON in fence", () => {
     const json = '{\n  "passed": true,\n  "findings": []\n}';
-    const input = "```json\n" + json + "\n```";
+    const input = `\`\`\`json\n${json}\n\`\`\``;
     expect(extractJsonFromMarkdown(input)).toBe(json);
   });
 });
@@ -125,13 +125,13 @@ describe("extractJsonObject", () => {
   });
 
   test("extracts object from narration with preamble", () => {
-    const input = "After analysis: " + JSON_FIXTURE + " All ACs met.";
+    const input = `After analysis: ${JSON_FIXTURE} All ACs met.`;
     expect(extractJsonObject(input)).toBe(JSON_FIXTURE);
   });
 
   test("extracts JSON array from text", () => {
     const json = '[{"id":"1"},{"id":"2"}]';
-    const input = "Here are the results: " + json;
+    const input = `Here are the results: ${json}`;
     expect(extractJsonObject(input)).toBe(json);
   });
 

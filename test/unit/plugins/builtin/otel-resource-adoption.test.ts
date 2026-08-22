@@ -72,7 +72,6 @@ function resourceAttributes(payload: any) {
 
 describe("US-007 AC1: buildTracesPayload resource attributes include nax.feature", () => {
   test("success: emits nax.feature resource attribute equal to the supplied feature", () => {
-    // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
     const payload: any = buildTracesPayload({
       serviceName: "nax",
       traceId: "a".repeat(32),
@@ -93,7 +92,6 @@ describe("US-007 AC1: buildTracesPayload resource attributes include nax.feature
   });
 
   test("success: also includes nax.run_id and nax.project on the same resource block", () => {
-    // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
     const payload: any = buildTracesPayload({
       serviceName: "nax",
       traceId: "a".repeat(32),
@@ -113,7 +111,6 @@ describe("US-007 AC1: buildTracesPayload resource attributes include nax.feature
   });
 
   test("boundary: omits nax.git.branch when gitBranch is not provided", () => {
-    // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
     const payload: any = buildTracesPayload({
       serviceName: "nax",
       traceId: "a".repeat(32),
@@ -135,7 +132,6 @@ describe("US-007 AC1: buildTracesPayload resource attributes include nax.feature
 
 describe("US-007 AC2: buildMetricsPayload (otlp.ts) resource attributes include nax.feature", () => {
   test("success: emits nax.feature resource attribute equal to the supplied feature", () => {
-    // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
     const payload: any = buildMetricsPayload({
       serviceName: "nax",
       runId: "r1",
@@ -151,7 +147,6 @@ describe("US-007 AC2: buildMetricsPayload (otlp.ts) resource attributes include 
   });
 
   test("success: also includes nax.run_id and nax.project", () => {
-    // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
     const payload: any = buildMetricsPayload({
       serviceName: "nax",
       runId: "r42",
@@ -168,7 +163,6 @@ describe("US-007 AC2: buildMetricsPayload (otlp.ts) resource attributes include 
   });
 
   test("boundary: emits git attributes when gitBranch and gitSha are provided", () => {
-    // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
     const payload: any = buildMetricsPayload({
       serviceName: "nax",
       runId: "r1",
@@ -188,7 +182,6 @@ describe("US-007 AC2: buildMetricsPayload (otlp.ts) resource attributes include 
 });
 
 describe("US-007 AC3: buildHeartbeatMetricsPayload resource attributes include nax.run_id", () => {
-  // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
   const payload: any = buildHeartbeatMetricsPayload({
     serviceName: "nax",
     timeUnixNano: "5000",
@@ -207,14 +200,12 @@ describe("US-007 AC3: buildHeartbeatMetricsPayload resource attributes include n
 });
 
 describe("US-007 AC4: buildHeartbeatMetricsPayload gauge points retain the bare feature attribute", () => {
-  // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
   const payload: any = buildHeartbeatMetricsPayload({
     serviceName: "nax",
     timeUnixNano: "5000",
     snapshot: snapshot(),
   });
   const metrics = payload.resourceMetrics[0].scopeMetrics[0].metrics;
-  // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP metric entries
   const byName = (n: string) => metrics.find((m: any) => m.name === n);
 
   test("nax.run.active gauge data point carries the bare 'feature' attribute (no nax.feature)", () => {
@@ -249,7 +240,6 @@ describe("US-007 AC5: span-tree payload builder resource attributes include nax.
       testStrategy: "tdd-simple",
       sessionModel: "single-session",
     });
-    // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
     const payload: any = agg.buildMetricsPayload({
       serviceName: "nax",
       runId: "r1",
@@ -275,7 +265,6 @@ describe("US-007 AC5: span-tree payload builder resource attributes include nax.
       testStrategy: "tdd-simple",
       sessionModel: "single-session",
     });
-    // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
     const payload: any = agg.buildMetricsPayload({
       serviceName: "nax",
       runId: "r1",
@@ -302,7 +291,6 @@ describe("US-007 AC5: span-tree payload builder resource attributes include nax.
       testStrategy: "tdd-simple",
       sessionModel: "single-session",
     });
-    // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
     const payload: any = agg.buildMetricsPayload({
       serviceName: "my-service",
       runId: "r42",
@@ -327,7 +315,6 @@ describe("US-007 AC5: span-tree payload builder resource attributes include nax.
 
   test("boundary: empty aggregator still emits nax.project on its resource block", () => {
     const agg = createPhaseMetricsAggregator();
-    // biome-ignore lint/suspicious/noExplicitAny: dynamic OTLP payload
     const payload: any = agg.buildMetricsPayload({
       serviceName: "nax",
       runId: "r1",

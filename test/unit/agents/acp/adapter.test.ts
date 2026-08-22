@@ -17,8 +17,15 @@ import type { AgentRunOptions } from "@/agents/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ACP mock types — mirror expected acpx interfaces for test isolation
+//
+// These are exported because manager.test.ts, manager-dispatch-emission.test.ts
+// and adapter-phase-a.test.ts import makeClient/makeSession from here. They
+// belong in _test-helpers.ts, but moving them changes which module first
+// initialises @/agents/acp and breaks 22 tests, so the move is deferred to the
+// per-file drain rather than done in a lint-prep commit (#1514 phase 3c).
 // ─────────────────────────────────────────────────────────────────────────────
 
+// biome-ignore lint/suspicious/noExportsInTest: shared by three sibling test files; see note above
 export interface AcpSessionResponse {
   messages: Array<{ role: string; content: string }>;
   stopReason: "end_turn" | "cancelled" | "error" | string;
@@ -29,12 +36,14 @@ export interface AcpSessionResponse {
   cancelled?: boolean;
 }
 
+// biome-ignore lint/suspicious/noExportsInTest: shared by three sibling test files; see note above
 export interface MockAcpSession {
   prompt(text: string): Promise<AcpSessionResponse>;
   close(opts?: { forceTerminate?: boolean }): Promise<void>;
   cancelActivePrompt(): Promise<void>;
 }
 
+// biome-ignore lint/suspicious/noExportsInTest: shared by three sibling test files; see note above
 export interface MockAcpClient {
   start(): Promise<void>;
   createSession(opts: { agentName: string; permissionMode: string }): Promise<MockAcpSession>;
@@ -47,6 +56,7 @@ export interface MockAcpClient {
 // Shared helpers — also used by adapter-run.test.ts
 // ─────────────────────────────────────────────────────────────────────────────
 
+// biome-ignore lint/suspicious/noExportsInTest: shared by three sibling test files; see note above
 export function makeSession(
   overrides: {
     promptFn?: (text: string) => Promise<AcpSessionResponse>;
@@ -67,6 +77,7 @@ export function makeSession(
   };
 }
 
+// biome-ignore lint/suspicious/noExportsInTest: shared by three sibling test files; see note above
 export function makeClient(
   session: MockAcpSession,
   overrides: {
@@ -102,6 +113,7 @@ function makeCompleteOptions(
   } as import("@/agents/types").ResolvedCompleteOptions;
 }
 
+// biome-ignore lint/suspicious/noExportsInTest: shared by three sibling test files; see note above
 export function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptions {
   return {
     workdir: ACP_WORKDIR,
@@ -160,7 +172,7 @@ describe("isInstalled()", () => {
     const checked: string[] = [];
     _acpAdapterDeps.which = mock((name: string) => {
       checked.push(name);
-      return "/bin/" + name;
+      return `/bin/${name}`;
     });
     await new AcpAgentAdapter("claude").isInstalled();
     expect(checked.length).toBeGreaterThan(0);

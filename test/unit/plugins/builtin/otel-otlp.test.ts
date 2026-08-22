@@ -40,7 +40,6 @@ const summary = { completed: 2, failed: 1, skipped: 0, paused: 0 };
 const events: SpanEvent[] = [{ timeUnixNano: "1000000", name: "story.complete", attributes: [attr("storyId", "s1")] }];
 
 describe("buildTracesPayload", () => {
-  // biome-ignore lint/suspicious/noExplicitAny: testing dynamic OTLP payload
   const payload: any = buildTracesPayload({
     serviceName: "nax",
     traceId: "a".repeat(32),
@@ -77,7 +76,6 @@ describe("buildTracesPayload", () => {
   });
 
   test("status code is OK (1) when nothing failed", () => {
-    // biome-ignore lint/suspicious/noExplicitAny: testing dynamic OTLP payload
     const ok: any = buildTracesPayload({
       serviceName: "nax",
       traceId: "a".repeat(32),
@@ -98,7 +96,6 @@ describe("buildTracesPayload", () => {
       { traceId: "a".repeat(32), spanId: "c".repeat(16), name: "nax.phase", attributes: [] },
       { traceId: "a".repeat(32), spanId: "d".repeat(16), name: "nax.phase", attributes: [] },
     ];
-    // biome-ignore lint/suspicious/noExplicitAny: testing dynamic OTLP payload
     const withExtras: any = buildTracesPayload({
       serviceName: "nax",
       traceId: "a".repeat(32),
@@ -128,7 +125,6 @@ describe("buildTracesPayload", () => {
 });
 
 describe("buildMetricsPayload", () => {
-  // biome-ignore lint/suspicious/noExplicitAny: testing dynamic OTLP payload
   const payload: any = buildMetricsPayload({
     serviceName: "nax",
     runId: "r1",
@@ -138,17 +134,14 @@ describe("buildMetricsPayload", () => {
     totalDurationMs: 1234,
   });
   const metrics = payload.resourceMetrics[0].scopeMetrics[0].metrics;
-  // biome-ignore lint/suspicious/noExplicitAny: accessing untyped metric entries
   const byName = (n: string) => metrics.find((m: any) => m.name === n);
 
   test("emits a stories.total counter with one data point per non-zero status", () => {
     const sum = byName("nax.stories.total").sum;
     expect(sum.isMonotonic).toBe(true);
     expect(sum.aggregationTemporality).toBe(2);
-    // biome-ignore lint/suspicious/noExplicitAny: accessing untyped dataPoint entries
     const statuses = sum.dataPoints.map((d: any) => d.attributes[0].value.stringValue).sort();
     expect(statuses).toEqual(["completed", "failed"]);
-    // biome-ignore lint/suspicious/noExplicitAny: accessing untyped dataPoint entries
     const completed = sum.dataPoints.find((d: any) => d.attributes[0].value.stringValue === "completed");
     expect(completed.asInt).toBe("2");
   });

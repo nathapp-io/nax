@@ -346,7 +346,6 @@ describe("classifyRecurrence — semantic source (F1b)", () => {
       outcome: "fixes-applied",
       startedAt: "2026-08-01T00:00:00.000Z",
       finishedAt: "2026-08-01T00:00:01.000Z",
-      // biome-ignore lint/suspicious/noExplicitAny: minimal Iteration shape
     }) as any;
 
   // Semantic findings carry no `category`, so the fingerprint's prose fallback

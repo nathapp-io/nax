@@ -75,7 +75,6 @@ function spyLogger() {
       warn: (...args: unknown[]) => {
         warnCalls.push(args);
       },
-      // biome-ignore lint/suspicious/noExplicitAny: minimal test logger stub
     }) as any;
   return warnCalls;
 }
@@ -183,7 +182,6 @@ describe("CodeNeighborProvider — fileSize failure observability", () => {
     _codeNeighborDeps.glob = () => ({ files: candidateFiles, truncated: false });
     _codeNeighborDeps.fileExists = async (p: string) => touchedFiles.some((tf) => p.endsWith(tf));
     // Simulate a caller passing a partial deps object without fileSize wired up.
-    // biome-ignore lint/suspicious/noExplicitAny: intentionally simulating a misconfigured dep
     (_codeNeighborDeps as any).fileSize = undefined;
     _codeNeighborDeps.readFile = async () => "";
 

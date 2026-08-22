@@ -270,7 +270,7 @@ describe("FeatureContextProviderV2 US-003 — fragment dependency walk", () => {
     mockReadFragment({ "US-002": "b-body" });
 
     const provider = new FeatureContextProviderV2(a, makeFragmentsConfig());
-    let result;
+    let result: Awaited<ReturnType<typeof provider.fetch>> | undefined;
     let raised: unknown = null;
     try {
       result = await provider.fetch(makeRequest({ storyId: "US-001" }));

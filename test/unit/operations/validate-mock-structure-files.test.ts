@@ -269,7 +269,6 @@ describe("validateMockStructureFiles", () => {
         pathspec: [],
         testDirs: ["tests"],
         resolution: "detected",
-        resolution: "detected",
       };
 
       const decl: TestEditDeclaration = {
@@ -347,7 +346,6 @@ describe("validateMockStructureFiles", () => {
         globs: ["tests/**/*.py"],
         pathspec: [],
         testDirs: ["tests"],
-        resolution: "detected",
         resolution: "detected",
       };
       const probed: string[] = [];

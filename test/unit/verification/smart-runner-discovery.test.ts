@@ -20,12 +20,10 @@ describe("Pass 1: mapSourceToTests (path convention)", () => {
   });
 
   afterEach(() => {
-    // biome-ignore lint/suspicious/noExplicitAny: restoring original
     (Bun as any).file = originalFile;
   });
 
   function mockFileExists(existingPaths: string[]) {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking
     (Bun as any).file = (path: string) => ({
       exists: () => Promise.resolve(existingPaths.includes(path)),
     });
@@ -123,14 +121,11 @@ describe("Pass 2: importGrepFallback", () => {
   });
 
   afterEach(() => {
-    // biome-ignore lint/suspicious/noExplicitAny: restoring originals
     (Bun as any).file = originalFile;
-    // biome-ignore lint/suspicious/noExplicitAny: restoring originals
     (Bun as any).Glob = originalGlob;
   });
 
   function mockGlob(files: string[]) {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking Glob
     (Bun as any).Glob = class {
       scan(_workdir: string): AsyncIterable<string> {
         return {
@@ -149,7 +144,6 @@ describe("Pass 2: importGrepFallback", () => {
   }
 
   function mockFileContent(contentMap: Record<string, string>) {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking
     (Bun as any).file = (path: string) => ({
       exists: () => Promise.resolve(path in contentMap),
       text: () => Promise.resolve(contentMap[path] ?? ""),
@@ -215,7 +209,6 @@ describe("Pass 2: importGrepFallback", () => {
 
   test("skips test files that cannot be read", async () => {
     mockGlob(["test/unit/broken.test.ts", "test/unit/ok.test.ts"]);
-    // biome-ignore lint/suspicious/noExplicitAny: mocking
     (Bun as any).file = (path: string) => ({
       exists: () => Promise.resolve(true),
       text: () => {
@@ -257,14 +250,11 @@ describe("Pass 3: full-suite fallback (empty return from both passes)", () => {
   });
 
   afterEach(() => {
-    // biome-ignore lint/suspicious/noExplicitAny: restoring originals
     (Bun as any).file = originalFile;
-    // biome-ignore lint/suspicious/noExplicitAny: restoring originals
     (Bun as any).Glob = originalGlob;
   });
 
   test("importGrepFallback returns empty array when no test files match any pattern", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking Glob
     (Bun as any).Glob = class {
       scan(_workdir: string): AsyncIterable<string> {
         return {
@@ -285,7 +275,6 @@ describe("Pass 3: full-suite fallback (empty return from both passes)", () => {
   });
 
   test("importGrepFallback returns empty array when no scanned test files import the module", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking Glob
     (Bun as any).Glob = class {
       scan(_workdir: string): AsyncIterable<string> {
         let done = false;
@@ -304,7 +293,6 @@ describe("Pass 3: full-suite fallback (empty return from both passes)", () => {
         };
       }
     };
-    // biome-ignore lint/suspicious/noExplicitAny: mocking
     (Bun as any).file = (_path: string) => ({
       text: () => Promise.resolve(`import { x } from "../../../src/completely/different";`),
     });
@@ -327,13 +315,11 @@ describe("Custom testFilePatterns", () => {
   });
 
   afterEach(() => {
-    // biome-ignore lint/suspicious/noExplicitAny: restoring original
     (Bun as any).Glob = originalGlob;
   });
 
   test("passes custom testFilePatterns to Bun.Glob", async () => {
     const capturedPatterns: string[] = [];
-    // biome-ignore lint/suspicious/noExplicitAny: mocking Glob
     (Bun as any).Glob = class {
       constructor(pattern: string) {
         capturedPatterns.push(pattern);
@@ -359,7 +345,6 @@ describe("Custom testFilePatterns", () => {
 
   test("uses each pattern independently", async () => {
     let scanCount = 0;
-    // biome-ignore lint/suspicious/noExplicitAny: mocking Glob
     (Bun as any).Glob = class {
       scan(_workdir: string): AsyncIterable<string> {
         scanCount++;

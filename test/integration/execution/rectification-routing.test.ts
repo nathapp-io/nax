@@ -289,7 +289,7 @@ describe("AC3.8: verifier op dispatched during initial run and re-dispatched dur
     await plan.run();
 
     // Verifier ran exactly once during the initial plan execution
-    expect(initialCallCounts["verifier"]).toBe(1);
+    expect(initialCallCounts.verifier).toBe(1);
 
     expect(capturedCycle).not.toBeNull();
     expect(capturedCtx).not.toBeNull();
@@ -309,7 +309,7 @@ describe("AC3.8: verifier op dispatched during initial run and re-dispatched dur
 
     // autofix-implementer addresses review findings, not the TDD isolation boundary.
     // Verifier is a once-per-story phase and is NOT re-dispatched after autofix-implementer.
-    expect(validateCallCounts["verifier"] ?? 0).toBe(0);
+    expect(validateCallCounts.verifier ?? 0).toBe(0);
 
     // Semantic review MUST be re-run (it's in autofix-implementer's phase set)
     expect(validateCallCounts["semantic-review"] ?? 0).toBeGreaterThan(0);
@@ -387,6 +387,6 @@ describe("AC3.9: after autofix-implementer iteration, full-suite-gate and semant
 
     // autofix-implementer addresses review findings, not the TDD isolation boundary.
     // Verifier is excluded from autofix-implementer's revalidation set (once-per-story phase).
-    expect(validateCallCounts["verifier"] ?? 0).toBe(0);
+    expect(validateCallCounts.verifier ?? 0).toBe(0);
   });
 });

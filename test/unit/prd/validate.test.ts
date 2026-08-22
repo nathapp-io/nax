@@ -51,12 +51,12 @@ describe("validateStoryId", () => {
   });
 
   test("rejects IDs longer than 64 characters", () => {
-    const longId = "a" + "b".repeat(64); // 65 characters
+    const longId = `a${"b".repeat(64)}`; // 65 characters
     expect(() => validateStoryId(longId)).toThrow(/pattern/);
   });
 
   test("accepts IDs exactly 64 characters", () => {
-    const id64 = "a" + "b".repeat(63); // 64 characters
+    const id64 = `a${"b".repeat(63)}`; // 64 characters
     expect(() => validateStoryId(id64)).not.toThrow();
   });
 });

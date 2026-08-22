@@ -357,9 +357,9 @@ describe("Logger", () => {
       expect(lines.length).toBe(4);
 
       const entries = lines.map((line) => JSON.parse(line));
-      entries.forEach((entry) => {
+      for (const entry of entries) {
         expect(entry.storyId).toBe("story-123");
-      });
+      }
     });
   });
 

@@ -121,7 +121,7 @@ describe("planDraftOp.model — AC-8 & AC-9: model tier resolution", () => {
     ["AC-9: 'balanced' → 'balanced'", { model: "balanced" }, "balanced"],
   ] as const)("%s", (_label, planOverrides, expected) => {
     const ctx = makeBuildCtx(planOverrides as any);
-    expect((planDraftOp.model as Function)({}, ctx)).toBe(expected);
+    expect((planDraftOp.model as (input: unknown, ctx: unknown) => string)({}, ctx)).toBe(expected);
   });
 });
 
@@ -211,7 +211,15 @@ describe("planDraftOp.parse — AC-14, AC-15, AC-16: failure paths", () => {
 
 describe("planDraftOp.retry — AC-17: retry strategy wiring", () => {
   // retry is now a factory function; call it with a default input to get the strategy
-  const retry = (planDraftOp.retry as Function)(makeDraftInput()) as { shouldRetry: Function };
+  const retry = (
+    planDraftOp.retry as (input: unknown) => {
+      shouldRetry: (
+        err: unknown,
+        attempt: number,
+        ctx: unknown,
+      ) => { retry: boolean; nextPrompt: string; fallback?: unknown };
+    }
+  )(makeDraftInput());
 
   test.each([
     ["non-ParseValidationError", () => new Error("network"), { lastOutput: "{}", storyId: "s1" }],

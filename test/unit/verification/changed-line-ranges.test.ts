@@ -58,7 +58,6 @@ describe("getChangedLineRanges", () => {
 -x
 +y
 `;
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(diff, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedLineRanges("/workdir");
@@ -71,7 +70,6 @@ describe("getChangedLineRanges", () => {
 
   test('AC2: passes ["diff", "--unified=0", baseRef] in order to git runner', async () => {
     let capturedArgs: string[] = [];
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock((args: string[], _opts: unknown) => {
       capturedArgs = args as string[];
       return makeProc("", 0);
@@ -88,7 +86,6 @@ describe("getChangedLineRanges", () => {
 
   test("AC3: defaults baseRef to HEAD~1 when not provided", async () => {
     let capturedArgs: string[] = [];
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock((args: string[], _opts: unknown) => {
       capturedArgs = args as string[];
       return makeProc("", 0);
@@ -104,7 +101,6 @@ describe("getChangedLineRanges", () => {
   // ---------------------------------------------------------------------------
 
   test("AC4: resolves to null on non-zero git exit code", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc("", 128)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedLineRanges("/workdir", "abc123");
@@ -116,7 +112,6 @@ describe("getChangedLineRanges", () => {
   // ---------------------------------------------------------------------------
 
   test("AC5: resolves to null when git runner throws", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => {
       throw new Error("spawn failed");
     }) as unknown as typeof _gitDeps.spawn;
@@ -130,7 +125,6 @@ describe("getChangedLineRanges", () => {
   // ---------------------------------------------------------------------------
 
   test("AC6: resolves to an empty Map (not null) on empty stdout", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc("", 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedLineRanges("/workdir", "abc123");
@@ -151,7 +145,6 @@ describe("getChangedLineRanges", () => {
 -x
 +y
 `;
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(diff, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedLineRanges("/workdir", "abc123");
@@ -172,7 +165,6 @@ describe("getChangedLineRanges", () => {
 -x
 +y
 `;
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(diff, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedLineRanges("/workdir", "abc123");
@@ -195,7 +187,6 @@ new file mode 100644
 +line2
 +line3
 `;
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(diff, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedLineRanges("/workdir", "abc123");
@@ -217,7 +208,6 @@ new file mode 100644
 -x
 +y
 `;
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(diff, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedLineRanges("/workdir", "abc123");
@@ -235,7 +225,6 @@ new file mode 100644
 -x
 +y
 `;
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
     _gitDeps.spawn = mock(() => makeProc(diff, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedLineRanges("relative/workdir", "abc123");

@@ -76,7 +76,7 @@ describe("SemanticReviewConfig", () => {
   test("SemanticReviewConfig accepts all ModelTier values", () => {
     const tiers: Array<"fast" | "balanced" | "powerful"> = ["fast", "balanced", "powerful"];
 
-    tiers.forEach((tier) => {
+    for (const tier of tiers) {
       const config: SemanticReviewConfig = {
         model: tier,
         diffMode: "embedded",
@@ -88,7 +88,7 @@ describe("SemanticReviewConfig", () => {
         excludePatterns: [],
       };
       expect(config.model).toBe(tier);
-    });
+    }
   });
 });
 

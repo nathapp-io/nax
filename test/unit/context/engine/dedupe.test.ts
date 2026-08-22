@@ -55,7 +55,7 @@ describe("dedupeChunks", () => {
     const base = "The configuration object must include a valid timeout value greater than zero.";
     const chunks = [
       makeScored({ id: "a:1", score: 0.9, content: base }),
-      makeScored({ id: "b:1", score: 0.7, content: base + " " }), // trivially different
+      makeScored({ id: "b:1", score: 0.7, content: `${base} ` }), // trivially different
     ];
     const result = dedupeChunks(chunks);
     expect(result.kept).toHaveLength(1);

@@ -42,7 +42,7 @@ describe("parseMochaOutput", () => {
   });
 
   test("counts-only run (no failing section) yields no failures", () => {
-    const output = `  4 passing (20ms)`;
+    const output = "  4 passing (20ms)";
     const summary = parseMochaOutput(output);
     expect(summary.passed).toBe(4);
     expect(summary.failed).toBe(0);

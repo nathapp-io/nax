@@ -75,10 +75,10 @@ describe("CostAggregator", () => {
     agg.record(makeEvent({ agentName: "claude", costUsd: 0.002 }));
     agg.record(makeEvent({ agentName: "codex", costUsd: 0.005 }));
     const by = agg.byAgent();
-    expect(by["claude"].callCount).toBe(2);
-    expect(by["claude"].totalCostUsd).toBeCloseTo(0.003);
-    expect(by["codex"].callCount).toBe(1);
-    expect(by["codex"].totalCostUsd).toBeCloseTo(0.005);
+    expect(by.claude.callCount).toBe(2);
+    expect(by.claude.totalCostUsd).toBeCloseTo(0.003);
+    expect(by.codex.callCount).toBe(1);
+    expect(by.codex.totalCostUsd).toBeCloseTo(0.005);
   });
 
   test("byStage() groups events by stage", () => {
@@ -87,9 +87,9 @@ describe("CostAggregator", () => {
     agg.record(makeEvent({ stage: "verify", costUsd: 0.02 }));
     agg.record(makeEvent({ stage: undefined }));
     const by = agg.byStage();
-    expect(by["run"].callCount).toBe(1);
-    expect(by["verify"].callCount).toBe(1);
-    expect(by["unknown"].callCount).toBe(1);
+    expect(by.run.callCount).toBe(1);
+    expect(by.verify.callCount).toBe(1);
+    expect(by.unknown.callCount).toBe(1);
   });
 
   test("byStory() groups events by storyId", () => {
@@ -285,7 +285,7 @@ describe("CostAggregator", () => {
     expect(by["scope-A"].totalCostUsd).toBeCloseTo(0.03);
     expect(by["scope-B"].callCount).toBe(1);
     expect(by["scope-B"].totalCostUsd).toBeCloseTo(0.05);
-    expect(by["unknown"]).toBeUndefined();
+    expect(by.unknown).toBeUndefined();
   });
 
   // --- AC4: byCall ---
@@ -378,10 +378,10 @@ describe("CostAggregator", () => {
     await agg1.drain();
     expect(warnCalls1.length).toBeGreaterThanOrEqual(1);
     const drainWarn = warnCalls1.find(
-      ([, , data]) => typeof (data as Record<string, unknown>)["openScopeCount"] === "number",
+      ([, , data]) => typeof (data as Record<string, unknown>).openScopeCount === "number",
     );
     expect(drainWarn).toBeDefined();
-    expect((drainWarn![2] as Record<string, unknown>)["openScopeCount"]).toBe(1);
+    expect((drainWarn![2] as Record<string, unknown>).openScopeCount).toBe(1);
 
     // Scenario 2: closed scope → no warn with openScopeCount
     const warnCalls2: Array<Record<string, unknown>> = [];
@@ -396,7 +396,7 @@ describe("CostAggregator", () => {
     const agg2 = new CostAggregator("r-001", "/tmp/drain");
     agg2.openScope("closed-scope").close();
     await agg2.drain();
-    expect(warnCalls2.find((d) => typeof d["openScopeCount"] === "number")).toBeUndefined();
+    expect(warnCalls2.find((d) => typeof d.openScopeCount === "number")).toBeUndefined();
 
     _costAggDeps.getSafeLogger = origGetSafeLogger;
     _costAggDeps.write = origWrite;

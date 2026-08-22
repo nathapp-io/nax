@@ -18,8 +18,8 @@ describe("AGENT_PROFILES", () => {
   });
 
   test("claude >= 128_000 and codex >= 64_000 maxContextTokens", () => {
-    expect(AGENT_PROFILES["claude"]!.caps.maxContextTokens).toBeGreaterThanOrEqual(128_000);
-    expect(AGENT_PROFILES["codex"]!.caps.maxContextTokens).toBeGreaterThanOrEqual(64_000);
+    expect(AGENT_PROFILES.claude!.caps.maxContextTokens).toBeGreaterThanOrEqual(128_000);
+    expect(AGENT_PROFILES.codex!.caps.maxContextTokens).toBeGreaterThanOrEqual(64_000);
   });
 
   test.each([
@@ -37,8 +37,8 @@ describe("AGENT_PROFILES", () => {
   });
 
   test("claude and codex supportsToolCalls is true", () => {
-    expect(AGENT_PROFILES["claude"]!.caps.supportsToolCalls).toBe(true);
-    expect(AGENT_PROFILES["codex"]!.caps.supportsToolCalls).toBe(true);
+    expect(AGENT_PROFILES.claude!.caps.supportsToolCalls).toBe(true);
+    expect(AGENT_PROFILES.codex!.caps.supportsToolCalls).toBe(true);
   });
 
   test("all profiles have preferredPromptTokens > 0", () => {
@@ -99,11 +99,11 @@ describe("AGENT_PROFILES — #508-H6 AC-27 built-in profiles", () => {
   });
 
   test("gemini has positive maxContextTokens", () => {
-    expect(AGENT_PROFILES["gemini"]?.caps.maxContextTokens).toBeGreaterThan(0);
+    expect(AGENT_PROFILES.gemini?.caps.maxContextTokens).toBeGreaterThan(0);
   });
 
   test("local toolSchemaDialect is none and supportsToolCalls is false", () => {
-    expect(AGENT_PROFILES["local"]?.caps.toolSchemaDialect).toBe("none");
-    expect(AGENT_PROFILES["local"]?.caps.supportsToolCalls).toBe(false);
+    expect(AGENT_PROFILES.local?.caps.toolSchemaDialect).toBe("none");
+    expect(AGENT_PROFILES.local?.caps.supportsToolCalls).toBe(false);
   });
 });

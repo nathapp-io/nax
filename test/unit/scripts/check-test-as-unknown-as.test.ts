@@ -45,11 +45,7 @@ describe("scanAsUnknownAs", () => {
   });
 
   test("an allow marker on the preceding line suppresses the cast", async () => {
-    write(
-      root,
-      "test/unit/a.test.ts",
-      "// test-ratchet-allow: as-unknown-as\nconst x = foo as unknown as Bar;\n",
-    );
+    write(root, "test/unit/a.test.ts", "// test-ratchet-allow: as-unknown-as\nconst x = foo as unknown as Bar;\n");
     expect((await scanAsUnknownAs(root)).count).toBe(0);
   });
 

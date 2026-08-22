@@ -155,7 +155,7 @@ describe("semanticReviewOp.parse()", () => {
   });
   test("parses fence-wrapped JSON response", () => {
     const ctx = makeBuildCtx();
-    const json = "```json\n" + JSON.stringify({ passed: true, findings: [] }) + "\n```";
+    const json = `\`\`\`json\n${JSON.stringify({ passed: true, findings: [] })}\n\`\`\``;
     const result = semanticReviewOp.parse(json, SAMPLE_INPUT, ctx);
     expect(result.passed).toBe(true);
     expect(result.failOpen).toBeUndefined();

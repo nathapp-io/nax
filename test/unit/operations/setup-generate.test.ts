@@ -45,7 +45,7 @@ function makeMonoAnalysis(packageCount: number): RepoAnalysis {
 }
 
 function fenced(config: unknown): string {
-  return "```json\n" + JSON.stringify({ config }) + "\n```";
+  return `\`\`\`json\n${JSON.stringify({ config })}\n\`\`\``;
 }
 
 // ─── AC1: parse returns SetupPlan with valid config ───────────────────────────
@@ -133,16 +133,13 @@ describe("setupGenerateOp.parse — AC6 ext: mono monoConfigs uses LLM per-packa
     const pkg0Config = makeNaxConfig({ execution: { maxIterations: 11 } });
     const pkg1Config = makeNaxConfig({ execution: { maxIterations: 22 } });
 
-    const output =
-      "```json\n" +
-      JSON.stringify({
-        config: {},
-        monoConfigs: [
-          { relativeDir: "packages/pkg-0", config: pkg0Config },
-          { relativeDir: "packages/pkg-1", config: pkg1Config },
-        ],
-      }) +
-      "\n```";
+    const output = `\`\`\`json\n${JSON.stringify({
+      config: {},
+      monoConfigs: [
+        { relativeDir: "packages/pkg-0", config: pkg0Config },
+        { relativeDir: "packages/pkg-1", config: pkg1Config },
+      ],
+    })}\n\`\`\``;
 
     const result = setupGenerateOp.parse(output, analysis, NO_BUILD_CTX);
     expect(result.monoConfigs).toHaveLength(2);

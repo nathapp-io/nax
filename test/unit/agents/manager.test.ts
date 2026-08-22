@@ -167,7 +167,7 @@ describe("AgentManager.nextCandidate (Phase 4)", () => {
 
   test("filters pruned candidates", () => {
     const m = makeManager({ map: { claude: ["codex", "gemini"] } });
-    m["_prunedFallback"].add("codex");
+    m._prunedFallback.add("codex");
     expect(m.nextCandidate("claude", 0)).toBe("gemini");
   });
 
@@ -247,7 +247,7 @@ describe("AgentManager — middleware envelope", () => {
       await manager.runAs("claude", { runOptions: { prompt: "test", workdir: "/tmp" } as never });
     } catch {}
     expect(capturedPerms).toBeDefined();
-    expect(typeof capturedPerms!["mode"]).toBe("string");
+    expect(typeof capturedPerms!.mode).toBe("string");
   });
 
   test("runAs() re-throws adapter errors (middleware onError no longer invoked — ADR-020 Wave 1)", async () => {

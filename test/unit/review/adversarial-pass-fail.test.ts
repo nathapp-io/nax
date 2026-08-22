@@ -502,7 +502,6 @@ describe("runAdversarialReview — recurrence demotion (parity with op verify())
           message: "No error handling on login",
         },
       ],
-      // biome-ignore lint/suspicious/noExplicitAny: minimal Iteration/Finding shape for fingerprint matching
     })) as any;
 
     const result = await runAdversarialReview({

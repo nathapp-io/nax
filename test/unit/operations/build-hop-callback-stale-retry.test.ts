@@ -57,9 +57,7 @@ beforeEach(() => {
   origCreateContextToolRuntime = _buildHopCallbackDeps.createContextToolRuntime;
   origRebuildForAgent = _buildHopCallbackDeps.rebuildForAgent;
   // Suppress context tool runtime creation — not relevant to session reuse tests.
-  // biome-ignore lint/suspicious/noExplicitAny: test stub
   _buildHopCallbackDeps.createContextToolRuntime = () => undefined as any;
-  // biome-ignore lint/suspicious/noExplicitAny: test stub
   _buildHopCallbackDeps.rebuildForAgent = (prior) => prior as any;
 });
 

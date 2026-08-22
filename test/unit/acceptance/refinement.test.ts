@@ -176,7 +176,7 @@ describe("parseRefinementResponse — truncated array recovery", () => {
 
   test("recovers array with trailing comma before missing ] (common LLM pattern)", () => {
     const items = makeItems(criteria);
-    const withTrailingComma = JSON.stringify(items).slice(0, -1) + ","; // strip ] then add ,
+    const withTrailingComma = `${JSON.stringify(items).slice(0, -1)},`; // strip ] then add ,
     const result = parseRefinementResponse(withTrailingComma, criteria);
     expect(result).toHaveLength(criteria.length);
   });

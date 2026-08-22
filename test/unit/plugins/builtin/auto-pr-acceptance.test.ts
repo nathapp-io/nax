@@ -281,7 +281,7 @@ describe("autoPrPlugin.execute", () => {
 
     const ctx = makeContext();
     let threw = false;
-    let result;
+    let result: Awaited<ReturnType<NonNullable<typeof autoPrPlugin.extensions.postRunAction>["execute"]>> | undefined;
     try {
       result = await autoPrPlugin.extensions.postRunAction!.execute(ctx);
     } catch {
@@ -331,7 +331,7 @@ describe("autoPrPlugin.execute", () => {
       },
     });
 
-    let result;
+    let result: Awaited<ReturnType<NonNullable<typeof autoPrPlugin.extensions.postRunAction>["execute"]>> | undefined;
     let threw = false;
     try {
       result = await autoPrPlugin.extensions.postRunAction!.execute(ctx);

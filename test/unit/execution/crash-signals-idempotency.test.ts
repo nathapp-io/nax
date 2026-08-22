@@ -38,7 +38,6 @@ describe("crash-signals idempotency", () => {
     // Prevent the real process.exit from killing the test runner.
     (process as unknown as { exit: (code?: number) => never }).exit = ((code?: number) => {
       exitCalls.push(code ?? 0);
-      // biome-ignore lint/correctness/noPrecisionLoss: no-op in tests
       return undefined as never;
     }) as typeof process.exit;
   });

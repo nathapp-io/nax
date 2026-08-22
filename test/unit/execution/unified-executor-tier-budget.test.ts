@@ -135,16 +135,16 @@ describe("US-003 AC-9: sequential executor invokes preIterationTierCheck once be
 
   beforeEach(() => {
     const deps = depsView()._unifiedExecutorDeps;
-    origPreIterationTierCheck = deps["preIterationTierCheck"];
-    origRunIteration = deps["runIteration"];
-    origSelectIndependentBatch = deps["selectIndependentBatch"];
+    origPreIterationTierCheck = deps.preIterationTierCheck;
+    origRunIteration = deps.runIteration;
+    origSelectIndependentBatch = deps.selectIndependentBatch;
   });
 
   afterEach(() => {
     const deps = depsView()._unifiedExecutorDeps;
-    deps["preIterationTierCheck"] = origPreIterationTierCheck;
-    deps["runIteration"] = origRunIteration;
-    deps["selectIndependentBatch"] = origSelectIndependentBatch;
+    deps.preIterationTierCheck = origPreIterationTierCheck;
+    deps.runIteration = origRunIteration;
+    deps.selectIndependentBatch = origSelectIndependentBatch;
     mock.restore();
   });
 
@@ -169,10 +169,10 @@ describe("US-003 AC-9: sequential executor invokes preIterationTierCheck once be
     );
 
     const deps = depsView()._unifiedExecutorDeps;
-    deps["preIterationTierCheck"] = preIterationTierCheckMock;
-    deps["runIteration"] = runIterationMock;
+    deps.preIterationTierCheck = preIterationTierCheckMock;
+    deps.runIteration = runIterationMock;
     // Force the sequential path: parallelCount undefined, batch selector returns [].
-    deps["selectIndependentBatch"] = mock(() => []);
+    deps.selectIndependentBatch = mock(() => []);
 
     const prd = makePrd([story]);
     const ctx = makeCtx({ parallelCount: undefined });
@@ -203,16 +203,16 @@ describe("US-003 AC-10: sequential executor skips runIteration when shouldSkipIt
 
   beforeEach(() => {
     const deps = depsView()._unifiedExecutorDeps;
-    origPreIterationTierCheck = deps["preIterationTierCheck"];
-    origRunIteration = deps["runIteration"];
-    origSelectIndependentBatch = deps["selectIndependentBatch"];
+    origPreIterationTierCheck = deps.preIterationTierCheck;
+    origRunIteration = deps.runIteration;
+    origSelectIndependentBatch = deps.selectIndependentBatch;
   });
 
   afterEach(() => {
     const deps = depsView()._unifiedExecutorDeps;
-    deps["preIterationTierCheck"] = origPreIterationTierCheck;
-    deps["runIteration"] = origRunIteration;
-    deps["selectIndependentBatch"] = origSelectIndependentBatch;
+    deps.preIterationTierCheck = origPreIterationTierCheck;
+    deps.runIteration = origRunIteration;
+    deps.selectIndependentBatch = origSelectIndependentBatch;
     mock.restore();
   });
 
@@ -234,9 +234,9 @@ describe("US-003 AC-10: sequential executor skips runIteration when shouldSkipIt
     });
 
     const deps = depsView()._unifiedExecutorDeps;
-    deps["preIterationTierCheck"] = preIterationTierCheckMock;
-    deps["runIteration"] = runIterationMock;
-    deps["selectIndependentBatch"] = mock(() => []);
+    deps.preIterationTierCheck = preIterationTierCheckMock;
+    deps.runIteration = runIterationMock;
+    deps.selectIndependentBatch = mock(() => []);
 
     const prd = makePrd([story]);
     const ctx = makeCtx({ parallelCount: undefined });
@@ -261,16 +261,16 @@ describe("US-003 AC-11: batch executor invokes preIterationTierCheck once per ba
 
   beforeEach(() => {
     const deps = depsView()._unifiedExecutorDeps;
-    origPreIterationTierCheck = deps["preIterationTierCheck"];
-    origRunParallelBatch = deps["runParallelBatch"];
-    origSelectIndependentBatch = deps["selectIndependentBatch"];
+    origPreIterationTierCheck = deps.preIterationTierCheck;
+    origRunParallelBatch = deps.runParallelBatch;
+    origSelectIndependentBatch = deps.selectIndependentBatch;
   });
 
   afterEach(() => {
     const deps = depsView()._unifiedExecutorDeps;
-    deps["preIterationTierCheck"] = origPreIterationTierCheck;
-    deps["runParallelBatch"] = origRunParallelBatch;
-    deps["selectIndependentBatch"] = origSelectIndependentBatch;
+    deps.preIterationTierCheck = origPreIterationTierCheck;
+    deps.runParallelBatch = origRunParallelBatch;
+    deps.selectIndependentBatch = origSelectIndependentBatch;
     mock.restore();
   });
 
@@ -300,9 +300,9 @@ describe("US-003 AC-11: batch executor invokes preIterationTierCheck once per ba
     });
 
     const deps = depsView()._unifiedExecutorDeps;
-    deps["preIterationTierCheck"] = preIterationTierCheckMock;
-    deps["runParallelBatch"] = runParallelBatchMock;
-    deps["selectIndependentBatch"] = mock(() => [story1, story2, story3]);
+    deps.preIterationTierCheck = preIterationTierCheckMock;
+    deps.runParallelBatch = runParallelBatchMock;
+    deps.selectIndependentBatch = mock(() => [story1, story2, story3]);
 
     const prd = makePrd([story1, story2, story3]);
     const ctx = makeCtx({ parallelCount: 3 });
@@ -343,16 +343,16 @@ describe("US-003: batch executor excludes shouldSkipIteration stories from dispa
 
   beforeEach(() => {
     const deps = depsView()._unifiedExecutorDeps;
-    origPreIterationTierCheck = deps["preIterationTierCheck"];
-    origRunParallelBatch = deps["runParallelBatch"];
-    origSelectIndependentBatch = deps["selectIndependentBatch"];
+    origPreIterationTierCheck = deps.preIterationTierCheck;
+    origRunParallelBatch = deps.runParallelBatch;
+    origSelectIndependentBatch = deps.selectIndependentBatch;
   });
 
   afterEach(() => {
     const deps = depsView()._unifiedExecutorDeps;
-    deps["preIterationTierCheck"] = origPreIterationTierCheck;
-    deps["runParallelBatch"] = origRunParallelBatch;
-    deps["selectIndependentBatch"] = origSelectIndependentBatch;
+    deps.preIterationTierCheck = origPreIterationTierCheck;
+    deps.runParallelBatch = origRunParallelBatch;
+    deps.selectIndependentBatch = origSelectIndependentBatch;
     mock.restore();
   });
 
@@ -378,9 +378,9 @@ describe("US-003: batch executor excludes shouldSkipIteration stories from dispa
     });
 
     const deps = depsView()._unifiedExecutorDeps;
-    deps["preIterationTierCheck"] = preIterationTierCheckMock;
-    deps["runParallelBatch"] = runParallelBatchMock;
-    deps["selectIndependentBatch"] = mock(() => [story1, story2, story3]);
+    deps.preIterationTierCheck = preIterationTierCheckMock;
+    deps.runParallelBatch = runParallelBatchMock;
+    deps.selectIndependentBatch = mock(() => [story1, story2, story3]);
 
     const prd = makePrd([story1, story2, story3]);
     const ctx = makeCtx({ parallelCount: 3 });
@@ -414,9 +414,9 @@ describe("US-003: batch executor excludes shouldSkipIteration stories from dispa
     }));
 
     const deps = depsView()._unifiedExecutorDeps;
-    deps["preIterationTierCheck"] = preIterationTierCheckMock;
-    deps["runParallelBatch"] = runParallelBatchMock;
-    deps["selectIndependentBatch"] = mock(() => [story1, story2]);
+    deps.preIterationTierCheck = preIterationTierCheckMock;
+    deps.runParallelBatch = runParallelBatchMock;
+    deps.selectIndependentBatch = mock(() => [story1, story2]);
 
     const prd = makePrd([story1, story2]);
     const ctx = makeCtx({ parallelCount: 2 });

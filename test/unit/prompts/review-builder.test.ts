@@ -85,7 +85,7 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt()", () => {
   describe("diff block", () => {
     test("diff is included verbatim in a fenced code block", () => {
       const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
-      expect(result).toContain("```diff\n" + DIFF);
+      expect(result).toContain(`\`\`\`diff\n${DIFF}`);
     });
   });
 

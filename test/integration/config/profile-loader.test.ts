@@ -216,7 +216,7 @@ describe("loadConfig — profile activation (US-002)", () => {
 
   // AC 9: companion .env file values do not modify process.env after loadConfig() returns
   test("companion .env file values do not persist in process.env after loadConfig returns", async () => {
-    const envKey = "NAX_TEST_PROFILE_SECRET_" + Date.now();
+    const envKey = `NAX_TEST_PROFILE_SECRET_${Date.now()}`;
 
     // Create a fast profile with a companion .env file
     writeJson(join(globalDir, "profiles", "fast.json"), {});

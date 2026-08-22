@@ -157,7 +157,9 @@ describe("logger redaction in JSONL output", () => {
     expect(lines).toHaveLength(400);
     expect(lines.map((l) => JSON.parse(l).message)).toEqual(Array.from({ length: 400 }, (_, i) => `entry-${i}`));
     // Every line must be complete JSON — a split batch would leave a torn line.
-    expect(() => lines.forEach((l) => JSON.parse(l))).not.toThrow();
+    expect(() => {
+      for (const l of lines) JSON.parse(l);
+    }).not.toThrow();
   });
 
   test("redacts nested secret keys", async () => {

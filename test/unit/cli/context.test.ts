@@ -46,6 +46,7 @@ function makeEntry(stage: string, overrides: Partial<StoredContextManifest["mani
 
 function stripAnsi(s: string): string {
   // eslint-disable-next-line no-control-regex
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: ESC is the point — this strips ANSI colour codes
   return s.replace(/\x1B\[[0-9;]*m/g, "");
 }
 

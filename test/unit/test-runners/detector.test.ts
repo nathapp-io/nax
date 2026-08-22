@@ -53,7 +53,7 @@ describe("buildTestFrameworkHint", () => {
 
 describe("detectFramework — rust & mocha", () => {
   test("detects cargo test result line as rust", () => {
-    const output = `test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s`;
+    const output = "test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s";
     expect(detectFramework(output)).toBe("rust");
   });
 

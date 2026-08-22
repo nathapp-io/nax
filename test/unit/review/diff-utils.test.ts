@@ -188,7 +188,7 @@ describe("truncateDiff()", () => {
   });
 
   test("truncates when over DIFF_CAP_BYTES; includes stat preamble when provided; omits when absent", () => {
-    const largeDiff = "diff --git a/foo.ts b/foo.ts\n" + "x".repeat(DIFF_CAP_BYTES + 1000);
+    const largeDiff = `diff --git a/foo.ts b/foo.ts\n${"x".repeat(DIFF_CAP_BYTES + 1000)}`;
 
     const noStat = truncateDiff(largeDiff);
     expect(noStat.length).toBeLessThan(largeDiff.length);

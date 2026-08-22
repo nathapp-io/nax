@@ -659,7 +659,6 @@ describe("US-002: handleRunCompletion — manifest retention sweep", () => {
     });
   }
 
-  // biome-ignore lint/suspicious/noExplicitAny: spy type varies by mock helper
   let loggerSpy: any;
 
   beforeEach(() => {

@@ -249,7 +249,6 @@ describe("planCommand callOp migration (US-003)", () => {
     };
 
     const origInitChain = _planDeps.initInteractionChain;
-    // biome-ignore lint/suspicious/noExplicitAny: Mock object for testing
     _planDeps.initInteractionChain = mock(async () => mockChain as any);
 
     try {

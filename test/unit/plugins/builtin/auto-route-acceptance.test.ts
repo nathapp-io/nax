@@ -310,7 +310,9 @@ describe("autoRoutePlugin.execute", () => {
       },
     });
 
-    let result;
+    let result:
+      | Awaited<ReturnType<NonNullable<typeof autoRoutePlugin.extensions.postRunAction>["execute"]>>
+      | undefined;
     let threw = false;
     try {
       result = await autoRoutePlugin.extensions.postRunAction!.execute(ctx);

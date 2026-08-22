@@ -3,8 +3,8 @@ import { _bunDeps, mapSourceToTests } from "@/verification/smart-runner";
 
 describe("mapSourceToTests", () => {
   test("runs candidate existence checks concurrently", async () => {
-    let active = 0,
-      maxActive = 0;
+    let active = 0;
+    let maxActive = 0;
     const origFile = _bunDeps.file;
     _bunDeps.file = ((p: string) => ({
       async exists() {

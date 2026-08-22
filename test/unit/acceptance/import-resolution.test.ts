@@ -216,7 +216,7 @@ use std::collections::HashMap;
   });
 
   test("caps super/self at one segment past the root for deeper paths", () => {
-    const content = `use super::a::b::c;`;
+    const content = "use super::a::b::c;";
     // Best-effort, no parent-dir traversal: only the first segment is kept,
     // unlike crate:: which keeps the full chain.
     expect(parseRustUses(content)).toEqual(["super::a"]);

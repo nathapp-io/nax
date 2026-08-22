@@ -454,7 +454,7 @@ describe("DebateRunner.runPlan()", () => {
     });
     _debateSessionDeps.readFile = mock(async () => '{"userStories":[]}');
 
-    const specContent = `# My Feature\n## Stories\n### US-001\n**AC:**\n- AC one\n- AC two`;
+    const specContent = "# My Feature\n## Stories\n### US-001\n**AC:**\n- AC one\n- AC two";
     const makeRunner = (storyId: string) =>
       new DebateRunner({
         ctx: makeCallCtxWithIds(storyId, agentManager, sm, config),

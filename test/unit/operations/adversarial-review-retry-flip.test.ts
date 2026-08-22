@@ -11,8 +11,6 @@
  * - parse phase runs on final output with looksLikeFail detection
  */
 
-/* biome-ignore lint/suspicious/noExplicitAny: test mocking and type compatibility */
-
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import type { AgentRunRequest } from "@/agents";
 import { ParseValidationError } from "@/agents";

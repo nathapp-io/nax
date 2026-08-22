@@ -277,7 +277,7 @@ describe("Integration: 6 roles with no override — story title and AC present",
 
 describe("Structural: call sites migrated away from old prompt functions", () => {
   test("session-runner.ts deleted; prompt.ts uses PromptBuilder not old functions", async () => {
-    const { existsSync } = require("fs");
+    const { existsSync } = require("node:fs");
     expect(existsSync(new URL("../../../src/tdd/session-runner.ts", import.meta.url).pathname)).toBe(false);
 
     const promptSrc = await Bun.file(

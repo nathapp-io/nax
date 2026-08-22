@@ -114,7 +114,7 @@ describe("Tier 1 — vitest config", () => {
 
   test("falls through to Tier 2 when vitest config has no extractable include", async () => {
     _frameworkConfigDeps.readText = mock(async (path: string) => {
-      if (path.endsWith("vitest.config.ts")) return `export default defineConfig({})`;
+      if (path.endsWith("vitest.config.ts")) return "export default defineConfig({})";
       return null;
     });
     _frameworkDefaultsDeps.readText = mock(async (path: string) => {
@@ -408,7 +408,7 @@ describe("Tier 3 — file scan", () => {
     _frameworkConfigDeps.readText = mock(async () => null);
     _frameworkDefaultsDeps.readText = mock(async () => null);
 
-    const files = "src/a.test.ts\nsrc/b.test.ts\n" + Array.from({ length: 50 }, (_, i) => `src/f${i}.ts`).join("\n");
+    const files = `src/a.test.ts\nsrc/b.test.ts\n${Array.from({ length: 50 }, (_, i) => `src/f${i}.ts`).join("\n")}`;
     _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput(files)) as unknown as typeof Bun.spawn;
     _directoryScanDeps.dirExists = mock(async () => false);
 

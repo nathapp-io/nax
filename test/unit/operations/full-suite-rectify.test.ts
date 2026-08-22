@@ -364,7 +364,6 @@ describe("makeRepoScopedTestFixStrategy — change attribution", () => {
   afterEach(() => Object.assign(_repoScopedFixDeps, origDeps));
 
   const output = { applied: true, testEditDeclarations: [] } as FullSuiteRectifyOutput;
-  // biome-ignore lint/suspicious/noExplicitAny: only packageDir is read by buildInput
   const ctx = { packageDir: "/repo" } as any;
 
   test("reports the files changed since the ref captured before the dispatch", async () => {

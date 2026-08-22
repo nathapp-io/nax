@@ -34,14 +34,14 @@ describe("execution.rectification.storyScopedFixBudget (US-004)", () => {
     const config = NaxConfigSchema.parse({});
     const execution = config.execution as Record<string, unknown>;
     const rectification = execution.rectification as Record<string, unknown>;
-    expect(rectification["storyScopedFixBudget"]).toBe(true);
+    expect(rectification.storyScopedFixBudget).toBe(true);
   });
 
   test("[US-004 AC 1] defaults to true when execution.rectification is set without storyScopedFixBudget", () => {
     const config = NaxConfigSchema.parse(rectificationConfig({ enabled: true }));
     const execution = config.execution as Record<string, unknown>;
     const rectification = execution.rectification as Record<string, unknown>;
-    expect(rectification["storyScopedFixBudget"]).toBe(true);
+    expect(rectification.storyScopedFixBudget).toBe(true);
   });
 
   test("[US-004 AC 3] string value 'yes' is rejected without coercion", () => {
@@ -101,6 +101,6 @@ describe("execution.rectification.storyScopedFixBudget — layered resolution (U
 
     const execution = config.execution as Record<string, unknown>;
     const rectification = execution.rectification as Record<string, unknown>;
-    expect(rectification["storyScopedFixBudget"]).toBe(false);
+    expect(rectification.storyScopedFixBudget).toBe(false);
   });
 });

@@ -92,8 +92,8 @@ describe("DebateRunner.run() — critique rounds (rounds === 2)", () => {
 
     await runner.run("test prompt");
 
-    expect(callCounts["claude"]).toBe(2);
-    expect(callCounts["opencode"]).toBe(2);
+    expect(callCounts.claude).toBe(2);
+    expect(callCounts.opencode).toBe(2);
   });
 
   test("claude's critique prompt contains opencode's proposal", async () => {
@@ -125,7 +125,7 @@ describe("DebateRunner.run() — critique rounds (rounds === 2)", () => {
 
     await runner.run("test prompt");
 
-    const claudeRound2Prompt = promptsByAgent["claude"]?.[1];
+    const claudeRound2Prompt = promptsByAgent.claude?.[1];
     expect(claudeRound2Prompt).toBeDefined();
     expect(claudeRound2Prompt).toContain("proposal from opencode");
   });
@@ -159,7 +159,7 @@ describe("DebateRunner.run() — critique rounds (rounds === 2)", () => {
 
     await runner.run("test prompt");
 
-    const opencodeRound2Prompt = promptsByAgent["opencode"]?.[1];
+    const opencodeRound2Prompt = promptsByAgent.opencode?.[1];
     expect(opencodeRound2Prompt).toBeDefined();
     expect(opencodeRound2Prompt).toContain("proposal from claude");
   });
@@ -193,7 +193,7 @@ describe("DebateRunner.run() — critique rounds (rounds === 2)", () => {
 
     await runner.run("test prompt");
 
-    const claudeRound2Prompt = promptsByAgent["claude"]?.[1];
+    const claudeRound2Prompt = promptsByAgent.claude?.[1];
     expect(claudeRound2Prompt).not.toContain("proposal from claude");
   });
 });
@@ -224,8 +224,8 @@ describe("DebateRunner.run() — no critique round (rounds === 1)", () => {
 
     await runner.run("test prompt");
 
-    expect(callCounts["claude"]).toBe(1);
-    expect(callCounts["opencode"]).toBe(1);
+    expect(callCounts.claude).toBe(1);
+    expect(callCounts.opencode).toBe(1);
   });
 });
 

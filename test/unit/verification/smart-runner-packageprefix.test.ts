@@ -16,7 +16,6 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mapSourceToTests } from "@/verification/smart-runner";
 
 function mockFileExists(existingPaths: string[]) {
-  // biome-ignore lint/suspicious/noExplicitAny: mocking Bun.file
   (Bun as any).file = (path: string) => ({
     exists: () => Promise.resolve(existingPaths.includes(path)),
   });
@@ -30,7 +29,6 @@ describe("mapSourceToTests — packagePrefix (monorepo)", () => {
   });
 
   afterEach(() => {
-    // biome-ignore lint/suspicious/noExplicitAny: restoring original
     (Bun as any).file = originalFile;
   });
 
@@ -83,7 +81,6 @@ describe("mapSourceToTests — co-located test files (testFilePatterns)", () => 
   });
 
   afterEach(() => {
-    // biome-ignore lint/suspicious/noExplicitAny: restoring original
     (Bun as any).file = originalFile;
   });
 

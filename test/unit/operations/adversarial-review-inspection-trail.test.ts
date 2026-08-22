@@ -53,7 +53,6 @@ async function runHopBody(opts: {
       adversarialConfig: { ...ADVERSARIAL_CONFIG, ...opts.config },
       mode: opts.mode ?? "ref",
     },
-    // biome-ignore lint/suspicious/noExplicitAny: minimal HopBodyContext stub for unit test
   } as any);
   return { result, callCount };
 }
@@ -80,7 +79,6 @@ describe("adversarialReviewOp.hopBody — inspection-trail guard (#3A)", () => {
       send: mockSend,
       sendWithParseRetry: mockSend,
       input: { workdir: "/tmp", story: STORY, adversarialConfig: ADVERSARIAL_CONFIG, mode: "ref" },
-      // biome-ignore lint/suspicious/noExplicitAny: minimal HopBodyContext stub
     } as any);
     expect(secondPrompt).toBe(AdversarialReviewPromptBuilder.demandInspection());
   });

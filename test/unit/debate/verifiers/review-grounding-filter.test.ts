@@ -14,9 +14,7 @@ import type { PostDebateVerifierContext, PostDebateVerifierResult } from "@/deba
 import type { CallContext } from "@/operations/types";
 
 // Stub implementation placeholder
-export const reviewGroundingFilterVerifier = async (
-  _ctx: PostDebateVerifierContext,
-): Promise<PostDebateVerifierResult> => {
+const reviewGroundingFilterVerifier = async (_ctx: PostDebateVerifierContext): Promise<PostDebateVerifierResult> => {
   throw new Error("not implemented");
 };
 

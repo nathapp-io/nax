@@ -59,7 +59,7 @@ function makeObservation(kind: Observation["kind"], runId = "run-001", projectKe
 }
 
 function writeObservations(runDir: string, observations: Observation[]): void {
-  const content = observations.map((o) => JSON.stringify(o)).join("\n") + "\n";
+  const content = `${observations.map((o) => JSON.stringify(o)).join("\n")}\n`;
   writeFileSync(join(runDir, "observations.jsonl"), content);
 }
 
@@ -68,7 +68,7 @@ function writeProposalsMd(runDir: string, content: string): void {
 }
 
 function writeRollup(rollupPath: string, observations: Observation[]): void {
-  const content = observations.map((o) => JSON.stringify(o)).join("\n") + "\n";
+  const content = `${observations.map((o) => JSON.stringify(o)).join("\n")}\n`;
   mkdirSync(join(rollupPath, ".."), { recursive: true });
   writeFileSync(rollupPath, content);
 }

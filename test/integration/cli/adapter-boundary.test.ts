@@ -8,7 +8,7 @@
  */
 
 import { beforeAll, describe, expect, test } from "bun:test";
-import { join } from "path";
+import { join } from "node:path";
 
 const SRC_DIR = join(process.cwd(), "src");
 
@@ -61,7 +61,7 @@ describe("ADR-013 Phase 6 — new AgentManager() confinement", () => {
       if (file.includes("/test/")) continue;
       if (file.includes("/types/")) continue;
 
-      const relativePath = file.replace(SRC_DIR + "/", "");
+      const relativePath = file.replace(`${SRC_DIR}/`, "");
       if (NEW_AGENT_MANAGER_ALLOWED.has(relativePath)) continue;
 
       const content = await Bun.file(file).text();
@@ -103,7 +103,7 @@ describe("ADR-013 Phase 5 — adapter boundary enforcement", () => {
       if (file.includes("/test/")) continue;
       if (file.includes("/types/")) continue;
 
-      const relativePath = file.replace(SRC_DIR + "/", "");
+      const relativePath = file.replace(`${SRC_DIR}/`, "");
       if (ALLOWED_FILES.has(relativePath)) continue;
 
       const content = await Bun.file(file).text();

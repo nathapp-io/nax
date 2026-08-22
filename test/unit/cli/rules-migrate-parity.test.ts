@@ -25,7 +25,7 @@ beforeEach(() => {
   origGlobInDir = _rulesCLIDeps.globInDir;
   origMkdir = _rulesCLIDeps.mkdir;
 
-  Object.keys(written).forEach((k) => delete written[k]);
+  for (const k of Object.keys(written)) delete written[k];
 
   _rulesCLIDeps.readFile = async () => "";
   _rulesCLIDeps.writeFile = async (path, content) => {
@@ -80,7 +80,7 @@ describe("rulesMigrateCommand — dry-run / real-run parity", () => {
     _rulesCLIDeps.fileExists = async (p) => p === "/project/.nax/rules/project-conventions.md";
     _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
     const dryRun = await rulesMigrateCommand({ dir: "/project", force: true, dryRun: true });
-    Object.keys(written).forEach((k) => delete written[k]);
+    for (const k of Object.keys(written)) delete written[k];
     const realRun = await rulesMigrateCommand({ dir: "/project", force: true, dryRun: false });
     expect(new Set(dryRun.written)).toEqual(new Set(realRun.written));
   });
@@ -90,7 +90,7 @@ describe("rulesMigrateCommand — dry-run / real-run parity", () => {
     _rulesCLIDeps.fileExists = async (p) => p === "/project/.nax/rules/project-conventions.md";
     _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
     const dryRun = await rulesMigrateCommand({ dir: "/project", dryRun: true });
-    Object.keys(written).forEach((k) => delete written[k]);
+    for (const k of Object.keys(written)) delete written[k];
     const realRun = await rulesMigrateCommand({ dir: "/project", dryRun: false });
     expect(new Set(dryRun.skipped)).toEqual(new Set(realRun.skipped));
   });
@@ -120,7 +120,7 @@ describe("rulesMigrateCommand — dry-run / real-run parity", () => {
     } finally {
       console.log = originalLog;
     }
-    Object.keys(written).forEach((k) => delete written[k]);
+    for (const k of Object.keys(written)) delete written[k];
     const realRun = await rulesMigrateCommand({ dir: "/project", dryRun: false });
     const summary = lines.find((line) => /^\s*Dry run: \d+ file\(s\) would be written, \d+ skipped\.$/.test(line));
     expect(summary).toBeDefined();
@@ -136,7 +136,7 @@ describe("rulesMigrateCommand — dry-run / real-run parity", () => {
     _rulesCLIDeps.fileExists = async (p) => p === "/project/.nax/rules/project-conventions.md";
     _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
     const dryRun = await rulesMigrateCommand({ dir: "/project", dryRun: true });
-    Object.keys(written).forEach((k) => delete written[k]);
+    for (const k of Object.keys(written)) delete written[k];
     const realRun = await rulesMigrateCommand({ dir: "/project", dryRun: false });
     expect(dryRun.skipped).toContain("project-conventions.md");
     expect(realRun.skipped).toContain("project-conventions.md");
@@ -147,7 +147,7 @@ describe("rulesMigrateCommand — dry-run / real-run parity", () => {
     _rulesCLIDeps.fileExists = async (p) => p === "/project/.nax/rules/project-conventions.md";
     _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
     const dryRun = await rulesMigrateCommand({ dir: "/project", dryRun: true });
-    Object.keys(written).forEach((k) => delete written[k]);
+    for (const k of Object.keys(written)) delete written[k];
     const realRun = await rulesMigrateCommand({ dir: "/project", dryRun: false });
     expect(dryRun.written).not.toContain("project-conventions.md");
     expect(realRun.written).not.toContain("project-conventions.md");

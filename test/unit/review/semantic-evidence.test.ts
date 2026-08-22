@@ -332,7 +332,7 @@ describe("checkFindingEvidence — line-anchored window", () => {
   // anywhere in the file — line numbers could drift freely. These tests pin
   // the behaviour: the observed must appear within ±10 lines of the cited line.
   function makeMultiLineFile(): string {
-    return Array.from({ length: 60 }, (_, i) => `// line ${i + 1}`).join("\n") + "\n";
+    return `${Array.from({ length: 60 }, (_, i) => `// line ${i + 1}`).join("\n")}\n`;
   }
 
   test("matches when observed appears at the cited line", async () => {

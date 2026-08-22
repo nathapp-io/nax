@@ -22,7 +22,6 @@ afterEach(() => {
   _runSetupDeps.detectProjectProfile = undefined as never;
 });
 
-// biome-ignore lint/style/noNamespaceImport: cleanup after all tests
 import { afterAll } from "bun:test";
 import { makeTempDir } from "@test/helpers";
 afterAll(() => {

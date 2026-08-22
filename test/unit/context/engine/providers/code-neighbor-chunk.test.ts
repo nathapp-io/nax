@@ -276,7 +276,7 @@ describe("assembleCodeNeighborChunk — truncation contract (AC2: scope only wha
     // Make the second neighbour so long that the cap slice cuts through
     // its name. The first neighbour is fully in the body; the second's
     // full form is not.
-    const longB = "src/multi/b/" + "x".repeat(2000);
+    const longB = `src/multi/b/${"x".repeat(2000)}`;
     const sections: NeighborSection[] = [{ file: "src/multi.ts", neighbors: ["src/multi/a.ts", longB] }];
     const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
     expect(chunk.content.length).toBeLessThanOrEqual(2000);
@@ -297,7 +297,7 @@ describe("assembleCodeNeighborChunk — truncation contract (AC2: scope only wha
     // end-position is past the cap.
     const file = "src/svc.ts";
     const n1 = "src/foo/dep.ts"; // 15 chars, fully rendered
-    const n2 = "src/foo" + "x".repeat(1900); // 1907 chars, sliced mid-name
+    const n2 = `src/foo${"x".repeat(1900)}`; // 1907 chars, sliced mid-name
     const sections: NeighborSection[] = [{ file, neighbors: [n1, n2] }];
     const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
     expect(chunk.content.length).toBeLessThanOrEqual(2000);

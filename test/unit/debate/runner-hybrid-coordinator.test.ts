@@ -108,7 +108,7 @@ describe("runHybrid coordinator", () => {
     expect(proposalPromptSpy).toHaveBeenCalledTimes(3);
     expect(proposalPromptSpy.mock.calls.map(([index]) => index)).toEqual([0, 1, 2]);
     expect(result.proposals).toHaveLength(3);
-    expect(result.proposals.map((proposal) => proposal.output)).toEqual([`rebut-2-0`, `rebut-2-1`, `rebut-2-2`]);
+    expect(result.proposals.map((proposal) => proposal.output)).toEqual(["rebut-2-0", "rebut-2-1", "rebut-2-2"]);
     expect(result.rebuttals).toEqual([
       { debater: { agent: "claude", model: "fast" }, round: 1, output: "rebut-1-0" },
       { debater: { agent: "opencode", model: "fast" }, round: 1, output: "rebut-1-1" },

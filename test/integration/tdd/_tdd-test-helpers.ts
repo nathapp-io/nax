@@ -155,7 +155,7 @@ export function mockGitSpawn(opts: {
       diffCount++;
       return {
         exited: Promise.resolve(0),
-        stdout: mockResponse(files.join("\n") + "\n"),
+        stdout: mockResponse(`${files.join("\n")}\n`),
         stderr: mockResponse(""),
       };
     }
@@ -174,7 +174,7 @@ export function mockGitSpawn(opts: {
         // autoCommitIfDirty guard — return the workdir so it passes
         return {
           exited: Promise.resolve(0),
-          stdout: mockResponse((spawnOpts?.cwd ?? "/tmp/test") + "\n"),
+          stdout: mockResponse(`${spawnOpts?.cwd ?? "/tmp/test"}\n`),
           stderr: mockResponse(""),
         };
       }

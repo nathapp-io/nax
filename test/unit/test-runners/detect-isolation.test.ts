@@ -177,7 +177,7 @@ describe("Tier 1 unextractable config — honest fallback to Tier 2 defaults", (
     // best-effort fallback (better than emitting nothing and missing test files).
     _frameworkConfigDeps.readText = mock(async (path: string) => {
       if (path.endsWith("jest.config.js")) {
-        return `module.exports = { testRegex: /src\\/.*\\.unit\\.test\\.tsx?$/ }`;
+        return "module.exports = { testRegex: /src\\/.*\\.unit\\.test\\.tsx?$/ }";
       }
       return null;
     });
@@ -200,7 +200,7 @@ describe("Tier 1 unextractable config — honest fallback to Tier 2 defaults", (
     // Tier 1 yields no patterns, so Tier 2 defaults surface as best-effort fallback.
     _frameworkConfigDeps.readText = mock(async (path: string) => {
       if (path.endsWith("vitest.config.ts")) {
-        return `export default defineConfig({ test: { include: getIncludePatterns() } })`;
+        return "export default defineConfig({ test: { include: getIncludePatterns() } })";
       }
       return null;
     });
@@ -437,7 +437,7 @@ describe("jest config resolution precedence", () => {
     _frameworkConfigDeps.readText = mock(async (path: string) => {
       if (path.endsWith("jest.config.js")) {
         // No testMatch — just some other config
-        return `module.exports = { transform: {} }`;
+        return "module.exports = { transform: {} }";
       }
       if (path.endsWith("package.json")) {
         return JSON.stringify({ jest: { testMatch: ["src/**/*.unit.test.ts"] } });

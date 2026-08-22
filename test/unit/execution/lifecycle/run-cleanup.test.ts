@@ -344,7 +344,6 @@ describe("cleanupRun — action result logging", () => {
   let logInfoCalls: Array<[string, string, unknown]> = [];
   let logWarnCalls: Array<[string, string, unknown]> = [];
   let logDebugCalls: Array<[string, string, unknown]> = [];
-  // biome-ignore lint/suspicious/noExplicitAny: spy type varies
   let loggerSpy: any;
 
   function makeLogger() {
@@ -610,7 +609,6 @@ describe("runner-completion.ts — does not invoke post-run actions", () => {
           acceptance: { enabled: false },
           headless: { enabled: true },
           autoCommit: { enabled: false },
-          // biome-ignore lint/suspicious/noExplicitAny: minimal stub for test
         } as any,
         hooks: { hooks: [] } as import("@/hooks").LoadedHooksConfig,
         feature: "test-feat",

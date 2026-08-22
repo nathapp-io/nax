@@ -33,7 +33,6 @@ function mockScanner(result: ScannerResult) {
   _testCoverageProviderDeps.generateTestCoverageSummary = async () => result as any;
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: test stub — accepts partial shapes for convenience
 function mockResolvePatterns(result: any) {
   _testCoverageProviderDeps.resolveTestFilePatterns = async () => result;
 }

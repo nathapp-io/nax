@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { join } from "path";
+import { join } from "node:path";
 import type { Finding } from "@/findings/types";
 
 const BASE = join(import.meta.dir, "../../../src/operations");

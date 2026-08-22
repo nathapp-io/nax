@@ -79,21 +79,21 @@ describe("parseAcceptanceCriteria", () => {
   });
 
   test("extracts AC lines without list marker", () => {
-    const spec = `AC-1: Plain criterion\nAC-2: Another criterion`;
+    const spec = "AC-1: Plain criterion\nAC-2: Another criterion";
     const criteria = parseAcceptanceCriteria(spec);
     expect(criteria).toHaveLength(2);
     expect(criteria[0].id).toBe("AC-1");
   });
 
   test("handles checkbox-style AC lines", () => {
-    const spec = `- [ ] AC-1: Todo criterion\n- [x] AC-2: Done criterion`;
+    const spec = "- [ ] AC-1: Todo criterion\n- [x] AC-2: Done criterion";
     const criteria = parseAcceptanceCriteria(spec);
     expect(criteria).toHaveLength(2);
     expect(criteria[0].text).toBe("Todo criterion");
   });
 
   test("normalizes AC IDs to uppercase", () => {
-    const spec = `- ac-1: lowercase id`;
+    const spec = "- ac-1: lowercase id";
     const criteria = parseAcceptanceCriteria(spec);
     expect(criteria[0].id).toBe("AC-1");
   });

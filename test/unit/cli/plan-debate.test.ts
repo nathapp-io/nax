@@ -61,7 +61,7 @@ function makeMockPlanManager(runFn?: (runOptions: any) => Promise<any>) {
   });
 }
 
-const SAMPLE_SPEC = `# Feature: Debate Integration Test\n## Goal\nTest that debate is wired into plan.\n`;
+const SAMPLE_SPEC = "# Feature: Debate Integration Test\n## Goal\nTest that debate is wired into plan.\n";
 
 const SAMPLE_PRD: PRD = {
   project: "test-project",

@@ -479,15 +479,14 @@ describe("AC10 — correlation metadata flows from AcpClientOptions to session s
     _spawnClientDeps.spawn = (_cmd, _opts) => {
       callCount++;
       if (callCount === 1) return makeSpawnResult(0); // loadSession ensure
-      const ndjson =
-        JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          result: {
-            stopReason: "end_turn",
-            usage: { inputTokens: 1, outputTokens: 1, cachedReadTokens: 0, cachedWriteTokens: 0 },
-          },
-        }) + "\n";
+      const ndjson = `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        result: {
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1, cachedReadTokens: 0, cachedWriteTokens: 0 },
+        },
+      })}\n`;
       return makeSpawnResult(0, ndjson);
     };
 
@@ -521,28 +520,24 @@ describe("AC10 — correlation metadata flows from AcpClientOptions to session s
     _spawnClientDeps.spawn = (_cmd, _opts) => {
       callCount++;
       if (callCount === 1) return makeSpawnResult(0);
-      const ndjson =
-        JSON.stringify({
-          jsonrpc: "2.0",
-          method: "session/update",
-          params: {
-            sessionId: "x",
-            update: {
-              sessionUpdate: "tool_call",
-              toolName: "bash",
-            },
+      const ndjson = `${JSON.stringify({
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          sessionId: "x",
+          update: {
+            sessionUpdate: "tool_call",
+            toolName: "bash",
           },
-        }) +
-        "\n" +
-        JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          result: {
-            stopReason: "end_turn",
-            usage: { inputTokens: 1, outputTokens: 1, cachedReadTokens: 0, cachedWriteTokens: 0 },
-          },
-        }) +
-        "\n";
+        },
+      })}\n${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        result: {
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1, cachedReadTokens: 0, cachedWriteTokens: 0 },
+        },
+      })}\n`;
       return makeSpawnResult(0, ndjson);
     };
 

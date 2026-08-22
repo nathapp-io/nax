@@ -420,7 +420,7 @@ describe("hydrateFromResumePlan (AC4 + AC7)", () => {
     const phaseOutputs: Record<string, unknown> = {};
     hydrateFromResumePlan(plan, phaseOutputs);
 
-    const output = phaseOutputs["implementer"];
+    const output = phaseOutputs.implementer;
     expect(phasePassed("implementer", output, "US-001")).toBe(true);
   });
 
@@ -433,7 +433,7 @@ describe("hydrateFromResumePlan (AC4 + AC7)", () => {
     const phaseOutputs: Record<string, unknown> = {};
     hydrateFromResumePlan(plan, phaseOutputs);
 
-    const output = phaseOutputs["implementer"];
+    const output = phaseOutputs.implementer;
     expect(extractPhaseFindings(output)).toEqual([]);
   });
 

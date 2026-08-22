@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import { NaxError } from "@/errors";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { makeMockAgentManager, makeNaxConfig, makePRD } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

@@ -266,7 +266,7 @@ Only for agent files.`,
   // warns, and skips just that file — other valid rules still load.
   test.each([
     ["empty string paths", `---\npaths: ""\n---\nContent.`],
-    ["malformed frontmatter", `---\npriority: [not-a-number]\n---\nBroken`],
+    ["malformed frontmatter", "---\npriority: [not-a-number]\n---\nBroken"],
   ] as const)(
     "skips (does not throw for) a file with %s, warns, and keeps other valid rules",
     async (_label, content) => {

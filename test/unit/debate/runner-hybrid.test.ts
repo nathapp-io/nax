@@ -297,7 +297,7 @@ describe("DebateRunner hybrid mode — pre-opened sessions per debater (AC3)", (
     const sm = makeSessionManager({
       openSession: mock(async (name: string) => {
         openCalls.push(name);
-        return { id: "h-" + openCalls.length, agentName: "claude" };
+        return { id: `h-${openCalls.length}`, agentName: "claude" };
       }),
       closeSession: mock(async () => {
         closeCalls.push(1);

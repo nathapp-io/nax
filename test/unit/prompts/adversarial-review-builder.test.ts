@@ -115,7 +115,7 @@ describe("AdversarialReviewPromptBuilder — embedded mode", () => {
       diff: DIFF,
     });
 
-    expect(result).toContain("```diff\n" + DIFF);
+    expect(result).toContain(`\`\`\`diff\n${DIFF}`);
   });
 
   test("prompt includes untested source files from testInventory", () => {

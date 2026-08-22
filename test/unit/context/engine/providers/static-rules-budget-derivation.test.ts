@@ -163,7 +163,7 @@ describe("StaticRulesProvider — US-003 per-stage rules budget derivation", () 
     _staticRulesDeps.readFile = async () => "";
     _staticRulesDeps.globInDir = () => [];
     const provider = new StaticRulesProvider();
-    let result;
+    let result: Awaited<ReturnType<typeof provider.fetch>> | undefined;
     expect(async () => {
       result = await provider.fetch(BASE_REQUEST);
     }).not.toThrow();

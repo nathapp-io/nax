@@ -189,37 +189,37 @@ describe("generateMutants — whitespace-guard arithmetic (non-spaced tokens mus
   });
 
   test("AC4: spaced '-' on a real arithmetic expression mutates to '+'", () => {
-    const source = `const idx = line - 1;`;
+    const source = "const idx = line - 1;";
     const mutants = generateMutants({ source, language: "typescript", file: "idx.ts" });
     expect(mutants.some((m) => m.operatorId === "ts:arith-flip" && m.after === "const idx = line + 1;")).toBe(true);
   });
 
   test("AC5: spaced '+' mutates to '-'", () => {
-    const source = `const total = a + b;`;
+    const source = "const total = a + b;";
     const mutants = generateMutants({ source, language: "typescript", file: "total.ts" });
     expect(mutants.some((m) => m.operatorId === "ts:arith-flip" && m.after === "const total = a - b;")).toBe(true);
   });
 
   test("AC5b: every spaced '+' on a line mutates, not just the first", () => {
-    const source = `const total = a + b + c;`;
+    const source = "const total = a + b + c;";
     const mutants = generateMutants({ source, language: "typescript", file: "total.ts" });
     expect(mutants.some((m) => m.operatorId === "ts:arith-flip" && m.after === "const total = a - b - c;")).toBe(true);
   });
 
   test("AC6: spaced '/' mutates to '*'", () => {
-    const source = `const half = n / 2;`;
+    const source = "const half = n / 2;";
     const mutants = generateMutants({ source, language: "typescript", file: "half.ts" });
     expect(mutants.some((m) => m.operatorId === "ts:arith-flip" && m.after === "const half = n * 2;")).toBe(true);
   });
 
   test("AC7: spaced '*' mutates to '/'", () => {
-    const source = `const twice = n * 2;`;
+    const source = "const twice = n * 2;";
     const mutants = generateMutants({ source, language: "typescript", file: "twice.ts" });
     expect(mutants.some((m) => m.operatorId === "ts:arith-flip" && m.after === "const twice = n / 2;")).toBe(true);
   });
 
   test("AC8: Python spaced '+' mutates to '-'", () => {
-    const source = `y = a + b`;
+    const source = "y = a + b";
     const mutants = generateMutants({ source, language: "python", file: "f.py" });
     expect(mutants.some((m) => m.operatorId === "py:arith-flip" && m.after === "y = a - b")).toBe(true);
   });
@@ -231,13 +231,13 @@ describe("generateMutants — whitespace-guard arithmetic (non-spaced tokens mus
   });
 
   test("AC10: Go spaced '+' mutates to '-'", () => {
-    const source = `sum := a + b`;
+    const source = "sum := a + b";
     const mutants = generateMutants({ source, language: "go", file: "f.go" });
     expect(mutants.some((m) => m.operatorId === "go:arith-flip" && m.after === "sum := a - b")).toBe(true);
   });
 
   test("AC11: Rust spaced '+' mutates to '-'", () => {
-    const source = `let sum = a + b;`;
+    const source = "let sum = a + b;";
     const mutants = generateMutants({ source, language: "rust", file: "f.rs" });
     expect(mutants.some((m) => m.operatorId === "rust:arith-flip" && m.after === "let sum = a - b;")).toBe(true);
   });
@@ -249,7 +249,7 @@ describe("generateMutants — whitespace-guard arithmetic (non-spaced tokens mus
       `import { c } from "./c";`,
       `import { d } from "./d";`,
       `import { e } from "./e";`,
-      `const total = a + b;`,
+      "const total = a + b;",
     ];
     const source = `${lines.join("\n")}\n`;
     const mutants = generateMutants({ source, language: "typescript", file: "imports.ts" });
@@ -260,7 +260,7 @@ describe("generateMutants — whitespace-guard arithmetic (non-spaced tokens mus
   });
 
   test("AC13: two calls with identical inputs return deeply equal arrays", () => {
-    const source = `const x = a + b;\nconst y = c - d;\n`;
+    const source = "const x = a + b;\nconst y = c - d;\n";
     const first = generateMutants({ source, language: "typescript", file: "x.ts" });
     const second = generateMutants({ source, language: "typescript", file: "x.ts" });
     expect(second).toEqual(first);

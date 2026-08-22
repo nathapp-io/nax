@@ -52,7 +52,7 @@ describe("runQualityCommand env stripping", () => {
       stripEnvVars: ["AWS_SECRET_ACCESS_KEY"],
     });
 
-    expect(getLastEnv()["AWS_SECRET_ACCESS_KEY"]).toBeUndefined();
+    expect(getLastEnv().AWS_SECRET_ACCESS_KEY).toBeUndefined();
   });
 
   test("passes env unchanged when no stripEnvVars provided", async () => {
@@ -66,7 +66,7 @@ describe("runQualityCommand env stripping", () => {
       workdir: "/tmp",
     });
 
-    expect(getLastEnv()["MY_VAR"]).toBe("keep-me");
+    expect(getLastEnv().MY_VAR).toBe("keep-me");
   });
 
   test("strips multiple vars when multiple are configured", async () => {
@@ -82,8 +82,8 @@ describe("runQualityCommand env stripping", () => {
       stripEnvVars: ["AWS_SECRET_ACCESS_KEY", "MY_VAR"],
     });
 
-    expect(getLastEnv()["AWS_SECRET_ACCESS_KEY"]).toBeUndefined();
-    expect(getLastEnv()["MY_VAR"]).toBeUndefined();
+    expect(getLastEnv().AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    expect(getLastEnv().MY_VAR).toBeUndefined();
   });
 
   test("env override still applies after stripping", async () => {
@@ -99,7 +99,7 @@ describe("runQualityCommand env stripping", () => {
       env: { OVERRIDE_VAR: "override-value" },
     });
 
-    expect(getLastEnv()["AWS_SECRET_ACCESS_KEY"]).toBeUndefined();
-    expect(getLastEnv()["OVERRIDE_VAR"]).toBe("override-value");
+    expect(getLastEnv().AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    expect(getLastEnv().OVERRIDE_VAR).toBe("override-value");
   });
 });

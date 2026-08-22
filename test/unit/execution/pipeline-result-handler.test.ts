@@ -245,7 +245,7 @@ describe("handlePipelineSuccess — outputFiles capture (ENH-005)", () => {
     const ctx = makeCtx(story, { storyGitRef: "abc123" });
 
     const manyFiles = Array.from({ length: 20 }, (_, i) => `src/file${i}.ts`).join("\n");
-    _gitDeps.spawn = mockSpawnReturning(manyFiles + "\n");
+    _gitDeps.spawn = mockSpawnReturning(`${manyFiles}\n`);
 
     await handlePipelineSuccess(ctx, makeMinimalResult());
 

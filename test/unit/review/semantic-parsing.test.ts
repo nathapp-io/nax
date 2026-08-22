@@ -140,11 +140,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
   // Failure mode 2: preamble + fenced JSON (production log pattern)
   test("parses passed=true from preamble + ```json fence", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
-    const response =
-      "I'll verify each acceptance criterion by reading the actual implementation files.\n" +
-      "```json\n" +
-      JSON.stringify({ passed: true, findings: [] }) +
-      "\n```";
+    const response = `I'll verify each acceptance criterion by reading the actual implementation files.\n\`\`\`json\n${JSON.stringify({ passed: true, findings: [] })}\n\`\`\``;
     const result = await callRunSemanticReview(response);
     expect(result.success).toBe(true);
     expect(result.output).not.toContain("could not parse");
@@ -166,7 +162,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
         },
       ],
     };
-    const response = "Let me check the implementation.\n```json\n" + JSON.stringify(payload) + "\n```";
+    const response = `Let me check the implementation.\n\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``;
     const result = await callRunSemanticReview(response);
     expect(result.success).toBe(false);
     expect(result.output).toContain("Semantic review failed");
@@ -174,7 +170,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
 
   test("parses from preamble + plain ``` fence", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
-    const response = "After reviewing the diff:\n" + "```\n" + JSON.stringify({ passed: true, findings: [] }) + "\n```";
+    const response = `After reviewing the diff:\n\`\`\`\n${JSON.stringify({ passed: true, findings: [] })}\n\`\`\``;
     const result = await callRunSemanticReview(response);
     expect(result.success).toBe(true);
     expect(result.output).not.toContain("could not parse");
@@ -205,7 +201,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
         },
       ],
     };
-    const response = "I found issues. " + JSON.stringify(payload) + " That concludes my review.";
+    const response = `I found issues. ${JSON.stringify(payload)} That concludes my review.`;
     const result = await callRunSemanticReview(response);
     expect(result.success).toBe(false);
   });

@@ -17,7 +17,7 @@ import * as path from "node:path";
 import { _resetPluginErrorSink, _setPluginErrorSink, loadPlugins as loadPluginsWithBuiltins } from "@/plugins/loader";
 import type { PluginConfigEntry } from "@/plugins/types";
 import type { NaxPlugin } from "@/plugins/types";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { makeTempDir } from "@test/helpers";
 
 const DISABLE_BUILTIN_PLUGINS = ["nax-curator", "nax-auto-pr"];
 

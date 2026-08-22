@@ -181,7 +181,6 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
 
   // Wrap callOp to record phase order — use type assertion to satisfy the
   // generic signature which can't be expressed concisely without losing information.
-  // biome-ignore lint/suspicious/noExplicitAny: E2E instrumentation wrapper — all calls pass through to origCallOp
   (_storyOrchestratorDeps as { callOp: (...args: any[]) => any }).callOp = async (
     ctx: unknown,
     op: unknown,
@@ -203,7 +202,6 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
   // ExecutionPlan discards runNonBlockingFix's return — spy it so the nbf outcome
   // ({ ran, kept, restored }) is observable. Delegates to the real implementation.
   let nonBlockingFix: E2ENonBlockingFix | undefined;
-  // biome-ignore lint/suspicious/noExplicitAny: E2E instrumentation wrapper — passes through to origRunNbf
   (_storyOrchestratorDeps as { runNonBlockingFix: (...args: any[]) => any }).runNonBlockingFix = async (
     nbfArgs: unknown,
     nbfDeps: unknown,
@@ -242,13 +240,11 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
       // TestSummary has a complex shape; cast via unknown to avoid importing its full type.
       // `failures` is only set when the caller supplies it — otherwise it stays undefined
       // to preserve the legacy gate-parse-crash → validator-error behavior some tests rely on.
-      // biome-ignore lint/suspicious/noExplicitAny: minimal test summary for gate mock
       parsedSummary: {
         passed: g.passed ? 1 : 0,
         failed: g.failed,
         skipped: 0,
         ...(g.failures ? { failures: g.failures } : {}),
-        // biome-ignore lint/suspicious/noExplicitAny: minimal test summary for gate mock
       } as any,
       timedOut: false,
     };

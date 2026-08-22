@@ -199,13 +199,13 @@ Error: JS test error
 
   test("handles failures without file context; failures with no error message", () => {
     const noFile = parseTestOutput(
-      `bun test v1.0.0\n\n✗ orphan test [1.0ms]\n\n(fail) orphan test [1.0ms]\nError: No file context\n  at /path/to/unknown.ts:1:1\n\n0 passed, 1 failed [1.0ms]`,
+      "bun test v1.0.0\n\n✗ orphan test [1.0ms]\n\n(fail) orphan test [1.0ms]\nError: No file context\n  at /path/to/unknown.ts:1:1\n\n0 passed, 1 failed [1.0ms]",
     );
     expect(noFile.failures).toHaveLength(1);
     expect(noFile.failures[0].file).toBe("unknown");
 
     const noMsg = parseTestOutput(
-      `bun test v1.0.0\n\ntest/minimal.test.ts:\n✗ minimal fail [0.5ms]\n\n(fail) minimal fail [0.5ms]\n\n0 passed, 1 failed [0.5ms]`,
+      "bun test v1.0.0\n\ntest/minimal.test.ts:\n✗ minimal fail [0.5ms]\n\n(fail) minimal fail [0.5ms]\n\n0 passed, 1 failed [0.5ms]",
     );
     expect(noMsg.failures).toHaveLength(1);
     expect(noMsg.failures[0].error).toBe("Unknown error");
@@ -215,20 +215,20 @@ Error: JS test error
   describe("Jest output — Console pseudo-failure filtering", () => {
     test("does not capture '● Console' when mixed with real failures or in single/multiple files", () => {
       const mixed = parseTestOutput(
-        `FAIL src/commands/kb-import.spec.ts\n  ● Console\n\n    console.error\n      error during test\n\n  ● kb import > AC1 › exits 0 and prints success\n\n    Error: expected 0, got 1\n\nTests:       0 passed, 1 failed, 1 total`,
+        "FAIL src/commands/kb-import.spec.ts\n  ● Console\n\n    console.error\n      error during test\n\n  ● kb import > AC1 › exits 0 and prints success\n\n    Error: expected 0, got 1\n\nTests:       0 passed, 1 failed, 1 total",
       );
       expect(mixed.failures).toHaveLength(1);
       expect(mixed.failures[0].testName).toBe("kb import > AC1 › exits 0 and prints success");
 
       const single = parseTestOutput(
-        `FAIL src/commands/comment.spec.ts\n  ● Console\n\n    console.error\n      Some error logged during a test\n\nTests:       1 passed, 0 failed, 1 total`,
+        "FAIL src/commands/comment.spec.ts\n  ● Console\n\n    console.error\n      Some error logged during a test\n\nTests:       1 passed, 0 failed, 1 total",
       );
       expect(single.failures).toHaveLength(0);
       expect(single.passed).toBe(1);
       expect(single.failed).toBe(0);
 
       const multi = parseTestOutput(
-        `FAIL src/commands/comment.spec.ts\n  ● Console\n\n    console.error\n\nFAIL src/commands/label.spec.ts\n  ● Console\n\n    console.log\n\nTests:       0 passed, 0 failed, 2 total`,
+        "FAIL src/commands/comment.spec.ts\n  ● Console\n\n    console.error\n\nFAIL src/commands/label.spec.ts\n  ● Console\n\n    console.log\n\nTests:       0 passed, 0 failed, 2 total",
       );
       expect(multi.failures).toHaveLength(0);
     });
@@ -238,7 +238,8 @@ Error: JS test error
     test("parses Vitest's real all-passing summary (no colon after 'Tests')", () => {
       // Reproduces real `vitest run` output — verified against actual CLI output,
       // not Jest's colon-suffixed format that a shared parser previously assumed.
-      const output = ` RUN  v4.1.9 /repo/apps/web\n\n\n Test Files  1 passed (1)\n      Tests  5 passed (5)\n   Start at  12:37:53\n   Duration  194ms`;
+      const output =
+        " RUN  v4.1.9 /repo/apps/web\n\n\n Test Files  1 passed (1)\n      Tests  5 passed (5)\n   Start at  12:37:53\n   Duration  194ms";
 
       const result = parseTestOutput(output);
 
@@ -247,7 +248,7 @@ Error: JS test error
     });
 
     test("parses Vitest's mixed pass/fail summary (no colon)", () => {
-      const output = ` Test Files  1 failed | 1 passed (2)\n      Tests  2 failed | 3 passed (5)`;
+      const output = " Test Files  1 failed | 1 passed (2)\n      Tests  2 failed | 3 passed (5)";
 
       const result = parseTestOutput(output);
 
@@ -256,7 +257,7 @@ Error: JS test error
     });
 
     test("parses Vitest's zero-test summary as a genuine zero, not a parse miss", () => {
-      const output = ` Test Files  1 passed (1)\n      Tests  0 passed (0)`;
+      const output = " Test Files  1 passed (1)\n      Tests  0 passed (0)";
 
       const result = parseTestOutput(output);
 
@@ -267,7 +268,7 @@ Error: JS test error
     test("ignores app-log noise starting with 'Tests ' that isn't the real summary line", () => {
       // A line starting with "Tests " but not shaped like "<n> passed|failed" (e.g.
       // incidental app output) must not be mistaken for the framework summary.
-      const output = `Tests  processed 3 items this run\n\n Test Files  1 passed (1)\n      Tests  5 passed (5)`;
+      const output = "Tests  processed 3 items this run\n\n Test Files  1 passed (1)\n      Tests  5 passed (5)";
 
       const result = parseTestOutput(output);
 
@@ -301,7 +302,7 @@ Error: Alternative marks error
   test("counts (fail) lines with or without summary; summary backstop dominates", () => {
     // Sub-scenario 1: (fail) lines with summary — summary wins
     const withSummary = parseTestOutput(
-      `test/example.test.ts:\n(fail) suite > test name [10.00ms]\n(fail) suite > test name 2 [2.00ms]\n\n 38 pass\n 23 fail\nRan 61 tests across 3 files.`,
+      "test/example.test.ts:\n(fail) suite > test name [10.00ms]\n(fail) suite > test name 2 [2.00ms]\n\n 38 pass\n 23 fail\nRan 61 tests across 3 files.",
     );
     expect(withSummary.failed).toBe(23);
     expect(withSummary.passed).toBe(38);
@@ -309,7 +310,7 @@ Error: Alternative marks error
 
     // Sub-scenario 2: (fail) lines without summary
     const noSummary = parseTestOutput(
-      `test/unit/cli/plan.test.ts:\n(fail) plan > AC-1 [3.00ms]\nError: Expected true\n  at test.ts:12:5\n(fail) plan > AC-2 [2.00ms]\nError: Expected false\n  at test.ts:22:5`,
+      "test/unit/cli/plan.test.ts:\n(fail) plan > AC-1 [3.00ms]\nError: Expected true\n  at test.ts:12:5\n(fail) plan > AC-2 [2.00ms]\nError: Expected false\n  at test.ts:22:5",
     );
     expect(noSummary.failed).toBe(2);
     expect(noSummary.passed).toBe(0);

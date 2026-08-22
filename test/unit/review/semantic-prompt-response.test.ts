@@ -499,7 +499,7 @@ describe("runSemanticReview — markdown fence stripping (BUG-090)", () => {
         },
       ],
     };
-    const fencedResponse = "```json\n" + JSON.stringify(payload) + "\n```";
+    const fencedResponse = `\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``;
     const agentManager = makeAgentManager(fencedResponse);
     const result = await runSemanticReview({
       workdir: "/tmp/wd",

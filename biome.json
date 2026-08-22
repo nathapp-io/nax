@@ -17,7 +17,8 @@
       "linter": {
         "rules": {
           "suspicious": { "noExplicitAny": "off" },
-          "style": { "noNonNullAssertion": "off" }
+          "style": { "noNonNullAssertion": "off" },
+          "performance": { "noDelete": "off" }
         }
       }
     }

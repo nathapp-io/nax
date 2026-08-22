@@ -54,7 +54,6 @@ function makeContext(
     version: "0.1.0",
     pluginConfig: {},
     logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-    // biome-ignore lint/suspicious/noExplicitAny: collector reads no config keys on this path
     config: {} as any,
     outputDir: join(root, "out", projectKey),
     globalDir: join(root, "global"),
@@ -230,7 +229,7 @@ describe("the rollup is shared by every project (#1429)", () => {
     const p = join(root, "rollup.jsonl");
     await writeFile(
       p,
-      [rollupRow("old-1", undefined), rollupRow("new-1", "alpha")].map((r) => JSON.stringify(r)).join("\n") + "\n",
+      `${[rollupRow("old-1", undefined), rollupRow("new-1", "alpha")].map((r) => JSON.stringify(r)).join("\n")}\n`,
     );
     const { observations } = await readHeuristicWindow(p, 20, { projectKey: "alpha" });
     expect(observations.map((o) => o.runId)).toEqual(["new-1"]);
@@ -364,7 +363,6 @@ describe("curator plugin — end to end", () => {
             unchangedOutcome: 3,
           },
         },
-        // biome-ignore lint/suspicious/noExplicitAny: partial config is all this path reads
       } as any,
     };
     await curatorPlugin.extensions.postRunAction?.execute(ctx);

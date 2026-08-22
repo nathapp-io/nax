@@ -59,7 +59,7 @@ describe("autoCommitIfDirty", () => {
     const gitRoot = "/repo";
     _gitDeps.spawn = mock((cmd: string[], opts?: { cwd?: string }) => {
       calls.push({ cmd, cwd: opts?.cwd });
-      if (cmd.includes("rev-parse")) return makeProc(gitRoot + "\n");
+      if (cmd.includes("rev-parse")) return makeProc(`${gitRoot}\n`);
       if (cmd.includes("status")) return makeProc(" M src/foo.ts\n");
       return makeProc("");
     }) as unknown as typeof _gitDeps.spawn;
@@ -80,7 +80,7 @@ describe("autoCommitIfDirty", () => {
     const workdir = "/repo/apps/cli";
     _gitDeps.spawn = mock((cmd: string[], opts?: { cwd?: string }) => {
       calls.push({ cmd, cwd: opts?.cwd });
-      if (cmd.includes("rev-parse")) return makeProc(gitRoot + "\n");
+      if (cmd.includes("rev-parse")) return makeProc(`${gitRoot}\n`);
       if (cmd.includes("status")) return makeProc(" M src/config.ts\n");
       return makeProc("");
     }) as unknown as typeof _gitDeps.spawn;
@@ -97,7 +97,7 @@ describe("autoCommitIfDirty", () => {
     const gitRoot = "/repo";
     _gitDeps.spawn = mock((cmd: string[], opts?: { cwd?: string }) => {
       calls.push({ cmd, cwd: opts?.cwd });
-      if (cmd.includes("rev-parse")) return makeProc(gitRoot + "\n");
+      if (cmd.includes("rev-parse")) return makeProc(`${gitRoot}\n`);
       if (cmd.includes("status")) return makeProc(" M src/index.ts\n");
       return makeProc("");
     }) as unknown as typeof _gitDeps.spawn;
@@ -114,7 +114,7 @@ describe("autoCommitIfDirty", () => {
     const workdir = "/my-project";
     _gitDeps.spawn = mock((cmd: string[], opts?: { cwd?: string }) => {
       calls.push({ cmd, cwd: opts?.cwd });
-      if (cmd.includes("rev-parse")) return makeProc(gitRoot + "\n");
+      if (cmd.includes("rev-parse")) return makeProc(`${gitRoot}\n`);
       return makeProc("");
     }) as unknown as typeof _gitDeps.spawn;
 
@@ -127,7 +127,7 @@ describe("autoCommitIfDirty", () => {
     const gitRoot = "/repo";
     _gitDeps.spawn = mock((cmd: string[], opts?: { cwd?: string }) => {
       calls.push({ cmd, cwd: opts?.cwd });
-      if (cmd.includes("rev-parse")) return makeProc(gitRoot + "\n");
+      if (cmd.includes("rev-parse")) return makeProc(`${gitRoot}\n`);
       if (cmd.includes("status")) return makeProc(""); // clean
       return makeProc("");
     }) as unknown as typeof _gitDeps.spawn;
@@ -142,7 +142,7 @@ describe("autoCommitIfDirty", () => {
     const gitRoot = "/repo";
     _gitDeps.spawn = mock((cmd: string[], opts?: { cwd?: string }) => {
       calls.push({ cmd, cwd: opts?.cwd });
-      if (cmd.includes("rev-parse")) return makeProc(gitRoot + "\n");
+      if (cmd.includes("rev-parse")) return makeProc(`${gitRoot}\n`);
       if (cmd.includes("status")) return makeProc(" M src/foo.ts\n");
       return makeProc("");
     }) as unknown as typeof _gitDeps.spawn;

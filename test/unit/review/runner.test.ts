@@ -499,7 +499,6 @@ describe("runReview — semantic check integration (AC-9)", () => {
       storyId: "US-001",
       storyGitRef: "abc1234",
       story,
-      // biome-ignore lint/suspicious/noExplicitAny: test stub for agentManager
       agentManager: (() => null) as any,
     });
     expect(_semanticDeps.runSemanticReview).toHaveBeenCalledWith(

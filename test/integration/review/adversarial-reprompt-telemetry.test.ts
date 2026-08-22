@@ -227,6 +227,7 @@ describe("AC4 + AC5: reprompt with grounded second turn", () => {
       writeFileSync(join(workdir, "src", "auth.ts"), "function login(u, p) { return db.rawQuery(u + p); }\n");
 
       const saved = saveDeps();
+      // biome-ignore lint/suspicious/noDuplicateTestHooks: pre-existing — three tests each register a restore hook from inside the test body; belongs at describe level, deferred to the per-file drain (#1514)
       afterEach(() => restoreDeps(saved));
 
       _diffUtilsDeps.isGitRefValid = mock(async () => true);

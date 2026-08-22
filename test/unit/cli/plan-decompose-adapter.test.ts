@@ -289,7 +289,7 @@ describe("plan.ts module exports — local buildDecomposePrompt removed (US-002 
     const planModule = (await import("@/cli/plan")) as Record<string, unknown>;
     // The shared buildDecomposePrompt in src/agents/shared/decompose.ts takes DecomposeOptions.
     // The plan-specific overload (positional params) must not exist as a named export.
-    const fn = planModule["buildDecomposePrompt"];
+    const fn = planModule.buildDecomposePrompt;
     // If exported, calling it with (UserStory, [], string) returns a string.
     // After removal it should be undefined.
     expect(fn).toBeUndefined();

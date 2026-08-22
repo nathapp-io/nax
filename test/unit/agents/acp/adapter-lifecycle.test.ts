@@ -43,7 +43,11 @@ describe("ensureAcpSession — cwd guard", () => {
   test("throws an actionable error when the session cwd does not exist", async () => {
     _acpAdapterDeps.cwdExists = () => Promise.resolve(false);
     let created = false;
-    const client = makeClient("/repo/packages/portfolio", { onCreate: () => (created = true) });
+    const client = makeClient("/repo/packages/portfolio", {
+      onCreate: () => {
+        created = true;
+      },
+    });
 
     await expect(ensureAcpSession(client, "sess-1", "claude", "approve-reads")).rejects.toThrow(
       /Session cwd does not exist: \/repo\/packages\/portfolio/,

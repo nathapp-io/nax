@@ -18,7 +18,6 @@ export const mockImplementerOp: RunOperation<{ story: string }, { success: boole
   kind: "run",
   name: "implementer",
   stage: "run",
-  // biome-ignore lint/suspicious/noExplicitAny: test double for a heterogeneous op config slice
   config: testSel as any,
   session: { role: "implementer", lifetime: "warm" },
   build: () => ({
@@ -36,11 +35,8 @@ export function makePhaseOp(
   return {
     kind: "run",
     name,
-    // biome-ignore lint/suspicious/noExplicitAny: test double for a heterogeneous op stage
     stage: stage as any,
-    // biome-ignore lint/suspicious/noExplicitAny: test double for a heterogeneous op config slice
     config: testSel as any,
-    // biome-ignore lint/suspicious/noExplicitAny: test double for a heterogeneous session role
     session: { role: role as any, lifetime: "fresh" },
     build: () => ({
       role: { id: "r", content: name, overridable: false },

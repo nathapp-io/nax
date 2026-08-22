@@ -51,7 +51,6 @@ async function runHopBody(opts: {
       semanticConfig: { ...SEMANTIC_CONFIG, ...opts.config },
       mode: opts.mode ?? "ref",
     },
-    // biome-ignore lint/suspicious/noExplicitAny: minimal HopBodyContext stub for unit test
   } as any);
   return { result, callCount };
 }
@@ -78,7 +77,6 @@ describe("semanticReviewOp.hopBody — inspection-trail guard (#3A)", () => {
       send: mockSend,
       sendWithParseRetry: mockSend,
       input: { workdir: "/tmp", story: STORY, semanticConfig: SEMANTIC_CONFIG, mode: "ref" },
-      // biome-ignore lint/suspicious/noExplicitAny: minimal HopBodyContext stub
     } as any);
     expect(secondPrompt).toBe(ReviewPromptBuilder.demandInspection());
   });

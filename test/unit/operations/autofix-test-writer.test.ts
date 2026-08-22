@@ -63,7 +63,6 @@ describe("testWriterRectifyOp.build", () => {
       handoffFiles: ["test/dispatcher.test.ts"],
     };
 
-    // biome-ignore lint/suspicious/noExplicitAny: test context
     const ctx = {} as any;
 
     const result = testWriterRectifyOp.build(input, ctx);
@@ -83,7 +82,6 @@ describe("testWriterRectifyOp.build", () => {
       handoffFiles: ["test/x.test.ts"],
     };
 
-    // biome-ignore lint/suspicious/noExplicitAny: test context
     const ctx = {} as any;
 
     const result = testWriterRectifyOp.build(input, ctx);
@@ -101,7 +99,6 @@ describe("testWriterRectifyOp.build", () => {
       handoffFiles: [],
     };
 
-    // biome-ignore lint/suspicious/noExplicitAny: test context
     const ctx = {} as any;
 
     const result = testWriterRectifyOp.build(input, ctx);
@@ -119,7 +116,6 @@ describe("testWriterRectifyOp.build", () => {
       // handoffReason omitted
     };
 
-    // biome-ignore lint/suspicious/noExplicitAny: test context
     const ctx = {} as any;
 
     const result = testWriterRectifyOp.build(input, ctx);

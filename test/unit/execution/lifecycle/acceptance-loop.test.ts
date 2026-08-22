@@ -80,7 +80,7 @@ test("AC-1: something", async () => {
   });
 
   test("returns false for expect(false).toBe(false)", () => {
-    const content = `expect(false).toBe(false);`;
+    const content = "expect(false).toBe(false);";
     expect(isStubTestFile(content)).toBe(false);
   });
 

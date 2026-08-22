@@ -28,7 +28,7 @@ beforeEach(() => {
   origLoadCanonicalRules = _rulesCLIDeps.loadCanonicalRules;
   origGetLogger = _rulesCLIDeps.getLogger;
 
-  Object.keys(written).forEach((k) => delete written[k]);
+  for (const k of Object.keys(written)) delete written[k];
 
   _rulesCLIDeps.readFile = async () => "";
   _rulesCLIDeps.writeFile = async (path, content) => {

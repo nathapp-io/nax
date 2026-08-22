@@ -132,7 +132,7 @@ describe("AC7: verifier findings route to autofix-implementer via verifierContex
       if (name === "verifier") {
         // First dispatch: fail with tdd-verifier finding → enters rectification.
         // Subsequent dispatches (resume block): pass so story terminates cleanly.
-        if (opCounts["verifier"] === 1) {
+        if (opCounts.verifier === 1) {
           return {
             success: false,
             normalizedFindings: [VERIFIER_FINDING],
@@ -230,7 +230,7 @@ describe("AC8: validate-short-circuit + empty findings → liteScopeIncomplete a
       if (name === "verifier") {
         // First verifier run happens in lite validate after full-suite-rectify.
         // Return failure + empty findings to force short-circuit signalling.
-        if (opCounts["verifier"] === 1) {
+        if (opCounts.verifier === 1) {
           return {
             success: false,
             normalizedFindings: [],
@@ -288,6 +288,6 @@ describe("AC8: validate-short-circuit + empty findings → liteScopeIncomplete a
     expect(result.liteScopeIncomplete).toBe(true);
 
     expect(opCounts["full-suite-gate"] ?? 0).toBeGreaterThanOrEqual(2);
-    expect(opCounts["verifier"] ?? 0).toBeGreaterThanOrEqual(2);
+    expect(opCounts.verifier ?? 0).toBeGreaterThanOrEqual(2);
   });
 });

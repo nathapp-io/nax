@@ -47,10 +47,10 @@ describe("AgentManager — lazy registry creation (Phase 4)", () => {
   test("_registry is undefined before first getAgent() call and defined after", () => {
     const manager = new AgentManager(DEFAULT_CONFIG);
     // Access private field via type cast to verify laziness
-    const before = (manager as unknown as Record<string, unknown>)["_registry"];
+    const before = (manager as unknown as Record<string, unknown>)._registry;
     expect(before).toBeUndefined();
     manager.getAgent("claude");
-    const after = (manager as unknown as Record<string, unknown>)["_registry"];
+    const after = (manager as unknown as Record<string, unknown>)._registry;
     expect(after).not.toBeUndefined();
   });
 });

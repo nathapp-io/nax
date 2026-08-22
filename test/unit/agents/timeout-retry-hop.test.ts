@@ -55,7 +55,6 @@ const STUB_RUN_OPTIONS = {
   workdir: "/tmp",
   storyId: "US-002",
   sessionRole: "implementer" as const,
-  // biome-ignore lint/suspicious/noExplicitAny: minimal AgentRunOptions stub for unit tests
 } as any;
 
 function makeSuccessResult(): AgentResult {

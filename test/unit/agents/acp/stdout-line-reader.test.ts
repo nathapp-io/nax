@@ -108,7 +108,7 @@ describe("readStreamTail (MEM-1)", () => {
   });
 
   test("content over the cap is trimmed to the last maxBytes", async () => {
-    const big = "x".repeat(10_000) + "TAIL";
+    const big = `${"x".repeat(10_000)}TAIL`;
     const result = await readStreamTail(streamOf(big), 100).promise;
     expect(result.endsWith("TAIL")).toBe(true);
     expect(Buffer.byteLength(result, "utf8")).toBeLessThanOrEqual(100);

@@ -11,7 +11,7 @@ import { join } from "node:path";
 import type { DecomposedStory } from "@/agents/shared/types-extended";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { makeMockAgentManager, makeNaxConfig, makePRD } from "@test/helpers";
 
 function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,

@@ -259,7 +259,7 @@ describe("AC5: rectificationExhausted: true → resume NOT entered", () => {
       // AC5: verifier was never dispatched — resume block skipped because rectificationExhausted=true.
       // Verifier is absent from phaseOutputs (main loop short-circuited at gate, resume NOT entered).
       // With current code, runRectification returns {} (not rectificationExhausted: true) → resume ENTERS → verifier RUNS → test FAILS.
-      expect(opRunCount["verifier"] ?? 0).toBe(0);
+      expect(opRunCount.verifier ?? 0).toBe(0);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
@@ -326,7 +326,7 @@ describe("AC6: liteScopeIncomplete: true → resume IS entered", () => {
       // With current code, runRectification returns {} → liteScopeIncomplete is undefined → test FAILS on that.
       expect(result.liteScopeIncomplete).toBe(true);
       // Resume IS entered → verifier ran.
-      expect(opRunCount["verifier"] ?? 0).toBeGreaterThan(0);
+      expect(opRunCount.verifier ?? 0).toBeGreaterThan(0);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
@@ -417,7 +417,7 @@ describe("AC7: mechanical-only rectificationExhausted → resume IS entered for 
 
       // AC7: resume block IS entered because unfixedFindings are all lint.
       // Verifier and reviews run even though the lint gate stays failing.
-      expect(opRunCount["verifier"] ?? 0).toBeGreaterThan(0);
+      expect(opRunCount.verifier ?? 0).toBeGreaterThan(0);
       expect(opRunCount["semantic-review"] ?? 0).toBeGreaterThan(0);
       expect(opRunCount["adversarial-review"] ?? 0).toBeGreaterThan(0);
     } finally {
@@ -466,7 +466,7 @@ describe("AC7: mechanical-only rectificationExhausted → resume IS entered for 
         .build(ctx)
         .run();
 
-      expect(opRunCount["verifier"] ?? 0).toBe(0);
+      expect(opRunCount.verifier ?? 0).toBe(0);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
