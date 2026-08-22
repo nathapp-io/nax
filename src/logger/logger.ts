@@ -2,6 +2,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { NaxError } from "../errors.js";
 import { type FormatterOptions, type VerbosityMode, formatLogEntry } from "../log-format/index.js";
+import { stripControlChars } from "../utils/strip-control-chars.js";
 import { formatConsole, formatJsonl } from "./formatters.js";
 import { redactEntry } from "./redact.js";
 import { SinkRegistry } from "./sink-registry.js";
@@ -179,11 +180,15 @@ export class Logger {
     const timestamp = new Date(entry.timestamp).toLocaleTimeString("en-US", {
       hour12: false,
     });
-    const parts = [`[${timestamp}]`, `[${entry.stage}]`];
+    // STYLE-21: strip ESC / control bytes from agent- or PRD-controlled
+    // display fields before they reach stdout (mirror of formatConsole
+    // in src/logger/formatters.ts and the hardened path in
+    // src/log-format/formatter.ts:285).
+    const parts = [`[${stripControlChars(timestamp)}]`, `[${stripControlChars(entry.stage)}]`];
     if (entry.storyId) {
-      parts.push(`[${entry.storyId}]`);
+      parts.push(`[${stripControlChars(entry.storyId)}]`);
     }
-    parts.push(entry.message);
+    parts.push(stripControlChars(entry.message));
     let output = parts.join(" ");
     if (entry.data && Object.keys(entry.data).length > 0) {
       output += `\n${JSON.stringify(entry.data, null, 2)}`;
