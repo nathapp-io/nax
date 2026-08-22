@@ -177,6 +177,50 @@ const DEBATE_DUPLICATE_FINDINGS_RESULT: DebateResult = {
   totalCostUsd: 0.001,
 };
 
+// BUG-27: dedup keyed only on file:line (or acId) collapses distinct findings
+// that share a line. Build a result where both debaters flag DIFFERENT issues
+// on the SAME file:line — they must survive merge as two findings. Both are
+// blocking-severity so they appear in result.findings under majority-fail-closed.
+const PROPOSAL_DIFFERENT_ISSUES_A = JSON.stringify({
+  passed: false,
+  findings: [
+    {
+      severity: "error",
+      file: "src/review/semantic.ts",
+      line: 10,
+      issue: "missing null check on input",
+      suggestion: "Add early return for null",
+      acIndex: 1,
+    },
+  ],
+});
+const PROPOSAL_DIFFERENT_ISSUES_B = JSON.stringify({
+  passed: false,
+  findings: [
+    {
+      severity: "error",
+      file: "src/review/semantic.ts",
+      line: 10,
+      issue: "off-by-one in line range",
+      suggestion: "Use < instead of <=",
+      acIndex: 1,
+    },
+  ],
+});
+const DEBATE_DIFFERENT_ISSUES_SAME_LINE: DebateResult = {
+  storyId: "US-004",
+  stage: "review",
+  outcome: "failed",
+  rounds: 1,
+  debaters: ["claude", "opencode"],
+  resolverType: "majority-fail-closed",
+  proposals: [
+    { debater: { agent: "claude" }, output: PROPOSAL_DIFFERENT_ISSUES_A },
+    { debater: { agent: "opencode" }, output: PROPOSAL_DIFFERENT_ISSUES_B },
+  ],
+  totalCostUsd: 0.001,
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals
 // ─────────────────────────────────────────────────────────────────────────────
@@ -493,6 +537,32 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     const dedupeKeys = findings.map((f) => `${f.file}:${f.line}`);
     const uniqueKeys = [...new Set(dedupeKeys)];
     expect(dedupeKeys.length).toBe(uniqueKeys.length);
+  });
+
+  // BUG-27: when two debaters flag DIFFERENT issues on the same file:line,
+  // the dedup must not collapse them — the second defect vanishes from
+  // blocking classification and recurrence fingerprints. Include normalized
+  // issue text in the dedup key (as fingerprintFor does) to keep both.
+  test("BUG-27: distinct issues on the same file:line both survive merge", async () => {
+    _semanticDeps.createDebateRunner = mock(() => ({
+      run: mock(async () => DEBATE_DIFFERENT_ISSUES_SAME_LINE),
+    })) as unknown as typeof _semanticDeps.createDebateRunner;
+
+    const result = await runSemanticReview({
+      workdir: WORKDIR,
+      storyGitRef: STORY_GIT_REF,
+      story: STORY,
+      semanticConfig: SEMANTIC_CONFIG,
+      agentManager: makeAgentManager(PROPOSAL_PASS),
+      naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+      runtime: makeMockRuntime(),
+    });
+
+    const findings = result.findings ?? [];
+    // Both findings should be present — different issue text on the same line.
+    expect(findings).toHaveLength(2);
+    const messages = findings.map((f) => f.message).sort();
+    expect(messages).toEqual(["missing null check on input", "off-by-one in line range"]);
   });
 
   test("AC5: findings from both debaters are included when they report different issues", async () => {
