@@ -12,6 +12,7 @@ import { _fileScanDeps } from "@/test-runners/detect/file-scan";
 import { _frameworkConfigDeps } from "@/test-runners/detect/framework-configs";
 import { _frameworkDefaultsDeps } from "@/test-runners/detect/framework-defaults";
 import { detectTestFilePatterns } from "@/test-runners/detect/index";
+import { makeSpawn } from "@test/helpers";
 
 type Orig = {
   readText: typeof _frameworkConfigDeps.readText;
@@ -28,18 +29,6 @@ type Orig = {
 };
 
 let orig: Orig;
-
-function spawnWithOutput(output: string): ReturnType<typeof Bun.spawn> {
-  const enc = new TextEncoder();
-  const bytes = enc.encode(output);
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(bytes);
-      controller.close();
-    },
-  });
-  return { exited: Promise.resolve(0), stdout: stream } as unknown as ReturnType<typeof Bun.spawn>;
-}
 
 beforeEach(() => {
   orig = {
@@ -61,9 +50,7 @@ beforeEach(() => {
   _cacheDeps.writeJson = mock(async () => {});
   _cacheDeps.fileMtime = mock(async () => null);
   _directoryScanDeps.dirExists = mock(async () => false);
-  _directoryScanDeps.spawn = mock(
-    (..._args: unknown[]) => ({ exited: Promise.resolve(1), stdout: null }) as unknown as ReturnType<typeof Bun.spawn>,
-  ) as unknown as typeof Bun.spawn;
+  _directoryScanDeps.spawn = makeSpawn(() => ({ exitCode: 1 })).spawn;
   _frameworkDefaultsDeps.fileExists = mock(async () => false);
 });
 
@@ -123,7 +110,7 @@ describe("cache", () => {
       }
       return null;
     });
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     await detectTestFilePatterns("/fake/workdir");
     expect(written.length).toBe(1);
@@ -139,7 +126,7 @@ describe("cache", () => {
 
     _frameworkConfigDeps.readText = mock(async () => null);
     _frameworkDefaultsDeps.readText = mock(async () => null);
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
     _directoryScanDeps.dirExists = mock(async () => false);
 
     const result = await detectTestFilePatterns("/fake/workdir");
@@ -169,7 +156,7 @@ describe("cache", () => {
       if (path.endsWith("package.json")) return JSON.stringify({ devDependencies: { vitest: "^1.0.0" } });
       return null;
     });
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.patterns).not.toContain("**/*.stale.ts");

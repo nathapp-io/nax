@@ -16,6 +16,7 @@ import {
 } from "@/review/runner";
 import type { ReviewConfig } from "@/review/types";
 import { _gitDeps } from "@/utils/git";
+import { makeSpawn } from "@test/helpers";
 
 /** Minimal ReviewConfig with typecheck enabled but command set to disable via executionConfig */
 const typecheckConfig: ReviewConfig = {
@@ -141,22 +142,10 @@ describe("runReview — typecheck findings normalization", () => {
 
   test("attaches structured findings when typecheck output is parseable", async () => {
     _deps.getUncommittedFiles = mock(async () => []);
-    const toStream = (text: string): ReadableStream => {
-      return new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode(text));
-          controller.close();
-        },
-      });
-    };
-    _runnerDeps.spawn = mock((_args: unknown) => {
-      return {
-        exited: Promise.resolve(1),
-        stdout: toStream("src/index.ts(10,3): error TS2304: Cannot find name 'foo'\nFound 1 error in 1 file."),
-        stderr: toStream(""),
-        kill: () => {},
-      } as unknown as ReturnType<typeof Bun.spawn>;
-    });
+    _runnerDeps.spawn = makeSpawn(() => ({
+      exitCode: 1,
+      stdout: "src/index.ts(10,3): error TS2304: Cannot find name 'foo'\nFound 1 error in 1 file.",
+    })).spawn;
 
     const result = await runReview({
       config: { enabled: true, checks: ["typecheck"], commands: { typecheck: "bun run typecheck" } },
@@ -280,30 +269,14 @@ describe("runReview — build check (BUILD-001)", () => {
 
   test("build check passes when command succeeds; fails when command fails", async () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => []);
-    _runnerDeps.spawn = mock(
-      (_args: unknown) =>
-        ({
-          exited: Promise.resolve(0),
-          stdout: { text: () => Promise.resolve("build output") },
-          stderr: { text: () => Promise.resolve("") },
-          kill: () => {},
-        }) as unknown as ReturnType<typeof Bun.spawn>,
-    );
+    _runnerDeps.spawn = makeSpawn(() => "build output").spawn;
     const pass = await runReview({ config: buildConfig, workdir: "/tmp/fake-workdir" });
     expect(pass.success).toBe(true);
     expect(pass.checks[0].check).toBe("build");
     expect(pass.checks[0].success).toBe(true);
     expect(pass.checks[0].command).toBe("echo 'build passed'");
 
-    _runnerDeps.spawn = mock(
-      (_args: unknown) =>
-        ({
-          exited: Promise.resolve(1),
-          stdout: { text: () => Promise.resolve("") },
-          stderr: { text: () => Promise.resolve("Build failed") },
-          kill: () => {},
-        }) as unknown as ReturnType<typeof Bun.spawn>,
-    );
+    _runnerDeps.spawn = makeSpawn(() => ({ exitCode: 1, stderr: "Build failed" })).spawn;
     const fail = await runReview({ config: buildConfig, workdir: "/tmp/fake-workdir" });
     expect(fail.success).toBe(false);
     expect(fail.checks[0].success).toBe(false);
@@ -320,15 +293,10 @@ describe("runReview — build check (BUILD-001)", () => {
 
     // In checks but no command
     let spawnCalled = false;
-    _runnerDeps.spawn = mock((_args: unknown) => {
+    _runnerDeps.spawn = makeSpawn(() => {
       spawnCalled = true;
-      return {
-        exited: Promise.resolve(0),
-        stdout: { text: () => Promise.resolve("") },
-        stderr: { text: () => Promise.resolve("") },
-        kill: () => {},
-      } as unknown as ReturnType<typeof Bun.spawn>;
-    });
+      return "";
+    }).spawn;
     const r2 = await runReview({
       config: { enabled: true, checks: ["build"], commands: {} },
       workdir: "/tmp/fake-workdir",
@@ -342,14 +310,7 @@ describe("runReview — build check (BUILD-001)", () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => []);
 
     // Mock spawn to simulate successful build
-    _runnerDeps.spawn = mock((_args: unknown) => {
-      return {
-        exited: Promise.resolve(0),
-        stdout: { text: () => Promise.resolve("build output") },
-        stderr: { text: () => Promise.resolve("") },
-        kill: () => {},
-      } as unknown as ReturnType<typeof Bun.spawn>;
-    });
+    _runnerDeps.spawn = makeSpawn(() => "build output").spawn;
 
     // Config with build in checks but no explicit command - should use quality.commands.build
     const configWithQualityBuild: ReviewConfig = {
@@ -372,15 +333,10 @@ describe("runReview — build check (BUILD-001)", () => {
 
     // Mock spawn: first call fails, second would succeed but should not be reached
     let callCount = 0;
-    _runnerDeps.spawn = mock((_args: unknown) => {
+    _runnerDeps.spawn = makeSpawn(() => {
       callCount++;
-      return {
-        exited: Promise.resolve(1),
-        stdout: { text: () => Promise.resolve("") },
-        stderr: { text: () => Promise.resolve("Build failed") },
-        kill: () => {},
-      } as unknown as ReturnType<typeof Bun.spawn>;
-    });
+      return { exitCode: 1, stderr: "Build failed" };
+    }).spawn;
 
     const configWithMultipleChecks: ReviewConfig = {
       enabled: true,
@@ -428,23 +384,10 @@ describe("runReview — semantic check integration (AC-9)", () => {
   test("calls runSemanticReview (not spawn); result appears in checks array", async () => {
     _deps.getUncommittedFiles = mock(async () => []);
     let spawnCalled = false;
-    _runnerDeps.spawn = mock((_args: unknown) => {
+    _runnerDeps.spawn = makeSpawn(() => {
       spawnCalled = true;
-      return {
-        exited: Promise.resolve(0),
-        stdout: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        kill: () => {},
-      } as unknown as ReturnType<typeof Bun.spawn>;
-    });
+      return "";
+    }).spawn;
     _semanticDeps.runSemanticReview = mock(async () => ({
       check: "semantic" as const,
       success: true,

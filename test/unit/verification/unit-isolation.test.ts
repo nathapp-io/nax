@@ -13,6 +13,7 @@ import {
   verifyTestWriterIsolation,
 } from "@/tdd/isolation";
 import { isTestFile } from "@/test-runners";
+import { makeSpawn } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // isTestFile
@@ -157,23 +158,7 @@ describe("verifyTestWriterIsolation: strict vs. lite mode", () => {
   // mockSpawn maps the arg list to a string payload so getChangedFiles and
   // getAddedLinesPerFile (numstat) can be answered with different shapes.
   function mockSpawn(handler: (args: string[]) => string): void {
-    _isolationDeps.spawn = mock((args: string[]) => {
-      const payload = handler(args);
-      return {
-        stdout: new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode(payload));
-            controller.close();
-          },
-        }),
-        stderr: new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-      } as unknown as ReturnType<typeof Bun.spawn>;
-    }) as unknown as typeof _isolationDeps.spawn;
+    _isolationDeps.spawn = makeSpawn(({ cmd }) => handler(cmd)).spawn;
   }
 
   it("strict: src/ writes outside allowedPaths are HARD violations", async () => {

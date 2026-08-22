@@ -2,9 +2,9 @@
   "counts": {
     "asAny": 1399,
     "tsSuppress": 54,
-    "ratchetAllow": 116
+    "ratchetAllow": 115
   },
-  "updatedAt": "2026-08-22T17:45:24.873Z",
+  "updatedAt": "2026-08-22T18:12:33.320Z",
   "byFile": {
     "test/helpers/mock-agent-manager.ts": {
       "asAny": 1
@@ -645,9 +645,6 @@
     },
     "test/unit/config/test-strategy.test.ts": {
       "asAny": 4
-    },
-    "test/unit/quality/runner.test.ts": {
-      "ratchetAllow": 1
     },
     "test/unit/logger/redact.test.ts": {
       "asAny": 28

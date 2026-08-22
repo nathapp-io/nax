@@ -1,6 +1,6 @@
 {
-  "count": 1965,
-  "updatedAt": "2026-08-22T17:45:24.800Z",
+  "count": 1963,
+  "updatedAt": "2026-08-22T18:12:33.250Z",
   "byFile": {
     "test/helpers/deps.ts": 2,
     "test/helpers/fake-agent-manager.ts": 3,
@@ -162,7 +162,6 @@
     "test/unit/execution/parallel-batch-rectification-context.test.ts": 4,
     "test/unit/execution/parallel-batch.test.ts": 36,
     "test/unit/execution/parallel-worker.test.ts": 2,
-    "test/unit/execution/pid-registry.test.ts": 2,
     "test/unit/execution/pipeline-result-handler.test.ts": 10,
     "test/unit/execution/plan-inputs-review-wiring.test.ts": 4,
     "test/unit/execution/plan-inputs.test.ts": 1,

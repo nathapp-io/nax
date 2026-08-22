@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { PidRegistry, _pidRegistryDeps } from "@/execution";
-import { withDepsRestore } from "@test/helpers";
+import { makeSpawn, withDepsRestore } from "@test/helpers";
 
 const TEST_WORKDIR = `/tmp/nax-pid-registry-test-${randomUUID()}`;
 const PID_FILE = `${TEST_WORKDIR}/.nax-pids`;
@@ -238,17 +238,14 @@ describe("PidRegistry", () => {
   test("killAll() terminates tracked descendants before clearing the registry", async () => {
     const calls: string[][] = [];
 
-    _pidRegistryDeps.spawn = mock((cmd: string[]) => {
+    _pidRegistryDeps.spawn = makeSpawn(({ cmd }) => {
       calls.push(cmd);
       if (cmd[0] === "ps" && cmd[1] === "-eo") {
         return {
           pid: 2000,
-          stdout: makeStream(
+          stdout:
             "172446 1 Thu May 15 11:52:44 2026\n172468 172446 Thu May 15 11:52:45 2026\n172469 172468 Thu May 15 11:52:46 2026\n172552 172469 Thu May 15 11:52:47 2026\n",
-          ),
-          stderr: makeStream(),
-          exited: Promise.resolve(0),
-        } as unknown as ReturnType<typeof Bun.spawn>;
+        };
       }
       if (cmd[0] === "ps" && cmd[1] === "-o") {
         const pid = cmd[4];
@@ -260,18 +257,14 @@ describe("PidRegistry", () => {
         };
         return {
           pid: 2000,
-          stdout: makeStream(byPid[pid] ?? ""),
-          stderr: makeStream(),
-          exited: Promise.resolve(byPid[pid] ? 0 : 1),
-        } as unknown as ReturnType<typeof Bun.spawn>;
+          stdout: byPid[pid] ?? "",
+          exitCode: byPid[pid] ? 0 : 1,
+        };
       }
       return {
         pid: 2001,
-        stdout: makeStream(),
-        stderr: makeStream(),
-        exited: Promise.resolve(0),
-      } as unknown as ReturnType<typeof Bun.spawn>;
-    }) as typeof Bun.spawn;
+      };
+    }).spawn;
     _pidRegistryDeps.sleep = mock(async () => {}) as typeof Bun.sleep;
 
     const registry = new PidRegistry(TEST_WORKDIR);
@@ -293,17 +286,14 @@ describe("PidRegistry", () => {
     const calls: string[][] = [];
     let lookup172552 = 0;
 
-    _pidRegistryDeps.spawn = mock((cmd: string[]) => {
+    _pidRegistryDeps.spawn = makeSpawn(({ cmd }) => {
       calls.push(cmd);
       if (cmd[0] === "ps" && cmd[1] === "-eo") {
         return {
           pid: 2000,
-          stdout: makeStream(
+          stdout:
             "172446 1 Thu May 15 11:52:44 2026\n172468 172446 Thu May 15 11:52:45 2026\n172469 172468 Thu May 15 11:52:46 2026\n172552 172469 Thu May 15 11:52:47 2026\n",
-          ),
-          stderr: makeStream(),
-          exited: Promise.resolve(0),
-        } as unknown as ReturnType<typeof Bun.spawn>;
+        };
       }
       if (cmd[0] === "ps" && cmd[1] === "-o") {
         const pid = cmd[4];
@@ -312,10 +302,8 @@ describe("PidRegistry", () => {
           const output = lookup172552 < 2 ? "172469 Thu May 15 11:52:47 2026\n" : "999999 Thu May 15 11:59:59 2026\n";
           return {
             pid: 2000,
-            stdout: makeStream(output),
-            stderr: makeStream(),
-            exited: Promise.resolve(0),
-          } as unknown as ReturnType<typeof Bun.spawn>;
+            stdout: output,
+          };
         }
         const byPid: Record<string, string> = {
           "172446": "1 Thu May 15 11:52:44 2026\n",
@@ -324,18 +312,14 @@ describe("PidRegistry", () => {
         };
         return {
           pid: 2000,
-          stdout: makeStream(byPid[pid] ?? ""),
-          stderr: makeStream(),
-          exited: Promise.resolve(byPid[pid] ? 0 : 1),
-        } as unknown as ReturnType<typeof Bun.spawn>;
+          stdout: byPid[pid] ?? "",
+          exitCode: byPid[pid] ? 0 : 1,
+        };
       }
       return {
         pid: 2001,
-        stdout: makeStream(),
-        stderr: makeStream(),
-        exited: Promise.resolve(0),
-      } as unknown as ReturnType<typeof Bun.spawn>;
-    }) as typeof Bun.spawn;
+      };
+    }).spawn;
     _pidRegistryDeps.sleep = mock(async () => {}) as typeof Bun.sleep;
 
     const registry = new PidRegistry(TEST_WORKDIR);

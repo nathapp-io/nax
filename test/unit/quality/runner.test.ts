@@ -10,32 +10,11 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _qualityRunnerDeps, runQualityCommand } from "@/quality/runner";
+import { makeSpawn, makeSpawnResult } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Mock helpers
 // ---------------------------------------------------------------------------
-
-function makeSpawnMock(exitCode: number, stdout = "", stderr = "") {
-  return mock(
-    (_args: unknown) =>
-      ({
-        exited: Promise.resolve(exitCode),
-        stdout: new ReadableStream({
-          start(controller) {
-            if (stdout) controller.enqueue(new TextEncoder().encode(stdout));
-            controller.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(controller) {
-            if (stderr) controller.enqueue(new TextEncoder().encode(stderr));
-            controller.close();
-          },
-        }),
-        kill: mock(() => {}),
-      }) as unknown as ReturnType<typeof Bun.spawn>,
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -53,7 +32,7 @@ describe("runQualityCommand — success (exit 0)", () => {
   });
 
   test("returns success=true and exitCode=0", async () => {
-    _qualityRunnerDeps.spawn = makeSpawnMock(0, "all good", "") as typeof Bun.spawn;
+    _qualityRunnerDeps.spawn = makeSpawn(() => "all good").spawn;
 
     const result = await runQualityCommand({
       commandName: "lint",
@@ -69,7 +48,7 @@ describe("runQualityCommand — success (exit 0)", () => {
   });
 
   test("captures combined stdout and stderr in output", async () => {
-    _qualityRunnerDeps.spawn = makeSpawnMock(0, "stdout line", "stderr line") as unknown as typeof Bun.spawn;
+    _qualityRunnerDeps.spawn = makeSpawn(() => ({ stdout: "stdout line", stderr: "stderr line" })).spawn;
 
     const result = await runQualityCommand({
       commandName: "typecheck",
@@ -82,7 +61,7 @@ describe("runQualityCommand — success (exit 0)", () => {
   });
 
   test("durationMs is non-negative", async () => {
-    _qualityRunnerDeps.spawn = makeSpawnMock(0) as unknown as typeof Bun.spawn;
+    _qualityRunnerDeps.spawn = makeSpawn().spawn;
 
     const result = await runQualityCommand({
       commandName: "build",
@@ -106,7 +85,7 @@ describe("runQualityCommand — failure (non-zero exit)", () => {
   });
 
   test("returns success=false and captures exit code", async () => {
-    _qualityRunnerDeps.spawn = makeSpawnMock(1, "", "Lint error on line 42") as unknown as typeof Bun.spawn;
+    _qualityRunnerDeps.spawn = makeSpawn(() => ({ exitCode: 1, stderr: "Lint error on line 42" })).spawn;
 
     const result = await runQualityCommand({
       commandName: "lint",
@@ -121,7 +100,7 @@ describe("runQualityCommand — failure (non-zero exit)", () => {
   });
 
   test("exit code 2 is surfaced correctly", async () => {
-    _qualityRunnerDeps.spawn = makeSpawnMock(2) as unknown as typeof Bun.spawn;
+    _qualityRunnerDeps.spawn = makeSpawn(() => ({ exitCode: 2 })).spawn;
 
     const result = await runQualityCommand({
       commandName: "typecheck",
@@ -162,24 +141,12 @@ describe("runQualityCommand — timeout flow", () => {
       if (signal === "SIGTERM") resolveExited(143);
     }) as typeof process.kill;
 
-    _qualityRunnerDeps.spawn = mock(
-      (_args: unknown) =>
-        ({
-          pid: 1234, // Provide explicit PID for killProcessGroup
-          exited: exitedPromise,
-          stdout: new ReadableStream({
-            start(c) {
-              c.close();
-            },
-          }),
-          stderr: new ReadableStream({
-            start(c) {
-              c.close();
-            },
-          }),
-          kill: mock(() => {}), // Not called anymore, but keep for safety
-        }) as unknown as ReturnType<typeof Bun.spawn>,
-    ) as typeof Bun.spawn;
+    _qualityRunnerDeps.spawn = makeSpawn(() => {
+      const proc = makeSpawnResult({ pid: 1234 }); // Provide explicit PID for killProcessGroup
+      // The process only dies when the runner sends SIGTERM.
+      Object.defineProperty(proc, "exited", { value: exitedPromise });
+      return proc;
+    }).spawn;
 
     const result = await runQualityCommand({
       commandName: "lint",
@@ -209,7 +176,7 @@ describe("runQualityCommand — storyId correlation", () => {
   });
 
   test("result includes commandName and command from options", async () => {
-    _qualityRunnerDeps.spawn = makeSpawnMock(0) as unknown as typeof Bun.spawn;
+    _qualityRunnerDeps.spawn = makeSpawn().spawn;
 
     const result = await runQualityCommand({
       commandName: "lint",
@@ -225,8 +192,8 @@ describe("runQualityCommand — storyId correlation", () => {
   });
 
   test("spawn is called with parsed command parts", async () => {
-    const spawnMock = makeSpawnMock(0);
-    _qualityRunnerDeps.spawn = spawnMock as unknown as typeof Bun.spawn;
+    const stub = makeSpawn();
+    _qualityRunnerDeps.spawn = stub.spawn;
 
     await runQualityCommand({
       commandName: "typecheck",
@@ -235,18 +202,17 @@ describe("runQualityCommand — storyId correlation", () => {
       storyId: "US-007",
     });
 
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    const callArg = (spawnMock.mock.calls[0] as unknown[])[0] as { cmd: string[]; cwd: string };
-    expect(callArg.cmd).toEqual(["/bin/sh", "-c", "bun run typecheck"]);
-    expect(callArg.cwd).toBe("/tmp/project");
+    expect(stub.calls).toHaveLength(1);
+    expect(stub.calls[0]?.cmd).toEqual(["/bin/sh", "-c", "bun run typecheck"]);
+    expect(stub.calls[0]?.opts.cwd).toBe("/tmp/project");
   });
 
   // BUG-02: without detached:true, Bun does not setpgid the /bin/sh wrapper
   // into its own process group, so killProcessGroup(-pid) on timeout would
   // only reach the shell and leak the real test-runner grandchild.
   test("spawns with detached:true so timeout can reach the whole process group", async () => {
-    const spawnMock = makeSpawnMock(0);
-    _qualityRunnerDeps.spawn = spawnMock as unknown as typeof Bun.spawn; // test-ratchet-allow: as-unknown-as
+    const stub = makeSpawn();
+    _qualityRunnerDeps.spawn = stub.spawn;
 
     await runQualityCommand({
       commandName: "lint",
@@ -254,7 +220,6 @@ describe("runQualityCommand — storyId correlation", () => {
       workdir: "/tmp/project",
     });
 
-    const callArg = (spawnMock.mock.calls[0] as unknown[])[0] as { detached?: boolean };
-    expect(callArg.detached).toBe(true);
+    expect(stub.calls[0]?.opts.detached).toBe(true);
   });
 });
