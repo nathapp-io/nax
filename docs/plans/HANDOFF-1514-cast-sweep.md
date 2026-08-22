@@ -340,6 +340,48 @@ numbers for casts and typecheck errors.
 
 ## 7. Progress log
 
+### Phase 1a — session 2 (2026-08-23): §3a/§3b/§3c-i no-judgement queues drained
+
+**Commits (this session, on top of session 1's 8):**
+1. `3d05b2872` — `test(story-fixtures)`: use `makeStory` (12 UserStory sites; `"completed"` status → `"passed"`, never read by src)
+2. `1046db345` — `test(plan,execution,pipeline)`: `makeMockCallContext` / `makeMockRuntime` / `makeNaxConfig`
+3. `8a42ec6f5` — `test(logger)`: `makeLogger` for all 34 getLogger/getSafeLogger cast sites
+4. `333882475` — `test(escalation,operations,cleanup)`: `makeMockAgentManager`, `makePluginRegistry`, typed tier-check params
+5. `151b23d2f` — `test(spawn)`: `makeSpawn` seam for all non-allow-marked `typeof Bun.spawn` / `ReturnType<typeof Bun.spawn>` casts
+6. `9460a487e` — `test(git-diff-spawn)`: `makeSpawn` for `_gitDeps.spawn` + `_diffUtilsDeps.spawn` (~60 sites)
+7. `0d58e943e` — `test(escalation,completion,executor)`: remaining `_xDeps.spawn` seams + fully-typed `EscalationHandlerContext` fixtures
+8. `1a7f807a5` — `test(plan-decompose,regression)`: typed `createRuntime` / `parseTestOutput` dep stubs
+9. `932896694` — `test(logger)`: last logger-member casts (`_optimizerDeps`, `_debateSessionDeps`, `_gitDeps.getSafeLogger`)
+
+**Totals (branch start → now):**
+- `as unknown as` casts: 681 → **346** (−335; ratchet scan)
+- typecheck errors in `test/`: 1969 → **1963** (−6)
+- Buckets now: 3a=24 (all design-call), 3b=5 (allow-marked / wedged-stream), 3c-i=4
+  (`worktreeManager` ×2 — actually class-typed, reclassify as 3c-ii; plus 2 allow-neighbours),
+  3c-ii=31, 3d=61, 3e=49, tail=172.
+
+**What remains is exactly the escalate/leave-alone set plus the tail.** No
+factory-swap cluster is left untouched.
+
+**Seam changes made this session (both in `test/helpers/spawn.ts`):**
+- `makeSpawn().spawn` is now a bun `mock()` — `toHaveBeenCalledWith` /
+  `toHaveBeenCalled` work directly on it, and `stub.calls` stays authoritative.
+- Worked examples: `quality/runner.test.ts` (timeout flow via
+  `Object.defineProperty(proc, "exited", …)`), `review/runner.test.ts` BUG-1 site,
+  `completion-skip-persistence.test.ts` (pull-based stderr),
+  `pid-registry.test.ts` (per-command routing).
+
+**New blockers discovered (added to §5 list):**
+- `test/unit/review/semantic-debate.test.ts` (12 `createDebateRunner` casts) and
+  `pipeline-result-handler.test.ts` (7 `mergeEngine`) — confirmed 3c-ii: stubs
+  return bare objects standing in for classes with private state.
+- `iteration-runner-worktree.test.ts` spreads a real `WorktreeManager` then
+  overrides 2 methods — needs a `makeWorktreeManager` seam or an interface; design.
+- `tier-escalation.test.ts` cross-agent blocks put `agent` on `ctx.routing`;
+  `EscalationHandlerContext.routing` has no `agent` field (handler reads
+  `story.routing?.agent`). Fixed by dropping it from ctx.routing — safe because
+  nothing reads `ctx.routing.agent`.
+
 ### Phase 1a — committed (7 commits, branch `chore/1514-test-debt-drain`)
 
 **Commits:**
@@ -352,7 +394,7 @@ numbers for casts and typecheck errors.
 7. `c8a735cec` — `test(config)`: use `makeNaxConfig` for `Partial<NaxConfig>`
 8. `fbd38fdf4` — `test(acceptance,review)`: use `makeNaxConfig` (hardening + semantic-debate)
 
-**Totals so far:**
+**Totals so far (session 1):**
 - `as unknown as` casts: 681 → 606 (−75)
 - typecheck errors in `test/`: 1969 → 1967 (−2; net negative because removed bogus
   fields the cast was masking — `autoMode.defaultAgent` migration, `parallel` on
