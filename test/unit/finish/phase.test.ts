@@ -417,9 +417,13 @@ describe("runFinishPhase — ledger skip observability (#1674 part 1)", () => {
       const result = await withInfoSpy(async (infoSpy) => {
         const r = await runFinishPhase(ctx);
         const call = infoSpy.mock.calls.find(
-          (c: unknown[]) => c[0] === "finish" && (c[1] as string)?.includes("already finished"),
+          (c: unknown[]) => c[0] === "finish" && (c[1] as string)?.includes("skipped"),
         );
         expect(call).toBeDefined();
+        // The reason moved into the log details when #1674 part 2 added a
+        // second skip reason ("pr-merged") to the same branch — asserting it
+        // here keeps the "which skip was this" claim under test.
+        expect((call?.[2] as Record<string, unknown>)?.reason).toBe("already-finished");
         return r;
       });
       expect(result?.status).toBe("nothing-to-finish");
@@ -429,6 +433,62 @@ describe("runFinishPhase — ledger skip observability (#1674 part 1)", () => {
         reason: "already-finished",
         url: "https://forge.example/pr/3",
       });
+    } finally {
+      Object.assign(_finishPhaseDeps, restore);
+    }
+  });
+
+  test("a machine result with skipReason 'pr-merged' (#1674 part 2) also writes status: skipped", async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const restore = { ..._finishPhaseDeps };
+    _finishPhaseDeps.loadFinishContext = async () => proceedContext();
+    _finishPhaseDeps.detectForge = async () => null;
+    _finishPhaseDeps.runFinishMachine = async () => ({
+      feature: "f",
+      status: "nothing-to-finish",
+      skipReason: "pr-merged",
+      url: "https://forge.example/pr/7",
+    });
+    const ctx = {
+      ...makeCtx(),
+      statusWriter: {
+        setPostRunPhase: (_phase: "finish", update: Record<string, unknown>) => {
+          updates.push(update);
+        },
+      },
+    };
+    try {
+      const result = await runFinishPhase(ctx);
+      expect(result?.status).toBe("nothing-to-finish");
+      expect(updates[updates.length - 1]).toMatchObject({
+        status: "skipped",
+        reason: "pr-merged",
+        url: "https://forge.example/pr/7",
+      });
+    } finally {
+      Object.assign(_finishPhaseDeps, restore);
+    }
+  });
+
+  test("a plain nothing-to-finish (no skipReason) still reports passed, not skipped", async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const restore = { ..._finishPhaseDeps };
+    _finishPhaseDeps.loadFinishContext = async () => proceedContext();
+    _finishPhaseDeps.detectForge = async () => null;
+    _finishPhaseDeps.runFinishMachine = async () => ({ feature: "f", status: "nothing-to-finish" });
+    const ctx = {
+      ...makeCtx(),
+      statusWriter: {
+        setPostRunPhase: (_phase: "finish", update: Record<string, unknown>) => {
+          updates.push(update);
+        },
+      },
+    };
+    try {
+      await runFinishPhase(ctx);
+      const terminal = updates[updates.length - 1];
+      expect(terminal).toMatchObject({ status: "passed", result: "nothing-to-finish" });
+      expect(terminal?.reason).toBeUndefined();
     } finally {
       Object.assign(_finishPhaseDeps, restore);
     }

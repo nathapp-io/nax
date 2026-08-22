@@ -201,6 +201,25 @@ describe("machine-loops", () => {
 
       expect(result.status).toBe("nothing-to-finish");
       expect(result.url).toBeUndefined();
+      // A plain zero-commits preflight carries neither marker — only the
+      // merged-PR short-circuit below does.
+      expect(result.skipReason).toBeUndefined();
+      expect(trail).toHaveLength(0);
+    });
+  });
+
+  test("merged-PR route (#1674 part 2): nothing-to-finish carrying skipReason and the PR url", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail } = makeDeps({
+        auditDir: dir,
+        context: { route: "nothing-to-finish", skipReason: "pr-merged", prUrl: "https://forge.example/pr/7" },
+      });
+      const result = await runFinishMachine(baseState(), deps);
+
+      expect(result.status).toBe("nothing-to-finish");
+      expect(result.skipReason).toBe("pr-merged");
+      expect(result.url).toBe("https://forge.example/pr/7");
+      // Nothing ran: no reviewer, no fixer, no commit onto a merged branch.
       expect(trail).toHaveLength(0);
     });
   });
@@ -209,7 +228,7 @@ describe("machine-loops", () => {
     await withTempDir(async (dir) => {
       const { deps, trail } = makeDeps({
         auditDir: dir,
-        context: { route: "already-finished", ledgerPrUrl: "https://forge.example/pr/5" },
+        context: { route: "already-finished", prUrl: "https://forge.example/pr/5" },
       });
       const state = baseState();
       const result = await runFinishMachine(state, deps);

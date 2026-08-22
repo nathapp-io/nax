@@ -561,6 +561,13 @@ than no gate. `gh` or `glab` must be authenticated for the PR/MR step.
 | Spec conflicts, contradictions, design calls, or anything it can't get green | Commits and pushes what it fixed, then escalates via Telegram or a PR/MR comment. No ready PR. |
 | Branch has no commits ahead of base | Reports `nothing-to-finish` and stops. |
 | Branch/HEAD already match a terminal outcome from a previous finish (`rerun: "on-change"`, the default) | Skips the phase entirely, logs it, and records `status: "skipped"` — see `rerun` above. |
+| The branch's PR/MR is already **merged** | Reports `nothing-to-finish` with `reason: "pr-merged"` and stops, rather than reviewing, committing onto a merged branch and rewriting the merged PR's body. |
+| The branch's PR/MR is **closed without being merged** | Escalates. The commits still exist but a human closed the PR, and reopening it or pushing to it is not a decision the fix loop makes on its own. |
+
+Both forge checks fail open: no PR yet, an unauthenticated or missing `gh` /
+`glab`, an undetected forge or an unrecognised response all leave the phase
+running as normal. A missed check costs one redundant finish run; a wrong
+one would abandon a branch that still had work to finish.
 
 The phase's audit trail — one line per fix round, plus the terminal state — is
 written to `~/.nax/<project>/finish-audit/<feature>/`, beside `prompt-audit/`

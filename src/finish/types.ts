@@ -238,8 +238,13 @@ export interface FinishResult {
    * this to report `postRun.finish.status: "skipped"` rather than `"passed"`
    * on `status.json` — the two are different claims ("there was truly
    * nothing to do" vs "this exact commit was already finished").
+   *
+   * `"pr-merged"` (#1674 part 2) is the same kind of claim from the other
+   * short-circuit: the branch's PR was already merged, so the machine stood
+   * down before running anything. Both reuse `status: "nothing-to-finish"`,
+   * and both report `"skipped"` rather than `"passed"`.
    */
-  skipReason?: "already-finished";
+  skipReason?: "already-finished" | "pr-merged";
 }
 
 /** Result of running the feature's acceptance-test gate. */

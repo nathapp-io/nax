@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import type { ResolveResult } from "@/cli";
+import type { ForgeDeps, ForgeRunResult } from "@/forge";
 import { _finishContextDeps, loadFinishContext } from "@/finish";
 import { withTempDir } from "@test/helpers";
 
@@ -210,7 +211,7 @@ describe("loadFinishContext — ledger entry check (#1674 part 1)", () => {
       });
 
       expect(ctx.route).toBe("already-finished");
-      expect(ctx.ledgerPrUrl).toBe("https://example.com/pr/9");
+      expect(ctx.prUrl).toBe("https://example.com/pr/9");
     });
   });
 
@@ -373,5 +374,183 @@ describe("loadFinishContext — ledger entry check (#1674 part 1)", () => {
 
       expect(ctx.route).toBe("proceed");
     });
+  });
+});
+
+
+/**
+ * A `ForgeDeps` whose `run` answers the branch's PR view with `stdout`, and
+ * records every argv it was handed so a test can assert the check did (or did
+ * not) reach the forge.
+ */
+function makeForge(res: Partial<ForgeRunResult> & { throws?: boolean }): {
+  deps: ForgeDeps;
+  calls: string[][];
+} {
+  const calls: string[][] = [];
+  const deps: ForgeDeps = {
+    run: async (cmd: string[]): Promise<ForgeRunResult> => {
+      calls.push(cmd);
+      if (res.throws) throw new Error("gh: command not found");
+      return { stdout: res.stdout ?? "", stderr: res.stderr ?? "", exitCode: res.exitCode ?? 0 };
+    },
+    readText: async () => null,
+  };
+  return { deps, calls };
+}
+
+/** The git responder every #1674-part-2 test shares: 3 commits ahead, no ledger involvement. */
+const aheadGit = async (args: string[]): Promise<GitResult> => {
+  if (args[0] === "remote" && args[1] === "show") return okGit("  HEAD branch: main\n");
+  if (args[0] === "rev-list") return okGit("3\n");
+  if (args[0] === "rev-parse" && args[1] === "HEAD") return okGit("head-sha\n");
+  if (args[0] === "rev-parse" && args[1] === "--verify") return okGit("abc123\n");
+  throw new Error(`unexpected git call: ${args.join(" ")}`);
+};
+
+describe("loadFinishContext — merged/closed PR short-circuit (#1674 part 2)", () => {
+  const ledgerOpts = (deps: ForgeDeps) => ({
+    branch: "feat/x",
+    auditDir: "/nonexistent-audit-dir",
+    rerun: "on-change" as const,
+    forge: { kind: "github" as const, deps },
+  });
+
+  test("a merged GitHub PR routes to nothing-to-finish, carrying its url", async () => {
+    _finishContextDeps.git = aheadGit;
+    _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+    const { deps, calls } = makeForge({
+      stdout: JSON.stringify({ state: "MERGED", mergedAt: "2026-08-22T00:00:00Z", url: "https://example.com/pr/7" }),
+    });
+
+    const ctx = await loadFinishContext("my-feature", "/repo", ledgerOpts(deps));
+
+    expect(ctx.route).toBe("nothing-to-finish");
+    expect(ctx.skipReason).toBe("pr-merged");
+    expect(ctx.prUrl).toBe("https://example.com/pr/7");
+    // Reported honestly: the branch really is ahead, it is the PR that is done.
+    expect(ctx.commitsAhead).toBe(3);
+    expect(calls[0]?.slice(0, 3)).toEqual(["gh", "pr", "view"]);
+  });
+
+  test("a merged GitLab MR (lower-case state) is recognised too", async () => {
+    _finishContextDeps.git = aheadGit;
+    _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+    const { deps } = makeForge({ stdout: JSON.stringify({ state: "merged", web_url: "https://gl.example/mr/2" }) });
+
+    const ctx = await loadFinishContext("my-feature", "/repo", {
+      ...ledgerOpts(deps),
+      forge: { kind: "gitlab", deps },
+    });
+
+    expect(ctx.route).toBe("nothing-to-finish");
+    expect(ctx.skipReason).toBe("pr-merged");
+    expect(ctx.prUrl).toBe("https://gl.example/mr/2");
+  });
+
+  test("a CLOSED PR carrying a mergedAt is treated as merged, not as an escalation", async () => {
+    _finishContextDeps.git = aheadGit;
+    _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+    const { deps } = makeForge({
+      stdout: JSON.stringify({ state: "CLOSED", mergedAt: "2026-08-22T00:00:00Z", url: "https://example.com/pr/8" }),
+    });
+
+    const ctx = await loadFinishContext("my-feature", "/repo", ledgerOpts(deps));
+
+    expect(ctx.route).toBe("nothing-to-finish");
+    expect(ctx.skipReason).toBe("pr-merged");
+  });
+
+  test("a closed-unmerged PR escalates rather than reporting nothing to finish", async () => {
+    _finishContextDeps.git = aheadGit;
+    _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+    const { deps } = makeForge({
+      stdout: JSON.stringify({ state: "CLOSED", mergedAt: null, url: "https://example.com/pr/9" }),
+    });
+
+    const ctx = await loadFinishContext("my-feature", "/repo", ledgerOpts(deps));
+
+    expect(ctx.route).toBe("escalate");
+    expect(ctx.reason).toContain("closed without being merged");
+    expect(ctx.reason).toContain("https://example.com/pr/9");
+    expect(ctx.prUrl).toBe("https://example.com/pr/9");
+  });
+
+  test("an open PR proceeds", async () => {
+    _finishContextDeps.git = aheadGit;
+    _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+    const { deps } = makeForge({ stdout: JSON.stringify({ state: "OPEN", url: "https://example.com/pr/1" }) });
+
+    const ctx = await loadFinishContext("my-feature", "/repo", ledgerOpts(deps));
+
+    expect(ctx.route).toBe("proceed");
+    expect(ctx.skipReason).toBeUndefined();
+  });
+
+  test("fails open: a non-zero forge exit (no PR, or an unauthenticated CLI) proceeds", async () => {
+    _finishContextDeps.git = aheadGit;
+    _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+    const { deps } = makeForge({ exitCode: 1, stderr: "no pull requests found for branch" });
+
+    const ctx = await loadFinishContext("my-feature", "/repo", ledgerOpts(deps));
+
+    expect(ctx.route).toBe("proceed");
+  });
+
+  test("fails open: unparseable forge output proceeds", async () => {
+    _finishContextDeps.git = aheadGit;
+    _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+    const { deps } = makeForge({ stdout: "not json at all" });
+
+    const ctx = await loadFinishContext("my-feature", "/repo", ledgerOpts(deps));
+
+    expect(ctx.route).toBe("proceed");
+  });
+
+  test("fails open: a forge CLI that cannot be spawned proceeds instead of throwing", async () => {
+    _finishContextDeps.git = aheadGit;
+    _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+    const { deps } = makeForge({ throws: true });
+
+    const ctx = await loadFinishContext("my-feature", "/repo", ledgerOpts(deps));
+
+    expect(ctx.route).toBe("proceed");
+  });
+
+  test("a null forge kind never reaches the forge at all", async () => {
+    _finishContextDeps.git = aheadGit;
+    _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+    const { deps, calls } = makeForge({ stdout: JSON.stringify({ state: "MERGED" }) });
+
+    const ctx = await loadFinishContext("my-feature", "/repo", { ...ledgerOpts(deps), forge: { kind: null, deps } });
+
+    expect(ctx.route).toBe("proceed");
+    expect(calls).toHaveLength(0);
+  });
+
+  test("omitting the forge option entirely keeps the pre-#1674-part-2 behaviour", async () => {
+    _finishContextDeps.git = aheadGit;
+    _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+
+    const ctx = await loadFinishContext("my-feature", "/repo", {
+      branch: "feat/x",
+      auditDir: "/nonexistent-audit-dir",
+      rerun: "on-change",
+    });
+
+    expect(ctx.route).toBe("proceed");
+  });
+
+  test("a zero-commit branch never asks the forge — the preflight already routed it", async () => {
+    _finishContextDeps.git = makeGit({ revList: okGit("0\n") });
+    _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+    const { deps, calls } = makeForge({ stdout: JSON.stringify({ state: "MERGED" }) });
+
+    const ctx = await loadFinishContext("my-feature", "/repo", ledgerOpts(deps));
+
+    expect(ctx.route).toBe("nothing-to-finish");
+    // The plain preflight route, not the merged short-circuit.
+    expect(ctx.skipReason).toBeUndefined();
+    expect(calls).toHaveLength(0);
   });
 });
