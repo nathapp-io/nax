@@ -192,12 +192,19 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
       );
     },
 
-    async escalate(state: FinishState, reason: string, findings: Finding[]) {
+    async escalate(state: FinishState, reason: string, findings: Finding[], options?: { push?: boolean }) {
       let pushError: string | undefined;
-      try {
-        await commitAndPush(state.workdir, state.branch, ESCALATION_PUSH_MESSAGE(state.feature));
-      } catch (err) {
-        pushError = errorMessage(err);
+      // `commitAndPush` pushes unconditionally — `commitFixes` reporting
+      // `committed: false` does not skip the `git push --set-upstream`. That
+      // is right for every escalation that follows a fix loop, and wrong for
+      // the closed-PR precondition escalation, which passes `push: false`:
+      // see `FinishOps.escalate`'s doc comment (`./ops`).
+      if (options?.push !== false) {
+        try {
+          await commitAndPush(state.workdir, state.branch, ESCALATION_PUSH_MESSAGE(state.feature));
+        } catch (err) {
+          pushError = errorMessage(err);
+        }
       }
       const syncNote = pushError ? `\n\n> Note: nax-finish could not push its partial fixes — ${pushError}` : "";
       try {

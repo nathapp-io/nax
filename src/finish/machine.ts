@@ -132,7 +132,12 @@ async function doEscalate(
   let url: string | undefined;
   let deliveryError: string | undefined;
   try {
-    ({ url, deliveryError } = await deps.ops.escalate(state, reason, findings));
+    // `escalateWithoutPush` is set only by the closed-PR precondition route
+    // (#1674 part 2, `./context`) — reachable here because that route
+    // escalates out of `runPreconditions` before anything else runs, so no
+    // other `doEscalate` caller can be carrying it.
+    const push = deps.context.escalateWithoutPush ? { push: false } : undefined;
+    ({ url, deliveryError } = await deps.ops.escalate(state, reason, findings, push));
   } catch (err) {
     deliveryError = errorMessage(err);
   }
@@ -191,14 +196,22 @@ async function runPreconditions(state: FinishState, deps: FinishMachineDeps): Pr
       feature: state.feature,
       status: "nothing-to-finish",
       skipReason: "already-finished",
-      ...(context.ledgerPrUrl ? { url: context.ledgerPrUrl } : {}),
+      ...(context.prUrl ? { url: context.prUrl } : {}),
     };
     await writeResult(deps.audit, result);
     return result;
   }
   if (context.route === "nothing-to-finish") {
     state.status = "nothing-to-finish";
-    const result: FinishResult = { feature: state.feature, status: "nothing-to-finish" };
+    // `skipReason`/`prUrl` are set only by the merged-PR short-circuit
+    // (#1674 part 2); a plain zero-commits preflight carries neither, and
+    // must keep reporting a bare `nothing-to-finish` as it always has.
+    const result: FinishResult = {
+      feature: state.feature,
+      status: "nothing-to-finish",
+      ...(context.skipReason ? { skipReason: context.skipReason } : {}),
+      ...(context.prUrl ? { url: context.prUrl } : {}),
+    };
     await writeResult(deps.audit, result);
     return result;
   }

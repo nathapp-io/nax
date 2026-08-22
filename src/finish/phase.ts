@@ -178,10 +178,16 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
       auditDir: `${ctx.runtime.outputDir}/finish-audit/${ctx.feature}`,
       runId: ctx.runId,
     };
+    // Detected before `loadFinishContext`, not after, so the merged/closed
+    // short-circuit (#1674 part 2) can ask the forge about this branch's PR
+    // before anything else runs. `detectForge` needs nothing from the context
+    // — only the workdir — so the move is a pure reorder.
+    const forgeKind = await _finishPhaseDeps.detectForge(defaultForgeDeps, ctx.workdir);
     const context = await _finishPhaseDeps.loadFinishContext(ctx.feature, ctx.workdir, {
       branch: ctx.branch,
       auditDir: audit.auditDir,
       rerun: settings.rerun,
+      forge: { kind: forgeKind, deps: defaultForgeDeps },
     });
     const state = createFinishState({
       feature: ctx.feature,
@@ -191,7 +197,6 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
       base: context.base,
       specPath: context.specPath,
     });
-    const forgeKind = await _finishPhaseDeps.detectForge(defaultForgeDeps, ctx.workdir);
     const callCtx: CallContext = {
       runtime: ctx.runtime,
       packageView: ctx.runtime.packages.resolve(ctx.workdir),
@@ -243,13 +248,15 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
 
   const costUsd = _finishPhaseDeps.snapshotCost(ctx.runtime) - costBefore;
   const passed = failure === undefined && result?.status !== "escalated";
-  if (result?.skipReason === "already-finished") {
-    // #1674 part 1: the ledger already covers this exact HEAD — the machine
-    // did no real work beyond the entry check. Reported distinctly from the
-    // ordinary "passed" path so a consumer of status.json can tell "this run
-    // did nothing because there was nothing new" from "this run did the
-    // work and it passed".
-    getSafeLogger()?.info("finish", "Finish phase skipped — already finished at this HEAD", {
+  if (result?.skipReason) {
+    // The machine stood down without doing real work: the ledger already
+    // covers this exact HEAD (#1674 part 1, "already-finished") or the
+    // branch's PR is already merged (#1674 part 2, "pr-merged"). Reported
+    // distinctly from the ordinary "passed" path so a consumer of
+    // status.json can tell "this run did nothing because there was nothing
+    // new" from "this run did the work and it passed".
+    getSafeLogger()?.info("finish", "Finish phase skipped", {
+      reason: result.skipReason,
       storyId: "_run",
       feature: result.feature,
       ...(result.url ? { url: result.url } : {}),

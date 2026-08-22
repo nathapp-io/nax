@@ -129,6 +129,27 @@ describe("ops-impl", () => {
     });
   });
 
+  test("escalate pushes partial fixes by default", async () => {
+    const { deps, calls } = baseDeps();
+    await createFinishOps(deps).escalate(state, "needs a human", []);
+    expect(calls.some((c) => c[0] === "push")).toBe(true);
+  });
+
+  // Post-review CRITICAL: `commitAndPush` pushes unconditionally — a
+  // `committed: false` does NOT skip the `git push --set-upstream`. On the
+  // closed-PR route (#1674 part 2) that push can recreate a head branch the
+  // forge deleted when the human closed the PR, and nothing has run at that
+  // point for it to be carrying anyway.
+  test("escalate with push:false makes no commit and no push, but still delivers", async () => {
+    const { deps, calls } = baseDeps();
+    const outcome = await createFinishOps(deps).escalate(state, "the PR is closed", [], { push: false });
+
+    expect(calls.some((c) => c[0] === "push")).toBe(false);
+    expect(calls.some((c) => c[0] === "commit")).toBe(false);
+    // The whole point of the route: the human is still told.
+    expect(outcome.deliveryError).toBeUndefined();
+  });
+
   test("escalate reports no forge as a delivery error", async () => {
     const { deps } = baseDeps({ forgeKind: null });
     const outcome = await createFinishOps(deps).escalate(state, "needs a human", []);

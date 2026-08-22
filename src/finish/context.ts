@@ -16,6 +16,8 @@
  */
 import { resolveFeatureSpec } from "@/cli";
 import type { AcceptanceGroupResult, AcceptanceResolutionStatus } from "@/cli";
+import { viewArgv } from "@/forge";
+import type { ForgeDeps, ForgeKind } from "@/forge";
 import { errorMessage } from "@/utils/errors";
 import { gitWithTimeout } from "@/utils/git";
 import { readLedger } from "./audit";
@@ -35,8 +37,31 @@ export interface FinishContext {
   commitsAhead: number;
   route: "proceed" | "nothing-to-finish" | "escalate" | "already-finished";
   reason?: string;
-  /** Set only when `route` is `"already-finished"`: the ledger's recorded PR url, if it has one. */
-  ledgerPrUrl?: string;
+  /**
+   * The PR/MR this context already knows about, when one stood the run down:
+   * the ledger's recorded url on the `already-finished` route (#1674 part 1),
+   * or the merged PR's url on the `nothing-to-finish` route (#1674 part 2).
+   * Absent on every route that has no such PR.
+   */
+  prUrl?: string;
+  /**
+   * Set only by the closed-PR escalation below: `ops.escalate` must NOT run
+   * its usual `commitAndPush` for this one.
+   *
+   * That push is unconditional (`commit.ts`'s `commitAndPush` pushes whether
+   * or not anything was committed), and `git push --set-upstream` against a
+   * branch whose closed PR had its head branch auto-deleted RECREATES it —
+   * undoing the cleanup the human's close performed. Nothing has run at this
+   * point either, so there are no partial fixes the push could be carrying.
+   */
+  escalateWithoutPush?: boolean;
+  /**
+   * Why a `nothing-to-finish` route is a *skip* rather than a plain
+   * zero-commits preflight. Only `"pr-merged"` (#1674 part 2) is set here —
+   * the `already-finished` route carries its own reason in `route` itself,
+   * and the machine stamps that skipReason from the route.
+   */
+  skipReason?: "pr-merged";
 }
 
 /**
@@ -52,6 +77,13 @@ export interface LoadFinishContextOptions {
   auditDir: string;
   /** `finish.rerun`; `"always"` skips the ledger check entirely. */
   rerun: "on-change" | "always";
+  /**
+   * Forge access for the merged/closed short-circuit (#1674 part 2). Omit it,
+   * or pass a null `kind`, and that check never fires — every caller that
+   * predates it keeps the pre-#1674-part-2 behaviour of routing on the commit
+   * count alone.
+   */
+  forge?: { kind: ForgeKind | null; deps: ForgeDeps };
 }
 
 const LEDGER_TERMINAL_STATUSES = new Set(["opened", "promoted", "already-ready", "escalated"]);
@@ -80,6 +112,72 @@ async function checkLedger(workdir: string, opts: LoadFinishContextOptions) {
   if (!sha || sha !== ledger.headSha) return null;
 
   return ledger;
+}
+
+/** What the branch's existing PR/MR is, when it is no longer open. */
+type ClosedPrState = { state: "merged" | "closed"; url?: string };
+
+/**
+ * Read the branch's PR/MR and report it only when it is merged or closed
+ * (#1674 part 2).
+ *
+ * Returns `null` — "carry on as normal" — for every other answer, and that is
+ * the whole design: no PR yet, an open PR, an unauthenticated `gh`, a forge
+ * outage, a JSON schema this does not recognise and a `kind` of `null` are
+ * indistinguishable to a caller that only knows the run must not be dropped
+ * on a guess. A false negative costs one redundant finish run, which is
+ * exactly today's behaviour; a false positive would abandon a branch that
+ * still had real work to finish.
+ *
+ * `viewArgv` (`@/forge`) supplies the argv so this shares the field list
+ * shape with `openOrPromotePr`'s view call. GitHub's `state` is upper-case
+ * (`OPEN` / `CLOSED` / `MERGED`) and GitLab's is lower-case (`opened` /
+ * `closed` / `merged`, with `locked` also possible), so the comparison is
+ * case-folded rather than forked per forge. GitLab additionally reports a
+ * merged MR as `state: "merged"`, so `mergedAt`/`merged_at` is only a
+ * fallback for a schema that reports the timestamp without the state.
+ */
+async function checkPrState(
+  workdir: string,
+  branch: string,
+  forge: { kind: ForgeKind | null; deps: ForgeDeps },
+): Promise<ClosedPrState | null> {
+  const { kind, deps } = forge;
+  if (kind === null) return null;
+
+  let res: Awaited<ReturnType<ForgeDeps["run"]>>;
+  try {
+    res = await deps.run(viewArgv(kind, branch, "state,mergedAt,url"), { cwd: workdir });
+  } catch {
+    return null;
+  }
+  if (res.exitCode !== 0) return null;
+
+  // CRITICAL (post-review): the shape check is NOT redundant with the catch.
+  // `JSON.parse("null")` SUCCEEDS and returns `null`, so the catch never
+  // fires and the first property read below throws a TypeError — out of
+  // `loadFinishContext`, which runs *before* the state machine and so is
+  // outside its outer catch. That aborts the whole finish phase (no PR, no
+  // escalation, a bare "could not run" log): the exact opposite of the
+  // fail-open this function promises, on an input a forge CLI or an API
+  // wrapper can legitimately print for "no result".
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(res.stdout);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== "object") return null;
+  const view = parsed as Record<string, unknown>;
+  const url = typeof view.url === "string" ? view.url : typeof view.web_url === "string" ? view.web_url : undefined;
+  const state = typeof view.state === "string" ? view.state.toLowerCase() : "";
+  const mergedAt = view.mergedAt ?? view.merged_at;
+
+  if (state === "merged" || (state === "closed" && typeof mergedAt === "string" && mergedAt !== "")) {
+    return { state: "merged", ...(url ? { url } : {}) };
+  }
+  if (state === "closed") return { state: "closed", ...(url ? { url } : {}) };
+  return null;
 }
 
 /**
@@ -207,7 +305,55 @@ export async function loadFinishContext(
         commitsAhead: pre.commitsAhead,
         route: "already-finished",
         reason: `Already finished at ${ledger.headSha} on "${ledger.branch}" (status: "${ledger.status}") — nothing has changed since.`,
-        ...(ledger.prUrl ? { ledgerPrUrl: ledger.prUrl } : {}),
+        ...(ledger.prUrl ? { prUrl: ledger.prUrl } : {}),
+      };
+    }
+  }
+
+  // #1674 part 2. Ordered after the ledger check because that one is local
+  // (a file read plus `git rev-parse`) while this one is a forge round trip,
+  // and both stand the same run down.
+  if (pre.route === "proceed" && ledgerOpts?.forge) {
+    const pr = await checkPrState(workdir, ledgerOpts.branch, ledgerOpts.forge);
+    if (pr?.state === "merged") {
+      // Every step after this writes to a PR that no longer accepts work:
+      // the reviewers would diff commits already on the base branch, the fix
+      // loop would commit onto a merged branch, and the terminal step would
+      // rewrite the merged PR's title and body. There is nothing left to
+      // finish, so this is a `nothing-to-finish` — flagged `pr-merged` so a
+      // reader of status.json can tell it from a zero-commit branch.
+      return {
+        base,
+        specPath: resolved.specSource.path,
+        acceptanceStatus,
+        groups,
+        testFileRegex,
+        commitsAhead: pre.commitsAhead,
+        route: "nothing-to-finish",
+        skipReason: "pr-merged",
+        reason: `The PR/MR for "${ledgerOpts.branch}" is already merged — nothing left to finish.`,
+        ...(pr.url ? { prUrl: pr.url } : {}),
+      };
+    }
+    if (pr?.state === "closed") {
+      // Deliberately NOT `nothing-to-finish`. A closed-unmerged PR means a
+      // human rejected or abandoned this branch while its commits still
+      // exist: silently reporting success would hide that, and reopening or
+      // re-pushing is not a decision an automated fix loop gets to make.
+      // Escalating hands it to the person who closed it. The ledger (#1674
+      // part 1) records the escalation against this HEAD, so a re-run at the
+      // same commit pages them once, not once per run.
+      return {
+        base,
+        specPath: resolved.specSource.path,
+        acceptanceStatus,
+        groups,
+        testFileRegex,
+        commitsAhead: pre.commitsAhead,
+        route: "escalate",
+        escalateWithoutPush: true,
+        reason: `The PR/MR for "${ledgerOpts.branch}" is closed without being merged${pr.url ? ` (${pr.url})` : ""}, but the branch still has ${pre.commitsAhead} commit(s) ahead of "${base}". nax-finish will not reopen it or push to it — a human needs to decide whether this branch is still wanted.`,
+        ...(pr.url ? { prUrl: pr.url } : {}),
       };
     }
   }
