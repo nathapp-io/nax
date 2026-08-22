@@ -7,6 +7,7 @@
 
 import { existsSync } from "node:fs";
 import { rename, unlink } from "node:fs/promises";
+import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 
 /**
@@ -39,6 +40,35 @@ export async function loadJsonFile<T>(path: string, context = "json-file"): Prom
       error: String(err),
     });
     return null;
+  }
+}
+
+/**
+ * Load a JSON file, distinguishing "absent" from "corrupt" (SEC-5, D-10).
+ *
+ * `loadJsonFile` collapses both cases onto `null` — structurally avoidable
+ * since it already branches on `existsSync` first. For files whose absence
+ * is a legitimate, common state (no config yet, no history yet) but whose
+ * *corruption* should not silently be treated the same as absence, use this
+ * variant instead:
+ *
+ * - File does not exist → returns `null` (same as `loadJsonFile`).
+ * - File exists but fails to parse → throws `NaxError` with the path and
+ *   `{ cause: err }`, instead of logging a warning and returning `null`.
+ *
+ * `loadJsonFile` itself is left untouched — each call site migrates to this
+ * variant as an explicit, reviewable decision rather than a blanket
+ * behaviour change to every existing caller.
+ */
+export async function loadJsonFileStrict<T>(path: string, context = "json-file"): Promise<T | null> {
+  if (!existsSync(path)) {
+    return null;
+  }
+
+  try {
+    return (await Bun.file(path).json()) as T;
+  } catch (err) {
+    throw new NaxError(`Failed to parse JSON file: ${path}`, "JSON_FILE_PARSE_FAILED", { stage: context, cause: err });
   }
 }
 

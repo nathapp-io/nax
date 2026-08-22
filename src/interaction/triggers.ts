@@ -41,17 +41,21 @@ export function getTriggerConfig(
 ): { fallback: InteractionFallback; timeout: number } {
   const metadata = TRIGGER_METADATA[trigger];
   const triggerConfig = config.interaction?.triggers?.[trigger];
-  const defaults = config.interaction?.defaults ?? {
-    timeout: 600000,
-    fallback: "escalate" as InteractionFallback,
-  };
+  const defaults = config.interaction?.defaults ?? { timeout: 600000 };
 
-  let fallback: InteractionFallback = metadata.defaultFallback;
+  // BUG-48: honour interaction.defaults.fallback — it is the documented
+  // migration path for the removed `auto` plugin (see init.ts) — except for
+  // red-tier (security-review / cost-exceeded / merge-conflict) gates, which
+  // must not be silently converted to approve-on-timeout by a blanket
+  // `defaults.fallback: "continue"`. Red-tier gates keep their per-trigger
+  // metadata default unless a per-trigger override below says otherwise.
+  let fallback: InteractionFallback =
+    metadata.safety === "red" ? metadata.defaultFallback : (defaults.fallback ?? metadata.defaultFallback);
   let timeout = defaults.timeout;
 
   if (typeof triggerConfig === "object") {
     if (triggerConfig.fallback) {
-      fallback = triggerConfig.fallback as InteractionFallback;
+      fallback = triggerConfig.fallback;
     }
     if (triggerConfig.timeout) {
       timeout = triggerConfig.timeout;

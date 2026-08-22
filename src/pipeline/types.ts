@@ -290,6 +290,15 @@ export interface PipelineContext extends DispatchContext {
   fullSuiteGateFailingFiles?: string[];
   /** Number of runtime crashes (RUNTIME_CRASH verify status) encountered for this story (BUG-070) */
   storyRuntimeCrashes?: number;
+  /**
+   * Count of this story's semantic/adversarial review checks that returned
+   * `success:true, failOpen:true` (LLM dispatch failed and the gate degraded
+   * to a pass rather than blocking). Set by applyPostRunInspection from
+   * phaseOutputs; surfaced in StoryMetrics.reviewsFailedOpen (ENH-20) so a
+   * run whose reviews were skipped is distinguishable from one that was
+   * actually reviewed and passed.
+   */
+  reviewsFailedOpen?: number;
   /** Structured review findings — passed to escalation for retry context */
   reviewFindings?: import("../findings").Finding[];
   /** Accumulated cost across all prior escalation attempts (BUG-067) */

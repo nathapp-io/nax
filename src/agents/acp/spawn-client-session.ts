@@ -389,7 +389,11 @@ export class SpawnAcpSession implements AcpSession {
 
     if (options?.forceTerminate) {
       try {
-        await this.trackedSpawn(["acpx", this.agentName, "stop"], undefined, options?.signal);
+        // BUG-3: --cwd required — without it acpx resolves against nax's
+        // process cwd instead of this session's worktree, risking a hit
+        // against (or a miss of) the wrong queue owner in a parallel run
+        // where multiple instances of the same agentName run concurrently.
+        await this.trackedSpawn(["acpx", "--cwd", this.cwd, this.agentName, "stop"], undefined, options?.signal);
       } catch (err) {
         getSafeLogger()?.debug("acp-adapter", "acpx stop failed (swallowed)", { cause: String(err) });
       }
@@ -409,7 +413,8 @@ export class SpawnAcpSession implements AcpSession {
       this.activeProc = null; // LOW: null out after kill, matching close()
     }
 
-    const cmd = ["acpx", this.agentName, "cancel"];
+    // BUG-3: --cwd required — see the matching comment on close()'s "stop" call.
+    const cmd = ["acpx", "--cwd", this.cwd, this.agentName, "cancel"];
     getSafeLogger()?.debug("acp-adapter", `Cancelling active prompt: ${this.sessionName}`);
 
     await this.trackedSpawn(cmd);

@@ -93,29 +93,36 @@ export function coerceVerdict(obj: Record<string, unknown>): VerifierVerdict | n
     // contradicted by a failure indicator later in the string (e.g. the
     // agent writing "VERIFIED FAILED: 3 tests red").
     const isVerifiedButFailed = /VERIFIED\b.*\b(FAIL|FAILED|RED|NOT MET)\b/.test(verdictStr);
+    // "ALL ACCEPTANCE CRITERIA MET" must not match its own negation
+    // ("NOT ALL ACCEPTANCE CRITERIA MET").
+    const isNegated = /\bNOT\b/.test(verdictStr);
     const approved =
       verdictStr === "PASS" ||
       verdictStr === "PASSED" ||
       verdictStr === "APPROVED" ||
       (verdictStr.startsWith("VERIFIED") && !isVerifiedButFailed) ||
-      verdictStr.includes("ALL ACCEPTANCE CRITERIA MET") ||
+      (verdictStr.includes("ALL ACCEPTANCE CRITERIA MET") && !isNegated) ||
       obj.approved === true;
 
-    // Parse test results from verification_summary or top-level
+    // Parse test results from verification_summary or top-level.
+    // BUG-1 (D-1): allPassing must never be seeded from `approved` — it is
+    // only ever set true from actual test evidence below.
     let passCount = 0;
     let failCount = 0;
-    let allPassing = approved;
+    let allPassing = false;
     const summary = obj.verification_summary as Record<string, unknown> | undefined;
     if (summary?.test_results && typeof summary.test_results === "string") {
       // Parse "45/45 PASS" or "42/45 PASS" patterns — anchored to test-count
       // context so an unrelated "N/N" substring (e.g. a "2024/05/13" date)
-      // is never mistaken for a pass/fail ratio.
-      const match = (summary.test_results as string).match(/(\d+)\/(\d+)\s+(?:tests?\s+)?(?:pass|fail)/i);
+      // is never mistaken for a pass/fail ratio. The pass/fail keyword is
+      // captured (not discarded) so a same-count "5/5 FAIL" ratio is never
+      // read as all-passing.
+      const match = (summary.test_results as string).match(/(\d+)\/(\d+)\s+(?:tests?\s+)?(pass|fail)/i);
       if (match) {
         passCount = Number.parseInt(match[1], 10);
         const total = Number.parseInt(match[2], 10);
         failCount = total - passCount;
-        allPassing = failCount === 0;
+        allPassing = match[3].toLowerCase() === "pass" && failCount === 0 && total > 0;
       }
     }
     // Also check top-level tests object (partial schema compliance)

@@ -53,7 +53,7 @@ const SENSITIVE_ENV_KEY_PATTERN = /key|token|secret|password|credential|auth|ses
  * a single non-empty path segment with no separators, NUL, or dot/dot-dot
  * values. Mirrors validatePathSegment in context/fragments/store.ts.
  */
-function validateProfileName(profileName: string): void {
+export function validateProfileName(profileName: string): void {
   if (profileName.length === 0) {
     throw new NaxError("Profile name must be non-empty", "PROFILE_NAME_INVALID", { stage: "config" });
   }
@@ -217,12 +217,26 @@ export function profileOverrideFromConfig(config: {
   return undefined;
 }
 
-/** Reads and parses the `profile` field of a config.json in the given dir into a chain. */
+/**
+ * Reads and parses the `profile` field of a config.json in the given dir into a chain.
+ *
+ * BUG-40: this runs (via resolveProfileNames) BEFORE loadConfig's own tolerant
+ * layers (applyGlobalLayer/applyProjectLayer, which use loadJsonFileStrict —
+ * SEC-5) reach the same file. A corrupt config.json used to surface here
+ * first as a raw, unguarded SyntaxError with no NaxError context — one file,
+ * two different failure postures. Swallow the parse error into an empty
+ * chain here; the strict layer loader that runs moments later raises the
+ * real, path-named NaxError.
+ */
 async function readProfileChainFromConfig(dir: string): Promise<string[]> {
   const configFile = Bun.file(join(dir, "config.json"));
   if (!(await configFile.exists())) return [];
-  const config = await configFile.json();
-  return parseProfileList(config.profile as string | string[] | undefined);
+  try {
+    const config = await configFile.json();
+    return parseProfileList(config.profile as string | string[] | undefined);
+  } catch {
+    return [];
+  }
 }
 
 /** A chain that carries no meaningful overlay (empty, or only the implicit "default"). */

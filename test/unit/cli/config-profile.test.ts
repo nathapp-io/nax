@@ -336,4 +336,23 @@ describe("profileCreateCommand", () => {
     }
     expect(thrownError).toBeInstanceOf(Error);
   });
+
+  // SEC-18: the read side (loadProfile/loadProfileEnv) validates the profile
+  // name before joining it into a path; the create side previously didn't,
+  // so `nax config profile create "../../evil"` could write outside
+  // profilesDir. Assert both the traversal is rejected AND nothing is
+  // written outside .nax/profiles/ for it.
+  test("rejects a path-traversal profile name and writes nothing outside .nax/profiles/", async () => {
+    await expect(profileCreateCommand("../../evil", tempDir)).rejects.toThrow();
+    expect(await Bun.file(join(tempDir, "..", "evil.json")).exists()).toBe(false);
+    expect(await Bun.file(join(tempDir, "evil.json")).exists()).toBe(false);
+  });
+
+  test("rejects an empty profile name", async () => {
+    await expect(profileCreateCommand("", tempDir)).rejects.toThrow();
+  });
+
+  test("rejects a profile name containing a path separator", async () => {
+    await expect(profileCreateCommand("sub/dir", tempDir)).rejects.toThrow();
+  });
 });

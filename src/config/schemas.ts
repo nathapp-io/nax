@@ -307,9 +307,10 @@ export const NaxConfigSchema = z
     interaction: InteractionConfigSchema.optional().default({
       plugin: "cli",
       config: {},
+      // No top-level `fallback` (BUG-48 / D-9) — see the matching comment on
+      // InteractionConfigSchema.defaults.fallback in schemas-infra.ts.
       defaults: {
         timeout: 600000,
-        fallback: "escalate",
       },
       triggers: {
         "security-review": true,

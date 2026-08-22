@@ -6,6 +6,7 @@
 
 import { Box, Text, useApp, useInput } from "ink";
 import { memo, useEffect, useRef, useState } from "react";
+import { errorMessage } from "../utils/errors";
 import { writeQueueCommand, writeRetryCommand } from "../utils/queue-writer";
 import { CostOverlay } from "./components/CostOverlay";
 import { HelpOverlay } from "./components/HelpOverlay";
@@ -96,6 +97,10 @@ export function App({ feature, version, stories: initialStories, events, queueFi
   const [showCost, setShowCost] = useState(false);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
   const [showAbortConfirm, setShowAbortConfirm] = useState(false);
+  // BUG-4: a failed queue-command write (e.g. unwritable .queue.txt) must
+  // surface inline as "couldn't pause/abort/skip", not crash the run via an
+  // unhandled rejection. See StatusBar's transient error line.
+  const [queueActionError, setQueueActionError] = useState<string | undefined>(undefined);
 
   // Wire agent stream events for live call metadata and token accumulation
   const { activeCalls, inputTokens, outputTokens } = useAgentStreamEvents(agentStreamEvents);
@@ -122,6 +127,17 @@ export function App({ feature, version, stories: initialStories, events, queueFi
 
   // Handle keyboard actions
   const handleKeyboardAction = async (action: KeyboardAction) => {
+    try {
+      await dispatchKeyboardAction(action);
+      setQueueActionError(undefined);
+    } catch (err) {
+      // BUG-4: a fallible queue write (e.g. unwritable .queue.txt) must not
+      // crash the run — surface it inline instead.
+      setQueueActionError(`couldn't ${action.type.toLowerCase()}: ${errorMessage(err)}`);
+    }
+  };
+
+  const dispatchKeyboardAction = async (action: KeyboardAction) => {
     switch (action.type) {
       case "TOGGLE_FOCUS":
         setFocus((prev) => (prev === PanelFocus.Stories ? PanelFocus.Agent : PanelFocus.Stories));
@@ -196,7 +212,11 @@ export function App({ feature, version, stories: initialStories, events, queueFi
         if (showQuitConfirm) {
           exit();
         } else if (showAbortConfirm && queueFilePath) {
-          writeQueueCommand(queueFilePath, { type: "ABORT" });
+          // BUG-4: bare fire-and-forget call — must catch, not let a
+          // rejection escape as an unhandled promise rejection.
+          writeQueueCommand(queueFilePath, { type: "ABORT" }).catch((err) => {
+            setQueueActionError(`couldn't abort: ${errorMessage(err)}`);
+          });
           setShowAbortConfirm(false);
         }
       } else if (inputKey === "n" || key.escape) {
@@ -296,6 +316,7 @@ export function App({ feature, version, stories: initialStories, events, queueFi
         runComplete={isRunComplete}
         isParallel={isParallel}
         activeCount={activeCount}
+        errorMessage={queueActionError}
       />
 
       {/* Overlays */}

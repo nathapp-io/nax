@@ -30,7 +30,7 @@ function createInteractionPlugin(pluginName: string): InteractionPlugin {
       // — and no configured project ever used it. Auto-approval remains available
       // via `interaction.defaults.fallback: "continue"`.
       throw new NaxError(
-        'The "auto" interaction plugin was removed — it never functioned (see docs/reviews/2026-08-11-code-review-latent-bugs-v2.md, BUG-09). Use `interaction.defaults.fallback: "continue"` for auto-approval on timeout, or configure "cli", "telegram", or "webhook".',
+        'The "auto" interaction plugin was removed — it never functioned (see docs/reviews/2026-08-11-code-review-latent-bugs-v2.md, BUG-09). Use `interaction.defaults.fallback: "continue"` for auto-approval on timeout, or configure "cli", "telegram", or "webhook". Note: red-tier gates (security-review, cost-exceeded, merge-conflict) ignore this global default and require a per-trigger override.',
         "INTERACTION_PLUGIN_REMOVED",
         { stage: "run", pluginName },
       );
@@ -69,10 +69,12 @@ export async function initInteractionChain(
     return null;
   }
 
-  // Create chain
+  // Create chain. `defaults.fallback` is undefined unless the operator set it
+  // (BUG-48 / D-9); InteractionChain's own defaultFallback is unused by any
+  // caller today, so this default only keeps the constructor's contract.
   const chain = new InteractionChain({
     defaultTimeout: config.interaction.defaults.timeout,
-    defaultFallback: config.interaction.defaults.fallback,
+    defaultFallback: config.interaction.defaults.fallback ?? "escalate",
   });
 
   // Create and register plugin
