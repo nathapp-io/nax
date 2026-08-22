@@ -90,6 +90,36 @@ describe("getAgentVersion", () => {
     const version = await getAgentVersion("claude");
     expect(version).toBe("v1.2.3");
   });
+
+  // PERF-32: a hung wrapper script must not stall the multi-agent health
+  // precheck. proc.exited that never resolves is bounded by
+  // VERSION_DETECTION_TIMEOUT_MS (5s) — getAgentVersion returns null.
+  test("PERF-32: returns null when proc.exited never resolves (hung binary)", async () => {
+    const hungProc = {
+      exited: new Promise<number>(() => {}),
+      stdout: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
+      stderr: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
+      pid: 0,
+      kill: () => {},
+    };
+    _versionDetectionDeps.spawn = mock(() => hungProc) as typeof _versionDetectionDeps.spawn;
+
+    const start = Date.now();
+    const v = await getAgentVersion("hung-binary");
+    const elapsed = Date.now() - start;
+
+    expect(v).toBeNull();
+    // Version timeout is 5s; assert it returned rather than blocked.
+    expect(elapsed).toBeLessThan(30_000);
+  });
 });
 
 // ---------------------------------------------------------------------------

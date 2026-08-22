@@ -14,6 +14,7 @@
 import { NaxError } from "../errors";
 import { DEFAULT_TEST_FILE_PATTERNS, isTestFileByPatterns } from "../test-runners";
 import { spawn } from "../utils/bun-deps";
+import { gitWithTimeout } from "../utils/git";
 import type { IsolationCheck } from "./types";
 
 /** Injectable deps for testability — mock _isolationDeps.spawn instead of global Bun.spawn */
@@ -36,31 +37,10 @@ export function isSourceFile(filePath: string): boolean {
  * --porcelain` are merged in and deduped.
  */
 export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promise<string[]> {
-  const diffProc = _isolationDeps.spawn(["git", "diff", "--name-only", fromRef], {
-    cwd: workdir,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const statusProc = _isolationDeps.spawn(["git", "status", "--porcelain"], {
-    cwd: workdir,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  // Use Bun.readableStreamToText — more reliable than new Response(stream).text()
-  // with both real pipes and mocked ReadableStreams across Bun versions.
-  // Must read BEFORE awaiting proc.exited to avoid stream-closed-on-exit issues.
-  // Drain stdout+stderr concurrently with proc.exited — sequential reads would
-  // deadlock on a pipe-buffer-sized stderr (~64KB), and stderr must be read
-  // regardless of exit code so a failure isn't silently discarded.
-  const [output, stderr, exitCode, statusOutput, statusStderr, statusExitCode] = await Promise.all([
-    Bun.readableStreamToText(diffProc.stdout),
-    Bun.readableStreamToText(diffProc.stderr),
-    diffProc.exited,
-    Bun.readableStreamToText(statusProc.stdout),
-    Bun.readableStreamToText(statusProc.stderr),
-    statusProc.exited,
-  ]);
+  // BUG-31: route through gitWithTimeout so a wedged git (NFS / lock
+  // contention) cannot stall the TDD isolation stage indefinitely.
+  const { stdout: output, stderr, exitCode } = await gitWithTimeout(["diff", "--name-only", fromRef], workdir);
+  const { stdout: statusOutput, exitCode: statusExitCode } = await gitWithTimeout(["status", "--porcelain"], workdir);
 
   if (exitCode !== 0) {
     throw new NaxError(
@@ -76,7 +56,7 @@ export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promis
 
   if (statusExitCode !== 0) {
     throw new NaxError(
-      `git status --porcelain failed (exit ${statusExitCode}): ${statusStderr.trim()}`,
+      `git status --porcelain failed (exit ${statusExitCode}): ${statusOutput.trim()}`,
       "GIT_DIFF_FAILED",
       {
         stage: "tdd-isolation",
