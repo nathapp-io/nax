@@ -432,7 +432,7 @@ describe("runAdversarialReview — verifiedBy.observed substantiation (#987)", (
       writeFileSync(join(workdir, "src/auth.ts"), "export function login() {}\n");
 
       const logger = makeLogger();
-      _evidenceDeps.getLogger = () => logger as unknown as ReturnType<typeof _evidenceDeps.getLogger>;
+      _evidenceDeps.getLogger = () => logger;
 
       const llmResponse = JSON.stringify({
         passed: false,

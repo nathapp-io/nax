@@ -64,7 +64,7 @@ describe("ContextOrchestrator.assemble() — US-003 floor overage warn log (AC-4
   beforeEach(() => {
     origGetLogger = _orchestratorDeps.getLogger;
     mockLogger = makeLogger();
-    _orchestratorDeps.getLogger = () => mockLogger as unknown as ReturnType<typeof _orchestratorDeps.getLogger>;
+    _orchestratorDeps.getLogger = () => mockLogger;
   });
 
   afterEach(() => {

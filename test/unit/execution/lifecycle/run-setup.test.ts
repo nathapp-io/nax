@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { _runSetupDeps, warnFallbackMisconfiguration, warnProfileMismatch } from "@/execution/lifecycle/run-setup";
-import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { makeLogger, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -85,84 +85,61 @@ describe("warnFallbackMisconfiguration — #508-M4 AC-35 pre-flight warning", ()
     });
   }
 
-  function makeLogger() {
-    const warns: Array<[string, string, Record<string, unknown>]> = [];
-    const logger = {
-      warn: (stage: string, msg: string, ctx: Record<string, unknown>) => warns.push([stage, msg, ctx]),
-      info: () => {},
-      debug: () => {},
-      error: () => {},
-    };
-    return { logger, warns };
-  }
-
   test("emits warn for each fallback candidate not resolved by agentGetFn", () => {
-    const { logger, warns } = makeLogger();
+    const logger = makeLogger();
     const agentGetFn = (name: string) => (name === "codex" ? {} : undefined);
 
     warnFallbackMisconfiguration(
       makeConfig({ claude: ["codex", "gemini"] }),
       agentGetFn as (name: string) => unknown,
-      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
+      logger,
     );
 
-    expect(warns.length).toBe(1);
-    expect(warns[0]?.[0]).toBe("fallback");
-    expect(warns[0]?.[2]).toMatchObject({ candidate: "gemini" });
+    expect(logger.calls.length).toBe(1);
+    expect(logger.calls[0]?.stage).toBe("fallback");
+    expect(logger.calls[0]?.data).toMatchObject({ candidate: "gemini" });
   });
 
   test("does not warn when all candidates resolve", () => {
-    const { logger, warns } = makeLogger();
+    const logger = makeLogger();
     const agentGetFn = (_name: string) => ({});
 
-    warnFallbackMisconfiguration(
-      makeConfig({ claude: ["codex"] }),
-      agentGetFn as (name: string) => unknown,
-      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
-    );
+    warnFallbackMisconfiguration(makeConfig({ claude: ["codex"] }), agentGetFn as (name: string) => unknown, logger);
 
-    expect(warns).toHaveLength(0);
+    expect(logger.calls).toHaveLength(0);
   });
 
   test("does not warn when fallback is disabled (enabled: false)", () => {
-    const { logger, warns } = makeLogger();
+    const logger = makeLogger();
     const agentGetFn = (_name: string) => undefined;
     const config = makeNaxConfig({
       agent: { fallback: { enabled: false, map: { claude: ["gemini"] } } },
     });
 
-    warnFallbackMisconfiguration(
-      config,
-      agentGetFn as (name: string) => unknown,
-      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
-    );
+    warnFallbackMisconfiguration(config, agentGetFn as (name: string) => unknown, logger);
 
-    expect(warns).toHaveLength(0);
+    expect(logger.calls).toHaveLength(0);
   });
 
   test("does not warn when agentGetFn is undefined (skip check when resolver unavailable)", () => {
-    const { logger, warns } = makeLogger();
+    const logger = makeLogger();
 
-    warnFallbackMisconfiguration(
-      makeConfig({ claude: ["gemini"] }),
-      undefined,
-      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
-    );
+    warnFallbackMisconfiguration(makeConfig({ claude: ["gemini"] }), undefined, logger);
 
-    expect(warns).toHaveLength(0);
+    expect(logger.calls).toHaveLength(0);
   });
 
   test("deduplicates warnings for the same candidate across multiple primary agents", () => {
-    const { logger, warns } = makeLogger();
+    const logger = makeLogger();
     const agentGetFn = (_name: string) => undefined;
 
     warnFallbackMisconfiguration(
       makeConfig({ claude: ["gemini"], codex: ["gemini"] }),
       agentGetFn as (name: string) => unknown,
-      logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>,
+      logger,
     );
 
-    const geminiWarns = warns.filter((w) => (w[2] as Record<string, unknown>).candidate === "gemini");
+    const geminiWarns = logger.calls.filter((c) => c.data?.candidate === "gemini");
     expect(geminiWarns).toHaveLength(1);
   });
 });
@@ -172,19 +149,8 @@ describe("warnFallbackMisconfiguration — #508-M4 AC-35 pre-flight warning", ()
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("warnProfileMismatch — Task 10 Part B", () => {
-  function makeLogger() {
-    const warns: Array<[string, string, Record<string, unknown>]> = [];
-    const logger = {
-      warn: (stage: string, msg: string, ctx: Record<string, unknown>) => warns.push([stage, msg, ctx]),
-      info: () => {},
-      debug: () => {},
-      error: () => {},
-    };
-    return { logger, warns };
-  }
-
   test("emits warn when story has agentProfileId that no longer exists in config", () => {
-    const { logger, warns } = makeLogger();
+    const logger = makeLogger();
     const story = makeStory({
       id: "US-001",
       routing: {
@@ -215,18 +181,18 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
       },
     });
 
-    warnProfileMismatch(prd, config, logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>);
+    warnProfileMismatch(prd, config, logger);
 
-    expect(warns).toHaveLength(1);
-    const [stage, msg, ctx] = warns[0]!;
-    expect(stage).toBe("setup");
-    expect(msg).toContain("removed-profile");
-    expect(msg).toContain("no longer exists");
-    expect(ctx.storyId).toBe("US-001");
+    expect(logger.calls).toHaveLength(1);
+    const call = logger.calls[0]!;
+    expect(call.stage).toBe("setup");
+    expect(call.message).toContain("removed-profile");
+    expect(call.message).toContain("no longer exists");
+    expect(call.data?.storyId).toBe("US-001");
   });
 
   test("does not emit warn when story's agentProfileId still exists in config", () => {
-    const { logger, warns } = makeLogger();
+    const logger = makeLogger();
     const story = makeStory({
       id: "US-002",
       routing: {
@@ -255,13 +221,13 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
       },
     });
 
-    warnProfileMismatch(prd, config, logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>);
+    warnProfileMismatch(prd, config, logger);
 
-    expect(warns).toHaveLength(0);
+    expect(logger.calls).toHaveLength(0);
   });
 
   test("does not emit warn when story has no agentProfileId (control case)", () => {
-    const { logger, warns } = makeLogger();
+    const logger = makeLogger();
     const story = makeStory({
       id: "US-003",
       routing: {
@@ -288,39 +254,39 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
       },
     });
 
-    warnProfileMismatch(prd, config, logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>);
+    warnProfileMismatch(prd, config, logger);
 
-    expect(warns).toHaveLength(0);
+    expect(logger.calls).toHaveLength(0);
   });
 
   test("emits PRD-level warn when prd.routingProfile differs from the resolved config profile", () => {
-    const { logger, warns } = makeLogger();
+    const logger = makeLogger();
     const prd = makePRD({ userStories: [], routingProfile: "aggressive" });
     const config = makeNaxConfig({ profile: "cheap" });
 
-    warnProfileMismatch(prd, config, logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>);
+    warnProfileMismatch(prd, config, logger);
 
-    expect(warns).toHaveLength(1);
-    const [stage, msg, ctx] = warns[0]!;
-    expect(stage).toBe("prd");
-    expect(msg).toContain('planned with config profile "aggressive"');
-    expect(ctx.storyId).toBe("prd");
-    expect(ctx.plannedProfile).toBe("aggressive");
-    expect(ctx.currentProfile).toBe("cheap");
+    expect(logger.calls).toHaveLength(1);
+    const call = logger.calls[0]!;
+    expect(call.stage).toBe("prd");
+    expect(call.message).toContain('planned with config profile "aggressive"');
+    expect(call.data?.storyId).toBe("prd");
+    expect(call.data?.plannedProfile).toBe("aggressive");
+    expect(call.data?.currentProfile).toBe("cheap");
   });
 
   test("does not emit PRD-level warn when prd.routingProfile matches the resolved config profile", () => {
-    const { logger, warns } = makeLogger();
+    const logger = makeLogger();
     const prd = makePRD({ userStories: [], routingProfile: "shared" });
     const config = { ...makeNaxConfig(), profile: "shared" };
 
-    warnProfileMismatch(prd, config, logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>);
+    warnProfileMismatch(prd, config, logger);
 
-    expect(warns).toHaveLength(0);
+    expect(logger.calls).toHaveLength(0);
   });
 
   test("warns per story when routing.agent is not defined in config.models", () => {
-    const { logger, warns } = makeLogger();
+    const logger = makeLogger();
     const prd = makePRD({
       userStories: [
         makeStory({
@@ -337,12 +303,12 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
     });
     const config = makeNaxConfig({ models: { claude: { fast: "m" } } });
 
-    warnProfileMismatch(prd, config, logger as unknown as ReturnType<typeof import("@/logger").getSafeLogger>);
+    warnProfileMismatch(prd, config, logger);
 
-    const agentWarns = warns.filter(
-      ([, msg, ctx]) => /agent "ghost".*not defined in config\.models/i.test(msg) && ctx.storyId === "US-1",
+    const agentWarns = logger.calls.filter(
+      (c) => /agent "ghost".*not defined in config\.models/i.test(c.message) && c.data?.storyId === "US-1",
     );
     expect(agentWarns).toHaveLength(1);
-    expect(agentWarns[0]?.[2]).toMatchObject({ storyId: "US-1", agent: "ghost" });
+    expect(agentWarns[0]?.data).toMatchObject({ storyId: "US-1", agent: "ghost" });
   });
 });

@@ -20,7 +20,7 @@ import { _debateSessionDeps, resolveOutcome } from "@/debate/session-helpers";
 import type { DebateSessionOptions } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import type { CallContext } from "@/operations/types";
-import { makeMockAgentManager } from "@test/helpers";
+import { makeLogger, makeMockAgentManager } from "@test/helpers";
 
 const DEFAULT_DEBATE_CONFIG = debateConfigSelector.select(DEFAULT_CONFIG);
 
@@ -282,17 +282,9 @@ describe("resolveOutcome() — majority resolver warns when workdir provided (US
 
   test("emits warn for majority-fail-closed and majority-fail-open when workdir is defined", async () => {
     const makeWarnCapture = () => {
-      const warnCalls: Array<{ stage: string; message: string }> = [];
-      _debateSessionDeps.getSafeLogger = mock(
-        () =>
-          ({
-            warn: (stage: string, message: string) => warnCalls.push({ stage, message }),
-            info: () => {},
-            debug: () => {},
-            error: () => {},
-          }) as unknown as ReturnType<typeof _debateSessionDeps.getSafeLogger>,
-      );
-      return warnCalls;
+      const logger = makeLogger();
+      _debateSessionDeps.getSafeLogger = mock(() => logger);
+      return logger;
     };
 
     for (const resolverType of ["majority-fail-closed", "majority-fail-open"] as const) {
@@ -308,8 +300,10 @@ describe("resolveOutcome() — majority resolver warns when workdir provided (US
         "/tmp/workdir",
         "my-feature",
       );
-      expect(warnCalls.length).toBeGreaterThan(0);
-      expect(warnCalls[0].message).toContain("majority resolver does not support implementer session resumption");
+      expect(warnCalls.calls.length).toBeGreaterThan(0);
+      expect(warnCalls.calls[0]?.message).toContain(
+        "majority resolver does not support implementer session resumption",
+      );
     }
   });
 

@@ -12,6 +12,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _rulesCLIDeps, _rulesLintDeps, rulesLintCommandDirect as rulesLintCommandFromLint } from "@/cli";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
+import { makeLogger } from "@test/helpers";
+import type { LogCall } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers
@@ -45,13 +47,6 @@ afterEach(() => {
   _rulesCLIDeps.getLogger = origGetLoggerCLI;
 });
 
-interface IsolationCall {
-  level: string;
-  stage: string;
-  message: string;
-  data?: Record<string, unknown>;
-}
-
 function makeRule(overrides: Partial<CanonicalRule>): CanonicalRule {
   return {
     fileName: "rule.md",
@@ -62,21 +57,11 @@ function makeRule(overrides: Partial<CanonicalRule>): CanonicalRule {
   };
 }
 
-function captureLogger(): IsolationCall[] {
-  const calls: IsolationCall[] = [];
-  const logger = {
-    warn: (stage: string, message: string, data?: Record<string, unknown>) => {
-      calls.push({ level: "warn", stage, message, data });
-    },
-    info: (stage: string, message: string, data?: Record<string, unknown>) => {
-      calls.push({ level: "info", stage, message, data });
-    },
-    debug: () => {},
-    error: () => {},
-  };
-  _rulesLintDeps.getLogger = () => logger as unknown as ReturnType<typeof _rulesLintDeps.getLogger>;
-  _rulesCLIDeps.getLogger = () => logger as unknown as ReturnType<typeof _rulesCLIDeps.getLogger>;
-  return calls;
+function captureLogger(): LogCall[] {
+  const logger = makeLogger();
+  _rulesLintDeps.getLogger = () => logger;
+  _rulesCLIDeps.getLogger = () => logger;
+  return logger.calls;
 }
 
 function captureStdout(): { lines: string[]; restore(): void } {

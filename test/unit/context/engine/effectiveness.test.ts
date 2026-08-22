@@ -19,7 +19,7 @@ import * as EngineBarrel from "@/context/engine";
 // AC2: must import directly from effectiveness.ts to verify direct-vs-barrel equivalence
 import { classifyWithTerms as classifyWithTermsDirect } from "@/context/engine/effectiveness";
 import { _manifestStoreDeps } from "@/context/engine/manifest-store";
-import { withDepsRestore } from "@test/helpers";
+import { makeLogger, withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // US-004: classifyWithTerms + buildEvidenceTerms (production helpers)
@@ -174,11 +174,8 @@ describe("annotateManifestEffectiveness — #506 catch block logging", () => {
   withDepsRestore(_effectivenessDeps);
 
   test("calls logger.warn when manifest read-modify-write throws", async () => {
-    const warnArgs: Array<[string, string, Record<string, unknown>]> = [];
-    _effectivenessDeps.getLogger = () =>
-      ({
-        warn: (stage: string, msg: string, ctx: Record<string, unknown>) => warnArgs.push([stage, msg, ctx]),
-      }) as unknown as ReturnType<typeof _effectivenessDeps.getLogger>;
+    const logger = makeLogger();
+    _effectivenessDeps.getLogger = () => logger;
 
     let readCount = 0;
     _manifestStoreDeps.listManifestFiles = async () => ["context-manifest-execution.json"];
@@ -195,14 +192,14 @@ describe("annotateManifestEffectiveness — #506 catch block logging", () => {
       findingMessages: [],
     });
 
-    expect(warnArgs.length).toBeGreaterThan(0);
-    expect(warnArgs[0][0]).toBe("context-v2");
-    expect(typeof warnArgs[0][2].error).toBe("string");
+    const warns = logger.calls.filter((c) => c.level === "warn");
+    expect(warns.length).toBeGreaterThan(0);
+    expect(warns[0]?.stage).toBe("context-v2");
+    expect(typeof warns[0]?.data?.error).toBe("string");
   });
 
   test("continues processing remaining manifests when one read-modify-write fails", async () => {
-    _effectivenessDeps.getLogger = () =>
-      ({ warn: () => {} }) as unknown as ReturnType<typeof _effectivenessDeps.getLogger>;
+    _effectivenessDeps.getLogger = () => makeLogger();
 
     const written: string[] = [];
     let readCount = 0;

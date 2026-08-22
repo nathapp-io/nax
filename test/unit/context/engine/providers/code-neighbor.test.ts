@@ -14,7 +14,7 @@ import type { ContextRequest } from "@/context/engine/types";
 import { extractTestDirs, globsToPathspec, globsToTestRegex } from "@/test-runners/conventions";
 import type { ResolvedTestPatterns } from "@/test-runners/resolver";
 import type { NaxIgnoreIndex, NaxIgnoreMatcher } from "@/utils/path-filters";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
 
 /**
  * Build a ResolvedTestPatterns value from test-file globs.
@@ -502,27 +502,21 @@ describe("CodeNeighborProvider — #508-M11 glob cap debug logging", () => {
   });
 
   test("logs warn when glob truncated at cap; no warn when below cap", () => {
-    let warnCalls: Array<[string, string, Record<string, unknown>]> = [];
-    _codeNeighborDeps.getLogger = () =>
-      ({
-        debug: () => {},
-        warn: (stage: string, msg: string, ctx: Record<string, unknown>) => warnCalls.push([stage, msg, ctx]),
-        info: () => {},
-        error: () => {},
-      }) as unknown as ReturnType<typeof _codeNeighborDeps.getLogger>;
+    const logger = makeLogger();
+    _codeNeighborDeps.getLogger = () => logger;
 
     const { files, truncated } = _codeNeighborDeps.glob("src/**/*.ts", tmpDir, [], 200);
     expect(files).toHaveLength(200);
     expect(truncated).toBe(true);
-    expect(warnCalls.length).toBeGreaterThan(0);
-    expect(warnCalls[0]?.[0]).toBe("context-v2");
-    expect(warnCalls[0]?.[2]).toMatchObject({ cap: 200 });
+    expect(logger.calls.length).toBeGreaterThan(0);
+    expect(logger.calls[0]?.stage).toBe("context-v2");
+    expect(logger.calls[0]?.data).toMatchObject({ cap: 200 });
 
-    warnCalls = [];
+    logger.reset();
     const { files: files2, truncated: truncated2 } = _codeNeighborDeps.glob("src/file0.ts", tmpDir, [], 500);
     expect(files2.length).toBeLessThan(200);
     expect(truncated2).toBe(false);
-    expect(warnCalls.length).toBe(0);
+    expect(logger.calls.length).toBe(0);
   });
 });
 

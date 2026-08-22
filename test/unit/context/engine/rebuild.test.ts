@@ -310,7 +310,7 @@ describe("US-001 — rebuild() AC6: unknown agent id sets bundle.agentId AND emi
   beforeEach(() => {
     origGetLogger = _orchestratorDeps.getLogger;
     mockLogger = makeLogger();
-    _orchestratorDeps.getLogger = () => mockLogger as unknown as ReturnType<typeof _orchestratorDeps.getLogger>;
+    _orchestratorDeps.getLogger = () => mockLogger;
   });
 
   afterEach(() => {

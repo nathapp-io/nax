@@ -12,6 +12,7 @@ import {
   RulesFrontmatterError,
   parseFrontmatter,
 } from "@/context/rules/rules-frontmatter";
+import { makeLogger } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC1: parseFrontmatter() returns priority 100 when content has no frontmatter block
@@ -458,19 +459,9 @@ describe("loadCanonicalRules — AC14 displaced-frontmatter logger warning", () 
     _canonicalLoaderDeps.getLogger = origGetLogger;
   });
 
-  function makeWarnSpy(warnData: Array<Record<string, unknown>>) {
-    return () =>
-      ({
-        warn: (_stage: string, _msg: string, data: Record<string, unknown>) => warnData.push(data),
-        debug: () => {},
-        info: () => {},
-        error: () => {},
-      }) as unknown as ReturnType<typeof _canonicalLoaderDeps.getLogger>;
-  }
-
   test("[AC14] emits a warning through _canonicalLoaderDeps.getLogger() when a rule file has a displaced frontmatter block", async () => {
-    const warnData: Array<Record<string, unknown>> = [];
-    _canonicalLoaderDeps.getLogger = makeWarnSpy(warnData);
+    const logger = makeLogger();
+    _canonicalLoaderDeps.getLogger = () => logger;
 
     const filePath = "/project/.nax/rules/displaced.md";
     _canonicalLoaderDeps.globInDir = () => [filePath];
@@ -483,8 +474,8 @@ describe("loadCanonicalRules — AC14 displaced-frontmatter logger warning", () 
 
     await loadCanonicalRules("/project");
 
-    const hasDisplacedWarning = warnData.some((entry) => {
-      const file = entry.file;
+    const hasDisplacedWarning = logger.calls.some((c) => {
+      const file = c.data?.file;
       return typeof file === "string" && file === filePath;
     });
     expect(hasDisplacedWarning).toBe(true);

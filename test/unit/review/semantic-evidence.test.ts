@@ -38,7 +38,7 @@ let origGetLogger: typeof _evidenceDeps.getLogger;
 beforeEach(() => {
   logger = makeLogger();
   origGetLogger = _evidenceDeps.getLogger;
-  _evidenceDeps.getLogger = () => logger as unknown as ReturnType<typeof _evidenceDeps.getLogger>;
+  _evidenceDeps.getLogger = () => logger;
 });
 
 afterEach(() => {

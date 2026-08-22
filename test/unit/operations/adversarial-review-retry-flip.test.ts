@@ -18,7 +18,7 @@ import * as loggerModule from "@/logger";
 import { type CallContext, _callOpDeps, adversarialReviewOp, callOp } from "@/operations";
 import type { AdversarialReviewInput } from "@/operations/adversarial-review";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import { makeLogger, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -266,22 +266,8 @@ describe("AC6: cost accumulation — estimatedCostUsd sums all turns", () => {
 
 describe("AC7: logging — storyId is first key in data object", () => {
   test("warn logs on JSON parse retry include storyId as first key", () => {
-    const mockLogger = {
-      info: () => {},
-      warn: (_stage: string, message: string, data: Record<string, unknown>) => {
-        if (message.includes("retry")) {
-          const keys = Object.keys(data);
-          expect(keys[0]).toBe("storyId");
-          expect(data.storyId).toBe(SAMPLE_STORY.id);
-        }
-      },
-      debug: () => {},
-      error: () => {},
-    };
-
-    const spy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(
-      mockLogger as unknown as ReturnType<typeof loggerModule.getSafeLogger>,
-    );
+    const logger = makeLogger();
+    const spy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
 
     try {
       const ctx = makeBuildCtx();
@@ -303,6 +289,12 @@ describe("AC7: logging — storyId is first key in data object", () => {
       const result = strategy.shouldRetry(new ParseValidationError("JSON parse failed"), 0, retryCtx);
 
       expect(result.retry).toBe(true);
+
+      for (const call of logger.calls.filter((c) => c.message.includes("retry"))) {
+        const keys = Object.keys(call.data ?? {});
+        expect(keys[0]).toBe("storyId");
+        expect(call.data?.storyId).toBe(SAMPLE_STORY.id);
+      }
     } finally {
       spy.mockRestore();
     }
