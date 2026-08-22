@@ -2,10 +2,13 @@
 
 **Date:** 2026-08-21 (**rev. 3** — 2026-08-22: re-verification + implementation handover)
 **Reviewer:** ox-alpha (AI); rev. 2 re-verification and rev. 3 decision register by a second reviewer
-**Status:** **P0 and P1 shipped** on branch `fix/fail-open-gates` (10 commits, all findings
-below marked ✅ SHIPPED) — see `docs/20260822-review-fail-open-gates-branch.md` for the
-implementation code review (Grade A-, no blocking findings). P2/P3/P4 remain open — see
-**Handover Brief** below before starting that work.
+**Status:** **P0, P1, and all 6 remaining P2 findings shipped.** P0/P1 landed on branch
+`fix/fail-open-gates` (10 commits, all findings below marked ✅ SHIPPED) — see
+`docs/20260822-review-fail-open-gates-branch.md` for the implementation code review (Grade A-, no
+blocking findings). The remaining P2 batch (MEM-6, BUG-8, BUG-9, BUG-11, BUG-12, BUG-13) landed on
+branch `fix/p2-review-batch` (commits `a2603ee67`, `d325f1a22` — the second commit fixes
+test-isolation issues and adds missing regression coverage found in self-review of the first).
+P3/P4 remain open — see **Handover Brief** below before starting that work.
 **Version:** 0.81.0 (HEAD `76c5bafdc`, clean tree)
 **Files:** ~891 TS files in `src/` + `bin/` (~141k LOC); all 40 source directories covered via 6 parallel deep-dive passes + knowledge-graph hotspot analysis
 **Baseline:** `bun run typecheck` — clean (exit 0) at review time; only 4 non-comment `any` uses in `src/`
@@ -1140,13 +1143,13 @@ BUG-19.)*
 | **P1** | BUG-3 | S | ✅ **SHIPPED** (commit `5263d67dc`) — Add `--cwd` to the `acpx cancel` / `acpx stop` argv |
 | **P1** | SEC-18 | S | ✅ **SHIPPED** (commit `34d64849f`) — `validateProfileName` in profile create |
 | **P1** | SEC-5 | M | ✅ **SHIPPED** (commit `b4a27225d`, with BUG-40/BUG-10) — Fail fast on config parse errors — strict `loadJsonFile` variant (ENOENT ≠ corrupt); also fixes BUG-10 and pairs with BUG-40 |
-| **P2** | MEM-6 | M | Remove worktrees for failed parallel stories (track creation, not config mode) |
+| **P2** | MEM-6 | M | ✅ **SHIPPED** (`fix/p2-review-batch`, commit `a2603ee67`) — Worktree cleanup now keys off real `.nax-wt/<storyId>` existence (`_resultHandlerDeps.existsSync`) rather than `storyIsolation` config mode, on both the `fail` and `pause` branches |
 | **P2** | BUG-10 | S | ✅ **SHIPPED** (commit `b4a27225d`, shipped early alongside SEC-5 since they share `loadJsonFileStrict`) — Quarantine corrupt `metrics.json` instead of wiping history |
-| **P2** | BUG-11 | S | NaN-safe timestamp guard in scratch purge |
-| **P2** | BUG-12 | S | `asFiniteNumber` for all four `usage_update` numeric fields |
-| **P2** | BUG-13 | M | Deadline for worktree dependency provisioning spawn |
-| **P2** | BUG-8 | M | Re-resolve dispatchable stories by id after the PRD reload |
-| **P2** | BUG-9 | M | Coordinator-owned queue-command application in parallel mode |
+| **P2** | BUG-11 | S | ✅ **SHIPPED** (`fix/p2-review-batch`, commit `a2603ee67`) — NaN-safe timestamp guard in scratch purge (fail safe / keep on unparseable `lastActivityAt`) |
+| **P2** | BUG-12 | S | ✅ **SHIPPED** (`fix/p2-review-batch`, commit `a2603ee67`) — `asFiniteNumber` for all four `usage_update` numeric fields in the JSON-RPC `session/update` branch |
+| **P2** | BUG-13 | M | ✅ **SHIPPED** (`fix/p2-review-batch`, commit `a2603ee67`) — `execution.worktreeDependencies.timeoutSeconds` (default 300s) + SIGKILL-on-expiry for the provisioning spawn |
+| **P2** | BUG-8 | M | ✅ **SHIPPED** (`fix/p2-review-batch`, commit `a2603ee67`) — `runBatchPreChecks` re-resolves dispatchable stories by id against the reloaded PRD generation after a sibling skip |
+| **P2** | BUG-9 | M | ✅ **SHIPPED** (`fix/p2-review-batch`, commit `a2603ee67`) — `queueCheckStage` refuses to claim commands under `skipPrdPersistence`; `drainQueueAtBatchBoundary` (new, `execution/queue-handler.ts`) applies PAUSE/ABORT/RETRY/PRIORITY/SKIP/INJECT once per parallel-batch boundary instead |
 | **P3** | BUG-7, BUG-14, BUG-15, BUG-16, BUG-17, MEM-19, ENH-20 | M | ENH-20 ✅ **SHIPPED** (commit `37c111c94`, shipped early — sequencing groups it with BUG-1/BUG-2 as the "green must mean checked" PR, not with this P3 batch). Remaining: cost pre-gate, inconclusive-acceptance handling, `parseAsync`, status shape validation, prompts-init path, drain deadlines |
 | **P4** | LOW items (STYLE-21 … ENH-47) | S each | Table above; mostly one-line guards or doc clarifications. Prioritise BUG-31 / PERF-32 alongside BUG-13 to close the deadline convention gap in one pass |
 
