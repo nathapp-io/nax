@@ -95,9 +95,18 @@ export function createMockAgent(results: Partial<AgentResult>[]): AgentAdapter {
       // guard accepts the response. Callers supplying explicit `output` (e.g.
       // for parser-specific assertions) override this default.
       // Include `approved` so verifierOp.parse (which uses coerceVerdict) can
-      // derive the correct approval status from the same envelope.
+      // derive the correct approval status from the same envelope. Also
+      // include a `tests` object with real (albeit fake) pass/fail evidence
+      // — coerceVerdict (BUG-1, D-1) no longer seeds `tests.allPassing` from
+      // `approved` alone; it requires actual test evidence, and this generic
+      // envelope is reused for the verifier session role too.
       const approved = !!(r.success ?? true);
-      const defaultOutput = JSON.stringify({ success: r.success ?? true, filesChanged: [], approved });
+      const defaultOutput = JSON.stringify({
+        success: r.success ?? true,
+        filesChanged: [],
+        approved,
+        tests: { allPassing: approved, passCount: approved ? 1 : 0, failCount: approved ? 0 : 1 },
+      });
       return {
         output: r.output ?? defaultOutput,
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
