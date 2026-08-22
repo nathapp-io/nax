@@ -1,0 +1,785 @@
+{
+  "counts": {
+    "asAny": 1399,
+    "tsSuppress": 54,
+    "ratchetAllow": 128
+  },
+  "updatedAt": "2026-08-22T13:36:35.497Z",
+  "byFile": {
+    "test/helpers/mock-agent-manager.ts": {
+      "asAny": 1
+    },
+    "test/helpers/mutation-check.ts": {
+      "asAny": 3
+    },
+    "test/helpers/e2e/orchestrator-harness.ts": {
+      "asAny": 1
+    },
+    "test/integration/interaction/interaction-chain-pipeline.test.ts": {
+      "asAny": 16,
+      "tsSuppress": 3
+    },
+    "test/integration/tdd/_tdd-test-helpers.ts": {
+      "asAny": 5
+    },
+    "test/integration/tdd/tdd-cleanup.test.ts": {
+      "asAny": 17
+    },
+    "test/integration/routing/plugin-routing-advanced.test.ts": {
+      "asAny": 2
+    },
+    "test/integration/prompts/pb-004-migration.test.ts": {
+      "asAny": 11
+    },
+    "test/integration/execution/fullsuite-rectify-declaration.test.ts": {
+      "asAny": 6
+    },
+    "test/integration/execution/runner-plugin-integration.test.ts": {
+      "asAny": 1
+    },
+    "test/integration/execution/nbf-rectify-declaration.test.ts": {
+      "asAny": 6
+    },
+    "test/integration/execution/rectification-routing.test.ts": {
+      "asAny": 4
+    },
+    "test/integration/execution/verifier-findings-flow.test.ts": {
+      "asAny": 6
+    },
+    "test/integration/execution/parallel-batch-rectification.test.ts": {
+      "asAny": 9
+    },
+    "test/integration/execution/scratch-per-role.test.ts": {
+      "asAny": 1
+    },
+    "test/integration/execution/parallel-batch-results.test.ts": {
+      "asAny": 16
+    },
+    "test/integration/execution/verdict-cleanup.test.ts": {
+      "asAny": 1
+    },
+    "test/integration/operations/complete-empty-output-retry.test.ts": {
+      "asAny": 1
+    },
+    "test/integration/cli/cli-precheck-integration.test.ts": {
+      "asAny": 1
+    },
+    "test/integration/agents/timeout-retry-fresh-session.test.ts": {
+      "asAny": 3
+    },
+    "test/integration/agents/stale-then-swap.test.ts": {
+      "asAny": 10
+    },
+    "test/integration/agents/manager-lifetime.test.ts": {
+      "asAny": 1
+    },
+    "test/integration/agents/stale-retry-session-reuse.test.ts": {
+      "asAny": 3
+    },
+    "test/integration/plan/plan-callop-migration.test.ts": {
+      "asAny": 1
+    },
+    "test/integration/config/security-loader.test.ts": {
+      "asAny": 1
+    },
+    "test/integration/config/merger.test.ts": {
+      "asAny": 3
+    },
+    "test/integration/context/context-verification-integration.test.ts": {
+      "asAny": 5
+    },
+    "test/integration/context/test-coverage-parity.test.ts": {
+      "asAny": 8
+    },
+    "test/integration/pipeline/pipeline-acceptance.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/session/session-keeper.test.ts": {
+      "asAny": 7
+    },
+    "test/unit/session/scratch-writer.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/interaction/chain.test.ts": {
+      "ratchetAllow": 1
+    },
+    "test/unit/interaction/interaction-network-failures.test.ts": {
+      "ratchetAllow": 6
+    },
+    "test/unit/interaction/plugins/telegram.test.ts": {
+      "tsSuppress": 2,
+      "ratchetAllow": 1
+    },
+    "test/unit/interaction/plugins/cli.test.ts": {
+      "asAny": 8
+    },
+    "test/unit/tdd/retire-legacy-surfaces.test.ts": {
+      "asAny": 13
+    },
+    "test/unit/tdd/isolation.test.ts": {
+      "ratchetAllow": 2
+    },
+    "test/unit/precheck/precheck-checks-tier1-blockers.test.ts": {
+      "asAny": 3
+    },
+    "test/unit/precheck/precheck-checks-tier2-warnings.test.ts": {
+      "asAny": 8
+    },
+    "test/unit/prompts/builder.test.ts": {
+      "asAny": 5
+    },
+    "test/unit/prompts/builders/rectifier-builder.test.ts": {
+      "asAny": 5
+    },
+    "test/unit/prompts/builders/rectifier-builder-review-labels.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/prompts/sections/role-task.test.ts": {
+      "asAny": 7
+    },
+    "test/unit/prompts/sections/isolation.test.ts": {
+      "asAny": 6
+    },
+    "test/unit/prompts/sections/tdd-conventions.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/prompts/sections/hermetic.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/prd/schema.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/prd/prd-auto-default.test.ts": {
+      "asAny": 11
+    },
+    "test/unit/review/adversarial-metadata-audit.test.ts": {
+      "asAny": 10
+    },
+    "test/unit/review/semantic-debate.test.ts": {
+      "asAny": 4
+    },
+    "test/unit/review/adversarial-retry-truncation.test.ts": {
+      "asAny": 9
+    },
+    "test/unit/review/semantic-retry.test.ts": {
+      "asAny": 8
+    },
+    "test/unit/review/orchestrator-wrapper-parity.test.ts": {
+      "asAny": 3
+    },
+    "test/unit/review/adversarial-pass-fail.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/review/recurrence-demotion.test.ts": {
+      "asAny": 4
+    },
+    "test/unit/review/runner.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/finish/review-audit-gaps-quality-walk.test.ts": {
+      "ratchetAllow": 1
+    },
+    "test/unit/finish/notify.test.ts": {
+      "ratchetAllow": 1
+    },
+    "test/unit/finish/pr-title.test.ts": {
+      "ratchetAllow": 1
+    },
+    "test/unit/hooks/on-all-stories-complete.test.ts": {
+      "tsSuppress": 12
+    },
+    "test/unit/hooks/shell-security.test.ts": {
+      "tsSuppress": 13
+    },
+    "test/unit/execution/plan-inputs.test.ts": {
+      "asAny": 4
+    },
+    "test/unit/execution/story-orchestrator.test.ts": {
+      "asAny": 50
+    },
+    "test/unit/execution/story-orchestrator-revalidation-repo-scope.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/execution/pipeline-result-handler-bug12.test.ts": {
+      "ratchetAllow": 6
+    },
+    "test/unit/execution/unified-executor-tier-budget.test.ts": {
+      "ratchetAllow": 1
+    },
+    "test/unit/execution/build-plan-for-strategy.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/execution/merge.test.ts": {
+      "asAny": 1,
+      "tsSuppress": 10,
+      "ratchetAllow": 1
+    },
+    "test/unit/execution/worktree-manager.test.ts": {
+      "tsSuppress": 8
+    },
+    "test/unit/execution/_revalidation-fixtures.ts": {
+      "asAny": 4
+    },
+    "test/unit/execution/story-orchestrator-duplicate-phase.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/execution/post-run-isolation.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/execution/mutation-check-wiring.test.ts": {
+      "asAny": 22
+    },
+    "test/unit/execution/story-orchestrator-resume-integration.test.ts": {
+      "asAny": 1,
+      "tsSuppress": 1
+    },
+    "test/unit/execution/post-run-inspection.test.ts": {
+      "asAny": 8
+    },
+    "test/unit/execution/repo-scoped-fix-record.test.ts": {
+      "ratchetAllow": 1
+    },
+    "test/unit/execution/story-orchestrator-rectification-exhaustion.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/execution/story-orchestrator-resume-guard.test.ts": {
+      "asAny": 12
+    },
+    "test/unit/execution/parallel-batch.test.ts": {
+      "ratchetAllow": 2
+    },
+    "test/unit/execution/parallel-worker-isolation.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/execution/unified-executor-reconcile.test.ts": {
+      "asAny": 3
+    },
+    "test/unit/execution/pipeline-result-handler-worktree-cleanup.test.ts": {
+      "ratchetAllow": 6
+    },
+    "test/unit/execution/story-orchestrator-logs.test.ts": {
+      "asAny": 22
+    },
+    "test/unit/execution/crash-heartbeat.test.ts": {
+      "asAny": 7
+    },
+    "test/unit/execution/pipeline-result-handler-pause-reason.test.ts": {
+      "ratchetAllow": 4
+    },
+    "test/unit/execution/pid-registry.test.ts": {
+      "ratchetAllow": 2
+    },
+    "test/unit/execution/story-orchestrator-check-ops.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/execution/plan-inputs-review-wiring.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/execution/escalation/tier-escalation-retry-cap.test.ts": {
+      "ratchetAllow": 5
+    },
+    "test/unit/execution/escalation/tier-escalation-source-tier.test.ts": {
+      "asAny": 1,
+      "ratchetAllow": 22
+    },
+    "test/unit/execution/escalation/per-tier-budget.test.ts": {
+      "ratchetAllow": 4
+    },
+    "test/unit/execution/escalation/tier-escalation-first-iteration.test.ts": {
+      "ratchetAllow": 2
+    },
+    "test/unit/execution/story-orchestrator/semantic-iteration-wiring.test.ts": {
+      "asAny": 5
+    },
+    "test/unit/execution/story-orchestrator/run-phase-telemetry.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/execution/story-orchestrator/flake-triage-seam.test.ts": {
+      "ratchetAllow": 1
+    },
+    "test/unit/execution/story-orchestrator/phase-details.test.ts": {
+      "asAny": 28
+    },
+    "test/unit/execution/lifecycle/run-regression.test.ts": {
+      "tsSuppress": 5
+    },
+    "test/unit/execution/lifecycle/run-cleanup.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/execution/lifecycle/acceptance-loop-cycle.test.ts": {
+      "asAny": 10
+    },
+    "test/unit/execution/lifecycle/acceptance-loop-retry-budget.test.ts": {
+      "asAny": 7
+    },
+    "test/unit/findings/cycle.test.ts": {
+      "ratchetAllow": 2
+    },
+    "test/unit/acceptance/hardening.test.ts": {
+      "asAny": 5,
+      "ratchetAllow": 1
+    },
+    "test/unit/verification/smart-runner.test.ts": {
+      "asAny": 12
+    },
+    "test/unit/verification/import-grep-fallback.test.ts": {
+      "asAny": 4
+    },
+    "test/unit/verification/tdd-verdict.test.ts": {
+      "asAny": 3
+    },
+    "test/unit/verification/map-source-to-tests-parallel.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/verification/flake-probe.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/verification/smart-runner-packageprefix.test.ts": {
+      "asAny": 3
+    },
+    "test/unit/verification/smart-runner-discovery.test.ts": {
+      "asAny": 15
+    },
+    "test/unit/operations/mechanical-lintfix-strategy.test.ts": {
+      "asAny": 8
+    },
+    "test/unit/operations/adversarial-review-reground.test.ts": {
+      "asAny": 14
+    },
+    "test/unit/operations/autofix-implementer-strategy.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/operations/verify-scoped.test.ts": {
+      "asAny": 6
+    },
+    "test/unit/operations/verify-op-recover.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/operations/full-suite-gate.test.ts": {
+      "asAny": 22
+    },
+    "test/unit/operations/typecheck-check.test.ts": {
+      "asAny": 6
+    },
+    "test/unit/operations/autofix-implementer.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/operations/finish-review-quality-walk.test.ts": {
+      "ratchetAllow": 2
+    },
+    "test/unit/operations/debate-propose.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/operations/adversarial-review-retry-flip.test.ts": {
+      "asAny": 13
+    },
+    "test/unit/operations/mechanical-formatfix-strategy.test.ts": {
+      "asAny": 6
+    },
+    "test/unit/operations/mutation-check-selection.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/operations/finish-narrative.test.ts": {
+      "ratchetAllow": 2
+    },
+    "test/unit/operations/quality-gate-packageview.test.ts": {
+      "asAny": 12
+    },
+    "test/unit/operations/adversarial-review-inspection-trail.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/operations/debate-rebut.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/operations/plan-interactive.test.ts": {
+      "asAny": 10
+    },
+    "test/unit/operations/semantic-review-inspection-trail.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/operations/lint-check.test.ts": {
+      "asAny": 6
+    },
+    "test/unit/operations/ground.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/operations/semantic-review-reground.test.ts": {
+      "asAny": 12
+    },
+    "test/unit/operations/mutation-check.test.ts": {
+      "asAny": 3
+    },
+    "test/unit/operations/autofix-test-writer.test.ts": {
+      "asAny": 4
+    },
+    "test/unit/operations/mutation-check-revert.test.ts": {
+      "asAny": 5
+    },
+    "test/unit/operations/full-suite-rectify.test.ts": {
+      "asAny": 4
+    },
+    "test/unit/operations/implementer.test.ts": {
+      "asAny": 31
+    },
+    "test/unit/operations/adversarial-review-requote.test.ts": {
+      "asAny": 7
+    },
+    "test/unit/operations/plan-critic-llm.test.ts": {
+      "asAny": 6
+    },
+    "test/unit/operations/write-test-op.test.ts": {
+      "asAny": 27
+    },
+    "test/unit/operations/plan-draft.test.ts": {
+      "asAny": 13
+    },
+    "test/unit/operations/verify-op-parse-retry.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/operations/mutation-check-telemetry.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/operations/semantic-review-verify.test.ts": {
+      "asAny": 3
+    },
+    "test/unit/operations/lint-check-tool-diagnostics.test.ts": {
+      "asAny": 6
+    },
+    "test/unit/operations/adversarial-advisory-findings.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/operations/adversarial-review.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/operations/build-hop-callback-stale-retry.test.ts": {
+      "asAny": 6
+    },
+    "test/unit/operations/finish-review.test.ts": {
+      "ratchetAllow": 1
+    },
+    "test/unit/operations/full-suite-rectify-op.test.ts": {
+      "asAny": 3
+    },
+    "test/unit/operations/mutation-check-diff-scope.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/operations/autofix-test-writer-strategy.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/operations/fix-strategy-composition.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/operations/test-presence-gate.test.ts": {
+      "asAny": 21
+    },
+    "test/unit/operations/verify-op.test.ts": {
+      "asAny": 22
+    },
+    "test/unit/operations/debate-synthesis.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/operations/greenfield-gate.test.ts": {
+      "asAny": 18
+    },
+    "test/unit/operations/debate-judge.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/operations/adversarial-review-verify.test.ts": {
+      "asAny": 4
+    },
+    "test/unit/operations/typecheck-check-tool-diagnostics.test.ts": {
+      "asAny": 6
+    },
+    "test/unit/debate/runner-plan.test.ts": {
+      "asAny": 42
+    },
+    "test/unit/debate/runner-plug-point-dispatch.test.ts": {
+      "asAny": 14
+    },
+    "test/unit/debate/runner-rounds-and-cost.test.ts": {
+      "asAny": 4
+    },
+    "test/unit/debate/runner-stateful.test.ts": {
+      "asAny": 27
+    },
+    "test/unit/debate/session-helpers-resolver-model.test.ts": {
+      "asAny": 5
+    },
+    "test/unit/debate/prompt-builder.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/debate/runner-one-shot-roles.test.ts": {
+      "asAny": 4
+    },
+    "test/unit/debate/session-helpers.test.ts": {
+      "asAny": 8
+    },
+    "test/unit/debate/runner.test.ts": {
+      "asAny": 23
+    },
+    "test/unit/debate/runner-agent-resolution.test.ts": {
+      "asAny": 5
+    },
+    "test/unit/debate/runner-mode-routing.test.ts": {
+      "asAny": 8
+    },
+    "test/unit/debate/runner-events.test.ts": {
+      "asAny": 4
+    },
+    "test/unit/debate/runner-hybrid.test.ts": {
+      "asAny": 43
+    },
+    "test/unit/debate/verifiers/review-grounding-filter.test.ts": {
+      "asAny": 3
+    },
+    "test/unit/debate/verifiers/plan-checklist.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/cli/plan-debate.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/cli/plan-decompose-ac13-14.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/cli/plan-mode.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/cli/plan.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/cli/init-detect-ui.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/cli/init-detect.test.ts": {
+      "asAny": 7
+    },
+    "test/unit/cli/config-display.test.ts": {
+      "ratchetAllow": 1
+    },
+    "test/unit/utils/queue-file-lock.test.ts": {
+      "ratchetAllow": 4
+    },
+    "test/unit/utils/git-capture-diff-summary.test.ts": {
+      "ratchetAllow": 2
+    },
+    "test/unit/agents/timeout-retry-hop.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/agents/manager-complete-empty-output.test.ts": {
+      "ratchetAllow": 2
+    },
+    "test/unit/agents/manager-stale-retry-hop-kind.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/agents/acp/adapter.test.ts": {
+      "ratchetAllow": 1
+    },
+    "test/unit/agents/acp/token-mapper.test.ts": {
+      "ratchetAllow": 5
+    },
+    "test/unit/agents/acp/spawn-client.test.ts": {
+      "ratchetAllow": 2
+    },
+    "test/unit/agents/acp/activity-emission.test.ts": {
+      "asAny": 8
+    },
+    "test/unit/agents/acp/registry.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/agents/acp/adapter-phase-a.test.ts": {
+      "asAny": 13
+    },
+    "test/unit/agents/cost/calculate.test.ts": {
+      "ratchetAllow": 4
+    },
+    "test/unit/agents/retry/types.test.ts": {
+      "asAny": 3
+    },
+    "test/unit/agents/retry/tiered-parse-retry.test.ts": {
+      "asAny": 4
+    },
+    "test/unit/worktree/dependencies.test.ts": {
+      "ratchetAllow": 1
+    },
+    "test/unit/runtime/packages.test.ts": {
+      "asAny": 7
+    },
+    "test/unit/runtime/middleware/agent-stream-logging.test.ts": {
+      "asAny": 16
+    },
+    "test/unit/plugins/registry.test.ts": {
+      "asAny": 18
+    },
+    "test/unit/plugins/builtin/otel-resource-adoption.test.ts": {
+      "asAny": 6
+    },
+    "test/unit/plugins/builtin/otel-resource-git.test.ts": {
+      "asAny": 5
+    },
+    "test/unit/plugins/builtin/curator-registration.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/plugins/builtin/curator-paths.test.ts": {
+      "asAny": 4
+    },
+    "test/unit/plugins/builtin/otel-reporter-logs-lifecycle.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/plugins/builtin/curator-seam.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/plugins/builtin/curator-collector.test.ts": {
+      "asAny": 15
+    },
+    "test/unit/plugins/builtin/curator-scoping.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/config/regression-gate-schema.test.ts": {
+      "asAny": 4
+    },
+    "test/unit/config/reporters-schema.test.ts": {
+      "asAny": 5
+    },
+    "test/unit/config/merge-agent-models-routing.test.ts": {
+      "ratchetAllow": 3
+    },
+    "test/unit/config/migrations.test.ts": {
+      "asAny": 12
+    },
+    "test/unit/config/test-strategy.test.ts": {
+      "asAny": 4
+    },
+    "test/unit/quality/runner.test.ts": {
+      "ratchetAllow": 1
+    },
+    "test/unit/logger/redact.test.ts": {
+      "asAny": 28
+    },
+    "test/unit/context/context-build.test.ts": {
+      "asAny": 5
+    },
+    "test/unit/context/file-injection.test.ts": {
+      "asAny": 16
+    },
+    "test/unit/context/context-isolation.test.ts": {
+      "asAny": 11
+    },
+    "test/unit/context/provider-timeout-abort.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/context/prior-failures.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/context/context-format.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/context/context-core.test.ts": {
+      "asAny": 3
+    },
+    "test/unit/context/engine/query-scratch.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/context/engine/provider-weights.test.ts": {
+      "ratchetAllow": 3
+    },
+    "test/unit/context/engine/pull-tools.test.ts": {
+      "asAny": 7
+    },
+    "test/unit/context/engine/lint-config-factory.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/context/engine/orchestrator-factory.test.ts": {
+      "asAny": 3
+    },
+    "test/unit/context/engine/providers/code-neighbor-cache-budget.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/context/engine/providers/test-coverage.test.ts": {
+      "asAny": 7
+    },
+    "test/unit/context/engine/providers/code-neighbor-cap.test.ts": {
+      "asAny": 3
+    },
+    "test/unit/context/engine/providers/prior-run-failure.test.ts": {
+      "ratchetAllow": 4
+    },
+    "test/unit/context/engine/providers/code-neighbor-size-cap.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/pipeline/storyid-events.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/pipeline/runner-retry.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/pipeline/event-bus.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/pipeline/subscribers/interaction.test.ts": {
+      "asAny": 14
+    },
+    "test/unit/pipeline/subscribers/hooks.test.ts": {
+      "asAny": 4
+    },
+    "test/unit/pipeline/subscribers/reporters.test.ts": {
+      "asAny": 3
+    },
+    "test/unit/pipeline/stages/acceptance-setup-fingerprint.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/pipeline/stages/routing-profile-tier.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/pipeline/stages/context-us004.test.ts": {
+      "ratchetAllow": 2
+    },
+    "test/unit/pipeline/stages/execution-phase-telemetry.test.ts": {
+      "asAny": 10
+    },
+    "test/unit/pipeline/stages/acceptance-missing-target.test.ts": {
+      "asAny": 7,
+      "ratchetAllow": 2
+    },
+    "test/unit/pipeline/stages/completion-fragment-capture.test.ts": {
+      "asAny": 6,
+      "ratchetAllow": 4
+    },
+    "test/unit/pipeline/stages/execution-unified.test.ts": {
+      "asAny": 14
+    },
+    "test/unit/pipeline/stages/completion-review-gate.test.ts": {
+      "asAny": 1
+    },
+    "test/unit/pipeline/stages/routing-idempotence.test.ts": {
+      "asAny": 3
+    },
+    "test/unit/pipeline/stages/acceptance-setup-regeneration.test.ts": {
+      "asAny": 5
+    },
+    "test/unit/pipeline/stages/autofix-prompts.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/pipeline/stages/acceptance-setup-commit.test.ts": {
+      "asAny": 4
+    },
+    "test/unit/pipeline/stages/acceptance-setup-criteria.test.ts": {
+      "asAny": 9
+    },
+    "test/unit/pipeline/stages/acceptance-setup-strategy.test.ts": {
+      "asAny": 3
+    },
+    "test/unit/pipeline/stages/acceptance-setup-gate.test.ts": {
+      "asAny": 14
+    },
+    "test/unit/pipeline/stages/execution-repo-scoped-fixes.test.ts": {
+      "ratchetAllow": 2
+    },
+    "test/unit/pipeline/stages/acceptance-setup-agent-file.test.ts": {
+      "asAny": 2
+    },
+    "test/unit/pipeline/stages/acceptance.test.ts": {
+      "asAny": 19,
+      "ratchetAllow": 7
+    }
+  }
+}
