@@ -22,27 +22,21 @@ import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineContext, PipelineRunResult } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD, UserStory } from "@/prd/types";
-import { cleanupTempDir, makePRD, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makePRD, makeStory as makeStoryBase, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
 function makeStory(id: string, opts: Partial<UserStory> = {}): UserStory {
-  return {
+  return makeStoryBase({
     id,
     title: `Story ${id}`,
     description: "Test story",
     acceptanceCriteria: [`AC-1: ${id}`],
-    tags: [],
-    dependencies: [],
-    status: "pending",
-    passes: false,
-    escalations: [],
-    attempts: 0,
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
     ...opts,
-  } as unknown as UserStory;
+  });
 }
 
 function makePrd(stories: UserStory[]): PRD {

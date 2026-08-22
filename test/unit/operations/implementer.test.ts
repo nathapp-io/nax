@@ -4,6 +4,7 @@ import type { NaxConfig } from "@/config";
 import { implementerOp, testWriterOp } from "@/operations";
 import type { RunOperation } from "@/operations";
 import type { UserStory } from "@/prd";
+import { makeStory } from "@test/helpers";
 
 /**
  * Tests for implementerOp — the full RunOperation shape for the implementer role.
@@ -310,17 +311,9 @@ describe("implementerOp.verify — isolation", () => {
 });
 
 function storyWithTier(tier: string | undefined): UserStory {
-  return {
-    id: "US-001",
-    title: "t",
-    description: "d",
-    acceptanceCriteria: [],
-    dependencies: [],
-    status: "pending",
-    passes: false,
-    attempts: 0,
+  return makeStory({
     routing: tier ? { complexity: "medium", modelTier: tier, testStrategy: "tdd-simple", reasoning: "" } : undefined,
-  } as unknown as UserStory;
+  });
 }
 
 const buildCtx = { config: {} as any, packageView: {} as any };

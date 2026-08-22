@@ -6,38 +6,33 @@
 
 import { mock } from "bun:test";
 import type { PRD, UserStory } from "@/prd/types";
+import { makePRD, makeStory } from "@test/helpers";
 
 export function makePendingStory(id: string): UserStory {
-  return {
+  return makeStory({
     id,
     title: `Story ${id}`,
     description: `Description for ${id}`,
     acceptanceCriteria: [`AC-1: ${id} works`],
-    tags: [],
-    dependencies: [],
-    status: "pending" as const,
-    passes: false,
-    escalations: [],
-    attempts: 0,
     routing: {
-      complexity: "simple" as const,
-      modelTier: "fast" as const,
-      testStrategy: "test-after" as const,
+      complexity: "simple",
+      modelTier: "fast",
+      testStrategy: "test-after",
       reasoning: "test",
     },
     priorFailures: [],
-  } as unknown as UserStory;
+  });
 }
 
 export function makePrd(stories: UserStory[]): PRD {
-  return {
+  return makePRD({
     project: "test-project",
     feature: "test-feature",
     branchName: "feat/test",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     userStories: stories,
-  } as unknown as PRD;
+  });
 }
 
 export function makeCtx(overrides: { parallelCount?: number; costLimit?: number; maxIterations?: number } = {}) {

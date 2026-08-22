@@ -5,42 +5,35 @@ import { DEFAULT_CONFIG } from "@/config";
 import type { LoadedHooksConfig } from "@/hooks";
 import { initLogger, resetLogger } from "@/logger";
 import type { PluginRegistry } from "@/plugins";
-import type { PRD, UserStory } from "@/prd/types";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import type { PRD, StoryStatus, UserStory } from "@/prd/types";
+import { cleanupTempDir, makePRD, makeStory as makeStoryBase, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeStory(
-  id: string,
-  dependencies: string[] = [],
-  status: "pending" | "passed" | "failed" | "completed" = "pending",
-): UserStory {
-  return {
+function makeStory(id: string, dependencies: string[] = [], status: StoryStatus = "pending"): UserStory {
+  return makeStoryBase({
     id,
     title: `Story ${id}`,
     description: "Test story",
     acceptanceCriteria: [`AC-1: ${id} feature works`],
-    tags: [],
     dependencies,
     status,
-    passes: status === "passed" || status === "completed",
-    escalations: [],
-    attempts: 0,
+    passes: status === "passed",
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
-  } as unknown as UserStory;
+  });
 }
 
 function makePrd(stories: UserStory[]): PRD {
-  return {
+  return makePRD({
     project: "test-project",
     feature: "test-feature",
     branchName: "feat/test",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     userStories: stories,
-  } as unknown as PRD;
+  });
 }
 
 let tmpDir: string;

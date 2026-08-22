@@ -3,19 +3,17 @@ import type { NaxConfig } from "@/config/types";
 import { FeatureContextProviderV2, _featureContextV2Deps } from "@/context/engine/providers/feature-context";
 import type { ContextRequest } from "@/context/engine/types";
 import type { UserStory } from "@/prd";
-import { makeNaxConfig } from "@test/helpers";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
-const STORY: UserStory = {
+const STORY: UserStory = makeStory({
   id: "story-001",
   title: "Test story",
   description: "",
-  acceptanceCriteria: [],
-  status: "pending",
-} as unknown as UserStory;
+});
 
 const CONFIG = {} as NaxConfig;
 

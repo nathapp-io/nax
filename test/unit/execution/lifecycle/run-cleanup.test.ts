@@ -15,7 +15,8 @@ import { _runCleanupDeps, cleanupRun } from "@/execution";
 import type { RunCleanupOptions } from "@/execution/lifecycle/run-cleanup";
 import * as loggerModule from "@/logger";
 import type { IPostRunAction, PostRunActionResult, PostRunContext } from "@/plugins/extensions";
-import type { PRD, UserStory } from "@/prd/types";
+import type { PRD, StoryStatus } from "@/prd/types";
+import { makeStory } from "@test/helpers";
 
 // ============================================================================
 // Helpers
@@ -28,13 +29,13 @@ function makePrd(overrides: Partial<{ stories: unknown[] }> = {}) {
   } as PRD;
 }
 
-function makeStory(status: string) {
-  return {
+function storyWithStatus(status: StoryStatus) {
+  return makeStory({
     id: `US-${status}`,
     title: "Story",
     status,
     passes: status === "passed",
-  } as unknown as UserStory;
+  });
 }
 
 function makePluginRegistry(actions: IPostRunAction[] = [], reporters: unknown[] = []) {
@@ -98,7 +99,7 @@ describe("buildPostRunContext", () => {
     const { buildPostRunContext } = await import("@/execution/lifecycle/run-cleanup");
     expect(typeof buildPostRunContext).toBe("function");
 
-    const prd = makePrd({ stories: [makeStory("passed"), makeStory("failed")] });
+    const prd = makePrd({ stories: [storyWithStatus("passed"), storyWithStatus("failed")] });
     const opts = makeCleanupOptions({
       prd,
       feature: "feat-x",
@@ -136,11 +137,11 @@ describe("buildPostRunContext", () => {
 
     const prd = makePrd({
       stories: [
-        makeStory("passed"),
-        makeStory("passed"),
-        makeStory("failed"),
-        makeStory("skipped"),
-        makeStory("paused"),
+        storyWithStatus("passed"),
+        storyWithStatus("passed"),
+        storyWithStatus("failed"),
+        storyWithStatus("skipped"),
+        storyWithStatus("paused"),
       ],
     });
     const opts = makeCleanupOptions({ prd, storiesCompleted: 2 });
@@ -601,7 +602,7 @@ describe("runner-completion.ts — does not invoke post-run actions", () => {
 
     const { runCompletionPhase } = await import("@/execution/runner-completion");
 
-    const prd = makePrd({ stories: [makeStory("passed")] });
+    const prd = makePrd({ stories: [storyWithStatus("passed")] });
 
     try {
       await runCompletionPhase({

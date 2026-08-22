@@ -1,31 +1,24 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import { initLogger, resetLogger } from "@/logger";
-import type { UserStory } from "@/prd/types";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import type { StoryStatus, UserStory } from "@/prd/types";
+import { cleanupTempDir, makeStory as makeStoryBase, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeStory(
-  id: string,
-  dependencies: string[] = [],
-  status: "pending" | "passed" | "failed" | "completed" = "pending",
-): UserStory {
-  return {
+function makeStory(id: string, dependencies: string[] = [], status: StoryStatus = "pending"): UserStory {
+  return makeStoryBase({
     id,
     title: `Story ${id}`,
     description: "Test story",
     acceptanceCriteria: [`AC-1: ${id} feature works`],
-    tags: [],
     dependencies,
     status,
-    passes: status === "passed" || status === "completed",
-    escalations: [],
-    attempts: 0,
+    passes: status === "passed",
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
-  } as unknown as UserStory;
+  });
 }
 
 let tmpDir: string;
@@ -134,7 +127,7 @@ describe("AC-14: selectIndependentBatch dependency-free only", () => {
     try {
       const { selectIndependentBatch } = await import("@/execution/story-selector");
       const stories = [
-        makeStory("US-001", [], "completed"),
+        makeStory("US-001", [], "passed"),
         makeStory("US-002", ["US-001"], "pending"),
         makeStory("US-003", ["US-001"], "pending"),
       ];

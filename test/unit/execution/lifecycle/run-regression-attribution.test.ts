@@ -12,9 +12,9 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _regressionDeps, findResponsibleStoryByTransition, runDeferredRegression } from "@/execution";
 import type { DeferredRegressionOptions, StorySnapshot } from "@/execution";
 import type { Finding } from "@/findings/types";
-import type { PRD, UserStory } from "@/prd";
+import type { PRD } from "@/prd";
 import { _gitDeps } from "@/utils/git";
-import { makeMockRuntime, makeNaxConfig, makePRD } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 function snap(storyId: string, completedAt: string, failingTestFiles?: string[]): StorySnapshot {
   return { storyId, completedAt, failingTestFiles };
@@ -83,11 +83,9 @@ const deferredConfig = makeNaxConfig({
 
 function makePrd(storyIds: string[], failedStoryIds: ReadonlySet<string> = new Set()): PRD {
   return makePRD({
-    userStories: storyIds.map((id) => ({
-      id,
-      status: failedStoryIds.has(id) ? "failed" : "passed",
-      title: id,
-    })) as unknown as UserStory[],
+    userStories: storyIds.map((id) =>
+      makeStory({ id, title: id, status: failedStoryIds.has(id) ? "failed" : "passed" }),
+    ),
   });
 }
 

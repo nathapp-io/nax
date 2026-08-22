@@ -25,8 +25,7 @@ import {
   handleQueryNeighbor,
 } from "@/context/engine/pull-tools";
 import { NaxError } from "@/errors";
-import type { UserStory } from "@/prd";
-import { makeLogger, makeNaxConfig } from "@test/helpers";
+import { makeLogger, makeNaxConfig, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals for dep injection
@@ -333,16 +332,11 @@ describe("QUERY_FEATURE_CONTEXT_DESCRIPTOR", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("handleQueryFeatureContext", () => {
-  const STORY = {
+  const STORY = makeStory({
     id: "US-001",
     title: "Test story",
     description: "desc",
-    acceptanceCriteria: [],
-    tags: [],
-    dependencies: [],
-    status: "pending",
-    passes: false,
-  } as unknown as UserStory;
+  });
 
   const CONFIG = makeNaxConfig();
 
