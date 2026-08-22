@@ -165,7 +165,18 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
     },
 
     async promotePr(state: FinishState) {
-      await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature));
+      // Fourth commit site (#1674 part 3 review fix): `machine.ts`'s three
+      // fix-loop sites (acceptance/review/gate) are not the only place a
+      // commit can land this run. The terminal gate pass can leave the tree
+      // dirty on its own — an auto-fixing lint/build step, a pre-commit hook
+      // re-staging files — even when every fix loop above finished clean, so
+      // `commitAndPush` here can commit real content that none of those three
+      // sites ever saw. `state.committedThisRun` must reflect that BEFORE
+      // `openOrPromotePr` and `narrate` (both called below/after this) read
+      // it, or a run that pushed a real commit still gets skipped for the
+      // body write it earned.
+      const { committed } = await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature));
+      if (committed) state.committedThisRun = true;
       if (forgeKind === null) return { status: "already-ready" };
       const content = await buildPrContentOrFallback(state, audit, forgeKind, prBody);
       return openOrPromotePr(

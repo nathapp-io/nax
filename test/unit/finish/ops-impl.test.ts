@@ -229,6 +229,42 @@ describe("ops-impl", () => {
     expect(editCall).toBeDefined();
   });
 
+  // #1674 part 3 review fix: `commitAndPush` inside `promotePr` is a FOURTH
+  // commit site machine.ts's three fix-loop sites do not cover — the terminal
+  // gate pass can leave the tree dirty on its own even when every fix loop
+  // finished clean. `committedThisRun` must be folded in from `commitAndPush`'s
+  // own return value before `openOrPromotePr` reads it, or a run that pushed a
+  // real commit here still gets its body write skipped.
+  test("promotePr commits a dirty tree at the terminal step and still writes the body, even though committedThisRun was false going in", async () => {
+    const untouched = freshState({ committedThisRun: false });
+    const { deps, calls } = baseDeps();
+    _finishGitDeps.git = async (args: string[]) => {
+      calls.push(args);
+      if (args[0] === "status") return { exitCode: 0, stdout: " M some-file.ts\n", stderr: "" };
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    await createFinishOps(deps).promotePr(untouched);
+    const commitCall = calls.find((c) => c[0] === "commit");
+    expect(commitCall).toBeDefined();
+    expect(untouched.committedThisRun).toBe(true);
+    const editCall = calls.find((c) => c.includes("edit"));
+    expect(editCall).toBeDefined();
+  });
+
+  test("promotePr on a clean tree at the terminal step still does not write the body when committedThisRun was false going in", async () => {
+    const untouched = freshState({ committedThisRun: false });
+    const { deps, calls } = baseDeps();
+    // baseDeps' default `_finishGitDeps.git` already reports a clean tree
+    // (empty `status --porcelain` stdout) — asserted explicitly here so this
+    // test pins "no over-correction" even if that default ever changes.
+    await createFinishOps(deps).promotePr(untouched);
+    const commitCall = calls.find((c) => c[0] === "commit");
+    expect(commitCall).toBeUndefined();
+    expect(untouched.committedThisRun).toBe(false);
+    const editCall = calls.find((c) => c.includes("edit"));
+    expect(editCall).toBeUndefined();
+  });
+
   test("narrate does not rewrite the body on a zero-commit already-ready run", async () => {
     let callOpCalled = false;
     _finishOpsDeps.callOp = (async () => {
