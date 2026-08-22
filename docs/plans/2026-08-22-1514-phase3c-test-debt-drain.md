@@ -324,6 +324,62 @@ same fixture drift seen from the other side.
 imports (`PRD` ×32, `UserStory` ×31, `NaxConfig` ×8, `IAgentManager` ×4). Add the
 `import type` line. One commit, ~79 errors.
 
+## 4b. Phase 1b — the decision register
+
+Every cast cluster, with its ruling. **Shape A** = execute now, it is a mechanical
+call-site sweep. **Seam** = a typed helper had to be designed first; where the ruling
+says *done*, the seam is committed and the sweep is now Shape A.
+
+### The resolution rule — apply this before reading the table
+
+A cast target spelled `T["field"]`, `Parameters<typeof f>[n]`, or
+`ReturnType<typeof f>` **does not name a new type**. Resolve it first. 261 of the
+casts (~30%) are spelled this way, and about a third of those land on a type that
+already has a factory. Two worked examples, both committed:
+
+- `Parameters<typeof preIterationTierCheck>[0] | [2] | [3]` → `UserStory`,
+  `NaxConfig`, `PRD` — all three already have factories.
+- `DeferredRegressionOptions["prd"]` → `PRD`. `makePRD()` was a drop-in.
+
+Never write a new factory before resolving the indirection.
+
+### Rulings
+
+| Cluster | Casts | Ruling |
+|:--|--:|:--|
+| `typeof _xDeps.spawn` ×9 names, `ReturnType<typeof Bun.spawn>` | 186 | **Seam — done.** `makeSpawn` / `makeSpawnResult` in `test/helpers/spawn.ts` |
+| `CallOpFn` | 65 | **Seam — done.** `makeCallOpMock` returns `CallOpFn & Mock`, and takes a handler |
+| `Logger` | 12 + 15 tc | **Seam — done.** `MockLogger = Logger & {…}` |
+| `NaxConfig`, `Partial<NaxConfig>` | 67 | **Shape A** → `makeNaxConfig()` / `makeSparseNaxConfig()` (takes `DeepPartial`) |
+| `PipelineContext` | 38 | **Shape A** → `makeTestContext()`. Several sites are a *local* `makeCtx` that casts on the way out — delete it in favour of the shared one |
+| `Parameters<typeof preIterationTierCheck>[n]` | 25 | **Shape A** → resolves to `UserStory` / `NaxConfig` / `PRD` |
+| `PRD` | 16 | **Shape A** → `makePRD()` |
+| `UserStory` | 10 | **Shape A** → `makeStory()` |
+| `CallContext` | 9 | **Shape A** → `makeMockCallContext()` (`test/helpers/call-context.ts`) |
+| `NaxRuntime` | 6 | **Shape A** → `makeMockRuntime()` |
+| `PipelineRunResult` and `["context"]` | 16 | **Seam needed.** One factory in `test/helpers`; 4 files, all building the same `{ success, finalAction, reason, context }` shape |
+| `Parameters<typeof handleTierEscalation>[0]` | 16 | **Seam needed.** Resolves to `EscalationHandlerContext`; 3 files |
+| `BakeoffCoordinatorDeps` + `BakeoffCliDeps` | 27 | **Seam needed, but local.** One file each — a typed builder in the test file, not `test/helpers` |
+| `ContextBundle` | 14 | **Seam needed.** Widest spread (12 files), so this one belongs in `test/helpers` |
+| `RunCompletionOptions` + `RunnerCompletionOptions` | 25 | **Resolve first.** Most are `["statusWriter"]` — a `StatusWriter` factory may be the real answer, not an options factory |
+| `DeferredRegressionOptions` | 11 | **Resolve first.** One already resolved to `PRD`; check the rest before building anything |
+| `AgentRegistry` | 10 | **Seam needed.** 2 files |
+| `SequentialExecutionContext` | 7 | **Seam needed.** Small — a local typed builder is enough |
+| `FixCycle<Finding>`, `FixCycleContext` | 19 | **Not a factory problem.** These read back a captured value (`capturedCycle as unknown as FixCycle<Finding>`). Type the capture variable at its declaration instead |
+| `Record<string, unknown>` | 20 | **Leave — case by case.** Deliberate negative tests (`"not-an-object"`) and `DEFAULT_CONFIG` spread-widening. Not one cluster and mostly legitimate |
+| `Finding` | 10 | **Resolve first.** `makeFinding` exists in `_cycle-fixtures.ts` — check its return type before assuming |
+| remaining `typeof _xDeps.<member>` | ~46 | **Uniform rule, per dep.** Declare the stub as the dep's own type — `const stub: typeof _xDeps.createRuntime = …` — which forces the mock to conform. If it cannot, the mock is genuinely incomplete: complete it |
+
+### What is left for 1b
+
+The three seams above are committed and proven. Seven clusters still need a design
+call: `PipelineRunResult`, `EscalationHandlerContext`, the two Bakeoff deps bags,
+`ContextBundle`, `AgentRegistry`, `SequentialExecutionContext`, plus the two
+resolve-first pairs. That is ~135 casts behind ~7 small factories.
+
+Everything marked Shape A — **171 casts** — is executable now and needs no further
+decision.
+
 ## 5. Phase 2 — per-file burn-down (the grind, ~500 files)
 
 Work descending by combined count. Regenerate the worklist any time:
