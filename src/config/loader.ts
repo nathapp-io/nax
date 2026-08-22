@@ -8,7 +8,7 @@ import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
-import { loadJsonFile } from "../utils/json-file";
+import { loadJsonFileStrict } from "../utils/json-file";
 import {
   applyConfigCompatShims,
   createConfigWarnDedupe,
@@ -111,7 +111,7 @@ async function applyGlobalLayer(
   // flowing through defaults + global merge". null when there is no global config file.
   globalLayerConf: Record<string, unknown> | null;
 }> {
-  const globalConfRaw = await loadJsonFile<Record<string, unknown>>(globalConfigPath(), "config");
+  const globalConfRaw = await loadJsonFileStrict<Record<string, unknown>>(globalConfigPath(), "config");
   if (!globalConfRaw) return { rawConfig, globalConfRaw: null, globalLayerConf: null };
   const { profile: _gProfile, ...globalConfStripped } = globalConfRaw;
   const globalConf = applyConfigCompatShims(globalConfStripped, ctx.logger, ctx.warnDedupe);
@@ -130,7 +130,7 @@ async function applyProjectLayer(
   ctx: ConfigLoadCtx,
 ): Promise<Record<string, unknown>> {
   if (!projDir) return rawConfig;
-  const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"), "config");
+  const projConf = await loadJsonFileStrict<Record<string, unknown>>(join(projDir, "config.json"), "config");
   if (!projConf) return rawConfig;
   const { profile: _pProfile, ...projConfStripped } = projConf;
   const resolvedProjConf = applyConfigCompatShims(projConfStripped, ctx.logger, ctx.warnDedupe);
@@ -375,7 +375,7 @@ export function _clearRootConfigCache(): void {
  */
 export async function loadPackageOverride(repoRoot: string, packageDir: string): Promise<Partial<NaxConfig> | null> {
   const packageConfigPath = join(repoRoot, PROJECT_NAX_DIR, "mono", packageDir, "config.json");
-  const override = await loadJsonFile<Partial<NaxConfig> & { profile?: string }>(packageConfigPath, "config");
+  const override = await loadJsonFileStrict<Partial<NaxConfig> & { profile?: string }>(packageConfigPath, "config");
   if (!override) return null;
   const { profile: _profile, ...fields } = override;
   return fields;
@@ -435,7 +435,10 @@ export async function loadConfigForWorkdir(
   const repoRoot = dirname(rootNaxDir);
   const packageConfigPath = join(repoRoot, PROJECT_NAX_DIR, "mono", packageDir, "config.json");
 
-  const packageOverride = await loadJsonFile<Partial<NaxConfig> & { profile?: string }>(packageConfigPath, "config");
+  const packageOverride = await loadJsonFileStrict<Partial<NaxConfig> & { profile?: string }>(
+    packageConfigPath,
+    "config",
+  );
 
   if (!packageOverride) {
     logger.info("config", "Per-package config not found — falling back to root config", {

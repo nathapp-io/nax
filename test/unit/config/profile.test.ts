@@ -375,6 +375,20 @@ describe("config/profile", () => {
       expect(result).toEqual(["default"]);
     });
 
+    // BUG-40: a corrupt project config.json used to surface here as a raw,
+    // unguarded SyntaxError with no NaxError context — before loadConfig's
+    // own tolerant/strict layer loader even got a chance to run. This must
+    // degrade to an empty chain instead, letting the strict layer loader
+    // (SEC-5) be the one and only place that raises the real error.
+    test("a corrupt project config.json degrades to an empty chain instead of throwing", async () => {
+      const projectNaxDir = join(projectDir, ".nax");
+      mkdirSync(projectNaxDir, { recursive: true });
+      await Bun.write(join(projectNaxDir, "config.json"), '{ "profile": "p,q", }');
+
+      const result = await resolveProfileNames({}, {}, projectDir);
+      expect(result).toEqual(["default"]);
+    });
+
     test("resolveProfileName (singular) returns the last meaningful name for back-compat", async () => {
       const result = await resolveProfileName({ profile: "a,b" }, {}, projectDir);
       expect(result).toBe("b");

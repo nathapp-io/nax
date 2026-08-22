@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger";
 import {
@@ -384,6 +384,50 @@ describe("saveRunMetrics - concurrent writers (BUG-6)", () => {
     expect(saved).toHaveLength(writerCount);
     const ids = saved.map((s) => s.runId).sort();
     expect(ids).toEqual(metrics.map((m) => m.runId).sort());
+  });
+});
+
+function makeMinimalRunMetrics(runId: string): RunMetrics {
+  return {
+    runId,
+    feature: "test-feature",
+    startedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+    totalCost: 0.01,
+    totalStories: 0,
+    storiesCompleted: 0,
+    storiesFailed: 0,
+    totalDurationMs: 0,
+    stories: [],
+  };
+}
+
+// BUG-10: loadJsonFile collapses "absent" and "corrupt" onto the same null,
+// so a single bad parse on this read-MODIFY-write path used to coerce prior
+// history to [] and overwrite the file with just the current run — silently
+// destroying every previous run's metrics. It must quarantine the corrupt
+// file (preserving it for inspection) and continue with the current run's
+// own metrics, not abort and not silently wipe history.
+describe("saveRunMetrics - corrupt metrics.json quarantine (BUG-10)", () => {
+  test("quarantines a corrupt metrics.json instead of wiping history", async () => {
+    await writeFile(`${OUTPUT_DIR}/metrics.json`, '{ "not": "an array", }'); // trailing comma — invalid JSON
+
+    await saveRunMetrics(OUTPUT_DIR, makeMinimalRunMetrics("run-after-corruption"));
+
+    // The corrupt file was renamed aside, not overwritten in place.
+    const dirEntries = await readFile(`${OUTPUT_DIR}/metrics.json`, "utf-8").then((c) => JSON.parse(c));
+    expect(dirEntries).toHaveLength(1);
+    expect(dirEntries[0].runId).toBe("run-after-corruption");
+
+    const files = await readdir(OUTPUT_DIR);
+    const quarantined = files.filter((f) => f.startsWith("metrics.json.corrupt-"));
+    expect(quarantined).toHaveLength(1);
+    expect(await readFile(`${OUTPUT_DIR}/${quarantined[0]}`, "utf-8")).toBe('{ "not": "an array", }');
+  });
+
+  test("run does not abort when metrics.json is corrupt", async () => {
+    await writeFile(`${OUTPUT_DIR}/metrics.json`, "{ broken");
+    await expect(saveRunMetrics(OUTPUT_DIR, makeMinimalRunMetrics("run-x"))).resolves.toBeUndefined();
   });
 });
 

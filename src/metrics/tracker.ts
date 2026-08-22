@@ -4,6 +4,7 @@
  * Collects and persists per-story and per-run metrics.
  */
 
+import { rename } from "node:fs/promises";
 import path from "node:path";
 import { resolveDefaultAgent } from "../agents";
 import { resolveModelForAgent } from "../config/schema";
@@ -12,7 +13,8 @@ import { loadContextManifests } from "../context/engine/manifest-store";
 import { computePollutionMetrics } from "../context/engine/pollution";
 import { getLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
-import { loadJsonFile, saveJsonFile } from "../utils/json-file";
+import { errorMessage } from "../utils/errors";
+import { loadJsonFile, loadJsonFileStrict, saveJsonFile } from "../utils/json-file";
 import { withPathFileLock } from "../utils/path-file-lock";
 import type { ContextProviderMetrics, FloorOverageMetrics, RunMetrics, StoryMetrics } from "./types";
 import { TokenUsage } from "./types";
@@ -399,6 +401,43 @@ export function metricsPathFor(outputDir: string): string {
  * });
  * ```
  */
+/**
+ * Load existing run metrics for the append-then-save path, quarantining a
+ * corrupt file instead of silently coercing it to empty history (BUG-10,
+ * D-12). `loadJsonFile` treats "absent" and "corrupt" identically, and on
+ * this read-MODIFY-write path that means one bad parse wipes every prior
+ * run's history behind a single warn line: history is destroyed, not just
+ * read as empty.
+ *
+ * Metrics are telemetry, not correctness, so — unlike the config layers
+ * (SEC-5), which fail the load — a corrupt metrics.json quarantines the
+ * file (renamed alongside an ISO-8601 timestamp, preserving it for
+ * inspection) and continues the run with an empty history rather than
+ * aborting a completed run over its own prior-run's torn file.
+ */
+async function loadExistingMetricsOrQuarantine(metricsPath: string): Promise<RunMetrics[] | null> {
+  try {
+    return await loadJsonFileStrict<RunMetrics[]>(metricsPath, "metrics");
+  } catch (err) {
+    const quarantinePath = `${metricsPath}.corrupt-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    try {
+      await rename(metricsPath, quarantinePath);
+    } catch (renameErr) {
+      getLogger().warn("metrics", "Failed to quarantine corrupt metrics.json — leaving in place", {
+        metricsPath,
+        error: errorMessage(renameErr),
+      });
+      return null;
+    }
+    getLogger().warn("metrics", "Corrupt metrics.json quarantined — continuing with empty run history", {
+      metricsPath,
+      quarantinePath,
+      error: errorMessage(err),
+    });
+    return null;
+  }
+}
+
 export async function saveRunMetrics(outputDir: string, runMetrics: RunMetrics): Promise<void> {
   const metricsPath = metricsPathFor(outputDir);
 
@@ -441,7 +480,7 @@ export async function saveRunMetrics(outputDir: string, runMetrics: RunMetrics):
   // writer that releases the lock before its write lands lets a peer read a
   // stale base and overwrite the append. Lock is keyed by the metrics file path.
   await withPathFileLock(metricsPath, async () => {
-    const existing = await loadJsonFile<RunMetrics[]>(metricsPath, "metrics");
+    const existing = await loadExistingMetricsOrQuarantine(metricsPath);
     const allMetrics = Array.isArray(existing) ? existing : [];
     allMetrics.push(finalMetrics);
 
