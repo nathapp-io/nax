@@ -84,71 +84,170 @@ braces properly.
 
 ## 3. The work queue
 
+Counts are from a scan that mirrors the ratchet exactly (per match, allow-marked lines
+and their neighbours skipped) and sum to its 681. They drift as you work; the rulings
+do not — regenerate them with:
+
+```bash
+bun scripts/report-cast-buckets.ts
+```
+
+| Bucket | Casts | Who |
+|:--|--:|:--|
+| §3a Shape A — factory exists | **169** | you |
+| §3b seam sweeps — helper exists, example committed | **157** | you |
+| §3c-i typed dep stubs | **23** | you |
+| §3c-ii dep members returning a class | 31 | escalate |
+| §3d leave alone | 61 | nobody |
+| §3e private-member reach-ins | 49 | escalate |
+| tail — everything under 4 per cluster | **191** | you, with the resolution habit |
+
+**349 casts are yours with no judgement required** (3a + 3b + 3c-i). Do those first
+and in that order; the tail is where you will slow down.
+
 ### 3a. Shape A — a factory already returns this exact type
 
-Replace `{ …literal… } as unknown as T` with `makeX({ …literal… })`. Import from
-`@test/helpers`. Nothing else changes.
+Replace `{ …literal… } as unknown as T` with `makeX({ …literal… })`, importing from
+`@test/helpers`. Nothing else changes. **169 casts, no judgement required.**
 
 | Cast target | Casts | Files | Replace with |
 |:--|--:|--:|:--|
 | `NaxConfig` | 48 | 25 | `makeNaxConfig(…)` |
 | `PipelineContext` | 25 | 22 | `makeTestContext(…)` |
 | `PRD` | 16 | 15 | `makePRD(…)` |
-| `Partial<NaxConfig>` | 11 | 5 | `makeNaxConfig(…)` — it takes `DeepPartial` |
+| `ReturnType<typeof import("@/logger").getSafeLogger>` | 11 | — | `makeLogger()` |
+| `Partial<NaxConfig>` | 11 | 5 | `makeNaxConfig(…)` — takes `DeepPartial` |
 | `UserStory` | 10 | 10 | `makeStory(…)` |
 | `CallContext` | 9 | 4 | `makeMockCallContext(…)` |
 | `PipelineContext["config"]` | 7 | 6 | `makeNaxConfig(…)` |
 | `NaxRuntime` | 6 | 6 | `makeMockRuntime(…)` |
+| `ReturnType<typeof origGetSafeLogger>` | 6 | — | `makeLogger()` |
+| `ReturnType<typeof _rulesCLIDeps.getLogger>` | 5 | 3 | `makeLogger()` |
+| `ReturnType<typeof _packagesDeps.getSafeLogger>` | 5 | 1 | `makeLogger()` |
+| `import("@/agents").IAgentManager` | 5 | — | `makeMockAgentManager()` |
+| `Parameters<typeof preIterationTierCheck>[0]` | 4 | 1 | `makeStory(…)` |
+| `Parameters<typeof preIterationTierCheck>[2]` | 4 | 1 | `makeNaxConfig(…)` |
+| `Parameters<typeof preIterationTierCheck>[3]` | 4 | 1 | `makePRD(…)` |
+| `import("@/prd/types").PRD` | 2 | — | `makePRD(…)` |
+| `import("@/runtime").NaxRuntime`, `import("@/config").NaxConfig`, `import("@/plugins/registry").PluginRegistry` | 3 | — | `makeMockRuntime()` / `makeNaxConfig()` / `makePluginRegistry()` |
+
+The four `getSafeLogger` / `getLogger` spellings all resolve to `Logger`, which
+`makeLogger()` returns since commit `ef0b154e0`. They look like four clusters and are
+one.
 
 Several `PipelineContext` sites are a *local* `makeCtx()` in the test file that casts
-on the way out. Delete the local and use `makeTestContext` instead.
+on the way out. Delete the local, use `makeTestContext`.
 
-### 3b. Seam sweeps — the helper exists, one file is done as a worked example
+### 3b. Seam sweeps — helper exists, one file done as a worked example
 
-Same edit as 3a, but read the worked example first — `git show <commit> -- <file>`.
+Same edit as 3a. Read the worked example first: `git show <commit> -- <file>`.
+**157 casts.**
 
-| Cast target | Casts | Files | Helper | Worked example |
-|:--|--:|--:|:--|:--|
-| `typeof _gitDeps.spawn` | 42 | — | `makeSpawn` | `577570f96` — `test/unit/utils/auto-commit.test.ts` |
-| `typeof Bun.spawn` | 42 | — | `makeSpawn` | `577570f96` — `test/unit/quality/runner-env-strip.test.ts` |
-| `ReturnType<typeof Bun.spawn>` | 27 | 8 | `makeSpawnResult` | same commit |
-| `typeof _diffUtilsDeps.spawn` | 26 | — | `makeSpawn` | same commit |
-| `typeof _executorDeps.spawn` | 11 | — | `makeSpawn` | same commit |
-| `typeof _deferredReviewDeps.spawn` | 10 | — | `makeSpawn` | same commit |
-| `typeof _completionDeps.spawn` | 8 | — | `makeSpawn` | same commit |
-| `typeof _resultHandlerDeps.spawn` | 5 | — | `makeSpawn` | same commit |
-| `typeof _isolationDeps.spawn` | 4 | — | `makeSpawn` | same commit |
-| `Parameters<typeof handleTierEscalation>[0]` | 8 | 1 | `makeEscalationContext` | `f3aa6b248` |
+| Cast target | Casts | Helper | Worked example |
+|:--|--:|:--|:--|
+| `typeof Bun.spawn` | 39 | `makeSpawn().spawn` | `577570f96` — `test/unit/quality/runner-env-strip.test.ts` |
+| `typeof _gitDeps.spawn` | 36 | `makeSpawn().spawn` | `577570f96` — `test/unit/utils/auto-commit.test.ts` |
+| `typeof _diffUtilsDeps.spawn` | 26 | `makeSpawn().spawn` | same |
+| `ReturnType<typeof Bun.spawn>` | 25 | `makeSpawnResult(…)` | same |
+| `typeof _deferredReviewDeps.spawn` | 10 | `makeSpawn().spawn` | same |
+| `Parameters<typeof handleTierEscalation>[0]` | 8 | `makeEscalationContext(…)` | `f3aa6b248` |
+| `typeof _completionDeps.spawn` | 4 | `makeSpawn().spawn` | `577570f96` |
+| `typeof _executorDeps.spawn`, `_resultHandlerDeps.spawn`, `_isolationDeps.spawn`, `_reconcileDeps.spawn` | ~12 | `makeSpawn().spawn` | same |
 
-Every `_xDeps.spawn` in `src/` is `spawn as typeof spawn` off `src/utils/bun-deps`, so
-one `makeSpawn().spawn` is assignable to all of them. Handler signature is
-`({ cmd, opts }) => stdoutString | FakeProcSpec`; `calls` and `lastEnv()` cover
-recording and env assertions.
+Every `_xDeps.spawn` in `src/` is declared `spawn as typeof spawn` off
+`src/utils/bun-deps`, so one `makeSpawn().spawn` is assignable to all of them. The
+handler is `({ cmd, opts }) => stdoutString | FakeProcSpec`; `calls` and `lastEnv()`
+cover recording and env assertions.
 
-### 3c. Resolve the indirection first
+### 3c. `_xDeps.<member>` — two kinds, and only one is yours
 
-A target spelled `T["field"]`, `Parameters<typeof f>[n]`, or `ReturnType<typeof f>`
-**does not name a new type**. Look up what it resolves to, then check §3a. On this
-branch that collapsed three whole clusters — `PipelineRunResult["context"]` was just
-`PipelineContext`; `Parameters<typeof handleTierEscalation>[0]` was
-`EscalationHandlerContext`, exported all along.
+I tested the obvious rule ("declare the stub with the slot's type so the compiler
+forces it to conform") on a real site and **it does not work for half of these**, so
+check which kind you have before touching anything.
 
-| Cast target | Casts | Files | Do this |
+**3c-i — plain function or value members. Yours. ~23 casts.**
+
+Declare the stub with the dep's own type instead of casting into the slot:
+
+```ts
+// before
+_queueLockDeps.readdir = mock(async () => []) as unknown as typeof _queueLockDeps.readdir;
+
+// after
+const readdir: typeof _queueLockDeps.readdir = async () => [];
+_queueLockDeps.readdir = readdir;
+```
+
+| Cast target | Casts | Files | Note |
 |:--|--:|--:|:--|
-| `DeferredRegressionOptions` | 9 | 3 | resolve each field; one already resolved to `PRD` |
-| `FixCycle<Finding>` / `Finding[]` | 17 | 5 | **not** a factory problem — these read back a captured value. Type the capture variable at its declaration instead of casting at the read |
-| `ReturnType<typeof _xDeps.<member>>` | ~25 | ~10 | declare the stub as the dep's own type: `const stub: typeof _xDeps.createRuntime = …`. If the mock cannot conform, it is genuinely incomplete — complete it |
-| `typeof _semanticDeps.createDebateRunner` etc. | ~50 | — | same rule as the row above |
+| `typeof _planDeps.createRuntime` | 11 | 2 | returns `NaxRuntime` — build it with `makeMockRuntime()` inside the typed stub |
+| `typeof _queueLockDeps.readdir` and other one-off `_xDeps` members | ~12 | — | |
 
-### 3d. Leave these alone
+**3c-ii — members that return a class. NOT yours. Escalate. 31 casts.**
+
+| Cast target | Casts | Returns | Why it is blocked |
+|:--|--:|:--|:--|
+| `typeof _semanticDeps.createDebateRunner` | 13 | `DebateRunner` | class with private fields |
+| `typeof _resultHandlerDeps.mergeEngine` | 7 | `MergeEngine` | class |
+| `ReturnType<typeof _contextStageDeps.createOrchestrator>` | 6 | `ContextOrchestrator` | class |
+| `ReturnType<typeof _acpAdapterDeps.createClient>` | 6 | ACP client | class-shaped |
+
+A class with private fields cannot be satisfied by an object literal, so declaring the
+stub does not fix the cast — it converts one cast into several type errors and, in the
+case I tried, a failing test. These need a `makeX` seam with the cast contained inside
+it, the same shape as `makeLogger` / `makeStatusWriter` / `makePluginRegistry`.
+Building those is a design call. **Leave them and report.**
+
+Rule of thumb: `grep -rn "export class <ReturnedType>" src/`. If it is a class, it is
+3c-ii.
+
+### 3d. Leave alone
 
 | Cast target | Casts | Why |
 |:--|--:|:--|
-| `Record<string, unknown>` | 20 | Deliberate negative tests (`"not-an-object"`) and `DEFAULT_CONFIG` spread-widening. Legitimate |
-| `BakeoffCoordinatorDeps[…]`, `BakeoffCliDeps[…]` | 24 | One file each. A typed builder local to that file is the right fix, not a shared helper — nothing else uses these deps bags. Low priority |
-| anything already carrying `// test-ratchet-allow: as-unknown-as` | 116 | Reviewed and accepted. Do not touch |
+| `Record<string, unknown>` | 20 | Deliberate negative tests (`"not-an-object"`) and `DEFAULT_CONFIG` spread-widening |
+| `as unknown as string` / `string[]` | 9 | Deliberate negative tests — `42 as unknown as string`, `undefined as unknown as string`. Feeding a wrong type on purpose is the assertion |
+| `BakeoffCoordinatorDeps[…]`, `BakeoffCliDeps[…]`, `ContestantRunnerDeps[…]` | 28 | One file each. A typed builder local to that file is the right fix, not a shared helper — nothing else uses these deps bags. Low priority; skip unless asked |
+| anything carrying `// test-ratchet-allow: as-unknown-as` | 116 | Reviewed and accepted. Do not touch |
 
----
+### 3e. Not classified — do not start here
+
+49 casts target an **inline object literal type** to reach a non-public member:
+
+```ts
+const backoffMs = (plugin as unknown as { backoffMs: number }).backoffMs;
+```
+
+Concentrated in `test/unit/interaction/interaction-network-failures.test.ts` and
+`test/integration/operations/complete-empty-output-retry.test.ts`. Fixing these means
+deciding whether the member should be public, or whether the test should go through
+the public API — a design call. Escalate rather than guess.
+
+### The tail — 191 casts, ~40 clusters of fewer than four
+
+Not leftovers: this is 28% of the work and the second-biggest bucket. It has no table
+because each cluster is 1–3 sites, but it is not unstructured — apply §3a's habit:
+
+1. What type is this really? Resolve `T["field"]`, `Parameters<typeof f>[n]`,
+   `ReturnType<typeof f>` first.
+2. `grep -rn "): <Type>" test/helpers/` — does a factory already return it?
+3. If yes, it is Shape A. If the type is a **class**, it is 3c-ii — escalate.
+4. If it is a plain interface with no factory and fewer than ~5 sites, write the
+   literal out in full rather than adding a helper. A one-file fixture does not earn
+   a shared factory.
+
+Roughly 30 of the 191 are a measurement artifact — long or nested generics
+(`RunOperation<…>`, `Pick<typeof DEFAULT_CONFIG, …>`) that the classifier could not
+parse into a cluster. Treat them individually.
+
+Two named callouts:
+
+- **`FixCycle<Finding>` (12), `FixCycleContext` (4), `Finding` / `Finding[]` (9)** —
+  **not** a factory problem. These read back a captured value
+  (`capturedCycle as unknown as FixCycle<Finding>`). Type the capture variable at its
+  declaration and the cast at the read disappears.
+- **`DeferredRegressionOptions` (9)** — resolve field by field. One of its fields
+  already resolved to `PRD` in commit `26da265d0`; the others may too.
 
 ## 4. Forbidden
 
@@ -175,6 +274,9 @@ rest are on review.
 - Removing a cast reveals the mock cannot satisfy the interface at all and no factory
   covers it — that is a design call, which is not your job here.
 - The same file fails twice in a row. Two attempts, then hand it back.
+- Anything in **§3c-ii** (a dep member returning a class) or **§3e** (reaching a
+  private member through an inline object type). Both need a design call. They are
+  listed so you can recognise and skip them, not so you can attempt them.
 
 ---
 
