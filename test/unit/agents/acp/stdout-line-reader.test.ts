@@ -100,20 +100,20 @@ describe("readStreamTail (MEM-1)", () => {
   }
 
   test("small content passes through unchanged", async () => {
-    const result = await readStreamTail(streamOf("connection refused"), 1024);
+    const result = await readStreamTail(streamOf("connection refused"), 1024).promise;
     expect(result).toBe("connection refused");
   });
 
   test("content over the cap is trimmed to the last maxBytes", async () => {
     const big = "x".repeat(10_000) + "TAIL";
-    const result = await readStreamTail(streamOf(big), 100);
+    const result = await readStreamTail(streamOf(big), 100).promise;
     expect(result.endsWith("TAIL")).toBe(true);
     expect(Buffer.byteLength(result, "utf8")).toBeLessThanOrEqual(100);
   });
 
   test("never splits a multi-byte UTF-8 sequence at the trim boundary", async () => {
     const heart = "❤".repeat(5000); // 3 bytes each
-    const result = await readStreamTail(streamOf(heart), 100);
+    const result = await readStreamTail(streamOf(heart), 100).promise;
     // Trimming may drop whole code points, but must never leave a broken
     // surrogate / invalid sequence — round-trip through a decoder.
     const reparsed = new TextDecoder().decode(enc.encode(result));
@@ -123,7 +123,7 @@ describe("readStreamTail (MEM-1)", () => {
 
   test("never splits an astral-plane surrogate pair at the trim boundary", async () => {
     const clef = "𝄞".repeat(5000); // U+1D11E — 4 bytes, surrogate pair in UTF-16
-    const result = await readStreamTail(streamOf(clef), 100);
+    const result = await readStreamTail(streamOf(clef), 100).promise;
     const reparsed = new TextDecoder().decode(enc.encode(result));
     expect(reparsed).toBe(result);
     expect(Buffer.byteLength(result, "utf8")).toBeLessThanOrEqual(100);
@@ -147,7 +147,51 @@ describe("readStreamTail (MEM-1)", () => {
         c.close();
       },
     });
-    const result = await readStreamTail(stream, 1024);
+    const result = await readStreamTail(stream, 1024).promise;
     expect(result).toBe(content);
+  });
+
+  // MEM-38 (D-24): the readStreamTail contract now exposes { promise, cancel }
+  // so the spawn-client drain-timeout-loser can settle the pending read()
+  // and release the stream lock + decoder + tail closure. Without cancel,
+  // a won drain timer left stderr readers parked forever — one per affected
+  // prompt.
+  test("MEM-38: cancel() settles the pending read() so the stream lock is released", async () => {
+    let streamCancelled = false;
+    let resolveStart!: () => void;
+    const controllerRef: { current: ReadableStreamDefaultController<Uint8Array> | null } = {
+      current: null,
+    };
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        controllerRef.current = c;
+      },
+      cancel(reason) {
+        streamCancelled = true;
+        resolveStart();
+        return Promise.resolve();
+      },
+    });
+
+    const handle = readStreamTail(stream, 1024);
+    // Trigger cancel — this calls reader.cancel() which propagates to
+    // stream.cancel() via the WritableStream backpressure model.
+    handle.cancel();
+    // Wait for the cancellation to propagate through the stream.
+    await new Promise<void>((r) => {
+      if (streamCancelled) {
+        r();
+        return;
+      }
+      resolveStart = r;
+      setTimeout(r, 100);
+    });
+    expect(streamCancelled).toBe(true);
+    // The promise should resolve (empty tail) so drain-loser awaits
+    // don't hang on a cancelled reader.
+    const result = await handle.promise;
+    expect(result).toBe("");
+    // Reference the controller so the linter doesn't flag it unused.
+    void controllerRef;
   });
 });

@@ -441,6 +441,52 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
     expect(response.requestId).toBe(longId);
   });
 
+  // BUG-42 (D-26): parts[1] used to be cast to InteractionResponse["action"]
+  // without validating. An unknown action then fell through every switch arm
+  // with no observable failure. Now the plugin logs a warn and returns null
+  // (a no-op) so a malformed callback can never silently route through —
+  // receive() must time out instead of resolving with the bogus action.
+  test("BUG-42: receive() ignores a callback with an unknown action", async () => {
+    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request) => {
+      const urlStr = url.toString();
+      if (urlStr.includes("sendMessage")) {
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 30, chat: { id: 99999 } } }));
+      }
+      if (urlStr.includes("getUpdates")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            result: [
+              {
+                update_id: 40,
+                callback_query: {
+                  id: "cq-bogus",
+                  // Garbage action — must not be accepted.
+                  data: "tg-bogus:rm-rf:DOES_NOT_EXIST",
+                  message: { message_id: 30, chat: { id: 99999 } },
+                },
+              },
+            ],
+          }),
+        );
+      }
+      return new Response(JSON.stringify({ ok: true }));
+    }) as typeof fetch;
+
+    const plugin = new TelegramInteractionPlugin();
+    await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
+    await plugin.send(makeConfirmRequest("tg-bogus"));
+
+    // The unknown-action callback must be ignored — receive() falls
+    // through to its timeout, which resolves as { action: "skip",
+    // respondedBy: "timeout" }. It must NOT resolve with the bogus
+    // action or value.
+    const response = await plugin.receive("tg-bogus", 200);
+    expect(response.action).toBe("skip");
+    expect(response.respondedBy).toBe("timeout");
+    expect((response as unknown as { value?: string }).value).toBeUndefined();
+  });
+
   test("receive() acknowledges callback queries even when requestId does not match", async () => {
     const answeredCallbackIds: string[] = [];
     let resolveOtherAck: (() => void) | null = null;

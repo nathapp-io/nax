@@ -8,6 +8,7 @@
  * Phase 2: per-stage scoped allowlists (stub below).
  */
 
+import { getSafeLogger } from "../logger";
 import type { AgentManagerConfig } from "./selectors";
 
 export type PermissionProfile = "unrestricted" | "safe" | "scoped";
@@ -36,6 +37,22 @@ export interface ResolvedPermissions {
  * Single source of truth — all adapters call this.
  */
 export function resolvePermissions(config: AgentManagerConfig | undefined, _stage: PipelineStage): ResolvedPermissions {
+  // SEC-41 (D-20): if the caller didn't pass a config (the exact mistake
+  // CLAUDE.md warns against — "Never hardcode ?? true/false/..."), the
+  // OLD default was `unrestricted` → `approve-all`, the most permissive
+  // possible mode. That inverted the safer-than-typo posture: an invalid
+  // profile fails closed to `approve-reads` (default arm), but a missing
+  // config silently granted the agent maximum permissions. Warn and
+  // fail-closed — the absent case should NOT be more permissive than
+  // the invalid case.
+  if (config === undefined) {
+    getSafeLogger()?.warn("permissions", "resolvePermissions called without a config — defaulting to 'safe'", {
+      stage: _stage,
+      resolvedMode: "approve-reads",
+    });
+    return { mode: "approve-reads" };
+  }
+
   const profile: PermissionProfile = config?.execution?.permissionProfile ?? "unrestricted";
 
   switch (profile) {

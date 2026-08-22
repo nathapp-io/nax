@@ -66,13 +66,24 @@ export function getTriggerConfig(
 }
 
 /**
- * Substitute {{variable}} placeholders in a template string
+ * Substitute {{variable}} placeholders in a template string.
+ * Exported for direct testing (BUG-43) — production callers use
+ * createTriggerRequest, which feeds `metadata.defaultSummary` through here.
  */
-function substituteTemplate(template: string, context: TriggerContext): string {
+export function substituteTemplate(template: string, context: TriggerContext): string {
   let result = template;
   for (const [key, value] of Object.entries(context)) {
     if (value !== undefined) {
-      result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), String(value));
+      // BUG-43 (D-27): escape the key before interpolating into a RegExp.
+      // TriggerContext has an open `[key: string]: unknown` index signature,
+      // so a caller can add arbitrary keys (e.g. `cost(usd)`) that would
+      // otherwise break the template — the unescaped `(` would be parsed as
+      // a regex group and the substitution would either throw or hit a
+      // different match than intended. Built-in keys happen to be safe
+      // today; the open index signature makes this a footgun, not a
+      // theoretical risk.
+      const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      result = result.replace(new RegExp(`\\{\\{${escaped}\\}\\}`, "g"), String(value));
     }
   }
   return result;

@@ -242,7 +242,10 @@ export class SpawnAcpSession implements AcpSession {
       const parseHandle = readAndParseLines(proc.stdout, parseState, onActivity);
       const parsePromise = parseHandle.promise.catch(() => {});
       // MEM-1: cap stderr to a 64KB rolling tail instead of buffering the full stream.
-      const stderrPromise = readStreamTail(proc.stderr).catch(() => "");
+      // readStreamTail returns { promise, cancel } — we capture the handle so the
+      // drain-timeout-loser branch below can settle the pending read() (MEM-38).
+      const stderrHandle = readStreamTail(proc.stderr);
+      const stderrPromise = stderrHandle.promise.catch(() => "");
 
       const exitCode = await proc.exited;
 
@@ -264,6 +267,10 @@ export class SpawnAcpSession implements AcpSession {
       // Drain timeout won the race: cancel the stdout reader so its pending read()
       // settles and the reader/lock isn't held for the rest of the process (BUG-46).
       if (stdoutWinner === "drain") parseHandle.cancel();
+      // MEM-38: same hygiene for stderr — when drainB wins the race, the pending
+      // readStreamTail read() would otherwise hold the reader lock + decoder +
+      // 64KB tail closure for the rest of the process.
+      if (stderr === "") stderrHandle.cancel();
 
       // Emit process_update(exited) after exit code is known
       emit?.({ ...baseEvent, kind: "agent.process_update", status: "exited", exitCode, timestamp: now() });

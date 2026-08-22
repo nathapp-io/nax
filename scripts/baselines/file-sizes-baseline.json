@@ -1,15 +1,17 @@
 {
-  "updatedAt": "2026-08-22T06:57:40.830Z",
+  "updatedAt": "2026-08-22T08:56:20.393Z",
   "byFile": {
     "src/agents/manager.ts": 789,
-    "src/execution/unified-executor.ts": 768,
+    "src/execution/escalation/tier-escalation.ts": 603,
+    "src/execution/unified-executor.ts": 772,
+    "src/interaction/plugins/telegram.ts": 613,
     "src/prd/schema.ts": 628,
     "src/prompts/builders/rectifier-builder.ts": 902,
-    "src/session/manager.ts": 708,
+    "src/session/manager.ts": 731,
     "test/unit/cli/plan.test.ts": 1087,
     "test/unit/debate/runner-plan.test.ts": 1048,
     "test/unit/execution/escalation/tier-escalation.test.ts": 1102,
     "test/unit/execution/story-orchestrator.test.ts": 1734,
-    "test/unit/interaction/plugins/telegram.test.ts": 826
+    "test/unit/interaction/plugins/telegram.test.ts": 872
   }
 }

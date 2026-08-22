@@ -93,4 +93,35 @@ describe("PidRegistry - Concurrent Operations", () => {
     expect(pids).not.toContain(3001);
     expect(pids).toContain(3002);
   });
+
+  // RACE-34: register() called while a write is in flight must wait for
+  // the in-flight write AND the follow-up coalesced write that includes
+  // the just-added pid. Previously the returned tail waited only for the
+  // in-flight write — a hard kill in the gap between caller-return and
+  // follow-up-write left the live agent PID absent from .nax-pids.
+  test("RACE-34: register() resolves only after the just-added PID is durably persisted", async () => {
+    tempDir = makeTempDir("nax-pid-race34-");
+    registry = new PidRegistry(tempDir);
+
+    // Start an in-flight write by registering a sentinel and NOT awaiting.
+    const sentinelPromise = registry.register(9999);
+
+    // Without awaiting sentinelPromise, register another PID — this call
+    // enters enqueueWrite() with _writing=true.
+    const livePidPromise = registry.register(8888);
+
+    await Promise.all([sentinelPromise, livePidPromise]);
+
+    // After both promises resolve, BOTH PIDs must be on disk. The bug
+    // would leave 8888 absent if register()'s tail skipped the follow-up.
+    const pidsFile = join(tempDir, ".nax-pids");
+    const content = await Bun.file(pidsFile).text();
+    const pids = content
+      .split("\n")
+      .filter((line) => line.trim())
+      .map((line) => JSON.parse(line).pid);
+
+    expect(pids).toContain(9999);
+    expect(pids).toContain(8888);
+  });
 });
