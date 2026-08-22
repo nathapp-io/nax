@@ -92,15 +92,18 @@ do not — regenerate them with:
 bun scripts/report-cast-buckets.ts
 ```
 
-| Bucket | Casts | Who |
-|:--|--:|:--|
-| §3a Shape A — factory exists | **169** | you |
-| §3b seam sweeps — helper exists, example committed | **157** | you |
-| §3c-i typed dep stubs | **23** | you |
-| §3c-ii dep members returning a class | 31 | escalate |
-| §3d leave alone | 61 | nobody |
-| §3e private-member reach-ins | 49 | escalate |
-| tail — everything under 4 per cluster | **191** | you, with the resolution habit |
+| Bucket | Casts (start) | Casts (current) | Δ | Who |
+|:--|--:|--:|--:|:--|
+| §3a Shape A — factory exists | **169** | **92** | -77 | you |
+| §3b seam sweeps — helper exists, example committed | **157** | **157** | 0 | you |
+| §3c-i typed dep stubs | **23** | **23** | 0 | you |
+| §3c-ii dep members returning a class | 31 | 31 | 0 | escalate |
+| §3d leave alone | 61 | 61 | 0 | nobody |
+| §3e private-member reach-ins | 49 | 49 | 0 | escalate |
+| tail — everything under 4 per cluster | **191** | **193** | +2 | you, with the resolution habit |
+| **Total** | **681** | **606** | **-75** | |
+
+**Last verified:** ratchet = 606, typecheck errors = 1967 (was 1969; **−2**).
 
 **349 casts are yours with no judgement required** (3a + 3b + 3c-i). Do those first
 and in that order; the tail is where you will slow down.
@@ -108,28 +111,28 @@ and in that order; the tail is where you will slow down.
 ### 3a. Shape A — a factory already returns this exact type
 
 Replace `{ …literal… } as unknown as T` with `makeX({ …literal… })`, importing from
-`@test/helpers`. Nothing else changes. **169 casts, no judgement required.**
+`@test/helpers`. Nothing else changes.
 
-| Cast target | Casts | Files | Replace with |
-|:--|--:|--:|:--|
-| `NaxConfig` | 48 | 25 | `makeNaxConfig(…)` |
-| `PipelineContext` | 25 | 22 | `makeTestContext(…)` |
-| `PRD` | 16 | 15 | `makePRD(…)` |
-| `ReturnType<typeof import("@/logger").getSafeLogger>` | 11 | — | `makeLogger()` |
-| `Partial<NaxConfig>` | 11 | 5 | `makeNaxConfig(…)` — takes `DeepPartial` |
-| `UserStory` | 10 | 10 | `makeStory(…)` |
-| `CallContext` | 9 | 4 | `makeMockCallContext(…)` |
-| `PipelineContext["config"]` | 7 | 6 | `makeNaxConfig(…)` |
-| `NaxRuntime` | 6 | 6 | `makeMockRuntime(…)` |
-| `ReturnType<typeof origGetSafeLogger>` | 6 | — | `makeLogger()` |
-| `ReturnType<typeof _rulesCLIDeps.getLogger>` | 5 | 3 | `makeLogger()` |
-| `ReturnType<typeof _packagesDeps.getSafeLogger>` | 5 | 1 | `makeLogger()` |
-| `import("@/agents").IAgentManager` | 5 | — | `makeMockAgentManager()` |
-| `Parameters<typeof preIterationTierCheck>[0]` | 4 | 1 | `makeStory(…)` |
-| `Parameters<typeof preIterationTierCheck>[2]` | 4 | 1 | `makeNaxConfig(…)` |
-| `Parameters<typeof preIterationTierCheck>[3]` | 4 | 1 | `makePRD(…)` |
-| `import("@/prd/types").PRD` | 2 | — | `makePRD(…)` |
-| `import("@/runtime").NaxRuntime`, `import("@/config").NaxConfig`, `import("@/plugins/registry").PluginRegistry` | 3 | — | `makeMockRuntime()` / `makeNaxConfig()` / `makePluginRegistry()` |
+| Cast target | Casts (start) | Casts (now) | Files | Replace with | Status |
+|:--|--:|--:|--:|:--|:--|
+| `NaxConfig` | 48 | **7** | 25 | `makeNaxConfig(…)` | partial — see "skipped" below |
+| `PipelineContext` | 25 | **6** | 22 | `makeTestContext(…)` + `Object.assign` for extras | partial — see "skipped" below |
+| `PRD` | 16 | **7** | 15 | `makePRD(…)` | partial — integration files left |
+| `ReturnType<typeof import("@/logger").getSafeLogger>` | 11 | 11 | — | `makeLogger()` | untouched |
+| `Partial<NaxConfig>` | 11 | **8** | 5 | `makeNaxConfig(…)` — takes `DeepPartial` | partial — `merge-agent-models-routing` mostly done; e2e/allow-marked left |
+| `UserStory` | 10 | 10 | 10 | `makeStory(…)` | untouched |
+| `CallContext` | 9 | 9 | 4 | `makeMockCallContext(…)` | untouched |
+| `PipelineContext["config"]` | 7 | 7 | 6 | `makeNaxConfig(…)` | untouched |
+| `NaxRuntime` | 6 | 6 | 6 | `makeMockRuntime(…)` | untouched |
+| `ReturnType<typeof origGetSafeLogger>` | 6 | 6 | — | `makeLogger()` | untouched |
+| `ReturnType<typeof _rulesCLIDeps.getLogger>` | 5 | 5 | 3 | `makeLogger()` | untouched |
+| `ReturnType<typeof _packagesDeps.getSafeLogger>` | 5 | 5 | 1 | `makeLogger()` | untouched |
+| `import("@/agents").IAgentManager` | 5 | 5 | — | `makeMockAgentManager()` | untouched |
+| `Parameters<typeof preIterationTierCheck>[0]` | 4 | 4 | 1 | `makeStory(…)` | untouched |
+| `Parameters<typeof preIterationTierCheck>[2]` | 4 | 4 | 1 | `makeNaxConfig(…)` | untouched |
+| `Parameters<typeof preIterationTierCheck>[3]` | 4 | 4 | 1 | `makePRD(…)` | untouched |
+| `import("@/prd/types").PRD` | 2 | 2 | — | `makePRD(…)` | untouched |
+| `import("@/runtime").NaxRuntime`, `import("@/config").NaxConfig`, `import("@/plugins/registry").PluginRegistry` | 3 | 3 | — | `makeMockRuntime()` / `makeNaxConfig()` / `makePluginRegistry()` | untouched |
 
 The four `getSafeLogger` / `getLogger` spellings all resolve to `Logger`, which
 `makeLogger()` returns since commit `ef0b154e0`. They look like four clusters and are
@@ -138,10 +141,57 @@ one.
 Several `PipelineContext` sites are a *local* `makeCtx()` in the test file that casts
 on the way out. Delete the local, use `makeTestContext`.
 
+**§3a skipped sites (escalate — design call needed):**
+
+- `test/unit/config/selector.test.ts` (4 `NaxConfig` casts) — same file has §3e
+  private-member reach-ins that read `c.execution.parallel` after the cast was masking
+  an obsolete `parallel` field. Removing the NaxConfig cast breaks the §3e assertion.
+  The test is exercising `makeSparseNaxConfig({...parallel})` and reading parallel via
+  `as unknown as { execution: { parallel: boolean } }`. Removing parallel changes test
+  semantics (toEqual would need toEqual-like → toMatchObject, against "Nothing else
+  changes"). Leave both NaxConfig and §3e casts together; needs design.
+- `test/unit/acceptance/hardening.test.ts` line 517 — has `// test-ratchet-allow`.
+- `test/unit/cli/config-display.test.ts` line 39 — has `// test-ratchet-allow`.
+- `test/unit/context/engine/stage-assembler*.test.ts` (3 files) — fixtures use legacy
+  `autoMode.defaultAgent` + partial PRD/story that the cast was hiding. Removing
+  cast surfaces many required fields. Either delete `defaultAgent` and fill PRD/story
+  properly, or refactor the test to read via the public API. Design call.
+- `test/unit/metrics/tracker-provider-cost.test.ts` — fixture has `autoMode.defaultAgent`
+  and partial PRD. Same shape.
+- `test/unit/execution/deferred-review.test.ts` (2 inline `import("@/prd/types").PRD`)
+  — partial PRD `{ feature, userStories: [] }`. Switching to `makePRD({...})` would
+  surface missing fields. Tighten fixture or design.
+- `test/integration/execution/deferred-review-integration.test.ts` — fixture uses
+  `pluginMode: "deferred"` which was REMOVED from the schema in ADR-012 Phase 6.
+  Removing the cast surfaces the obsolete key. Needs a redesign of the test (or
+  restoring the option). Cannot be a mechanical edit.
+- `test/integration/acceptance/red-green-cycle.test.ts` — has `as PipelineContext["hooks"]`
+  and `as PipelineContext["config"]` (different cluster, see PipelineContext["config"]
+  table). §3a PRD casts at lines 191, 233 use `makePrd(completedStories) as unknown as PRD`
+  — local `makePrd` could be replaced with `makePRD`.
+- `test/integration/execution/_parallel-metrics-helpers.ts`, `parallel-batch-results.test.ts`,
+  `parallel-batch-rectification.test.ts` — PRD casts, all use `{ userStories: [...] }` as
+  unknown pattern. Switching to `makePRD({ userStories: [...] })` straightforward.
+- `test/unit/config/merge-agent-models-routing.test.ts` — 3 of 5 `Partial<NaxConfig>`
+  casts remain (lines 89, 140, 185), all with `// test-ratchet-allow: as-unknown-as`
+  comments because they test `agent: null` / `routing: null` edge cases (BUG-06).
+  Leave alone — these are reviewed exceptions.
+
 ### 3b. Seam sweeps — helper exists, one file done as a worked example
 
 Same edit as 3a. Read the worked example first: `git show <commit> -- <file>`.
-**157 casts.**
+**157 casts — untouched.** Largest sub-clusters:
+
+| Cast target | Casts | Helper | Worked example |
+|:--|--:|:--|:--|
+| `typeof Bun.spawn` | 39 | `makeSpawn().spawn` | `577570f96` — `test/unit/quality/runner-env-strip.test.ts` |
+| `typeof _gitDeps.spawn` | 36 | `makeSpawn().spawn` | `577570f96` — `test/unit/utils/auto-commit.test.ts` |
+| `typeof _diffUtilsDeps.spawn` | 26 | `makeSpawn().spawn` | same |
+| `ReturnType<typeof Bun.spawn>` | 25 | `makeSpawnResult(…)` | same |
+| `typeof _deferredReviewDeps.spawn` | 10 | `makeSpawn().spawn` | same |
+| `Parameters<typeof handleTierEscalation>[0]` | 8 | `makeEscalationContext(…)` | `f3aa6b248` |
+| `typeof _completionDeps.spawn` | 4 | `makeSpawn().spawn` | `577570f96` |
+| `typeof _executorDeps.spawn`, `_resultHandlerDeps.spawn`, `_isolationDeps.spawn`, `_reconcileDeps.spawn` | ~12 | `makeSpawn().spawn` | same |
 
 | Cast target | Casts | Helper | Worked example |
 |:--|--:|:--|:--|
@@ -285,3 +335,131 @@ rest are on review.
 `bun run check:all` green, `bun run test` green, all three baselines lower than when
 you started, and no file worse than its per-file baseline. Report the before/after
 numbers for casts and typecheck errors.
+
+---
+
+## 7. Progress log
+
+### Phase 1a — committed (7 commits, branch `chore/1514-test-debt-drain`)
+
+**Commits:**
+1. `195253fd5` — `test(bakeoff,interaction,precheck)`: use `makeNaxConfig`
+2. `2067803f7` — `test(context,pipeline,cli)`: use `makeNaxConfig`
+3. `bac6ae931` — `test(debate,integration)`: use `makeNaxConfig` + `makePlanDebateConfig` helper
+4. `224197902` — `test(metrics,pipeline)`: use `makeTestContext` + `Object.assign` for extras
+5. `fdd075f89` — `test(prd,plan,debate)`: use `makePRD`
+6. `d0e600fe6` — `test(baselines)`: update ratchets
+7. `c8a735cec` — `test(config)`: use `makeNaxConfig` for `Partial<NaxConfig>`
+8. `fbd38fdf4` — `test(acceptance,review)`: use `makeNaxConfig` (hardening + semantic-debate)
+
+**Totals so far:**
+- `as unknown as` casts: 681 → 606 (−75)
+- typecheck errors in `test/`: 1969 → 1967 (−2; net negative because removed bogus
+  fields the cast was masking — `autoMode.defaultAgent` migration, `parallel` on
+  `ExecutionConfig`, `enabled` on `InteractionConfig`, bogus `pluginMode: "deferred"`
+  still deferred, etc.)
+- Files touched: 49 test files + 4 baseline files
+
+### Patterns learned (write these down so the next session doesn't relearn)
+
+1. **`makeTestContext` + `Object.assign`** is the workhorse for PipelineContext:
+   ```ts
+   return Object.assign(
+     makeTestContext({ config, prd, story, ...required fields }),
+     { agentResult, runtime, verifyResult, ...test-only fields },
+     overrides,
+   );
+   ```
+   `as Partial<PipelineContext>` triggers TS2352 when extras are present; `Object.assign`
+   avoids the cast entirely.
+
+2. **DeepPartial inference breaks for nested objects** when you spread a typed value
+   back into the override object. `makeTestContext({ ...TEST_CONFIG, debate: {...} })`
+   fails because `debate: {enabled, agents, maxConcurrentDebaters}` is checked against
+   `DebateConfig` (strict) instead of `DeepPartial<DebateConfig>`. Workaround: don't
+   spread — either omit TEST_CONFIG entirely or use a local helper like
+   `makePlanDebateConfig(agents)` that wraps the literal directly.
+
+3. **`config: {} as unknown as NaxConfig`** at the bottom of a literal → use
+   `makeNaxConfig()` (empty). Doesn't deep-merge anything weird, just returns
+   `DEFAULT_CONFIG`.
+
+4. **`{ …, …overrides } as unknown as T`** → `Object.assign(makeX(...), extras, overrides)`
+   for cases where overrides and extras both exist.
+
+5. **Pre-migration keys to delete on sight** (these were masked by the cast):
+   - `autoMode.defaultAgent` → migrated to `agent.default`
+   - `autoMode.fallbackOrder` → migrated to `agent.fallback.map` + `enabled`
+   - `context.v2.fallback` → migrated to `agent.fallback`
+   - `tierOrder: ["fast", ...]` → migrated to `tierOrder: [{tier: "fast", attempts: 1}, ...]`
+   - `parallel` on `ExecutionConfig` — never existed, removed
+   - `enabled` on `InteractionConfig` — never existed, removed (interaction is enabled
+     via `defaults.fallback` etc.)
+   - `pluginMode: "per-story" | "deferred"` — schema migrated to `"gating" | "observational"`
+     in ADR-012 Phase 6; the old values are rejected with a migration pointer.
+     Tests using them (deferred-review-integration.test.ts) need a redesign.
+
+6. **Deep merge and reference equality**: `makeNaxConfig` returns a deep-merged object,
+   not the same reference as `root`. Tests asserting `result.models === root.models`
+   break when an override has no `models` field. Don't migrate those — keep the
+   partial cast.
+
+### Open §3a sites (escalate, 92 casts)
+
+See the updated §3a table above for per-cluster counts. Summary of "no judgement
+required" clusters still untouched:
+
+- `UserStory` (10), `CallContext` (9), `NaxRuntime` (6) — straightforward helpers exist
+  but not yet applied. Should batch through quickly.
+- `PipelineContext["config"]` (7) — likely `makeNaxConfig({...})` in field position.
+- `ReturnType<typeof getLogger>` × 4 variants (~27 total) — `makeLogger()` drop-in.
+- `IAgentManager` (5), `preIterationTierCheck` params (12), `PluginRegistry` (3) — small
+  clusters, each one a few sites.
+- `PRD` integration leftovers (~7) — `_parallel-metrics-helpers.ts`,
+  `parallel-batch-results.test.ts`, `parallel-batch-rectification.test.ts`,
+  `red-green-cycle.test.ts`.
+
+### Blockers requiring design (do not attempt mechanically)
+
+- `test/integration/execution/deferred-review-integration.test.ts` — uses
+  `pluginMode: "deferred"` (REMOVED from schema). Either restore the value or rewrite
+  the test. **Not a cast sweep task.**
+- `test/unit/config/selector.test.ts` — §3e cast and §3a NaxConfig cast in same file;
+  removing the NaxConfig cast surfaces an obsolete `parallel` field that the §3e cast
+  reads. Either delete the test or accept `toMatchObject` instead of `toEqual`.
+- `test/unit/context/engine/stage-assembler{,-extra-provider-ids,-scope-files}.test.ts`
+  — fixtures use `autoMode.defaultAgent` (legacy) + many partial fields. Migrating
+  would require rewriting fixtures to use the new keys. Likely 3 hours.
+- `test/unit/metrics/tracker-provider-cost.test.ts` — same legacy-key issue.
+- `test/unit/execution/deferred-review.test.ts` (2 inline `import("@/prd/types").PRD`)
+  — partial PRD; mechanical fix is `makePRD({...})` but needs an `as Partial<PRD>` cast
+  on the overrides (TS2352).
+
+### §3b seam sweeps (157 casts, untouched)
+
+Still fully pending. Pattern from the worked example:
+```ts
+// before
+_deferredReviewDeps.spawn = mock(...) as unknown as typeof _deferredReviewDeps.spawn;
+// after
+_deferredReviewDeps.spawn = mock(...);
+```
+Or for return types:
+```ts
+// before
+mock(...) as unknown as ReturnType<typeof Bun.spawn>
+// after
+makeSpawnResult({ exitCode: 0, stdout: "", stderr: "" })
+```
+
+### §3c-i typed dep stubs (23 casts, untouched)
+
+Pattern from the plan:
+```ts
+// before
+_queueLockDeps.readdir = mock(async () => []) as unknown as typeof _queueLockDeps.readdir;
+// after
+const readdir: typeof _queueLockDeps.readdir = async () => [];
+_queueLockDeps.readdir = readdir;
+```
+

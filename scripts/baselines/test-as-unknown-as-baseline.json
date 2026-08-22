@@ -1,6 +1,6 @@
 {
-  "count": 608,
-  "updatedAt": "2026-08-22T15:31:05.956Z",
+  "count": 606,
+  "updatedAt": "2026-08-22T16:26:24.924Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": 1,
     "test/helpers/status-writer.ts": 1,
@@ -39,7 +39,7 @@
     "test/unit/review/adversarial-metadata-audit.test.ts": 1,
     "test/unit/review/semantic-unverifiable.test.ts": 1,
     "test/unit/review/semantic-threshold.test.ts": 1,
-    "test/unit/review/semantic-debate.test.ts": 15,
+    "test/unit/review/semantic-debate.test.ts": 14,
     "test/unit/review/adversarial-verifiedby.test.ts": 2,
     "test/unit/review/semantic-debate-audit-shape.test.ts": 1,
     "test/unit/review/semantic-parsing.test.ts": 1,
@@ -119,7 +119,6 @@
     "test/unit/bakeoff/coordinator.test.ts": 15,
     "test/unit/bakeoff/run-action.test.ts": 12,
     "test/unit/bakeoff/contestant.test.ts": 4,
-    "test/unit/acceptance/hardening.test.ts": 1,
     "test/unit/test-runners/detect.test.ts": 24,
     "test/unit/test-runners/detect-cache.test.ts": 6,
     "test/unit/test-runners/detect-isolation.test.ts": 4,
