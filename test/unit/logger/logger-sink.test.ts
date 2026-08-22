@@ -136,4 +136,41 @@ describe("logger sink registration", () => {
     });
     expect(() => getLogger().info("some-stage", "test")).not.toThrow();
   });
+
+  // BUG-22: SinkRegistry shallow-clones only the top-level entry; a sink
+  // mutating entry.data leaks the change to later sinks and to the JSONL
+  // file written after dispatch. The dispatcher's docstring claims
+  // mutation isolation — make it true for the data field at least.
+  describe("BUG-22: mutation isolation between sinks and JSONL writer", () => {
+    test("a sink mutating entry.data does not affect a later sink", () => {
+      const observed: Array<LogEntry["data"]> = [];
+      addSink((entry) => {
+        if (entry.data) entry.data.corrupted = true;
+      });
+      addSink((entry) => observed.push(entry.data));
+      getLogger().info("stage", "msg", { original: "value" });
+      expect(observed[0]?.corrupted).toBeUndefined();
+      expect(observed[0]?.original).toBe("value");
+    });
+
+    test("a sink mutating entry.data does not affect the JSONL writer", async () => {
+      const tempDir = makeTempDir("nax-logger-sink-bug22-");
+      try {
+        resetLogger();
+        const logPath = join(tempDir, "run.jsonl");
+        const fileLogger = initLogger({ level: "info", filePath: logPath });
+        addSink((entry) => {
+          if (entry.data) entry.data.injected = "later";
+        });
+        fileLogger.info("stage", "msg", { original: "value" });
+        await fileLogger.flush();
+        const content = readFileSync(logPath, "utf8");
+        const parsed = JSON.parse(content.trim());
+        expect(parsed.data.injected).toBeUndefined();
+        expect(parsed.data.original).toBe("value");
+      } finally {
+        cleanupTempDir(tempDir);
+      }
+    });
+  });
 });
