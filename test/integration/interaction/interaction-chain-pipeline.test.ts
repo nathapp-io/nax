@@ -22,7 +22,7 @@ import { pipelineEventBus } from "@/pipeline/event-bus";
 import { wireInteraction } from "@/pipeline/subscribers/interaction";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
-import { makeMockRuntime } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -39,6 +39,7 @@ const baseConfig: Partial<NaxConfig> = {
     verificationTimeoutSeconds: 60,
   },
   interaction: {
+    plugin: "cli",
     triggers: {
       "human-review": { enabled: true },
     },
@@ -444,14 +445,10 @@ describe("AC3: CLI interaction plugin for non-headless human-review", () => {
     // FAILS if initInteractionChain doesn't register CLI plugin when headless=false
     const { initInteractionChain } = await import("@/interaction");
 
-    const config = {
-      ...baseConfig,
-      interaction: {
-        ...baseConfig.interaction,
-        enabled: true,
-        plugin: "cli",
-      },
-    } as unknown as NaxConfig;
+    const config = makeNaxConfig(baseConfig);
+    if (config.interaction) {
+      config.interaction.plugin = "cli";
+    }
 
     const chain = await initInteractionChain(config, false /* headless = false */);
 
