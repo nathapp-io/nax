@@ -78,6 +78,22 @@ export interface FinishState {
   /** Set once the draft PR is open (D7), so promote is idempotent. */
   prUrl?: string;
   escalationReason?: string;
+  /**
+   * True once any phase's fix loop produced a commit during this run.
+   *
+   * The signal `openOrPromotePr` and `narrate` gate a PR title/body rewrite on
+   * (#1674 part 3): a run that only re-verified an already-green branch has
+   * nothing new to describe, and must leave a human's edited description
+   * alone. Per-phase `fixAttempts` does not answer this — it increments every
+   * time a fix step runs, including a fixer whose commit produced no diff
+   * (`commitFixes`'s `committed: false`), so counting attempts would still
+   * rewrite the body on a no-op run. This flag instead mirrors the exact
+   * `commit.committed` boolean `machine.ts` already computes at each of the
+   * three commit sites (acceptance/review/gate loops): set true the first
+   * time any of them commits, never reset, for the lifetime of one run's
+   * `FinishState`.
+   */
+  committedThisRun: boolean;
 }
 
 /** The caller-supplied identity fields of a fresh `FinishState`. */
@@ -104,6 +120,7 @@ export function createFinishState(init: FinishStateInit): FinishState {
     status: "running",
     phases,
     findings: [],
+    committedThisRun: false,
   };
 }
 
