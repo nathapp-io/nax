@@ -453,6 +453,15 @@ export const NaxConfigSchema = z
         notify: z
           .object({ mode: z.enum(["escalation", "always", "off"]).default("escalation") })
           .default({ mode: "escalation" }),
+        /**
+         * Cross-run idempotency (#1674 part 1). `on-change` (default) skips
+         * the phase entirely when the ledger's `branch`/`headSha` match the
+         * current branch/HEAD and the recorded status is terminal — a
+         * re-run at the same commit can only repeat side effects, never do
+         * new work. `always` bypasses the ledger, matching pre-ledger
+         * behaviour, for repos that want every run to redrive finish.
+         */
+        rerun: z.enum(["on-change", "always"]).default("on-change"),
         // Wall-clock caps. Every one bounds work the phase awaits; without
         // them a hung gate stalls the run's completion phase, which has no
         // timeout of its own.
@@ -476,6 +485,7 @@ export const NaxConfigSchema = z
         reviewers: { spec: null, quality: null, narrative: null, fix: null },
         escalate: { telegram: true },
         notify: { mode: "escalation" },
+        rerun: "on-change",
         timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
       }),
     reporters: ReportersConfigSchema,

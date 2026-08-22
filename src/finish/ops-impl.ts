@@ -165,11 +165,29 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
     },
 
     async promotePr(state: FinishState) {
-      await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature));
+      // Fourth commit site (#1674 part 3 review fix): `machine.ts`'s three
+      // fix-loop sites (acceptance/review/gate) are not the only place a
+      // commit can land this run. The terminal gate pass can leave the tree
+      // dirty on its own — an auto-fixing lint/build step, a pre-commit hook
+      // re-staging files — even when every fix loop above finished clean, so
+      // `commitAndPush` here can commit real content that none of those three
+      // sites ever saw. `state.committedThisRun` must reflect that BEFORE
+      // `openOrPromotePr` and `narrate` (both called below/after this) read
+      // it, or a run that pushed a real commit still gets skipped for the
+      // body write it earned.
+      const { committed } = await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature));
+      if (committed) state.committedThisRun = true;
       if (forgeKind === null) return { status: "already-ready" };
       const content = await buildPrContentOrFallback(state, audit, forgeKind, prBody);
       return openOrPromotePr(
-        { workdir: state.workdir, branch: state.branch, title: content.title, body: content.body, forge: forgeKind },
+        {
+          workdir: state.workdir,
+          branch: state.branch,
+          title: content.title,
+          body: content.body,
+          forge: forgeKind,
+          committedThisRun: state.committedThisRun,
+        },
         forge,
       );
     },
@@ -209,6 +227,15 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
     ops.narrate = async (state: FinishState) => {
       try {
         if (forgeKind === null) return;
+        // #1674 part 3 (H2): same rule as `openOrPromotePr` — an
+        // already-ready PR this run did not touch has nothing new to
+        // narrate, and rewriting its body here would destroy a human's
+        // edits exactly like the unconditional `updatePrBody` call this
+        // replaces did. `machine.ts` sets `state.status` from `promotePr`'s
+        // result before calling `narrate`, so this read sees this run's
+        // real outcome. Returning here also skips the narrative LLM call
+        // itself, not just the write — there is nothing worth spending on.
+        if (state.status === "already-ready" && !state.committedThisRun) return;
         const input: FinishNarrativeInput = {
           base: state.base,
           model: models?.narrative,

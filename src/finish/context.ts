@@ -18,6 +18,7 @@ import { resolveFeatureSpec } from "@/cli";
 import type { AcceptanceGroupResult, AcceptanceResolutionStatus } from "@/cli";
 import { errorMessage } from "@/utils/errors";
 import { gitWithTimeout } from "@/utils/git";
+import { readLedger } from "./audit";
 
 export const _finishContextDeps = {
   git: gitWithTimeout,
@@ -32,8 +33,53 @@ export interface FinishContext {
   /** Regex sources from the ADR-009 SSOT. Empty means "cannot classify", never "nothing is a test". */
   testFileRegex: string[];
   commitsAhead: number;
-  route: "proceed" | "nothing-to-finish" | "escalate";
+  route: "proceed" | "nothing-to-finish" | "escalate" | "already-finished";
   reason?: string;
+  /** Set only when `route` is `"already-finished"`: the ledger's recorded PR url, if it has one. */
+  ledgerPrUrl?: string;
+}
+
+/**
+ * Inputs to the finish-ledger entry check (#1674 part 1). Optional on
+ * `loadFinishContext` — every caller that omits it (including every test
+ * predating the ledger) gets the pre-ledger behaviour: `route` never becomes
+ * `"already-finished"`.
+ */
+export interface LoadFinishContextOptions {
+  /** The current branch, compared against the ledger's recorded one. */
+  branch: string;
+  /** `<outputDir>/finish-audit/<feature>` — where `last.json` would live. */
+  auditDir: string;
+  /** `finish.rerun`; `"always"` skips the ledger check entirely. */
+  rerun: "on-change" | "always";
+}
+
+const LEDGER_TERMINAL_STATUSES = new Set(["opened", "promoted", "already-ready", "escalated"]);
+
+/**
+ * The entry check itself: does the ledger already cover this exact commit?
+ *
+ * Fails open at every step — a missing/corrupt ledger (`readLedger` already
+ * returns `null` for both), a branch mismatch, a non-terminal recorded
+ * status, or a `git rev-parse HEAD` that errors all return `null`, which
+ * `loadFinishContext` reads as "check did not fire, proceed as normal". A
+ * false negative here just means finish re-does one run's worth of
+ * unnecessary work (today's behaviour); a false positive would silently drop
+ * a run that genuinely had something to finish, which is the wrong side to
+ * fail on.
+ */
+async function checkLedger(workdir: string, opts: LoadFinishContextOptions) {
+  const ledger = await readLedger(opts.auditDir);
+  if (!ledger) return null;
+  if (ledger.branch !== opts.branch) return null;
+  if (!LEDGER_TERMINAL_STATUSES.has(ledger.status)) return null;
+
+  const head = await _finishContextDeps.git(["rev-parse", "HEAD"], workdir);
+  if (head.exitCode !== 0) return null;
+  const sha = head.stdout.trim();
+  if (!sha || sha !== ledger.headSha) return null;
+
+  return ledger;
 }
 
 /**
@@ -106,7 +152,11 @@ async function preflight(workdir: string, base: string): Promise<Preflight> {
  * its outer catch is not in play yet — a throw here becomes `route: "escalate"`,
  * not an unhandled rejection in the post-run phase.
  */
-export async function loadFinishContext(feature: string, workdir: string): Promise<FinishContext> {
+export async function loadFinishContext(
+  feature: string,
+  workdir: string,
+  ledgerOpts?: LoadFinishContextOptions,
+): Promise<FinishContext> {
   const base = await detectBaseBranch(workdir);
 
   let resolved: Awaited<ReturnType<typeof resolveFeatureSpec>>;
@@ -144,6 +194,23 @@ export async function loadFinishContext(feature: string, workdir: string): Promi
   const testFileRegex: string[] = resolved.testPatterns?.regex ?? [];
 
   const pre = await preflight(workdir, base);
+
+  if (pre.route === "proceed" && ledgerOpts && ledgerOpts.rerun !== "always") {
+    const ledger = await checkLedger(workdir, ledgerOpts);
+    if (ledger) {
+      return {
+        base,
+        specPath: resolved.specSource.path,
+        acceptanceStatus,
+        groups,
+        testFileRegex,
+        commitsAhead: pre.commitsAhead,
+        route: "already-finished",
+        reason: `Already finished at ${ledger.headSha} on "${ledger.branch}" (status: "${ledger.status}") — nothing has changed since.`,
+        ...(ledger.prUrl ? { ledgerPrUrl: ledger.prUrl } : {}),
+      };
+    }
+  }
 
   return {
     base,

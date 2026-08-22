@@ -65,15 +65,45 @@ function isFeatureBranch(branch: string): boolean {
   return branch !== "main" && branch !== "master" && branch.length > 0;
 }
 
+/** Which clause of the gate blocked the phase, or `null` when it did not. */
+export type FinishSkipReason = "enabled" | "completed" | "failed" | "paused" | "branch";
+
+/**
+ * The gate, split out from `shouldRunFinish` so a caller can log or record
+ * *which* clause blocked the phase (#1671) rather than only that one did.
+ *
+ * Order matters and is preserved from the original single boolean check:
+ * `enabled` is checked first (the phase is off, full stop), then the story
+ * summary's three fields in the order they were originally `||`'d together,
+ * then the branch. A run that fails more than one clause reports only the
+ * first — good enough for a log line; nothing downstream needs the full set.
+ */
+export function finishSkipReason(args: {
+  enabled: boolean;
+  branch: string;
+  storySummary: { completed: number; failed: number; paused: number };
+}): FinishSkipReason | null {
+  if (!args.enabled) return "enabled";
+  const s = args.storySummary;
+  if (s.completed === 0) return "completed";
+  if (s.failed > 0) return "failed";
+  if (s.paused > 0) return "paused";
+  if (!isFeatureBranch(args.branch)) return "branch";
+  return null;
+}
+
+/**
+ * Thin boolean wrapper over `finishSkipReason`, kept for every existing
+ * caller and test that only needs "does the phase run" — most notably
+ * `test/unit/finish/phase.test.ts`'s `completed: 0` case, which must keep
+ * passing unchanged.
+ */
 export function shouldRunFinish(args: {
   enabled: boolean;
   branch: string;
   storySummary: { completed: number; failed: number; paused: number };
 }): boolean {
-  if (!args.enabled) return false;
-  const s = args.storySummary;
-  if (s.completed === 0 || s.failed > 0 || s.paused > 0) return false;
-  return isFeatureBranch(args.branch);
+  return finishSkipReason(args) === null;
 }
 
 /**
@@ -110,7 +140,25 @@ function writeFinishStatus(ctx: FinishPhaseContext, update: Record<string, unkno
 
 export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishResult | null> {
   const settings = readFinishConfig(ctx.config);
-  if (!shouldRunFinish({ enabled: settings.enabled, branch: ctx.branch, storySummary: ctx.storySummary })) {
+  const skipReason = finishSkipReason({
+    enabled: settings.enabled,
+    branch: ctx.branch,
+    storySummary: ctx.storySummary,
+  });
+  if (skipReason) {
+    // The disabled case is not recorded on status.json (only logged): writing
+    // a `finish` key there for every finish-disabled run would add that key
+    // for all consumers, which is a wider behaviour change than the #1671
+    // gate fix warrants. Every other clause is both logged and recorded —
+    // those runs already have `finish.enabled: true`, so a `finish` status
+    // entry is expected there regardless.
+    getSafeLogger()?.info("finish", "Finish phase skipped — gate did not pass", {
+      storyId: "_run",
+      reason: skipReason,
+    });
+    if (skipReason !== "enabled") {
+      writeFinishStatus(ctx, { status: "skipped", reason: skipReason });
+    }
     return null;
   }
 
@@ -123,11 +171,18 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
   let result: FinishResult | null = null;
   let failure: string | undefined;
   try {
-    const context = await _finishPhaseDeps.loadFinishContext(ctx.feature, ctx.workdir);
+    // Resolved before `loadFinishContext` so the ledger's entry check
+    // (#1674 part 1) can read `last.json` from the exact directory this run
+    // will later write it to.
     const audit: AuditTarget = {
       auditDir: `${ctx.runtime.outputDir}/finish-audit/${ctx.feature}`,
       runId: ctx.runId,
     };
+    const context = await _finishPhaseDeps.loadFinishContext(ctx.feature, ctx.workdir, {
+      branch: ctx.branch,
+      auditDir: audit.auditDir,
+      rerun: settings.rerun,
+    });
     const state = createFinishState({
       feature: ctx.feature,
       workdir: ctx.workdir,
@@ -188,14 +243,33 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
 
   const costUsd = _finishPhaseDeps.snapshotCost(ctx.runtime) - costBefore;
   const passed = failure === undefined && result?.status !== "escalated";
-  writeFinishStatus(ctx, {
-    status: passed ? "passed" : "failed",
-    lastRunAt: _finishPhaseDeps.now(),
-    ...(result ? { result: result.status } : {}),
-    ...(result?.url ? { url: result.url } : {}),
-    ...(result?.escalationReason ? { escalationReason: result.escalationReason } : {}),
-    ...(result?.deliveryError ? { deliveryError: result.deliveryError } : {}),
-  });
+  if (result?.skipReason === "already-finished") {
+    // #1674 part 1: the ledger already covers this exact HEAD — the machine
+    // did no real work beyond the entry check. Reported distinctly from the
+    // ordinary "passed" path so a consumer of status.json can tell "this run
+    // did nothing because there was nothing new" from "this run did the
+    // work and it passed".
+    getSafeLogger()?.info("finish", "Finish phase skipped — already finished at this HEAD", {
+      storyId: "_run",
+      feature: result.feature,
+      ...(result.url ? { url: result.url } : {}),
+    });
+    writeFinishStatus(ctx, {
+      status: "skipped",
+      reason: result.skipReason,
+      lastRunAt: _finishPhaseDeps.now(),
+      ...(result.url ? { url: result.url } : {}),
+    });
+  } else {
+    writeFinishStatus(ctx, {
+      status: passed ? "passed" : "failed",
+      lastRunAt: _finishPhaseDeps.now(),
+      ...(result ? { result: result.status } : {}),
+      ...(result?.url ? { url: result.url } : {}),
+      ...(result?.escalationReason ? { escalationReason: result.escalationReason } : {}),
+      ...(result?.deliveryError ? { deliveryError: result.deliveryError } : {}),
+    });
+  }
   // An escalation nobody received is the worst outcome this phase has: the run
   // stopped for a human who was never told. The plugin this replaced logged it
   // and failed its action; the phase cannot fail a run, so the log and the

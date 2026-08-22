@@ -181,6 +181,18 @@ describe("machine-loops", () => {
     });
   });
 
+  test("a terminal result carries headSha/branch for the ledger (#1674 part 1)", async () => {
+    await withTempDir(async (dir) => {
+      const { deps } = makeDeps({ auditDir: dir });
+      const state = baseState();
+      const result = await runFinishMachine(state, deps);
+
+      expect(result.branch).toBe("feat/x");
+      expect(result.headSha).toBeDefined();
+      expect(typeof result.headSha).toBe("string");
+    });
+  });
+
   test("nothing-to-finish: never calls a reviewer, never opens a PR", async () => {
     await withTempDir(async (dir) => {
       const { deps, trail } = makeDeps({ auditDir: dir, context: { route: "nothing-to-finish" } });
@@ -189,6 +201,22 @@ describe("machine-loops", () => {
 
       expect(result.status).toBe("nothing-to-finish");
       expect(result.url).toBeUndefined();
+      expect(trail).toHaveLength(0);
+    });
+  });
+
+  test("already-finished route (#1674 part 1 ledger hit): never calls a reviewer, reports skipReason", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail } = makeDeps({
+        auditDir: dir,
+        context: { route: "already-finished", ledgerPrUrl: "https://forge.example/pr/5" },
+      });
+      const state = baseState();
+      const result = await runFinishMachine(state, deps);
+
+      expect(result.status).toBe("nothing-to-finish");
+      expect(result.skipReason).toBe("already-finished");
+      expect(result.url).toBe("https://forge.example/pr/5");
       expect(trail).toHaveLength(0);
     });
   });
