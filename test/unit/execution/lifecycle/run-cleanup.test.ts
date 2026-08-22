@@ -16,7 +16,7 @@ import type { RunCleanupOptions } from "@/execution/lifecycle/run-cleanup";
 import * as loggerModule from "@/logger";
 import type { IPostRunAction, PostRunActionResult, PostRunContext } from "@/plugins/extensions";
 import type { PRD, StoryStatus } from "@/prd/types";
-import { makeStory } from "@test/helpers";
+import { makePluginRegistry as makePluginRegistryHelper, makeStory } from "@test/helpers";
 
 // ============================================================================
 // Helpers
@@ -40,14 +40,14 @@ function storyWithStatus(status: StoryStatus) {
 
 function makePluginRegistry(actions: IPostRunAction[] = [], reporters: unknown[] = []) {
   const teardownAll = mock(async () => {});
-  return {
+  return makePluginRegistryHelper({
     getPostRunActions: mock(() => actions),
     getPostRunActionRegistrations: mock(() =>
       actions.map((action) => ({ pluginName: `plugin-${action.name}`, action })),
     ),
     getReporters: mock(() => reporters),
     teardownAll,
-  } as unknown as import("@/plugins/registry").PluginRegistry;
+  });
 }
 
 function makeCleanupOptions(overrides: Partial<RunCleanupOptions> = {}): RunCleanupOptions {

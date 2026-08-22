@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { resolveMaxAttemptsOutcome } from "@/execution";
 import { pipelineEventBus } from "@/pipeline";
-import { makeLogger } from "@test/helpers";
+import { makeLogger, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // shouldRetrySameTier — pure predicate (BUG-070)
@@ -99,19 +99,14 @@ describe("handleTierEscalation — tier escalation regression guard", () => {
     _tierEscalationDeps.savePRD = () => Promise.resolve();
 
     try {
-      const story = {
+      const story = makeStory({
         id: "US-001",
         title: "Story",
         description: "Test",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "in-progress" as const,
-        passes: false,
-        escalations: [],
+        status: "in-progress",
         attempts: 0,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
-      };
+        routing: { complexity: "simple", reasoning: "", modelTier: "fast", testStrategy: "test-after" },
+      });
 
       const ctx = {
         story,
@@ -334,19 +329,14 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
     _tierEscalationDeps.savePRD = () => Promise.resolve();
 
     try {
-      const story = {
+      const story = makeStory({
         id: "US-001",
         title: "Story",
         description: "Test",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "in-progress" as const,
-        passes: false,
-        escalations: [],
+        status: "in-progress",
         attempts: 0,
         routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "" },
-      };
+      });
 
       const ctx = {
         story,
@@ -427,31 +417,24 @@ describe("preIterationTierCheck — story:escalated event emission", () => {
     _tierEscalationDeps.savePRD = () => Promise.resolve();
 
     try {
-      const story = {
+      const story = makeStory({
         id: "US-pre-iter-001",
         title: "Story",
         description: "Test",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "in-progress" as const,
-        passes: false,
-        escalations: [],
+        status: "in-progress",
         // attempts === tierCfg.attempts (1) → triggers escalation
         attempts: 1,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
-      };
+        routing: { complexity: "simple", reasoning: "", modelTier: "fast", testStrategy: "test-after" },
+      });
 
-      const prd = {
+      const prd = makePRD({
         project: "test",
         feature: "f",
         branchName: "b",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
         userStories: [story],
-      };
+      });
 
-      const config = {
+      const config = makeNaxConfig({
         autoMode: {
           escalation: {
             enabled: true,
@@ -463,16 +446,16 @@ describe("preIterationTierCheck — story:escalated event emission", () => {
         },
         routing: { llm: { mode: "per-story" }, strategy: "keyword" },
         models: {},
-      };
+      });
 
       const result = await preIterationTierCheck(
-        story as unknown as Parameters<typeof preIterationTierCheck>[0],
+        story,
         { modelTier: "fast" },
-        config as unknown as Parameters<typeof preIterationTierCheck>[2],
-        prd as unknown as Parameters<typeof preIterationTierCheck>[3],
+        config,
+        prd,
         "/tmp/test-prd-pre-iter.json",
         undefined,
-        { hooks: {} } as unknown as Parameters<typeof preIterationTierCheck>[6],
+        { hooks: {} },
         "f",
         0,
         "/tmp",
@@ -499,31 +482,24 @@ describe("preIterationTierCheck — story:escalated event emission", () => {
     _tierEscalationDeps.savePRD = () => Promise.resolve();
 
     try {
-      const story = {
+      const story = makeStory({
         id: "US-pre-iter-002",
         title: "Story",
         description: "Test",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "in-progress" as const,
-        passes: false,
-        escalations: [],
+        status: "in-progress",
         // attempts (0) < tierCfg.attempts (1) → no escalation
         attempts: 0,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
-      };
+        routing: { complexity: "simple", reasoning: "", modelTier: "fast", testStrategy: "test-after" },
+      });
 
-      const prd = {
+      const prd = makePRD({
         project: "test",
         feature: "f",
         branchName: "b",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
         userStories: [story],
-      };
+      });
 
-      const config = {
+      const config = makeNaxConfig({
         autoMode: {
           escalation: {
             enabled: true,
@@ -535,16 +511,16 @@ describe("preIterationTierCheck — story:escalated event emission", () => {
         },
         routing: { llm: { mode: "per-story" }, strategy: "keyword" },
         models: {},
-      };
+      });
 
       const result = await preIterationTierCheck(
-        story as unknown as Parameters<typeof preIterationTierCheck>[0],
+        story,
         { modelTier: "fast" },
-        config as unknown as Parameters<typeof preIterationTierCheck>[2],
-        prd as unknown as Parameters<typeof preIterationTierCheck>[3],
+        config,
+        prd,
         "/tmp/test-prd-pre-iter-2.json",
         undefined,
-        { hooks: {} } as unknown as Parameters<typeof preIterationTierCheck>[6],
+        { hooks: {} },
         "f",
         0,
         "/tmp",
@@ -585,19 +561,14 @@ describe("handleTierEscalation — story:escalated event emission", () => {
     _tierEscalationDeps.savePRD = () => Promise.resolve();
 
     try {
-      const story = {
+      const story = makeStory({
         id: "US-escalated-001",
         title: "Story",
         description: "Test",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "in-progress" as const,
-        passes: false,
-        escalations: [],
+        status: "in-progress",
         attempts: 0,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
-      };
+        routing: { complexity: "simple", reasoning: "", modelTier: "fast", testStrategy: "test-after" },
+      });
 
       const ctx = {
         story,
@@ -672,30 +643,23 @@ describe("preIterationTierCheck — M2: unmatched rung on non-empty agent ladder
 
     try {
       // Story whose agent ("codex") is not in the tierOrder (which only has "claude" rungs)
-      const story = {
+      const story = makeStory({
         id: "US-unmatched-001",
         title: "Story",
         description: "Test",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "in-progress" as const,
-        passes: false,
-        escalations: [],
+        status: "in-progress",
         attempts: 5, // well above any tier's attempt budget — would skip if rung were found
-        routing: { modelTier: "fast", testStrategy: "test-after", agent: "codex" },
-      };
+        routing: { complexity: "simple", reasoning: "", modelTier: "fast", testStrategy: "test-after", agent: "codex" },
+      });
 
-      const prd = {
+      const prd = makePRD({
         project: "test",
         feature: "f",
         branchName: "b",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
         userStories: [story],
-      };
+      });
 
-      const config = {
+      const config = makeNaxConfig({
         autoMode: {
           escalation: {
             enabled: true,
@@ -707,16 +671,16 @@ describe("preIterationTierCheck — M2: unmatched rung on non-empty agent ladder
         },
         routing: { llm: { mode: "per-story" }, strategy: "keyword" },
         models: {},
-      };
+      });
 
       const result = await preIterationTierCheck(
-        story as unknown as Parameters<typeof preIterationTierCheck>[0],
+        story,
         { modelTier: "fast" },
-        config as unknown as Parameters<typeof preIterationTierCheck>[2],
-        prd as unknown as Parameters<typeof preIterationTierCheck>[3],
+        config,
+        prd,
         "/tmp/test-prd-unmatched.json",
         undefined,
-        { hooks: {} } as unknown as Parameters<typeof preIterationTierCheck>[6],
+        { hooks: {} },
         "f",
         0,
         "/tmp",
@@ -760,31 +724,24 @@ describe("preIterationTierCheck — ADR-025 gap #3: prior context captured on bu
     };
 
     try {
-      const story = {
+      const story = makeStory({
         id: "US-prior-001",
         title: "Story",
         description: "Test",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "in-progress" as const,
-        passes: false,
-        escalations: [],
+        status: "in-progress",
         // attempts === tierCfg.attempts (2) → budget exhausted
         attempts: 2,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
-      };
+        routing: { complexity: "simple", reasoning: "", modelTier: "fast", testStrategy: "test-after" },
+      });
 
-      const prd = {
+      const prd = makePRD({
         project: "test",
         feature: "f",
         branchName: "b",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
         userStories: [story],
-      };
+      });
 
-      const config = {
+      const config = makeNaxConfig({
         autoMode: {
           escalation: {
             enabled: true,
@@ -797,16 +754,16 @@ describe("preIterationTierCheck — ADR-025 gap #3: prior context captured on bu
         // per-story mode bypasses LLM re-route
         routing: { llm: { mode: "per-story" }, strategy: "keyword" },
         models: {},
-      };
+      });
 
       const result = await preIterationTierCheck(
-        story as unknown as Parameters<typeof preIterationTierCheck>[0],
+        story,
         { modelTier: "fast" },
-        config as unknown as Parameters<typeof preIterationTierCheck>[2],
-        prd as unknown as Parameters<typeof preIterationTierCheck>[3],
+        config,
+        prd,
         "/tmp/test-prd-prior.json",
         undefined,
-        { hooks: {} } as unknown as Parameters<typeof preIterationTierCheck>[6],
+        { hooks: {} },
         "f",
         0,
         "/tmp",
@@ -966,19 +923,14 @@ describe("handleTierEscalation — runtime-crash retry-same (US-002)", () => {
     };
 
     try {
-      const story = {
+      const story = makeStory({
         id: "US-002-retry-1",
         title: "Story",
         description: "Test",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "in-progress" as const,
-        passes: false,
-        escalations: [],
+        status: "in-progress",
         attempts: 2,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
-      };
+        routing: { complexity: "simple", reasoning: "", modelTier: "fast", testStrategy: "test-after" },
+      });
 
       const ctx = {
         story,
@@ -1035,19 +987,14 @@ describe("handleTierEscalation — runtime-crash retry-same (US-002)", () => {
     _tierEscalationDeps.savePRD = () => Promise.resolve();
 
     try {
-      const story = {
+      const story = makeStory({
         id: "US-002-retry-2",
         title: "Story",
         description: "Test",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "in-progress" as const,
-        passes: false,
-        escalations: [],
+        status: "in-progress",
         attempts: 1,
-        routing: { modelTier: "balanced", testStrategy: "test-after" },
-      };
+        routing: { complexity: "simple", reasoning: "", modelTier: "balanced", testStrategy: "test-after" },
+      });
 
       const originalPrd = {
         project: "test",

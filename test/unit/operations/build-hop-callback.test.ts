@@ -6,7 +6,14 @@ import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents";
 import type { AdapterFailure, ContextBundle } from "@/context/engine";
 import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
 import type { BuildHopCallbackContext } from "@/operations";
-import { makeContextBundle, makeContextManifest, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
+import {
+  makeContextBundle,
+  makeContextManifest,
+  makeMockAgentManager,
+  makeNaxConfig,
+  makeSessionManager,
+  makeStory,
+} from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -38,9 +45,9 @@ function makeStubTurnResult(output = "agent output"): TurnResult {
 }
 
 function makeAgentManagerStub(runAsSessionFn?: () => Promise<TurnResult>): IAgentManager {
-  return {
-    runAsSession: mock(runAsSessionFn ?? (() => Promise.resolve(makeStubTurnResult()))),
-  } as unknown as IAgentManager;
+  return makeMockAgentManager({
+    runAsSessionFn: runAsSessionFn ?? (() => Promise.resolve(makeStubTurnResult())),
+  });
 }
 
 function makeBaseOptions(prompt = "do the work", config = makeNaxConfig()): AgentRunOptions {
