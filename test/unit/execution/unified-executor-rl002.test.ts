@@ -15,6 +15,7 @@ import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineEvent, RunCompletedEvent } from "@/pipeline/event-bus";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd/types";
+import { makePluginRegistry, makeStatusWriter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -46,25 +47,6 @@ function makeCompletePRD(stories: UserStory[] = [makeStory("US-001", "passed")])
   } as unknown as PRD;
 }
 
-function makeStatusWriter() {
-  return {
-    setPrd: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    setRunStatus: mock(() => {}),
-    update: mock(async () => {}),
-    writeFeatureStatus: mock(async () => {}),
-  };
-}
-
-function makePluginRegistry() {
-  return {
-    getReporters: () => [],
-    getContextProviders: () => [],
-    getReviewers: () => [],
-    getRoutingStrategies: () => [],
-  };
-}
-
 const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
 
 const RL002_WORKDIR = `/tmp/nax-rl002-test-workdir-${randomUUID()}`;
@@ -85,8 +67,8 @@ function makeMinimalContext(): SequentialExecutionContext {
     feature: "test-feature",
     dryRun: false,
     useBatch: false,
-    pluginRegistry: makePluginRegistry() as unknown as SequentialExecutionContext["pluginRegistry"],
-    statusWriter: makeStatusWriter() as unknown as SequentialExecutionContext["statusWriter"],
+    pluginRegistry: makePluginRegistry(),
+    statusWriter: makeStatusWriter(),
     runId: "run-rl002-test",
     startTime: Date.now(),
     batchPlan: [],

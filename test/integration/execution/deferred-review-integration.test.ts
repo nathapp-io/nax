@@ -22,7 +22,7 @@ import { executeUnified } from "@/execution/unified-executor";
 import type { PluginRegistry } from "@/plugins";
 import type { IReviewPlugin } from "@/plugins/extensions";
 import type { PRD } from "@/prd/types";
-import { makeStatusWriter, makeTempDir } from "@test/helpers";
+import { makePluginRegistry, makeStatusWriter, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -63,14 +63,7 @@ function makeReviewer(name: string, passed = true): IReviewPlugin {
 }
 
 function makeRegistry(reviewers: IReviewPlugin[]): PluginRegistry {
-  return {
-    getReviewers: mock(() => reviewers),
-    getReporters: mock(() => []),
-    getOptimizers: mock(() => []),
-    getRouters: mock(() => []),
-    getContextProviders: mock(() => []),
-    plugins: [],
-  } as unknown as PluginRegistry;
+  return makePluginRegistry({ getReviewers: mock(() => reviewers) });
 }
 
 function makeConfig(pluginMode?: "per-story" | "deferred"): NaxConfig {

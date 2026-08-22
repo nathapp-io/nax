@@ -110,7 +110,7 @@ function makeOpts(config: NaxConfig, prd: PRD, statusWriter: MockStatusWriter): 
     storiesCompleted: 1,
     iterations: 1,
     statusWriter: statusWriter,
-    pluginRegistry: { getAll: () => [], get: () => undefined } as unknown as RunnerCompletionOptions["pluginRegistry"],
+    pluginRegistry: { getAll: () => [], get: () => undefined },
     prdPath: `${WORKDIR}/prd.json`,
     runtime: {
       outputDir: `${WORKDIR}/output`,

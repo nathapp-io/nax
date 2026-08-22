@@ -78,7 +78,7 @@ function makeOpts(
     pluginRegistry: {
       getAll: () => [],
       get: () => undefined,
-    } as unknown as RunnerCompletionOptions["pluginRegistry"],
+    },
     prdPath: `${WORKDIR}/prd.json`,
     featureDir,
   };

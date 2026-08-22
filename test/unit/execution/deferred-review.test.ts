@@ -16,7 +16,7 @@ import { _deferredReviewDeps, captureRunStartRef, runDeferredReview } from "@/ex
 import type { PluginRegistry } from "@/plugins";
 import type { IReviewPlugin } from "@/plugins/extensions";
 import type { ReviewConfig } from "@/review/types";
-import { withDepsRestore } from "@test/helpers";
+import { makePluginRegistry, withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -71,9 +71,7 @@ function makeReviewer(name: string, passed = true): IReviewPlugin {
 }
 
 function makeRegistry(reviewers: IReviewPlugin[]): PluginRegistry {
-  return {
-    getReviewers: mock(() => reviewers),
-  } as unknown as PluginRegistry;
+  return makePluginRegistry({ getReviewers: mock(() => reviewers) });
 }
 
 function makeReviewConfig(pluginMode?: "per-story" | "deferred"): ReviewConfig {

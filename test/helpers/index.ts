@@ -29,6 +29,7 @@ export {
   mockDiffUtilsDeps,
 } from "./review-audit";
 export { makeContextBundle, makeContextManifest } from "./context-bundle";
+export { makePluginRegistry, type MockPluginRegistry } from "./plugin-registry";
 export { makeSpawn, makeSpawnResult } from "./spawn";
 export { makeStatusWriter, type MockStatusWriter } from "./status-writer";
 export type { FakeProcSpec, SpawnCall, SpawnResult, SpawnStub } from "./spawn";
