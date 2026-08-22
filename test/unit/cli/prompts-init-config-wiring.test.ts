@@ -283,6 +283,15 @@ describe("promptsInitCommand — handles missing .nax/config.json gracefully", (
     const config = readConfigJson(tempDir);
     expect((config.prompts as { overrides?: Record<string, string> })?.overrides).toEqual(EXPECTED_OVERRIDES);
   });
+
+  test("BUG-17 hardening: a prompts section that is not an object is replaced, not crashed on", async () => {
+    writeConfigJson(tempDir, { version: 1, prompts: "bogus" });
+
+    await promptsInitCommand({ workdir: tempDir });
+
+    const config = readConfigJson(tempDir);
+    expect((config.prompts as { overrides?: Record<string, string> })?.overrides).toEqual(EXPECTED_OVERRIDES);
+  });
 });
 
 describe("promptsInitCommand — headless/non-TTY mode auto-writes config", () => {

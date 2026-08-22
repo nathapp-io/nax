@@ -678,4 +678,34 @@ describe("BUG-16 — schema-drifted status.json degrades instead of crashing", (
     expect(output).toContain("Stories:");
     expect(output).not.toContain("undefined");
   });
+
+  test("all-features view survives a cost section whose limit is a non-number (cost-limit banner path)", async () => {
+    buildFeatureFixture();
+    writeFileSync(
+      join(testDir, ".nax", "status.json"),
+      JSON.stringify({
+        version: 1,
+        run: {
+          id: "run-2026-01-01T00-00-00-000Z",
+          feature: "test-feature",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          status: "cost-limit",
+          dryRun: false,
+          pid: 12345,
+        },
+        progress: { total: 1, passed: 0, failed: 0, paused: 0, blocked: 0, pending: 1 },
+        cost: { spent: 5.5, limit: "5" },
+        current: null,
+        iterations: 3,
+        updatedAt: "2026-01-01T01:00:00.000Z",
+        durationMs: 3600000,
+      }),
+    );
+
+    await displayFeatureStatus({ dir: testDir });
+
+    const output = consoleOutput.join("\n");
+    expect(output).toContain("test-feature");
+    expect(output).not.toContain("undefined");
+  });
 });

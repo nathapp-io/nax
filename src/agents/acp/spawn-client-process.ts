@@ -228,22 +228,37 @@ export async function runTrackedSpawn(
 
 /**
  * MEM-19: drain a process stream with a bounded wait. Returns the full text
- * when the stream EOFs promptly; returns "" (and cancels the stream reader so
- * its pending read settles — MEM-38 hygiene) when the drain timer wins.
+ * when the stream EOFs promptly; returns "" (and cancels the reader so its
+ * pending read settles — MEM-38 hygiene) when the drain timer wins.
+ *
+ * The reader is owned here rather than handed to a `Response` body: a locked
+ * stream cannot be cancelled, so `reader.cancel()` on the drain-win path is
+ * what actually releases the pending read (a `Response` body would keep it
+ * parked for the process lifetime).
  */
 async function drainStream(stream: ReadableStream<Uint8Array> | null, timeoutMs: number): Promise<string> {
   if (!stream) return "";
-  const textPromise = new Response(stream).text().catch(() => "");
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  const readAll = async (): Promise<string> => {
+    let text = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return text;
+  };
   const drain = makeStreamDrain(timeoutMs);
   const winner = await Promise.race([
-    textPromise.then((text) => ({ fromStream: true as const, text })),
+    readAll()
+      .catch(() => "")
+      .then((text) => ({ fromStream: true as const, text })),
     drain.promise.then(() => ({ fromStream: false as const, text: "" })),
   ]).finally(() => drain.cancel());
   if (!winner.fromStream) {
-    // The drain won — cancel the reader so its pending read settles
-    // (MEM-38 hygiene). The stream is locked by the Response body reader,
-    // so the cancel rejects rather than throwing synchronously.
-    stream.cancel().catch(() => {});
+    reader.cancel().catch(() => {});
   }
   return winner.text;
 }

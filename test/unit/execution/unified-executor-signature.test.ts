@@ -130,7 +130,10 @@ describe("AC-7 — cost-limit check after parallel batch (source)", () => {
   test("unified-executor.ts has cost-limit check after runParallelBatch in source order", async () => {
     const src = await readSrc("execution/unified-executor.ts");
     const batchIdx = src.indexOf("runParallelBatch");
-    const postGateIdx = src.lastIndexOf("cost-limit");
+    // First occurrence AFTER runParallelBatch — the post-batch check. (A plain
+    // lastIndexOf would land on the sequential gate and never catch the
+    // post-batch check being deleted.)
+    const postGateIdx = src.indexOf("cost-limit", batchIdx);
     expect(src).toContain("costLimit");
     expect(batchIdx).toBeGreaterThan(0);
     expect(postGateIdx).toBeGreaterThan(0);

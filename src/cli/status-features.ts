@@ -117,6 +117,9 @@ function isUsableStatusFile(value: unknown): value is NaxStatusFile {
   }
   const cost = v.cost as Record<string, unknown> | undefined;
   if (!cost || typeof cost.spent !== "number") return false;
+  // BUG-16 (review): the cost-limit banner does `(cost.limit ?? 0).toFixed(4)`
+  // — a non-number `limit` crashes it just like a missing section would.
+  if (typeof cost.limit !== "number" && cost.limit !== null) return false;
   const progress = v.progress as Record<string, unknown> | undefined;
   if (!progress || typeof progress.passed !== "number" || typeof progress.total !== "number") return false;
 

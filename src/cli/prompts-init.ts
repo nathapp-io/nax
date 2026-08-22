@@ -143,8 +143,12 @@ async function autoWirePromptsConfig(workdir: string): Promise<void> {
   // silently clobbered by this command (SEC-5 posture).
   const config = (await loadJsonFileStrict<Record<string, unknown>>(configPath, "config")) ?? {};
 
-  // Check if prompts.overrides is already set
-  const prompts = (config.prompts as Record<string, unknown> | undefined) ?? {};
+  // Check if prompts.overrides is already set — a non-object prompts section
+  // (hand-edited config) is treated as absent rather than crashed on.
+  const prompts = (typeof config.prompts === "object" && config.prompts !== null ? config.prompts : {}) as Record<
+    string,
+    unknown
+  >;
   if (prompts.overrides && Object.keys(prompts.overrides).length > 0) {
     _promptsInitDeps.log(
       "[INFO] prompts.overrides already configured in .nax/config.json. Skipping auto-wiring.\n" +
