@@ -97,6 +97,21 @@ describe("buildSmartTestCommand", () => {
     const result = buildSmartTestCommand(testFiles as string[], command);
     expect(result).toBe(expected);
   });
+
+  // BUG-26 (D-18): the smart-runner heuristic replaces the last path-like
+  // token with scoped test files. When the candidate is an interpreter's
+  // script operand (e.g. `node ./scripts/run-tests.js`), replacing it with
+  // `node 'test/unit/foo.test.ts'` runs the wrong thing. Fail-safe: append
+  // instead of replacing — worst case runs a superset, never the wrong target.
+  test.each([
+    ["node ./scripts/run-tests.js — appends scoped tests", ["test/unit/foo.test.ts"], "node ./scripts/run-tests.js", "node ./scripts/run-tests.js 'test/unit/foo.test.ts'"],
+    ["bun ./scripts/run-tests.ts — appends scoped tests", ["test/unit/foo.test.ts"], "bun ./scripts/run-tests.ts", "bun ./scripts/run-tests.ts 'test/unit/foo.test.ts'"],
+    ["python ./run_tests.py — appends scoped tests", ["test/unit/foo.test.ts"], "python ./run_tests.py", "python ./run_tests.py 'test/unit/foo.test.ts'"],
+    ["npx jest — appends scoped tests", ["test/unit/foo.test.ts"], "npx jest", "npx jest 'test/unit/foo.test.ts'"],
+  ])("BUG-26: %s", (_label, testFiles, command, expected) => {
+    const result = buildSmartTestCommand(testFiles as string[], command);
+    expect(result).toBe(expected);
+  });
 });
 
 // ---------------------------------------------------------------------------

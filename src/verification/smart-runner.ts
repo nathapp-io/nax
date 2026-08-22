@@ -396,6 +396,13 @@ function unquote(token: string): string {
   return token;
 }
 
+// BUG-26 (D-18): interpreters whose first argument is a script path. The
+// smart-runner heuristic must NOT replace that script operand with scoped
+// test files — `node 'test/unit/foo.test.ts'` runs the wrong file. Falling
+// back to *append* runs a superset (the full suite plus the extra argument),
+// which is the fail-safe direction for a verification gate.
+const INTERPRETERS = ["node", "bun", "deno", "python", "python3", "ruby", "npx", "tsx", "ts-node"];
+
 export function buildSmartTestCommand(testFiles: string[], baseCommand: string): string {
   if (testFiles.length === 0) {
     return baseCommand;
@@ -417,6 +424,15 @@ export function buildSmartTestCommand(testFiles: string[], baseCommand: string):
     if (precededByPathFlag || isCombinedFlagValue) continue;
     lastPathIndex = i;
     break;
+  }
+
+  // BUG-26 (D-18): if the last path candidate is an interpreter's script
+  // operand (e.g. `node ./scripts/run-tests.js`), replace-then-append would
+  // drop the script and run the wrong target. Fall back to append so the
+  // runner executes the script (which then chooses its own scope) with the
+  // extra argument as a hint — never the wrong file.
+  if (lastPathIndex === 1 && INTERPRETERS.includes(unquote(parts[0]))) {
+    return `${baseCommand} ${quotedTestFiles.join(" ")}`;
   }
 
   if (lastPathIndex === -1) {
