@@ -1,3 +1,4 @@
+import { isAbsolute, relative } from "node:path";
 import type { ConfigLoader, ConfigSelector, NaxConfig } from "../config";
 import { mergePackageConfig } from "../config";
 import { getSafeLogger } from "../logger";
@@ -26,9 +27,12 @@ export interface PackageRegistry {
 
 function createPackageView(config: NaxConfig, packageDir: string, repoRoot: string, hasOverride: boolean): PackageView {
   const memo = new Map<string, unknown>();
+  // TYPE-29 (D-23): use path.relative rather than startsWith(repoRoot) so
+  // a sibling directory whose name is a prefix of the repo root (e.g.
+  // /repo vs /repository) does not produce a garbage relative key.
   const relativeFromRoot = packageDir
-    ? packageDir.startsWith(repoRoot)
-      ? packageDir.slice(repoRoot.length).replace(/^\//, "")
+    ? isAbsolute(packageDir) && isAbsolute(repoRoot)
+      ? stripLeadingSlash(relative(repoRoot, packageDir))
       : packageDir
     : "";
 
@@ -49,6 +53,10 @@ function createPackageView(config: NaxConfig, packageDir: string, repoRoot: stri
   };
 }
 
+function stripLeadingSlash(p: string): string {
+  return p.startsWith("./") ? p.slice(2) : p === "." ? "" : p;
+}
+
 export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): PackageRegistry {
   const cache = new Map<string, PackageView>();
   const mergedConfigs = new Map<string, NaxConfig>();
@@ -57,11 +65,15 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
   // Normalize to relative so cache and mergedConfigs keys are consistent with
   // what hydrate() stores (discoverWorkspacePackages returns relative paths).
   // Pipeline stages pass absolute workdirs; without this, mergedConfigs.get() always misses.
+  // TYPE-29 (D-23): use path.relative rather than a separator-prefix check —
+  // both inputs are absolute POSIX paths here, so the result is unambiguous
+  // and the separator-less `startsWith(repoRoot)` bug is avoided.
   function toRelativeKey(packageDir: string | undefined): string {
     if (!packageDir) return "";
-    const prefix = repoRoot.endsWith("/") ? repoRoot : `${repoRoot}/`;
-    if (packageDir.startsWith(prefix)) return packageDir.slice(prefix.length);
-    if (packageDir === repoRoot) return "";
+    if (isAbsolute(packageDir) && isAbsolute(repoRoot)) {
+      if (packageDir === repoRoot) return "";
+      return stripLeadingSlash(relative(repoRoot, packageDir));
+    }
     return packageDir;
   }
 
