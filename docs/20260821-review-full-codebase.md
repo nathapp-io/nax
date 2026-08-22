@@ -2,7 +2,10 @@
 
 **Date:** 2026-08-21 (**rev. 3** — 2026-08-22: re-verification + implementation handover)
 **Reviewer:** ox-alpha (AI); rev. 2 re-verification and rev. 3 decision register by a second reviewer
-**Status:** ready for handover — see **Handover Brief** below before starting work
+**Status:** **P0 and P1 shipped** on branch `fix/fail-open-gates` (10 commits, all findings
+below marked ✅ SHIPPED) — see `docs/20260822-review-fail-open-gates-branch.md` for the
+implementation code review (Grade A-, no blocking findings). P2/P3/P4 remain open — see
+**Handover Brief** below before starting that work.
 **Version:** 0.81.0 (HEAD `76c5bafdc`, clean tree)
 **Files:** ~891 TS files in `src/` + `bin/` (~141k LOC); all 40 source directories covered via 6 parallel deep-dive passes + knowledge-graph hotspot analysis
 **Baseline:** `bun run typecheck` — clean (exit 0) at review time; only 4 non-comment `any` uses in `src/`
@@ -1060,11 +1063,11 @@ Each finding below was verified in source (rev 1 and re-verified rev 2); analysi
 | RACE-37 | Concurrent `openSession(name)` opens two physical sessions; the loser is orphaned | `session/manager.ts:424-447`: the map check precedes `await adapter.openSession`; the second `set` overwrites the first | The first physical acpx session lives until TTL/forceStop. Single-flight exists for `sendPrompt` but not for open | Extend the `_busySessions`-style synchronous check-and-set to `openSession` |
 | MEM-38 | Losing the stderr-drain race leaves the `readStreamTail` reader pending forever (BUG-46 fixed stdout only) | `agents/acp/spawn-client-session.ts:267-273`: the stdout winner cancels `parseHandle`; the stderr winner cancels only the timer | Parked reader holds the stream lock + decoder + 64KB tail closure per affected prompt | Cancel the stderr reader when `drainB` wins |
 | BUG-39 | `ensureGitExcludes` does an unlocked read-modify-write of `.git/info/exclude`; substring matching | `worktree/manager.ts:29-41` | Overlapping invocations interleave read-read-write-write; the last writer clobbers the first's entries; `includes("runs/")` suppresses longer entries | Serialize via the existing path-file-lock; line-aware matching |
-| BUG-40 | Malformed profile-chain config read throws a raw SyntaxError before the tolerant layers run | `config/profile.ts:221-226` unguarded `.json()`; ordering proven at `loader.ts:305` vs `:321/:324` | The same corrupt file handled tolerantly a few lines later crashes earlier with no NaxError context. Two opposite postures on one file — see SEC-5 | try/catch → empty chain, and let the layer loaders own diagnostics |
+| BUG-40 | ✅ **SHIPPED** (commit `b4a27225d`, shipped with SEC-5/BUG-10). Malformed profile-chain config read throws a raw SyntaxError before the tolerant layers run | `config/profile.ts:221-226` unguarded `.json()`; ordering proven at `loader.ts:305` vs `:321/:324` | The same corrupt file handled tolerantly a few lines later crashes earlier with no NaxError context. Two opposite postures on one file — see SEC-5 | try/catch → empty chain, and let the layer loaders own diagnostics |
 | SEC-41 | `resolvePermissions` defaults to `approve-all` when the config object is missing | `config/permissions.ts:38-39`: `config?.execution?.permissionProfile ?? "unrestricted"`; the `default:` arm correctly fails safe to `approve-reads` for *invalid* values | A call site that forgets to thread config — the exact mistake CLAUDE.md warns about — silently gets maximum permissiveness, while a *typo'd* profile fails safe. The absent case is treated more permissively than the invalid one | **D-20:** default to `"safe"` (approve-reads) and `warn` naming the stage. Not a throw — the existing `default:` arm already falls back to approve-reads for *invalid* profiles, so treating absent more permissively than invalid is the bug; throwing risks live call sites passing `opts.config ?? this._config` |
 | BUG-42 | Telegram callback action cast to the action union without validation | `interaction/plugins/telegram.ts:442`: `parts[1] as InteractionResponse["action"]` | An arbitrary string from the configured chat flows into action switches. Gated by `isFromConfiguredChat`, so this is robustness, not privilege | Validate against known actions, else ignore |
 | BUG-43 | `substituteTemplate` interpolates context keys into a RegExp unescaped | `interaction/triggers.ts:67-75`: `new RegExp(\`\\{\\{${key}\\}\\}\`, "g")` | A key like `cost(usd)` breaks or mis-substitutes templates. Built-in keys are safe today; `TriggerContext` has an open `[key: string]: unknown` index signature, so callers can add arbitrary keys | Escape the key, or split/join literal replace |
-| BUG-44 | Per-trigger `timeout` override is unbounded (defaults are validated `min(1000).max(3600000)`) | `config/schemas-infra.ts:171` (`z.number().optional()`) vs `:162`; consumer `triggers.ts:56-58` | `-1` / `0.5` reaches `setTimeout` and fires immediately — the interactive gate becomes an unconditional fallback with no error. Same schema asymmetry as SEC-3, one line below it | `.int().positive()` mirroring the defaults block |
+| BUG-44 | ✅ **SHIPPED** (commit `fe29e5b5a`, shipped with SEC-3/BUG-48). Per-trigger `timeout` override is unbounded (defaults are validated `min(1000).max(3600000)`) | `config/schemas-infra.ts:171` (`z.number().optional()`) vs `:162`; consumer `triggers.ts:56-58` | `-1` / `0.5` reaches `setTimeout` and fires immediately — the interactive gate becomes an unconditional fallback with no error. Same schema asymmetry as SEC-3, one line below it | `.int().positive()` mirroring the defaults block |
 | ENH-45 | Hook-command blocklist is trivially bypassable; creates false audit confidence | `hooks/runner.ts:136-146` — the blocklist misses `bash payload.sh`, `wget -qO- host \| sh`, `node -e` | Mitigated by argv-mode execution (documented at :191-203) — the residual issue is reviewer over-trust of a "Security validation failed" message that implies more than it delivers | **D-22:** keep the check, reword the message from "Security validation failed" to a best-effort lint warning referencing the argv-mode note at :191-203 |
 | RACE-46 | Curator rollup append vs GC rename race loses observations | `plugins/builtin/curator/rollup.ts:81` plain `appendFile`; `rollup-prune.ts:150-151` rewrite + `rename`, with no coordination | Rows appended between GC's read pass and its rename land in the old inode and are destroyed. Telemetry loss only | Take the shared path-file-lock around both |
 | ENH-47 | Shelled-out `rm` / `ln -s` with unchecked exit codes (**rev 2: portability half is speculative**) | `bin/nax.ts:656-667`; contrast `unlock.ts:96-97` "native unlink, not a shelled-out rm" | The unchecked exit code is the real defect: a failed `ln -s` silently leaves a stale `latest.jsonl`. The "fails on Windows" argument is hypothetical (no `engines`, no `win32` refs anywhere in `src/`); the no-coreutils-on-PATH case remains valid | Use native `unlink`/`symlink` |
@@ -1129,22 +1132,22 @@ BUG-19.)*
 
 | Priority | ID | Effort | Description |
 |:---|:---|:---|:---|
-| **P0** | BUG-1 | S–M | Verdict coercion: capture the pass/fail keyword, reject negations, stop seeding `allPassing` from `approved`. **Do not** add `approved !== false` to `categorizeVerdict` (contradicts the advisory-override design). Consider gating the verifier-as-SSOT carve-out on non-coerced verdicts |
-| **P0** | BUG-2 | S | Normalize severity **at the parse boundary** (`validateLLMShape` / `validateAdversarialShape`), case-insensitively, unknown → fail-closed; de-duplicate the two `normalizeSeverity` copies |
-| **P0** | SEC-3 | S | `z.enum` for the per-trigger fallback + `default: return "abort"` in the switch |
-| **P1** | BUG-48 | S | Honour `interaction.defaults.fallback` in `getTriggerConfig`, or remove the field and the `init.ts:33` guidance |
-| **P1** | BUG-4 | S | Catch TUI key-handler rejections; surface inline instead of crashing the run |
-| **P1** | BUG-3 | S | Add `--cwd` to the `acpx cancel` / `acpx stop` argv |
-| **P1** | SEC-18 | S | `validateProfileName` in profile create |
-| **P1** | SEC-5 | M | Fail fast on config parse errors — strict `loadJsonFile` variant (ENOENT ≠ corrupt); also fixes BUG-10 and pairs with BUG-40 |
+| **P0** | BUG-1 | S–M | ✅ **SHIPPED** (`fix/fail-open-gates`, commit `b4e8462a0`) — parser fix (D-1, D-2) landed; the D-3 verdict-provenance follow-up was deliberately deferred (optional per the register — "ship the parser fix alone, it closes the live hole"). Verdict coercion: capture the pass/fail keyword, reject negations, stop seeding `allPassing` from `approved`. **Do not** add `approved !== false` to `categorizeVerdict` (contradicts the advisory-override design). Consider gating the verifier-as-SSOT carve-out on non-coerced verdicts |
+| **P0** | BUG-2 | S | ✅ **SHIPPED** (commit `41c67d31f`) — Normalize severity **at the parse boundary** (`validateLLMShape` / `validateAdversarialShape`), case-insensitively, unknown → fail-closed; de-duplicate the two `normalizeSeverity` copies |
+| **P0** | SEC-3 | S | ✅ **SHIPPED** (commit `fe29e5b5a`, with BUG-44/BUG-48) — `z.enum` for the per-trigger fallback + `default: return "abort"` in the switch |
+| **P1** | BUG-48 | S | ✅ **SHIPPED** (commit `fe29e5b5a`) — Honour `interaction.defaults.fallback` in `getTriggerConfig`, or remove the field and the `init.ts:33` guidance |
+| **P1** | BUG-4 | S | ✅ **SHIPPED** (commit `803852525`) — Catch TUI key-handler rejections; surface inline instead of crashing the run |
+| **P1** | BUG-3 | S | ✅ **SHIPPED** (commit `5263d67dc`) — Add `--cwd` to the `acpx cancel` / `acpx stop` argv |
+| **P1** | SEC-18 | S | ✅ **SHIPPED** (commit `34d64849f`) — `validateProfileName` in profile create |
+| **P1** | SEC-5 | M | ✅ **SHIPPED** (commit `b4a27225d`, with BUG-40/BUG-10) — Fail fast on config parse errors — strict `loadJsonFile` variant (ENOENT ≠ corrupt); also fixes BUG-10 and pairs with BUG-40 |
 | **P2** | MEM-6 | M | Remove worktrees for failed parallel stories (track creation, not config mode) |
-| **P2** | BUG-10 | S | Quarantine corrupt `metrics.json` instead of wiping history |
+| **P2** | BUG-10 | S | ✅ **SHIPPED** (commit `b4a27225d`, shipped early alongside SEC-5 since they share `loadJsonFileStrict`) — Quarantine corrupt `metrics.json` instead of wiping history |
 | **P2** | BUG-11 | S | NaN-safe timestamp guard in scratch purge |
 | **P2** | BUG-12 | S | `asFiniteNumber` for all four `usage_update` numeric fields |
 | **P2** | BUG-13 | M | Deadline for worktree dependency provisioning spawn |
 | **P2** | BUG-8 | M | Re-resolve dispatchable stories by id after the PRD reload |
 | **P2** | BUG-9 | M | Coordinator-owned queue-command application in parallel mode |
-| **P3** | BUG-7, BUG-14, BUG-15, BUG-16, BUG-17, MEM-19, ENH-20 | M | Batch: cost pre-gate, inconclusive-acceptance handling, `parseAsync`, status shape validation, prompts-init path, drain deadlines, `failOpen` reporting |
+| **P3** | BUG-7, BUG-14, BUG-15, BUG-16, BUG-17, MEM-19, ENH-20 | M | ENH-20 ✅ **SHIPPED** (commit `37c111c94`, shipped early — sequencing groups it with BUG-1/BUG-2 as the "green must mean checked" PR, not with this P3 batch). Remaining: cost pre-gate, inconclusive-acceptance handling, `parseAsync`, status shape validation, prompts-init path, drain deadlines |
 | **P4** | LOW items (STYLE-21 … ENH-47) | S each | Table above; mostly one-line guards or doc clarifications. Prioritise BUG-31 / PERF-32 alongside BUG-13 to close the deadline convention gap in one pass |
 
 **Sequencing:** see **Handover Brief → Sequencing for the implementing session**, which is the single
