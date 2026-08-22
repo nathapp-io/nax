@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { getChangedFiles } from "@/tdd";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { _isolationDeps, getChangedFiles } from "@/tdd";
+import { getAddedLinesPerFile } from "@/tdd/isolation";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 async function git(cwd: string, args: string[]): Promise<void> {
@@ -50,5 +51,69 @@ describe("getChangedFiles", () => {
     const changed = await getChangedFiles(dir, "HEAD");
 
     expect(changed).toEqual(["tracked.txt"]);
+  });
+});
+
+// BUG-31: a wedged git (NFS / lock contention) must not stall the TDD
+// isolation stage indefinitely. `_isolationDeps.timeoutMs` is injected short
+// here (mirrors `_gitDeps.timeoutRetryGitTimeoutMs` in `src/utils/git.ts`) so
+// this test asserts the SIGKILL contract without burning the full 10s
+// production timeout in wall-clock.
+describe("runGitBounded (via getChangedFiles / getAddedLinesPerFile)", () => {
+  let origSpawn: typeof _isolationDeps.spawn;
+  let origTimeoutMs: typeof _isolationDeps.timeoutMs;
+  let killed: boolean;
+
+  function makeHungProc() {
+    killed = false;
+    let resolveExited: (code: number) => void = () => {};
+    return {
+      // Simulates real Bun.spawn behaviour: proc.kill() resolves the exited
+      // promise (128 + SIGKILL(9) = 137), so the `await proc.exited` in
+      // runGitBounded unblocks instead of hanging forever on a mock.
+      exited: new Promise<number>((r) => {
+        resolveExited = r;
+      }),
+      stdout: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
+      stderr: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
+      pid: 0,
+      kill: () => {
+        killed = true;
+        resolveExited(137);
+      },
+    };
+  }
+
+  beforeEach(() => {
+    origSpawn = _isolationDeps.spawn;
+    origTimeoutMs = _isolationDeps.timeoutMs;
+    _isolationDeps.timeoutMs = 50;
+  });
+
+  afterEach(() => {
+    _isolationDeps.spawn = origSpawn;
+    _isolationDeps.timeoutMs = origTimeoutMs;
+  });
+
+  test("getChangedFiles rejects and SIGKILLs the process when git hangs", async () => {
+    _isolationDeps.spawn = mock(() => makeHungProc()) as unknown as typeof _isolationDeps.spawn; // test-ratchet-allow: as-unknown-as
+
+    await expect(getChangedFiles("/tmp/does-not-matter", "HEAD")).rejects.toThrow(/timed out/);
+    expect(killed).toBe(true);
+  });
+
+  test("getAddedLinesPerFile rejects when git hangs", async () => {
+    _isolationDeps.spawn = mock(() => makeHungProc()) as unknown as typeof _isolationDeps.spawn; // test-ratchet-allow: as-unknown-as
+
+    await expect(getAddedLinesPerFile("/tmp/does-not-matter", "HEAD")).rejects.toThrow(/timed out/);
+    expect(killed).toBe(true);
   });
 });

@@ -43,17 +43,20 @@ function makeMockProc(stdout: string, exitCode: number) {
 let origSpawn: typeof _versionDetectionDeps.spawn;
 let origGetInstalledAgents: typeof _versionDetectionDeps.getInstalledAgents;
 let origGetAllAgents: typeof _versionDetectionDeps.getAllAgents;
+let origTimeoutMs: typeof _versionDetectionDeps.timeoutMs;
 
 beforeEach(() => {
   origSpawn = _versionDetectionDeps.spawn;
   origGetInstalledAgents = _versionDetectionDeps.getInstalledAgents;
   origGetAllAgents = _versionDetectionDeps.getAllAgents;
+  origTimeoutMs = _versionDetectionDeps.timeoutMs;
 });
 
 afterEach(() => {
   _versionDetectionDeps.spawn = origSpawn;
   _versionDetectionDeps.getInstalledAgents = origGetInstalledAgents;
   _versionDetectionDeps.getAllAgents = origGetAllAgents;
+  _versionDetectionDeps.timeoutMs = origTimeoutMs;
 });
 
 // ---------------------------------------------------------------------------
@@ -93,10 +96,12 @@ describe("getAgentVersion", () => {
 
   // PERF-32: a hung wrapper script must not stall the multi-agent health
   // precheck. proc.exited that never resolves is bounded by
-  // VERSION_DETECTION_TIMEOUT_MS — getAgentVersion returns null. The test
-  // takes the full 5s because that's what the timeout guarantees, so the
-  // runner's per-test timeout needs to be extended.
+  // `_versionDetectionDeps.timeoutMs` — getAgentVersion returns null.
+  // The timeout is injected short here (mirrors `_gitDeps.timeoutRetryGitTimeoutMs`
+  // in `src/utils/git.ts`) so this test asserts the SIGKILL contract without
+  // burning the full 5s production timeout in wall-clock.
   test("PERF-32: returns null when proc.exited never resolves (hung binary)", async () => {
+    _versionDetectionDeps.timeoutMs = 50;
     const hungProc = {
       exited: new Promise<number>(() => {}),
       stdout: new ReadableStream({
@@ -119,9 +124,8 @@ describe("getAgentVersion", () => {
     const elapsed = Date.now() - start;
 
     expect(v).toBeNull();
-    // Version timeout is 5s; assert it returned rather than blocked.
-    expect(elapsed).toBeLessThan(30_000);
-  }, { timeout: 30_000 });
+    expect(elapsed).toBeLessThan(5_000);
+  });
 });
 
 // ---------------------------------------------------------------------------

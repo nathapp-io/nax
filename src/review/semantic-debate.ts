@@ -14,7 +14,6 @@ import { getSafeLogger } from "../logger";
 import { filterByAcGroundingMinimal } from "./ac-quote-validator";
 import { MAX_ACKS } from "./acks";
 import { llmFindingsToReviewFindings } from "./finding-projection";
-import { fingerprintFor } from "./recurrence-demotion";
 import { normalizeIssueText } from "./recurrence-demotion";
 import {
   type LLMFinding,

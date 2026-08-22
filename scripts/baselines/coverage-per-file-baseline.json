@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-08-22T03:54:14.927Z",
+  "updatedAt": "2026-08-22T10:34:33.926Z",
   "byFile": {
     "src/acceptance/content-loader.ts": 0,
     "src/agents/acp/adapter-close-physical.ts": 0.0741,
@@ -29,7 +29,7 @@
     "src/commands/migrate.ts": 0.3224,
     "src/commands/precheck.ts": 0.1094,
     "src/commands/replay.ts": 0.7048,
-    "src/commands/resume.ts": 0.3835,
+    "src/commands/resume.ts": 0.5147,
     "src/config/merger.ts": 0.4231,
     "src/config/path-security.ts": 0.4507,
     "src/config/paths.ts": 0.6585,
@@ -46,7 +46,7 @@
     "src/errors.ts": 0.6,
     "src/execution/batching.ts": 0.2056,
     "src/execution/build-plan-for-strategy.ts": 0.7037,
-    "src/execution/crash-heartbeat.ts": 0.6944,
+    "src/execution/crash-heartbeat.ts": 0.7083,
     "src/execution/crash-signals.ts": 0.5639,
     "src/execution/dry-run.ts": 0.06,
     "src/execution/escalation/tier-outcome.ts": 0.5327,
@@ -70,18 +70,16 @@
     "src/operations/autofix-implementer.ts": 0.6585,
     "src/operations/debate-plan.ts": 0.7667,
     "src/operations/finish-narrative.ts": 0.7857,
-    "src/optimizer/noop.optimizer.ts": 0.2667,
     "src/pipeline/events.ts": 0.6471,
     "src/pipeline/runner.ts": 0.6692,
     "src/pipeline/stages/acceptance.ts": 0.721,
-    "src/pipeline/stages/constitution.ts": 0.1707,
-    "src/pipeline/stages/context.ts": 0.6746,
-    "src/pipeline/stages/optimizer.ts": 0.4063,
+    "src/pipeline/stages/constitution.ts": 0.5172,
+    "src/pipeline/stages/context.ts": 0.6984,
     "src/pipeline/subscribers/interaction.ts": 0.7031,
     "src/plan/strategies/write-prd.ts": 0.7143,
     "src/plugins/loader.ts": 0.3817,
     "src/plugins/validator.ts": 0.266,
-    "src/prd/types.ts": 0.6197,
+    "src/prd/types.ts": 0.6301,
     "src/precheck/index.ts": 0.7831,
     "src/prompts/core/sections/findings.ts": 0,
     "src/prompts/loader.ts": 0.7727,
@@ -105,6 +103,6 @@
     "src/utils/nax-project-root.ts": 0.25,
     "src/utils/porcelain.ts": 0.7197,
     "src/verification/runners.ts": 0.1,
-    "src/worktree/manager.ts": 0.4513
+    "src/worktree/manager.ts": 0.5945
   }
 }

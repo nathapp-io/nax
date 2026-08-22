@@ -5,6 +5,7 @@
  * by running `<agent> --version` and parsing the output.
  */
 
+import { getSafeLogger } from "@/logger";
 import { typedSpawn } from "@/utils/bun-deps";
 import { getAllAgents, getInstalledAgents } from "../registry";
 
@@ -26,12 +27,18 @@ export interface AgentVersionInfo {
 const VERSION_DETECTION_TIMEOUT_MS = 5_000;
 
 /**
- * Dependency injection for testability
+ * Dependency injection for testability.
+ *
+ * `timeoutMs` is injectable (mirrors `_gitDeps.timeoutRetryGitTimeoutMs` in
+ * `src/utils/git.ts`) so the hang-path test can assert the SIGKILL contract
+ * with a short deadline instead of burning the full 5s production timeout
+ * in wall-clock on every test run.
  */
 export const _versionDetectionDeps = {
   spawn: typedSpawn,
   getInstalledAgents,
   getAllAgents,
+  timeoutMs: VERSION_DETECTION_TIMEOUT_MS,
 };
 
 /**
@@ -58,15 +65,16 @@ export async function getAgentVersion(binaryName: string): Promise<string | null
   // deadline; on timeout, return null rather than block.
   const exitPromise = proc.exited.then((code) => ({ kind: "exit" as const, code }));
   type TimeoutResult = { kind: "timeout" };
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<TimeoutResult>((resolve) => {
-    setTimeout(() => {
+    timer = setTimeout(() => {
       try {
         proc.kill("SIGKILL");
       } catch {
         // Process may have already exited
       }
       resolve({ kind: "timeout" });
-    }, VERSION_DETECTION_TIMEOUT_MS);
+    }, _versionDetectionDeps.timeoutMs);
   });
 
   // Drain stderr concurrently — >64KB on stderr would otherwise deadlock
@@ -76,6 +84,7 @@ export async function getAgentVersion(binaryName: string): Promise<string | null
   const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
 
   const result = await Promise.race([exitPromise, timeoutPromise]);
+  clearTimeout(timer);
 
   if (result.kind === "timeout") {
     return null;
@@ -90,7 +99,10 @@ export async function getAgentVersion(binaryName: string): Promise<string | null
   // Surface stderr at debug level for diagnosability — a version-detection
   // failure that produces a non-empty stderr is otherwise silent.
   if (stderr.trim().length > 0) {
-    process.stderr.write(`[version-detection] ${binaryName} --version stderr: ${stderr.trim()}\n`);
+    getSafeLogger()?.debug("version-detection", `${binaryName} --version stderr`, {
+      binaryName,
+      stderr: stderr.trim(),
+    });
   }
 
   const versionLine = stdout.trim().split("\n")[0];

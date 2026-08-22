@@ -14,20 +14,26 @@
 import { NaxError } from "../errors";
 import { DEFAULT_TEST_FILE_PATTERNS, isTestFileByPatterns } from "../test-runners";
 import { spawn } from "../utils/bun-deps";
-import { gitWithTimeout } from "../utils/git";
 import type { IsolationCheck } from "./types";
 
-/** Injectable deps for testability — mock _isolationDeps.spawn instead of global Bun.spawn */
-export const _isolationDeps = { spawn };
+const GIT_TIMEOUT_MS = 10_000;
+
+/**
+ * Injectable deps for testability — mock _isolationDeps.spawn instead of
+ * global Bun.spawn. `timeoutMs` is injectable (mirrors
+ * `_gitDeps.timeoutRetryGitTimeoutMs` in `src/utils/git.ts`) so the hang-path
+ * test can assert the SIGKILL contract with a short deadline instead of
+ * burning the full 10s production timeout in wall-clock.
+ */
+export const _isolationDeps = { spawn, timeoutMs: GIT_TIMEOUT_MS };
 
 /**
  * BUG-31: bound the git spawn for TDD isolation with a hard deadline so a
  * wedged git (NFS / lock contention) cannot stall the stage indefinitely.
- * Mirrors src/review/diff-utils.ts runGitWithTimeout — duplicated locally
- * so the TDD stage's existing `_isolationDeps.spawn` mockability is
- * preserved (gitWithTimeout wraps `_gitDeps.spawn`, a different mock seam).
+ * Mirrors src/utils/git.ts gitWithTimeout — duplicated locally so the TDD
+ * stage's existing `_isolationDeps.spawn` mockability is preserved
+ * (gitWithTimeout wraps `_gitDeps.spawn`, a different mock seam).
  */
-const GIT_TIMEOUT_MS = 10_000;
 async function runGitBounded(
   args: string[],
   workdir: string,
@@ -37,31 +43,36 @@ async function runGitBounded(
   exitCode: number;
 }> {
   const proc = _isolationDeps.spawn(["git", ...args], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
-  const exitPromise = proc.exited;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      try {
-        proc.kill();
-      } catch {
-        // already dead
-      }
-      reject(
-        new NaxError(`git ${args[0]} timed out after ${GIT_TIMEOUT_MS}ms`, "GIT_TIMEOUT", {
-          stage: "tdd-isolation",
-          args,
-          timeoutMs: GIT_TIMEOUT_MS,
-        }),
-      );
-    }, GIT_TIMEOUT_MS);
-  });
-  try {
-    const exitCode = (await Promise.race([exitPromise, timeoutPromise])) as number;
-    const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-    return { stdout, stderr, exitCode };
-  } finally {
-    if (timer) clearTimeout(timer);
+
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+      // already dead
+    }
+  }, _isolationDeps.timeoutMs);
+
+  // Drain stdout/stderr concurrently with awaiting exit — a process that fills
+  // either pipe's OS buffer (>64KB) before being read would otherwise block on
+  // the write and never reach `exited`, defeating the timeout's own SIGKILL.
+  const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
+  const stderrPromise = new Response(proc.stderr).text().catch(() => "");
+
+  const exitCode = await proc.exited;
+  clearTimeout(timer);
+
+  if (timedOut) {
+    throw new NaxError(`git ${args[0]} timed out after ${_isolationDeps.timeoutMs}ms`, "GIT_TIMEOUT", {
+      stage: "tdd-isolation",
+      args,
+      timeoutMs: _isolationDeps.timeoutMs,
+    });
   }
+
+  const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
+  return { stdout, stderr, exitCode };
 }
 
 /** Common source directory patterns */
@@ -86,8 +97,13 @@ export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promis
   // _isolationDeps.spawn so existing tests that mock _isolationDeps.spawn
   // still get to fake git output without needing to also mock
   // _gitDeps.spawn (gitWithTimeout's own dependency).
-  const { stdout: output, stderr, exitCode } = await runGitBounded(["diff", "--name-only", fromRef], workdir);
-  const { stdout: statusOutput, exitCode: statusExitCode } = await runGitBounded(["status", "--porcelain"], workdir);
+  const [
+    { stdout: output, stderr, exitCode },
+    { stdout: statusOutput, stderr: statusStderr, exitCode: statusExitCode },
+  ] = await Promise.all([
+    runGitBounded(["diff", "--name-only", fromRef], workdir),
+    runGitBounded(["status", "--porcelain"], workdir),
+  ]);
 
   if (exitCode !== 0) {
     throw new NaxError(
@@ -103,7 +119,7 @@ export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promis
 
   if (statusExitCode !== 0) {
     throw new NaxError(
-      `git status --porcelain failed (exit ${statusExitCode}): ${statusOutput.trim()}`,
+      `git status --porcelain failed (exit ${statusExitCode}): ${statusStderr.trim()}`,
       "GIT_DIFF_FAILED",
       {
         stage: "tdd-isolation",
@@ -128,13 +144,7 @@ export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promis
  * Used by the lite-mode stub heuristic — files with small additions are stub-sized.
  */
 export async function getAddedLinesPerFile(workdir: string, fromRef = "HEAD"): Promise<Map<string, number>> {
-  const proc = _isolationDeps.spawn(["git", "diff", "--numstat", fromRef], {
-    cwd: workdir,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const output = await Bun.readableStreamToText(proc.stdout);
-  await proc.exited;
+  const { stdout: output } = await runGitBounded(["diff", "--numstat", fromRef], workdir);
 
   const result = new Map<string, number>();
   for (const line of output.trim().split("\n").filter(Boolean)) {

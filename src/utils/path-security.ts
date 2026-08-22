@@ -4,6 +4,7 @@
 
 import { realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
+import { isSafeRelativePath } from "../prd";
 
 /**
  * Result of a path validation.
@@ -58,7 +59,7 @@ function safeRealpathForComparison(p: string): string {
  */
 export function isRelativeAndSafe(filePath: string): boolean {
   if (!filePath) return false;
-  if (filePath.split(/[\\/]/).includes("..")) return false;
+  if (!isSafeRelativePath(filePath)) return false;
   const normalized = normalize(filePath);
   if (isAbsolute(normalized)) return false;
   return true;

@@ -6,7 +6,10 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { join } from "node:path";
+import { NAX_GITIGNORE_ENTRIES } from "@/utils/gitignore";
 import { WorktreeManager } from "@/worktree/manager";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -156,6 +159,92 @@ branch refs/heads/nax/US-001
     expect(worktrees.length).toBe(2);
     expect(worktrees[0].branch).toBe("master");
     expect(worktrees[1].branch).toBe("nax/US-001");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WorktreeManager.ensureGitExcludes
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Pure file I/O (mkdir + a path-file-locked read-modify-write of
+// .git/info/exclude) — no real git repo required, so this belongs at unit
+// scope alongside parseWorktreeList rather than only in the integration
+// suite's git-backed fixtures.
+
+describe("WorktreeManager.ensureGitExcludes", () => {
+  let projectRoot: string;
+
+  it("creates .git/info/exclude with nax entries when absent", async () => {
+    projectRoot = makeTempDir("worktree-excludes-");
+    try {
+      const manager = new WorktreeManager();
+      await manager.ensureGitExcludes(projectRoot);
+
+      const excludePath = join(projectRoot, ".git", "info", "exclude");
+      const content = await Bun.file(excludePath).text();
+      for (const entry of NAX_GITIGNORE_ENTRIES) {
+        expect(content).toContain(entry);
+      }
+    } finally {
+      cleanupTempDir(projectRoot);
+    }
+  });
+
+  it("is idempotent — a second call does not duplicate entries", async () => {
+    projectRoot = makeTempDir("worktree-excludes-");
+    try {
+      const manager = new WorktreeManager();
+      await manager.ensureGitExcludes(projectRoot);
+      await manager.ensureGitExcludes(projectRoot);
+
+      const excludePath = join(projectRoot, ".git", "info", "exclude");
+      const content = await Bun.file(excludePath).text();
+      for (const entry of NAX_GITIGNORE_ENTRIES) {
+        const occurrences = content.split("\n").filter((line) => line.trim() === entry).length;
+        expect(occurrences).toBe(1);
+      }
+    } finally {
+      cleanupTempDir(projectRoot);
+    }
+  });
+
+  // BUG-39: `existing.includes(entry)` used to treat a substring match (e.g.
+  // an existing `/foo/runs/` line) as covering a distinct shorter entry
+  // (`runs/`), silently skipping it. Line-aware matching must not do that.
+  it("does not skip an entry that is only a substring of an existing line", async () => {
+    projectRoot = makeTempDir("worktree-excludes-");
+    try {
+      const [firstEntry] = NAX_GITIGNORE_ENTRIES;
+      const infoDir = join(projectRoot, ".git", "info");
+      await Bun.write(join(infoDir, "exclude"), `/some/prefix/${firstEntry}\n`);
+
+      const manager = new WorktreeManager();
+      await manager.ensureGitExcludes(projectRoot);
+
+      const excludePath = join(infoDir, "exclude");
+      const content = await Bun.file(excludePath).text();
+      const exactLine = content.split("\n").some((line) => line.trim() === firstEntry);
+      expect(exactLine).toBe(true);
+    } finally {
+      cleanupTempDir(projectRoot);
+    }
+  });
+
+  it("preserves pre-existing unrelated exclude entries", async () => {
+    projectRoot = makeTempDir("worktree-excludes-");
+    try {
+      const infoDir = join(projectRoot, ".git", "info");
+      await Bun.write(join(infoDir, "exclude"), "*.local\n");
+
+      const manager = new WorktreeManager();
+      await manager.ensureGitExcludes(projectRoot);
+
+      const excludePath = join(infoDir, "exclude");
+      const content = await Bun.file(excludePath).text();
+      expect(content).toContain("*.local");
+    } finally {
+      cleanupTempDir(projectRoot);
+    }
   });
 });
 

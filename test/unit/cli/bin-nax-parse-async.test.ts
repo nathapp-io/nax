@@ -52,3 +52,36 @@ describe("BUG-15 — bin/nax.ts observes async action promises", () => {
     }
   });
 });
+
+// ENH-47 (D-30): the latest.jsonl symlink used to be recreated via
+// Bun.spawnSync(['rm', ...]) / Bun.spawnSync(['ln', '-s', ...]) with unchecked
+// exit codes — a failed `ln -s` silently left a stale symlink (or, on a
+// runner without GNU coreutils on PATH, never created one at all). Fixed to
+// native fs.unlinkSync/fs.symlinkSync, which throw on failure instead of
+// silently no-opping.
+describe("ENH-47 — bin/nax.ts latest.jsonl symlink uses native fs calls", () => {
+  test("imports symlinkSync/unlinkSync from node:fs, not spawning rm/ln", async () => {
+    const src = await readBinNaxSource();
+    expect(src).toMatch(/import\s*\{[^}]*\bsymlinkSync\b[^}]*\}\s*from\s*"node:fs"/);
+    expect(src).toMatch(/import\s*\{[^}]*\bunlinkSync\b[^}]*\}\s*from\s*"node:fs"/);
+  });
+
+  test("recreates latest.jsonl via native unlinkSync + symlinkSync, not a shelled-out rm/ln", async () => {
+    const src = await readBinNaxSource();
+    const idx = src.indexOf('join(runsDir, "latest.jsonl")');
+    expect(idx).toBeGreaterThan(0);
+
+    const scope = src.slice(idx, idx + 600);
+    expect(scope).toContain("unlinkSync(latestSymlink)");
+    expect(scope).toContain("symlinkSync(");
+    // Regression guard: no non-comment line may shell out to rm/ln again.
+    const codeLines = scope
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => !line.startsWith("//") && !line.startsWith("*"));
+    for (const line of codeLines) {
+      expect(line).not.toMatch(/spawnSync\(\s*\[\s*["']rm["']/);
+      expect(line).not.toMatch(/spawnSync\(\s*\[\s*["']ln["']/);
+    }
+  });
+});

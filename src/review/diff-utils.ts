@@ -58,11 +58,12 @@ async function runGitWithTimeout(
   type RunResult = { kind: "exit"; code: number } | { kind: "timeout" };
   let resolveTimeout: (v: RunResult) => void = () => {};
   const exitPromise = proc.exited.then<RunResult>((code) => ({ kind: "exit", code }));
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<RunResult>((resolve) => {
     resolveTimeout = resolve;
     // SIGKILL on timeout so a wedged git releases its pipes and proc.exited
     // can settle. Best-effort — kill may fail if the process is already gone.
-    setTimeout(() => {
+    timer = setTimeout(() => {
       try {
         proc.kill("SIGKILL");
       } catch {
@@ -79,6 +80,7 @@ async function runGitWithTimeout(
   const stderrPromise = new Response(proc.stderr).text().catch(() => "");
 
   const result = await Promise.race([exitPromise, timeoutPromise]);
+  clearTimeout(timer);
 
   if (result.kind === "timeout") {
     // Don't await the drain promises here — a SIGKILL'd process's pipes
