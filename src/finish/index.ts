@@ -20,7 +20,7 @@ export {
   roundsPath,
   writeResult,
 } from "./audit";
-export type { AuditTarget, FinishLedgerEntry } from "./audit";
+export type { AuditTarget, FinishLedgerEntry, WriteResultOptions } from "./audit";
 export { readFinishConfig } from "./config";
 export type { FinishSettings } from "./config";
 export {

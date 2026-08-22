@@ -279,4 +279,50 @@ describe("ledger — writeResult updates last.json for terminal statuses (#1674 
       expect(await Bun.file(resultPath(t)).exists()).toBe(true);
     });
   });
+
+  test("writeResult(..., { ledger: false }) writes result.json but skips the ledger update", async () => {
+    await withTempDir(async (dir) => {
+      const t = { auditDir: join(dir, "finish-audit", "feat"), runId: "run-1" };
+      await writeResult(
+        t,
+        { feature: "feat", status: "opened", headSha: "sha-1", branch: "feat/x" },
+        { ledger: false },
+      );
+
+      expect(await Bun.file(resultPath(t)).exists()).toBe(true);
+      expect(await readLedger(t.auditDir)).toBeNull();
+    });
+  });
+
+  test("an 'escalated' result carrying deliveryError does not update the ledger (CRITICAL, post-#1675 review)", async () => {
+    await withTempDir(async (dir) => {
+      const t = { auditDir: join(dir, "finish-audit", "feat"), runId: "run-1" };
+      await writeResult(t, {
+        feature: "feat",
+        status: "escalated",
+        headSha: "sha-1",
+        branch: "feat/x",
+        deliveryError: "no forge detected",
+      });
+
+      expect(await readLedger(t.auditDir)).toBeNull();
+    });
+  });
+
+  test("an 'escalated' result with NO deliveryError (delivery succeeded) still updates the ledger", async () => {
+    await withTempDir(async (dir) => {
+      const t = { auditDir: join(dir, "finish-audit", "feat"), runId: "run-1" };
+      await writeResult(t, {
+        feature: "feat",
+        status: "escalated",
+        headSha: "sha-1",
+        branch: "feat/x",
+        url: "https://example.com/pr/1",
+      });
+
+      const ledger = await readLedger(t.auditDir);
+      expect(ledger?.status).toBe("escalated");
+      expect(ledger?.prUrl).toBe("https://example.com/pr/1");
+    });
+  });
 });

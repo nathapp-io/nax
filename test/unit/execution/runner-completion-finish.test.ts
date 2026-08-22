@@ -248,6 +248,36 @@ describe("finish phase", () => {
     expect((calls[0] as { storySummary: { completed: number } }).storySummary.completed).toBe(0);
   });
 
+  test("an all-skipped PRD with storiesCompleted 0 backfills to completed: 0 (MEDIUM, pinned deliberately)", async () => {
+    // isComplete(prd) treats a "skipped" story as complete, but
+    // countStories(prd).passed excludes it — so an all-skipped PRD is
+    // "complete" for the isComplete(prd) branch yet contributes 0 to the
+    // fallback's `counts.passed`. The gate still blocks (completed: 0),
+    // which is CORRECT: a PRD where nothing passed has nothing to ship, so
+    // finish must not fire for it. Pinned here because it reads as an
+    // oversight otherwise — this is deliberate, not a bug. Do NOT change the
+    // predicate to make this case report a nonzero completed count.
+    const calls: unknown[] = [];
+    _runnerCompletionDeps.runFinishPhase = mock(async (ctx) => {
+      calls.push(ctx);
+      return null;
+    });
+    const opts = {
+      ...makeOptsWithRuntime(
+        makeConfig(false),
+        makePRD([
+          { id: "US-001", status: "skipped" },
+          { id: "US-002", status: "skipped" },
+        ]),
+        makeStatusWriter(),
+      ),
+      storiesCompleted: 0,
+    };
+    await runCompletionPhase(opts);
+    expect(calls).toHaveLength(1);
+    expect((calls[0] as { storySummary: { completed: number } }).storySummary.completed).toBe(0);
+  });
+
   test("a real run that executed a story keeps its own storiesCompleted, even if the PRD is complete", async () => {
     const calls: unknown[] = [];
     _runnerCompletionDeps.runFinishPhase = mock(async (ctx) => {
