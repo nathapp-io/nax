@@ -545,3 +545,137 @@ describe("displayFeatureDetails - Pending Interactions Removal (US-002)", () => 
     expect(output).toContain("Beta story");
   });
 });
+
+// ============================================================================
+// BUG-16 — a schema-drifted status.json (valid JSON, missing run/cost/progress
+// sections) previously threw TypeError out of displayAllFeatures /
+// displayFeatureDetails — a diagnostic command crashing on the artifact it
+// exists to diagnose. The loaders now shape-guard and degrade to null.
+// ============================================================================
+
+describe("BUG-16 — schema-drifted status.json degrades instead of crashing", () => {
+  let testDir: string;
+  let originalCwd: string;
+  let consoleOutput: string[];
+  const originalLog = console.log;
+  let origProjectOutputDir: typeof _statusFeaturesDeps.projectOutputDir;
+
+  beforeEach(() => {
+    const rawTestDir = makeTempDir("nax-test-");
+    testDir = realpathSync(rawTestDir);
+    originalCwd = process.cwd();
+
+    origProjectOutputDir = _statusFeaturesDeps.projectOutputDir;
+    _statusFeaturesDeps.projectOutputDir = () => join(testDir, ".nax");
+
+    consoleOutput = [];
+    console.log = mock((message: string) => {
+      consoleOutput.push(message);
+    });
+  });
+
+  afterEach(() => {
+    _statusFeaturesDeps.projectOutputDir = origProjectOutputDir;
+    process.chdir(originalCwd);
+    console.log = originalLog;
+
+    if (testDir) {
+      rmSync(testDir, { recursive: true, force: true });
+    }
+  });
+
+  function buildFeatureFixture(): void {
+    const naxDir = join(testDir, ".nax");
+    const featuresDir = join(naxDir, "features");
+    const featureDir = join(featuresDir, "test-feature");
+    mkdirSync(featureDir, { recursive: true });
+    writeFileSync(join(naxDir, "config.json"), "{}");
+    const prd: PRD = {
+      project: "test-project",
+      feature: "test-feature",
+      branchName: "feat/test-feature",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      userStories: [
+        {
+          id: "US-001",
+          title: "First story",
+          description: "Test story 1",
+          acceptanceCriteria: ["AC-1"],
+          tags: [],
+          dependencies: [],
+          status: "passed",
+          passes: true,
+          escalations: [],
+          attempts: 1,
+        },
+      ],
+    };
+    writeFileSync(join(featureDir, "prd.json"), JSON.stringify(prd, null, 2));
+  }
+
+  test("all-features view survives a project status.json that is valid JSON but lacks run/cost/progress", async () => {
+    buildFeatureFixture();
+    writeFileSync(join(testDir, ".nax", "status.json"), "{}");
+
+    await displayFeatureStatus({ dir: testDir });
+
+    const output = consoleOutput.join("\n");
+    expect(output).toContain("test-feature");
+    expect(output).not.toContain("undefined");
+  });
+
+  test("all-features view survives a project status.json with only a partial run section", async () => {
+    buildFeatureFixture();
+    writeFileSync(join(testDir, ".nax", "status.json"), JSON.stringify({ version: 1, run: { id: "run-x" } }));
+
+    await displayFeatureStatus({ dir: testDir });
+
+    const output = consoleOutput.join("\n");
+    expect(output).toContain("test-feature");
+    expect(output).not.toContain("undefined");
+  });
+
+  test("single-feature view survives a schema-drifted feature status.json and still renders the story table", async () => {
+    buildFeatureFixture();
+    writeFileSync(join(testDir, ".nax", "features", "test-feature", "status.json"), "{}");
+
+    await displayFeatureStatus({ feature: "test-feature", dir: testDir });
+
+    const output = consoleOutput.join("\n");
+    expect(output).toContain("Stories:");
+    expect(output).toContain("US-001");
+    expect(output).not.toContain("undefined");
+  });
+
+  test("single-feature view survives a postRun section missing its acceptance/regression subsections", async () => {
+    buildFeatureFixture();
+    writeFileSync(
+      join(testDir, ".nax", "features", "test-feature", "status.json"),
+      JSON.stringify({
+        version: 1,
+        run: {
+          id: "run-2026-01-01T00-00-00-000Z",
+          feature: "test-feature",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          status: "completed",
+          dryRun: false,
+          pid: 12345,
+        },
+        progress: { total: 1, passed: 1, failed: 0, paused: 0, blocked: 0, pending: 0 },
+        cost: { spent: 0.1, limit: null },
+        current: null,
+        iterations: 5,
+        updatedAt: "2026-01-01T01:00:00.000Z",
+        durationMs: 3600000,
+        postRun: {},
+      }),
+    );
+
+    await displayFeatureStatus({ feature: "test-feature", dir: testDir });
+
+    const output = consoleOutput.join("\n");
+    expect(output).toContain("Stories:");
+    expect(output).not.toContain("undefined");
+  });
+});
