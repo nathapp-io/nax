@@ -1,8 +1,12 @@
 /**
  * Unit tests for PE-002: Auto-configure prompts.overrides when templates exist
  *
- * Tests that promptsInitCommand auto-wires prompts.overrides into nax.config.json
+ * Tests that promptsInitCommand auto-wires prompts.overrides into .nax/config.json
  * after writing template files.
+ *
+ * BUG-17: the auto-wire previously targeted `.nax/config.json` — a file nothing
+ * loads. The config SSOT is `<root>/.nax/config.json` (config/paths.ts), and
+ * every fixture here reads/writes that path.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -20,13 +24,16 @@ const EXPECTED_OVERRIDES = {
   "tdd-simple": ".nax/templates/tdd-simple.md",
 };
 
+function configPath(workdir: string): string {
+  return join(workdir, ".nax", "config.json");
+}
+
 function readConfigJson(workdir: string): Record<string, unknown> {
-  const configPath = join(workdir, "nax.config.json");
-  return JSON.parse(readFileSync(configPath, "utf-8"));
+  return JSON.parse(readFileSync(configPath(workdir), "utf-8"));
 }
 
 function writeConfigJson(workdir: string, config: Record<string, unknown>): void {
-  writeFileSync(join(workdir, "nax.config.json"), JSON.stringify(config, null, 2));
+  writeFileSync(configPath(workdir), JSON.stringify(config, null, 2));
 }
 
 describe("promptsInitCommand — auto-wires prompts.overrides", () => {
@@ -56,7 +63,7 @@ describe("promptsInitCommand — auto-wires prompts.overrides", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  test("adds prompts.overrides to nax.config.json when file exists and overrides not set", async () => {
+  test("adds prompts.overrides to .nax/config.json when file exists and overrides not set", async () => {
     writeConfigJson(tempDir, { version: 1, models: {} });
 
     await promptsInitCommand({ workdir: tempDir });
@@ -106,12 +113,12 @@ describe("promptsInitCommand — auto-wires prompts.overrides", () => {
     expect((config.execution as { maxIterations: number }).maxIterations).toBe(6);
   });
 
-  test("writes nax.config.json with 2-space indentation", async () => {
+  test("writes .nax/config.json with 2-space indentation", async () => {
     writeConfigJson(tempDir, { version: 1 });
 
     await promptsInitCommand({ workdir: tempDir });
 
-    const raw = readFileSync(join(tempDir, "nax.config.json"), "utf-8");
+    const raw = readFileSync(join(tempDir, ".nax", "config.json"), "utf-8");
     // 2-space indent means lines should start with exactly 2 spaces for top-level keys
     expect(raw).toMatch(/\n {2}"/);
     // Should NOT use 4-space or tab indentation
@@ -193,7 +200,7 @@ describe("promptsInitCommand — does not overwrite existing prompts.overrides",
   });
 });
 
-describe("promptsInitCommand — handles missing nax.config.json gracefully", () => {
+describe("promptsInitCommand — handles missing .nax/config.json gracefully", () => {
   let tempDir: string;
   let originalLog: typeof _promptsInitDeps.log;
   let originalWarn: typeof _promptsInitDeps.warn;
@@ -220,8 +227,8 @@ describe("promptsInitCommand — handles missing nax.config.json gracefully", ()
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  test("does NOT throw when nax.config.json does not exist", async () => {
-    expect(existsSync(join(tempDir, "nax.config.json"))).toBe(false);
+  test("does NOT throw when .nax/config.json does not exist", async () => {
+    expect(existsSync(join(tempDir, ".nax", "config.json"))).toBe(false);
 
     let threw = false;
     try {
@@ -232,20 +239,20 @@ describe("promptsInitCommand — handles missing nax.config.json gracefully", ()
     expect(threw).toBe(false);
   });
 
-  test("still writes template files when nax.config.json is missing", async () => {
+  test("still writes template files when .nax/config.json is missing", async () => {
     await promptsInitCommand({ workdir: tempDir });
 
     expect(existsSync(join(tempDir, ".nax", "templates", "test-writer.md"))).toBe(true);
     expect(existsSync(join(tempDir, ".nax", "templates", "implementer.md"))).toBe(true);
   });
 
-  test("does NOT create nax.config.json when it does not exist", async () => {
+  test("does NOT create .nax/config.json when it does not exist", async () => {
     await promptsInitCommand({ workdir: tempDir });
 
-    expect(existsSync(join(tempDir, "nax.config.json"))).toBe(false);
+    expect(existsSync(join(tempDir, ".nax", "config.json"))).toBe(false);
   });
 
-  test("prints manual instructions when nax.config.json is missing", async () => {
+  test("prints manual instructions when .nax/config.json is missing", async () => {
     await promptsInitCommand({ workdir: tempDir });
 
     const allOutput = consoleOutput.join("\n");
@@ -254,8 +261,27 @@ describe("promptsInitCommand — handles missing nax.config.json gracefully", ()
       allOutput.includes("prompts") ||
       allOutput.includes("config") ||
       allOutput.includes("override") ||
-      allOutput.includes("nax.config.json");
+      allOutput.includes(".nax/config.json");
     expect(mentionsManualConfig).toBe(true);
+  });
+
+  // BUG-17: the auto-wire used to target `nax.config.json` — a file nothing
+  // loads — so `[OK] Auto-wired` reported success into a dead file. The config
+  // SSOT is `.nax/config.json`; a stray legacy `nax.config.json` must be
+  // neither read nor written.
+  test("BUG-17: a stray legacy nax.config.json is neither read nor written — wiring lands in .nax/config.json", async () => {
+    writeConfigJson(tempDir, { version: 1 });
+    const legacyPath = join(tempDir, "nax.config.json");
+    const legacyContent = JSON.stringify({ version: 1, prompts: { overrides: { "test-writer": "legacy.md" } } });
+    writeFileSync(legacyPath, legacyContent);
+
+    await promptsInitCommand({ workdir: tempDir });
+
+    // The legacy file is byte-identical — never read, never overwritten.
+    expect(readFileSync(legacyPath, "utf-8")).toBe(legacyContent);
+    // The real config got the auto-wired overrides.
+    const config = readConfigJson(tempDir);
+    expect((config.prompts as { overrides?: Record<string, string> })?.overrides).toEqual(EXPECTED_OVERRIDES);
   });
 });
 
