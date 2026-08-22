@@ -251,6 +251,9 @@ async function runAcceptanceLoop(state: FinishState, deps: FinishMachineDeps): P
     );
     const commit = await commitFixes(state.workdir, message, { skipHooks: true });
     noteCommitWindow(state, commit.committed ? commit.shaBefore : null);
+    // #1674 part 3: the one honest place to learn "did this run commit
+    // anything" — see `FinishState.committedThisRun`'s doc comment.
+    if (commit.committed) state.committedThisRun = true;
     await recordRound(
       audit,
       state,
@@ -341,6 +344,8 @@ async function runReviewLoop(
     );
     const commit = await commitFixes(state.workdir, message, { skipHooks: true });
     noteCommitWindow(state, commit.committed ? commit.shaBefore : null);
+    // #1674 part 3 — see `FinishState.committedThisRun`'s doc comment.
+    if (commit.committed) state.committedThisRun = true;
     await recordRound(
       audit,
       state,
@@ -430,6 +435,8 @@ async function runQualityGatesLoop(state: FinishState, deps: FinishMachineDeps):
     );
     const commit = await commitFixes(state.workdir, message, { skipHooks: true });
     noteCommitWindow(state, commit.committed ? commit.shaBefore : null);
+    // #1674 part 3 — see `FinishState.committedThisRun`'s doc comment.
+    if (commit.committed) state.committedThisRun = true;
     const files = commit.committed && commit.shaAfter ? await filesInCommit(state.workdir, commit.shaAfter) : null;
     const gateRoute = gateCommitRoute(commit.committed, files, context.testFileRegex);
 
@@ -464,11 +471,14 @@ async function runQualityGatesLoop(state: FinishState, deps: FinishMachineDeps):
 async function finishTerminal(state: FinishState, deps: FinishMachineDeps): Promise<FinishResult> {
   assertNotAborted(deps);
   const promoted = await deps.ops.promotePr(state);
+  // Set before `narrate` runs (#1674 part 3): `narrate` gates its own
+  // PR-body rewrite on whether this run opened/promoted the PR, and the
+  // only place that status lives on `state` is this field.
+  state.status = promoted.status;
   assertNotAborted(deps);
   if (deps.ops.narrate) {
     await deps.ops.narrate(state);
   }
-  state.status = promoted.status;
   const url = promoted.url ?? state.prUrl;
   // Same ledger stamp as `doEscalate` — see its comment. This is the one
   // path that reaches a genuinely successful terminal status

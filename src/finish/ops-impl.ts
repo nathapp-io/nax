@@ -169,7 +169,14 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
       if (forgeKind === null) return { status: "already-ready" };
       const content = await buildPrContentOrFallback(state, audit, forgeKind, prBody);
       return openOrPromotePr(
-        { workdir: state.workdir, branch: state.branch, title: content.title, body: content.body, forge: forgeKind },
+        {
+          workdir: state.workdir,
+          branch: state.branch,
+          title: content.title,
+          body: content.body,
+          forge: forgeKind,
+          committedThisRun: state.committedThisRun,
+        },
         forge,
       );
     },
@@ -209,6 +216,15 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
     ops.narrate = async (state: FinishState) => {
       try {
         if (forgeKind === null) return;
+        // #1674 part 3 (H2): same rule as `openOrPromotePr` — an
+        // already-ready PR this run did not touch has nothing new to
+        // narrate, and rewriting its body here would destroy a human's
+        // edits exactly like the unconditional `updatePrBody` call this
+        // replaces did. `machine.ts` sets `state.status` from `promotePr`'s
+        // result before calling `narrate`, so this read sees this run's
+        // real outcome. Returning here also skips the narrative LLM call
+        // itself, not just the write — there is nothing worth spending on.
+        if (state.status === "already-ready" && !state.committedThisRun) return;
         const input: FinishNarrativeInput = {
           base: state.base,
           model: models?.narrative,

@@ -196,6 +196,68 @@ describe("ops-impl", () => {
     expect(outcome).toEqual({ url: "https://x/1" });
   });
 
+  // #1674 part 3 (H2): promotePr/narrate must not clobber a human-edited PR
+  // description on a run that found the PR already ready and committed
+  // nothing of its own.
+  function freshState(overrides: { committedThisRun?: boolean; status?: string } = {}) {
+    const s = createFinishState({
+      feature: "demo",
+      workdir: "/repo",
+      branch: "feat/demo",
+      runId: "run-1",
+      base: "origin/main",
+      specPath: "spec.md",
+    });
+    if (overrides.committedThisRun !== undefined) s.committedThisRun = overrides.committedThisRun;
+    if (overrides.status !== undefined) s.status = overrides.status as typeof s.status;
+    return s;
+  }
+
+  test("promotePr does not write the body on already-ready with zero commits this run", async () => {
+    const untouched = freshState({ committedThisRun: false });
+    const { deps, calls } = baseDeps();
+    await createFinishOps(deps).promotePr(untouched);
+    const editCall = calls.find((c) => c.includes("edit"));
+    expect(editCall).toBeUndefined();
+  });
+
+  test("promotePr writes the body on already-ready when this run committed a fix", async () => {
+    const committed = freshState({ committedThisRun: true });
+    const { deps, calls } = baseDeps();
+    await createFinishOps(deps).promotePr(committed);
+    const editCall = calls.find((c) => c.includes("edit"));
+    expect(editCall).toBeDefined();
+  });
+
+  test("narrate does not rewrite the body on a zero-commit already-ready run", async () => {
+    let callOpCalled = false;
+    _finishOpsDeps.callOp = (async () => {
+      callOpCalled = true;
+      return { narrative: "new narrative", title: "new title" };
+    }) as typeof _finishOpsDeps.callOp;
+    const untouched = freshState({ committedThisRun: false, status: "already-ready" });
+    const { deps, calls } = baseDeps();
+    await createFinishOps(deps).narrate?.(untouched);
+    expect(callOpCalled).toBe(false);
+    expect(calls.find((c) => c.includes("edit"))).toBeUndefined();
+  });
+
+  test("narrate rewrites the body when this run committed a fix, even if already-ready", async () => {
+    _finishOpsDeps.callOp = (async () => ({ narrative: "new narrative", title: "new title" })) as typeof _finishOpsDeps.callOp;
+    const committed = freshState({ committedThisRun: true, status: "already-ready" });
+    const { deps, calls } = baseDeps();
+    await createFinishOps(deps).narrate?.(committed);
+    expect(calls.find((c) => c.includes("edit"))).toBeDefined();
+  });
+
+  test("narrate rewrites the body when this run opened or promoted the PR, regardless of commits", async () => {
+    _finishOpsDeps.callOp = (async () => ({ narrative: "new narrative", title: "new title" })) as typeof _finishOpsDeps.callOp;
+    const opened = freshState({ committedThisRun: false, status: "opened" });
+    const { deps, calls } = baseDeps();
+    await createFinishOps(deps).narrate?.(opened);
+    expect(calls.find((c) => c.includes("edit"))).toBeDefined();
+  });
+
   test("openDraftPr returns null rather than throwing when the forge cannot be spawned, per D4.5", async () => {
     const forge: ForgeDeps = {
       run: async () => {

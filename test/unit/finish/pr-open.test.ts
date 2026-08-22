@@ -24,6 +24,11 @@ const args = {
   title: "feat: demo",
   body: "body",
   forge: "github" as const,
+  // Existing tests below exercise the `opened`/`promoted` branches (always
+  // written) and the `already-ready` branch with a commit this run — the
+  // `already-ready` + zero-commits gating (#1674 part 3) gets its own
+  // dedicated tests further down with an explicit `committedThisRun: false`.
+  committedThisRun: true,
 };
 
 describe("parseView", () => {
@@ -107,6 +112,41 @@ describe("openOrPromotePr", () => {
       return cmd.includes("ready") ? { exitCode: 1, stderr: "denied" } : { exitCode: 0 };
     });
     await expect(openOrPromotePr(args, deps)).rejects.toThrow(/denied/);
+  });
+
+  // #1674 part 3 (H2): the already-ready branch must not clobber a human's
+  // PR description on a run that changed nothing.
+  test("does NOT write the body on an already-ready PR when this run committed nothing", async () => {
+    const { deps, calls } = depsFor((cmd) =>
+      cmd.includes("view") ? { exitCode: 0, stdout: '{"isDraft":false,"url":"https://x/13"}' } : { exitCode: 0 },
+    );
+    await expect(openOrPromotePr({ ...args, committedThisRun: false }, deps)).resolves.toEqual({
+      status: "already-ready",
+      url: "https://x/13",
+    });
+    expect(calls.map((c) => c[2])).toEqual(["view"]);
+  });
+
+  test("still writes the body on an already-ready PR when this run committed a fix", async () => {
+    const { deps, calls } = depsFor((cmd) =>
+      cmd.includes("view") ? { exitCode: 0, stdout: '{"isDraft":false,"url":"https://x/14"}' } : { exitCode: 0 },
+    );
+    await expect(openOrPromotePr({ ...args, committedThisRun: true }, deps)).resolves.toEqual({
+      status: "already-ready",
+      url: "https://x/14",
+    });
+    expect(calls.map((c) => c[2])).toEqual(["view", "edit"]);
+  });
+
+  test("promoting a draft writes the body regardless of commits this run", async () => {
+    const { deps, calls } = depsFor((cmd) =>
+      cmd.includes("view") ? { exitCode: 0, stdout: '{"isDraft":true,"url":"https://x/15"}' } : { exitCode: 0 },
+    );
+    await expect(openOrPromotePr({ ...args, committedThisRun: false }, deps)).resolves.toEqual({
+      status: "promoted",
+      url: "https://x/15",
+    });
+    expect(calls.map((c) => c[2])).toEqual(["view", "ready", "edit"]);
   });
 });
 

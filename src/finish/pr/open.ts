@@ -47,9 +47,19 @@ export function parseView(stdout: string, forge: ForgeKind): { isDraft: boolean;
 /**
  * Promote the finish's draft PR to ready, or create the PR when the branch
  * has none (the view command failed or the branch's PR/MR is already closed).
+ *
+ * `committedThisRun` gates the `already-ready` branch's body write (#1674
+ * part 3, H2): a run that finds the PR already ready AND made no commit of
+ * its own has nothing new to describe, and unconditionally overwriting the
+ * body there was destroying human edits — reviewer notes, added context, a
+ * checklist — on every re-run, including ones that changed nothing at all.
+ * The `opened` and `promoted` branches are unconditional on purpose: `opened`
+ * writes the body once at creation time (nothing to clobber yet), and
+ * `promoted` means this run itself just moved the PR out of draft, which is
+ * squarely "this run produced something to describe".
  */
 export async function openOrPromotePr(
-  args: { workdir: string; branch: string; title: string; body: string; forge: ForgeKind },
+  args: { workdir: string; branch: string; title: string; body: string; forge: ForgeKind; committedThisRun: boolean },
   deps: ForgeDeps,
 ): Promise<{ status: "opened" | "promoted" | "already-ready"; url?: string }> {
   const view = await deps.run(viewArgv(args.forge, args.branch, "isDraft,url"), { cwd: args.workdir });
@@ -86,7 +96,9 @@ export async function openOrPromotePr(
     return { status: "promoted", url };
   }
 
-  await updatePrBody(args, deps);
+  if (args.committedThisRun) {
+    await updatePrBody(args, deps);
+  }
   return { status: "already-ready", url };
 }
 
