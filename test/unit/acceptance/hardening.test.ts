@@ -1,18 +1,17 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { type HardeningContext, _hardeningDeps, runHardeningPass } from "@/acceptance/hardening";
 import type { NaxConfig } from "@/config";
-import { makeMockAgentManager, makePRD, makeStory } from "@test/helpers";
+import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 // ─── Fixtures ───────────────────────────────────────────────────────────────
 
-const TEST_CONFIG = {
-  autoMode: { defaultAgent: "claude" },
-  models: {},
+const TEST_CONFIG: NaxConfig = makeNaxConfig({
+  agent: { default: "claude" },
   acceptance: {
     model: "fast",
     hardening: { enabled: true },
   },
-} as unknown as NaxConfig;
+});
 
 function makeCtx(overrides: Partial<HardeningContext> = {}): HardeningContext {
   const agentManager = makeMockAgentManager();

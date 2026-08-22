@@ -19,6 +19,7 @@ import type { SemanticStory } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
 import { makeMockAgentManager } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
+import { makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -427,7 +428,21 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       story: STORY,
       semanticConfig: SEMANTIC_CONFIG,
       agentManager,
-      naxConfig: { debate: { enabled: false, agents: 0, stages: {} as never } } as unknown as NaxConfig,
+      naxConfig: makeNaxConfig({
+        debate: {
+          enabled: false,
+          agents: 0,
+          maxConcurrentDebaters: 0,
+          grounder: { model: "fast", timeoutSeconds: 60 },
+          stages: {
+            plan: {} as never,
+            review: {} as never,
+            acceptance: {} as never,
+            rectification: {} as never,
+            escalation: {} as never,
+          },
+        },
+      }),
       runtime,
     });
 
