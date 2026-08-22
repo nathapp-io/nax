@@ -49,6 +49,20 @@ export interface FinishOps {
   promotePr(state: FinishState): Promise<{ status: "opened" | "promoted" | "already-ready"; url?: string }>;
   /** Improve the PR body prose. Optional; a run with narrative disabled omits it. */
   narrate?(state: FinishState): Promise<void>;
-  /** Deliver an escalation to a human. Must not throw; delivery failure is reported, not raised. */
-  escalate(state: FinishState, reason: string, findings: Finding[]): Promise<{ url?: string; deliveryError?: string }>;
+  /**
+   * Deliver an escalation to a human. Must not throw; delivery failure is
+   * reported, not raised.
+   *
+   * `options.push: false` suppresses the partial-fix commit and push this
+   * normally does first. Only the closed-PR precondition escalation (#1674
+   * part 2) passes it: nothing has run at that point, so there is nothing to
+   * push, and pushing to a closed PR's branch can recreate a head branch the
+   * forge deleted when the human closed it.
+   */
+  escalate(
+    state: FinishState,
+    reason: string,
+    findings: Finding[],
+    options?: { push?: boolean },
+  ): Promise<{ url?: string; deliveryError?: string }>;
 }

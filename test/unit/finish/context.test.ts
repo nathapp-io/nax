@@ -507,6 +507,50 @@ describe("loadFinishContext — merged/closed PR short-circuit (#1674 part 2)", 
     expect(ctx.route).toBe("proceed");
   });
 
+  // Post-review CRITICAL: `JSON.parse("null")` SUCCEEDS, so the parse catch
+  // never fires and the first property read threw a TypeError — out of
+  // `loadFinishContext`, which runs before the state machine and so is
+  // outside its catch, aborting the entire finish phase. Every non-object
+  // payload is pinned here, not just the one that crashed, because the crash
+  // was the only member of this set anyone had thought to try.
+  for (const [label, stdout] of [
+    ["literal null", "null"],
+    ["an array", "[]"],
+    ["a bare string", '"no result"'],
+    ["a number", "5"],
+  ] as const) {
+    test(`fails open: forge output that is ${label} proceeds instead of throwing`, async () => {
+      _finishContextDeps.git = aheadGit;
+      _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+      const { deps } = makeForge({ stdout });
+
+      const ctx = await loadFinishContext("my-feature", "/repo", ledgerOpts(deps));
+
+      expect(ctx.route).toBe("proceed");
+    });
+  }
+
+  test("the closed-unmerged route marks the escalation as one that must not push", async () => {
+    _finishContextDeps.git = aheadGit;
+    _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+    const { deps } = makeForge({ stdout: JSON.stringify({ state: "CLOSED", mergedAt: null }) });
+
+    const ctx = await loadFinishContext("my-feature", "/repo", ledgerOpts(deps));
+
+    expect(ctx.route).toBe("escalate");
+    expect(ctx.escalateWithoutPush).toBe(true);
+  });
+
+  test("a merged PR does not set escalateWithoutPush — it never escalates at all", async () => {
+    _finishContextDeps.git = aheadGit;
+    _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+    const { deps } = makeForge({ stdout: JSON.stringify({ state: "MERGED" }) });
+
+    const ctx = await loadFinishContext("my-feature", "/repo", ledgerOpts(deps));
+
+    expect(ctx.escalateWithoutPush).toBeUndefined();
+  });
+
   test("fails open: a forge CLI that cannot be spawned proceeds instead of throwing", async () => {
     _finishContextDeps.git = aheadGit;
     _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;

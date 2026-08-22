@@ -132,7 +132,12 @@ async function doEscalate(
   let url: string | undefined;
   let deliveryError: string | undefined;
   try {
-    ({ url, deliveryError } = await deps.ops.escalate(state, reason, findings));
+    // `escalateWithoutPush` is set only by the closed-PR precondition route
+    // (#1674 part 2, `./context`) — reachable here because that route
+    // escalates out of `runPreconditions` before anything else runs, so no
+    // other `doEscalate` caller can be carrying it.
+    const push = deps.context.escalateWithoutPush ? { push: false } : undefined;
+    ({ url, deliveryError } = await deps.ops.escalate(state, reason, findings, push));
   } catch (err) {
     deliveryError = errorMessage(err);
   }

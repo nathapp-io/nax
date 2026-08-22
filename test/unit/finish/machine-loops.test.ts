@@ -240,6 +240,45 @@ describe("machine-loops", () => {
     });
   });
 
+  test("closed-PR escalate route (#1674 part 2) passes push:false through to ops.escalate", async () => {
+    await withTempDir(async (dir) => {
+      const seen: Array<{ push?: boolean } | undefined> = [];
+      const { deps } = makeDeps({
+        auditDir: dir,
+        context: { route: "escalate", escalateWithoutPush: true, reason: "the PR is closed" },
+        ops: {
+          escalate: async (_state, _reason, _findings, options) => {
+            seen.push(options);
+            return {};
+          },
+        },
+      });
+      const result = await runFinishMachine(baseState(), deps);
+
+      expect(result.status).toBe("escalated");
+      expect(seen).toEqual([{ push: false }]);
+    });
+  });
+
+  test("an ordinary escalate route leaves ops.escalate's push alone", async () => {
+    await withTempDir(async (dir) => {
+      const seen: Array<{ push?: boolean } | undefined> = [];
+      const { deps } = makeDeps({
+        auditDir: dir,
+        context: { route: "escalate", reason: "base ref not fetched locally" },
+        ops: {
+          escalate: async (_state, _reason, _findings, options) => {
+            seen.push(options);
+            return {};
+          },
+        },
+      });
+      await runFinishMachine(baseState(), deps);
+
+      expect(seen).toEqual([undefined]);
+    });
+  });
+
   test("escalate route: escalates immediately, no reviewer, no PR", async () => {
     await withTempDir(async (dir) => {
       const { deps, trail } = makeDeps({

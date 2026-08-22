@@ -45,6 +45,17 @@ export interface FinishContext {
    */
   prUrl?: string;
   /**
+   * Set only by the closed-PR escalation below: `ops.escalate` must NOT run
+   * its usual `commitAndPush` for this one.
+   *
+   * That push is unconditional (`commit.ts`'s `commitAndPush` pushes whether
+   * or not anything was committed), and `git push --set-upstream` against a
+   * branch whose closed PR had its head branch auto-deleted RECREATES it —
+   * undoing the cleanup the human's close performed. Nothing has run at this
+   * point either, so there are no partial fixes the push could be carrying.
+   */
+  escalateWithoutPush?: boolean;
+  /**
    * Why a `nothing-to-finish` route is a *skip* rather than a plain
    * zero-commits preflight. Only `"pr-merged"` (#1674 part 2) is set here —
    * the `already-finished` route carries its own reason in `route` itself,
@@ -142,16 +153,25 @@ async function checkPrState(
   }
   if (res.exitCode !== 0) return null;
 
-  let parsed: Record<string, unknown>;
+  // CRITICAL (post-review): the shape check is NOT redundant with the catch.
+  // `JSON.parse("null")` SUCCEEDS and returns `null`, so the catch never
+  // fires and the first property read below throws a TypeError — out of
+  // `loadFinishContext`, which runs *before* the state machine and so is
+  // outside its outer catch. That aborts the whole finish phase (no PR, no
+  // escalation, a bare "could not run" log): the exact opposite of the
+  // fail-open this function promises, on an input a forge CLI or an API
+  // wrapper can legitimately print for "no result".
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(res.stdout) as Record<string, unknown>;
+    parsed = JSON.parse(res.stdout);
   } catch {
     return null;
   }
-  const url =
-    typeof parsed.url === "string" ? parsed.url : typeof parsed.web_url === "string" ? parsed.web_url : undefined;
-  const state = typeof parsed.state === "string" ? parsed.state.toLowerCase() : "";
-  const mergedAt = parsed.mergedAt ?? parsed.merged_at;
+  if (parsed === null || typeof parsed !== "object") return null;
+  const view = parsed as Record<string, unknown>;
+  const url = typeof view.url === "string" ? view.url : typeof view.web_url === "string" ? view.web_url : undefined;
+  const state = typeof view.state === "string" ? view.state.toLowerCase() : "";
+  const mergedAt = view.mergedAt ?? view.merged_at;
 
   if (state === "merged" || (state === "closed" && typeof mergedAt === "string" && mergedAt !== "")) {
     return { state: "merged", ...(url ? { url } : {}) };
@@ -331,6 +351,7 @@ export async function loadFinishContext(
         testFileRegex,
         commitsAhead: pre.commitsAhead,
         route: "escalate",
+        escalateWithoutPush: true,
         reason: `The PR/MR for "${ledgerOpts.branch}" is closed without being merged${pr.url ? ` (${pr.url})` : ""}, but the branch still has ${pre.commitsAhead} commit(s) ahead of "${base}". nax-finish will not reopen it or push to it — a human needs to decide whether this branch is still wanted.`,
         ...(pr.url ? { prUrl: pr.url } : {}),
       };
