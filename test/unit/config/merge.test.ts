@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { mergePackageConfig } from "@/config/merge";
 import type { NaxConfig } from "@/config/schema";
+import { makeNaxConfig } from "@test/helpers";
 
 function makeRoot(): NaxConfig {
   return {
@@ -384,17 +385,17 @@ describe("mergePackageConfig", () => {
       [
         "root.execution",
         (r: NaxConfig) => r.execution.verificationTimeoutSeconds,
-        (_r: NaxConfig) => ({ execution: { verificationTimeoutSeconds: 999 } }) as unknown as Partial<NaxConfig>,
+        (_r: NaxConfig) => makeNaxConfig({ execution: { verificationTimeoutSeconds: 999 } }),
       ],
       [
         "root.review",
         (r: NaxConfig) => r.review.enabled,
-        (r: NaxConfig) => ({ review: { enabled: !r.review.enabled } }) as unknown as Partial<NaxConfig>,
+        (r: NaxConfig) => makeNaxConfig({ review: { enabled: !r.review.enabled } }),
       ],
       [
         "root.acceptance",
         (r: NaxConfig) => r.acceptance.enabled,
-        (r: NaxConfig) => ({ acceptance: { enabled: !r.acceptance.enabled } }) as unknown as Partial<NaxConfig>,
+        (r: NaxConfig) => makeNaxConfig({ acceptance: { enabled: !r.acceptance.enabled } }),
       ],
     ])("does not mutate %s", (_label, getOrig, makeOverride) => {
       const root = makeRoot();

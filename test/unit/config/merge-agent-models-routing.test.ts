@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { mergePackageConfig } from "@/config/merge";
 import type { NaxConfig } from "@/config/schema";
+import { makeNaxConfig } from "@test/helpers";
 
 function makeRoot(): NaxConfig {
   return {
@@ -104,8 +105,10 @@ describe("mergePackageConfig — models section", () => {
 
   test("adds a new agent model entry while preserving existing ones", () => {
     const root = makeRoot();
-    const override = { models: { "custom-agent": { fast: "haiku", balanced: "sonnet", powerful: "opus" } } };
-    const result = mergePackageConfig(root, override as unknown as Partial<NaxConfig>);
+    const override = makeNaxConfig({
+      models: { "custom-agent": { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
+    });
+    const result = mergePackageConfig(root, override);
     expect(result.models["custom-agent"]?.fast).toBe("haiku");
     expect(result.models.claude?.fast).toBe("haiku"); // root entry preserved
   });
@@ -119,8 +122,10 @@ describe("mergePackageConfig — models section", () => {
   test("does not mutate root.models", () => {
     const root = makeRoot();
     const origFast = root.models.claude?.fast;
-    const override = { models: { claude: { fast: "sonnet", balanced: "sonnet", powerful: "opus" } } };
-    mergePackageConfig(root, override as unknown as Partial<NaxConfig>);
+    const override = makeNaxConfig({
+      models: { claude: { fast: "sonnet", balanced: "sonnet", powerful: "opus" } },
+    });
+    mergePackageConfig(root, override);
     expect(root.models.claude?.fast).toBe(origFast);
   });
 
@@ -192,13 +197,13 @@ describe("mergePackageConfig — routing section", () => {
 describe("mergePackageConfig — combined override", () => {
   test("merges agent + models + routing + quality simultaneously", () => {
     const root = makeRoot();
-    const override = {
+    const override = makeNaxConfig({
       agent: { maxInteractionTurns: 20 },
       models: { claude: { fast: "sonnet", balanced: "opus", powerful: "opus" } },
       routing: { strategy: "llm" },
       quality: { commands: { test: "npm test" } },
-    };
-    const result = mergePackageConfig(root, override as unknown as Partial<NaxConfig>);
+    });
+    const result = mergePackageConfig(root, override);
 
     expect(result.agent?.protocol).toBe("acp");
     expect(result.agent?.maxInteractionTurns).toBe(20);
