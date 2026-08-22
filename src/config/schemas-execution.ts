@@ -134,6 +134,8 @@ const WorktreeDependenciesConfigSchema = z
   .object({
     mode: z.enum(["provision", "off"]).default("off"),
     setupCommand: z.string().nullable().default(null),
+    /** Hard deadline (BUG-13) for the provisioning spawn — a hung install (registry/NFS stall) must not block the story forever. */
+    timeoutSeconds: z.number().int().min(1).max(3600).default(300),
   })
   .superRefine((value, ctx) => {
     if (value.mode !== "provision" && value.setupCommand !== null) {
@@ -203,6 +205,7 @@ export const ExecutionConfigSchema = z.object({
   worktreeDependencies: WorktreeDependenciesConfigSchema.default({
     mode: "off",
     setupCommand: null,
+    timeoutSeconds: 300,
   }),
   storyIsolation: z.enum(["shared", "worktree"]).default("shared"),
   flakeDetection: FlakeDetectionConfigSchema.default({

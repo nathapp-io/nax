@@ -63,7 +63,9 @@ export type ExitReason =
   | "no-stories"
   | "pre-merge-aborted"
   /** The run's AbortSignal was aborted during an iteration delay (BUG-2 fix). */
-  | "aborted";
+  | "aborted"
+  /** A queued PAUSE/ABORT command was applied at a parallel-batch boundary (BUG-9). */
+  | "queue-paused";
 
 export interface SequentialExecutionResult {
   prd: PRD;

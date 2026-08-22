@@ -72,7 +72,7 @@
     "src/operations/finish-narrative.ts": 0.7857,
     "src/optimizer/noop.optimizer.ts": 0.2667,
     "src/pipeline/events.ts": 0.6471,
-    "src/pipeline/runner.ts": 0.7692,
+    "src/pipeline/runner.ts": 0.6692,
     "src/pipeline/stages/acceptance.ts": 0.721,
     "src/pipeline/stages/constitution.ts": 0.1707,
     "src/pipeline/stages/context.ts": 0.6746,

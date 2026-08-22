@@ -2,23 +2,23 @@
  * Unit tests for pipeline-result-handler.ts (ENH-005 — outputFiles capture)
  */
 
-import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { join } from "node:path";
 import { DEFAULT_CONFIG } from "@/config/defaults";
-import { loadPRD, savePRD } from "@/prd";
-import { makeMockRuntime } from "@test/helpers";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _tierEscalationDeps } from "@/execution/escalation/tier-escalation";
-import type { PRD, UserStory } from "@/prd/types";
-import { _gitDeps } from "@/utils/git";
 import {
+  type PipelineHandlerContext,
   _resultHandlerDeps,
   handlePipelineFailure,
   handlePipelineSuccess,
-  type PipelineHandlerContext,
 } from "@/execution/pipeline-result-handler";
 import type { PipelineRunResult } from "@/pipeline/runner";
 import { PluginRegistry } from "@/plugins/registry";
+import { loadPRD, savePRD } from "@/prd";
+import type { PRD, UserStory } from "@/prd/types";
+import { _gitDeps } from "@/utils/git";
+import { makeMockRuntime } from "@test/helpers";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -98,7 +98,11 @@ function mockSpawnReturning(output: string) {
           controller.close();
         },
       }),
-      stderr: new ReadableStream({ start(c) { c.close(); } }),
+      stderr: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
       exited: Promise.resolve(0),
       kill: mock(() => {}),
     };
@@ -118,12 +122,20 @@ let origSpawn: typeof _gitDeps.spawn;
 let origResultSpawn: typeof _resultHandlerDeps.spawn;
 let origMergeEngine: typeof _resultHandlerDeps.mergeEngine;
 let origSavePrd: typeof _tierEscalationDeps.savePRD;
+let origExistsSync: typeof _resultHandlerDeps.existsSync;
 
 beforeEach(() => {
   origSpawn = _gitDeps.spawn;
   origResultSpawn = _resultHandlerDeps.spawn;
   origMergeEngine = _resultHandlerDeps.mergeEngine;
   origSavePrd = _tierEscalationDeps.savePRD;
+  origExistsSync = _resultHandlerDeps.existsSync;
+  // MEM-6: cleanup now keys off real worktree existence rather than config
+  // mode. Default to "does not exist" — the safe, deterministic default that
+  // matches every test's actual fixture state — so tests that don't care
+  // about worktree cleanup never fall through to a real, unmocked spawn.
+  // Tests that specifically exercise worktree removal opt in explicitly.
+  _resultHandlerDeps.existsSync = (() => false) as typeof _resultHandlerDeps.existsSync;
 });
 
 afterEach(() => {
@@ -131,6 +143,7 @@ afterEach(() => {
   _resultHandlerDeps.spawn = origResultSpawn;
   _resultHandlerDeps.mergeEngine = origMergeEngine;
   _tierEscalationDeps.savePRD = origSavePrd;
+  _resultHandlerDeps.existsSync = origExistsSync;
   mock.restore();
 });
 
@@ -155,8 +168,17 @@ describe("handlePipelineSuccess — outputFiles capture (ENH-005)", () => {
       capturedArgs = args as string[];
       const bytes = new TextEncoder().encode("apps/api/src/index.ts\n");
       return {
-        stdout: new ReadableStream({ start(c) { c.enqueue(bytes); c.close(); } }),
-        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
         exited: Promise.resolve(0),
         kill: mock(() => {}),
       };
@@ -174,7 +196,9 @@ describe("handlePipelineSuccess — outputFiles capture (ENH-005)", () => {
     const ctx = makeCtx(story, { storyGitRef: undefined });
 
     // spawn should not be called
-    _gitDeps.spawn = mock(() => { throw new Error("spawn should not be called"); });
+    _gitDeps.spawn = mock(() => {
+      throw new Error("spawn should not be called");
+    });
 
     await handlePipelineSuccess(ctx, makeMinimalResult());
 
@@ -185,7 +209,9 @@ describe("handlePipelineSuccess — outputFiles capture (ENH-005)", () => {
     const story = makeStory("US-001");
     const ctx = makeCtx(story, { storyGitRef: null });
 
-    _gitDeps.spawn = mock(() => { throw new Error("spawn should not be called"); });
+    _gitDeps.spawn = mock(() => {
+      throw new Error("spawn should not be called");
+    });
 
     await handlePipelineSuccess(ctx, makeMinimalResult());
 
@@ -242,7 +268,9 @@ describe("handlePipelineSuccess — outputFiles capture (ENH-005)", () => {
     const story = makeStory("US-001");
     const ctx = makeCtx(story, { storyGitRef: "abc123" });
 
-    _gitDeps.spawn = mock(() => { throw new Error("git not found"); });
+    _gitDeps.spawn = mock(() => {
+      throw new Error("git not found");
+    });
 
     // Should not throw
     const result = await handlePipelineSuccess(ctx, makeMinimalResult());
@@ -307,74 +335,11 @@ describe("handlePipelineSuccess — worktree mode (EXEC-002)", () => {
 // EXEC-002: worktree cleanup on failure
 // ---------------------------------------------------------------------------
 
-describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
-  test("calls git worktree remove on 'fail' finalAction in worktree mode", async () => {
-    const story = makeStory("US-001", { status: "pending", passes: false, attempts: 2 });
-    const ctx = makeCtx(story, {
-      config: {
-        ...WORKTREE_CONFIG,
-        execution: {
-          ...WORKTREE_CONFIG.execution,
-          rectification: { ...WORKTREE_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
-        },
-      },
-    });
-
-    const spawnCalls: string[][] = [];
-    _resultHandlerDeps.spawn = mock((args: unknown) => {
-      spawnCalls.push(args as string[]);
-      return {
-        stdout: new ReadableStream({ start(c) { c.close(); } }),
-        stderr: new ReadableStream({ start(c) { c.close(); } }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
-    }) as unknown as typeof _resultHandlerDeps.spawn;
-
-    const failResult: PipelineRunResult = {
-      success: false,
-      finalAction: "fail",
-      reason: "Tests failed",
-      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"],
-    };
-
-    await handlePipelineFailure(ctx, failResult);
-
-    const worktreeRemoveCalls = spawnCalls.filter((a) => a.includes("worktree") && a.includes("remove"));
-    expect(worktreeRemoveCalls.length).toBeGreaterThan(0);
-    // Branch NOT deleted (only directory removed)
-    const branchDeleteCalls = spawnCalls.filter((a) => a.includes("branch") && a.includes("-D"));
-    expect(branchDeleteCalls.length).toBe(0);
-  });
-
-  test("does NOT call git worktree remove in shared mode on 'fail'", async () => {
-    const story = makeStory("US-001", { status: "pending", passes: false, attempts: 2 });
-    const ctx = makeCtx(story);
-
-    const spawnCalls: string[][] = [];
-    _resultHandlerDeps.spawn = mock((args: unknown) => {
-      spawnCalls.push(args as string[]);
-      return {
-        stdout: new ReadableStream({ start(c) { c.close(); } }),
-        stderr: new ReadableStream({ start(c) { c.close(); } }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
-    }) as unknown as typeof _resultHandlerDeps.spawn;
-
-    const failResult: PipelineRunResult = {
-      success: false,
-      finalAction: "fail",
-      reason: "Tests failed",
-      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"],
-    };
-
-    await handlePipelineFailure(ctx, failResult);
-
-    const worktreeRemoveCalls = spawnCalls.filter((a) => a.includes("worktree") && a.includes("remove"));
-    expect(worktreeRemoveCalls.length).toBe(0);
-  });
-});
+// ---------------------------------------------------------------------------
+// EXEC-002 / MEM-6 — worktree cleanup on fail/pause: see
+// pipeline-result-handler-worktree-cleanup.test.ts (split out for the
+// 800-line cap)
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // nax#1582 — pause path persists the blocking reason: see
@@ -506,8 +471,16 @@ describe("handlePipelineSuccess — a failed worktree merge is not a passed stor
     _resultHandlerDeps.spawn = mock((args: unknown) => {
       calls.push(args as string[]);
       return {
-        stdout: new ReadableStream({ start(c) { c.close(); } }),
-        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        stdout: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
         exited: Promise.resolve(0),
         kill: mock(() => {}),
       };

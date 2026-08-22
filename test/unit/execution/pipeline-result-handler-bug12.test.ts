@@ -56,13 +56,20 @@ const failResult: PipelineRunResult = {
 };
 
 let origResultSpawn: typeof _resultHandlerDeps.spawn;
+let origExistsSync: typeof _resultHandlerDeps.existsSync;
 
 beforeEach(() => {
   origResultSpawn = _resultHandlerDeps.spawn;
+  origExistsSync = _resultHandlerDeps.existsSync;
+  // MEM-6: cleanup now keys off real worktree existence rather than config
+  // mode — simulate "exists" so these worktree-mode removal tests don't
+  // depend on real disk state at the fake /tmp/repo workdir.
+  _resultHandlerDeps.existsSync = (() => true) as typeof _resultHandlerDeps.existsSync;
 });
 
 afterEach(() => {
   _resultHandlerDeps.spawn = origResultSpawn;
+  _resultHandlerDeps.existsSync = origExistsSync;
   mock.restore();
 });
 

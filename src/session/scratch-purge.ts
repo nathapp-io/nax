@@ -80,8 +80,10 @@ export async function purgeStaleScratch(
 
     if (!lastActivityAt) continue;
 
-    // Skip sessions still within the retention window (boundary is non-inclusive)
-    if (new Date(lastActivityAt).getTime() >= cutoffMs) continue;
+    // Skip sessions still within the retention window (boundary is non-inclusive).
+    // Fail safe (keep) on unparseable timestamps, matching manager-sweep's policy.
+    const activityMs = new Date(lastActivityAt).getTime();
+    if (!Number.isFinite(activityMs) || activityMs >= cutoffMs) continue;
 
     if (archiveInsteadOfDelete) {
       const archiveDest = join(featureDir(projectDir, featureName), "_archive", "sessions", sessionId);

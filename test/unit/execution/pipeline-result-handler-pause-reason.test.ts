@@ -5,10 +5,10 @@
  * file cap (.claude/rules/project-conventions.md).
  */
 
-import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { DEFAULT_CONFIG } from "@/config";
-import { handlePipelineFailure, type PipelineHandlerContext } from "@/execution";
+import { type PipelineHandlerContext, _resultHandlerDeps, handlePipelineFailure } from "@/execution";
 import type { PipelineRunResult } from "@/pipeline";
 import { PluginRegistry } from "@/plugins";
 import { loadPRD } from "@/prd";
@@ -42,14 +42,21 @@ function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = 
 describe("handlePipelineFailure — pause-reason persistence (nax#1582)", () => {
   let tempDir: string;
   let prdPath: string;
+  let origExistsSync: typeof _resultHandlerDeps.existsSync;
 
   beforeEach(() => {
     tempDir = makeTempDir("nax-pause-reason-");
     prdPath = join(tempDir, "prd.json");
+    origExistsSync = _resultHandlerDeps.existsSync;
+    // MEM-6: ctx.workdir here is the shared fake "/tmp/repo" path (not
+    // per-test-isolated), so force "no worktree" rather than letting a real,
+    // unmocked existsSync/spawn depend on whatever happens to exist on disk.
+    _resultHandlerDeps.existsSync = (() => false) as typeof _resultHandlerDeps.existsSync;
   });
 
   afterEach(() => {
     cleanupTempDir(tempDir);
+    _resultHandlerDeps.existsSync = origExistsSync;
   });
 
   test("appends the pipeline reason to priorErrors instead of leaving it empty", async () => {
@@ -96,7 +103,7 @@ describe("handlePipelineFailure — pause-reason persistence (nax#1582)", () => 
     const pauseResult: PipelineRunResult = {
       success: false,
       finalAction: "pause",
-      reason: 'src/does-not-exist.ts:1 says `this quote is fabricated`',
+      reason: "src/does-not-exist.ts:1 says `this quote is fabricated`",
       context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"], // test-ratchet-allow: as-unknown-as
     };
 

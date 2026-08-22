@@ -136,6 +136,7 @@ export const NaxConfigSchema = z
       worktreeDependencies: {
         mode: "off",
         setupCommand: null,
+        timeoutSeconds: 300,
       },
       storyIsolation: "shared",
       flakeDetection: {

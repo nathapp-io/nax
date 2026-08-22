@@ -388,6 +388,65 @@ describe("BUG-54 — partial usage objects do not fabricate zero-filled token us
   });
 });
 
+// BUG-12: the JSON-RPC session/update usage_update branch (distinct from the
+// legacy flat NDJSON branch above) had four bare `typeof x === "number"`
+// checks instead of asFiniteNumber — the one place in this file that skipped
+// the convention. A malformed/overflowing usage_update must not poison
+// inputTokens/outputTokens/costUsd/exactCostUsd with Infinity or NaN.
+describe("BUG-12 — JSON-RPC usage_update rejects non-finite values", () => {
+  function usageUpdateLine(update: Record<string, unknown>): string {
+    return JSON.stringify({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: { sessionId: "x", update: { sessionUpdate: "usage_update", ...update } },
+    });
+  }
+
+  test("rejects an _meta.usage.inputTokens that overflows to Infinity", () => {
+    const state = createParseState();
+    const line = usageUpdateLine({ _meta: { usage: { inputTokens: 1e400, outputTokens: 9 } } });
+    const activity = parseAcpxJsonLine(line, state);
+    expect(activity?.inputTokens).toBeUndefined();
+    expect(activity?.outputTokens).toBe(9);
+  });
+
+  test("rejects an _meta.usage.outputTokens that overflows to Infinity", () => {
+    const state = createParseState();
+    const line = usageUpdateLine({ _meta: { usage: { inputTokens: 7, outputTokens: 1e400 } } });
+    const activity = parseAcpxJsonLine(line, state);
+    expect(activity?.inputTokens).toBe(7);
+    expect(activity?.outputTokens).toBeUndefined();
+  });
+
+  test("rejects a fallback `used` field that overflows to Infinity", () => {
+    const state = createParseState();
+    const line = usageUpdateLine({ used: 1e400 });
+    const activity = parseAcpxJsonLine(line, state);
+    expect(activity?.outputTokens).toBeUndefined();
+  });
+
+  test("rejects a cost.amount that overflows to Infinity — exactCostUsd is never poisoned", () => {
+    const state = createParseState();
+    const line = usageUpdateLine({ cost: { amount: 1e400, currency: "USD" } });
+    const activity = parseAcpxJsonLine(line, state);
+    expect(activity?.costUsd).toBeUndefined();
+    expect(state.exactCostUsd).toBeUndefined();
+  });
+
+  test("still accepts finite values across all four fields", () => {
+    const state = createParseState();
+    const line = usageUpdateLine({
+      _meta: { usage: { inputTokens: 7, outputTokens: 9 } },
+      cost: { amount: 0.05, currency: "USD" },
+    });
+    const activity = parseAcpxJsonLine(line, state);
+    expect(activity?.inputTokens).toBe(7);
+    expect(activity?.outputTokens).toBe(9);
+    expect(activity?.costUsd).toBe(0.05);
+    expect(state.exactCostUsd).toBe(0.05);
+  });
+});
+
 describe("BUG-10 — cumulative_token_usage rejects malformed (non-numeric) token values", () => {
   test("a string input_tokens is not assigned to state.tokenUsage as-is", () => {
     const state = createParseState();
