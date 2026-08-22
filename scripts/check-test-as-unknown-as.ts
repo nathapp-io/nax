@@ -27,7 +27,13 @@ import { dirname, join } from "node:path";
 const ROOT = join(import.meta.dir, "..");
 const SCAN_DIR = "test";
 const BASELINE_FILE = join(import.meta.dir, "baselines", "test-as-unknown-as-baseline.json");
-const PATTERN = /\bas\s+unknown\s+as\b/;
+/**
+ * Global so a line carrying more than one cast counts as more than one. A
+ * per-line count would let two cast lines be joined into one to lower the
+ * number without removing a cast, and would drift whenever the formatter
+ * reflows a long line.
+ */
+const PATTERN = /\bas\s+unknown\s+as\b/g;
 const ALLOW_MARKER = "test-ratchet-allow: as-unknown-as";
 
 /**
@@ -66,10 +72,14 @@ export async function scanAsUnknownAs(
     const text = await Bun.file(join(rootDir, rel)).text();
     const lines = text.split("\n");
     for (const line of lines) {
-      if (!PATTERN.test(line)) continue;
+      // `String.match` with a /g/ pattern ignores lastIndex, so the shared
+      // regex stays safe to reuse across lines.
+      const matches = line.match(PATTERN);
+      if (matches === null) continue;
+      // The marker suppresses the whole line, however many casts it carries.
       if (line.includes(ALLOW_MARKER)) continue;
-      byFile[rel] = (byFile[rel] ?? 0) + 1;
-      count++;
+      byFile[rel] = (byFile[rel] ?? 0) + matches.length;
+      count += matches.length;
     }
   }
   return { count, byFile };

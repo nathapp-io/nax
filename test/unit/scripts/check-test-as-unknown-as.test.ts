@@ -29,6 +29,24 @@ describe("scanAsUnknownAs", () => {
     expect(byFile["test/unit/b.test.ts"]).toBe(1);
   });
 
+  test("counts every cast on a line, not the line once", async () => {
+    // A line-based count lets `a as unknown as B, c as unknown as D` read as one
+    // cast, so joining two cast lines lowers the number without removing a cast.
+    write(root, "test/unit/a.test.ts", "call(x as unknown as B, y as unknown as C);\n");
+    const { count, byFile } = await scanAsUnknownAs(root);
+    expect(count).toBe(2);
+    expect(byFile["test/unit/a.test.ts"]).toBe(2);
+  });
+
+  test("a line's allow marker suppresses every cast on that line", async () => {
+    write(
+      root,
+      "test/unit/a.test.ts",
+      "call(x as unknown as B, y as unknown as C); // test-ratchet-allow: as-unknown-as\n",
+    );
+    expect((await scanAsUnknownAs(root)).count).toBe(0);
+  });
+
   test("matches across multiple files in nested dirs", async () => {
     write(root, "test/unit/sub/deep.test.ts", "const x = a as unknown as B;\n");
     write(root, "test/integration/nested/c.test.ts", "const y = c as unknown as D;\n");
