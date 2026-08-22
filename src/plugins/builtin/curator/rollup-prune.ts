@@ -16,6 +16,7 @@
 
 import { rename, unlink, writeFile } from "node:fs/promises";
 import { appendFile } from "node:fs/promises";
+import { withPathFileLock } from "@/utils/path-file-lock";
 import { streamJsonlLines } from "./jsonl-stream";
 import type { Observation } from "./types";
 
@@ -92,6 +93,15 @@ export interface PruneRollupInput {
  * whose it is.
  */
 export async function pruneRollup(input: PruneRollupInput): Promise<PruneResult> {
+  // RACE-46 (D-29): take the shared path-file-lock with appendToRollup().
+  // Without it, an observation appended between our read pass and our
+  // rename(tmpPath, rollupPath) lands in the old inode and is silently
+  // destroyed — the curator's whole purpose is preserving observations.
+  const { rollupPath, projectKey, keepRunIds, dropUnattributed = false } = input;
+  return withPathFileLock(rollupPath, () => pruneRollupUnlocked(input));
+}
+
+async function pruneRollupUnlocked(input: PruneRollupInput): Promise<PruneResult> {
   const { rollupPath, projectKey, keepRunIds, dropUnattributed = false } = input;
   const tmpPath = `${rollupPath}.gc-tmp`;
   const result: PruneResult = { kept: 0, dropped: 0, keptOtherProjects: 0, keptUnattributed: 0 };

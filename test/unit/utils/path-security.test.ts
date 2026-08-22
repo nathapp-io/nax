@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { validateModulePath } from "@/utils/path-security";
+import { isRelativeAndSafe, validateModulePath } from "@/utils/path-security";
 import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,6 +76,34 @@ describe("path-security utility", () => {
     const result = validateModulePath("", roots);
     expect(result.valid).toBe(false);
     expect(result.error).toContain("empty");
+  });
+
+  // STYLE-30 (D-23): the substring `includes("..")` check rejected legit
+  // filenames containing two dots (e.g. `src/foo..bar.ts`, version-snapshot
+  // patterns). Switched to a segment-wise check that mirrors the rationale
+  // at src/prd/modifies.ts:50-57.
+  describe("isRelativeAndSafe — STYLE-30 segment-wise check", () => {
+    test("allows a relative path whose filename contains two dots", () => {
+      expect(isRelativeAndSafe("src/foo..bar.ts")).toBe(true);
+      expect(isRelativeAndSafe("snapshots/v1..v2.snap")).toBe(true);
+    });
+
+    test("blocks a relative path with a `..` segment", () => {
+      expect(isRelativeAndSafe("src/../etc/passwd")).toBe(false);
+      expect(isRelativeAndSafe("../sibling")).toBe(false);
+    });
+
+    test("blocks an absolute path", () => {
+      expect(isRelativeAndSafe("/etc/passwd")).toBe(false);
+    });
+
+    test("blocks a Windows-style traversal segment", () => {
+      expect(isRelativeAndSafe("src\\..\\etc")).toBe(false);
+    });
+
+    test("blocks empty path", () => {
+      expect(isRelativeAndSafe("")).toBe(false);
+    });
   });
 });
 

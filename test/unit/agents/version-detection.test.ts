@@ -43,17 +43,20 @@ function makeMockProc(stdout: string, exitCode: number) {
 let origSpawn: typeof _versionDetectionDeps.spawn;
 let origGetInstalledAgents: typeof _versionDetectionDeps.getInstalledAgents;
 let origGetAllAgents: typeof _versionDetectionDeps.getAllAgents;
+let origTimeoutMs: typeof _versionDetectionDeps.timeoutMs;
 
 beforeEach(() => {
   origSpawn = _versionDetectionDeps.spawn;
   origGetInstalledAgents = _versionDetectionDeps.getInstalledAgents;
   origGetAllAgents = _versionDetectionDeps.getAllAgents;
+  origTimeoutMs = _versionDetectionDeps.timeoutMs;
 });
 
 afterEach(() => {
   _versionDetectionDeps.spawn = origSpawn;
   _versionDetectionDeps.getInstalledAgents = origGetInstalledAgents;
   _versionDetectionDeps.getAllAgents = origGetAllAgents;
+  _versionDetectionDeps.timeoutMs = origTimeoutMs;
 });
 
 // ---------------------------------------------------------------------------
@@ -89,6 +92,39 @@ describe("getAgentVersion", () => {
 
     const version = await getAgentVersion("claude");
     expect(version).toBe("v1.2.3");
+  });
+
+  // PERF-32: a hung wrapper script must not stall the multi-agent health
+  // precheck. proc.exited that never resolves is bounded by
+  // `_versionDetectionDeps.timeoutMs` — getAgentVersion returns null.
+  // The timeout is injected short here (mirrors `_gitDeps.timeoutRetryGitTimeoutMs`
+  // in `src/utils/git.ts`) so this test asserts the SIGKILL contract without
+  // burning the full 5s production timeout in wall-clock.
+  test("PERF-32: returns null when proc.exited never resolves (hung binary)", async () => {
+    _versionDetectionDeps.timeoutMs = 50;
+    const hungProc = {
+      exited: new Promise<number>(() => {}),
+      stdout: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
+      stderr: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
+      pid: 0,
+      kill: () => {},
+    };
+    _versionDetectionDeps.spawn = mock(() => hungProc) as typeof _versionDetectionDeps.spawn;
+
+    const start = Date.now();
+    const v = await getAgentVersion("hung-binary");
+    const elapsed = Date.now() - start;
+
+    expect(v).toBeNull();
+    expect(elapsed).toBeLessThan(5_000);
   });
 });
 

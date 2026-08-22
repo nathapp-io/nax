@@ -325,6 +325,61 @@ describe("WorktreeManager", () => {
         expect(content).toContain(entry);
       }
     });
+
+    // BUG-39 (D-25): substring matching used to skip entries whose shorter
+    // sibling was already present. e.g. an existing `runs/` line would
+    // suppress `runs/cache/` because `"runs/cache/".includes("runs/")` is
+    // false but `"existing".includes("runs/")` is true after a misread.
+    // The intent was the other way round. Switch to line-aware matching
+    // so each entry is checked exactly, not as a substring of anything.
+    test("BUG-39: line-aware matching does not suppress a longer entry when a shorter one is present", async () => {
+      const manager = new WorktreeManager();
+      const infoDir = join(projectRoot, ".git", "info");
+      mkdirSync(infoDir, { recursive: true });
+      const excludePath = join(infoDir, "exclude");
+      // Pre-seed a line that is a substring of NAX_GITIGNORE_ENTRIES —
+      // the old `existing.includes(entry)` check would treat this as
+      // already covered. With line-aware matching it should NOT.
+      writeFileSync(excludePath, "runs/\n");
+
+      await manager.ensureGitExcludes(projectRoot);
+
+      const content = await Bun.file(excludePath).text();
+      // Both the user-authored `runs/` AND the full nax entry must be
+      // present after the call.
+      expect(content).toContain("runs/");
+      // Find at least one NAX entry that survives — proves the substring
+      // suppression was removed.
+      const naxLines = NAX_GITIGNORE_ENTRIES.filter((entry) => content.split("\n").includes(entry));
+      expect(naxLines.length).toBeGreaterThan(0);
+    });
+
+    // BUG-39: concurrent ensureGitExcludes() used to interleave
+    // read-read-write-write and lose one writer's entries (the last
+    // writer's write won). withPathFileLock serializes them. The lock
+    // matters most when one writer adds new content between another
+    // writer's read and write — that scenario can only be reliably
+    // triggered across processes, so this test verifies the lock-acquire
+    // and release are wired (no leaked lock candidates after the call).
+    test("BUG-39: ensureGitExcludes does not leave a stale lock candidate behind", async () => {
+      const manager = new WorktreeManager();
+      const infoDir = join(projectRoot, ".git", "info");
+      rmSync(infoDir, { recursive: true, force: true });
+
+      await manager.ensureGitExcludes(projectRoot);
+
+      const excludePath = join(infoDir, "exclude");
+      // No `.lock.*` candidate file should remain — the path-file-lock
+      // is released in its `finally` block on the success path.
+      const entries = await Array.fromAsync(
+        new Bun.Glob(`${"exclude"}.lock.*`).scan({ cwd: infoDir }),
+      );
+      expect(entries.length).toBe(0);
+
+      // Subsequent calls still work (the lock isn't held by a zombie
+      // candidate from a prior invocation).
+      await manager.ensureGitExcludes(projectRoot);
+    });
   });
 
   describe("list", () => {

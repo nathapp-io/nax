@@ -18,6 +18,7 @@ import { globalConfigDir } from "../config/paths";
 import { NaxError } from "../errors";
 import { type StoryCheckpoint, buildResumePlan, loadCheckpoints } from "../execution/checkpoint";
 import { projectOutputDir } from "../runtime";
+import { validateFeatureName } from "../utils/feature-name";
 
 /** Options accepted by the `nax resume` command. */
 export interface ResumeCommandOptions {
@@ -151,6 +152,16 @@ export function registerResumeCommand(program: Command): void {
       const naxDir = findProjectDir(cmdOpts.dir);
       if (!naxDir) {
         process.stderr.write("nax not initialized. Run: nax init\n");
+        process.exit(1);
+      }
+      // SEC-28: validate the feature name before joining it into a path —
+      // unvalidated input lets `nax resume -f ../../x` escape the .nax
+      // directory (mirror the guard at src/commands/common.ts:112 and the
+      // SEC-08/18 pattern).
+      try {
+        validateFeatureName(cmdOpts.feature);
+      } catch (error) {
+        process.stderr.write(`${(error as Error).message}\n`);
         process.exit(1);
       }
       const featureDir = join(naxDir, "features", cmdOpts.feature);

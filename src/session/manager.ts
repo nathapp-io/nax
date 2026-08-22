@@ -422,6 +422,29 @@ export class SessionManager implements ISessionManager {
   }
 
   async openSession(name: string, opts: OpenSessionRequest): Promise<SessionHandle> {
+    // RACE-37: synchronous single-flight guard for the open path. Without
+    // this, two concurrent openSession(name) calls both pass the
+    // _liveHandles.get check, both await adapter.openSession (which
+    // spawns a real acpx process), and the loser overwrites the winner
+    // in _liveHandles on the line below — orphaning the first physical
+    // session until TTL/forceStop. Mirror the _busySessions pattern.
+    if (this._busySessions.has(name)) {
+      throw new NaxError(`Session "${name}" is already being opened (single-flight invariant)`, "SESSION_BUSY", {
+        stage: "session",
+        sessionName: name,
+      });
+    }
+    this._busySessions.add(name);
+
+    try {
+      const handle = await this.openSessionImpl(name, opts);
+      return handle;
+    } finally {
+      this._busySessions.delete(name);
+    }
+  }
+
+  private async openSessionImpl(name: string, opts: OpenSessionRequest): Promise<SessionHandle> {
     const liveHandle = this._liveHandles.get(name);
     if (liveHandle && liveHandle.agentName === opts.agentName) {
       const liveDesc = this._findByName(name);

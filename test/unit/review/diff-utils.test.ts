@@ -257,3 +257,36 @@ describe("collectDiffFileList", () => {
     expect(await collectDiffFileList("/tmp/repo", "abc123")).toEqual(["src/a.ts", "src/b.ts"]);
   });
 });
+
+// BUG-31: a hung git (NFS / lock contention) must not stall the review
+// stage indefinitely. The runGitWithTimeout wrapper applies a SIGKILL
+// deadline so collectDiff resolves with null rather than blocking forever.
+describe("collectDiff() — BUG-31: hung git returns rather than blocking", () => {
+  test("returns null within the deadline when proc.exited never resolves", async () => {
+    const hungSpawn = mock((_opts: unknown) => ({
+      // Promise that never resolves — the timeout must save us.
+      exited: new Promise<number>(() => {}),
+      stdout: new ReadableStream({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      stderr: new ReadableStream({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      kill: () => {},
+    })) as unknown as typeof _diffUtilsDeps.spawn;
+    _diffUtilsDeps.spawn = hungSpawn;
+
+    const start = Date.now();
+    const out = await collectDiff("/workdir", "abc123", [], undefined);
+    const elapsed = Date.now() - start;
+
+    expect(out).toBeNull();
+    // 30s is the GIT_TIMEOUT_MS in test config; assert the call returned
+    // rather than blocking indefinitely.
+    expect(elapsed).toBeLessThan(60_000);
+  }, { timeout: 30_000 });
+});

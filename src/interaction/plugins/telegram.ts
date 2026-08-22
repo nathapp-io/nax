@@ -439,6 +439,27 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       const parts = data.split(":");
       if (parts.length < 2) return null;
 
+      // BUG-42 (D-26): validate parts[1] against the known action set before
+      // casting. The previous `as InteractionResponse["action"]` accepted any
+      // string from the configured chat; an unknown action then fell through
+      // every switch arm with no observable failure. Gated by
+      // isFromConfiguredChat, so the practical risk is robustness (a dropped
+      // callback) rather than privilege — but a malformed callback should be
+      // a no-op, not a silent switch fall-through.
+      const VALID_ACTIONS: ReadonlySet<InteractionResponse["action"]> = new Set([
+        "approve",
+        "reject",
+        "choose",
+        "input",
+        "skip",
+        "abort",
+      ]);
+      if (!VALID_ACTIONS.has(parts[1] as InteractionResponse["action"])) {
+        getSafeLogger()?.warn("telegram", "Ignoring callback with unknown action", {
+          action: parts[1],
+        });
+        return null;
+      }
       const action = parts[1] as InteractionResponse["action"];
       // Rejoin everything after the action: an option key may itself contain
       // ":" (e.g. "scope:api"). Taking only parts[2] truncated the value, so

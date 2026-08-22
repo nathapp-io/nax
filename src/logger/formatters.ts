@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { stripControlChars } from "../utils/strip-control-chars.js";
 import type { LogEntry } from "./types.js";
 
 /**
@@ -45,13 +46,13 @@ export function formatConsole(entry: LogEntry): string {
   }
 
   // Build base message with timestamp, stage, and optional storyId
-  const parts = [chalk.gray(`[${timestamp}]`), levelColor(`[${entry.stage}]`)];
+  const parts = [chalk.gray(`[${stripControlChars(timestamp)}]`), levelColor(`[${stripControlChars(entry.stage)}]`)];
 
   if (entry.storyId) {
-    parts.push(chalk.cyan(`[${entry.storyId}]`));
+    parts.push(chalk.cyan(`[${stripControlChars(entry.storyId)}]`));
   }
 
-  parts.push(entry.message);
+  parts.push(stripControlChars(entry.message));
 
   // Append data if present (pretty-printed on next line)
   let output = parts.join(" ");

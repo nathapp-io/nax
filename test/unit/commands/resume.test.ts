@@ -63,6 +63,16 @@ function makeBaseDeps(
 // ---------------------------------------------------------------------------
 
 describe("registerResumeCommand — AC1: commander wiring", () => {
+  let origCwd: string;
+
+  beforeEach(() => {
+    origCwd = process.cwd();
+  });
+
+  afterEach(() => {
+    process.chdir(origCwd);
+  });
+
   test("AC1: registerResumeCommand is an exported function from @/commands/resume", () => {
     expect(typeof registerResumeCommandFromCmd).toBe("function");
   });
@@ -73,6 +83,48 @@ describe("registerResumeCommand — AC1: commander wiring", () => {
 
     const sub = program.commands.find((c) => c.name() === "resume");
     expect(sub).toBeDefined();
+  });
+
+  // SEC-28: `nax resume -f ../../x` must not escape the .nax directory — the
+  // action validates the feature name against validateFeatureName (same
+  // guard as src/commands/common.ts:112).
+  test("SEC-28: rejects a feature name that fails validateFeatureName", async () => {
+    const origExit = process.exit;
+    const origWrite = process.stderr.write;
+    let exitCode: number | undefined;
+    const stderrChunks: string[] = [];
+    process.exit = ((code?: number) => {
+      exitCode = code ?? 0;
+      throw new Error("__process_exit__");
+    }) as typeof process.exit;
+    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+      stderrChunks.push(typeof chunk === "string" ? chunk : chunk.toString());
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      const program = new Command();
+      registerResumeCommandFromCmd(program);
+      // Provide an explicit .nax dir under the temp dir so findProjectDir succeeds.
+      const tempDir = makeTempDir("nax-resume-sec28-");
+      try {
+        const { mkdirSync, writeFileSync } = await import("node:fs");
+        mkdirSync(join(tempDir, ".nax"), { recursive: true });
+        writeFileSync(join(tempDir, ".nax", "config.json"), "{}");
+        process.chdir(tempDir);
+        await program.parseAsync(["node", "nax", "resume", "-f", "../../evil"]);
+      } finally {
+        cleanupTempDir(tempDir);
+      }
+    } catch (e) {
+      // Expected — process.exit throws to short-circuit the action.
+      if (!(e instanceof Error) || e.message !== "__process_exit__") throw e;
+    } finally {
+      process.exit = origExit;
+      process.stderr.write = origWrite;
+    }
+    expect(exitCode).toBe(1);
+    expect(stderrChunks.join("")).toMatch(/feature/i);
+    expect(stderrChunks.join("")).toMatch(/single path segment|cannot contain path traversal/);
   });
 });
 

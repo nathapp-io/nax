@@ -15,6 +15,7 @@
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import type { Framework } from "../test-runners/detector";
+import { parseTestOutput } from "../test-runners/parser";
 import type { TestFailure } from "../test-runners/types";
 import { executeWithTimeout } from "./executor";
 import { shellQuoteArg } from "./shell-quote";
@@ -186,6 +187,17 @@ export async function runFlakeProbe(input: FlakeProbeInput): Promise<FlakeProbeV
       // batch of all-zero-matched runs read as "consistent-failure" (BUG-8),
       // directly contradicting the unattributable-never-fails-a-story
       // contract above.
+      continue;
+    }
+    // BUG-33 (D-19): require positive evidence the probe ran a test, not
+    // just that the framework's "no tests matched" markers didn't match.
+    // bun/jest/vitest exit 0 with zero-match phrasings that aren't in
+    // NO_TESTS_EXECUTED_MARKERS — counting those as attributable lets a
+    // deterministic failure be relabelled "flaky". parseTestOutput
+    // dispatches per framework and reports `passed + failed`; both must
+    // be zero for the probe to be unattributable.
+    const parsed = parseTestOutput(result.output ?? "");
+    if (parsed.passed + parsed.failed < 1) {
       continue;
     }
     attributableRuns += 1;

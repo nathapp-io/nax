@@ -65,10 +65,29 @@ export interface HeuristicWindow {
  * @param rollupPath - Absolute path to the rollup JSONL file
  */
 export async function appendToRollup(observations: Observation[], rollupPath: string): Promise<void> {
-  try {
-    const dir = path.dirname(rollupPath);
-    await mkdir(dir, { recursive: true });
+  // RACE-46 (D-29): serialize with pruneRollup() via the path-keyed file
+  // lock so an observation landing between GC's read pass and its
+  // rename(tmpPath, rollupPath) doesn't get written to the old inode
+  // and then destroyed by the rename. Telemetry loss only — but the
+  // curator's whole purpose is preserving observations.
+  //
+  // mkdir first so the lock-candidate file can land on disk; the
+  // path-file-lock requires the parent directory to exist before it can
+  // write its `<path>.lock.<ts>.<pid>.<uuid>` candidate.
+  const dir = path.dirname(rollupPath);
+  await mkdir(dir, { recursive: true }).catch(() => {
+    // Already-exists or read-only parent surfaces inside the locked body.
+  });
 
+  const { withPathFileLock } = await import("@/utils/path-file-lock");
+  await withPathFileLock(rollupPath, () => appendToRollupUnlocked(observations, rollupPath)).catch(() => {
+    // Lock-acquisition / write failures are logged below in the unlocked
+    // body — never thrown because the curator must not affect run exit.
+  });
+}
+
+async function appendToRollupUnlocked(observations: Observation[], rollupPath: string): Promise<void> {
+  try {
     if (observations.length === 0) {
       const f = Bun.file(rollupPath);
       if (!(await f.exists())) {

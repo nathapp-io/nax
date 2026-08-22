@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatJsonl } from "@/logger";
+import { formatConsole, formatJsonl } from "@/logger";
 import type { LogEntry } from "@/logger";
 
 function makeEntry(overrides: Partial<LogEntry> = {}): LogEntry {
@@ -61,5 +61,30 @@ describe("formatJsonl", () => {
       expect(parsed.message).toBe("Failed to serialize log entry");
       expect(parsed.data.originalMessage).toBe("Task classified");
     });
+  });
+});
+
+// STYLE-21: legacy console formatters must strip ESC/control bytes from
+// agent-controlled or PRD-authored display strings before they reach stdout
+// (see src/log-format/formatter.ts:285 for the hardened path).
+describe("formatConsole (STYLE-21)", () => {
+  test("strips an OSC escape sequence from entry.message", () => {
+    const entry = makeEntry({ message: "before\x1b]0;evil\x07after" });
+    const out = formatConsole(entry);
+    expect(out).not.toContain("\x1b");
+    expect(out).toContain("beforeafter");
+  });
+
+  test("strips a CSI cursor-move sequence from entry.message", () => {
+    const entry = makeEntry({ message: "ok\x1b[2Jdone" });
+    const out = formatConsole(entry);
+    expect(out).not.toContain("\x1b");
+    expect(out).toContain("okdone");
+  });
+
+  test("preserves ordinary whitespace (tab, newline, CR) inside message", () => {
+    const entry = makeEntry({ message: "line1\nline2\tcol\r" });
+    const out = formatConsole(entry);
+    expect(out).toContain("line1\nline2\tcol\r");
   });
 });

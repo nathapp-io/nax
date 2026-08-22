@@ -35,7 +35,7 @@ export const MAX_BUFFERED_STDERR_BYTES = 64 * 1024; // 64KB rolling tail
 export function readStreamTail(
   stream: ReadableStream<Uint8Array>,
   maxBytes: number = MAX_BUFFERED_STDERR_BYTES,
-): Promise<string> {
+): { promise: Promise<string>; cancel: () => void } {
   const decoder = new TextDecoder();
   const reader = stream.getReader();
   let tail = "";
@@ -58,7 +58,7 @@ export function readStreamTail(
     tail = tail.slice(index);
   };
 
-  return (async () => {
+  const promise = (async () => {
     try {
       while (true) {
         const { done, value } = await reader.read();
@@ -71,6 +71,16 @@ export function readStreamTail(
       reader.releaseLock();
     }
   })();
+  // Mirror readAndParseLines — expose cancel so the caller can settle the
+  // pending read() when a drain-timeout race is lost (MEM-38). Without
+  // cancel, the loser of drainB.stderr holds the stream lock + decoder +
+  // 64KB tail closure for the rest of the process.
+  return {
+    promise,
+    cancel: () => {
+      reader.cancel().catch(() => {});
+    },
+  };
 }
 
 /**

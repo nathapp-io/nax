@@ -25,6 +25,18 @@ describe("PackageRegistry", () => {
     const registry = createPackageRegistry(loader, "/repo");
     expect(registry.repo()).toBe(registry.resolve(undefined));
   });
+
+  // TYPE-29 (D-23): the previous startsWith(repoRoot) check (without a
+  // trailing separator) made a sibling directory whose name is a prefix of
+  // the repo root look like it lived inside it — /repository was reported
+  // as relativeFromRoot: "ry" against repoRoot "/repo". path.relative
+  // gives the unambiguous answer.
+  test("relativeFromRoot does not collide when packageDir is a prefix-named sibling (TYPE-29)", () => {
+    const loader = createConfigLoader(minConfig);
+    const registry = createPackageRegistry(loader, "/repo");
+    const view = registry.resolve("/repository");
+    expect(view.relativeFromRoot).toBe("../repository");
+  });
 });
 
 describe("PackageView.select()", () => {

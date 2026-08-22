@@ -458,6 +458,14 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   }
 
   const maxAttempts = calculateMaxIterations(ctx.config.autoMode.escalation.tierOrder);
+  // NOTE (ENH-35, D-21): this cumulative-attempts cap is intentionally
+  // per-tier only — `attempts` is reset on every tier change (`@design
+  // BUG-011`), so it caps attempts *within* a tier, not across the run.
+  // Termination in practice comes from tier exhaustion (see
+  // handleNoTierAvailable). Anyone tightening budgets expecting the
+  // cumulative cap to fire across escalations will find it never does.
+  // The per-tier reset is deliberate; budgeting is a product/cost call,
+  // not a review fix. See issue tracking D-21.
   const canEscalate = storiesToEscalate.every((s) => (s.attempts ?? 0) < maxAttempts);
 
   if (!canEscalate) {

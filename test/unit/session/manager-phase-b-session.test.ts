@@ -225,6 +225,47 @@ describe("openSession()", () => {
     expect(sm.descriptor(name)?.state).toBe("RUNNING");
     expect(openCallCount).toBe(2);
   });
+
+  // RACE-37 (D-23): two concurrent openSession(name) calls used to both
+  // pass the _liveHandles.get check, both await adapter.openSession (each
+  // spawning a real acpx process), and the loser overwrote the winner in
+  // _liveHandles — orphaning the first physical session until TTL/
+  // forceStop. Single-flight on _busySessions ensures the second caller
+  // gets SESSION_BUSY synchronously without spawning a duplicate process.
+  test("RACE-37: concurrent openSession for same name throws SESSION_BUSY and only spawns once", async () => {
+    let resolveFirst!: () => void;
+    let firstStarted = false;
+    let openCallCount = 0;
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string) => {
+        openCallCount++;
+        if (!firstStarted) {
+          firstStarted = true;
+          await new Promise<void>((resolve) => {
+            resolveFirst = resolve;
+          });
+        }
+        return { id: name, agentName: "claude" } as SessionHandle;
+      }),
+    });
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    const name = "nax-race37-test";
+
+    // First call starts but does not resolve — adapter.openSession hangs.
+    const first = sm.openSession(name, makeOpenRequest());
+    // Yield so the first call enters the adapter's openSession path.
+    await new Promise((r) => setImmediate(r));
+
+    // Second call should throw SESSION_BUSY synchronously without
+    // spawning a second acpx process.
+    await expect(sm.openSession(name, makeOpenRequest())).rejects.toMatchObject({
+      code: "SESSION_BUSY",
+    });
+    expect(openCallCount).toBe(1);
+
+    resolveFirst();
+    await first;
+  });
 });
 
 // ─── closeSession() ───────────────────────────────────────────────────────────

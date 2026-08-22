@@ -178,13 +178,17 @@ async function executeHook(
     return { success: true, output: "(disabled)" };
   }
 
-  // Validate command for injection patterns
+  // Validate command for injection patterns. ENH-45 (D-28): reword the
+  // message — "Security validation failed" implied more than this
+  // best-effort pattern list delivers. The argv-mode execution at
+  // hasShellOperators() below is the real safety guarantee; this check
+  // is a partial speed bump, not a security boundary. Treat it as such.
   try {
     validateHookCommand(hookDef.command);
   } catch (err) {
     return {
       success: false,
-      output: `Security validation failed: ${err}`,
+      output: `Hook command matched a known-risky pattern (best-effort lint — see argv-mode note below): ${err}`,
     };
   }
 

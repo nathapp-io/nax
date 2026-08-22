@@ -17,6 +17,7 @@ import {
   checkPreMerge,
   checkSecurityReview,
   isTriggerEnabled,
+  substituteTemplate,
 } from "@/interaction/triggers";
 import { makeNaxConfig } from "@test/helpers";
 
@@ -241,5 +242,44 @@ describe("BUG-17: trigger fallback honored on timeout for every trigger", () => 
     const cfg = makeConfig({ "cost-exceeded": { enabled: true, fallback: "abort" } });
     const context = { featureName: "feature-x", cost: 1.0, limit: 1.0 };
     expect(await checkCostExceeded(context, cfg, makeChain("approve"))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// substituteTemplate — context-key RegExp escaping (BUG-43)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("substituteTemplate (BUG-43)", () => {
+  test("substitutes a plain alphanumeric key", () => {
+    expect(substituteTemplate("hello {{name}}", { name: "world" })).toBe("hello world");
+  });
+
+  test("substitutes a key with regex metacharacters without throwing or mis-substituting", () => {
+    // BUG-43 (D-27): the previous code interpolated the key directly into
+    // a RegExp. A key like `cost(usd)` parses `(` as a regex group, which
+    // either throws (unmatched group) or matches a different substring
+    // than `{{cost(usd)}}`. TriggerContext has an open index signature
+    // so callers can add arbitrary keys — escape the key before use.
+    const template = "limit was {{cost(usd)}}";
+    const result = substituteTemplate(template, { "cost(usd)": "$1.23" });
+    expect(result).toBe("limit was $1.23");
+  });
+
+  test("substitutes keys with braces, dots, slashes, and backslashes", () => {
+    const template = "a {{a.b}} b {{c[0]}} c {{d/e}} d {{f\\g}}";
+    const result = substituteTemplate(template, {
+      "a.b": "A",
+      "c[0]": "C",
+      "d/e": "D",
+      "f\\g": "F",
+    });
+    expect(result).toBe("a A b C c D d F");
+  });
+
+  test("leaves a placeholder untouched when the key is not in context", () => {
+    // Verifies the regex wasn't so over-escaped that legitimate keys
+    // stop matching. Plain alphanumeric keys must still substitute.
+    const result = substituteTemplate("hi {{name}}", { other: "x" });
+    expect(result).toBe("hi {{name}}");
   });
 });

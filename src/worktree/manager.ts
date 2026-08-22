@@ -26,22 +26,41 @@ export class WorktreeManager {
     const infoDir = join(projectRoot, ".git", "info");
     const excludePath = join(infoDir, "exclude");
 
+    // BUG-39: serialize the read-modify-write of `.git/info/exclude` via the
+    // path-keyed file lock so two concurrent ensureGitExcludes() callers
+    // (e.g. parallel story setup) don't interleave read-read-write-write
+    // and clobber each other's appended entries. Without this, the last
+    // writer wins and one story's entries silently disappear. mkdir first
+    // so the lock's candidate-file write can land in `.git/info/`.
+    await mkdir(infoDir, { recursive: true });
+
+    const { withPathFileLock } = await import("../utils/path-file-lock");
     try {
-      await mkdir(infoDir, { recursive: true });
+      await withPathFileLock(excludePath, async () => {
+        let existing = "";
+        if (existsSync(excludePath)) {
+          existing = await Bun.file(excludePath).text();
+        }
 
-      let existing = "";
-      if (existsSync(excludePath)) {
-        existing = await Bun.file(excludePath).text();
-      }
+        // Line-aware matching: `existing.includes(entry)` would treat
+        // `/foo/runs/` as already containing `runs/` and skip appending
+        // `runs/` itself. Split into lines and match each line exactly so
+        // a substring prefix never suppresses a longer entry.
+        const existingLines = new Set(
+          existing
+            .split("\n")
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0),
+        );
+        const missing = NAX_GITIGNORE_ENTRIES.filter((entry) => !existingLines.has(entry));
+        if (missing.length === 0) return;
 
-      const missing = NAX_GITIGNORE_ENTRIES.filter((entry) => !existing.includes(entry));
-      if (missing.length === 0) return;
+        const section = `\n# nax — generated files (auto-added by nax parallel)\n${missing.join("\n")}\n`;
+        await Bun.write(excludePath, existing + section);
 
-      const section = `\n# nax — generated files (auto-added by nax parallel)\n${missing.join("\n")}\n`;
-      await Bun.write(excludePath, existing + section);
-
-      logger?.info("worktree", "Updated .git/info/exclude with nax entries", {
-        added: missing.length,
+        logger?.info("worktree", "Updated .git/info/exclude with nax entries", {
+          added: missing.length,
+        });
       });
     } catch (error) {
       // Non-fatal — log warning and continue. Worktrees may still get conflicts
@@ -302,16 +321,18 @@ export class WorktreeManager {
         currentWorktree.branch = line.substring("branch ".length).replace("refs/heads/", "");
       } else if (line === "") {
         // Empty line indicates end of worktree entry
-        if (currentWorktree.path && currentWorktree.branch) {
-          worktrees.push(currentWorktree as WorktreeInfo);
+        // BUG-24 (D-17): detached-HEAD worktrees (rebase, bisect) emit no
+        // `branch` line — keep them with branch: null instead of dropping.
+        if (currentWorktree.path) {
+          worktrees.push({ path: currentWorktree.path, branch: currentWorktree.branch ?? null });
         }
         currentWorktree = {};
       }
     }
 
     // Handle last entry if no trailing newline
-    if (currentWorktree.path && currentWorktree.branch) {
-      worktrees.push(currentWorktree as WorktreeInfo);
+    if (currentWorktree.path) {
+      worktrees.push({ path: currentWorktree.path, branch: currentWorktree.branch ?? null });
     }
 
     return worktrees;

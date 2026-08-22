@@ -33,7 +33,7 @@
  * ```
  */
 
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, symlinkSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import chalk from "chalk";
@@ -670,14 +670,15 @@ program
     // Create/update latest.jsonl symlink
     const latestSymlink = join(runsDir, "latest.jsonl");
     try {
-      // Remove existing symlink if present
+      // ENH-47 (D-30): use native fs.unlink/fs.symlink instead of
+      // Bun.spawnSync(['rm', ...]) / Bun.spawnSync(['ln', '-s', ...]).
+      // The shelled-out version had unchecked exit codes — a failed
+      // `ln -s` silently left a stale `latest.jsonl` (or, on a runner
+      // without GNU coreutils on PATH, never created one at all).
       if (existsSync(latestSymlink)) {
-        Bun.spawnSync(["rm", latestSymlink]);
+        unlinkSync(latestSymlink);
       }
-      // Create new symlink pointing to current run log
-      Bun.spawnSync(["ln", "-s", `${runId}.jsonl`, latestSymlink], {
-        cwd: runsDir,
-      });
+      symlinkSync(`${runId}.jsonl`, latestSymlink);
     } catch (error) {
       console.error(chalk.yellow(`Warning: Failed to create latest.jsonl symlink: ${error}`));
     }

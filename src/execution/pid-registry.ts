@@ -448,9 +448,18 @@ export class PidRegistry {
 
   private enqueueWrite(): Promise<void> {
     if (this._writing) {
-      // A write is in-flight — coalesce: schedule exactly one follow-up write.
+      // A write is in-flight — coalesce: schedule exactly one follow-up write
+      // that will include this caller. The returned promise must include the
+      // pending coalesced write so register()/unregister() callers wait for
+      // their own PID to land on disk — otherwise a hard kill in the window
+      // between caller-return and follow-up-write leaves a live agent PID
+      // absent from .nax-pids (RACE-34).
       this._pendingWrite = true;
-      return this.writeQueueTail;
+      // Chain a follow-up so the returned tail waits for both the in-flight
+      // write and the one we just queued. enqueueWrite() will run it again
+      // (recursively) when _writing clears; the chain we attach here ensures
+      // the caller resolves only after that recursion completes.
+      return this.writeQueueTail.then(() => this.enqueueWrite());
     }
     this._writing = true;
     this.writeQueueTail = this.writePidsFile()

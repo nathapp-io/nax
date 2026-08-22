@@ -30,11 +30,14 @@ type ExecResult = {
   countsTowardEscalation: boolean;
 };
 
-function okExec(): ExecResult {
-  return { success: true, timeout: false, countsTowardEscalation: true };
+function okExec(): ExecResultWithOutput {
+  // BUG-33: include positive parseable output so parseTestOutput reports
+  // >= 1 test run — otherwise the new positive-evidence guard would mark
+  // every clean run as unattributable.
+  return { success: true, timeout: false, countsTowardEscalation: true, output: "1 passed" };
 }
-function failExec(): ExecResult {
-  return { success: false, timeout: false, countsTowardEscalation: true };
+function failExec(): ExecResultWithOutput {
+  return { success: false, timeout: false, countsTowardEscalation: true, output: "1 failed" };
 }
 function envExec(): ExecResult {
   return { success: false, timeout: true, countsTowardEscalation: false };
@@ -478,7 +481,7 @@ describe("runFlakeProbe — zero-tests-matched output detection (BUG-8)", () => 
 
   test("ordinary passing output (no zero-matched marker) is attributable, not treated as zero-matched", async () => {
     installFakeExecutor([
-      { success: true, timeout: false, countsTowardEscalation: true, output: "PASS\nok  \tpkg/foo\t0.002s" },
+      { success: true, timeout: false, countsTowardEscalation: true, output: "PASS\nok  \tpkg/foo\t0.002s\n1 passed" },
     ]);
 
     const result = await runFlakeProbe({
@@ -494,6 +497,30 @@ describe("runFlakeProbe — zero-tests-matched output detection (BUG-8)", () => 
     if (result.verdict === "flaky") {
       expect(result.probePasses).toBe(1);
     }
+  });
+
+  // BUG-33 (D-19): bun/jest/vitest can exit 0 with phrasing that isn't in
+  // the Go-only NO_TESTS_EXECUTED_MARKERS list — counting those as
+  // attributable lets a deterministic failure be relabelled "flaky". The
+  // positive-evidence guard parses the output via parseTestOutput and
+  // requires passed+failed >= 1.
+  test("BUG-33: bun-style exit 0 with non-Go zero-matched phrasing is unattributable", async () => {
+    installFakeExecutor([
+      // Bun's "no tests found" phrasing isn't in the Go marker regex.
+      { success: true, timeout: false, countsTowardEscalation: true, output: "No tests found" },
+    ]);
+
+    const result = await runFlakeProbe({
+      framework: "bun",
+      baseCommand: "bun test",
+      failure: makeFailure({ file: "src/foo.test.ts", testName: "test foo" }),
+      cwd: "/tmp/probe",
+      probeRuns: 1,
+      probeTimeoutSeconds: 30,
+    });
+
+    // Without parseable positive evidence, the probe is unattributable.
+    expect(result.verdict).toBe("unprobeable");
   });
 });
 

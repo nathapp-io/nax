@@ -14,6 +14,7 @@ import { getSafeLogger } from "../logger";
 import { filterByAcGroundingMinimal } from "./ac-quote-validator";
 import { MAX_ACKS } from "./acks";
 import { llmFindingsToReviewFindings } from "./finding-projection";
+import { normalizeIssueText } from "./recurrence-demotion";
 import {
   type LLMFinding,
   formatFindings,
@@ -155,11 +156,16 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
   }
   const debateAcks = acks.length > 0 ? acks : undefined;
 
-  // Deduplicate findings by AC id (primary) or file:line (fallback)
+  // Deduplicate findings by AC id (primary), then file + normalized issue text
+  // (fallback). BUG-27: keying on file:line alone collapses two distinct
+  // defects that share a line into one, hiding the second from blocking
+  // classification and recurrence fingerprints. Including the normalized
+  // issue text (mirroring the prose fallback in fingerprintFor) keeps
+  // multiple defects within the same AC/file/line distinct.
   const seen = new Set<string>();
   const deduped: LLMFinding[] = [];
   for (const f of allFindings) {
-    const key = f.acId ?? `${f.file}:${f.line}`;
+    const key = f.acId ?? `${f.file ?? ""}|${normalizeIssueText(f.issue).slice(0, 48)}`;
     if (!seen.has(key)) {
       seen.add(key);
       deduped.push(f);

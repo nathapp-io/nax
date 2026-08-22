@@ -4,6 +4,7 @@
 
 import { realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
+import { isSafeRelativePath } from "../prd";
 
 /**
  * Result of a path validation.
@@ -45,12 +46,22 @@ function safeRealpathForComparison(p: string): string {
  * Returns true when filePath is safe to use as a relative file path — i.e. it
  * contains no `..` segments and is not an absolute path.  Used by context-engine
  * providers to gate user-supplied paths before any filesystem or git call.
+ *
+ * STYLE-30 (D-23): use a segment-wise `..` check, not a substring check —
+ * the substring form rejected legitimate filenames that merely contain two
+ * dots (e.g. `src/foo..bar.ts`, `v1..v2.snap`), silently dropping a valid
+ * path. The segment-wise helper at `src/prd/modifies.ts:50-57` carries the
+ * written rationale for this; mirror it here (with an additional
+ * isAbsolute gate that the prd helper doesn't need).
+ *
+ * Check the raw input's segments — normalizing first would collapse
+ * `src/../etc/passwd` to `etc/passwd`, hiding the `..` segment entirely.
  */
 export function isRelativeAndSafe(filePath: string): boolean {
   if (!filePath) return false;
+  if (!isSafeRelativePath(filePath)) return false;
   const normalized = normalize(filePath);
   if (isAbsolute(normalized)) return false;
-  if (normalized.includes("..")) return false;
   return true;
 }
 

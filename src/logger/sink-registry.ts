@@ -32,11 +32,21 @@ export class SinkRegistry {
    * file written after dispatch. Without this, a buggy sink could rewrite a
    * redacted secret back into the entry and break the redaction-by-construction
    * guarantee the Logger relies on.
+   *
+   * BUG-22: the top-level `{...entry}` only protects scalar fields — the
+   * nested `entry.data` object is shared by reference and a sink doing
+   * `entry.data.x = …` would otherwise leak the mutation to later sinks and
+   * to the JSONL writer. Clone `data` too at the same one-level depth (the
+   * common case for flat data objects). Fully recursive cloning is a separate
+   * concern and would re-introduce circular-reference handling.
    */
   dispatch(entry: LogEntry): void {
     for (const sink of this.sinks) {
       try {
-        sink({ ...entry });
+        // BUG-22: clone per-sink (and clone the nested `data` field) so a
+        // sink mutating `entry.data` cannot leak the change to later sinks.
+        const cloned: LogEntry = entry.data ? { ...entry, data: { ...entry.data } } : { ...entry };
+        sink(cloned);
       } catch (error) {
         process.stderr.write(`[logger] Sink threw: ${error}\n`);
       }
