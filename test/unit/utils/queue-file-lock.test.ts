@@ -56,7 +56,13 @@ describe("listLiveCandidates — stale-lock eviction (BUG-10)", () => {
     expect(unlinked.some((p) => p.endsWith(deadPidName))).toBe(true);
   });
 
-  test("unlinks a candidate with an unparseable timestamp even if its pid is alive", async () => {
+  test("keeps a candidate with an unparseable timestamp when its pid is alive (BUG-25)", async () => {
+    // BUG-25: the docstring says the timestamp's MAX_LOCK_AGE_MS bound only
+    // applies when liveness can't be judged from age at all — but the
+    // previous implementation short-circuited on `createdAt === null` and
+    // unlinked regardless of pid liveness, contradicting its own invariant.
+    // A live holder whose filename timestamp doesn't parse (renamed scheme,
+    // older format) must NOT lose the lock.
     const unparseableName = "queue.txt.lock.notanumber.7777.ccc";
     const unlinked: string[] = [];
 
@@ -72,8 +78,8 @@ describe("listLiveCandidates — stale-lock eviction (BUG-10)", () => {
 
     const live = await listLiveCandidates(QUEUE_PATH);
 
-    expect(live).toEqual([]);
-    expect(unlinked.some((p) => p.endsWith(unparseableName))).toBe(true);
+    expect(live).toEqual([unparseableName]);
+    expect(unlinked).toEqual([]);
   });
 
   test("mixed set: keeps the alive old lock, evicts the dead one, sorted oldest-first", async () => {

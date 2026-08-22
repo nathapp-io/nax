@@ -42,13 +42,18 @@ function candidateTime(fileName: string): number | null {
 /**
  * BUG-10: a lock whose holder pid is still alive must never be unlinked,
  * no matter how old it is — a long-held lock (slow queue command) is not
- * the same as an abandoned one. The MAX_LOCK_AGE_MS bound only applies
- * when the candidate's own timestamp can't be parsed (createdAt === null),
- * since liveness can't be judged from age at all in that case.
+ * the same as an abandoned one.
+ *
+ * BUG-25: when the candidate's own timestamp can't be parsed (renamed
+ * scheme, older format), liveness can't be judged from age alone. Fall
+ * back to the pid liveness check — a live pid must keep its lock. The
+ * MAX_LOCK_AGE_MS bound is still applied at the caller when the timestamp
+ * is missing AND the pid is dead.
  */
 function isLiveCandidate(pid: number | null, createdAt: number | null): boolean {
   if (pid === null) return false;
-  if (createdAt === null) return false;
+  if (createdAt !== null) return _queueLockDeps.isPidAlive(pid);
+  // BUG-25: timestamp unparseable — consult pid liveness before evicting.
   return _queueLockDeps.isPidAlive(pid);
 }
 
