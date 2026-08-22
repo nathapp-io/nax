@@ -159,6 +159,18 @@ describe("validateLLMShape() — normalization at the parse boundary", () => {
   });
 });
 
+// BUG-2: severity normalization must happen at the same parse boundary as
+// category, so every consumer of the raw findings[] sees a canonical value.
+describe("validateLLMShape() — severity normalization at the parse boundary", () => {
+  test("normalizes a capitalized severity before any consumer sees it", () => {
+    const parsed = validateLLMShape({
+      passed: false,
+      findings: [{ severity: "Critical", file: "src/a.ts", line: 4, issue: "SQL injection", suggestion: "parameterize" }],
+    });
+    expect(parsed?.findings[0].severity).toBe("critical");
+  });
+});
+
 describe("downstream consumers read the normalized category", () => {
   const parse = (category: string) =>
     validateLLMShape({

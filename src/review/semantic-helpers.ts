@@ -3,14 +3,14 @@
  * Extracted from semantic.ts to stay within the 600-line file limit.
  */
 
-import type { Finding, FindingSeverity } from "../findings";
+import type { Finding } from "../findings";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { extractAcks } from "./acks";
 import { resolveFixTarget } from "./category-fix-target";
 import { normalizeSemanticCategory } from "./semantic-categories";
-import { SEVERITY_RANK, isBlockingSeverity } from "./severity";
+import { isBlockingSeverity, normalizeSeverity } from "./severity";
 import type { Severity } from "./severity";
-export { isBlockingSeverity };
+export { isBlockingSeverity, normalizeSeverity };
 import type { ReviewAck, SemanticReviewConfig } from "./types";
 
 export interface LLMFinding {
@@ -74,7 +74,10 @@ export function validateLLMShape(parsed: unknown): LLMResponse | null {
     // shapes an LLM produces, and every downstream reader dereferences
     // `f.severity` / `f.file` unguarded — so a malformed entry that survives the
     // parse boundary becomes a crash somewhere far from its cause.
-    findings: (obj.findings as unknown[]).filter(isFindingShaped).map(withNormalizedCategory),
+    findings: (obj.findings as unknown[])
+      .filter(isFindingShaped)
+      .map(withNormalizedCategory)
+      .map(withNormalizedSeverity),
     ...(acks.length > 0 && { acks }),
   };
 }
@@ -93,6 +96,16 @@ function withNormalizedCategory(f: LLMFinding): LLMFinding {
   return { ...f, category };
 }
 
+/**
+ * Copy a finding with its severity canonicalised (BUG-2). Runs at the parse
+ * boundary, alongside `withNormalizedCategory`, so every downstream consumer
+ * of the raw `LLMFinding[]` — not only the converted `Finding[]` — sees a
+ * canonical value.
+ */
+function withNormalizedSeverity(f: LLMFinding): LLMFinding {
+  return { ...f, severity: normalizeSeverity(f.severity) };
+}
+
 export function parseLLMResponse(raw: string): LLMResponse | null {
   try {
     return validateLLMShape(tryParseLLMJson(raw));
@@ -105,21 +118,6 @@ export function formatFindings(findings: LLMFinding[]): string {
   return findings
     .map((f) => `[${f.severity}] ${f.file}:${f.line} — ${f.issue}\n  Suggestion: ${f.suggestion}`)
     .join("\n");
-}
-
-/** Normalize LLM severity values to FindingSeverity. */
-export function normalizeSeverity(sev: string): FindingSeverity {
-  if (sev === "warn") return "warning";
-  if (
-    sev === "critical" ||
-    sev === "error" ||
-    sev === "warning" ||
-    sev === "info" ||
-    sev === "low" ||
-    sev === "unverifiable"
-  )
-    return sev;
-  return "info";
 }
 
 export const UNVERIFIED_FINDING_PATTERNS = [

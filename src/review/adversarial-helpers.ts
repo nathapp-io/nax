@@ -5,14 +5,14 @@
  * to keep each file within the 600-line project limit.
  */
 
-import type { Finding, FindingSeverity } from "../findings";
+import type { Finding } from "../findings";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { extractAcks } from "./acks";
 import { categoryToFixTarget, resolveFixTarget } from "./category-fix-target";
-import { isBlockingSeverity } from "./severity";
+import { isBlockingSeverity, normalizeSeverity } from "./severity";
 import type { Severity } from "./severity";
 import type { ReviewAck } from "./types";
-export { isBlockingSeverity };
+export { isBlockingSeverity, normalizeSeverity };
 
 export interface AdversarialLLMFinding {
   severity: Severity;
@@ -86,7 +86,7 @@ export function validateAdversarialShape(parsed: unknown): AdversarialLLMRespons
     // `findings: ["prose"]` are both shapes an LLM produces, and every downstream
     // reader (e.g. filterByAcQuote) dereferences `.severity` unguarded — a malformed
     // entry that survives this cast becomes a crash mid-review (BUG-49).
-    findings: (obj.findings as unknown[]).filter(isAdversarialFindingShaped),
+    findings: (obj.findings as unknown[]).filter(isAdversarialFindingShaped).map(withNormalizedSeverity),
     ...(acks.length > 0 && { acks }),
   };
 }
@@ -94,6 +94,15 @@ export function validateAdversarialShape(parsed: unknown): AdversarialLLMRespons
 /** A finding must at least be an object; field-level validity is the consumer's business. */
 function isAdversarialFindingShaped(f: unknown): f is AdversarialLLMFinding {
   return typeof f === "object" && f !== null && !Array.isArray(f);
+}
+
+/**
+ * Copy a finding with its severity canonicalised (BUG-2), at the parse
+ * boundary, so every downstream reader of the raw `AdversarialLLMFinding[]`
+ * sees a canonical value.
+ */
+function withNormalizedSeverity(f: AdversarialLLMFinding): AdversarialLLMFinding {
+  return { ...f, severity: normalizeSeverity(f.severity) };
 }
 
 /**
@@ -113,21 +122,6 @@ export function formatFindings(findings: AdversarialLLMFinding[]): string {
   return findings
     .map((f) => `[${f.severity}][${f.category}] ${f.file}:${f.line} — ${f.issue}\n  Suggestion: ${f.suggestion}`)
     .join("\n");
-}
-
-/** Normalize LLM severity values to FindingSeverity. */
-export function normalizeSeverity(sev: string): FindingSeverity {
-  if (sev === "warn") return "warning";
-  if (
-    sev === "critical" ||
-    sev === "error" ||
-    sev === "warning" ||
-    sev === "info" ||
-    sev === "low" ||
-    sev === "unverifiable"
-  )
-    return sev;
-  return "info";
 }
 
 /** Convert AdversarialLLMFinding[] to Finding[] with adversarial-review source. */
