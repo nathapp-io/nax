@@ -187,6 +187,38 @@ describe("runHardeningPass()", () => {
     expect(_hardeningDeps.savePRD).not.toHaveBeenCalled();
   });
 
+  // BUG-14: an acceptance-test command that fails opaquely (timeout kill, missing
+  // venv, syntax error) previously discarded EVERY suggested criterion — the
+  // `(exitCode !== 0 && failedACs.length === 0)` disjunct treated an inconclusive
+  // run as a verdict. Inconclusive must keep the criteria, not delete them.
+  test("keeps suggested criteria when the test command fails without parseable AC ids (inconclusive run) — BUG-14", async () => {
+    const story = makeStory({
+      acceptanceCriteria: ["spec AC"],
+      suggestedCriteria: ["edge case"],
+      status: "passed",
+      passes: true,
+      attempts: 1,
+    });
+    const ctx = makeCtx({ prd: makePRD({ userStories: [story] }) });
+
+    _hardeningDeps.callOp = mockCallOp(
+      [{ original: "edge case", refined: "edge case", testable: true, storyId: "US-001" }],
+      { testCode: 'test("AC-1", () => {})' },
+    );
+    _hardeningDeps.writeFile = mock(async () => {});
+    _hardeningDeps.savePRD = mock(async () => {});
+    _hardeningDeps.spawn = failingSpawn("ModuleNotFoundError: cannot load test file\n");
+
+    const result = await runHardeningPass(ctx);
+
+    // The opaque failure is inconclusive, not a per-AC verdict — nothing is discarded.
+    expect(result.promoted).toEqual(["edge case"]);
+    expect(result.discarded).toEqual([]);
+    expect(story.acceptanceCriteria).toContain("edge case");
+    expect(story.suggestedCriteria).toBeUndefined();
+    expect(_hardeningDeps.savePRD).toHaveBeenCalledTimes(1);
+  });
+
   test("discards testable:false criteria even when the stub test passes", async () => {
     const story = makeStory({
       acceptanceCriteria: ["spec AC"],

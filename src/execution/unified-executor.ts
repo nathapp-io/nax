@@ -258,6 +258,11 @@ export async function executeUnified(
         const selectBatch = _unifiedExecutorDeps.selectIndependentBatch;
         const batch = retryStory ? [retryStory] : selectBatch(readyStories, ctx.parallelCount as number);
         if (batch.length > 1) {
+          // BUG-7: pre-dispatch cost gate, mirroring the single-story path below (:481-484).
+          {
+            const batchCostPreCheck = await enforceCostLimit(ctx, totalCost, costLimit);
+            if (batchCostPreCheck.stop) return buildResult("cost-limit");
+          }
           // Emit story:started for each batch story before dispatch (AC-5) — stays here even for a
           // story the pre-check will refuse (see story-announce.ts, #1653). #1575: also record the
           // tier/agent so the story.start log below can never disagree with the event it accompanies.

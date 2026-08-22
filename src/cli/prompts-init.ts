@@ -6,7 +6,9 @@
 
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { projectConfigDir } from "../config/paths";
 import { buildRoleTaskSection } from "../prompts/sections/role-task";
+import { atomicWriteText, loadJsonFileStrict } from "../utils/json-file";
 
 export const _promptsInitDeps = {
   log: console.log.bind(console) as (...args: unknown[]) => void,
@@ -18,7 +20,7 @@ export interface PromptsInitCommandOptions {
   workdir: string;
   /** Overwrite existing files if true */
   force?: boolean;
-  /** Auto-wire prompts.overrides in nax.config.json (default: true) */
+  /** Auto-wire prompts.overrides in .nax/config.json (default: true) */
   autoWireConfig?: boolean;
 }
 
@@ -39,7 +41,7 @@ const TEMPLATE_HEADER = `<!--
     - Story context (acceptance criteria, description, dependencies)
     - Conventions (project coding standards)
 
-  To activate overrides, add to your nax/config.json:
+  To activate overrides, add to your .nax/config.json:
     { "prompts": { "overrides": { "<role>": ".nax/templates/<role>.md" } } }
 -->
 
@@ -48,9 +50,9 @@ const TEMPLATE_HEADER = `<!--
 /**
  * Execute the `nax prompts --init` command.
  *
- * Creates nax/templates/ and writes 5 default role-body template files
+ * Creates .nax/templates/ and writes 5 default role-body template files
  * (test-writer, implementer, verifier, single-session, tdd-simple).
- * Auto-wires prompts.overrides in nax.config.json if the file exists and overrides are not already set.
+ * Auto-wires prompts.overrides in .nax/config.json if the file exists and overrides are not already set.
  * Returns the list of file paths written. Returns empty array if files
  * already exist and force is not set.
  *
@@ -68,7 +70,7 @@ export async function promptsInitCommand(options: PromptsInitCommandOptions): Pr
 
   if (existingFiles.length > 0 && !force) {
     _promptsInitDeps.warn(
-      `[WARN] nax/templates/ already contains files: ${existingFiles.join(", ")}. No files overwritten.\n       Pass --force to overwrite existing templates.`,
+      `[WARN] .nax/templates/ already contains files: ${existingFiles.join(", ")}. No files overwritten.\n       Pass --force to overwrite existing templates.`,
     );
     return [];
   }
@@ -86,12 +88,12 @@ export async function promptsInitCommand(options: PromptsInitCommandOptions): Pr
     written.push(filePath);
   }
 
-  _promptsInitDeps.log(`[OK] Written ${written.length} template files to nax/templates/:`);
+  _promptsInitDeps.log(`[OK] Written ${written.length} template files to .nax/templates/:`);
   for (const filePath of written) {
     _promptsInitDeps.log(`  - ${filePath.replace(`${workdir}/`, "")}`);
   }
 
-  // Auto-wire prompts.overrides in nax.config.json (if enabled)
+  // Auto-wire prompts.overrides in .nax/config.json (if enabled)
   if (autoWireConfig) {
     await autoWirePromptsConfig(workdir);
   }
@@ -100,16 +102,19 @@ export async function promptsInitCommand(options: PromptsInitCommandOptions): Pr
 }
 
 /**
- * Auto-wire prompts.overrides in nax.config.json after template init.
+ * Auto-wire prompts.overrides in .nax/config.json after template init.
  *
- * If nax.config.json exists and prompts.overrides is not already set,
+ * If .nax/config.json exists and prompts.overrides is not already set,
  * add the override paths. If overrides are already set, print a note.
- * If nax.config.json doesn't exist, print manual instructions.
+ * If .nax/config.json doesn't exist, print manual instructions.
+ *
+ * BUG-17: this used to target `nax.config.json` — a file nothing loads.
+ * The config SSOT is `<root>/.nax/config.json` (config/paths.ts).
  *
  * @param workdir - Project working directory
  */
 async function autoWirePromptsConfig(workdir: string): Promise<void> {
-  const configPath = join(workdir, "nax.config.json");
+  const configPath = join(projectConfigDir(workdir), "config.json");
 
   // If config file doesn't exist, print manual instructions
   if (!existsSync(configPath)) {
@@ -129,20 +134,24 @@ async function autoWirePromptsConfig(workdir: string): Promise<void> {
       2,
     );
     _promptsInitDeps.log(
-      `\nNo nax.config.json found. To activate overrides, create nax/config.json with:\n${exampleConfig}`,
+      `\nNo .nax/config.json found. To activate overrides, create .nax/config.json with:\n${exampleConfig}`,
     );
     return;
   }
 
-  // Read existing config
-  const configFile = Bun.file(configPath);
-  const configContent = await configFile.text();
-  const config = JSON.parse(configContent);
+  // Read existing config — strict variant: a corrupt config must not be
+  // silently clobbered by this command (SEC-5 posture).
+  const config = (await loadJsonFileStrict<Record<string, unknown>>(configPath, "config")) ?? {};
 
-  // Check if prompts.overrides is already set
-  if (config.prompts?.overrides && Object.keys(config.prompts.overrides).length > 0) {
+  // Check if prompts.overrides is already set — a non-object prompts section
+  // (hand-edited config) is treated as absent rather than crashed on.
+  const prompts = (typeof config.prompts === "object" && config.prompts !== null ? config.prompts : {}) as Record<
+    string,
+    unknown
+  >;
+  if (prompts.overrides && Object.keys(prompts.overrides).length > 0) {
     _promptsInitDeps.log(
-      "[INFO] prompts.overrides already configured in nax.config.json. Skipping auto-wiring.\n" +
+      "[INFO] prompts.overrides already configured in .nax/config.json. Skipping auto-wiring.\n" +
         "       To reset overrides, remove the prompts.overrides section and re-run this command.",
     );
     return;
@@ -158,17 +167,16 @@ async function autoWirePromptsConfig(workdir: string): Promise<void> {
   };
 
   // Add or update prompts section
-  if (!config.prompts) {
-    config.prompts = {};
-  }
-  config.prompts.overrides = overrides;
+  prompts.overrides = overrides;
+  config.prompts = prompts;
 
   // Write config with custom formatting that avoids 4-space indentation
-  // by putting the overrides object on a single line
+  // by putting the overrides object on a single line (atomic write, same
+  // torn-read guarantee as saveJsonFile).
   const updatedConfig = formatConfigJson(config);
-  await Bun.write(configPath, updatedConfig);
+  await atomicWriteText(configPath, updatedConfig, "config");
 
-  _promptsInitDeps.log("[OK] Auto-wired prompts.overrides in nax.config.json");
+  _promptsInitDeps.log("[OK] Auto-wired prompts.overrides in .nax/config.json");
 }
 
 /**

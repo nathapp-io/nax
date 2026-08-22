@@ -12,8 +12,8 @@
  * spawn-client.test.ts for why this must never reach the real OS.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { killProcessTree } from "@/agents/acp/spawn-client-process";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { killProcessTree, runTrackedSpawn } from "@/agents/acp/spawn-client-process";
 import { waitForCondition } from "@test/helpers";
 
 const FAKE_PID = 99999999;
@@ -86,5 +86,87 @@ describe("killProcessTree — BUG-6", () => {
       handle.cancel();
       handle.cancel();
     }).not.toThrow();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MEM-19 — runTrackedSpawn's normal-exit drain had no deadline. A grandchild
+// inheriting the pipe fd and outliving acpx produces the same missing-EOF that
+// the timeout path already handles ("Bun bug: piped streams may not close").
+// The pre-fix code awaited `new Response(proc.stdout).text()` unboundedly once
+// `proc.exited` resolved.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runTrackedSpawn — MEM-19 normal-exit drain deadline", () => {
+  test("normal-exit stdout that never EOFs resolves via the drain timeout instead of hanging", async () => {
+    const hangStream = new ReadableStream({ start() {} }); // never enqueues, never closes
+    const closedStream = new ReadableStream({ start(ctrl) { ctrl.close(); } });
+    const spawn = mock(() => ({
+      pid: FAKE_PID,
+      exited: Promise.resolve(0),
+      stdout: hangStream,
+      stderr: closedStream,
+      kill: () => {},
+    }));
+
+    const startedAt = Date.now();
+    const result = await runTrackedSpawn(
+      {
+        spawn: spawn as never,
+        // Far away — the exited race must win; the DRAIN must be what bounds it.
+        trackedSpawnDeadlineMs: 60_000,
+        killTreeGraceMs: 1,
+        streamDrainTimeoutMs: 50,
+      },
+      ["acpx", "echo", "hello"],
+      undefined,
+      undefined,
+      undefined,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe(""); // drain timeout won → empty output
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    // The drain path must never kill the (already exited) process tree.
+    expect(killCalls).toHaveLength(0);
+  });
+
+  test("normal-exit streams that close promptly still return their full output", async () => {
+    const stdoutStream = new ReadableStream({
+      start(ctrl) {
+        ctrl.enqueue(new TextEncoder().encode("hello stdout"));
+        ctrl.close();
+      },
+    });
+    const stderrStream = new ReadableStream({
+      start(ctrl) {
+        ctrl.enqueue(new TextEncoder().encode("warn stderr"));
+        ctrl.close();
+      },
+    });
+    const spawn = mock(() => ({
+      pid: FAKE_PID,
+      exited: Promise.resolve(0),
+      stdout: stdoutStream,
+      stderr: stderrStream,
+      kill: () => {},
+    }));
+
+    const result = await runTrackedSpawn(
+      {
+        spawn: spawn as never,
+        trackedSpawnDeadlineMs: 60_000,
+        killTreeGraceMs: 1,
+        streamDrainTimeoutMs: 50,
+      },
+      ["acpx", "echo", "hello"],
+      undefined,
+      undefined,
+      undefined,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("hello stdout");
+    expect(result.stderr).toBe("warn stderr");
   });
 });

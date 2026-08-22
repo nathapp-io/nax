@@ -358,7 +358,16 @@ program
     if (profileOverride && profileOverride.length > 0) {
       cliOverrides.profile = profileOverride;
     }
-    const config = await loadConfig(naxDir ?? undefined, cliOverrides);
+    // BUG-15: loadConfig can reject on a corrupt/invalid config (SEC-5 strict
+    // loading) — an unobserved async action rejection surfaces as a raw stack
+    // trace. Fail with the house-style error instead.
+    let config: Awaited<ReturnType<typeof loadConfig>>;
+    try {
+      config = await loadConfig(naxDir ?? undefined, cliOverrides);
+    } catch (err) {
+      console.error(chalk.red(`Error loading config: ${(err as Error).message}`));
+      process.exit(1);
+    }
 
     if (!naxDir) {
       console.error(chalk.red("nax not initialized. Run: nax init"));
@@ -530,7 +539,14 @@ program
     let tuiInstance: ReturnType<typeof renderTui> | undefined;
     if (!useHeadless) {
       // Load PRD to get initial story states
-      const prd = await loadPRD(prdPath);
+      // BUG-15: a corrupt prd.json must not escape as an unhandled rejection.
+      let prd: Awaited<ReturnType<typeof loadPRD>>;
+      try {
+        prd = await loadPRD(prdPath);
+      } catch (err) {
+        console.error(chalk.red(`Error loading PRD: ${(err as Error).message}`));
+        process.exit(1);
+      }
       const initialStories: StoryDisplayState[] = prd.userStories.map((story) => ({
         story,
         status: story.passes ? "passed" : "pending",
@@ -874,9 +890,14 @@ features
     for (const name of entries) {
       const prdPath = join(featuresDir, name, "prd.json");
       if (existsSync(prdPath)) {
-        const prd = await loadPRD(prdPath);
-        const c = countStories(prd);
-        console.log(`  ${name} — ${c.passed}/${c.total} stories done`);
+        try {
+          const prd = await loadPRD(prdPath);
+          const c = countStories(prd);
+          console.log(`  ${name} — ${c.passed}/${c.total} stories done`);
+        } catch {
+          // BUG-15: one corrupt PRD degrades to one bad row, not a dead listing.
+          console.log(`  ${name} — (prd.json unreadable)`);
+        }
       } else {
         console.log(`  ${name} (no prd.json yet)`);
       }
@@ -1788,4 +1809,13 @@ plugins
     }
   });
 
-program.parse();
+// BUG-15: parse() ignores the promise of async action handlers — a rejection
+// becomes an unhandled rejection with a raw stack trace. parseAsync observes
+// them; the catch below is the safety net for anything that still escapes
+// (most actions exit themselves with a house-style error).
+try {
+  await program.parseAsync(process.argv);
+} catch (err) {
+  console.error(chalk.red(`Error: ${(err as Error).message}`));
+  process.exit(1);
+}
