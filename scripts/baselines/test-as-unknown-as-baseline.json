@@ -1,6 +1,6 @@
 {
-  "count": 689,
-  "updatedAt": "2026-08-22T14:15:28.896Z",
+  "count": 681,
+  "updatedAt": "2026-08-22T14:19:36.357Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": 1,
     "test/helpers/status-writer.ts": 1,
@@ -166,11 +166,10 @@
     "test/unit/cli/rules-migrate-description.test.ts": 1,
     "test/unit/cli/plan-decompose-adapter.test.ts": 5,
     "test/unit/utils/auto-commit.test.ts": 1,
-    "test/unit/agents/manager-complete-empty-output.test.ts": 3,
     "test/unit/agents/manager-narrowed.test.ts": 1,
     "test/unit/agents/manager.test.ts": 3,
     "test/unit/agents/phase4-registry-cleanup.test.ts": 2,
-    "test/unit/agents/manager-complete.test.ts": 6,
+    "test/unit/agents/manager-complete.test.ts": 1,
     "test/unit/agents/model-resolution.test.ts": 4,
     "test/unit/agents/manager-abort.test.ts": 1,
     "test/unit/agents/acp/adapter.test.ts": 5,

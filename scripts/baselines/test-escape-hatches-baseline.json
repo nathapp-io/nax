@@ -2,9 +2,9 @@
   "counts": {
     "asAny": 1399,
     "tsSuppress": 54,
-    "ratchetAllow": 120
+    "ratchetAllow": 118
   },
-  "updatedAt": "2026-08-22T14:15:28.971Z",
+  "updatedAt": "2026-08-22T14:19:36.427Z",
   "byFile": {
     "test/helpers/mock-agent-manager.ts": {
       "asAny": 1
@@ -564,9 +564,6 @@
     },
     "test/unit/agents/timeout-retry-hop.test.ts": {
       "asAny": 1
-    },
-    "test/unit/agents/manager-complete-empty-output.test.ts": {
-      "ratchetAllow": 2
     },
     "test/unit/agents/manager-stale-retry-hop-kind.test.ts": {
       "asAny": 1

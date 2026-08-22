@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { AgentManager } from "@/agents/manager";
 import type { AgentRegistry } from "@/agents/registry";
-import { makeNaxConfig } from "@test/helpers";
+import { makeAgentAdapter, makeAgentRegistry, makeNaxConfig } from "@test/helpers";
 
 const baseOptions = {
   modelDef: { provider: "anthropic" as const, model: "claude-sonnet-4-6", env: {} as Record<string, string> },
@@ -40,12 +40,12 @@ function makeStaticRegistry(agentName: string, outputSequence: string[]) {
     };
   });
   return {
-    registry: {
+    registry: makeAgentRegistry({
       getAgent: (name: string) => {
         if (name !== agentName) return undefined;
-        return { complete: completeMock };
+        return makeAgentAdapter({ complete: completeMock });
       },
-    } as unknown as AgentRegistry,
+    }),
     completeMock,
     getCallCount: () => callCount,
   };
@@ -70,13 +70,13 @@ function makeMultiAgentRegistry(agents: Record<string, { outputs: string[] }>) {
   }
 
   return {
-    registry: {
+    registry: makeAgentRegistry({
       getAgent: (name: string) => {
         const m = mocks[name];
         if (!m) return undefined;
-        return { complete: m };
+        return makeAgentAdapter({ complete: m });
       },
-    } as unknown as AgentRegistry,
+    }),
     mocks,
     callCounts,
   };
@@ -121,19 +121,19 @@ describe("completeWithFallback empty-output synthesis (AC4)", () => {
       retriable: false,
       message: "auth failed",
     };
-    const registry = {
+    const registry = makeAgentRegistry({
       getAgent: (name: string) => {
         if (name !== "claude") return undefined;
-        return {
+        return makeAgentAdapter({
           complete: mock(async () => ({
             output: "",
             tokenUsage: { inputTokens: 0, outputTokens: 0 },
             estimatedCostUsd: 0,
             adapterFailure: existingFailure,
           })),
-        };
+        });
       },
-    } as unknown as AgentRegistry;
+    });
 
     const config = naxConfigWith(0, false);
     const m = new AgentManager(config, registry);
@@ -201,9 +201,9 @@ describe("completeWithFallback retry success (AC6)", () => {
 // correctly throws NaxError("AGENT_NOT_FOUND") at the same boundary.
 describe("completeWithFallback — BUG-4 missing adapter regression", () => {
   test("throws NaxError('AGENT_NOT_FOUND') when registry has no entry for the requested agent", async () => {
-    const emptyRegistry = {
+    const emptyRegistry = makeAgentRegistry({
       getAgent: (_name: string) => undefined,
-    } as unknown as AgentRegistry; // test-ratchet-allow: as-unknown-as
+    });
 
     const m = new AgentManager(naxConfigWith(), emptyRegistry);
 
@@ -220,9 +220,9 @@ describe("completeWithFallback — BUG-4 missing adapter regression", () => {
   });
 
   test("does NOT silently return empty success when the agent is missing (pre-fix regression)", async () => {
-    const emptyRegistry = {
+    const emptyRegistry = makeAgentRegistry({
       getAgent: (_name: string) => undefined,
-    } as unknown as AgentRegistry; // test-ratchet-allow: as-unknown-as
+    });
 
     const m = new AgentManager(naxConfigWith(), emptyRegistry);
 
