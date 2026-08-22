@@ -578,12 +578,8 @@ export async function executeUnified(
         // batch.length === 0: fall through to sequential single-story path
       }
 
-      // Sequential single-story dispatch — reuse ctx.batchPlan when set so the
-      // single source of truth (precomputed in runner-execution.ts) wins over
-      // this local recompute. The hardcoded size 4 here was a fallback before
-      // ctx.batchPlan existed; it's kept only when no plan was injected
-      // (PERF-36, D-22).
-      const currentBatchPlan = ctx.batchPlan ?? (ctx.useBatch ? precomputeBatchPlan(getAllReadyStories(prd), 4) : []);
+      // Sequential single-story dispatch
+      const currentBatchPlan = ctx.useBatch ? precomputeBatchPlan(getAllReadyStories(prd), 4) : ctx.batchPlan;
       const selected = selectNextStories(prd, ctx.config, currentBatchPlan, 0, lastStoryId, ctx.useBatch);
       if (!selected) return buildResult("no-stories");
       const { selection } = selected;

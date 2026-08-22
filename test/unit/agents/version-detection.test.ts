@@ -93,8 +93,10 @@ describe("getAgentVersion", () => {
 
   // PERF-32: a hung wrapper script must not stall the multi-agent health
   // precheck. proc.exited that never resolves is bounded by
-  // VERSION_DETECTION_TIMEOUT_MS (5s) — getAgentVersion returns null.
-  test("PERF-32: returns null when proc.exited never resolves (hung binary)", async () => {
+  // VERSION_DETECTION_TIMEOUT_MS — getAgentVersion returns null. The test
+  // takes the full 5s because that's what the timeout guarantees, so the
+  // runner's per-test timeout needs to be extended.
+  test("PERF-32: returns null when proc.exited never resolves (hung binary)", { timeout: 30_000 }, async () => {
     const hungProc = {
       exited: new Promise<number>(() => {}),
       stdout: new ReadableStream({

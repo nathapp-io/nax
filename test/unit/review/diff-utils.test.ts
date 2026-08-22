@@ -262,7 +262,7 @@ describe("collectDiffFileList", () => {
 // stage indefinitely. The runGitWithTimeout wrapper applies a SIGKILL
 // deadline so collectDiff resolves with null rather than blocking forever.
 describe("collectDiff() — BUG-31: hung git returns rather than blocking", () => {
-  test("returns null within the deadline when proc.exited never resolves", async () => {
+  test("returns null within the deadline when proc.exited never resolves", { timeout: 30_000 }, async () => {
     const hungSpawn = mock((_opts: unknown) => ({
       // Promise that never resolves — the timeout must save us.
       exited: new Promise<number>(() => {}),

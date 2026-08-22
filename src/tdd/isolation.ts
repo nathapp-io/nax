@@ -20,6 +20,50 @@ import type { IsolationCheck } from "./types";
 /** Injectable deps for testability — mock _isolationDeps.spawn instead of global Bun.spawn */
 export const _isolationDeps = { spawn };
 
+/**
+ * BUG-31: bound the git spawn for TDD isolation with a hard deadline so a
+ * wedged git (NFS / lock contention) cannot stall the stage indefinitely.
+ * Mirrors src/review/diff-utils.ts runGitWithTimeout — duplicated locally
+ * so the TDD stage's existing `_isolationDeps.spawn` mockability is
+ * preserved (gitWithTimeout wraps `_gitDeps.spawn`, a different mock seam).
+ */
+const GIT_TIMEOUT_MS = 10_000;
+async function runGitBounded(
+  args: string[],
+  workdir: string,
+): Promise<{
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}> {
+  const proc = _isolationDeps.spawn(["git", ...args], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
+  const exitPromise = proc.exited;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      try {
+        proc.kill();
+      } catch {
+        // already dead
+      }
+      reject(
+        new NaxError(`git ${args[0]} timed out after ${GIT_TIMEOUT_MS}ms`, "GIT_TIMEOUT", {
+          stage: "tdd-isolation",
+          args,
+          timeoutMs: GIT_TIMEOUT_MS,
+        }),
+      );
+    }, GIT_TIMEOUT_MS);
+  });
+  try {
+    const exitCode = (await Promise.race([exitPromise, timeoutPromise])) as number;
+    const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    return { stdout, stderr, exitCode };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /** Common source directory patterns */
 const SRC_PATTERNS = [/^src\//, /^lib\//, /^packages\//];
 
@@ -37,10 +81,13 @@ export function isSourceFile(filePath: string): boolean {
  * --porcelain` are merged in and deduped.
  */
 export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promise<string[]> {
-  // BUG-31: route through gitWithTimeout so a wedged git (NFS / lock
-  // contention) cannot stall the TDD isolation stage indefinitely.
-  const { stdout: output, stderr, exitCode } = await gitWithTimeout(["diff", "--name-only", fromRef], workdir);
-  const { stdout: statusOutput, exitCode: statusExitCode } = await gitWithTimeout(["status", "--porcelain"], workdir);
+  // BUG-31: time-bound the git calls (NFS / lock contention could otherwise
+  // stall the TDD isolation stage indefinitely). Route through
+  // _isolationDeps.spawn so existing tests that mock _isolationDeps.spawn
+  // still get to fake git output without needing to also mock
+  // _gitDeps.spawn (gitWithTimeout's own dependency).
+  const { stdout: output, stderr, exitCode } = await runGitBounded(["diff", "--name-only", fromRef], workdir);
+  const { stdout: statusOutput, exitCode: statusExitCode } = await runGitBounded(["status", "--porcelain"], workdir);
 
   if (exitCode !== 0) {
     throw new NaxError(
