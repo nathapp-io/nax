@@ -12,7 +12,7 @@ import { initLogger, resetLogger } from "@/logger";
 import { acceptanceStage } from "@/pipeline/stages/acceptance";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeConfigSlice, makeTempDir } from "@test/helpers";
 
 let testDir: string;
 let featureDir: string;
@@ -75,7 +75,7 @@ function createTestPRD(stories: Array<{ id: string; status: string }>): PRD {
 describe("acceptanceStage.enabled", () => {
   test("disabled when acceptance disabled in config, or any story is pending/in-progress", () => {
     const ctxDisabled = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }]), {
-      acceptance: { enabled: false, maxRetries: 2, testPath: "acceptance.test.ts" },
+      acceptance: makeConfigSlice("acceptance", { enabled: false, maxRetries: 2, testPath: "acceptance.test.ts" }),
     });
     expect(acceptanceStage.enabled(ctxDisabled)).toBe(false);
 
