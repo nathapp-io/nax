@@ -9,18 +9,21 @@ import type { UserStory } from "@/prd";
 import { RectifierPromptBuilder } from "@/prompts";
 import type { TestFailure } from "@/test-runners";
 import { type RectificationState, shouldRetryRectification } from "@/verification/rectification";
+import { makeConfigSlice } from "@test/helpers";
 
 describe("shouldRetryRectification", () => {
-  const baseConfig: RectificationConfig = {
-    enabled: true,
-    maxAttemptsTotal: 2,
-    maxAttemptsPerStrategy: 3,
-    fullSuiteTimeoutSeconds: 120,
-    maxFailureSummaryChars: 2000,
-    abortOnIncreasingFailures: true,
-    rethinkAtAttempt: 2,
-    urgencyAtAttempt: 3,
-  };
+  const baseConfig: RectificationConfig = makeConfigSlice("execution", {
+    rectification: {
+      enabled: true,
+      maxAttemptsTotal: 2,
+      maxAttemptsPerStrategy: 3,
+      fullSuiteTimeoutSeconds: 120,
+      maxFailureSummaryChars: 2000,
+      abortOnIncreasingFailures: true,
+      rethinkAtAttempt: 2,
+      urgencyAtAttempt: 3,
+    },
+  }).rectification;
 
   test("returns true when attempt < maxRetries and failures exist, decreased, stable, or increased with abort=false", () => {
     const trueScenarios: Array<{ state: RectificationState; config: RectificationConfig; label: string }> = [
@@ -117,16 +120,18 @@ describe("createEscalatedRectificationPrompt", () => {
     },
   ];
 
-  const baseConfig: RectificationConfig = {
-    enabled: true,
-    maxAttemptsTotal: 2,
-    maxAttemptsPerStrategy: 3,
-    fullSuiteTimeoutSeconds: 120,
-    maxFailureSummaryChars: 2000,
-    abortOnIncreasingFailures: true,
-    rethinkAtAttempt: 2,
-    urgencyAtAttempt: 3,
-  };
+  const baseConfig: RectificationConfig = makeConfigSlice("execution", {
+    rectification: {
+      enabled: true,
+      maxAttemptsTotal: 2,
+      maxAttemptsPerStrategy: 3,
+      fullSuiteTimeoutSeconds: 120,
+      maxFailureSummaryChars: 2000,
+      abortOnIncreasingFailures: true,
+      rethinkAtAttempt: 2,
+      urgencyAtAttempt: 3,
+    },
+  }).rectification;
 
   test("includes 'Previous Rectification Attempts' header, prior attempt count, and original tier", () => {
     const prompt = RectifierPromptBuilder.escalated(mockFailures, mockStory, 2, "balanced", "powerful", baseConfig);
