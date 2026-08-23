@@ -77,11 +77,18 @@ Two of its rulings were **wrong**, and measuring on the merged tree caught both:
 
 ### Open findings — these need a home or they will be lost
 
-- **Nothing in the suite exercises the review normalization path.** Every adversarial and
-  semantic fixture omitted `normalizedFindings` and `acDropped` — the fields
-  `src/review/adversarial.ts` reads to decide what is *blocking*. The callop-seam annotation
-  forced them to be supplied, but they are supplied as **empty**, so the path is still
-  unasserted. Worth its own issue.
+- ~~Nothing in the suite exercises the review normalization path.~~ **Retracted — this was
+  wrong.** The claim came from `adversarial-retry.test.ts`, whose fixtures stub `callOp` and
+  therefore bypass `classifyAdversarialFindings` entirely. That is by design: per its header,
+  that file tests ADR-019 retry/fail-open behaviour, not classification.
+  `test/unit/review/adversarial-pass-fail.test.ts` (29 tests) drives `runAdversarialReview`
+  through the real op path with real LLM JSON, produces real `acDropped` entries, and asserts
+  both terminal branches — `passReason === "ac_quote_not_substring_demoted"`
+  (`buildHallucinatedAcQuoteResult`) and the mixed-drop fail-closed case
+  (`buildUngroundedFailClosedResult`). The path is covered.
+  **Lesson: "no test file supplies a non-empty X" is not evidence that X is untested** when a
+  sibling file constructs X from real inputs instead of stubbing it. Check the consumers of
+  the branch, not the shape of one file's fixtures.
 - The 8 tier-3 `callOp` sites are accepted exceptions, not debt to drain: those modules really
   are polymorphic and the generic signature is correct.
 

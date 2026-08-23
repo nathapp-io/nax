@@ -204,14 +204,14 @@ only what was missing.
 `adversarial-retry.test.ts`: `src` tsc **0**, converted sites cleared, **10 tests green**,
 no cast added. Expect **1745 → ~1721** for all of tier 1.
 
-### What tier 1 actually found
+### A note on what tier 1 surfaces (and what it does not)
 
-Every adversarial and semantic fixture in the suite has been claiming to be a
-`…ReviewOutput` while omitting `normalizedFindings` and `acDropped` — the fields
-`src/review/adversarial.ts` reads to decide what is **blocking**. They pass because the
-code tolerates `undefined` there, which means **nothing in the suite exercises the
-normalization path**. That is a finding worth more than the 24 errors; note it in your
-report. Do not try to fix it here.
+The annotated slot forces every fixture to supply `normalizedFindings` and `acDropped`,
+which they previously omitted. **This is not evidence of a coverage gap** — an earlier
+revision of this handoff claimed it was, and that was wrong. These fixtures stub `callOp`
+and so bypass `classifyAdversarialFindings` by design; classification is covered by
+`test/unit/review/adversarial-pass-fail.test.ts`, which drives the real op path with real
+LLM JSON. Supply the fields as empty via the factory and move on.
 
 ---
 
