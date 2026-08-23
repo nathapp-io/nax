@@ -94,19 +94,23 @@ bun scripts/report-cast-buckets.ts
 
 | Bucket | Casts (start) | Casts (current) | Δ | Who |
 |:--|--:|--:|--:|:--|
-| §3a Shape A — factory exists | **169** | **15** | -154 | **§10** — legacy-key fixtures |
+| §3a Shape A — factory exists | **169** | **9** | -160 | remaining are §3d-shaped / §3e-entangled |
 | §3b seam sweeps — helper exists, example committed | **157** | **5** | -152 | survivors only |
 | §3c-i typed dep stubs | **23** | **1** | -22 | survivor only |
 | §3c-ii dep members returning a class | 31 | **0** | -31 | **CLOSED** (§9 Task B, session 6) |
-| §3d holding bucket | 61 | 30 | -31 | bakeoff builders **done**; 30 load-bearing |
+| §3d holding bucket | 61 | 29 | -32 | load-bearing |
 | §3e private-member reach-ins | 49 | 49 | 0 | escalate |
-| tail — everything under 4 per cluster | **191** | **63** | -128 | **drained of tractable work** |
-| **Total** | **681** | **163** | **-518** | |
+| tail — everything under 4 per cluster | **191** | **58** | -133 | **drained of tractable work** |
+| **Total** | **681** | **151** | **-530** | |
 
-**Last verified:** ratchet = 163, typecheck errors = 1949 (was 1969; **−20**), per-file
-gate `worse: 0`, tree clean at `41b9ee603`. 42 commits on the branch.
+**Last verified:** ratchet = 151, typecheck errors = 1946 (was 1969; **−23**), per-file
+gate `worse: 0`, tree clean at `f3d7a4646`. 46 commits on the branch.
 
-**→ If you are a fresh session picking this up, go straight to §10.**
+**§10 is DONE (session 7).** Every bucket with mechanical follow-through is now closed.
+What remains needs a ruling from the repo owner — see §8.
+
+**→ §9 and §10 are both DONE. There is no queued task.** Read §8 for the remaining
+decisions, and §Patterns learned before touching anything.
 **§9 is DONE (session 6) — do not start it.** It is kept only as the worked record of
 how the seams were built.
 
@@ -363,6 +367,46 @@ numbers for casts and typecheck errors.
 ---
 
 ## 7. Progress log
+
+### Phase 1a — session 7 (2026-08-23): §10 done, the masked-field catalogue
+
+**163 → 151 (−12)**, typecheck **1949 → 1946**, per-file gate `worse: 0`, tree clean at
+`f3d7a4646`.
+
+- `41b9ee603` — `tracker-provider-cost.test.ts` (worked example, the ruling)
+- `cc187b258` — `stage-assembler-scope-files.test.ts`, `execution-stage.test.ts`
+- `236821bbf` — `context-digest.test.ts`, `context-rules-fallback.test.ts`
+- `d52132410` — `deferred-review-integration.test.ts` rewrite (the product decision below)
+- `f3d7a4646` — `red-green-cycle.test.ts`
+
+**The `pluginMode` question was answered: rewrite the test, do not restore the value.**
+Per-story plugin gating was removed in ADR-023 / #1146, so deferred **is** the plugin-review
+timing and `review.pluginMode` selects only `gating` vs `observational`. The tests no longer
+parameterise on a mode. One test — "reviewer failure does not fail the run" — now pins
+`pluginMode: "observational"` **explicitly**, because it is the mode and not the deferred
+timing that produces that behaviour; under `gating` the run would fail
+(`run-completion.ts:76`). Left implicit, it would have silently ridden a schema default.
+
+**What the casts were hiding — the real output of this session:**
+
+| File | Masked defect |
+|:--|:--|
+| `tracker-provider-cost` | `routing: { tier }` — `RoutingResult` has **`modelTier`**; the fixture supplied `modelTier: undefined` for as long as the cast existed, and the tests passed |
+| `deferred-review-integration` | the **entire `tdd` block was fictional** (`mode`, `testStrategy`, `testCommand` — none exist); `acceptance.testCommand` (it is `command`); and behind them, three **missing required** `DispatchContext` fields (`agentManager`, `sessionManager`, `abortSignal`) |
+| `stage-assembler-scope-files` | `routing` missing required `complexity` / `modelTier` / `reasoning` |
+| `execution-stage` | `packageView.select` had the wrong generic signature — `() => cfg` ignores the selector `PackageView.select` actually invokes; plus 4 missing `PackageView` fields |
+| `context-digest` | `naxIgnoreIndex` stub had only `getMatchers()`; `NaxIgnoreIndex` also requires `repoRoot`, `filter`, `toPathspecExcludes` |
+| `context-rules-fallback` | `makeCtx` hand-built the whole context with per-field casts (`rootConfig: {}`, `prd: {userStories:[]}`, `hooks: {}`, `routing: {}`) — **none satisfied its real type**; the casts bypassed the checker entirely |
+| `red-green-cycle` | the `hooks` and `PRD` casts were pure noise (item 12); `ctx as Record<string, unknown>` was reaching `acceptanceSetup.redFailCount`, a real optional field |
+
+Several of these tests were asserting against fixtures that did not resemble the types they
+claimed to be, and passing. **That is the argument for this whole issue**, and it is worth
+more than the −530 on the counter.
+
+**Process failure worth not repeating:** this session ran an agent on §10 while editing
+`deferred-review-integration.test.ts` itself, in the same working directory. See
+§Patterns learned item 13. Use `isolation: "worktree"` or serialise.
+
 
 ### Phase 1a/1b — session 5 (2026-08-23): first seam built, `DeepPartial` bug found
 
@@ -622,6 +666,25 @@ factory-swap cluster is left untouched.
     declared generic parameterizes — even though it is `undefined` at runtime. Fix:
     don't spread the *typed* const. Spread an **untyped** object carrying only the
     fields you need copied, so it brings no conflicting optional-field type.
+
+13. **NEVER run two agents against the same working directory (session 7 — near miss).**
+    A session and a delegated agent both edited `test/` in the same non-worktree checkout.
+    The agent ran `git stash` / `git stash pop` to isolate a diff at the moment the other
+    process was committing, and separately read a transient "worse" typecheck result off a
+    file the other process had mid-edit. Nothing was lost this time — that was luck, not
+    design. `git stash` is repo-global: it would have swept the other process's uncommitted
+    work. If work must overlap, give each agent its own git worktree (the Agent tool's
+    `isolation: "worktree"`), or serialise. A narrowly-staged `git add <path>` commit is a
+    partial mitigation, not a fix.
+
+14. **A "wrong field" in a fixture is often a whole fictional section (session 7).**
+    `deferred-review-integration.test.ts` carried a `tdd: { mode, testStrategy, testCommand }`
+    block in which **not one of the three fields exists** on `TddConfig` (it has `strategy`,
+    with entirely different values). Same file: `acceptance.testCommand` (it is `command`).
+    Do not translate field-by-field on reflex — check whether the whole block was ever read,
+    and delete it if not. And expect §Patterns item 8 to cascade: each deleted bogus field
+    revealed the next, four rounds before that file went clean, ending in three **missing
+    required** fields that had been invisible the whole time.
 
 12. **Annotate at the point of use, never at the declaration — and check whether the
     cast was needed at all (session 4).** All 31 bakeoff casts turned out to be pure
@@ -958,10 +1021,10 @@ to cover one awkward caller.
 
 ---
 
-## 10. Legacy-key fixture migration (§3a remnant, ~15 casts)
+## 10. Legacy-key fixture migration — **DONE (session 7)**
 
-**The design call is made and one file is done as a worked example** (`41b9ee603`).
-What is left is repetition. Everything in §1 (verify loop), §4 (forbidden), §5 (escalate)
+**COMPLETE.** 163 → 151. Kept as the record of the ruling and of what the casts were
+hiding — that catalogue, not the count, is the value. Original brief follows. Everything in §1 (verify loop), §4 (forbidden), §5 (escalate)
 and §Patterns learned applies.
 
 **Starting state:** ratchet = 163, typecheck = 1949, per-file gate `worse: 0`, tree clean
