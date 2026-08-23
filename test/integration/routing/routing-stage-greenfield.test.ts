@@ -63,8 +63,6 @@ function createTestContext(
     },
     autoMode: {
       enabled: true,
-      defaultAgent: "nax-agent-claude",
-      fallbackOrder: ["nax-agent-claude"],
       complexityRouting: {
         simple: "fast",
         medium: "balanced",

@@ -12,7 +12,7 @@ import * as path from "node:path";
 import { pluginsListCommand } from "@/cli/plugins";
 import type { NaxConfig } from "@/config/schema";
 import type { NaxPlugin } from "@/plugins/types";
-import { makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // Test fixture helpers
 async function createTempDir(): Promise<string> {
@@ -129,23 +129,9 @@ describe("pluginsListCommand", () => {
 
   describe("no plugins installed", () => {
     test("displays 'No plugins installed' message", async () => {
-      const config: NaxConfig = {
-        agents: {
-          "claude-code": { enabled: true },
-        },
-        routing: {
-          defaultTier: "fast",
-          defaultTestStrategy: "unit",
-        },
-        autoMode: {
-          defaultAgent: "claude-code",
-        },
-        execution: {
-          maxIterations: 20,
-          timeout: 1800000,
-        },
+      const config: NaxConfig = makeNaxConfig({
         disabledPlugins: ["nax-curator", "nax-auto-pr"],
-      };
+      });
 
       const capture = captureConsoleLog();
 
@@ -189,22 +175,7 @@ describe("pluginsListCommand", () => {
 
       await writePluginFile(globalPluginsDir, "test-global-plugin.ts", plugin);
 
-      const config: NaxConfig = {
-        agents: {
-          "claude-code": { enabled: true },
-        },
-        routing: {
-          defaultTier: "fast",
-          defaultTestStrategy: "unit",
-        },
-        autoMode: {
-          defaultAgent: "claude-code",
-        },
-        execution: {
-          maxIterations: 20,
-          timeout: 1800000,
-        },
-      };
+      const config: NaxConfig = makeNaxConfig();
 
       const capture = captureConsoleLog();
 
@@ -247,22 +218,7 @@ describe("pluginsListCommand", () => {
 
       await writePluginFile(projectPluginsDir, "project-plugin.ts", plugin);
 
-      const config: NaxConfig = {
-        agents: {
-          "claude-code": { enabled: true },
-        },
-        routing: {
-          defaultTier: "fast",
-          defaultTestStrategy: "unit",
-        },
-        autoMode: {
-          defaultAgent: "claude-code",
-        },
-        execution: {
-          maxIterations: 20,
-          timeout: 1800000,
-        },
-      };
+      const config: NaxConfig = makeNaxConfig();
 
       const capture = captureConsoleLog();
 
@@ -302,28 +258,14 @@ describe("pluginsListCommand", () => {
 
       await writePluginFile(customPluginDir, "index.ts", plugin);
 
-      const config: NaxConfig = {
-        agents: {
-          "claude-code": { enabled: true },
-        },
-        routing: {
-          defaultTier: "fast",
-          defaultTestStrategy: "unit",
-        },
-        autoMode: {
-          defaultAgent: "claude-code",
-        },
-        execution: {
-          maxIterations: 20,
-          timeout: 1800000,
-        },
+      const config: NaxConfig = makeNaxConfig({
         plugins: [
           {
             module: path.join(customPluginDir, "index.ts"),
             config: {},
           },
         ],
-      };
+      });
 
       const capture = captureConsoleLog();
 
@@ -384,21 +326,7 @@ describe("pluginsListCommand", () => {
       await writePluginFile(plugin1Dir, "index.ts", plugin1);
       await writePluginFile(plugin2Dir, "index.ts", plugin2);
 
-      const config: NaxConfig = {
-        agents: {
-          "claude-code": { enabled: true },
-        },
-        routing: {
-          defaultTier: "fast",
-          defaultTestStrategy: "unit",
-        },
-        autoMode: {
-          defaultAgent: "claude-code",
-        },
-        execution: {
-          maxIterations: 20,
-          timeout: 1800000,
-        },
+      const config: NaxConfig = makeNaxConfig({
         plugins: [
           {
             module: path.join(plugin1Dir, "index.ts"),
@@ -409,7 +337,7 @@ describe("pluginsListCommand", () => {
             config: {},
           },
         ],
-      };
+      });
 
       const capture = captureConsoleLog();
 
@@ -469,28 +397,14 @@ describe("pluginsListCommand", () => {
 
       await writePluginFile(pluginDir, "index.ts", plugin);
 
-      const config: NaxConfig = {
-        agents: {
-          "claude-code": { enabled: true },
-        },
-        routing: {
-          defaultTier: "fast",
-          defaultTestStrategy: "unit",
-        },
-        autoMode: {
-          defaultAgent: "claude-code",
-        },
-        execution: {
-          maxIterations: 20,
-          timeout: 1800000,
-        },
+      const config: NaxConfig = makeNaxConfig({
         plugins: [
           {
             module: path.join(pluginDir, "index.ts"),
             config: {},
           },
         ],
-      };
+      });
 
       const capture = captureConsoleLog();
 
@@ -547,28 +461,14 @@ describe("pluginsListCommand", () => {
       };
       await writePluginFile(configPluginDir, "index.ts", configPlugin);
 
-      const config: NaxConfig = {
-        agents: {
-          "claude-code": { enabled: true },
-        },
-        routing: {
-          defaultTier: "fast",
-          defaultTestStrategy: "unit",
-        },
-        autoMode: {
-          defaultAgent: "claude-code",
-        },
-        execution: {
-          maxIterations: 20,
-          timeout: 1800000,
-        },
+      const config: NaxConfig = makeNaxConfig({
         plugins: [
           {
             module: path.join(configPluginDir, "index.ts"),
             config: {},
           },
         ],
-      };
+      });
 
       const capture = captureConsoleLog();
 
@@ -617,28 +517,14 @@ describe("pluginsListCommand", () => {
 
       await writePluginFile(pluginDir, "index.ts", plugin);
 
-      const config: NaxConfig = {
-        agents: {
-          "claude-code": { enabled: true },
-        },
-        routing: {
-          defaultTier: "fast",
-          defaultTestStrategy: "unit",
-        },
-        autoMode: {
-          defaultAgent: "claude-code",
-        },
-        execution: {
-          maxIterations: 20,
-          timeout: 1800000,
-        },
+      const config: NaxConfig = makeNaxConfig({
         plugins: [
           {
             module: path.join(pluginDir, "index.ts"),
             config: {},
           },
         ],
-      };
+      });
 
       const capture = captureConsoleLog();
 
@@ -651,22 +537,7 @@ describe("pluginsListCommand", () => {
     });
 
     test("returns without error when no plugins found", async () => {
-      const config: NaxConfig = {
-        agents: {
-          "claude-code": { enabled: true },
-        },
-        routing: {
-          defaultTier: "fast",
-          defaultTestStrategy: "unit",
-        },
-        autoMode: {
-          defaultAgent: "claude-code",
-        },
-        execution: {
-          maxIterations: 20,
-          timeout: 1800000,
-        },
-      };
+      const config: NaxConfig = makeNaxConfig();
 
       const capture = captureConsoleLog();
 
