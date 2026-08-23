@@ -74,7 +74,6 @@ describe("telegramCreds", () => {
 
   test("telegramCreds ignores interaction.config when another plugin is selected", () => {
     const prev = { ...process.env };
-    process.env.NAX_TELEGRAM_TOKEN = undefined as unknown as string; // test-ratchet-allow: as-unknown-as
     try {
       delete process.env.NAX_TELEGRAM_TOKEN;
       delete process.env.TELEGRAM_BOT_TOKEN;

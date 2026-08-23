@@ -2,10 +2,10 @@
   "counts": {
     "asAny": 1398,
     "tsSuppress": 54,
-    "ratchetAllow": 108,
-    "absentValue": 18
+    "ratchetAllow": 107,
+    "absentValue": 17
   },
-  "updatedAt": "2026-08-23T05:46:30.494Z",
+  "updatedAt": "2026-08-23T05:56:23.125Z",
   "byFile": {
     "test/helpers/mock-agent-manager.ts": {
       "asAny": 1
@@ -174,13 +174,7 @@
     "test/unit/review/runner.test.ts": {
       "asAny": 1
     },
-    "test/unit/review/category-fix-target.test.ts": {
-      "absentValue": 1
-    },
     "test/unit/finish/review-audit-gaps-quality-walk.test.ts": {
-      "ratchetAllow": 1
-    },
-    "test/unit/finish/notify.test.ts": {
       "ratchetAllow": 1
     },
     "test/unit/finish/pr-title.test.ts": {
