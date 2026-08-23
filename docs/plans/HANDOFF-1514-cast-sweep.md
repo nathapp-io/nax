@@ -121,11 +121,14 @@ built four seams and closed **§3c-ii entirely**; session 8 executed §11 Groups
 Remaining: tail remnant 61, §3e 19 (3 accessor-contained + reclassified + scanner bug),
 §3d 29, §3a remnant 5, §3b/§3c-i survivors 6.
 
-**§10 is the one remaining bucket with mechanical follow-through.** Everything else needs
-a ruling from the repo owner first.
+**§10 is DONE.** As of session 9 the one bucket with mechanical follow-through is **§12**.
 
 **Do not dispatch another sweep agent against this doc.** There is no factory-swap
-cluster left. The next step is one of the design decisions in §8, not more repetition.
+cluster left.
+
+**→ Session 9 resolved Decisions 4 and 5 and found Group E already fixed. The single
+queued task is now §12 (`absentValue<T>()`, 18 substitutions, 120 → 102). Start there;
+it is the last one.**
 
 ### 3a. Shape A — a factory already returns this exact type
 
@@ -823,7 +826,14 @@ timing and `review.pluginMode` selects only `gating` vs `observational`. See §7
 for the catalogue of fixture defects the casts in these files were hiding — it is the most
 useful record this document holds.
 
-### Decision 4 — accept or fix the tail remnant (58 casts) — OPEN
+### Decision 4 — accept or fix the tail remnant (58 casts) — ✅ **RESOLVED (session 9), see §12**
+
+**Ruling: do not reclassify. Do not repair the deliberately-wrong fixtures.** The tail
+stays documented as-is, with one carve-out: the 22 casts across the tail and §3d that are
+all the *same* shape — `undefined as unknown as T` / `null as unknown as T` — get the
+named idiom described in §12. Everything else in the table below is left standing, and
+this decision is closed rather than open. See §12 for the executable detail.
+
 
 All escalated in session 3. Each is a fixture deliberately built wrong, or a fake that
 would need a real migration:
@@ -841,7 +851,14 @@ would need a real migration:
 The last two are §3d-shaped: the cleanest resolution may be to reclassify them as
 reviewed exceptions rather than fix them.
 
-### Decision 5 — §3d: bakeoff DONE, 29 load-bearing left — OPEN
+### Decision 5 — §3d: bakeoff DONE, 29 load-bearing left — ⏸ **RULED (session 9): leave, re-triage after §12**
+
+**Ruling: leave §3d in place — feeding a wrong type on purpose is the assertion — but
+re-derive the bucket after §12 lands.** Some §3d entries are deliberate-*absent* negatives
+(`undefined as unknown as NaxConfig["autoMode"]` and friends) which the `absentValue<T>()`
+idiom absorbs. Run `bun scripts/report-cast-buckets.ts` after §12 and re-triage what is
+actually left before treating this as final.
+
 
 **Not closed as permanent.** §3d is a holding bucket, not a verdict, and it splits into
 two halves that deserve different answers:
@@ -872,8 +889,8 @@ closed as done.
 | # | Open decision | Casts | Who must decide |
 |:--|:--|--:|:--|
 | 2 | §3e private-member reach-ins | 49 | ✅ **DONE (session 8)** — Groups A–C landed (`129ef87a0`); Group E (scanner bug) still open, file separately |
-| 4 | tail remnant | 58 | **repo owner** — most are fixtures wrong *on purpose*; the honest resolution is reclassification, not repair |
-| 5 | §3d | 29 | load-bearing; leave unless a better negative-test idiom appears |
+| 4 | tail remnant | 58 | ✅ **RESOLVED (session 9)** — do not reclassify, do not repair; carve out the 22 deliberate-absent casts to §12 |
+| 5 | §3d | 29 | ⏸ **RULED (session 9)** — leave; re-derive and re-triage after §12 lands |
 | — | §3a remnant / §3b / §3c-i survivors | 11 | §3d-shaped or §3e-entangled; all moved that could move — survivors are allow-marked / deliberate negatives |
 
 **Decision 2 was resolved in §11 and executed in session 8**, which also unblocked
@@ -1278,8 +1295,166 @@ count. File it separately if it is not a quick change; do not delete the fixture
 | B — noise | 2 | 0 | delete the cast | ✅ **DONE** |
 | C — real defects | 4 | 0 | fix; **also unblocks 4 §3a** | ✅ **DONE** |
 | D — reclassify | 13 | 13 | leave, record as §3d | in place |
-| E — scanner bug | 1 | 1 | fix the scanner separately | **OPEN** — file separately, do not delete the fixture |
+| E — scanner bug | 1 | 0 | fix the scanner separately | ✅ **ALREADY FIXED** — see note below |
 
 **151 → 120 (landed session 8, `129ef87a0`).** Groups A–C are executed; nothing below
-needs another decision. Group E is the one remaining §3e item — a small scanner fix,
-tracked separately per the ruling.
+needs another decision.
+
+**Group E was already fixed and this entry was stale (found session 9).**
+`test/unit/scripts/check-test-as-unknown-as.test.ts` is in `EXEMPT_FILES` in **both**
+`scripts/check-test-as-unknown-as.ts` and `scripts/report-cast-buckets.ts`, and the
+baseline's `byFile` carries no `test/unit/scripts/` entry. Nothing was ever
+double-counted. Patterns item 10 again: re-derive, never trust a recorded number in this
+doc. **§3e is fully closed.**
+
+---
+
+## 12. The `absentValue<T>()` idiom — the one queued mechanical task
+
+**Ruled session 9 (Decisions 4 + 5).** This is the *only* work queued from this document.
+Everything else is closed, declined, or waiting on the re-triage at the end of this
+section. It is pure substitution: no type is designed, no `src/` signature changes.
+
+### Why
+
+18 countable casts are the identical shape — a value deliberately absent, fed to a
+parameter that does not accept absence, *because that is the assertion*:
+
+```ts
+undefined as unknown as import("@/agents").IAgentManager
+null as unknown as string
+```
+
+Decision 5 said to revisit §3d "if a better negative-test idiom appears". This is it. The
+cast is contained once in a named helper, exactly the shape §11 Group A blessed for the
+private-internals accessors, and the idiom itself is ratcheted so it cannot become a
+laundering channel.
+
+### Step 1 — the helper
+
+Create `test/helpers/absent.ts`:
+
+```ts
+/**
+ * Deliberately-absent values for negative tests: feeding `undefined`/`null` to a
+ * parameter whose type forbids it, because the absence *is* the assertion.
+ *
+ * The single type-lie in this file replaces 18 `as unknown as` casts across test/.
+ * Call sites are counted by the `absentValue` counter in
+ * `scripts/check-test-escape-hatches.ts` — this is a ratcheted escape hatch, not a
+ * free one. Do not export `coerce`.
+ */
+function coerce<T>(value: unknown): T {
+  return value as T;
+}
+
+/** `undefined`, typed as `T`. For "what happens when this required arg is missing?" */
+export function absentValue<T>(): T {
+  return coerce<T>(undefined);
+}
+
+/** `null`, typed as `T`. For "what happens when this required arg is null?" */
+export function nullValue<T>(): T {
+  return coerce<T>(null);
+}
+```
+
+Export both from `test/helpers/index.ts` alongside the existing factories.
+
+`coerce` uses `value as T`, not `as unknown as T`, so the file adds **zero** to the cast
+ratchet. That is deliberate laundering-by-design and is exactly why step 2 is not
+optional. **Do step 2 in the same commit as step 1.**
+
+### Step 2 — ratchet the idiom (mandatory, same commit)
+
+In `scripts/check-test-escape-hatches.ts`:
+
+- add to `PATTERNS`: `absentValue: /\b(absentValue|nullValue)\s*</g`
+- add `absentValue: 0` to `emptyCounts()`
+- update the file's header comment to describe the fourth hatch
+- add a case to `test/unit/scripts/check-test-escape-hatches.test.ts` (that file is
+  already in `EXEMPT_FILES`, so its fixture strings will not self-count)
+
+Requiring the explicit type argument (`absentValue<string>()`) is what makes the pattern
+greppable and the call site self-documenting. Do not add an overload that infers `T`.
+
+### Step 3 — substitute the call sites
+
+**Re-derive the list — do not trust these line numbers.** They drift, and 4 further sites
+are already `test-ratchet-allow`-marked and must be left alone:
+
+```bash
+bun -e '
+const {execSync}=require("child_process"); const fs=require("fs");
+const out=execSync(`grep -rn "as unknown as" --include=*.ts test | grep -E "undefined as unknown as|null as unknown as"`,{encoding:"utf8"});
+for(const l of out.trim().split("\n")){
+  const m=l.match(/^([^:]+):(\d+):/); if(!m) continue;
+  const lines=fs.readFileSync(m[1],"utf8").split("\n"); const i=+m[2]-1;
+  const A="test-ratchet-allow: as-unknown-as";
+  if(![lines[i-1],lines[i],lines[i+1]].some(x=>x&&x.includes(A))) console.log(m[1]+":"+m[2]);
+}'
+```
+
+As of session 9 that prints 18 sites in 8 files:
+
+| File | Sites |
+|:--|--:|
+| `test/unit/verification/smart-runner-discovery.test.ts` | 5 |
+| `test/unit/debate/session-helpers-resolver-model.test.ts` | 5 |
+| `test/unit/verification/crash-detector.test.ts` | 2 (one `undefined`, one `null`) |
+| `test/integration/cli/cli-routing-calibrate.test.ts` | 2 |
+| `test/unit/config/merge.test.ts` | 1 |
+| `test/unit/agents/retry/parse-retry.test.ts` | 1 |
+| `test/unit/verification/fix-generator.test.ts` | 1 |
+| `test/unit/review/category-fix-target.test.ts` | 1 (`null`) |
+
+The substitution:
+
+```ts
+- undefined as unknown as import("@/agents").IAgentManager
++ absentValue<IAgentManager>()          // import the type at the top of the file
+
+- null as unknown as string
++ nullValue<string>()
+```
+
+**Per §Patterns learned item 12, try the honest fix first at each site.** At least one is
+not an absent-value case at all:
+
+- `test/unit/finish/notify.test.ts:77` — `process.env.NAX_TELEGRAM_TOKEN = undefined as
+  unknown as string`. The correct code is `delete process.env.NAX_TELEGRAM_TOKEN`.
+  (Already allow-marked, so it is outside the 18 — fix it anyway if it is quick.)
+- `test/unit/review/category-fix-target.test.ts:34` — `null as unknown as undefined`.
+  Casting *to* `undefined` is nonsense; check whether the parameter type should just be
+  `null | undefined`, which would delete the cast outright.
+
+Anything that does not substitute cleanly: leave it, and note why in the commit body.
+Do not design a type. See §5 Escalate.
+
+### Expected numbers
+
+| Counter | Before | After |
+|:--|--:|--:|
+| `as unknown as` | 120 | **102** |
+| escape hatches `absentValue` | — (new) | 18 |
+| `asAny` / `tsSuppress` / `ratchetAllow` | 1398 / 54 / 108 | unchanged |
+| typecheck errors | 1946 | unchanged, per-file `worse: 0` |
+
+Suggested commits: (1) helper + ratchet counter + its test, (2) the 18 substitutions,
+(3) baselines. Or fold 1–2 together; do not fold in the baseline update — §1 step 5
+exists so the baselines are lowered only after every gate is already green.
+
+Follow **§1 The loop** verbatim, including the per-file baseline diff. A new counter
+appearing in `scripts/baselines/test-escape-hatches-baseline.json` is the one case where
+a number legitimately goes *up* from nothing — every pre-existing number must still have
+gone down or stayed equal.
+
+### Step 4 — re-triage §3d and close out
+
+After the substitutions land, run `bun scripts/report-cast-buckets.ts` and update §3's
+table. Then re-read §8 Decision 5 against the *new* §3d contents: some of its 29 were
+deliberate-absent negatives that this idiom absorbs. Record what is genuinely left as
+load-bearing, and mark Decision 5 closed.
+
+At that point every decision in this document is resolved and the remaining casts are
+documented exceptions. **That is the end of the sweep** — do not open a new bucket.
