@@ -7,7 +7,17 @@ import type { ISessionManager, SessionDescriptor } from "@/session/types";
  * Pass `overrides` to customize behavior for the specific test.
  */
 export function makeSessionManager(overrides: Partial<ISessionManager> = {}): ISessionManager {
-  const stubDescriptor = { id: "mock-session", state: "CREATED" } as unknown as SessionDescriptor;
+  const stubDescriptor: SessionDescriptor = {
+    id: "mock-session",
+    role: "main",
+    state: "CREATED",
+    agent: "claude",
+    workdir: "/tmp/test",
+    protocolIds: { recordId: null, sessionId: null },
+    completedStages: [],
+    createdAt: new Date(0).toISOString(),
+    lastActivityAt: new Date(0).toISOString(),
+  };
   const stubHandle: SessionHandle = { id: "mock-session", agentName: "claude" };
   const stubTurnResult: TurnResult = {
     output: "",

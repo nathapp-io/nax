@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { planConfigSelector } from "@/config";
 import { SinglePlanStrategy, _singlePlanDeps } from "@/plan";
 import type { PlanModeContext } from "@/plan/strategies";
 import type { PRD } from "@/prd/types";
@@ -40,20 +41,22 @@ function makeCtx(overrides: {
   writeFile?: (path: string, content: string) => Promise<void>;
   existsSync?: (path: string) => boolean;
 }): PlanModeContext {
-  const config = makeNaxConfig({
-    routing: {
-      agents: {
-        enabled: true,
-        strategy: "off",
-        default: "opencode-structural",
-        profiles: [
-          { id: "opencode-structural", target: { agent: "opencode", model: "fast" }, strengths: ["mechanical"] },
-          { id: "claude-final", target: { agent: "claude", model: "balanced" }, strengths: ["design"] },
-        ],
-        ...(overrides.agentRouting ?? {}),
+  const config = planConfigSelector.select(
+    makeNaxConfig({
+      routing: {
+        agents: {
+          enabled: true,
+          strategy: "off",
+          default: "opencode-structural",
+          profiles: [
+            { id: "opencode-structural", target: { agent: "opencode", model: "fast" }, strengths: ["mechanical"] },
+            { id: "claude-final", target: { agent: "claude", model: "balanced" }, strengths: ["design"] },
+          ],
+          ...(overrides.agentRouting ?? {}),
+        },
       },
-    },
-  }) as unknown as PlanModeContext["config"];
+    }),
+  );
 
   const fakeRuntime = makeMockRuntime();
 
