@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { importGrepFallback, _bunDeps, MAX_GREP_TEST_FILES } from "@/verification/smart-runner";
+import { MAX_GREP_TEST_FILES, _bunDeps, importGrepFallback } from "@/verification/smart-runner";
 
 describe("importGrepFallback", () => {
   test("caps the number of scanned test files at MAX_GREP_TEST_FILES", async () => {
@@ -7,13 +7,20 @@ describe("importGrepFallback", () => {
     // Patch glob to return 1000 files
     const origGlob = _bunDeps.glob;
     _bunDeps.glob = (() => ({
-      async *scan() { for (const f of many) yield f; }
+      async *scan() {
+        for (const f of many) yield f;
+      },
     })) as any;
     let reads = 0;
     const origFile = _bunDeps.file;
     _bunDeps.file = ((_p: string) => ({
-      async text() { reads++; return "needle"; },
-      async exists() { return true; },
+      async text() {
+        reads++;
+        return "needle";
+      },
+      async exists() {
+        return true;
+      },
     })) as any;
 
     try {

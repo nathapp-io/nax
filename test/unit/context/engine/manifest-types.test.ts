@@ -37,8 +37,6 @@ describe("manifest-types", () => {
       ],
     };
 
-    await expect(
-      writeContextManifest(PROJECT_DIR(), FEATURE_ID, STORY_ID, STAGE, manifest),
-    ).resolves.toBeUndefined();
+    await expect(writeContextManifest(PROJECT_DIR(), FEATURE_ID, STORY_ID, STAGE, manifest)).resolves.toBeUndefined();
   });
 });

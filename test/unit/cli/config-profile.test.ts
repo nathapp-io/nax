@@ -7,9 +7,9 @@
  * All tests are RED until src/cli/config-profile.ts is implemented.
  */
 
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   profileCreateCommand,
   profileCurrentCommand,
@@ -121,10 +121,7 @@ describe("profileShowCommand", () => {
 
   test("masks values from $VAR substitution as '***' when unmask=false", async () => {
     // Use companion .env file for hermetic env var injection
-    await Bun.write(
-      join(tempDir, ".nax", "profiles", "fast.env"),
-      "FAST_MODEL_VAR=gpt-4\n",
-    );
+    await Bun.write(join(tempDir, ".nax", "profiles", "fast.env"), "FAST_MODEL_VAR=gpt-4\n");
     await writeJsonAsync(join(tempDir, ".nax", "profiles", "fast.json"), {
       model: "$FAST_MODEL_VAR",
       timeout: 30000,
@@ -161,10 +158,7 @@ describe("profileShowCommand", () => {
   });
 
   test("shows raw values when unmask=true", async () => {
-    await Bun.write(
-      join(tempDir, ".nax", "profiles", "fast.env"),
-      "FAST_SHOW_VAR=real-value\n",
-    );
+    await Bun.write(join(tempDir, ".nax", "profiles", "fast.env"), "FAST_SHOW_VAR=real-value\n");
     await writeJsonAsync(join(tempDir, ".nax", "profiles", "fast.json"), {
       model: "$FAST_SHOW_VAR",
       apiKey: "my-api-key",

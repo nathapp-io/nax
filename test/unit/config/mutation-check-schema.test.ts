@@ -6,11 +6,11 @@
 import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_CONFIG,
-  mergePackageConfig,
-  mutationCheckConfigSelector,
   type MutationCheckConfig,
   type NaxConfig,
   NaxConfigSchema,
+  mergePackageConfig,
+  mutationCheckConfigSelector,
 } from "@/config";
 
 describe("execution.mutationCheck schema defaults (AC1–AC3)", () => {

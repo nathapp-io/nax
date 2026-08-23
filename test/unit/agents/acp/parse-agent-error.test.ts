@@ -64,8 +64,7 @@ describe("parseAgentError", () => {
     });
 
     test("detects rate-limit with retryAfterSeconds from inner envelope", () => {
-      const stderr =
-        'throttled {"type":"error","error":{"type":"rate_limit_error","retryAfterSeconds":42}}';
+      const stderr = 'throttled {"type":"error","error":{"type":"rate_limit_error","retryAfterSeconds":42}}';
       const result = parseAgentError(stderr);
       expect(result.type).toBe("rate-limit");
       expect(result.retryAfterSeconds).toBe(42);

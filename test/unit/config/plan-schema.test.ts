@@ -16,11 +16,7 @@ describe("PlanConfigSchema — mode / citationThreshold / criticModel (AC1–AC7
   });
 
   // AC2–AC4: valid mode values round-trip
-  test.each([
-    ["single"],
-    ["debate"],
-    ["pipeline"],
-  ] as const)("AC2–4: mode=%s round-trips", (mode) => {
+  test.each([["single"], ["debate"], ["pipeline"]] as const)("AC2–4: mode=%s round-trips", (mode) => {
     const base = NaxConfigSchema.parse({}).plan;
     const result = PlanConfigSchema.parse({ ...base, mode });
     expect(result.mode).toBe(mode);

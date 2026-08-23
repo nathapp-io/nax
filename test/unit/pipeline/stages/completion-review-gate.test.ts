@@ -17,6 +17,7 @@ import type { PRD, UserStory } from "@/prd";
 import { withTempDir } from "@test/helpers";
 import { makeNaxConfig } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
+import { makeTestContext } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration
@@ -33,12 +34,14 @@ function makeChain(action: InteractionResponse["action"]): InteractionChain {
   const plugin: InteractionPlugin = {
     name: "test",
     send: mock(async () => {}),
-    receive: mock(async (id: string): Promise<InteractionResponse> => ({
-      requestId: id,
-      action,
-      respondedBy: "user",
-      respondedAt: Date.now(),
-    })),
+    receive: mock(
+      async (id: string): Promise<InteractionResponse> => ({
+        requestId: id,
+        action,
+        respondedBy: "user",
+        respondedAt: Date.now(),
+      }),
+    ),
   };
   chain.register(plugin);
   return chain;
@@ -89,23 +92,37 @@ function makePRD(): PRD {
   };
 }
 
-function makeCtx(config: ReturnType<typeof makeNaxConfig>, tempDir: string, interaction?: InteractionChain): PipelineContext {
-  return {
-    config,
-    prd: makePRD(),
-    story: makeStory(),
-    stories: [makeStory()],
-    routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-    rootConfig: makeNaxConfig(),
-    workdir: tempDir,
-    projectDir: tempDir,
-    featureDir: tempDir,
-    agentResult: { success: true, estimatedCostUsd: 0.01, output: "", stderr: "", exitCode: 0, rateLimited: false },
-    hooks: {} as PipelineContext["hooks"],
-    interaction,
-    storyStartTime: new Date().toISOString(),
-    runtime: makeMockRuntime(),
-  } as unknown as PipelineContext;
+function makeCtx(
+  config: ReturnType<typeof makeNaxConfig>,
+  tempDir: string,
+  interaction?: InteractionChain,
+): PipelineContext {
+  return Object.assign(
+    makeTestContext({
+      config,
+      prd: makePRD(),
+      story: makeStory(),
+      stories: [makeStory()],
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+      rootConfig: makeNaxConfig(),
+      workdir: tempDir,
+      projectDir: tempDir,
+    }),
+    {
+      featureDir: tempDir,
+      agentResult: {
+        success: true,
+        estimatedCostUsd: 0.01,
+        output: "",
+        stderr: "",
+        exitCode: 0,
+        rateLimited: false,
+      },
+      interaction,
+      storyStartTime: new Date().toISOString(),
+      runtime: makeMockRuntime(),
+    },
+  );
 }
 
 afterEach(() => {

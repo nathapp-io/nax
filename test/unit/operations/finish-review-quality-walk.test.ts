@@ -63,7 +63,6 @@ describe("AC15 — finishReviewOp.verify invokes git with the review range", () 
       await withTempDir(async (dir) => {
         const ctx = makeCtx();
         const parsed = finishReviewOp.parse("[HIGH] Some finding\nProblem: p\nFix: f", QUALITY_INPUT, ctx);
-        // biome-ignore lint/style/noNonNullAssertion: verify is declared on the op
         await finishReviewOp.verify!(
           parsed,
           { ...QUALITY_INPUT, workdir: dir },

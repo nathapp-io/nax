@@ -307,15 +307,7 @@ describe("splitRuleIntoSections — fenced code blocks", () => {
     const rule: CanonicalRule = {
       id: "authoring",
       fileName: "authoring.md",
-      content: [
-        "## Real",
-        "prose",
-        "```markdown",
-        "## Not A Heading",
-        "example body",
-        "```",
-        "more prose",
-      ].join("\n"),
+      content: ["## Real", "prose", "```markdown", "## Not A Heading", "example body", "```", "more prose"].join("\n"),
     };
 
     const sections = splitRuleIntoSections(rule);

@@ -12,11 +12,11 @@ import { describe, expect, mock, test } from "bun:test";
 import type { DiagnosisResult } from "@/acceptance/types";
 import type { AgentAdapter, AgentResult } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config/defaults";
-import { makeAgentAdapter } from "@test/helpers";
 import type { AcceptanceFixConfig, NaxConfig } from "@/config/schema";
 import type { PipelineEventEmitter } from "@/pipeline/events";
 import type { AgentGetFn } from "@/pipeline/types";
 import type { PRD } from "@/prd";
+import { makeAgentAdapter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -129,7 +129,7 @@ function makeAcceptanceContext() {
 describe("AC-1: runAcceptanceLoop obtains agent via (ctx.agentGetFn ?? _acceptanceLoopDeps.getAgent)(agentName)", () => {
   test("uses ctx.agentGetFn when provided to get agent for diagnoseAcceptanceFailure", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const agentGetFn = mock(() => mockAgent) as unknown as AgentGetFn;
+    const agentGetFn: AgentGetFn = mock((_name: string) => mockAgent);
     const config = makeMinimalConfig({ fix: makeFixConfig("diagnose-first") });
 
     const ctx = {
@@ -170,7 +170,7 @@ describe("AC-1: runAcceptanceLoop obtains agent via (ctx.agentGetFn ?? _acceptan
     // This test verifies the pattern: agent should come from agentGetFn, not from getAgent directly
     // The actual implementation should call (ctx.agentGetFn ?? _acceptanceLoopDeps.getAgent)(...)
     const mockAgent = makeMockAgentAdapter();
-    const agentGetFn = mock(() => mockAgent) as unknown as AgentGetFn;
+    const agentGetFn: AgentGetFn = mock((_name: string) => mockAgent);
 
     // If agentGetFn is provided, it must be used
     expect(agentGetFn).toBeDefined();
@@ -180,7 +180,7 @@ describe("AC-1: runAcceptanceLoop obtains agent via (ctx.agentGetFn ?? _acceptan
 
   test("falls back to _acceptanceLoopDeps.getAgent when agentGetFn is not provided", () => {
     // When agentGetFn is undefined, the code should fall back to _acceptanceLoopDeps.getAgent
-    const agentGetFn = undefined as unknown as AgentGetFn | undefined;
+    const agentGetFn: AgentGetFn | undefined = undefined;
     const agent = agentGetFn ?? (() => makeMockAgentAdapter())();
     expect(agent).toBeDefined();
   });
@@ -193,7 +193,7 @@ describe("AC-1: runAcceptanceLoop obtains agent via (ctx.agentGetFn ?? _acceptan
 describe("AC-2: When strategy is 'diagnose-first' and diagnosis verdict is 'source_bug', calls executeSourceFix()", () => {
   test("calls executeSourceFix when diagnosis returns source_bug verdict", async () => {
     const mockAgent = makeMockAgentAdapter();
-    const agentGetFn = mock(() => mockAgent) as unknown as AgentGetFn;
+    const agentGetFn: AgentGetFn = mock((_name: string) => mockAgent);
     const config = makeMinimalConfig({ fix: makeFixConfig("diagnose-first") });
 
     const diagnosis: DiagnosisResult = {

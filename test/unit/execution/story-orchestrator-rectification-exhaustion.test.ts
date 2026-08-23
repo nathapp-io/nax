@@ -13,15 +13,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _storyOrchestratorDeps, StoryOrchestratorBuilder } from "@/execution";
+import { pickSelector } from "@/config";
+import type { DEFAULT_CONFIG } from "@/config";
+import { StoryOrchestratorBuilder, _storyOrchestratorDeps } from "@/execution";
 import type { StoryOrchestratorResult } from "@/execution";
 import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
-import { pickSelector } from "@/config";
-import { DEFAULT_CONFIG } from "@/config";
-import { makeTestRuntime, makeStory } from "@test/helpers";
+import type { CallContext, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import type { RunOperation, CallContext } from "@/operations";
+import { makeStory, makeTestRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -42,7 +42,11 @@ const mockImplementerOp: RunOperation<{ story: string }, { success: boolean }, t
   parse: () => ({ success: true }),
 };
 
-const mockVerifierOp: RunOperation<{ story: string }, { success: boolean; findings: Finding[] }, typeof DEFAULT_CONFIG> = {
+const mockVerifierOp: RunOperation<
+  { story: string },
+  { success: boolean; findings: Finding[] },
+  typeof DEFAULT_CONFIG
+> = {
   kind: "run",
   name: "verifier",
   stage: "verify",
@@ -377,7 +381,7 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
 
     // Gate findings flow through to the cycle — verifier never ran so carve-out doesn't fire.
     expect(capturedCycle).not.toBeNull();
-    const findings = (capturedCycle as unknown as FixCycle<Finding>).findings;
+    const findings = capturedCycle!.findings;
     const hasTestRunnerFinding = findings.some((f) => f.source === "test-runner");
     expect(hasTestRunnerFinding).toBe(true);
   });
@@ -410,7 +414,7 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
     // phaseOutputs[verifier] is undefined (verifier never ran), so the cross-iteration
     // carve-out never fires. Gate findings flow to cycle unfiltered.
     expect(capturedCycle).not.toBeNull();
-    const findings = (capturedCycle as unknown as FixCycle<Finding>).findings;
+    const findings = capturedCycle!.findings;
     const hasTestRunnerFinding = findings.some((f) => f.source === "test-runner");
     expect(hasTestRunnerFinding).toBe(true);
   });
@@ -437,7 +441,7 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
     await plan.run();
 
     expect(capturedCycle).not.toBeNull();
-    const findings = (capturedCycle as unknown as FixCycle<Finding>).findings;
+    const findings = capturedCycle!.findings;
     const hasTestRunnerFinding = findings.some((f) => f.source === "test-runner");
     expect(hasTestRunnerFinding).toBe(true);
   });
@@ -484,10 +488,7 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    await (capturedCycle as FixCycle<Finding>).validate(
-      capturedCtx as FixCycleContext,
-      { mode: "full" },
-    );
+    await (capturedCycle as FixCycle<Finding>).validate(capturedCtx as FixCycleContext, { mode: "full" });
 
     // Second validate call: gate regresses to failing. phaseOutputs[verifier] still holds the
     // prior passing result → shouldSkipPhaseForRectification fires on gate → gate findings excluded.
@@ -501,10 +502,9 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    const secondValidate = await (capturedCycle as FixCycle<Finding>).validate(
-      capturedCtx as FixCycleContext,
-      { mode: "full" },
-    );
+    const secondValidate = await (capturedCycle as FixCycle<Finding>).validate(capturedCtx as FixCycleContext, {
+      mode: "full",
+    });
     const secondCallFindings = Array.isArray(secondValidate) ? secondValidate : secondValidate.findings;
     // Gate still ran (it's part of validationPhases — carve-out only filters findings, not dispatch)
     expect(gateCalledSecondTime).toBe(true);
@@ -543,10 +543,9 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    const validateResult = await (capturedCycle as FixCycle<Finding>).validate(
-      capturedCtx as FixCycleContext,
-      { mode: "full" },
-    );
+    const validateResult = await (capturedCycle as FixCycle<Finding>).validate(capturedCtx as FixCycleContext, {
+      mode: "full",
+    });
     const findings = Array.isArray(validateResult) ? validateResult : validateResult.findings;
     // Short-circuit fires AFTER pushing the gate finding into the findings array,
     // so the cycle can still drive the next fix iteration.

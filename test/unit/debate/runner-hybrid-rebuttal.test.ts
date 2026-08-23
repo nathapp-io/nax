@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { DEFAULT_CONFIG } from "@/config";
 import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
-import { type DebateStageConfig } from "@/debate/types";
+import type { DebateStageConfig } from "@/debate/types";
 import * as callModule from "@/operations";
 import type { DebateHybridInput } from "@/operations/debate-hybrid";
 import type { CallContext } from "@/operations/types";
@@ -51,10 +51,7 @@ function makeCallCtx(
   };
 }
 
-function makeRunner(
-  stageConfigOverrides: Partial<DebateStageConfig> = {},
-  storyId = "US-test",
-): DebateRunner {
+function makeRunner(stageConfigOverrides: Partial<DebateStageConfig> = {}, storyId = "US-test"): DebateRunner {
   const agentManager = makeMockAgentManager();
   const sessionManager = makeSessionManager({
     openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),

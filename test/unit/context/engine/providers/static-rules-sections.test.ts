@@ -14,10 +14,10 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { StaticRulesProvider, _staticRulesDeps } from "@/context/engine";
-import type { RuleSection } from "@/context/rules/rule-sections";
-import type { SectionBudgetResult } from "@/context/rules/rule-budget";
-import type { CanonicalRule } from "@/context/rules/canonical-loader";
 import type { ContextRequest } from "@/context/engine/types";
+import type { CanonicalRule } from "@/context/rules/canonical-loader";
+import type { SectionBudgetResult } from "@/context/rules/rule-budget";
+import type { RuleSection } from "@/context/rules/rule-sections";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep save/restore
@@ -73,7 +73,10 @@ const BASE_REQUEST: ContextRequest = {
   budgetTokens: 4000,
 };
 
-function sectionOf(rule: CanonicalRule, partial: Partial<RuleSection> & { slug: string; content: string }): RuleSection {
+function sectionOf(
+  rule: CanonicalRule,
+  partial: Partial<RuleSection> & { slug: string; content: string },
+): RuleSection {
   return {
     ruleId: rule.id ?? rule.fileName.replace(/\.md$/i, ""),
     rulePath: rule.path ?? rule.fileName,
@@ -133,10 +136,11 @@ describe("StaticRulesProvider — US-004 AC1: splitRuleIntoSections invocation",
 describe("StaticRulesProvider — US-004 AC2: applySectionBudget invocation", () => {
   test("AC2: applySectionBudget receives budgetTokens = rulesShare * request.budgetTokens when below provider cap", async () => {
     setupCanonical([{ fileName: "a.md", id: "a", content: "## A\nbody" }]);
-    const section = sectionOf(
-      { fileName: "a.md", id: "a" } as CanonicalRule,
-      { slug: "section", content: "## A\nbody", ordinal: 0 },
-    );
+    const section = sectionOf({ fileName: "a.md", id: "a" } as CanonicalRule, {
+      slug: "section",
+      content: "## A\nbody",
+      ordinal: 0,
+    });
     _staticRulesDeps.splitRuleIntoSections = (() => [section]) as typeof _staticRulesDeps.splitRuleIntoSections;
     let receivedBudget = -1;
     _staticRulesDeps.applySectionBudget = ((_sections: RuleSection[], budgetTokens: number) => {
@@ -328,7 +332,8 @@ describe("StaticRulesProvider — US-004 AC9: scopingReport.sectionCount", () =>
     const keptRule = { fileName: "kept.md", id: "kept" } as CanonicalRule;
     const filteredRule = { fileName: "filtered.md", id: "filtered" } as CanonicalRule;
     _staticRulesDeps.splitRuleIntoSections = ((rule: CanonicalRule) => {
-      if (rule.id === "kept") return [sectionOf(keptRule, { slug: "a", content: "## A\nbody", heading: "A", ordinal: 0 })];
+      if (rule.id === "kept")
+        return [sectionOf(keptRule, { slug: "a", content: "## A\nbody", heading: "A", ordinal: 0 })];
       return [sectionOf(filteredRule, { slug: "b", content: "## B\nbody", heading: "B", ordinal: 0 })];
     }) as typeof _staticRulesDeps.splitRuleIntoSections;
     _staticRulesDeps.applySectionBudget = ((s: RuleSection[]) => ({
@@ -360,7 +365,8 @@ describe("StaticRulesProvider — US-004 AC10/AC11: stage filter removes rule se
     const keptRule = { fileName: "kept.md", id: "kept" } as CanonicalRule;
     const filteredRule = { fileName: "filtered.md", id: "filtered" } as CanonicalRule;
     _staticRulesDeps.splitRuleIntoSections = ((rule: CanonicalRule) => {
-      if (rule.id === "kept") return [sectionOf(keptRule, { slug: "a", content: "## A\nbody", heading: "A", ordinal: 0 })];
+      if (rule.id === "kept")
+        return [sectionOf(keptRule, { slug: "a", content: "## A\nbody", heading: "A", ordinal: 0 })];
       return [sectionOf(filteredRule, { slug: "b", content: "## B\nbody", heading: "B", ordinal: 0 })];
     }) as typeof _staticRulesDeps.splitRuleIntoSections;
     _staticRulesDeps.applySectionBudget = ((s: RuleSection[]) => ({
@@ -385,7 +391,8 @@ describe("StaticRulesProvider — US-004 AC10/AC11: stage filter removes rule se
     const keptRule = { fileName: "kept.md", id: "kept" } as CanonicalRule;
     const filteredRule = { fileName: "filtered.md", id: "filtered" } as CanonicalRule;
     _staticRulesDeps.splitRuleIntoSections = ((rule: CanonicalRule) => {
-      if (rule.id === "kept") return [sectionOf(keptRule, { slug: "a", content: "## A\nbody", heading: "A", ordinal: 0 })];
+      if (rule.id === "kept")
+        return [sectionOf(keptRule, { slug: "a", content: "## A\nbody", heading: "A", ordinal: 0 })];
       return [sectionOf(filteredRule, { slug: "b", content: "## B\nbody", heading: "B", ordinal: 0 })];
     }) as typeof _staticRulesDeps.splitRuleIntoSections;
     let receivedOwners: string[] = [];

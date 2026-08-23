@@ -10,8 +10,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { clearCache, clearCacheForStory, getCacheSize, injectCacheEntry } from "@/routing/strategies/llm";
 import type { RoutingDecision } from "@/routing/decision";
+import { clearCache, clearCacheForStory, getCacheSize, injectCacheEntry } from "@/routing/strategies/llm";
 
 const DECISION: RoutingDecision = {
   complexity: "simple",

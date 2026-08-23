@@ -7,12 +7,13 @@
 
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import {
-  _isolationDeps,
   LITE_STUB_ADDED_LINES_CEILING,
+  _isolationDeps,
   isSourceFile,
   verifyTestWriterIsolation,
 } from "@/tdd/isolation";
 import { isTestFile } from "@/test-runners";
+import { makeSpawn } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // isTestFile
@@ -157,23 +158,7 @@ describe("verifyTestWriterIsolation: strict vs. lite mode", () => {
   // mockSpawn maps the arg list to a string payload so getChangedFiles and
   // getAddedLinesPerFile (numstat) can be answered with different shapes.
   function mockSpawn(handler: (args: string[]) => string): void {
-    _isolationDeps.spawn = mock((args: string[]) => {
-      const payload = handler(args);
-      return {
-        stdout: new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode(payload));
-            controller.close();
-          },
-        }),
-        stderr: new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-      } as unknown as ReturnType<typeof Bun.spawn>;
-    }) as unknown as typeof _isolationDeps.spawn;
+    _isolationDeps.spawn = makeSpawn(({ cmd }) => handler(cmd)).spawn;
   }
 
   it("strict: src/ writes outside allowedPaths are HARD violations", async () => {
@@ -181,13 +166,7 @@ describe("verifyTestWriterIsolation: strict vs. lite mode", () => {
       if (args.includes("--name-only")) return "packages/foo/src/foo.py\n";
       return "10\t0\tpackages/foo/src/foo.py\n";
     });
-    const result = await verifyTestWriterIsolation(
-      "/tmp",
-      "HEAD",
-      ["packages/*/tests/**"],
-      ["**/test_*.py"],
-      "strict",
-    );
+    const result = await verifyTestWriterIsolation("/tmp", "HEAD", ["packages/*/tests/**"], ["**/test_*.py"], "strict");
     expect(result.passed).toBe(false);
     expect(result.violations).toContain("packages/foo/src/foo.py");
     expect(result.softViolations ?? []).not.toContain("packages/foo/src/foo.py");
@@ -199,13 +178,7 @@ describe("verifyTestWriterIsolation: strict vs. lite mode", () => {
       if (args.includes("--name-only")) return "packages/foo/src/__init__.py\n";
       return `${added}\t0\tpackages/foo/src/__init__.py\n`;
     });
-    const result = await verifyTestWriterIsolation(
-      "/tmp",
-      "HEAD",
-      ["packages/*/tests/**"],
-      ["**/test_*.py"],
-      "lite",
-    );
+    const result = await verifyTestWriterIsolation("/tmp", "HEAD", ["packages/*/tests/**"], ["**/test_*.py"], "lite");
     expect(result.passed).toBe(true);
     expect(result.violations).toEqual([]);
     expect(result.softViolations).toContain("packages/foo/src/__init__.py");
@@ -217,13 +190,7 @@ describe("verifyTestWriterIsolation: strict vs. lite mode", () => {
       if (args.includes("--name-only")) return "packages/foo/src/big.py\n";
       return `${added}\t0\tpackages/foo/src/big.py\n`;
     });
-    const result = await verifyTestWriterIsolation(
-      "/tmp",
-      "HEAD",
-      ["packages/*/tests/**"],
-      ["**/test_*.py"],
-      "lite",
-    );
+    const result = await verifyTestWriterIsolation("/tmp", "HEAD", ["packages/*/tests/**"], ["**/test_*.py"], "lite");
     expect(result.passed).toBe(false);
     expect(result.violations).toContain("packages/foo/src/big.py");
   });
@@ -233,13 +200,7 @@ describe("verifyTestWriterIsolation: strict vs. lite mode", () => {
       if (args.includes("--name-only")) return "src/index.ts\n";
       return "999\t0\tsrc/index.ts\n";
     });
-    const result = await verifyTestWriterIsolation(
-      "/tmp",
-      "HEAD",
-      ["src/index.ts"],
-      ["**/*.test.ts"],
-      "lite",
-    );
+    const result = await verifyTestWriterIsolation("/tmp", "HEAD", ["src/index.ts"], ["**/*.test.ts"], "lite");
     expect(result.passed).toBe(true);
     expect(result.softViolations).toContain("src/index.ts");
   });

@@ -10,9 +10,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { _planDeps, planDecomposeCommand } from "@/cli/plan";
-import { mapDecomposedStoriesToUserStories } from "@/prd/decompose-mapper";
 import type { DecomposedStory } from "@/agents/shared/types-extended";
+import { _planDeps, planDecomposeCommand } from "@/cli/plan";
+import type { NaxConfig } from "@/config";
+import type { PRD, UserStory } from "@/prd";
+import { mapDecomposedStoriesToUserStories } from "@/prd/decompose-mapper";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
@@ -23,9 +25,17 @@ function makeMockDecomposeManager(
     completeAsFn: decomposeFn
       ? async (name: string, _prompt: string, opts?: any) => {
           const result = await decomposeFn(name, opts ?? {});
-          return { output: JSON.stringify(result.stories), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+          return {
+            output: JSON.stringify(result.stories),
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0,
+          };
         }
-      : async () => ({ output: JSON.stringify([]), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+      : async () => ({
+          output: JSON.stringify([]),
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+        }),
   });
 }
 
@@ -169,7 +179,11 @@ describe("planDecomposeCommand — fenced JSON parsing regression", () => {
     setupBaseDeps(tmpDir, prd, capturedWrites);
     _planDeps.createRuntime = mock(() =>
       makeMockAgentManager({
-        completeAsFn: async () => ({ output: fencedJson, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+        completeAsFn: async () => ({
+          output: fencedJson,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+        }),
       }),
     );
 
@@ -186,7 +200,11 @@ describe("planDecomposeCommand — fenced JSON parsing regression", () => {
     setupBaseDeps(tmpDir, prd, capturedWrites);
     _planDeps.createRuntime = mock(() =>
       makeMockAgentManager({
-        completeAsFn: async () => ({ output: fencedJson, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+        completeAsFn: async () => ({
+          output: fencedJson,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+        }),
       }),
     );
 
@@ -203,7 +221,11 @@ describe("planDecomposeCommand — fenced JSON parsing regression", () => {
     setupBaseDeps(tmpDir, prd, capturedWrites);
     _planDeps.createRuntime = mock(() =>
       makeMockAgentManager({
-        completeAsFn: async () => ({ output: fencedJson, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+        completeAsFn: async () => ({
+          output: fencedJson,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+        }),
       }),
     );
 
@@ -250,9 +272,7 @@ describe("planDecomposeCommand — contract parity with adapter.decompose output
     const decomposed = [makeDecomposedStory("US-001-A"), makeDecomposedStory("US-001-B")];
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.createRuntime = mock(() =>
-      makeMockDecomposeManager(async () => ({ stories: decomposed })),
-    );
+    _planDeps.createRuntime = mock(() => makeMockDecomposeManager(async () => ({ stories: decomposed })));
 
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
 
@@ -266,9 +286,7 @@ describe("planDecomposeCommand — contract parity with adapter.decompose output
     const decomposed = [makeDecomposedStory("US-001-A", { title: "Unique title from LLM" })];
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.createRuntime = mock(() =>
-      makeMockDecomposeManager(async () => ({ stories: decomposed })),
-    );
+    _planDeps.createRuntime = mock(() => makeMockDecomposeManager(async () => ({ stories: decomposed })));
 
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
 
@@ -281,9 +299,7 @@ describe("planDecomposeCommand — contract parity with adapter.decompose output
     const decomposed = [makeDecomposedStory("US-001-A", { contextFiles: ["src/bar.ts", "src/baz.ts"] })];
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.createRuntime = mock(() =>
-      makeMockDecomposeManager(async () => ({ stories: decomposed })),
-    );
+    _planDeps.createRuntime = mock(() => makeMockDecomposeManager(async () => ({ stories: decomposed })));
 
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
 
@@ -296,9 +312,7 @@ describe("planDecomposeCommand — contract parity with adapter.decompose output
     const decomposed = [makeDecomposedStory("US-001-A", { complexity: "complex" })];
     const prd = makePrd();
     setupBaseDeps(tmpDir, prd, capturedWrites);
-    _planDeps.createRuntime = mock(() =>
-      makeMockDecomposeManager(async () => ({ stories: decomposed })),
-    );
+    _planDeps.createRuntime = mock(() => makeMockDecomposeManager(async () => ({ stories: decomposed })));
 
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
 

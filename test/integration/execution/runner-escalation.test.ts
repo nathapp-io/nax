@@ -14,7 +14,6 @@ import { resolveMaxAttemptsOutcome } from "@/execution/runner";
 import type { UserStory } from "@/prd";
 import type { FailureCategory } from "@/tdd/types";
 
-
 describe("Batch Failure Escalation Strategy", () => {
   test("batch failure should escalate only first story, others remain at same tier", () => {
     // Simulate a batch of 4 simple stories at 'fast' tier
@@ -150,7 +149,6 @@ describe("Batch Failure Escalation Strategy", () => {
     }
   });
 });
-
 
 describe("Configurable Escalation Chain (ADR-003)", () => {
   const defaultTiers = [

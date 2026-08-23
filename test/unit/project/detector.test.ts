@@ -5,8 +5,8 @@
  * All tests must fail until detector.ts is implemented.
  */
 
-import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { clearLanguageCache, detectProjectProfile } from "@/project";
 import { withTempDir } from "@test/helpers";
 
@@ -49,10 +49,7 @@ describe("detectProjectProfile — language: go", () => {
 describe("detectProjectProfile — language: rust", () => {
   test("returns language: 'rust' when Cargo.toml exists and no go.mod", async () => {
     await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "Cargo.toml"),
-        '[package]\nname = "myapp"\nversion = "0.1.0"\n',
-      );
+      await Bun.write(join(dir, "Cargo.toml"), '[package]\nname = "myapp"\nversion = "0.1.0"\n');
       const profile = await detectProjectProfile(dir, {});
       expect(profile.language).toBe("rust");
     });
@@ -61,10 +58,7 @@ describe("detectProjectProfile — language: rust", () => {
   test("go takes priority over rust when both manifests present", async () => {
     await withTempDir(async (dir) => {
       await Bun.write(join(dir, "go.mod"), "module example.com/myapp\n\ngo 1.21\n");
-      await Bun.write(
-        join(dir, "Cargo.toml"),
-        '[package]\nname = "myapp"\nversion = "0.1.0"\n',
-      );
+      await Bun.write(join(dir, "Cargo.toml"), '[package]\nname = "myapp"\nversion = "0.1.0"\n');
       const profile = await detectProjectProfile(dir, {});
       expect(profile.language).toBe("go");
     });
@@ -80,13 +74,19 @@ describe("detectProjectProfile — language: typescript/javascript", () => {
     clearLanguageCache();
   });
 
-  test.each(["devDependencies", "dependencies"] as const)("returns language: 'typescript' when typescript in %s", async (depKey) => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "package.json"), JSON.stringify({ name: "myapp", [depKey]: { typescript: "^5.0.0" } }));
-      const profile = await detectProjectProfile(dir, {});
-      expect(profile.language).toBe("typescript");
-    });
-  });
+  test.each(["devDependencies", "dependencies"] as const)(
+    "returns language: 'typescript' when typescript in %s",
+    async (depKey) => {
+      await withTempDir(async (dir) => {
+        await Bun.write(
+          join(dir, "package.json"),
+          JSON.stringify({ name: "myapp", [depKey]: { typescript: "^5.0.0" } }),
+        );
+        const profile = await detectProjectProfile(dir, {});
+        expect(profile.language).toBe("typescript");
+      });
+    },
+  );
 
   test("returns language: 'javascript' when package.json exists without typescript dep", async () => {
     await withTempDir(async (dir) => {
@@ -124,10 +124,7 @@ describe("detectProjectProfile — language: typescript/javascript", () => {
 describe("detectProjectProfile — language: python", () => {
   test("returns language: 'python' when pyproject.toml exists", async () => {
     await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "pyproject.toml"),
-        "[tool.poetry]\nname = \"myapp\"\nversion = \"0.1.0\"\n",
-      );
+      await Bun.write(join(dir, "pyproject.toml"), '[tool.poetry]\nname = "myapp"\nversion = "0.1.0"\n');
       const profile = await detectProjectProfile(dir, {});
       expect(profile.language).toBe("python");
     });
@@ -161,10 +158,7 @@ describe("detectProjectProfile — language: python", () => {
 
   test("rust takes priority over python when both manifests present", async () => {
     await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "Cargo.toml"),
-        '[package]\nname = "myapp"\nversion = "0.1.0"\n',
-      );
+      await Bun.write(join(dir, "Cargo.toml"), '[package]\nname = "myapp"\nversion = "0.1.0"\n');
       await Bun.write(join(dir, "requirements.txt"), "pytest\n");
       const profile = await detectProjectProfile(dir, {});
       expect(profile.language).toBe("rust");
@@ -184,10 +178,7 @@ describe("detectProjectProfile — type: web", () => {
     { dep: "nuxt", version: "^3.0.0" },
   ])("returns type: 'web' when package.json deps include $dep", async ({ dep, version }) => {
     await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "package.json"),
-        JSON.stringify({ name: "myapp", dependencies: { [dep]: version } }),
-      );
+      await Bun.write(join(dir, "package.json"), JSON.stringify({ name: "myapp", dependencies: { [dep]: version } }));
       const profile = await detectProjectProfile(dir, {});
       expect(profile.type).toBe("web");
     });
@@ -205,10 +196,7 @@ describe("detectProjectProfile — type: api", () => {
     { dep: "hono", version: "^4.0.0" },
   ])("returns type: 'api' when package.json deps include $dep", async ({ dep, version }) => {
     await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "package.json"),
-        JSON.stringify({ name: "myapp", dependencies: { [dep]: version } }),
-      );
+      await Bun.write(join(dir, "package.json"), JSON.stringify({ name: "myapp", dependencies: { [dep]: version } }));
       const profile = await detectProjectProfile(dir, {});
       expect(profile.type).toBe("api");
     });
@@ -300,10 +288,7 @@ describe("detectProjectProfile — type: monorepo", () => {
 describe("detectProjectProfile — type: tui", () => {
   test("returns type: 'tui' when package.json deps include ink", async () => {
     await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "package.json"),
-        JSON.stringify({ name: "myapp", dependencies: { ink: "^4.0.0" } }),
-      );
+      await Bun.write(join(dir, "package.json"), JSON.stringify({ name: "myapp", dependencies: { ink: "^4.0.0" } }));
       const profile = await detectProjectProfile(dir, {});
       expect(profile.type).toBe("tui");
     });
@@ -320,7 +305,10 @@ describe("detectProjectProfile — testFramework inference from deps", () => {
     ["vitest", "^1.0.0"],
   ] as const)("returns testFramework: '%s' when %s is in devDependencies", async (dep, version) => {
     await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "package.json"), JSON.stringify({ name: "myapp", devDependencies: { [dep]: version } }));
+      await Bun.write(
+        join(dir, "package.json"),
+        JSON.stringify({ name: "myapp", devDependencies: { [dep]: version } }),
+      );
       const profile = await detectProjectProfile(dir, {});
       expect(profile.testFramework).toBe(dep);
     });
@@ -328,10 +316,7 @@ describe("detectProjectProfile — testFramework inference from deps", () => {
 
   test("returns testFramework: 'cargo-test' when language is rust", async () => {
     await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "Cargo.toml"),
-        '[package]\nname = "myapp"\nversion = "0.1.0"\n',
-      );
+      await Bun.write(join(dir, "Cargo.toml"), '[package]\nname = "myapp"\nversion = "0.1.0"\n');
       const profile = await detectProjectProfile(dir, {});
       expect(profile.testFramework).toBe("cargo-test");
     });
@@ -357,10 +342,7 @@ describe("detectProjectProfile — lintTool inference from config files", () => 
 
   test("returns lintTool: 'clippy' when language is rust", async () => {
     await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "Cargo.toml"),
-        '[package]\nname = "myapp"\nversion = "0.1.0"\n',
-      );
+      await Bun.write(join(dir, "Cargo.toml"), '[package]\nname = "myapp"\nversion = "0.1.0"\n');
       const profile = await detectProjectProfile(dir, {});
       expect(profile.lintTool).toBe("clippy");
     });
@@ -381,9 +363,24 @@ describe("detectProjectProfile — respects existing overrides", () => {
   });
 
   test.each([
-    ["language", { language: "typescript" } as object, (p: Awaited<ReturnType<typeof detectProjectProfile>>) => p.language, "typescript"],
-    ["testFramework", { testFramework: "custom-test" } as object, (p: Awaited<ReturnType<typeof detectProjectProfile>>) => p.testFramework, "custom-test"],
-    ["lintTool", { lintTool: "custom-lint" } as object, (p: Awaited<ReturnType<typeof detectProjectProfile>>) => p.lintTool, "custom-lint"],
+    [
+      "language",
+      { language: "typescript" } as object,
+      (p: Awaited<ReturnType<typeof detectProjectProfile>>) => p.language,
+      "typescript",
+    ],
+    [
+      "testFramework",
+      { testFramework: "custom-test" } as object,
+      (p: Awaited<ReturnType<typeof detectProjectProfile>>) => p.testFramework,
+      "custom-test",
+    ],
+    [
+      "lintTool",
+      { lintTool: "custom-lint" } as object,
+      (p: Awaited<ReturnType<typeof detectProjectProfile>>) => p.lintTool,
+      "custom-lint",
+    ],
   ])("does not overwrite %s when already set in existing", async (_field, existing, getField, expected) => {
     await withTempDir(async (dir) => {
       await Bun.write(join(dir, "go.mod"), "module example.com/myapp\n\ngo 1.21\n");

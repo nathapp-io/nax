@@ -9,11 +9,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeStory } from "@test/helpers";
+import type { Finding } from "@/findings/types";
 import { RectifierPromptBuilder, repoScopedRectification } from "@/prompts";
 import type { FailureRecord } from "@/prompts";
-import type { Finding } from "@/findings/types";
 import type { ReviewCheckResult } from "@/review/types";
+import { makeStory } from "@test/helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -41,7 +41,11 @@ const CONTEXT = "# Project Context\n\nThis project uses Bun 1.3+.";
 
 describe("RectifierPromptBuilder.regressionFailure()", () => {
   test("includes story title, description, acceptance criteria, failure messages, and test command", () => {
-    const result = RectifierPromptBuilder.regressionFailure({ story: STORY, failures: FAILURES, testCommand: TEST_CMD });
+    const result = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+    });
     expect(result).toContain(STORY.title);
     expect(result).toContain(STORY.description);
     for (const ac of STORY.acceptanceCriteria) expect(result).toContain(ac);
@@ -61,16 +65,28 @@ describe("RectifierPromptBuilder.regressionFailure()", () => {
   });
 
   test("includes conventions by default; omits conventions section when disabled", () => {
-    const withConventions = RectifierPromptBuilder.regressionFailure({ story: STORY, failures: FAILURES, testCommand: TEST_CMD });
+    const withConventions = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+    });
     expect(withConventions).toContain("Conventions");
-    const noConventions = RectifierPromptBuilder.regressionFailure({ story: STORY, failures: FAILURES, testCommand: TEST_CMD, conventions: false });
+    const noConventions = RectifierPromptBuilder.regressionFailure({
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+      conventions: false,
+    });
     expect(noConventions.split("\n").some((l) => l.startsWith("# Conventions"))).toBe(false);
   });
 
   test("includes isolation, context, constitution, and promptPrefix when provided", () => {
     const result = RectifierPromptBuilder.regressionFailure({
-      story: STORY, failures: FAILURES, testCommand: TEST_CMD,
-      isolation: "strict", context: CONTEXT,
+      story: STORY,
+      failures: FAILURES,
+      testCommand: TEST_CMD,
+      isolation: "strict",
+      context: CONTEXT,
       constitution: "# Constitution\n\nFollow these rules.",
       promptPrefix: "DIAGNOSTIC: Retrying after escalation.",
     });

@@ -22,11 +22,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  _manifestStoreDeps,
-  contextStoryDir,
-  loadFeatureManifests,
-} from "@/context/engine";
+import { _manifestStoreDeps, contextStoryDir, loadFeatureManifests } from "@/context/engine";
 import type { ContextManifest } from "@/context/engine/types";
 import { cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
 

@@ -16,7 +16,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { renderReport, type RenderOptions } from "@/replay";
+import { type RenderOptions, renderReport } from "@/replay";
 import type { RunTimeline, StoryTimeline } from "@/replay";
 
 function buildStory(overrides: Partial<StoryTimeline> & { storyId: string }): StoryTimeline {

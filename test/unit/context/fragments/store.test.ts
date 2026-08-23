@@ -100,9 +100,7 @@ describe("fragment store — writeFragment / readFragment (US-001)", () => {
   });
 
   test("writeFragment builds the path under <projectDir>/.nax/features/<featureId>/fragments/<storyId>.md", () => {
-    expect(fragmentPath("/repo", "feat-auth", "US-001")).toBe(
-      "/repo/.nax/features/feat-auth/fragments/US-001.md",
-    );
+    expect(fragmentPath("/repo", "feat-auth", "US-001")).toBe("/repo/.nax/features/feat-auth/fragments/US-001.md");
   });
 
   test("writeFragment creates the fragments dir before writing", async () => {

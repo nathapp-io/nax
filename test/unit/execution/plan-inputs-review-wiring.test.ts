@@ -1,28 +1,19 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
-import { assemblePlanInputsFromCtx } from "@/execution/plan-inputs";
 import type { NaxConfig } from "@/config/schema";
+import { assemblePlanInputsFromCtx } from "@/execution/plan-inputs";
 import { _diffUtilsDeps } from "@/review";
+import { makeSpawn } from "@test/helpers";
 
 // ─── Spawn mock for diff-utils used inside prepare-inputs ──────────────────────
 
 function makeSpawnSequence(outputs: string[]) {
   let i = 0;
-  return mock((_opts: unknown) => {
+  return makeSpawn(() => {
     const out = outputs[i] ?? "";
     i += 1;
-    return {
-      exited: Promise.resolve(0),
-      stdout: new ReadableStream({
-        start(c) {
-          c.enqueue(new TextEncoder().encode(out));
-          c.close();
-        },
-      }),
-      stderr: new ReadableStream({ start: (c) => c.close() }),
-      kill: () => {},
-    };
-  }) as unknown as typeof _diffUtilsDeps.spawn;
+    return out;
+  }).spawn;
 }
 
 const STAT_OUT = " src/foo.ts | 5 +-\n 1 file changed, 5 insertions(+)\n";
@@ -163,7 +154,6 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     expect(inputs.adversarialReview!.refExcludePatterns?.length ?? 0).toBeGreaterThan(0);
   });
 
-
   test("AC#4 (#1120): resolveTestFilePatterns result is shared between semantic and adversarial helpers via resolvedTestPatterns", async () => {
     // Both checks enabled — two prepare-inputs calls. plan-inputs.ts resolves patterns
     // once and forwards resolvedTestPatterns to both helpers, preventing double resolution.
@@ -208,7 +198,6 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     expect(adversarialExcludes).toContain(SENTINEL_DIR_PATHSPEC);
   });
 });
-
 
 describe("assemblePlanInputsFromCtx — evidence substantiation wiring (#1668)", () => {
   // `checkFindingEvidence` resolves a finding's file against `repoRoot` first,

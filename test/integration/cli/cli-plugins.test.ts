@@ -12,7 +12,7 @@ import * as path from "node:path";
 import { pluginsListCommand } from "@/cli/plugins";
 import type { NaxConfig } from "@/config/schema";
 import type { NaxPlugin } from "@/plugins/types";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { makeTempDir } from "@test/helpers";
 
 // Test fixture helpers
 async function createTempDir(): Promise<string> {

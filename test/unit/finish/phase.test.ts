@@ -87,9 +87,7 @@ function makeCtx(opts?: {
       enabled: true,
       notify: { mode: opts?.notifyMode ?? "escalation" },
     },
-    ...(opts?.telegram
-      ? { interaction: { plugin: "telegram", config: { botToken: "tok", chatId: "chat" } } }
-      : {}),
+    ...(opts?.telegram ? { interaction: { plugin: "telegram", config: { botToken: "tok", chatId: "chat" } } } : {}),
   };
 
   return {
@@ -127,7 +125,7 @@ describe("runFinishPhase", () => {
     });
     _finishPhaseDeps.detectForge = async () => null;
     _finishPhaseDeps.runFinishMachine = async () => ({ feature: "f", status: "already-ready" });
-    let costReadings = [1.0, 1.25];
+    const costReadings = [1.0, 1.25];
     _finishPhaseDeps.snapshotCost = () => costReadings.shift() ?? 0;
     try {
       const result = await runFinishPhase(makeCtx({ emit: (e) => events.push(e) }));
@@ -292,7 +290,13 @@ describe("escalation channel selection", () => {
     _finishPhaseDeps.detectForge = async () => "github";
     _finishPhaseDeps.createFinishOps = (deps) => {
       seen = deps.preferTelegram;
-      return { review: async () => ({ findings: [], gaps: [] }), fix: async () => ({}), openDraftPr: async () => null, promotePr: async () => ({ status: "opened" as const }), escalate: async () => ({}) };
+      return {
+        review: async () => ({ findings: [], gaps: [] }),
+        fix: async () => ({}),
+        openDraftPr: async () => null,
+        promotePr: async () => ({ status: "opened" as const }),
+        escalate: async () => ({}),
+      };
     };
     _finishPhaseDeps.runFinishMachine = async () => ({ feature: "f", status: "already-ready" });
     return runFinishPhase(makeCtx(opts))

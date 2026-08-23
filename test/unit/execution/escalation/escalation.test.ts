@@ -54,7 +54,6 @@ describe("escalateTier", () => {
     expect(escalateTier({ tier: "opus" }, customTierOrder)).toBeNull();
   });
 
-
   it("returns agent from next tier entry when agent field is set (AC-1)", () => {
     const tierOrder: TierConfig[] = [
       { tier: "fast", agent: "claude", attempts: 3 },
@@ -108,11 +107,9 @@ describe("escalateTier", () => {
     const step1 = escalateTier({ tier: "balanced", agent: "opencode" }, tierOrder);
     expect(step1).toEqual({ tier: "balanced", agent: "claude" });
 
-    // biome-ignore lint/style/noNonNullAssertion: checked above
     const step2 = escalateTier({ tier: step1!.tier, agent: step1!.agent }, tierOrder);
     expect(step2).toEqual({ tier: "powerful", agent: "claude" });
 
-    // biome-ignore lint/style/noNonNullAssertion: checked above
     const step3 = escalateTier({ tier: step2!.tier, agent: step2!.agent }, tierOrder);
     expect(step3).toBeNull();
   });
@@ -129,9 +126,7 @@ describe("escalateTier", () => {
   });
 
   test("returns null when rung not found in ladder", () => {
-    const tierOrder: TierConfig[] = [
-      { tier: "balanced", agent: "claude", attempts: 3 },
-    ];
+    const tierOrder: TierConfig[] = [{ tier: "balanced", agent: "claude", attempts: 3 }];
     const result = escalateTier({ tier: "fast", agent: "claude" }, tierOrder);
     expect(result).toBeNull();
   });
@@ -195,9 +190,7 @@ describe("getTierConfig", () => {
   });
 
   it("returns undefined when (tier, agent) tuple not found", () => {
-    const crossAgentOrder: TierConfig[] = [
-      { tier: "balanced", agent: "opencode", attempts: 3 },
-    ];
+    const crossAgentOrder: TierConfig[] = [{ tier: "balanced", agent: "opencode", attempts: 3 }];
     expect(getTierConfig({ tier: "balanced", agent: "unknown" }, crossAgentOrder)).toBeUndefined();
   });
 });
@@ -211,8 +204,24 @@ describe("calculateMaxIterations", () => {
     ["defaultTierOrder (5+3+2=10)", defaultTierOrder, 10],
     ["single tier (7)", [{ tier: "only", attempts: 7 }], 7],
     ["empty tier order (0)", [], 0],
-    ["large counts (100+200+150=450)", [{ tier: "a", attempts: 100 }, { tier: "b", attempts: 200 }, { tier: "c", attempts: 150 }], 450],
-    ["zero attempts (0+5+0=5)", [{ tier: "a", attempts: 0 }, { tier: "b", attempts: 5 }, { tier: "c", attempts: 0 }], 5],
+    [
+      "large counts (100+200+150=450)",
+      [
+        { tier: "a", attempts: 100 },
+        { tier: "b", attempts: 200 },
+        { tier: "c", attempts: 150 },
+      ],
+      450,
+    ],
+    [
+      "zero attempts (0+5+0=5)",
+      [
+        { tier: "a", attempts: 0 },
+        { tier: "b", attempts: 5 },
+        { tier: "c", attempts: 0 },
+      ],
+      5,
+    ],
   ])("sums attempts for %s", (_label, tierOrder, expected) => {
     expect(calculateMaxIterations(tierOrder)).toBe(expected);
   });

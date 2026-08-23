@@ -9,9 +9,9 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "@/config";
-import type { PRD, UserStory } from "@/prd";
-import type { PipelineContext } from "@/pipeline/types";
 import type { _routingDeps as RoutingDeps } from "@/pipeline/stages/routing";
+import type { PipelineContext } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd";
 import type { EscalationAttempt, StoryRouting } from "@/prd/types";
 import { makeNaxConfig, makeStory } from "@test/helpers";
 
@@ -71,15 +71,13 @@ describe("routingStage - initialModelTier set on first classification", () => {
   afterEach(() => {
     mock.restore();
     if (origRoutingDeps) {
-      const { _routingDeps } = require("../../../../src/pipeline/stages/routing");
+      const { _routingDeps } = require("@/pipeline/stages/routing");
       Object.assign(_routingDeps, origRoutingDeps);
     }
   });
 
   test("story.routing.initialModelTier is set to classified modelTier on first classify", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 
@@ -96,9 +94,7 @@ describe("routingStage - initialModelTier set on first classification", () => {
   });
 
   test("story.routing.initialModelTier matches modelTier on first classify (powerful tier)", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 
@@ -133,15 +129,13 @@ describe("routingStage - initialModelTier never overwritten after first classify
   afterEach(() => {
     mock.restore();
     if (origRoutingDeps) {
-      const { _routingDeps } = require("../../../../src/pipeline/stages/routing");
+      const { _routingDeps } = require("@/pipeline/stages/routing");
       Object.assign(_routingDeps, origRoutingDeps);
     }
   });
 
   test("initialModelTier is preserved when story escalates from fast to powerful", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 

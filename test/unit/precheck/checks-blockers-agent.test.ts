@@ -6,8 +6,8 @@
  * Covers: claude, codex, opencode, gemini, aider, missing-binary, default behavior.
  */
 
-import { describe, expect, mock, test, afterEach } from "bun:test";
-import { checkAgentCLI, _deps } from "@/precheck/checks-blockers";
+import { afterEach, describe, expect, mock, test } from "bun:test";
+import { _deps, checkAgentCLI } from "@/precheck/checks-blockers";
 import { withDepsRestore } from "@test/helpers";
 import { makeNaxConfig } from "@test/helpers";
 
@@ -85,7 +85,9 @@ describe("checkAgentCLI — missing binary (non-zero exit)", () => {
     expect(r1.passed).toBe(false);
     expect(r1.tier).toBe("blocker");
 
-    _deps.spawn = mock((_cmd: string[]) => { throw new Error("ENOENT"); });
+    _deps.spawn = mock((_cmd: string[]) => {
+      throw new Error("ENOENT");
+    });
     const r2 = await checkAgentCLI(makeConfig("codex"));
     expect(r2.passed).toBe(false);
     expect(r2.tier).toBe("blocker");

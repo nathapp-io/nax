@@ -54,9 +54,7 @@ describe("splitWorkerProtocol", () => {
   });
 
   test("throws when the Output format heading is missing", () => {
-    expect(() => splitWorkerProtocol("just mechanics, no heading\n")).toThrow(
-      /missing the "## Output format" heading/,
-    );
+    expect(() => splitWorkerProtocol("just mechanics, no heading\n")).toThrow(/missing the "## Output format" heading/);
   });
 });
 
@@ -95,10 +93,7 @@ describe("firstDifferingLine", () => {
 describe("generatePromptsFileContent", () => {
   test("regenerates content matching the committed prompts.gen.ts", async () => {
     const generated = await generatePromptsFileContent();
-    const committed = await Bun.file(
-      new URL("../../../src/finish/review/prompts.gen.ts", import.meta.url),
-    ).text();
+    const committed = await Bun.file(new URL("../../../src/finish/review/prompts.gen.ts", import.meta.url)).text();
     expect(generated).toBe(committed);
   });
-
 });

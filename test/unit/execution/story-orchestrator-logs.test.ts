@@ -66,7 +66,6 @@ describe("StoryOrchestrator runPhase — beforeRef threading", () => {
       await runtime.close();
     }
   });
-
 });
 
 describe("StoryOrchestrator runPhase — log emission", () => {

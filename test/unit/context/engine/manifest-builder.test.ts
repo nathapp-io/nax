@@ -120,9 +120,7 @@ describe("buildManifest — chunkScopePaths mapping (AC5)", () => {
     const manifest = buildManifest(inputs);
 
     expect(manifest.chunkScopePaths).toBeDefined();
-    expect(manifest.chunkScopePaths?.["static-rules:agents:section-a:deadbeef"]).toEqual([
-      "src/agents/**/*.ts",
-    ]);
+    expect(manifest.chunkScopePaths?.["static-rules:agents:section-a:deadbeef"]).toEqual(["src/agents/**/*.ts"]);
     // Chunk without scopePaths is NOT keyed in chunkScopePaths
     expect(manifest.chunkScopePaths?.["static-rules:global:section-b:abcdef01"]).toBeUndefined();
   });
@@ -167,9 +165,7 @@ describe("buildManifest — chunkScopePaths mapping (AC5)", () => {
     const manifest = buildManifest(inputs);
 
     expect(manifest.chunkScopePaths?.["static-rules:agents:section-a:deadbeef"]).toEqual(["src/agents/**/*.ts"]);
-    expect(manifest.chunkScopePaths?.["static-rules:retry-strategy:section-b:abcdef01"]).toEqual([
-      "src/operations/**",
-    ]);
+    expect(manifest.chunkScopePaths?.["static-rules:retry-strategy:section-b:abcdef01"]).toEqual(["src/operations/**"]);
     expect(manifest.chunkScopePaths?.["static-rules:test-writing:section-c:12345678"]).toEqual([
       "test/**/*.test.ts",
       "test/**/*.test.tsx",
@@ -217,9 +213,7 @@ describe("buildManifest — chunkScopePaths omitted when empty (AC6)", () => {
     // Presence check
     expect(manifest.chunkScopePaths).toBeDefined();
     // Only the scoped chunk is keyed
-    expect(Object.keys(manifest.chunkScopePaths ?? {}).sort()).toEqual([
-      "static-rules:agents:section-a:deadbeef",
-    ]);
+    expect(Object.keys(manifest.chunkScopePaths ?? {}).sort()).toEqual(["static-rules:agents:section-a:deadbeef"]);
   });
 });
 
@@ -302,10 +296,6 @@ describe("buildManifest — code-neighbor chunkScopePaths (US-002 AC5)", () => {
     const inputs = makeInputs({ packed, usedTokens: 100 });
     const manifest = buildManifest(inputs);
 
-    expect(manifest.chunkScopePaths?.["code-neighbor:abcdef01"]).toEqual([
-      "src/foo.ts",
-      "src/shared.ts",
-      "src/bar.ts",
-    ]);
+    expect(manifest.chunkScopePaths?.["code-neighbor:abcdef01"]).toEqual(["src/foo.ts", "src/shared.ts", "src/bar.ts"]);
   });
 });

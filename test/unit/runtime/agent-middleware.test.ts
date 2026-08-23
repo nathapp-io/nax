@@ -1,6 +1,6 @@
-import { describe, test, expect } from "bun:test";
-import { MiddlewareChain, type AgentMiddleware, type MiddlewareContext } from "@/runtime/agent-middleware";
+import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
+import { type AgentMiddleware, MiddlewareChain, type MiddlewareContext } from "@/runtime/agent-middleware";
 
 function makeCtx(overrides: Partial<MiddlewareContext> = {}): MiddlewareContext {
   return {
@@ -21,24 +21,52 @@ describe("MiddlewareChain", () => {
 
   test("calls before hooks in order", async () => {
     const calls: string[] = [];
-    const a: AgentMiddleware = { name: "a", before: async () => { calls.push("a"); } };
-    const b: AgentMiddleware = { name: "b", before: async () => { calls.push("b"); } };
+    const a: AgentMiddleware = {
+      name: "a",
+      before: async () => {
+        calls.push("a");
+      },
+    };
+    const b: AgentMiddleware = {
+      name: "b",
+      before: async () => {
+        calls.push("b");
+      },
+    };
     await MiddlewareChain.from([a, b]).runBefore(makeCtx());
     expect(calls).toEqual(["a", "b"]);
   });
 
   test("calls after hooks in order with result + durationMs", async () => {
     const calls: Array<[string, unknown, number]> = [];
-    const a: AgentMiddleware = { name: "a", after: async (_, r, d) => { calls.push(["a", r, d]); } };
-    const b: AgentMiddleware = { name: "b", after: async (_, r, d) => { calls.push(["b", r, d]); } };
+    const a: AgentMiddleware = {
+      name: "a",
+      after: async (_, r, d) => {
+        calls.push(["a", r, d]);
+      },
+    };
+    const b: AgentMiddleware = {
+      name: "b",
+      after: async (_, r, d) => {
+        calls.push(["b", r, d]);
+      },
+    };
     await MiddlewareChain.from([a, b]).runAfter(makeCtx(), { success: true }, 42);
-    expect(calls).toEqual([["a", { success: true }, 42], ["b", { success: true }, 42]]);
+    expect(calls).toEqual([
+      ["a", { success: true }, 42],
+      ["b", { success: true }, 42],
+    ]);
   });
 
   test("calls onError hooks in order with err + durationMs", async () => {
     const calls: string[] = [];
     const err = new Error("boom");
-    const a: AgentMiddleware = { name: "a", onError: async (_, e) => { calls.push(String(e)); } };
+    const a: AgentMiddleware = {
+      name: "a",
+      onError: async (_, e) => {
+        calls.push(String(e));
+      },
+    };
     await MiddlewareChain.from([a]).runOnError(makeCtx(), err, 10);
     expect(calls).toEqual(["Error: boom"]);
   });
@@ -52,7 +80,12 @@ describe("MiddlewareChain", () => {
 
   test("passes MiddlewareContext through to each hook", async () => {
     const seen: string[] = [];
-    const mw: AgentMiddleware = { name: "spy", before: async (ctx) => { seen.push(ctx.agentName); } };
+    const mw: AgentMiddleware = {
+      name: "spy",
+      before: async (ctx) => {
+        seen.push(ctx.agentName);
+      },
+    };
     await MiddlewareChain.from([mw]).runBefore(makeCtx({ agentName: "codex" }));
     expect(seen).toEqual(["codex"]);
   });

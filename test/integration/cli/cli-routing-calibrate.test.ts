@@ -10,15 +10,16 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Command } from "commander";
 import { _routingCalibrateDeps, parseMinSamplesFlag, routingCalibrateCommand, runRoutingCalibrateCli } from "@/cli";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
 import { NaxError } from "@/errors";
 import type { RunMetrics } from "@/metrics";
+import { absentValue } from "@test/helpers";
+import { Command } from "commander";
 
 type CalibrateDeps = typeof _routingCalibrateDeps;
 
@@ -573,7 +574,7 @@ describe("routingCalibrateCommand — partial project config overlay", () => {
     // matching the partial-overlay style used everywhere else in this repo.
     const partialOverlay: NaxConfig = {
       ...(structuredClone(DEFAULT_CONFIG) as NaxConfig),
-      autoMode: undefined as unknown as NaxConfig["autoMode"],
+      autoMode: absentValue<NaxConfig["autoMode"]>(),
       name: "fixture-project",
     };
     const { deps, writes } = makeCalibrateDepsFixture();
@@ -597,7 +598,7 @@ describe("routingCalibrateCommand — partial project config overlay", () => {
     const runs = makeRunsWithEscalatingSimpleBand();
     const partialOverlay: NaxConfig = {
       ...(structuredClone(DEFAULT_CONFIG) as NaxConfig),
-      autoMode: undefined as unknown as NaxConfig["autoMode"],
+      autoMode: absentValue<NaxConfig["autoMode"]>(),
       name: "fixture-project",
     };
     const { deps, writes } = makeCalibrateDepsFixture();

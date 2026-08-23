@@ -4,11 +4,13 @@ import { pickSelector } from "@/config";
 import type { DEFAULT_CONFIG } from "@/config";
 import { callOp } from "@/operations";
 import type { HopBodyContext, RunOperation } from "@/operations/types";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 let runtime: NaxRuntime | undefined;
-afterEach(async () => { await runtime?.close(); });
+afterEach(async () => {
+  await runtime?.close();
+});
 
 const testSel = pickSelector("routing-op-test", "routing");
 
@@ -219,7 +221,12 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       },
       runAsSessionFn: async (_agentName, _handle, _prompt, _opts) => {
         sendCallCount++;
-        return { output: "single turn", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0, internalRoundTrips: 0 };
+        return {
+          output: "single turn",
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+          internalRoundTrips: 0,
+        };
       },
     });
     const sessionManager = makeSessionManager();
@@ -399,7 +406,12 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
         sendCallCount++;
         // First call: invalid JSON; second call: valid JSON
         const output = sendCallCount === 1 ? "invalid json" : validOutput;
-        return { output, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.01, internalRoundTrips: 0 };
+        return {
+          output,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0.01,
+          internalRoundTrips: 0,
+        };
       },
     });
     const sessionManager = makeSessionManager();
@@ -446,7 +458,12 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       runAsSessionFn: async (_agentName, _handle, _prompt, _opts) => {
         sendCallCount++;
         const output = sendCallCount === 1 ? "invalid json" : validOutput;
-        return { output, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.05, internalRoundTrips: 0 };
+        return {
+          output,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0.05,
+          internalRoundTrips: 0,
+        };
       },
     });
     const sessionManager = makeSessionManager();
@@ -497,7 +514,11 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
 
     const fallbackValue = { passed: true, findings: [], failOpen: true };
 
-    const opWithFallback: RunOperation<{ text: string }, { passed: boolean; findings: unknown[]; failOpen?: boolean }, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+    const opWithFallback: RunOperation<
+      { text: string },
+      { passed: boolean; findings: unknown[]; failOpen?: boolean },
+      Pick<typeof DEFAULT_CONFIG, "routing">
+    > = {
       kind: "run",
       name: "fallback-op",
       stage: "review",
@@ -566,7 +587,9 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
     const opAbortRetry: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
       ...runEchoOp,
       name: "abort-retry-op",
-      parse: (_output) => { throw new Error("Always fail parse"); },
+      parse: (_output) => {
+        throw new Error("Always fail parse");
+      },
       retry: alwaysRetry,
     };
 

@@ -11,26 +11,21 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import type {
-  CallContext,
-  DeterministicOperation,
-  MutationCheckInput,
-  MutationCheckOutput,
-} from "@/operations";
-import { mutationCheckOp } from "@/operations";
+import { DEFAULT_CONFIG } from "@/config";
+import type { MutationCheckConfig } from "@/config/selectors";
 import {
-  _storyOrchestratorDeps,
-  StoryOrchestratorBuilder,
-  buildPlanForStrategy,
   CANONICAL_ORDER,
+  type InternalBuildState,
   PHASE_KIND_TO_STATE_KEY,
   STRICT_VERDICT_PHASE_NAMES,
-  type InternalBuildState,
+  StoryOrchestratorBuilder,
+  _storyOrchestratorDeps,
+  buildPlanForStrategy,
 } from "@/execution";
-import type { MutationCheckConfig } from "@/config/selectors";
-import { DEFAULT_CONFIG } from "@/config";
-import { makeMockCallContext, makeMockPlanInputs, makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
+import type { CallContext, DeterministicOperation, MutationCheckInput, MutationCheckOutput } from "@/operations";
+import { mutationCheckOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
+import { makeMockCallContext, makeMockPlanInputs, makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC1: CANONICAL_ORDER positions mutation-check immediately after full-suite-gate
@@ -80,9 +75,11 @@ describe("AC3: STRICT_VERDICT_PHASE_NAMES excludes mutation-check", () => {
 // AC4: builder.addMutationCheck + spied mutationCheckOp runs after full-suite-gate
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeMutationCheckOp(
-  result: { success: true; survivors?: readonly unknown[] },
-): DeterministicOperation<MutationCheckInput, MutationCheckOutput, MutationCheckConfig> {
+function makeMutationCheckOp(result: { success: true; survivors?: readonly unknown[] }): DeterministicOperation<
+  MutationCheckInput,
+  MutationCheckOutput,
+  MutationCheckConfig
+> {
   return {
     kind: "deterministic",
     name: "mutation-check",
@@ -154,7 +151,10 @@ describe("AC4: builder.addMutationCheck + plan run", () => {
             stage: "run",
             config: (() => DEFAULT_CONFIG) as any,
             session: { role: "implementer", lifetime: "warm" },
-            build: () => ({ role: { id: "r", content: "", overridable: false }, task: { id: "t", content: "", overridable: false } }),
+            build: () => ({
+              role: { id: "r", content: "", overridable: false },
+              task: { id: "t", content: "", overridable: false },
+            }),
             parse: () => ({ success: true }),
           },
           input: { code: "" },
@@ -220,7 +220,10 @@ describe("AC4: builder.addMutationCheck + plan run", () => {
             stage: "run",
             config: (() => DEFAULT_CONFIG) as any,
             session: { role: "implementer", lifetime: "warm" },
-            build: () => ({ role: { id: "r", content: "", overridable: false }, task: { id: "t", content: "", overridable: false } }),
+            build: () => ({
+              role: { id: "r", content: "", overridable: false },
+              task: { id: "t", content: "", overridable: false },
+            }),
             parse: () => ({ success: true }),
           },
           input: { code: "" },
@@ -383,7 +386,10 @@ describe("AC6: mutation-check survivor with success:true does not halt verifier"
             stage: "run",
             config: (() => DEFAULT_CONFIG) as any,
             session: { role: "implementer", lifetime: "warm" },
-            build: () => ({ role: { id: "r", content: "", overridable: false }, task: { id: "t", content: "", overridable: false } }),
+            build: () => ({
+              role: { id: "r", content: "", overridable: false },
+              task: { id: "t", content: "", overridable: false },
+            }),
             parse: () => ({ success: true }),
           },
           input: { code: "" },

@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { AgentManager } from "@/agents/manager";
-import { DEFAULT_CONFIG } from "@/config/defaults";
-import type { NaxConfig } from "@/config";
-import { NaxConfigSchema } from "@/config/schemas";
-import { MiddlewareChain, type AgentMiddleware, type MiddlewareContext } from "@/runtime/agent-middleware";
 import { _acpAdapterDeps } from "@/agents/acp/adapter";
+import { AgentManager } from "@/agents/manager";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { NaxConfigSchema } from "@/config/schemas";
+import { type AgentMiddleware, MiddlewareChain, type MiddlewareContext } from "@/runtime/agent-middleware";
 import { makeClient, makeSession } from "./acp/adapter.test";
 
 function makeManager(fallback: Record<string, unknown> = {}) {
@@ -24,8 +24,18 @@ function makeManager(fallback: Record<string, unknown> = {}) {
   } as never);
 }
 
-const availFailure = { category: "availability" as const, outcome: "fail-auth" as const, retriable: false, message: "" };
-const qualityFailure = { category: "quality" as const, outcome: "fail-quality" as const, retriable: false, message: "" };
+const availFailure = {
+  category: "availability" as const,
+  outcome: "fail-auth" as const,
+  retriable: false,
+  message: "",
+};
+const qualityFailure = {
+  category: "quality" as const,
+  outcome: "fail-quality" as const,
+  retriable: false,
+  message: "",
+};
 
 describe("AgentManager — Phase 1 pass-through", () => {
   test("getDefault() returns 'claude' when unset and prefers agent.default when explicitly set", () => {
@@ -43,7 +53,12 @@ describe("AgentManager — Phase 1 pass-through", () => {
     const manager = new AgentManager(DEFAULT_CONFIG);
     expect(manager.isUnavailable("claude")).toBe(false);
 
-    manager.markUnavailable("claude", { category: "availability", outcome: "fail-auth", message: "401 unauthorized", retriable: false });
+    manager.markUnavailable("claude", {
+      category: "availability",
+      outcome: "fail-auth",
+      message: "401 unauthorized",
+      retriable: false,
+    });
     expect(manager.isUnavailable("claude")).toBe(true);
 
     manager.reset();
@@ -53,11 +68,7 @@ describe("AgentManager — Phase 1 pass-through", () => {
   test("shouldSwap() returns false when hasBundle is false", () => {
     const manager = new AgentManager(DEFAULT_CONFIG);
     expect(
-      manager.shouldSwap(
-        { category: "availability", outcome: "fail-auth", message: "x", retriable: false },
-        0,
-        false,
-      ),
+      manager.shouldSwap({ category: "availability", outcome: "fail-auth", message: "x", retriable: false }, 0, false),
     ).toBe(false);
   });
 
@@ -129,7 +140,14 @@ describe("AgentManager.shouldSwap (Phase 4)", () => {
     ["fallback disabled", makeManager({ enabled: false }), availFailure, 0, true, false],
     ["hop cap reached", makeManager({ maxHopsPerStory: 1 }), availFailure, 1, true, false],
     ["hasBundle is false", makeManager(), availFailure, 0, false, false],
-    ["quality failure onQualityFailure=false", makeManager({ onQualityFailure: false }), qualityFailure, 0, true, false],
+    [
+      "quality failure onQualityFailure=false",
+      makeManager({ onQualityFailure: false }),
+      qualityFailure,
+      0,
+      true,
+      false,
+    ],
     ["quality failure onQualityFailure=true", makeManager({ onQualityFailure: true }), qualityFailure, 0, true, true],
     ["failure is undefined", makeManager(), undefined, 0, true, false],
   ] as const)("shouldSwap(%s) → %s", (_label, mgr, failure, hops, hasBundle, expected) => {
@@ -149,7 +167,7 @@ describe("AgentManager.nextCandidate (Phase 4)", () => {
 
   test("filters pruned candidates", () => {
     const m = makeManager({ map: { claude: ["codex", "gemini"] } });
-    m["_prunedFallback"].add("codex");
+    m._prunedFallback.add("codex");
     expect(m.nextCandidate("claude", 0)).toBe("gemini");
   });
 
@@ -185,7 +203,9 @@ describe("AgentManager — middleware envelope", () => {
       calledRunAs = true;
       return { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 };
     };
-    try { await manager.run({ runOptions: { prompt: "test" } as never }); } catch {}
+    try {
+      await manager.run({ runOptions: { prompt: "test" } as never });
+    } catch {}
     expect(calledRunAs).toBe(true);
 
     let calledCompleteAs = false;
@@ -193,15 +213,24 @@ describe("AgentManager — middleware envelope", () => {
       calledCompleteAs = true;
       return { output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     };
-    try { await manager.complete("prompt", {} as never); } catch {}
+    try {
+      await manager.complete("prompt", {} as never);
+    } catch {}
     expect(calledCompleteAs).toBe(true);
   });
 
   test("middleware before() is called before the adapter", async () => {
     const calls: string[] = [];
-    const mw: AgentMiddleware = { name: "spy", before: async () => { calls.push("before"); } };
+    const mw: AgentMiddleware = {
+      name: "spy",
+      before: async () => {
+        calls.push("before");
+      },
+    };
     const manager = makeMiddlewareManager(mw);
-    try { await manager.runAs("claude", { runOptions: { prompt: "test", workdir: "/tmp" } as never }); } catch {}
+    try {
+      await manager.runAs("claude", { runOptions: { prompt: "test", workdir: "/tmp" } as never });
+    } catch {}
     expect(calls).toContain("before");
   });
 
@@ -214,44 +243,74 @@ describe("AgentManager — middleware envelope", () => {
       },
     };
     const manager = makeMiddlewareManager(mw);
-    try { await manager.runAs("claude", { runOptions: { prompt: "test", workdir: "/tmp" } as never }); } catch {}
+    try {
+      await manager.runAs("claude", { runOptions: { prompt: "test", workdir: "/tmp" } as never });
+    } catch {}
     expect(capturedPerms).toBeDefined();
-    expect(typeof capturedPerms!["mode"]).toBe("string");
+    expect(typeof capturedPerms!.mode).toBe("string");
   });
 
   test("runAs() re-throws adapter errors (middleware onError no longer invoked — ADR-020 Wave 1)", async () => {
     const manager = makeMiddlewareManager();
-    await expect(
-      manager.runAs("nonexistent-agent-xyz", { runOptions: { prompt: "test" } as never })
-    ).rejects.toThrow();
+    await expect(manager.runAs("nonexistent-agent-xyz", { runOptions: { prompt: "test" } as never })).rejects.toThrow();
   });
 
   test("fallback still works after agent swap (agentFallbacks in result)", async () => {
     const config = NaxConfigSchema.parse({
       agent: {
         default: "claude",
-        fallback: { enabled: true, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true },
+        fallback: {
+          enabled: true,
+          map: { claude: ["codex"] },
+          maxHopsPerStory: 2,
+          onQualityFailure: false,
+          rebuildContext: true,
+        },
       },
     }) as NaxConfig;
     const manager = new AgentManager(config, undefined, { runId: "r-fallback-test" });
 
     let callCount = 0;
     const result = await manager.runAs("claude", {
-      runOptions: { prompt: "original-prompt", workdir: "/tmp", modelTier: "fast", modelDef: { provider: "anthropic", model: "m", env: {} }, timeoutSeconds: 10, config } as never,
+      runOptions: {
+        prompt: "original-prompt",
+        workdir: "/tmp",
+        modelTier: "fast",
+        modelDef: { provider: "anthropic", model: "m", env: {} },
+        timeoutSeconds: 10,
+        config,
+      } as never,
       executeHop: async (_agentName, _bundle, _failure) => {
         callCount += 1;
         if (callCount === 1) {
           return {
             result: {
-              success: false, exitCode: 1, output: "unavailable", rateLimited: false, durationMs: 10, estimatedCostUsd: 0,
-              adapterFailure: { category: "availability" as const, outcome: "fail-auth" as const, retriable: false, message: "" },
+              success: false,
+              exitCode: 1,
+              output: "unavailable",
+              rateLimited: false,
+              durationMs: 10,
+              estimatedCostUsd: 0,
+              adapterFailure: {
+                category: "availability" as const,
+                outcome: "fail-auth" as const,
+                retriable: false,
+                message: "",
+              },
             },
             bundle: { files: [] } as never,
             prompt: "original-prompt",
           };
         }
         return {
-          result: { success: true, exitCode: 0, output: "fallback-done", rateLimited: false, durationMs: 20, estimatedCostUsd: 0.001 },
+          result: {
+            success: true,
+            exitCode: 0,
+            output: "fallback-done",
+            rateLimited: false,
+            durationMs: 20,
+            estimatedCostUsd: 0.001,
+          },
           bundle: undefined,
           prompt: "swap-handoff-prompt",
         };
@@ -275,7 +334,11 @@ describe("AgentManager — middleware envelope", () => {
     };
     const manager = makeMiddlewareManager(mw);
     try {
-      await manager.completeAs("claude", "prompt", { modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} }, workdir: "/tmp/test", timeoutMs: 100 });
+      await manager.completeAs("claude", "prompt", {
+        modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+        workdir: "/tmp/test",
+        timeoutMs: 100,
+      });
     } catch {}
     expect(calls).toHaveLength(0);
     expect(capturedSignal).toBeUndefined();

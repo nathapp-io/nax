@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import type { NaxConfig } from "@/config";
-import type { InteractionChain } from "@/interaction/chain";
 import {
   type TriggerContext,
   checkCostExceeded,
@@ -16,16 +15,14 @@ import {
   isTriggerEnabled,
 } from "@/interaction/triggers";
 import type { TriggerName } from "@/interaction/types";
+import { makeInteractionChain } from "@test/helpers";
 
 const makeSlicedConfig = (
   triggers: Partial<Record<TriggerName, unknown>>,
   defaults: Record<string, unknown> = {},
 ): NaxConfig => ({ interaction: { triggers: triggers as Record<string, unknown>, defaults } }) as NaxConfig;
 
-const mockChain = {
-  prompt: async () => ({ action: "approve" }) as const,
-  applyFallback: (_r: unknown, _f: string) => "approve" as const,
-} as unknown as InteractionChain;
+const mockChain = makeInteractionChain();
 
 describe("triggers — narrowed config (Pick<NaxConfig, 'interaction'>)", () => {
   describe("isTriggerEnabled", () => {
@@ -103,14 +100,14 @@ describe("triggers — narrowed config (Pick<NaxConfig, 'interaction'>)", () => 
       const config = makeSlicedConfig({});
       const context: TriggerContext = { featureName: "my-feature" };
       let called = false;
-      const chain = {
+      const chain = makeInteractionChain({
         prompt: async (req: unknown) => {
           called = true;
           expect((req as { id: string }).id.startsWith("trigger-")).toBe(true);
           return { action: "approve" } as const;
         },
         applyFallback: (_r: unknown, _f: string) => "approve" as const,
-      } as unknown as InteractionChain;
+      });
 
       const response = await executeTrigger("security-review", context, config, chain);
       expect(called).toBe(true);

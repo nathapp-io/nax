@@ -15,18 +15,20 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { loadConfig } from "@/config/loader";
 import { _resetPluginErrorSink, _setPluginErrorSink, loadPlugins as loadPluginsWithBuiltins } from "@/plugins/loader";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { makeTempDir } from "@test/helpers";
 
 const DISABLE_BUILTIN_PLUGINS = ["nax-curator", "nax-auto-pr"];
 
-function loadPlugins(
-  ...args: Parameters<typeof loadPluginsWithBuiltins>
-): ReturnType<typeof loadPluginsWithBuiltins> {
+function loadPlugins(...args: Parameters<typeof loadPluginsWithBuiltins>): ReturnType<typeof loadPluginsWithBuiltins> {
   const [globalDir, projectDir, configPlugins, projectRoot, disabledPlugins, isTestFile] = args;
-  return loadPluginsWithBuiltins(globalDir, projectDir, configPlugins, projectRoot, [
-    ...DISABLE_BUILTIN_PLUGINS,
-    ...(disabledPlugins ?? []),
-  ], isTestFile);
+  return loadPluginsWithBuiltins(
+    globalDir,
+    projectDir,
+    configPlugins,
+    projectRoot,
+    [...DISABLE_BUILTIN_PLUGINS, ...(disabledPlugins ?? [])],
+    isTestFile,
+  );
 }
 
 async function createTempDir(): Promise<string> {
@@ -297,9 +299,9 @@ export default {
       const projectPluginsDir = path.join(naxDir, "plugins");
       const configPlugins = config.plugins || [];
 
-      await expect(
-        loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, projectRoot),
-      ).rejects.toMatchObject({ code: "PLUGIN_LOAD_FAILED" });
+      await expect(loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, projectRoot)).rejects.toMatchObject({
+        code: "PLUGIN_LOAD_FAILED",
+      });
 
       // Verify helpful error was logged
       const errorOutput = errorLogs.join("\n");

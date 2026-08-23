@@ -9,12 +9,13 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "@/config/defaults";
-import { type SequentialExecutionContext, executeUnified } from "@/execution/unified-executor";
 import { _runCompletionDeps, handleRunCompletion } from "@/execution/lifecycle/run-completion";
+import { type SequentialExecutionContext, executeUnified } from "@/execution/unified-executor";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineEvent, RunCompletedEvent } from "@/pipeline/event-bus";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd/types";
+import { makePRD, makePluginRegistry, makeStatusWriter, makeTestRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -36,33 +37,12 @@ function makeStory(id: string, status: UserStory["status"] = "passed"): UserStor
 }
 
 function makeCompletePRD(stories: UserStory[] = [makeStory("US-001", "passed")]): PRD {
-  return {
+  return makePRD({
     project: "test-project",
     feature: "test-feature",
     branchName: "test-branch",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
     userStories: stories,
-  } as unknown as PRD;
-}
-
-function makeStatusWriter() {
-  return {
-    setPrd: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    setRunStatus: mock(() => {}),
-    update: mock(async () => {}),
-    writeFeatureStatus: mock(async () => {}),
-  };
-}
-
-function makePluginRegistry() {
-  return {
-    getReporters: () => [],
-    getContextProviders: () => [],
-    getReviewers: () => [],
-    getRoutingStrategies: () => [],
-  };
+  });
 }
 
 const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
@@ -71,40 +51,31 @@ const RL002_WORKDIR = `/tmp/nax-rl002-test-workdir-${randomUUID()}`;
 const RL002_PRD_PATH = `/tmp/nax-rl002-test-prd-${randomUUID()}.json`;
 
 function makeMinimalContext(): SequentialExecutionContext {
+  const config = {
+    ...DEFAULT_CONFIG,
+    execution: {
+      ...DEFAULT_CONFIG.execution,
+      iterationDelayMs: 0,
+    },
+  };
   return {
     prdPath: RL002_PRD_PATH,
     workdir: RL002_WORKDIR,
-    config: {
-      ...DEFAULT_CONFIG,
-      execution: {
-        ...DEFAULT_CONFIG.execution,
-        iterationDelayMs: 0,
-      },
-    },
+    config,
     hooks: EMPTY_HOOKS,
     feature: "test-feature",
     dryRun: false,
     useBatch: false,
-    pluginRegistry: makePluginRegistry() as unknown as SequentialExecutionContext["pluginRegistry"],
-    statusWriter: makeStatusWriter() as unknown as SequentialExecutionContext["statusWriter"],
+    pluginRegistry: makePluginRegistry(),
+    statusWriter: makeStatusWriter(),
     runId: "run-rl002-test",
     startTime: Date.now(),
     batchPlan: [],
     interactionChain: null,
     logFilePath: undefined,
-    runtime: {
-      outputDir: "/tmp/nax-test-rl002-output",
-      costAggregator: {
-        snapshot: () => ({ totalCostUsd: 0, totalEstimatedCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }),
-        byStage: () => ({}),
-        byStory: () => ({}),
-        byAgent: () => ({}),
-        record: () => {},
-        recordError: () => {},
-        recordOperationSummary: () => {},
-        drain: async () => {},
-      },
-    } as unknown as SequentialExecutionContext["runtime"],
+    // Real cost aggregator via a real runtime — a fresh instance already reports
+    // an all-zero snapshot, which is all this test needs.
+    runtime: makeTestRuntime({ config }),
   };
 }
 
@@ -143,9 +114,7 @@ describe("RL-002: unified-executor does not emit run:completed", () => {
 
     expect(result.exitReason).toBe("completed");
 
-    const runCompletedEvents = capturedEvents.filter(
-      (ev): ev is RunCompletedEvent => ev.type === "run:completed",
-    );
+    const runCompletedEvents = capturedEvents.filter((ev): ev is RunCompletedEvent => ev.type === "run:completed");
     // AC #2: unified-executor must NOT emit run:completed
     expect(runCompletedEvents).toHaveLength(0);
   });

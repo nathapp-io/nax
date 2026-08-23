@@ -82,7 +82,12 @@ async function captureToolDiagnostics(
   }
 }
 
-export const typecheckCheckOp: DeterministicOperation<TypecheckCheckInput, TypecheckCheckOutput, QualityConfig> = {
+export const typecheckCheckOp: DeterministicOperation<
+  TypecheckCheckInput,
+  TypecheckCheckOutput,
+  QualityConfig,
+  TypecheckCheckDeps
+> = {
   kind: "deterministic",
   name: "typecheck-check",
   stage: "review",

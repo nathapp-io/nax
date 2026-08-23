@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { buildPlanForStrategy, _storyOrchestratorDeps } from "@/execution";
+import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
 import type { PlanInputs } from "@/execution";
 import type { UserStory } from "@/prd/types";
 import type { NaxRuntime } from "@/runtime";

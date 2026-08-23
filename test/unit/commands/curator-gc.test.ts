@@ -11,21 +11,15 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { NaxConfig } from "@/config";
-import {
-  _curatorCmdDeps as _deps,
-  curatorCommit,
-  curatorDryrun,
-  curatorGc,
-  curatorStatus,
-} from "@/commands";
+import { _curatorCmdDeps as _deps, curatorCommit, curatorDryrun, curatorGc, curatorStatus } from "@/commands";
 import type { ResolvedProject } from "@/commands/common";
+import type { NaxConfig } from "@/config";
 import type { Observation } from "@/plugins/builtin/curator/types";
-import { makeNaxConfig, makeTempDir } from "@test/helpers";
+import { type DeepPartial, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function buildCuratorConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
+function buildCuratorConfig(overrides: DeepPartial<NaxConfig> = {}): NaxConfig {
   return makeNaxConfig({
     name: "test-proj",
     curator: {
@@ -65,7 +59,7 @@ function makeObservation(kind: Observation["kind"], runId = "run-001", projectKe
 }
 
 function writeObservations(runDir: string, observations: Observation[]): void {
-  const content = observations.map((o) => JSON.stringify(o)).join("\n") + "\n";
+  const content = `${observations.map((o) => JSON.stringify(o)).join("\n")}\n`;
   writeFileSync(join(runDir, "observations.jsonl"), content);
 }
 
@@ -74,7 +68,7 @@ function writeProposalsMd(runDir: string, content: string): void {
 }
 
 function writeRollup(rollupPath: string, observations: Observation[]): void {
-  const content = observations.map((o) => JSON.stringify(o)).join("\n") + "\n";
+  const content = `${observations.map((o) => JSON.stringify(o)).join("\n")}\n`;
   mkdirSync(join(rollupPath, ".."), { recursive: true });
   writeFileSync(rollupPath, content);
 }

@@ -71,9 +71,9 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt()", () => {
 
   describe("custom rules", () => {
     test("omitted when rules empty; included and numbered when rules are present", () => {
-      expect(
-        builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF }),
-      ).not.toContain("## Additional Review Rules");
+      expect(builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF })).not.toContain(
+        "## Additional Review Rules",
+      );
 
       const withRules = builder.buildSemanticReviewPrompt(STORY, CONFIG_WITH_RULES, { mode: "embedded", diff: DIFF });
       expect(withRules).toContain("## Additional Review Rules");
@@ -85,7 +85,7 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt()", () => {
   describe("diff block", () => {
     test("diff is included verbatim in a fenced code block", () => {
       const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
-      expect(result).toContain("```diff\n" + DIFF);
+      expect(result).toContain(`\`\`\`diff\n${DIFF}`);
     });
   });
 
@@ -146,11 +146,15 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt() — priorSemanticItera
   const builder = new ReviewPromptBuilder();
 
   test("omits prior iterations block when undefined or empty; includes it when entries present", () => {
+    expect(builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF })).not.toContain(
+      "## Prior Iterations",
+    );
     expect(
-      builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF }),
-    ).not.toContain("## Prior Iterations");
-    expect(
-      builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF, priorSemanticIterations: [] }),
+      builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, {
+        mode: "embedded",
+        diff: DIFF,
+        priorSemanticIterations: [],
+      }),
     ).not.toContain("## Prior Iterations");
   });
 
@@ -182,7 +186,7 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt() — priorSemanticItera
 describe("ReviewPromptBuilder.jsonRetryCondensed()", () => {
   test("error/warning/info thresholds produce correct include-all + cap text", () => {
     const error = ReviewPromptBuilder.jsonRetryCondensed();
-    expect(error).toContain("Include ALL findings with severity \"error\"");
+    expect(error).toContain('Include ALL findings with severity "error"');
     expect(error).toContain("at most 3 additional findings");
     expect(error).toContain("Output ONLY a complete, valid JSON object");
 
@@ -197,9 +201,11 @@ describe("ReviewPromptBuilder.jsonRetryCondensed()", () => {
   });
 
   test("custom advisoryCap and zero advisoryCap are honored", () => {
-    expect(ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: "error", advisoryCap: 5 })).toContain("at most 5 additional findings");
+    expect(ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: "error", advisoryCap: 5 })).toContain(
+      "at most 5 additional findings",
+    );
     const zero = ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: "error", advisoryCap: 0 });
-    expect(zero).toContain("Include ALL findings with severity \"error\"");
+    expect(zero).toContain('Include ALL findings with severity "error"');
     expect(zero).toContain("at most 0 additional findings");
   });
 
@@ -229,7 +235,7 @@ describe("ReviewPromptBuilder.requoteVerbatim()", () => {
     expect(result).toContain("did not match the referenced file on disk");
     expect(result).toContain('"file":"src/foo.ts"');
     expect(result).toContain('"line":42');
-    expect(result).toContain("observed\":\"exact 1-3 line quote");
+    expect(result).toContain('observed":"exact 1-3 line quote');
     expect(result).toContain('set observed to ""');
     expect(result).toContain("Do not return a full review");
   });

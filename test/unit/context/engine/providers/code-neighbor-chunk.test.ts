@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { assembleCodeNeighborChunk, type NeighborSection } from "@/context/engine";
+import { type NeighborSection, assembleCodeNeighborChunk } from "@/context/engine";
 import type { RawChunk } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,9 +60,7 @@ describe("assembleCodeNeighborChunk — AC1 (touched file in scopePaths)", () =>
 
 describe("assembleCodeNeighborChunk — AC2 (neighbours in scopePaths)", () => {
   test("[AC2] chunk.scopePaths contains each neighbor path rendered in the chunk body", () => {
-    const sections = makeSections([
-      ["src/foo.ts", ["src/foo/dep.ts", "src/foo/util.ts", "test/unit/foo.test.ts"]],
-    ]);
+    const sections = makeSections([["src/foo.ts", ["src/foo/dep.ts", "src/foo/util.ts", "test/unit/foo.test.ts"]]]);
     const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 });
     expect(chunk).not.toBeNull();
 
@@ -278,10 +276,8 @@ describe("assembleCodeNeighborChunk — truncation contract (AC2: scope only wha
     // Make the second neighbour so long that the cap slice cuts through
     // its name. The first neighbour is fully in the body; the second's
     // full form is not.
-    const longB = "src/multi/b/" + "x".repeat(2000);
-    const sections: NeighborSection[] = [
-      { file: "src/multi.ts", neighbors: ["src/multi/a.ts", longB] },
-    ];
+    const longB = `src/multi/b/${"x".repeat(2000)}`;
+    const sections: NeighborSection[] = [{ file: "src/multi.ts", neighbors: ["src/multi/a.ts", longB] }];
     const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
     expect(chunk.content.length).toBeLessThanOrEqual(2000);
     // file is fully in body (it's in the section header which fits inside
@@ -301,7 +297,7 @@ describe("assembleCodeNeighborChunk — truncation contract (AC2: scope only wha
     // end-position is past the cap.
     const file = "src/svc.ts";
     const n1 = "src/foo/dep.ts"; // 15 chars, fully rendered
-    const n2 = "src/foo" + "x".repeat(1900); // 1907 chars, sliced mid-name
+    const n2 = `src/foo${"x".repeat(1900)}`; // 1907 chars, sliced mid-name
     const sections: NeighborSection[] = [{ file, neighbors: [n1, n2] }];
     const chunk = assembleCodeNeighborChunk({ sections, truncated: false, maxGlobFiles: 500 }) as RawChunk;
     expect(chunk.content.length).toBeLessThanOrEqual(2000);

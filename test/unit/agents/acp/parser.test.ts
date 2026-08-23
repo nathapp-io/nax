@@ -404,6 +404,7 @@ describe("BUG-12 — JSON-RPC usage_update rejects non-finite values", () => {
 
   test("rejects an _meta.usage.inputTokens that overflows to Infinity", () => {
     const state = createParseState();
+    // biome-ignore lint/correctness/noPrecisionLoss: 1e400 overflowing to Infinity is exactly what this asserts
     const line = usageUpdateLine({ _meta: { usage: { inputTokens: 1e400, outputTokens: 9 } } });
     const activity = parseAcpxJsonLine(line, state);
     expect(activity?.inputTokens).toBeUndefined();
@@ -412,6 +413,7 @@ describe("BUG-12 — JSON-RPC usage_update rejects non-finite values", () => {
 
   test("rejects an _meta.usage.outputTokens that overflows to Infinity", () => {
     const state = createParseState();
+    // biome-ignore lint/correctness/noPrecisionLoss: 1e400 overflowing to Infinity is exactly what this asserts
     const line = usageUpdateLine({ _meta: { usage: { inputTokens: 7, outputTokens: 1e400 } } });
     const activity = parseAcpxJsonLine(line, state);
     expect(activity?.inputTokens).toBe(7);
@@ -420,6 +422,7 @@ describe("BUG-12 — JSON-RPC usage_update rejects non-finite values", () => {
 
   test("rejects a fallback `used` field that overflows to Infinity", () => {
     const state = createParseState();
+    // biome-ignore lint/correctness/noPrecisionLoss: 1e400 overflowing to Infinity is exactly what this asserts
     const line = usageUpdateLine({ used: 1e400 });
     const activity = parseAcpxJsonLine(line, state);
     expect(activity?.outputTokens).toBeUndefined();
@@ -427,6 +430,7 @@ describe("BUG-12 — JSON-RPC usage_update rejects non-finite values", () => {
 
   test("rejects a cost.amount that overflows to Infinity — exactCostUsd is never poisoned", () => {
     const state = createParseState();
+    // biome-ignore lint/correctness/noPrecisionLoss: 1e400 overflowing to Infinity is exactly what this asserts
     const line = usageUpdateLine({ cost: { amount: 1e400, currency: "USD" } });
     const activity = parseAcpxJsonLine(line, state);
     expect(activity?.costUsd).toBeUndefined();

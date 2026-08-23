@@ -4,24 +4,21 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { ReviewAuditDecision } from "@/runtime";
 import { runSemanticReview } from "@/review/semantic";
 import type { SemanticReviewConfig, SemanticStory } from "@/review/types";
+import type { ReviewAuditDecision } from "@/runtime";
 import {
   agentManagerWithFixedLLMResponse,
   captureAuditDecisions,
-  mockDiffUtilsDeps,
   makeMockRuntime,
+  mockDiffUtilsDeps,
 } from "@test/helpers";
 
 const STORY: SemanticStory = {
   id: "US-001",
   title: "Test semantic audit shape",
   description: "Validate canonical shape on disk",
-  acceptanceCriteria: [
-    "AC-1: validate input",
-    "AC-2: must validate listener input",
-  ],
+  acceptanceCriteria: ["AC-1: validate input", "AC-2: must validate listener input"],
 };
 
 const CFG: SemanticReviewConfig = {

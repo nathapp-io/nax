@@ -13,12 +13,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import type { DecomposeResult, DecomposedStory } from "@/agents/shared/types-extended";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { makeMockAgentManager, makeNaxConfig, makePRD } from "@test/helpers";
-import type { PRD, UserStory } from "@/prd/types";
+import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import type { NaxConfig } from "@/config";
+import type { PRD, UserStory } from "@/prd/types";
+import { cleanupTempDir, makeMockRuntime, makeTempDir } from "@test/helpers";
+import { makeMockAgentManager, makeNaxConfig, makePRD } from "@test/helpers";
 
 function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
@@ -27,9 +27,17 @@ function makeMockDecomposeManager(
     completeAsFn: decomposeFn
       ? async (name: string, _prompt: string, opts?: any) => {
           const result = await decomposeFn(name, opts ?? {});
-          return { output: JSON.stringify(result.stories), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+          return {
+            output: JSON.stringify(result.stories),
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0,
+          };
         }
-      : async () => ({ output: JSON.stringify([]), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+      : async () => ({
+          output: JSON.stringify([]),
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+        }),
   });
 }
 
@@ -145,11 +153,13 @@ describe("planDecomposeCommand — calls adapter.decompose() not adapter.complet
     _planDeps.mkdirp = mock(async () => {});
 
     _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
-      makeMockDecomposeManager(async (_name: string, opts: unknown) => {
-        capturedDecomposeCalls.push(opts);
-        return { stories: makeDecomposeResult().stories };
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async (_name: string, opts: unknown) => {
+          capturedDecomposeCalls.push(opts);
+          return { stories: makeDecomposeResult().stories };
+        }),
       }),
-    ) as unknown as typeof _planDeps.createRuntime;
+    );
   });
 
   afterEach(() => {
@@ -178,11 +188,13 @@ describe("planDecomposeCommand — calls adapter.decompose() not adapter.complet
 
     // Replace complete() with a non-throwing mock so we can check call count
     _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
-      makeMockDecomposeManager(async (_name: string, opts: unknown) => {
-        capturedDecomposeCalls.push(opts);
-        return { stories: makeDecomposeResult().stories };
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async (_name: string, opts: unknown) => {
+          capturedDecomposeCalls.push(opts);
+          return { stories: makeDecomposeResult().stories };
+        }),
       }),
-    ) as unknown as typeof _planDeps.createRuntime;
+    );
 
     await planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" });
 
@@ -191,9 +203,7 @@ describe("planDecomposeCommand — calls adapter.decompose() not adapter.complet
 
   test("resolves without error when adapter.decompose() is available", async () => {
     const config = makeConfig();
-    expect(
-      planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" }),
-    ).resolves.toBeDefined();
+    expect(planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" })).resolves.toBeDefined();
   });
 });
 
@@ -225,11 +235,13 @@ describe("planDecomposeCommand — adapter.decompose() option forwarding (US-002
     _planDeps.mkdirp = mock(async () => {});
 
     _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
-      makeMockDecomposeManager(async (_name: string, opts: Record<string, unknown>) => {
-        capturedDecomposeOpts.push(opts);
-        return { stories: makeDecomposeResult().stories };
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async (_name: string, opts: Record<string, unknown>) => {
+          capturedDecomposeOpts.push(opts);
+          return { stories: makeDecomposeResult().stories };
+        }),
       }),
-    ) as unknown as typeof _planDeps.createRuntime;
+    );
   });
 
   afterEach(() => {
@@ -280,10 +292,10 @@ describe("plan.ts module exports — local buildDecomposePrompt removed (US-002 
   test("plan.ts does not export buildDecomposePrompt with (targetStory, siblings, codebaseContext) signature", async () => {
     // After US-002 the local buildDecomposePrompt(targetStory, siblings, codebaseContext)
     // must be removed. We verify it is no longer exported.
-    const planModule = await import("@/cli/plan") as Record<string, unknown>;
+    const planModule = (await import("@/cli/plan")) as Record<string, unknown>;
     // The shared buildDecomposePrompt in src/agents/shared/decompose.ts takes DecomposeOptions.
     // The plan-specific overload (positional params) must not exist as a named export.
-    const fn = planModule["buildDecomposePrompt"];
+    const fn = planModule.buildDecomposePrompt;
     // If exported, calling it with (UserStory, [], string) returns a string.
     // After removal it should be undefined.
     expect(fn).toBeUndefined();
@@ -336,13 +348,13 @@ describe("planDecomposeCommand — no raw JSON.parse of decompose response (US-0
     // adapter.decompose() returns DecomposeResult (stories array), not a raw JSON string.
     // planDecomposeCommand must not attempt JSON.parse on this structured value.
     _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
-      makeMockDecomposeManager(async () => ({ stories: makeDecomposeResult().stories })),
-    ) as unknown as typeof _planDeps.createRuntime;
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async () => ({ stories: makeDecomposeResult().stories })),
+      }),
+    );
 
     const config = makeConfig();
-    expect(
-      planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" }),
-    ).resolves.toBeDefined();
+    expect(planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" })).resolves.toBeDefined();
   });
 
   test("integrates sub-stories from adapter.decompose() result into the written PRD", async () => {
@@ -352,8 +364,10 @@ describe("planDecomposeCommand — no raw JSON.parse of decompose response (US-0
     });
 
     _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
-      makeMockDecomposeManager(async () => ({ stories: makeDecomposeResult().stories })),
-    ) as unknown as typeof _planDeps.createRuntime;
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async () => ({ stories: makeDecomposeResult().stories })),
+      }),
+    );
 
     const config = makeConfig();
     await planDecomposeCommand(tmpDir, config, { feature: FEATURE, storyId: "US-001" });

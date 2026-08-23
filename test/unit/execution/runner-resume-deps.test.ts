@@ -17,11 +17,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { LoadedHooksConfig } from "@/hooks";
 import type { NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
-import { _runnerDeps, _runnerReentrancyGuard, run, type RunOptions } from "@/execution";
+import { type RunOptions, _runnerDeps, _runnerReentrancyGuard, run } from "@/execution";
 import { _storyOrchestratorDeps } from "@/execution";
+import type { LoadedHooksConfig } from "@/hooks";
 
 function makeMinimalOptions(overrides: Partial<RunOptions> = {}): RunOptions {
   const config = {} as NaxConfig;

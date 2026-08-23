@@ -51,12 +51,12 @@ describe("validateStoryId", () => {
   });
 
   test("rejects IDs longer than 64 characters", () => {
-    const longId = "a" + "b".repeat(64); // 65 characters
+    const longId = `a${"b".repeat(64)}`; // 65 characters
     expect(() => validateStoryId(longId)).toThrow(/pattern/);
   });
 
   test("accepts IDs exactly 64 characters", () => {
-    const id64 = "a" + "b".repeat(63); // 64 characters
+    const id64 = `a${"b".repeat(63)}`; // 64 characters
     expect(() => validateStoryId(id64)).not.toThrow();
   });
 });
@@ -64,11 +64,7 @@ describe("validateStoryId", () => {
 // ── US-004 AC-8, AC-9: PRD-tracking guard ────────────────────────────────────
 
 async function initGitRepo(root: string): Promise<void> {
-  for (const args of [
-    ["init"],
-    ["config", "user.email", "test@example.com"],
-    ["config", "user.name", "Test User"],
-  ]) {
+  for (const args of [["init"], ["config", "user.email", "test@example.com"], ["config", "user.name", "Test User"]]) {
     const proc = Bun.spawn(["git", ...args], { cwd: root, stdout: "pipe", stderr: "pipe" });
     await proc.exited;
   }
@@ -148,8 +144,17 @@ describe("assertPrdCommitted — git status failure", () => {
       const isStatus = args[1] === "status";
       const bytes = new TextEncoder().encode("");
       return {
-        stdout: new ReadableStream({ start(c) { c.enqueue(bytes); c.close(); } }),
-        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
         exited: Promise.resolve(isStatus ? 1 : 0),
         kill: mock(() => {}),
       };

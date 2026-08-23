@@ -167,10 +167,7 @@ describe("pipeline (US-003 AC7: per-story status from run metrics)", () => {
     stubRun({ success: false, storiesCompleted: 2 });
     stubLoadRunMetrics([
       makeRunMetrics({
-        stories: [
-          makeStoryMetric({ storyId: "s1", success: true }),
-          makeStoryMetric({ storyId: "s2", success: true }),
-        ],
+        stories: [makeStoryMetric({ storyId: "s1", success: true }), makeStoryMetric({ storyId: "s2", success: true })],
       }),
     ]);
 

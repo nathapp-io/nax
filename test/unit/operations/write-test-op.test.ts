@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import type { NaxConfig } from "@/config";
 import { testWriterOp } from "@/operations";
 import type { RunOperation } from "@/operations";
-import type { NaxConfig } from "@/config";
 
 /**
  * Tests for testWriterOp — the full RunOperation shape for the test-writer role.
@@ -38,10 +38,7 @@ describe("testWriterOp — RunOperation shape", () => {
     expect(typeof testWriterOp.keepOpen).toBe("function");
   });
 
-  test.each([
-    ["name" as const],
-    ["stage" as const],
-  ])("testWriterOp has a non-empty %s string", async (field) => {
+  test.each([["name" as const], ["stage" as const]])("testWriterOp has a non-empty %s string", async (field) => {
     const { testWriterOp } = await import("@/operations");
     expect(typeof testWriterOp[field]).toBe("string");
     expect(testWriterOp[field]).toBeTruthy();
@@ -52,10 +49,7 @@ describe("testWriterOp — RunOperation shape", () => {
     expect(testWriterOp.config).toBeDefined();
   });
 
-  test.each([
-    ["build" as const],
-    ["parse" as const],
-  ])("testWriterOp has a %s function", async (method) => {
+  test.each([["build" as const], ["parse" as const]])("testWriterOp has a %s function", async (method) => {
     const { testWriterOp } = await import("@/operations");
     expect(typeof testWriterOp[method]).toBe("function");
   });

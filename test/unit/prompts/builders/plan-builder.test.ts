@@ -90,7 +90,14 @@ describe("PlanPromptBuilder.build — monorepo handling (MW-007)", () => {
     expect(prompt).toContain("- apps/web");
 
     const details: PackageSummary[] = [
-      { path: "apps/api", name: "@acme/api", runtime: "bun", framework: "Hono", testRunner: "bun:test", keyDeps: ["zod"] },
+      {
+        path: "apps/api",
+        name: "@acme/api",
+        runtime: "bun",
+        framework: "Hono",
+        testRunner: "bun:test",
+        keyDeps: ["zod"],
+      },
     ];
     const promptWithDetails = fullPrompt(SPEC, CTX, undefined, ["apps/api"], details);
     expect(promptWithDetails).toContain("Package Tech Stacks");
@@ -114,14 +121,13 @@ describe("PlanPromptBuilder.build — spec anchor rules (fix #346)", () => {
     else expect(taskContext).not.toContain("Preserve spec ACs");
   });
 
-  test.each([
-    ["suggestedCriteria"],
-    ["Never silently drop"],
-    ["story scope"],
-  ])("taskContext with spec contains '%s'", (text) => {
-    const { taskContext } = new PlanPromptBuilder().build(SPEC_WITH_AC, CTX2);
-    expect(taskContext).toContain(text);
-  });
+  test.each([["suggestedCriteria"], ["Never silently drop"], ["story scope"]])(
+    "taskContext with spec contains '%s'",
+    (text) => {
+      const { taskContext } = new PlanPromptBuilder().build(SPEC_WITH_AC, CTX2);
+      expect(taskContext).toContain(text);
+    },
+  );
 
   test.each([
     ["includes suggestedCriteria when spec provided", SPEC_WITH_AC, true],
@@ -144,7 +150,15 @@ describe("PlanPromptBuilder.build — fileReadAccess gate (AC-6)", () => {
     expect(withFalse.taskContext).toBe(withUndefined.taskContext);
     expect(withFalse.outputFormat).toBe(withUndefined.outputFormat);
 
-    const withProposers = new PlanPromptBuilder().build(SPEC, CTX, undefined, undefined, undefined, undefined, undefined);
+    const withProposers = new PlanPromptBuilder().build(
+      SPEC,
+      CTX,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    );
     expect(withProposers.taskContext).toBe(withUndefined.taskContext);
   });
 
@@ -167,7 +181,6 @@ describe("PlanPromptBuilder.build — fileReadAccess gate (AC-6)", () => {
     if (shouldInclude) expect(taskContext).toContain("up to 5 file reads");
     else expect(taskContext).not.toContain("up to");
   });
-
 });
 
 // ─── PlanPromptBuilder.jsonRepair() static method ─────────────────────────────
@@ -238,29 +251,34 @@ Budget: aim for ≤ 10 file reads per story.
   // AC-4: taskContext does NOT contain "## Codebase Structure"
   // ──────────────────────────────────────────────────────────────────────────
 
-  test.each([
-    ["## Source Roots"],
-    ["You have Read, Grep, and Glob tools"],
-    ["≤ 10 file reads per story"],
-  ])("taskContext contains '%s' (AC-5/7/8)", (text) => {
-    const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
-    expect(taskContext).toContain(text);
-  });
+  test.each([["## Source Roots"], ["You have Read, Grep, and Glob tools"], ["≤ 10 file reads per story"]])(
+    "taskContext contains '%s' (AC-5/7/8)",
+    (text) => {
+      const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
+      expect(taskContext).toContain(text);
+    },
+  );
 
-  test.each([
-    ["## Codebase Structure"],
-    ["file names and structure only"],
-    ["## Dependencies"],
-    ["## Test Setup"],
-  ])("taskContext does NOT contain '%s' (AC-4/6/9/10)", (text) => {
-    const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
-    expect(taskContext).not.toContain(text);
-  });
+  test.each([["## Codebase Structure"], ["file names and structure only"], ["## Dependencies"], ["## Test Setup"]])(
+    "taskContext does NOT contain '%s' (AC-4/6/9/10)",
+    (text) => {
+      const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
+      expect(taskContext).not.toContain(text);
+    },
+  );
 
   test("AC-11: with fileReadAccess: true, taskContext section contains 'File Read Permission:'", () => {
-    const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX, undefined, undefined, undefined, undefined, {
-      fileReadAccess: true,
-    });
+    const { taskContext } = new PlanPromptBuilder().build(
+      SPEC,
+      SOURCE_ROOTS_CTX,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        fileReadAccess: true,
+      },
+    );
     expect(taskContext).toContain("File Read Permission:");
   });
 });
@@ -310,7 +328,14 @@ describe("PlanPromptBuilder — shared quality rules", () => {
     ["injects SPEC_ANCHOR_RULES when spec non-empty", "Some non-empty spec", true],
     ["omits SPEC_ANCHOR_RULES when spec empty", "", false],
   ] as const)("buildDraft(): %s", (_label, specContent, shouldInclude) => {
-    const { task } = new PlanPromptBuilder().buildDraft({ manifestSection: "## Manifest\n", specContent, codebaseContext: "ctx", feature: "feat", branchName: "feat/x", citationThreshold: 0.5 });
+    const { task } = new PlanPromptBuilder().buildDraft({
+      manifestSection: "## Manifest\n",
+      specContent,
+      codebaseContext: "ctx",
+      feature: "feat",
+      branchName: "feat/x",
+      citationThreshold: 0.5,
+    });
     if (shouldInclude) expect(task.content).toContain("Enumerate failure-mode tables");
     else expect(task.content).not.toContain("Enumerate failure-mode tables");
   });
@@ -319,16 +344,37 @@ describe("PlanPromptBuilder — shared quality rules", () => {
     ["injects monorepo hint when packages provided", ["packages/api"] as string[] | undefined, true],
     ["omits monorepo hint when no packages", undefined, false],
   ] as const)("buildDraft(): %s", (_label, packages, shouldInclude) => {
-    const { task } = new PlanPromptBuilder().buildDraft({ manifestSection: "## Manifest\n", specContent: "Some spec", codebaseContext: "ctx", feature: "feat", branchName: "feat/x", citationThreshold: 0.5, packages });
-    if (shouldInclude) { expect(task.content).toContain("Monorepo Context"); expect(task.content).toContain("packages/api"); expect(task.content).toContain('"workdir"'); }
-    else { expect(task.content).not.toContain("Monorepo Context"); expect(task.content).not.toContain('"workdir"'); }
+    const { task } = new PlanPromptBuilder().buildDraft({
+      manifestSection: "## Manifest\n",
+      specContent: "Some spec",
+      codebaseContext: "ctx",
+      feature: "feat",
+      branchName: "feat/x",
+      citationThreshold: 0.5,
+      packages,
+    });
+    if (shouldInclude) {
+      expect(task.content).toContain("Monorepo Context");
+      expect(task.content).toContain("packages/api");
+      expect(task.content).toContain('"workdir"');
+    } else {
+      expect(task.content).not.toContain("Monorepo Context");
+      expect(task.content).not.toContain('"workdir"');
+    }
   });
 
   test.each([
     ["includes suggestedCriteria when spec non-empty", "Some spec", true],
     ["omits suggestedCriteria when spec empty", "", false],
   ] as const)("buildDraft(): %s", (_label, specContent, shouldInclude) => {
-    const { task } = new PlanPromptBuilder().buildDraft({ manifestSection: "## Manifest\n", specContent, codebaseContext: "ctx", feature: "feat", branchName: "feat/x", citationThreshold: 0.5 });
+    const { task } = new PlanPromptBuilder().buildDraft({
+      manifestSection: "## Manifest\n",
+      specContent,
+      codebaseContext: "ctx",
+      feature: "feat",
+      branchName: "feat/x",
+      citationThreshold: 0.5,
+    });
     if (shouldInclude) expect(task.content).toContain("suggestedCriteria");
     else expect(task.content).not.toContain("suggestedCriteria");
   });

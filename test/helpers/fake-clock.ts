@@ -117,8 +117,7 @@ export function makeFakeClock(): FakeClock {
 
         if (++fired > MAX_TIMERS_PER_ADVANCE) {
           throw new Error(
-            `FakeClock.advance(${ms}) fired ${MAX_TIMERS_PER_ADVANCE} timers without reaching the target — ` +
-              `a callback is almost certainly re-arming itself with a zero/near-zero delay.`,
+            `FakeClock.advance(${ms}) fired ${MAX_TIMERS_PER_ADVANCE} timers without reaching the target — a callback is almost certainly re-arming itself with a zero/near-zero delay.`,
           );
         }
 

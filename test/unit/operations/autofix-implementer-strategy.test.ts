@@ -222,11 +222,19 @@ describe("makeAutofixImplementerStrategy", () => {
       const sink = makeSink();
       const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), sink);
       const output = makeOutput([
-        { reason: "mock_structure", file: "test/foo.test.ts", files: ["test/foo.test.ts", "test/bar.test.ts"], reasonDetail: "needs mock restructure" },
+        {
+          reason: "mock_structure",
+          file: "test/foo.test.ts",
+          files: ["test/foo.test.ts", "test/bar.test.ts"],
+          reasonDetail: "needs mock restructure",
+        },
       ]);
       strategy.extractApplied!(output, [], {} as FixCycleContext);
       expect(sink.mockHandoffs).toHaveLength(1);
-      expect(sink.mockHandoffs[0]).toEqual({ files: ["test/foo.test.ts", "test/bar.test.ts"], reasonDetail: "needs mock restructure" });
+      expect(sink.mockHandoffs[0]).toEqual({
+        files: ["test/foo.test.ts", "test/bar.test.ts"],
+        reasonDetail: "needs mock restructure",
+      });
       expect(sink.testEdits).toHaveLength(0);
     });
 
@@ -274,7 +282,12 @@ describe("makeAutofixImplementerStrategy", () => {
       const output = makeOutput([
         { reason: "mock_structure", file: "test/a.test.ts", files: ["test/a.test.ts"], reasonDetail: "mock reason" },
         { reason: "lint_only", file: "test/b.test.ts", finding: "lint error" },
-        { reason: "mock_structure", file: "test/c.test.ts", files: ["test/c.test.ts"], reasonDetail: "another mock reason" },
+        {
+          reason: "mock_structure",
+          file: "test/c.test.ts",
+          files: ["test/c.test.ts"],
+          reasonDetail: "another mock reason",
+        },
         { reason: "prd_contract", file: "test/d.test.ts" },
       ]);
       strategy.extractApplied!(output, [], {} as FixCycleContext);

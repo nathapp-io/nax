@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { CheckpointWriter } from "@/execution";
 import { NaxError } from "@/errors";
+import { CheckpointWriter } from "@/execution";
 
 function makeAppend() {
   const calls: Array<{ path: string; line: string }> = [];

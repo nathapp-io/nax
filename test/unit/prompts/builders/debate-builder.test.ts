@@ -3,9 +3,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { Debater } from "@/debate/types";
 import { DebatePromptBuilder } from "@/prompts";
 import type { PromptBuilderOptions, StageContext } from "@/prompts";
-import type { Debater } from "@/debate/types";
 
 const debaters: Debater[] = [
   { agent: "claude", model: "fast" },
@@ -31,7 +31,10 @@ function makeOptions(overrides: Partial<PromptBuilderOptions> = {}): PromptBuild
 
 describe("DebatePromptBuilder.proposeSlot — citationsRequired gate", () => {
   test("output is unchanged when citationsRequired is false", () => {
-    const withFalse = new DebatePromptBuilder(makeStageContext(), makeOptions({ proposers: { citationsRequired: false } }));
+    const withFalse = new DebatePromptBuilder(
+      makeStageContext(),
+      makeOptions({ proposers: { citationsRequired: false } }),
+    );
     const withUndefined = new DebatePromptBuilder(makeStageContext(), makeOptions());
 
     expect(withFalse.proposeSlot(0).task.content).toBe(withUndefined.proposeSlot(0).task.content);
@@ -77,7 +80,10 @@ describe("DebatePromptBuilder.proposeSlot — citationsRequired gate", () => {
   });
 
   test("taskContext appears in proposal prompt", () => {
-    const builder = new DebatePromptBuilder(makeStageContext({ taskContext: "unique-task-context-abc" }), makeOptions());
+    const builder = new DebatePromptBuilder(
+      makeStageContext({ taskContext: "unique-task-context-abc" }),
+      makeOptions(),
+    );
     const slot = builder.proposeSlot(0);
     expect(slot.task.content).toContain("unique-task-context-abc");
   });

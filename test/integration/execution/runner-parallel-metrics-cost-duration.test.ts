@@ -9,10 +9,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { initLogger, resetLogger } from "@/logger";
 import type { RunParallelBatchResult } from "@/execution/parallel-batch";
+import { initLogger, resetLogger } from "@/logger";
 import type { UserStory } from "@/prd/types";
-import { makePendingStory, makePrd, makeCtx } from "./_parallel-metrics-helpers";
+import { makeCtx, makePendingStory, makePrd } from "./_parallel-metrics-helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local helpers
@@ -80,9 +80,7 @@ describe("AC-1 — completed story cost equals storyCosts.get(story.id)", () => 
     ]);
 
     deps.selectIndependentBatch = mock(() => [story1, story2]);
-    deps.runParallelBatch = mock(async () =>
-      makeBatchResult([story1, story2], costMap),
-    );
+    deps.runParallelBatch = mock(async () => makeBatchResult([story1, story2], costMap));
 
     const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
@@ -109,9 +107,7 @@ describe("AC-1 — completed story cost equals storyCosts.get(story.id)", () => 
     ]);
 
     deps.selectIndependentBatch = mock(() => [story1, story2]);
-    deps.runParallelBatch = mock(async () =>
-      makeBatchResult([story1, story2], costMap),
-    );
+    deps.runParallelBatch = mock(async () => makeBatchResult([story1, story2], costMap));
 
     const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
@@ -167,9 +163,7 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id) from batch res
     ]);
 
     deps.selectIndependentBatch = mock(() => [story1, story2]);
-    deps.runParallelBatch = mock(async () =>
-      makeBatchResult([story1, story2], costMap, durationsMap),
-    );
+    deps.runParallelBatch = mock(async () => makeBatchResult([story1, story2], costMap, durationsMap));
 
     const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
@@ -200,15 +194,10 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id) from batch res
     ]);
 
     deps.selectIndependentBatch = mock(() => [story1, story2]);
-    deps.runParallelBatch = mock(async () =>
-      makeBatchResult([story1, story2], costMap, durationsMap),
-    );
+    deps.runParallelBatch = mock(async () => makeBatchResult([story1, story2], costMap, durationsMap));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(
-      makeCtx({ parallelCount: 2 }) as never,
-      makePrd([story1, story2]) as never,
-    );
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([story1, story2]) as never);
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);
     const m2 = result.allStoryMetrics.find((m) => m.storyId === story2.id);
@@ -254,17 +243,13 @@ describe("AC-5 — executeUnified is the only dispatch entry point; removed func
   });
 
   test("unified-executor.ts source does not import or define the old removed dispatch function", async () => {
-    const src = await Bun.file(
-      new URL("../../../src/execution/unified-executor.ts", import.meta.url).pathname,
-    ).text();
+    const src = await Bun.file(new URL("../../../src/execution/unified-executor.ts", import.meta.url).pathname).text();
     const legacyName = ["runParallel", "Execution"].join("");
     expect(src).not.toContain(legacyName);
   });
 
   test("runner-execution.ts source does not reference the old removed dispatch function", async () => {
-    const src = await Bun.file(
-      new URL("../../../src/execution/runner-execution.ts", import.meta.url).pathname,
-    ).text();
+    const src = await Bun.file(new URL("../../../src/execution/runner-execution.ts", import.meta.url).pathname).text();
     const legacyName = ["runParallel", "Execution"].join("");
     expect(src).not.toContain(legacyName);
   });

@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { join } from "path";
+import { join } from "node:path";
 import type { Finding } from "@/findings/types";
 
 const BASE = join(import.meta.dir, "../../../src/operations");
@@ -52,9 +52,7 @@ describe("AC5: SOURCE_TO_CHECK maps tdd-verifier to test check", () => {
   test("AC5: source file contains exactly one tdd-verifier: test line in SOURCE_TO_CHECK", async () => {
     const file = Bun.file(join(BASE, "_finding-to-check.ts"));
     const content = await file.text();
-    const matches = content
-      .split("\n")
-      .filter((line) => /^\s*"tdd-verifier": "test",\s*$/.test(line));
+    const matches = content.split("\n").filter((line) => /^\s*"tdd-verifier": "test",\s*$/.test(line));
     expect(matches.length).toBe(1);
   });
 });

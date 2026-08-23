@@ -32,10 +32,7 @@ describe("extractQuoteTriples", () => {
   });
 
   test("multiple citations in one reason string", () => {
-    const reason = [
-      "At src/a.ts:10 `doThing()` and",
-      "also src/b.ts:20 `otherThing()` both fail",
-    ].join(" ");
+    const reason = ["At src/a.ts:10 `doThing()` and", "also src/b.ts:20 `otherThing()` both fail"].join(" ");
     const triples = extractQuoteTriples(reason);
     expect(triples).toHaveLength(2);
     expect(triples[0].file).toBe("src/a.ts");
@@ -136,11 +133,7 @@ describe("verifyEscalationQuotes", () => {
     return { readFile: async (_path: string) => fileContent };
   }
 
-  const REAL_CONTENT = [
-    "function doStuff() {",
-    "  return 42;",
-    "}",
-  ].join("\n");
+  const REAL_CONTENT = ["function doStuff() {", "  return 42;", "}"].join("\n");
 
   test("reason with no citations returned unchanged", async () => {
     const reason = "Just a plain failure reason with no file references.";

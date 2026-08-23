@@ -12,18 +12,18 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { _fragmentStoreDeps, listFragmentStoryIds, readFragment } from "@/context";
-import type { PRD, UserStory } from "@/prd";
-import { makePRD, makeStory, withDepsRestore } from "@test/helpers";
 import {
+  type LoadPRDResult,
   _contextFragmentsDeps,
   formatFragmentsInspect,
   formatFragmentsPrune,
   fragmentsInspectCommand,
   fragmentsPruneCommand,
   listDependentStoryIds,
-  type LoadPRDResult,
 } from "@/cli";
+import { _fragmentStoreDeps, listFragmentStoryIds, readFragment } from "@/context";
+import type { PRD, UserStory } from "@/prd";
+import { makePRD, makeStory, withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -39,6 +39,7 @@ function loadedPRD(stories: readonly UserStory[]): LoadPRDResult {
 
 function stripAnsi(s: string): string {
   // eslint-disable-next-line no-control-regex
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: ESC is the point — this strips ANSI colour codes
   return s.replace(/\x1B\[[0-9;]*m/g, "");
 }
 

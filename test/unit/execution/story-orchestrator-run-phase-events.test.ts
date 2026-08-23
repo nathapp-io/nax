@@ -11,10 +11,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { CallContext } from "@/operations";
-import type { CostScopeHandle } from "@/runtime";
-import { pipelineEventBus, type StoryPhaseCompletedEvent } from "@/pipeline";
 import { _storyOrchestratorDeps, runPhase } from "@/execution";
+import type { CallContext } from "@/operations";
+import { type StoryPhaseCompletedEvent, pipelineEventBus } from "@/pipeline";
+import type { CostScopeHandle } from "@/runtime";
 import { makeTestRuntime } from "@test/helpers";
 
 type AnyOp = Parameters<typeof _storyOrchestratorDeps.callOp>[1];
@@ -36,9 +36,13 @@ function makeOp(name: string): AnyOp {
     stage: "verify",
     kind: "run",
     config: [],
-    build: () => ({ prompt: "", user: "", extras: {} }),
+    session: { role: "main", lifetime: "fresh" },
+    build: () => ({
+      role: { id: "role", content: "", overridable: false },
+      task: { id: "task", content: "", overridable: false },
+    }),
     parse: () => ({}),
-  } as unknown as AnyOp;
+  };
 }
 
 function makeSlot(opName: string) {
@@ -188,7 +192,10 @@ describe("runPhase — story:phase:completed event emission", () => {
   });
 
   test("AC10: outcome is 'passed' when buildPhaseOutcomeLogData reports success", async () => {
-    _storyOrchestratorDeps.callOp = (async () => ({ success: true, status: "passed" })) as typeof _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.callOp = (async () => ({
+      success: true,
+      status: "passed",
+    })) as typeof _storyOrchestratorDeps.callOp;
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const received: StoryPhaseCompletedEvent[] = [];
@@ -224,7 +231,10 @@ describe("runPhase — story:phase:completed event emission", () => {
   });
 
   test("AC11: semantic-review emits an outcome even though deterministic logging returns early", async () => {
-    _storyOrchestratorDeps.callOp = (async () => ({ passed: false, findings: [] })) as typeof _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.callOp = (async () => ({
+      passed: false,
+      findings: [],
+    })) as typeof _storyOrchestratorDeps.callOp;
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const received: StoryPhaseCompletedEvent[] = [];
@@ -240,7 +250,7 @@ describe("runPhase — story:phase:completed event emission", () => {
 
   test("AC12: emitted costUsd equals the invocation's scope snapshot total, not the accumulated phaseCosts", async () => {
     const runtime = makeTestRuntime();
-    const scopeCosts: Record<string, number> = { "verifier": 0.123, "implementer": 0.999 };
+    const scopeCosts: Record<string, number> = { verifier: 0.123, implementer: 0.999 };
     let openCount = 0;
     const realOpenScope = runtime.costAggregator.openScope.bind(runtime.costAggregator);
     runtime.costAggregator.openScope = ((scopeId?: string): CostScopeHandle => {

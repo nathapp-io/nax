@@ -119,7 +119,6 @@ describe("verifierPickSelector", () => {
         // Expected to fail
       }
     });
-
   });
 
   describe("AC 4: skips patching when patch disabled or overlap high", () => {

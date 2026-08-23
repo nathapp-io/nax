@@ -20,8 +20,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { AcpAgentAdapter, type AcpClient, type AcpClientOptions, type AcpSession, type AcpSessionResponse, _acpAdapterDeps } from "@/agents";
-import { AgentStreamEventBus, attachAgentIdleWatchdog, type AgentStreamEvent } from "@/runtime";
+import {
+  AcpAgentAdapter,
+  type AcpClient,
+  type AcpClientOptions,
+  type AcpSession,
+  type AcpSessionResponse,
+  _acpAdapterDeps,
+} from "@/agents";
+import { type AgentStreamEvent, AgentStreamEventBus, attachAgentIdleWatchdog } from "@/runtime";
 import { makeNaxConfig } from "@test/helpers";
 
 // setTimeout is permitted here for controlled test delays (not Bun.sleep — see testing-rules.md)
@@ -153,11 +160,7 @@ function makeHangingMockClient(opts: AcpClientOptions | undefined): AcpClient {
  */
 function makeActiveSessionMockClient(
   opts: AcpClientOptions | undefined,
-  activityKind:
-    | "agent.message_update"
-    | "agent.thinking_update"
-    | "agent.usage_update"
-    | "agent.tool_call_update",
+  activityKind: "agent.message_update" | "agent.thinking_update" | "agent.usage_update" | "agent.tool_call_update",
   intervalMs: number,
   durationMs: number,
 ): AcpClient {
@@ -414,5 +417,4 @@ describe("Idle watchdog stale cancellation (ACP)", () => {
       detach();
     }
   });
-
 });

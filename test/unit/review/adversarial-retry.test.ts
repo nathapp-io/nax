@@ -12,7 +12,7 @@ import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { AdversarialReviewConfig } from "@/review/types";
 import type { SemanticStory } from "@/review/types";
-import { makeMockAgentManager } from "@test/helpers";
+import { makeMockAgentManager, makeSpawn } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -96,17 +96,7 @@ function restoreAllDeps() {
 function setupHappyPathDeps(statContent = STAT_OUTPUT) {
   _diffUtilsDeps.isGitRefValid = mock(async () => true);
   _diffUtilsDeps.getMergeBase = mock(async () => undefined);
-  _diffUtilsDeps.spawn = mock((_opts: unknown) => ({
-    exited: Promise.resolve(0),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(statContent));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({ start(controller) { controller.close(); } }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  _diffUtilsDeps.spawn = makeSpawn(() => statContent).spawn;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -208,7 +198,18 @@ describe("runAdversarialReview — JSON retry outcomes", () => {
   test("returns failure with blocking findings when callOp returns findings", async () => {
     _adversarialDeps.callOp = mock(async () => ({
       passed: false,
-      findings: [{ severity: "error", file: "src/log.ts", line: 1, issue: "Bug", suggestion: "Fix", acQuote: "can log in", acIndex: 1, verifiedBy: { file: "src/log.ts", observed: "bug stub" } }],
+      findings: [
+        {
+          severity: "error",
+          file: "src/log.ts",
+          line: 1,
+          issue: "Bug",
+          suggestion: "Fix",
+          acQuote: "can log in",
+          acIndex: 1,
+          verifiedBy: { file: "src/log.ts", observed: "bug stub" },
+        },
+      ],
     }));
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
@@ -263,7 +264,9 @@ describe("runAdversarialReview — JSON retry outcomes", () => {
   });
 
   test("returns fail-open when callOp throws", async () => {
-    _adversarialDeps.callOp = mock(async () => { throw new Error("LLM call failed"); });
+    _adversarialDeps.callOp = mock(async () => {
+      throw new Error("LLM call failed");
+    });
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
@@ -382,4 +385,3 @@ describe("runAdversarialReview — logging", () => {
     expect(retryLog).toBeUndefined();
   });
 });
-

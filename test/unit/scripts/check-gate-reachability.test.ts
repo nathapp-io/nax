@@ -25,17 +25,9 @@ describe("discoverCheckScripts", () => {
   afterEach(() => cleanupTempDir(root));
 
   test("finds check-*.ts and check-*.sh, ignoring other scripts", () => {
-    writeScripts(root, [
-      "check-file-sizes.ts",
-      "check-process-cwd.sh",
-      "release.ts",
-      "analyze-coverage-gap.ts",
-    ]);
+    writeScripts(root, ["check-file-sizes.ts", "check-process-cwd.sh", "release.ts", "analyze-coverage-gap.ts"]);
 
-    expect(discoverCheckScripts(root).sort()).toEqual([
-      "check-file-sizes.ts",
-      "check-process-cwd.sh",
-    ]);
+    expect(discoverCheckScripts(root).sort()).toEqual(["check-file-sizes.ts", "check-process-cwd.sh"]);
   });
 
   test("returns an empty list when scripts/ has no check scripts", () => {
@@ -104,10 +96,7 @@ describe("collectReachableScriptFiles", () => {
       },
     });
 
-    expect([...reachable].sort()).toEqual([
-      "check-file-sizes.ts",
-      "check-process-cwd.sh",
-    ]);
+    expect([...reachable].sort()).toEqual(["check-file-sizes.ts", "check-process-cwd.sh"]);
   });
 
   test("terminates on a self-referential script instead of recursing forever", () => {
@@ -163,9 +152,7 @@ describe("findUnreachableCheckScripts", () => {
 
 describe("the nax repo itself", () => {
   test("every scripts/check-* gate is reachable from CI", async () => {
-    const { findUnreachableCheckScriptsInRepo } = await import(
-      "../../../scripts/check-gate-reachability"
-    );
+    const { findUnreachableCheckScriptsInRepo } = await import("@scripts/check-gate-reachability");
     const root = join(import.meta.dir, "..", "..", "..");
 
     expect(findUnreachableCheckScriptsInRepo(root)).toEqual([]);

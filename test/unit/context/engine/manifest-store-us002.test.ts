@@ -6,11 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import {
-  _manifestStoreDeps,
-  loadContextManifests,
-  writeContextManifest,
-} from "@/context/engine";
+import { _manifestStoreDeps, loadContextManifests, writeContextManifest } from "@/context/engine";
 import type { ContextManifest } from "@/context/engine/types";
 import { withDepsRestore } from "@test/helpers";
 

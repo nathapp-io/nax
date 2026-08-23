@@ -11,9 +11,9 @@
 
 import { describe, expect, test } from "bun:test";
 import { AgentManager } from "@/agents";
-import type { HopKind, AgentResult } from "@/agents";
+import type { AgentResult, HopKind } from "@/agents";
 import type { AdapterFailure, ContextBundle } from "@/context/engine";
-import { makeNaxConfig } from "@test/helpers";
+import { makeContextBundle, makeNaxConfig } from "@test/helpers";
 
 const STALE_FAILURE: AdapterFailure = {
   category: "availability",
@@ -29,13 +29,11 @@ const AUTH_FAILURE: AdapterFailure = {
   message: "401",
 };
 
-const STUB_BUNDLE = {
-  pushMarkdown: "",
+const STUB_BUNDLE = makeContextBundle({
   pullTools: [],
   digest: "",
-  manifest: {},
   chunks: [],
-} as unknown as ContextBundle;
+});
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const STUB_RUN_OPTIONS = { prompt: "do it", workdir: "/tmp", storyId: "US-001" } as any;
@@ -194,8 +192,10 @@ describe("runWithFallback — HopKind routing", () => {
         agents.push(agentName);
         calls++;
         let result: AgentResult;
-        if (calls === 1) result = makeFailResult(STALE_FAILURE); // primary → stale
-        else if (calls === 2) result = makeFailResult(STALE_FAILURE); // stale-retry → stale again (exhausted)
+        if (calls === 1)
+          result = makeFailResult(STALE_FAILURE); // primary → stale
+        else if (calls === 2)
+          result = makeFailResult(STALE_FAILURE); // stale-retry → stale again (exhausted)
         else result = makeSuccessResult(); // swap → success
         return { result, bundle: _bundle };
       },

@@ -7,9 +7,9 @@
  * so `autoCommitIfDirty` must refuse rather than sweep it in with `git add -A`.
  */
 
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _gitDeps, autoCommitIfDirty } from "@/utils/git";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 

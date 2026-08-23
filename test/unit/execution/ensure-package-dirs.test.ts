@@ -6,10 +6,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makePRD, makeStory } from "@test/helpers";
 import { ensureStoryPackageDirs } from "@/execution";
 import type { _ensurePackageDirsDeps } from "@/execution/ensure-package-dirs";
 import type { UserStory } from "@/prd";
+import { makePRD, makeStory } from "@test/helpers";
 
 const ROOT = "/repo";
 
@@ -58,10 +58,7 @@ describe("ensureStoryPackageDirs", () => {
 
   test("deduplicates stories sharing the same workdir", async () => {
     const { deps, created } = makeDeps(new Set([ROOT]));
-    const prd = makePrd([
-      story("US-001", "packages/portfolio"),
-      story("US-002", "packages/portfolio"),
-    ]);
+    const prd = makePrd([story("US-001", "packages/portfolio"), story("US-002", "packages/portfolio")]);
 
     await ensureStoryPackageDirs(prd, ROOT, deps);
 

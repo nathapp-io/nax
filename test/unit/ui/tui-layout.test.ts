@@ -7,12 +7,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { render } from "ink-testing-library";
-import { createElement } from "react";
 import type { UserStory } from "@/prd/types";
 import { StoriesPanel } from "@/tui/components/StoriesPanel";
 import { COMPACT_MAX_VISIBLE_STORIES, MAX_VISIBLE_STORIES, MIN_TERMINAL_WIDTH } from "@/tui/hooks/useLayout";
 import type { StoryDisplayState } from "@/tui/types";
+import { render } from "ink-testing-library";
+import { createElement } from "react";
 
 // Helper to create mock stories
 function createMockStory(id: string, status: StoryDisplayState["status"]): StoryDisplayState {

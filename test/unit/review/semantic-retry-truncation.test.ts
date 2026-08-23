@@ -74,9 +74,10 @@ function makeLogger(): MockLogger {
 
 // ─── callOp helpers ───────────────────────────────────────────────────────────
 
-function makeCallOpRuntime(
-  responses: Array<{ output: string; cost?: number }>,
-): { runtime: ReturnType<typeof makeTestRuntime>; capturedPrompts: string[] } {
+function makeCallOpRuntime(responses: Array<{ output: string; cost?: number }>): {
+  runtime: ReturnType<typeof makeTestRuntime>;
+  capturedPrompts: string[];
+} {
   const capturedPrompts: string[] = [];
   let callIdx = 0;
 
@@ -101,9 +102,7 @@ function makeCallOpRuntime(
   return { runtime, capturedPrompts };
 }
 
-async function runSemanticOp(
-  runtime: ReturnType<typeof makeTestRuntime>,
-): Promise<ReturnType<typeof callOp>> {
+async function runSemanticOp(runtime: ReturnType<typeof makeTestRuntime>): Promise<ReturnType<typeof callOp>> {
   return callOp(
     { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-002" },
     semanticReviewOp,
@@ -167,10 +166,7 @@ describe("truncation-detected condensed retry", () => {
         },
       ],
     });
-    const { runtime } = makeCallOpRuntime([
-      { output: UNFINISHED_JSON },
-      { output: condensedResponse },
-    ]);
+    const { runtime } = makeCallOpRuntime([{ output: UNFINISHED_JSON }, { output: condensedResponse }]);
 
     const result = await runSemanticOp(runtime);
 
@@ -190,10 +186,7 @@ describe("truncation logging", () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    const { runtime } = makeCallOpRuntime([
-      { output: UNFINISHED_JSON },
-      { output: PASSING_LLM_RESPONSE },
-    ]);
+    const { runtime } = makeCallOpRuntime([{ output: UNFINISHED_JSON }, { output: PASSING_LLM_RESPONSE }]);
 
     await runSemanticOp(runtime);
 
@@ -206,10 +199,7 @@ describe("truncation logging", () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    const { runtime } = makeCallOpRuntime([
-      { output: "not json text" },
-      { output: PASSING_LLM_RESPONSE },
-    ]);
+    const { runtime } = makeCallOpRuntime([{ output: "not json text" }, { output: PASSING_LLM_RESPONSE }]);
 
     await runSemanticOp(runtime);
 
@@ -254,10 +244,7 @@ describe("Bug 4 regression: parser-first, length is a hint not a veto", () => {
 
   test("parseable response with invalid shape triggers standard (non-condensed) retry", async () => {
     const wrongShape = JSON.stringify({ passed: true });
-    const { runtime, capturedPrompts } = makeCallOpRuntime([
-      { output: wrongShape },
-      { output: PASSING_LLM_RESPONSE },
-    ]);
+    const { runtime, capturedPrompts } = makeCallOpRuntime([{ output: wrongShape }, { output: PASSING_LLM_RESPONSE }]);
 
     await runSemanticOp(runtime);
 

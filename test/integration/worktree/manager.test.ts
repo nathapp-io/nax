@@ -371,9 +371,7 @@ describe("WorktreeManager", () => {
       const excludePath = join(infoDir, "exclude");
       // No `.lock.*` candidate file should remain — the path-file-lock
       // is released in its `finally` block on the success path.
-      const entries = await Array.fromAsync(
-        new Bun.Glob(`${"exclude"}.lock.*`).scan({ cwd: infoDir }),
-      );
+      const entries = await Array.fromAsync(new Bun.Glob(`${"exclude"}.lock.*`).scan({ cwd: infoDir }));
       expect(entries.length).toBe(0);
 
       // Subsequent calls still work (the lock isn't held by a zombie

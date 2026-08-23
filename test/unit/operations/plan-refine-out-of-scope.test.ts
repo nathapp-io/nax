@@ -11,6 +11,8 @@
 
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { _planRefineDeps, planRefineOp } from "@/operations";
+import type { PlanRefineInput } from "@/operations";
+import type { HopBodyContext } from "@/operations/types";
 import { PlanPromptBuilder } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
 import { makePRD, makeStory, makeTestRuntime, withWarnSpy } from "@test/helpers";
@@ -53,7 +55,7 @@ describe("planRefineOp.hopBody — out-of-scope self-heal turn", () => {
       sendCount += 1;
       return turn(sendCount === 1 ? "refined" : "repaired", 2);
     });
-    const ctx = {
+    const ctx: HopBodyContext<PlanRefineInput> = {
       input: {
         specContent: SPEC,
         codebaseContext: "",
@@ -63,7 +65,7 @@ describe("planRefineOp.hopBody — out-of-scope self-heal turn", () => {
       },
       send,
       sendWithParseRetry,
-    } as unknown as Parameters<NonNullable<typeof planRefineOp.hopBody>>[1];
+    };
     return { ctx, send };
   }
 
@@ -191,7 +193,10 @@ describe("planRefineOp.verify — story-local hoist demotion (#1446)", () => {
 
   test("demotes a hoisted story-local block onto its owning story, and warns", async () => {
     await withWarnSpy(async (warnSpy) => {
-      const hoisted = makePrd(["An interactive Ink TUI", "body-size limits on the import endpoint, deferred to arc 3."]);
+      const hoisted = makePrd([
+        "An interactive Ink TUI",
+        "body-size limits on the import endpoint, deferred to arc 3.",
+      ]);
 
       const result = await planRefineOp.verify!(hoisted, input as never, makeVerifyCtx() as never);
 

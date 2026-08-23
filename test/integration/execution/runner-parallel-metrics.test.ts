@@ -23,10 +23,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { initLogger, resetLogger } from "@/logger";
 import type { RunParallelBatchResult } from "@/execution/parallel-batch";
+import { initLogger, resetLogger } from "@/logger";
 import type { UserStory } from "@/prd/types";
-import { makePendingStory, makePrd, makeCtx } from "./_parallel-metrics-helpers";
+import { makeCtx, makePendingStory, makePrd } from "./_parallel-metrics-helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local helpers
@@ -82,7 +82,10 @@ describe("AC-1 — completed story cost equals storyCosts.get(story.id)", () => 
   test("each completed story gets its own cost from the Map, not an average", async () => {
     const s1 = makePendingStory("US-M1");
     const s2 = makePendingStory("US-M2");
-    const costMap = new Map([[s1.id, 0.12], [s2.id, 0.48]]);
+    const costMap = new Map([
+      [s1.id, 0.12],
+      [s2.id, 0.48],
+    ]);
 
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
@@ -124,8 +127,14 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id), not batch wal
   test("each story receives its own durationMs from the storyDurations Map", async () => {
     const s1 = makePendingStory("US-DUR1");
     const s2 = makePendingStory("US-DUR2");
-    const costMap = new Map([[s1.id, 0.1], [s2.id, 0.1]]);
-    const durMap = new Map([[s1.id, 2500], [s2.id, 7800]]);
+    const costMap = new Map([
+      [s1.id, 0.1],
+      [s2.id, 0.1],
+    ]);
+    const durMap = new Map([
+      [s1.id, 2500],
+      [s2.id, 7800],
+    ]);
 
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap, durMap));
@@ -177,7 +186,10 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
   test("rectified conflict story appears in allStoryMetrics with source 'rectification'", async () => {
     const conflictStory = makePendingStory("US-RECT");
     const cleanStory = makePendingStory("US-CLEAN");
-    const costMap = new Map([[conflictStory.id, 0.09], [cleanStory.id, 0.06]]);
+    const costMap = new Map([
+      [conflictStory.id, 0.09],
+      [cleanStory.id, 0.06],
+    ]);
 
     deps.selectIndependentBatch = mock(() => [conflictStory, cleanStory]);
     deps.runParallelBatch = mock(async () => ({
@@ -189,7 +201,10 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([conflictStory, cleanStory]) as never);
+    const result = await executeUnified(
+      makeCtx({ parallelCount: 2 }) as never,
+      makePrd([conflictStory, cleanStory]) as never,
+    );
 
     const rectM = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
     expect(rectM).toBeDefined();
@@ -199,7 +214,10 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
   test("rectificationCost equals conflict.cost from the batch result", async () => {
     const conflictStory = makePendingStory("US-RECTCOST");
     const cleanStory = makePendingStory("US-CLEANB");
-    const costMap = new Map([[conflictStory.id, 0.11], [cleanStory.id, 0.07]]);
+    const costMap = new Map([
+      [conflictStory.id, 0.11],
+      [cleanStory.id, 0.07],
+    ]);
 
     deps.selectIndependentBatch = mock(() => [conflictStory, cleanStory]);
     deps.runParallelBatch = mock(async () => ({
@@ -211,7 +229,10 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([conflictStory, cleanStory]) as never);
+    const result = await executeUnified(
+      makeCtx({ parallelCount: 2 }) as never,
+      makePrd([conflictStory, cleanStory]) as never,
+    );
 
     const rectM = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
     expect(rectM!.rectificationCost).toBe(0.04);
@@ -223,7 +244,10 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     // sum(allStoryMetrics.cost) silently under-reports against totalCost/costLimit.
     const conflictStory = makePendingStory("US-TOTALCOST");
     const cleanStory = makePendingStory("US-CLEANC");
-    const costMap = new Map([[conflictStory.id, 0.15], [cleanStory.id, 0.06]]);
+    const costMap = new Map([
+      [conflictStory.id, 0.15],
+      [cleanStory.id, 0.06],
+    ]);
 
     deps.selectIndependentBatch = mock(() => [conflictStory, cleanStory]);
     deps.runParallelBatch = mock(async () => ({
@@ -236,7 +260,10 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([conflictStory, cleanStory]) as never);
+    const result = await executeUnified(
+      makeCtx({ parallelCount: 2 }) as never,
+      makePrd([conflictStory, cleanStory]) as never,
+    );
 
     const rectM = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
     // First-pass cost (0.15) plus the rectification re-run (0.04) = 0.19
@@ -247,7 +274,10 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
   test("non-rectified conflict (rectified: false) does not produce a 'rectification' source entry", async () => {
     const failedConflict = makePendingStory("US-FAILRECT");
     const cleanStory = makePendingStory("US-CLEAND");
-    const costMap = new Map([[failedConflict.id, 0.09], [cleanStory.id, 0.05]]);
+    const costMap = new Map([
+      [failedConflict.id, 0.09],
+      [cleanStory.id, 0.05],
+    ]);
 
     deps.selectIndependentBatch = mock(() => [failedConflict, cleanStory]);
     deps.runParallelBatch = mock(async () => ({
@@ -259,7 +289,10 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([failedConflict, cleanStory]) as never);
+    const result = await executeUnified(
+      makeCtx({ parallelCount: 2 }) as never,
+      makePrd([failedConflict, cleanStory]) as never,
+    );
 
     const rectEntry = result.allStoryMetrics.find(
       (m) => m.storyId === failedConflict.id && m.source === "rectification",
@@ -270,7 +303,10 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
   test("rectified story has firstPassSuccess false", async () => {
     const conflictStory = makePendingStory("US-FPS");
     const cleanStory = makePendingStory("US-FPSC");
-    const costMap = new Map([[conflictStory.id, 0.08], [cleanStory.id, 0.05]]);
+    const costMap = new Map([
+      [conflictStory.id, 0.08],
+      [cleanStory.id, 0.05],
+    ]);
 
     deps.selectIndependentBatch = mock(() => [conflictStory, cleanStory]);
     deps.runParallelBatch = mock(async () => ({
@@ -282,7 +318,10 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([conflictStory, cleanStory]) as never);
+    const result = await executeUnified(
+      makeCtx({ parallelCount: 2 }) as never,
+      makePrd([conflictStory, cleanStory]) as never,
+    );
 
     const rectM = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
     expect(rectM!.firstPassSuccess).toBe(false);
@@ -302,7 +341,13 @@ describe("AC-4 — story:started emitted with correct storyId before batch execu
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => {
       eventLog.push("batch");
-      return makeBatch([s1, s2], new Map([[s1.id, 0.1], [s2.id, 0.1]]));
+      return makeBatch(
+        [s1, s2],
+        new Map([
+          [s1.id, 0.1],
+          [s2.id, 0.1],
+        ]),
+      );
     });
 
     const { pipelineEventBus } = await import("@/pipeline/event-bus");
@@ -338,7 +383,13 @@ describe("AC-4 — story:started emitted with correct storyId before batch execu
 
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () =>
-      makeBatch([s1, s2], new Map([[s1.id, 0.1], [s2.id, 0.1]])),
+      makeBatch(
+        [s1, s2],
+        new Map([
+          [s1.id, 0.1],
+          [s2.id, 0.1],
+        ]),
+      ),
     );
 
     const { pipelineEventBus } = await import("@/pipeline/event-bus");
@@ -377,9 +428,7 @@ describe("AC-5 — executeUnified is the entry point; legacy dispatch function i
   });
 
   test("runner-execution.ts does not reference runParallelExecution", async () => {
-    const src = await Bun.file(
-      new URL("../../../src/execution/runner-execution.ts", import.meta.url).pathname,
-    ).text();
+    const src = await Bun.file(new URL("../../../src/execution/runner-execution.ts", import.meta.url).pathname).text();
     expect(src).not.toContain("runParallelExecution");
   });
 });
@@ -393,7 +442,11 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     const s1 = makePendingStory("US-SC1");
     const s2 = makePendingStory("US-SC2");
     const s3 = makePendingStory("US-SC3");
-    const costMap = new Map([[s1.id, 0.1], [s2.id, 0.1], [s3.id, 0.1]]);
+    const costMap = new Map([
+      [s1.id, 0.1],
+      [s2.id, 0.1],
+      [s3.id, 0.1],
+    ]);
 
     deps.selectIndependentBatch = mock(() => [s1, s2, s3]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2, s3], costMap));
@@ -407,7 +460,10 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
   test("result.totalCost equals the batchResult.totalCost value", async () => {
     const s1 = makePendingStory("US-TC1");
     const s2 = makePendingStory("US-TC2");
-    const costMap = new Map([[s1.id, 0.3], [s2.id, 0.7]]);
+    const costMap = new Map([
+      [s1.id, 0.3],
+      [s2.id, 0.7],
+    ]);
 
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
@@ -421,14 +477,20 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
   test("result.exitReason is 'max-iterations' after consuming all iterations in a parallel batch", async () => {
     const s1 = makePendingStory("US-EXIT1");
     const s2 = makePendingStory("US-EXIT2");
-    const costMap = new Map([[s1.id, 0.05], [s2.id, 0.05]]);
+    const costMap = new Map([
+      [s1.id, 0.05],
+      [s2.id, 0.05],
+    ]);
 
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
 
     const { executeUnified } = await import("@/execution/unified-executor");
     // maxIterations: 1 → the loop processes the batch then exits naturally
-    const result = await executeUnified(makeCtx({ parallelCount: 2, maxIterations: 1 }) as never, makePrd([s1, s2]) as never);
+    const result = await executeUnified(
+      makeCtx({ parallelCount: 2, maxIterations: 1 }) as never,
+      makePrd([s1, s2]) as never,
+    );
 
     expect(result.exitReason).toBe("max-iterations");
   });
@@ -436,7 +498,10 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
   test("allStoryMetrics has no duplicate entries for the same storyId", async () => {
     const s1 = makePendingStory("US-DEDUP1");
     const s2 = makePendingStory("US-DEDUP2");
-    const costMap = new Map([[s1.id, 0.1], [s2.id, 0.1]]);
+    const costMap = new Map([
+      [s1.id, 0.1],
+      [s2.id, 0.1],
+    ]);
 
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
@@ -452,7 +517,10 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
   test("completed parallel stories have firstPassSuccess true", async () => {
     const s1 = makePendingStory("US-FPS1");
     const s2 = makePendingStory("US-FPS2");
-    const costMap = new Map([[s1.id, 0.1], [s2.id, 0.1]]);
+    const costMap = new Map([
+      [s1.id, 0.1],
+      [s2.id, 0.1],
+    ]);
 
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
@@ -468,7 +536,10 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
   test("completed parallel stories have source 'parallel'", async () => {
     const s1 = makePendingStory("US-SRC1");
     const s2 = makePendingStory("US-SRC2");
-    const costMap = new Map([[s1.id, 0.1], [s2.id, 0.1]]);
+    const costMap = new Map([
+      [s1.id, 0.1],
+      [s2.id, 0.1],
+    ]);
 
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
@@ -485,7 +556,11 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     const s1 = makePendingStory("US-COUNT1");
     const s2 = makePendingStory("US-COUNT2");
     const rectStory = makePendingStory("US-COUNTRECT");
-    const costMap = new Map([[s1.id, 0.1], [s2.id, 0.1], [rectStory.id, 0.12]]);
+    const costMap = new Map([
+      [s1.id, 0.1],
+      [s2.id, 0.1],
+      [rectStory.id, 0.12],
+    ]);
 
     deps.selectIndependentBatch = mock(() => [s1, s2, rectStory]);
     deps.runParallelBatch = mock(async () => ({
@@ -497,10 +572,7 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(
-      makeCtx({ parallelCount: 3 }) as never,
-      makePrd([s1, s2, rectStory]) as never,
-    );
+    const result = await executeUnified(makeCtx({ parallelCount: 3 }) as never, makePrd([s1, s2, rectStory]) as never);
 
     // 2 completed + 1 rectified = 3 entries total
     expect(result.allStoryMetrics).toHaveLength(3);
@@ -510,7 +582,10 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     const s1 = makePendingStory("US-CLIMIT1");
     const s2 = makePendingStory("US-CLIMIT2");
     // Each story costs 60 — total 120, limit is 100
-    const costMap = new Map([[s1.id, 60], [s2.id, 60]]);
+    const costMap = new Map([
+      [s1.id, 60],
+      [s2.id, 60],
+    ]);
 
     deps.selectIndependentBatch = mock(() => [s1, s2]);
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));

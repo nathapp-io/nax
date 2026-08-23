@@ -4,6 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { Mock } from "bun:test";
 import { outputAdvisoryFindingsSummary } from "@/execution";
 import type { AdvisoryFindingSummaryEntry } from "@/runtime";
 
@@ -18,13 +19,13 @@ function makeFinding(overrides: Partial<AdvisoryFindingSummaryEntry> = {}): Advi
 }
 
 describe("outputAdvisoryFindingsSummary", () => {
-  let logSpy: ReturnType<typeof mock>;
+  let logSpy: Mock<typeof console.log>;
   let origLog: typeof console.log;
 
   beforeEach(() => {
     origLog = console.log;
-    logSpy = mock(() => {});
-    console.log = logSpy as unknown as typeof console.log;
+    logSpy = mock<typeof console.log>(() => {});
+    console.log = logSpy;
   });
 
   afterEach(() => {

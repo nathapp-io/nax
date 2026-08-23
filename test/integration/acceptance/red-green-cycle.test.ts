@@ -15,14 +15,10 @@ import path from "node:path";
 import { DEFAULT_CONFIG } from "@/config";
 import { initLogger, resetLogger } from "@/logger";
 import { acceptanceStage } from "@/pipeline/stages/acceptance";
-import {
-  _acceptanceSetupDeps,
-  acceptanceSetupStage,
-  computeACFingerprint,
-} from "@/pipeline/stages/acceptance-setup";
+import { _acceptanceSetupDeps, acceptanceSetupStage, computeACFingerprint } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
-import { makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makePRD, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -48,14 +44,11 @@ function makeStory(
 }
 
 function makePrd(stories: ReturnType<typeof makeStory>[]): PRD {
-  return {
-    project: "test-project",
+  return makePRD({
     feature: "test-feature",
     branchName: "feat/test",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
     userStories: stories,
-  };
+  });
 }
 
 function makeCtx(tmpDir: string, overrides: Partial<PipelineContext> = {}): PipelineContext {
@@ -65,16 +58,14 @@ function makeCtx(tmpDir: string, overrides: Partial<PipelineContext> = {}): Pipe
     makeStory("US-002", ["AC-1: third feature works"]),
   ];
   return {
-    config: {
-      ...DEFAULT_CONFIG,
+    config: makeNaxConfig({
       acceptance: {
-        ...DEFAULT_CONFIG.acceptance,
         enabled: true,
         refinement: true,
         redGate: true,
         model: "fast",
       },
-    } as unknown as PipelineContext["config"],
+    }),
     prd: makePrd(stories),
     story: stories[0],
     stories,
@@ -88,7 +79,7 @@ function makeCtx(tmpDir: string, overrides: Partial<PipelineContext> = {}): Pipe
     workdir: tmpDir,
     projectDir: tmpDir,
     featureDir,
-    hooks: { hooks: {} } as unknown as PipelineContext["hooks"],
+    hooks: { hooks: {} },
     ...overrides,
   };
 }
@@ -170,8 +161,7 @@ describe("RED to GREEN acceptance cycle", () => {
 
     // RED gate detects failures — valid RED, stage continues
     expect(setupResult.action).toBe("continue");
-    const contextWithSetup = ctx as unknown as Record<string, unknown>;
-    expect((contextWithSetup.acceptanceSetup as Record<string, unknown>).redFailCount).toBeGreaterThan(0);
+    expect(ctx.acceptanceSetup?.redFailCount).toBeGreaterThan(0);
   });
 
   test("GREEN gate passes after implementation stubs are written", async () => {
@@ -192,7 +182,7 @@ describe("RED to GREEN acceptance cycle", () => {
       makeStory("US-002", ["AC-1: third feature works"], "passed"),
     ];
     const greenCtx = makeCtx(tmpDir, {
-      prd: makePrd(completedStories) as unknown as PRD,
+      prd: makePrd(completedStories),
       story: completedStories[0],
       stories: completedStories,
       acceptanceTestPaths: [{ testPath, packageDir: tmpDir }],
@@ -234,7 +224,7 @@ describe("RED to GREEN acceptance cycle", () => {
       makeStory("US-002", ["AC-1: third feature works"], "passed"),
     ];
     const greenCtx = makeCtx(tmpDir, {
-      prd: makePrd(completedStories) as unknown as PRD,
+      prd: makePrd(completedStories),
       story: completedStories[0],
       stories: completedStories,
       acceptanceTestPaths: [{ testPath, packageDir: tmpDir }],
@@ -359,9 +349,7 @@ describe("edge case: already-passing tests trigger skip", () => {
 
   test("skip result includes a human-readable reason explaining the warning", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.callOp = makeDefaultCallOp(
-      'import { test } from "bun:test"; test("AC-1", () => {});',
-    );
+    _acceptanceSetupDeps.callOp = makeDefaultCallOp('import { test } from "bun:test"; test("AC-1", () => {});');
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 0, output: "1 passed" });
 

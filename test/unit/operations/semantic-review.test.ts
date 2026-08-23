@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { Iteration } from "@/findings";
+import { callOp } from "@/operations";
 import { semanticReviewOp } from "@/operations/semantic-review";
 import type { SemanticReviewInput } from "@/operations/semantic-review";
-import { callOp } from "@/operations";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -155,7 +155,7 @@ describe("semanticReviewOp.parse()", () => {
   });
   test("parses fence-wrapped JSON response", () => {
     const ctx = makeBuildCtx();
-    const json = "```json\n" + JSON.stringify({ passed: true, findings: [] }) + "\n```";
+    const json = `\`\`\`json\n${JSON.stringify({ passed: true, findings: [] })}\n\`\`\``;
     const result = semanticReviewOp.parse(json, SAMPLE_INPUT, ctx);
     expect(result.passed).toBe(true);
     expect(result.failOpen).toBeUndefined();

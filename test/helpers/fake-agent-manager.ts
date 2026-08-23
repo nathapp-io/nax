@@ -1,13 +1,13 @@
-import { DEFAULT_CONFIG } from "@/config";
-import type { NaxConfig } from "@/config";
-import { resolvePermissions } from "@/config/permissions";
-import { getLogger } from "@/logger";
-import { formatSessionName } from "@/runtime/session-name";
 import { buildContextToolPreamble, buildRunInteractionHandler } from "@/agents/acp/adapter";
 import { NO_OP_INTERACTION_HANDLER } from "@/agents/interaction-handler";
 import type { IAgentManager } from "@/agents/manager-types";
 import type { AgentAdapter, AgentResult } from "@/agents/types";
+import { DEFAULT_CONFIG } from "@/config";
+import type { NaxConfig } from "@/config";
+import { resolvePermissions } from "@/config/permissions";
+import { getLogger } from "@/logger";
 import type { IDispatchEventBus } from "@/runtime/dispatch-events";
+import { formatSessionName } from "@/runtime/session-name";
 
 export interface FakeAgentManagerOptions {
   /** Optional default agent name override. Defaults to adapter.name. */
@@ -40,15 +40,11 @@ export function fakeAgentManager(
   const dispatchEvents = opts.dispatchEvents;
   const warnMismatch = (method: string, requested: string): void => {
     if (requested !== adapter.name) {
-      getLogger().warn(
-        "agents",
-        "fakeAgentManager: agentName mismatch — test manager wraps a single adapter",
-        {
-          method,
-          requested,
-          wrapped: adapter.name,
-        },
-      );
+      getLogger().warn("agents", "fakeAgentManager: agentName mismatch — test manager wraps a single adapter", {
+        method,
+        requested,
+        wrapped: adapter.name,
+      });
     }
   };
   const mgr: IAgentManager = {

@@ -167,7 +167,13 @@ describe("withNoProgressBail — US-002", () => {
 
   test("US-002 AC12/AC13: production wrapper composition bails after three fix dispatches", async () => {
     const runtime = makeTestRuntime();
-    const ctx = { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-002" } as FixCycleContext;
+    const ctx = {
+      runtime,
+      packageView: runtime.packages.repo(),
+      packageDir: "/tmp",
+      agentName: "claude",
+      storyId: "US-002",
+    } as FixCycleContext;
     const persisted = [finding("one"), finding("two")];
     let dispatches = 0;
     const wrapped = withNoProgressBail(withIncreasingFailuresBail([strategy()], true, 3), true, 3);
@@ -191,7 +197,13 @@ describe("withNoProgressBail — US-002", () => {
 
   test("US-002 AC14: disabled no-progress bail dispatches more than three fixes", async () => {
     const runtime = makeTestRuntime();
-    const ctx = { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-002" } as FixCycleContext;
+    const ctx = {
+      runtime,
+      packageView: runtime.packages.repo(),
+      packageDir: "/tmp",
+      agentName: "claude",
+      storyId: "US-002",
+    } as FixCycleContext;
     const persisted = [finding("one"), finding("two")];
     let dispatches = 0;
     const wrapped = withNoProgressBail(withIncreasingFailuresBail([strategy()], false, 3), false, 3);
@@ -253,7 +265,7 @@ describe("withNoProgressBail — US-002 AC-2.9/AC-2.10: driven through runRectif
         abortOnNoProgress,
         consecutiveNoProgressToBail: 3,
       },
-    } as unknown as Parameters<typeof runRectification>[1];
+    };
   }
 
   /** The gate stays red with the identical finding on every re-run — a pure stall, no progress ever made. */
@@ -275,9 +287,14 @@ describe("withNoProgressBail — US-002 AC-2.9/AC-2.10: driven through runRectif
     const ctx = makeCtx(runtime);
     const dispatches = alwaysRedGateAndCountFixes();
 
-    const result = await runRectification(ctx, makeState(true), {}, {
-      "full-suite-gate": { success: false, passed: false, findings: [GATE_FAILURE] },
-    });
+    const result = await runRectification(
+      ctx,
+      makeState(true),
+      {},
+      {
+        "full-suite-gate": { success: false, passed: false, findings: [GATE_FAILURE] },
+      },
+    );
     await runtime.close();
 
     expect(result.rectificationExhausted).toBe(true);
@@ -289,9 +306,14 @@ describe("withNoProgressBail — US-002 AC-2.9/AC-2.10: driven through runRectif
     const ctx = makeCtx(runtime);
     const dispatches = alwaysRedGateAndCountFixes();
 
-    await runRectification(ctx, makeState(false), {}, {
-      "full-suite-gate": { success: false, passed: false, findings: [GATE_FAILURE] },
-    });
+    await runRectification(
+      ctx,
+      makeState(false),
+      {},
+      {
+        "full-suite-gate": { success: false, passed: false, findings: [GATE_FAILURE] },
+      },
+    );
     await runtime.close();
 
     expect(dispatches()).toBeGreaterThan(3);

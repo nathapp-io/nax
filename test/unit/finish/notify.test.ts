@@ -8,7 +8,7 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { _notifyDeps, sendTelegramNotify, telegramCreds, isTelegramConfigured } from "@/finish";
+import { _notifyDeps, isTelegramConfigured, sendTelegramNotify, telegramCreds } from "@/finish";
 
 const orig = _notifyDeps.fetch;
 
@@ -74,7 +74,6 @@ describe("telegramCreds", () => {
 
   test("telegramCreds ignores interaction.config when another plugin is selected", () => {
     const prev = { ...process.env };
-    process.env.NAX_TELEGRAM_TOKEN = undefined as unknown as string; // test-ratchet-allow: as-unknown-as
     try {
       delete process.env.NAX_TELEGRAM_TOKEN;
       delete process.env.TELEGRAM_BOT_TOKEN;
@@ -92,7 +91,9 @@ describe("telegramCreds", () => {
 
 describe("isTelegramConfigured", () => {
   test("returns true when creds are available", () => {
-    const result = isTelegramConfigured({ interaction: { plugin: "telegram", config: { botToken: "t", chatId: "c" } } });
+    const result = isTelegramConfigured({
+      interaction: { plugin: "telegram", config: { botToken: "t", chatId: "c" } },
+    });
     expect(result).toBe(true);
   });
 

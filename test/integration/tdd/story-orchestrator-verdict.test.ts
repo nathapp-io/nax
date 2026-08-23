@@ -4,11 +4,19 @@ import path from "node:path";
 import { DEFAULT_CONFIG } from "@/config";
 import { buildPlanForStrategy } from "@/execution/build-plan-for-strategy";
 import type { PlanInputs } from "@/execution/plan-inputs";
+import type { UserStory } from "@/prd";
 import type { ResolvedTestPatterns } from "@/test-runners";
 import { makeMockCallContext } from "@test/helpers";
 import { makeRuntimeWithFakeAgent } from "@test/helpers";
-import type { UserStory } from "@/prd";
-import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps, stubFullSuiteGateContext } from "./_tdd-test-helpers";
+import {
+  type SavedDeps,
+  createMockAgent,
+  mockAllSpawn,
+  mockGitSpawn,
+  restoreDeps,
+  saveDeps,
+  stubFullSuiteGateContext,
+} from "./_tdd-test-helpers";
 
 let saved: SavedDeps;
 
@@ -73,37 +81,38 @@ function mockGitAndTest(opts: {
   let revParseCount = 0;
   let diffCount = 0;
 
-  mockAllSpawn(mock((cmd: string[], _spawnOpts?: any) => {
-    if (cmd[0] === "/bin/sh" && cmd[2]?.includes("bun test")) {
-      const r = opts.onTestCmd?.() ?? { exitCode: 0, stdout: "5 pass, 0 fail\n" };
-      return {
-        pid: 9999,
-        exited: Promise.resolve(r.exitCode),
-        stdout: new Response(r.stdout).body,
-        stderr: new Response("").body,
-      };
-    }
-    if (cmd[0] === "git" && cmd[1] === "rev-parse") {
-      revParseCount++;
-      return {
-        exited: Promise.resolve(0),
-        stdout: new Response(`ref-${revParseCount}\n`).body,
-        stderr: new Response("").body,
-      };
-    }
-    if (cmd[0] === "git" && cmd[1] === "diff") {
-      const f = files[diffCount] || [];
-      diffCount++;
-      return {
-        exited: Promise.resolve(0),
-        stdout: new Response(f.join("\n") + "\n").body,
-        stderr: new Response("").body,
-      };
-    }
-    return { exited: Promise.resolve(0), stdout: new Response("").body, stderr: new Response("").body };
-  }));
+  mockAllSpawn(
+    mock((cmd: string[], _spawnOpts?: any) => {
+      if (cmd[0] === "/bin/sh" && cmd[2]?.includes("bun test")) {
+        const r = opts.onTestCmd?.() ?? { exitCode: 0, stdout: "5 pass, 0 fail\n" };
+        return {
+          pid: 9999,
+          exited: Promise.resolve(r.exitCode),
+          stdout: new Response(r.stdout).body,
+          stderr: new Response("").body,
+        };
+      }
+      if (cmd[0] === "git" && cmd[1] === "rev-parse") {
+        revParseCount++;
+        return {
+          exited: Promise.resolve(0),
+          stdout: new Response(`ref-${revParseCount}\n`).body,
+          stderr: new Response("").body,
+        };
+      }
+      if (cmd[0] === "git" && cmd[1] === "diff") {
+        const f = files[diffCount] || [];
+        diffCount++;
+        return {
+          exited: Promise.resolve(0),
+          stdout: new Response(`${f.join("\n")}\n`).body,
+          stderr: new Response("").body,
+        };
+      }
+      return { exited: Promise.resolve(0), stdout: new Response("").body, stderr: new Response("").body };
+    }),
+  );
 }
-
 
 describe("buildPlanForStrategy — three-session-tdd verdict", () => {
   test("all sessions succeed → result.success is true", async () => {
@@ -117,7 +126,13 @@ describe("buildPlanForStrategy — three-session-tdd verdict", () => {
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
     const callCtx = makeMockCallContext({ runtime });
-    const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const plan = await buildPlanForStrategy(
+      callCtx,
+      story,
+      DEFAULT_CONFIG,
+      "three-session-tdd",
+      makePlanInputsNoGreenfield(),
+    );
     const result = await plan.run();
 
     expect(result.success).toBe(true);
@@ -134,7 +149,13 @@ describe("buildPlanForStrategy — three-session-tdd verdict", () => {
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
     const callCtx = makeMockCallContext({ runtime });
-    const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const plan = await buildPlanForStrategy(
+      callCtx,
+      story,
+      DEFAULT_CONFIG,
+      "three-session-tdd",
+      makePlanInputsNoGreenfield(),
+    );
     const result = await plan.run();
 
     expect(result.success).toBe(false);
@@ -142,13 +163,7 @@ describe("buildPlanForStrategy — three-session-tdd verdict", () => {
 
   test("no test command configured → sessions still complete successfully", async () => {
     mockGitSpawn({
-      diffFiles: [
-        ["test/user.test.ts"],
-        ["test/user.test.ts"],
-        ["src/user.ts"],
-        ["src/user.ts"],
-        ["src/user.ts"],
-      ],
+      diffFiles: [["test/user.test.ts"], ["test/user.test.ts"], ["src/user.ts"], ["src/user.ts"], ["src/user.ts"]],
     });
 
     const configNoRectification = {
@@ -183,19 +198,20 @@ describe("buildPlanForStrategy — three-session-tdd verdict", () => {
 
   test("early-exit before session 3 (session 1 fails) → result.success is false", async () => {
     mockGitAndTest({
-      diffFiles: [
-        ["test/user.test.ts"],
-        ["test/user.test.ts"],
-      ],
+      diffFiles: [["test/user.test.ts"], ["test/user.test.ts"]],
     });
 
-    const agent = createMockAgent([
-      { success: false, exitCode: 1, estimatedCostUsd: 0.01 },
-    ]);
+    const agent = createMockAgent([{ success: false, exitCode: 1, estimatedCostUsd: 0.01 }]);
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
     const callCtx = makeMockCallContext({ runtime });
-    const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const plan = await buildPlanForStrategy(
+      callCtx,
+      story,
+      DEFAULT_CONFIG,
+      "three-session-tdd",
+      makePlanInputsNoGreenfield(),
+    );
     const result = await plan.run();
 
     expect(result.success).toBe(false);
@@ -203,13 +219,7 @@ describe("buildPlanForStrategy — three-session-tdd verdict", () => {
 
   test("phaseOutputs contains implementer key after successful run", async () => {
     mockGitSpawn({
-      diffFiles: [
-        ["test/user.test.ts"],
-        ["test/user.test.ts"],
-        ["src/user.ts"],
-        ["src/user.ts"],
-        ["src/user.ts"],
-      ],
+      diffFiles: [["test/user.test.ts"], ["test/user.test.ts"], ["src/user.ts"], ["src/user.ts"], ["src/user.ts"]],
     });
 
     const agent = createMockAgent([
@@ -220,7 +230,13 @@ describe("buildPlanForStrategy — three-session-tdd verdict", () => {
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
     const callCtx = makeMockCallContext({ runtime });
-    const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const plan = await buildPlanForStrategy(
+      callCtx,
+      story,
+      DEFAULT_CONFIG,
+      "three-session-tdd",
+      makePlanInputsNoGreenfield(),
+    );
     const result = await plan.run();
 
     expect(result.phaseOutputs).toBeDefined();

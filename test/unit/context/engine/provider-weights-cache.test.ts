@@ -44,7 +44,8 @@ describe("ProviderWeightsCache", () => {
       loadCalls++;
       return [];
     }) as typeof _providerWeightsCacheDeps.loadFeatureManifests;
-    _providerWeightsCacheDeps.deriveProviderWeights = (() => ({})) as typeof _providerWeightsCacheDeps.deriveProviderWeights;
+    _providerWeightsCacheDeps.deriveProviderWeights =
+      (() => ({})) as typeof _providerWeightsCacheDeps.deriveProviderWeights;
 
     const cache = new ProviderWeightsCache();
     await cache.loadOrGet("feature-a", "/repo");
@@ -60,7 +61,8 @@ describe("ProviderWeightsCache", () => {
       seenFeatureIds.push(opts?.featureId ?? "");
       return [] as StoredContextManifest[];
     }) as typeof _providerWeightsCacheDeps.loadFeatureManifests;
-    _providerWeightsCacheDeps.deriveProviderWeights = (() => ({})) as typeof _providerWeightsCacheDeps.deriveProviderWeights;
+    _providerWeightsCacheDeps.deriveProviderWeights =
+      (() => ({})) as typeof _providerWeightsCacheDeps.deriveProviderWeights;
 
     const cache = new ProviderWeightsCache();
     await cache.loadOrGet("feature-a", "/repo");
@@ -77,7 +79,8 @@ describe("ProviderWeightsCache", () => {
       loadCalls++;
       return [];
     }) as typeof _providerWeightsCacheDeps.loadFeatureManifests;
-    _providerWeightsCacheDeps.deriveProviderWeights = (() => ({})) as typeof _providerWeightsCacheDeps.deriveProviderWeights;
+    _providerWeightsCacheDeps.deriveProviderWeights =
+      (() => ({})) as typeof _providerWeightsCacheDeps.deriveProviderWeights;
 
     const cache = new ProviderWeightsCache();
     await cache.loadOrGet("feature-a", "/repo");
@@ -93,7 +96,8 @@ describe("ProviderWeightsCache", () => {
       loadCalls++;
       return [];
     }) as typeof _providerWeightsCacheDeps.loadFeatureManifests;
-    _providerWeightsCacheDeps.deriveProviderWeights = (() => ({})) as typeof _providerWeightsCacheDeps.deriveProviderWeights;
+    _providerWeightsCacheDeps.deriveProviderWeights =
+      (() => ({})) as typeof _providerWeightsCacheDeps.deriveProviderWeights;
 
     const cache = new ProviderWeightsCache();
     await cache.loadOrGet("feature-a", "/repo");

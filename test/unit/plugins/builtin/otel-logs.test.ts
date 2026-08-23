@@ -125,7 +125,6 @@ describe("toLogRecord", () => {
 describe("buildLogsPayload", () => {
   test("returns an OTLP resourceLogs envelope with shared resource attributes", () => {
     const entry: LogEntry = { ...baseEntry, storyId: "s-1", data: { phase: "execute" } };
-    // biome-ignore lint/suspicious/noExplicitAny: inspecting untyped payload
     const payload: any = buildLogsPayload([entry], {
       serviceName: "nax",
       runId: "r1",
@@ -144,7 +143,6 @@ describe("buildLogsPayload", () => {
       { ...baseEntry, message: "first" },
       { ...baseEntry, message: "second", level: "warn" },
     ];
-    // biome-ignore lint/suspicious/noExplicitAny: inspecting untyped payload
     const payload: any = buildLogsPayload(entries, { serviceName: "nax", runId: "r1" });
     const records = payload.resourceLogs[0].scopeLogs[0].logRecords;
     expect(records).toHaveLength(2);

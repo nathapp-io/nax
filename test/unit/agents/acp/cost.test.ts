@@ -38,14 +38,8 @@ describe("estimateCostFromTokenUsage — basic tokens", () => {
   });
 
   test("output tokens are more expensive than input tokens at equal counts", () => {
-    const inputOnlyCost = estimateCostFromTokenUsage(
-      { inputTokens: 1_000_000, outputTokens: 0 },
-      "claude-sonnet-4",
-    );
-    const outputOnlyCost = estimateCostFromTokenUsage(
-      { inputTokens: 0, outputTokens: 1_000_000 },
-      "claude-sonnet-4",
-    );
+    const inputOnlyCost = estimateCostFromTokenUsage({ inputTokens: 1_000_000, outputTokens: 0 }, "claude-sonnet-4");
+    const outputOnlyCost = estimateCostFromTokenUsage({ inputTokens: 0, outputTokens: 1_000_000 }, "claude-sonnet-4");
     expect(outputOnlyCost).toBeGreaterThan(inputOnlyCost);
   });
 
@@ -125,10 +119,7 @@ describe("estimateCostFromTokenUsage — unknown model fallback", () => {
 
 describe("estimateCostFromTokenUsage — cache tokens", () => {
   test("cacheReadInputTokens are cheaper than regular input tokens", () => {
-    const regularCost = estimateCostFromTokenUsage(
-      { inputTokens: 100_000, outputTokens: 0 },
-      "claude-sonnet-4",
-    );
+    const regularCost = estimateCostFromTokenUsage({ inputTokens: 100_000, outputTokens: 0 }, "claude-sonnet-4");
     const cacheReadCost = estimateCostFromTokenUsage(
       { inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 100_000 },
       "claude-sonnet-4",
@@ -137,10 +128,7 @@ describe("estimateCostFromTokenUsage — cache tokens", () => {
   });
 
   test("cacheCreationInputTokens contribute to total cost", () => {
-    const baseCost = estimateCostFromTokenUsage(
-      { inputTokens: 100_000, outputTokens: 0 },
-      "claude-sonnet-4",
-    );
+    const baseCost = estimateCostFromTokenUsage({ inputTokens: 100_000, outputTokens: 0 }, "claude-sonnet-4");
     const cacheCreationCost = estimateCostFromTokenUsage(
       { inputTokens: 100_000, outputTokens: 0, cacheCreationInputTokens: 50_000 },
       "claude-sonnet-4",

@@ -72,7 +72,7 @@ describe("quality.commands schema", () => {
   test("build is preserved after schema parse", () => {
     const input = buildConfigWithCommands({ build: "bun run build" });
     const result = NaxConfigSchema.parse(input);
-    expect((result.quality.commands as Record<string, string>)["build"]).toBe("bun run build");
+    expect((result.quality.commands as Record<string, string>).build).toBe("bun run build");
   });
 
   test("build is optional — absent when not provided", () => {

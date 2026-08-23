@@ -8,7 +8,7 @@
  * All I/O is intercepted via _codeNeighborDeps injection; no real filesystem access.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { CodeNeighborProvider, _codeNeighborDeps } from "@/context/engine/providers/code-neighbor";
 import type { ContextRequest } from "@/context/engine/types";
 

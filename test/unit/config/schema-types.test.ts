@@ -10,11 +10,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { ModelsConfig, ModelTier } from "@/config/schema-types";
+import type { ModelTier, ModelsConfig } from "@/config/schema-types";
 import { resolveConfiguredModel, resolveModelForAgent } from "@/config/schema-types";
 import type { TierConfig } from "@/config/schema-types";
-import type { StoryRouting } from "@/prd/types";
 import { NaxError } from "@/errors";
+import type { StoryRouting } from "@/prd/types";
 
 // Type-level assertions to ensure agent field exists
 // These will cause compilation errors if the field is missing from the interfaces

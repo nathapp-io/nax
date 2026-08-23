@@ -120,8 +120,12 @@ describe("countProgress", () => {
 
   test("pending = total - passed - failed - paused - blocked; skipped and in-progress count as pending", () => {
     const stories = [
-      makeStory("US-001", "passed"), makeStory("US-002", "failed"), makeStory("US-003", "paused"),
-      makeStory("US-004", "blocked"), makeStory("US-005", "pending"), makeStory("US-006", "in-progress"),
+      makeStory("US-001", "passed"),
+      makeStory("US-002", "failed"),
+      makeStory("US-003", "paused"),
+      makeStory("US-004", "blocked"),
+      makeStory("US-005", "pending"),
+      makeStory("US-006", "in-progress"),
       makeStory("US-007", "skipped"),
     ];
     const p = countProgress(makePrd(stories));
@@ -178,7 +182,14 @@ describe("countProgress", () => {
 describe("buildStatusSnapshot", () => {
   test("version 1; run metadata (id, feature, startedAt, status, dryRun, pid) matches state", () => {
     expect(buildStatusSnapshot(makeRunState()).version).toBe(1);
-    const state = makeRunState({ runId: "run-test-id", feature: "my-feature", startedAt: "2026-02-25T10:00:00.000Z", runStatus: "running", dryRun: true, pid: 12345 });
+    const state = makeRunState({
+      runId: "run-test-id",
+      feature: "my-feature",
+      startedAt: "2026-02-25T10:00:00.000Z",
+      runStatus: "running",
+      dryRun: true,
+      pid: 12345,
+    });
     const snapshot = buildStatusSnapshot(state);
     expect(snapshot.run.id).toBe("run-test-id");
     expect(snapshot.run.feature).toBe("my-feature");
@@ -341,7 +352,6 @@ describe("writeStatusFile", () => {
     // Check for 2-space indent on top-level keys
     expect(raw).toContain('  "version"');
   });
-
 });
 
 // ============================================================================
@@ -354,11 +364,22 @@ describe("PostRunStatus type hierarchy", () => {
       expect(({ status } as AcceptancePhaseStatus).status).toBe(status);
       expect(({ status } as RegressionPhaseStatus).status).toBe(status);
     }
-    const acc: AcceptancePhaseStatus = { status: "failed", lastRunAt: "2026-04-04T10:00:00.000Z", retries: 2, failedACs: ["AC-1", "AC-2"] };
+    const acc: AcceptancePhaseStatus = {
+      status: "failed",
+      lastRunAt: "2026-04-04T10:00:00.000Z",
+      retries: 2,
+      failedACs: ["AC-1", "AC-2"],
+    };
     expect(acc.lastRunAt).toBe("2026-04-04T10:00:00.000Z");
     expect(acc.retries).toBe(2);
     expect(acc.failedACs).toEqual(["AC-1", "AC-2"]);
-    const reg: RegressionPhaseStatus = { status: "failed", lastRunAt: "2026-04-04T10:00:00.000Z", retries: 1, failedTests: ["test-a", "test-b"], affectedStories: ["US-001", "US-002"] };
+    const reg: RegressionPhaseStatus = {
+      status: "failed",
+      lastRunAt: "2026-04-04T10:00:00.000Z",
+      retries: 1,
+      failedTests: ["test-a", "test-b"],
+      affectedStories: ["US-001", "US-002"],
+    };
     expect(reg.retries).toBe(1);
     expect(reg.failedTests).toEqual(["test-a", "test-b"]);
     expect(reg.affectedStories).toEqual(["US-001", "US-002"]);
@@ -386,7 +407,13 @@ describe("buildStatusSnapshot postRun field", () => {
 
     const full: PostRunStatus = {
       acceptance: { status: "failed", lastRunAt: "2026-04-04T11:00:00.000Z", retries: 2, failedACs: ["AC-1"] },
-      regression: { status: "failed", lastRunAt: "2026-04-04T11:00:00.000Z", retries: 1, failedTests: ["test-x"], affectedStories: ["US-001"] },
+      regression: {
+        status: "failed",
+        lastRunAt: "2026-04-04T11:00:00.000Z",
+        retries: 1,
+        failedTests: ["test-x"],
+        affectedStories: ["US-001"],
+      },
     };
     const fullSnap = buildStatusSnapshot(makeRunState({ postRun: full }));
     expect(fullSnap.postRun?.acceptance.failedACs).toEqual(["AC-1"]);

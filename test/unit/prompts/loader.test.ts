@@ -9,9 +9,9 @@ import { chmodSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { promptLoaderConfigSelector } from "@/config";
 import type { NaxConfig } from "@/config";
-import { loadOverride } from "@/prompts/loader";
 import type { PromptRole } from "@/prompts/core/types";
-import { fullTest, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { loadOverride } from "@/prompts/loader";
+import { type DeepPartial, fullTest, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -20,8 +20,6 @@ import { fullTest, makeNaxConfig, makeTempDir } from "@test/helpers";
 function makeConfig(overrides: DeepPartial<NaxConfig> = {}) {
   return makeNaxConfig(overrides);
 }
-
-type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -268,7 +266,10 @@ describe("NaxConfig.prompts type shape", () => {
   });
 
   test("loadOverride accepts a Pick<NaxConfig, 'prompts'> literal (no NaxConfig cast)", async () => {
-    const config = { prompts: { overrides: {}, behavioralGuardrails: "lite" as const } } satisfies Pick<NaxConfig, "prompts">;
+    const config = { prompts: { overrides: {}, behavioralGuardrails: "lite" as const } } satisfies Pick<
+      NaxConfig,
+      "prompts"
+    >;
     const result = await loadOverride("test-writer", "/tmp/nonexistent-loader-test", config);
     expect(result).toBeNull();
   });

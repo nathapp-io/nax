@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Iteration, Finding } from "@/findings";
+import type { Finding, Iteration } from "@/findings";
 import { buildPriorIterationsBlock } from "@/prompts/builders/prior-iterations-builder";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -12,7 +12,9 @@ function makeFinding(overrides: Partial<Finding> & Pick<Finding, "source" | "mes
   };
 }
 
-function makeIteration(overrides: Partial<Iteration<Finding>> & Pick<Iteration<Finding>, "iterationNum" | "outcome">): Iteration<Finding> {
+function makeIteration(
+  overrides: Partial<Iteration<Finding>> & Pick<Iteration<Finding>, "iterationNum" | "outcome">,
+): Iteration<Finding> {
   return {
     findingsBefore: [],
     fixesApplied: [],
@@ -179,7 +181,12 @@ describe("buildPriorIterationsBlock — verdict template", () => {
     const f2 = makeFinding({ source: "adversarial-review", message: "y" });
     const f3 = makeFinding({ source: "adversarial-review", message: "z" });
     const iter1 = makeIteration({ iterationNum: 1, outcome: "partial", findingsBefore: [], findingsAfter: [f1] });
-    const iter2 = makeIteration({ iterationNum: 2, outcome: "unchanged", findingsBefore: [f1], findingsAfter: [f2, f3] });
+    const iter2 = makeIteration({
+      iterationNum: 2,
+      outcome: "unchanged",
+      findingsBefore: [f1],
+      findingsAfter: [f2, f3],
+    });
 
     const output = buildPriorIterationsBlock([iter1, iter2]);
     expect(output).toContain("classify each of the 3 prior finding(s) above");

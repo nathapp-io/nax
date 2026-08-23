@@ -12,8 +12,20 @@ describe("findingKey", () => {
 
 describe("findingRecurrenceKey — nax#1581", () => {
   test("matches when file/line/rule are identical but message differs", () => {
-    const a = makeFinding({ source: "semantic-review", message: "cannot return X", file: "src/a.ts", line: 10, rule: "AC-2" });
-    const b = makeFinding({ source: "semantic-review", message: "violates AC-2", file: "src/a.ts", line: 10, rule: "AC-2" });
+    const a = makeFinding({
+      source: "semantic-review",
+      message: "cannot return X",
+      file: "src/a.ts",
+      line: 10,
+      rule: "AC-2",
+    });
+    const b = makeFinding({
+      source: "semantic-review",
+      message: "violates AC-2",
+      file: "src/a.ts",
+      line: 10,
+      rule: "AC-2",
+    });
     expect(findingRecurrenceKey(a)).toBe(findingRecurrenceKey(b));
   });
 

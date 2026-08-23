@@ -8,7 +8,7 @@
 
 import { beforeEach, describe, expect, test } from "bun:test";
 import { ContextOrchestrator, _orchestratorDeps } from "@/context/engine/orchestrator";
-import { getStageContextConfig, STAGE_CONTEXT_MAP } from "@/context/engine/stage-config";
+import { STAGE_CONTEXT_MAP, getStageContextConfig } from "@/context/engine/stage-config";
 import type { ContextRequest } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -40,13 +40,10 @@ const BASE_REQUEST: ContextRequest = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("StageContextConfig.planDigestBoost", () => {
-  test.each(["single-session", "tdd-simple", "no-test", "batch"])(
-    "%s has planDigestBoost >= 1.5",
-    (stage) => {
-      const cfg = getStageContextConfig(stage);
-      expect(cfg.planDigestBoost).toBeGreaterThanOrEqual(1.5);
-    },
-  );
+  test.each(["single-session", "tdd-simple", "no-test", "batch"])("%s has planDigestBoost >= 1.5", (stage) => {
+    const cfg = getStageContextConfig(stage);
+    expect(cfg.planDigestBoost).toBeGreaterThanOrEqual(1.5);
+  });
 
   test.each(["execution", "verify", "review-semantic", "plan", "tdd-test-writer", "tdd-implementer"])(
     "%s has planDigestBoost absent or <= 1",

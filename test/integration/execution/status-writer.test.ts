@@ -17,7 +17,7 @@ import type { NaxConfig } from "@/config";
 import type { NaxStatusFile } from "@/execution/status-file";
 import { StatusWriter, type StatusWriterContext } from "@/execution/status-writer";
 import type { PRD, UserStory } from "@/prd";
-import { makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ============================================================================
 // Helpers
@@ -50,14 +50,14 @@ function makePrd(count = 1): PRD {
 }
 
 function makeConfig(costLimit = 5.0): NaxConfig {
-  return {
+  return makeNaxConfig({
     execution: {
       costLimit,
       maxIterations: 10,
       maxStoriesPerFeature: 50,
       iterationDelayMs: 0,
     },
-  } as unknown as NaxConfig;
+  });
 }
 
 function makeCtx(overrides: Partial<StatusWriterContext> = {}): StatusWriterContext {
@@ -129,7 +129,15 @@ describe("StatusWriter setters", () => {
     const path = join(dir, "status.json");
     const sw = new StatusWriter(path, makeConfig(), makeCtx());
     sw.setPrd(makePrd());
-    sw.setCurrentStory({ storyId: "US-001", title: "Test story", complexity: "simple", tddStrategy: "test-after", model: "balanced", attempt: 1, phase: "routing" });
+    sw.setCurrentStory({
+      storyId: "US-001",
+      title: "Test story",
+      complexity: "simple",
+      tddStrategy: "test-after",
+      model: "balanced",
+      attempt: 1,
+      phase: "routing",
+    });
     await sw.update(0, 0);
     const content = JSON.parse(await Bun.file(path).text()) as NaxStatusFile;
     expect(content.current?.storyId).toBe("US-001");

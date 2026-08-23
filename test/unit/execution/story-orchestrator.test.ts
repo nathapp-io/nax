@@ -17,28 +17,23 @@
  * - AC10: TDD wrapper retains rollback, verdict, isolation, greenfield detection
  */
 
-import { afterEach, describe, test, expect, mock } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { CallContext, RunOperation, CompleteOperation, DeterministicOperation } from "@/operations";
-import { pickSelector } from "@/config";
-import { DEFAULT_CONFIG } from "@/config";
-import {
-  makeMockAgentManager,
-  makeTestRuntime,
-  makeNaxConfig,
-  makeLinkWithCosts,
-} from "@test/helpers";
-import type { NaxRuntime } from "@/runtime";
 import type { CompleteResult, TurnResult } from "@/agents/types";
-import type { ReviewCheckResult, Finding } from "@/findings";
+import { pickSelector } from "@/config";
+import type { DEFAULT_CONFIG } from "@/config";
 import { NaxError } from "@/errors";
 import {
+  StoryOrchestratorBuilder,
   _storyOrchestratorDeps,
   formatPhaseResultMessage,
   phasesToRevalidate,
   refreshReviewInputForDispatch,
-  StoryOrchestratorBuilder,
 } from "@/execution";
+import type { Finding, ReviewCheckResult } from "@/findings";
+import type { CallContext, CompleteOperation, DeterministicOperation, RunOperation } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
+import { makeLinkWithCosts, makeMockAgentManager, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 // ============================================================================
 // Test Helper: Mock Operations
@@ -91,11 +86,7 @@ interface TestTestWriterOutput {
 
 const testSel = pickSelector("test-orchestrator-selector", "execution");
 
-const mockImplementerOp: RunOperation<
-  TestImplementerInput,
-  TestImplementerOutput,
-  typeof DEFAULT_CONFIG
-> = {
+const mockImplementerOp: RunOperation<TestImplementerInput, TestImplementerOutput, typeof DEFAULT_CONFIG> = {
   kind: "run",
   name: "mock-implementer",
   stage: "run",
@@ -114,11 +105,7 @@ const mockImplementerOp: RunOperation<
   },
 };
 
-const mockTestWriterOp: RunOperation<
-  TestTestWriterInput,
-  TestTestWriterOutput,
-  typeof DEFAULT_CONFIG
-> = {
+const mockTestWriterOp: RunOperation<TestTestWriterInput, TestTestWriterOutput, typeof DEFAULT_CONFIG> = {
   kind: "run",
   name: "mock-test-writer",
   stage: "run",
@@ -137,11 +124,7 @@ const mockTestWriterOp: RunOperation<
   },
 };
 
-const mockVerifierOp: RunOperation<
-  TestVerifierInput,
-  TestVerifierOutput,
-  typeof DEFAULT_CONFIG
-> = {
+const mockVerifierOp: RunOperation<TestVerifierInput, TestVerifierOutput, typeof DEFAULT_CONFIG> = {
   kind: "run",
   name: "mock-verifier",
   stage: "verify",
@@ -160,11 +143,7 @@ const mockVerifierOp: RunOperation<
   },
 };
 
-const mockSemanticReviewOp: RunOperation<
-  TestSemanticReviewInput,
-  TestSemanticReviewOutput,
-  typeof DEFAULT_CONFIG
-> = {
+const mockSemanticReviewOp: RunOperation<TestSemanticReviewInput, TestSemanticReviewOutput, typeof DEFAULT_CONFIG> = {
   kind: "run",
   name: "mock-semantic-review",
   stage: "review",
@@ -257,33 +236,53 @@ describe("StoryOrchestratorBuilder — AC2: build() throws ORCHESTRATOR_NO_IMPLE
 describe("StoryOrchestratorBuilder — AC3: Canonical execution order", () => {
   test("canonical order: test-writer→implementer→verifier; skips phases not added", async () => {
     const config = makeNaxConfig();
-    const makeOrderTracker = (roles: string[]) => makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) => {
-        const role = _req.sessionRole ?? "unknown";
-        roles.push(role);
-        return onSuccess({ turnId: randomUUID(), output: JSON.stringify({ success: true }), tokenUsage: { inputTokens: 10, outputTokens: 5 }, estimatedCostUsd: 0.001 });
-      },
-    });
+    const makeOrderTracker = (roles: string[]) =>
+      makeMockAgentManager({
+        runAsSessionFn: async (_req, onSuccess) => {
+          const role = _req.sessionRole ?? "unknown";
+          roles.push(role);
+          return onSuccess({
+            turnId: randomUUID(),
+            output: JSON.stringify({ success: true }),
+            tokenUsage: { inputTokens: 10, outputTokens: 5 },
+            estimatedCostUsd: 0.001,
+          });
+        },
+      });
 
     const order1: string[] = [];
     runtime = makeTestRuntime({ config, agentManager: makeOrderTracker(order1) });
-    const ctx1: CallContext = { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "story-1" };
+    const ctx1: CallContext = {
+      runtime,
+      packageView: runtime.packages.repo(),
+      packageDir: "/tmp",
+      agentName: "claude",
+      storyId: "story-1",
+    };
     await new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
       .addTestWriter({ op: mockTestWriterOp, input: { story: "test" } })
       .addImplementer({ op: mockImplementerOp, input: { code: "test" } })
       .addVerifier({ op: mockVerifierOp, input: { code: "test" } })
-      .build(ctx1).run();
+      .build(ctx1)
+      .run();
     expect(order1).toEqual(["test-writer", "implementer", "verifier"]);
     await runtime.close();
     runtime = undefined;
 
     const order2: string[] = [];
     runtime = makeTestRuntime({ config, agentManager: makeOrderTracker(order2) });
-    const ctx2: CallContext = { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "story-1" };
+    const ctx2: CallContext = {
+      runtime,
+      packageView: runtime.packages.repo(),
+      packageDir: "/tmp",
+      agentName: "claude",
+      storyId: "story-1",
+    };
     await new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
       .addImplementer({ op: mockImplementerOp, input: { code: "test" } })
       .addVerifier({ op: mockVerifierOp, input: { code: "test" } })
-      .build(ctx2).run();
+      .build(ctx2)
+      .run();
     expect(order2).toEqual(["implementer", "verifier"]);
   });
 });
@@ -296,15 +295,14 @@ describe("StoryOrchestratorBuilder — AC4: callOp dispatch only", () => {
     const origCallOp = _storyOrchestratorDeps.callOp;
     _storyOrchestratorDeps.callOp = mock(async () => {
       callOpInvoked = true;
-      return { success: true } as unknown as ReturnType<typeof origCallOp>;
+      return { success: true };
     });
 
     const mockAgentManager = makeMockAgentManager();
     runtime = makeTestRuntime({ config, agentManager: mockAgentManager });
 
     const { StoryOrchestratorBuilder } = require("@/execution/story-orchestrator");
-    const builder = new StoryOrchestratorBuilder()
-      .addImplementer({ op: mockImplementerOp, input: { code: "test" } });
+    const builder = new StoryOrchestratorBuilder().addImplementer({ op: mockImplementerOp, input: { code: "test" } });
 
     const ctx: CallContext = {
       runtime,
@@ -322,7 +320,6 @@ describe("StoryOrchestratorBuilder — AC4: callOp dispatch only", () => {
 
     _storyOrchestratorDeps.callOp = origCallOp;
   });
-
 });
 
 describe("StoryOrchestratorBuilder — AC5: Error handling and success=false", () => {
@@ -341,8 +338,10 @@ describe("StoryOrchestratorBuilder — AC5: Error handling and success=false", (
 
     runtime = makeTestRuntime({ config, agentManager: mockAgentManager });
 
-    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
-      .addImplementer({ op: mockImplementerOp, input: { code: "test" } });
+    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)().addImplementer({
+      op: mockImplementerOp,
+      input: { code: "test" },
+    });
 
     const ctx: CallContext = {
       runtime,
@@ -361,10 +360,18 @@ describe("StoryOrchestratorBuilder — AC5: Error handling and success=false", (
   test("logs and propagates thrown errors with { storyId, phase, error }", async () => {
     const config = makeNaxConfig();
     const mockAgentManager = makeMockAgentManager({
-      runAsSessionFn: async () => { throw new Error("Test error"); },
+      runAsSessionFn: async () => {
+        throw new Error("Test error");
+      },
     });
     runtime = makeTestRuntime({ config, agentManager: mockAgentManager });
-    const ctx: CallContext = { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "story-1" };
+    const ctx: CallContext = {
+      runtime,
+      packageView: runtime.packages.repo(),
+      packageDir: "/tmp",
+      agentName: "claude",
+      storyId: "story-1",
+    };
     const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
       .addImplementer({ op: mockImplementerOp, input: { code: "test" } })
       .build(ctx);
@@ -388,8 +395,10 @@ describe("StoryOrchestratorBuilder — AC6: Result shape (costs, outputs, durati
 
     runtime = makeTestRuntime({ config, agentManager: mockAgentManager });
 
-    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
-      .addImplementer({ op: mockImplementerOp, input: { code: "test" } });
+    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)().addImplementer({
+      op: mockImplementerOp,
+      input: { code: "test" },
+    });
 
     const ctx: CallContext = {
       runtime,
@@ -411,19 +420,33 @@ describe("StoryOrchestratorBuilder — AC6: Result shape (costs, outputs, durati
   test("aggregates per-phase costs keyed by op.name and sums into totalCostUsd", async () => {
     const config = makeNaxConfig();
     const mockAgentManager = makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) => onSuccess({
-        turnId: randomUUID(), output: JSON.stringify({ success: true }), tokenUsage: { inputTokens: 10, outputTokens: 5 }, estimatedCostUsd: 0.005,
-      }),
+      runAsSessionFn: async (_req, onSuccess) =>
+        onSuccess({
+          turnId: randomUUID(),
+          output: JSON.stringify({ success: true }),
+          tokenUsage: { inputTokens: 10, outputTokens: 5 },
+          estimatedCostUsd: 0.005,
+        }),
     });
     runtime = makeTestRuntime({ config, agentManager: mockAgentManager });
-    const ctx: CallContext = { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "story-1" };
+    const ctx: CallContext = {
+      runtime,
+      packageView: runtime.packages.repo(),
+      packageDir: "/tmp",
+      agentName: "claude",
+      storyId: "story-1",
+    };
     const result = await new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
       .addImplementer({ op: mockImplementerOp, input: { code: "test" } })
       .addVerifier({ op: mockVerifierOp, input: { code: "test" } })
-      .build(ctx).run();
+      .build(ctx)
+      .run();
     expect(result.phaseCosts["mock-implementer"]).toBeGreaterThanOrEqual(0);
     expect(result.phaseCosts["mock-verifier"]).toBeGreaterThanOrEqual(0);
-    expect(result.totalCostUsd).toBeCloseTo(Object.values(result.phaseCosts).reduce((a, b) => a + b, 0), 5);
+    expect(result.totalCostUsd).toBeCloseTo(
+      Object.values(result.phaseCosts).reduce((a, b) => a + b, 0),
+      5,
+    );
   });
 
   test("stores parsed phase outputs keyed by op.name in phaseOutputs", async () => {
@@ -679,15 +702,27 @@ describe("StoryOrchestratorBuilder — AC8: SessionKeeper reuse", () => {
     const mockAgentManager = makeMockAgentManager({
       runAsSessionFn: async (_req, onSuccess) => {
         if (_req.sessionRole === "implementer") sessionCount++;
-        return onSuccess({ turnId: randomUUID(), output: JSON.stringify({ success: true }), tokenUsage: { inputTokens: 10, outputTokens: 5 }, estimatedCostUsd: 0.001 });
+        return onSuccess({
+          turnId: randomUUID(),
+          output: JSON.stringify({ success: true }),
+          tokenUsage: { inputTokens: 10, outputTokens: 5 },
+          estimatedCostUsd: 0.001,
+        });
       },
     });
     runtime = makeTestRuntime({ config, agentManager: mockAgentManager });
-    const ctx: CallContext = { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "story-1" };
+    const ctx: CallContext = {
+      runtime,
+      packageView: runtime.packages.repo(),
+      packageDir: "/tmp",
+      agentName: "claude",
+      storyId: "story-1",
+    };
     const result = await new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
       .addImplementer({ op: mockImplementerOp, input: { code: "test" } })
       .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
-      .build(ctx).run();
+      .build(ctx)
+      .run();
     expect(sessionCount).toBeGreaterThanOrEqual(1);
     expect(result).toBeDefined();
   });
@@ -742,7 +777,6 @@ describe("StoryOrchestratorBuilder — AC8: SessionKeeper reuse", () => {
     // All implementer calls should reuse the same session (SessionKeeper)
     expect(sessionIds.length).toBeLessThanOrEqual(2);
   });
-
 });
 
 describe("StoryOrchestratorBuilder — AC9: Refactored execution and TDD", () => {
@@ -758,8 +792,10 @@ describe("StoryOrchestratorBuilder — AC10: TDD wrapper retains responsibilitie
     const config = makeNaxConfig();
     runtime = makeTestRuntime({ config });
 
-    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
-      .addImplementer({ op: mockImplementerOp, input: { code: "test" } });
+    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)().addImplementer({
+      op: mockImplementerOp,
+      input: { code: "test" },
+    });
 
     const ctx: CallContext = {
       runtime,
@@ -793,14 +829,23 @@ function makeDeterministicOp(
 
 describe("AC-6: short-circuit carve-out for gate + verifier when rectification configured", () => {
   let rt: NaxRuntime | undefined;
-  afterEach(async () => { await rt?.close(); });
+  afterEach(async () => {
+    await rt?.close();
+  });
 
   test("when rectification configured: gate failure halts before verifier (verifier judges only on green code)", async () => {
-    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
+    const config = makeNaxConfig({
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } },
+    });
     rt = makeTestRuntime({ config });
 
     let verifierRan = false;
-    const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "t.ts" }] });
+    const gateOp = makeDeterministicOp("full-suite-gate", {
+      success: false,
+      findings: [
+        { source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "t.ts" },
+      ],
+    });
     const verOp = makeDeterministicOp("verifier", { success: true });
 
     const origCallOp = _storyOrchestratorDeps.callOp;
@@ -810,10 +855,21 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
       if (op.kind === "deterministic") return op.execute(input, _ctx);
       return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
     };
-    _storyOrchestratorDeps.runFixCycle = async () => ({ iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 });
+    _storyOrchestratorDeps.runFixCycle = async () => ({
+      iterations: [],
+      finalFindings: [],
+      exitReason: "resolved" as const,
+      costUsd: 0,
+    });
 
     try {
-      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const ctx: CallContext = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-t",
+      } as any;
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
         .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
@@ -847,7 +903,13 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     };
 
     try {
-      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const ctx: CallContext = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-t",
+      } as any;
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
         .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
@@ -881,7 +943,13 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     };
 
     try {
-      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const ctx: CallContext = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-t",
+      } as any;
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
         .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
@@ -911,7 +979,13 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     };
 
     try {
-      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const ctx: CallContext = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-t",
+      } as any;
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
         .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
@@ -948,7 +1022,13 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     };
 
     try {
-      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const ctx: CallContext = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-t",
+      } as any;
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
         .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
@@ -1075,7 +1155,13 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     };
 
     try {
-      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const ctx: CallContext = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-t",
+      } as any;
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
         .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
@@ -1096,19 +1182,30 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
 
 describe("AC3 + AC5: gate-internal rectification — finding aggregation and full-suite-rectify dispatch", () => {
   let rt: NaxRuntime | undefined;
-  afterEach(async () => { await rt?.close(); });
+  afterEach(async () => {
+    await rt?.close();
+  });
 
   test("AC5: runFixCycle receives mixed-source findings from full-suite gate output", async () => {
     // Gate produces a mixed-source output: one test-runner finding + one lint finding.
     // The unified rectification entrypoint should preserve both so mechanical fixes can run.
-    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
+    const config = makeNaxConfig({
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } },
+    });
     rt = makeTestRuntime({ config });
 
     let capturedCycleFindings: Finding[] | null = null;
     const gateOp = makeDeterministicOp("full-suite-gate", {
       success: false,
       findings: [
-        { source: "test-runner", category: "failed-test", severity: "error", message: "test fail", rule: "t", file: "f.ts" },
+        {
+          source: "test-runner",
+          category: "failed-test",
+          severity: "error",
+          message: "test fail",
+          rule: "t",
+          file: "f.ts",
+        },
         { source: "lint", category: "style", severity: "warning", message: "lint issue", rule: "l", file: "f.ts" },
       ],
     });
@@ -1126,7 +1223,13 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
     };
 
     try {
-      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const ctx: CallContext = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-t",
+      } as any;
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
         .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
@@ -1146,14 +1249,25 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
 
   test("AC5: verifier findings with non-test-runner source also reach rectification", async () => {
     // Verifier produces a review-category finding — the unified architecture should carry it into rectification.
-    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
+    const config = makeNaxConfig({
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } },
+    });
     rt = makeTestRuntime({ config });
 
     let capturedCycleFindings: Finding[] | null = null;
     const gateOp = makeDeterministicOp("full-suite-gate", { success: true });
     const verOp = makeDeterministicOp("verifier", {
       success: false,
-      findings: [{ source: "semantic-review", category: "semantic", severity: "error", message: "review fail", rule: "r", file: "f.ts" }],
+      findings: [
+        {
+          source: "semantic-review",
+          category: "semantic",
+          severity: "error",
+          message: "review fail",
+          rule: "r",
+          file: "f.ts",
+        },
+      ],
     });
 
     const origCallOp = _storyOrchestratorDeps.callOp;
@@ -1168,7 +1282,13 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
     };
 
     try {
-      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const ctx: CallContext = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-t",
+      } as any;
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
         .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
@@ -1180,7 +1300,14 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
       expect(capturedCycleFindings).not.toBeNull();
       // Non-null assertion: TypeScript CFA doesn't track closure assignments, so we assert explicitly.
       expect(capturedCycleFindings!).toEqual([
-        { source: "semantic-review", category: "semantic", severity: "error", message: "review fail", rule: "r", file: "f.ts" },
+        {
+          source: "semantic-review",
+          category: "semantic",
+          severity: "error",
+          message: "review fail",
+          rule: "r",
+          file: "f.ts",
+        },
       ]);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
@@ -1192,13 +1319,17 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
     // This is the critical end-to-end test: rectification was previously unreachable when
     // inlineReview=false. With the guard removed, gate findings now reach runFixCycle and
     // the full-suite-rectify strategy (prepended by buildPlanForStrategy) is dispatched.
-    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
+    const config = makeNaxConfig({
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } },
+    });
     rt = makeTestRuntime({ config });
 
     let capturedStrategyNames: string[] = [];
     const gateOp = makeDeterministicOp("full-suite-gate", {
       success: false,
-      findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "f.ts" }],
+      findings: [
+        { source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "f.ts" },
+      ],
     });
     const verOp = makeDeterministicOp("verifier", { success: false, findings: [] });
 
@@ -1219,14 +1350,20 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
       const story = ms({ id: "US-t", title: "test" });
       const fullSuiteStrategy = makeFullSuiteRectifyStrategy(story, makeNaxConfig());
 
-      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const ctx: CallContext = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-t",
+      } as any;
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
         .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
         .addRectification({
           maxAttempts: 3,
-          strategies: [fullSuiteStrategy],  // simulating what buildPlanForStrategy prepends
+          strategies: [fullSuiteStrategy], // simulating what buildPlanForStrategy prepends
           abortOnIncreasingFailures: false,
         })
         .build(ctx);
@@ -1242,10 +1379,14 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
 
 describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode skips gate only", () => {
   let rt: NaxRuntime | undefined;
-  afterEach(async () => { await rt?.close(); });
+  afterEach(async () => {
+    await rt?.close();
+  });
 
   test("AC-4: validate re-runs gate (mode=full) and re-runs verifier when strategy maps to it (new: previously hard-stripped)", async () => {
-    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
+    const config = makeNaxConfig({
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } },
+    });
     rt = makeTestRuntime({ config });
 
     const gateRunCount = { n: 0 };
@@ -1272,12 +1413,31 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
     };
 
     try {
-      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const ctx: CallContext = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-t",
+      } as any;
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
         .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
-        .addRectification({ maxAttempts: 3, strategies: [{ name: "s", appliesTo: () => true, fixOp: mockImplementerOp, buildInput: () => ({ code: "" }), maxAttempts: 1, coRun: "exclusive" as const }], abortOnIncreasingFailures: false })
+        .addRectification({
+          maxAttempts: 3,
+          strategies: [
+            {
+              name: "s",
+              appliesTo: () => true,
+              fixOp: mockImplementerOp,
+              buildInput: () => ({ code: "" }),
+              maxAttempts: 1,
+              coRun: "exclusive" as const,
+            },
+          ],
+          abortOnIncreasingFailures: false,
+        })
         .build(ctx);
       await plan.run();
 
@@ -1298,14 +1458,21 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
   });
 
   test("AC-5: validate skips gate when mode=lite", async () => {
-    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
+    const config = makeNaxConfig({
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } },
+    });
     rt = makeTestRuntime({ config });
 
     const gateRunCount = { n: 0 };
     const verifierRunCount = { n: 0 };
     let capturedCycle: any = null;
 
-    const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "f", rule: "r", file: "f.ts" }] });
+    const gateOp = makeDeterministicOp("full-suite-gate", {
+      success: false,
+      findings: [
+        { source: "test-runner", category: "failed-test", severity: "error", message: "f", rule: "r", file: "f.ts" },
+      ],
+    });
     const verOp = makeDeterministicOp("verifier", { success: false });
 
     const origCallOp = _storyOrchestratorDeps.callOp;
@@ -1322,12 +1489,31 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
     };
 
     try {
-      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const ctx: CallContext = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-t",
+      } as any;
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
         .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
-        .addRectification({ maxAttempts: 3, strategies: [{ name: "s", appliesTo: () => true, fixOp: mockImplementerOp, buildInput: () => ({ code: "" }), maxAttempts: 1, coRun: "exclusive" as const }], abortOnIncreasingFailures: false })
+        .addRectification({
+          maxAttempts: 3,
+          strategies: [
+            {
+              name: "s",
+              appliesTo: () => true,
+              fixOp: mockImplementerOp,
+              buildInput: () => ({ code: "" }),
+              maxAttempts: 1,
+              coRun: "exclusive" as const,
+            },
+          ],
+          abortOnIncreasingFailures: false,
+        })
         .build(ctx);
       await plan.run();
 
@@ -1335,7 +1521,7 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
         const beforeGate = gateRunCount.n;
         const beforeVerifier = verifierRunCount.n;
         await capturedCycle.validate(ctx, { mode: "lite" });
-        expect(gateRunCount.n).toBe(beforeGate);       // lite mode: gate skipped
+        expect(gateRunCount.n).toBe(beforeGate); // lite mode: gate skipped
         // New contract (Task 2): verifier re-runs even in lite mode — lite only exempts the gate.
         // Unknown strategy "s" → fallback to all phases → verifier included; gate guard fires only on "full-suite-gate".
         expect(verifierRunCount.n).toBeGreaterThan(beforeVerifier);
@@ -1347,14 +1533,21 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
   });
 
   test("AC-6: validate short-circuits on phase failure — verifier does not run on broken-gate code", async () => {
-    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
+    const config = makeNaxConfig({
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } },
+    });
     rt = makeTestRuntime({ config });
 
     const gateRunCount = { n: 0 };
     const verifierRunCount = { n: 0 };
     let capturedCycle: any = null;
 
-    const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "f", rule: "r", file: "f.ts" }] });
+    const gateOp = makeDeterministicOp("full-suite-gate", {
+      success: false,
+      findings: [
+        { source: "test-runner", category: "failed-test", severity: "error", message: "f", rule: "r", file: "f.ts" },
+      ],
+    });
     const verOp = makeDeterministicOp("verifier", { success: true });
 
     const origCallOp = _storyOrchestratorDeps.callOp;
@@ -1371,12 +1564,31 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
     };
 
     try {
-      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const ctx: CallContext = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-t",
+      } as any;
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
         .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
-        .addRectification({ maxAttempts: 3, strategies: [{ name: "s", appliesTo: () => true, fixOp: mockImplementerOp, buildInput: () => ({ code: "" }), maxAttempts: 1, coRun: "exclusive" as const }], abortOnIncreasingFailures: false })
+        .addRectification({
+          maxAttempts: 3,
+          strategies: [
+            {
+              name: "s",
+              appliesTo: () => true,
+              fixOp: mockImplementerOp,
+              buildInput: () => ({ code: "" }),
+              maxAttempts: 1,
+              coRun: "exclusive" as const,
+            },
+          ],
+          abortOnIncreasingFailures: false,
+        })
         .build(ctx);
       await plan.run();
 
@@ -1403,11 +1615,18 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
     // fixed code. STRATEGY_TO_REVALIDATION_PHASES["full-suite-rectify"] intentionally
     // excludes adversarial-review; without the resume, it never runs. See log
     // 2026-05-27T05-06-41.jsonl line 521 — phasesSelected omitted adversarial.
-    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
+    const config = makeNaxConfig({
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } },
+    });
     rt = makeTestRuntime({ config });
 
     const opRuns: Record<string, number> = {};
-    const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "f", rule: "r", file: "f.ts" }] });
+    const gateOp = makeDeterministicOp("full-suite-gate", {
+      success: false,
+      findings: [
+        { source: "test-runner", category: "failed-test", severity: "error", message: "f", rule: "r", file: "f.ts" },
+      ],
+    });
     const verOp = makeDeterministicOp("verifier", { success: true });
     const advOp = makeDeterministicOp("adversarial-review", { success: true, findings: [] });
 
@@ -1429,17 +1648,41 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
       } finally {
         (gateOp as any).execute = origGateExecute;
       }
-      return { iterations: [{ strategyName: "full-suite-rectify" }], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
+      return {
+        iterations: [{ strategyName: "full-suite-rectify" }],
+        finalFindings: [],
+        exitReason: "resolved" as const,
+        costUsd: 0,
+      };
     };
 
     try {
-      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const ctx: CallContext = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-t",
+      } as any;
       const plan = new StoryOrchestratorBuilder()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
         .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
         .addAdversarialReview({ op: advOp, input: { code: "" } })
-        .addRectification({ maxAttempts: 3, strategies: [{ name: "full-suite-rectify", appliesTo: () => true, fixOp: mockImplementerOp, buildInput: () => ({ code: "" }), maxAttempts: 1, coRun: "exclusive" as const }], abortOnIncreasingFailures: false })
+        .addRectification({
+          maxAttempts: 3,
+          strategies: [
+            {
+              name: "full-suite-rectify",
+              appliesTo: () => true,
+              fixOp: mockImplementerOp,
+              buildInput: () => ({ code: "" }),
+              maxAttempts: 1,
+              coRun: "exclusive" as const,
+            },
+          ],
+          abortOnIncreasingFailures: false,
+        })
         .build(ctx);
       await plan.run();
 
@@ -1460,7 +1703,6 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
 
 describe("refreshReviewInputForDispatch — re-prepare review inputs at dispatch time (Bug A)", () => {
   test("semantic-review input is refreshed with fresh stat/diff at dispatch", async () => {
-    
     const origPrepare = _storyOrchestratorDeps.prepareSemanticReviewInput;
     _storyOrchestratorDeps.prepareSemanticReviewInput = mock(async () => ({
       effectiveRef: "fresh-ref",
@@ -1496,7 +1738,6 @@ describe("refreshReviewInputForDispatch — re-prepare review inputs at dispatch
   });
 
   test("adversarial-review input is refreshed with fresh stat/diff/testInventory at dispatch", async () => {
-    
     const origPrepare = _storyOrchestratorDeps.prepareAdversarialReviewInput;
     _storyOrchestratorDeps.prepareAdversarialReviewInput = mock(async () => ({
       effectiveRef: "fresh-ref",
@@ -1527,14 +1768,12 @@ describe("refreshReviewInputForDispatch — re-prepare review inputs at dispatch
   });
 
   test("non-review phases pass through unchanged", async () => {
-    
     const input = { foo: "bar" };
     const result = await refreshReviewInputForDispatch("full-suite-gate", input);
     expect(result).toBe(input);
   });
 
   test("input without _refresh payload passes through unchanged (backward compat)", async () => {
-    
     const input = { workdir: "/tmp", semanticConfig: {} };
     const result = await refreshReviewInputForDispatch("semantic-review", input);
     expect(result).toBe(input);
@@ -1547,8 +1786,7 @@ describe("refreshReviewInputForDispatch — re-prepare review inputs at dispatch
 
 describe("phasesToRevalidate — verifier inclusion after fix strategies", () => {
   // Helper to construct an InternalPhase stub — only `kind` matters for filtering.
-  const phase = (kind: string) =>
-    ({ kind, slot: { op: { name: kind } as any, input: {} } }) as any;
+  const phase = (kind: string) => ({ kind, slot: { op: { name: kind } as any, input: {} } }) as any;
 
   const allPhases = [
     phase("full-suite-gate"),
@@ -1644,15 +1882,21 @@ describe("formatPhaseResultMessage — phase log wording", () => {
 
 describe("rectification phase envelope", () => {
   let rt: NaxRuntime | undefined;
-  afterEach(async () => { await rt?.close(); });
+  afterEach(async () => {
+    await rt?.close();
+  });
 
   test("rectification 'resolved' exit produces { success: true, exitReason: 'resolved', ... }", async () => {
-    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
+    const config = makeNaxConfig({
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } },
+    });
     rt = makeTestRuntime({ config });
 
     const gateOp = makeDeterministicOp("full-suite-gate", {
       success: false,
-      findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "t.ts" }],
+      findings: [
+        { source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "t.ts" },
+      ],
     });
 
     const origCallOp = _storyOrchestratorDeps.callOp;
@@ -1662,14 +1906,30 @@ describe("rectification phase envelope", () => {
       return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
     };
     _storyOrchestratorDeps.runFixCycle = async () => ({
-      iterations: [{ iterationNum: 1, findingsBefore: 1, fixesApplied: [], findingsAfter: 0, outcome: "resolved" as const, startedAt: 0, finishedAt: 0 }],
+      iterations: [
+        {
+          iterationNum: 1,
+          findingsBefore: 1,
+          fixesApplied: [],
+          findingsAfter: 0,
+          outcome: "resolved" as const,
+          startedAt: 0,
+          finishedAt: 0,
+        },
+      ],
       finalFindings: [],
       exitReason: "resolved" as const,
       costUsd: 0,
     });
 
     try {
-      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const ctx: CallContext = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-t",
+      } as any;
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
         .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
@@ -1692,12 +1952,16 @@ describe("rectification phase envelope", () => {
   });
 
   test("rectification 'max-attempts-total' exit produces { success: false, exitReason: 'max-attempts-total', ... }", async () => {
-    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
+    const config = makeNaxConfig({
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } },
+    });
     rt = makeTestRuntime({ config });
 
     const gateOp = makeDeterministicOp("full-suite-gate", {
       success: false,
-      findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "t.ts" }],
+      findings: [
+        { source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "t.ts" },
+      ],
     });
 
     const origCallOp = _storyOrchestratorDeps.callOp;
@@ -1708,13 +1972,21 @@ describe("rectification phase envelope", () => {
     };
     _storyOrchestratorDeps.runFixCycle = async () => ({
       iterations: [],
-      finalFindings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "t.ts" }],
+      finalFindings: [
+        { source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "t.ts" },
+      ],
       exitReason: "max-attempts-total" as const,
       costUsd: 0,
     });
 
     try {
-      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const ctx: CallContext = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-t",
+      } as any;
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
         .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })

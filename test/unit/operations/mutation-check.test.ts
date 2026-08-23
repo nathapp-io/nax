@@ -4,8 +4,9 @@ import { _mutationCheckDeps, mutationCheckOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 import {
   cleanupTempDir,
-  makeMutationCheckCtx,
   makeMutationCheckDeps as fakeDeps,
+  makeMutationCheckCtx,
+  makeResolvedTestPatterns,
   makeTempDir,
 } from "@test/helpers";
 
@@ -41,7 +42,7 @@ describe("mutationCheckOp — AC2: disabled short-circuit", () => {
         story: FAKE_STORY,
         workdir: "/tmp/test",
         storyId: "US-004",
-        resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+        resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
       },
       ctx,
       fakeDeps(),
@@ -66,7 +67,7 @@ describe("mutationCheckOp — AC2: disabled short-circuit", () => {
         story: FAKE_STORY,
         workdir: "/tmp/test",
         storyId: "US-004",
-        resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+        resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
       },
       ctx,
       fakeDeps(),
@@ -106,12 +107,12 @@ describe("mutationCheckOp — AC2: disabled short-circuit", () => {
           story: FAKE_STORY,
           workdir: dir,
           storyId: "US-004",
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: { enabled: false, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -156,12 +157,12 @@ describe("mutationCheckOp — AC3: surviving mutant (regression SUCCESS)", () =>
           storyId: "US-004",
           storyGitRef: "abc123",
           repoRoot: dir,
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -205,7 +206,7 @@ describe("mutationCheckOp — US-004 runtime collection", () => {
           workdir: dir,
           storyId: "US-004",
           repoRoot: dir,
-          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+          resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
         },
         ctx,
         deps,
@@ -220,7 +221,10 @@ describe("mutationCheckOp — US-004 runtime collection", () => {
 
   test("US-004 AC4: records checked true with zero candidates when changed ranges are unavailable", async () => {
     const mutationSummaries = new Map();
-    const ctx = ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }, { mutationSummaries });
+    const ctx = ctxWithConfig(
+      { mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } },
+      { mutationSummaries },
+    );
     const deps = fakeDeps({ getChangedLineRanges: async () => null });
 
     await mutationCheckOp.execute(
@@ -228,7 +232,7 @@ describe("mutationCheckOp — US-004 runtime collection", () => {
         story: FAKE_STORY,
         workdir: "/tmp/test",
         storyId: "US-004",
-        resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+        resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
       },
       ctx,
       deps,
@@ -258,7 +262,7 @@ describe("mutationCheckOp — US-004 runtime collection", () => {
           workdir: dir,
           storyId: "US-004",
           repoRoot: dir,
-          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+          resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
         },
         ctx,
         deps,
@@ -304,12 +308,12 @@ describe("mutationCheckOp — AC4: TEST_FAILURE kills the mutant", () => {
           storyId: "US-004",
           storyGitRef: "abc123",
           repoRoot: dir,
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -363,12 +367,12 @@ describe("mutationCheckOp — outcomes aggregation (US-003)", () => {
           storyId: "US-004",
           storyGitRef: "abc123",
           repoRoot: dir,
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: mutationsConfig }),
         deps,
@@ -431,12 +435,12 @@ describe("mutationCheckOp — outcomes aggregation (US-003)", () => {
           storyId: "US-004",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -483,12 +487,12 @@ describe("mutationCheckOp — AC5: TIMEOUT is classified errored (not survived)"
           storyId: "US-004",
           storyGitRef: "abc123",
           repoRoot: dir,
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -523,12 +527,12 @@ describe("mutationCheckOp — AC6: unsupported language no-ops", () => {
           workdir: dir,
           storyId: "US-004",
           storyGitRef: "abc",
-          resolvedTestPatterns: {
-            globs: ["**/*.py"],
-            regex: [/test_.*\.py$/],
-            pathspec: [":!test_*.py"],
+          resolvedTestPatterns: makeResolvedTestPatterns({
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [":!*.test.ts"],
             testDirs: ["tests"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -559,12 +563,12 @@ describe("mutationCheckOp — AC6: unsupported language no-ops", () => {
           workdir: dir,
           storyId: "US-004",
           storyGitRef: "abc",
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.unknown"],
             regex: [/test_.*\.unknown$/],
             pathspec: [":!test_*.unknown"],
             testDirs: ["tests"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -585,7 +589,7 @@ describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
     try {
       const file = join(dir, "src", "foo.ts");
       // 5 candidate mutants — every line has a comparison.
-      await Bun.write(file, ["a == b", "c == d", "e == f", "g == h", "i == j"].join("\n") + "\n");
+      await Bun.write(file, `${["a == b", "c == d", "e == f", "g == h", "i == j"].join("\n")}\n`);
 
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [file],
@@ -609,12 +613,12 @@ describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
           storyId: "US-004",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 2, timeoutSeconds: 60 } }),
         deps,
@@ -634,8 +638,8 @@ describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
       const fileA = join(dir, "src", "a.ts");
       const fileB = join(dir, "src", "b.ts");
       // 4 candidate mutants per file, 2 files → 8 candidates total.
-      await Bun.write(fileA, ["a == b", "c == d", "e == f", "g == h"].join("\n") + "\n");
-      await Bun.write(fileB, ["i == j", "k == l", "m == n", "o == p"].join("\n") + "\n");
+      await Bun.write(fileA, `${["a == b", "c == d", "e == f", "g == h"].join("\n")}\n`);
+      await Bun.write(fileB, `${["i == j", "k == l", "m == n", "o == p"].join("\n")}\n`);
 
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [fileA, fileB],
@@ -657,7 +661,10 @@ describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
       });
 
       const mutationSummaries = new Map();
-      const ctx = ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }, { mutationSummaries });
+      const ctx = ctxWithConfig(
+        { mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } },
+        { mutationSummaries },
+      );
       const out = await mutationCheckOp.execute(
         {
           story: FAKE_STORY,
@@ -665,12 +672,12 @@ describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
           storyId: "US-004",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctx,
         deps,
@@ -718,12 +725,12 @@ describe("mutationCheckOp — AC8: forwards storyGitRef + configured command; re
           storyId: "US-004",
           storyGitRef: "deadbeef",
           repoRoot: dir,
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -738,4 +745,3 @@ describe("mutationCheckOp — AC8: forwards storyGitRef + configured command; re
     }
   });
 });
-

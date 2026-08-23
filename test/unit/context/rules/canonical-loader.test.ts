@@ -5,18 +5,18 @@
  * Filesystem calls are intercepted via _canonicalLoaderDeps injection.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { NaxError } from "@/errors";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { translateLegacyFrontmatter, withReviewNotice } from "@/cli";
 import {
+  CANONICAL_RULES_DIR,
+  NeutralityLintError,
+  _canonicalLoaderDeps,
   applyCanonicalRulesBudget,
   lintForNeutrality,
   loadCanonicalRules,
-  NeutralityLintError,
-  CANONICAL_RULES_DIR,
-  _canonicalLoaderDeps,
 } from "@/context/rules/canonical-loader";
-
+import { NaxError } from "@/errors";
+import { makeLogger } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers
@@ -125,7 +125,13 @@ describe("lintForNeutrality", () => {
 
 describe("NeutralityLintError", () => {
   test("is a NaxError, exposes violations array, and includes file+line in message", () => {
-    const violation = { file: "coding.md", lineNumber: 12, line: "CLAUDE.md", ruleId: "claude-reference", pattern: "agent-specific file" };
+    const violation = {
+      file: "coding.md",
+      lineNumber: 12,
+      line: "CLAUDE.md",
+      ruleId: "claude-reference",
+      pattern: "agent-specific file",
+    };
     const err = new NeutralityLintError([violation]);
     expect(err).toBeInstanceOf(NaxError);
     expect(err.code).toBe("NEUTRALITY_LINT_FAILED");
@@ -261,16 +267,19 @@ Only for agent files.`,
   // warns, and skips just that file — other valid rules still load.
   test.each([
     ["empty string paths", `---\npaths: ""\n---\nContent.`],
-    ["malformed frontmatter", `---\npriority: [not-a-number]\n---\nBroken`],
-  ] as const)("skips (does not throw for) a file with %s, warns, and keeps other valid rules", async (_label, content) => {
-    setupFiles({
-      "/project/.nax/rules/bad.md": content,
-      "/project/.nax/rules/good.md": "## Good\n\nContent.",
-    });
-    const rules = await loadCanonicalRules("/project");
-    expect(rules).toHaveLength(1);
-    expect(rules[0]?.fileName).toBe("good.md");
-  });
+    ["malformed frontmatter", "---\npriority: [not-a-number]\n---\nBroken"],
+  ] as const)(
+    "skips (does not throw for) a file with %s, warns, and keeps other valid rules",
+    async (_label, content) => {
+      setupFiles({
+        "/project/.nax/rules/bad.md": content,
+        "/project/.nax/rules/good.md": "## Good\n\nContent.",
+      });
+      const rules = await loadCanonicalRules("/project");
+      expect(rules).toHaveLength(1);
+      expect(rules[0]?.fileName).toBe("good.md");
+    },
+  );
 
   test("[US-002] soft-by-default: loadCanonicalRules keeps every rule when budgetTokens is provided but enforcement is off", async () => {
     setupFiles({
@@ -312,15 +321,18 @@ describe("loadCanonicalRules — frontmatter key validation (US-004)", () => {
   test.each([
     ["not a string or array", "---\nappliesTo: 42\n---\nBody."],
     ["an array containing a non-string entry", '---\nappliesTo:\n  - "src/**"\n  - 7\n---\nBody.'],
-  ])("[US-004 AC 2 / BUG-03] skips (does not throw for) an invalid appliesTo (%s), and loads other files", async (_label, content) => {
-    setupFiles({
-      "/project/.nax/rules/bad.md": content,
-      "/project/.nax/rules/good.md": "## Good\n\nContent.",
-    });
-    const rules = await loadCanonicalRules("/project");
-    expect(rules).toHaveLength(1);
-    expect(rules[0]?.fileName).toBe("good.md");
-  });
+  ])(
+    "[US-004 AC 2 / BUG-03] skips (does not throw for) an invalid appliesTo (%s), and loads other files",
+    async (_label, content) => {
+      setupFiles({
+        "/project/.nax/rules/bad.md": content,
+        "/project/.nax/rules/good.md": "## Good\n\nContent.",
+      });
+      const rules = await loadCanonicalRules("/project");
+      expect(rules).toHaveLength(1);
+      expect(rules[0]?.fileName).toBe("good.md");
+    },
+  );
 
   test("[US-004 AC 3] resolves normally when a rule declares priority, paths, and appliesTo together", async () => {
     setupFiles({
@@ -544,19 +556,9 @@ describe("loadCanonicalRules — #508-M10 no sentinel storyId in logger calls", 
     _canonicalLoaderDeps.getLogger = origGetLogger;
   });
 
-  function makeLoggerSpy(warnData: Array<Record<string, unknown>>, debugData: Array<Record<string, unknown>>) {
-    return () =>
-      ({
-        warn: (_stage: string, _msg: string, data: Record<string, unknown>) => warnData.push(data),
-        debug: (_stage: string, _msg: string, data: Record<string, unknown>) => debugData.push(data),
-        info: () => {},
-        error: () => {},
-      }) as unknown as ReturnType<typeof _canonicalLoaderDeps.getLogger>;
-  }
-
   test("warn log data does not contain storyId when readFile fails", async () => {
-    const warnData: Array<Record<string, unknown>> = [];
-    _canonicalLoaderDeps.getLogger = makeLoggerSpy(warnData, []);
+    const logger = makeLogger();
+    _canonicalLoaderDeps.getLogger = () => logger;
     _canonicalLoaderDeps.globInDir = () => ["/project/.nax/rules/rules.md"];
     _canonicalLoaderDeps.readFile = async () => {
       throw new Error("disk error");
@@ -564,19 +566,21 @@ describe("loadCanonicalRules — #508-M10 no sentinel storyId in logger calls", 
 
     await loadCanonicalRules("/project");
 
-    expect(warnData).toHaveLength(1);
-    expect("storyId" in (warnData[0] ?? {})).toBe(false);
+    const warns = logger.calls.filter((c) => c.level === "warn");
+    expect(warns).toHaveLength(1);
+    expect("storyId" in (warns[0]?.data ?? {})).toBe(false);
   });
 
   test("debug log data does not contain storyId when rules load successfully", async () => {
-    const debugData: Array<Record<string, unknown>> = [];
-    _canonicalLoaderDeps.getLogger = makeLoggerSpy([], debugData);
+    const logger = makeLogger();
+    _canonicalLoaderDeps.getLogger = () => logger;
     _canonicalLoaderDeps.globInDir = () => ["/project/.nax/rules/style.md"];
     _canonicalLoaderDeps.readFile = async () => "## Style\n\nUse async/await.";
 
     await loadCanonicalRules("/project");
 
-    expect(debugData).toHaveLength(1);
-    expect("storyId" in (debugData[0] ?? {})).toBe(false);
+    const debugs = logger.calls.filter((c) => c.level === "debug");
+    expect(debugs).toHaveLength(1);
+    expect("storyId" in (debugs[0]?.data ?? {})).toBe(false);
   });
 });

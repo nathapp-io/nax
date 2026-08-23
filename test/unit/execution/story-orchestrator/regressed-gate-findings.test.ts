@@ -10,8 +10,14 @@ import { describe, expect, test } from "bun:test";
 import { describeGateRegression, selectRegressedGateFindings } from "@/execution";
 import type { Finding } from "@/findings/types";
 
-const finding = (file: string, rule: string, category = ""): Finding =>
-  ({ source: "test-runner", severity: "error", category, message: `${file} failed`, file, rule }) as unknown as Finding;
+const finding = (file: string, rule: string, category = ""): Finding => ({
+  source: "test-runner",
+  severity: "error",
+  category,
+  message: `${file} failed`,
+  file,
+  rule,
+});
 
 const key = (f: Finding): string => `${f.file}::${f.rule}`;
 

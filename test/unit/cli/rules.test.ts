@@ -11,8 +11,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { NaxError } from "@/errors";
-import { makeLogger, withTempDir } from "@test/helpers";
 import {
   _rulesCLIDeps,
   neutralizeContent,
@@ -21,6 +19,8 @@ import {
   translateLegacyFrontmatter,
 } from "@/cli/rules";
 import { lintForNeutrality } from "@/context/rules/canonical-loader";
+import { NaxError } from "@/errors";
+import { makeLogger, withTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers
@@ -47,7 +47,7 @@ beforeEach(() => {
   origLoadCanonicalRules = _rulesCLIDeps.loadCanonicalRules;
   origGetLogger = _rulesCLIDeps.getLogger;
 
-  Object.keys(written).forEach((k) => delete written[k]);
+  for (const k of Object.keys(written)) delete written[k];
 
   _rulesCLIDeps.readFile = async () => "";
   _rulesCLIDeps.writeFile = async (path, content) => {
@@ -442,7 +442,7 @@ describe("rulesLintCommand", () => {
 
   test("[US-004 AC 4] warns (does not throw) naming the rule file and pattern when an appliesTo glob matches zero files", async () => {
     const logger = makeLogger();
-    _rulesCLIDeps.getLogger = () => logger as unknown as ReturnType<typeof _rulesCLIDeps.getLogger>;
+    _rulesCLIDeps.getLogger = () => logger;
     _rulesCLIDeps.loadCanonicalRules = origLoadCanonicalRules;
     _rulesCLIDeps.globCanonicalRuleFiles = origGlobCanonicalRuleFiles;
 
@@ -469,7 +469,7 @@ describe("rulesLintCommand", () => {
     // passed, so a pattern that legitimately targets a hidden path (e.g.
     // .github/**) must not be reported as a dead glob.
     const logger = makeLogger();
-    _rulesCLIDeps.getLogger = () => logger as unknown as ReturnType<typeof _rulesCLIDeps.getLogger>;
+    _rulesCLIDeps.getLogger = () => logger;
     _rulesCLIDeps.loadCanonicalRules = origLoadCanonicalRules;
     _rulesCLIDeps.globCanonicalRuleFiles = origGlobCanonicalRuleFiles;
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { PRD } from "@/prd";
 import type { FactsManifest } from "@/debate/facts-manifest";
+import type { PRD } from "@/prd";
 
 /**
  * CriticPromptBuilder tests — US-003 AC15
@@ -124,7 +124,12 @@ describe("CriticPromptBuilder", () => {
         feature: "feat-x",
         userStories: [
           { id: "US-001", title: "first story", description: "do thing", acceptanceCriteria: ["When X, then Y"] },
-          { id: "US-002", title: "second story", description: "do other thing", acceptanceCriteria: ["When A, then B"] },
+          {
+            id: "US-002",
+            title: "second story",
+            description: "do other thing",
+            acceptanceCriteria: ["When A, then B"],
+          },
         ],
         branchName: "feat/x",
       };

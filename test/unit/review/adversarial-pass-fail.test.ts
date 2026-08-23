@@ -7,11 +7,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { AgentAdapter, IAgentManager } from "@/agents";
 import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
-import type { AgentAdapter, IAgentManager } from "@/agents";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -54,7 +54,10 @@ function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
       estimatedCostUsd: cost,
       internalRoundTrips: 0,
     }),
-    completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] }),
+    completeWithFallbackFn: async () => ({
+      result: { output: llmResponse, costUsd: cost, source: "mock" },
+      fallbacks: [],
+    }),
     completeAsFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
     getAgentFn: () => makeAgentAdapter(),
   });
@@ -65,21 +68,7 @@ function makeRuntime(agentManager: IAgentManager) {
 }
 
 function makeSpawnMock(stdout: string, exitCode = 0) {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(stdout));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(controller) {
-        controller.close();
-      },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(() => ({ exitCode, stdout })).spawn;
 }
 
 const PASSING_RESPONSE = JSON.stringify({ passed: true, findings: [] });
@@ -241,12 +230,12 @@ const ALL_LOCUS_MISMATCH_RESPONSE = JSON.stringify({
     {
       severity: "error",
       category: "error-path",
-      file: "src/process-handler.ts",   // locus keywords: process, handler
+      file: "src/process-handler.ts", // locus keywords: process, handler
       line: 10,
-      issue: "Process exit not triggered on failure",  // extra keywords: exit
+      issue: "Process exit not triggered on failure", // extra keywords: exit
       suggestion: "Call process.exit(1)",
-      acQuote: "Users can",             // IS a substring of "Users can log in"
-      acIndex: 1,                       // valid index
+      acQuote: "Users can", // IS a substring of "Users can log in"
+      acIndex: 1, // valid index
       // "users can" contains none of: process, handler, exit → ac_quote_does_not_constrain_locus
       verifiedBy: { file: "src/log.ts", observed: "login handler stub" },
     },
@@ -499,7 +488,6 @@ describe("runAdversarialReview — recurrence demotion (parity with op verify())
           message: "No error handling on login",
         },
       ],
-      // biome-ignore lint/suspicious/noExplicitAny: minimal Iteration/Finding shape for fingerprint matching
     })) as any;
 
     const result = await runAdversarialReview({
@@ -651,7 +639,7 @@ describe("runAdversarialReview — fail-open when modelResolver returns null", (
 
   afterEach(restoreAllDeps);
 
-test("returns success=true when modelResolver returns null", async () => {
+  test("returns success=true when modelResolver returns null", async () => {
     const result = await runAdversarialReview({
       workdir: "/tmp/wd",
       storyGitRef: "abc123",

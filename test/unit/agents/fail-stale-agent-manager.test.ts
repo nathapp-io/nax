@@ -31,15 +31,19 @@ const RUN_OPTIONS = {
 // Helper: flat AgentResult wrapped in SessionRunHopResult so TypeScript is satisfied.
 // AgentManager normalises both flat and wrapped forms at runtime; the wrapper is
 // the canonical shape declared by SessionRunHopFn.
-function hopResult(result: Parameters<typeof AgentManager.prototype.runWithFallback>[0]["runOptions"] extends never ? never : {
-  success: boolean;
-  exitCode: number;
-  output: string;
-  rateLimited: boolean;
-  durationMs: number;
-  estimatedCostUsd: number;
-  adapterFailure?: AdapterFailure;
-}) {
+function hopResult(
+  result: Parameters<typeof AgentManager.prototype.runWithFallback>[0]["runOptions"] extends never
+    ? never
+    : {
+        success: boolean;
+        exitCode: number;
+        output: string;
+        rateLimited: boolean;
+        durationMs: number;
+        estimatedCostUsd: number;
+        adapterFailure?: AdapterFailure;
+      },
+) {
   return { result, prompt: "test prompt" };
 }
 
@@ -143,7 +147,14 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
               adapterFailure: staleFailureRetryable,
             });
           }
-          return hopResult({ success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 100, estimatedCostUsd: 0 });
+          return hopResult({
+            success: true,
+            exitCode: 0,
+            output: "ok",
+            rateLimited: false,
+            durationMs: 100,
+            estimatedCostUsd: 0,
+          });
         },
       },
     );
@@ -186,7 +197,14 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
               adapterFailure: staleFailureRetryable,
             });
           }
-          return hopResult({ success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 100, estimatedCostUsd: 0 });
+          return hopResult({
+            success: true,
+            exitCode: 0,
+            output: "ok",
+            rateLimited: false,
+            durationMs: 100,
+            estimatedCostUsd: 0,
+          });
         },
       },
     );
@@ -238,7 +256,14 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
               adapterFailure: staleFailureRetryable,
             });
           }
-          return hopResult({ success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 100, estimatedCostUsd: 0 });
+          return hopResult({
+            success: true,
+            exitCode: 0,
+            output: "ok",
+            rateLimited: false,
+            durationMs: 100,
+            estimatedCostUsd: 0,
+          });
         },
       },
     );
@@ -385,7 +410,14 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
               adapterFailure: staleFailureRetryable,
             });
           }
-          return hopResult({ success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 100, estimatedCostUsd: 0 });
+          return hopResult({
+            success: true,
+            exitCode: 0,
+            output: "ok",
+            rateLimited: false,
+            durationMs: 100,
+            estimatedCostUsd: 0,
+          });
         },
       },
     );

@@ -1,16 +1,18 @@
-import { afterEach, describe, test, expect } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import { callOp } from "@/operations";
 import type { CallContext, RunOperation } from "@/operations";
-import { pickSelector, DEFAULT_CONFIG } from "@/config";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 // Split out of call.test.ts (Task 4) once that file approached the 800-line
 // test-file limit — see .claude/rules/test-architecture.md "split by describe
 // block, not by bug number."
 
 let runtime: NaxRuntime | undefined;
-afterEach(async () => { await runtime?.close(); });
+afterEach(async () => {
+  await runtime?.close();
+});
 
 // Local helper mirroring the CallContext literal call.test.ts builds inline
 // for its other callOp cases — spreads `extra` over the common base so
@@ -94,9 +96,7 @@ describe("callOp — CallContext.signal (Task 4: caller-supplied abort signal)",
       caller.abort();
     });
 
-    await expect(
-      callOp(makeCtx(runtime, { signal: caller.signal }), op, { text: "x" }),
-    ).rejects.toThrow(/aborted/);
+    await expect(callOp(makeCtx(runtime, { signal: caller.signal }), op, { text: "x" })).rejects.toThrow(/aborted/);
     expect(attempts).toBe(1);
   });
 
@@ -115,9 +115,7 @@ describe("callOp — CallContext.signal (Task 4: caller-supplied abort signal)",
       parent.abort();
     });
 
-    await expect(
-      callOp(makeCtx(runtime), op, { text: "x" }),
-    ).rejects.toThrow(/aborted/);
+    await expect(callOp(makeCtx(runtime), op, { text: "x" })).rejects.toThrow(/aborted/);
     expect(attempts).toBe(1);
   });
 });

@@ -10,17 +10,9 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "@/config";
-import {
-  assemblePlanInputsFromCtx,
-  buildPlanForStrategy,
-  _storyOrchestratorDeps,
-} from "@/execution";
-import {
-  makeMechanicalFormatFixStrategy,
-  makeMechanicalLintFixStrategy,
-} from "@/operations";
-import type { CallContext } from "@/operations";
+import { _storyOrchestratorDeps, assemblePlanInputsFromCtx, buildPlanForStrategy } from "@/execution";
 import type { Finding } from "@/findings";
+import { makeMechanicalFormatFixStrategy, makeMechanicalLintFixStrategy } from "@/operations";
 import type { PipelineContext } from "@/pipeline/types";
 import type { NaxRuntime } from "@/runtime";
 import {
@@ -444,7 +436,7 @@ describe("single-session adversarial-review routing", () => {
 describe("AC6: mechanical fix fixOp.execute returns early when both commands undefined", () => {
   test("makeMechanicalLintFixStrategy: returns {applied:true, exitCode:0} without calling runQualityCommand", async () => {
     const config = makeNaxConfig({ quality: { commands: {} } });
-    const mockCtx = { packageView: { packageDir: "", config, select: (s: any) => s.select(config) } } as unknown as CallContext;
+    const mockCtx = makeMockCallContext({ runtime: makeTestRuntime({ config }) });
     let called = false;
     const mockDeps = {
       runQualityCommand: async () => {
@@ -453,18 +445,14 @@ describe("AC6: mechanical fix fixOp.execute returns early when both commands und
       },
     };
     const strategy = makeMechanicalLintFixStrategy();
-    const result = await strategy.fixOp.execute(
-      { workdir: "/tmp/test", storyId: "US-001" },
-      mockCtx,
-      mockDeps,
-    );
+    const result = await strategy.fixOp.execute({ workdir: "/tmp/test", storyId: "US-001" }, mockCtx, mockDeps);
     expect(result).toEqual({ applied: true, exitCode: 0 });
     expect(called).toBe(false);
   });
 
   test("makeMechanicalFormatFixStrategy: returns {applied:true, exitCode:0} without calling runQualityCommand", async () => {
     const config = makeNaxConfig({ quality: { commands: {} } });
-    const mockCtx = { packageView: { packageDir: "", config, select: (s: any) => s.select(config) } } as unknown as CallContext;
+    const mockCtx = makeMockCallContext({ runtime: makeTestRuntime({ config }) });
     let called = false;
     const mockDeps = {
       runQualityCommand: async () => {
@@ -473,11 +461,7 @@ describe("AC6: mechanical fix fixOp.execute returns early when both commands und
       },
     };
     const strategy = makeMechanicalFormatFixStrategy();
-    const result = await strategy.fixOp.execute(
-      { workdir: "/tmp/test", storyId: "US-001" },
-      mockCtx,
-      mockDeps,
-    );
+    const result = await strategy.fixOp.execute({ workdir: "/tmp/test", storyId: "US-001" }, mockCtx, mockDeps);
     expect(result).toEqual({ applied: true, exitCode: 0 });
     expect(called).toBe(false);
   });
@@ -501,13 +485,7 @@ describe("AC7: full-path regression scenarios under unified path", () => {
       verifier: { story },
     });
     const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
-    expect(plan.phaseNames()).toEqual([
-      "test-writer",
-      "greenfield-gate",
-      "implementer",
-      "full-suite-gate",
-      "verifier",
-    ]);
+    expect(plan.phaseNames()).toEqual(["test-writer", "greenfield-gate", "implementer", "full-suite-gate", "verifier"]);
   });
 
   test("partial-progress retry: story.attempts=1 omits test-writer and greenfield-gate", async () => {
@@ -607,5 +585,4 @@ describe("AC7: full-path regression scenarios under unified path", () => {
       await runtime.close();
     }
   });
-
 });

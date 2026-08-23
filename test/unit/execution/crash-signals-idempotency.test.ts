@@ -11,16 +11,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import {
-  type SignalHandlerContext,
-  installSignalHandlers,
-} from "@/execution/crash-signals";
-import type { StatusWriter } from "@/execution/status-writer";
+import { type SignalHandlerContext, installSignalHandlers } from "@/execution/crash-signals";
+import { makeStatusWriter } from "@test/helpers";
 
-const noopStatusWriter = {
-  setRunStatus: () => {},
-  update: async () => {},
-} as unknown as StatusWriter;
+const noopStatusWriter = makeStatusWriter();
 
 /** Invoke every SIGTERM listener registered on `process`. */
 async function fireSignal(signal: NodeJS.Signals): Promise<void> {
@@ -41,7 +35,6 @@ describe("crash-signals idempotency", () => {
     // Prevent the real process.exit from killing the test runner.
     (process as unknown as { exit: (code?: number) => never }).exit = ((code?: number) => {
       exitCalls.push(code ?? 0);
-      // biome-ignore lint/correctness/noPrecisionLoss: no-op in tests
       return undefined as never;
     }) as typeof process.exit;
   });

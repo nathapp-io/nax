@@ -90,11 +90,7 @@ describe("orchestrator — static-kind floor inclusion survives low weight (AC5)
       scope: "project",
       rawScore: 1.0,
     });
-    const staticProvider = makeProvider(
-      "static-rules",
-      { chunks: [staticChunk] },
-      "static",
-    );
+    const staticProvider = makeProvider("static-rules", { chunks: [staticChunk] }, "static");
     const orch = new ContextOrchestrator([staticProvider]);
     const request: ContextRequest = {
       ...BASE_REQUEST,
@@ -102,9 +98,7 @@ describe("orchestrator — static-kind floor inclusion survives low weight (AC5)
     };
     const bundle = await orch.assemble(request);
     expect(bundle.manifest.includedChunks).toContain("static-rules:rules-md");
-    expect(
-      bundle.manifest.excludedChunks.find((c) => c.id === "static-rules:rules-md"),
-    ).toBeUndefined();
+    expect(bundle.manifest.excludedChunks.find((c) => c.id === "static-rules:rules-md")).toBeUndefined();
   });
 
   test("AC5 (with explicit minScore): low weight × low minScore still keeps static in includedChunks", async () => {
@@ -114,11 +108,7 @@ describe("orchestrator — static-kind floor inclusion survives low weight (AC5)
       scope: "project",
       rawScore: 1.0,
     });
-    const staticProvider = makeProvider(
-      "static-rules",
-      { chunks: [staticChunk] },
-      "static",
-    );
+    const staticProvider = makeProvider("static-rules", { chunks: [staticChunk] }, "static");
     const orch = new ContextOrchestrator([staticProvider]);
     const request: ContextRequest = {
       ...BASE_REQUEST,
@@ -143,11 +133,7 @@ describe("orchestrator — neighbor-kind excluded when low weight drops score be
       scope: "feature",
       rawScore: 0.5,
     });
-    const neighborProvider = makeProvider(
-      "code-neighbor",
-      { chunks: [neighborChunk] },
-      "neighbor",
-    );
+    const neighborProvider = makeProvider("code-neighbor", { chunks: [neighborChunk] }, "neighbor");
     const orch = new ContextOrchestrator([neighborProvider]);
     const request: ContextRequest = {
       ...BASE_REQUEST,
@@ -167,11 +153,7 @@ describe("orchestrator — neighbor-kind excluded when low weight drops score be
       scope: "feature",
       rawScore: 0.5,
     });
-    const neighborProvider = makeProvider(
-      "code-neighbor",
-      { chunks: [neighborChunk] },
-      "neighbor",
-    );
+    const neighborProvider = makeProvider("code-neighbor", { chunks: [neighborChunk] }, "neighbor");
     const orch = new ContextOrchestrator([neighborProvider]);
     const bundle = await orch.assemble(BASE_REQUEST);
     // Without weights, score = 0.5 × 0.75 = 0.375 > MIN_SCORE — chunk is included.
@@ -201,7 +183,9 @@ describe("orchestrator — undefined vs empty providerWeights produce identical 
   });
 
   test("AC9 (boundary): even when the request declares an empty map, behaviour matches no map at all", async () => {
-    const chunks: RawChunk[] = [makeChunk({ id: "feature-context:f1", kind: "feature", scope: "feature", rawScore: 0.4 })];
+    const chunks: RawChunk[] = [
+      makeChunk({ id: "feature-context:f1", kind: "feature", scope: "feature", rawScore: 0.4 }),
+    ];
     const provider = makeProvider("mixed-provider", { chunks }, "feature");
 
     const orch = new ContextOrchestrator([provider]);

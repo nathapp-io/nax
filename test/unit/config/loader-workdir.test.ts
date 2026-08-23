@@ -202,10 +202,7 @@ describe("loadConfigForWorkdir", () => {
   });
 
   test("per-package agent.protocol override is applied", async () => {
-    writeFileSync(
-      join(tempDir, ".nax", "config.json"),
-      JSON.stringify({ agent: { protocol: "acp" } }),
-    );
+    writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({ agent: { protocol: "acp" } }));
     mkdirSync(join(tempDir, ".nax", "mono", "packages", "pkg-a"), { recursive: true });
     writeFileSync(
       join(tempDir, ".nax", "mono", "packages", "pkg-a", "config.json"),
@@ -220,10 +217,7 @@ describe("loadConfigForWorkdir", () => {
   });
 
   test("per-package routing.strategy override is applied", async () => {
-    writeFileSync(
-      join(tempDir, ".nax", "config.json"),
-      JSON.stringify({ routing: { strategy: "keyword" } }),
-    );
+    writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({ routing: { strategy: "keyword" } }));
     mkdirSync(join(tempDir, ".nax", "mono", "packages", "ml"), { recursive: true });
     writeFileSync(
       join(tempDir, ".nax", "mono", "packages", "ml", "config.json"),

@@ -26,19 +26,19 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 
-import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
 import { pickSelector } from "@/config";
-import { DEFAULT_CONFIG } from "@/config";
-import { makeMockAgentManager, makeNaxConfig, makeTestRuntime } from "@test/helpers";
-import type { NaxRuntime } from "@/runtime";
+import type { DEFAULT_CONFIG } from "@/config";
 import {
-  _storyOrchestratorDeps,
-  StoryOrchestratorBuilder,
-  buildResumePlan,
   type ResumePlan,
   type StoryCheckpoint,
+  StoryOrchestratorBuilder,
   type TreeState,
+  _storyOrchestratorDeps,
+  buildResumePlan,
 } from "@/execution";
+import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
+import { makeMockAgentManager, makeMockCallContext, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 // ===========================================================================
 // Shared ops
@@ -46,11 +46,10 @@ import {
 
 const testSel = pickSelector("test-resume-integration-selector", "execution");
 
-function makePassOp(name: string, output: unknown = { success: true }): DeterministicOperation<
-  unknown,
-  unknown,
-  typeof DEFAULT_CONFIG
-> {
+function makePassOp(
+  name: string,
+  output: unknown = { success: true },
+): DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> {
   return {
     kind: "deterministic",
     name,
@@ -60,11 +59,10 @@ function makePassOp(name: string, output: unknown = { success: true }): Determin
   };
 }
 
-function makeFailOp(name: string, output: unknown = { success: false }): DeterministicOperation<
-  unknown,
-  unknown,
-  typeof DEFAULT_CONFIG
-> {
+function makeFailOp(
+  name: string,
+  output: unknown = { success: false },
+): DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> {
   return {
     kind: "deterministic",
     name,
@@ -75,11 +73,7 @@ function makeFailOp(name: string, output: unknown = { success: false }): Determi
 }
 
 // Implementer has to be a RunOperation (semantic constraint of StoryOrchestratorBuilder).
-function makeRunOp<I, O>(name: string, sessionRole: string, output: O): RunOperation<
-  I,
-  O,
-  typeof DEFAULT_CONFIG
-> {
+function makeRunOp<I, O>(name: string, sessionRole: string, output: O): RunOperation<I, O, typeof DEFAULT_CONFIG> {
   return {
     kind: "run",
     name,
@@ -564,14 +558,12 @@ describe("AC7: buildResumePlan invoked once; phaseOutputs seeded", () => {
 // ===========================================================================
 
 function makeCtx(runtime: NaxRuntime, storyId: string, opts: { withFeatureDir?: boolean } = {}): CallContext {
-  return {
+  return makeMockCallContext({
     runtime,
-    packageView: runtime.packages.repo(),
     packageDir: "/tmp",
-    agentName: "claude",
     storyId,
     ...(opts.withFeatureDir ? { featureDir: "/tmp/feature" } : {}),
-  } as unknown as CallContext;
+  });
 }
 
 function makeDeterministic(name: string, result: { success: boolean; findings?: unknown[] }) {

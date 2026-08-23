@@ -37,11 +37,14 @@ describe("extractUrl", () => {
 describe("viewArgv", () => {
   test("builds the gh and glab view commands", () => {
     expect(viewArgv("github", "feat/x", "number,state")).toEqual([
-      "gh", "pr", "view", "feat/x", "--json", "number,state",
+      "gh",
+      "pr",
+      "view",
+      "feat/x",
+      "--json",
+      "number,state",
     ]);
-    expect(viewArgv("gitlab", "feat/x", "number")).toEqual([
-      "glab", "mr", "view", "feat/x", "--output", "json",
-    ]);
+    expect(viewArgv("gitlab", "feat/x", "number")).toEqual(["glab", "mr", "view", "feat/x", "--output", "json"]);
   });
 });
 
@@ -76,9 +79,7 @@ describe("openPr", () => {
     const r = await openPr("github", { title: "T", body: "B", branch: "feat/x", draft: true }, d, "/repo");
     expect(r.success).toBe(true);
     expect(r.url).toBe("https://github.com/o/r/pull/9");
-    expect(captured[0]).toEqual([
-      "gh", "pr", "create", "--title", "T", "--body", "B", "--head", "feat/x", "--draft",
-    ]);
+    expect(captured[0]).toEqual(["gh", "pr", "create", "--title", "T", "--body", "B", "--head", "feat/x", "--draft"]);
   });
 
   test("omits --draft when a ready PR is requested", async () => {
@@ -86,7 +87,15 @@ describe("openPr", () => {
     const d = deps(() => ({ exitCode: 0, stdout: "https://gitlab.com/t/r/-/merge_requests/4", stderr: "" }), captured);
     await openPr("gitlab", { title: "T", body: "B", branch: "feat/x", draft: false }, d, "/repo");
     expect(captured[0]).toEqual([
-      "glab", "mr", "create", "--title", "T", "--description", "B", "--source-branch", "feat/x",
+      "glab",
+      "mr",
+      "create",
+      "--title",
+      "T",
+      "--description",
+      "B",
+      "--source-branch",
+      "feat/x",
     ]);
   });
 

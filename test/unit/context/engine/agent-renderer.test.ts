@@ -8,7 +8,7 @@
  * multi-scope ordering, empty-chunk handling, and cross-scope isolation.
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { renderForAgent } from "@/context/engine/agent-renderer";
 import type { PackedChunk } from "@/context/engine/packing";
 
@@ -89,7 +89,7 @@ describe("renderForAgent — claude (markdown-sections)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("renderForAgent — codex (xml-tagged)", () => {
-  test("wraps project scope in <context_section type=\"project\">", () => {
+  test('wraps project scope in <context_section type="project">', () => {
     const chunks = [makeChunk("project", { content: "Use async/await." })];
     const result = renderForAgent(chunks, "codex");
     expect(result).toContain('<context_section type="project">');
@@ -97,7 +97,7 @@ describe("renderForAgent — codex (xml-tagged)", () => {
     expect(result).toContain("Use async/await.");
   });
 
-  test("wraps session scope in <context_section type=\"session\">", () => {
+  test('wraps session scope in <context_section type="session">', () => {
     const chunks = [makeChunk("session")];
     const result = renderForAgent(chunks, "codex");
     expect(result).toContain('<context_section type="session">');

@@ -55,9 +55,13 @@ describe("extractSpecOutOfScope", () => {
   });
 
   test("falls back to paragraph text when the section has no bullets", () => {
-    const spec = ["## Out of Scope", "", "Anything touching the billing service is deferred", "to a later arc.", ""].join(
-      "\n",
-    );
+    const spec = [
+      "## Out of Scope",
+      "",
+      "Anything touching the billing service is deferred",
+      "to a later arc.",
+      "",
+    ].join("\n");
 
     expect(extractSpecOutOfScope(spec)).toEqual(["Anything touching the billing service is deferred to a later arc."]);
   });
@@ -125,7 +129,8 @@ describe("extractSpecOutOfScope", () => {
   });
 
   test("reads a table as one item per data row, skipping the header", () => {
-    const spec = "## Out of Scope\n\n| Deferred | Reason |\n|---|---|\n| Ink TUI | later arc |\n| Checkpoints | no data |\n";
+    const spec =
+      "## Out of Scope\n\n| Deferred | Reason |\n|---|---|\n| Ink TUI | later arc |\n| Checkpoints | no data |\n";
     expect(extractSpecOutOfScope(spec)).toEqual(["Ink TUI — later arc", "Checkpoints — no data"]);
   });
 
@@ -670,13 +675,9 @@ describe("demoteStoryScopedOutOfScope — fail-safe rails", () => {
     // "rate limiting" is 13 chars — under the match floor, and generic enough
     // that a substring hit against any story's wording proves nothing. The
     // coverage ratio alone would wave it through.
-    const spec = [
-      "## Acceptance Criteria",
-      "",
-      "### US-002 — B",
-      "",
-      "**Out of scope:** rate limiting deferred.",
-    ].join("\n");
+    const spec = ["## Acceptance Criteria", "", "### US-002 — B", "", "**Out of scope:** rate limiting deferred."].join(
+      "\n",
+    );
     const prd = makePRD({ outOfScope: ["rate limiting"], userStories: twoStories() });
 
     expect(demoteStoryScopedOutOfScope(prd, spec)).toBe(prd);

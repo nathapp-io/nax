@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { killProcessGroup } from "@/utils/process-kill";
 
 describe("killProcessGroup", () => {
@@ -13,7 +13,7 @@ describe("killProcessGroup", () => {
   });
 
   test("kills process group (negative PID) successfully", () => {
-    let killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
+    const killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
 
     process.kill = ((pid, signal) => {
       killCalls.push({ pid, signal });
@@ -26,7 +26,7 @@ describe("killProcessGroup", () => {
   });
 
   test("falls back to single process kill when group kill fails with ESRCH", () => {
-    let killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
+    const killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
 
     process.kill = ((pid, signal) => {
       killCalls.push({ pid, signal });
@@ -103,7 +103,7 @@ describe("killProcessGroup", () => {
   });
 
   test("supports SIGKILL signal", () => {
-    let killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
+    const killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
 
     process.kill = ((pid, signal) => {
       killCalls.push({ pid, signal });
@@ -116,7 +116,7 @@ describe("killProcessGroup", () => {
   });
 
   test("supports numeric signal codes", () => {
-    let killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
+    const killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
 
     process.kill = ((pid, signal) => {
       killCalls.push({ pid, signal });
@@ -129,7 +129,7 @@ describe("killProcessGroup", () => {
   });
 
   test("handles zero PID gracefully", () => {
-    let killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
+    const killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
 
     process.kill = ((pid, signal) => {
       killCalls.push({ pid, signal });
@@ -144,7 +144,7 @@ describe("killProcessGroup", () => {
   });
 
   test("handles negative PID (already negative process group ID)", () => {
-    let killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
+    const killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
 
     process.kill = ((pid, signal) => {
       killCalls.push({ pid, signal });

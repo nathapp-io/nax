@@ -15,9 +15,9 @@ import { ParseValidationError } from "@/agents";
 import type { RetryStrategy } from "@/agents";
 import { planInteractiveOp } from "@/operations";
 import { validatePlanOutput } from "@/prd";
+import type { NaxRuntime } from "@/runtime";
 import { makePRD, makeStory } from "@test/helpers";
 import { makeTestRuntime, withWarnSpy } from "@test/helpers";
-import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -75,7 +75,8 @@ describe("planInteractiveOp.retry", () => {
       outputPath: "/tmp/prd.json",
     };
 
-    const retryResult = typeof planInteractiveOp.retry === "function" ? planInteractiveOp.retry(input, ctx) : planInteractiveOp.retry;
+    const retryResult =
+      typeof planInteractiveOp.retry === "function" ? planInteractiveOp.retry(input, ctx) : planInteractiveOp.retry;
     expect(retryResult).toBeDefined();
     if (retryResult && typeof retryResult === "object" && "shouldRetry" in retryResult) {
       expect(typeof retryResult.shouldRetry).toBe("function");
@@ -134,7 +135,13 @@ describe("planInteractiveOp.parse()", () => {
       ],
     };
 
-    const input = { specContent: "Test spec", codebaseContext: "Test context", featureName: "test-feature", branchName: "feat/test", outputPath: "/tmp/prd.json" };
+    const input = {
+      specContent: "Test spec",
+      codebaseContext: "Test context",
+      featureName: "test-feature",
+      branchName: "feat/test",
+      outputPath: "/tmp/prd.json",
+    };
     const result = planInteractiveOp.parse(JSON.stringify(validPRD), input, ctx);
     expect(result).toBeDefined();
     expect(typeof result).toBe("object");
@@ -151,8 +158,16 @@ describe("planInteractiveOp.parse()", () => {
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(planInteractiveOp.config) };
-    const input = { specContent: "Test spec", codebaseContext: "Test context", featureName: "test-feature", branchName: "feat/test", outputPath: "/tmp/prd.json" };
-    expect(() => { planInteractiveOp.parse(output, input, ctx); }).toThrow();
+    const input = {
+      specContent: "Test spec",
+      codebaseContext: "Test context",
+      featureName: "test-feature",
+      branchName: "feat/test",
+      outputPath: "/tmp/prd.json",
+    };
+    expect(() => {
+      planInteractiveOp.parse(output, input, ctx);
+    }).toThrow();
   });
 });
 
@@ -174,7 +189,13 @@ describe("planInteractiveOp.recover", () => {
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(planInteractiveOp.config), readFile, fileExists };
-    const input = { specContent: "Test spec", codebaseContext: "Test context", featureName: "test-feature", branchName: "feat/test", outputPath: "/nonexistent/prd.json" };
+    const input = {
+      specContent: "Test spec",
+      codebaseContext: "Test context",
+      featureName: "test-feature",
+      branchName: "feat/test",
+      outputPath: "/nonexistent/prd.json",
+    };
     const result = await planInteractiveOp.recover!(input, ctx as any);
     expect(result).toBeNull();
   });
@@ -217,7 +238,13 @@ describe("planInteractiveOp.recover", () => {
       readFile: async (_path: string) => JSON.stringify(validPRD),
       fileExists: async (_path: string) => true,
     };
-    const input = { specContent: "Test spec", codebaseContext: "Test context", featureName: "test-feature", branchName: "feat/test", outputPath: "/tmp/prd.json" };
+    const input = {
+      specContent: "Test spec",
+      codebaseContext: "Test context",
+      featureName: "test-feature",
+      branchName: "feat/test",
+      outputPath: "/tmp/prd.json",
+    };
     const result = await planInteractiveOp.recover!(input, ctx as any);
     expect(result).not.toBeNull();
     expect(result).toHaveProperty("userStories");
@@ -232,34 +259,58 @@ describe("planInteractiveOp.verify", () => {
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(planInteractiveOp.config), readFile: async (_p: string) => null, fileExists: async (_p: string) => false };
+    const ctx = {
+      packageView: view,
+      config: view.select(planInteractiveOp.config),
+      readFile: async (_p: string) => null,
+      fileExists: async (_p: string) => false,
+    };
 
     const emptyPRD = {
-      project: "test-project", feature: "test-feature", analysis: "test analysis",
-      branchName: "feat/test", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      project: "test-project",
+      feature: "test-feature",
+      analysis: "test analysis",
+      branchName: "feat/test",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       userStories: [],
     };
 
-    const input = { specContent: "Test spec", codebaseContext: "", featureName: "test-feature", branchName: "feat/test", outputPath: "/tmp/prd.json" };
+    const input = {
+      specContent: "Test spec",
+      codebaseContext: "",
+      featureName: "test-feature",
+      branchName: "feat/test",
+      outputPath: "/tmp/prd.json",
+    };
 
     const nullResult = await planInteractiveOp.verify!(emptyPRD as any, input as any, ctx as any);
     expect(nullResult).toBeNull();
 
     const validPRD = {
       ...emptyPRD,
-      userStories: [{
-        id: "US-001", title: "Test story", description: "Test description", acceptanceCriteria: ["Test AC"],
-        contextFiles: [], tags: [], dependencies: [], status: "pending", passes: false,
-        routing: { complexity: "simple", testStrategy: "no-test", noTestJustification: "test", reasoning: "test" },
-        escalations: [], attempts: 0,
-      }],
+      userStories: [
+        {
+          id: "US-001",
+          title: "Test story",
+          description: "Test description",
+          acceptanceCriteria: ["Test AC"],
+          contextFiles: [],
+          tags: [],
+          dependencies: [],
+          status: "pending",
+          passes: false,
+          routing: { complexity: "simple", testStrategy: "no-test", noTestJustification: "test", reasoning: "test" },
+          escalations: [],
+          attempts: 0,
+        },
+      ],
     };
     const prdResult = await planInteractiveOp.verify!(validPRD as any, input as any, ctx as any);
     expect(prdResult).not.toBeNull();
     expect(prdResult).toEqual(validPRD);
   });
 });
-
 
 // ─── Adversarial: retry validate / parse consistency ─────────────────────────
 
@@ -292,21 +343,17 @@ describe("planInteractiveOp.retry — validate/parse consistency (adversarial AC
       userStories: [],
     });
 
-    expect(() =>
-      validatePlanOutput(emptyStoriesOutput, "test-feature", "feat/test"),
-    ).toThrow("[schema] userStories is required and must be a non-empty array");
-
-    const decision = retryStrategy.shouldRetry(
-      new ParseValidationError("LLM returned empty userStories"),
-      0,
-      {
-        site: "run",
-        agentName: "claude",
-        stage: "plan",
-        storyId: "US-001",
-        lastOutput: emptyStoriesOutput,
-      },
+    expect(() => validatePlanOutput(emptyStoriesOutput, "test-feature", "feat/test")).toThrow(
+      "[schema] userStories is required and must be a non-empty array",
     );
+
+    const decision = retryStrategy.shouldRetry(new ParseValidationError("LLM returned empty userStories"), 0, {
+      site: "run",
+      agentName: "claude",
+      stage: "plan",
+      storyId: "US-001",
+      lastOutput: emptyStoriesOutput,
+    });
 
     expect(decision.retry).toBe(true);
   });
@@ -375,7 +422,11 @@ describe("planInteractiveOp.recover — disk-recovery escape hatch (#993)", () =
 
   test.each([
     ["(b) outputPath is missing (readFile returns null)", async (_p: string) => null, async (_p: string) => false],
-    ["(c) outputPath contains the envelope shape (not a valid PRD)", async (_p: string) => envelopeJson, async (_p: string) => true],
+    [
+      "(c) outputPath contains the envelope shape (not a valid PRD)",
+      async (_p: string) => envelopeJson,
+      async (_p: string) => true,
+    ],
   ] as const)("%s → recover returns null", async (_label, readFile, fileExists) => {
     const { planInteractiveOp } = await import("@/operations");
     const runtime = makeTestRuntime();
@@ -404,7 +455,13 @@ describe("planInteractiveOp.verify — out-of-scope backfill (single mode)", () 
     });
   }
 
-  const input = { specContent: SPEC, codebaseContext: "", featureName: "test-feature", branchName: "feat/test", outputPath: "/tmp/prd.json" };
+  const input = {
+    specContent: SPEC,
+    codebaseContext: "",
+    featureName: "test-feature",
+    branchName: "feat/test",
+    outputPath: "/tmp/prd.json",
+  };
 
   test("backfills every spec exclusion the planner omitted, and warns", async () => {
     await withWarnSpy(async (warnSpy) => {
@@ -426,7 +483,11 @@ describe("planInteractiveOp.verify — out-of-scope backfill (single mode)", () 
   test("does not warn or add a field when the spec declares no exclusions", async () => {
     await withWarnSpy(async (warnSpy) => {
       const noScopeInput = { ...input, specContent: "# Feature\n\n## Design\n- build it\n" };
-      const result = await planInteractiveOp.verify!(prdWith(), noScopeInput as never, makeInteractiveVerifyCtx() as never);
+      const result = await planInteractiveOp.verify!(
+        prdWith(),
+        noScopeInput as never,
+        makeInteractiveVerifyCtx() as never,
+      );
       expect(result?.outOfScope).toBeUndefined();
       expect(warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("out-of-scope"))).toBeUndefined();
     });

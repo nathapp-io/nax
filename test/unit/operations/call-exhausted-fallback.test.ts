@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { callOp } from "@/operations";
-import type { RunOperation } from "@/operations";
-import { DEFAULT_CONFIG, pickSelector } from "@/config";
 import { ParseValidationError, makeParseRetryStrategy } from "@/agents/retry";
 import type { RetryStrategy } from "@/agents/retry";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import { callOp } from "@/operations";
+import type { RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
+import { makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -122,10 +122,12 @@ describe("callOp empty-output + exhaustedFallback — AC1: fallback returned wit
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
     createdRuntimes.push(runtime);
 
-    const op = makeOpWithFallback<{ passed: boolean; findings: unknown[]; failOpen: boolean; estimatedCostUsd?: number }>(
-      "fallback-cost-op",
-      { passed: true, findings: [], failOpen: true },
-    );
+    const op = makeOpWithFallback<{
+      passed: boolean;
+      findings: unknown[];
+      failOpen: boolean;
+      estimatedCostUsd?: number;
+    }>("fallback-cost-op", { passed: true, findings: [], failOpen: true });
 
     const result = await callOp(makeCallCtx(runtime), op, "hello");
 

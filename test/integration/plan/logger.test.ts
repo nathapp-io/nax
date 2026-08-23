@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { fullTest } from "@test/helpers";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { Logger, getLogger, initLogger, resetLogger } from "@/logger";
+import { fullTest } from "@test/helpers";
 
 const TEST_LOG_DIR = path.join(process.cwd(), "test-logs");
 const TEST_LOG_FILE = path.join(TEST_LOG_DIR, "test.jsonl");
@@ -357,9 +357,9 @@ describe("Logger", () => {
       expect(lines.length).toBe(4);
 
       const entries = lines.map((line) => JSON.parse(line));
-      entries.forEach((entry) => {
+      for (const entry of entries) {
         expect(entry.storyId).toBe("story-123");
-      });
+      }
     });
   });
 
@@ -429,7 +429,10 @@ describe("Logger", () => {
       // Create logger with invalid path
       const originalWrite = process.stderr.write.bind(process.stderr);
       const errors: string[] = [];
-      process.stderr.write = ((msg: string) => { errors.push(msg); return true; }) as typeof process.stderr.write;
+      process.stderr.write = ((msg: string) => {
+        errors.push(msg);
+        return true;
+      }) as typeof process.stderr.write;
 
       const logger = initLogger({
         level: "info",

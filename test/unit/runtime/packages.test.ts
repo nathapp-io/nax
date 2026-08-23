@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _packagesDeps, createPackageRegistry } from "@/runtime/packages";
 import { createConfigLoader, pickSelector } from "@/config";
+import { _packagesDeps, createPackageRegistry } from "@/runtime/packages";
 import { makeLogger, makeNaxConfig } from "@test/helpers";
 
 const minConfig = makeNaxConfig({ routing: { strategy: "keyword" } });
@@ -131,7 +131,7 @@ describe("F2 invariant — pre-hydrate warn for non-root resolve()", () => {
 
   test("warns when resolve(nonRootPkg) is called before hydrate()", () => {
     const mockLogger = makeLogger();
-    _packagesDeps.getSafeLogger = mock(() => mockLogger as unknown as ReturnType<typeof _packagesDeps.getSafeLogger>);
+    _packagesDeps.getSafeLogger = mock(() => mockLogger);
     const loader = createConfigLoader(minConfig);
     const registry = createPackageRegistry(loader, "/repo");
 
@@ -144,7 +144,7 @@ describe("F2 invariant — pre-hydrate warn for non-root resolve()", () => {
 
   test("does not warn for repo() (root-equivalent, no per-package override expected)", () => {
     const mockLogger = makeLogger();
-    _packagesDeps.getSafeLogger = mock(() => mockLogger as unknown as ReturnType<typeof _packagesDeps.getSafeLogger>);
+    _packagesDeps.getSafeLogger = mock(() => mockLogger);
     const loader = createConfigLoader(minConfig);
     const registry = createPackageRegistry(loader, "/repo");
 
@@ -155,7 +155,7 @@ describe("F2 invariant — pre-hydrate warn for non-root resolve()", () => {
 
   test("does not warn after hydrate() has run", async () => {
     const mockLogger = makeLogger();
-    _packagesDeps.getSafeLogger = mock(() => mockLogger as unknown as ReturnType<typeof _packagesDeps.getSafeLogger>);
+    _packagesDeps.getSafeLogger = mock(() => mockLogger);
     const loader = createConfigLoader(minConfig);
     const registry = createPackageRegistry(loader, "/repo");
 
@@ -168,7 +168,7 @@ describe("F2 invariant — pre-hydrate warn for non-root resolve()", () => {
 
   test("does not warn for a package that was hydrated with an override", async () => {
     const mockLogger = makeLogger();
-    _packagesDeps.getSafeLogger = mock(() => mockLogger as unknown as ReturnType<typeof _packagesDeps.getSafeLogger>);
+    _packagesDeps.getSafeLogger = mock(() => mockLogger);
     const loader = createConfigLoader(minConfig);
     const registry = createPackageRegistry(loader, "/repo");
 
@@ -182,7 +182,7 @@ describe("F2 invariant — pre-hydrate warn for non-root resolve()", () => {
 
   test("warns only once per package (cached view suppresses repeat)", () => {
     const mockLogger = makeLogger();
-    _packagesDeps.getSafeLogger = mock(() => mockLogger as unknown as ReturnType<typeof _packagesDeps.getSafeLogger>);
+    _packagesDeps.getSafeLogger = mock(() => mockLogger);
     const loader = createConfigLoader(minConfig);
     const registry = createPackageRegistry(loader, "/repo");
 

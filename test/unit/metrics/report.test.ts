@@ -285,7 +285,14 @@ describe("toCostReport — no internal fields leak", () => {
         attempts: 2,
         context: {
           providers: {
-            tmp: { tokensProduced: 1, chunksProduced: 1, chunksKept: 1, wallClockMs: 1, timedOut: false, failed: false },
+            tmp: {
+              tokensProduced: 1,
+              chunksProduced: 1,
+              chunksKept: 1,
+              wallClockMs: 1,
+              timedOut: false,
+              failed: false,
+            },
           },
           pollution: {
             droppedBelowMinScore: 0,

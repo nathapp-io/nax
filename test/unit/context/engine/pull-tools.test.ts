@@ -25,8 +25,7 @@ import {
   handleQueryNeighbor,
 } from "@/context/engine/pull-tools";
 import { NaxError } from "@/errors";
-import type { UserStory } from "@/prd";
-import { makeLogger } from "@test/helpers";
+import { makeLogger, makeNaxConfig, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals for dep injection
@@ -75,7 +74,7 @@ describe("QUERY_NEIGHBOR_DESCRIPTOR", () => {
     expect(QUERY_NEIGHBOR_DESCRIPTOR.description.length).toBeGreaterThan(0);
     const schema = QUERY_NEIGHBOR_DESCRIPTOR.inputSchema as { required?: string[] };
     expect(schema.required).toContain("filePath");
-    expect(PULL_TOOL_REGISTRY["query_neighbor"]).toBe(QUERY_NEIGHBOR_DESCRIPTOR);
+    expect(PULL_TOOL_REGISTRY.query_neighbor).toBe(QUERY_NEIGHBOR_DESCRIPTOR);
   });
 
   test.each(["maxCallsPerSession", "maxTokensPerCall"] as const)("%s is a positive integer", (field) => {
@@ -319,7 +318,7 @@ describe("QUERY_FEATURE_CONTEXT_DESCRIPTOR", () => {
     expect(QUERY_FEATURE_CONTEXT_DESCRIPTOR.description.length).toBeGreaterThan(0);
     const schema = QUERY_FEATURE_CONTEXT_DESCRIPTOR.inputSchema as { required?: string[] };
     expect(schema.required).toBeUndefined();
-    expect(PULL_TOOL_REGISTRY["query_feature_context"]).toBe(QUERY_FEATURE_CONTEXT_DESCRIPTOR);
+    expect(PULL_TOOL_REGISTRY.query_feature_context).toBe(QUERY_FEATURE_CONTEXT_DESCRIPTOR);
   });
 
   test.each(["maxCallsPerSession", "maxTokensPerCall"] as const)("%s is a positive integer", (field) => {
@@ -333,18 +332,13 @@ describe("QUERY_FEATURE_CONTEXT_DESCRIPTOR", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("handleQueryFeatureContext", () => {
-  const STORY = {
+  const STORY = makeStory({
     id: "US-001",
     title: "Test story",
     description: "desc",
-    acceptanceCriteria: [],
-    tags: [],
-    dependencies: [],
-    status: "pending",
-    passes: false,
-  } as unknown as UserStory;
+  });
 
-  const CONFIG = {} as unknown as NaxConfig;
+  const CONFIG = makeNaxConfig();
 
   function makeBudget(sessionLimit = 5, runLimit = 50) {
     return new PullToolBudget(sessionLimit, runLimit, createRunCallCounter());
@@ -415,7 +409,7 @@ describe("handleQueryFeatureContext", () => {
   });
 
   test("truncates output to maxTokensPerCall * 4 characters", async () => {
-    const longContent = "## Section\n" + "x".repeat(500);
+    const longContent = `## Section\n${"x".repeat(500)}`;
     mockV1Provider(longContent);
     const maxTokensPerCall = 20; // tiny cap → 80 chars max
     const result = await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget(), maxTokensPerCall);

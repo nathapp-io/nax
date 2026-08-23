@@ -16,7 +16,7 @@ import { _diffUtilsDeps } from "@/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "@/review/semantic";
 import type { SemanticStory } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
-import { makeMockAgentManager } from "@test/helpers";
+import { makeMockAgentManager, makeSpawn } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
 import { withTempDir } from "@test/helpers";
 
@@ -28,10 +28,7 @@ const STORY: SemanticStory = {
   id: "US-010",
   title: "i18n key migration",
   description: "Migrate hardcoded strings to i18n keys",
-  acceptanceCriteria: [
-    "Component uses t('foo.bar') from i18n",
-    "Locale files contain foo.bar key",
-  ],
+  acceptanceCriteria: ["Component uses t('foo.bar') from i18n", "Locale files contain foo.bar key"],
 };
 
 const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
@@ -56,8 +53,22 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       agentFallbacks: [],
     }),
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
-    runWithFallbackFn: async () => ({ result: { success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCostUsd: cost, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] }),
+    runWithFallbackFn: async () => ({
+      result: {
+        success: true,
+        exitCode: 0,
+        output: llmResponse,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCostUsd: cost,
+        agentFallbacks: [],
+      },
+      fallbacks: [],
+    }),
+    completeWithFallbackFn: async () => ({
+      result: { output: llmResponse, costUsd: cost, source: "mock" },
+      fallbacks: [],
+    }),
     runAsFn: async (_agent, opts) => ({
       success: true,
       exitCode: 0,
@@ -72,19 +83,7 @@ function makeAgentManager(llmResponse: string, cost = 0) {
 }
 
 function makeSpawnMock(stdout: string, exitCode = 0) {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(stdout));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(controller) { controller.close(); },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(() => ({ exitCode, stdout })).spawn;
 }
 
 // ---------------------------------------------------------------------------
@@ -364,7 +363,14 @@ describe("semantic prompt includes tool-access instructions", () => {
     const agentManager = makeAgentManager(JSON.stringify({ passed: true, findings: [] }));
     const runtime = makeMockRuntime({ agentManager });
     (agentManager.runWithFallback as ReturnType<typeof mock>).mockImplementation(async () => ({
-      result: { success: true, exitCode: 0, output: JSON.stringify({ passed: true, findings: [] }), rateLimited: false, durationMs: 100, estimatedCostUsd: 0 } as AgentResult,
+      result: {
+        success: true,
+        exitCode: 0,
+        output: JSON.stringify({ passed: true, findings: [] }),
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCostUsd: 0,
+      } as AgentResult,
       fallbacks: [],
     }));
 

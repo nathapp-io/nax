@@ -4,14 +4,14 @@ import { RefinePlanStrategy, _refinePlanDeps } from "@/plan";
 import type { PlanDeps, PlanModeContext } from "@/plan/strategies/types";
 import type { PackageSummary } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager } from "@test/helpers";
+import { makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 
 function makeRuntime(closeImpl?: () => Promise<void>): NaxRuntime {
-  return {
-    packages: { resolve: () => ({}) },
+  const runtime = makeMockRuntime({
     agentManager: makeMockAgentManager({ getDefaultAgent: "agent-refine" }),
-    close: closeImpl ?? (async () => {}),
-  } as unknown as NaxRuntime;
+  });
+  if (closeImpl) runtime.close = closeImpl;
+  return runtime;
 }
 
 const VALID_PRD_JSON = JSON.stringify({
@@ -88,7 +88,11 @@ describe("RefinePlanStrategy", () => {
       const result = await strategy.execute(ctx);
       expect(result.outputPath).toBe(ctx.outputPath);
       expect(callOpMock).toHaveBeenCalledTimes(1);
-      const [callCtx, operation, input] = callOpMock.mock.calls[0] as [Record<string, unknown>, unknown, Record<string, unknown>];
+      const [callCtx, operation, input] = callOpMock.mock.calls[0] as [
+        Record<string, unknown>,
+        unknown,
+        Record<string, unknown>,
+      ];
       expect(callCtx.runtime).toBe(ctx.runtime);
       expect(callCtx.packageDir).toBe(ctx.workdir);
       expect(callCtx.agentName).toBe("agent-refine");

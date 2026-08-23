@@ -8,13 +8,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { filterContextByRole, truncateToContextBudget } from "@/context/feature-context-filter";
-import { FeatureContextProvider } from "@/context/providers/feature-context";
-import { clearFeatureResolverCache } from "@/context/feature-resolver";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config/types";
+import { filterContextByRole, truncateToContextBudget } from "@/context/feature-context-filter";
+import { clearFeatureResolverCache } from "@/context/feature-resolver";
+import { FeatureContextProvider } from "@/context/providers/feature-context";
 import type { UserStory } from "@/prd";
-import { makeTempDir, cleanupTempDir } from "@test/helpers";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function makeStory(id: string): UserStory {
   return {

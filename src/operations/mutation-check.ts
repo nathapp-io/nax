@@ -123,7 +123,12 @@ async function sweepLeftoverMutants(repoRoot: string, storyId: string): Promise<
   }
 }
 
-export const mutationCheckOp: DeterministicOperation<MutationCheckInput, MutationCheckOutput, MutationCheckConfig> = {
+export const mutationCheckOp: DeterministicOperation<
+  MutationCheckInput,
+  MutationCheckOutput,
+  MutationCheckConfig,
+  MutationCheckDeps
+> = {
   kind: "deterministic",
   name: "mutation-check",
   stage: "verify",

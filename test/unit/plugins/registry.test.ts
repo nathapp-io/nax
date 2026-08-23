@@ -80,7 +80,9 @@ describe("PluginRegistry.getRouters", () => {
 
 describe("PluginRegistry.getAgent", () => {
   it("returns undefined when no agent plugins or name not found; returns agent by name when present", () => {
-    expect(new PluginRegistry([createMockPlugin("optimizer-plugin", ["optimizer"])]).getAgent("claude")).toBeUndefined();
+    expect(
+      new PluginRegistry([createMockPlugin("optimizer-plugin", ["optimizer"])]).getAgent("claude"),
+    ).toBeUndefined();
 
     const claudeAgent = { name: "claude" } as any;
     const cursorAgent = { name: "cursor" } as any;
@@ -271,5 +273,4 @@ describe("PluginRegistry.teardownAll", () => {
     expect(teardown1).toHaveBeenCalledTimes(1);
     expect(teardown2).toHaveBeenCalledTimes(1);
   });
-
 });

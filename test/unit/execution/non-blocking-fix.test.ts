@@ -13,19 +13,46 @@ describe("non-blocking-fix gating", () => {
   test("disabled config → does not run", () => {
     expect(shouldRunNonBlockingFix(undefined, 2)).toBe(false);
     expect(
-      shouldRunNonBlockingFix({ enabled: false, scope: "both", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } }, 2),
+      shouldRunNonBlockingFix(
+        {
+          enabled: false,
+          scope: "both",
+          regressionAttempts: 1,
+          verifierGuard: true,
+          sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+        },
+        2,
+      ),
     ).toBe(false);
   });
 
   test("enabled but zero advisory findings → does not run", () => {
     expect(
-      shouldRunNonBlockingFix({ enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } }, 0),
+      shouldRunNonBlockingFix(
+        {
+          enabled: true,
+          scope: "both",
+          regressionAttempts: 1,
+          verifierGuard: true,
+          sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+        },
+        0,
+      ),
     ).toBe(false);
   });
 
   test("enabled with advisory findings → runs", () => {
     expect(
-      shouldRunNonBlockingFix({ enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } }, 3),
+      shouldRunNonBlockingFix(
+        {
+          enabled: true,
+          scope: "both",
+          regressionAttempts: 1,
+          verifierGuard: true,
+          sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+        },
+        3,
+      ),
     ).toBe(true);
   });
 
@@ -47,7 +74,13 @@ describe("runNonBlockingFix keep vs restore", () => {
     workdir: "/tmp/x",
     storyId: "us-001",
     advisoryFindings: [{ source: "adversarial-review", severity: "warning", category: "input", message: "m" }] as never,
-    cfg: { enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } } as const,
+    cfg: {
+      enabled: true,
+      scope: "both",
+      regressionAttempts: 1,
+      verifierGuard: true,
+      sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+    } as const,
     phaseCosts: {} as Record<string, number>,
   };
   const fakeDeps = {
@@ -421,7 +454,7 @@ describe("runNonBlockingFix keep vs restore", () => {
     // rollback that cost must be reverted alongside phaseOutputs, so a discarded pass
     // leaves the result's per-phase cost breakdown symmetric with its outputs.
     const phaseOutputs: Record<string, unknown> = { "full-suite-gate": { success: true } };
-    const phaseCosts: Record<string, number> = { implementer: 0.10 };
+    const phaseCosts: Record<string, number> = { implementer: 0.1 };
     const res = await runNonBlockingFix(
       {
         ...baseArgs,
@@ -429,7 +462,7 @@ describe("runNonBlockingFix keep vs restore", () => {
         phaseCosts,
         runRectify: async () => {
           phaseCosts.implementer = 0.35; // pass spent more
-          phaseCosts["adversarial-review"] = 0.20; // and added a new phase
+          phaseCosts["adversarial-review"] = 0.2; // and added a new phase
           return { rectificationExhausted: true };
         },
       },
@@ -437,13 +470,13 @@ describe("runNonBlockingFix keep vs restore", () => {
     );
     expect(res).toEqual({ ran: true, kept: false, restored: true });
     // Reverted to the entry snapshot — the discarded pass's cost is gone, the new key removed.
-    expect(phaseCosts).toEqual({ implementer: 0.10 });
+    expect(phaseCosts).toEqual({ implementer: 0.1 });
   });
 
   test("kept → phaseCosts retains the best-effort pass cost", async () => {
     // When the pass is kept (resolved, within cap), its cost is real work and stays.
     const phaseOutputs: Record<string, unknown> = { "full-suite-gate": { success: true } };
-    const phaseCosts: Record<string, number> = { implementer: 0.10 };
+    const phaseCosts: Record<string, number> = { implementer: 0.1 };
     const res = await runNonBlockingFix(
       {
         ...baseArgs,
@@ -668,7 +701,13 @@ describe("actionableAdvisoryFindings", () => {
   test("an all-compliance advisory bucket closes the NBF gate", () => {
     // The observed US-004 case: one advisory finding, and it asked for nothing.
     // NBF must not open a paid pass for it.
-    const cfg = { enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } } as const;
+    const cfg = {
+      enabled: true,
+      scope: "both",
+      regressionAttempts: 1,
+      verifierGuard: true,
+      sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+    } as const;
     const actionable = actionableAdvisoryFindings([advisory({ actionRequired: false })]);
     expect(shouldRunNonBlockingFix(cfg, actionable.length)).toBe(false);
   });

@@ -1,7 +1,16 @@
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
 
-type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
+/**
+ * `NonNullable` before the `extends object` test: for an OPTIONAL nested config
+ * (`debate?: DebateConfig`), `T[K]` is `DebateConfig | undefined`, and a union
+ * with `undefined` does not extend `object` — so the old form fell through to
+ * `: T[K]` and demanded the FULL `DebateConfig` for a one-field override.
+ * See #1514 §Patterns learned item 2.
+ */
+export type DeepPartial<T> = {
+  [K in keyof T]?: NonNullable<T[K]> extends object ? DeepPartial<NonNullable<T[K]>> : T[K];
+};
 
 function isEmptyObject(val: unknown): boolean {
   return typeof val === "object" && val !== null && !Array.isArray(val) && Object.keys(val).length === 0;
@@ -14,9 +23,15 @@ function deepMerge<T>(base: T, override: DeepPartial<T>): T {
   const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
   for (const [k, v] of Object.entries(override as Record<string, unknown>)) {
     const baseVal = (base as Record<string, unknown>)[k];
-    out[k] = typeof baseVal === "object" && baseVal !== null && !Array.isArray(baseVal) && typeof v === "object" && v !== null && !isEmptyObject(v)
-      ? deepMerge(baseVal, v as DeepPartial<typeof baseVal>)
-      : v;
+    out[k] =
+      typeof baseVal === "object" &&
+      baseVal !== null &&
+      !Array.isArray(baseVal) &&
+      typeof v === "object" &&
+      v !== null &&
+      !isEmptyObject(v)
+        ? deepMerge(baseVal, v as DeepPartial<typeof baseVal>)
+        : v;
   }
   return out as T;
 }

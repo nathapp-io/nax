@@ -11,52 +11,41 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
+import {
+  type ParallelBatchCtx,
+  type RunParallelBatchResult,
+  _parallelBatchDeps,
+  runParallelBatch,
+} from "@/execution/parallel-batch";
+import type { ParallelBatchResult } from "@/execution/parallel-worker";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineContext, PipelineRunResult } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD, UserStory } from "@/prd/types";
-import {
-  _parallelBatchDeps,
-  runParallelBatch,
-  type ParallelBatchCtx,
-  type RunParallelBatchResult,
-} from "@/execution/parallel-batch";
-import type { ParallelBatchResult } from "@/execution/parallel-worker";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makePRD, makeStory as makeStoryBase, makeTempDir, makeTestContext } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeStory(
-  id: string,
-  opts: Partial<UserStory> = {},
-): UserStory {
-  return {
+function makeStory(id: string, opts: Partial<UserStory> = {}): UserStory {
+  return makeStoryBase({
     id,
     title: `Story ${id}`,
     description: "Test story",
     acceptanceCriteria: [`AC-1: ${id}`],
-    tags: [],
-    dependencies: [],
-    status: "pending",
-    passes: false,
-    escalations: [],
-    attempts: 0,
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
     ...opts,
-  } as unknown as UserStory;
+  });
 }
 
 function makePrd(stories: UserStory[]): PRD {
-  return {
+  return makePRD({
     project: "test",
     feature: "test-feature",
     branchName: "feat/test",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
     userStories: stories,
-  } as unknown as PRD;
+  });
 }
 
 function makePipelineRunResult(success: boolean, reason?: string): PipelineRunResult {
@@ -87,14 +76,14 @@ function makeCtx(tmpDir: string): ParallelBatchCtx {
     hooks: {} as LoadedHooksConfig,
     pluginRegistry: {} as PluginRegistry,
     maxConcurrency: 2,
-    pipelineContext: {
+    pipelineContext: makeTestContext({
       config: DEFAULT_CONFIG as NaxConfig,
       rootConfig: DEFAULT_CONFIG as NaxConfig,
       prd: {} as PRD,
       hooks: {} as LoadedHooksConfig,
       plugins: {} as PluginRegistry,
       storyStartTime: new Date().toISOString(),
-    } as unknown as Omit<PipelineContext, "story" | "stories" | "workdir" | "routing">,
+    }),
   };
 }
 
@@ -159,7 +148,10 @@ describe("AC-1: runParallelBatch — completed stories", () => {
     const workerResult = makeWorkerBatchResult({
       pipelinePassed: [story1, story2],
       merged: [story1],
-      storyCosts: new Map([["US-001", 0.3], ["US-002", 0.4]]),
+      storyCosts: new Map([
+        ["US-001", 0.3],
+        ["US-002", 0.4],
+      ]),
       totalCost: 0.7,
     });
 
@@ -395,7 +387,10 @@ describe("AC-4: runParallelBatch — per-story costs from storyCosts Map", () =>
     const prd = makePrd([story1, story2]);
     const ctx = makeCtx(tmpDir);
 
-    const workerStoryCosts = new Map([["US-001", 0.5], ["US-002", 0.3]]);
+    const workerStoryCosts = new Map([
+      ["US-001", 0.5],
+      ["US-002", 0.3],
+    ]);
     const workerResult = makeWorkerBatchResult({
       pipelinePassed: [story1, story2],
       merged: [story1, story2],
@@ -428,7 +423,10 @@ describe("AC-4: runParallelBatch — per-story costs from storyCosts Map", () =>
     const ctx = makeCtx(tmpDir);
 
     // If even-split: 0.8 / 2 = 0.4 each. But actual costs differ.
-    const workerStoryCosts = new Map([["US-001", 0.6], ["US-002", 0.2]]);
+    const workerStoryCosts = new Map([
+      ["US-001", 0.6],
+      ["US-002", 0.2],
+    ]);
     const workerResult = makeWorkerBatchResult({
       pipelinePassed: [story1, story2],
       merged: [story1, story2],
@@ -474,7 +472,11 @@ describe("AC-5: runParallelBatch — totalCost equals sum of storyCosts", () => 
     const workerResult = makeWorkerBatchResult({
       pipelinePassed: [story1, story2, story3],
       merged: [story1, story2, story3],
-      storyCosts: new Map([["US-001", 0.5], ["US-002", 0.3], ["US-003", 0.2]]),
+      storyCosts: new Map([
+        ["US-001", 0.5],
+        ["US-002", 0.3],
+        ["US-003", 0.2],
+      ]),
       totalCost: 1.0,
     });
 
@@ -697,9 +699,7 @@ describe("AC-8: merge-conflict-rectify exports identical to parallel-executor-re
 
 describe("AC-9: import sites updated to merge-conflict-rectify", () => {
   test("parallel-batch.ts imports from merge-conflict-rectify and not the old module name", async () => {
-    const source = await Bun.file(
-      join(import.meta.dir, "../../../src/execution/parallel-batch.ts"),
-    ).text();
+    const source = await Bun.file(join(import.meta.dir, "../../../src/execution/parallel-batch.ts")).text();
     expect(source).toContain('import("./merge-conflict-rectify")');
   });
 
@@ -755,13 +755,11 @@ describe("per-story config loading — resilience", () => {
     const ctx = makeCtx(tmpDir);
 
     let configLoadCallCount = 0;
-    _parallelBatchDeps.loadConfigForWorkdir = mock(
-      async (_root: string, workdir: string, _prof: unknown) => {
-        configLoadCallCount++;
-        if (workdir === "packages/bad") throw new Error("Malformed per-package config");
-        return DEFAULT_CONFIG as NaxConfig;
-      },
-    );
+    _parallelBatchDeps.loadConfigForWorkdir = mock(async (_root: string, workdir: string, _prof: unknown) => {
+      configLoadCallCount++;
+      if (workdir === "packages/bad") throw new Error("Malformed per-package config");
+      return DEFAULT_CONFIG as NaxConfig;
+    });
     _parallelBatchDeps.createWorktreeManager = mock(async () => ({
       create: mock(async () => {}),
       remove: mock(async () => {}),

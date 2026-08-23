@@ -1,17 +1,14 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import {
-  acceptanceSetupStage,
-  _acceptanceSetupDeps,
-} from "@/pipeline/stages/acceptance-setup";
-import type { PipelineContext } from "@/pipeline/types";
 import { DEFAULT_CONFIG } from "@/config";
+import { _acceptanceSetupDeps, acceptanceSetupStage } from "@/pipeline/stages/acceptance-setup";
+import type { PipelineContext } from "@/pipeline/types";
 import { waitForCondition } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeStory(id: string, acceptanceCriteria: string[]) {
+function makeStory(id: string, acceptanceCriteria: string[], status: "pending" | "decomposed" = "pending") {
   return {
     id,
     title: `Story ${id}`,
@@ -19,7 +16,7 @@ function makeStory(id: string, acceptanceCriteria: string[]) {
     acceptanceCriteria,
     tags: [],
     dependencies: [],
-    status: "pending" as const,
+    status,
     passes: false,
     escalations: [],
     attempts: 0,
@@ -284,10 +281,7 @@ describe("acceptance-setup: calls refinement and generation", () => {
 
 describe("acceptance-setup: decomposed story exclusion", () => {
   function makeDecomposedCtx() {
-    const parentStory = {
-      ...makeStory("US-PARENT", ["parent AC-1", "child AC-1", "child AC-2"]),
-      status: "decomposed" as const,
-    } as unknown as ReturnType<typeof makeStory>;
+    const parentStory = makeStory("US-PARENT", ["parent AC-1", "child AC-1", "child AC-2"], "decomposed");
     const childA = makeStory("US-CHILD-A", ["child AC-1"]);
     const childB = makeStory("US-CHILD-B", ["child AC-2"]);
     return makeCtx({ prd: makePrd([parentStory, childA, childB]), stories: [parentStory, childA, childB] });

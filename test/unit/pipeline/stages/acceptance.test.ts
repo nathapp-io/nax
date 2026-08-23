@@ -6,10 +6,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { acceptanceStage, parseTestFailures } from "@/pipeline/stages/acceptance";
-import type { PipelineContext } from "@/pipeline/types";
 import { DEFAULT_CONFIG } from "@/config";
 import { addSink, initLogger, resetLogger } from "@/logger";
+import { acceptanceStage, parseTestFailures } from "@/pipeline/stages/acceptance";
+import type { PipelineContext } from "@/pipeline/types";
 import { _executorDeps } from "@/verification";
 import { makeStory } from "@test/helpers";
 
@@ -18,7 +18,9 @@ import { makeStory } from "@test/helpers";
 // ---------------------------------------------------------------------------
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
-  const stories = [makeStory({ id: "US-001", status: "passed", passes: true, attempts: 0, acceptanceCriteria: ["AC-1: criterion"] })];
+  const stories = [
+    makeStory({ id: "US-001", status: "passed", passes: true, attempts: 0, acceptanceCriteria: ["AC-1: criterion"] }),
+  ];
   return {
     config: {
       ...DEFAULT_CONFIG,
@@ -78,7 +80,7 @@ describe("US-002: per-package acceptance runner", () => {
         }),
       };
       return mockProc;
-    }) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
+    }) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
 
     const ctx = makeCtx({
       acceptanceTestPaths: [
@@ -134,7 +136,7 @@ describe("US-002: per-package acceptance runner", () => {
           controller.close();
         },
       }),
-    })) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
+    })) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
 
     const origFile = Bun.file;
     (Bun as any).file = (_p: string) => ({
@@ -166,10 +168,19 @@ describe("US-002: per-package acceptance runner", () => {
       spawnCalls.push({ cmd, cwd: opts.cwd });
       return {
         exited: Promise.resolve(0),
-        stdout: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("1 pass\n")); c.close(); } }),
-        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(new TextEncoder().encode("1 pass\n"));
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
       };
-    }) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
+    }) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
 
     const origFile = Bun.file;
     (Bun as any).file = (_p: string) => ({
@@ -234,7 +245,7 @@ describe("US-002: per-package acceptance runner", () => {
           },
         }),
       };
-    }) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
+    }) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
 
     const origFile = Bun.file;
     (Bun as any).file = (_p: string) => ({
@@ -297,7 +308,7 @@ describe("US-002: per-package acceptance runner", () => {
           },
         }),
       };
-    }) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
+    }) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
 
     const origFile = Bun.file;
     (Bun as any).file = (_p: string) => ({
@@ -361,7 +372,7 @@ describe("US-002: per-package acceptance runner", () => {
           },
         }),
       };
-    }) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
+    }) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
 
     const origFile = Bun.file;
     (Bun as any).file = (_p: string) => ({
@@ -415,7 +426,15 @@ describe("acceptanceStage.enabled()", () => {
   });
 
   test("disabled when not all stories complete", () => {
-    const stories = [makeStory({ id: "US-001", status: "pending", passes: false, attempts: 0, acceptanceCriteria: ["AC-1: criterion"] })];
+    const stories = [
+      makeStory({
+        id: "US-001",
+        status: "pending",
+        passes: false,
+        attempts: 0,
+        acceptanceCriteria: ["AC-1: criterion"],
+      }),
+    ];
     const ctx = makeCtx({
       prd: {
         project: "test",
@@ -491,11 +510,9 @@ describe("parseTestFailures()", () => {
   });
 
   test("returns empty array when no failures", () => {
-    const output = [
-      "  ✓ AC-1: passes",
-      "--- PASS: TestAC1Something (0.00s)",
-      "tests::test_AC_1_thing PASSED",
-    ].join("\n");
+    const output = ["  ✓ AC-1: passes", "--- PASS: TestAC1Something (0.00s)", "tests::test_AC_1_thing PASSED"].join(
+      "\n",
+    );
 
     expect(parseTestFailures(output)).toEqual([]);
   });
@@ -531,10 +548,7 @@ describe("parseTestFailures()", () => {
   });
 
   test("vitest: does NOT match a passing test whose title contains the word FAIL", () => {
-    const output = [
-      " Test Files  1 passed (1)",
-      "   ✓ AC-7: handles FAIL responses gracefully 5ms",
-    ].join("\n");
+    const output = [" Test Files  1 passed (1)", "   ✓ AC-7: handles FAIL responses gracefully 5ms"].join("\n");
 
     expect(parseTestFailures(output)).toEqual([]);
   });
@@ -640,7 +654,7 @@ describe("acceptance verdict logger emit", () => {
           controller.close();
         },
       }),
-    })) as unknown as typeof _executorDeps.spawn;  // test-ratchet-allow: as-unknown-as
+    })) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
     (Bun as any).file = (_p: string) => ({
       exists: () => Promise.resolve(true),
       text: () => Promise.resolve(""),

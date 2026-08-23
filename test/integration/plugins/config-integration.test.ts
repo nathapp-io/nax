@@ -13,7 +13,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { loadPlugins } from "@/plugins/loader";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { makeTempDir } from "@test/helpers";
 
 async function createTempDir(): Promise<string> {
   const tmpDir = makeTempDir("nax-integration-test-");
@@ -153,7 +153,10 @@ export default {
     const globalPluginsDir = path.join(projectRoot, ".nax", "plugins");
     const projectPluginsDir = path.join(projectRoot, ".nax", "plugins");
 
-    const registry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, projectRoot, ["nax-curator", "nax-auto-pr"]);
+    const registry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, projectRoot, [
+      "nax-curator",
+      "nax-auto-pr",
+    ]);
 
     // Verify both plugins loaded
     expect(registry.plugins).toHaveLength(2);

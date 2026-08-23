@@ -7,7 +7,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
-import { createRuntime, type NaxRuntime } from "@/runtime";
+import { type NaxRuntime, createRuntime } from "@/runtime";
 import { makeTestRuntime } from "@test/helpers";
 
 const runtimes: NaxRuntime[] = [];

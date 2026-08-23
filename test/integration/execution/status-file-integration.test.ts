@@ -16,7 +16,6 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { _registryTestAdapters } from "@/agents/registry";
-import { makeTempDir } from "@test/helpers";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -33,6 +32,7 @@ import { run } from "@/execution/runner";
 import type { RunOptions } from "@/execution/runner";
 import type { NaxStatusFile } from "@/execution/status-file";
 import type { PRD } from "@/prd/types";
+import { makeTempDir } from "@test/helpers";
 
 // ============================================================================
 // Mock agent (satisfies agent installation check in runner)

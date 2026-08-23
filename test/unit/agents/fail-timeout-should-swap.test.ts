@@ -74,7 +74,7 @@ describe("AgentManager.shouldSwap with fail-timeout (US-001 AC10)", () => {
 // calls — a single slow story must not poison the agent pool.
 describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
   test("does NOT mark the dispatched agent unavailable for fail-timeout outcome", async () => {
-    let dispatchedAgents: string[] = [];
+    const dispatchedAgents: string[] = [];
 
     const manager = new AgentManager(
       {
@@ -120,7 +120,7 @@ describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
   });
 
   test("does NOT mark the dispatched agent unavailable even when swap is enabled (onQualityFailure default)", async () => {
-    let dispatchedAgents: string[] = [];
+    const dispatchedAgents: string[] = [];
 
     const manager = new AgentManager(
       {
@@ -175,8 +175,8 @@ describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
     // AC11 hardening: even after the manager has processed a fail-timeout
     // result, the next runWithFallback call should still dispatch to the
     // primary agent (not be silently rerouted because of pool poisoning).
-    let firstStoryAgents: string[] = [];
-    let secondStoryAgents: string[] = [];
+    const firstStoryAgents: string[] = [];
+    const secondStoryAgents: string[] = [];
     let storyCount = 0;
 
     const manager = new AgentManager(
@@ -247,7 +247,7 @@ describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
     // agent for the remainder of the run. This contradicts AC11 ("the
     // dispatched agent is not recorded as unavailable for subsequent calls").
     // The fail-timeout guarantee must hold regardless of onQualityFailure.
-    let dispatchedAgents: string[] = [];
+    const dispatchedAgents: string[] = [];
 
     const manager = new AgentManager(
       {
@@ -286,12 +286,10 @@ describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
     // hasBundle=true simulates a real runHop invocation through callOp
     // (which always passes a context bundle); without this guard the swap
     // branch is bypassed regardless of shouldSwap.
-    await manager.runWithFallback(
-      {
-        runOptions: RUN_OPTIONS,
-        bundle: { pushMarkdown: "ctx", pullTools: [], digest: "", manifest: {} as never, chunks: [] },
-      },
-    );
+    await manager.runWithFallback({
+      runOptions: RUN_OPTIONS,
+      bundle: { pushMarkdown: "ctx", pullTools: [], digest: "", manifest: {} as never, chunks: [] },
+    });
 
     // AC11: dispatched agent must NOT be recorded as unavailable, even when
     // the project has explicitly opted into quality-failure swaps.

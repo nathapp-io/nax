@@ -4,8 +4,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { NaxError } from "@/errors";
 import { resolvePostDebateVerifier } from "@/debate";
+import { NaxError } from "@/errors";
 
 describe("resolvePostDebateVerifier", () => {
   it("throws NaxError with code POST_DEBATE_VERIFIER_UNKNOWN for unknown kind", () => {

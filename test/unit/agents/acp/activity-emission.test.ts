@@ -12,7 +12,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { createParseState, parseAcpxJsonLine, SpawnAcpClient, type AcpLineActivity, _spawnClientDeps } from "@/agents";
+import { type AcpLineActivity, SpawnAcpClient, _spawnClientDeps, createParseState, parseAcpxJsonLine } from "@/agents";
 import type { AgentStreamEvent } from "@/runtime";
 import { withDepsRestore } from "@test/helpers";
 
@@ -408,7 +408,7 @@ describe("AC9 — spawn failure emits call_ended without prior call_started", ()
       "/tmp",
       30,
       undefined, // onPidSpawned
-      0,         // promptRetries
+      0, // promptRetries
       undefined, // onPidExited
       { onStreamActivity: (event) => events.push(event) },
     );
@@ -448,21 +448,17 @@ describe("AC9 — spawn failure emits call_ended without prior call_started", ()
       throw new Error("spawn ENOENT: acpx binary not found");
     };
 
-    const client = new SpawnAcpClient(
-      "acpx --model claude-sonnet-4-5 claude",
-      "/tmp",
-      30,
-      undefined,
-      0,
-      undefined,
-      {
-        onStreamActivity: () => {},
-        onWatchdogRegister: (callId, cancelFn) => registry.set(callId, cancelFn),
-      },
-    );
+    const client = new SpawnAcpClient("acpx --model claude-sonnet-4-5 claude", "/tmp", 30, undefined, 0, undefined, {
+      onStreamActivity: () => {},
+      onWatchdogRegister: (callId, cancelFn) => registry.set(callId, cancelFn),
+    });
 
     const session = await client.loadSession("test-session", "claude", "approve-reads");
-    try { await session!.prompt("hello"); } catch { /* expected */ }
+    try {
+      await session!.prompt("hello");
+    } catch {
+      /* expected */
+    }
 
     // Registry must be empty — no entry should have been added for the failed spawn
     expect(registry.size).toBe(0);
@@ -483,32 +479,23 @@ describe("AC10 — correlation metadata flows from AcpClientOptions to session s
     _spawnClientDeps.spawn = (_cmd, _opts) => {
       callCount++;
       if (callCount === 1) return makeSpawnResult(0); // loadSession ensure
-      const ndjson =
-        JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          result: {
-            stopReason: "end_turn",
-            usage: { inputTokens: 1, outputTokens: 1, cachedReadTokens: 0, cachedWriteTokens: 0 },
-          },
-        }) + "\n";
+      const ndjson = `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        result: {
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1, cachedReadTokens: 0, cachedWriteTokens: 0 },
+        },
+      })}\n`;
       return makeSpawnResult(0, ndjson);
     };
 
-    const client = new SpawnAcpClient(
-      "acpx --model claude-sonnet-4-5 claude",
-      "/tmp",
-      30,
-      undefined,
-      0,
-      undefined,
-      {
-        onStreamActivity: (event) => events.push(event),
-        runId: "run-abc",
-        storyId: "story-123",
-        stage: "run",
-      },
-    );
+    const client = new SpawnAcpClient("acpx --model claude-sonnet-4-5 claude", "/tmp", 30, undefined, 0, undefined, {
+      onStreamActivity: (event) => events.push(event),
+      runId: "run-abc",
+      storyId: "story-123",
+      stage: "run",
+    });
 
     const session = await client.loadSession("test-session", "claude", "approve-reads");
     await session!.prompt("hello");
@@ -533,40 +520,30 @@ describe("AC10 — correlation metadata flows from AcpClientOptions to session s
     _spawnClientDeps.spawn = (_cmd, _opts) => {
       callCount++;
       if (callCount === 1) return makeSpawnResult(0);
-      const ndjson =
-        JSON.stringify({
-          jsonrpc: "2.0",
-          method: "session/update",
-          params: {
-            sessionId: "x",
-            update: {
-              sessionUpdate: "tool_call",
-              toolName: "bash",
-            },
+      const ndjson = `${JSON.stringify({
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          sessionId: "x",
+          update: {
+            sessionUpdate: "tool_call",
+            toolName: "bash",
           },
-        }) +
-        "\n" +
-        JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          result: {
-            stopReason: "end_turn",
-            usage: { inputTokens: 1, outputTokens: 1, cachedReadTokens: 0, cachedWriteTokens: 0 },
-          },
-        }) +
-        "\n";
+        },
+      })}\n${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        result: {
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1, cachedReadTokens: 0, cachedWriteTokens: 0 },
+        },
+      })}\n`;
       return makeSpawnResult(0, ndjson);
     };
 
-    const client = new SpawnAcpClient(
-      "acpx --model claude-sonnet-4-5 claude",
-      "/tmp",
-      30,
-      undefined,
-      0,
-      undefined,
-      { onStreamActivity: (event) => events.push(event) },
-    );
+    const client = new SpawnAcpClient("acpx --model claude-sonnet-4-5 claude", "/tmp", 30, undefined, 0, undefined, {
+      onStreamActivity: (event) => events.push(event),
+    });
 
     const session = await client.loadSession("test-session", "claude", "approve-reads");
     await session!.prompt("hello");

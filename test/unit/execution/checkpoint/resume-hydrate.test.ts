@@ -33,15 +33,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  buildResumePlan,
+  type ResumePlan,
+  type StoryCheckpoint,
+  type TreeState,
   buildCheckpointLogData,
+  buildResumePlan,
   captureTreeState,
   extractPhaseFindings,
   hydrateFromResumePlan,
   phasePassed,
-  type ResumePlan,
-  type StoryCheckpoint,
-  type TreeState,
 } from "@/execution";
 
 // _gitDeps is the project's injectable Bun.spawn seam. Tests must NOT depend
@@ -80,13 +80,17 @@ type PhaseKind =
 function mockSpawnOutput(stdout: string, exitCode = 0): ReturnType<typeof mock> {
   const bytes = new TextEncoder().encode(stdout);
   return mock((_args: string[], _opts: unknown) => ({
-    stdout: new ReadableStream({ start(c) {
-      c.enqueue(bytes);
-      c.close();
-    } }),
-    stderr: new ReadableStream({ start(c) {
-      c.close();
-    } }),
+    stdout: new ReadableStream({
+      start(c) {
+        c.enqueue(bytes);
+        c.close();
+      },
+    }),
+    stderr: new ReadableStream({
+      start(c) {
+        c.close();
+      },
+    }),
     exited: Promise.resolve(exitCode),
     kill: mock(() => {}),
   }));
@@ -122,19 +126,20 @@ describe("captureTreeState (AC8)", () => {
     const capturedArgs: string[][] = [];
     _gitDeps.spawn = mock((args: string[]) => {
       capturedArgs.push(args as string[]);
-      const stdout =
-        capturedArgs.length === 1
-          ? "abc123\n"
-          : " M src/foo.ts\n M src/bar.ts\n?? untracked.txt\n";
+      const stdout = capturedArgs.length === 1 ? "abc123\n" : " M src/foo.ts\n M src/bar.ts\n?? untracked.txt\n";
       const bytes = new TextEncoder().encode(stdout);
       return {
-        stdout: new ReadableStream({ start(c) {
-          c.enqueue(bytes);
-          c.close();
-        } }),
-        stderr: new ReadableStream({ start(c) {
-          c.close();
-        } }),
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
         exited: Promise.resolve(0),
         kill: mock(() => {}),
       };
@@ -167,13 +172,17 @@ describe("captureTreeState (AC8)", () => {
       const bytes = new TextEncoder().encode(callIndex === 0 ? "cleanhead\n" : dirtyOutput);
       callIndex++;
       return {
-        stdout: new ReadableStream({ start(c) {
-          c.enqueue(bytes);
-          c.close();
-        } }),
-        stderr: new ReadableStream({ start(c) {
-          c.close();
-        } }),
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
         exited: Promise.resolve(0),
         kill: mock(() => {}),
       };
@@ -210,13 +219,17 @@ describe("captureTreeState (AC8)", () => {
       }
       const bytes = new TextEncoder().encode(stdout);
       return {
-        stdout: new ReadableStream({ start(c) {
-          c.enqueue(bytes);
-          c.close();
-        } }),
-        stderr: new ReadableStream({ start(c) {
-          c.close();
-        } }),
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
         exited: Promise.resolve(0),
         kill: mock(() => {}),
       };
@@ -258,13 +271,17 @@ describe("captureTreeState (AC8)", () => {
       }
       const bytes = new TextEncoder().encode(stdout);
       return {
-        stdout: new ReadableStream({ start(c) {
-          c.enqueue(bytes);
-          c.close();
-        } }),
-        stderr: new ReadableStream({ start(c) {
-          c.close();
-        } }),
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
         exited: Promise.resolve(0),
         kill: mock(() => {}),
       };
@@ -301,14 +318,18 @@ describe("captureTreeState (AC8)", () => {
       // proc.kill is a spy; the helper (after fix) MUST call kill on the
       // hung proc to enforce its timeout budget.
       return {
-        stdout: new ReadableStream({ start(c) {
-          // Never enqueue — proc.stdout stays open.
-          // Close is intentionally NOT called, mimicking a subprocess whose
-          // stdout pipe is held open by the parent (the hung git binary).
-        } }),
-        stderr: new ReadableStream({ start(c) {
-          c.close();
-        } }),
+        stdout: new ReadableStream({
+          start(c) {
+            // Never enqueue — proc.stdout stays open.
+            // Close is intentionally NOT called, mimicking a subprocess whose
+            // stdout pipe is held open by the parent (the hung git binary).
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
         exited: new Promise<number>(() => {}),
         kill: mock(() => {
           killCalls++;
@@ -337,9 +358,7 @@ describe("captureTreeState (AC8)", () => {
     // its own SIGKILL deadline on the hung proc) or it stalled (BAD — the
     // helper has no timeout guard).
     if (result === "TIMEOUT") {
-      throw new Error(
-        `captureTreeState stalled on hung git subprocess (no timeout guard) — elapsed=${elapsed}ms`,
-      );
+      throw new Error(`captureTreeState stalled on hung git subprocess (no timeout guard) — elapsed=${elapsed}ms`);
     }
     // Belt-and-braces: directly bound the elapsed time, even if the helper
     // resolves correctly today but starts hanging tomorrow.
@@ -401,7 +420,7 @@ describe("hydrateFromResumePlan (AC4 + AC7)", () => {
     const phaseOutputs: Record<string, unknown> = {};
     hydrateFromResumePlan(plan, phaseOutputs);
 
-    const output = phaseOutputs["implementer"];
+    const output = phaseOutputs.implementer;
     expect(phasePassed("implementer", output, "US-001")).toBe(true);
   });
 
@@ -414,7 +433,7 @@ describe("hydrateFromResumePlan (AC4 + AC7)", () => {
     const phaseOutputs: Record<string, unknown> = {};
     hydrateFromResumePlan(plan, phaseOutputs);
 
-    const output = phaseOutputs["implementer"];
+    const output = phaseOutputs.implementer;
     expect(extractPhaseFindings(output)).toEqual([]);
   });
 

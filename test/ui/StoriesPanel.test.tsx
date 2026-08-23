@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import type { StoryDisplayState } from "@/tui";
+import { StoriesPanel } from "@/tui/components/StoriesPanel";
 import { render } from "ink-testing-library";
 import React from "react";
-import { StoriesPanel } from "@/tui/components/StoriesPanel";
-import type { StoryDisplayState } from "@/tui";
 
 function makeStory(overrides: Partial<StoryDisplayState> = {}): StoryDisplayState {
   return {
@@ -35,7 +35,9 @@ describe("StoriesPanel", () => {
   describe("SEC-09: ANSI/control-char stripping", () => {
     test("strips a CSI sequence embedded in the story id (non-compact mode)", () => {
       const stories = [
-        makeStory({ story: { id: "US-\x1b[2J001", title: "t", passes: false, workdir: ".", acceptanceCriteria: [] } as never }),
+        makeStory({
+          story: { id: "US-\x1b[2J001", title: "t", passes: false, workdir: ".", acceptanceCriteria: [] } as never,
+        }),
       ];
       const { lastFrame } = render(React.createElement(StoriesPanel, { stories }));
       const frame = lastFrame() ?? "";
@@ -45,7 +47,9 @@ describe("StoriesPanel", () => {
 
     test("strips a CSI sequence embedded in the story id (compact mode)", () => {
       const stories = [
-        makeStory({ story: { id: "US-\x1b[2J001", title: "t", passes: false, workdir: ".", acceptanceCriteria: [] } as never }),
+        makeStory({
+          story: { id: "US-\x1b[2J001", title: "t", passes: false, workdir: ".", acceptanceCriteria: [] } as never,
+        }),
       ];
       const { lastFrame } = render(React.createElement(StoriesPanel, { stories, compact: true }));
       const frame = lastFrame() ?? "";

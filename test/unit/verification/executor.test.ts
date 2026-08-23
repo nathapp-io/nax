@@ -10,7 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _executorDeps, appendForceExitFlag, executeWithTimeout, normalizeEnvironment } from "@/verification";
-import { withTimerSpy } from "@test/helpers";
+import { makeSpawn, makeSpawnResult, withTimerSpy } from "@test/helpers";
 
 describe("appendForceExitFlag (VER-1)", () => {
   test("inserts before a pipe, not inside the redirect tail", () => {
@@ -121,23 +121,13 @@ describe("executeWithTimeout — BUG-2 drain-deadlock regression", () => {
     // inherited the write-end. Pre-fix, line 167's `Promise.all([stdoutPromise,
     // stderrPromise])` waits forever. Post-fix, raceWithDeadline bounds both
     // drains with drainTimeoutMs, mirroring the timeout path (lines 147-150).
-    _executorDeps.spawn = mock((_cmd: unknown, _opts: unknown) => {
-      return {
-        stdout: new ReadableStream({
-          start() {
-            /* never closes */
-          },
-        }),
-        stderr: new ReadableStream({
-          start() {
-            /* never closes */
-          },
-        }),
-        exited: Promise.resolve(0),
-        pid: 99999,
-        kill: mock(() => {}),
-      };
-    }) as unknown as typeof _executorDeps.spawn;
+    _executorDeps.spawn = makeSpawn(() => {
+      const proc = makeSpawnResult({ pid: 99999 });
+      // Never enqueue, never close — a grandchild inherited the write-end.
+      Object.defineProperty(proc, "stdout", { value: new ReadableStream({ start() {} }) });
+      Object.defineProperty(proc, "stderr", { value: new ReadableStream({ start() {} }) });
+      return proc;
+    }).spawn;
 
     const start = Date.now();
     const result = await executeWithTimeout("ignored — spawn is mocked", 10, undefined, {
@@ -160,25 +150,7 @@ describe("executeWithTimeout — BUG-2 drain-deadlock regression", () => {
     // schedule), the drain captures the buffered output. This guards against a
     // regression where raceWithDeadline accidentally throws away data the
     // race actually won.
-    _executorDeps.spawn = mock((_cmd: unknown, _opts: unknown) => {
-      const bytes = new TextEncoder().encode("hello-from-child\n");
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        pid: 99999,
-        kill: mock(() => {}),
-      };
-    }) as unknown as typeof _executorDeps.spawn;
+    _executorDeps.spawn = makeSpawn(() => "hello-from-child\n").spawn;
 
     const result = await executeWithTimeout("ignored — spawn is mocked", 10, undefined, {
       drainTimeoutMs: 1_000,

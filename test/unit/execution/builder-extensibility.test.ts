@@ -9,8 +9,8 @@
  * US-005) or src/pipeline/stages/execution.ts (wrapper must stay phase-blind).
  */
 
-import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { Glob } from "bun";
 
 const REPO_ROOT = join(import.meta.dir, "../../..");
@@ -36,7 +36,10 @@ describe("AC#10 — builder extensibility constraint", () => {
       "addAdversarialReview",
       "addRectification",
     ]) {
-      expect(src.includes(sym), `execution.ts must not call ${sym} — phase dispatch belongs in buildPlanForStrategy`).toBe(false);
+      expect(
+        src.includes(sym),
+        `execution.ts must not call ${sym} — phase dispatch belongs in buildPlanForStrategy`,
+      ).toBe(false);
     }
   });
 

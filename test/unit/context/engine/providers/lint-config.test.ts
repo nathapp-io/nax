@@ -26,9 +26,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { ProjectProfile } from "@/config";
 import { LintConfigProvider, _lintConfigProviderDeps } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
-import type { ProjectProfile } from "@/config";
 import { cleanupTempDir, makeTempDir, withTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -61,7 +61,7 @@ beforeEach(() => {
   origReadFile = _lintConfigProviderDeps.readFile;
   // Default: detector returns the package's detected lint tool; no files exist.
   _lintConfigProviderDeps.detectProjectProfile = async (_workdir, existing) =>
-    ({ lintTool: "biome", ...existing } as ProjectProfile);
+    ({ lintTool: "biome", ...existing }) as ProjectProfile;
   _lintConfigProviderDeps.fileExists = async () => false;
   _lintConfigProviderDeps.readFile = async () => "";
 });
@@ -216,11 +216,7 @@ describe("LintConfigProvider — AC7 degrade to detected tool name when no disti
 
   test("AC7: returns a chunk naming ruff when ruff config (pyproject.toml) is detected but no distiller exists", async () => {
     await withTempDir(async (dir) => {
-      await writeFile(
-        join(dir, "pyproject.toml"),
-        "[tool.ruff]\nline-length = 100\n",
-        "utf8",
-      );
+      await writeFile(join(dir, "pyproject.toml"), "[tool.ruff]\nline-length = 100\n", "utf8");
       _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "ruff" });
       await wireRealDisk();
 
@@ -234,11 +230,7 @@ describe("LintConfigProvider — AC7 degrade to detected tool name when no disti
 
   test("AC7: returns a chunk naming golangci-lint when .golangci.yml is detected but no distiller exists", async () => {
     await withTempDir(async (dir) => {
-      await writeFile(
-        join(dir, ".golangci.yml"),
-        "run:\n  timeout: 5m\n",
-        "utf8",
-      );
+      await writeFile(join(dir, ".golangci.yml"), "run:\n  timeout: 5m\n", "utf8");
       _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "golangci-lint" });
       await wireRealDisk();
 
@@ -264,11 +256,7 @@ describe("LintConfigProvider — AC7 degrade to detected tool name when no disti
 
   test("AC7: returns a chunk naming clippy when Cargo.toml is present (clippy's lint config)", async () => {
     await withTempDir(async (dir) => {
-      await writeFile(
-        join(dir, "Cargo.toml"),
-        "[package]\nname = \"x\"\n[lints.clippy]\nwarn = []\n",
-        "utf8",
-      );
+      await writeFile(join(dir, "Cargo.toml"), '[package]\nname = "x"\n[lints.clippy]\nwarn = []\n', "utf8");
       _lintConfigProviderDeps.detectProjectProfile = async () => ({ lintTool: "clippy" });
       await wireRealDisk();
 

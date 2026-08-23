@@ -22,19 +22,13 @@ describe("DEFAULT_CONFIG review.checks", () => {
     expect(DEFAULT_CONFIG.review.checks).not.toContain("test");
   });
 
-  test.each([
-    ["typecheck"],
-    ["lint"],
-  ] as const)("default review.checks includes '%s'", (check) => {
+  test.each([["typecheck"], ["lint"]] as const)("default review.checks includes '%s'", (check) => {
     expect(DEFAULT_CONFIG.review.checks).toContain(check);
   });
 });
 
 describe("schema backwards compatibility: 'test' remains a valid review check", () => {
-  test.each([
-    [["typecheck", "lint", "test"]],
-    [["test"]],
-  ])("schema accepts review.checks %j", (checks) => {
+  test.each([[["typecheck", "lint", "test"]], [["test"]]])("schema accepts review.checks %j", (checks) => {
     const config = { ...DEFAULT_CONFIG, review: { ...DEFAULT_CONFIG.review, checks } };
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
@@ -54,10 +48,7 @@ describe("schema backwards compatibility: 'test' remains a valid review check", 
 });
 
 describe("schema: 'build' is a valid review check (BUILD-001)", () => {
-  test.each([
-    [["typecheck", "lint", "build"]],
-    [["build"]],
-  ])("schema accepts review.checks %j", (checks) => {
+  test.each([[["typecheck", "lint", "build"]], [["build"]]])("schema accepts review.checks %j", (checks) => {
     const config = { ...DEFAULT_CONFIG, review: { ...DEFAULT_CONFIG.review, checks } };
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
@@ -113,4 +104,3 @@ describe("DEFAULT_CONFIG.precheck.storySizeGate (US-001)", () => {
     expect(DEFAULT_CONFIG.precheck.storySizeGate[field]).toBe(expected);
   });
 });
-

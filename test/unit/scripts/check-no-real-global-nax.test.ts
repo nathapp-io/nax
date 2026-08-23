@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  findForbiddenGlobalNaxUsages,
-  formatGlobalNaxViolationReport,
-} from "@scripts/check-no-real-global-nax";
+import { findForbiddenGlobalNaxUsages, formatGlobalNaxViolationReport } from "@scripts/check-no-real-global-nax";
 import { makeTempDir } from "@test/helpers";
 
 describe("findForbiddenGlobalNaxUsages", () => {

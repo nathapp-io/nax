@@ -1,18 +1,16 @@
 import { describe, expect, mock, test } from "bun:test";
-import { _singlePlanDeps, SinglePlanStrategy } from "@/plan";
-import { makeNaxConfig, makeMockAgentManager } from "@test/helpers";
+import { planConfigSelector } from "@/config";
+import { SinglePlanStrategy, _singlePlanDeps } from "@/plan";
 import type { PlanModeContext } from "@/plan/strategies";
 import type { PRD } from "@/prd/types";
-import type { NaxRuntime } from "@/runtime";
+import { makeLogger, makeMockRuntime, makeNaxConfig, makePRD } from "@test/helpers";
 
 // Minimal PRD returned by the stubbed callOp
 function makePrd(agentProfileId?: string): PRD {
-  return {
+  return makePRD({
     project: "p",
     feature: "my-feature",
     branchName: "feat/my-feature",
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
     userStories: [
       {
         id: "US-001",
@@ -33,7 +31,7 @@ function makePrd(agentProfileId?: string): PRD {
         },
       },
     ],
-  } as unknown as PRD;
+  });
 }
 
 // Minimal PlanModeContext builder
@@ -43,26 +41,24 @@ function makeCtx(overrides: {
   writeFile?: (path: string, content: string) => Promise<void>;
   existsSync?: (path: string) => boolean;
 }): PlanModeContext {
-  const config = makeNaxConfig({
-    routing: {
-      agents: {
-        enabled: true,
-        strategy: "off",
-        default: "opencode-structural",
-        profiles: [
-          { id: "opencode-structural", target: { agent: "opencode", model: "fast" }, strengths: ["mechanical"] },
-          { id: "claude-final", target: { agent: "claude", model: "balanced" }, strengths: ["design"] },
-        ],
-        ...(overrides.agentRouting ?? {}),
+  const config = planConfigSelector.select(
+    makeNaxConfig({
+      routing: {
+        agents: {
+          enabled: true,
+          strategy: "off",
+          default: "opencode-structural",
+          profiles: [
+            { id: "opencode-structural", target: { agent: "opencode", model: "fast" }, strengths: ["mechanical"] },
+            { id: "claude-final", target: { agent: "claude", model: "balanced" }, strengths: ["design"] },
+          ],
+          ...(overrides.agentRouting ?? {}),
+        },
       },
-    },
-  }) as unknown as PlanModeContext["config"];
+    }),
+  );
 
-  const fakeRuntime = {
-    agentManager: makeMockAgentManager(),
-    packages: { resolve: () => ({}) },
-    close: async () => {},
-  } as unknown as NaxRuntime;
+  const fakeRuntime = makeMockRuntime();
 
   return {
     workdir: "/tmp/test",
@@ -95,7 +91,7 @@ function makeCtx(overrides: {
       initInteractionChain: async () => null,
       createInteractionBridge: () => ({}) as PlanModeContext["interactionBridge"],
       createDebateRunner: () => ({}) as ReturnType<PlanModeContext["deps"]["createDebateRunner"]>,
-      getLogger: () => null as unknown as ReturnType<PlanModeContext["deps"]["getLogger"]>,
+      getLogger: () => makeLogger(),
     },
   };
 }

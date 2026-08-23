@@ -7,10 +7,10 @@
  *   story.start logging — sequential (single-story) dispatch
  */
 
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { Logger } from "@/logger";
 import * as loggerModule from "@/logger";
 
@@ -133,7 +133,14 @@ function makeCtx(overrides: { parallelCount?: number } = {}) {
     runtime: {
       outputDir: "/tmp/nax-test-logging-output",
       costAggregator: {
-        snapshot: () => ({ totalCostUsd: 0, totalEstimatedCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }),
+        snapshot: () => ({
+          totalCostUsd: 0,
+          totalEstimatedCostUsd: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          callCount: 0,
+          errorCount: 0,
+        }),
         byStage: () => ({}),
         byStory: () => ({}),
         byAgent: () => ({}),
@@ -192,14 +199,19 @@ describe("story.start logging — parallel batch dispatch", () => {
       error: mock(() => {}),
       debug: mock(() => {}),
     };
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as ReturnType<typeof loggerModule.getSafeLogger>);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(
+      logger as ReturnType<typeof loggerModule.getSafeLogger>,
+    );
 
     deps.selectIndependentBatch = mock(() => [story1, story2]);
     deps.runParallelBatch = mock(async () => ({
       completed: [story1, story2],
       failed: [],
       mergeConflicts: [],
-      storyCosts: new Map([[story1.id, 0], [story2.id, 0]]),
+      storyCosts: new Map([
+        [story1.id, 0],
+        [story2.id, 0],
+      ]),
       totalCost: 0,
     }));
 
@@ -229,7 +241,9 @@ describe("story.start logging — parallel batch dispatch", () => {
       error: mock(() => {}),
       debug: mock(() => {}),
     };
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as ReturnType<typeof loggerModule.getSafeLogger>);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(
+      logger as ReturnType<typeof loggerModule.getSafeLogger>,
+    );
 
     deps.selectIndependentBatch = mock(() => [story1, makePendingStory("US-002")]);
     deps.runParallelBatch = mock(async () => ({
@@ -302,7 +316,9 @@ describe("story.start logging — sequential (single-story) dispatch", () => {
       error: mock(() => {}),
       debug: mock(() => {}),
     };
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as ReturnType<typeof loggerModule.getSafeLogger>);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(
+      logger as ReturnType<typeof loggerModule.getSafeLogger>,
+    );
 
     deps.selectIndependentBatch = mock(() => [story1]);
     deps.runIteration = mock(async () => ({
@@ -335,7 +351,9 @@ describe("story.start logging — sequential (single-story) dispatch", () => {
       error: mock(() => {}),
       debug: mock(() => {}),
     };
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as ReturnType<typeof loggerModule.getSafeLogger>);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(
+      logger as ReturnType<typeof loggerModule.getSafeLogger>,
+    );
 
     deps.selectIndependentBatch = mock(() => [story1]);
     deps.runIteration = mock(async () => ({
@@ -393,7 +411,9 @@ describe("story.start announcement — profile-assigned stories (#1575)", () => 
       error: mock(() => {}),
       debug: mock(() => {}),
     };
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as ReturnType<typeof loggerModule.getSafeLogger>);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(
+      logger as ReturnType<typeof loggerModule.getSafeLogger>,
+    );
   }
 
   beforeEach(async () => {
@@ -445,7 +465,10 @@ describe("story.start announcement — profile-assigned stories (#1575)", () => 
       completed: [profiled, plain],
       failed: [],
       mergeConflicts: [],
-      storyCosts: new Map([[profiled.id, 0], [plain.id, 0]]),
+      storyCosts: new Map([
+        [profiled.id, 0],
+        [plain.id, 0],
+      ]),
       totalCost: 0,
     }));
 

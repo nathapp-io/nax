@@ -15,9 +15,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import type { DecomposedStory } from "@/agents/shared/types-extended";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import type { DebateResult } from "@/debate/types";
-import type { DecomposedStory } from "@/agents/shared/types-extended";
+import type { PRD, UserStory } from "@/prd";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
@@ -28,9 +29,17 @@ function makeMockDecomposeManager(
     completeAsFn: decomposeFn
       ? async (name: string, _prompt: string, opts?: any) => {
           const result = await decomposeFn(name, opts ?? {});
-          return { output: JSON.stringify(result.stories), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+          return {
+            output: JSON.stringify(result.stories),
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0,
+          };
         }
-      : async () => ({ output: JSON.stringify([]), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+      : async () => ({
+          output: JSON.stringify([]),
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+        }),
   });
 }
 
@@ -197,9 +206,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     _planDeps.readPackageJsonAt = mock(async () => null);
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
-    _planDeps.createRuntime = mock(() =>
-      makeMockDecomposeManager(async () => makeDecomposeAdapterResult()),
-    );
+    _planDeps.createRuntime = mock(() => makeMockDecomposeManager(async () => makeDecomposeAdapterResult()));
   }
 
   beforeEach(async () => {
@@ -272,7 +279,11 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
       makeMockAgentManager({
         completeAsFn: async () => {
           completeCalls.push(1);
-          return { output: JSON.stringify(makeDecomposeAdapterResult().stories), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+          return {
+            output: JSON.stringify(makeDecomposeAdapterResult().stories),
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0,
+          };
         },
       }),
     );
@@ -322,7 +333,11 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
       makeMockAgentManager({
         completeAsFn: async () => {
           completeCalls.push(1);
-          return { output: JSON.stringify(makeDecomposeAdapterResult().stories), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+          return {
+            output: JSON.stringify(makeDecomposeAdapterResult().stories),
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0,
+          };
         },
       }),
     );
@@ -387,7 +402,11 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
       makeMockAgentManager({
         completeAsFn: async () => {
           completeCalls.push(1);
-          return { output: JSON.stringify(makeDecomposeAdapterResult().stories), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+          return {
+            output: JSON.stringify(makeDecomposeAdapterResult().stories),
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0,
+          };
         },
       }),
     );
@@ -413,7 +432,11 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
       makeMockAgentManager({
         completeAsFn: async () => {
           completeCalls.push(1);
-          return { output: JSON.stringify(makeDecomposeAdapterResult().stories), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+          return {
+            output: JSON.stringify(makeDecomposeAdapterResult().stories),
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0,
+          };
         },
       }),
     );
@@ -423,11 +446,10 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     }));
     _planDeps.createDebateRunner = createDebateMock as never;
 
-    await planDecomposeCommand(
-      tmpDir,
-      makeNaxConfig({ agent: { default: "claude" } }),
-      { feature: FEATURE, storyId: STORY_ID },
-    );
+    await planDecomposeCommand(tmpDir, makeNaxConfig({ agent: { default: "claude" } }), {
+      feature: FEATURE,
+      storyId: STORY_ID,
+    });
 
     expect(createDebateMock).not.toHaveBeenCalled();
     expect(completeCalls).toHaveLength(1);

@@ -16,9 +16,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { acceptanceGenerateOp, callOp } from "@/operations";
 import type { AcceptanceGenerateInput, CallContext } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
 import { makeMockAgentManager, makeTestRuntime } from "@test/helpers";
 import { withTempDir } from "@test/helpers";
-import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -53,7 +53,18 @@ describe("acceptanceGenerateOp.verify — agent-file recovery (bug #774)", () =>
       const agentManager = makeMockAgentManager({
         runWithFallbackFn: async (_req) => {
           await Bun.write(testFilePath, REAL_TEST_CODE);
-          return { result: { success: true, exitCode: 0, output: CONVERSATIONAL_OUTPUT, rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          return {
+            result: {
+              success: true,
+              exitCode: 0,
+              output: CONVERSATIONAL_OUTPUT,
+              rateLimited: false,
+              durationMs: 0,
+              estimatedCostUsd: 0,
+              agentFallbacks: [],
+            },
+            fallbacks: [],
+          };
         },
       });
       const runtime = makeTestRuntime({ agentManager, workdir: dir });
@@ -88,7 +99,18 @@ describe("acceptanceGenerateOp.verify — agent-file recovery (bug #774)", () =>
       const agentManager = makeMockAgentManager({
         runWithFallbackFn: async (_req) => {
           await Bun.write(testFilePath, STUB_TEST_CODE);
-          return { result: { success: true, exitCode: 0, output: CONVERSATIONAL_OUTPUT, rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          return {
+            result: {
+              success: true,
+              exitCode: 0,
+              output: CONVERSATIONAL_OUTPUT,
+              rateLimited: false,
+              durationMs: 0,
+              estimatedCostUsd: 0,
+              agentFallbacks: [],
+            },
+            fallbacks: [],
+          };
         },
       });
       const runtime = makeTestRuntime({ agentManager, workdir: dir });
@@ -119,7 +141,18 @@ describe("acceptanceGenerateOp.verify — agent-file recovery (bug #774)", () =>
       const testFilePath = join(dir, "test-feature.nax-acceptance.test.ts");
 
       const agentManager = makeMockAgentManager({
-        runWithFallbackFn: async (_req) => ({ result: { success: true, exitCode: 0, output: CONVERSATIONAL_OUTPUT, rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] }),
+        runWithFallbackFn: async (_req) => ({
+          result: {
+            success: true,
+            exitCode: 0,
+            output: CONVERSATIONAL_OUTPUT,
+            rateLimited: false,
+            durationMs: 0,
+            estimatedCostUsd: 0,
+            agentFallbacks: [],
+          },
+          fallbacks: [],
+        }),
       });
       const runtime = makeTestRuntime({ agentManager, workdir: dir });
       createdRuntimes.push(runtime);

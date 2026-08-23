@@ -9,12 +9,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { _cacheDeps } from "@/test-runners/detect/cache";
 import { _directoryScanDeps } from "@/test-runners/detect/directory-scan";
 import { _fileScanDeps } from "@/test-runners/detect/file-scan";
 import { _frameworkConfigDeps } from "@/test-runners/detect/framework-configs";
 import { _frameworkDefaultsDeps } from "@/test-runners/detect/framework-defaults";
 import { detectTestFilePatterns, detectTestFilePatternsForWorkspace } from "@/test-runners/detect/index";
-import { _cacheDeps } from "@/test-runners/detect/cache";
+import { makeSpawn } from "@test/helpers";
 
 // ─── Save/restore helpers ─────────────────────────────────────────────────────
 
@@ -34,24 +35,6 @@ type Orig = {
 
 let orig: Orig;
 
-/** Make a subprocess mock that returns the given stdout text */
-function spawnWithOutput(output: string): ReturnType<typeof Bun.spawn> {
-  const enc = new TextEncoder();
-  const bytes = enc.encode(output);
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(bytes);
-      controller.close();
-    },
-  });
-  return { exited: Promise.resolve(0), stdout: stream } as unknown as ReturnType<typeof Bun.spawn>;
-}
-
-/** Make a subprocess mock that exits with non-zero (failure) */
-function spawnFailed(): ReturnType<typeof Bun.spawn> {
-  return { exited: Promise.resolve(1), stdout: null } as unknown as ReturnType<typeof Bun.spawn>;
-}
-
 beforeEach(() => {
   orig = {
     readText: _frameworkConfigDeps.readText,
@@ -67,12 +50,14 @@ beforeEach(() => {
     dirSpawn: _directoryScanDeps.spawn,
   };
   // Default: cache miss, write is no-op
-  _cacheDeps.readJson = mock(async () => { throw new Error("not found"); });
+  _cacheDeps.readJson = mock(async () => {
+    throw new Error("not found");
+  });
   _cacheDeps.writeJson = mock(async () => {});
   _cacheDeps.fileMtime = mock(async () => null);
   // Default: no directories exist, no go.mod/Cargo.toml
   _directoryScanDeps.dirExists = mock(async () => false);
-  _directoryScanDeps.spawn = mock((..._args: unknown[]) => spawnFailed()) as unknown as typeof Bun.spawn;
+  _directoryScanDeps.spawn = makeSpawn(() => ({ exitCode: 1 })).spawn;
   _frameworkDefaultsDeps.fileExists = mock(async () => false);
 });
 
@@ -101,7 +86,7 @@ describe("Tier 1 — vitest config", () => {
       return null;
     });
     _frameworkDefaultsDeps.readText = mock(async () => null);
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("high");
@@ -112,7 +97,7 @@ describe("Tier 1 — vitest config", () => {
 
   test("falls through to Tier 2 when vitest config has no extractable include", async () => {
     _frameworkConfigDeps.readText = mock(async (path: string) => {
-      if (path.endsWith("vitest.config.ts")) return `export default defineConfig({})`;
+      if (path.endsWith("vitest.config.ts")) return "export default defineConfig({})";
       return null;
     });
     _frameworkDefaultsDeps.readText = mock(async (path: string) => {
@@ -121,7 +106,7 @@ describe("Tier 1 — vitest config", () => {
       }
       return null;
     });
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("medium");
@@ -143,7 +128,7 @@ describe("Tier 1 — jest config", () => {
       return null;
     });
     _frameworkDefaultsDeps.readText = mock(async () => null);
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("high");
@@ -159,7 +144,7 @@ describe("Tier 1 — jest config", () => {
       return null;
     });
     _frameworkDefaultsDeps.readText = mock(async () => null);
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("high");
@@ -174,7 +159,7 @@ describe("Tier 1 — jest config", () => {
       return null;
     });
     _frameworkDefaultsDeps.readText = mock(async () => null);
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("high");
@@ -190,7 +175,7 @@ describe("Tier 1 — jest config", () => {
       return null;
     });
     _frameworkDefaultsDeps.readText = mock(async () => null);
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.patterns).toContain("**/*.spec.ts");
@@ -216,7 +201,7 @@ describe("Tier 1 — vite config (Vitest)", () => {
       return null;
     });
     _frameworkDefaultsDeps.readText = mock(async () => null);
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("high");
@@ -236,7 +221,7 @@ describe("Tier 1 — vite config (Vitest)", () => {
       return null;
     });
     _frameworkDefaultsDeps.readText = mock(async () => null);
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     // No test: block → parseViteConfig returns null → no Tier 1 hit
@@ -258,7 +243,7 @@ describe("Tier 1 — bunfig.toml (Bun test)", () => {
       test: { preload: ["./happydom.ts"] },
     }));
     _frameworkDefaultsDeps.readText = mock(async () => null);
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("high");
@@ -279,7 +264,7 @@ describe("Tier 1 — bunfig.toml (Bun test)", () => {
       install: { registry: "https://npm.example.com/" },
     }));
     _frameworkDefaultsDeps.readText = mock(async () => null);
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     // No [test] in bunfig → falls through to lower tiers; Tier 4 may emit
@@ -302,7 +287,7 @@ describe("Tier 1 — pytest config", () => {
       tool: { pytest: { ini_options: { testpaths: ["tests", "integration"] } } },
     }));
     _frameworkDefaultsDeps.readText = mock(async () => null);
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("high");
@@ -322,19 +307,14 @@ describe("Tier 2 — framework defaults from manifests", () => {
       }
       return null;
     });
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("medium");
     // Jest defaults are expanded from extglob to simple globs so downstream
     // regex classification (globsToTestRegex) works correctly.
     expect(result.patterns).toEqual(
-      expect.arrayContaining([
-        "**/__tests__/**/*.js",
-        "**/__tests__/**/*.ts",
-        "**/*.spec.ts",
-        "**/*.test.tsx",
-      ]),
+      expect.arrayContaining(["**/__tests__/**/*.js", "**/__tests__/**/*.ts", "**/*.spec.ts", "**/*.test.tsx"]),
     );
     // Must not contain unexpanded extglob patterns.
     expect(result.patterns).not.toContain("**/?(*.)+(spec|test).[jt]s?(x)");
@@ -348,7 +328,7 @@ describe("Tier 2 — framework defaults from manifests", () => {
       }
       return null;
     });
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("medium");
@@ -363,7 +343,7 @@ describe("Tier 2 — framework defaults from manifests", () => {
     _frameworkConfigDeps.readText = mock(async () => null);
     _frameworkDefaultsDeps.readText = mock(async () => null);
     _frameworkDefaultsDeps.fileExists = mock(async (path: string) => path.endsWith("go.mod"));
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("medium");
@@ -380,7 +360,7 @@ describe("Tier 2 — framework defaults from manifests", () => {
       return null;
     });
     _frameworkDefaultsDeps.fileExists = mock(async (path: string) => path.endsWith("go.mod"));
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("medium");
@@ -399,9 +379,7 @@ describe("Tier 3 — file scan", () => {
 
     const testFiles = Array.from({ length: 6 }, (_, i) => `src/module${i}.test.ts`).join("\n");
     const allFiles = `${testFiles}\nsrc/app.ts\nsrc/index.ts\n`;
-    _fileScanDeps.spawn = mock((..._args: unknown[]) =>
-      spawnWithOutput(allFiles),
-    ) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => allFiles).spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("low");
@@ -413,10 +391,8 @@ describe("Tier 3 — file scan", () => {
     _frameworkConfigDeps.readText = mock(async () => null);
     _frameworkDefaultsDeps.readText = mock(async () => null);
 
-    const files =
-      "src/a.test.ts\nsrc/b.test.ts\n" +
-      Array.from({ length: 50 }, (_, i) => `src/f${i}.ts`).join("\n");
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput(files)) as unknown as typeof Bun.spawn;
+    const files = `src/a.test.ts\nsrc/b.test.ts\n${Array.from({ length: 50 }, (_, i) => `src/f${i}.ts`).join("\n")}`;
+    _fileScanDeps.spawn = makeSpawn(() => files).spawn;
     _directoryScanDeps.dirExists = mock(async () => false);
 
     const result = await detectTestFilePatterns("/fake/workdir");
@@ -430,12 +406,10 @@ describe("Tier 4 — directory convention", () => {
   test("detects test/ directory and emits generic globs", async () => {
     _frameworkConfigDeps.readText = mock(async () => null);
     _frameworkDefaultsDeps.readText = mock(async () => null);
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 
     _directoryScanDeps.dirExists = mock(async (path: string) => path.endsWith("/test"));
-    _directoryScanDeps.spawn = mock((..._args: unknown[]) =>
-      spawnWithOutput("test/foo.test.ts\ntest/bar.test.ts\n"),
-    ) as unknown as typeof Bun.spawn;
+    _directoryScanDeps.spawn = makeSpawn(() => "test/foo.test.ts\ntest/bar.test.ts\n").spawn;
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("low");
@@ -449,7 +423,7 @@ describe("empty project", () => {
   test("returns empty confidence when no signals found", async () => {
     _frameworkConfigDeps.readText = mock(async () => null);
     _frameworkDefaultsDeps.readText = mock(async () => null);
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
     _directoryScanDeps.dirExists = mock(async () => false);
 
     const result = await detectTestFilePatterns("/fake/workdir");
@@ -475,7 +449,7 @@ describe("monorepo workspace", () => {
       return null;
     });
     _frameworkDefaultsDeps.fileExists = mock(async () => false);
-    _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
     _directoryScanDeps.dirExists = mock(async () => false);
 
     const result = await detectTestFilePatternsForWorkspace("/fake/root", ["packages/api", "packages/ui"]);

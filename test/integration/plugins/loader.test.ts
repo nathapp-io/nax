@@ -16,7 +16,7 @@ import {
   loadPlugins as loadPluginsWithBuiltins,
 } from "@/plugins/loader";
 import type { NaxPlugin, PluginConfigEntry } from "@/plugins/types";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { makeTempDir } from "@test/helpers";
 
 const DISABLE_BUILTIN_PLUGINS = ["nax-curator", "nax-auto-pr"];
 

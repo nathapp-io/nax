@@ -6,13 +6,9 @@
  * is implemented.
  */
 
-import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import {
-  generateContextTemplate,
-  initContext,
-  scanProject,
-} from "@/cli/init-context";
+import { join } from "node:path";
+import { generateContextTemplate, initContext, scanProject } from "@/cli/init-context";
 import { withTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
@@ -64,8 +60,18 @@ describe("scanProject — file tree", () => {
 describe("scanProject — package manifest", () => {
   test.each([
     ["name", { name: "my-project", version: "1.0.0" }, (m: any) => m?.name, "my-project"],
-    ["description", { name: "my-project", description: "A test project" }, (m: any) => m?.description, "A test project"],
-    ["scripts.build", { name: "proj", scripts: { build: "bun run build" } }, (m: any) => m?.scripts?.build, "bun run build"],
+    [
+      "description",
+      { name: "my-project", description: "A test project" },
+      (m: any) => m?.description,
+      "A test project",
+    ],
+    [
+      "scripts.build",
+      { name: "proj", scripts: { build: "bun run build" } },
+      (m: any) => m?.scripts?.build,
+      "bun run build",
+    ],
     ["dependencies.zod", { name: "proj", dependencies: { zod: "^3.0.0" } }, (m: any) => m?.dependencies?.zod, "^3.0.0"],
   ] as const)("reads %s from package.json", async (_field, pkgJson, getField, expected) => {
     await withTempDir(async (dir) => {
@@ -245,9 +251,23 @@ describe("generateContextTemplate — output structure", () => {
   });
 
   test("includes TODO when data missing; includes config files when present", () => {
-    const emptyResult = generateContextTemplate({ projectName: "proj", fileTree: [], packageManifest: null, readmeSnippet: null, entryPoints: [], configFiles: [] });
+    const emptyResult = generateContextTemplate({
+      projectName: "proj",
+      fileTree: [],
+      packageManifest: null,
+      readmeSnippet: null,
+      entryPoints: [],
+      configFiles: [],
+    });
     expect(emptyResult).toContain("TODO");
-    const withConfig = generateContextTemplate({ projectName: "proj", fileTree: [], packageManifest: null, readmeSnippet: null, entryPoints: [], configFiles: ["tsconfig.json", "biome.json"] });
+    const withConfig = generateContextTemplate({
+      projectName: "proj",
+      fileTree: [],
+      packageManifest: null,
+      readmeSnippet: null,
+      entryPoints: [],
+      configFiles: ["tsconfig.json", "biome.json"],
+    });
     expect(withConfig).toContain("tsconfig.json");
     expect(withConfig).toContain("biome.json");
   });
@@ -271,7 +291,6 @@ describe("generateContextTemplate — output structure", () => {
 
     expect(result).toContain("A fantastic library for testing");
   });
-
 });
 
 // ---------------------------------------------------------------------------
@@ -319,5 +338,3 @@ describe("initContext — creates context.md from template", () => {
     });
   });
 });
-
-

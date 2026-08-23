@@ -11,15 +11,16 @@
  *
  * Pattern:
  *   - makeTestRuntime({ config }) for tests that need the real AgentManager
- *   - Inject mock adapters via (rt.agentManager as any)._resolveRegistry
+ *   - Inject mock adapters via agentManagerInternals(rt.agentManager)._resolveRegistry
  *   - Track created runtimes for mandatory afterEach cleanup
  */
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import { callOp } from "@/operations";
 import type { CompleteOperation } from "@/operations";
-import { DEFAULT_CONFIG, pickSelector } from "@/config";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { agentManagerInternals } from "@test/helpers";
 
 const sel = pickSelector("complete-empty-output-retry-test", "routing");
 
@@ -74,8 +75,7 @@ describe("AC5+AC6: complete-kind empty-output → completeWithFallback retry (sa
         };
       }),
     };
-    (rt.agentManager as unknown as { _resolveRegistry: () => { getAgent: (name: string) => typeof adapter } })
-      ._resolveRegistry = () => ({ getAgent: () => adapter });
+    agentManagerInternals(rt.agentManager)._resolveRegistry = () => ({ getAgent: () => adapter });
 
     const result = await callOp(
       { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
@@ -109,8 +109,7 @@ describe("AC5+AC6: complete-kind empty-output → completeWithFallback retry (sa
         };
       }),
     };
-    (rt.agentManager as unknown as { _resolveRegistry: () => { getAgent: (name: string) => typeof adapter } })
-      ._resolveRegistry = () => ({ getAgent: () => adapter });
+    agentManagerInternals(rt.agentManager)._resolveRegistry = () => ({ getAgent: () => adapter });
 
     const result = await callOp(
       { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-002" },
@@ -150,8 +149,7 @@ describe("AC5: complete-kind empty-output — retries exhausted", () => {
         };
       }),
     };
-    (rt.agentManager as unknown as { _resolveRegistry: () => { getAgent: (name: string) => typeof adapter } })
-      ._resolveRegistry = () => ({ getAgent: () => adapter });
+    agentManagerInternals(rt.agentManager)._resolveRegistry = () => ({ getAgent: () => adapter });
 
     // op.parse("".trim()) returns "" — callOp returns "".
     const result = await callOp(
@@ -187,8 +185,7 @@ describe("AC5: complete-kind empty-output — retries exhausted", () => {
         };
       }),
     };
-    (rt.agentManager as unknown as { _resolveRegistry: () => { getAgent: (name: string) => typeof adapter } })
-      ._resolveRegistry = () => ({ getAgent: () => adapter });
+    agentManagerInternals(rt.agentManager)._resolveRegistry = () => ({ getAgent: () => adapter });
 
     await callOp(
       { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-004" },
@@ -249,10 +246,9 @@ describe("AC6: complete-kind empty-output → agent swap to fallback", () => {
       },
     };
 
-    (rt.agentManager as unknown as { _resolveRegistry: () => { getAgent: (name: string) => { complete: ReturnType<typeof mock> } | undefined } })
-      ._resolveRegistry = () => ({
-        getAgent: (name: string) => adapters[name],
-      });
+    agentManagerInternals(rt.agentManager)._resolveRegistry = () => ({
+      getAgent: (name: string) => adapters[name],
+    });
 
     const result = await callOp(
       { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-005" },
@@ -309,10 +305,9 @@ describe("AC6: complete-kind empty-output → agent swap to fallback", () => {
       },
     };
 
-    (rt.agentManager as unknown as { _resolveRegistry: () => { getAgent: (name: string) => { complete: ReturnType<typeof mock> } | undefined } })
-      ._resolveRegistry = () => ({
-        getAgent: (name: string) => adapters[name],
-      });
+    agentManagerInternals(rt.agentManager)._resolveRegistry = () => ({
+      getAgent: (name: string) => adapters[name],
+    });
 
     const result = await callOp(
       { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-006" },

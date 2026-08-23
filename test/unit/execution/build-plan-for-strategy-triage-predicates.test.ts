@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { buildPlanForStrategy, _storyOrchestratorDeps } from "@/execution";
+import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
 import type { PlanInputs } from "@/execution";
 import { makeAutofixTestWriterStrategy, makeDeclarationSink } from "@/operations";
 import type { UserStory } from "@/prd/types";
@@ -30,7 +30,9 @@ function makeTddRetryInputs(story: UserStory, extra: Partial<PlanInputs> = {}): 
 }
 
 describe("buildPlanForStrategy — AC2/AC3/AC4: triage strategy predicate behavior (driven through plan)", () => {
-  let capturedStrategiesByCall: Array<Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>>> = [];
+  let capturedStrategiesByCall: Array<
+    Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>>
+  > = [];
   let origRunFixCycle: typeof _storyOrchestratorDeps.runFixCycle;
   let origCallOp: typeof _storyOrchestratorDeps.callOp;
   let origCaptureGitRef: typeof _storyOrchestratorDeps.captureGitRef;
@@ -72,7 +74,9 @@ describe("buildPlanForStrategy — AC2/AC3/AC4: triage strategy predicate behavi
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
     _storyOrchestratorDeps.runFixCycle = mock(
-      async (cycle: { strategies: Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>> }) => {
+      async (cycle: {
+        strategies: Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>>;
+      }) => {
         capturedStrategiesByCall.push(cycle.strategies);
         return { iterations: [], finalFindings: [], exitReason: "no-strategy" as const, costUsd: 0 };
       },
@@ -210,7 +214,9 @@ describe("buildPlanForStrategy — AC5/AC6: default-preserving factory options +
   });
 
   test("AC6 (#1333): blocking three-session set → implementer claims adversarial SOURCE finding, test-writer claims adversarial TEST finding (driven through plan)", async () => {
-    const capturedStrategySets: Array<Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>>> = [];
+    const capturedStrategySets: Array<
+      Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>>
+    > = [];
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origCaptureGitRef = _storyOrchestratorDeps.captureGitRef;
@@ -236,7 +242,9 @@ describe("buildPlanForStrategy — AC5/AC6: default-preserving factory options +
         return { success: true };
       }) as typeof _storyOrchestratorDeps.callOp;
       _storyOrchestratorDeps.runFixCycle = mock(
-        async (cycle: { strategies: Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>> }) => {
+        async (cycle: {
+          strategies: Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>>;
+        }) => {
           capturedStrategySets.push(cycle.strategies);
           return { iterations: [], finalFindings: [], exitReason: "no-strategy" as const, costUsd: 0 };
         },

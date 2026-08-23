@@ -17,15 +17,15 @@
  * blind spot this file exists to cover.
  */
 
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { NaxConfig } from "@/config/types";
 import { FeatureContextProviderV2, _featureContextV2Deps } from "@/context/engine";
 import type { ContextRequest, RawChunk } from "@/context/engine/types";
 import { renderFragmentBody, writeFragment } from "@/context/fragments";
-import type { NaxConfig } from "@/config/types";
 import type { UserStory } from "@/prd";
-import { cleanupTempDir, makeTempDir, makePRD, makeStory } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 const FEATURE_ID = "feat-readback";
 const FRAGMENT_MAX_TOKENS = 400;
@@ -52,7 +52,7 @@ afterEach(() => {
 });
 
 function makeFragmentsConfig(overrides: { decay?: number; enabled?: boolean } = {}): NaxConfig {
-  return {
+  return makeNaxConfig({
     context: {
       v2: {
         fragments: {
@@ -63,7 +63,7 @@ function makeFragmentsConfig(overrides: { decay?: number; enabled?: boolean } = 
         },
       },
     },
-  } as unknown as NaxConfig;
+  });
 }
 
 function storyWith(id: string, dependencies: readonly string[] = []): UserStory {
@@ -129,10 +129,7 @@ describe("FeatureContextProviderV2 fragment read-back (real fs)", () => {
     }
     await writePRD([storyWith("US-001"), storyWith("US-002", ["US-001"]), storyWith("US-003", ["US-002"])]);
 
-    const provider = new FeatureContextProviderV2(
-      storyWith("US-003", ["US-002"]),
-      makeFragmentsConfig({ decay: 0.5 }),
-    );
+    const provider = new FeatureContextProviderV2(storyWith("US-003", ["US-002"]), makeFragmentsConfig({ decay: 0.5 }));
     const result = await provider.fetch(makeRequest({ storyId: "US-003" }));
 
     const byId = new Map(fragmentChunks(result.chunks).map((c) => [c.id, c]));
@@ -153,7 +150,12 @@ describe("FeatureContextProviderV2 fragment read-back (real fs)", () => {
         repoRoot,
         FEATURE_ID,
         id,
-        renderFragmentBody(id, `story ${id}`, [`ac for ${id}`], Array.from({ length: 10 }, () => filler)),
+        renderFragmentBody(
+          id,
+          `story ${id}`,
+          [`ac for ${id}`],
+          Array.from({ length: 10 }, () => filler),
+        ),
         FRAGMENT_MAX_TOKENS,
       );
     }

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { Mock } from "bun:test";
 import { type RunnerCompletionOptions, runCompletionPhase } from "@/execution";
 import type { MutationStorySummary } from "@/runtime";
 import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
@@ -23,13 +24,13 @@ function makeSummary(): MutationStorySummary {
 }
 
 describe("runCompletionPhase mutation survivor reporting", () => {
-  let logSpy: ReturnType<typeof mock>;
+  let logSpy: Mock<typeof console.log>;
   let originalLog: typeof console.log;
 
   beforeEach(() => {
     originalLog = console.log;
-    logSpy = mock(() => {});
-    console.log = logSpy as unknown as typeof console.log;
+    logSpy = mock<typeof console.log>(() => {});
+    console.log = logSpy;
   });
 
   afterEach(() => {

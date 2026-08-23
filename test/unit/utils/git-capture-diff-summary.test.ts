@@ -17,7 +17,11 @@ function mockSpawnOutput(output: string, exitCode = 0): typeof _gitDeps.spawn {
           c.close();
         },
       }),
-      stderr: new ReadableStream({ start(c) { c.close(); } }),
+      stderr: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
       exited: Promise.resolve(exitCode),
       kill: mock(() => {}),
     };
@@ -59,7 +63,11 @@ describe("captureDiffSummary", () => {
             c.close();
           },
         }),
-        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
         exited: Promise.resolve(0),
         kill: mock(() => {}),
       };

@@ -11,11 +11,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { DEFAULT_CONFIG } from "@/config";
 import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import type { CallContext } from "@/operations/types";
-import { DEFAULT_CONFIG } from "@/config";
 import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 // ─── Mock Helpers ──────────────────────────────────────────────────────────────
@@ -90,7 +90,11 @@ afterEach(() => {
 describe("DebateRunner.run() mode routing — AC1: panel + one-shot", () => {
   test("with mode 'panel' and sessionMode 'one-shot', calls runOneShot", async () => {
     const agentManager = makeMockAgentManager({
-      completeAsFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+      completeAsFn: async (_name, _p, _o) => ({
+        output: `{"passed": true}`,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
     });
 
     const runner = new DebateRunner({
@@ -149,7 +153,11 @@ describe("DebateRunner.run() mode routing — AC3: mode undefined defaults to pa
     delete (stageConfig as any).mode;
 
     const agentManager = makeMockAgentManager({
-      completeAsFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+      completeAsFn: async (_name, _p, _o) => ({
+        output: `{"passed": true}`,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
     });
 
     const runner = new DebateRunner({
@@ -200,7 +208,11 @@ describe("DebateRunner.run() mode routing — AC4: hybrid + stateful", () => {
 describe("DebateRunner.run() mode routing — AC5: hybrid + one-shot with fallback", () => {
   test("with mode 'hybrid' and sessionMode 'one-shot', calls runOneShot and logs warning", async () => {
     const agentManager = makeMockAgentManager({
-      completeAsFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+      completeAsFn: async (_name, _p, _o) => ({
+        output: `{"passed": true}`,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
     });
 
     const runner = new DebateRunner({
@@ -218,9 +230,7 @@ describe("DebateRunner.run() mode routing — AC5: hybrid + one-shot with fallba
 
     expect(result.storyId).toBe("test-story");
     // Verify warning was logged
-    const hybridWarning = loggedWarnings.find((w) =>
-      w.message.includes("hybrid mode requires sessionMode: stateful"),
-    );
+    const hybridWarning = loggedWarnings.find((w) => w.message.includes("hybrid mode requires sessionMode: stateful"));
     expect(hybridWarning).toBeDefined();
   });
 });
@@ -236,7 +246,11 @@ describe("DebateRunner.run() mode routing — AC6: hybrid + undefined sessionMod
     delete (stageConfig as any).sessionMode;
 
     const agentManager = makeMockAgentManager({
-      completeAsFn: async (_name, _p, _o) => ({ output: `{"passed": true}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+      completeAsFn: async (_name, _p, _o) => ({
+        output: `{"passed": true}`,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
     });
 
     const runner = new DebateRunner({
@@ -251,9 +265,7 @@ describe("DebateRunner.run() mode routing — AC6: hybrid + undefined sessionMod
 
     expect(result.storyId).toBe("test-story");
     // Verify warning was logged
-    const hybridWarning = loggedWarnings.find((w) =>
-      w.message.includes("hybrid mode requires sessionMode: stateful"),
-    );
+    const hybridWarning = loggedWarnings.find((w) => w.message.includes("hybrid mode requires sessionMode: stateful"));
     expect(hybridWarning).toBeDefined();
   });
 });

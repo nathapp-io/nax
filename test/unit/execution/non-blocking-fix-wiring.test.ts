@@ -1,6 +1,6 @@
 // test/unit/execution/non-blocking-fix-wiring.test.ts
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { buildPlanForStrategy, _storyOrchestratorDeps } from "@/execution";
+import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
 import { shouldRunNonBlockingFix } from "@/execution/non-blocking-fix";
 import type { NaxRuntime } from "@/runtime";
 import { _rollbackDeps } from "@/tdd";
@@ -12,17 +12,44 @@ describe("non-blocking-fix wiring gate", () => {
   });
   test("gate is on when enabled with advisory findings", () => {
     expect(
-      shouldRunNonBlockingFix({ enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } }, 5),
+      shouldRunNonBlockingFix(
+        {
+          enabled: true,
+          scope: "both",
+          regressionAttempts: 1,
+          verifierGuard: true,
+          sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+        },
+        5,
+      ),
     ).toBe(true);
   });
   test("gate is off when enabled but zero advisory findings", () => {
     expect(
-      shouldRunNonBlockingFix({ enabled: true, scope: "source", regressionAttempts: 1, verifierGuard: false, sourceDiffCap: { maxFiles: 10, maxLines: 500 } }, 0),
+      shouldRunNonBlockingFix(
+        {
+          enabled: true,
+          scope: "source",
+          regressionAttempts: 1,
+          verifierGuard: false,
+          sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+        },
+        0,
+      ),
     ).toBe(false);
   });
   test("gate is off when config present but disabled", () => {
     expect(
-      shouldRunNonBlockingFix({ enabled: false, scope: "both", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } }, 3),
+      shouldRunNonBlockingFix(
+        {
+          enabled: false,
+          scope: "both",
+          regressionAttempts: 1,
+          verifierGuard: true,
+          sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+        },
+        3,
+      ),
     ).toBe(false);
   });
 });
@@ -102,7 +129,13 @@ describe("non-blocking-fix runtime wiring", () => {
           timeoutMs: 600_000,
           parallel: false,
           maxConcurrentSessions: 2,
-          nonBlockingFix: { enabled: true, scope: "triage", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } },
+          nonBlockingFix: {
+            enabled: true,
+            scope: "triage",
+            regressionAttempts: 1,
+            verifierGuard: true,
+            sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+          },
         },
       },
     });
@@ -171,7 +204,13 @@ describe("non-blocking-fix runtime wiring", () => {
           timeoutMs: 600_000,
           parallel: false,
           maxConcurrentSessions: 2,
-          nonBlockingFix: { enabled: true, scope: "triage", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } },
+          nonBlockingFix: {
+            enabled: true,
+            scope: "triage",
+            regressionAttempts: 1,
+            verifierGuard: true,
+            sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+          },
         },
       },
     });
@@ -250,7 +289,13 @@ describe("non-blocking-fix runtime wiring", () => {
           timeoutMs: 600_000,
           parallel: false,
           maxConcurrentSessions: 2,
-          nonBlockingFix: { enabled: true, scope: "triage", regressionAttempts: 1, verifierGuard: true, sourceDiffCap: { maxFiles: 10, maxLines: 500 } },
+          nonBlockingFix: {
+            enabled: true,
+            scope: "triage",
+            regressionAttempts: 1,
+            verifierGuard: true,
+            sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+          },
         },
       },
     });

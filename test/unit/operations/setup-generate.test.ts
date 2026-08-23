@@ -7,13 +7,13 @@
 
 import { describe, expect, mock, spyOn, test } from "bun:test";
 import { ParseValidationError } from "@/agents";
+import type { RepoAnalysis } from "@/cli/setup-types";
 import type { NaxConfig } from "@/config";
 import { NaxConfigSchema } from "@/config";
 import { callOp, setupGenerateOp } from "@/operations";
 import type { BuildContext } from "@/operations/types";
 import { SetupPromptBuilder } from "@/prompts";
-import type { RepoAnalysis } from "@/cli/setup-types";
-import { makeAgentAdapter, makeMockCallContext, makeRuntimeWithFakeAgent, makeNaxConfig } from "@test/helpers";
+import { makeAgentAdapter, makeMockCallContext, makeNaxConfig, makeRuntimeWithFakeAgent } from "@test/helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -45,7 +45,7 @@ function makeMonoAnalysis(packageCount: number): RepoAnalysis {
 }
 
 function fenced(config: unknown): string {
-  return "```json\n" + JSON.stringify({ config }) + "\n```";
+  return `\`\`\`json\n${JSON.stringify({ config })}\n\`\`\``;
 }
 
 // ─── AC1: parse returns SetupPlan with valid config ───────────────────────────
@@ -77,7 +77,9 @@ describe("setupGenerateOp.parse — AC2: crossCheck absent command", () => {
 
 describe("setupGenerateOp.parse — AC3: non-JSON output", () => {
   test("AC3: throws ParseValidationError when parseLLMJson exhausts all tiers", () => {
-    expect(() => setupGenerateOp.parse("not json at all", makeSingleAnalysis(), NO_BUILD_CTX)).toThrow(ParseValidationError);
+    expect(() => setupGenerateOp.parse("not json at all", makeSingleAnalysis(), NO_BUILD_CTX)).toThrow(
+      ParseValidationError,
+    );
   });
 });
 
@@ -131,16 +133,13 @@ describe("setupGenerateOp.parse — AC6 ext: mono monoConfigs uses LLM per-packa
     const pkg0Config = makeNaxConfig({ execution: { maxIterations: 11 } });
     const pkg1Config = makeNaxConfig({ execution: { maxIterations: 22 } });
 
-    const output =
-      "```json\n" +
-      JSON.stringify({
-        config: {},
-        monoConfigs: [
-          { relativeDir: "packages/pkg-0", config: pkg0Config },
-          { relativeDir: "packages/pkg-1", config: pkg1Config },
-        ],
-      }) +
-      "\n```";
+    const output = `\`\`\`json\n${JSON.stringify({
+      config: {},
+      monoConfigs: [
+        { relativeDir: "packages/pkg-0", config: pkg0Config },
+        { relativeDir: "packages/pkg-1", config: pkg1Config },
+      ],
+    })}\n\`\`\``;
 
     const result = setupGenerateOp.parse(output, analysis, NO_BUILD_CTX);
     expect(result.monoConfigs).toHaveLength(2);
@@ -171,26 +170,22 @@ describe("setupGenerateOp.build — AC7: delegates to SetupPromptBuilder", () =>
 // ─── AC8: callOp rejects SETUP_PLAN_INVALID after exhaustion ─────────────────
 
 describe("callOp(setupGenerateOp) — AC8: SETUP_PLAN_INVALID on retry exhaustion", () => {
-  test(
-    "AC8: rejects with NaxError code SETUP_PLAN_INVALID when session always returns schema-invalid config",
-    async () => {
-      // Always return schema-invalid config (invalid name chars)
-      const badOutput = fenced({ name: "INVALID@NAME!" });
-      const adapter = makeAgentAdapter({
-        sendTurn: mock(async () => ({
-          output: badOutput,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          estimatedCostUsd: 0,
-          internalRoundTrips: 1,
-        })),
-      });
-      const { runtime } = makeRuntimeWithFakeAgent(adapter);
-      const ctx = makeMockCallContext({ runtime });
+  test("AC8: rejects with NaxError code SETUP_PLAN_INVALID when session always returns schema-invalid config", async () => {
+    // Always return schema-invalid config (invalid name chars)
+    const badOutput = fenced({ name: "INVALID@NAME!" });
+    const adapter = makeAgentAdapter({
+      sendTurn: mock(async () => ({
+        output: badOutput,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+        internalRoundTrips: 1,
+      })),
+    });
+    const { runtime } = makeRuntimeWithFakeAgent(adapter);
+    const ctx = makeMockCallContext({ runtime });
 
-      await expect(callOp(ctx, setupGenerateOp, makeSingleAnalysis())).rejects.toMatchObject({
-        code: "SETUP_PLAN_INVALID",
-      });
-    },
-    15_000,
-  );
+    await expect(callOp(ctx, setupGenerateOp, makeSingleAnalysis())).rejects.toMatchObject({
+      code: "SETUP_PLAN_INVALID",
+    });
+  }, 15_000);
 });

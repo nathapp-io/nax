@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { initLogger, getLogger, resetLogger } from "@/logger";
+import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 import { DispatchEventBus } from "@/runtime/dispatch-events";
 import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "@/runtime/dispatch-events";

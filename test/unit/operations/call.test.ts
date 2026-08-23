@@ -1,16 +1,18 @@
-import { afterEach, describe, test, expect, mock } from "bun:test";
+import { afterEach, describe, expect, type mock, test } from "bun:test";
+import type { AgentRunRequest } from "@/agents/manager-types";
+import type { RetryPreset } from "@/agents/retry";
+import type { CompleteResult, TurnResult } from "@/agents/types";
+import { pickSelector } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
 import { callOp, shouldKeepSessionOpen } from "@/operations";
 import type { CompleteOperation, RunOperation } from "@/operations";
-import { pickSelector } from "@/config";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
-import { DEFAULT_CONFIG } from "@/config";
-import type { CompleteResult, TurnResult } from "@/agents/types";
-import type { RetryPreset } from "@/agents/retry";
 import type { NaxRuntime } from "@/runtime";
-import type { AgentRunRequest } from "@/agents/manager-types";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 let runtime: NaxRuntime | undefined;
-afterEach(async () => { await runtime?.close(); });
+afterEach(async () => {
+  await runtime?.close();
+});
 
 const testSel = pickSelector("routing-op-test", "routing");
 const implementerGateSel = pickSelector("routing-op-test-with-gates", "routing", "review", "execution");
@@ -85,7 +87,11 @@ const invalidTimedRunEchoOp: RunOperation<{ text: string }, string, Pick<typeof 
 
 describe("callOp — kind:complete", () => {
   test("calls agentManager.completeAs with composed prompt", async () => {
-    const completeResult: CompleteResult = { output: "echoed", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+    const completeResult: CompleteResult = {
+      output: "echoed",
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: 0,
+    };
     const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
     runtime = makeTestRuntime({ agentManager });
 
@@ -103,7 +109,11 @@ describe("callOp — kind:complete", () => {
   });
 
   test("passes op timeoutMs to completeAs", async () => {
-    const completeResult: CompleteResult = { output: "echoed", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+    const completeResult: CompleteResult = {
+      output: "echoed",
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: 0,
+    };
     const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
     runtime = makeTestRuntime({ agentManager });
 
@@ -125,7 +135,11 @@ describe("callOp — kind:complete", () => {
   });
 
   test("throws CALL_OP_INVALID_TIMEOUT on non-positive timeoutMs", async () => {
-    const completeResult: CompleteResult = { output: "echoed", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+    const completeResult: CompleteResult = {
+      output: "echoed",
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: 0,
+    };
     const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
     runtime = makeTestRuntime({ agentManager });
 
@@ -148,7 +162,15 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
   test("dispatches via agentManager.runWithFallback with executeHop callback", async () => {
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (_req) => ({
-        result: { success: true, exitCode: 0, output: "ran via fallback", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        result: {
+          success: true,
+          exitCode: 0,
+          output: "ran via fallback",
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCostUsd: 0,
+          agentFallbacks: [],
+        },
         fallbacks: [],
       }),
     });
@@ -168,7 +190,10 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
     );
 
     expect(agentManager.runWithFallback).toHaveBeenCalledTimes(1);
-    const reqArg = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as { executeHop?: unknown; runOptions: { storyId?: string } };
+    const reqArg = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as {
+      executeHop?: unknown;
+      runOptions: { storyId?: string };
+    };
     expect(reqArg.executeHop).toBeTypeOf("function");
     expect(reqArg.runOptions.storyId).toBe("US-001");
     expect(result).toBe("ran via fallback");
@@ -181,7 +206,15 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
     // middleware envelope. This test pins the dispatch path.
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => ({
-        result: { success: true, exitCode: 0, output: "single-agent output", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        result: {
+          success: true,
+          exitCode: 0,
+          output: "single-agent output",
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCostUsd: 0,
+          agentFallbacks: [],
+        },
         fallbacks: [],
         // Surface req fields for assertion via the mock's call records below.
         ...({ _req: req } as Record<string, unknown>),
@@ -208,43 +241,98 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
     );
 
     expect(agentManager.runWithFallback).toHaveBeenCalledTimes(1);
-    const reqArg = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as { noFallback?: boolean };
+    const reqArg = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as {
+      noFallback?: boolean;
+    };
     expect(reqArg.noFallback).toBe(true);
     expect(result).toBe("single-agent output");
   });
 
   test("keepOpen: disabled when review+rectification off; enabled when rectification on; autofix always warm", async () => {
-    const makeManager = () => makeMockAgentManager({
-      runWithFallbackFn: async (_req) => ({
-        result: { success: true, exitCode: 0, output: "single-agent output", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
-        fallbacks: [],
-      }),
-    });
-    const offConfig = { ...DEFAULT_CONFIG, review: { ...DEFAULT_CONFIG.review, enabled: false }, execution: { ...DEFAULT_CONFIG.execution, rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: false } } };
-    const onConfig = { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: true } } };
+    const makeManager = () =>
+      makeMockAgentManager({
+        runWithFallbackFn: async (_req) => ({
+          result: {
+            success: true,
+            exitCode: 0,
+            output: "single-agent output",
+            rateLimited: false,
+            durationMs: 1,
+            estimatedCostUsd: 0,
+            agentFallbacks: [],
+          },
+          fallbacks: [],
+        }),
+      });
+    const offConfig = {
+      ...DEFAULT_CONFIG,
+      review: { ...DEFAULT_CONFIG.review, enabled: false },
+      execution: {
+        ...DEFAULT_CONFIG.execution,
+        rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: false },
+      },
+    };
+    const onConfig = {
+      ...DEFAULT_CONFIG,
+      execution: {
+        ...DEFAULT_CONFIG.execution,
+        rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: true },
+      },
+    };
 
     const am1 = makeManager();
     runtime = makeTestRuntime({ agentManager: am1, sessionManager: makeSessionManager(), config: offConfig });
-    await callOp({ runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" }, warmImplementerOp, { text: "hello" });
-    expect(((am1.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as { runOptions: { keepOpen?: boolean } }).runOptions.keepOpen).toBeUndefined();
-    await runtime.close(); runtime = undefined;
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      warmImplementerOp,
+      { text: "hello" },
+    );
+    expect(
+      ((am1.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as { runOptions: { keepOpen?: boolean } })
+        .runOptions.keepOpen,
+    ).toBeUndefined();
+    await runtime.close();
+    runtime = undefined;
 
     const am2 = makeManager();
     runtime = makeTestRuntime({ agentManager: am2, sessionManager: makeSessionManager(), config: onConfig });
-    await callOp({ runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" }, warmImplementerOp, { text: "hello" });
-    expect(((am2.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as { runOptions: { keepOpen?: boolean } }).runOptions.keepOpen).toBe(true);
-    await runtime.close(); runtime = undefined;
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      warmImplementerOp,
+      { text: "hello" },
+    );
+    expect(
+      ((am2.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as { runOptions: { keepOpen?: boolean } })
+        .runOptions.keepOpen,
+    ).toBe(true);
+    await runtime.close();
+    runtime = undefined;
 
     const am3 = makeManager();
     runtime = makeTestRuntime({ agentManager: am3, sessionManager: makeSessionManager(), config: offConfig });
-    await callOp({ runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" }, warmAutofixOp, { text: "hello" });
-    expect(((am3.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as { runOptions: { keepOpen?: boolean } }).runOptions.keepOpen).toBe(true);
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      warmAutofixOp,
+      { text: "hello" },
+    );
+    expect(
+      ((am3.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as { runOptions: { keepOpen?: boolean } })
+        .runOptions.keepOpen,
+    ).toBe(true);
   });
 
   test("throws CALL_OP_NO_OUTPUT when run returns no output", async () => {
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (_req) => ({
-        result: { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        result: {
+          success: false,
+          exitCode: 1,
+          output: "",
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCostUsd: 0,
+          agentFallbacks: [],
+        },
         fallbacks: [],
       }),
     });
@@ -350,7 +438,11 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
 // back to "balanced is hardcoded".
 describe("callOp — op.model resolver (issue #725)", () => {
   test("CompleteOperation: literal model is forwarded to completeAs.model", async () => {
-    const completeResult: CompleteResult = { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+    const completeResult: CompleteResult = {
+      output: "ok",
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: 0,
+    };
     const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
     runtime = makeTestRuntime({ agentManager });
 
@@ -377,7 +469,11 @@ describe("callOp — op.model resolver (issue #725)", () => {
   });
 
   test("CompleteOperation: resolver function is invoked with input and resolves to ConfiguredModel", async () => {
-    const completeResult: CompleteResult = { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+    const completeResult: CompleteResult = {
+      output: "ok",
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: 0,
+    };
     const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
     runtime = makeTestRuntime({ agentManager });
 
@@ -499,7 +595,15 @@ describe("callOp — op.hopBody + op.retry compose (US-004)", () => {
   test("RunOperation with both hopBody and retry succeeds — no error thrown, one dispatch", async () => {
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (_req) => ({
-        result: { success: true, exitCode: 0, output: "composed result", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        result: {
+          success: true,
+          exitCode: 0,
+          output: "composed result",
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCostUsd: 0,
+          agentFallbacks: [],
+        },
         fallbacks: [],
       }),
     });
@@ -517,9 +621,12 @@ describe("callOp — op.hopBody + op.retry compose (US-004)", () => {
         task: { id: "task", content: input.text, overridable: false },
       }),
       parse: (output) => output.trim(),
-      hopBody: async (_initialPrompt, _ctx): Promise<TurnResult> => (
-        { output: "from hopBody", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0, internalRoundTrips: 0 }
-      ),
+      hopBody: async (_initialPrompt, _ctx): Promise<TurnResult> => ({
+        output: "from hopBody",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+        internalRoundTrips: 0,
+      }),
       retry: { preset: "transient-network" as const, maxAttempts: 3, baseDelayMs: 500 } as RetryPreset,
     };
 
@@ -541,70 +648,172 @@ describe("callOp — op.hopBody + op.retry compose (US-004)", () => {
   });
 
   test("allows RunOperation with only hopBody, only retry, or neither — all dispatch once", async () => {
-    const makeSuccessManager = (output: string) => makeMockAgentManager({
-      runWithFallbackFn: async (_req) => ({ result: { success: true, exitCode: 0, output, rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] }),
-    });
+    const makeSuccessManager = (output: string) =>
+      makeMockAgentManager({
+        runWithFallbackFn: async (_req) => ({
+          result: {
+            success: true,
+            exitCode: 0,
+            output,
+            rateLimited: false,
+            durationMs: 1,
+            estimatedCostUsd: 0,
+            agentFallbacks: [],
+          },
+          fallbacks: [],
+        }),
+      });
 
     const hopBodyOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
-      kind: "run", name: "hopbody-only-op", stage: "run", config: testSel, session: { role: "implementer", lifetime: "fresh" },
-      build: (input) => ({ role: { id: "role", content: "Echo text.", overridable: false }, task: { id: "task", content: input.text, overridable: false } }),
+      kind: "run",
+      name: "hopbody-only-op",
+      stage: "run",
+      config: testSel,
+      session: { role: "implementer", lifetime: "fresh" },
+      build: (input) => ({
+        role: { id: "role", content: "Echo text.", overridable: false },
+        task: { id: "task", content: input.text, overridable: false },
+      }),
       parse: (output) => output.trim(),
-      hopBody: async (_initialPrompt, _ctx): Promise<TurnResult> => ({ output: "from hopBody", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0, internalRoundTrips: 0 }),
+      hopBody: async (_initialPrompt, _ctx): Promise<TurnResult> => ({
+        output: "from hopBody",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+        internalRoundTrips: 0,
+      }),
     };
     const am1 = makeSuccessManager("hopbody works");
     runtime = makeTestRuntime({ agentManager: am1, sessionManager: makeSessionManager() });
-    expect(await callOp({ runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" }, hopBodyOp, { text: "hello" })).toBe("hopbody works");
+    expect(
+      await callOp(
+        { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+        hopBodyOp,
+        { text: "hello" },
+      ),
+    ).toBe("hopbody works");
     expect(am1.runWithFallback).toHaveBeenCalledTimes(1);
-    await runtime.close(); runtime = undefined;
+    await runtime.close();
+    runtime = undefined;
 
     const retryOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
-      kind: "run", name: "retry-only-op", stage: "run", config: testSel, session: { role: "implementer", lifetime: "fresh" },
-      build: (input) => ({ role: { id: "role", content: "Echo text.", overridable: false }, task: { id: "task", content: input.text, overridable: false } }),
+      kind: "run",
+      name: "retry-only-op",
+      stage: "run",
+      config: testSel,
+      session: { role: "implementer", lifetime: "fresh" },
+      build: (input) => ({
+        role: { id: "role", content: "Echo text.", overridable: false },
+        task: { id: "task", content: input.text, overridable: false },
+      }),
       parse: (output) => output.trim(),
       retry: { preset: "transient-network" as const, maxAttempts: 3, baseDelayMs: 500 } as RetryPreset,
     };
     const am2 = makeSuccessManager("ran");
     runtime = makeTestRuntime({ agentManager: am2, sessionManager: makeSessionManager() });
-    expect(await callOp({ runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" }, retryOp, { text: "hello" })).toBe("ran");
+    expect(
+      await callOp(
+        { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+        retryOp,
+        { text: "hello" },
+      ),
+    ).toBe("ran");
     expect(am2.runWithFallback).toHaveBeenCalledTimes(1);
-    await runtime.close(); runtime = undefined;
+    await runtime.close();
+    runtime = undefined;
 
     const am3 = makeSuccessManager("ran");
     runtime = makeTestRuntime({ agentManager: am3, sessionManager: makeSessionManager() });
-    expect(await callOp({ runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" }, runEchoOp, { text: "hello" })).toBe("ran");
+    expect(
+      await callOp(
+        { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+        runEchoOp,
+        { text: "hello" },
+      ),
+    ).toBe("ran");
     expect(am3.runWithFallback).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("callOp — kind:run — interactionBridge threading (AC3/AC4/AC8)", () => {
   test("interactionBridge threaded when set; maxInteractionTurns threaded when set; bridge key absent when not set", async () => {
-    const makeRunManager = () => makeMockAgentManager({
-      runWithFallbackFn: async (_req) => ({ result: { success: true, exitCode: 0, output: "ran", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] }),
-    });
+    const makeRunManager = () =>
+      makeMockAgentManager({
+        runWithFallbackFn: async (_req) => ({
+          result: {
+            success: true,
+            exitCode: 0,
+            output: "ran",
+            rateLimited: false,
+            durationMs: 1,
+            estimatedCostUsd: 0,
+            agentFallbacks: [],
+          },
+          fallbacks: [],
+        }),
+      });
     const bridge = { detectQuestion: async (_: string) => false, onQuestionDetected: async (_: string) => "answer" };
 
     const am1 = makeRunManager();
     runtime = makeTestRuntime({ agentManager: am1, sessionManager: makeSessionManager() });
-    await callOp({ runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001", interactionBridge: bridge }, runEchoOp, { text: "hello" });
-    expect(((am1.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as AgentRunRequest).runOptions.interactionBridge).toBe(bridge);
-    await runtime.close(); runtime = undefined;
+    await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-001",
+        interactionBridge: bridge,
+      },
+      runEchoOp,
+      { text: "hello" },
+    );
+    expect(
+      ((am1.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as AgentRunRequest).runOptions
+        .interactionBridge,
+    ).toBe(bridge);
+    await runtime.close();
+    runtime = undefined;
 
     const am2 = makeRunManager();
     runtime = makeTestRuntime({ agentManager: am2, sessionManager: makeSessionManager() });
-    await callOp({ runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001", maxInteractionTurns: 7 }, runEchoOp, { text: "hello" });
-    expect(((am2.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as AgentRunRequest).runOptions.maxInteractionTurns).toBe(7);
-    await runtime.close(); runtime = undefined;
+    await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-001",
+        maxInteractionTurns: 7,
+      },
+      runEchoOp,
+      { text: "hello" },
+    );
+    expect(
+      ((am2.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as AgentRunRequest).runOptions
+        .maxInteractionTurns,
+    ).toBe(7);
+    await runtime.close();
+    runtime = undefined;
 
     const am3 = makeRunManager();
     runtime = makeTestRuntime({ agentManager: am3, sessionManager: makeSessionManager() });
-    await callOp({ runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" }, runEchoOp, { text: "hello" });
-    expect("interactionBridge" in ((am3.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as AgentRunRequest).runOptions).toBe(false);
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      runEchoOp,
+      { text: "hello" },
+    );
+    expect(
+      "interactionBridge" in
+        ((am3.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as AgentRunRequest).runOptions,
+    ).toBe(false);
   });
 });
 
 describe("callOp — run-kind op.recover invocation on retry exhaustion (#993)", () => {
   // A run-kind op whose parse() always throws to simulate unparseable agent output.
-  function makeStrictRunOp(overrides: Partial<RunOperation<{ id: string }, { value: string }, Pick<typeof DEFAULT_CONFIG, "routing">>> = {}): RunOperation<{ id: string }, { value: string }, Pick<typeof DEFAULT_CONFIG, "routing">> {
+  function makeStrictRunOp(
+    overrides: Partial<RunOperation<{ id: string }, { value: string }, Pick<typeof DEFAULT_CONFIG, "routing">>> = {},
+  ): RunOperation<{ id: string }, { value: string }, Pick<typeof DEFAULT_CONFIG, "routing">> {
     return {
       kind: "run",
       name: "strict-parse-op",
@@ -615,7 +824,9 @@ describe("callOp — run-kind op.recover invocation on retry exhaustion (#993)",
         role: { id: "role", content: "", overridable: false },
         task: { id: "task", content: input.id, overridable: false },
       }),
-      parse: (_output) => { throw new Error("parse always throws"); },
+      parse: (_output) => {
+        throw new Error("parse always throws");
+      },
       retry: {
         shouldRetry: (_failure, attempt) =>
           attempt < 2 ? { retry: true, delayMs: 0, nextPrompt: "retry" } : { retry: false },
@@ -638,7 +849,15 @@ describe("callOp — run-kind op.recover invocation on retry exhaustion (#993)",
       runWithFallbackFn: async (req) => {
         const result = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
         return {
-          result: { success: true, exitCode: 0, rateLimited: false, durationMs: 1, output: result.result.output, estimatedCostUsd: result.result.estimatedCostUsd ?? 0, agentFallbacks: [] },
+          result: {
+            success: true,
+            exitCode: 0,
+            rateLimited: false,
+            durationMs: 1,
+            output: result.result.output,
+            estimatedCostUsd: result.result.estimatedCostUsd ?? 0,
+            agentFallbacks: [],
+          },
           fallbacks: [],
         };
       },
@@ -650,7 +869,15 @@ describe("callOp — run-kind op.recover invocation on retry exhaustion (#993)",
   function makeChatAckAgentManager() {
     return makeMockAgentManager({
       runWithFallbackFn: async (_req) => ({
-        result: { success: true, exitCode: 0, output: "File already valid.", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        result: {
+          success: true,
+          exitCode: 0,
+          output: "File already valid.",
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCostUsd: 0,
+          agentFallbacks: [],
+        },
         fallbacks: [],
       }),
     });
@@ -673,7 +900,6 @@ describe("callOp — run-kind op.recover invocation on retry exhaustion (#993)",
     expect(result).toBe(recovered);
   });
 
-
   test("(c) both exhaustedFallback and op.recover — exhaustedFallback wins", async () => {
     // Uses hop-invoking mock so sendWithParseRetry runs and retryFallback is set.
     const agentManager = makeHopInvokingAgentManager();
@@ -688,7 +914,10 @@ describe("callOp — run-kind op.recover invocation on retry exhaustion (#993)",
             ? { retry: true, delayMs: 0, nextPrompt: "retry" }
             : { retry: false, fallback: { value: "from-exhausted-fallback" } },
       },
-      recover: async () => { recoverCalled.push(true); return { value: "from-recover" }; },
+      recover: async () => {
+        recoverCalled.push(true);
+        return { value: "from-recover" };
+      },
     });
 
     const result = await callOp(
@@ -704,16 +933,19 @@ describe("callOp — run-kind op.recover invocation on retry exhaustion (#993)",
 
   test.each([
     ["(b) op.recover undefined — falls through to envelope passthrough", makeStrictRunOp()],
-    ["(d) op.recover returns null — falls through to envelope passthrough", makeStrictRunOp({ recover: async () => null })],
+    [
+      "(d) op.recover returns null — falls through to envelope passthrough",
+      makeStrictRunOp({ recover: async () => null }),
+    ],
   ] as const)("%s", async (_label, op) => {
     const agentManager = makeHopInvokingAgentManager();
     const sessionManager = makeSessionManager();
     runtime = makeTestRuntime({ agentManager, sessionManager });
-    const result = await callOp(
+    const result = (await callOp(
       { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
       op,
       { id: "f1" },
-    ) as unknown as { output: string };
+    )) as unknown as { output: string };
     expect(typeof result).toBe("object");
     expect("output" in result).toBe(true);
   });
@@ -723,7 +955,11 @@ describe("callOp — run-kind op.recover invocation on retry exhaustion (#993)",
     const sessionManager = makeSessionManager();
     runtime = makeTestRuntime({ agentManager, sessionManager });
 
-    const op = makeStrictRunOp({ recover: async () => { throw new Error("disk-read-error"); } });
+    const op = makeStrictRunOp({
+      recover: async () => {
+        throw new Error("disk-read-error");
+      },
+    });
 
     await expect(
       callOp(
@@ -734,4 +970,3 @@ describe("callOp — run-kind op.recover invocation on retry exhaustion (#993)",
     ).rejects.toThrow("disk-read-error");
   });
 });
-

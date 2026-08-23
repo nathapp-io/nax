@@ -10,21 +10,21 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { CallContext } from "@/operations/types";
-import type { DebateStageConfig } from "@/debate/types";
 import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
 import {
   DebateRunner,
   _debateSessionDeps,
-  resolveOutcome,
-  registerSelector,
   pickSelectorKind,
-  registerPreDebatePhase,
   registerPostDebateVerifier,
+  registerPreDebatePhase,
+  registerSelector,
+  resolveOutcome,
 } from "@/debate";
-import type { Selector, SelectorContext, SelectorResult } from "@/debate/selectors/types";
 import type { PreDebatePhase, PreDebatePhaseContext, PreDebatePhaseResult } from "@/debate/pre-phase/types";
+import type { Selector, SelectorContext, SelectorResult } from "@/debate/selectors/types";
+import type { DebateStageConfig } from "@/debate/types";
 import type { PostDebateVerifier, PostDebateVerifierContext, PostDebateVerifierResult } from "@/debate/verifiers/types";
+import type { CallContext } from "@/operations/types";
 import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 const DEFAULT_DEBATE_CONFIG = debateConfigSelector.select(DEFAULT_CONFIG);
@@ -83,13 +83,14 @@ describe("resolveOutcome() — selector dispatch wiring (US-004 AC1)", () => {
 
   beforeEach(() => {
     origGetSafeLogger = _debateSessionDeps.getSafeLogger;
-    _debateSessionDeps.getSafeLogger = mock(() =>
-      ({
-        info: mock(() => {}),
-        debug: mock(() => {}),
-        warn: mock(() => {}),
-        error: mock(() => {}),
-      } as any),
+    _debateSessionDeps.getSafeLogger = mock(
+      () =>
+        ({
+          info: mock(() => {}),
+          debug: mock(() => {}),
+          warn: mock(() => {}),
+          error: mock(() => {}),
+        }) as any,
     );
     selectorCallCount = 0;
     registerSelector("test-synthesis", mockSelector);
@@ -159,28 +160,26 @@ describe("resolveOutcome() — selector dispatch wiring (US-004 AC1)", () => {
   });
 });
 
-
 // ─── AC4: Pre-debate phase dispatch in runPanelOneShot() ──────────────────────
 
 describe("runPanelOneShot() — pre-debate phase dispatch (US-004 AC4)", () => {
   let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
   let prePhaseCallCount = 0;
-  const mockPrePhase: PreDebatePhase = async (
-    _ctx: PreDebatePhaseContext,
-  ): Promise<PreDebatePhaseResult> => {
+  const mockPrePhase: PreDebatePhase = async (_ctx: PreDebatePhaseContext): Promise<PreDebatePhaseResult> => {
     prePhaseCallCount++;
     return { manifestSection: "## Pre-phase results\nTest pre-phase output", costUsd: 0.005 };
   };
 
   beforeEach(() => {
     origGetSafeLogger = _debateSessionDeps.getSafeLogger;
-    _debateSessionDeps.getSafeLogger = mock(() =>
-      ({
-        info: mock(() => {}),
-        debug: mock(() => {}),
-        warn: mock(() => {}),
-        error: mock(() => {}),
-      } as any),
+    _debateSessionDeps.getSafeLogger = mock(
+      () =>
+        ({
+          info: mock(() => {}),
+          debug: mock(() => {}),
+          warn: mock(() => {}),
+          error: mock(() => {}),
+        }) as any,
     );
     prePhaseCallCount = 0;
     registerPreDebatePhase("test-grounder", mockPrePhase);
@@ -247,13 +246,14 @@ describe("runPanelOneShot() — post-debate verifier dispatch (US-004 AC5)", () 
 
   beforeEach(() => {
     origGetSafeLogger = _debateSessionDeps.getSafeLogger;
-    _debateSessionDeps.getSafeLogger = mock(() =>
-      ({
-        info: mock((): any => {}),
-        debug: mock((): any => {}),
-        warn: mock((): any => {}),
-        error: mock((): any => {}),
-      } as any),
+    _debateSessionDeps.getSafeLogger = mock(
+      () =>
+        ({
+          info: mock((): any => {}),
+          debug: mock((): any => {}),
+          warn: mock((): any => {}),
+          error: mock((): any => {}),
+        }) as any,
     );
     verifierCallCount = 0;
     registerPostDebateVerifier("test-verifier", mockVerifier);
@@ -337,13 +337,14 @@ describe("runPanelOneShot() — behavior preservation (US-004 AC3)", () => {
 
   beforeEach(() => {
     origGetSafeLogger = _debateSessionDeps.getSafeLogger;
-    _debateSessionDeps.getSafeLogger = mock(() =>
-      ({
-        info: mock((): any => {}),
-        debug: mock((): any => {}),
-        warn: mock((): any => {}),
-        error: mock((): any => {}),
-      } as any),
+    _debateSessionDeps.getSafeLogger = mock(
+      () =>
+        ({
+          info: mock((): any => {}),
+          debug: mock((): any => {}),
+          warn: mock((): any => {}),
+          error: mock((): any => {}),
+        }) as any,
     );
   });
 
@@ -403,13 +404,14 @@ describe("All debate runners — resolveOutcome() integration (US-004 AC6)", () 
 
   beforeEach(() => {
     origGetSafeLogger = _debateSessionDeps.getSafeLogger;
-    _debateSessionDeps.getSafeLogger = mock(() =>
-      ({
-        info: mock((): any => {}),
-        debug: mock((): any => {}),
-        warn: mock((): any => {}),
-        error: mock((): any => {}),
-      } as any),
+    _debateSessionDeps.getSafeLogger = mock(
+      () =>
+        ({
+          info: mock((): any => {}),
+          debug: mock((): any => {}),
+          warn: mock((): any => {}),
+          error: mock((): any => {}),
+        }) as any,
     );
   });
 

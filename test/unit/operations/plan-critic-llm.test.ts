@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { ParseValidationError } from "@/agents";
 import type { RetryStrategy } from "@/agents";
 import { NaxError } from "@/errors";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 /**
  * planCriticLlmOp + CriticPromptBuilder tests — US-003
@@ -180,7 +180,13 @@ describe("inspectCriticOutput — AC6-8", () => {
 describe("planCriticLlmOp.parse() — AC9-11", () => {
   test("returns findings array on valid JSON; throws ParseValidationError on invalid or schema-mismatch — AC9-11", () => {
     expect(planCriticLlmOp.parse?.('{"findings":[]}', {}, {})).toMatchObject({ findings: [] });
-    expect(planCriticLlmOp.parse?.(JSON.stringify({ findings: [{ checklistItem: "ac-testable", severity: "blocker" }] }), {}, {}).findings.length).toBeGreaterThan(0);
+    expect(
+      planCriticLlmOp.parse?.(
+        JSON.stringify({ findings: [{ checklistItem: "ac-testable", severity: "blocker" }] }),
+        {},
+        {},
+      ).findings.length,
+    ).toBeGreaterThan(0);
     expect(() => planCriticLlmOp.parse?.("not json", {}, {})).toThrow(ParseValidationError);
     expect(() => planCriticLlmOp.parse?.('{"other":"x"}', {}, {})).toThrow(ParseValidationError);
   });

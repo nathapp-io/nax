@@ -14,8 +14,8 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExecutionConfig } from "@/config/schema";
-import { runReview } from "@/review/runner";
 import type { ReviewConfig } from "@/review";
+import { runReview } from "@/review/runner";
 import { makeTempDir } from "@test/helpers";
 
 describe("Review Config-Driven Commands (US-005)", () => {
@@ -32,7 +32,11 @@ describe("Review Config-Driven Commands (US-005)", () => {
       lintCommand: "echo 'custom lint command'",
     };
 
-    const result = await runReview({ config: reviewConfig, workdir: tempDir, executionConfig: executionConfig as ExecutionConfig });
+    const result = await runReview({
+      config: reviewConfig,
+      workdir: tempDir,
+      executionConfig: executionConfig as ExecutionConfig,
+    });
 
     expect(result.success).toBe(true);
     expect(result.checks).toHaveLength(1);
@@ -53,7 +57,11 @@ describe("Review Config-Driven Commands (US-005)", () => {
       typecheckCommand: "echo 'custom typecheck command'",
     };
 
-    const result = await runReview({ config: reviewConfig, workdir: tempDir, executionConfig: executionConfig as ExecutionConfig });
+    const result = await runReview({
+      config: reviewConfig,
+      workdir: tempDir,
+      executionConfig: executionConfig as ExecutionConfig,
+    });
 
     expect(result.success).toBe(true);
     expect(result.checks).toHaveLength(1);
@@ -75,7 +83,11 @@ describe("Review Config-Driven Commands (US-005)", () => {
       typecheckCommand: "echo 'typecheck ok'",
     };
 
-    const result = await runReview({ config: reviewConfig, workdir: tempDir, executionConfig: executionConfig as ExecutionConfig });
+    const result = await runReview({
+      config: reviewConfig,
+      workdir: tempDir,
+      executionConfig: executionConfig as ExecutionConfig,
+    });
 
     // lint skipped, only typecheck ran
     expect(result.success).toBe(true);
@@ -156,7 +168,11 @@ describe("Review Config-Driven Commands (US-005)", () => {
       lintCommand: "echo 'config override'",
     };
 
-    const result = await runReview({ config: reviewConfig, workdir: tempDir, executionConfig: executionConfig as ExecutionConfig });
+    const result = await runReview({
+      config: reviewConfig,
+      workdir: tempDir,
+      executionConfig: executionConfig as ExecutionConfig,
+    });
 
     expect(result.success).toBe(true);
     expect(result.checks).toHaveLength(1);
@@ -208,7 +224,11 @@ describe("Review Config-Driven Commands (US-005)", () => {
       lintCommand: "echo 'execution config lint'",
     };
 
-    const result = await runReview({ config: reviewConfig, workdir: tempDir, executionConfig: executionConfig as ExecutionConfig });
+    const result = await runReview({
+      config: reviewConfig,
+      workdir: tempDir,
+      executionConfig: executionConfig as ExecutionConfig,
+    });
 
     expect(result.success).toBe(true);
     expect(result.checks).toHaveLength(1);
@@ -277,7 +297,11 @@ describe("Review Config-Driven Commands (US-005)", () => {
       lintCommand: "echo 'exec lint'",
     };
 
-    const result = await runReview({ config: reviewConfig, workdir: tempDir, executionConfig: executionConfig as ExecutionConfig });
+    const result = await runReview({
+      config: reviewConfig,
+      workdir: tempDir,
+      executionConfig: executionConfig as ExecutionConfig,
+    });
 
     expect(result.success).toBe(true);
     expect(result.checks).toHaveLength(result.checks.length); // Fixed for v0.20.0 default change;
@@ -312,7 +336,11 @@ describe("Review Config-Driven Commands (US-005)", () => {
       // No testCommand in ExecutionConfig
     };
 
-    const result = await runReview({ config: reviewConfig, workdir: tempDir, executionConfig: executionConfig as ExecutionConfig });
+    const result = await runReview({
+      config: reviewConfig,
+      workdir: tempDir,
+      executionConfig: executionConfig as ExecutionConfig,
+    });
 
     expect(result.success).toBe(true);
     expect(result.checks).toHaveLength(1);

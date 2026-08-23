@@ -14,11 +14,10 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "@/config";
+import { collectStoryMetrics } from "@/metrics/tracker";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
-import { collectStoryMetrics } from "@/metrics/tracker";
-import { makeNaxConfig } from "@test/helpers";
-import { makeMockRuntime } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig, makeTestContext } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-test-metrics-${randomUUID()}`;
 const WORKDIR_BATCH = `/tmp/nax-test-metrics-batch-${randomUUID()}`;
@@ -161,22 +160,25 @@ describe("collectBatchMetrics - runtimeCrashes per story", () => {
     const { collectBatchMetrics } = await import("@/metrics/tracker");
 
     const stories = [makeStory({ id: "US-001" }), makeStory({ id: "US-002" })];
-    const ctx = {
-      config: makeNaxConfig(),
-      prd: makePRD(stories[0]),
-      story: stories[0],
-      stories,
-      routing: {
-        complexity: "simple",
-        modelTier: "fast",
-        testStrategy: "test-after",
-        reasoning: "test",
+    const ctx = Object.assign(
+      makeTestContext({
+        config: makeNaxConfig(),
+        prd: makePRD(stories[0]),
+        story: stories[0],
+        stories,
+        routing: {
+          complexity: "simple",
+          modelTier: "fast",
+          testStrategy: "test-after",
+          reasoning: "test",
+        },
+        workdir: WORKDIR_BATCH,
+      }),
+      {
+        agentResult: { success: true, estimatedCostUsd: 0.01, durationMs: 1000 },
+        runtime: makeMockRuntime(),
       },
-      workdir: WORKDIR_BATCH,
-      hooks: { hooks: {} },
-      agentResult: { success: true, estimatedCostUsd: 0.01, durationMs: 1000 },
-      runtime: makeMockRuntime(),
-    } as unknown as PipelineContext;
+    );
 
     const batchMetrics = collectBatchMetrics(ctx, STORY_START_TIME);
 

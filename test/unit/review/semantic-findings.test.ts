@@ -17,7 +17,7 @@ import { _diffUtilsDeps } from "@/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "@/review/semantic";
 import type { SemanticStory } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -56,11 +56,30 @@ function makeAgentManager(llmResponse: string, cost = 0) {
     }),
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
     runWithFallbackFn: async (request) => {
-      const result = { success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCostUsd: cost, agentFallbacks: [] };
+      const result = {
+        success: true,
+        exitCode: 0,
+        output: llmResponse,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCostUsd: cost,
+        agentFallbacks: [],
+      };
       return { result, fallbacks: [], bundle: request.bundle };
     },
-    completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] }),
-    runAsFn: async () => ({ success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCostUsd: cost, agentFallbacks: [] }),
+    completeWithFallbackFn: async () => ({
+      result: { output: llmResponse, costUsd: cost, source: "mock" },
+      fallbacks: [],
+    }),
+    runAsFn: async () => ({
+      success: true,
+      exitCode: 0,
+      output: llmResponse,
+      rateLimited: false,
+      durationMs: 100,
+      estimatedCostUsd: cost,
+      agentFallbacks: [],
+    }),
     completeAsFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
     getAgentFn: () => makeAgentAdapter(),
   });
@@ -70,7 +89,10 @@ function makeRuntime(agentManager: ReturnType<typeof makeAgentManager>) {
   return makeMockRuntime({ agentManager });
 }
 
-async function callRunSemanticReview(llmResponse: string, overrides?: Partial<import("@/review/types").ReviewCheckResult>): Promise<import("@/review/types").ReviewCheckResult> {
+async function callRunSemanticReview(
+  llmResponse: string,
+  overrides?: Partial<import("@/review/types").ReviewCheckResult>,
+): Promise<import("@/review/types").ReviewCheckResult> {
   const agentManager = makeAgentManager(llmResponse);
   return runSemanticReview({
     workdir: "/tmp/wd",
@@ -83,14 +105,7 @@ async function callRunSemanticReview(llmResponse: string, overrides?: Partial<im
 }
 
 function makeSpawnMock(stdout = "diff output", exitCode = 0) {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(c) { c.enqueue(new TextEncoder().encode(stdout)); c.close(); },
-    }),
-    stderr: new ReadableStream({ start(c) { c.close(); } }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(() => ({ exitCode, stdout })).spawn;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +135,15 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
-        { severity: "error", file: "src/foo.ts", line: 10, issue: "Stub left in code", suggestion: "Remove stub", acQuote: "Each src module error finding", acIndex: 2 },
+        {
+          severity: "error",
+          file: "src/foo.ts",
+          line: 10,
+          issue: "Stub left in code",
+          suggestion: "Remove stub",
+          acQuote: "Each src module error finding",
+          acIndex: 2,
+        },
       ],
     });
     const result = await callRunSemanticReview(llmResponse);
@@ -131,7 +154,15 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
-        { severity: "error", file: "src/foo.ts", line: 5, issue: "src module wiring missing in runner", suggestion: "Fix it", acQuote: "Each src module error finding", acIndex: 2 },
+        {
+          severity: "error",
+          file: "src/foo.ts",
+          line: 5,
+          issue: "src module wiring missing in runner",
+          suggestion: "Fix it",
+          acQuote: "Each src module error finding",
+          acIndex: 2,
+        },
       ],
     });
 
@@ -145,8 +176,24 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
-        { severity: "error", file: "src/a.ts", line: 1, issue: "src module error in a", suggestion: "Fix", acQuote: "Each src module error finding", acIndex: 2 },
-        { severity: "error", file: "src/b.ts", line: 2, issue: "src module error in b", suggestion: "Fix", acQuote: "Each src module error finding", acIndex: 2 },
+        {
+          severity: "error",
+          file: "src/a.ts",
+          line: 1,
+          issue: "src module error in a",
+          suggestion: "Fix",
+          acQuote: "Each src module error finding",
+          acIndex: 2,
+        },
+        {
+          severity: "error",
+          file: "src/b.ts",
+          line: 2,
+          issue: "src module error in b",
+          suggestion: "Fix",
+          acQuote: "Each src module error finding",
+          acIndex: 2,
+        },
       ],
     });
 
@@ -161,9 +208,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
-      findings: [
-        { severity: "info", file: "src/x.ts", line: 3, issue: "Info issue", suggestion: "Fix" },
-      ],
+      findings: [{ severity: "info", file: "src/x.ts", line: 3, issue: "Info issue", suggestion: "Fix" }],
     });
 
     const result = await callRunSemanticReview(llmResponse);
@@ -178,7 +223,15 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
-        { severity: "error", file: "src/review/runner.ts", line: 42, issue: "src module error not wired", suggestion: "Fix", acQuote: "Each src module error finding", acIndex: 2 },
+        {
+          severity: "error",
+          file: "src/review/runner.ts",
+          line: 42,
+          issue: "src module error not wired",
+          suggestion: "Fix",
+          acQuote: "Each src module error finding",
+          acIndex: 2,
+        },
       ],
     });
 
@@ -192,7 +245,15 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
-        { severity: "error", file: "src/foo.ts", line: 99, issue: "src module error missing", suggestion: "Fix", acQuote: "Each src module error finding", acIndex: 2 },
+        {
+          severity: "error",
+          file: "src/foo.ts",
+          line: 99,
+          issue: "src module error missing",
+          suggestion: "Fix",
+          acQuote: "Each src module error finding",
+          acIndex: 2,
+        },
       ],
     });
     const result = await callRunSemanticReview(llmResponse);
@@ -205,7 +266,15 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
-        { severity: "error", file: "src/foo.ts", line: 1, issue: "src module error not flagged", suggestion: "Fix", acQuote: "Each src module error finding", acIndex: 2 },
+        {
+          severity: "error",
+          file: "src/foo.ts",
+          line: 1,
+          issue: "src module error not flagged",
+          suggestion: "Fix",
+          acQuote: "Each src module error finding",
+          acIndex: 2,
+        },
       ],
     });
     const result = await callRunSemanticReview(llmResponse);
@@ -217,9 +286,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
-      findings: [
-        { severity: "warn", file: "src/foo.ts", line: 1, issue: "Warn issue", suggestion: "Fix" },
-      ],
+      findings: [{ severity: "warn", file: "src/foo.ts", line: 1, issue: "Warn issue", suggestion: "Fix" }],
     });
     const result = await callRunSemanticReview(llmResponse);
 
@@ -231,9 +298,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     _diffUtilsDeps.spawn = makeSpawnMock("some diff");
     const llmResponse = JSON.stringify({
       passed: false,
-      findings: [
-        { severity: "info", file: "src/foo.ts", line: 1, issue: "Info issue", suggestion: "Fix" },
-      ],
+      findings: [{ severity: "info", file: "src/foo.ts", line: 1, issue: "Info issue", suggestion: "Fix" }],
     });
     const result = await callRunSemanticReview(llmResponse);
 
@@ -246,7 +311,15 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
-        { severity: "error", file: "src/a.ts", line: 1, issue: "src module error missing in A", suggestion: "Fix A", acQuote: "Each src module error finding", acIndex: 2 },
+        {
+          severity: "error",
+          file: "src/a.ts",
+          line: 1,
+          issue: "src module error missing in A",
+          suggestion: "Fix A",
+          acQuote: "Each src module error finding",
+          acIndex: 2,
+        },
         { severity: "warn", file: "src/b.ts", line: 20, issue: "Issue B", suggestion: "Fix B" },
         { severity: "info", file: "src/c.ts", line: 5, issue: "Issue C", suggestion: "Fix C" },
       ],

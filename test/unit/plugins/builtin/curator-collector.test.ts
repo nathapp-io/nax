@@ -24,7 +24,6 @@ function makeContext(root: string, workdir: string): CuratorPostRunContext {
     version: "0.1.0",
     pluginConfig: {},
     logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-    // biome-ignore lint/suspicious/noExplicitAny: collector reads no config keys on this path
     config: {} as any,
     outputDir: join(root, "out"),
     globalDir: join(root, "global"),

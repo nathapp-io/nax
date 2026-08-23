@@ -1,8 +1,8 @@
-import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import type { ResolveResult } from "@/cli";
-import type { ForgeDeps, ForgeRunResult } from "@/forge";
 import { _finishContextDeps, loadFinishContext } from "@/finish";
+import type { ForgeDeps, ForgeRunResult } from "@/forge";
 import { withTempDir } from "@test/helpers";
 
 type GitResult = { stdout: string; stderr: string; exitCode: number };
@@ -31,7 +31,11 @@ const okResolve: ResolveResult = {
   status: "ok",
   featureName: "my-feature",
   specSource: { kind: "markdown", path: ".nax/features/my-feature/spec.md" },
-  acceptance: { status: "ok", enabled: true, groups: [{ packageDir: "", testPath: "t.test.ts", exists: true, cwd: "" }] },
+  acceptance: {
+    status: "ok",
+    enabled: true,
+    groups: [{ packageDir: "", testPath: "t.test.ts", exists: true, cwd: "" }],
+  },
   testPatterns: { regex: ["\\.test\\.ts$"], resolution: "detected" },
   message: "resolved spec: .nax/features/my-feature/spec.md",
 };
@@ -376,7 +380,6 @@ describe("loadFinishContext — ledger entry check (#1674 part 1)", () => {
     });
   });
 });
-
 
 /**
  * A `ForgeDeps` whose `run` answers the branch's PR view with `stdout`, and

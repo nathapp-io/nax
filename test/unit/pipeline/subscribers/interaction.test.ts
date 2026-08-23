@@ -1,8 +1,8 @@
 // RE-ARCH: keep
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { wireInteraction } from "@/pipeline/subscribers/interaction";
-import { PipelineEventBus, type StoryFailedEvent } from "@/pipeline/event-bus";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
+import { PipelineEventBus, type StoryFailedEvent } from "@/pipeline/event-bus";
+import { wireInteraction } from "@/pipeline/subscribers/interaction";
 import type { UserStory } from "@/prd";
 
 describe("wireInteraction", () => {
@@ -49,9 +49,7 @@ describe("wireInteraction - max-retries trigger", () => {
     bus.clear();
   });
 
-  function createStoryFailedEvent(
-    overrides: Partial<StoryFailedEvent> = {},
-  ): StoryFailedEvent {
+  function createStoryFailedEvent(overrides: Partial<StoryFailedEvent> = {}): StoryFailedEvent {
     const story: UserStory = {
       id: "US-001",
       title: "Test Story",

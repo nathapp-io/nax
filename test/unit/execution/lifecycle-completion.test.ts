@@ -9,18 +9,14 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "@/config";
 import { purgeStaleManifests } from "@/context/engine";
-import {
-  type RunCompletionOptions,
-  _runCompletionDeps,
-  handleRunCompletion,
-} from "@/execution/lifecycle";
+import { type RunCompletionOptions, _runCompletionDeps, handleRunCompletion } from "@/execution/lifecycle";
 import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
 import * as loggerModule from "@/logger";
 import type { StoryMetrics } from "@/metrics";
 import type { RunCompletedEvent } from "@/pipeline";
 import { pipelineEventBus } from "@/pipeline";
 import type { PRD, UserStory } from "@/prd";
-import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import { type DeepPartial, makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -52,7 +48,11 @@ function makePRD(stories: Array<{ id: string; status: UserStory["status"] }>): P
   };
 }
 
-function makeConfig(regressionMode?: "deferred" | "per-story" | "disabled", testCommand?: string): NaxConfig {
+function makeConfig(
+  regressionMode?: "deferred" | "per-story" | "disabled",
+  testCommand?: string,
+  extra: DeepPartial<NaxConfig> = {},
+): NaxConfig {
   return makeNaxConfig({
     execution: {
       regressionGate: {
@@ -67,18 +67,8 @@ function makeConfig(regressionMode?: "deferred" | "per-story" | "disabled", test
         ...(testCommand ? { test: testCommand } : {}),
       },
     },
+    ...extra,
   });
-}
-
-function makeStatusWriter() {
-  return {
-    setPrd: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    setRunStatus: mock(() => {}),
-    setPostRunPhase: mock((_phase: string, _update: Record<string, unknown>) => {}),
-    update: mock(async () => {}),
-    writeFeatureStatus: mock(async () => {}),
-  };
 }
 
 function makeStoryMetrics(storyId: string, fullSuiteGatePassed: boolean | undefined): StoryMetrics {
@@ -119,7 +109,7 @@ function makeOpts(
     iterations: 1,
     startTime: Date.now() - 1000,
     workdir,
-    statusWriter: makeStatusWriter() as unknown as RunCompletionOptions["statusWriter"],
+    statusWriter: makeStatusWriter(),
     config,
     runtime: makeMockRuntime(),
     ...overrides,
@@ -556,7 +546,7 @@ describe("handleRunCompletion - run status on regression failure (RL-004)", () =
     ]);
     await handleRunCompletion({
       ...makeOpts(config, prd2),
-      statusWriter: failWriter as unknown as RunCompletionOptions["statusWriter"],
+      statusWriter: failWriter,
     });
     expect(failWriter.setRunStatus).toHaveBeenCalledWith("failed");
 
@@ -567,7 +557,7 @@ describe("handleRunCompletion - run status on regression failure (RL-004)", () =
     const prd1 = makePRD([{ id: "US-001", status: "passed" }]);
     await handleRunCompletion({
       ...makeOpts(config, prd1),
-      statusWriter: passWriter as unknown as RunCompletionOptions["statusWriter"],
+      statusWriter: passWriter,
     });
     expect(passWriter.setRunStatus).not.toHaveBeenCalledWith("failed");
   });
@@ -584,7 +574,7 @@ describe("handleRunCompletion - cost-limit exitReason surfaces distinctly", () =
 
     await handleRunCompletion({
       ...makeOpts(config, prd, undefined, { exitReason: "cost-limit" }),
-      statusWriter: statusWriter as unknown as RunCompletionOptions["statusWriter"],
+      statusWriter: statusWriter,
     });
 
     expect(statusWriter.setRunStatus).toHaveBeenCalledWith("cost-limit");
@@ -600,7 +590,7 @@ describe("handleRunCompletion - cost-limit exitReason surfaces distinctly", () =
 
     await handleRunCompletion({
       ...makeOpts(config, prd),
-      statusWriter: statusWriter as unknown as RunCompletionOptions["statusWriter"],
+      statusWriter: statusWriter,
     });
 
     expect(statusWriter.setRunStatus).not.toHaveBeenCalledWith("cost-limit");
@@ -617,7 +607,7 @@ describe("handleRunCompletion - cost-limit exitReason surfaces distinctly", () =
 
     await handleRunCompletion({
       ...makeOpts(config, prd, undefined, { exitReason: "cost-limit" }),
-      statusWriter: statusWriter as unknown as RunCompletionOptions["statusWriter"],
+      statusWriter: statusWriter,
     });
 
     expect(statusWriter.setRunStatus).toHaveBeenLastCalledWith("failed");
@@ -649,21 +639,12 @@ describe("US-002: handleRunCompletion — manifest retention sweep", () => {
   }
 
   function makeConfigWithManifest(retentionDays?: number): NaxConfig {
-    const base = makeConfig("disabled");
-    if (retentionDays === undefined) return base;
-    return makeNaxConfig({
-      ...base,
-      context: {
-        ...base.context,
-        v2: {
-          ...base.context.v2,
-          manifest: { retentionDays },
-        },
-      },
+    if (retentionDays === undefined) return makeConfig("disabled");
+    return makeConfig("disabled", undefined, {
+      context: { v2: { manifest: { retentionDays } } },
     });
   }
 
-  // biome-ignore lint/suspicious/noExplicitAny: spy type varies by mock helper
   let loggerSpy: any;
 
   beforeEach(() => {

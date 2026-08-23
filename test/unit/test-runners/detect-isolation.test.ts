@@ -13,12 +13,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { _cacheDeps } from "@/test-runners/detect/cache";
 import { _directoryScanDeps } from "@/test-runners/detect/directory-scan";
 import { _fileScanDeps } from "@/test-runners/detect/file-scan";
 import { _frameworkConfigDeps } from "@/test-runners/detect/framework-configs";
 import { _frameworkDefaultsDeps } from "@/test-runners/detect/framework-defaults";
 import { detectTestFilePatterns } from "@/test-runners/detect/index";
-import { _cacheDeps } from "@/test-runners/detect/cache";
+import { makeSpawn } from "@test/helpers";
 
 // ─── Save/restore helpers ─────────────────────────────────────────────────────
 
@@ -38,22 +39,6 @@ type Orig = {
 
 let orig: Orig;
 
-function spawnWithOutput(output: string): ReturnType<typeof Bun.spawn> {
-  const enc = new TextEncoder();
-  const bytes = enc.encode(output);
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(bytes);
-      controller.close();
-    },
-  });
-  return { exited: Promise.resolve(0), stdout: stream } as unknown as ReturnType<typeof Bun.spawn>;
-}
-
-function spawnFailed(): ReturnType<typeof Bun.spawn> {
-  return { exited: Promise.resolve(1), stdout: null } as unknown as ReturnType<typeof Bun.spawn>;
-}
-
 beforeEach(() => {
   orig = {
     readText: _frameworkConfigDeps.readText,
@@ -68,13 +53,15 @@ beforeEach(() => {
     dirExists: _directoryScanDeps.dirExists,
     dirSpawn: _directoryScanDeps.spawn,
   };
-  _cacheDeps.readJson = mock(async () => { throw new Error("not found"); });
+  _cacheDeps.readJson = mock(async () => {
+    throw new Error("not found");
+  });
   _cacheDeps.writeJson = mock(async () => {});
   _cacheDeps.fileMtime = mock(async () => null);
   _directoryScanDeps.dirExists = mock(async () => false);
-  _directoryScanDeps.spawn = mock((..._args: unknown[]) => spawnFailed()) as unknown as typeof Bun.spawn;
+  _directoryScanDeps.spawn = makeSpawn(() => ({ exitCode: 1 })).spawn;
   _frameworkDefaultsDeps.fileExists = mock(async () => false);
-  _fileScanDeps.spawn = mock((..._args: unknown[]) => spawnWithOutput("")) as unknown as typeof Bun.spawn;
+  _fileScanDeps.spawn = makeSpawn(() => "").spawn;
 });
 
 afterEach(() => {
@@ -175,7 +162,7 @@ describe("Tier 1 unextractable config — honest fallback to Tier 2 defaults", (
     // best-effort fallback (better than emitting nothing and missing test files).
     _frameworkConfigDeps.readText = mock(async (path: string) => {
       if (path.endsWith("jest.config.js")) {
-        return `module.exports = { testRegex: /src\\/.*\\.unit\\.test\\.tsx?$/ }`;
+        return "module.exports = { testRegex: /src\\/.*\\.unit\\.test\\.tsx?$/ }";
       }
       return null;
     });
@@ -198,7 +185,7 @@ describe("Tier 1 unextractable config — honest fallback to Tier 2 defaults", (
     // Tier 1 yields no patterns, so Tier 2 defaults surface as best-effort fallback.
     _frameworkConfigDeps.readText = mock(async (path: string) => {
       if (path.endsWith("vitest.config.ts")) {
-        return `export default defineConfig({ test: { include: getIncludePatterns() } })`;
+        return "export default defineConfig({ test: { include: getIncludePatterns() } })";
       }
       return null;
     });
@@ -435,7 +422,7 @@ describe("jest config resolution precedence", () => {
     _frameworkConfigDeps.readText = mock(async (path: string) => {
       if (path.endsWith("jest.config.js")) {
         // No testMatch — just some other config
-        return `module.exports = { transform: {} }`;
+        return "module.exports = { transform: {} }";
       }
       if (path.endsWith("package.json")) {
         return JSON.stringify({ jest: { testMatch: ["src/**/*.unit.test.ts"] } });

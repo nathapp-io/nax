@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import type { AcceptanceFixSourceInput, AcceptanceFixTestInput } from "@/operations/acceptance-fix";
 import type { NaxRuntime } from "@/runtime";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -51,12 +51,17 @@ describe("acceptanceFixSourceOp shape", () => {
     expect(timeoutMs).toBe((ctx.config.execution.sessionTimeoutSeconds ?? 0) * 1000);
   });
   test("model resolves from acceptance.fix.fixModel", () => {
-    const config = makeNaxConfig({ acceptance: { fix: { fixModel: { agent: "opencode", model: "opencode-go/minimax-m2.7" } } } });
+    const config = makeNaxConfig({
+      acceptance: { fix: { fixModel: { agent: "opencode", model: "opencode-go/minimax-m2.7" } } },
+    });
     const runtime = makeTestRuntime({ config });
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(acceptanceFixSourceOp.config) };
-    expect(acceptanceFixSourceOp.model?.(SOURCE_INPUT, ctx)).toEqual({ agent: "opencode", model: "opencode-go/minimax-m2.7" });
+    expect(acceptanceFixSourceOp.model?.(SOURCE_INPUT, ctx)).toEqual({
+      agent: "opencode",
+      model: "opencode-go/minimax-m2.7",
+    });
   });
 });
 
@@ -92,12 +97,17 @@ describe("acceptanceFixTestOp shape", () => {
     expect(timeoutMs).toBe((ctx.config.execution.sessionTimeoutSeconds ?? 0) * 1000);
   });
   test("model resolves from acceptance.fix.fixModel", () => {
-    const config = makeNaxConfig({ acceptance: { fix: { fixModel: { agent: "opencode", model: "opencode-go/minimax-m2.7" } } } });
+    const config = makeNaxConfig({
+      acceptance: { fix: { fixModel: { agent: "opencode", model: "opencode-go/minimax-m2.7" } } },
+    });
     const runtime = makeTestRuntime({ config });
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(acceptanceFixTestOp.config) };
-    expect(acceptanceFixTestOp.model?.(TEST_INPUT, ctx)).toEqual({ agent: "opencode", model: "opencode-go/minimax-m2.7" });
+    expect(acceptanceFixTestOp.model?.(TEST_INPUT, ctx)).toEqual({
+      agent: "opencode",
+      model: "opencode-go/minimax-m2.7",
+    });
   });
 });
 

@@ -7,9 +7,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { clearFeatureResolverCache, resolveFeatureId, _resolverDeps } from "@/context/feature-resolver";
+import { _resolverDeps, clearFeatureResolverCache, resolveFeatureId } from "@/context/feature-resolver";
 import type { UserStory } from "@/prd";
-import { makeTempDir, cleanupTempDir } from "@test/helpers";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function makeStory(id: string): UserStory {
   return {

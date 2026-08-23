@@ -12,20 +12,16 @@
  * AC6: rectResult { liteScopeIncomplete: true }   → resume block IS entered
  */
 
-import { afterEach, describe, test, expect } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { CallContext, DeterministicOperation } from "@/operations";
 import { pickSelector } from "@/config";
-import { DEFAULT_CONFIG } from "@/config";
-import { makeMockAgentManager, makeTestRuntime, makeNaxConfig } from "@test/helpers";
-import type { NaxRuntime } from "@/runtime";
+import type { DEFAULT_CONFIG } from "@/config";
+import { EXHAUSTED_EXIT_REASONS, StoryOrchestratorBuilder, _storyOrchestratorDeps } from "@/execution";
 import type { Finding } from "@/findings";
-import {
-  _storyOrchestratorDeps,
-  EXHAUSTED_EXIT_REASONS,
-  StoryOrchestratorBuilder,
-} from "@/execution";
+import type { CallContext, DeterministicOperation } from "@/operations";
 import type { RunOperation } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
+import { makeMockAgentManager, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 // ============================================================================
 // Shared helpers
@@ -44,7 +40,11 @@ const mockImplementerOp: RunOperation<{ code: string }, { success: boolean }, ty
     task: { id: "t1", content: input.code, overridable: false },
   }),
   parse: (output) => {
-    try { return JSON.parse(output); } catch { return { success: false }; }
+    try {
+      return JSON.parse(output);
+    } catch {
+      return { success: false };
+    }
   },
 };
 
@@ -259,7 +259,7 @@ describe("AC5: rectificationExhausted: true → resume NOT entered", () => {
       // AC5: verifier was never dispatched — resume block skipped because rectificationExhausted=true.
       // Verifier is absent from phaseOutputs (main loop short-circuited at gate, resume NOT entered).
       // With current code, runRectification returns {} (not rectificationExhausted: true) → resume ENTERS → verifier RUNS → test FAILS.
-      expect(opRunCount["verifier"] ?? 0).toBe(0);
+      expect(opRunCount.verifier ?? 0).toBe(0);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
@@ -326,7 +326,7 @@ describe("AC6: liteScopeIncomplete: true → resume IS entered", () => {
       // With current code, runRectification returns {} → liteScopeIncomplete is undefined → test FAILS on that.
       expect(result.liteScopeIncomplete).toBe(true);
       // Resume IS entered → verifier ran.
-      expect(opRunCount["verifier"] ?? 0).toBeGreaterThan(0);
+      expect(opRunCount.verifier ?? 0).toBeGreaterThan(0);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
@@ -375,7 +375,19 @@ describe("AC7: mechanical-only rectificationExhausted → resume IS entered for 
     };
     // rectificationExhausted=true with mechanical-only unfixedFindings
     _storyOrchestratorDeps.runFixCycle = async () => ({
-      iterations: [{ iterationNum: 1, findingsBefore: [LINT_FINDING], fixesApplied: [{ strategyName: "mechanical-lintfix", op: "mechanical-lintfix", targetFiles: [], summary: "" }], findingsAfter: [LINT_FINDING], outcome: "unchanged" as const, startedAt: "", finishedAt: "" }],
+      iterations: [
+        {
+          iterationNum: 1,
+          findingsBefore: [LINT_FINDING],
+          fixesApplied: [
+            { strategyName: "mechanical-lintfix", op: "mechanical-lintfix", targetFiles: [], summary: "" },
+          ],
+          findingsAfter: [LINT_FINDING],
+          outcome: "unchanged" as const,
+          startedAt: "",
+          finishedAt: "",
+        },
+      ],
       finalFindings: [LINT_FINDING],
       exitReason: "validate-short-circuit" as const,
       costUsd: 0,
@@ -405,7 +417,7 @@ describe("AC7: mechanical-only rectificationExhausted → resume IS entered for 
 
       // AC7: resume block IS entered because unfixedFindings are all lint.
       // Verifier and reviews run even though the lint gate stays failing.
-      expect(opRunCount["verifier"] ?? 0).toBeGreaterThan(0);
+      expect(opRunCount.verifier ?? 0).toBeGreaterThan(0);
       expect(opRunCount["semantic-review"] ?? 0).toBeGreaterThan(0);
       expect(opRunCount["adversarial-review"] ?? 0).toBeGreaterThan(0);
     } finally {
@@ -454,7 +466,7 @@ describe("AC7: mechanical-only rectificationExhausted → resume IS entered for 
         .build(ctx)
         .run();
 
-      expect(opRunCount["verifier"] ?? 0).toBe(0);
+      expect(opRunCount.verifier ?? 0).toBe(0);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;

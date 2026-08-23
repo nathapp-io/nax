@@ -12,10 +12,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { reconstructTimeline, type RunTimeline, type StoryTimeline } from "@/replay";
+import type { NaxStatusFile } from "@/execution/status-file";
 import type { LogEntry } from "@/logger/types";
 import type { RunMetrics, StoryMetrics } from "@/metrics/types";
-import type { NaxStatusFile } from "@/execution/status-file";
+import { type RunTimeline, type StoryTimeline, reconstructTimeline } from "@/replay";
 
 function entry(partial: Partial<LogEntry>): LogEntry {
   return {
@@ -57,7 +57,9 @@ function buildStoryMetrics(overrides: Partial<StoryMetrics> & { storyId: string 
   };
 }
 
-function buildRunMetrics(overrides: Partial<RunMetrics> & { runId: string; feature: string; stories: StoryMetrics[] }): RunMetrics {
+function buildRunMetrics(
+  overrides: Partial<RunMetrics> & { runId: string; feature: string; stories: StoryMetrics[] },
+): RunMetrics {
   const { stories, ...rest } = overrides;
   return {
     startedAt: "2026-01-01T00:00:00.000Z",
@@ -130,7 +132,11 @@ describe("reconstructTimeline — AC7: runId, feature, stories match metrics", (
       stories: [buildStoryMetrics({ storyId: "US-001" })],
     });
 
-    const tl = reconstructTimeline({ entries: [], runMetrics: metrics, meta: { runId: "run-001", feature: "feat-auth" } });
+    const tl = reconstructTimeline({
+      entries: [],
+      runMetrics: metrics,
+      meta: { runId: "run-001", feature: "feat-auth" },
+    });
 
     expect(tl.feature).toBe("feat-auth");
   });
@@ -146,7 +152,11 @@ describe("reconstructTimeline — AC7: runId, feature, stories match metrics", (
       ],
     });
 
-    const tl = reconstructTimeline({ entries: [], runMetrics: metrics, meta: { runId: "run-001", feature: "feat-auth" } });
+    const tl = reconstructTimeline({
+      entries: [],
+      runMetrics: metrics,
+      meta: { runId: "run-001", feature: "feat-auth" },
+    });
 
     expect(tl.stories.length).toBe(3);
   });
@@ -158,7 +168,11 @@ describe("reconstructTimeline — AC7: runId, feature, stories match metrics", (
       stories: [buildStoryMetrics({ storyId: "US-001" })],
     });
 
-    const tl = reconstructTimeline({ entries: [], runMetrics: metrics, meta: { runId: "run-001", feature: "feat-auth" } });
+    const tl = reconstructTimeline({
+      entries: [],
+      runMetrics: metrics,
+      meta: { runId: "run-001", feature: "feat-auth" },
+    });
 
     expect(tl.feature).toBe("feat-auth");
   });

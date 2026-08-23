@@ -4,7 +4,7 @@
  * filtering, maxCallsPerSession precedence) and Phase 5 (review-stage tools).
  */
 
-import { describe, test, expect, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import {
   ContextOrchestrator,
   PULL_TOOL_REGISTRY,
@@ -44,7 +44,6 @@ describe("Phase 4: pull tools", () => {
     const bundle = await orch.assemble({ ...TDD_IMPLEMENTER_REQUEST, pullConfig });
     expect(bundle.pullTools).toEqual([]);
   });
-
 
   test("pullTools items are ToolDescriptor objects; maxCallsPerSession reflects pullConfig override", async () => {
     const orch = new ContextOrchestrator([]);
@@ -151,16 +150,19 @@ describe("Phase 5: review stage pull tools", () => {
     providerIds: [],
   };
 
-  test.each(["review-semantic", "review-adversarial"] as const)("%s with pullConfig enabled returns query_feature_context", async (stage) => {
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      ...REVIEW_REQUEST,
-      stage,
-      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
-    });
-    expect(bundle.pullTools).toHaveLength(1);
-    expect(bundle.pullTools[0]?.name).toBe(QUERY_FEATURE_CONTEXT_DESCRIPTOR.name);
-  });
+  test.each(["review-semantic", "review-adversarial"] as const)(
+    "%s with pullConfig enabled returns query_feature_context",
+    async (stage) => {
+      const orch = new ContextOrchestrator([]);
+      const bundle = await orch.assemble({
+        ...REVIEW_REQUEST,
+        stage,
+        pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
+      });
+      expect(bundle.pullTools).toHaveLength(1);
+      expect(bundle.pullTools[0]?.name).toBe(QUERY_FEATURE_CONTEXT_DESCRIPTOR.name);
+    },
+  );
 
   test("review-semantic pullConfig disabled returns empty pull tools", async () => {
     const orch = new ContextOrchestrator([]);
@@ -174,8 +176,13 @@ describe("Phase 5: review stage pull tools", () => {
   test("pull tool names do not bleed across stages: tdd-implementer lacks query_feature_context, review-semantic lacks query_neighbor", async () => {
     const orchA = new ContextOrchestrator([]);
     const bundleA = await orchA.assemble({
-      storyId: "US-001", repoRoot: "/project", packageDir: "/project",
-      stage: "tdd-implementer", role: "implementer", budgetTokens: 8_000, providerIds: [],
+      storyId: "US-001",
+      repoRoot: "/project",
+      packageDir: "/project",
+      stage: "tdd-implementer",
+      role: "implementer",
+      budgetTokens: 8_000,
+      providerIds: [],
       pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
     });
     expect(bundleA.pullTools.map((t) => t.name)).not.toContain("query_feature_context");

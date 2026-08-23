@@ -6,16 +6,12 @@
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import {
-  _runCompletionDeps,
-  handleRunCompletion,
-  type RunCompletionOptions,
-} from "@/execution";
-import type { DeferredReviewResult } from "@/execution/deferred-review";
 import type { NaxConfig } from "@/config";
-import { makeNaxConfig, makeMockRuntime, makePRD } from "@test/helpers";
-import { pipelineEventBus } from "@/pipeline/event-bus";
+import { type RunCompletionOptions, _runCompletionDeps, handleRunCompletion } from "@/execution";
+import type { DeferredReviewResult } from "@/execution/deferred-review";
 import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
+import { pipelineEventBus } from "@/pipeline/event-bus";
+import { makeMockRuntime, makeNaxConfig, makePRD, makeStatusWriter } from "@test/helpers";
 
 const origDeps = { ..._runCompletionDeps };
 
@@ -24,19 +20,6 @@ afterEach(() => {
   pipelineEventBus.clear();
   mock.restore();
 });
-
-function makeStatusWriter() {
-  const setRunStatus = mock(() => {});
-  return {
-    setRunStatus,
-    setPostRunPhase: mock(() => {}),
-    getPostRunStatus: () => ({}),
-    writeFeatureStatus: mock(async () => {}),
-    setPrd: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    update: mock(async () => {}),
-  };
-}
 
 function makePluginModeConfig(pluginMode: "observational" | "gating"): NaxConfig {
   return makeNaxConfig({
@@ -61,6 +44,7 @@ function makeOpts(
   deferredReview: DeferredReviewResult | undefined,
   statusWriter: ReturnType<typeof makeStatusWriter>,
 ): RunCompletionOptions {
+  const runtime = makeMockRuntime();
   return {
     runId: randomUUID(),
     feature: "f",
@@ -72,11 +56,14 @@ function makeOpts(
     iterations: 1,
     startTime: Date.now(),
     workdir: "/tmp/x",
-    statusWriter: statusWriter as unknown as RunCompletionOptions["statusWriter"],
+    statusWriter: statusWriter,
     config: makePluginModeConfig(pluginMode),
     deferredReview,
-    runtime: makeMockRuntime(),
-  } as unknown as RunCompletionOptions;
+    runtime,
+    agentManager: runtime.agentManager,
+    sessionManager: runtime.sessionManager,
+    abortSignal: new AbortController().signal,
+  };
 }
 
 describe("handleRunCompletion deferred plugin review (#1146 G2)", () => {

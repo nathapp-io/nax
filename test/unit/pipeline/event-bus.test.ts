@@ -64,7 +64,9 @@ describe("PipelineEventBus", () => {
     const bus = new PipelineEventBus();
     const results: string[] = [];
 
-    bus.on("story:completed", () => { throw new Error("boom"); });
+    bus.on("story:completed", () => {
+      throw new Error("boom");
+    });
     bus.on("story:completed", () => results.push("second"));
 
     bus.emit(makeStoryCompletedEvent());

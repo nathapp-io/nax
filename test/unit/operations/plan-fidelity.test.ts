@@ -205,7 +205,9 @@ describe("warnOnDroppedContextFiles — #1466", () => {
 
     warnOnDroppedContextFiles(prd, spec, "feat");
 
-    const dropWarnings = entries.filter((e) => e.level === "warn" && e.stage === "plan" && e.message.includes("absent"));
+    const dropWarnings = entries.filter(
+      (e) => e.level === "warn" && e.stage === "plan" && e.message.includes("absent"),
+    );
     expect(dropWarnings).toHaveLength(0);
     const rejectedWarning = entries.find(
       (e) => e.level === "warn" && e.stage === "plan" && e.message.includes("absolute or traversing"),

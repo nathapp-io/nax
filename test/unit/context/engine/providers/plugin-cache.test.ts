@@ -15,13 +15,10 @@
  * Uses _pluginCacheDeps injection — no real module I/O.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import {
-  PluginProviderCache,
-  _pluginCacheDeps,
-} from "@/context/engine/providers/plugin-cache";
-import type { IContextProvider, ContextProviderResult } from "@/context/engine";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { ContextPluginProviderConfig } from "@/config/runtime-types";
+import type { ContextProviderResult, IContextProvider } from "@/context/engine";
+import { PluginProviderCache, _pluginCacheDeps } from "@/context/engine/providers/plugin-cache";
 import type { InitialisableProvider } from "@/context/engine/providers/plugin-loader";
 import { withTimerSpy } from "@test/helpers";
 
@@ -37,10 +34,7 @@ function makeProvider(id: string): IContextProvider {
   };
 }
 
-function makeDisposableProvider(
-  id: string,
-  disposeFn: () => Promise<void> = async () => {},
-): InitialisableProvider {
+function makeDisposableProvider(id: string, disposeFn: () => Promise<void> = async () => {}): InitialisableProvider {
   return {
     id,
     kind: "rag",
@@ -50,10 +44,7 @@ function makeDisposableProvider(
   };
 }
 
-function makeConfig(
-  module: string,
-  overrides: Partial<ContextPluginProviderConfig> = {},
-): ContextPluginProviderConfig {
+function makeConfig(module: string, overrides: Partial<ContextPluginProviderConfig> = {}): ContextPluginProviderConfig {
   return { module, enabled: true, ...overrides };
 }
 
@@ -79,7 +70,10 @@ afterEach(() => {
 describe("PluginProviderCache.loadOrGet", () => {
   test("returns [] and never calls loader when configs is empty", async () => {
     let called = false;
-    _pluginCacheDeps.loadProviders = async () => { called = true; return []; };
+    _pluginCacheDeps.loadProviders = async () => {
+      called = true;
+      return [];
+    };
 
     const cache = new PluginProviderCache();
     const result = await cache.loadOrGet([], "/workdir");
@@ -90,13 +84,13 @@ describe("PluginProviderCache.loadOrGet", () => {
 
   test("returns [] and never calls loader when all configs are disabled", async () => {
     let called = false;
-    _pluginCacheDeps.loadProviders = async () => { called = true; return []; };
+    _pluginCacheDeps.loadProviders = async () => {
+      called = true;
+      return [];
+    };
 
     const cache = new PluginProviderCache();
-    const result = await cache.loadOrGet(
-      [makeConfig("@my/rag", { enabled: false })],
-      "/workdir",
-    );
+    const result = await cache.loadOrGet([makeConfig("@my/rag", { enabled: false })], "/workdir");
 
     expect(result).toEqual([]);
     expect(called).toBe(false);
@@ -105,7 +99,10 @@ describe("PluginProviderCache.loadOrGet", () => {
   test("calls loader once and returns provider list on first call", async () => {
     const provider = makeProvider("p1");
     let calls = 0;
-    _pluginCacheDeps.loadProviders = async () => { calls++; return [provider]; };
+    _pluginCacheDeps.loadProviders = async () => {
+      calls++;
+      return [provider];
+    };
 
     const cache = new PluginProviderCache();
     const result = await cache.loadOrGet([makeConfig("@my/rag")], "/workdir");
@@ -118,7 +115,10 @@ describe("PluginProviderCache.loadOrGet", () => {
   test("cache hit — returns same instances without calling loader again", async () => {
     const provider = makeProvider("p1");
     let calls = 0;
-    _pluginCacheDeps.loadProviders = async () => { calls++; return [provider]; };
+    _pluginCacheDeps.loadProviders = async () => {
+      calls++;
+      return [provider];
+    };
 
     const cache = new PluginProviderCache();
     const configs = [makeConfig("@my/rag")];
@@ -151,7 +151,10 @@ describe("PluginProviderCache.loadOrGet", () => {
 
   test("different workdir produces a separate cache entry", async () => {
     let calls = 0;
-    _pluginCacheDeps.loadProviders = async () => { calls++; return [makeProvider(`p${calls}`)]; };
+    _pluginCacheDeps.loadProviders = async () => {
+      calls++;
+      return [makeProvider(`p${calls}`)];
+    };
 
     const cache = new PluginProviderCache();
     const configs = [makeConfig("@my/rag")];
@@ -171,11 +174,14 @@ describe("PluginProviderCache.loadOrGet", () => {
 describe("PluginProviderCache.disposeAll", () => {
   test("calls dispose() on every InitialisableProvider loaded into the cache", async () => {
     const disposed: string[] = [];
-    const p1 = makeDisposableProvider("p1", async () => { disposed.push("p1"); });
-    const p2 = makeDisposableProvider("p2", async () => { disposed.push("p2"); });
+    const p1 = makeDisposableProvider("p1", async () => {
+      disposed.push("p1");
+    });
+    const p2 = makeDisposableProvider("p2", async () => {
+      disposed.push("p2");
+    });
 
-    _pluginCacheDeps.loadProviders = async (configs) =>
-      configs[0].module === "@rag-a" ? [p1] : [p2];
+    _pluginCacheDeps.loadProviders = async (configs) => (configs[0].module === "@rag-a" ? [p1] : [p2]);
 
     const cache = new PluginProviderCache();
     await cache.loadOrGet([makeConfig("@rag-a")], "/w");
@@ -203,7 +209,9 @@ describe("PluginProviderCache.disposeAll", () => {
     const pThrow = makeDisposableProvider("pThrow", async () => {
       throw new Error("dispose failed");
     });
-    const pOk = makeDisposableProvider("pOk", async () => { disposed.push("pOk"); });
+    const pOk = makeDisposableProvider("pOk", async () => {
+      disposed.push("pOk");
+    });
 
     let callCount = 0;
     _pluginCacheDeps.loadProviders = async () => {
@@ -223,7 +231,9 @@ describe("PluginProviderCache.disposeAll", () => {
 
   test("disposeAll() is idempotent — second call is a no-op", async () => {
     let disposeCount = 0;
-    const p = makeDisposableProvider("p", async () => { disposeCount++; });
+    const p = makeDisposableProvider("p", async () => {
+      disposeCount++;
+    });
 
     _pluginCacheDeps.loadProviders = async () => [p];
 
@@ -296,8 +306,8 @@ describe("PluginProviderCache.disposeAll", () => {
     const cache = new PluginProviderCache();
     await cache.disposeAll();
 
-    await expect(
-      cache.loadOrGet([makeConfig("@my/rag")], "/w"),
-    ).rejects.toMatchObject({ code: "PLUGIN_CACHE_DISPOSED" });
+    await expect(cache.loadOrGet([makeConfig("@my/rag")], "/w")).rejects.toMatchObject({
+      code: "PLUGIN_CACHE_DISPOSED",
+    });
   });
 });

@@ -83,7 +83,10 @@ describe("createPluginLogger", () => {
     await getLogger().flush();
 
     const content = await Bun.file(logFile).text();
-    const lines = content.trim().split("\n").map((l) => JSON.parse(l));
+    const lines = content
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
 
     expect(lines.some((l) => l.stage === "plugin:test-plugin")).toBe(true);
     expect(lines.some((l) => l.stage === "plugin:semgrep-security")).toBe(true);

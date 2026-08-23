@@ -79,7 +79,12 @@ describe("buildPhaseOutcomeLogData — verdict detail surfacing", () => {
   });
 
   test("preserves status=skipped so log formatting can avoid false 'passed' wording", () => {
-    const built = buildPhaseOutcomeLogData("US-001", "lint-check", { success: true, status: "skipped", findings: [] }, 10);
+    const built = buildPhaseOutcomeLogData(
+      "US-001",
+      "lint-check",
+      { success: true, status: "skipped", findings: [] },
+      10,
+    );
     expect(built?.success).toBe(true);
     expect(built?.data.status).toBe("skipped");
   });

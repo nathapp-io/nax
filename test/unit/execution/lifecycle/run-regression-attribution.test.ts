@@ -14,7 +14,7 @@ import type { DeferredRegressionOptions, StorySnapshot } from "@/execution";
 import type { Finding } from "@/findings/types";
 import type { PRD } from "@/prd";
 import { _gitDeps } from "@/utils/git";
-import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig, makePRD, makeSpawn, makeStory } from "@test/helpers";
 
 function snap(storyId: string, completedAt: string, failingTestFiles?: string[]): StorySnapshot {
   return { storyId, completedAt, failingTestFiles };
@@ -82,9 +82,11 @@ const deferredConfig = makeNaxConfig({
 });
 
 function makePrd(storyIds: string[], failedStoryIds: ReadonlySet<string> = new Set()): PRD {
-  return {
-    userStories: storyIds.map((id) => ({ id, status: failedStoryIds.has(id) ? "failed" : "passed", title: id })),
-  } as unknown as PRD;
+  return makePRD({
+    userStories: storyIds.map((id) =>
+      makeStory({ id, title: id, status: failedStoryIds.has(id) ? "failed" : "passed" }),
+    ),
+  });
 }
 
 describe("runDeferredRegression — transition attribution", () => {
@@ -155,7 +157,7 @@ describe("runDeferredRegression — transition attribution", () => {
         snap("US-002", "2026-01-01T00:01:00.000Z", ["foo.test.ts"]),
         snap("US-003", "2026-01-01T00:02:00.000Z", ["foo.test.ts"]),
       ],
-    } as unknown as DeferredRegressionOptions;
+    };
 
     const result = await runDeferredRegression(options);
 
@@ -192,7 +194,7 @@ describe("runDeferredRegression — transition attribution", () => {
         snap("US-001", "2026-01-01T00:00:00.000Z", []),
         snap("US-002", "2026-01-01T00:01:00.000Z", ["bar.test.ts"]),
       ],
-    } as unknown as DeferredRegressionOptions);
+    });
 
     expect(result.success).toBe(false);
     expect(result.affectedStories).toEqual([]);
@@ -221,12 +223,7 @@ describe("runDeferredRegression — transition attribution", () => {
     }));
 
     const originalSpawn = _gitDeps.spawn;
-    _gitDeps.spawn = mock(() => ({
-      exited: Promise.resolve(0),
-      stdout: "abc1234 chore(US-004): unrelated passing story",
-      stderr: "",
-      kill: () => {},
-    })) as unknown as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(() => "abc1234 chore(US-004): unrelated passing story").spawn;
 
     try {
       const result = await runDeferredRegression({
@@ -235,7 +232,7 @@ describe("runDeferredRegression — transition attribution", () => {
         workdir: "/tmp/test-workdir",
         runtime: makeMockRuntime(),
         storyMetrics: [snap("US-003", "2026-01-01T00:01:00.000Z", ["foo.test.ts"])],
-      } as unknown as DeferredRegressionOptions);
+      });
 
       expect(result.success).toBe(false);
       expect(result.affectedStories).not.toContain("US-004");

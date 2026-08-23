@@ -1,7 +1,7 @@
-import { describe, expect, test, afterEach } from "bun:test";
-import { verifyScopedOp, _verifyScopedDeps } from "@/operations";
-import type { VerifyScopedDeps } from "@/operations";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { Finding } from "@/findings";
+import { _verifyScopedDeps, verifyScopedOp } from "@/operations";
+import type { VerifyScopedDeps } from "@/operations";
 
 function ctxWithQuality(quality?: Record<string, unknown>, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
   const config = { quality, execution: {} } as any;
@@ -95,7 +95,9 @@ describe("verifyScopedOp — AC5: execute returns success=true when test command
         parseTestOutput: () => ({
           passed: 0,
           failed: 1,
-          failures: [{ file: "test/unit/foo.test.ts", testName: "my test", error: "Expected true to be false", stackTrace: [] }],
+          failures: [
+            { file: "test/unit/foo.test.ts", testName: "my test", error: "Expected true to be false", stackTrace: [] },
+          ],
         }),
         testSummaryToFindings: () => [mockFinding],
       }),
@@ -134,7 +136,12 @@ describe("verifyScopedOp — AC6: no-command early return", () => {
     const deps = fakeDeps({
       selectScopedTests: async () => {
         selectionCalled = true;
-        return { effectiveCommand: "bun test", isFullSuite: true, thresholdFallback: false, isMonorepoOrchestrator: false };
+        return {
+          effectiveCommand: "bun test",
+          isFullSuite: true,
+          thresholdFallback: false,
+          isMonorepoOrchestrator: false,
+        };
       },
     });
 
@@ -260,7 +267,10 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
   test("workdir routing — uses repoRoot when no per-package override", async () => {
     let seenWorkdir = "";
     const deps = fakeDeps({
-      regression: async (opts) => { seenWorkdir = opts.workdir; return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" }; },
+      regression: async (opts) => {
+        seenWorkdir = opts.workdir;
+        return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
+      },
     });
     await verifyScopedOp.execute(
       { workdir: "/repo/packages/app", storyId: "S-1", regressionMode: "per-story" },
@@ -273,7 +283,10 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
   test("workdir routing — uses input.workdir (packageDir) when per-package override exists", async () => {
     let seenWorkdir = "";
     const deps = fakeDeps({
-      regression: async (opts) => { seenWorkdir = opts.workdir; return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" }; },
+      regression: async (opts) => {
+        seenWorkdir = opts.workdir;
+        return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
+      },
     });
     await verifyScopedOp.execute(
       { workdir: "/repo/packages/lib", storyId: "S-1", regressionMode: "per-story" },
@@ -285,11 +298,21 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
 
   test("forwards repoRoot/packagePrefix/resolvedTestPatterns to selectScopedTests (Pass 0 anchors)", async () => {
     let seen: Record<string, unknown> | undefined;
-    const resolvedTestPatterns = { globs: ["tests/**/*.py"], pathspec: [], regex: [/test_.*\.py$/], testDirs: ["tests"] } as any;
+    const resolvedTestPatterns = {
+      globs: ["tests/**/*.py"],
+      pathspec: [],
+      regex: [/test_.*\.py$/],
+      testDirs: ["tests"],
+    } as any;
     const deps = fakeDeps({
       selectScopedTests: async (input) => {
         seen = input as unknown as Record<string, unknown>;
-        return { effectiveCommand: "uv run pytest", isFullSuite: true, thresholdFallback: false, isMonorepoOrchestrator: false };
+        return {
+          effectiveCommand: "uv run pytest",
+          isFullSuite: true,
+          thresholdFallback: false,
+          isMonorepoOrchestrator: false,
+        };
       },
     });
     await verifyScopedOp.execute(

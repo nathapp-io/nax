@@ -38,14 +38,14 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_CONFIG, pickSelector } from "@/config";
-import { _storyOrchestratorDeps, runRectification, StoryOrchestratorBuilder } from "@/execution";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import { StoryOrchestratorBuilder, _storyOrchestratorDeps, runRectification } from "@/execution";
 import type { InternalBuildState } from "@/execution";
 import { getStoryFixState, storyFixKey } from "@/findings";
 import type { Finding, FixStrategy } from "@/findings";
-import { makeMockAgentManager, makeNaxConfig, makeTestRuntime } from "@test/helpers";
-import type { NaxRuntime } from "@/runtime";
 import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
+import { makeMockAgentManager, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared fixtures
@@ -103,7 +103,7 @@ function rbState(maxAttempts: number): InternalBuildState {
     fullSuiteGate: { kind: "full-suite-gate", slot: { op: rbGateOp, input: {} } },
     rectification: {
       maxAttempts: 20,
-      strategies: [rbFixStrategy(maxAttempts) as unknown as FixStrategy<Finding, unknown, unknown, unknown>],
+      strategies: [rbFixStrategy(maxAttempts)],
       abortOnIncreasingFailures: false,
       abortOnNoProgress: false,
     },
@@ -158,14 +158,7 @@ async function rbRun(
     overrides?: Record<string, unknown>;
   },
 ): Promise<{ dispatchCount: number; phaseOutputs: Record<string, unknown>; result: unknown }> {
-  const {
-    storyId,
-    tier,
-    agentName,
-    maxAttempts = 3,
-    resolveAfterCalls = Number.POSITIVE_INFINITY,
-    overrides,
-  } = opts;
+  const { storyId, tier, agentName, maxAttempts = 3, resolveAfterCalls = Number.POSITIVE_INFINITY, overrides } = opts;
   let dispatchCount = 0;
   let gateCalls = 0;
   const origCallOp = _storyOrchestratorDeps.callOp;
@@ -594,12 +587,11 @@ async function runPlanResumeScenario(
       .build(ctx, { isThreeSession: true });
 
     const result = await plan.run();
-    const rectOutput = result.phaseOutputs.rectification as
-      | { exitReason: string }
-      | undefined;
+    const rectOutput = result.phaseOutputs.rectification as { exitReason: string } | undefined;
     return {
       dispatchCount,
-      storeIterations: getStoryFixState(runtime.storyFixHistory, storyFixKey(storyId, undefined, RB_AGENT)).iterations.length,
+      storeIterations: getStoryFixState(runtime.storyFixHistory, storyFixKey(storyId, undefined, RB_AGENT)).iterations
+        .length,
       rectificationExitReason: rectOutput?.exitReason,
     };
   } finally {

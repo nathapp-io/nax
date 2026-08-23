@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _telegramPluginDeps, TelegramInteractionPlugin } from "@/interaction/plugins/telegram";
+import { TelegramInteractionPlugin, _telegramPluginDeps } from "@/interaction/plugins/telegram";
 import type { InteractionRequest } from "@/interaction/types";
 
 describe("TelegramInteractionPlugin - Regression BUG-116", () => {
@@ -30,22 +30,27 @@ describe("TelegramInteractionPlugin - Regression BUG-116", () => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
-        return new Response(
-          JSON.stringify({ ok: true, result: { message_id: 10, chat: { id: 99999 } } }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 10, chat: { id: 99999 } } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       if (urlStr.includes("getUpdates")) {
-        return new Response(
-          JSON.stringify({ ok: true, result: [] }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ ok: true, result: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       if (urlStr.includes("editMessageText")) {
         editCalled = true;
-        const body = (await (url instanceof Request ? url.json() : JSON.parse(new TextDecoder().decode((await (url as unknown as Response).arrayBuffer()))).json())) as Record<string, unknown>;
+        const body = (await (url instanceof Request
+          ? url.json()
+          : JSON.parse(new TextDecoder().decode(await (url as unknown as Response).arrayBuffer())).json())) as Record<
+          string,
+          unknown
+        >;
         editBody = body;
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
       }
@@ -80,17 +85,17 @@ describe("TelegramInteractionPlugin - Regression BUG-116", () => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
-        return new Response(
-          JSON.stringify({ ok: true, result: { message_id: 42, chat: { id: 99999 } } }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 42, chat: { id: 99999 } } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       if (urlStr.includes("getUpdates")) {
-        return new Response(
-          JSON.stringify({ ok: true, result: [] }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ ok: true, result: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       if (urlStr.includes("editMessageText")) {

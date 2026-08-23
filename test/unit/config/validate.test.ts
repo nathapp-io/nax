@@ -10,9 +10,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { validateConfig } from "@/config/validate";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { NaxConfig } from "@/config/types";
+import { validateConfig } from "@/config/validate";
 
 /** Merge overrides into a copy of DEFAULT_CONFIG */
 function cfg(overrides: Record<string, unknown>): NaxConfig {
@@ -175,7 +175,9 @@ describe("validateConfig — tierOrder agent key validation", () => {
 
     const result = validateConfig(config);
 
-    expect(result.errors.some((e) => e.toLowerCase().includes("tier") || e.toLowerCase().includes("tierorder"))).toBe(true);
+    expect(result.errors.some((e) => e.toLowerCase().includes("tier") || e.toLowerCase().includes("tierorder"))).toBe(
+      true,
+    );
   });
 
   test("passes when tierOrder entry has agent that exists in models", () => {

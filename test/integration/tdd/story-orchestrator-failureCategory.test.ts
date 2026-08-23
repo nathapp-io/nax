@@ -3,10 +3,17 @@ import { DEFAULT_CONFIG } from "@/config";
 import { buildPlanForStrategy } from "@/execution/build-plan-for-strategy";
 import type { PlanInputs } from "@/execution/plan-inputs";
 import { _fullSuiteGateDeps } from "@/operations/full-suite-gate";
+import type { UserStory } from "@/prd";
 import { makeMockCallContext } from "@test/helpers";
 import { makeRuntimeWithFakeAgent } from "@test/helpers";
-import type { UserStory } from "@/prd";
-import { type SavedDeps, createMockAgent, mockGitSpawn, restoreDeps, saveDeps, stubFullSuiteGateContext } from "./_tdd-test-helpers";
+import {
+  type SavedDeps,
+  createMockAgent,
+  mockGitSpawn,
+  restoreDeps,
+  saveDeps,
+  stubFullSuiteGateContext,
+} from "./_tdd-test-helpers";
 
 let saved: SavedDeps;
 let origRunTests: typeof _fullSuiteGateDeps.runTests;
@@ -47,22 +54,24 @@ function makePlanInputsNoGreenfield(storyArg: UserStory = story, overrides: Part
   };
 }
 
-
 describe("buildPlanForStrategy — failure scenarios", () => {
   test("test-writer failure → success=false", async () => {
     // Test-writer agent returns failure
     mockGitSpawn({
-      diffFiles: [
-        ["test/user.test.ts"],
-        ["test/user.test.ts"],
-      ],
+      diffFiles: [["test/user.test.ts"], ["test/user.test.ts"]],
     });
 
     const agent = createMockAgent([{ success: false, exitCode: 1, estimatedCostUsd: 0.01 }]);
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
     const callCtx = makeMockCallContext({ runtime });
-    const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const plan = await buildPlanForStrategy(
+      callCtx,
+      story,
+      DEFAULT_CONFIG,
+      "three-session-tdd",
+      makePlanInputsNoGreenfield(),
+    );
     const result = await plan.run();
 
     expect(result.success).toBe(false);
@@ -70,19 +79,20 @@ describe("buildPlanForStrategy — failure scenarios", () => {
 
   test("test-writer crash/timeout → success=false", async () => {
     mockGitSpawn({
-      diffFiles: [
-        ["test/user.test.ts"],
-        ["test/user.test.ts"],
-      ],
+      diffFiles: [["test/user.test.ts"], ["test/user.test.ts"]],
     });
 
-    const agent = createMockAgent([
-      { success: false, exitCode: 1, estimatedCostUsd: 0.01 },
-    ]);
+    const agent = createMockAgent([{ success: false, exitCode: 1, estimatedCostUsd: 0.01 }]);
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
     const callCtx = makeMockCallContext({ runtime });
-    const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const plan = await buildPlanForStrategy(
+      callCtx,
+      story,
+      DEFAULT_CONFIG,
+      "three-session-tdd",
+      makePlanInputsNoGreenfield(),
+    );
     const result = await plan.run();
 
     expect(result.success).toBe(false);
@@ -90,12 +100,7 @@ describe("buildPlanForStrategy — failure scenarios", () => {
 
   test("implementer failure → success=false", async () => {
     mockGitSpawn({
-      diffFiles: [
-        ["test/user.test.ts"],
-        ["test/user.test.ts"],
-        ["src/user.ts"],
-        ["src/user.ts"],
-      ],
+      diffFiles: [["test/user.test.ts"], ["test/user.test.ts"], ["src/user.ts"], ["src/user.ts"]],
     });
 
     const agent = createMockAgent([
@@ -105,7 +110,13 @@ describe("buildPlanForStrategy — failure scenarios", () => {
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
     const callCtx = makeMockCallContext({ runtime });
-    const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const plan = await buildPlanForStrategy(
+      callCtx,
+      story,
+      DEFAULT_CONFIG,
+      "three-session-tdd",
+      makePlanInputsNoGreenfield(),
+    );
     const result = await plan.run();
 
     expect(result.success).toBe(false);
@@ -124,7 +135,13 @@ describe("buildPlanForStrategy — failure scenarios", () => {
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
     const callCtx = makeMockCallContext({ runtime });
-    const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const plan = await buildPlanForStrategy(
+      callCtx,
+      story,
+      DEFAULT_CONFIG,
+      "three-session-tdd",
+      makePlanInputsNoGreenfield(),
+    );
     const result = await plan.run();
 
     expect(result.success).toBe(true);
@@ -138,16 +155,15 @@ describe("buildPlanForStrategy — failure scenarios", () => {
       passed: false,
       failed: 1,
       output: "forced suite failure\n",
-      parsedSummary: { passed: 0, failed: 1, failures: [{ file: "test/a.test.ts", testName: "test A", error: "err A", stackTrace: [] }] },
+      parsedSummary: {
+        passed: 0,
+        failed: 1,
+        failures: [{ file: "test/a.test.ts", testName: "test A", error: "err A", stackTrace: [] }],
+      },
     }));
 
     mockGitSpawn({
-      diffFiles: [
-        ["test/user.test.ts"],
-        ["test/user.test.ts"],
-        ["src/user.ts"],
-        ["src/user.ts"],
-      ],
+      diffFiles: [["test/user.test.ts"], ["test/user.test.ts"], ["src/user.ts"], ["src/user.ts"]],
     });
 
     const config = {
@@ -196,10 +212,7 @@ describe("buildPlanForStrategy — failure scenarios", () => {
 
     try {
       mockGitSpawn({
-        diffFiles: [
-          ["requirements.md"],
-          ["requirements.md"],
-        ],
+        diffFiles: [["requirements.md"], ["requirements.md"]],
       });
 
       const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);

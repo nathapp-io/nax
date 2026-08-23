@@ -20,16 +20,24 @@ import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/help
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeMockPlanManager(
-  capturePrompt?: (prompt: string) => void,
-  prdOutput?: object,
-) {
+function makeMockPlanManager(capturePrompt?: (prompt: string) => void, prdOutput?: object) {
   const output = JSON.stringify(prdOutput ?? SAMPLE_PRD);
   return makeMockRuntime({
     agentManager: makeMockAgentManager({
       runWithFallbackFn: async (req) => {
         if (capturePrompt) capturePrompt(req.runOptions.prompt ?? "");
-        return { result: { success: true, exitCode: 0, output, rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+        return {
+          result: {
+            success: true,
+            exitCode: 0,
+            output,
+            rateLimited: false,
+            durationMs: 1,
+            estimatedCostUsd: 0,
+            agentFallbacks: [],
+          },
+          fallbacks: [],
+        };
       },
     }),
   });
@@ -109,7 +117,9 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     _planDeps.existsSync = mock(() => true);
     _planDeps.initInteractionChain = mock(async () => null);
     _planDeps.createRuntime = mock(() =>
-      makeMockPlanManager((prompt) => { capturedPrompts.push(prompt); }),
+      makeMockPlanManager((prompt) => {
+        capturedPrompts.push(prompt);
+      }),
     );
   });
 
@@ -276,7 +286,9 @@ describe("planCommand — per-package tech stack in prompt", () => {
     });
     _planDeps.initInteractionChain = mock(async () => null);
     _planDeps.createRuntime = mock(() =>
-      makeMockPlanManager((prompt) => { capturedPrompts.push(prompt); }, minimalPrd),
+      makeMockPlanManager((prompt) => {
+        capturedPrompts.push(prompt);
+      }, minimalPrd),
     );
   });
 
@@ -330,7 +342,9 @@ describe("planCommand — per-package tech stack in prompt", () => {
   });
 
   test("omits Package Tech Stacks section for single-package repos", async () => {
-    _planDeps.scanSourceRoots = mock(async () => [{ path: ".", language: "typescript", framework: "", testRunner: "" }]);
+    _planDeps.scanSourceRoots = mock(async () => [
+      { path: ".", language: "typescript", framework: "", testRunner: "" },
+    ]);
 
     await planCommand(tmpDir, makeNaxConfig(), { from: "/spec.md", feature: "test", auto: true });
 

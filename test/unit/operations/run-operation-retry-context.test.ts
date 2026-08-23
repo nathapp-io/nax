@@ -5,11 +5,13 @@ import { pickSelector } from "@/config";
 import type { DEFAULT_CONFIG } from "@/config";
 import { callOp } from "@/operations";
 import type { RunOperation } from "@/operations/types";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 let runtime: NaxRuntime | undefined;
-afterEach(async () => { await runtime?.close(); });
+afterEach(async () => {
+  await runtime?.close();
+});
 
 const testSel = pickSelector("routing-op-test", "routing");
 
@@ -65,7 +67,7 @@ describe("callOp — RunOperation.retry RetryContext threading (US-004)", () => 
         throw new Error("Intentional parse error to trigger shouldRetry");
       },
       retry: customRetryStrategy,
-    } as unknown as RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">>;
+    };
 
     try {
       await callOp(
@@ -122,7 +124,7 @@ describe("callOp — RunOperation.retry RetryContext threading (US-004)", () => 
         throw new Error("JSON parse failed");
       },
       retry: customRetryStrategy,
-    } as unknown as RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">>;
+    };
 
     try {
       await callOp(
@@ -177,7 +179,7 @@ describe("callOp — RunOperation.retry RetryContext threading (US-004)", () => 
         throw new Error("Trigger retry");
       },
       retry: captureStoryIdStrategy,
-    } as unknown as RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">>;
+    };
 
     try {
       await callOp(
@@ -233,7 +235,7 @@ describe("callOp — RunOperation.retry RetryContext threading (US-004)", () => 
         throw new Error("Trigger retry with delay");
       },
       retry: delayedRetryStrategy,
-    } as unknown as RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">>;
+    };
 
     try {
       await callOp(

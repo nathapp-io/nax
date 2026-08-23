@@ -18,11 +18,12 @@ import type {
 } from "@/bakeoff";
 import type { ContestantResult } from "@/bakeoff/types";
 import type { NaxConfig } from "@/config";
+import { makeNaxConfig } from "@test/helpers";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function baseConfig(): NaxConfig {
-  return {
+  return makeNaxConfig({
     agent: {
       default: "claude",
       fallback: {
@@ -31,7 +32,7 @@ function baseConfig(): NaxConfig {
         maxHopsPerStory: 2,
       },
     },
-  } as unknown as NaxConfig;
+  });
 }
 
 function baseOptions(overrides: Partial<ContestantOptions> = {}): ContestantOptions {
@@ -68,8 +69,7 @@ function makeWorktreeManager(): FakeWorktreeManager {
 
 function makeDeps(overrides: Partial<ContestantRunnerDeps> = {}): ContestantRunnerDeps {
   return {
-    worktreeManager: (overrides.worktreeManager ??
-      makeWorktreeManager()) as unknown as ContestantRunnerDeps["worktreeManager"],
+    worktreeManager: overrides.worktreeManager ?? makeWorktreeManager(),
     pipeline:
       overrides.pipeline ??
       (async () => ({
@@ -208,11 +208,7 @@ describe("runContestant (US-002 AC8: pipeline crash classification)", () => {
     let result: ContestantResult | unknown;
     let didThrow = false;
     try {
-      result = await runContestant(
-        "claude",
-        baseOptions(),
-        makeDeps({ worktreeManager: wt as unknown as ContestantRunnerDeps["worktreeManager"], pipeline }),
-      );
+      result = await runContestant("claude", baseOptions(), makeDeps({ worktreeManager: wt, pipeline }));
     } catch (err) {
       didThrow = true;
       result = err;
@@ -258,11 +254,7 @@ describe("runContestant (worktree lifecycle around the pipeline)", () => {
       throw new Error("pipeline exploded");
     });
 
-    await runContestant(
-      "claude",
-      baseOptions(),
-      makeDeps({ worktreeManager: wt as unknown as ContestantRunnerDeps["worktreeManager"], pipeline }),
-    );
+    await runContestant("claude", baseOptions(), makeDeps({ worktreeManager: wt, pipeline }));
 
     expect(order).toEqual(["create", "pipeline", "remove"]);
   });
@@ -276,11 +268,7 @@ describe("runContestant (worktree lifecycle around the pipeline)", () => {
       throw new Error("should never be called");
     });
 
-    const result = await runContestant(
-      "claude",
-      baseOptions(),
-      makeDeps({ worktreeManager: wt as unknown as ContestantRunnerDeps["worktreeManager"], pipeline }),
-    );
+    const result = await runContestant("claude", baseOptions(), makeDeps({ worktreeManager: wt, pipeline }));
 
     expect(result.status).toBe("dnf-crashed");
     expect(result.error as string).toContain("worktree create failed");

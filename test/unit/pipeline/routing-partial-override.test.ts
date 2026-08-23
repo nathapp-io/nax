@@ -10,12 +10,13 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { initLogger, resetLogger } from "@/logger";
-import { _routingDeps, routingStage } from "@/pipeline/stages/routing";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
+import { initLogger, resetLogger } from "@/logger";
+import { _routingDeps, routingStage } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
+import { makeNaxConfig } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-test-partial-routing-${randomUUID()}`;
 
@@ -58,12 +59,12 @@ function makeStory(routingOverride?: Partial<UserStory["routing"]>): UserStory {
 
 function makeCtx(story: UserStory): PipelineContext {
   return {
-    config: {
+    config: makeNaxConfig({
       tdd: { greenfieldDetection: false },
       autoMode: { complexityRouting: {} },
       routing: { strategy: "llm", llm: { mode: "per-story" } },
       execution: { agent: "claude" },
-    } as unknown as NaxConfig,
+    }),
     rootConfig: DEFAULT_CONFIG,
     story,
     stories: [story],
@@ -109,7 +110,12 @@ describe("routing stage — resolveRouting integration (BUG-032 + FIX-001)", () 
 
   test("(2) escalated modelTier from story.routing is preserved (BUG-032)", async () => {
     // Simulate escalation: story.routing.modelTier was bumped to "powerful"
-    const story = makeStory({ modelTier: "powerful", complexity: "medium", testStrategy: "three-session-tdd", reasoning: "escalated" });
+    const story = makeStory({
+      modelTier: "powerful",
+      complexity: "medium",
+      testStrategy: "three-session-tdd",
+      reasoning: "escalated",
+    });
     const ctx = makeCtx(story);
 
     await routingStage.execute(ctx);

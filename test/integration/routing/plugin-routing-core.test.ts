@@ -18,8 +18,8 @@ import * as loggerModule from "@/logger";
 import { PluginRegistry } from "@/plugins/registry";
 import type { NaxPlugin } from "@/plugins/types";
 import type { UserStory } from "@/prd/types";
-import { resolveRouting, routeStory } from "@/routing/router";
 import type { RoutingContext, RoutingDecision, RoutingStrategy } from "@/routing";
+import { resolveRouting, routeStory } from "@/routing/router";
 
 // ============================================================================
 // Test Helpers
@@ -62,7 +62,6 @@ function createMockPlugin(pluginName: string, router?: RoutingStrategy): NaxPlug
 
   return plugin;
 }
-
 
 describe("Plugin routers chain order", () => {
   test("plugin routers execute before built-in keyword strategy", async () => {
@@ -137,10 +136,7 @@ describe("Plugin router precedence", () => {
       reasoning: "Plugin 2 decision (should not be used)",
     }));
 
-    const registry = new PluginRegistry([
-      createMockPlugin("plugin-1", router1),
-      createMockPlugin("plugin-2", router2),
-    ]);
+    const registry = new PluginRegistry([createMockPlugin("plugin-1", router1), createMockPlugin("plugin-2", router2)]);
 
     const story = createTestStory();
     const context: RoutingContext = { config: DEFAULT_CONFIG };
@@ -162,10 +158,7 @@ describe("Plugin router precedence", () => {
       reasoning: "Plugin 2 decision",
     }));
 
-    const registry = new PluginRegistry([
-      createMockPlugin("plugin-1", router1),
-      createMockPlugin("plugin-2", router2),
-    ]);
+    const registry = new PluginRegistry([createMockPlugin("plugin-1", router1), createMockPlugin("plugin-2", router2)]);
 
     const story = createTestStory();
     const context: RoutingContext = { config: DEFAULT_CONFIG };
@@ -242,10 +235,7 @@ describe("Plugin router fallback to built-in strategy", () => {
     const router1 = createPluginRouter("plugin-router-1", () => null);
     const router2 = createPluginRouter("plugin-router-2", () => null);
 
-    const registry = new PluginRegistry([
-      createMockPlugin("plugin-1", router1),
-      createMockPlugin("plugin-2", router2),
-    ]);
+    const registry = new PluginRegistry([createMockPlugin("plugin-1", router1), createMockPlugin("plugin-2", router2)]);
 
     // Simple story that keyword strategy would classify as "simple"
     const story = createTestStory({
@@ -373,10 +363,7 @@ describe("Plugin router context", () => {
       return null;
     });
 
-    const registry = new PluginRegistry([
-      createMockPlugin("plugin-1", router1),
-      createMockPlugin("plugin-2", router2),
-    ]);
+    const registry = new PluginRegistry([createMockPlugin("plugin-1", router1), createMockPlugin("plugin-2", router2)]);
 
     const story = createTestStory();
     const context: RoutingContext = { config: DEFAULT_CONFIG };

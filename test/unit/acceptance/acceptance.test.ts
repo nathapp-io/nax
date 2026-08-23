@@ -4,11 +4,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import {
-  buildAcceptanceTestPrompt,
-  generateSkeletonTests,
-  parseAcceptanceCriteria,
-} from "@/acceptance/generator";
+import { buildAcceptanceTestPrompt, generateSkeletonTests, parseAcceptanceCriteria } from "@/acceptance/generator";
 
 describe("parseAcceptanceCriteria", () => {
   test("parses AC-N: format", () => {

@@ -13,6 +13,7 @@ import { _fullSuiteGateDeps, _lintCheckDeps, _typecheckCheckDeps } from "@/opera
 import type { UserStory } from "@/prd/types";
 import type { QualityCommandResult } from "@/quality/runner";
 import {
+  type DeepPartial,
   cleanupTempDir,
   makeMockCallContext,
   makeMockPlanInputs,
@@ -58,7 +59,7 @@ export interface E2EOptions {
   agent: ScriptedAgentSpec;
   gates?: E2EGates;
   story?: Partial<UserStory>;
-  config?: Partial<NaxConfig>;
+  config?: DeepPartial<NaxConfig>;
   /**
    * Seed `test/placeholder.test.ts` so greenfield-gate detects pre-existing tests
    * and does NOT pause with "greenfield-no-tests". Defaults to `true`. Set to
@@ -118,7 +119,7 @@ export interface E2EResult {
   nonBlockingFix?: E2ENonBlockingFix;
 }
 
-function makeE2EConfig(overrides?: Partial<NaxConfig>): NaxConfig {
+function makeE2EConfig(overrides?: DeepPartial<NaxConfig>): NaxConfig {
   // Spread overrides at the sub-key level so a partial `quality` or `review` override
   // does not wipe out the harness-required keys (e.g. `lintFix: "lint --fix"` for
   // mechanical-lintfix, or `enabled/checks` for review). Other top-level overrides
@@ -139,7 +140,7 @@ function makeE2EConfig(overrides?: Partial<NaxConfig>): NaxConfig {
       ...(reviewOverride ?? {}),
     },
     ...topLevelRest,
-  } as Partial<NaxConfig>);
+  });
 }
 
 export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
@@ -181,7 +182,6 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
 
   // Wrap callOp to record phase order — use type assertion to satisfy the
   // generic signature which can't be expressed concisely without losing information.
-  // biome-ignore lint/suspicious/noExplicitAny: E2E instrumentation wrapper — all calls pass through to origCallOp
   (_storyOrchestratorDeps as { callOp: (...args: any[]) => any }).callOp = async (
     ctx: unknown,
     op: unknown,
@@ -203,7 +203,6 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
   // ExecutionPlan discards runNonBlockingFix's return — spy it so the nbf outcome
   // ({ ran, kept, restored }) is observable. Delegates to the real implementation.
   let nonBlockingFix: E2ENonBlockingFix | undefined;
-  // biome-ignore lint/suspicious/noExplicitAny: E2E instrumentation wrapper — passes through to origRunNbf
   (_storyOrchestratorDeps as { runNonBlockingFix: (...args: any[]) => any }).runNonBlockingFix = async (
     nbfArgs: unknown,
     nbfDeps: unknown,
@@ -216,10 +215,13 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
       rollbackToRef: async () => {},
       measureSourceDiff: async () => opts.nonBlockingFixDiff ?? { fileCount: 0, sourceLineCount: 0 },
     };
-    const out = await origRunNbf(nbfArgs as Parameters<typeof origRunNbf>[0], {
-      ...(nbfDeps as object),
-      ...stubDeps,
-    } as Parameters<typeof origRunNbf>[1]);
+    const out = await origRunNbf(
+      nbfArgs as Parameters<typeof origRunNbf>[0],
+      {
+        ...(nbfDeps as object),
+        ...stubDeps,
+      } as Parameters<typeof origRunNbf>[1],
+    );
     nonBlockingFix = { ran: out.ran, kept: out.kept, restored: out.restored };
     return out;
   };
@@ -239,13 +241,11 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
       // TestSummary has a complex shape; cast via unknown to avoid importing its full type.
       // `failures` is only set when the caller supplies it — otherwise it stays undefined
       // to preserve the legacy gate-parse-crash → validator-error behavior some tests rely on.
-      // biome-ignore lint/suspicious/noExplicitAny: minimal test summary for gate mock
       parsedSummary: {
         passed: g.passed ? 1 : 0,
         failed: g.failed,
         skipped: 0,
         ...(g.failures ? { failures: g.failures } : {}),
-        // biome-ignore lint/suspicious/noExplicitAny: minimal test summary for gate mock
       } as any,
       timedOut: false,
     };

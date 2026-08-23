@@ -2,45 +2,38 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
-import { initLogger, resetLogger } from "@/logger";
 import type { LoadedHooksConfig } from "@/hooks";
+import { initLogger, resetLogger } from "@/logger";
 import type { PluginRegistry } from "@/plugins";
-import type { PRD, UserStory } from "@/prd/types";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import type { PRD, StoryStatus, UserStory } from "@/prd/types";
+import { cleanupTempDir, makePRD, makeStory as makeStoryBase, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeStory(
-  id: string,
-  dependencies: string[] = [],
-  status: "pending" | "passed" | "failed" | "completed" = "pending",
-): UserStory {
-  return {
+function makeStory(id: string, dependencies: string[] = [], status: StoryStatus = "pending"): UserStory {
+  return makeStoryBase({
     id,
     title: `Story ${id}`,
     description: "Test story",
     acceptanceCriteria: [`AC-1: ${id} feature works`],
-    tags: [],
     dependencies,
     status,
-    passes: status === "passed" || status === "completed",
-    escalations: [],
-    attempts: 0,
+    passes: status === "passed",
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
-  } as unknown as UserStory;
+  });
 }
 
 function makePrd(stories: UserStory[]): PRD {
-  return {
+  return makePRD({
     project: "test-project",
     feature: "test-feature",
     branchName: "feat/test",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     userStories: stories,
-  } as unknown as PRD;
+  });
 }
 
 let tmpDir: string;
@@ -72,8 +65,9 @@ describe("AC-6: runParallelBatch rectification success", () => {
     const origMerge = _parallelBatchDeps.createMergeEngine;
     const origRectify = _parallelBatchDeps.rectifyConflictedStory;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
+    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createMergeEngine = async () =>
+      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],
@@ -119,8 +113,9 @@ describe("AC-6: runParallelBatch rectification success", () => {
     const origMerge = _parallelBatchDeps.createMergeEngine;
     const origRectify = _parallelBatchDeps.rectifyConflictedStory;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
+    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createMergeEngine = async () =>
+      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],
@@ -169,8 +164,9 @@ describe("AC-7: runParallelBatch rectification failure", () => {
     const origMerge = _parallelBatchDeps.createMergeEngine;
     const origRectify = _parallelBatchDeps.rectifyConflictedStory;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
+    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createMergeEngine = async () =>
+      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],
@@ -179,7 +175,9 @@ describe("AC-7: runParallelBatch rectification failure", () => {
       mergeConflicts: [{ storyId: "US-001", conflictFiles: [], originalCost: 0.5 }],
       storyCosts: new Map([["US-001", 0.5]]),
     });
-    _parallelBatchDeps.rectifyConflictedStory = async () => { throw new Error("rectification error"); };
+    _parallelBatchDeps.rectifyConflictedStory = async () => {
+      throw new Error("rectification error");
+    };
 
     try {
       const result = await runParallelBatch({
@@ -202,7 +200,6 @@ describe("AC-7: runParallelBatch rectification failure", () => {
       _parallelBatchDeps.rectifyConflictedStory = origRectify;
     }
   });
-
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -228,16 +225,15 @@ describe("AC-8: merge-conflict-rectify exports", () => {
 
 describe("AC-9: import sites updated", () => {
   test("parallel-batch.ts imports from merge-conflict-rectify", async () => {
-    const source = await Bun.file(
-      join(import.meta.dir, "../../../src/execution/parallel-batch.ts"),
-    ).text().catch(() => "");
+    const source = await Bun.file(join(import.meta.dir, "../../../src/execution/parallel-batch.ts"))
+      .text()
+      .catch(() => "");
     if (source) {
       expect(source).toContain('import("./merge-conflict-rectify")');
     } else {
       expect(true).toBe(true);
     }
   });
-
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -250,5 +246,4 @@ describe("AC-10: rectification-pass deleted", () => {
     const exists = await Bun.file(filePath).exists();
     expect(exists).toBe(false);
   });
-
 });

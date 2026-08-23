@@ -8,9 +8,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Command } from "commander";
 import { loadConfig } from "@/config/loader";
 import { makeTempDir } from "@test/helpers";
+import { Command } from "commander";
 
 describe("CLI --profile flag", () => {
   let tempDir: string;
@@ -22,10 +22,7 @@ describe("CLI --profile flag", () => {
     mkdirSync(naxDir, { recursive: true });
 
     // Create a minimal config.json
-    writeFileSync(
-      join(naxDir, "config.json"),
-      JSON.stringify({ version: 1 }),
-    );
+    writeFileSync(join(naxDir, "config.json"), JSON.stringify({ version: 1 }));
   });
 
   afterEach(() => {
@@ -118,10 +115,7 @@ describe("CLI --profile flag", () => {
           capturedOptions = options;
         });
 
-      program.parse(
-        ["plan", "--profile", "thorough", "-f", "test-feature", "--from", "spec.md"],
-        { from: "user" },
-      );
+      program.parse(["plan", "--profile", "thorough", "-f", "test-feature", "--from", "spec.md"], { from: "user" });
 
       expect(capturedOptions.profile).toBe("thorough");
       expect(capturedOptions.feature).toBe("test-feature");
@@ -140,10 +134,7 @@ describe("CLI --profile flag", () => {
           capturedOptions = options;
         });
 
-      program.parse(
-        ["plan", "-f", "test-feature", "--from", "spec.md"],
-        { from: "user" },
-      );
+      program.parse(["plan", "-f", "test-feature", "--from", "spec.md"], { from: "user" });
 
       expect(capturedOptions.profile).toBeUndefined();
       expect(capturedOptions.feature).toBe("test-feature");

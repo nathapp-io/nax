@@ -14,12 +14,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { ContextOrchestrator } from "@/context/engine";
-import type {
-  AdapterFailure,
-  ContextBundle,
-  ContextChunk,
-  ContextManifest,
-} from "@/context/engine/types";
+import type { AdapterFailure, ContextBundle, ContextChunk, ContextManifest } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures (duplicated from rebuild-repack.test.ts to keep this file
@@ -86,7 +81,9 @@ function makeBundleFromChunks(
     agentId,
     manifest: makeManifest({
       includedChunks: chunks.map((c) => c.id),
-      floorItems: chunks.filter((c) => c.kind === "feature" || c.kind === "static" || c.kind === "test-coverage").map((c) => c.id),
+      floorItems: chunks
+        .filter((c) => c.kind === "feature" || c.kind === "static" || c.kind === "test-coverage")
+        .map((c) => c.id),
       usedTokens: chunks.reduce((s, c) => s + c.tokens, 0),
       ...manifestOverrides,
     }),

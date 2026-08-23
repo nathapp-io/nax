@@ -22,7 +22,8 @@ import {
 } from "@/cli";
 import { loadCanonicalRules as loadCanonicalRulesImpl } from "@/context/engine";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
+import type { MockLogger } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers
@@ -279,28 +280,10 @@ function makeRuleWithWarnings(overrides: Partial<CanonicalRule> & { warnings?: s
   };
 }
 
-function captureLoggerCalls(): {
-  calls: Array<{ level: string; stage: string; message: string; data?: Record<string, unknown> }>;
-  reset(): void;
-} {
-  const calls: Array<{ level: string; stage: string; message: string; data?: Record<string, unknown> }> = [];
-  const logger = {
-    warn: (stage: string, message: string, data?: Record<string, unknown>) => {
-      calls.push({ level: "warn", stage, message, data });
-    },
-    info: (stage: string, message: string, data?: Record<string, unknown>) => {
-      calls.push({ level: "info", stage, message, data });
-    },
-    debug: () => {},
-    error: () => {},
-  };
-  _rulesCLIDeps.getLogger = () => logger as unknown as ReturnType<typeof _rulesCLIDeps.getLogger>;
-  return {
-    calls,
-    reset: () => {
-      calls.length = 0;
-    },
-  };
+function captureLoggerCalls(): MockLogger {
+  const logger = makeLogger();
+  _rulesCLIDeps.getLogger = () => logger;
+  return logger;
 }
 
 describe("rulesLintCommand — AC1 unrecognised-stage warning", () => {
@@ -470,27 +453,10 @@ function makeRule(overrides: Partial<CanonicalRule>): CanonicalRule {
   };
 }
 
-interface InertScopingCall {
-  level: string;
-  stage: string;
-  message: string;
-  data?: Record<string, unknown>;
-}
-
-function captureInertScopingLogger(): { calls: InertScopingCall[] } {
-  const calls: InertScopingCall[] = [];
-  const logger = {
-    warn: (stage: string, message: string, data?: Record<string, unknown>) => {
-      calls.push({ level: "warn", stage, message, data });
-    },
-    info: (stage: string, message: string, data?: Record<string, unknown>) => {
-      calls.push({ level: "info", stage, message, data });
-    },
-    debug: () => {},
-    error: () => {},
-  };
-  _rulesCLIDeps.getLogger = () => logger as unknown as ReturnType<typeof _rulesCLIDeps.getLogger>;
-  return { calls };
+function captureInertScopingLogger(): MockLogger {
+  const logger = makeLogger();
+  _rulesCLIDeps.getLogger = () => logger;
+  return logger;
 }
 
 function stubInertScopingDeps(rules: CanonicalRule[]): void {
@@ -550,7 +516,11 @@ describe("US-002 rulesLintCommand — AC2 inert-paths warning", () => {
     await rulesLintCommandFromRules({ dir: tempDir });
 
     const inert = calls.find(
-      (c) => c.level === "warn" && c.stage === "rules-lint" && c.data?.file === absolutePath && c.data?.code === "INERT_PATHS",
+      (c) =>
+        c.level === "warn" &&
+        c.stage === "rules-lint" &&
+        c.data?.file === absolutePath &&
+        c.data?.code === "INERT_PATHS",
     );
     expect(inert).toBeDefined();
   });
@@ -699,15 +669,7 @@ describe("US-002 rulesLintCommandDirect — dep forwarding", () => {
     ];
     _rulesCLIDeps.globHasMatch = () => true;
 
-    const calls: InertScopingCall[] = [];
-    const logger = {
-      warn: (stage: string, message: string, data?: Record<string, unknown>) => {
-        calls.push({ level: "warn", stage, message, data });
-      },
-      info: () => {},
-      debug: () => {},
-      error: () => {},
-    };
+    const logger = makeLogger();
 
     await rulesLintCommandFromLint(
       { dir: "/project" },
@@ -715,12 +677,14 @@ describe("US-002 rulesLintCommandDirect — dep forwarding", () => {
         globCanonicalRuleFiles: _rulesCLIDeps.globCanonicalRuleFiles,
         loadCanonicalRules: _rulesCLIDeps.loadCanonicalRules,
         globHasMatch: _rulesCLIDeps.globHasMatch,
-        getLogger: () => logger as unknown as ReturnType<typeof _rulesLintDeps.getLogger>,
+        getLogger: () => logger,
         discoverWorkspacePackages: async () => [],
       },
     );
 
-    const inert = calls.some((c) => c.level === "warn" && c.stage === "rules-lint" && c.data?.code === "INERT_PATHS");
+    const inert = logger.calls.some(
+      (c) => c.level === "warn" && c.stage === "rules-lint" && c.data?.code === "INERT_PATHS",
+    );
     expect(inert).toBe(true);
   });
 });

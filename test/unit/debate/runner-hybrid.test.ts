@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { DEFAULT_CONFIG } from "@/config";
+import { debateConfigSelector } from "@/config";
 import { DebateRunner, _debateSessionDeps } from "@/debate";
-import type { HybridCtx } from "@/debate/runner-hybrid";
 import type { DebateRunnerOptions, DebateStageConfig } from "@/debate";
+import type { HybridCtx } from "@/debate/runner-hybrid";
 import type { CallContext } from "@/operations";
 import * as callModule from "@/operations";
 import type { DebateStatefulInput } from "@/operations/debate-stateful";
-import { DEFAULT_CONFIG } from "@/config";
-import { debateConfigSelector } from "@/config";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
@@ -104,7 +104,10 @@ describe("DebateRunner hybrid mode — handle IDs correspond to sessionRole (AC1
   test("debater 0 gets handle 'debate-hybrid-0' and debater 1 gets 'debate-hybrid-1'", async () => {
     const openedNames: string[] = [];
     const sm = makeSessionManager({
-      openSession: mock(async (name: string) => { openedNames.push(name); return { id: name, agentName: "claude" }; }),
+      openSession: mock(async (name: string) => {
+        openedNames.push(name);
+        return { id: name, agentName: "claude" };
+      }),
       closeSession: mock(async () => {}),
       nameFor: mock((req) => req.role ?? ""),
     });
@@ -143,7 +146,10 @@ describe("DebateRunner hybrid mode — handle IDs correspond to sessionRole (AC1
   test("sessionRole index matches debater position in the debaters array (3 debaters)", async () => {
     const openedNames: string[] = [];
     const sm = makeSessionManager({
-      openSession: mock(async (name: string) => { openedNames.push(name); return { id: name, agentName: "claude" }; }),
+      openSession: mock(async (name: string) => {
+        openedNames.push(name);
+        return { id: name, agentName: "claude" };
+      }),
       closeSession: mock(async () => {}),
       nameFor: mock((req) => req.role ?? ""),
     });
@@ -200,7 +206,11 @@ describe("DebateRunner hybrid mode — parallel proposals via allSettledBounded 
     const agentManager = makeMockAgentManager({
       runAsSessionFn: async (agentName) => {
         invoked.push(agentName);
-        return { output: `proposal-${agentName}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+        return {
+          output: `proposal-${agentName}`,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          internalRoundTrips: 0,
+        };
       },
     });
     const ctx = makeCallCtx({
@@ -245,7 +255,11 @@ describe("DebateRunner hybrid mode — parallel proposals via allSettledBounded 
       runAsSessionFn: async (agentName, _handle, prompt) => {
         // Only count proposal calls (not rebuttals)
         if (!prompt.includes("## Your Task")) proposalInvoked.push(agentName);
-        return { output: `proposal-${agentName}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+        return {
+          output: `proposal-${agentName}`,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          internalRoundTrips: 0,
+        };
       },
     });
     const ctx = makeCallCtx({
@@ -281,8 +295,13 @@ describe("DebateRunner hybrid mode — pre-opened sessions per debater (AC3)", (
     const closeCalls: number[] = [];
 
     const sm = makeSessionManager({
-      openSession: mock(async (name: string) => { openCalls.push(name); return { id: "h-" + openCalls.length, agentName: "claude" }; }),
-      closeSession: mock(async () => { closeCalls.push(1); }),
+      openSession: mock(async (name: string) => {
+        openCalls.push(name);
+        return { id: `h-${openCalls.length}`, agentName: "claude" };
+      }),
+      closeSession: mock(async () => {
+        closeCalls.push(1);
+      }),
       nameFor: mock((req) => req.role ?? ""),
     });
     const agentManager = makeMockAgentManager({
@@ -333,7 +352,11 @@ describe("DebateRunner hybrid mode — single-agent fallback when fewer than 2 p
     const agentManager = makeMockAgentManager({
       runAsSessionFn: async (agentName) => {
         if (agentName === "opencode") throw new Error("opencode failed");
-        return { output: `proposal-${agentName}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+        return {
+          output: `proposal-${agentName}`,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          internalRoundTrips: 0,
+        };
       },
     });
     const ctx = makeCallCtx({
@@ -370,7 +393,9 @@ describe("DebateRunner hybrid mode — single-agent fallback when fewer than 2 p
       nameFor: mock((req) => req.role ?? ""),
     });
     const agentManager = makeMockAgentManager({
-      runAsSessionFn: async () => { throw new Error("all failed"); },
+      runAsSessionFn: async () => {
+        throw new Error("all failed");
+      },
     });
     const ctx = makeCallCtx({
       runtime: {
@@ -605,7 +630,7 @@ describe("runHybrid() — two-scope cost tracking (US-005)", () => {
   });
 
   test("AC6: totalCostUsd = debaterScope (0.10) + resolverScope (0.02) = 0.12", async () => {
-    const costAgg = makeScopedCostAgg(0.10, 0.02);
+    const costAgg = makeScopedCostAgg(0.1, 0.02);
     const ctx = makeCtxWithCostAgg(costAgg);
     const sm = (ctx.runtime as any).sessionManager;
     spyOn(callModule, "callOp").mockImplementation(async (_callCtx: unknown, _op: unknown, input: unknown) => {

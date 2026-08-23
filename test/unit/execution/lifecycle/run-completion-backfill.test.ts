@@ -22,7 +22,7 @@ import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regress
 import type { StoryMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD } from "@/prd";
-import { makeNaxConfig, makeMockRuntime, makePRD as makePRDHelper, makeStory } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig, makePRD as makePRDHelper, makeStatusWriter, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -52,17 +52,6 @@ const REGRESSION_CONFIG: NaxConfig = makeNaxConfig({
     commands: { test: "bun test" },
   },
 });
-
-function makeStatusWriter() {
-  return {
-    setPrd: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    setRunStatus: mock(() => {}),
-    setPostRunPhase: mock(() => {}),
-    update: mock(async () => {}),
-    writeFeatureStatus: mock(async () => {}),
-  };
-}
 
 function makeStoryMetrics(overrides: Partial<StoryMetrics>): StoryMetrics {
   return {
@@ -97,7 +86,7 @@ function makeOpts(config: NaxConfig, prd: PRD, metrics: StoryMetrics[]): RunComp
     iterations: 1,
     startTime: Date.now() - 1000,
     workdir: WORKDIR,
-    statusWriter: makeStatusWriter() as unknown as RunCompletionOptions["statusWriter"],
+    statusWriter: makeStatusWriter(),
     config,
     runtime: makeMockRuntime(),
   };

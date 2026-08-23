@@ -123,12 +123,7 @@ describe("applySectionBudget — exhausted budget drops lower-priority rules", (
     ];
     const result = applySectionBudget(sections, 100);
     expect(result.retainedSections.map((s) => sectionId(s))).toEqual(["rule-a#a0", "rule-a#a1"]);
-    expect(result.droppedIds).toEqual([
-      "rule-a#a2",
-      "rule-a#a3",
-      "rule-b#b0",
-      "rule-b#b1",
-    ]);
+    expect(result.droppedIds).toEqual(["rule-a#a2", "rule-a#a3", "rule-b#b0", "rule-b#b1"]);
   });
 });
 
@@ -138,9 +133,7 @@ describe("applySectionBudget — exhausted budget drops lower-priority rules", (
 
 describe("applySectionBudget — single oversized section", () => {
   test("AC6: when a single section exceeds the budget by itself, returns it and reports overageTokens greater than zero", () => {
-    const sections: RuleSection[] = [
-      makeSection({ slug: "big", ordinal: 0, tokens: 500, priority: 1 }),
-    ];
+    const sections: RuleSection[] = [makeSection({ slug: "big", ordinal: 0, tokens: 500, priority: 1 })];
     const result = applySectionBudget(sections, 100);
     expect(result.retainedSections).toEqual(sections);
     expect(result.overageTokens).toBeGreaterThan(0);
@@ -198,9 +191,7 @@ describe("applySectionBudget — zero budget", () => {
 
 describe("applySectionBudget — non-finite budget", () => {
   test("AC10: returns an empty section list without throwing when budgetTokens is non-finite", () => {
-    const sections: RuleSection[] = [
-      makeSection({ slug: "a", ordinal: 0, tokens: 50, priority: 1 }),
-    ];
+    const sections: RuleSection[] = [makeSection({ slug: "a", ordinal: 0, tokens: 50, priority: 1 })];
     expect(() => applySectionBudget(sections, Number.NaN)).not.toThrow();
     expect(() => applySectionBudget(sections, Number.POSITIVE_INFINITY)).not.toThrow();
     expect(applySectionBudget(sections, Number.NaN).retainedSections).toEqual([]);
@@ -244,12 +235,7 @@ describe("applySectionBudget — cross-rule ordering", () => {
     const result = applySectionBudget(sections, 40);
 
     // alpha survives whole; beta is the boundary rule and contributes its lead.
-    expect(result.retainedSections.map(sectionId)).toEqual([
-      "alpha#preamble",
-      "alpha#a",
-      "alpha#b",
-      "beta#preamble",
-    ]);
+    expect(result.retainedSections.map(sectionId)).toEqual(["alpha#preamble", "alpha#a", "alpha#b", "beta#preamble"]);
     expect(result.droppedIds).toEqual(["beta#a", "beta#b"]);
   });
 
@@ -257,13 +243,6 @@ describe("applySectionBudget — cross-rule ordering", () => {
     const sections = [...sectionsFor("zulu", 1), ...sectionsFor("alpha", 100)];
     const result = applySectionBudget(sections, 1000);
 
-    expect(result.retainedSections.map((s) => s.ruleId)).toEqual([
-      "zulu",
-      "zulu",
-      "zulu",
-      "alpha",
-      "alpha",
-      "alpha",
-    ]);
+    expect(result.retainedSections.map((s) => s.ruleId)).toEqual(["zulu", "zulu", "zulu", "alpha", "alpha", "alpha"]);
   });
 });

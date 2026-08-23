@@ -17,7 +17,7 @@
 
 import { describe, expect, test } from "bun:test";
 import type { StoryCheckpoint, TreeState } from "@/execution";
-import { buildResumePlan, type ResumePlan } from "@/execution";
+import { type ResumePlan, buildResumePlan } from "@/execution";
 import * as checkpointBarrel from "@/execution";
 
 const TREE: TreeState = { headSha: "abc123", dirtyDigest: "deadbeef" };
@@ -104,14 +104,7 @@ describe("buildResumePlan with null checkpoint (AC6)", () => {
 
 describe("buildResumePlan cheap-gate exclusion (AC7)", () => {
   test("matching tree + greenPhases containing verify-scoped, lint-check, typecheck-check ⇒ none appear in skipPhases", () => {
-    const checkpoint = cp([
-      "test-writer",
-      "implementer",
-      "verifier",
-      "verify-scoped",
-      "lint-check",
-      "typecheck-check",
-    ]);
+    const checkpoint = cp(["test-writer", "implementer", "verifier", "verify-scoped", "lint-check", "typecheck-check"]);
     const plan = buildResumePlan(checkpoint, TREE);
 
     expect(plan.skipPhases).not.toContain("verify-scoped");

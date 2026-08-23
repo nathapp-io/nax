@@ -9,12 +9,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { AgentResult } from "@/agents/types";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "@/review/semantic";
 import type { SemanticStory } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
-import type { AgentResult } from "@/agents/types";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers (mirrors semantic.test.ts patterns)
@@ -61,7 +61,10 @@ function makeAgentManager(response: string, cost = 0) {
       };
       return { result, fallbacks: [], bundle: request.bundle };
     },
-    completeWithFallbackFn: async () => ({ result: { output: response, costUsd: cost, source: "mock" }, fallbacks: [] }),
+    completeWithFallbackFn: async () => ({
+      result: { output: response, costUsd: cost, source: "mock" },
+      fallbacks: [],
+    }),
     runAsFn: async () => ({
       success: true,
       exitCode: 0,
@@ -77,19 +80,7 @@ function makeAgentManager(response: string, cost = 0) {
 }
 
 function makeSpawnMock(stdout: string, exitCode = 0) {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(stdout));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(controller) { controller.close(); },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(() => ({ exitCode, stdout })).spawn;
 }
 
 // ---------------------------------------------------------------------------
@@ -135,11 +126,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
   // Failure mode 2: preamble + fenced JSON (production log pattern)
   test("parses passed=true from preamble + ```json fence", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
-    const response =
-      "I'll verify each acceptance criterion by reading the actual implementation files.\n" +
-      "```json\n" +
-      JSON.stringify({ passed: true, findings: [] }) +
-      "\n```";
+    const response = `I'll verify each acceptance criterion by reading the actual implementation files.\n\`\`\`json\n${JSON.stringify({ passed: true, findings: [] })}\n\`\`\``;
     const result = await callRunSemanticReview(response);
     expect(result.success).toBe(true);
     expect(result.output).not.toContain("could not parse");
@@ -149,10 +136,19 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const payload = {
       passed: false,
-      findings: [{ severity: "error", file: "src/foo.ts", line: 10, issue: "Parser missing impl", suggestion: "implement it", acQuote: "Parser handles preamble + fenced JSON", acIndex: 1 }],
+      findings: [
+        {
+          severity: "error",
+          file: "src/foo.ts",
+          line: 10,
+          issue: "Parser missing impl",
+          suggestion: "implement it",
+          acQuote: "Parser handles preamble + fenced JSON",
+          acIndex: 1,
+        },
+      ],
     };
-    const response =
-      "Let me check the implementation.\n```json\n" + JSON.stringify(payload) + "\n```";
+    const response = `Let me check the implementation.\n\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``;
     const result = await callRunSemanticReview(response);
     expect(result.success).toBe(false);
     expect(result.output).toContain("Semantic review failed");
@@ -160,11 +156,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
 
   test("parses from preamble + plain ``` fence", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
-    const response =
-      "After reviewing the diff:\n" +
-      "```\n" +
-      JSON.stringify({ passed: true, findings: [] }) +
-      "\n```";
+    const response = `After reviewing the diff:\n\`\`\`\n${JSON.stringify({ passed: true, findings: [] })}\n\`\`\``;
     const result = await callRunSemanticReview(response);
     expect(result.success).toBe(true);
     expect(result.output).not.toContain("could not parse");
@@ -173,8 +165,7 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
   // Bare JSON embedded in narration (tier 3)
   test("parses passed=true from JSON embedded in narration", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
-    const response =
-      'After analysis: {"passed":true,"findings":[]} All ACs are correctly implemented.';
+    const response = 'After analysis: {"passed":true,"findings":[]} All ACs are correctly implemented.';
     const result = await callRunSemanticReview(response);
     expect(result.success).toBe(true);
     expect(result.output).not.toContain("could not parse");
@@ -184,9 +175,19 @@ describe("runSemanticReview — multi-tier JSON parsing", () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const payload = {
       passed: false,
-      findings: [{ severity: "error", file: "src/bar.ts", line: 5, issue: "Parser finds stub in bar", suggestion: "implement", acQuote: "Parser handles bare JSON in narration", acIndex: 2 }],
+      findings: [
+        {
+          severity: "error",
+          file: "src/bar.ts",
+          line: 5,
+          issue: "Parser finds stub in bar",
+          suggestion: "implement",
+          acQuote: "Parser handles bare JSON in narration",
+          acIndex: 2,
+        },
+      ],
     };
-    const response = "I found issues. " + JSON.stringify(payload) + " That concludes my review.";
+    const response = `I found issues. ${JSON.stringify(payload)} That concludes my review.`;
     const result = await callRunSemanticReview(response);
     expect(result.success).toBe(false);
   });

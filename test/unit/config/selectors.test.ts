@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_CONFIG,
   NaxConfigSchema,
@@ -47,7 +47,6 @@ describe("ConfigSelector — Phase 1 selectors", () => {
       expect(Object.keys(slice)).toEqual(["interaction"]);
     });
 
-
     test("interactionConfigSelector preserves values", () => {
       const slice = interactionConfigSelector.select(DEFAULT_CONFIG);
       expect(slice.interaction).toEqual(DEFAULT_CONFIG.interaction);
@@ -74,14 +73,12 @@ describe("ConfigSelector — Phase 1 selectors", () => {
       ]);
     });
 
-
     test("qualityConfigSelector picks quality and execution", () => {
       const slice = qualityConfigSelector.select(DEFAULT_CONFIG);
       expect(slice).toHaveProperty("quality");
       expect(slice).toHaveProperty("execution");
       expect(Object.keys(slice).sort()).toEqual(["execution", "quality"]);
     });
-
   });
 
   describe("widened selectors", () => {
@@ -195,18 +192,15 @@ describe("ConfigSelector — Phase 1 selectors", () => {
       expect(Object.keys(slice).sort()).toEqual(["execution", "project", "quality"]);
     });
 
-
     test("contextToolRuntimeConfigSelector picks context, execution, project, quality", () => {
       const slice = contextToolRuntimeConfigSelector.select(DEFAULT_CONFIG);
       expect(Object.keys(slice).sort()).toEqual(["context", "execution", "project", "quality"]);
     });
 
-
     test("promptLoaderConfigSelector picks prompts, context, project", () => {
       const slice = promptLoaderConfigSelector.select(DEFAULT_CONFIG);
       expect(Object.keys(slice).sort()).toEqual(["context", "project", "prompts"]);
     });
-
   });
 });
 

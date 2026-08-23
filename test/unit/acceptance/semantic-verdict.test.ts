@@ -13,11 +13,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import path from "node:path";
-import {
-  _semanticVerdictDeps,
-  loadSemanticVerdicts,
-  persistSemanticVerdict,
-} from "@/acceptance/semantic-verdict";
+import { _semanticVerdictDeps, loadSemanticVerdicts, persistSemanticVerdict } from "@/acceptance/semantic-verdict";
 import type { SemanticVerdict } from "@/acceptance/types";
 
 // ---------------------------------------------------------------------------
@@ -147,9 +143,7 @@ describe("persistSemanticVerdict — file path", () => {
       passed: false,
       timestamp: "2026-04-05T10:00:00.000Z",
       acCount: 2,
-      findings: [
-        { ruleId: "r1", severity: "error", file: "src/a.ts", line: 5, message: "bad code" },
-      ],
+      findings: [{ ruleId: "r1", severity: "error", file: "src/a.ts", line: 5, message: "bad code" }],
     };
 
     await persistSemanticVerdict("/feat/dir", "US-001", verdict);

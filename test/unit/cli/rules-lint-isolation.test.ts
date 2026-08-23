@@ -12,6 +12,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _rulesCLIDeps, _rulesLintDeps, rulesLintCommandDirect as rulesLintCommandFromLint } from "@/cli";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
+import { makeLogger } from "@test/helpers";
+import type { LogCall } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers
@@ -45,13 +47,6 @@ afterEach(() => {
   _rulesCLIDeps.getLogger = origGetLoggerCLI;
 });
 
-interface IsolationCall {
-  level: string;
-  stage: string;
-  message: string;
-  data?: Record<string, unknown>;
-}
-
 function makeRule(overrides: Partial<CanonicalRule>): CanonicalRule {
   return {
     fileName: "rule.md",
@@ -62,21 +57,11 @@ function makeRule(overrides: Partial<CanonicalRule>): CanonicalRule {
   };
 }
 
-function captureLogger(): IsolationCall[] {
-  const calls: IsolationCall[] = [];
-  const logger = {
-    warn: (stage: string, message: string, data?: Record<string, unknown>) => {
-      calls.push({ level: "warn", stage, message, data });
-    },
-    info: (stage: string, message: string, data?: Record<string, unknown>) => {
-      calls.push({ level: "info", stage, message, data });
-    },
-    debug: () => {},
-    error: () => {},
-  };
-  _rulesLintDeps.getLogger = () => logger as unknown as ReturnType<typeof _rulesLintDeps.getLogger>;
-  _rulesCLIDeps.getLogger = () => logger as unknown as ReturnType<typeof _rulesCLIDeps.getLogger>;
-  return calls;
+function captureLogger(): LogCall[] {
+  const logger = makeLogger();
+  _rulesLintDeps.getLogger = () => logger;
+  _rulesCLIDeps.getLogger = () => logger;
+  return logger.calls;
 }
 
 function captureStdout(): { lines: string[]; restore(): void } {
@@ -99,10 +84,7 @@ function captureStdout(): { lines: string[]; restore(): void } {
 
 describe("US-002 rulesLintCommand — AC1 first root rejects, healthy root still emits warnings", () => {
   test("[AC1] emits through the injected logger a warning attributable to a rule from the second root when the first root's loadCanonicalRules rejects", async () => {
-    _rulesLintDeps.globCanonicalRuleFiles = () => [
-      ".nax/rules/root.md",
-      "packages/api/.nax/rules/api.md",
-    ];
+    _rulesLintDeps.globCanonicalRuleFiles = () => [".nax/rules/root.md", "packages/api/.nax/rules/api.md"];
     _rulesLintDeps.loadCanonicalRules = async (root: string) => {
       if (root === "/project") {
         throw new Error("root load failed");
@@ -154,10 +136,7 @@ describe("US-002 rulesLintCommand — AC1 first root rejects, healthy root still
 
 describe("US-002 rulesLintCommand — AC2 reject with NaxError RULES_LINT_ROOT_FAILED", () => {
   test("[AC2] rejects with a NaxError whose code is RULES_LINT_ROOT_FAILED when at least one root's loadCanonicalRules rejects", async () => {
-    _rulesLintDeps.globCanonicalRuleFiles = () => [
-      ".nax/rules/root.md",
-      "packages/api/.nax/rules/api.md",
-    ];
+    _rulesLintDeps.globCanonicalRuleFiles = () => [".nax/rules/root.md", "packages/api/.nax/rules/api.md"];
     _rulesLintDeps.loadCanonicalRules = async (root: string) => {
       if (root === "/project") {
         throw new Error("root load failed");
@@ -233,10 +212,7 @@ describe("US-002 rulesLintCommand — AC3 two-of-three failure context names bot
 
 describe("US-002 rulesLintCommand — AC4 all roots load with warnings, resolves", () => {
   test("[AC4] resolves without rejecting when every root loads successfully and only warnings are produced", async () => {
-    _rulesLintDeps.globCanonicalRuleFiles = () => [
-      ".nax/rules/root.md",
-      "packages/api/.nax/rules/api.md",
-    ];
+    _rulesLintDeps.globCanonicalRuleFiles = () => [".nax/rules/root.md", "packages/api/.nax/rules/api.md"];
     _rulesLintDeps.loadCanonicalRules = async () => [
       makeRule({
         path: "with-warns.md",
@@ -269,10 +245,7 @@ describe("US-002 rulesLintCommand — AC4 all roots load with warnings, resolves
 
 describe("US-002 rulesLintCommand — AC5 all roots load with warnings, [WARN] summary", () => {
   test("[AC5] emits the [WARN] summary line when every root loads successfully and warnings are produced", async () => {
-    _rulesLintDeps.globCanonicalRuleFiles = () => [
-      ".nax/rules/root.md",
-      "packages/api/.nax/rules/api.md",
-    ];
+    _rulesLintDeps.globCanonicalRuleFiles = () => [".nax/rules/root.md", "packages/api/.nax/rules/api.md"];
     _rulesLintDeps.loadCanonicalRules = async () => [
       makeRule({
         path: "with-warns.md",

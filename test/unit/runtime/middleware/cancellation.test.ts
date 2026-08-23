@@ -1,14 +1,18 @@
-import { describe, test, expect } from "bun:test";
-import { cancellationMiddleware } from "@/runtime/middleware/cancellation";
+import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
 import type { MiddlewareContext } from "@/runtime/agent-middleware";
+import { cancellationMiddleware } from "@/runtime/middleware/cancellation";
 
 function makeCtx(aborted = false): MiddlewareContext {
   const ctrl = new AbortController();
   if (aborted) ctrl.abort();
   return {
-    runId: "r-001", agentName: "claude", kind: "run",
-    request: null, prompt: null, config: DEFAULT_CONFIG,
+    runId: "r-001",
+    agentName: "claude",
+    kind: "run",
+    request: null,
+    prompt: null,
+    config: DEFAULT_CONFIG,
     signal: ctrl.signal,
     resolvedPermissions: { mode: "approve-reads" },
   };
@@ -28,8 +32,12 @@ describe("cancellationMiddleware", () => {
   test("before() passes through when signal is undefined", async () => {
     const mw = cancellationMiddleware();
     const ctx: MiddlewareContext = {
-      runId: "r-001", agentName: "claude", kind: "run",
-      request: null, prompt: null, config: DEFAULT_CONFIG,
+      runId: "r-001",
+      agentName: "claude",
+      kind: "run",
+      request: null,
+      prompt: null,
+      config: DEFAULT_CONFIG,
       resolvedPermissions: { mode: "approve-reads" },
     };
     await expect(mw.before!(ctx)).resolves.toBeUndefined();
@@ -40,8 +48,12 @@ describe("cancellationMiddleware", () => {
     const ctrl = new AbortController();
     ctrl.abort();
     const ctx: MiddlewareContext = {
-      runId: "r-001", agentName: "claude", kind: "complete",
-      request: null, prompt: "test", config: DEFAULT_CONFIG,
+      runId: "r-001",
+      agentName: "claude",
+      kind: "complete",
+      request: null,
+      prompt: "test",
+      config: DEFAULT_CONFIG,
       signal: ctrl.signal,
       resolvedPermissions: { mode: "approve-reads" },
     };

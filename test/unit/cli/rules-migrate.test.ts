@@ -15,11 +15,11 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  type MigrationOutcome,
   _rulesCLIDeps,
   rulesMigrateCommand,
   translateLegacyFrontmatter,
   withReviewNotice,
-  type MigrationOutcome,
 } from "@/cli";
 import { withTempDir } from "@test/helpers";
 
@@ -48,7 +48,7 @@ beforeEach(() => {
   origLoadCanonicalRules = _rulesCLIDeps.loadCanonicalRules;
   origGetLogger = _rulesCLIDeps.getLogger;
 
-  Object.keys(written).forEach((k) => delete written[k]);
+  for (const k of Object.keys(written)) delete written[k];
 
   _rulesCLIDeps.readFile = async () => "";
   _rulesCLIDeps.writeFile = async (path, content) => {

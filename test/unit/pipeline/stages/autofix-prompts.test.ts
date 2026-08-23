@@ -103,10 +103,7 @@ describe("buildReviewRectificationPrompt", () => {
 
   describe("mixed failures (semantic + mechanical)", () => {
     test("combines both sections", () => {
-      const checks = [
-        makeCheck("lint", "console.log found"),
-        makeCheck("semantic", "AC not implemented"),
-      ];
+      const checks = [makeCheck("lint", "console.log found"), makeCheck("semantic", "AC not implemented")];
       const prompt = RectifierPromptBuilder.reviewRectification(checks, STORY_BASE);
 
       expect(prompt).toContain("Lint/Typecheck Errors");
@@ -118,10 +115,7 @@ describe("buildReviewRectificationPrompt", () => {
     });
 
     test("includes scope constraint for monorepo", () => {
-      const checks = [
-        makeCheck("lint", "error"),
-        makeCheck("semantic", "missing key"),
-      ];
+      const checks = [makeCheck("lint", "error"), makeCheck("semantic", "missing key")];
       const prompt = RectifierPromptBuilder.reviewRectification(checks, STORY_MONOREPO);
 
       expect(prompt).toContain("Only modify files within `apps/web/`");
@@ -208,9 +202,7 @@ describe("buildDialogueAwareRectificationPrompt (AC4)", () => {
   });
 
   test("includes failed check output alongside reasoning", () => {
-    const findingReasoning = new Map<string, string>([
-      ["AC1", "The handler is missing"],
-    ]);
+    const findingReasoning = new Map<string, string>([["AC1", "The handler is missing"]]);
 
     const prompt = RectifierPromptBuilder.dialogueAwareRectification(FAILED_CHECKS_SEMANTIC, STORY_BASE, {
       findingReasoning,

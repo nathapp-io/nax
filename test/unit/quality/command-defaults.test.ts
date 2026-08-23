@@ -5,11 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import {
-  _commandDefaultsDeps,
-  clearCommandDefaultsCache,
-  resolveDefaultQualityCommands,
-} from "@/quality";
+import { _commandDefaultsDeps, clearCommandDefaultsCache, resolveDefaultQualityCommands } from "@/quality";
 
 type Lang = "go" | "rust" | "python" | "typescript" | "javascript" | undefined;
 

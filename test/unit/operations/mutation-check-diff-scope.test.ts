@@ -10,13 +10,14 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import * as loggerModule from "@/logger";
 import { mutationCheckOp } from "@/operations";
+import * as mutationModule from "@/verification/mutation";
 import {
   cleanupTempDir,
-  makeMutationCheckCtx,
   makeMutationCheckDeps as fakeDeps,
+  makeMutationCheckCtx,
+  makeResolvedTestPatterns,
   makeTempDir,
 } from "@test/helpers";
-import * as mutationModule from "@/verification/mutation";
 
 const FAKE_STORY = { id: "US-003", title: "scope mutation candidates" } as any;
 
@@ -39,7 +40,7 @@ describe("mutationCheckOp — US-003 AC7: getChangedLineRanges resolves to null"
           storyId: "US-003",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+          resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -76,7 +77,7 @@ describe("mutationCheckOp — US-003 AC8: null range result never invokes regres
           storyId: "US-003",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+          resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -120,7 +121,7 @@ describe("mutationCheckOp — US-003 AC9: null range result emits a warning with
           storyId: "US-003",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+          resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -165,7 +166,7 @@ describe("mutationCheckOp — US-003 AC10: changed file absent from range map is
           storyId: "US-003",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+          resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -214,16 +215,14 @@ describe("mutationCheckOp — US-003 AC11: unmapped file emits a debug log with 
           storyId: "US-003",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+          resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
       );
 
       const calls = debugSpy!.mock.calls as Array<[string, string, Record<string, unknown>]>;
-      const matching = calls.filter(
-        ([, , data]) => data?.storyId === "US-003" && data?.file === file,
-      );
+      const matching = calls.filter(([, , data]) => data?.storyId === "US-003" && data?.file === file);
       expect(matching.length).toBeGreaterThan(0);
     } finally {
       cleanupTempDir(dir);
@@ -256,7 +255,7 @@ describe("mutationCheckOp — US-003 AC12: generateMutants receives the file's l
           storyId: "US-003",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+          resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 10, timeoutSeconds: 60 } }),
         deps,
@@ -300,7 +299,7 @@ describe("mutationCheckOp — US-003 AC13: getChangedLineRanges is invoked exact
           storyId: "US-003",
           storyGitRef: "abc123",
           repoRoot: dir,
-          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+          resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -338,7 +337,7 @@ describe("mutationCheckOp — US-003 AC14: file with no mutable content never in
           storyId: "US-003",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+          resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -388,7 +387,7 @@ describe("mutationCheckOp — US-003 AC15: file with no mutable content emits no
           storyId: "US-003",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+          resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -396,8 +395,7 @@ describe("mutationCheckOp — US-003 AC15: file with no mutable content emits no
 
       const calls = warnSpy!.mock.calls as Array<[string, string, Record<string, unknown>]>;
       const matching = calls.filter(
-        ([, message, data]) =>
-          data?.storyId === "US-003" && data?.file === file && typeof message === "string",
+        ([, message, data]) => data?.storyId === "US-003" && data?.file === file && typeof message === "string",
       );
       expect(matching).toHaveLength(0);
     } finally {
@@ -435,7 +433,7 @@ describe("mutationCheckOp — issue #1485: anchor root matches getChangedLineRan
           storyId: "US-003",
           storyGitRef: "abc123",
           repoRoot,
-          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+          resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -474,7 +472,7 @@ describe("mutationCheckOp — issue #1485: anchor root matches getChangedLineRan
           storyGitRef: "abc123",
           repoRoot,
           packagePrefix: "packages/api",
-          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+          resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -504,7 +502,7 @@ describe("mutationCheckOp — issue #1485: anchor root matches getChangedLineRan
           storyId: "US-003",
           storyGitRef: "abc123",
           repoRoot: dir,
-          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+          resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -546,7 +544,7 @@ describe("mutationCheckOp — issue #1485: anchor root matches getChangedLineRan
           storyId: "US-003",
           storyGitRef: "abc123",
           repoRoot,
-          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+          resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -582,7 +580,7 @@ describe("mutationCheckOp — issue #1485: anchor root matches getChangedLineRan
           storyId: "US-003",
           storyGitRef: "abc123",
           packagePrefix: "packages/api",
-          resolvedTestPatterns: { globs: [], regex: [], pathspec: [], testDirs: [] },
+          resolvedTestPatterns: makeResolvedTestPatterns({ globs: [], regex: [], pathspec: [], testDirs: [] }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,

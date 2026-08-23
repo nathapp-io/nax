@@ -25,7 +25,6 @@ function makeSlot(opName: string): AnySlot {
       session: { role: "reviewer-semantic" as const, lifetime: "fresh" as const },
       build: () => ({ prompt: "" }),
       parse: () => ({}),
-      // biome-ignore lint/suspicious/noExplicitAny: minimal op shape for runPhase
     } as any,
     input: {},
   };
@@ -37,7 +36,6 @@ function semanticFinding(issue: string): Finding {
     severity: "error",
     file: "src/thing.ts",
     message: issue,
-    // biome-ignore lint/suspicious/noExplicitAny: minimal Finding shape
   } as any;
 }
 
@@ -51,11 +49,9 @@ async function dispatchSemanticPhase(
   _storyOrchestratorDeps.callOp = (async (_ctx: unknown, _op: unknown, input: unknown) => {
     seenInput = input as Record<string, unknown>;
     return output;
-    // biome-ignore lint/suspicious/noExplicitAny: test double
   }) as any;
   try {
     const ctx = makeMockCallContext({ storyId: "US-001" });
-    // biome-ignore lint/suspicious/noExplicitAny: runtime store injection
     (ctx.runtime as any).semanticIterations = store;
     await runPhase(ctx, makeSlot("semantic-review"), {}, {});
   } finally {
@@ -75,7 +71,6 @@ describe("runPhase — semantic-review iteration history", () => {
       outcome: "fixes-applied",
       startedAt: "2026-08-01T00:00:00.000Z",
       finishedAt: "2026-08-01T00:00:01.000Z",
-      // biome-ignore lint/suspicious/noExplicitAny: minimal Iteration shape
     } as any;
     store.set("US-001", [prior]);
 

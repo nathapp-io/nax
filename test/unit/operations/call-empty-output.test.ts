@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import type { AdapterFailure } from "@/context/engine";
 import { _callOpDeps, callOp } from "@/operations";
 import type { RunOperation } from "@/operations";
-import { DEFAULT_CONFIG, pickSelector } from "@/config";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
 
 // This file covers synthesis logic in sendWithFileOutput (src/operations/call.ts).
 // The AC9 tests below are a forward-declaration placeholder — Task 2 adds
@@ -97,7 +97,7 @@ describe("sendWithFileOutput — AC1: empty output synthesises fail-stale Adapte
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
     createdRuntimes.push(runtime);
 
-    let thrown: Error & { code?: string } | null = null;
+    let thrown: (Error & { code?: string }) | null = null;
     try {
       await callOp(
         { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
@@ -177,7 +177,7 @@ describe("sendWithFileOutput — AC1: empty output synthesises fail-stale Adapte
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
     createdRuntimes.push(runtime);
 
-    let thrown: Error & { code?: string; context?: { storyId?: string } } | null = null;
+    let thrown: (Error & { code?: string; context?: { storyId?: string } }) | null = null;
     try {
       await callOp(
         { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
@@ -338,11 +338,16 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => ({
-        output: "Agent \"claude\" failed: some session-level failure",
+        output: 'Agent "claude" failed: some session-level failure',
         estimatedCostUsd: 0,
         internalRoundTrips: 0,
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        adapterFailure: { category: "quality" as const, outcome: "fail-adapter-error" as const, retriable: false, message: "pre-existing" },
+        adapterFailure: {
+          category: "quality" as const,
+          outcome: "fail-adapter-error" as const,
+          retriable: false,
+          message: "pre-existing",
+        },
       }),
     });
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });

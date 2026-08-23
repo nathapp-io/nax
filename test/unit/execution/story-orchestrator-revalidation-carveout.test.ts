@@ -9,8 +9,8 @@
  * discarded and then failed on by the staleness guard).
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _storyOrchestratorDeps, runRectification } from "@/execution";
-import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
+import { type RectificationOverrides, _storyOrchestratorDeps, runRectification } from "@/execution";
+import type { FixCycle, FixCycleContext, FixCycleExitReason, FixStrategy } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
 import type { CallContext } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -78,25 +78,28 @@ afterEach(async () => {
 
 describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale verifier pass (#1401)", () => {
   /** Gate + verifier + the cheap checks: the minimum to reproduce the stale read. */
-  function makeRectifyState(strategies: unknown[] = []): Parameters<typeof runRectification>[1] {
+  // Strategies passed here have heterogeneous concrete op I/O types (e.g. mockImplementerOp's
+  // { story: string } -> { success: boolean }); `unknown` rejects them on variance, so this
+  // mirrors FixStrategy's own C=any default.
+  function makeRectifyState(strategies: FixStrategy<Finding, any, any>[] = []): Parameters<typeof runRectification>[1] {
     return {
       fullSuiteGate: { kind: "full-suite-gate", slot: { op: mockFullSuiteGateOp, input: { story: "US-1401" } } },
       verifier: { kind: "verifier", slot: { op: mockVerifierOp, input: { story: "US-1401" } } },
       lintCheck: { kind: "lint-check", slot: { op: mockLintCheckOp, input: { story: "US-1401" } } },
       typecheckCheck: { kind: "typecheck-check", slot: { op: mockTypecheckCheckOp, input: { story: "US-1401" } } },
       rectification: { maxAttempts: 3, strategies, abortOnIncreasingFailures: false },
-    } as unknown as Parameters<typeof runRectification>[1];
+    };
   }
 
   /** Mirrors ExecutionPlan's nbf wiring: seeded advisories + verifierGuard extra phase. */
-  function nbfOverrides(extra: Record<string, unknown> = {}) {
+  function nbfOverrides(extra: Partial<RectificationOverrides> = {}): RectificationOverrides {
     return {
       initialFindings: [ADVISORY],
       extraRevalidationKinds: ["verifier"],
       // 1 + review.nonBlockingFix.regressionAttempts (default 1).
       maxAttempts: 2,
       ...extra,
-    } as unknown as Parameters<typeof runRectification>[4];
+    };
   }
 
   /** Pre-rectification state: the story was green, verifier included. */
@@ -130,7 +133,9 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
 
     await runRectification(ctx, state, {}, phaseOutputs, overrides);
     failGateOnly();
-    return { cycle: cycle as unknown as FixCycle<Finding>, cycleCtx: cycleCtx as unknown as FixCycleContext };
+    expect(cycle).not.toBeNull();
+    expect(cycleCtx).not.toBeNull();
+    return { cycle: cycle!, cycleCtx: cycleCtx! };
   }
 
   test("US-002 production composition: no-progress reason outranks count-increase", async () => {
@@ -144,13 +149,15 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
 
     await runRectification(
       ctx,
-      makeRectifyState([{
-        name: "strategy",
-        appliesTo: () => true,
-        fixOp: mockImplementerOp,
-        buildInput: () => ({ story: "US-002" }),
-        maxAttempts: 12,
-      }]),
+      makeRectifyState([
+        {
+          name: "strategy",
+          appliesTo: () => true,
+          fixOp: mockImplementerOp,
+          buildInput: () => ({ story: "US-002" }),
+          maxAttempts: 12,
+        },
+      ]),
       {},
       greenBefore(),
       { initialFindings: before },
@@ -165,7 +172,8 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
       startedAt: "2026-01-01T00:00:00.000Z",
       finishedAt: "2026-01-01T00:00:01.000Z",
     }));
-    const reason = (capturedCycle as unknown as FixCycle<Finding>).strategies[0]?.bailWhen?.(iterations);
+    expect(capturedCycle).not.toBeNull();
+    const reason = capturedCycle!.strategies[0]?.bailWhen?.(iterations);
     expect(reason).toContain("no finding resolved");
   });
 
@@ -236,7 +244,9 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
     );
     failGateOnly();
 
-    const result = await (cycle as unknown as FixCycle<Finding>).validate(cycleCtx as unknown as FixCycleContext, {
+    expect(cycle).not.toBeNull();
+    expect(cycleCtx).not.toBeNull();
+    const result = await cycle!.validate(cycleCtx!, {
       mode: "full",
       strategiesRun: ["autofix-implementer"],
     });
@@ -323,12 +333,12 @@ describe("nbf regressionAttempts is actually spendable once the gate regression 
       maxAttempts: 2,
     };
 
-    const state = {
+    const state: Parameters<typeof runRectification>[1] = {
       fullSuiteGate: { kind: "full-suite-gate", slot: { op: mockFullSuiteGateOp, input: { story: "US-1401" } } },
       verifier: { kind: "verifier", slot: { op: mockVerifierOp, input: { story: "US-1401" } } },
       lintCheck: { kind: "lint-check", slot: { op: mockLintCheckOp, input: { story: "US-1401" } } },
       rectification: { maxAttempts: 3, strategies: [strategy], abortOnIncreasingFailures: false },
-    } as unknown as Parameters<typeof runRectification>[1];
+    };
 
     await runRectification(
       ctx,
@@ -342,7 +352,7 @@ describe("nbf regressionAttempts is actually spendable once the gate regression 
         extraRevalidationKinds: ["verifier"],
         // 1 + review.nonBlockingFix.regressionAttempts (default 1).
         maxAttempts: 2,
-      } as unknown as Parameters<typeof runRectification>[4],
+      },
     );
 
     // Iteration 1 fixes the advisory; the gate then goes red and that finding now

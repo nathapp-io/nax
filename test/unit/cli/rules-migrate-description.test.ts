@@ -6,6 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _rulesCLIDeps, rulesMigrateCommand } from "@/cli/rules";
+import { makeLogger } from "@test/helpers";
 
 let origReadFile: typeof _rulesCLIDeps.readFile;
 let origWriteFile: typeof _rulesCLIDeps.writeFile;
@@ -28,7 +29,7 @@ beforeEach(() => {
   origLoadCanonicalRules = _rulesCLIDeps.loadCanonicalRules;
   origGetLogger = _rulesCLIDeps.getLogger;
 
-  Object.keys(written).forEach((k) => delete written[k]);
+  for (const k of Object.keys(written)) delete written[k];
 
   _rulesCLIDeps.readFile = async () => "";
   _rulesCLIDeps.writeFile = async (path, content) => {
@@ -59,9 +60,7 @@ afterEach(() => {
 
 describe("rulesMigrateCommand + loadCanonicalRules — US-001 AC9 description round-trips through migrate", () => {
   test("[AC9] loadCanonicalRules does not throw and the loaded rule's description equals the original legacy value", async () => {
-    const { _canonicalLoaderDeps, loadCanonicalRules } = await import(
-      "../../../src/context/rules/canonical-loader"
-    );
+    const { _canonicalLoaderDeps, loadCanonicalRules } = await import("@/context/rules/canonical-loader");
     const legacyPath = "/repo/.claude/rules/ctrl-rule.md";
     const targetPath = "/repo/.nax/rules/ctrl-rule.md";
     _rulesCLIDeps.globInDir = () => [legacyPath];
@@ -94,10 +93,7 @@ describe("rulesMigrateCommand + loadCanonicalRules — US-001 AC9 description ro
       if (p === targetPath) return migrated;
       throw new Error(`unexpected file: ${p}`);
     };
-    _canonicalLoaderDeps.getLogger = () =>
-      ({ warn: () => {}, debug: () => {}, info: () => {}, error: () => {} }) as unknown as ReturnType<
-        typeof _canonicalLoaderDeps.getLogger
-      >;
+    _canonicalLoaderDeps.getLogger = () => makeLogger();
     try {
       const rules = await loadCanonicalRules("/repo");
       expect(rules).toHaveLength(1);

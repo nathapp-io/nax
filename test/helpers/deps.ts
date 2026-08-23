@@ -21,6 +21,7 @@
  * The helper registers `beforeEach` (save) and `afterEach` (restore) inside
  * the enclosing `describe` block, so it scopes naturally to that block.
  */
+import { afterEach, beforeEach } from "bun:test";
 
 /**
  * Save and restore injectable deps around each test in the enclosing describe.
@@ -29,19 +30,19 @@
  * @param keys  - Keys to save/restore. Omit to save all enumerable keys.
  */
 export function withDepsRestore<T extends Record<string, unknown>>(deps: T, keys?: (keyof T)[]): void {
-	const saved: Partial<T> = {};
+  const saved: Partial<T> = {};
 
-	beforeEach(() => {
-		const keysToSave = keys ?? (Object.keys(deps) as (keyof T)[]);
-		for (const key of keysToSave) {
-			saved[key] = deps[key];
-		}
-	});
+  beforeEach(() => {
+    const keysToSave = keys ?? (Object.keys(deps) as (keyof T)[]);
+    for (const key of keysToSave) {
+      saved[key] = deps[key];
+    }
+  });
 
-	afterEach(() => {
-		for (const key of Object.keys(saved) as (keyof T)[]) {
-			deps[key] = saved[key] as T[keyof T];
-			delete saved[key];
-		}
-	});
+  afterEach(() => {
+    for (const key of Object.keys(saved) as (keyof T)[]) {
+      deps[key] = saved[key] as T[keyof T];
+      delete saved[key];
+    }
+  });
 }

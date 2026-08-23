@@ -9,13 +9,10 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _rollbackDeps, rollbackToRef } from "@/tdd/rollback";
+import { makeSpawn } from "@test/helpers";
 
 function makeResetSpawn(exitCode = 0) {
-  return (() => ({
-    stdout: new Response("").body,
-    stderr: new Response("").body,
-    exited: Promise.resolve(exitCode),
-  })) as unknown as typeof Bun.spawn;
+  return makeSpawn(() => ({ exitCode })).spawn;
 }
 
 describe("rollbackToRef", () => {

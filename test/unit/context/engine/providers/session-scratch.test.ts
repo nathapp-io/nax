@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { SessionScratchProvider, _sessionScratchDeps } from "@/context/engine/providers/session-scratch";
 import type { ContextRequest } from "@/context/engine/types";
 import { _pathFilterDeps } from "@/utils/path-filters";
@@ -168,9 +168,7 @@ describe("SessionScratchProvider", () => {
   });
 
   test("applies .naxignore filters to TDD changed-file listing", async () => {
-    const ignoreFiles = new Map<string, string>([
-      ["/repo/.naxignore", "*.generated.ts\ncoverage/\n"],
-    ]);
+    const ignoreFiles = new Map<string, string>([["/repo/.naxignore", "*.generated.ts\ncoverage/\n"]]);
     _pathFilterDeps.fileExists = async (path) => ignoreFiles.has(path);
     _pathFilterDeps.readFile = async (path) => ignoreFiles.get(path) ?? "";
     const entry = JSON.stringify({
@@ -220,9 +218,7 @@ describe("SessionScratchProvider", () => {
     };
 
     const provider = new SessionScratchProvider();
-    const result = await provider.fetch(
-      makeRequest({ storyScratchDirs: ["/sess/dir-a", "/sess/dir-b"] }),
-    );
+    const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir-a", "/sess/dir-b"] }));
     expect(result.chunks).toHaveLength(2);
     expect(callCount).toBe(2);
   });

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { buildPlanComposition } from "@/plan";
 import type { DebateStageConfig } from "@/debate/types";
+import { buildPlanComposition } from "@/plan";
 
 function makeBaseStageConfig(
   overrides: Partial<DebateStageConfig> & { evidenceMode?: "current" | "asymmetric" } = {},

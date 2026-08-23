@@ -15,12 +15,12 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { IAgentManager } from "@/agents";
-import { _diffUtilsDeps } from "@/review/diff-utils";
 import { runAdversarialReview } from "@/review/adversarial";
+import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
-import { makeAgentAdapter, makeMockRuntime, makeMockAgentManager } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
 import type { ReviewRepromptEvent } from "@/runtime/dispatch-events";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
 
 const STORY: SemanticStory = {
   id: "STORY-REP-01",
@@ -73,21 +73,7 @@ function makeAcceptedFinding(overrides: Record<string, unknown> = {}): Record<st
 const STAT_OUTPUT = "src/auth.ts | 5 +++++\n 1 file changed, 5 insertions(+)";
 
 function makeSpawnMock(stdout: string, exitCode = 0) {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(stdout));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(controller) {
-        controller.close();
-      },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(() => ({ exitCode, stdout })).spawn;
 }
 
 function makeAgentManager(llmResponse: string): IAgentManager {
@@ -108,7 +94,7 @@ function makeAgentManager(llmResponse: string): IAgentManager {
 }
 
 describe("review-reprompt-on-drop telemetry integration", () => {
-  let createdRuntimes: NaxRuntime[] = [];
+  const createdRuntimes: NaxRuntime[] = [];
   let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
   let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
   let origSpawn: typeof _diffUtilsDeps.spawn;
@@ -293,7 +279,9 @@ describe("review-reprompt-on-drop telemetry integration", () => {
     expect(sessionSendCount).toBe(2);
     expect(repromptEvents).toHaveLength(1);
     expect(repromptEvents[0].repromptOutcome).toBe("recovered-blocking");
-    expect(result.success === true || (result.success === false && result.findings && result.findings.length > 0)).toBe(true);
+    expect(result.success === true || (result.success === false && result.findings && result.findings.length > 0)).toBe(
+      true,
+    );
   });
 
   test("no reprompt: acRegroundOnDrop === false → zero events", async () => {

@@ -1,16 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _runCompletionDeps, handleRunCompletion } from "@/execution/lifecycle/run-completion";
-import type { ISessionManager } from "@/session";
-import { makeMockRuntime } from "@test/helpers";
-
-const makeStatusWriter = () => ({
-  setPrd: mock(() => {}),
-  setCurrentStory: mock(() => {}),
-  setRunStatus: mock(() => {}),
-  setPostRunPhase: mock(() => {}),
-  update: mock(async () => {}),
-});
+import { makeMockRuntime, makeSessionManager, makeStatusWriter } from "@test/helpers";
 
 const makePrd = () => ({
   project: "test-project",
@@ -66,7 +57,7 @@ describe("handleRunCompletion session teardown", () => {
           },
         },
       } as never,
-      sessionManager: { closeStory: mock(() => []), listActive: mock(() => []) } as unknown as ISessionManager,
+      sessionManager: makeSessionManager({ closeStory: mock(() => []), listActive: mock(() => []) }),
       runtime: makeMockRuntime() as never,
     });
 

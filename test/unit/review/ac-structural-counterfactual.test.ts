@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  BLOCKING_CATEGORIES,
-  analyzeStructuralCounterfactual,
-} from "@/review";
+import { BLOCKING_CATEGORIES, analyzeStructuralCounterfactual } from "@/review";
 
 const ACS = ["AC1: validate input", "AC2: error path", "AC3: assumption"];
 
@@ -12,9 +9,7 @@ function diffFiles(...paths: string[]): ReadonlySet<string> {
 
 describe("BLOCKING_CATEGORIES", () => {
   test("contains exactly the four blocking categories", () => {
-    expect([...BLOCKING_CATEGORIES].sort()).toEqual(
-      ["abandonment", "assumption", "error-path", "input"].sort(),
-    );
+    expect([...BLOCKING_CATEGORIES].sort()).toEqual(["abandonment", "assumption", "error-path", "input"].sort());
   });
 });
 
@@ -89,11 +84,7 @@ describe("analyzeStructuralCounterfactual", () => {
     });
 
     test("missing file → false", () => {
-      const result = analyzeStructuralCounterfactual(
-        { acIndex: 1, category: "input" },
-        ACS,
-        diffFiles("src/a.ts"),
-      );
+      const result = analyzeStructuralCounterfactual({ acIndex: 1, category: "input" }, ACS, diffFiles("src/a.ts"));
       expect(result.fileInDiff).toBe(false);
     });
 

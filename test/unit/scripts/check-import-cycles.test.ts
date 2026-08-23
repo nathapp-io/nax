@@ -1,12 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  buildImportGraph,
-  findCyclicModules,
-  formatReport,
-  resolveSpecifier,
-} from "@scripts/check-import-cycles";
+import { buildImportGraph, findCyclicModules, formatReport, resolveSpecifier } from "@scripts/check-import-cycles";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function write(root: string, rel: string, content: string): void {
@@ -76,7 +71,10 @@ describe("findCyclicModules", () => {
   });
   afterEach(() => cleanupTempDir(root));
 
-  const files = (root: string) => findCyclicModules(root).map((m) => m.file).sort();
+  const files = (root: string) =>
+    findCyclicModules(root)
+      .map((m) => m.file)
+      .sort();
 
   test("reports nothing for an acyclic graph", () => {
     write(root, "src/a/index.ts", 'export { a } from "./leaf";\n');

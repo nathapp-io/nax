@@ -11,16 +11,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { NaxConfig } from "@/config/types";
 import { checkGitignoreCoversNax, checkPromptOverrideFiles } from "@/precheck";
-import { makeTempDir } from "@test/helpers";
+import { type DeepPartial, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 function makeTmpDir(): string {
   return makeTempDir("nax-test-");
 }
 
 function makeMinimalConfig(overrides?: Record<string, string>): NaxConfig {
-  return {
+  return makeNaxConfig({
     prompts: overrides ? { overrides } : undefined,
-  } as unknown as NaxConfig;
+  });
 }
 
 describe("checkPromptOverrideFiles", () => {
@@ -167,16 +167,15 @@ describe("checkGitignoreCoversNax", () => {
 
 import { checkBuildCommandInReviewChecks } from "@/precheck";
 
-function makeBugConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
-  return {
+function makeBugConfig(overrides: DeepPartial<NaxConfig> = {}): NaxConfig {
+  return makeNaxConfig({
     review: {
       checks: ["typecheck", "lint"],
       commands: {},
-      semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000, excludePatterns: [] },
     },
     quality: { commands: {} },
     ...overrides,
-  } as unknown as NaxConfig;
+  });
 }
 
 describe("checkBuildCommandInReviewChecks (BUG-092)", () => {
@@ -187,7 +186,7 @@ describe("checkBuildCommandInReviewChecks (BUG-092)", () => {
 
   test("warns when quality.commands.build set but build not in review.checks", () => {
     const result = checkBuildCommandInReviewChecks(
-      makeBugConfig({ quality: { commands: { build: "bun run build" } } } as Partial<NaxConfig>),
+      makeBugConfig({ quality: { commands: { build: "bun run build" } } }),
     );
     expect(result.passed).toBe(false);
     expect(result.tier).toBe("warning");
@@ -203,7 +202,7 @@ describe("checkBuildCommandInReviewChecks (BUG-092)", () => {
           commands: { build: "bun run build" },
           semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000, excludePatterns: [] },
         },
-      } as Partial<NaxConfig>),
+      }),
     );
     expect(result.passed).toBe(false);
     expect(result.message).toContain("review.checks");
@@ -212,13 +211,13 @@ describe("checkBuildCommandInReviewChecks (BUG-092)", () => {
   test("passes when build command set AND build is in review.checks", () => {
     const result = checkBuildCommandInReviewChecks(
       makeBugConfig({
-        quality: { commands: { build: "bun run build" } } as Partial<NaxConfig["quality"]>,
+        quality: { commands: { build: "bun run build" } },
         review: {
           checks: ["typecheck", "lint", "build"],
           commands: {},
           semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000, excludePatterns: [] },
         },
-      } as Partial<NaxConfig>),
+      }),
     );
     expect(result.passed).toBe(true);
   });

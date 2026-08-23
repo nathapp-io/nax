@@ -1,5 +1,5 @@
-import * as path from "node:path";
 import { describe, expect, test } from "bun:test";
+import * as path from "node:path";
 import { type ForgeDeps, findPrTemplate } from "@/forge";
 
 function deps(files: Record<string, string>, read?: string[]): ForgeDeps {

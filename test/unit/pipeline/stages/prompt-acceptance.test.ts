@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { _promptStageDeps, promptStage } from "@/pipeline/stages/prompt";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
-import { makeSparseNaxConfig, makeStory } from "@test/helpers";
+import { makeSparseNaxConfig, makeStory, makeTestContext } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-prompt-acceptance-${randomUUID()}`;
 
@@ -31,9 +31,29 @@ function makePRD(): PRD {
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   const story = makeStory({ status: "in-progress", passes: false, attempts: 0, acceptanceCriteria: ["AC1"] });
-  return {
-    config: makeSparseNaxConfig({ agent: { default: "test-agent" }, models: {}, execution: { sessionTimeoutSeconds: 60, dangerouslySkipPermissions: false, costLimit: 10, maxIterations: 10, rectification: { maxAttemptsTotal: 3 } } }),
-    rootConfig: makeSparseNaxConfig({ agent: { default: "test-agent" }, models: {}, execution: { sessionTimeoutSeconds: 60, dangerouslySkipPermissions: false, costLimit: 10, maxIterations: 10, rectification: { maxAttemptsTotal: 3 } } }),
+  return makeTestContext({
+    config: makeSparseNaxConfig({
+      agent: { default: "test-agent" },
+      models: {},
+      execution: {
+        sessionTimeoutSeconds: 60,
+        dangerouslySkipPermissions: false,
+        costLimit: 10,
+        maxIterations: 10,
+        rectification: { maxAttemptsTotal: 3 },
+      },
+    }),
+    rootConfig: makeSparseNaxConfig({
+      agent: { default: "test-agent" },
+      models: {},
+      execution: {
+        sessionTimeoutSeconds: 60,
+        dangerouslySkipPermissions: false,
+        costLimit: 10,
+        maxIterations: 10,
+        rectification: { maxAttemptsTotal: 3 },
+      },
+    }),
     prd: makePRD(),
     story,
     stories: [story],
@@ -44,9 +64,8 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
       reasoning: "",
     },
     workdir: WORKDIR,
-    hooks: {} as PipelineContext["hooks"],
     ...overrides,
-  } as unknown as PipelineContext;
+  } as Partial<PipelineContext>);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -129,9 +148,7 @@ describe("promptStage.execute() — reads acceptanceTestPaths files", () => {
     }));
 
     const ctx = makeCtx({
-      acceptanceTestPaths: [
-        { testPath: "/feature/acceptance.test.ts", packageDir: "/feature" },
-      ],
+      acceptanceTestPaths: [{ testPath: "/feature/acceptance.test.ts", packageDir: "/feature" }],
     });
     await promptStage.execute(ctx);
 
@@ -145,9 +162,7 @@ describe("promptStage.execute() — reads acceptanceTestPaths files", () => {
     }));
 
     const ctx = makeCtx({
-      acceptanceTestPaths: [
-        { testPath: "/feature/acceptance.test.ts", packageDir: "/feature" },
-      ],
+      acceptanceTestPaths: [{ testPath: "/feature/acceptance.test.ts", packageDir: "/feature" }],
     });
     await promptStage.execute(ctx);
 

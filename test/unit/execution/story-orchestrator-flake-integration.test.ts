@@ -29,7 +29,7 @@ import type { Finding, FixCycle, FixCycleContext, FixCycleExitReason } from "@/f
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { CallContext, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeTestRuntime } from "@test/helpers";
+import { makeMockCallContext, makeTestRuntime } from "@test/helpers";
 
 const testSel = pickSelector("flake-triage-integration", "execution");
 
@@ -95,13 +95,11 @@ function makeCtx(): { ctx: CallContext; runtime: NaxRuntime } {
   const runtime = makeTestRuntime();
   return {
     runtime,
-    ctx: {
+    ctx: makeMockCallContext({
       runtime,
-      packageView: runtime.packages.repo(),
       packageDir: "/tmp",
-      agentName: "claude",
       storyId: "US-003",
-    } as unknown as CallContext,
+    }),
   };
 }
 
@@ -195,7 +193,7 @@ describe("AC1: triage runs once with gate failed-test findings before gatherRect
     });
     // The fix cycle must see the gate's failed-test finding (triage passed it through).
     expect(capturedCycle).not.toBeNull();
-    const cycleFindings = (capturedCycle as unknown as FixCycle<Finding>).findings;
+    const cycleFindings = capturedCycle!.findings;
     expect(cycleFindings.some((f) => f.source === "test-runner" && f.file === "test/foo.test.ts")).toBe(true);
   });
 
@@ -344,7 +342,7 @@ describe("AC3: mixed triage → fix cycle receives only failed-test findings", (
     await plan.run();
 
     expect(capturedCycle).not.toBeNull();
-    const cycleFindings = (capturedCycle as unknown as FixCycle<Finding>).findings;
+    const cycleFindings = capturedCycle!.findings;
     // Exactly 2 failed-test findings reach the cycle (indices 1 and 3).
     expect(cycleFindings.length).toBe(2);
     for (const f of cycleFindings) {
@@ -392,8 +390,12 @@ describe("AC5: describeGateRegression ignores flaky-test diffs", () => {
       ],
     };
     expect(
-      describeGateRegression({ gateOutput: finalGateOutput, baselineKeys: baseline, gateName: GATE_NAME, storyId: "US-003" })
-        .regressed,
+      describeGateRegression({
+        gateOutput: finalGateOutput,
+        baselineKeys: baseline,
+        gateName: GATE_NAME,
+        storyId: "US-003",
+      }).regressed,
     ).toBe(false);
   });
 
@@ -409,8 +411,12 @@ describe("AC5: describeGateRegression ignores flaky-test diffs", () => {
       ],
     };
     expect(
-      describeGateRegression({ gateOutput: finalGateOutput, baselineKeys: baseline, gateName: GATE_NAME, storyId: "US-003" })
-        .regressed,
+      describeGateRegression({
+        gateOutput: finalGateOutput,
+        baselineKeys: baseline,
+        gateName: GATE_NAME,
+        storyId: "US-003",
+      }).regressed,
     ).toBe(true);
   });
 });
@@ -523,10 +529,8 @@ describe("F3: triage seam is awaited and its throw is caught", () => {
     // un-triaged failed-test finding — degrade to "no quarantine".
     expect(triageStub.mock.calls.length).toBeGreaterThanOrEqual(1);
     expect(capturedCycle).not.toBeNull();
-    const cycleFindings = (capturedCycle as unknown as FixCycle<Finding>).findings;
-    expect(cycleFindings.some((f) => f.file === "test/unit/foo.test.ts" && f.category === "failed-test")).toBe(
-      true,
-    );
+    const cycleFindings = capturedCycle!.findings;
+    expect(cycleFindings.some((f) => f.file === "test/unit/foo.test.ts" && f.category === "failed-test")).toBe(true);
     // Story completes (does not crash on the seam throw) — success is false
     // because the un-triaged failed-test finding remains blocking, not because
     // of an unhandled error.
@@ -573,9 +577,7 @@ describe("F5: triage visibility — skipped path is surfaced", () => {
     await plan.run();
 
     const triageErrorWarns = warnSpy.mock.calls.filter(
-      (c) =>
-        String(c[0]) === "story-orchestrator" &&
-        String(c[1]).includes("Flake triage threw"),
+      (c) => String(c[0]) === "story-orchestrator" && String(c[1]).includes("Flake triage threw"),
     );
     expect(triageErrorWarns.length).toBeGreaterThanOrEqual(1);
     const data = triageErrorWarns[0]?.[2] as { storyId?: string; gateName?: string; error?: string } | undefined;
@@ -698,11 +700,11 @@ describe("describeGateRegression — quarantine-memo filter (#1383)", () => {
 
 describe("runRectification — seeded findings do not invoke initial gate triage", () => {
   /** Minimal state: rectification needs one validation phase, and triage needs the gate slot. */
-  function makeRectifyState() {
+  function makeRectifyState(): Parameters<typeof runRectification>[1] {
     return {
       fullSuiteGate: { kind: "full-suite-gate" as const, slot: { op: makeGateOp(), input: { story: "US-003" } } },
       rectification: { maxAttempts: 1, strategies: [], abortOnIncreasingFailures: false },
-    } as unknown as Parameters<typeof runRectification>[1];
+    };
   }
 
   /** A failing gate output carrying one structured failure — triage's precondition. */
@@ -736,9 +738,7 @@ describe("runRectification — seeded findings do not invoke initial gate triage
     const { ctx } = makeCtx();
     const phaseOutputs: Record<string, unknown> = failingGateOutput();
     await runRectification(ctx, makeRectifyState(), {}, phaseOutputs, {
-      initialFindings: [
-        { source: "adversarial-review", severity: "warning", category: "style", message: "advisory" },
-      ],
+      initialFindings: [{ source: "adversarial-review", severity: "warning", category: "style", message: "advisory" }],
     });
     expect(triageCalls).toBe(0);
   });

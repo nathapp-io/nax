@@ -13,13 +13,13 @@
  * shape (returns deduped, sorted union) so we can match the exact list.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ContextBundle, ContextRequest } from "@/context/engine";
-import { _contextStageDeps, contextStage } from "@/pipeline/stages";
 import { _scopeFilesDeps, resolveScopeFiles } from "@/pipeline";
+import { _contextStageDeps, contextStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
-import { makeStory } from "@test/helpers";
+import { makeContextOrchestrator, makeNaxConfig, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals
@@ -76,12 +76,12 @@ function makeBundle(): ContextBundle {
 
 function makeCtx(story: UserStory): PipelineContext {
   return {
-    config: {
+    config: makeNaxConfig({
       context: {
         v2: { enabled: true },
-        featureEngine: { budgetTokens: 8_000 },
+        featureEngine: { enabled: false, budgetTokens: 8_000 },
       },
-    } as unknown as PipelineContext["config"],
+    }),
     rootConfig: {} as PipelineContext["rootConfig"],
     prd: {} as PipelineContext["prd"],
     story,
@@ -98,14 +98,15 @@ function captureContextRequest(): {
   captured: ContextRequest | null;
 } {
   const ref: { captured: ContextRequest | null } = { captured: null };
-  _contextStageDeps.createOrchestrator = () =>
-    ({
+  _contextStageDeps.createOrchestrator = mock(() =>
+    makeContextOrchestrator({
       async assemble(req: ContextRequest) {
         ref.captured = req;
         return makeBundle();
       },
       rebuildForAgent: () => makeBundle(),
-    }) as unknown as ReturnType<typeof _contextStageDeps.createOrchestrator>;
+    }),
+  );
   // Suppress scratch + digests so the stage stays hermetic.
   _contextStageDeps.readDigest = async () => "";
   _contextStageDeps.writeDigest = async () => {};

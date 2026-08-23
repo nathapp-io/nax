@@ -478,8 +478,20 @@ describe("filterByScopeQuote", () => {
 
   test("drops ungrounded scope findings and keeps the rest", () => {
     const findings: AcQuotable[] = [
-      { severity: "warning", category: "out-of-scope", issue: "a", scopeQuote: "An interactive Ink TUI", scopeIndex: 1 },
-      { severity: "warning", category: "out-of-scope", issue: "b", scopeQuote: "a boundary nobody wrote", scopeIndex: 1 },
+      {
+        severity: "warning",
+        category: "out-of-scope",
+        issue: "a",
+        scopeQuote: "An interactive Ink TUI",
+        scopeIndex: 1,
+      },
+      {
+        severity: "warning",
+        category: "out-of-scope",
+        issue: "b",
+        scopeQuote: "a boundary nobody wrote",
+        scopeIndex: 1,
+      },
       { severity: "error", category: "input", issue: "c", acQuote: "x", acIndex: 1 },
     ];
 
@@ -545,7 +557,13 @@ describe("filterByScopeQuote — non-scope findings are never collateral", () =>
   });
 
   test("rejects a quote too short to ground anything", () => {
-    const finding: AcQuotable = { severity: "warning", category: "out-of-scope", issue: "i", scopeQuote: "No", scopeIndex: 1 };
+    const finding: AcQuotable = {
+      severity: "warning",
+      category: "out-of-scope",
+      issue: "i",
+      scopeQuote: "No",
+      scopeIndex: 1,
+    };
     expect(validateScopeQuote(finding, ["No telemetry"]).code).toBe("missing_scope_quote");
   });
 });

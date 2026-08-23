@@ -10,12 +10,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { DEFAULT_CONFIG } from "@/config";
 import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import type { CallContext } from "@/operations/types";
-import { DEFAULT_CONFIG } from "@/config";
-import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
+import { makeLogger, makeMockAgentManager, makeSessionManager } from "@test/helpers";
 import { waitForCondition } from "@test/helpers";
 
 function makeCallCtx(
@@ -244,16 +244,10 @@ describe("DebateRunner.run() — unavailable agent handling", () => {
   });
 
   test("logs a warning with stage 'debate' when a debater's agent is not found", async () => {
-    const warnings: Array<{ stage: string; message: string }> = [];
-
-    _debateSessionDeps.getSafeLogger = mock(() => ({
-      info: () => {},
-      debug: () => {},
-      warn: (stage: string, message: string) => {
-        warnings.push({ stage, message });
-      },
-      error: () => {},
-    })) as unknown as typeof _debateSessionDeps.getSafeLogger;
+    const logger = makeLogger();
+    const warnings = () =>
+      logger.calls.filter((c) => c.level === "warn").map((c) => ({ stage: c.stage, message: c.message }));
+    _debateSessionDeps.getSafeLogger = () => logger;
 
     const agentManager = makeMockAgentManager({
       unavailableAgents: new Set(["missing-agent"]),
@@ -271,7 +265,7 @@ describe("DebateRunner.run() — unavailable agent handling", () => {
 
     await runner.run("test prompt");
 
-    const debateWarning = warnings.find((w) => w.stage === "debate");
+    const debateWarning = warnings().find((w) => w.stage === "debate");
     expect(debateWarning).toBeDefined();
     expect(debateWarning?.message).toMatch(/missing-agent/);
   });
@@ -309,7 +303,11 @@ describe("DebateRunner.run() — single-agent fallback", () => {
   test("returns the one successful proposal when only 1 debater succeeds", async () => {
     const agentManager = makeMockAgentManager({
       unavailableAgents: new Set(["missing-1", "missing-2"]),
-      completeAsFn: async () => ({ output: "the single successful proposal", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+      completeAsFn: async () => ({
+        output: "the single successful proposal",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
     });
 
     const runner = new DebateRunner({

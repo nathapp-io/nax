@@ -6,10 +6,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { createPriorFailuresContext, formatPriorFailures } from "@/context/elements";
 import { buildContext, sortContextElements } from "@/context/builder";
-import type { StructuredFailure, UserStory } from "@/prd";
+import { createPriorFailuresContext, formatPriorFailures } from "@/context/elements";
 import type { StoryContext } from "@/context/types";
+import type { StructuredFailure, UserStory } from "@/prd";
 
 describe("formatPriorFailures", () => {
   test("should format a single prior failure correctly", () => {
@@ -65,11 +65,7 @@ describe("formatPriorFailures", () => {
           file: "test/example.test.ts",
           testName: "test name",
           error: "Error message",
-          stackTrace: [
-            "at foo.ts:10:15",
-            "at bar.ts:20:10",
-            "at baz.ts:30:5",
-          ],
+          stackTrace: ["at foo.ts:10:15", "at bar.ts:20:10", "at baz.ts:30:5"],
         },
       ],
       timestamp: new Date().toISOString(),

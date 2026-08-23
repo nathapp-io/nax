@@ -1,13 +1,18 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _registryTestAdapters } from "@/agents/registry";
+import { createAgentRegistry } from "@/agents/registry";
 import type { AgentAdapter } from "@/agents/types";
 import { resolveDefaultAgent } from "@/agents/utils";
-import { createAgentRegistry } from "@/agents/registry";
-import { AgentManagerConfig } from "@/config/selectors";
+import type { AgentManagerConfig } from "@/config/selectors";
 import { makeAgentAdapter } from "@test/helpers";
 
-const makeSlicedConfig = (agent: Record<string, unknown> = {}, execution: Record<string, unknown> = {}): AgentManagerConfig =>
-  ({ agent: agent as AgentManagerConfig["agent"], execution: execution as unknown as AgentManagerConfig["execution"] });
+const makeSlicedConfig = (
+  agent: Record<string, unknown> = {},
+  execution: Record<string, unknown> = {},
+): AgentManagerConfig => ({
+  agent: agent as AgentManagerConfig["agent"],
+  execution: execution as unknown as AgentManagerConfig["execution"],
+});
 
 describe("AgentManager — narrowed config (Pick<NaxConfig, 'agent' | 'execution'>)", () => {
   describe("resolveDefaultAgent", () => {

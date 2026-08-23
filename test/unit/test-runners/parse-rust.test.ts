@@ -42,7 +42,7 @@ test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; 
   });
 
   test("passing-only run yields no failures", () => {
-    const output = `test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s`;
+    const output = "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s";
     const summary = parseRustTestOutput(output);
     expect(summary.passed).toBe(10);
     expect(summary.failed).toBe(0);

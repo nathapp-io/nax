@@ -8,7 +8,6 @@ import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExecutionConfig, NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd/types";
-import { makeTempDir } from "@test/helpers";
 import {
   checkClaudeMdExists,
   checkDiskSpace,
@@ -19,6 +18,7 @@ import {
   checkTestCommand,
   checkTypecheckCommand,
 } from "@/precheck";
+import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -176,7 +176,6 @@ describe("checkClaudeMdExists (Tier 2 warning)", () => {
     expect(result.passed).toBe(true);
     expect(result.message).toContain("CLAUDE.md");
   });
-
 });
 
 describe("checkDiskSpace (Tier 2 warning)", () => {
@@ -191,8 +190,20 @@ describe("checkDiskSpace (Tier 2 warning)", () => {
 
 describe("checkPendingStories (Tier 2 warning)", () => {
   test("passes when pending or in-progress stories exist; counts both as actionable", async () => {
-    expect((await checkPendingStories(createMockPRD([createMockStory({ status: "pending" }), createMockStory({ status: "pending" })]))).passed).toBe(true);
-    const result = await checkPendingStories(createMockPRD([createMockStory({ status: "pending" }), createMockStory({ status: "in-progress" }), createMockStory({ status: "passed" })]));
+    expect(
+      (
+        await checkPendingStories(
+          createMockPRD([createMockStory({ status: "pending" }), createMockStory({ status: "pending" })]),
+        )
+      ).passed,
+    ).toBe(true);
+    const result = await checkPendingStories(
+      createMockPRD([
+        createMockStory({ status: "pending" }),
+        createMockStory({ status: "in-progress" }),
+        createMockStory({ status: "passed" }),
+      ]),
+    );
     expect(result.name).toBe("has-pending-stories");
     expect(result.tier).toBe("warning");
     expect(result.passed).toBe(true);
@@ -211,18 +222,24 @@ describe("checkPendingStories (Tier 2 warning)", () => {
 
 describe("checkOptionalCommands (Tier 2 warning)", () => {
   test("warns and lists missing commands when optional commands are absent", async () => {
-    let result = await checkOptionalCommands(createMockConfig({ testCommand: null as any, lintCommand: null as any, typecheckCommand: null as any }));
+    let result = await checkOptionalCommands(
+      createMockConfig({ testCommand: null as any, lintCommand: null as any, typecheckCommand: null as any }),
+    );
     expect(result.name).toBe("optional-commands-configured");
     expect(result.tier).toBe("warning");
     expect(result.passed).toBe(false);
 
-    result = await checkOptionalCommands(createMockConfig({ testCommand: "bun test", lintCommand: null as any, typecheckCommand: null as any }));
+    result = await checkOptionalCommands(
+      createMockConfig({ testCommand: "bun test", lintCommand: null as any, typecheckCommand: null as any }),
+    );
     expect(result.message).toContain("lint");
     expect(result.message).toContain("typecheck");
   });
 
   test("passes when all optional commands are configured", async () => {
-    const result = await checkOptionalCommands(createMockConfig({ testCommand: "bun test", lintCommand: "bun run lint", typecheckCommand: "bun run typecheck" }));
+    const result = await checkOptionalCommands(
+      createMockConfig({ testCommand: "bun test", lintCommand: "bun run lint", typecheckCommand: "bun run typecheck" }),
+    );
     expect(result.passed).toBe(true);
   });
 });
@@ -277,13 +294,19 @@ nax.lock
     expect(result.message).toContain("nax.lock");
 
     // Missing runs dirs
-    writeFileSync(join(testDir, ".gitignore"), "nax.lock\nnax/metrics.json\nnax/features/*/status.json\n.nax-pids\n.nax-wt/");
+    writeFileSync(
+      join(testDir, ".gitignore"),
+      "nax.lock\nnax/metrics.json\nnax/features/*/status.json\n.nax-pids\n.nax-wt/",
+    );
     result = await checkGitignoreCoversNax(testDir);
     expect(result.passed).toBe(false);
     expect(result.message).toContain("runs");
 
     // Missing .nax-pids
-    writeFileSync(join(testDir, ".gitignore"), "nax.lock\nnax/**/runs/\nnax/metrics.json\nnax/features/*/status.json\n.nax-wt/");
+    writeFileSync(
+      join(testDir, ".gitignore"),
+      "nax.lock\nnax/**/runs/\nnax/metrics.json\nnax/features/*/status.json\n.nax-wt/",
+    );
     result = await checkGitignoreCoversNax(testDir);
     expect(result.passed).toBe(false);
     expect(result.message).toContain(".nax-pids");

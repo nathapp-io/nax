@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { makeParseRetryStrategy } from "@/agents/retry/parse-retry";
 import { ParseValidationError } from "@/agents/retry/types";
 import type { RetryContext } from "@/agents/retry/types";
+import { absentValue } from "@test/helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -26,7 +27,10 @@ describe("makeParseRetryStrategy", () => {
   describe("AC-1: non-ParseValidationError falls through", () => {
     test.each([
       ["plain Error", plainError],
-      ["AdapterFailure-shaped error", Object.assign(new Error("adapter"), { kind: "adapter-failure", retriable: false })],
+      [
+        "AdapterFailure-shaped error",
+        Object.assign(new Error("adapter"), { kind: "adapter-failure", retriable: false }),
+      ],
     ])("returns { retry: false } for %s", (_label, err) => {
       const strategy = makeParseRetryStrategy({
         validate: () => false,
@@ -39,7 +43,7 @@ describe("makeParseRetryStrategy", () => {
 
   describe("AC-2: ParseValidationError with empty/undefined lastOutput", () => {
     test.each([
-      ["undefined", undefined as unknown as string],
+      ["undefined", absentValue<string>()],
       ["empty string", ""],
     ])("returns { retry: false } when lastOutput is %s", (_label, lastOutput) => {
       const strategy = makeParseRetryStrategy({
@@ -98,7 +102,9 @@ describe("makeParseRetryStrategy", () => {
       const strategy = makeParseRetryStrategy({
         validate: () => false,
         reviewerKind: "test",
-        parse: () => { throw new Error("parse error"); },
+        parse: () => {
+          throw new Error("parse error");
+        },
         looksTruncated: () => false,
         prompts: { invalid: () => "invalid-prompt", truncated: () => "truncated-prompt" },
       });
@@ -166,7 +172,10 @@ describe("makeParseRetryStrategy", () => {
     test("parses valid JSON and calls validate with it", () => {
       let capturedParsed: unknown;
       const strategy = makeParseRetryStrategy({
-        validate: (v: unknown) => { capturedParsed = v; return true; },
+        validate: (v: unknown) => {
+          capturedParsed = v;
+          return true;
+        },
         reviewerKind: "test",
         prompts: { invalid: () => "invalid", truncated: () => "truncated" },
         // parse omitted — should default to tryParseLLMJson

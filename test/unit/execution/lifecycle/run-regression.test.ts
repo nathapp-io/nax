@@ -14,11 +14,11 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "@/config";
 import { _regressionDeps, runDeferredRegression } from "@/execution";
 import type { DeferredRegressionOptions } from "@/execution";
-import type { FixCycleResult, Finding } from "@/findings";
+import type { Finding, FixCycleResult } from "@/findings";
 import type { PRD } from "@/prd";
-import type { VerificationResult } from "@/verification";
-import { makeNaxConfig, makeMockRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import type { VerificationResult } from "@/verification";
+import { makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -64,7 +64,14 @@ function makeFixCycleResult(succeeded: boolean, costUsd = 0, iterationCount = 1)
       costUsd,
     };
   }
-  const finding: Finding = { source: "test-runner", severity: "error", category: "failed-test", rule: "t", message: "fail", fixTarget: "source" };
+  const finding: Finding = {
+    source: "test-runner",
+    severity: "error",
+    category: "failed-test",
+    rule: "t",
+    message: "fail",
+    fixTarget: "source",
+  };
   return {
     iterations: Array.from({ length: iterationCount }, (_, i) => ({
       iterationNum: i + 1,
@@ -104,9 +111,9 @@ function makeConfig(): NaxConfig {
 }
 
 function makePrd(storyIds: string[]): PRD {
-  return {
-    userStories: storyIds.map((id) => ({ id, status: "passed", title: id })),
-  } as unknown as PRD;
+  return makePRD({
+    userStories: storyIds.map((id) => makeStory({ id, title: id, status: "passed" })),
+  });
 }
 
 function failuresFor(storyIds: string[]) {
@@ -129,7 +136,7 @@ function makeOptions(storyIds: string[], runtimeOverride?: NaxRuntime): Deferred
       completedAt: new Date(index * 1_000).toISOString(),
       failingTestFiles: [`${storyId}.test.ts`],
     })),
-  } as unknown as DeferredRegressionOptions;
+  };
 }
 
 // Save/restore pattern — no mock.module() to avoid Bun 1.x global leaks
@@ -387,10 +394,11 @@ describe("runDeferredRegression — test output context forwarding", () => {
       return makePassResult(); // mid-loop after US-002 → early exit
     });
 
-    _regressionDeps.parseTestOutput = mock((output) => {
+    const parseTestOutput: typeof _regressionDeps.parseTestOutput = (output) => {
       capturedParseArgs.push(output);
       return { passed: 0, failed: 92, failures: failuresFor(["US-001", "US-002"]) };
-    }) as unknown as typeof _regressionDeps.parseTestOutput;
+    };
+    _regressionDeps.parseTestOutput = parseTestOutput;
     _regressionDeps.runFixCycle = mock(async () => makeFixCycleResult(true, 0.1));
 
     await runDeferredRegression(makeOptions(["US-001", "US-002"]));
@@ -419,7 +427,7 @@ describe("runDeferredRegression — mode gating", () => {
       prd: makePrd(["US-001"]),
       workdir: "/tmp/test",
       runtime: makeMockRuntime(),
-    } as unknown as DeferredRegressionOptions);
+    });
 
     expect(result.success).toBe(true);
     expect(_regressionDeps.runVerification).not.toHaveBeenCalled();
@@ -438,7 +446,7 @@ describe("runDeferredRegression — mode gating", () => {
       prd: makePrd(["US-001"]),
       workdir: "/tmp/test",
       runtime: makeMockRuntime(),
-    } as unknown as DeferredRegressionOptions);
+    });
 
     expect(result.success).toBe(true);
     // per-story no longer short-circuits — the full suite is actually run.

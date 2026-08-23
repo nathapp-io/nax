@@ -17,8 +17,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { decomposeConfigSelector } from "@/config";
 import { _decomposeOpDeps, decomposeOp } from "@/operations/decompose";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -47,11 +47,13 @@ function makeBuildCtx(configOverrides?: object) {
 }
 
 /** Minimal LLM JSON for a single story with optional agentProfileId */
-function makeDecomposeOutput(stories: Array<{
-  id?: string;
-  title?: string;
-  agentProfileId?: string;
-}>): string {
+function makeDecomposeOutput(
+  stories: Array<{
+    id?: string;
+    title?: string;
+    agentProfileId?: string;
+  }>,
+): string {
   const arr = stories.map((s) => ({
     id: s.id ?? "US-001",
     title: s.title ?? "Story One",

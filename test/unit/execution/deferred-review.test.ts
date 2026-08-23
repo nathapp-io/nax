@@ -12,15 +12,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { _deferredReviewDeps, captureRunStartRef, runDeferredReview } from "@/execution/deferred-review";
 import type { PluginRegistry } from "@/plugins";
 import type { IReviewPlugin } from "@/plugins/extensions";
 import type { ReviewConfig } from "@/review/types";
-import {
-  _deferredReviewDeps,
-  captureRunStartRef,
-  runDeferredReview,
-} from "@/execution/deferred-review";
-import { withDepsRestore } from "@test/helpers";
+import { makePluginRegistry, makeSpawn, withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -29,29 +25,11 @@ import { withDepsRestore } from "@test/helpers";
 const FAKE_REF = "abc1234def5678901234567890123456789abcde";
 
 function makeSpawnForRef(ref: string) {
-  return mock(() => ({
-    exited: Promise.resolve(0),
-    stdout: new ReadableStream({
-      start(c) {
-        c.enqueue(new TextEncoder().encode(`${ref}\n`));
-        c.close();
-      },
-    }),
-    stderr: new ReadableStream({ start(c) { c.close(); } }),
-  }));
+  return makeSpawn(() => `${ref}\n`).spawn;
 }
 
 function makeSpawnForDiff(files: string[]) {
-  return mock(() => ({
-    exited: Promise.resolve(0),
-    stdout: new ReadableStream({
-      start(c) {
-        c.enqueue(new TextEncoder().encode(files.join("\n")));
-        c.close();
-      },
-    }),
-    stderr: new ReadableStream({ start(c) { c.close(); } }),
-  }));
+  return makeSpawn(() => files.join("\n")).spawn;
 }
 
 function makeReviewer(name: string, passed = true): IReviewPlugin {
@@ -67,9 +45,7 @@ function makeReviewer(name: string, passed = true): IReviewPlugin {
 }
 
 function makeRegistry(reviewers: IReviewPlugin[]): PluginRegistry {
-  return {
-    getReviewers: mock(() => reviewers),
-  } as unknown as PluginRegistry;
+  return makePluginRegistry({ getReviewers: mock(() => reviewers) });
 }
 
 function makeReviewConfig(pluginMode?: "per-story" | "deferred"): ReviewConfig {
@@ -92,7 +68,7 @@ afterEach(() => {
 
 describe("captureRunStartRef — captures HEAD git ref before stories run", () => {
   test("returns current HEAD ref via git rev-parse", async () => {
-    _deferredReviewDeps.spawn = makeSpawnForRef(FAKE_REF) as unknown as typeof _deferredReviewDeps.spawn;
+    _deferredReviewDeps.spawn = makeSpawnForRef(FAKE_REF);
 
     const ref = await captureRunStartRef("/tmp/workdir");
 
@@ -101,7 +77,7 @@ describe("captureRunStartRef — captures HEAD git ref before stories run", () =
 
   test("invokes git rev-parse HEAD in the provided workdir", async () => {
     const spawnMock = makeSpawnForRef(FAKE_REF);
-    _deferredReviewDeps.spawn = spawnMock as unknown as typeof _deferredReviewDeps.spawn;
+    _deferredReviewDeps.spawn = spawnMock;
 
     await captureRunStartRef("/tmp/my-workdir");
 
@@ -114,7 +90,7 @@ describe("captureRunStartRef — captures HEAD git ref before stories run", () =
   });
 
   test("trims whitespace/newline from git output", async () => {
-    _deferredReviewDeps.spawn = makeSpawnForRef(`  ${FAKE_REF}  \n`) as unknown as typeof _deferredReviewDeps.spawn;
+    _deferredReviewDeps.spawn = makeSpawnForRef(`  ${FAKE_REF}  \n`);
 
     const ref = await captureRunStartRef("/tmp/workdir");
 
@@ -122,9 +98,9 @@ describe("captureRunStartRef — captures HEAD git ref before stories run", () =
   });
 
   test("returns empty string when git command fails", async () => {
-    _deferredReviewDeps.spawn = mock(() => {
+    _deferredReviewDeps.spawn = makeSpawn(() => {
       throw new Error("git not found");
-    }) as unknown as typeof _deferredReviewDeps.spawn;
+    }).spawn;
 
     const ref = await captureRunStartRef("/tmp/workdir");
 
@@ -148,7 +124,7 @@ describe("runDeferredReview — skips when conditions are not met", () => {
   test("returns undefined when pluginMode is 'deferred' but registry has no reviewers", async () => {
     const registry = makeRegistry([]);
     const spawnMock = makeSpawnForDiff([]);
-    _deferredReviewDeps.spawn = spawnMock as unknown as typeof _deferredReviewDeps.spawn;
+    _deferredReviewDeps.spawn = spawnMock;
 
     const result = await runDeferredReview("/tmp/workdir", makeReviewConfig("deferred"), registry, FAKE_REF);
 
@@ -162,7 +138,7 @@ describe("runDeferredReview — skips when conditions are not met", () => {
 
 describe("runDeferredReview — runs reviewers with full diff when deferred", () => {
   beforeEach(() => {
-    _deferredReviewDeps.spawn = makeSpawnForDiff(["src/foo.ts", "src/bar.ts"]) as unknown as typeof _deferredReviewDeps.spawn;
+    _deferredReviewDeps.spawn = makeSpawnForDiff(["src/foo.ts", "src/bar.ts"]);
   });
 
   test("calls each registered reviewer exactly once", async () => {
@@ -187,7 +163,7 @@ describe("runDeferredReview — runs reviewers with full diff when deferred", ()
 
   test("uses run-start ref as baseRef for git diff (full diff range)", async () => {
     const spawnMock = makeSpawnForDiff(["src/changed.ts"]);
-    _deferredReviewDeps.spawn = spawnMock as unknown as typeof _deferredReviewDeps.spawn;
+    _deferredReviewDeps.spawn = spawnMock;
 
     const reviewer = makeReviewer("semgrep");
     const registry = makeRegistry([reviewer]);
@@ -256,7 +232,7 @@ describe("runDeferredReview — runs reviewers with full diff when deferred", ()
 
 describe("runDeferredReview — plugin failures do NOT fail the run", () => {
   beforeEach(() => {
-    _deferredReviewDeps.spawn = makeSpawnForDiff(["src/foo.ts"]) as unknown as typeof _deferredReviewDeps.spawn;
+    _deferredReviewDeps.spawn = makeSpawnForDiff(["src/foo.ts"]);
   });
 
   test("does NOT throw when a reviewer throws an exception", async () => {
@@ -296,7 +272,9 @@ describe("runDeferredReview — plugin failures do NOT fail the run", () => {
     const failingReviewer: IReviewPlugin = {
       name: "crashing",
       description: "Throws",
-      check: mock(async () => { throw new Error("crash"); }),
+      check: mock(async () => {
+        throw new Error("crash");
+      }),
     };
     const passingReviewer = makeReviewer("passing", true);
     const registry = makeRegistry([failingReviewer, passingReviewer]);

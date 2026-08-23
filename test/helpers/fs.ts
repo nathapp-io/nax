@@ -4,8 +4,8 @@
  * Provides utilities for polling file system events and async file operations.
  */
 
-import { access } from "node:fs/promises";
 import { constants } from "node:fs";
+import { access } from "node:fs/promises";
 
 function waitForNextPoll(pollIntervalMs: number): Promise<void> {
   return new Promise((resolve) => {
@@ -22,11 +22,7 @@ function waitForNextPoll(pollIntervalMs: number): Promise<void> {
  * @param pollIntervalMs - Poll interval in milliseconds (default: 10)
  * @throws Error if file doesn't exist within timeout
  */
-export async function waitForFile(
-  path: string,
-  timeoutMs = 500,
-  pollIntervalMs = 10,
-): Promise<void> {
+export async function waitForFile(path: string, timeoutMs = 500, pollIntervalMs = 10): Promise<void> {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {

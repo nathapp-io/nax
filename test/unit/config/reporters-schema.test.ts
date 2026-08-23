@@ -75,8 +75,8 @@ describe("US-005 AC2: OtelReporterConfigSchema defaults logs.enabled to false", 
   });
 });
 
-describe("US-005 AC3: OtelReporterConfigSchema defaults logs.level to \"info\"", () => {
-  test("success: when logs is omitted, parsed config reports logs.level === \"info\"", () => {
+describe('US-005 AC3: OtelReporterConfigSchema defaults logs.level to "info"', () => {
+  test('success: when logs is omitted, parsed config reports logs.level === "info"', () => {
     const parsed = ReportersConfigSchema.parse({ otel: { enabled: true } });
     expect((parsed.otel as any).logs?.level).toBe("info");
   });

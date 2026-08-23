@@ -53,9 +53,7 @@ describe("appendToRollup", () => {
 
       // After the call, no lock candidate must remain — the lock is
       // released in its `finally` block on the success path.
-      const entries = await Array.fromAsync(
-        new Bun.Glob(`${"rollup.jsonl"}.lock.*`).scan({ cwd: dir }),
-      );
+      const entries = await Array.fromAsync(new Bun.Glob(`${"rollup.jsonl"}.lock.*`).scan({ cwd: dir }));
       expect(entries.length).toBe(0);
 
       // Subsequent calls still work (lock isn't held by a zombie).

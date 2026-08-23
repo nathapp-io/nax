@@ -13,7 +13,15 @@ import type { PipelineRunResult } from "@/pipeline";
 import { PluginRegistry } from "@/plugins";
 import { loadPRD } from "@/prd";
 import type { UserStory } from "@/prd/types";
-import { cleanupTempDir, makeMockRuntime, makePRD, makeStory, makeTempDir } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeAgentResult,
+  makeMockRuntime,
+  makePRD,
+  makeStory,
+  makeTempDir,
+  makeTestContext,
+} from "@test/helpers";
 
 function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = {}): PipelineHandlerContext {
   const prd = makePRD({ userStories: [story] });
@@ -67,7 +75,7 @@ describe("handlePipelineFailure — pause-reason persistence (nax#1582)", () => 
       success: false,
       finalAction: "pause",
       reason: "Semantic review failed: 1 findings",
-      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"], // test-ratchet-allow: as-unknown-as
+      context: makeTestContext({ agentResult: makeAgentResult() }),
     };
 
     await handlePipelineFailure(ctx, pauseResult);
@@ -85,7 +93,7 @@ describe("handlePipelineFailure — pause-reason persistence (nax#1582)", () => 
     const pauseResult: PipelineRunResult = {
       success: false,
       finalAction: "pause",
-      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"], // test-ratchet-allow: as-unknown-as
+      context: makeTestContext({ agentResult: makeAgentResult() }),
     };
 
     await handlePipelineFailure(ctx, pauseResult);
@@ -104,7 +112,7 @@ describe("handlePipelineFailure — pause-reason persistence (nax#1582)", () => 
       success: false,
       finalAction: "pause",
       reason: "src/does-not-exist.ts:1 says `this quote is fabricated`",
-      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"], // test-ratchet-allow: as-unknown-as
+      context: makeTestContext({ agentResult: makeAgentResult() }),
     };
 
     await handlePipelineFailure(ctx, pauseResult);

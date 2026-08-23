@@ -21,7 +21,7 @@ import type { NaxConfig } from "@/config/schema";
 import { run } from "@/execution/runner";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { NaxPlugin } from "@/plugins/types";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { makeTempDir } from "@test/helpers";
 
 // Test fixture helpers
 async function createTempDir(): Promise<string> {

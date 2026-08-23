@@ -5,8 +5,9 @@ import type { NaxRuntime } from "@/runtime";
 import { applyMutant, journalPathFor, recordInFlight } from "@/verification";
 import {
   cleanupTempDir,
-  makeMutationCheckCtx,
   makeMutationCheckDeps as fakeDeps,
+  makeMutationCheckCtx,
+  makeResolvedTestPatterns,
   makeTempDir,
 } from "@test/helpers";
 
@@ -47,12 +48,12 @@ describe("mutationCheckOp — AC9: regression throw still reverts and reports su
           storyId: "US-004",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,

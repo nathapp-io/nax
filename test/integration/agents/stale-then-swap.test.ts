@@ -14,10 +14,10 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { AgentManager, SessionFailureError, SessionTurnError } from "@/agents";
-import { buildHopCallback, _buildHopCallbackDeps } from "@/operations";
 import type { SessionHandle, TurnResult } from "@/agents/types";
 import type { AdapterFailure, ContextBundle } from "@/context/engine";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
+import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
+import { makeContextBundle, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
 
 // ─── Stubs ───────────────────────────────────────────────────────────────────
 
@@ -38,13 +38,11 @@ const STALE_FAILURE: AdapterFailure = {
   message: "idle timeout",
 };
 
-const STUB_BUNDLE = {
-  pushMarkdown: "",
+const STUB_BUNDLE = makeContextBundle({
   pullTools: [],
   digest: "",
-  manifest: {},
   chunks: [],
-} as unknown as ContextBundle;
+});
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const STUB_RUN_OPTIONS = {
@@ -80,9 +78,7 @@ let origRebuildForAgent: typeof _buildHopCallbackDeps.rebuildForAgent;
 beforeEach(() => {
   origCreateContextToolRuntime = _buildHopCallbackDeps.createContextToolRuntime;
   origRebuildForAgent = _buildHopCallbackDeps.rebuildForAgent;
-  // biome-ignore lint/suspicious/noExplicitAny: test stub
   _buildHopCallbackDeps.createContextToolRuntime = () => undefined as any;
-  // biome-ignore lint/suspicious/noExplicitAny: test stub
   _buildHopCallbackDeps.rebuildForAgent = (prior) => prior as any;
 });
 
@@ -119,9 +115,7 @@ describe("stale-then-swap — full runWithFallback loop", () => {
 
     const handoff = mock(() => ({ id: "sess-001", state: "RUNNING" }) as any);
     const getLiveHandle = mock((_name: string) => CLAUDE_HANDLE);
-    const openSession = mock(async (name: string) =>
-      name.includes("codex") ? CODEX_HANDLE : CLAUDE_HANDLE,
-    );
+    const openSession = mock(async (name: string) => (name.includes("codex") ? CODEX_HANDLE : CLAUDE_HANDLE));
     const sessionMgr = makeSessionManager({ handoff, getLiveHandle, openSession });
 
     let sendCallCount = 0;
@@ -156,9 +150,7 @@ describe("stale-then-swap — full runWithFallback loop", () => {
 
     const closeSession = mock(async () => {});
     const getLiveHandle = mock((_name: string) => CLAUDE_HANDLE);
-    const openSession = mock(async (name: string) =>
-      name.includes("codex") ? CODEX_HANDLE : CLAUDE_HANDLE,
-    );
+    const openSession = mock(async (name: string) => (name.includes("codex") ? CODEX_HANDLE : CLAUDE_HANDLE));
     const sessionMgr = makeSessionManager({ closeSession, getLiveHandle, openSession });
 
     let sendCallCount = 0;
@@ -233,7 +225,7 @@ describe("fail-adapter-error retry — QUEUE_DISCONNECTED_BEFORE_COMPLETION (#10
     const config = makeAdapterErrorConfig(2);
     const manager = new AgentManager(config);
 
-    const openSession = mock(async () => ({ id: "ses_01", agentName: "claude" } as SessionHandle));
+    const openSession = mock(async () => ({ id: "ses_01", agentName: "claude" }) as SessionHandle);
     const sessionMgr = makeSessionManager({ openSession });
 
     let callCount = 0;
@@ -270,7 +262,7 @@ describe("fail-adapter-error retry — QUEUE_DISCONNECTED_BEFORE_COMPLETION (#10
     const config = makeAdapterErrorConfig(2);
     const manager = new AgentManager(config);
 
-    const openSession = mock(async () => ({ id: "ses_01", agentName: "claude" } as SessionHandle));
+    const openSession = mock(async () => ({ id: "ses_01", agentName: "claude" }) as SessionHandle);
     const sessionMgr = makeSessionManager({ openSession });
 
     let callCount = 0;
@@ -308,8 +300,8 @@ describe("fail-adapter-error retry — QUEUE_DISCONNECTED_BEFORE_COMPLETION (#10
     const config = makeAdapterErrorConfig(1);
     const manager = new AgentManager(config);
 
-    const openSession = mock(async () => ({ id: "ses_01", agentName: "claude" } as SessionHandle));
-    const getLiveHandle = mock((_name: string) => ({ id: "ses_01", agentName: "claude" } as SessionHandle));
+    const openSession = mock(async () => ({ id: "ses_01", agentName: "claude" }) as SessionHandle);
+    const getLiveHandle = mock((_name: string) => ({ id: "ses_01", agentName: "claude" }) as SessionHandle);
     const sessionMgr = makeSessionManager({ openSession, getLiveHandle });
 
     let callCount = 0;

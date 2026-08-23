@@ -12,7 +12,6 @@ import { _promptsInitDeps, promptsInitCommand } from "@/cli/prompts";
 import { buildRoleTaskSection } from "@/prompts/sections/role-task";
 import { makeTempDir } from "@test/helpers";
 
-
 const TEMPLATE_FILES = [
   "test-writer.md",
   "implementer.md",
@@ -83,7 +82,9 @@ describe("promptsInitCommand — per-file checks (exists, content, header)", () 
       expect(content, `${file} role section`).toContain(expected);
 
       expect(content, `${file} header comment`).toMatch(/<!--[\s\S]+?-->/);
-      expect(content.toLowerCase(), `${file} mentions override/controls`).toMatch(/override|role.?body|controls|customize/);
+      expect(content.toLowerCase(), `${file} mentions override/controls`).toMatch(
+        /override|role.?body|controls|customize/,
+      );
 
       const mentionsNonOverridable =
         content.toLowerCase().includes("isolation") ||

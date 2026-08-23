@@ -11,7 +11,7 @@
 export { makeAgentAdapter } from "./mock-agent-adapter";
 export { createMockAgentManager, makeMockAgentManager } from "./mock-agent-manager";
 export { makeLogger, type LogCall, type MockLogger } from "./mock-logger";
-export { makeNaxConfig, makeSparseNaxConfig } from "./mock-nax-config";
+export { makeNaxConfig, makeSparseNaxConfig, type DeepPartial } from "./mock-nax-config";
 export { makeSessionManager } from "./mock-session-manager";
 export {
   makeMockRuntime,
@@ -28,17 +28,36 @@ export {
   makeSpawnMock,
   mockDiffUtilsDeps,
 } from "./review-audit";
+export { makeAgentRegistry } from "./agent-registry";
+export { makeAgentResult } from "./agent-result";
+export { makeContextBundle, makeContextManifest } from "./context-bundle";
+export { makeContextOrchestrator, type MockContextOrchestrator } from "./context-orchestrator";
+export { makeInteractionChain, type MockInteractionChain } from "./interaction-chain";
+export { makeEscalationContext } from "./escalation-context";
+export { makePluginRegistry, type MockPluginRegistry } from "./plugin-registry";
+export { makeSpawn, makeSpawnResult } from "./spawn";
+export { makeDebateRunner, DEFAULT_DEBATE_RESULT, type MockDebateRunner } from "./debate-runner";
+export { makeMergeEngine, type MockMergeEngine } from "./merge-engine";
+export { makeStatusWriter, type MockStatusWriter } from "./status-writer";
+export type { FakeProcSpec, SpawnCall, SpawnResult, SpawnStub } from "./spawn";
 export { withDepsRestore } from "./deps";
 export { withExecutionDeps, type ExecutionDepsOverrides } from "./execution-deps-stub";
 export { waitForCondition, withTimeout } from "./timeout";
 export { makeLinkWithCosts } from "./link-with-costs";
 export { makeMockCallContext } from "./call-context";
-export { makeMockPlanInputs } from "./plan-inputs";
+export { makeMockPlanInputs, makeResolvedTestPatterns } from "./plan-inputs";
 export { withWarnSpy, withInfoSpy } from "./warn-spy";
 export { withTimerSpy } from "./timer-spy";
 export type { TimerSpyResult } from "./timer-spy";
 export { makeFakeClock } from "./fake-clock";
 export type { FakeClock } from "./fake-clock";
+export { agentManagerInternals, type AgentManagerInternals } from "./agent-manager-internals";
+export {
+  telegramInternals,
+  webhookInternals,
+  type TelegramInternals,
+  type WebhookInternals,
+} from "./interaction-internals";
 export { mockFetch } from "./mock-fetch";
 export { makeScriptedAgent, runOrchestratorE2E } from "./e2e";
 export type { ScriptedAgentSpec, ScriptedTurn, E2EOptions, E2EResult, E2EGates } from "./e2e";
@@ -49,3 +68,4 @@ export { fullTest, fullDescribe } from "./env";
 export { waitForFile } from "./fs";
 export { fakeAgentManager } from "./fake-agent-manager";
 export type { FakeAgentManagerOptions } from "./fake-agent-manager";
+export { absentValue, nullValue } from "./absent";

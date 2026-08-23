@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { join } from "path";
+import { join } from "node:path";
 import type { Finding } from "@/findings/types";
 
 const VERIFIER_FINDING: Finding = {
@@ -60,9 +60,7 @@ describe("AC7: RectifierPromptBuilder.verifierContext static method", () => {
   test("AC7: rectifier-builder.ts contains exactly one static verifierContext( definition", async () => {
     const file = Bun.file(join(import.meta.dir, "../../../../src/prompts/builders/rectifier-builder.ts"));
     const content = await file.text();
-    const matches = content
-      .split("\n")
-      .filter((line) => /static verifierContext\(/.test(line));
+    const matches = content.split("\n").filter((line) => /static verifierContext\(/.test(line));
     expect(matches.length).toBe(1);
   });
 });

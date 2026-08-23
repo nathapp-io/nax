@@ -4,7 +4,6 @@ import { makeStory } from "@test/helpers";
 
 describe("implementerRectifyOp.parse", () => {
   const input = { failedChecks: [], story: makeStory() };
-  // biome-ignore lint/suspicious/noExplicitAny: parse only reads .story.id from ctx
   const ctx = { story: makeStory() } as any;
 
   test("returns applied=true with empty declarations on plain output", () => {
@@ -42,4 +41,3 @@ CHANGE: a! → a?`;
     expect(out.testEditDeclarations).toHaveLength(1);
   });
 });
-

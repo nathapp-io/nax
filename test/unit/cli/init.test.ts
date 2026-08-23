@@ -6,9 +6,9 @@
  * .gitignore and .naxignore without disturbing user content.
  */
 
+import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, test } from "bun:test";
 import { _initDeps, initCommand, initProject } from "@/cli/init";
 import { withTempDir } from "@test/helpers";
 
@@ -234,15 +234,19 @@ describe("initProject — stack-aware constitution.md", () => {
     await withTempDir(async (tempDir) => {
       await Bun.write(join(tempDir, "bun.lockb"), "");
       await initProject(tempDir);
-      expect(await Bun.file(join(tempDir, ".nax", "constitution.md")).text()).toMatch(/Bun\.file\(\)|Bun\.spawn\(\)|Bun\.sleep\(\)|bun test/);
+      expect(await Bun.file(join(tempDir, ".nax", "constitution.md")).text()).toMatch(
+        /Bun\.file\(\)|Bun\.spawn\(\)|Bun\.sleep\(\)|bun test/,
+      );
     });
     await withTempDir(async (tempDir) => {
       await Bun.write(join(tempDir, "tsconfig.json"), "{}");
       await initProject(tempDir);
-      expect(await Bun.file(join(tempDir, ".nax", "constitution.md")).text()).toMatch(/strict.*TypeScript|TypeScript.*strict/i);
+      expect(await Bun.file(join(tempDir, ".nax", "constitution.md")).text()).toMatch(
+        /strict.*TypeScript|TypeScript.*strict/i,
+      );
     });
     await withTempDir(async (tempDir) => {
-      await Bun.write(join(tempDir, "pyproject.toml"), "[tool.poetry]\nname = \"example\"");
+      await Bun.write(join(tempDir, "pyproject.toml"), '[tool.poetry]\nname = "example"');
       await initProject(tempDir);
       expect(await Bun.file(join(tempDir, ".nax", "constitution.md")).text()).toMatch(/PEP.?8|type hint/i);
     });
@@ -258,8 +262,15 @@ describe("initProject — prints summary with created files and next steps", () 
   function captureInitLog(): { output: string[]; restore: () => void } {
     const output: string[] = [];
     const orig = _initDeps.log;
-    _initDeps.log = (...args: unknown[]) => { output.push(args.map(String).join(" ")); };
-    return { output, restore: () => { _initDeps.log = orig; } };
+    _initDeps.log = (...args: unknown[]) => {
+      output.push(args.map(String).join(" "));
+    };
+    return {
+      output,
+      restore: () => {
+        _initDeps.log = orig;
+      },
+    };
   }
 
   test("summary output includes config.json, constitution.md, context.md, nax generate, nax plan, and nax run", async () => {
@@ -275,6 +286,8 @@ describe("initProject — prints summary with created files and next steps", () 
         expect(out).toContain("nax plan");
         expect(out).toContain("nax run");
       });
-    } finally { restore(); }
+    } finally {
+      restore();
+    }
   });
 });

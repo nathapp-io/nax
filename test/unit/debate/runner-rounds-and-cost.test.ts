@@ -10,11 +10,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { DEFAULT_CONFIG } from "@/config";
 import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import type { CallContext } from "@/operations/types";
-import { DEFAULT_CONFIG } from "@/config";
 import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 function makeCallCtx(agentManager: ReturnType<typeof makeMockAgentManager>): CallContext {
@@ -70,7 +70,11 @@ describe("DebateRunner.run() — critique rounds (rounds === 2)", () => {
     const agentManager = makeMockAgentManager({
       completeAsFn: async (name) => {
         callCounts[name] = (callCounts[name] ?? 0) + 1;
-        return { output: `proposal from ${name}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+        return {
+          output: `proposal from ${name}`,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+        };
       },
     });
 
@@ -88,8 +92,8 @@ describe("DebateRunner.run() — critique rounds (rounds === 2)", () => {
 
     await runner.run("test prompt");
 
-    expect(callCounts["claude"]).toBe(2);
-    expect(callCounts["opencode"]).toBe(2);
+    expect(callCounts.claude).toBe(2);
+    expect(callCounts.opencode).toBe(2);
   });
 
   test("claude's critique prompt contains opencode's proposal", async () => {
@@ -99,7 +103,11 @@ describe("DebateRunner.run() — critique rounds (rounds === 2)", () => {
       completeAsFn: async (name, prompt) => {
         if (!promptsByAgent[name]) promptsByAgent[name] = [];
         promptsByAgent[name].push(prompt);
-        return { output: `proposal from ${name}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+        return {
+          output: `proposal from ${name}`,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+        };
       },
     });
 
@@ -117,7 +125,7 @@ describe("DebateRunner.run() — critique rounds (rounds === 2)", () => {
 
     await runner.run("test prompt");
 
-    const claudeRound2Prompt = promptsByAgent["claude"]?.[1];
+    const claudeRound2Prompt = promptsByAgent.claude?.[1];
     expect(claudeRound2Prompt).toBeDefined();
     expect(claudeRound2Prompt).toContain("proposal from opencode");
   });
@@ -129,7 +137,11 @@ describe("DebateRunner.run() — critique rounds (rounds === 2)", () => {
       completeAsFn: async (name, prompt) => {
         if (!promptsByAgent[name]) promptsByAgent[name] = [];
         promptsByAgent[name].push(prompt);
-        return { output: `proposal from ${name}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+        return {
+          output: `proposal from ${name}`,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+        };
       },
     });
 
@@ -147,7 +159,7 @@ describe("DebateRunner.run() — critique rounds (rounds === 2)", () => {
 
     await runner.run("test prompt");
 
-    const opencodeRound2Prompt = promptsByAgent["opencode"]?.[1];
+    const opencodeRound2Prompt = promptsByAgent.opencode?.[1];
     expect(opencodeRound2Prompt).toBeDefined();
     expect(opencodeRound2Prompt).toContain("proposal from claude");
   });
@@ -159,7 +171,11 @@ describe("DebateRunner.run() — critique rounds (rounds === 2)", () => {
       completeAsFn: async (name, prompt) => {
         if (!promptsByAgent[name]) promptsByAgent[name] = [];
         promptsByAgent[name].push(prompt);
-        return { output: `proposal from ${name}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+        return {
+          output: `proposal from ${name}`,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+        };
       },
     });
 
@@ -177,7 +193,7 @@ describe("DebateRunner.run() — critique rounds (rounds === 2)", () => {
 
     await runner.run("test prompt");
 
-    const claudeRound2Prompt = promptsByAgent["claude"]?.[1];
+    const claudeRound2Prompt = promptsByAgent.claude?.[1];
     expect(claudeRound2Prompt).not.toContain("proposal from claude");
   });
 });
@@ -208,8 +224,8 @@ describe("DebateRunner.run() — no critique round (rounds === 1)", () => {
 
     await runner.run("test prompt");
 
-    expect(callCounts["claude"]).toBe(1);
-    expect(callCounts["opencode"]).toBe(1);
+    expect(callCounts.claude).toBe(1);
+    expect(callCounts.opencode).toBe(1);
   });
 });
 
@@ -218,7 +234,11 @@ describe("DebateRunner.run() — no critique round (rounds === 1)", () => {
 describe("DebateRunner.run() — cost tracking", () => {
   test("DebateResult has totalCostUsd field", async () => {
     const agentManager = makeMockAgentManager({
-      completeAsFn: async (name, _p, _o) => ({ output: `output from ${name}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.1 }),
+      completeAsFn: async (name, _p, _o) => ({
+        output: `output from ${name}`,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0.1,
+      }),
     });
 
     const runner = new DebateRunner({
@@ -241,7 +261,11 @@ describe("DebateRunner.run() — cost tracking", () => {
 describe("DebateRunner.run() — proposals structure", () => {
   test("DebateResult.proposals contains one entry per successful debater", async () => {
     const agentManager = makeMockAgentManager({
-      completeAsFn: async (name) => ({ output: `output from ${name}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+      completeAsFn: async (name) => ({
+        output: `output from ${name}`,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
     });
 
     const runner = new DebateRunner({
@@ -264,7 +288,11 @@ describe("DebateRunner.run() — proposals structure", () => {
 
   test("each proposal entry contains debater identity (agent name)", async () => {
     const agentManager = makeMockAgentManager({
-      completeAsFn: async (name) => ({ output: `output from ${name}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+      completeAsFn: async (name) => ({
+        output: `output from ${name}`,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
     });
 
     const runner = new DebateRunner({
@@ -289,7 +317,11 @@ describe("DebateRunner.run() — proposals structure", () => {
 
   test("each proposal entry contains the output from completeAs()", async () => {
     const agentManager = makeMockAgentManager({
-      completeAsFn: async (name) => ({ output: `output from ${name}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+      completeAsFn: async (name) => ({
+        output: `output from ${name}`,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
     });
 
     const runner = new DebateRunner({
@@ -316,7 +348,11 @@ describe("DebateRunner.run() — proposals structure", () => {
 
   test("DebateResult includes storyId, stage, and resolverType", async () => {
     const agentManager = makeMockAgentManager({
-      completeAsFn: async () => ({ output: `{"passed": true}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+      completeAsFn: async () => ({
+        output: `{"passed": true}`,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
     });
 
     const runner = new DebateRunner({

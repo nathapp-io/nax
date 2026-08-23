@@ -15,6 +15,7 @@ import { runBakeoff, runContestant } from "@/bakeoff";
 import type { BakeoffCoordinatorDeps, ContestantOptions, ContestantRunnerDeps } from "@/bakeoff";
 import type { NaxConfig } from "@/config";
 import { WorktreeManager } from "@/worktree";
+import { makeNaxConfig } from "@test/helpers";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 async function git(args: string[], cwd: string): Promise<void> {
@@ -81,7 +82,7 @@ describe("runBakeoff worktree isolation (US-002 AC10)", () => {
         feature: "test-feature",
         projectRoot,
         outputDir,
-        config: {} as unknown as NaxConfig,
+        config: makeNaxConfig(),
       },
       deps,
     );

@@ -8,7 +8,7 @@
 
 import { beforeEach, describe, expect, test } from "bun:test";
 import { ContextOrchestrator, _orchestratorDeps } from "@/context/engine/orchestrator";
-import type { ContextRequest, IContextProvider, ContextProviderResult } from "@/context/engine/types";
+import type { ContextProviderResult, ContextRequest, IContextProvider } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

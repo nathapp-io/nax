@@ -6,9 +6,10 @@ import { BLOCKING_CATEGORIES } from "./ac-structural-counterfactual";
  * SSOT: the "source" set IS `BLOCKING_CATEGORIES` — never a hand-copied list.
  * `convention` and any unrecognized category default to "test" (conservative:
  * the implementer never receives an ambiguous/unknown finding for un-reviewed
- * source editing).
+ * source editing). `null` and `undefined` both take that default — the `!= null`
+ * guard below has always handled `null`, so the parameter type says so.
  */
-export function categoryToFixTarget(category: string | undefined): FixTarget {
+export function categoryToFixTarget(category: string | null | undefined): FixTarget {
   // "out-of-scope" is not a blocking category (scope findings are advisory), but
   // if `review.blockingThreshold` is lowered to "warning" it would otherwise fall
   // through to the test-writer. "You implemented excluded work" is a source-side

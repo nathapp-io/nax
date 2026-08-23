@@ -3,7 +3,7 @@ import { AgentManager } from "@/agents/manager";
 import type { AgentRegistry } from "@/agents/registry";
 import type { CompleteOptions } from "@/agents/types";
 import { PidRegistry } from "@/execution/pid-registry";
-import { makeNaxConfig } from "@test/helpers";
+import { makeAgentAdapter, makeAgentRegistry, makeNaxConfig } from "@test/helpers";
 
 const availFailure = {
   category: "availability" as const,
@@ -26,52 +26,56 @@ function makeConfig() {
   });
 }
 
-function makeRegistry(
-  results: Record<string, { output: string; failure?: typeof availFailure; throws?: unknown }>,
-) {
-  return {
+function makeRegistry(results: Record<string, { output: string; failure?: typeof availFailure; throws?: unknown }>) {
+  return makeAgentRegistry({
     getAgent: (name: string) => {
       const r = results[name];
       if (!r) return undefined;
-      return {
+      return makeAgentAdapter({
         complete: mock(async () => {
           if (r.throws !== undefined) throw r.throws;
           return {
             output: r.output,
-            tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.01, exactCostUsd: 0.01,
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0.01,
+            exactCostUsd: 0.01,
             adapterFailure: r.failure,
           };
         }),
-      };
+      });
     },
-  } as unknown as AgentRegistry;
+  });
 }
 
 describe("AgentManager PID lifecycle — configureRuntime", () => {
   test("attaches onPidSpawned and onPidExited to adapter.complete when pidRegistry is configured", async () => {
     let capturedOptions: CompleteOptions | undefined;
-    const registry = {
-      getAgent: () => ({
-        complete: mock(async (_prompt: string, opts: CompleteOptions) => {
-          capturedOptions = opts;
-          return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+    const registry = makeAgentRegistry({
+      getAgent: () =>
+        makeAgentAdapter({
+          complete: mock(async (_prompt: string, opts: CompleteOptions) => {
+            capturedOptions = opts;
+            return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+          }),
         }),
-      }),
-    } as unknown as AgentRegistry;
+    });
 
     const m = new AgentManager(makeNaxConfig(), registry);
     const pidRegistry = new PidRegistry("/tmp/test-pid-manager");
-    const registerSpy = mock((pid: number) => pidRegistry.register(pid));
-    const unregisterSpy = mock((pid: number) => pidRegistry.unregister(pid));
-    const patchedRegistry = {
-      ...pidRegistry,
-      register: registerSpy,
-      unregister: unregisterSpy,
-    } as unknown as PidRegistry;
+    const originalRegister = pidRegistry.register.bind(pidRegistry);
+    const originalUnregister = pidRegistry.unregister.bind(pidRegistry);
+    const registerSpy = mock<PidRegistry["register"]>((pid: number) => originalRegister(pid));
+    const unregisterSpy = mock<PidRegistry["unregister"]>((pid: number) => originalUnregister(pid));
+    pidRegistry.register = registerSpy;
+    pidRegistry.unregister = unregisterSpy;
 
-    m.configureRuntime({ pidRegistry: patchedRegistry });
+    m.configureRuntime({ pidRegistry });
 
-    await m.completeWithFallback("prompt", { modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} }, workdir: "/tmp/test", resolvedPermissions: { mode: "approve-reads" as const } });
+    await m.completeWithFallback("prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      resolvedPermissions: { mode: "approve-reads" as const },
+    });
 
     expect(capturedOptions?.onPidSpawned).toBeDefined();
     expect(capturedOptions?.onPidExited).toBeDefined();
@@ -85,17 +89,22 @@ describe("AgentManager PID lifecycle — configureRuntime", () => {
 
   test("does not attach lifecycle when no pidRegistry is configured", async () => {
     let capturedOptions: CompleteOptions | undefined;
-    const registry = {
-      getAgent: () => ({
-        complete: mock(async (_prompt: string, opts: CompleteOptions) => {
-          capturedOptions = opts;
-          return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+    const registry = makeAgentRegistry({
+      getAgent: () =>
+        makeAgentAdapter({
+          complete: mock(async (_prompt: string, opts: CompleteOptions) => {
+            capturedOptions = opts;
+            return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+          }),
         }),
-      }),
-    } as unknown as AgentRegistry;
+    });
 
     const m = new AgentManager(makeNaxConfig(), registry);
-    await m.completeWithFallback("prompt", { modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} }, workdir: "/tmp/test", resolvedPermissions: { mode: "approve-reads" as const } });
+    await m.completeWithFallback("prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      resolvedPermissions: { mode: "approve-reads" as const },
+    });
 
     expect(capturedOptions?.onPidSpawned).toBeUndefined();
     expect(capturedOptions?.onPidExited).toBeUndefined();
@@ -105,7 +114,11 @@ describe("AgentManager PID lifecycle — configureRuntime", () => {
 describe("AgentManager.completeWithFallback (#567)", () => {
   test("returns output on success", async () => {
     const m = new AgentManager(makeConfig(), makeRegistry({ claude: { output: "hello" } }));
-    const outcome = await m.completeWithFallback("prompt", { modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} }, workdir: "/tmp/test", resolvedPermissions: { mode: "approve-reads" as const } });
+    const outcome = await m.completeWithFallback("prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      resolvedPermissions: { mode: "approve-reads" as const },
+    });
     expect(outcome.result.output).toBe("hello");
     expect(outcome.fallbacks).toHaveLength(0);
   });
@@ -116,7 +129,11 @@ describe("AgentManager.completeWithFallback (#567)", () => {
       codex: { output: "from codex" },
     });
     const m = new AgentManager(makeConfig(), registry);
-    const outcome = await m.completeWithFallback("prompt", { modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} }, workdir: "/tmp/test", resolvedPermissions: { mode: "approve-reads" as const } });
+    const outcome = await m.completeWithFallback("prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      resolvedPermissions: { mode: "approve-reads" as const },
+    });
     expect(outcome.result.output).toBe("from codex");
     expect(outcome.fallbacks).toHaveLength(1);
     expect(outcome.fallbacks[0].priorAgent).toBe("claude");
@@ -134,11 +151,12 @@ describe("AgentManager.completeWithFallback (#567)", () => {
         },
       },
     });
-    const m = new AgentManager(
-      config,
-      makeRegistry({ claude: { output: "", failure: availFailure } }),
-    );
-    const outcome = await m.completeWithFallback("prompt", { modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} }, workdir: "/tmp/test", resolvedPermissions: { mode: "approve-reads" as const } });
+    const m = new AgentManager(config, makeRegistry({ claude: { output: "", failure: availFailure } }));
+    const outcome = await m.completeWithFallback("prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+      resolvedPermissions: { mode: "approve-reads" as const },
+    });
     expect(outcome.result.adapterFailure?.outcome).toBe("fail-auth");
   });
 });
@@ -205,14 +223,15 @@ describe("AgentManager.completeWithFallback — hard-exception classification (B
 describe("AgentManager.completeAs — promptRetries flows from config, not options", () => {
   test("promptRetries is pre-resolved from this._config.agent.acp.promptRetries", async () => {
     let capturedOptions: CompleteOptions | undefined;
-    const registry = {
-      getAgent: () => ({
-        complete: mock(async (_prompt: string, opts: CompleteOptions) => {
-          capturedOptions = opts;
-          return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+    const registry = makeAgentRegistry({
+      getAgent: () =>
+        makeAgentAdapter({
+          complete: mock(async (_prompt: string, opts: CompleteOptions) => {
+            capturedOptions = opts;
+            return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+          }),
         }),
-      }),
-    } as unknown as AgentRegistry;
+    });
 
     const config = makeNaxConfig({ agent: { acp: { promptRetries: 3 } } });
     const m = new AgentManager(config, registry);
@@ -236,14 +255,15 @@ describe("AgentManager.completeAs — promptRetries flows from config, not optio
 describe("AgentManager.completeAs — SEC-3 per-package config threading", () => {
   test("options.config.permissionProfile takes precedence over _config (pre-fix: ignored)", async () => {
     let capturedOptions: CompleteOptions | undefined;
-    const registry = {
-      getAgent: () => ({
-        complete: mock(async (_prompt: string, opts: CompleteOptions) => {
-          capturedOptions = opts;
-          return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+    const registry = makeAgentRegistry({
+      getAgent: () =>
+        makeAgentAdapter({
+          complete: mock(async (_prompt: string, opts: CompleteOptions) => {
+            capturedOptions = opts;
+            return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+          }),
         }),
-      }),
-    } as unknown as AgentRegistry;
+    });
 
     // Root config: unrestricted (approve-all)
     const rootConfig = makeNaxConfig({ execution: { permissionProfile: "unrestricted" } });

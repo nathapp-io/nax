@@ -17,12 +17,7 @@
 
 import { describe, expect, test } from "bun:test";
 import type { Iteration } from "@/findings";
-import {
-  appendStoryFixIterations,
-  createStoryFixHistory,
-  getStoryFixState,
-  storyFixKey,
-} from "@/findings";
+import { appendStoryFixIterations, createStoryFixHistory, getStoryFixState, storyFixKey } from "@/findings";
 import { makeFinding } from "./_cycle-fixtures";
 
 function makeIteration(iterationNum: number): Iteration {

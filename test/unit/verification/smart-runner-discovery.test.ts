@@ -11,6 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { importGrepFallback, mapSourceToTests } from "@/verification/smart-runner";
+import { absentValue } from "@test/helpers";
 
 describe("Pass 1: mapSourceToTests (path convention)", () => {
   let originalFile: typeof Bun.file;
@@ -20,12 +21,10 @@ describe("Pass 1: mapSourceToTests (path convention)", () => {
   });
 
   afterEach(() => {
-    // biome-ignore lint/suspicious/noExplicitAny: restoring original
     (Bun as any).file = originalFile;
   });
 
   function mockFileExists(existingPaths: string[]) {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking
     (Bun as any).file = (path: string) => ({
       exists: () => Promise.resolve(existingPaths.includes(path)),
     });
@@ -66,9 +65,7 @@ describe("Pass 1: mapSourceToTests (path convention)", () => {
 
   test("never maps a source file to itself with packagePrefix (monorepo)", async () => {
     mockFileExists(["/repo/apps/api/src/stock_api/_agent.py"]);
-    const result = await mapSourceToTests(["apps/api/src/stock_api/_agent.py"], "/repo", "apps/api", [
-      "tests/**/*.py",
-    ]);
+    const result = await mapSourceToTests(["apps/api/src/stock_api/_agent.py"], "/repo", "apps/api", ["tests/**/*.py"]);
     expect(result).toEqual([]);
   });
 
@@ -125,14 +122,11 @@ describe("Pass 2: importGrepFallback", () => {
   });
 
   afterEach(() => {
-    // biome-ignore lint/suspicious/noExplicitAny: restoring originals
     (Bun as any).file = originalFile;
-    // biome-ignore lint/suspicious/noExplicitAny: restoring originals
     (Bun as any).Glob = originalGlob;
   });
 
   function mockGlob(files: string[]) {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking Glob
     (Bun as any).Glob = class {
       scan(_workdir: string): AsyncIterable<string> {
         return {
@@ -141,7 +135,7 @@ describe("Pass 2: importGrepFallback", () => {
             return {
               async next() {
                 if (i < files.length) return { value: files[i++], done: false };
-                return { value: undefined as unknown as string, done: true };
+                return { value: absentValue<string>(), done: true };
               },
             };
           },
@@ -151,7 +145,6 @@ describe("Pass 2: importGrepFallback", () => {
   }
 
   function mockFileContent(contentMap: Record<string, string>) {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking
     (Bun as any).file = (path: string) => ({
       exists: () => Promise.resolve(path in contentMap),
       text: () => Promise.resolve(contentMap[path] ?? ""),
@@ -174,11 +167,7 @@ describe("Pass 2: importGrepFallback", () => {
       "/repo/test/unit/routing.test.ts": `import { route } from "../../../src/routing/strategies/llm";`,
     });
 
-    const result = await importGrepFallback(
-      ["src/routing/strategies/llm.ts"],
-      "/repo",
-      ["test/**/*.test.ts"],
-    );
+    const result = await importGrepFallback(["src/routing/strategies/llm.ts"], "/repo", ["test/**/*.test.ts"]);
 
     expect(result).toEqual(["/repo/test/unit/routing.test.ts"]);
   });
@@ -189,11 +178,7 @@ describe("Pass 2: importGrepFallback", () => {
       "/repo/test/unit/routing.test.ts": `import something from "../../../routing/strategies/llm";`,
     });
 
-    const result = await importGrepFallback(
-      ["src/routing/strategies/llm.ts"],
-      "/repo",
-      ["test/**/*.test.ts"],
-    );
+    const result = await importGrepFallback(["src/routing/strategies/llm.ts"], "/repo", ["test/**/*.test.ts"]);
 
     expect(result).toEqual(["/repo/test/unit/routing.test.ts"]);
   });
@@ -204,11 +189,7 @@ describe("Pass 2: importGrepFallback", () => {
       "/repo/test/unit/other.test.ts": `import { something } from "../../../src/other/module";`,
     });
 
-    const result = await importGrepFallback(
-      ["src/routing/strategies/llm.ts"],
-      "/repo",
-      ["test/**/*.test.ts"],
-    );
+    const result = await importGrepFallback(["src/routing/strategies/llm.ts"], "/repo", ["test/**/*.test.ts"]);
 
     expect(result).toEqual([]);
   });
@@ -220,11 +201,7 @@ describe("Pass 2: importGrepFallback", () => {
       "/repo/test/unit/b.test.ts": `import { fn } from "../../../src/utils/helper";`,
     });
 
-    const result = await importGrepFallback(
-      ["src/utils/helper.ts"],
-      "/repo",
-      ["test/**/*.test.ts"],
-    );
+    const result = await importGrepFallback(["src/utils/helper.ts"], "/repo", ["test/**/*.test.ts"]);
 
     expect(result).toContain("/repo/test/unit/a.test.ts");
     expect(result).toContain("/repo/test/unit/b.test.ts");
@@ -233,7 +210,6 @@ describe("Pass 2: importGrepFallback", () => {
 
   test("skips test files that cannot be read", async () => {
     mockGlob(["test/unit/broken.test.ts", "test/unit/ok.test.ts"]);
-    // biome-ignore lint/suspicious/noExplicitAny: mocking
     (Bun as any).file = (path: string) => ({
       exists: () => Promise.resolve(true),
       text: () => {
@@ -242,11 +218,7 @@ describe("Pass 2: importGrepFallback", () => {
       },
     });
 
-    const result = await importGrepFallback(
-      ["src/utils/helper.ts"],
-      "/repo",
-      ["test/**/*.test.ts"],
-    );
+    const result = await importGrepFallback(["src/utils/helper.ts"], "/repo", ["test/**/*.test.ts"]);
 
     // broken.test.ts is skipped, ok.test.ts matches
     expect(result).toEqual(["/repo/test/unit/ok.test.ts"]);
@@ -259,11 +231,7 @@ describe("Pass 2: importGrepFallback", () => {
       "/repo/test/unit/routing.test.ts": `import { classify } from "../../../src/routing/strategies/llm";`,
     });
 
-    const result = await importGrepFallback(
-      ["src/routing/strategies/llm.ts"],
-      "/repo",
-      ["test/**/*.test.ts"],
-    );
+    const result = await importGrepFallback(["src/routing/strategies/llm.ts"], "/repo", ["test/**/*.test.ts"]);
 
     expect(result).toHaveLength(1);
   });
@@ -283,35 +251,31 @@ describe("Pass 3: full-suite fallback (empty return from both passes)", () => {
   });
 
   afterEach(() => {
-    // biome-ignore lint/suspicious/noExplicitAny: restoring originals
     (Bun as any).file = originalFile;
-    // biome-ignore lint/suspicious/noExplicitAny: restoring originals
     (Bun as any).Glob = originalGlob;
   });
 
   test("importGrepFallback returns empty array when no test files match any pattern", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking Glob
     (Bun as any).Glob = class {
       scan(_workdir: string): AsyncIterable<string> {
         return {
           [Symbol.asyncIterator]() {
-            return { async next() { return { value: undefined as unknown as string, done: true }; } };
+            return {
+              async next() {
+                return { value: absentValue<string>(), done: true };
+              },
+            };
           },
         };
       }
     };
 
-    const result = await importGrepFallback(
-      ["src/foo/bar.ts"],
-      "/repo",
-      ["test/**/*.test.ts"],
-    );
+    const result = await importGrepFallback(["src/foo/bar.ts"], "/repo", ["test/**/*.test.ts"]);
 
     expect(result).toEqual([]);
   });
 
   test("importGrepFallback returns empty array when no scanned test files import the module", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking Glob
     (Bun as any).Glob = class {
       scan(_workdir: string): AsyncIterable<string> {
         let done = false;
@@ -319,24 +283,22 @@ describe("Pass 3: full-suite fallback (empty return from both passes)", () => {
           [Symbol.asyncIterator]() {
             return {
               async next() {
-                if (!done) { done = true; return { value: "test/unit/unrelated.test.ts", done: false }; }
-                return { value: undefined as unknown as string, done: true };
+                if (!done) {
+                  done = true;
+                  return { value: "test/unit/unrelated.test.ts", done: false };
+                }
+                return { value: absentValue<string>(), done: true };
               },
             };
           },
         };
       }
     };
-    // biome-ignore lint/suspicious/noExplicitAny: mocking
     (Bun as any).file = (_path: string) => ({
       text: () => Promise.resolve(`import { x } from "../../../src/completely/different";`),
     });
 
-    const result = await importGrepFallback(
-      ["src/foo/bar.ts"],
-      "/repo",
-      ["test/**/*.test.ts"],
-    );
+    const result = await importGrepFallback(["src/foo/bar.ts"], "/repo", ["test/**/*.test.ts"]);
 
     expect(result).toEqual([]);
   });
@@ -354,13 +316,11 @@ describe("Custom testFilePatterns", () => {
   });
 
   afterEach(() => {
-    // biome-ignore lint/suspicious/noExplicitAny: restoring original
     (Bun as any).Glob = originalGlob;
   });
 
   test("passes custom testFilePatterns to Bun.Glob", async () => {
     const capturedPatterns: string[] = [];
-    // biome-ignore lint/suspicious/noExplicitAny: mocking Glob
     (Bun as any).Glob = class {
       constructor(pattern: string) {
         capturedPatterns.push(pattern);
@@ -368,17 +328,17 @@ describe("Custom testFilePatterns", () => {
       scan(_workdir: string): AsyncIterable<string> {
         return {
           [Symbol.asyncIterator]() {
-            return { async next() { return { value: undefined as unknown as string, done: true }; } };
+            return {
+              async next() {
+                return { value: absentValue<string>(), done: true };
+              },
+            };
           },
         };
       }
     };
 
-    await importGrepFallback(
-      ["src/foo/bar.ts"],
-      "/repo",
-      ["test/unit/**/*.spec.ts", "test/integration/**/*.spec.ts"],
-    );
+    await importGrepFallback(["src/foo/bar.ts"], "/repo", ["test/unit/**/*.spec.ts", "test/integration/**/*.spec.ts"]);
 
     expect(capturedPatterns).toContain("test/unit/**/*.spec.ts");
     expect(capturedPatterns).toContain("test/integration/**/*.spec.ts");
@@ -386,23 +346,26 @@ describe("Custom testFilePatterns", () => {
 
   test("uses each pattern independently", async () => {
     let scanCount = 0;
-    // biome-ignore lint/suspicious/noExplicitAny: mocking Glob
     (Bun as any).Glob = class {
       scan(_workdir: string): AsyncIterable<string> {
         scanCount++;
         return {
           [Symbol.asyncIterator]() {
-            return { async next() { return { value: undefined as unknown as string, done: true }; } };
+            return {
+              async next() {
+                return { value: absentValue<string>(), done: true };
+              },
+            };
           },
         };
       }
     };
 
-    await importGrepFallback(
-      ["src/foo/bar.ts"],
-      "/repo",
-      ["test/unit/**/*.test.ts", "test/integration/**/*.test.ts", "test/e2e/**/*.test.ts"],
-    );
+    await importGrepFallback(["src/foo/bar.ts"], "/repo", [
+      "test/unit/**/*.test.ts",
+      "test/integration/**/*.test.ts",
+      "test/e2e/**/*.test.ts",
+    ]);
 
     expect(scanCount).toBe(3);
   });

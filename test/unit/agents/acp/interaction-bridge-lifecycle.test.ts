@@ -10,12 +10,8 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { AcpInteractionBridge, type BridgeConfig, type SessionNotification } from "@/agents/acp/interaction-bridge";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "@/interaction/types";
-import {
-  AcpInteractionBridge,
-  type BridgeConfig,
-  type SessionNotification,
-} from "@/agents/acp/interaction-bridge";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -31,20 +27,26 @@ function makeNotification(content: string, overrides: Partial<SessionNotificatio
   };
 }
 
-function makePlugin(overrides: {
-  sendFn?: (req: InteractionRequest) => Promise<void>;
-  receiveFn?: (requestId: string, timeout?: number) => Promise<InteractionResponse>;
-} = {}): InteractionPlugin {
+function makePlugin(
+  overrides: {
+    sendFn?: (req: InteractionRequest) => Promise<void>;
+    receiveFn?: (requestId: string, timeout?: number) => Promise<InteractionResponse>;
+  } = {},
+): InteractionPlugin {
   return {
     name: "mock-plugin",
     send: overrides.sendFn ?? mock(async (_req: InteractionRequest) => {}),
-    receive: overrides.receiveFn ?? mock(async (_requestId: string, _timeout?: number): Promise<InteractionResponse> => ({
-      requestId: _requestId,
-      action: "input",
-      value: "Continue with the default approach.",
-      respondedBy: "user",
-      respondedAt: Date.now(),
-    })),
+    receive:
+      overrides.receiveFn ??
+      mock(
+        async (_requestId: string, _timeout?: number): Promise<InteractionResponse> => ({
+          requestId: _requestId,
+          action: "input",
+          value: "Continue with the default approach.",
+          respondedBy: "user",
+          respondedAt: Date.now(),
+        }),
+      ),
   };
 }
 
@@ -216,7 +218,9 @@ describe("AcpInteractionBridge — timeout fallback behavior", () => {
 
   test("fallback response value is 'continue' when timed out", async () => {
     const plugin = makePlugin({
-      receiveFn: async () => { throw new Error("Timed out waiting for user"); },
+      receiveFn: async () => {
+        throw new Error("Timed out waiting for user");
+      },
     });
     const bridge = new AcpInteractionBridge(plugin, makeBridgeConfig());
 
@@ -245,7 +249,11 @@ describe("AcpInteractionBridge — lifecycle", () => {
 
   test("after destroy(), bridge no longer processes updates", async () => {
     const sent: InteractionRequest[] = [];
-    const plugin = makePlugin({ sendFn: async (req) => { sent.push(req); } });
+    const plugin = makePlugin({
+      sendFn: async (req) => {
+        sent.push(req);
+      },
+    });
     const bridge = new AcpInteractionBridge(plugin, makeBridgeConfig());
 
     await bridge.destroy();
@@ -258,7 +266,9 @@ describe("AcpInteractionBridge — lifecycle", () => {
     const events: unknown[] = [];
     const plugin = makePlugin();
     const bridge = new AcpInteractionBridge(plugin, makeBridgeConfig());
-    bridge.on("question-detected", (event: unknown) => { events.push(event); });
+    bridge.on("question-detected", (event: unknown) => {
+      events.push(event);
+    });
 
     await bridge.onSessionUpdate(makeNotification("which library should I use?"));
 
@@ -269,7 +279,9 @@ describe("AcpInteractionBridge — lifecycle", () => {
     const events: unknown[] = [];
     const plugin = makePlugin();
     const bridge = new AcpInteractionBridge(plugin, makeBridgeConfig());
-    bridge.on("response-received", (event: unknown) => { events.push(event); });
+    bridge.on("response-received", (event: unknown) => {
+      events.push(event);
+    });
 
     await bridge.waitForResponse("req-001", 5_000);
 
@@ -292,13 +304,15 @@ describe("AcpInteractionBridge — plugin integration", () => {
     const telegramLikePlugin: InteractionPlugin = {
       name: "telegram",
       send: mock(async () => {}),
-      receive: mock(async (_id: string, _timeout?: number): Promise<InteractionResponse> => ({
-        requestId: _id,
-        action: "input",
-        value: "Confirmed via Telegram.",
-        respondedBy: "telegram-user",
-        respondedAt: Date.now(),
-      })),
+      receive: mock(
+        async (_id: string, _timeout?: number): Promise<InteractionResponse> => ({
+          requestId: _id,
+          action: "input",
+          value: "Confirmed via Telegram.",
+          respondedBy: "telegram-user",
+          respondedAt: Date.now(),
+        }),
+      ),
     };
 
     const bridge = new AcpInteractionBridge(telegramLikePlugin, makeBridgeConfig());
@@ -310,7 +324,11 @@ describe("AcpInteractionBridge — plugin integration", () => {
 
   test("send is called with the correct requestId", async () => {
     const sent: InteractionRequest[] = [];
-    const plugin = makePlugin({ sendFn: async (req) => { sent.push(req); } });
+    const plugin = makePlugin({
+      sendFn: async (req) => {
+        sent.push(req);
+      },
+    });
     const bridge = new AcpInteractionBridge(plugin, makeBridgeConfig());
 
     await bridge.onSessionUpdate(makeNotification("please clarify the output format"));

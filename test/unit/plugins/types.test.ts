@@ -6,12 +6,12 @@
 
 import { describe, expect, it } from "bun:test";
 import type {
+  IPostRunAction,
+  NaxPlugin,
   PluginExtensions,
   PluginType,
-  IPostRunAction,
   PostRunActionResult,
   PostRunContext,
-  NaxPlugin,
 } from "@/plugins/types";
 
 // ─────────────────────────────────────────────────────────────────────────────

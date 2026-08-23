@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { AgentManager } from "@/agents/manager";
-import { NaxConfigSchema } from "@/config/schemas";
 import type { AgentAdapter } from "@/agents/types";
+import { NaxConfigSchema } from "@/config/schemas";
 import { makeAgentAdapter } from "@test/helpers";
 
 function stubAdapter(name: string, hasCreds: boolean): AgentAdapter {
@@ -16,7 +16,14 @@ function stubAdapter(name: string, hasCreds: boolean): AgentAdapter {
     },
     isInstalled: async () => true,
     hasCredentials: async () => hasCreds,
-    run: async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 }),
+    run: async () => ({
+      success: true,
+      exitCode: 0,
+      output: "",
+      rateLimited: false,
+      durationMs: 0,
+      estimatedCostUsd: 0,
+    }),
     buildCommand: () => [],
     plan: async () => ({ spec: "", cost: 0 }) as never,
     decompose: async () => ({ stories: [] }) as never,
@@ -44,7 +51,12 @@ describe("AgentManager.validateCredentials (#518)", () => {
     const manager = new AgentManager(config, registry, { logger: { warn } });
     await manager.validateCredentials();
     expect(
-      manager.resolveFallbackChain("claude", { category: "availability", outcome: "fail-auth", message: "", retriable: false }),
+      manager.resolveFallbackChain("claude", {
+        category: "availability",
+        outcome: "fail-auth",
+        message: "",
+        retriable: false,
+      }),
     ).not.toContain("codex");
     expect(warn).toHaveBeenCalled();
   });

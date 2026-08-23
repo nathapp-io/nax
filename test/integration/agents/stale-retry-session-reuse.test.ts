@@ -14,10 +14,10 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { AgentManager, SessionFailureError } from "@/agents";
-import { buildHopCallback, _buildHopCallbackDeps } from "@/operations";
 import type { SessionHandle, TurnResult } from "@/agents/types";
 import type { AdapterFailure, ContextBundle } from "@/context/engine";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
+import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
+import { makeContextBundle, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
 
 // ─── Stubs ───────────────────────────────────────────────────────────────────
 
@@ -37,13 +37,11 @@ const STALE_FAILURE: AdapterFailure = {
   message: "idle timeout",
 };
 
-const STUB_BUNDLE = {
-  pushMarkdown: "",
+const STUB_BUNDLE = makeContextBundle({
   pullTools: [],
   digest: "",
-  manifest: {},
   chunks: [],
-} as unknown as ContextBundle;
+});
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const STUB_RUN_OPTIONS = {
@@ -62,9 +60,7 @@ let origRebuildForAgent: typeof _buildHopCallbackDeps.rebuildForAgent;
 beforeEach(() => {
   origCreateContextToolRuntime = _buildHopCallbackDeps.createContextToolRuntime;
   origRebuildForAgent = _buildHopCallbackDeps.rebuildForAgent;
-  // biome-ignore lint/suspicious/noExplicitAny: test stub
   _buildHopCallbackDeps.createContextToolRuntime = () => undefined as any;
-  // biome-ignore lint/suspicious/noExplicitAny: test stub
   _buildHopCallbackDeps.rebuildForAgent = (prior) => prior as any;
 });
 

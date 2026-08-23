@@ -8,9 +8,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { FactsManifest } from "@/debate";
 import { formatSpecDeltas } from "@/plan";
 import type { VerifierFinding } from "@/plan/spec-deltas";
-import type { FactsManifest } from "@/debate";
 
 const makeManifest = (overrides?: Partial<FactsManifest>): FactsManifest => ({
   repoFacts: [],

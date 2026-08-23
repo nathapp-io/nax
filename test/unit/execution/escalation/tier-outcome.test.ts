@@ -6,13 +6,13 @@
  * the resume prompt).
  */
 
-import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { handleMaxAttemptsReached, handleNoTierAvailable } from "@/execution/escalation";
 import type { EscalationHandlerContext } from "@/execution/escalation";
 import { cleanupTempDir, makePRD, makeStory, makeTempDir } from "@test/helpers";
 
-function makeCtx(overrides: Partial<EscalationHandlerContext> = {}, prdPath: string): EscalationHandlerContext {
+function makeCtx(overrides: Partial<EscalationHandlerContext>, prdPath: string): EscalationHandlerContext {
   const story = makeStory({ id: "US-001", status: "in-progress" });
   const prd = makePRD({ userStories: [story] });
   return {
@@ -70,7 +70,7 @@ describe("handleNoTierAvailable — pause-reason persistence (nax#1582)", () => 
   test("scrubs a fabricated quote in the pipeline reason before persisting (nax#930 convention)", async () => {
     const prdPath = join(tempDir, "prd.json");
     const ctx = makeCtx(
-      { pipelineResult: { reason: 'src/does-not-exist.ts:1 says `this quote is fabricated`', context: {} } },
+      { pipelineResult: { reason: "src/does-not-exist.ts:1 says `this quote is fabricated`", context: {} } },
       prdPath,
     );
 

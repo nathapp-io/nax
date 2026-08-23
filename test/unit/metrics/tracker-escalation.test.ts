@@ -21,16 +21,12 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "@/config";
-import {
-  _tierEscalationDeps,
-  handleTierEscalation,
-} from "@/execution/escalation/tier-escalation";
+import { _tierEscalationDeps, handleTierEscalation } from "@/execution/escalation/tier-escalation";
 import { collectStoryMetrics } from "@/metrics/tracker";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
 import type { StoryRouting } from "@/prd/types";
-import { makeNaxConfig } from "@test/helpers";
-import { makeMockRuntime } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig, makeTestContext } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-escalation-test-${randomUUID()}`;
 const PRD_PATH = `/tmp/prd-${randomUUID()}.json`;
@@ -70,42 +66,45 @@ function makePRD(stories: UserStory[]): PRD {
 
 /** Build a minimal PipelineContext. Cast lets overrides include future fix fields. */
 function makeCtx(story: UserStory, overrides: Record<string, unknown> = {}): PipelineContext {
-  return {
-    config: makeNaxConfig({
-      autoMode: {
-        escalation: {
-          enabled: true,
-          tierOrder: [
-            { tier: "fast", attempts: 1 },
-            { tier: "balanced", attempts: 3 },
-            { tier: "powerful", attempts: 2 },
-          ],
-          escalateEntireBatch: false,
+  return Object.assign(
+    makeTestContext({
+      config: makeNaxConfig({
+        autoMode: {
+          escalation: {
+            enabled: true,
+            tierOrder: [
+              { tier: "fast", attempts: 1 },
+              { tier: "balanced", attempts: 3 },
+              { tier: "powerful", attempts: 2 },
+            ],
+            escalateEntireBatch: false,
+          },
         },
+      }),
+      prd: makePRD([story]),
+      story,
+      stories: [story],
+      routing: {
+        complexity: "medium",
+        modelTier: "balanced",
+        testStrategy: "test-after",
+        reasoning: "test",
       },
+      workdir: WORKDIR,
     }),
-    prd: makePRD([story]),
-    story,
-    stories: [story],
-    routing: {
-      complexity: "medium",
-      modelTier: "balanced",
-      testStrategy: "test-after",
-      reasoning: "test",
+    {
+      agentResult: {
+        success: true,
+        exitCode: 0,
+        output: "",
+        rateLimited: false,
+        estimatedCostUsd: 0.1,
+        durationMs: 5000,
+      },
+      runtime: makeMockRuntime(),
     },
-    workdir: WORKDIR,
-    hooks: { hooks: {} },
-    agentResult: {
-      success: true,
-      exitCode: 0,
-      output: "",
-      rateLimited: false,
-      estimatedCostUsd: 0.10,
-      durationMs: 5000,
-    },
-    runtime: makeMockRuntime(),
-    ...overrides,
-  } as unknown as PipelineContext;
+    overrides,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -142,66 +141,58 @@ describe("collectStoryMetrics — firstPassSuccess is false when escalation occu
       hasEscalations: true,
       expectedFirstPassSuccess: false,
     },
-  ])(
-    "$name",
-    async ({
+  ])("$name", async ({ attempts, hasPriorFailures, hasEscalations, expectedFirstPassSuccess }) => {
+    const story = makeStory({
       attempts,
-      hasPriorFailures,
-      hasEscalations,
-      expectedFirstPassSuccess,
-    }) => {
-      const story = makeStory({
-        attempts,
-        escalations: hasEscalations
-          ? [
-              {
-                fromTier: "fast",
-                toTier: "balanced",
-                reason: "exceeded tier budget",
-                timestamp: new Date().toISOString(),
-              },
-            ]
-          : [],
-        priorFailures: hasPriorFailures
-          ? [
-              {
-                attempt: 1,
-                modelTier: "fast",
-                stage: "escalation",
-                summary: hasPriorFailures ? "Failed with tier fast" : "",
-                timestamp: new Date().toISOString(),
-              },
-            ]
-          : [],
-        routing: {
-          complexity: "medium",
-          testStrategy: "test-after",
-          reasoning: "test",
-          modelTier: "balanced",
-        } satisfies StoryRouting,
-      });
+      escalations: hasEscalations
+        ? [
+            {
+              fromTier: "fast",
+              toTier: "balanced",
+              reason: "exceeded tier budget",
+              timestamp: new Date().toISOString(),
+            },
+          ]
+        : [],
+      priorFailures: hasPriorFailures
+        ? [
+            {
+              attempt: 1,
+              modelTier: "fast",
+              stage: "escalation",
+              summary: hasPriorFailures ? "Failed with tier fast" : "",
+              timestamp: new Date().toISOString(),
+            },
+          ]
+        : [],
+      routing: {
+        complexity: "medium",
+        testStrategy: "test-after",
+        reasoning: "test",
+        modelTier: "balanced",
+      } satisfies StoryRouting,
+    });
 
-      const ctx = makeCtx(story, {
-        routing: {
-          complexity: "medium",
-          modelTier: "balanced",
-          testStrategy: "test-after",
-          reasoning: "escalated to balanced after fast failure",
-        },
-        agentResult: {
-          success: true,
-          exitCode: 0,
-          output: "",
-          rateLimited: false,
-          estimatedCostUsd: 0.05,
-          durationMs: 3000,
-        },
-      });
+    const ctx = makeCtx(story, {
+      routing: {
+        complexity: "medium",
+        modelTier: "balanced",
+        testStrategy: "test-after",
+        reasoning: "escalated to balanced after fast failure",
+      },
+      agentResult: {
+        success: true,
+        exitCode: 0,
+        output: "",
+        rateLimited: false,
+        estimatedCostUsd: 0.05,
+        durationMs: 3000,
+      },
+    });
 
-      const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
-      expect(metrics.firstPassSuccess).toBe(expectedFirstPassSuccess);
-    },
-  );
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+    expect(metrics.firstPassSuccess).toBe(expectedFirstPassSuccess);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -279,7 +270,7 @@ describe("collectStoryMetrics — cost accumulates across all tier escalations",
       name: "cost includes prior attempt cost when story escalated (haiku cost + sonnet cost)",
       priorFailuresCount: 1,
       priorAttemptCost: 0.05,
-      currentAttemptCost: 0.10,
+      currentAttemptCost: 0.1,
       expectedCost: 0.15,
     },
     {
@@ -296,47 +287,24 @@ describe("collectStoryMetrics — cost accumulates across all tier escalations",
       currentAttemptCost: 0.2,
       expectedCost: 0.3,
     },
-  ])(
-    "$name",
-    async ({
-      priorFailuresCount,
-      priorAttemptCost,
-      currentAttemptCost,
-      expectedCost,
-    }) => {
-      const priorFailures = Array.from({ length: priorFailuresCount }, (_, i) => ({
-        attempt: i + 1,
-        modelTier: i === 0 ? ("fast" as const) : ("balanced" as const),
-        stage: "escalation" as const,
-        summary: priorFailuresCount > 1 ? `Failed at ${i === 0 ? "fast" : "balanced"}` : "Failed at fast tier",
-        timestamp: new Date().toISOString(),
-      }));
+  ])("$name", async ({ priorFailuresCount, priorAttemptCost, currentAttemptCost, expectedCost }) => {
+    const priorFailures = Array.from({ length: priorFailuresCount }, (_, i) => ({
+      attempt: i + 1,
+      modelTier: i === 0 ? ("fast" as const) : ("balanced" as const),
+      stage: "escalation" as const,
+      summary: priorFailuresCount > 1 ? `Failed at ${i === 0 ? "fast" : "balanced"}` : "Failed at fast tier",
+      timestamp: new Date().toISOString(),
+    }));
 
-      const story = makeStory({
-        attempts: priorFailuresCount > 0 ? 0 : 1,
-        priorFailures,
-      });
+    const story = makeStory({
+      attempts: priorFailuresCount > 0 ? 0 : 1,
+      priorFailures,
+    });
 
-      const runtime = makeMockRuntime();
+    const runtime = makeMockRuntime();
 
-      // Record prior attempt spend to the aggregator
-      if (priorAttemptCost > 0) {
-        runtime.costAggregator.record({
-          ts: Date.now(),
-          runId: "test",
-          agentName: "claude",
-          model: "test",
-          storyId: story.id,
-          tokens: { input: 0, output: 0 },
-          estimatedCostUsd: priorAttemptCost,
-          exactCostUsd: priorAttemptCost,
-          costUsd: priorAttemptCost,
-          confidence: "exact",
-          durationMs: 0,
-        });
-      }
-
-      // Record current attempt spend to the aggregator
+    // Record prior attempt spend to the aggregator
+    if (priorAttemptCost > 0) {
       runtime.costAggregator.record({
         ts: Date.now(),
         runId: "test",
@@ -344,43 +312,58 @@ describe("collectStoryMetrics — cost accumulates across all tier escalations",
         model: "test",
         storyId: story.id,
         tokens: { input: 0, output: 0 },
-        estimatedCostUsd: currentAttemptCost,
-        exactCostUsd: currentAttemptCost,
-        costUsd: currentAttemptCost,
+        estimatedCostUsd: priorAttemptCost,
+        exactCostUsd: priorAttemptCost,
+        costUsd: priorAttemptCost,
         confidence: "exact",
         durationMs: 0,
       });
+    }
 
-      const ctx = makeCtx(story, {
-        routing:
-          priorFailuresCount === 2
-            ? {
-                complexity: "expert",
-                modelTier: "powerful",
-                testStrategy: "three-session-tdd",
-                reasoning: "escalated twice",
-              }
-            : {
-                complexity: "medium",
-                modelTier: "balanced",
-                testStrategy: "test-after",
-                reasoning: "test",
-              },
-        agentResult: {
-          success: true,
-          exitCode: 0,
-          output: "",
-          rateLimited: false,
-          estimatedCostUsd: currentAttemptCost,
-          durationMs: priorFailuresCount === 2 ? 30000 : 5000,
-        },
-        runtime,
-      });
+    // Record current attempt spend to the aggregator
+    runtime.costAggregator.record({
+      ts: Date.now(),
+      runId: "test",
+      agentName: "claude",
+      model: "test",
+      storyId: story.id,
+      tokens: { input: 0, output: 0 },
+      estimatedCostUsd: currentAttemptCost,
+      exactCostUsd: currentAttemptCost,
+      costUsd: currentAttemptCost,
+      confidence: "exact",
+      durationMs: 0,
+    });
 
-      const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
-      expect(metrics.cost).toBeCloseTo(expectedCost, 5);
-    },
-  );
+    const ctx = makeCtx(story, {
+      routing:
+        priorFailuresCount === 2
+          ? {
+              complexity: "expert",
+              modelTier: "powerful",
+              testStrategy: "three-session-tdd",
+              reasoning: "escalated twice",
+            }
+          : {
+              complexity: "medium",
+              modelTier: "balanced",
+              testStrategy: "test-after",
+              reasoning: "test",
+            },
+      agentResult: {
+        success: true,
+        exitCode: 0,
+        output: "",
+        rateLimited: false,
+        estimatedCostUsd: currentAttemptCost,
+        durationMs: priorFailuresCount === 2 ? 30000 : 5000,
+      },
+      runtime,
+    });
+
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+    expect(metrics.cost).toBeCloseTo(expectedCost, 5);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -436,71 +419,66 @@ describe("handleTierEscalation — priorFailures records attempt data for cross-
         });
       },
     },
-  ])(
-    "$name",
-    async ({ checkKey, assertion }) => {
-      origSavePRD = _tierEscalationDeps.savePRD;
-      _tierEscalationDeps.savePRD = mock(() => Promise.resolve());
+  ])("$name", async ({ checkKey, assertion }) => {
+    origSavePRD = _tierEscalationDeps.savePRD;
+    _tierEscalationDeps.savePRD = mock(() => Promise.resolve());
 
-      const baseStory = makeStory({
-        attempts: 1,
-        priorFailures: [],
-        ...(checkKey === "routing"
-          ? {
-              routing: {
-                complexity: "medium",
-                testStrategy: "test-after",
-                reasoning: "test",
-                modelTier: "fast",
-              } satisfies StoryRouting,
-            }
-          : {}),
-      });
+    const baseStory = makeStory({
+      attempts: 1,
+      priorFailures: [],
+      ...(checkKey === "routing"
+        ? {
+            routing: {
+              complexity: "medium",
+              testStrategy: "test-after",
+              reasoning: "test",
+              modelTier: "fast",
+            } satisfies StoryRouting,
+          }
+        : {}),
+    });
 
-      const ctx = {
-        story: baseStory,
-        storiesToExecute: [baseStory],
-        isBatchExecution: false,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
-        pipelineResult: {
-          reason: "Tests failing",
-          context: {
-            tddFailureCategory: undefined,
-            retryAsLite: false,
-            reviewFindings: undefined,
+    const ctx = {
+      story: baseStory,
+      storiesToExecute: [baseStory],
+      isBatchExecution: false,
+      routing: { modelTier: "fast", testStrategy: "test-after" },
+      pipelineResult: {
+        reason: "Tests failing",
+        context: {
+          tddFailureCategory: undefined,
+          retryAsLite: false,
+          reviewFindings: undefined,
+        },
+      },
+      config: makeNaxConfig({
+        autoMode: {
+          escalation: {
+            enabled: true,
+            tierOrder: [
+              { tier: "fast", attempts: 1 },
+              { tier: "balanced", attempts: 3 },
+              { tier: "powerful", attempts: 2 },
+            ],
+            escalateEntireBatch: false,
           },
         },
-        config: makeNaxConfig({
-          autoMode: {
-            escalation: {
-              enabled: true,
-              tierOrder: [
-                { tier: "fast", attempts: 1 },
-                { tier: "balanced", attempts: 3 },
-                { tier: "powerful", attempts: 2 },
-              ],
-              escalateEntireBatch: false,
-            },
-          },
-        }),
-        prd: makePRD([baseStory]),
-        prdPath: PRD_PATH,
-        featureDir: undefined,
-        hooks: { hooks: {} },
-        feature: "test-feature",
-        totalCost: 0,
-        workdir: "/tmp",
-      };
+      }),
+      prd: makePRD([baseStory]),
+      prdPath: PRD_PATH,
+      featureDir: undefined,
+      hooks: { hooks: {} },
+      feature: "test-feature",
+      totalCost: 0,
+      workdir: "/tmp",
+    };
 
-      const result = await handleTierEscalation(
-        ctx as Parameters<typeof handleTierEscalation>[0],
-      );
+    const result = await handleTierEscalation(ctx as Parameters<typeof handleTierEscalation>[0]);
 
-      const updatedStory = result.prd.userStories.find((s) => s.id === "US-001");
-      expect(updatedStory).toBeDefined();
-      assertion(updatedStory);
-    },
-  );
+    const updatedStory = result.prd.userStories.find((s) => s.id === "US-001");
+    expect(updatedStory).toBeDefined();
+    assertion(updatedStory);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -533,28 +511,25 @@ describe("collectStoryMetrics — firstPassSuccess is false when autofix or rect
       rectifyAttempt: 0,
       expectedFirstPassSuccess: true,
     },
-  ])(
-    "$name",
-    async ({ autofixAttempt, rectifyAttempt, expectedFirstPassSuccess }) => {
-      const story = makeStory({
-        attempts: 1,
-        escalations: [],
-        priorFailures: [],
-      });
-      const ctx = makeCtx(story, {
-        autofixAttempt,
-        rectifyAttempt,
-        agentResult: {
-          success: true,
-          exitCode: 0,
-          output: "",
-          rateLimited: false,
-          estimatedCostUsd: 0.05,
-          durationMs: 3000,
-        },
-      });
-      const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
-      expect(metrics.firstPassSuccess).toBe(expectedFirstPassSuccess);
-    },
-  );
+  ])("$name", async ({ autofixAttempt, rectifyAttempt, expectedFirstPassSuccess }) => {
+    const story = makeStory({
+      attempts: 1,
+      escalations: [],
+      priorFailures: [],
+    });
+    const ctx = makeCtx(story, {
+      autofixAttempt,
+      rectifyAttempt,
+      agentResult: {
+        success: true,
+        exitCode: 0,
+        output: "",
+        rateLimited: false,
+        estimatedCostUsd: 0.05,
+        durationMs: 3000,
+      },
+    });
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+    expect(metrics.firstPassSuccess).toBe(expectedFirstPassSuccess);
+  });
 });

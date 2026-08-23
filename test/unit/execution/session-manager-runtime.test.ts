@@ -78,7 +78,12 @@ describe("closeStorySessions()", () => {
 
 describe("closeStorySessions() — AC-83 force-terminate", () => {
   test("passes force=true to closePhysicalSession when descriptor was FAILED", async () => {
-    const failedDescriptor = makeSessionDescriptor({ id: "sess-1", state: "FAILED", handle: "nax-1", workdir: "/workdir/a" });
+    const failedDescriptor = makeSessionDescriptor({
+      id: "sess-1",
+      state: "FAILED",
+      handle: "nax-1",
+      workdir: "/workdir/a",
+    });
     const sessionManager: SessionManagerLike = {
       closeStory: mock(() => [failedDescriptor]),
       listActive: mock(() => []),
@@ -92,7 +97,12 @@ describe("closeStorySessions() — AC-83 force-terminate", () => {
   });
 
   test("does not pass force when descriptor was not FAILED", async () => {
-    const runningDescriptor = makeSessionDescriptor({ id: "sess-1", state: "RUNNING", handle: "nax-1", workdir: "/workdir/a" });
+    const runningDescriptor = makeSessionDescriptor({
+      id: "sess-1",
+      state: "RUNNING",
+      handle: "nax-1",
+      workdir: "/workdir/a",
+    });
     const sessionManager: SessionManagerLike = {
       closeStory: mock(() => [runningDescriptor]),
       listActive: mock(() => []),
@@ -127,7 +137,12 @@ describe("closeAllRunSessions() — idempotency (H-5)", () => {
 
 describe("failAndClose() — H-1", () => {
   test("transitions session to FAILED and force-closes physical handle", async () => {
-    const runningSession = makeSessionDescriptor({ id: "sess-1", state: "RUNNING", handle: "nax-1", workdir: "/workdir/a" });
+    const runningSession = makeSessionDescriptor({
+      id: "sess-1",
+      state: "RUNNING",
+      handle: "nax-1",
+      workdir: "/workdir/a",
+    });
     const failedSession = { ...runningSession, state: "FAILED" as SessionState };
     const get = mock()
       .mockImplementationOnce(() => runningSession) // initial guard check

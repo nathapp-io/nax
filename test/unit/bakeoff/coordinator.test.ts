@@ -23,6 +23,7 @@ import type {
   ContestantRunnerDeps,
 } from "@/bakeoff";
 import type { NaxConfig } from "@/config";
+import { makeNaxConfig } from "@test/helpers";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ function baseOptions(overrides: Partial<BakeoffOptions> = {}): BakeoffOptions {
     feature: "test-feature",
     projectRoot: "/tmp/proj",
     outputDir: "/tmp/out",
-    config: {} as unknown as NaxConfig,
+    config: makeNaxConfig(),
     ...overrides,
   };
 }
@@ -90,7 +91,7 @@ describe("runBakeoff (AC-1: sequential execution)", () => {
           validAgents: names,
           profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
-        runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
+        runContestant: runContestantSpy,
         rankContestants,
         persistBakeoffResult: mock(async () => {}),
       },
@@ -121,7 +122,7 @@ describe("runBakeoff (AC-1: sequential execution)", () => {
           validAgents: names,
           profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
-        runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
+        runContestant: runContestantSpy,
         rankContestants,
         persistBakeoffResult: mock(async () => {}),
       },
@@ -145,7 +146,7 @@ describe("runBakeoff (AC-2: validation failure)", () => {
           validAgents: [],
           profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
-        runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
+        runContestant: runContestantSpy,
         rankContestants,
         persistBakeoffResult: mock(async () => {}),
       },
@@ -166,9 +167,7 @@ describe("runBakeoff (AC-2: validation failure)", () => {
           validAgents: [],
           profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
-        runContestant: mock(async (agent: string) =>
-          makeResult({ agent }),
-        ) as unknown as BakeoffCoordinatorDeps["runContestant"],
+        runContestant: mock(async (agent: string) => makeResult({ agent })),
         rankContestants,
         persistBakeoffResult: mock(async () => {}),
       },
@@ -185,8 +184,8 @@ describe("runBakeoff (AC-2: validation failure)", () => {
 describe("runBakeoff (AC-3: one runContestant call per validated agent)", () => {
   it("AC3: calls runContestant exactly once per validated agent", async () => {
     const captured: Array<{ agent: string; feature: string }> = [];
-    const runContestantSpy = mock(async (agent: string, opts: { feature: string }) => {
-      captured.push({ agent, feature: opts.feature });
+    const runContestantSpy = mock(async (agent: string, opts: ContestantOptions) => {
+      captured.push({ agent, feature: opts.feature ?? "" });
       return makeResult({ agent });
     });
 
@@ -197,7 +196,7 @@ describe("runBakeoff (AC-3: one runContestant call per validated agent)", () => 
           validAgents: names,
           profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
-        runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
+        runContestant: runContestantSpy,
         rankContestants,
         persistBakeoffResult: mock(async () => {}),
       },
@@ -226,7 +225,7 @@ describe("runBakeoff (AC-3: one runContestant call per validated agent)", () => 
           validAgents: ["claude"],
           profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
-        runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
+        runContestant: runContestantSpy,
         rankContestants,
         persistBakeoffResult: mock(async () => {}),
       },
@@ -253,9 +252,7 @@ describe("runBakeoff (AC-4: ranking wiring)", () => {
           validAgents: names,
           profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
-        runContestant: mock(async (agent: string) =>
-          agent === "claude" ? claudeResult : codexResult,
-        ) as unknown as BakeoffCoordinatorDeps["runContestant"],
+        runContestant: mock(async (agent: string) => (agent === "claude" ? claudeResult : codexResult)),
         rankContestants: rankSpy,
         persistBakeoffResult: mock(async () => {}),
       },
@@ -282,12 +279,10 @@ describe("runBakeoff (AC-4: ranking wiring)", () => {
           validAgents: names,
           profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
-        runContestant: mock(async (agent: string) =>
-          agent === "claude" ? higher : lower,
-        ) as unknown as BakeoffCoordinatorDeps["runContestant"],
+        runContestant: mock(async (agent: string) => (agent === "claude" ? higher : lower)),
         // Force a specific ordering so we can observe that ranking mirrors
         // rankContestants rather than the input collection order.
-        rankContestants: (() => [lower, higher]) as unknown as BakeoffCoordinatorDeps["rankContestants"],
+        rankContestants: () => [lower, higher],
         persistBakeoffResult: mock(async () => {}),
       },
       () => runBakeoff(baseOptions()),
@@ -317,7 +312,7 @@ describe("runBakeoff (AC-7: fail-open across DNF contestants)", () => {
           validAgents: names,
           profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
-        runContestant: runContestantSpy as unknown as BakeoffCoordinatorDeps["runContestant"],
+        runContestant: runContestantSpy,
         rankContestants,
         persistBakeoffResult: mock(async () => {}),
       },
@@ -346,7 +341,7 @@ describe("runBakeoff (AC-7: fail-open across DNF contestants)", () => {
             status: agent === "claude" ? "dnf-crashed" : "passed",
             storiesPassed: agent === "claude" ? 0 : 3,
           }),
-        ) as unknown as BakeoffCoordinatorDeps["runContestant"],
+        ),
         rankContestants,
         persistBakeoffResult: mock(async () => {}),
       },
@@ -387,9 +382,7 @@ describe("runBakeoff (AC-8: all-DNF persistence + non-zero outcome)", () => {
           validAgents: names,
           profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
-        runContestant: mock(
-          async (agent: string) => allDnf.find((d) => d.agent === agent)!,
-        ) as unknown as BakeoffCoordinatorDeps["runContestant"],
+        runContestant: mock(async (agent: string) => allDnf.find((d) => d.agent === agent)!),
         rankContestants,
         // Use real write semantics so the file actually exists on disk.
         persistBakeoffResult: async (r: BakeoffResult, dir: string) => {
@@ -425,9 +418,7 @@ describe("runBakeoff (AC-8: all-DNF persistence + non-zero outcome)", () => {
           validAgents: names,
           profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
-        runContestant: mock(async (agent: string) =>
-          makeResult({ agent, status: "dnf-crashed", storiesPassed: 0 }),
-        ) as unknown as BakeoffCoordinatorDeps["runContestant"],
+        runContestant: mock(async (agent: string) => makeResult({ agent, status: "dnf-crashed", storiesPassed: 0 })),
         rankContestants,
         persistBakeoffResult: async (r: BakeoffResult, dir: string) => {
           await import("node:fs/promises").then((m) =>
@@ -460,7 +451,7 @@ describe("runBakeoff (AC-9: at-least-one-finisher zero outcome)", () => {
             agent,
             status: agent === "claude" ? "passed" : "dnf-crashed",
           }),
-        ) as unknown as BakeoffCoordinatorDeps["runContestant"],
+        ),
         rankContestants,
         persistBakeoffResult: mock(async () => {}),
       },
@@ -480,9 +471,7 @@ describe("runBakeoff (AC-9: at-least-one-finisher zero outcome)", () => {
           validAgents: names,
           profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
-        runContestant: mock(async (agent: string) =>
-          makeResult({ agent, status: "passed", storiesPassed: 3 }),
-        ) as unknown as BakeoffCoordinatorDeps["runContestant"],
+        runContestant: mock(async (agent: string) => makeResult({ agent, status: "passed", storiesPassed: 3 })),
         rankContestants,
         persistBakeoffResult: mock(async () => {}),
       },

@@ -18,7 +18,16 @@ describe("IAgentManager.run()", () => {
   test("delegates to runWithFallback and returns AgentResult", async () => {
     const mgr = new AgentManager(
       makeNaxConfig({
-        agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } },
+        agent: {
+          default: "claude",
+          fallback: {
+            enabled: false,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: false,
+            rebuildContext: true,
+          },
+        },
       }),
       undefined,
       {
@@ -43,7 +52,18 @@ describe("IAgentManager.run()", () => {
         modelTier: "fast",
         modelDef: { provider: "anthropic", model: "m", env: {} },
         timeoutSeconds: 30,
-        config: makeNaxConfig({ agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } } }),
+        config: makeNaxConfig({
+          agent: {
+            default: "claude",
+            fallback: {
+              enabled: false,
+              map: { claude: ["codex"] },
+              maxHopsPerStory: 2,
+              onQualityFailure: false,
+              rebuildContext: true,
+            },
+          },
+        }),
       },
     };
 
@@ -56,7 +76,16 @@ describe("IAgentManager.run()", () => {
   test("copies fallback records into result.agentFallbacks on success", async () => {
     const mgr = new AgentManager(
       makeNaxConfig({
-        agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } },
+        agent: {
+          default: "claude",
+          fallback: {
+            enabled: false,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: false,
+            rebuildContext: true,
+          },
+        },
       }),
       undefined,
       {
@@ -81,7 +110,18 @@ describe("IAgentManager.run()", () => {
         modelTier: "fast",
         modelDef: { provider: "anthropic", model: "m", env: {} },
         timeoutSeconds: 30,
-        config: makeNaxConfig({ agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } } }),
+        config: makeNaxConfig({
+          agent: {
+            default: "claude",
+            fallback: {
+              enabled: false,
+              map: { claude: ["codex"] },
+              maxHopsPerStory: 2,
+              onQualityFailure: false,
+              rebuildContext: true,
+            },
+          },
+        }),
       },
     });
 
@@ -92,14 +132,32 @@ describe("IAgentManager.run()", () => {
 
 describe("IAgentManager.run() — agent swap", () => {
   let origSleep: typeof _agentManagerDeps.sleep;
-  beforeEach(() => { origSleep = _agentManagerDeps.sleep; });
-  afterEach(() => { _agentManagerDeps.sleep = origSleep; });
+  beforeEach(() => {
+    origSleep = _agentManagerDeps.sleep;
+  });
+  afterEach(() => {
+    _agentManagerDeps.sleep = origSleep;
+  });
 
   test("result.agentFallbacks has hop records when agent swap occurred", async () => {
-    const availFailure = { category: "availability" as const, outcome: "fail-auth" as const, retriable: false, message: "" };
+    const availFailure = {
+      category: "availability" as const,
+      outcome: "fail-auth" as const,
+      retriable: false,
+      message: "",
+    };
     const mgr = new AgentManager(
       makeNaxConfig({
-        agent: { default: "claude", fallback: { enabled: true, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } },
+        agent: {
+          default: "claude",
+          fallback: {
+            enabled: true,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: false,
+            rebuildContext: true,
+          },
+        },
       }),
       undefined,
       {
@@ -136,7 +194,18 @@ describe("IAgentManager.run() — agent swap", () => {
         modelTier: "fast",
         modelDef: { provider: "anthropic", model: "m", env: {} },
         timeoutSeconds: 30,
-        config: makeNaxConfig({ agent: { default: "claude", fallback: { enabled: true, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } } }),
+        config: makeNaxConfig({
+          agent: {
+            default: "claude",
+            fallback: {
+              enabled: true,
+              map: { claude: ["codex"] },
+              maxHopsPerStory: 2,
+              onQualityFailure: false,
+              rebuildContext: true,
+            },
+          },
+        }),
       },
       bundle: {} as never,
     });
@@ -155,14 +224,34 @@ describe("IAgentManager.complete()", () => {
     } as AgentAdapter;
     const mgr = new AgentManager(
       makeNaxConfig({
-        agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } },
+        agent: {
+          default: "claude",
+          fallback: {
+            enabled: false,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: false,
+            rebuildContext: true,
+          },
+        },
       }),
       { getAgent: () => adapter } as never,
     );
 
     const result = await mgr.complete("hello", {
       model: "claude-haiku",
-      config: makeNaxConfig({ agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } } }),
+      config: makeNaxConfig({
+        agent: {
+          default: "claude",
+          fallback: {
+            enabled: false,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: false,
+            rebuildContext: true,
+          },
+        },
+      }),
       workdir: "/tmp",
     });
 
@@ -175,7 +264,16 @@ describe("IAgentManager.getAgent()", () => {
     const adapter = {} as AgentAdapter;
     const mgr = new AgentManager(
       makeNaxConfig({
-        agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } },
+        agent: {
+          default: "claude",
+          fallback: {
+            enabled: false,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: false,
+            rebuildContext: true,
+          },
+        },
       }),
       { getAgent: () => adapter } as never,
     );
@@ -186,7 +284,16 @@ describe("IAgentManager.getAgent()", () => {
   test("returns undefined for an unknown agent name", () => {
     const mgr = new AgentManager(
       makeNaxConfig({
-        agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } },
+        agent: {
+          default: "claude",
+          fallback: {
+            enabled: false,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: false,
+            rebuildContext: true,
+          },
+        },
       }),
       { getAgent: () => undefined } as never,
     );
@@ -197,7 +304,16 @@ describe("IAgentManager.getAgent()", () => {
   test("lazily creates registry and returns adapter when no explicit registry is provided (Phase 4)", () => {
     const mgr = new AgentManager(
       makeNaxConfig({
-        agent: { default: "claude", fallback: { enabled: false, map: { claude: ["codex"] }, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true } },
+        agent: {
+          default: "claude",
+          fallback: {
+            enabled: false,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: false,
+            rebuildContext: true,
+          },
+        },
       }),
     );
     expect(mgr.getAgent("claude")).not.toBeUndefined();

@@ -12,38 +12,113 @@ import type { NaxPlugin } from "@/plugins/types";
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function makeOptPlugin(id: number): NaxPlugin {
-  return { name: `opt${id}`, version: "1.0.0", provides: ["optimizer"], extensions: { optimizer: {
-    name: `optimizer-${id}`,
-    async optimize(input) { return { optimizedPrompt: input.prompt, estimatedTokens: input.estimatedTokens, tokensSaved: 0, appliedStrategies: [] }; },
-  } } };
+  return {
+    name: `opt${id}`,
+    version: "1.0.0",
+    provides: ["optimizer"],
+    extensions: {
+      optimizer: {
+        name: `optimizer-${id}`,
+        async optimize(input) {
+          return {
+            optimizedPrompt: input.prompt,
+            estimatedTokens: input.estimatedTokens,
+            tokensSaved: 0,
+            appliedStrategies: [],
+          };
+        },
+      },
+    },
+  };
 }
 
 function makeRouterPlugin(id: number): NaxPlugin {
-  return { name: `router${id}`, version: "1.0.0", provides: ["router"], extensions: { router: { name: `router-${id}`, route() { return null; } } } };
+  return {
+    name: `router${id}`,
+    version: "1.0.0",
+    provides: ["router"],
+    extensions: {
+      router: {
+        name: `router-${id}`,
+        route() {
+          return null;
+        },
+      },
+    },
+  };
 }
 
 function makeReviewerPlugin(id: number, name = `reviewer-${id}`): NaxPlugin {
-  return { name: `rev${id}`, version: "1.0.0", provides: ["reviewer"], extensions: { reviewer: { name, description: "Reviewer", async check() { return { passed: true, output: "OK" }; } } } };
+  return {
+    name: `rev${id}`,
+    version: "1.0.0",
+    provides: ["reviewer"],
+    extensions: {
+      reviewer: {
+        name,
+        description: "Reviewer",
+        async check() {
+          return { passed: true, output: "OK" };
+        },
+      },
+    },
+  };
 }
 
 function makeProviderPlugin(id: number, name = `provider-${id}`): NaxPlugin {
-  return { name: `ctx${id}`, version: "1.0.0", provides: ["context-provider"], extensions: { contextProvider: { name, async getContext() { return { content: `# ${name}`, estimatedTokens: 100, label: name }; } } } };
+  return {
+    name: `ctx${id}`,
+    version: "1.0.0",
+    provides: ["context-provider"],
+    extensions: {
+      contextProvider: {
+        name,
+        async getContext() {
+          return { content: `# ${name}`, estimatedTokens: 100, label: name };
+        },
+      },
+    },
+  };
 }
 
 function makeReporterPlugin(id: number, name = `reporter-${id}`): NaxPlugin {
-  return { name: `rep${id}`, version: "1.0.0", provides: ["reporter"], extensions: { reporter: { name, async onRunStart() {} } } };
+  return {
+    name: `rep${id}`,
+    version: "1.0.0",
+    provides: ["reporter"],
+    extensions: { reporter: { name, async onRunStart() {} } },
+  };
 }
 
 function makeAgentPlugin(agentName: string, displayName: string, binary: string): NaxPlugin {
-  return { name: `agent-${agentName}`, version: "1.0.0", provides: ["agent"], extensions: { agent: {
-    name: agentName, displayName, binary,
-    capabilities: { supportedTiers: ["fast"], maxContextTokens: 100_000, features: new Set(["tdd"]) },
-    async isInstalled() { return true; },
-    async run() { return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 }; },
-    buildCommand() { return [binary]; },
-    async plan() { return { specContent: "" }; },
-    async decompose() { return { stories: [] }; },
-  } } };
+  return {
+    name: `agent-${agentName}`,
+    version: "1.0.0",
+    provides: ["agent"],
+    extensions: {
+      agent: {
+        name: agentName,
+        displayName,
+        binary,
+        capabilities: { supportedTiers: ["fast"], maxContextTokens: 100_000, features: new Set(["tdd"]) },
+        async isInstalled() {
+          return true;
+        },
+        async run() {
+          return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 };
+        },
+        buildCommand() {
+          return [binary];
+        },
+        async plan() {
+          return { specContent: "" };
+        },
+        async decompose() {
+          return { stories: [] };
+        },
+      },
+    },
+  };
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -150,16 +225,36 @@ describe("PluginRegistry", () => {
   describe("teardownAll", () => {
     test("calls teardown on all plugins; does not throw if plugin has no teardown; continues if one fails", async () => {
       const teardownCalls: string[] = [];
-      const p1: NaxPlugin = { ...makeOptPlugin(1), async teardown() { teardownCalls.push("plugin1"); } };
-      const p2: NaxPlugin = { ...makeRouterPlugin(2), async teardown() { teardownCalls.push("plugin2"); } };
+      const p1: NaxPlugin = {
+        ...makeOptPlugin(1),
+        async teardown() {
+          teardownCalls.push("plugin1");
+        },
+      };
+      const p2: NaxPlugin = {
+        ...makeRouterPlugin(2),
+        async teardown() {
+          teardownCalls.push("plugin2");
+        },
+      };
       await new PluginRegistry([p1, p2]).teardownAll();
       expect(teardownCalls).toEqual(["plugin1", "plugin2"]);
 
       await expect(new PluginRegistry([makeOptPlugin(1)]).teardownAll()).resolves.toBeUndefined();
 
       teardownCalls.length = 0;
-      const failing: NaxPlugin = { ...makeRouterPlugin(2), async teardown() { throw new Error("Teardown failed"); } };
-      const after: NaxPlugin = { ...makeReviewerPlugin(3), async teardown() { teardownCalls.push("plugin3"); } };
+      const failing: NaxPlugin = {
+        ...makeRouterPlugin(2),
+        async teardown() {
+          throw new Error("Teardown failed");
+        },
+      };
+      const after: NaxPlugin = {
+        ...makeReviewerPlugin(3),
+        async teardown() {
+          teardownCalls.push("plugin3");
+        },
+      };
       await new PluginRegistry([p1, failing, after]).teardownAll();
       expect(teardownCalls).toEqual(["plugin1", "plugin3"]);
     });

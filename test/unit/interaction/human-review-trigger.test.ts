@@ -11,36 +11,40 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "@/config";
 import { InteractionChain } from "@/interaction/chain";
+import { createTriggerRequest, executeTrigger } from "@/interaction/triggers";
 import type { InteractionPlugin, InteractionResponse, TriggerName } from "@/interaction/types";
 import { TRIGGER_METADATA } from "@/interaction/types";
-import { createTriggerRequest, executeTrigger } from "@/interaction/triggers";
+import { makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
-const minimalConfig = {
+const minimalConfig: NaxConfig = makeNaxConfig({
   interaction: {
+    plugin: "cli",
     triggers: {
       "human-review": { enabled: true },
     },
     defaults: {
       timeout: 30000,
-      fallback: "skip" as const,
+      fallback: "skip",
     },
   },
-} as unknown as NaxConfig;
+});
 
 function makeSkipPlugin(requestId: string): InteractionPlugin {
   return {
     name: "test-skip",
     send: mock(async () => {}),
-    receive: mock(async (_id: string): Promise<InteractionResponse> => ({
-      requestId,
-      action: "skip",
-      respondedBy: "user",
-      respondedAt: Date.now(),
-    })),
+    receive: mock(
+      async (_id: string): Promise<InteractionResponse> => ({
+        requestId,
+        action: "skip",
+        respondedBy: "user",
+        respondedAt: Date.now(),
+      }),
+    ),
   };
 }
 
@@ -141,12 +145,16 @@ describe("executeTrigger — human-review", () => {
     const chain = new InteractionChain({ defaultTimeout: 5000, defaultFallback: "skip" });
     const plugin: InteractionPlugin = {
       name: "capture",
-      send: mock(async (req) => { sentRequests.push(req); }),
-      receive: mock(async (_id: string): Promise<InteractionResponse> => ({
-        requestId: _id,
-        action: "skip",
-        respondedAt: Date.now(),
-      })),
+      send: mock(async (req) => {
+        sentRequests.push(req);
+      }),
+      receive: mock(
+        async (_id: string): Promise<InteractionResponse> => ({
+          requestId: _id,
+          action: "skip",
+          respondedAt: Date.now(),
+        }),
+      ),
     };
     chain.register(plugin, 10);
 

@@ -55,4 +55,3 @@ export async function withWarnSpy<T>(fn: (warnSpy: LogSpy) => Promise<T>): Promi
 export async function withInfoSpy<T>(fn: (infoSpy: LogSpy) => Promise<T>): Promise<T> {
   return withLogSpy("info", fn);
 }
-

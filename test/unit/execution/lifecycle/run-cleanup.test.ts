@@ -12,9 +12,11 @@
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { _runCleanupDeps, cleanupRun } from "@/execution";
-import type { IPostRunAction, PostRunActionResult, PostRunContext } from "@/plugins/extensions";
 import type { RunCleanupOptions } from "@/execution/lifecycle/run-cleanup";
 import * as loggerModule from "@/logger";
+import type { IPostRunAction, PostRunActionResult, PostRunContext } from "@/plugins/extensions";
+import type { PRD, StoryStatus } from "@/prd/types";
+import { makePluginRegistry as makePluginRegistryHelper, makeStory } from "@test/helpers";
 
 // ============================================================================
 // Helpers
@@ -24,23 +26,28 @@ function makePrd(overrides: Partial<{ stories: unknown[] }> = {}) {
   return {
     feature: "test-feature",
     userStories: overrides.stories ?? [],
-  } as import("@/prd").PRD;
+  } as PRD;
 }
 
-function makeStory(status: string) {
-  return { id: `US-${status}`, title: "Story", status, passes: status === "passed" } as unknown as import("@/prd/types").UserStory;
+function storyWithStatus(status: StoryStatus) {
+  return makeStory({
+    id: `US-${status}`,
+    title: "Story",
+    status,
+    passes: status === "passed",
+  });
 }
 
 function makePluginRegistry(actions: IPostRunAction[] = [], reporters: unknown[] = []) {
   const teardownAll = mock(async () => {});
-  return {
+  return makePluginRegistryHelper({
     getPostRunActions: mock(() => actions),
     getPostRunActionRegistrations: mock(() =>
       actions.map((action) => ({ pluginName: `plugin-${action.name}`, action })),
     ),
     getReporters: mock(() => reporters),
     teardownAll,
-  } as unknown as import("@/plugins/registry").PluginRegistry;
+  });
 }
 
 function makeCleanupOptions(overrides: Partial<RunCleanupOptions> = {}): RunCleanupOptions {
@@ -78,7 +85,7 @@ describe("RunCleanupOptions", () => {
     const runnerSource = await Bun.file(
       new URL("../../../../src/execution/runner.ts", import.meta.url).pathname,
     ).text();
-    const finallyMatch = runnerSource.match(/finally \{[\s\S]*?await runtime\.close\(\);[\s\S]*?\n  \}/m);
+    const finallyMatch = runnerSource.match(/finally \{[\s\S]*?await runtime\.close\(\);[\s\S]*?\n {2}\}/m);
     expect(finallyMatch).not.toBeNull();
   });
 });
@@ -92,8 +99,14 @@ describe("buildPostRunContext", () => {
     const { buildPostRunContext } = await import("@/execution/lifecycle/run-cleanup");
     expect(typeof buildPostRunContext).toBe("function");
 
-    const prd = makePrd({ stories: [makeStory("passed"), makeStory("failed")] });
-    const opts = makeCleanupOptions({ prd, feature: "feat-x", prdPath: "/p/prd.json", branch: "main", version: "3.0.0" });
+    const prd = makePrd({ stories: [storyWithStatus("passed"), storyWithStatus("failed")] });
+    const opts = makeCleanupOptions({
+      prd,
+      feature: "feat-x",
+      prdPath: "/p/prd.json",
+      branch: "main",
+      version: "3.0.0",
+    });
     const ctx = buildPostRunContext(opts, 5000, makePluginLogger());
 
     expect(ctx.runId).toBe("run-001");
@@ -124,11 +137,11 @@ describe("buildPostRunContext", () => {
 
     const prd = makePrd({
       stories: [
-        makeStory("passed"),
-        makeStory("passed"),
-        makeStory("failed"),
-        makeStory("skipped"),
-        makeStory("paused"),
+        storyWithStatus("passed"),
+        storyWithStatus("passed"),
+        storyWithStatus("failed"),
+        storyWithStatus("skipped"),
+        storyWithStatus("paused"),
       ],
     });
     const opts = makeCleanupOptions({ prd, storiesCompleted: 2 });
@@ -154,8 +167,14 @@ describe("cleanupRun — post-run action loop", () => {
     const action: IPostRunAction = {
       name: "test-action",
       description: "desc",
-      shouldRun: mock(async () => { callOrder.push("shouldRun"); return true; }),
-      execute: mock(async () => { callOrder.push("execute"); return { success: true, message: "ok" }; }),
+      shouldRun: mock(async () => {
+        callOrder.push("shouldRun");
+        return true;
+      }),
+      execute: mock(async () => {
+        callOrder.push("execute");
+        return { success: true, message: "ok" };
+      }),
     };
 
     const opts = makeCleanupOptions({ pluginRegistry: makePluginRegistry([action]) });
@@ -187,7 +206,10 @@ describe("cleanupRun — post-run action loop", () => {
     const actions: IPostRunAction[] = ["first", "second", "third"].map((name) => ({
       name,
       description: "desc",
-      shouldRun: mock(async () => { order.push(name); return true; }),
+      shouldRun: mock(async () => {
+        order.push(name);
+        return true;
+      }),
       execute: mock(async () => ({ success: true, message: "done" })),
     }));
 
@@ -203,16 +225,23 @@ describe("cleanupRun — post-run action loop", () => {
 
     const reporter = {
       name: "reporter",
-      onRunEnd: mock(async () => { callOrder.push("reporter.onRunEnd"); }),
+      onRunEnd: mock(async () => {
+        callOrder.push("reporter.onRunEnd");
+      }),
     };
     const registry = makePluginRegistry([], [reporter]);
-    registry.teardownAll = mock(async () => { callOrder.push("teardownAll"); }) as typeof registry.teardownAll;
+    registry.teardownAll = mock(async () => {
+      callOrder.push("teardownAll");
+    }) as typeof registry.teardownAll;
 
     const action: IPostRunAction = {
       name: "action",
       description: "desc",
       shouldRun: mock(async () => true),
-      execute: mock(async () => { callOrder.push("action.execute"); return { success: true, message: "done" }; }),
+      execute: mock(async () => {
+        callOrder.push("action.execute");
+        return { success: true, message: "done" };
+      }),
     };
     registry.getPostRunActionRegistrations = mock(() => [{ pluginName: "action-plugin", action }]);
 
@@ -266,8 +295,20 @@ describe("cleanupRun — on-post-run-action hook", () => {
       statuses.push(ctx.status ?? "");
     });
     const actions: IPostRunAction[] = [
-      { name: "skip", description: "desc", shouldRun: async () => false, execute: async () => ({ success: true, message: "x" }) },
-      { name: "error", description: "desc", shouldRun: async () => { throw new Error("boom"); }, execute: async () => ({ success: true, message: "x" }) },
+      {
+        name: "skip",
+        description: "desc",
+        shouldRun: async () => false,
+        execute: async () => ({ success: true, message: "x" }),
+      },
+      {
+        name: "error",
+        description: "desc",
+        shouldRun: async () => {
+          throw new Error("boom");
+        },
+        execute: async () => ({ success: true, message: "x" }),
+      },
     ];
 
     await cleanupRun(makeCleanupOptions({ pluginRegistry: makePluginRegistry(actions) }));
@@ -304,14 +345,19 @@ describe("cleanupRun — action result logging", () => {
   let logInfoCalls: Array<[string, string, unknown]> = [];
   let logWarnCalls: Array<[string, string, unknown]> = [];
   let logDebugCalls: Array<[string, string, unknown]> = [];
-  // biome-ignore lint/suspicious/noExplicitAny: spy type varies
   let loggerSpy: any;
 
   function makeLogger() {
     return {
-      info: mock((...args: [string, string, unknown]) => { logInfoCalls.push(args); }),
-      warn: mock((...args: [string, string, unknown]) => { logWarnCalls.push(args); }),
-      debug: mock((...args: [string, string, unknown]) => { logDebugCalls.push(args); }),
+      info: mock((...args: [string, string, unknown]) => {
+        logInfoCalls.push(args);
+      }),
+      warn: mock((...args: [string, string, unknown]) => {
+        logWarnCalls.push(args);
+      }),
+      debug: mock((...args: [string, string, unknown]) => {
+        logDebugCalls.push(args);
+      }),
       error: mock(() => {}),
     };
   }
@@ -335,7 +381,9 @@ describe("cleanupRun — action result logging", () => {
       name: "publisher",
       description: "desc",
       shouldRun: mock(async () => true),
-      execute: mock(async () => ({ success: true, message: "Published", url: "https://example.com/report" } as PostRunActionResult)),
+      execute: mock(
+        async () => ({ success: true, message: "Published", url: "https://example.com/report" }) as PostRunActionResult,
+      ),
     };
     await cleanupRun(makeCleanupOptions({ pluginRegistry: makePluginRegistry([successAction]) }));
     const infoMessages1 = logInfoCalls.map(([, msg]) => msg);
@@ -346,11 +394,16 @@ describe("cleanupRun — action result logging", () => {
       name: "notifier",
       description: "desc",
       shouldRun: mock(async () => true),
-      execute: mock(async () => ({ success: true, message: "Nothing to do", skipped: true, reason: "no changes" } as PostRunActionResult)),
+      execute: mock(
+        async () =>
+          ({ success: true, message: "Nothing to do", skipped: true, reason: "no changes" }) as PostRunActionResult,
+      ),
     };
     await cleanupRun(makeCleanupOptions({ pluginRegistry: makePluginRegistry([skippedAction]) }));
     const infoMessages2 = logInfoCalls.map(([, msg]) => msg);
-    expect(infoMessages2.some((m) => m.includes("[post-run] notifier") && m.includes("skipped") && m.includes("no changes"))).toBe(true);
+    expect(
+      infoMessages2.some((m) => m.includes("[post-run] notifier") && m.includes("skipped") && m.includes("no changes")),
+    ).toBe(true);
   });
 
   test("shouldRun()=false emits debug log", async () => {
@@ -386,7 +439,9 @@ describe("cleanupRun — action result logging", () => {
     await cleanupRun(opts);
 
     const warnMessages = logWarnCalls.map(([, msg]) => msg);
-    const found = warnMessages.some((m) => m.includes("[post-run] webhook") && m.includes("failed") && m.includes("Connection refused"));
+    const found = warnMessages.some(
+      (m) => m.includes("[post-run] webhook") && m.includes("failed") && m.includes("Connection refused"),
+    );
     expect(found).toBe(true);
   });
 
@@ -427,7 +482,9 @@ describe("cleanupRun — error tolerance", () => {
     const shouldRunAction: IPostRunAction = {
       name: "bad-should-run",
       description: "desc",
-      shouldRun: mock(async () => { throw new Error("shouldRun exploded"); }),
+      shouldRun: mock(async () => {
+        throw new Error("shouldRun exploded");
+      }),
       execute: mock(async () => ({ success: true, message: "ok" })),
     };
     const shouldRunRegistry = makePluginRegistry([shouldRunAction]);
@@ -438,7 +495,9 @@ describe("cleanupRun — error tolerance", () => {
       name: "bad-execute",
       description: "desc",
       shouldRun: mock(async () => true),
-      execute: mock(async () => { throw new Error("execute exploded"); }),
+      execute: mock(async () => {
+        throw new Error("execute exploded");
+      }),
     };
     const executeRegistry = makePluginRegistry([executeAction]);
     await expect(cleanupRun(makeCleanupOptions({ pluginRegistry: executeRegistry }))).resolves.toBeUndefined();
@@ -452,14 +511,19 @@ describe("cleanupRun — error tolerance", () => {
     const badAction: IPostRunAction = {
       name: "bad",
       description: "desc",
-      shouldRun: mock(async () => { throw new Error("boom"); }),
+      shouldRun: mock(async () => {
+        throw new Error("boom");
+      }),
       execute: mock(async () => ({ success: true, message: "x" })),
     };
     const goodAction: IPostRunAction = {
       name: "good",
       description: "desc",
       shouldRun: mock(async () => true),
-      execute: mock(async () => { executed.push("good"); return { success: true, message: "ok" }; }),
+      execute: mock(async () => {
+        executed.push("good");
+        return { success: true, message: "ok" };
+      }),
     };
 
     const opts = makeCleanupOptions({ pluginRegistry: makePluginRegistry([badAction, goodAction]) });
@@ -538,7 +602,7 @@ describe("runner-completion.ts — does not invoke post-run actions", () => {
 
     const { runCompletionPhase } = await import("@/execution/runner-completion");
 
-    const prd = makePrd({ stories: [makeStory("passed")] });
+    const prd = makePrd({ stories: [storyWithStatus("passed")] });
 
     try {
       await runCompletionPhase({
@@ -546,7 +610,6 @@ describe("runner-completion.ts — does not invoke post-run actions", () => {
           acceptance: { enabled: false },
           headless: { enabled: true },
           autoCommit: { enabled: false },
-          // biome-ignore lint/suspicious/noExplicitAny: minimal stub for test
         } as any,
         hooks: { hooks: [] } as import("@/hooks").LoadedHooksConfig,
         feature: "test-feat",
@@ -585,7 +648,7 @@ function makePluginLogger(): import("@/plugins/types").PluginLogger {
     info: mock(() => {}),
     warn: mock(() => {}),
     error: mock(() => {}),
-  } as unknown as import("@/plugins/types").PluginLogger;
+  };
 }
 
 // ============================================================================

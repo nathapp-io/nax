@@ -17,10 +17,10 @@
  *       and rejects with the same error.
  */
 
+import { describe, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, mock, test } from "bun:test";
-import { emitCostReportJson, type CostReportEmitDeps } from "@/cli";
+import { type CostReportEmitDeps, emitCostReportJson } from "@/cli";
 import type { CostReportV1 } from "@/metrics";
 import { projectOutputDir } from "@/runtime";
 
@@ -50,9 +50,7 @@ const FIXED_REPORT: CostReportV1 = {
     avgCostPerStory: 0.5,
     stories: [{ storyId: "US-001", cost: 0.5, model: "claude-sonnet-4-5", attempts: 1 }],
   },
-  modelEfficiency: [
-    { model: "claude-sonnet-4-5", attempts: 1, passRate: 1, avgCost: 0.5, totalCost: 0.5 },
-  ],
+  modelEfficiency: [{ model: "claude-sonnet-4-5", attempts: 1, passRate: 1, avgCost: 0.5, totalCost: 0.5 }],
 };
 
 function makeDeps(overrides: Partial<CostReportEmitDeps> = {}): CostReportEmitDeps {
@@ -80,10 +78,7 @@ describe("emitCostReportJson — AC1: export shape", () => {
   test("AC1: emitCostReportJson is a function and is re-exported from the @/cli/status barrel", () => {
     expect(typeof emitCostReportJson).toBe("function");
 
-    const barrelSrc = readFileSync(
-      join(import.meta.dir, "../../../src/cli/status.ts"),
-      "utf8",
-    );
+    const barrelSrc = readFileSync(join(import.meta.dir, "../../../src/cli/status.ts"), "utf8");
     expect(barrelSrc).toMatch(/export\s*\{[\s\S]*?\bemitCostReportJson\b[\s\S]*?\}\s*from\s+["']\.\/status-cost["']/);
   });
 });
@@ -123,7 +118,10 @@ describe("emitCostReportJson — AC2: stdout payload schemaVersion", () => {
 
 describe("emitCostReportJson — AC3: toCostReport receives injected runs + seam wiring", () => {
   test("AC3: toCostReport is invoked exactly once with the runs array returned by loadRuns, plus { now, project } where now is from deps.now and project is derived from the workdir via the canonical resolveProject path", async () => {
-    const injectedRuns = [{ runId: "r1", feature: "f1" }, { runId: "r2", feature: "f2" }] as never;
+    const injectedRuns = [
+      { runId: "r1", feature: "f1" },
+      { runId: "r2", feature: "f2" },
+    ] as never;
     const toCostReport = mock(() => FIXED_REPORT);
     const deps = makeDeps({
       loadRuns: mock(async () => injectedRuns),

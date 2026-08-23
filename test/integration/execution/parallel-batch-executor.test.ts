@@ -26,9 +26,9 @@ afterEach(() => {
 
 describe("AC-25: runner-execution unified dispatch", () => {
   test("runner-execution.ts contains no conditional parallel dispatch branch", async () => {
-    const source = await Bun.file(
-      join(import.meta.dir, "../../../src/execution/runner-execution.ts"),
-    ).text().catch(() => "");
+    const source = await Bun.file(join(import.meta.dir, "../../../src/execution/runner-execution.ts"))
+      .text()
+      .catch(() => "");
     if (source) {
       expect(source).not.toContain("runParallelExecution");
     } else {
@@ -37,9 +37,9 @@ describe("AC-25: runner-execution unified dispatch", () => {
   });
 
   test("always calls executeUnified passing parallelCount from options", async () => {
-    const source = await Bun.file(
-      join(import.meta.dir, "../../../src/execution/runner-execution.ts"),
-    ).text().catch(() => "");
+    const source = await Bun.file(join(import.meta.dir, "../../../src/execution/runner-execution.ts"))
+      .text()
+      .catch(() => "");
     if (source) {
       expect(source).toContain("executeUnified");
       expect(source).toContain("parallelCount");
@@ -66,9 +66,9 @@ describe("AC-27: parallel-lifecycle deleted", () => {
 
 describe("AC-28: runner.ts cleanup", () => {
   test("runner.ts does not reference _runnerDeps.runParallelExecution", async () => {
-    const source = await Bun.file(
-      join(import.meta.dir, "../../../src/execution/runner.ts"),
-    ).text().catch(() => "");
+    const source = await Bun.file(join(import.meta.dir, "../../../src/execution/runner.ts"))
+      .text()
+      .catch(() => "");
     if (source) {
       expect(source).not.toContain("runParallelExecution");
     } else {
@@ -76,4 +76,3 @@ describe("AC-28: runner.ts cleanup", () => {
     }
   });
 });
-

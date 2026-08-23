@@ -129,7 +129,7 @@ describe("buildAcceptanceSection — 50KB truncation", () => {
 
   test("does not truncate the shorter entry when longer one is truncated", () => {
     const entries: AcceptanceEntry[] = [
-      { testPath: "short.ts", content: "SHORT_MARKER" + "y".repeat(20 * 1024 - 12) },
+      { testPath: "short.ts", content: `SHORT_MARKER${"y".repeat(20 * 1024 - 12)}` },
       { testPath: "long.ts", content: "x".repeat(35 * 1024) },
     ];
     const result = buildAcceptanceSection(entries);

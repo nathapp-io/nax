@@ -1,6 +1,6 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { PromptAuditor, _promptAuditorDeps, type PromptAuditEntry } from "@/runtime/prompt-auditor";
+import { type PromptAuditEntry, PromptAuditor, _promptAuditorDeps } from "@/runtime/prompt-auditor";
 import { withTempDir } from "@test/helpers";
 
 const FEATURE = "my-feature";
@@ -24,7 +24,9 @@ describe("PromptAuditor", () => {
       const flushDir = join(dir, "audit");
       const appendedLines: string[] = [];
       const orig = _promptAuditorDeps.appendLine;
-      _promptAuditorDeps.appendLine = async (_p: string, d: string) => { appendedLines.push(d); };
+      _promptAuditorDeps.appendLine = async (_p: string, d: string) => {
+        appendedLines.push(d);
+      };
       const aud = new PromptAuditor("r-001", flushDir, FEATURE);
       aud.record(makeEntry({ prompt: "immediate" }));
       // Drain the queue deterministically — flush() awaits the chain head.
@@ -40,8 +42,13 @@ describe("PromptAuditor", () => {
     const appends: string[] = [];
     const origWrite = _promptAuditorDeps.write;
     const origAppend = _promptAuditorDeps.appendLine;
-    _promptAuditorDeps.write = async (p) => { writes.push(p); return 0; };
-    _promptAuditorDeps.appendLine = async (p) => { appends.push(p); };
+    _promptAuditorDeps.write = async (p) => {
+      writes.push(p);
+      return 0;
+    };
+    _promptAuditorDeps.appendLine = async (p) => {
+      appends.push(p);
+    };
     const aud = new PromptAuditor("r-001", "/tmp/audit", FEATURE);
     await aud.flush();
     expect(writes).toHaveLength(0);
@@ -55,7 +62,9 @@ describe("PromptAuditor", () => {
       const flushDir = join(dir, "audit");
       const appendedData: string[] = [];
       const origAppend = _promptAuditorDeps.appendLine;
-      _promptAuditorDeps.appendLine = async (_p: string, d: string) => { appendedData.push(d); };
+      _promptAuditorDeps.appendLine = async (_p: string, d: string) => {
+        appendedData.push(d);
+      };
       const orig = _promptAuditorDeps.write;
       _promptAuditorDeps.write = async () => 0;
       const aud = new PromptAuditor("r-test", flushDir, FEATURE);
@@ -75,7 +84,9 @@ describe("PromptAuditor", () => {
       const flushDir = join(dir, "audit");
       let capturedPath = "";
       const origAppend = _promptAuditorDeps.appendLine;
-      _promptAuditorDeps.appendLine = async (p: string) => { capturedPath = p; };
+      _promptAuditorDeps.appendLine = async (p: string) => {
+        capturedPath = p;
+      };
       const orig = _promptAuditorDeps.write;
       _promptAuditorDeps.write = async () => 0;
       const aud = new PromptAuditor("my-run", flushDir, FEATURE);
@@ -93,16 +104,21 @@ describe("PromptAuditor", () => {
       const txtPaths: string[] = [];
       const origWrite = _promptAuditorDeps.write;
       const origAppend = _promptAuditorDeps.appendLine;
-      _promptAuditorDeps.write = async (p: string) => { txtPaths.push(p); return 0; };
+      _promptAuditorDeps.write = async (p: string) => {
+        txtPaths.push(p);
+        return 0;
+      };
       _promptAuditorDeps.appendLine = async () => {};
       const aud = new PromptAuditor("my-run", flushDir, FEATURE);
-      aud.record(makeEntry({
-        ts: 1234567890000,
-        callType: "run",
-        stage: "run",
-        sessionName: "nax-abc12345-my-feature-us-000-implementer",
-        turn: 1,
-      }));
+      aud.record(
+        makeEntry({
+          ts: 1234567890000,
+          callType: "run",
+          stage: "run",
+          sessionName: "nax-abc12345-my-feature-us-000-implementer",
+          turn: 1,
+        }),
+      );
       await aud.flush();
       expect(txtPaths).toHaveLength(1);
       expect(txtPaths[0]).toBe(
@@ -119,15 +135,20 @@ describe("PromptAuditor", () => {
       const txtPaths: string[] = [];
       const origWrite = _promptAuditorDeps.write;
       const origAppend = _promptAuditorDeps.appendLine;
-      _promptAuditorDeps.write = async (p: string) => { txtPaths.push(p); return 0; };
+      _promptAuditorDeps.write = async (p: string) => {
+        txtPaths.push(p);
+        return 0;
+      };
       _promptAuditorDeps.appendLine = async () => {};
       const aud = new PromptAuditor("my-run", flushDir, FEATURE);
-      aud.record(makeEntry({
-        ts: 1234567890000,
-        callType: "complete",
-        stage: "acceptance",
-        sessionName: "nax-abc12345-my-feature-us-000-refine",
-      }));
+      aud.record(
+        makeEntry({
+          ts: 1234567890000,
+          callType: "complete",
+          stage: "acceptance",
+          sessionName: "nax-abc12345-my-feature-us-000-refine",
+        }),
+      );
       await aud.flush();
       expect(txtPaths).toHaveLength(1);
       expect(txtPaths[0]).toBe(
@@ -250,7 +271,9 @@ describe("PromptAuditor", () => {
         };
         _promptAuditorDeps.appendLine = async () => {};
         const aud = new PromptAuditor("my-run", flushDir, FEATURE);
-        aud.record(makeEntry({ sessionName: "nax-abc-my-feature-us-004-implementer", prompt: "hello", response: "world" }));
+        aud.record(
+          makeEntry({ sessionName: "nax-abc-my-feature-us-004-implementer", prompt: "hello", response: "world" }),
+        );
         await aud.flush();
         expect(txtContent).not.toContain("=== INTERACTIONS ===");
         _promptAuditorDeps.write = orig;
@@ -264,7 +287,9 @@ describe("PromptAuditor", () => {
         const appended: string[] = [];
         const origAppend = _promptAuditorDeps.appendLine;
         const orig = _promptAuditorDeps.write;
-        _promptAuditorDeps.appendLine = async (_p: string, d: string) => { appended.push(d); };
+        _promptAuditorDeps.appendLine = async (_p: string, d: string) => {
+          appended.push(d);
+        };
         _promptAuditorDeps.write = async () => 0;
         const aud = new PromptAuditor("my-run", flushDir, FEATURE);
         aud.record(
@@ -289,7 +314,10 @@ describe("PromptAuditor", () => {
         const paths: string[] = [];
         const origWrite = _promptAuditorDeps.write;
         const origAppend = _promptAuditorDeps.appendLine;
-        _promptAuditorDeps.write = async (p: string) => { paths.push(p); return 0; };
+        _promptAuditorDeps.write = async (p: string) => {
+          paths.push(p);
+          return 0;
+        };
         _promptAuditorDeps.appendLine = async () => {};
         const aud = new PromptAuditor("r-001", join(dir, "audit"), FEATURE);
         aud.record(makeEntry({ ts: 1777301912062, callType: "complete", stage: "acceptance", storyId: "US-001" }));
@@ -306,7 +334,10 @@ describe("PromptAuditor", () => {
         const paths: string[] = [];
         const origWrite = _promptAuditorDeps.write;
         const origAppend = _promptAuditorDeps.appendLine;
-        _promptAuditorDeps.write = async (p: string) => { paths.push(p); return 0; };
+        _promptAuditorDeps.write = async (p: string) => {
+          paths.push(p);
+          return 0;
+        };
         _promptAuditorDeps.appendLine = async () => {};
         const aud = new PromptAuditor("r-001", join(dir, "audit"), FEATURE);
         aud.record(makeEntry({ ts: 1777301880073, callType: "complete", stage: "acceptance" }));
@@ -323,10 +354,21 @@ describe("PromptAuditor", () => {
         const writes: Array<[string, string]> = [];
         const origWrite = _promptAuditorDeps.write;
         const origAppend = _promptAuditorDeps.appendLine;
-        _promptAuditorDeps.write = async (p: string, d: string) => { writes.push([p, String(d)]); return 0; };
+        _promptAuditorDeps.write = async (p: string, d: string) => {
+          writes.push([p, String(d)]);
+          return 0;
+        };
         _promptAuditorDeps.appendLine = async () => {};
         const aud = new PromptAuditor("r-001", join(dir, "audit"), FEATURE);
-        aud.record(makeEntry({ ts: 1777302229409, callType: "complete", stage: "acceptance", prompt: "Generate tests", response: "" }));
+        aud.record(
+          makeEntry({
+            ts: 1777302229409,
+            callType: "complete",
+            stage: "acceptance",
+            prompt: "Generate tests",
+            response: "",
+          }),
+        );
         await aud.flush();
         expect(writes).toHaveLength(1);
         expect(writes[0][0]).toEndWith("1777302229409-complete-acceptance.txt");
@@ -368,7 +410,9 @@ describe("PromptAuditor", () => {
       const appends: string[] = [];
       const origAppend = _promptAuditorDeps.appendLine;
       const origWrite = _promptAuditorDeps.write;
-      _promptAuditorDeps.appendLine = async (_p: string, d: string) => { appends.push(d); };
+      _promptAuditorDeps.appendLine = async (_p: string, d: string) => {
+        appends.push(d);
+      };
       _promptAuditorDeps.write = async () => {
         throw new Error("txt write failed");
       };
@@ -389,8 +433,13 @@ describe("PromptAuditor", () => {
       const paths: string[] = [];
       const origAppend = _promptAuditorDeps.appendLine;
       const origWrite = _promptAuditorDeps.write;
-      _promptAuditorDeps.appendLine = async (_p: string, d: string) => { appends.push(d); };
-      _promptAuditorDeps.write = async (p: string) => { paths.push(p); return 0; };
+      _promptAuditorDeps.appendLine = async (_p: string, d: string) => {
+        appends.push(d);
+      };
+      _promptAuditorDeps.write = async (p: string) => {
+        paths.push(p);
+        return 0;
+      };
       const aud = new PromptAuditor("r-001", join(dir, "audit"), FEATURE);
       aud.recordError({ ts: Date.now(), runId: "r-001", agentName: "claude", errorCode: "TIMEOUT", durationMs: 50 });
       await aud.flush();

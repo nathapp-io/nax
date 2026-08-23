@@ -48,9 +48,7 @@ describe("toReviewDecisionPayload", () => {
     });
     expect(payload?.parsed).toBe(false);
     expect(payload?.parsed === false && payload.failOpen).toBe(true);
-    expect(payload?.parsed === false && payload.unparsedPreview).toBe(
-      "I was unable to complete this review because…",
-    );
+    expect(payload?.parsed === false && payload.unparsedPreview).toBe("I was unable to complete this review because…");
   });
 
   test("carries the preview on a looksLikeFail give-up too", () => {

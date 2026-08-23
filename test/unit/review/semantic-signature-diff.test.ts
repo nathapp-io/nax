@@ -9,7 +9,7 @@ import { _diffUtilsDeps } from "@/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "@/review/semantic";
 import type { SemanticStory } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
-import { makeMockAgentManager } from "@test/helpers";
+import { makeMockAgentManager, makeSpawn } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
@@ -32,7 +32,16 @@ const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
   resetRefOnRerun: false,
   rules: [],
   timeoutMs: 60_000,
-  excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/", ":!.nax/", ":!.nax-pids"],
+  excludePatterns: [
+    ":!test/",
+    ":!tests/",
+    ":!*_test.go",
+    ":!*.test.ts",
+    ":!*.spec.ts",
+    ":!**/__tests__/",
+    ":!.nax/",
+    ":!.nax-pids",
+  ],
 };
 
 function makeAgentManager(llmResponse: string, cost = 0) {
@@ -48,8 +57,22 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       agentFallbacks: [],
     }),
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
-    runWithFallbackFn: async () => ({ result: { success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCostUsd: cost, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] }),
+    runWithFallbackFn: async () => ({
+      result: {
+        success: true,
+        exitCode: 0,
+        output: llmResponse,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCostUsd: cost,
+        agentFallbacks: [],
+      },
+      fallbacks: [],
+    }),
+    completeWithFallbackFn: async () => ({
+      result: { output: llmResponse, costUsd: cost, source: "mock" },
+      fallbacks: [],
+    }),
     runAsFn: async (_agent, opts) => ({
       success: true,
       exitCode: 0,
@@ -64,43 +87,14 @@ function makeAgentManager(llmResponse: string, cost = 0) {
 }
 
 function makeSpawnMock(stdout: string, exitCode = 0) {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(stdout));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(controller) {
-        controller.close();
-      },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(() => ({ exitCode, stdout })).spawn;
 }
 
 function makeSpawnMockWithStat(diffStdout: string, statStdout: string, exitCode = 0) {
-  return mock((opts: { cmd?: string[] }) => {
-    const isStatCall = opts.cmd?.includes("--stat");
-    const stdout = isStatCall ? statStdout : diffStdout;
-    return {
-      exited: Promise.resolve(exitCode),
-      stdout: new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode(stdout));
-          controller.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(controller) {
-          controller.close();
-        },
-      }),
-      kill: () => {},
-    };
-  }) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(({ cmd }) => ({
+    exitCode,
+    stdout: cmd.includes("--stat") ? statStdout : diffStdout,
+  })).spawn;
 }
 
 const PASSING_LLM_RESPONSE = JSON.stringify({ passed: true, findings: [] });
@@ -285,7 +279,8 @@ describe("runSemanticReview — git diff invocation", () => {
 
     expect(spawnMock).toHaveBeenCalled();
     const allCalls = (spawnMock as ReturnType<typeof mock>).mock.calls;
-    const unifiedCallOpts = allCalls.map((c) => c[0] as { cmd: string[] })
+    const unifiedCallOpts = allCalls
+      .map((c) => c[0] as { cmd: string[] })
       .find((opts) => opts.cmd?.includes("--unified=3"));
     expect(unifiedCallOpts).toBeDefined();
     const spawnOpts = unifiedCallOpts!;
@@ -349,7 +344,14 @@ describe("runSemanticReview — diff truncation", () => {
     const runtime = makeMockRuntime({ agentManager });
     (agentManager.runWithFallback as ReturnType<typeof mock>).mockImplementation(async (req) => {
       return {
-        result: { success: true, exitCode: 0, output: PASSING_LLM_RESPONSE, rateLimited: false, durationMs: 100, estimatedCostUsd: 0 } as AgentResult,
+        result: {
+          success: true,
+          exitCode: 0,
+          output: PASSING_LLM_RESPONSE,
+          rateLimited: false,
+          durationMs: 100,
+          estimatedCostUsd: 0,
+        } as AgentResult,
         fallbacks: [],
       };
     });
@@ -373,7 +375,14 @@ describe("runSemanticReview — diff truncation", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
     (agentManager.runWithFallback as ReturnType<typeof mock>).mockImplementation(async () => ({
-      result: { success: true, exitCode: 0, output: PASSING_LLM_RESPONSE, rateLimited: false, durationMs: 100, estimatedCostUsd: 0 } as AgentResult,
+      result: {
+        success: true,
+        exitCode: 0,
+        output: PASSING_LLM_RESPONSE,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCostUsd: 0,
+      } as AgentResult,
       fallbacks: [],
     }));
 
@@ -396,7 +405,14 @@ describe("runSemanticReview — diff truncation", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
     (agentManager.runWithFallback as ReturnType<typeof mock>).mockImplementation(async () => ({
-      result: { success: true, exitCode: 0, output: PASSING_LLM_RESPONSE, rateLimited: false, durationMs: 100, estimatedCostUsd: 0 } as AgentResult,
+      result: {
+        success: true,
+        exitCode: 0,
+        output: PASSING_LLM_RESPONSE,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCostUsd: 0,
+      } as AgentResult,
       fallbacks: [],
     }));
 

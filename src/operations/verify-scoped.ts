@@ -56,7 +56,12 @@ export const _verifyScopedDeps: VerifyScopedDeps = {
   testSummaryToFindings,
 };
 
-export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifyScopedOutput, QualityConfig> = {
+export const verifyScopedOp: DeterministicOperation<
+  VerifyScopedInput,
+  VerifyScopedOutput,
+  QualityConfig,
+  VerifyScopedDeps
+> = {
   kind: "deterministic",
   name: "verify-scoped",
   stage: "verify",

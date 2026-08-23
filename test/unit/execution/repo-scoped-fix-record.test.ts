@@ -24,7 +24,9 @@ function failedTest(file: string, rule: string): Finding {
   return { source: "test-runner", severity: "error", category: "failed-test", file, rule, message: `${rule} failed` };
 }
 
-function iteration(overrides: Partial<Iteration<Finding>> & Pick<Iteration<Finding>, "iterationNum">): Iteration<Finding> {
+function iteration(
+  overrides: Partial<Iteration<Finding>> & Pick<Iteration<Finding>, "iterationNum">,
+): Iteration<Finding> {
   return {
     findingsBefore: [],
     findingsAfter: [],

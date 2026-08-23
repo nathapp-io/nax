@@ -10,8 +10,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
-import { NaxConfigSchema } from "@/config/schemas";
 import type { NaxConfig, ProjectProfile } from "@/config/schema";
+import { NaxConfigSchema } from "@/config/schemas";
 
 // ── AC-1 helpers ──────────────────────────────────────────────────────────────
 

@@ -86,9 +86,7 @@ describe("path-filters (#542)", () => {
     });
 
     test("drops files matching resolved .naxignore patterns", async () => {
-      const files = new Map<string, string>([
-        ["/repo/.naxignore", "*.generated.ts\ncoverage/\n"],
-      ]);
+      const files = new Map<string, string>([["/repo/.naxignore", "*.generated.ts\ncoverage/\n"]]);
       _pathFilterDeps.fileExists = async (path) => files.has(path);
       _pathFilterDeps.readFile = async (path) => files.get(path) ?? "";
 
@@ -100,9 +98,7 @@ describe("path-filters (#542)", () => {
 
   describe("resolveNaxIgnorePatterns (#550)", () => {
     test("loads root patterns and ignores comments/blank lines", async () => {
-      const files = new Map<string, string>([
-        ["/repo/.naxignore", "# comment\n\n*.generated.ts\nlocales/en.json\n"],
-      ]);
+      const files = new Map<string, string>([["/repo/.naxignore", "# comment\n\n*.generated.ts\nlocales/en.json\n"]]);
       _pathFilterDeps.fileExists = async (path) => files.has(path);
       _pathFilterDeps.readFile = async (path) => files.get(path) ?? "";
 
@@ -131,9 +127,7 @@ describe("path-filters (#542)", () => {
     });
 
     test("allows root patterns with package prefixes to match package-relative paths", async () => {
-      const files = new Map<string, string>([
-        ["/repo/.naxignore", "packages/web/locales/en.json\n"],
-      ]);
+      const files = new Map<string, string>([["/repo/.naxignore", "packages/web/locales/en.json\n"]]);
       _pathFilterDeps.fileExists = async (path) => files.has(path);
       _pathFilterDeps.readFile = async (path) => files.get(path) ?? "";
 

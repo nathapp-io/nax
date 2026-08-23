@@ -17,7 +17,7 @@ import { PluginRegistry } from "@/plugins/registry";
 import { loadPRD, savePRD } from "@/prd";
 import type { PRD, UserStory } from "@/prd/types";
 import { _gitDeps } from "@/utils/git";
-import { makeMockRuntime } from "@test/helpers";
+import { makeAgentResult, makeMergeEngine, makeMockRuntime, makeSpawn, makeTestContext } from "@test/helpers";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
@@ -55,10 +55,10 @@ function makeMinimalResult(): PipelineRunResult {
   return {
     success: true,
     finalAction: "complete",
-    context: {
-      agentResult: { estimatedCostUsd: 0 },
+    context: makeTestContext({
+      agentResult: makeAgentResult(),
       storyMetrics: [],
-    } as unknown as PipelineRunResult["context"],
+    }),
   };
 }
 
@@ -69,7 +69,7 @@ function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = 
     prd,
     prdPath: "/tmp/prd.json",
     workdir: "/tmp/repo",
-    hooks: { hooks: [] } as unknown as PipelineHandlerContext["hooks"],
+    hooks: { hooks: {} },
     feature: "test-feature",
     totalCost: 0,
     startTime: Date.now(),
@@ -245,7 +245,7 @@ describe("handlePipelineSuccess — outputFiles capture (ENH-005)", () => {
     const ctx = makeCtx(story, { storyGitRef: "abc123" });
 
     const manyFiles = Array.from({ length: 20 }, (_, i) => `src/file${i}.ts`).join("\n");
-    _gitDeps.spawn = mockSpawnReturning(manyFiles + "\n");
+    _gitDeps.spawn = mockSpawnReturning(`${manyFiles}\n`);
 
     await handlePipelineSuccess(ctx, makeMinimalResult());
 
@@ -289,7 +289,7 @@ describe("handlePipelineSuccess — worktree mode (EXEC-002)", () => {
     const ctx = makeCtx(story, { config: WORKTREE_CONFIG });
 
     const mergeMock = mock(async () => ({ success: true as const }));
-    _resultHandlerDeps.mergeEngine = { merge: mergeMock } as unknown as typeof _resultHandlerDeps.mergeEngine;
+    _resultHandlerDeps.mergeEngine = makeMergeEngine({ merge: mergeMock });
     // Silence git spawn (no storyGitRef)
     _gitDeps.spawn = mockSpawnReturning("");
 
@@ -304,7 +304,7 @@ describe("handlePipelineSuccess — worktree mode (EXEC-002)", () => {
     const ctx = makeCtx(story); // DEFAULT_CONFIG has storyIsolation: "shared"
 
     const mergeMock = mock(async () => ({ success: true as const }));
-    _resultHandlerDeps.mergeEngine = { merge: mergeMock } as unknown as typeof _resultHandlerDeps.mergeEngine;
+    _resultHandlerDeps.mergeEngine = makeMergeEngine({ merge: mergeMock });
     _gitDeps.spawn = mockSpawnReturning("");
 
     await handlePipelineSuccess(ctx, makeMinimalResult());
@@ -316,9 +316,9 @@ describe("handlePipelineSuccess — worktree mode (EXEC-002)", () => {
     const story = makeStory("US-001");
     const ctx = makeCtx(story, { config: WORKTREE_CONFIG });
 
-    _resultHandlerDeps.mergeEngine = {
+    _resultHandlerDeps.mergeEngine = makeMergeEngine({
       merge: mock(async () => ({ success: false as const, conflictFiles: ["foo.ts"] })),
-    } as unknown as typeof _resultHandlerDeps.mergeEngine;
+    });
     _gitDeps.spawn = mockSpawnReturning("");
 
     // rectifyConflictedStory is dynamically imported inside handlePipelineSuccess.
@@ -378,7 +378,7 @@ describe("handlePipelineFailure — story:skipped event", () => {
       success: false,
       finalAction: "skip",
       reason: "Dependency not met",
-      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"],
+      context: makeTestContext({ agentResult: makeAgentResult() }),
     };
 
     await handlePipelineFailure(ctx, skipResult);
@@ -397,7 +397,7 @@ describe("handlePipelineFailure — story:skipped event", () => {
       success: false,
       finalAction: "skip",
       reason: undefined,
-      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"],
+      context: makeTestContext({ agentResult: makeAgentResult() }),
     };
 
     await handlePipelineFailure(ctx, skipResult);
@@ -415,7 +415,7 @@ describe("handlePipelineFailure — story:skipped event", () => {
       success: false,
       finalAction: "fail",
       reason: "Tests failed",
-      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"],
+      context: makeTestContext({ agentResult: makeAgentResult() }),
     };
 
     await handlePipelineFailure(ctx, failResult);
@@ -468,32 +468,19 @@ describe("handlePipelineSuccess — a failed worktree merge is not a passed stor
 
   function stubSpawn(): string[][] {
     const calls: string[][] = [];
-    _resultHandlerDeps.spawn = mock((args: unknown) => {
-      calls.push(args as string[]);
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
-    }) as unknown as typeof _resultHandlerDeps.spawn;
+    _resultHandlerDeps.spawn = makeSpawn(({ cmd }) => {
+      calls.push(cmd);
+      return "";
+    }).spawn;
     return calls;
   }
 
   test("a non-conflict merge failure marks the story failed on disk", async () => {
     const { ctx } = await seedPassedStory();
     stubSpawn();
-    _resultHandlerDeps.mergeEngine = {
+    _resultHandlerDeps.mergeEngine = makeMergeEngine({
       merge: mock(async () => ({ success: false as const, failureKind: "error" as const, error: "dirty tree" })),
-    } as unknown as typeof _resultHandlerDeps.mergeEngine;
+    });
 
     const result = await handlePipelineSuccess(ctx, makeMinimalResult());
 
@@ -505,9 +492,9 @@ describe("handlePipelineSuccess — a failed worktree merge is not a passed stor
   test("the reported failure survives the executor's reload-from-disk", async () => {
     const { ctx } = await seedPassedStory();
     stubSpawn();
-    _resultHandlerDeps.mergeEngine = {
+    _resultHandlerDeps.mergeEngine = makeMergeEngine({
       merge: mock(async () => ({ success: false as const, failureKind: "error" as const, error: "missing branch" })),
-    } as unknown as typeof _resultHandlerDeps.mergeEngine;
+    });
 
     const result = await handlePipelineSuccess(ctx, makeMinimalResult());
 
@@ -520,9 +507,9 @@ describe("handlePipelineSuccess — a failed worktree merge is not a passed stor
   test("a non-conflict merge failure reclaims the worktree directory", async () => {
     const { ctx } = await seedPassedStory();
     const calls = stubSpawn();
-    _resultHandlerDeps.mergeEngine = {
+    _resultHandlerDeps.mergeEngine = makeMergeEngine({
       merge: mock(async () => ({ success: false as const, failureKind: "error" as const, error: "dirty tree" })),
-    } as unknown as typeof _resultHandlerDeps.mergeEngine;
+    });
 
     await handlePipelineSuccess(ctx, makeMinimalResult());
 
@@ -532,9 +519,9 @@ describe("handlePipelineSuccess — a failed worktree merge is not a passed stor
   test("a clean merge still reports the story as passed", async () => {
     const { ctx } = await seedPassedStory();
     stubSpawn();
-    _resultHandlerDeps.mergeEngine = {
+    _resultHandlerDeps.mergeEngine = makeMergeEngine({
       merge: mock(async () => ({ success: true as const })),
-    } as unknown as typeof _resultHandlerDeps.mergeEngine;
+    });
 
     const result = await handlePipelineSuccess(ctx, makeMinimalResult());
 
@@ -577,10 +564,10 @@ describe("handlePipelineFailure — runtime-crash derives retry-same (US-002)", 
       success: false,
       finalAction: "escalate",
       reason: "Bun runtime crash",
-      context: {
-        agentResult: { estimatedCostUsd: 0 },
+      context: makeTestContext({
+        agentResult: makeAgentResult(),
         tddFailureCategory: "runtime-crash",
-      } as unknown as PipelineRunResult["context"],
+      }),
     };
 
     const result = await handlePipelineFailure(ctx, escalateResult);
@@ -613,10 +600,10 @@ describe("handlePipelineFailure — runtime-crash derives retry-same (US-002)", 
       success: false,
       finalAction: "escalate",
       reason: "Bun runtime crash",
-      context: {
-        agentResult: { estimatedCostUsd: 0 },
+      context: makeTestContext({
+        agentResult: makeAgentResult(),
         tddFailureCategory: "runtime-crash",
-      } as unknown as PipelineRunResult["context"],
+      }),
     };
 
     const result = await handlePipelineFailure(ctx, escalateResult);
@@ -653,10 +640,10 @@ describe("handlePipelineFailure — runtime-crash derives retry-same (US-002)", 
       success: false,
       finalAction: "escalate",
       reason: "Bun runtime crash",
-      context: {
-        agentResult: { estimatedCostUsd: 0 },
+      context: makeTestContext({
+        agentResult: makeAgentResult(),
         tddFailureCategory: "runtime-crash",
-      } as unknown as PipelineRunResult["context"],
+      }),
     };
 
     const result = await handlePipelineFailure(ctx, escalateResult);
@@ -689,10 +676,10 @@ describe("handlePipelineFailure — runtime-crash derives retry-same (US-002)", 
       success: false,
       finalAction: "escalate",
       reason: "Tests failed",
-      context: {
-        agentResult: { estimatedCostUsd: 0 },
+      context: makeTestContext({
+        agentResult: makeAgentResult(),
         tddFailureCategory: "tests-failing",
-      } as unknown as PipelineRunResult["context"],
+      }),
     };
 
     const result = await handlePipelineFailure(ctx, escalateResult);

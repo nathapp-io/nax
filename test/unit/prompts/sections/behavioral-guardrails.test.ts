@@ -26,21 +26,17 @@ describe("buildBehavioralGuardrailsSection", () => {
     const nullRoles: GuardrailRole[] = ["verifier", "no-test"];
     const levels: GuardrailLevel[] = ["lite", "strict"];
 
-    test.each(
-      nullRoles.flatMap((role) => levels.map((level) => [role, level] as const)),
-    )('returns null for role="%s" level="%s"', (role, level) => {
-      expect(buildBehavioralGuardrailsSection(role, level)).toBeNull();
-    });
+    test.each(nullRoles.flatMap((role) => levels.map((level) => [role, level] as const)))(
+      'returns null for role="%s" level="%s"',
+      (role, level) => {
+        expect(buildBehavioralGuardrailsSection(role, level)).toBeNull();
+      },
+    );
   });
 
   // AC-14: lite content for implementer roles — at most 8 lines including header
   describe("lite level for implementer roles", () => {
-    const implRoles: GuardrailRole[] = [
-      "implementer",
-      "single-session",
-      "tdd-simple",
-      "batch",
-    ];
+    const implRoles: GuardrailRole[] = ["implementer", "single-session", "tdd-simple", "batch"];
 
     test.each(implRoles)('role="%s" lite: returns string with header', (role) => {
       const result = buildBehavioralGuardrailsSection(role, "lite");
@@ -66,12 +62,7 @@ describe("buildBehavioralGuardrailsSection", () => {
 
   // AC-15: strict content includes "## State Assumptions" subsection for implementer roles
   describe("strict level for implementer roles", () => {
-    const implRoles: GuardrailRole[] = [
-      "implementer",
-      "single-session",
-      "tdd-simple",
-      "batch",
-    ];
+    const implRoles: GuardrailRole[] = ["implementer", "single-session", "tdd-simple", "batch"];
 
     test.each(implRoles)('role="%s" strict: includes ## State Assumptions', (role) => {
       const result = buildBehavioralGuardrailsSection(role, "strict");
@@ -178,7 +169,7 @@ describe("buildBehavioralGuardrailsSection", () => {
       expect(result).toContain("## Simplicity (Source)");
     });
 
-    test('pure implementer lite: does NOT include test-scope Simplicity', () => {
+    test("pure implementer lite: does NOT include test-scope Simplicity", () => {
       const result = buildBehavioralGuardrailsSection("implementer", "lite") as string;
       expect(result).not.toContain("Simplicity (tests)");
       expect(result).not.toContain("Simplicity (source)");

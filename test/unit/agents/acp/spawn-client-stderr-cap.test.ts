@@ -68,9 +68,16 @@ describe("SpawnAcpClient — MEM-1: stderr buffering cap", () => {
       if (callCount === 1) return makeSpawnResult(0); // ensure session
 
       return {
-        stdout: new ReadableStream<Uint8Array>({ start(c) { c.close(); } }),
+        stdout: new ReadableStream<Uint8Array>({
+          start(c) {
+            c.close();
+          },
+        }),
         stderr: new ReadableStream<Uint8Array>({
-          start(c) { c.enqueue(enc.encode(hugeStderr)); c.close(); },
+          start(c) {
+            c.enqueue(enc.encode(hugeStderr));
+            c.close();
+          },
         }),
         stdin: { write: () => 0, end: () => {}, flush: () => {} },
         exited: Promise.resolve(1),
@@ -99,9 +106,16 @@ describe("SpawnAcpClient — MEM-1: stderr buffering cap", () => {
       if (callCount === 1) return makeSpawnResult(0); // ensure session
 
       return {
-        stdout: new ReadableStream<Uint8Array>({ start(c) { c.close(); } }),
+        stdout: new ReadableStream<Uint8Array>({
+          start(c) {
+            c.close();
+          },
+        }),
         stderr: new ReadableStream<Uint8Array>({
-          start(c) { c.enqueue(enc.encode("connection refused")); c.close(); },
+          start(c) {
+            c.enqueue(enc.encode("connection refused"));
+            c.close();
+          },
         }),
         stdin: { write: () => 0, end: () => {}, flush: () => {} },
         exited: Promise.resolve(1),

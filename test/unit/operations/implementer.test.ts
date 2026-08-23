@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { implementerOp, testWriterOp } from "@/operations";
 import { resolveConfiguredModel } from "@/config";
-import type { RunOperation } from "@/operations";
 import type { NaxConfig } from "@/config";
+import { implementerOp, testWriterOp } from "@/operations";
+import type { RunOperation } from "@/operations";
 import type { UserStory } from "@/prd";
+import { makeStory } from "@test/helpers";
 
 /**
  * Tests for implementerOp — the full RunOperation shape for the implementer role.
@@ -39,10 +40,7 @@ describe("implementerOp — RunOperation shape", () => {
     expect(implementerOp.session.lifetime).toBe("warm");
   });
 
-  test.each([
-    ["name" as const],
-    ["stage" as const],
-  ])("implementerOp has a non-empty %s string", async (field) => {
+  test.each([["name" as const], ["stage" as const]])("implementerOp has a non-empty %s string", async (field) => {
     const { implementerOp } = await import("@/operations");
     expect(typeof implementerOp[field]).toBe("string");
     expect(implementerOp[field]).toBeTruthy();
@@ -53,10 +51,7 @@ describe("implementerOp — RunOperation shape", () => {
     expect(implementerOp.config).toBeDefined();
   });
 
-  test.each([
-    ["build" as const],
-    ["parse" as const],
-  ])("implementerOp has a %s function", async (method) => {
+  test.each([["build" as const], ["parse" as const]])("implementerOp has a %s function", async (method) => {
     const { implementerOp } = await import("@/operations");
     expect(typeof implementerOp[method]).toBe("function");
   });
@@ -316,17 +311,9 @@ describe("implementerOp.verify — isolation", () => {
 });
 
 function storyWithTier(tier: string | undefined): UserStory {
-  return {
-    id: "US-001",
-    title: "t",
-    description: "d",
-    acceptanceCriteria: [],
-    dependencies: [],
-    status: "pending",
-    passes: false,
-    attempts: 0,
+  return makeStory({
     routing: tier ? { complexity: "medium", modelTier: tier, testStrategy: "tdd-simple", reasoning: "" } : undefined,
-  } as unknown as UserStory;
+  });
 }
 
 const buildCtx = { config: {} as any, packageView: {} as any };

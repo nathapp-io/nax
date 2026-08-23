@@ -6,9 +6,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ReviewAuditDecision } from "@/runtime";
 import { _diffUtilsDeps, runAdversarialReview } from "@/review";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
+import type { ReviewAuditDecision } from "@/runtime";
 import {
   agentManagerWithFixedLLMResponse,
   captureAuditDecisions,
@@ -394,10 +394,16 @@ describe("adversarial structural counterfactual telemetry (#986)", () => {
 
     const llmResponse = JSON.stringify({
       passed: false,
-      findings: [{
-        severity: "error", category: "input", file: "src/foo.ts", line: 1,
-        issue: "x", suggestion: "y",
-      }],
+      findings: [
+        {
+          severity: "error",
+          category: "input",
+          file: "src/foo.ts",
+          line: 1,
+          issue: "x",
+          suggestion: "y",
+        },
+      ],
     });
     const { auditor, decisions } = captureAuditDecisions();
     const agentManager = agentManagerWithFixedLLMResponse(llmResponse);

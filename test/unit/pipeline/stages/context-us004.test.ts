@@ -24,7 +24,13 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import type { ContextBundle, ContextRequest, ContextManifest, IContextProvider, StoredContextManifest } from "@/context/engine";
+import type {
+  ContextBundle,
+  ContextManifest,
+  ContextRequest,
+  IContextProvider,
+  StoredContextManifest,
+} from "@/context/engine";
 import { ContextOrchestrator } from "@/context/engine";
 import { _contextStageDeps, contextStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
@@ -133,8 +139,7 @@ function captureContextRequest(): { captured: ContextRequest | null } {
   // Suppress scratch + digest I/O so the stage stays hermetic.
   _contextStageDeps.readDigest = async () => "";
   _contextStageDeps.writeDigest = async () => {};
-  _contextStageDeps.uuid = () =>
-    "stub-uuid-us004-feature" as `${string}-${string}-${string}-${string}-${string}`;
+  _contextStageDeps.uuid = () => "stub-uuid-us004-feature" as `${string}-${string}-${string}-${string}-${string}`;
   return ref;
 }
 
@@ -179,7 +184,8 @@ describe("contextStage — deriveProviderWeights invocation (AC7)", () => {
         },
       },
     ];
-    _contextStageDeps.loadFeatureManifests = (async () => sampleManifests) as typeof _contextStageDeps.loadFeatureManifests;
+    _contextStageDeps.loadFeatureManifests = (async () =>
+      sampleManifests) as typeof _contextStageDeps.loadFeatureManifests;
     _contextStageDeps.deriveProviderWeights = ((manifests: ContextManifest[]) => {
       deriveInputBatches++;
       lastBatch = manifests;
@@ -249,8 +255,7 @@ describe("contextStage — written manifest reflects lower weight (AC8)", () => 
 
     _contextStageDeps.readDigest = async () => "";
     _contextStageDeps.writeDigest = async () => {};
-    _contextStageDeps.uuid = () =>
-      "stub-uuid-us004-low-weight" as `${string}-${string}-${string}-${string}-${string}`;
+    _contextStageDeps.uuid = () => "stub-uuid-us004-low-weight" as `${string}-${string}-${string}-${string}-${string}`;
     _contextStageDeps.loadFeatureManifests = (async () => []) as typeof _contextStageDeps.loadFeatureManifests;
     _contextStageDeps.createOrchestrator = () => new ContextOrchestrator([provider, ...emptyProviders]);
 

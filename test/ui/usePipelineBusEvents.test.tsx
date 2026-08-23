@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { render } from "ink-testing-library";
-import { act } from "react";
-import { Text } from "ink";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import { usePipelineBusEvents } from "@/tui/hooks/usePipelineBusEvents";
 import type { StoryDisplayState } from "@/tui/types";
+import { Text } from "ink";
+import { render } from "ink-testing-library";
+import { act } from "react";
 
 function makeInitialStory(id: string): StoryDisplayState {
   return {
@@ -41,9 +41,7 @@ afterEach(() => pipelineEventBus.clear());
 
 describe("usePipelineBusEvents", () => {
   test("story:started marks story running with modelTier", () => {
-    const { lastFrame } = render(
-      <HookOutput stories={[makeInitialStory("US-001")]} />
-    );
+    const { lastFrame } = render(<HookOutput stories={[makeInitialStory("US-001")]} />);
 
     act(() => {
       pipelineEventBus.emit({
@@ -61,9 +59,7 @@ describe("usePipelineBusEvents", () => {
   });
 
   test("story:completed marks story passed and accumulates cost", () => {
-    const { lastFrame } = render(
-      <HookOutput stories={[makeInitialStory("US-001")]} />
-    );
+    const { lastFrame } = render(<HookOutput stories={[makeInitialStory("US-001")]} />);
 
     act(() => {
       pipelineEventBus.emit({
@@ -81,9 +77,7 @@ describe("usePipelineBusEvents", () => {
   });
 
   test("story:failed marks story failed with reason", () => {
-    const { lastFrame } = render(
-      <HookOutput stories={[makeInitialStory("US-001")]} />
-    );
+    const { lastFrame } = render(<HookOutput stories={[makeInitialStory("US-001")]} />);
 
     act(() => {
       pipelineEventBus.emit({
@@ -100,9 +94,7 @@ describe("usePipelineBusEvents", () => {
   });
 
   test("story:skipped marks story skipped", () => {
-    const { lastFrame } = render(
-      <HookOutput stories={[makeInitialStory("US-001")]} />
-    );
+    const { lastFrame } = render(<HookOutput stories={[makeInitialStory("US-001")]} />);
 
     act(() => {
       pipelineEventBus.emit({ type: "story:skipped", storyId: "US-001", reason: "user skip" });
@@ -112,9 +104,7 @@ describe("usePipelineBusEvents", () => {
   });
 
   test("story:escalated marks story retrying and appends escalation log", () => {
-    const { lastFrame } = render(
-      <HookOutput stories={[makeInitialStory("US-001")]} />
-    );
+    const { lastFrame } = render(<HookOutput stories={[makeInitialStory("US-001")]} />);
 
     act(() => {
       pipelineEventBus.emit({
@@ -133,9 +123,7 @@ describe("usePipelineBusEvents", () => {
   // only the display capped at 5. The hook must prune so a long run with many
   // escalations cannot grow memory without bound.
   test("MEM-2: escalationLog is pruned to a bounded cap, keeping the newest entries", () => {
-    const { lastFrame } = render(
-      <HookOutput stories={[makeInitialStory("US-001")]} />
-    );
+    const { lastFrame } = render(<HookOutput stories={[makeInitialStory("US-001")]} />);
 
     for (let i = 0; i < 30; i++) {
       act(() => {
@@ -152,9 +140,7 @@ describe("usePipelineBusEvents", () => {
   });
 
   test("run:completed sets runSummary passedStories", () => {
-    const { lastFrame } = render(
-      <HookOutput stories={[makeInitialStory("US-001")]} />
-    );
+    const { lastFrame } = render(<HookOutput stories={[makeInitialStory("US-001")]} />);
 
     act(() => {
       pipelineEventBus.emit({
@@ -228,7 +214,7 @@ describe("usePipelineBusEvents", () => {
 
   test("most-recent failure wins when multiple stories fail", () => {
     const { lastFrame } = render(
-      <LastFailedOutput stories={[makeInitialStory("US-001"), makeInitialStory("US-002")]} />
+      <LastFailedOutput stories={[makeInitialStory("US-001"), makeInitialStory("US-002")]} />,
     );
 
     act(() => {
@@ -313,7 +299,7 @@ describe("usePipelineBusEvents", () => {
 
   test("story:started for a different story does not clear lastFailedStoryId", () => {
     const { lastFrame } = render(
-      <LastFailedOutput stories={[makeInitialStory("US-001"), makeInitialStory("US-002")]} />
+      <LastFailedOutput stories={[makeInitialStory("US-001"), makeInitialStory("US-002")]} />,
     );
 
     act(() => {
@@ -352,9 +338,7 @@ function PostRunPhaseOutput({ stories }: { stories: StoryDisplayState[] }) {
 
 describe("usePipelineBusEvents — AC10: acceptance-setup phase:started", () => {
   test("AC10: records acceptance-setup phase as running when postrun:phase:started fires", () => {
-    const { lastFrame } = render(
-      <PostRunPhaseOutput stories={[]} />
-    );
+    const { lastFrame } = render(<PostRunPhaseOutput stories={[]} />);
 
     act(() => {
       pipelineEventBus.emit({
@@ -379,9 +363,7 @@ describe("usePipelineBusEvents — AC10: acceptance-setup phase:started", () => 
   });
 
   test("AC10 boundary: acceptance-setup phase transitions to passed on completed event", () => {
-    const { lastFrame } = render(
-      <PostRunPhaseOutput stories={[]} />
-    );
+    const { lastFrame } = render(<PostRunPhaseOutput stories={[]} />);
 
     act(() => {
       pipelineEventBus.emit({ type: "postrun:phase:started", phase: "acceptance-setup" });

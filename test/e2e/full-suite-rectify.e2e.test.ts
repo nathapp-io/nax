@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { runOrchestratorE2E } from "@test/helpers";
-import type { NaxConfig } from "@/config";
 
 const PASS_REVIEW = () => ({ output: JSON.stringify({ passed: true, findings: [] }) });
 const impl = () => ({ output: JSON.stringify({ filesChanged: ["src/a.ts"] }) });
@@ -91,7 +90,7 @@ describe("E2E: full-suite-rectify (success path)", () => {
     // the point is that full-suite-rectify FIRED (was matched), not that it resolved.
     const { result, strategiesFired } = await runOrchestratorE2E({
       strategy: "test-after",
-      config: { quality: { commands: { test: "false" } } } as unknown as Partial<NaxConfig>,
+      config: { quality: { commands: { test: "false" } } },
       agent: { implementer: impl, "reviewer-semantic": PASS_REVIEW, "reviewer-adversarial": PASS_REVIEW },
     });
 
@@ -157,12 +156,8 @@ describe("E2E: repo-scoped test fix (#1654)", () => {
     // #1658 — the dispatch is recorded on the story result, so a reviewer meeting
     // an unrelated file in this story's commit can see what caused it.
     expect(result.repoScopedFixes).toHaveLength(1);
-    expect(result.repoScopedFixes?.[0]?.triggeringTests).toEqual([
-      "test/legacy/auth.spec.ts::redirects to login",
-    ]);
-    expect(result.repoScopedFixes?.[0]?.declinedReason).toBe(
-      "test/legacy/auth.spec.ts is outside this story's scope",
-    );
+    expect(result.repoScopedFixes?.[0]?.triggeringTests).toEqual(["test/legacy/auth.spec.ts::redirects to login"]);
+    expect(result.repoScopedFixes?.[0]?.declinedReason).toBe("test/legacy/auth.spec.ts is outside this story's scope");
     expect(result.repoScopedFixes?.[0]?.findingsCleared).toBe(true);
   });
 
@@ -214,7 +209,7 @@ describe("E2E: repo-scoped test fix (#1654)", () => {
     let repoScopedDispatched = false;
     const { result } = await runOrchestratorE2E({
       strategy: "three-session-tdd",
-      config: { execution: { rectification: { repoScopedFallback: false } } } as Partial<NaxConfig>,
+      config: { execution: { rectification: { repoScopedFallback: false } } },
       agent: {
         "test-writer": tw,
         implementer: decliningImplementer,

@@ -52,9 +52,7 @@ describe("Context rebuild with fail-stale", () => {
     const logs: string[] = [];
 
     function logRebuild(failure: AdapterFailure, newAgent: string) {
-      logs.push(
-        `[rebuild] agent swap: ${failure.outcome} (${failure.category}) → ${newAgent}`,
-      );
+      logs.push(`[rebuild] agent swap: ${failure.outcome} (${failure.category}) → ${newAgent}`);
     }
 
     logRebuild(staleFailure, "codex");

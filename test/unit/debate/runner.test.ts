@@ -1,17 +1,21 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { DEFAULT_CONFIG } from "@/config";
+import { debateConfigSelector } from "@/config";
 import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import * as callModule from "@/operations";
 import type { CallContext } from "@/operations/types";
-import { DEFAULT_CONFIG } from "@/config";
-import { debateConfigSelector } from "@/config";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 function makeCallCtx(overrides: Partial<CallContext> = {}): CallContext {
   const agentManager = makeMockAgentManager({
-    completeFn: async (_name: string, _p: string, _o: unknown) => ({ output: '{"passed":true}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+    completeFn: async (_name: string, _p: string, _o: unknown) => ({
+      output: '{"passed":true}',
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: 0,
+    }),
   });
   return {
     runtime: {
@@ -98,7 +102,13 @@ describe("DebateRunner — one-shot panel mode", () => {
         costAggregator: createNoOpCostAggregator(),
       } as any,
     });
-    const runner = new DebateRunner({ ctx, stage: "review", stageConfig: makeStageConfig(), config: DEFAULT_CONFIG, workdir: "/tmp" });
+    const runner = new DebateRunner({
+      ctx,
+      stage: "review",
+      stageConfig: makeStageConfig(),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp",
+    });
     const result = await runner.run("prompt");
     expect(result.outcome).toBe("passed");
     expect(result.debaters).toHaveLength(1);
@@ -106,7 +116,9 @@ describe("DebateRunner — one-shot panel mode", () => {
 
   test("run() returns failed when all debaters fail", async () => {
     const agentManager = makeMockAgentManager({
-      completeAsFn: async () => { throw new Error("all fail"); },
+      completeAsFn: async () => {
+        throw new Error("all fail");
+      },
     });
     const ctx = makeCallCtx({
       runtime: {
@@ -118,7 +130,13 @@ describe("DebateRunner — one-shot panel mode", () => {
         costAggregator: createNoOpCostAggregator(),
       } as any,
     });
-    const runner = new DebateRunner({ ctx, stage: "review", stageConfig: makeStageConfig(), config: DEFAULT_CONFIG, workdir: "/tmp" });
+    const runner = new DebateRunner({
+      ctx,
+      stage: "review",
+      stageConfig: makeStageConfig(),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp",
+    });
     const result = await runner.run("prompt");
     expect(result.outcome).toBe("failed");
   });
@@ -299,7 +317,7 @@ describe("DebateRunner.runPanelOneShot() — four-scope cost tracking (US-006)",
   });
 
   test("AC6: totalCostUsd = sum of all four scope snapshots", async () => {
-    const costAgg = makeScopedCostAgg([0.01, 0.10, 0.02, 0]);
+    const costAgg = makeScopedCostAgg([0.01, 0.1, 0.02, 0]);
     const ctx = makeCtxWithCostAgg(costAgg);
     spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op) => {
       return '{"passed":true}' as any;

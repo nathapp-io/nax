@@ -65,11 +65,18 @@ describe("AdversarialReviewPromptBuilder — ref mode", () => {
 
   test("stat block included when stat provided, omitted when not", () => {
     const stat = "src/auth/login.ts | 10 ++++++++++\n 1 file changed";
-    const withStat = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF, stat });
+    const withStat = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+      stat,
+    });
     expect(withStat).toContain(stat);
     expect(withStat).toContain("Changed Files Summary");
 
-    const withoutStat = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF });
+    const withoutStat = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+    });
     expect(withoutStat).not.toContain("Changed Files Summary");
   });
 
@@ -108,7 +115,7 @@ describe("AdversarialReviewPromptBuilder — embedded mode", () => {
       diff: DIFF,
     });
 
-    expect(result).toContain("```diff\n" + DIFF);
+    expect(result).toContain(`\`\`\`diff\n${DIFF}`);
   });
 
   test("prompt includes untested source files from testInventory", () => {
@@ -212,8 +219,6 @@ describe("AdversarialReviewPromptBuilder — custom rules", () => {
   });
 });
 
-
-
 // ─── output schema ────────────────────────────────────────────────────────────
 
 describe("AdversarialReviewPromptBuilder — output schema", () => {
@@ -273,7 +278,9 @@ describe("AdversarialReviewPromptBuilder — priorAdversarialIterations", () => 
     {
       iterationNum: 1,
       findingsBefore: [],
-      fixesApplied: [{ strategyName: "source-fix", op: "source-fix", targetFiles: ["src/auth/login.ts"], summary: "", costUsd: 0 }],
+      fixesApplied: [
+        { strategyName: "source-fix", op: "source-fix", targetFiles: ["src/auth/login.ts"], summary: "", costUsd: 0 },
+      ],
       findingsAfter: [
         {
           source: "adversarial-review" as const,
@@ -317,7 +324,11 @@ describe("AdversarialReviewPromptBuilder — priorAdversarialIterations", () => 
     const undef = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF });
     expect(undef).not.toContain("## Prior Iterations");
 
-    const empty = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF, priorAdversarialIterations: [] });
+    const empty = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+      priorAdversarialIterations: [],
+    });
     expect(empty).not.toContain("## Prior Iterations");
   });
 

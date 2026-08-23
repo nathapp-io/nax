@@ -10,9 +10,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "@/config";
-import type { PRD, UserStory } from "@/prd";
 import type { _routingDeps as RoutingDeps } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd";
 import type { StoryRouting } from "@/prd/types";
 import { makeNaxConfig, makeStory } from "@test/helpers";
 
@@ -64,24 +64,32 @@ describe("routingStage — H1: profileModelTier seeds starting tier", () => {
 
   afterEach(() => {
     if (origRoutingDeps) {
-      const { _routingDeps } = require("../../../../src/pipeline/stages/routing");
+      const { _routingDeps } = require("@/pipeline/stages/routing");
       Object.assign(_routingDeps, origRoutingDeps);
     }
   });
 
   test("upward override — profileModelTier=powerful beats complexity-derived fast", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
     origRoutingDeps = { ..._routingDeps };
 
     _routingDeps.resolveRouting = () =>
-      Promise.resolve({ complexity: "simple" as const, modelTier: "fast" as const, testStrategy: "test-after" as const, reasoning: "keyword" });
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
     _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
     _routingDeps.savePRD = () => Promise.resolve();
 
     const story = makeStory({
-      routing: { complexity: "simple", testStrategy: "test-after", reasoning: "", profileModelTier: "powerful" as const },
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "",
+        profileModelTier: "powerful" as const,
+      },
     });
     const ctx = makeCtx(story);
 
@@ -91,18 +99,26 @@ describe("routingStage — H1: profileModelTier seeds starting tier", () => {
   });
 
   test("downward override (Interpretation A) — a cheap profile starts a complex story at fast — escalation recovers", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
     origRoutingDeps = { ..._routingDeps };
 
     _routingDeps.resolveRouting = () =>
-      Promise.resolve({ complexity: "expert" as const, modelTier: "powerful" as const, testStrategy: "three-session-tdd" as const, reasoning: "llm" });
+      Promise.resolve({
+        complexity: "expert" as const,
+        modelTier: "powerful" as const,
+        testStrategy: "three-session-tdd" as const,
+        reasoning: "llm",
+      });
     _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
     _routingDeps.savePRD = () => Promise.resolve();
 
     const story = makeStory({
-      routing: { complexity: "expert", testStrategy: "three-session-tdd", reasoning: "", profileModelTier: "fast" as const },
+      routing: {
+        complexity: "expert",
+        testStrategy: "three-session-tdd",
+        reasoning: "",
+        profileModelTier: "fast" as const,
+      },
     });
     const ctx = makeCtx(story);
 
@@ -113,20 +129,23 @@ describe("routingStage — H1: profileModelTier seeds starting tier", () => {
   });
 
   test("escalation still wins — escalated powerful is preserved over profileModelTier fast", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
     origRoutingDeps = { ..._routingDeps };
 
     _routingDeps.resolveRouting = () =>
-      Promise.resolve({ complexity: "simple" as const, modelTier: "fast" as const, testStrategy: "test-after" as const, reasoning: "keyword" });
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
     _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
     _routingDeps.savePRD = () => Promise.resolve();
 
     // Story already escalated to powerful; profile says fast
     const routing: StoryRouting = {
       complexity: "simple",
-      modelTier: "powerful",    // escalated tier already stored
+      modelTier: "powerful", // escalated tier already stored
       testStrategy: "test-after",
       reasoning: "",
       profileModelTier: "fast", // profile baseline
@@ -141,13 +160,16 @@ describe("routingStage — H1: profileModelTier seeds starting tier", () => {
   });
 
   test("story with no profileModelTier uses complexity-derived tier (regression guard)", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
     origRoutingDeps = { ..._routingDeps };
 
     _routingDeps.resolveRouting = () =>
-      Promise.resolve({ complexity: "medium" as const, modelTier: "balanced" as const, testStrategy: "three-session-tdd" as const, reasoning: "keyword" });
+      Promise.resolve({
+        complexity: "medium" as const,
+        modelTier: "balanced" as const,
+        testStrategy: "three-session-tdd" as const,
+        reasoning: "keyword",
+      });
     _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
     _routingDeps.savePRD = () => Promise.resolve();
 
@@ -160,18 +182,26 @@ describe("routingStage — H1: profileModelTier seeds starting tier", () => {
   });
 
   test("unknown/custom profileModelTier passes through as start tier without crash", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
     origRoutingDeps = { ..._routingDeps };
 
     _routingDeps.resolveRouting = () =>
-      Promise.resolve({ complexity: "simple" as const, modelTier: "fast" as const, testStrategy: "test-after" as const, reasoning: "keyword" });
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
     _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
     _routingDeps.savePRD = () => Promise.resolve();
 
     const story = makeStory({
-      routing: { complexity: "simple", testStrategy: "test-after", reasoning: "", profileModelTier: "custom-tier" as any },
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "",
+        profileModelTier: "custom-tier" as any,
+      },
     });
     const ctx = makeCtx(story);
 
@@ -183,16 +213,17 @@ describe("routingStage — H1: profileModelTier seeds starting tier", () => {
   });
 
   test("mapper-produced story with profileModelTier=fast routes to fast, not the mapper default", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
-    const { mapDecomposedStoriesToUserStories } = await import(
-      "../../../../src/prd/decompose-mapper"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
+    const { mapDecomposedStoriesToUserStories } = await import("@/prd/decompose-mapper");
     origRoutingDeps = { ..._routingDeps };
 
     _routingDeps.resolveRouting = () =>
-      Promise.resolve({ complexity: "medium" as const, modelTier: "balanced" as const, testStrategy: "test-after" as const, reasoning: "x" });
+      Promise.resolve({
+        complexity: "medium" as const,
+        modelTier: "balanced" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "x",
+      });
     _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
     _routingDeps.savePRD = () => Promise.resolve();
 
@@ -224,13 +255,16 @@ describe("routingStage — H1: profileModelTier seeds starting tier", () => {
   });
 
   test("custom-named escalated tier (from a custom tierOrder rung) is preserved over a canonical candidate", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
     origRoutingDeps = { ..._routingDeps };
 
     _routingDeps.resolveRouting = () =>
-      Promise.resolve({ complexity: "medium" as const, modelTier: "balanced" as const, testStrategy: "test-after" as const, reasoning: "x" });
+      Promise.resolve({
+        complexity: "medium" as const,
+        modelTier: "balanced" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "x",
+      });
     _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
     _routingDeps.savePRD = () => Promise.resolve();
 
@@ -257,18 +291,26 @@ describe("routingStage — H1: profileModelTier seeds starting tier", () => {
   });
 
   test("idempotence — running routingStage twice on a profile-seeded story yields stable modelTier", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
     origRoutingDeps = { ..._routingDeps };
 
     _routingDeps.resolveRouting = () =>
-      Promise.resolve({ complexity: "simple" as const, modelTier: "fast" as const, testStrategy: "test-after" as const, reasoning: "keyword" });
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
     _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
     _routingDeps.savePRD = () => Promise.resolve();
 
     const story = makeStory({
-      routing: { complexity: "simple", testStrategy: "test-after", reasoning: "", profileModelTier: "balanced" as const },
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "",
+        profileModelTier: "balanced" as const,
+      },
     });
     const ctx = makeCtx(story);
 
@@ -292,19 +334,22 @@ describe("routingStage — H2: initialAgent / initialProfileId written once", ()
 
   afterEach(() => {
     if (origRoutingDeps) {
-      const { _routingDeps } = require("../../../../src/pipeline/stages/routing");
+      const { _routingDeps } = require("@/pipeline/stages/routing");
       Object.assign(_routingDeps, origRoutingDeps);
     }
   });
 
   test("initialAgent and initialProfileId captured from first route", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
     origRoutingDeps = { ..._routingDeps };
 
     _routingDeps.resolveRouting = () =>
-      Promise.resolve({ complexity: "simple" as const, modelTier: "fast" as const, testStrategy: "test-after" as const, reasoning: "keyword" });
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
     _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
     _routingDeps.savePRD = () => Promise.resolve();
 
@@ -326,13 +371,16 @@ describe("routingStage — H2: initialAgent / initialProfileId written once", ()
   });
 
   test("initialAgent is not overwritten after escalation changes routing.agent", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
     origRoutingDeps = { ..._routingDeps };
 
     _routingDeps.resolveRouting = () =>
-      Promise.resolve({ complexity: "simple" as const, modelTier: "fast" as const, testStrategy: "test-after" as const, reasoning: "keyword" });
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
     _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
     _routingDeps.savePRD = () => Promise.resolve();
 
@@ -344,7 +392,7 @@ describe("routingStage — H2: initialAgent / initialProfileId written once", ()
         reasoning: "",
         agent: "opencode",
         agentProfileId: "oc-bal",
-        initialAgent: "opencode",   // already written on first route
+        initialAgent: "opencode", // already written on first route
         initialProfileId: "oc-bal",
       },
     });
@@ -361,13 +409,16 @@ describe("routingStage — H2: initialAgent / initialProfileId written once", ()
   });
 
   test("story with no agent assignment produces no initialAgent or initialProfileId keys", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
     origRoutingDeps = { ..._routingDeps };
 
     _routingDeps.resolveRouting = () =>
-      Promise.resolve({ complexity: "simple" as const, modelTier: "fast" as const, testStrategy: "test-after" as const, reasoning: "keyword" });
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "keyword",
+      });
     _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
     _routingDeps.savePRD = () => Promise.resolve();
 
@@ -382,9 +433,7 @@ describe("routingStage — H2: initialAgent / initialProfileId written once", ()
   });
 
   test("decision.agent applies when the PRD leaves agent unset (Part A forward-compat)", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
     origRoutingDeps = { ..._routingDeps };
     _routingDeps.resolveRouting = () =>
       Promise.resolve({
@@ -405,9 +454,7 @@ describe("routingStage — H2: initialAgent / initialProfileId written once", ()
   });
 
   test("PRD agent still wins over decision.agent", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
     origRoutingDeps = { ..._routingDeps };
     _routingDeps.resolveRouting = () =>
       Promise.resolve({
@@ -420,7 +467,9 @@ describe("routingStage — H2: initialAgent / initialProfileId written once", ()
     _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
     _routingDeps.savePRD = () => Promise.resolve();
 
-    const story = makeStory({ routing: { complexity: "simple", testStrategy: "test-after", reasoning: "", agent: "claude" } });
+    const story = makeStory({
+      routing: { complexity: "simple", testStrategy: "test-after", reasoning: "", agent: "claude" },
+    });
     const ctx = makeCtx(story);
     await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);
 
@@ -428,21 +477,28 @@ describe("routingStage — H2: initialAgent / initialProfileId written once", ()
   });
 
   test("initialAgent is NOT captured from an agent first assigned by escalation", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
     origRoutingDeps = { ..._routingDeps };
     _routingDeps.resolveRouting = () =>
-      Promise.resolve({ complexity: "simple" as const, modelTier: "fast" as const, testStrategy: "test-after" as const, reasoning: "k" });
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "k",
+      });
     _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
     _routingDeps.savePRD = () => Promise.resolve();
 
     // Story had NO plan-time agent; escalation later assigned one and left a record.
     const story = makeStory({
-      escalations: [
-        { fromTier: "fast", toTier: "balanced", reason: "budget", timestamp: new Date().toISOString() },
-      ],
-      routing: { complexity: "simple", testStrategy: "test-after", reasoning: "", modelTier: "balanced", agent: "claude" },
+      escalations: [{ fromTier: "fast", toTier: "balanced", reason: "budget", timestamp: new Date().toISOString() }],
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "",
+        modelTier: "balanced",
+        agent: "claude",
+      },
     });
     const ctx = makeCtx(story);
     await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);

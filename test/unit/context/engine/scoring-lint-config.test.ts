@@ -60,10 +60,7 @@ describe("scoreChunk — lint-config kind (US-004 AC3)", () => {
 
   test("AC3: lint-config chunk is below the static floor weight (0.8 < 1.0)", () => {
     const lint = scoreChunk(makeChunk({ kind: "lint-config", rawScore: 1.0 }), "implementer").score;
-    const staticScore = scoreChunk(
-      { ...makeChunk({ kind: "static", rawScore: 1.0 }) },
-      "implementer",
-    ).score;
+    const staticScore = scoreChunk({ ...makeChunk({ kind: "static", rawScore: 1.0 }) }, "implementer").score;
     expect(lint).toBeLessThan(staticScore);
   });
 });

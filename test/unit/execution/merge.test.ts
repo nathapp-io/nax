@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { _gitDeps } from "@/utils/git";
 import { MergeEngine } from "@/worktree";
 import type { StoryDependencies } from "@/worktree";
+import { makeSpawn } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -284,15 +285,10 @@ interface FakeProc {
 
 /** Build a `_gitDeps.spawn` stand-in that answers per git command. */
 function fakeSpawn(handler: (cmd: readonly string[]) => FakeProc): typeof _gitDeps.spawn {
-  return ((cmd: string[]) => {
+  return makeSpawn(({ cmd }) => {
     const res = handler(cmd);
-    return {
-      exited: Promise.resolve(res.exit),
-      stdout: new Response(res.stdout ?? "").body,
-      stderr: new Response(res.stderr ?? "").body,
-      kill: () => {},
-    };
-  }) as unknown as typeof _gitDeps.spawn;
+    return { exitCode: res.exit, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
+  }).spawn;
 }
 
 const isMergeCmd = (cmd: readonly string[]) => cmd[1] === "merge" && cmd[2] === "--no-ff";

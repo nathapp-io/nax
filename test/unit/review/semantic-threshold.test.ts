@@ -15,7 +15,7 @@ import { _diffUtilsDeps } from "@/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "@/review/semantic";
 import type { SemanticStory } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
-import { makeMockAgentManager } from "@test/helpers";
+import { makeMockAgentManager, makeSpawn } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
@@ -43,24 +43,28 @@ const MIXED_RESPONSE = JSON.stringify({
   passed: false,
   findings: [
     { severity: "warning", file: "src/foo.ts", line: 1, issue: "A warning", suggestion: "Fix warning" },
-    { severity: "error", file: "src/blockingThreshold.ts", line: 2, issue: "An error", suggestion: "Fix error", acQuote: "blockingThreshold controls which findings block", acIndex: 1 },
+    {
+      severity: "error",
+      file: "src/blockingThreshold.ts",
+      line: 2,
+      issue: "An error",
+      suggestion: "Fix error",
+      acQuote: "blockingThreshold controls which findings block",
+      acIndex: 1,
+    },
   ],
 });
 
 // LLM response: only a warning
 const WARNING_ONLY_RESPONSE = JSON.stringify({
   passed: false,
-  findings: [
-    { severity: "warning", file: "src/foo.ts", line: 1, issue: "Just a warning", suggestion: "Fix it" },
-  ],
+  findings: [{ severity: "warning", file: "src/foo.ts", line: 1, issue: "Just a warning", suggestion: "Fix it" }],
 });
 
 // LLM response: only an info finding
 const INFO_ONLY_RESPONSE = JSON.stringify({
   passed: false,
-  findings: [
-    { severity: "info", file: "src/foo.ts", line: 1, issue: "Just info", suggestion: "FYI" },
-  ],
+  findings: [{ severity: "info", file: "src/foo.ts", line: 1, issue: "Just info", suggestion: "FYI" }],
 });
 
 function makeAgentManager(llmResponse: string, cost = 0) {
@@ -76,8 +80,22 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       agentFallbacks: [],
     }),
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
-    runWithFallbackFn: async () => ({ result: { success: true, exitCode: 0, output: llmResponse, rateLimited: false, durationMs: 100, estimatedCostUsd: cost, agentFallbacks: [] }, fallbacks: [] }),
-    completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] }),
+    runWithFallbackFn: async () => ({
+      result: {
+        success: true,
+        exitCode: 0,
+        output: llmResponse,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCostUsd: cost,
+        agentFallbacks: [],
+      },
+      fallbacks: [],
+    }),
+    completeWithFallbackFn: async () => ({
+      result: { output: llmResponse, costUsd: cost, source: "mock" },
+      fallbacks: [],
+    }),
     runAsFn: async (_agent, opts) => ({
       success: true,
       exitCode: 0,
@@ -92,14 +110,7 @@ function makeAgentManager(llmResponse: string, cost = 0) {
 }
 
 function makeSpawnMock(stdout = "src/foo.ts | 2 ++") {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(0),
-    stdout: new ReadableStream({
-      start(c) { c.enqueue(new TextEncoder().encode(stdout)); c.close(); },
-    }),
-    stderr: new ReadableStream({ start(c) { c.close(); } }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(() => stdout).spawn;
 }
 
 // ---------------------------------------------------------------------------
@@ -156,7 +167,17 @@ describe("runSemanticReview — blockingThreshold defaults to 'error'", () => {
   test("error finding blocks by default (goes to findings)", async () => {
     const errorOnly = JSON.stringify({
       passed: false,
-      findings: [{ severity: "error", file: "src/blockingThreshold.ts", line: 1, issue: "An error", suggestion: "Fix", acQuote: "blockingThreshold controls which findings block", acIndex: 1 }],
+      findings: [
+        {
+          severity: "error",
+          file: "src/blockingThreshold.ts",
+          line: 1,
+          issue: "An error",
+          suggestion: "Fix",
+          acQuote: "blockingThreshold controls which findings block",
+          acIndex: 1,
+        },
+      ],
     });
     const agentManager = makeAgentManager(errorOnly);
     const runtime = makeMockRuntime({ agentManager });

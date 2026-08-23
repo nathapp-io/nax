@@ -1,5 +1,5 @@
-import { describe, test, expect } from "bun:test";
-import { scoreChunk, scoreChunks, MIN_SCORE } from "@/context/engine/scoring";
+import { describe, expect, test } from "bun:test";
+import { MIN_SCORE, scoreChunk, scoreChunks } from "@/context/engine/scoring";
 import type { RawChunk } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────

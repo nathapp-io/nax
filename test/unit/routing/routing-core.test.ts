@@ -11,7 +11,13 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
 import { escalateTier } from "@/execution/runner";
-import { classifyComplexity, complexityToModelTier, determineTestStrategy, isSecurityCriticalStory, routeTask } from "@/routing";
+import {
+  classifyComplexity,
+  complexityToModelTier,
+  determineTestStrategy,
+  isSecurityCriticalStory,
+  routeTask,
+} from "@/routing";
 import { makeNaxConfig } from "@test/helpers";
 
 describe("classifyComplexity", () => {
@@ -47,12 +53,52 @@ describe("determineTestStrategy", () => {
     // #408: medium now routes to tdd-simple; complex to three-session-tdd-lite
     ["simple → tdd-simple", "simple", "Fix typo", "Fix a typo", [], undefined, "tdd-simple"],
     ["medium → tdd-simple (#408)", "medium", "Add schema fields", "Add DTO fields", [], undefined, "tdd-simple"],
-    ["complex → three-session-tdd-lite (#408)", "complex", "Refactor module", "Complex refactor", [], undefined, "three-session-tdd-lite"],
-    ["expert → three-session-tdd", "expert", "Redesign architecture", "Architectural overhaul", [], undefined, "three-session-tdd"],
-    ["security keyword on simple → three-session-tdd", "simple", "Fix auth bypass", "Security fix for JWT token", ["security"], undefined, "three-session-tdd"],
-    ["public api keyword on simple → three-session-tdd", "simple", "Add endpoint", "New public api endpoint for users", [], undefined, "three-session-tdd"],
+    [
+      "complex → three-session-tdd-lite (#408)",
+      "complex",
+      "Refactor module",
+      "Complex refactor",
+      [],
+      undefined,
+      "three-session-tdd-lite",
+    ],
+    [
+      "expert → three-session-tdd",
+      "expert",
+      "Redesign architecture",
+      "Architectural overhaul",
+      [],
+      undefined,
+      "three-session-tdd",
+    ],
+    [
+      "security keyword on simple → three-session-tdd",
+      "simple",
+      "Fix auth bypass",
+      "Security fix for JWT token",
+      ["security"],
+      undefined,
+      "three-session-tdd",
+    ],
+    [
+      "public api keyword on simple → three-session-tdd",
+      "simple",
+      "Add endpoint",
+      "New public api endpoint for users",
+      [],
+      undefined,
+      "three-session-tdd",
+    ],
     // security keyword overrides complex → still three-session-tdd, not three-session-tdd-lite
-    ["security keyword on complex → three-session-tdd (override wins)", "complex", "Auth UI", "JWT token security screen", ["security"], "auto", "three-session-tdd"],
+    [
+      "security keyword on complex → three-session-tdd (override wins)",
+      "complex",
+      "Auth UI",
+      "JWT token security screen",
+      ["security"],
+      "auto",
+      "three-session-tdd",
+    ],
   ] as const)("%s", (_label, complexity, title, desc, tags, strategy, expected) => {
     expect(determineTestStrategy(complexity, title, desc, [...tags], strategy)).toBe(expected);
   });
@@ -120,8 +166,26 @@ describe("routeTask", () => {
 
   // #408: many ACs without keywords → simple; complex without security → tdd-lite
   test.each([
-    ["many ACs without keywords → simple (#408)", "Add fields", "Add schema fields", ["AC1", "AC2", "AC3", "AC4", "AC5", "AC6", "AC7", "AC8", "AC9"], [], "simple", "fast", "tdd-simple"],
-    ["complex without security keyword → three-session-tdd-lite (#408)", "Refactor module", "Refactor core module", ["AC1"], [], "complex", undefined, "three-session-tdd-lite"],
+    [
+      "many ACs without keywords → simple (#408)",
+      "Add fields",
+      "Add schema fields",
+      ["AC1", "AC2", "AC3", "AC4", "AC5", "AC6", "AC7", "AC8", "AC9"],
+      [],
+      "simple",
+      "fast",
+      "tdd-simple",
+    ],
+    [
+      "complex without security keyword → three-session-tdd-lite (#408)",
+      "Refactor module",
+      "Refactor core module",
+      ["AC1"],
+      [],
+      "complex",
+      undefined,
+      "three-session-tdd-lite",
+    ],
   ] as const)("%s", (_label, title, desc, acs, tags, complexity, modelTier, strategy) => {
     const result = routeTask(title, desc, [...acs], [...tags], DEFAULT_CONFIG);
     expect(result.complexity).toBe(complexity);
@@ -138,11 +202,14 @@ describe("routeTask", () => {
     test.each([
       ["strict", "Fix typo", "Fix a typo", ["Typo fixed"], [], "three-session-tdd", "strategy:strict"],
       ["lite", "Fix typo", "Fix a typo", ["Typo fixed"], [], "three-session-tdd-lite", "strategy:lite"],
-    ] as const)("strategy='%s' forces correct testStrategy and reasoning", (strategy, title, desc, acs, tags, expectedStrategy, expectedReasoning) => {
-      const result = routeTask(title, desc, [...acs], [...tags], makeConfig(strategy));
-      expect(result.testStrategy).toBe(expectedStrategy);
-      expect(result.reasoning).toContain(expectedReasoning);
-    });
+    ] as const)(
+      "strategy='%s' forces correct testStrategy and reasoning",
+      (strategy, title, desc, acs, tags, expectedStrategy, expectedReasoning) => {
+        const result = routeTask(title, desc, [...acs], [...tags], makeConfig(strategy));
+        expect(result.testStrategy).toBe(expectedStrategy);
+        expect(result.reasoning).toContain(expectedReasoning);
+      },
+    );
 
     test("config.tdd.strategy='off' forces test-after even on complex/security tasks", () => {
       const result = routeTask("Auth refactor", "JWT auth security", ["Token works"], ["security"], makeConfig("off"));

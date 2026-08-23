@@ -16,30 +16,18 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import type { CallOpFn } from "@/findings/cycle";
 import { createDeclineLedger, runFixCycle } from "@/findings";
-import { makeLogger } from "@test/helpers";
 import type { Finding, FixStrategy, Iteration } from "@/findings";
-import {
-  lintA,
-  lintB,
-  makeCallOpMock,
-  makeCtx,
-  makeCycle,
-  makeStrategy,
-  typecheckC,
-} from "./_cycle-fixtures";
+import type { CallOpFn } from "@/findings/cycle";
+import { makeLogger } from "@test/helpers";
+import { lintA, lintB, makeCallOpMock, makeCtx, makeCycle, makeStrategy, typecheckC } from "./_cycle-fixtures";
 
 /**
  * Build an Iteration<Finding> whose findingsBefore and findingsAfter are
  * identical to `findings` (no progress). Each iteration records one fix by the
  * supplied strategy.
  */
-function stalledPriorIteration(
-  findings: Finding[],
-  strategyName: string,
-  iterationNum: number,
-): Iteration<Finding> {
+function stalledPriorIteration(findings: Finding[], strategyName: string, iterationNum: number): Iteration<Finding> {
   return {
     iterationNum,
     findingsBefore: findings,
@@ -94,7 +82,7 @@ describe("US-002 AC1 — priorIterations saturate the per-strategy cap", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("max-attempts-per-strategy");
@@ -122,7 +110,7 @@ describe("US-002 AC1 — priorIterations saturate the per-strategy cap", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(callOpMock).toHaveBeenCalledTimes(1);
@@ -152,7 +140,7 @@ describe("US-002 AC2 — two prior dispatches consume two of three cap slots", (
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(callOpMock).toHaveBeenCalledTimes(1);
@@ -172,7 +160,7 @@ describe("US-002 AC2 — two prior dispatches consume two of three cap slots", (
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     // 1 prior + 1 live = 2 used; cap not yet hit. After the first live dispatch,
@@ -193,30 +181,27 @@ describe("US-002 AC3 — priorIterations saturate maxAttemptsTotal", () => {
     const strategyA = makeStrategy({ name: "fix-a", maxAttempts: 99, coRun: "co-run-sequential" });
     const strategyB = makeStrategy({ name: "fix-b", maxAttempts: 99, coRun: "co-run-sequential" });
     const priorIterations: Iteration<Finding>[] = [
-      priorFixIteration(
-        [lintA],
-        "fix-a",
-        1,
-        { fixesApplied: [{ strategyName: "fix-a", op: "noop-op", targetFiles: [], summary: "" }, { strategyName: "fix-b", op: "noop-op", targetFiles: [], summary: "" }] },
-      ),
-      priorFixIteration(
-        [lintA],
-        "fix-a",
-        2,
-        { fixesApplied: [{ strategyName: "fix-a", op: "noop-op", targetFiles: [], summary: "" }, { strategyName: "fix-b", op: "noop-op", targetFiles: [], summary: "" }] },
-      ),
+      priorFixIteration([lintA], "fix-a", 1, {
+        fixesApplied: [
+          { strategyName: "fix-a", op: "noop-op", targetFiles: [], summary: "" },
+          { strategyName: "fix-b", op: "noop-op", targetFiles: [], summary: "" },
+        ],
+      }),
+      priorFixIteration([lintA], "fix-a", 2, {
+        fixesApplied: [
+          { strategyName: "fix-a", op: "noop-op", targetFiles: [], summary: "" },
+          { strategyName: "fix-b", op: "noop-op", targetFiles: [], summary: "" },
+        ],
+      }),
     ];
-    const cycle = makeCycle(
-      [lintA],
-      [strategyA, strategyB],
-      async () => [],
-      { config: { maxAttemptsTotal: 4, validatorRetries: 1 } },
-    );
+    const cycle = makeCycle([lintA], [strategyA, strategyB], async () => [], {
+      config: { maxAttemptsTotal: 4, validatorRetries: 1 },
+    });
     cycle.priorIterations = priorIterations;
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("max-attempts-total");
@@ -227,24 +212,15 @@ describe("US-002 AC3 — priorIterations saturate maxAttemptsTotal", () => {
   test("boundary: prior iterations one short of the cap allow one live dispatch, then total saturates", async () => {
     const strategyA = makeStrategy({ name: "fix-a", maxAttempts: 99 });
     const priorIterations: Iteration<Finding>[] = [
-      priorFixIteration(
-        [lintA],
-        "fix-a",
-        1,
-        { fixesApplied: [{ strategyName: "fix-a", op: "noop-op", targetFiles: [], summary: "" }] },
-      ),
-      priorFixIteration(
-        [lintA],
-        "fix-a",
-        2,
-        { fixesApplied: [{ strategyName: "fix-a", op: "noop-op", targetFiles: [], summary: "" }] },
-      ),
-      priorFixIteration(
-        [lintA],
-        "fix-a",
-        3,
-        { fixesApplied: [{ strategyName: "fix-a", op: "noop-op", targetFiles: [], summary: "" }] },
-      ),
+      priorFixIteration([lintA], "fix-a", 1, {
+        fixesApplied: [{ strategyName: "fix-a", op: "noop-op", targetFiles: [], summary: "" }],
+      }),
+      priorFixIteration([lintA], "fix-a", 2, {
+        fixesApplied: [{ strategyName: "fix-a", op: "noop-op", targetFiles: [], summary: "" }],
+      }),
+      priorFixIteration([lintA], "fix-a", 3, {
+        fixesApplied: [{ strategyName: "fix-a", op: "noop-op", targetFiles: [], summary: "" }],
+      }),
     ];
     // First live validate returns the finding (no progress) so the cycle loops
     // and the second iteration's cap check sees 3 priors + 1 live = 4 = cap.
@@ -262,7 +238,7 @@ describe("US-002 AC3 — priorIterations saturate maxAttemptsTotal", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     // 3 priors < cap of 4: one live dispatch happens, then on the next iteration
@@ -291,9 +267,7 @@ describe("US-002 AC4/AC5 — bailWhen predicates read carried history", () => {
         const allStalled = trailing.every(
           (i) =>
             i.findingsBefore.length > 0 &&
-            i.findingsBefore.every((f) =>
-              i.findingsAfter.some((g) => JSON.stringify(g) === JSON.stringify(f)),
-            ),
+            i.findingsBefore.every((f) => i.findingsAfter.some((g) => JSON.stringify(g) === JSON.stringify(f))),
         );
         return allStalled ? `no progress for ${threshold} consecutive iterations` : null;
       },
@@ -313,7 +287,7 @@ describe("US-002 AC4/AC5 — bailWhen predicates read carried history", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("bail-when");
@@ -333,8 +307,8 @@ describe("US-002 AC4/AC5 — bailWhen predicates read carried history", () => {
     const logger = makeLogger();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
-      logger: logger as unknown as Parameters<typeof runFixCycle>[3]["logger"],
+      callOp: makeCallOpMock(),
+      logger,
     });
 
     expect(result.exitReason).toBe("bail-when");
@@ -351,8 +325,8 @@ describe("US-002 AC4/AC5 — bailWhen predicates read carried history", () => {
     const logger = makeLogger();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
-      logger: logger as unknown as Parameters<typeof runFixCycle>[3]["logger"],
+      callOp: makeCallOpMock(),
+      logger,
     });
 
     expect(result.exitReason).toBe("bail-when");
@@ -374,7 +348,7 @@ describe("US-002 AC4/AC5 — bailWhen predicates read carried history", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("resolved");
@@ -391,7 +365,7 @@ describe("US-002 AC4/AC5 — bailWhen predicates read carried history", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("bail-when");
@@ -408,13 +382,13 @@ describe("US-002 AC6 — omission preserves current behaviour", () => {
     const dispatched: string[] = [];
     const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 3 });
     const cycle = makeCycle([lintA], [strategy], async () => [lintA]);
-    const callOpMock = mock(async () => {
+    const callOpMock = makeCallOpMock(() => {
       dispatched.push("lint-fix");
       return {};
     });
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(dispatched).toHaveLength(3);
@@ -432,7 +406,7 @@ describe("US-002 AC6 — omission preserves current behaviour", () => {
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(callOpMock).toHaveBeenCalledTimes(3);
@@ -457,7 +431,7 @@ describe("US-002 AC7/AC8 — FixCycleResult contract preserved under carried his
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.iterations).toHaveLength(1);
@@ -485,7 +459,7 @@ describe("US-002 AC7/AC8 — FixCycleResult contract preserved under carried his
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.iterations).toHaveLength(2);
@@ -499,7 +473,13 @@ describe("US-002 AC7/AC8 — FixCycleResult contract preserved under carried his
 describe("US-002 AC9/AC10/AC11 — createDeclineLedger optional backing map", () => {
   test("AC9: backing map with a prior decline → isRetiredFor returns true without recordDeclined in this cycle", async () => {
     const backing = new Map<string, Set<string>>();
-    const priorKey = JSON.stringify([lintA.source, lintA.file ?? null, lintA.line ?? null, lintA.rule ?? null, lintA.message]);
+    const priorKey = JSON.stringify([
+      lintA.source,
+      lintA.file ?? null,
+      lintA.line ?? null,
+      lintA.rule ?? null,
+      lintA.message,
+    ]);
     backing.set("lint-fix", new Set([priorKey]));
 
     const strategy = makeStrategy({ name: "lint-fix" });
@@ -530,7 +510,13 @@ describe("US-002 AC9/AC10/AC11 — createDeclineLedger optional backing map", ()
     ledger.recordDeclined(strategy, [lintA]);
 
     // The caller's map must contain findingKey(lintA) under 'lint-fix'.
-    const expectedKey = JSON.stringify([lintA.source, lintA.file ?? null, lintA.line ?? null, lintA.rule ?? null, lintA.message]);
+    const expectedKey = JSON.stringify([
+      lintA.source,
+      lintA.file ?? null,
+      lintA.line ?? null,
+      lintA.rule ?? null,
+      lintA.message,
+    ]);
     const set = backing.get("lint-fix");
     expect(set).toBeInstanceOf(Set);
     expect(set?.has(expectedKey)).toBe(true);
@@ -577,7 +563,7 @@ describe("US-002 composite — carried history composes with runFixCycle end-to-
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     expect(result.exitReason).toBe("max-attempts-per-strategy");
@@ -599,7 +585,7 @@ describe("US-002 composite — carried history composes with runFixCycle end-to-
     const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: callOpMock as unknown as CallOpFn,
+      callOp: callOpMock,
     });
 
     // 'lint-fix' is below its cap of 2 (0 prior iterations of its own name),

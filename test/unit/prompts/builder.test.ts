@@ -209,7 +209,9 @@ describe("PromptBuilder — tdd-simple role", () => {
     expect(builder).toBeInstanceOf(PromptBuilder);
     const story = makeStory({ title: "TDD_SIMPLE_STORY_MARKER" });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any).story(story).build();
+    const prompt = await PromptBuilder.for("tdd-simple" as any)
+      .story(story)
+      .build();
     expect(prompt.length).toBeGreaterThan(0);
     expect(prompt).not.toContain("Only create or modify files in the test/ directory");
     expect(prompt).not.toContain("Do not modify test files");
@@ -222,7 +224,9 @@ describe("PromptBuilder — tdd-simple role", () => {
     ["git commit instruction", "git commit -m"],
   ])("tdd-simple prompt contains %s", async (_label, expected) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any).story(makeStory()).build();
+    const prompt = await PromptBuilder.for("tdd-simple" as any)
+      .story(makeStory())
+      .build();
     expect(prompt).toContain(expected);
   });
 
@@ -265,7 +269,6 @@ describe("PromptBuilder — tdd-simple role", () => {
   });
 });
 
-
 // ---------------------------------------------------------------------------
 // BP-001: batch role support (RED phase — will fail until implemented)
 // ---------------------------------------------------------------------------
@@ -287,7 +290,10 @@ describe("PromptBuilder — batch role: build()", () => {
   ];
 
   test("story IDs/headings/instructions/conventions present, no verdict; section order: constitution < stories < conventions", async () => {
-    const prompt = await PromptBuilder.for("batch").stories(batchStories).constitution("BATCH_CONSTITUTION_MARKER").build();
+    const prompt = await PromptBuilder.for("batch")
+      .stories(batchStories)
+      .constitution("BATCH_CONSTITUTION_MARKER")
+      .build();
     expect(prompt.length).toBeGreaterThan(0);
     expect(prompt).toContain("BP-001");
     expect(prompt).toContain("BP-002");
@@ -325,14 +331,18 @@ describe("PromptBuilder — test-quality pre-brief section", () => {
   test.each(["test-writer", "single-session", "tdd-simple"] as PromptRole[])(
     "%s prompt contains the Review-Proof Tests pre-brief with the story ID pinned",
     async (role) => {
-      const prompt = await PromptBuilder.for(role).story(makeStory({ id: "US-007" })).build();
+      const prompt = await PromptBuilder.for(role)
+        .story(makeStory({ id: "US-007" }))
+        .build();
       expect(prompt).toContain("# Review-Proof Tests");
       expect(prompt).toContain("(US-007)");
     },
   );
 
   test("batch prompt contains the pre-brief (no per-story ID pin)", async () => {
-    const prompt = await PromptBuilder.for("batch").stories([makeStory({ id: "B-001" })]).build();
+    const prompt = await PromptBuilder.for("batch")
+      .stories([makeStory({ id: "B-001" })])
+      .build();
     expect(prompt).toContain("# Review-Proof Tests");
   });
 
@@ -349,9 +359,9 @@ describe("PromptBuilder — test-quality pre-brief section", () => {
     ["verifier — reviews, never authors", "verifier", undefined],
     ["no-test — never writes tests", "no-test", undefined],
   ])("%s prompt omits the pre-brief", async (_label, role, options) => {
-    const prompt = await PromptBuilder.for(role as PromptRole, options).story(makeStory()).build();
+    const prompt = await PromptBuilder.for(role as PromptRole, options)
+      .story(makeStory())
+      .build();
     expect(prompt).not.toContain("# Review-Proof Tests");
   });
 });
-
-

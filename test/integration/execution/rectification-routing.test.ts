@@ -10,14 +10,14 @@
  * causing autofix-implementer (not full-suite-rectify) to be selected.
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _storyOrchestratorDeps, StoryOrchestratorBuilder } from "@/execution";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import { StoryOrchestratorBuilder, _storyOrchestratorDeps } from "@/execution";
 import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
-import { pickSelector, DEFAULT_CONFIG } from "@/config";
-import { makeTestRuntime, makeStory, makeNaxConfig } from "@test/helpers";
 import { makeAutofixImplementerStrategy, makeFullSuiteRectifyStrategy } from "@/operations";
+import type { CallContext, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import type { RunOperation, CallContext } from "@/operations";
+import { makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -171,8 +171,14 @@ describe("AC2.5: rectification routing — gate failure halts loop, gate finding
     _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
       if (op.name === "implementer") return { success: true };
       if (op.name === "full-suite-gate") return { success: false, findings: gateFindings };
-      if (op.name === "verifier") { verifierCalled = true; return { success: true, findings: [] }; }
-      if (op.name === "semantic-review") { semanticCalled = true; return { success: false, passed: false, findings: [] }; }
+      if (op.name === "verifier") {
+        verifierCalled = true;
+        return { success: true, findings: [] };
+      }
+      if (op.name === "semantic-review") {
+        semanticCalled = true;
+        return { success: false, passed: false, findings: [] };
+      }
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
@@ -214,7 +220,7 @@ describe("AC2.5: rectification routing — gate failure halts loop, gate finding
     // runFixCycle must have been called (gate findings are present)
     expect(capturedCycle).not.toBeNull();
 
-    const cycle = capturedCycle as unknown as FixCycle<Finding>;
+    const cycle = capturedCycle!;
 
     // AC2.5a: exactly 6 findings (gate findings, not semantic)
     expect(cycle.findings).toHaveLength(6);
@@ -224,9 +230,7 @@ describe("AC2.5: rectification routing — gate failure halts loop, gate finding
     expect(allTestRunner).toBe(true);
 
     // AC2.5c: the first matching strategy for test-runner findings is full-suite-rectify
-    const matchingStrategies = cycle.strategies.filter((s) =>
-      cycle.findings.some((f) => s.appliesTo(f)),
-    );
+    const matchingStrategies = cycle.strategies.filter((s) => cycle.findings.some((f) => s.appliesTo(f)));
     expect(matchingStrategies.length).toBeGreaterThan(0);
     expect(matchingStrategies[0]?.name).toBe("full-suite-rectify");
   });
@@ -285,7 +289,7 @@ describe("AC3.8: verifier op dispatched during initial run and re-dispatched dur
     await plan.run();
 
     // Verifier ran exactly once during the initial plan execution
-    expect(initialCallCounts["verifier"]).toBe(1);
+    expect(initialCallCounts.verifier).toBe(1);
 
     expect(capturedCycle).not.toBeNull();
     expect(capturedCtx).not.toBeNull();
@@ -298,14 +302,14 @@ describe("AC3.8: verifier op dispatched during initial run and re-dispatched dur
     }) as typeof _storyOrchestratorDeps.callOp;
 
     // Invoke validate with autofix-implementer strategiesRun
-    await (capturedCycle as unknown as FixCycle<Finding>).validate(capturedCtx as unknown as FixCycleContext, {
+    await capturedCycle!.validate(capturedCtx!, {
       mode: "full",
       strategiesRun: ["autofix-implementer"],
     });
 
     // autofix-implementer addresses review findings, not the TDD isolation boundary.
     // Verifier is a once-per-story phase and is NOT re-dispatched after autofix-implementer.
-    expect(validateCallCounts["verifier"] ?? 0).toBe(0);
+    expect(validateCallCounts.verifier ?? 0).toBe(0);
 
     // Semantic review MUST be re-run (it's in autofix-implementer's phase set)
     expect(validateCallCounts["semantic-review"] ?? 0).toBeGreaterThan(0);
@@ -370,7 +374,7 @@ describe("AC3.9: after autofix-implementer iteration, full-suite-gate and semant
     }) as typeof _storyOrchestratorDeps.callOp;
 
     // Simulate: after an autofix-implementer iteration, call validate
-    await (capturedCycle as unknown as FixCycle<Finding>).validate(capturedCtx as unknown as FixCycleContext, {
+    await capturedCycle!.validate(capturedCtx!, {
       mode: "full",
       strategiesRun: ["autofix-implementer"],
     });
@@ -383,6 +387,6 @@ describe("AC3.9: after autofix-implementer iteration, full-suite-gate and semant
 
     // autofix-implementer addresses review findings, not the TDD isolation boundary.
     // Verifier is excluded from autofix-implementer's revalidation set (once-per-story phase).
-    expect(validateCallCounts["verifier"] ?? 0).toBe(0);
+    expect(validateCallCounts.verifier ?? 0).toBe(0);
   });
 });

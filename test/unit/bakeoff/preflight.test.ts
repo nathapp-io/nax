@@ -243,8 +243,17 @@ describe("reclaimStaleBakeoffBranches — failed branch deletion", () => {
       const { output, exitCode } = handler(args);
       const bytes = new TextEncoder().encode(output);
       return {
-        stdout: new ReadableStream({ start(c) { c.enqueue(bytes); c.close(); } }),
-        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
         exited: Promise.resolve(exitCode),
         kill: mock(() => {}),
       };
@@ -304,9 +313,7 @@ describe("reclaimStaleBakeoffBranches — failed branch deletion", () => {
 
     // The pre-delete warn must include the SHA so a user can recover
     // (`git checkout <sha>` / `git branch <name> <sha>`).
-    const reclaimCall = warnSpy.mock.calls.find((c) =>
-      String(c[1]).includes("Reclaiming stale bake-off branch"),
-    );
+    const reclaimCall = warnSpy.mock.calls.find((c) => String(c[1]).includes("Reclaiming stale bake-off branch"));
     expect(reclaimCall).toBeDefined();
     const ctx = reclaimCall?.[2] as { branch?: string; sha?: string; projectRoot?: string } | undefined;
     expect(ctx?.branch).toBe(staleBranch);
@@ -337,9 +344,7 @@ describe("reclaimStaleBakeoffBranches — failed branch deletion", () => {
 
     // The reclaim warn still fires, but without a sha field — the
     // deletion is logged as best-effort.
-    const reclaimCall = warnSpy.mock.calls.find((c) =>
-      String(c[1]).includes("Reclaiming stale bake-off branch"),
-    );
+    const reclaimCall = warnSpy.mock.calls.find((c) => String(c[1]).includes("Reclaiming stale bake-off branch"));
     expect(reclaimCall).toBeDefined();
     const ctx = reclaimCall?.[2] as { branch?: string; sha?: string | null } | undefined;
     expect(ctx?.branch).toBe(staleBranch);

@@ -9,8 +9,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { parseRefinementResponse, refinementWouldFallback } from "@/acceptance/refinement";
-import { AcceptancePromptBuilder } from "@/prompts";
 import type { RefinedCriterion } from "@/acceptance/types";
+import { AcceptancePromptBuilder } from "@/prompts";
 
 const buildRefinementPrompt = (
   criteria: string[],
@@ -128,7 +128,10 @@ describe("parseRefinementResponse", () => {
       expect(empty[i].original).toBe(SAMPLE_CRITERIA[i]);
     }
 
-    const falseTestable = parseRefinementResponse(makeLLMResponse(SAMPLE_CRITERIA, STORY_ID, false).output, SAMPLE_CRITERIA);
+    const falseTestable = parseRefinementResponse(
+      makeLLMResponse(SAMPLE_CRITERIA, STORY_ID, false).output,
+      SAMPLE_CRITERIA,
+    );
     for (const item of falseTestable) {
       expect(item.testable).toBe(false);
     }
@@ -173,7 +176,7 @@ describe("parseRefinementResponse — truncated array recovery", () => {
 
   test("recovers array with trailing comma before missing ] (common LLM pattern)", () => {
     const items = makeItems(criteria);
-    const withTrailingComma = JSON.stringify(items).slice(0, -1) + ","; // strip ] then add ,
+    const withTrailingComma = `${JSON.stringify(items).slice(0, -1)},`; // strip ] then add ,
     const result = parseRefinementResponse(withTrailingComma, criteria);
     expect(result).toHaveLength(criteria.length);
   });
@@ -207,8 +210,8 @@ describe("buildRefinementPrompt — strategy-specific instructions", () => {
     expect(
       buildRefinementPrompt(SAMPLE_CRITERIA, "", { testStrategy: "component", testFramework: "ink-testing-library" }),
     ).toContain("ink-testing-library");
-    expect(
-      buildRefinementPrompt(SAMPLE_CRITERIA, "", { testStrategy: "snapshot", testFramework: "jest" }),
-    ).toContain("TEST FRAMEWORK: jest");
+    expect(buildRefinementPrompt(SAMPLE_CRITERIA, "", { testStrategy: "snapshot", testFramework: "jest" })).toContain(
+      "TEST FRAMEWORK: jest",
+    );
   });
 });

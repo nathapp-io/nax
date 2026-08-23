@@ -43,9 +43,9 @@ afterEach(() => {
 
 describe("resolveTestFilePatterns — contract validation", () => {
   test("throws INVALID_PACKAGE_DIR when packageDir is an absolute path", async () => {
-    await expect(
-      resolveTestFilePatterns(makeNaxConfig(), WORKDIR, "/absolute/path/to/package"),
-    ).rejects.toMatchObject({ code: "INVALID_PACKAGE_DIR" });
+    await expect(resolveTestFilePatterns(makeNaxConfig(), WORKDIR, "/absolute/path/to/package")).rejects.toMatchObject({
+      code: "INVALID_PACKAGE_DIR",
+    });
   });
 
   test("accepts undefined packageDir (single-package) and relative packageDir (monorepo)", async () => {
@@ -64,14 +64,20 @@ describe("resolveTestFilePatterns — resolution chain", () => {
   });
 
   test("root-config: returns user patterns when smartTestRunner.testFilePatterns is set", async () => {
-    const config = makeNaxConfig({ execution: { smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["src/**/*.spec.ts"] } } });
+    const config = makeNaxConfig({
+      execution: {
+        smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["src/**/*.spec.ts"] },
+      },
+    });
     const resolved = await resolveTestFilePatterns(config, WORKDIR);
     expect(resolved.resolution).toBe("root-config");
     expect(resolved.globs).toEqual(["src/**/*.spec.ts"]);
   });
 
   test("root-config: explicit empty array is honoured (no test files)", async () => {
-    const config = makeNaxConfig({ execution: { smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: [] } } });
+    const config = makeNaxConfig({
+      execution: { smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: [] } },
+    });
     const resolved = await resolveTestFilePatterns(config, WORKDIR);
     expect(resolved.resolution).toBe("root-config");
     expect(resolved.globs).toHaveLength(0);
@@ -79,7 +85,11 @@ describe("resolveTestFilePatterns — resolution chain", () => {
   });
 
   test("per-package: wins over root-config when mono config file present", async () => {
-    const config = makeNaxConfig({ execution: { smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["src/**/*.spec.ts"] } } }); // root-config would return this
+    const config = makeNaxConfig({
+      execution: {
+        smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["src/**/*.spec.ts"] },
+      },
+    }); // root-config would return this
     const monoConfigPath = `${WORKDIR}/.nax/mono/packages/api/config.json`;
     _resolverDeps.fileExists = async (p) => p === monoConfigPath;
     _resolverDeps.readJson = async () => ({
@@ -92,7 +102,11 @@ describe("resolveTestFilePatterns — resolution chain", () => {
   });
 
   test("per-package: falls through when mono config exists but omits testFilePatterns", async () => {
-    const config = makeNaxConfig({ execution: { smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["src/**/*.spec.ts"] } } });
+    const config = makeNaxConfig({
+      execution: {
+        smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["src/**/*.spec.ts"] },
+      },
+    });
     _resolverDeps.fileExists = async () => true;
     _resolverDeps.readJson = async () => ({ execution: { smartTestRunner: {} } });
 
@@ -155,14 +169,23 @@ describe("resolveTestFilePatterns — field consistency", () => {
   });
 
   test("regex correctly classifies a path from the resolved globs", async () => {
-    const config = makeNaxConfig({ execution: { smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["test/**/*.test.ts"] } } });
+    const config = makeNaxConfig({
+      execution: {
+        smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["test/**/*.test.ts"] },
+      },
+    });
     const resolved = await resolveTestFilePatterns(config, WORKDIR);
     expect(resolved.regex.some((re) => re.test("test/unit/foo.test.ts"))).toBe(true);
     expect(resolved.regex.some((re) => re.test("src/foo.ts"))).toBe(false);
   });
 
   test("empty globs produces empty pathspec, regex, and testDirs", async () => {
-    const resolved = await resolveTestFilePatterns(makeNaxConfig({ execution: { smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: [] } } }), WORKDIR);
+    const resolved = await resolveTestFilePatterns(
+      makeNaxConfig({
+        execution: { smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: [] } },
+      }),
+      WORKDIR,
+    );
     expect(resolved.pathspec).toHaveLength(0);
     expect(resolved.regex).toHaveLength(0);
     expect(resolved.testDirs).toHaveLength(0);
@@ -204,7 +227,11 @@ describe("resolveReviewExcludePatterns", () => {
   });
 
   test("undefined user patterns: derives from resolved patterns + well-known noise", async () => {
-    const config = makeNaxConfig({ execution: { smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["test/**/*.test.ts"] } } });
+    const config = makeNaxConfig({
+      execution: {
+        smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["test/**/*.test.ts"] },
+      },
+    });
     const resolved = await resolveTestFilePatterns(config, WORKDIR);
     const derived = resolveReviewExcludePatterns(undefined, resolved);
 
@@ -226,14 +253,27 @@ describe("resolveReviewExcludePatterns", () => {
     const derived = resolveReviewExcludePatterns(undefined, resolved);
     // Old hardcoded default; resolver produces ":!__tests__/" (without "**/" prefix) for
     // __tests__ — a minor Phase 1 difference that's lower-risk in practice.
-    const mustContain = [":!test/", ":!tests/", ":!__tests__/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!.nax/", ":!.nax-pids"];
+    const mustContain = [
+      ":!test/",
+      ":!tests/",
+      ":!__tests__/",
+      ":!*_test.go",
+      ":!*.test.ts",
+      ":!*.spec.ts",
+      ":!.nax/",
+      ":!.nax-pids",
+    ];
     for (const pattern of mustContain) {
       expect(derived).toContain(pattern);
     }
   });
 
   test("no duplicates in derived list", async () => {
-    const config = makeNaxConfig({ execution: { smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["test/**/*.test.ts"] } } });
+    const config = makeNaxConfig({
+      execution: {
+        smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["test/**/*.test.ts"] },
+      },
+    });
     const resolved = await resolveTestFilePatterns(config, WORKDIR);
     const derived = resolveReviewExcludePatterns(undefined, resolved);
     expect(derived.length).toBe(new Set(derived).size);

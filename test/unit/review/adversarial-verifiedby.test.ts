@@ -9,12 +9,19 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { substantiateAdversarialFindings } from "@/review";
-import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { IAgentManager } from "@/agents";
-import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeLogger, withTempDir } from "@test/helpers";
+import { substantiateAdversarialFindings } from "@/review";
 import { _adversarialDeps, _diffUtilsDeps, _evidenceDeps, runAdversarialReview } from "@/review";
+import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
+import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
+import {
+  makeAgentAdapter,
+  makeLogger,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeSpawn,
+  withTempDir,
+} from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -68,21 +75,7 @@ function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
 }
 
 function makeSpawnMock(stdout: string, exitCode = 0) {
-  return mock((_opts: unknown) => ({
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(stdout));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(controller) {
-        controller.close();
-      },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  return makeSpawn(() => ({ exitCode, stdout })).spawn;
 }
 
 // ---------------------------------------------------------------------------
@@ -432,7 +425,7 @@ describe("runAdversarialReview — verifiedBy.observed substantiation (#987)", (
       writeFileSync(join(workdir, "src/auth.ts"), "export function login() {}\n");
 
       const logger = makeLogger();
-      _evidenceDeps.getLogger = () => logger as unknown as ReturnType<typeof _evidenceDeps.getLogger>;
+      _evidenceDeps.getLogger = () => logger;
 
       const llmResponse = JSON.stringify({
         passed: false,
@@ -475,8 +468,7 @@ describe("runAdversarialReview — verifiedBy.observed substantiation (#987)", (
       const downgradeEvent = logger.calls.find((c) => {
         const event = (c.data as Record<string, unknown> | undefined)?.event;
         return (
-          event === "review.adversarial.finding.downgraded" ||
-          event === "review.adversarial.finding.requote_failed"
+          event === "review.adversarial.finding.downgraded" || event === "review.adversarial.finding.requote_failed"
         );
       });
       expect(downgradeEvent).toBeDefined();

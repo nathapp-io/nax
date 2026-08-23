@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import type { Finding } from "@/findings/types";
 import { fullSuiteRectifyOp } from "@/operations";
 import { RectifierPromptBuilder, repoScopedRectification } from "@/prompts";
-import type { Finding } from "@/findings/types";
 import { makeStory } from "@test/helpers";
 
 const finding: Finding = {
@@ -17,7 +17,6 @@ const story = makeStory({
   routing: { testStrategy: "three-session-tdd", complexity: "medium", reasoning: "tdd" },
 });
 
-// biome-ignore lint/suspicious/noExplicitAny: ctx stubs for unit tests
 const ctx = { story } as any;
 
 describe("fullSuiteRectifyOp — shape (AC-1)", () => {
@@ -144,12 +143,10 @@ describe("fullSuiteRectifyOp.keepOpen — scope: 'repo'", () => {
   test("repo scope does not keep the session open", () => {
     // The repo-scoped dispatch runs under its own session role and gets one
     // attempt; leaving it warm would strand a session nothing resumes.
-    // biome-ignore lint/suspicious/noExplicitAny: buildCtx stub for a resolver that ignores it
     expect(fullSuiteRectifyOp.keepOpen?.({ story, findings: [finding], scope: "repo" }, {} as any)).toBe(false);
   });
 
   test("story scope keeps the warm session the op declares", () => {
-    // biome-ignore lint/suspicious/noExplicitAny: buildCtx stub for a resolver that ignores it
     expect(fullSuiteRectifyOp.keepOpen?.({ story, findings: [finding] }, {} as any)).toBe(true);
   });
 });

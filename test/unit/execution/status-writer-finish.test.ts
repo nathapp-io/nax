@@ -7,10 +7,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { DEFAULT_CONFIG } from "@/config";
 import { StatusWriter } from "@/execution";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { join } from "node:path";
 
 let TEST_DIR: string;
 let TEST_STATUS_FILE: string;

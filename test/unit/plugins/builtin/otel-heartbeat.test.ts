@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { type FakeClock, makeFakeClock, withTimerSpy } from "@test/helpers";
 import {
   type Heartbeat,
   type HeartbeatSnapshot,
@@ -8,6 +7,7 @@ import {
   startHeartbeat,
 } from "@/plugins/builtin/otel-reporter/heartbeat";
 import { attr } from "@/plugins/builtin/otel-reporter/otlp";
+import { type FakeClock, makeFakeClock, withTimerSpy } from "@test/helpers";
 
 function snapshot(overrides: Partial<HeartbeatSnapshot> = {}): HeartbeatSnapshot {
   return {
@@ -111,8 +111,7 @@ describe("startHeartbeat", () => {
   // still on the stack, can prove the flag is checked before re-arming.
   test("AC7: stop() called from inside a tick prevents the loop re-arming", async () => {
     let ticks = 0;
-    let hb: Heartbeat | undefined;
-    hb = track(
+    const hb: Heartbeat | undefined = track(
       startHeartbeat({
         intervalMs: 30,
         getSnapshot: () => snapshot(),
@@ -197,14 +196,12 @@ describe("startHeartbeat", () => {
 });
 
 describe("buildHeartbeatMetricsPayload", () => {
-  // biome-ignore lint/suspicious/noExplicitAny: testing dynamic OTLP payload
   const payload: any = buildHeartbeatMetricsPayload({
     serviceName: "nax",
     timeUnixNano: "5000",
     snapshot: snapshot({ phaseElapsedMs: 250, costUsd: 1.5 }),
   });
   const metrics = payload.resourceMetrics[0].scopeMetrics[0].metrics;
-  // biome-ignore lint/suspicious/noExplicitAny: accessing untyped metric entries
   const byName = (n: string) => metrics.find((m: any) => m.name === n);
 
   test("nests one resource metrics entry with service.name resource attr", () => {

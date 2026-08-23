@@ -129,9 +129,7 @@ describe("DEFAULT_SEPARATED_TEST_DIRS", () => {
 
 describe("isTestFileByPatterns", () => {
   test("returns true when any configured pattern matches", () => {
-    expect(
-      isTestFileByPatterns("src/foo.spec.ts", ["test/**/*.test.ts", "src/**/*.spec.ts"]),
-    ).toBe(true);
+    expect(isTestFileByPatterns("src/foo.spec.ts", ["test/**/*.test.ts", "src/**/*.spec.ts"])).toBe(true);
   });
 
   test("returns false when no pattern matches", () => {

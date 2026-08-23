@@ -13,17 +13,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import {
-  _storyOrchestratorDeps,
-  StoryOrchestratorBuilder,
-} from "@/execution";
-import type { Finding } from "@/findings/types";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import { StoryOrchestratorBuilder, _storyOrchestratorDeps } from "@/execution";
 import type { FixStrategy } from "@/findings";
-import { pickSelector, DEFAULT_CONFIG } from "@/config";
-import { makeTestRuntime, makeStory, makeNaxConfig } from "@test/helpers";
+import type { Finding } from "@/findings/types";
 import { makeAutofixImplementerStrategy, makeDeclarationSink } from "@/operations";
+import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import type { RunOperation, DeterministicOperation, CallContext } from "@/operations";
+import { makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -135,7 +132,7 @@ describe("AC7: verifier findings route to autofix-implementer via verifierContex
       if (name === "verifier") {
         // First dispatch: fail with tdd-verifier finding → enters rectification.
         // Subsequent dispatches (resume block): pass so story terminates cleanly.
-        if (opCounts["verifier"] === 1) {
+        if (opCounts.verifier === 1) {
           return {
             success: false,
             normalizedFindings: [VERIFIER_FINDING],
@@ -233,7 +230,7 @@ describe("AC8: validate-short-circuit + empty findings → liteScopeIncomplete a
       if (name === "verifier") {
         // First verifier run happens in lite validate after full-suite-rectify.
         // Return failure + empty findings to force short-circuit signalling.
-        if (opCounts["verifier"] === 1) {
+        if (opCounts.verifier === 1) {
           return {
             success: false,
             normalizedFindings: [],
@@ -291,6 +288,6 @@ describe("AC8: validate-short-circuit + empty findings → liteScopeIncomplete a
     expect(result.liteScopeIncomplete).toBe(true);
 
     expect(opCounts["full-suite-gate"] ?? 0).toBeGreaterThanOrEqual(2);
-    expect(opCounts["verifier"] ?? 0).toBeGreaterThanOrEqual(2);
+    expect(opCounts.verifier ?? 0).toBeGreaterThanOrEqual(2);
   });
 });

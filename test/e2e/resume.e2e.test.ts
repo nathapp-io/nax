@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { runOrchestratorE2E } from "@test/helpers";
 import type { QualityCommandResult } from "@/quality/runner";
+import { runOrchestratorE2E } from "@test/helpers";
 
 const PASS_REVIEW = () => ({ output: JSON.stringify({ passed: true, findings: [] }) });
 const impl = () => ({ output: JSON.stringify({ filesChanged: ["src/a.ts"] }) });
@@ -18,8 +18,13 @@ const PASSING_VERDICT = JSON.stringify({
 });
 
 const FAIL_LINT: QualityCommandResult = {
-  commandName: "lint", command: "lint", success: false, exitCode: 1,
-  output: "E501 line too long", durationMs: 1, timedOut: false,
+  commandName: "lint",
+  command: "lint",
+  success: false,
+  exitCode: 1,
+  output: "E501 line too long",
+  durationMs: 1,
+  timedOut: false,
 };
 
 describe("E2E: post-rectification resume", () => {

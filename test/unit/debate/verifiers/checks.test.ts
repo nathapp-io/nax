@@ -14,15 +14,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import {
-  checkFilesExist,
-  checkAcAnchored,
-  checkClaimsCited,
-  checkNoContradictions,
-  checkSpecCoverage,
-} from "@/debate";
-import type { PRD } from "@/prd/types";
+import { checkAcAnchored, checkClaimsCited, checkFilesExist, checkNoContradictions, checkSpecCoverage } from "@/debate";
 import type { FactsManifest } from "@/debate/facts-manifest";
+import type { PRD } from "@/prd/types";
+import { makePRD } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -42,10 +37,7 @@ const makeStory = (overrides: Partial<PRD["userStories"][0]> = {}): PRD["userSto
   ...overrides,
 });
 
-const makePrd = (stories: PRD["userStories"] = [makeStory()]): PRD =>
-  ({
-    userStories: stories,
-  }) as unknown as PRD;
+const makePrd = (stories: PRD["userStories"] = [makeStory()]): PRD => makePRD({ userStories: stories });
 
 const makeManifest = (overrides: Partial<FactsManifest> = {}): FactsManifest => ({
   repoFacts: [],
@@ -111,7 +103,10 @@ describe("checkFilesExist (AC2)", () => {
     const prd1 = makePrd([makeStory({ contextFiles: [{ path: "src/foo.ts" }, { path: "src/bar.ts" }] })]);
     const findings1 = checkFilesExist(prd1, "/workdir", { existsSync: () => false });
     expect(findings1).toHaveLength(2);
-    for (const f of findings1) { expect(f.severity).toBe("major"); expect(f.checklistItem).toBe("files-exist"); }
+    for (const f of findings1) {
+      expect(f.severity).toBe("major");
+      expect(f.checklistItem).toBe("files-exist");
+    }
 
     const prd2 = makePrd([makeStory({ contextFiles: ["src/plain.ts"] })]);
     const findings2 = checkFilesExist(prd2, "/workdir", { existsSync: () => false });
@@ -143,7 +138,11 @@ describe("checkFilesExist (AC2)", () => {
   });
 
   test("returns empty array when all contextFiles exist or when story has no contextFiles", () => {
-    expect(checkFilesExist(makePrd([makeStory({ contextFiles: [{ path: "src/exists.ts" }] })]), "/workdir", { existsSync: () => true })).toHaveLength(0);
+    expect(
+      checkFilesExist(makePrd([makeStory({ contextFiles: [{ path: "src/exists.ts" }] })]), "/workdir", {
+        existsSync: () => true,
+      }),
+    ).toHaveLength(0);
     expect(checkFilesExist(makePrd([makeStory()]), "/workdir", { existsSync: () => false })).toHaveLength(0);
   });
 
@@ -178,7 +177,9 @@ describe("checkAcAnchored (AC3)", () => {
   });
 
   test("returns no finding for story with verifiedBy anchor or with intent=true", () => {
-    expect(checkAcAnchored(makePrd([makeStory({ verifiedBy: { kind: "test", anchor: "test-name", factIds: [] } })]))).toHaveLength(0);
+    expect(
+      checkAcAnchored(makePrd([makeStory({ verifiedBy: { kind: "test", anchor: "test-name", factIds: [] } })])),
+    ).toHaveLength(0);
     expect(checkAcAnchored(makePrd([makeStory({ intent: true })]))).toHaveLength(0);
   });
 });
@@ -191,7 +192,12 @@ describe("checkClaimsCited — null manifest and rate meets threshold (AC4+AC5)"
   test("returns [] when manifest is null, when specClaims is empty, and when rate >= threshold", () => {
     expect(checkClaimsCited(null, 0.5)).toEqual([]);
     expect(checkClaimsCited(makeManifest({ specClaims: [] }), 0.5)).toEqual([]);
-    expect(checkClaimsCited(makeManifest({ specClaims: [verifiedClaim("S-001"), verifiedClaim("S-002"), unverifiedClaim("S-003")] }), 0.5)).toEqual([]);
+    expect(
+      checkClaimsCited(
+        makeManifest({ specClaims: [verifiedClaim("S-001"), verifiedClaim("S-002"), unverifiedClaim("S-003")] }),
+        0.5,
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -236,7 +242,12 @@ describe("checkNoContradictions (AC7)", () => {
     const prd = makePrd([makeStory({ contextFiles: [{ path: "src/a.ts", factId: "S-001" }] })]);
     expect(checkNoContradictions(prd, null)).toEqual([]);
     expect(checkNoContradictions(prd, makeManifest({ specClaims: [verifiedClaim("S-001")] }))).toEqual([]);
-    expect(checkNoContradictions(makePrd([makeStory({ contextFiles: [{ path: "src/a.ts" }] })]), makeManifest({ specClaims: [contradictedClaim("S-001")] }))).toEqual([]);
+    expect(
+      checkNoContradictions(
+        makePrd([makeStory({ contextFiles: [{ path: "src/a.ts" }] })]),
+        makeManifest({ specClaims: [contradictedClaim("S-001")] }),
+      ),
+    ).toEqual([]);
   });
 });
 

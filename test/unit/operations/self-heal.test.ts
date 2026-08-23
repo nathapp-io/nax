@@ -1,7 +1,7 @@
-import { beforeEach, afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import type { TurnResult } from "@/agents/types";
 import { makeSelfHealStep, runSelfHealChain } from "@/operations";
 import type { HopBodyContext } from "@/operations/types";
-import type { TurnResult } from "@/agents/types";
 
 function makeTurn(output: string, cost: number): TurnResult {
   return { output, estimatedCostUsd: cost, internalRoundTrips: 1, tokenUsage: { inputTokens: 0, outputTokens: 0 } };
@@ -83,7 +83,9 @@ describe("runSelfHealChain", () => {
     const send = mock(async (_p: string) => makeTurn("repair", 5));
     const seed = makeTurn("seed-out", 2);
     const throwing = makeSelfHealStep<Input, string>({
-      detect: async () => { throw new Error("disk read failed"); },
+      detect: async () => {
+        throw new Error("disk read failed");
+      },
       buildRepair: () => "should-not-be-sent",
     });
     // Should not throw; seed must be preserved

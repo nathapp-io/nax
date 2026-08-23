@@ -9,6 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { NaxConfig } from "@/config";
+import type { ContextV2Config } from "@/config/runtime-types";
 import { createDefaultOrchestrator } from "@/context/engine/orchestrator-factory";
 import { _codeNeighborDeps } from "@/context/engine/providers/code-neighbor";
 import { _gitHistoryDeps } from "@/context/engine/providers/git-history";
@@ -16,7 +17,7 @@ import { TestCoverageProvider, _testCoverageProviderDeps } from "@/context/engin
 import { ToolDiagnosticsProvider, _toolDiagnosticsDeps } from "@/context/engine/providers/tool-diagnostics";
 import type { ContextRequest } from "@/context/engine/types";
 import type { UserStory } from "@/prd";
-import { makeNaxConfig } from "@test/helpers";
+import { type DeepPartial, makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -37,25 +38,29 @@ function makeStory(): UserStory {
   };
 }
 
-function makeConfig(providerOverrides: {
-  historyScope?: "repo" | "package";
-  neighborScope?: "repo" | "package";
-  crossPackageDepth?: number;
-} = {}): NaxConfig {
+const V2_OVERRIDE: DeepPartial<ContextV2Config> = {
+  enabled: true,
+  minScore: 0.1,
+  deterministic: false,
+  pluginProviders: [],
+  stages: {},
+  pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5 },
+  rules: { allowLegacyClaudeMd: true },
+  session: { retentionDays: 7, archiveOnFeatureArchive: true },
+  staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
+};
+
+function makeConfig(
+  providerOverrides: {
+    historyScope?: "repo" | "package";
+    neighborScope?: "repo" | "package";
+    crossPackageDepth?: number;
+  } = {},
+): NaxConfig {
   return makeNaxConfig({
-    autoMode: { defaultAgent: "claude" },
     context: {
       v2: {
-        enabled: true,
-        minScore: 0.1,
-        deterministic: false,
-        pluginProviders: [],
-        stages: {},
-        pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5 },
-        rules: { allowLegacyClaudeMd: true },
-        fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
-        session: { retentionDays: 7, archiveOnFeatureArchive: true },
-        staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
+        ...V2_OVERRIDE,
         providers: {
           historyScope: providerOverrides.historyScope ?? "package",
           neighborScope: providerOverrides.neighborScope ?? "package",
@@ -120,15 +125,15 @@ afterEach(() => {
 
 describe("createDefaultOrchestrator — #508-M7 optional chaining on rules", () => {
   test("does not throw when config.context.v2.rules is undefined", () => {
-    const configNoRules = {
-      ...makeConfig(),
+    const configNoRules = makeNaxConfig({
       context: {
         v2: {
-          ...makeConfig().context.v2,
+          ...V2_OVERRIDE,
+          providers: { historyScope: "package", neighborScope: "package", crossPackageDepth: 1 },
           rules: undefined,
         },
       },
-    } as unknown as NaxConfig;
+    });
 
     expect(() => createDefaultOrchestrator(makeStory(), configNoRules)).not.toThrow();
   });
@@ -206,14 +211,15 @@ describe("createDefaultOrchestrator — TestCoverageProvider registration", () =
     origResolvePatterns = _testCoverageProviderDeps.resolveTestFilePatterns;
     origGetContextFiles = _testCoverageProviderDeps.getContextFiles;
     _testCoverageProviderDeps.getContextFiles = () => [];
-    _testCoverageProviderDeps.generateTestCoverageSummary = async () => ({
-      summary: "test coverage summary",
-      tokens: 100,
-      files: [],
-      totalTests: 5,
-    } as any);
+    _testCoverageProviderDeps.generateTestCoverageSummary = async () =>
+      ({
+        summary: "test coverage summary",
+        tokens: 100,
+        files: [],
+        totalTests: 5,
+      }) as any;
     _testCoverageProviderDeps.resolveTestFilePatterns = async () =>
-      ({ patterns: ["**/*.test.ts"], strategy: "glob" } as any);
+      ({ patterns: ["**/*.test.ts"], strategy: "glob" }) as any;
   });
 
   afterEach(() => {
@@ -223,8 +229,7 @@ describe("createDefaultOrchestrator — TestCoverageProvider registration", () =
   });
 
   function makeConfigWithTestCoverage(enabled: boolean): NaxConfig {
-    return {
-      autoMode: { defaultAgent: "claude" },
+    return makeNaxConfig({
       context: {
         v2: {
           enabled: true,
@@ -234,7 +239,6 @@ describe("createDefaultOrchestrator — TestCoverageProvider registration", () =
           stages: {},
           pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5 },
           rules: { allowLegacyClaudeMd: true },
-          fallback: { enabled: false, onQualityFailure: false, maxHopsPerStory: 2, map: {} },
           session: { retentionDays: 7, archiveOnFeatureArchive: true },
           staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
           providers: {
@@ -250,7 +254,7 @@ describe("createDefaultOrchestrator — TestCoverageProvider registration", () =
           scopeToStory: true,
         },
       },
-    } as unknown as NaxConfig;
+    });
   }
 
   test("AC1: TestCoverageProvider is registered in providers array before additionalProviders", async () => {
@@ -258,9 +262,7 @@ describe("createDefaultOrchestrator — TestCoverageProvider registration", () =
     const orchestrator = createDefaultOrchestrator(makeStory(), config);
     const request = makeRequest({ providerIds: ["test-coverage"] });
     const bundle = await orchestrator.assemble(request);
-    const testCoverageResult = bundle.manifest.providerResults?.find(
-      (p) => p.providerId === "test-coverage",
-    );
+    const testCoverageResult = bundle.manifest.providerResults?.find((p) => p.providerId === "test-coverage");
     expect(testCoverageResult).toBeDefined();
   });
 
@@ -322,9 +324,7 @@ describe("createDefaultOrchestrator — ToolDiagnosticsProvider registration (US
     });
     const bundle = await orchestrator.assemble(request);
 
-    const tdResult = bundle.manifest.providerResults?.find(
-      (p) => p.providerId === "tool-diagnostics",
-    );
+    const tdResult = bundle.manifest.providerResults?.find((p) => p.providerId === "tool-diagnostics");
     expect(tdResult).toBeDefined();
     expect(tdResult?.providerId).toBe("tool-diagnostics");
   });
@@ -340,7 +340,9 @@ describe("createDefaultOrchestrator — ToolDiagnosticsProvider registration (US
         kind: "tool-diagnostics",
         timestamp: "2026-01-01T00:00:00.000Z",
         storyId: "US-001",
-        diagnostics: [{ file: "src/a.ts", line: 12, severity: "error", message: "Cannot find name 'foo'.", tool: "tsc" }],
+        diagnostics: [
+          { file: "src/a.ts", line: 12, severity: "error", message: "Cannot find name 'foo'.", tool: "tsc" },
+        ],
       })}\n`;
 
     const config = makeConfig();

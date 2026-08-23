@@ -9,8 +9,7 @@ import { parseDotenv, resolveEnvVars } from "@/config/dotenv";
 
 describe("parseDotenv", () => {
   test("parses standard dotenv content stripping comments, blank lines, export prefixes, and quotes", () => {
-    const content =
-      'FOO=bar\n# comment\n\nexport BAZ=qux\nQUOTED="hello world"';
+    const content = 'FOO=bar\n# comment\n\nexport BAZ=qux\nQUOTED="hello world"';
     const result = parseDotenv(content);
     expect(result).toEqual({ FOO: "bar", BAZ: "qux", QUOTED: "hello world" });
   });
@@ -52,8 +51,6 @@ describe("resolveEnvVars", () => {
   });
 
   test("supports inline substitution within a string (prefix-$VAR-suffix)", () => {
-    expect(resolveEnvVars({ a: "prefix-$FOO-suffix" }, { FOO: "mid" })).toEqual(
-      { a: "prefix-mid-suffix" },
-    );
+    expect(resolveEnvVars({ a: "prefix-$FOO-suffix" }, { FOO: "mid" })).toEqual({ a: "prefix-mid-suffix" });
   });
 });

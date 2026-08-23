@@ -38,12 +38,12 @@ describe("ModelsSchema — legacy flat config migration", () => {
     const models = result.data.models as Record<string, Record<string, unknown>>;
 
     expect(models[defaultAgent]).toBeDefined();
-    expect(models["fast"]).toBeUndefined();
-    expect(models["balanced"]).toBeUndefined();
-    expect(models["powerful"]).toBeUndefined();
-    expect(models[defaultAgent]["fast"]).toEqual({ provider: "anthropic", model: "haiku" });
-    expect(models[defaultAgent]["balanced"]).toEqual({ provider: "anthropic", model: "sonnet" });
-    expect(models[defaultAgent]["powerful"]).toEqual({ provider: "anthropic", model: "opus" });
+    expect(models.fast).toBeUndefined();
+    expect(models.balanced).toBeUndefined();
+    expect(models.powerful).toBeUndefined();
+    expect(models[defaultAgent].fast).toEqual({ provider: "anthropic", model: "haiku" });
+    expect(models[defaultAgent].balanced).toEqual({ provider: "anthropic", model: "sonnet" });
+    expect(models[defaultAgent].powerful).toEqual({ provider: "anthropic", model: "opus" });
   });
 
   test("auto-migrates legacy flat string entries: tier keys move under defaultAgent, string values preserved", () => {
@@ -61,9 +61,9 @@ describe("ModelsSchema — legacy flat config migration", () => {
     const models = result.data.models as Record<string, Record<string, unknown>>;
 
     expect(models[defaultAgent]).toBeDefined();
-    expect(models["fast"]).toBeUndefined();
-    expect(models[defaultAgent]["fast"]).toBe("claude-haiku-4-5");
-    expect(models[defaultAgent]["balanced"]).toBe("claude-sonnet-4-5");
+    expect(models.fast).toBeUndefined();
+    expect(models[defaultAgent].fast).toBe("claude-haiku-4-5");
+    expect(models[defaultAgent].balanced).toBe("claude-sonnet-4-5");
   });
 
   test.each([
@@ -74,7 +74,7 @@ describe("ModelsSchema — legacy flat config migration", () => {
     expect(result.success).toBe(true);
     if (!result.success) return;
     const models = result.data.models as Record<string, unknown>;
-    expect(models["fast"]).toBeUndefined();
+    expect(models.fast).toBeUndefined();
   });
 });
 
@@ -96,8 +96,8 @@ describe("ModelsSchema — new per-agent config (no migration)", () => {
     if (!result.success) return;
 
     const models = result.data.models as Record<string, Record<string, unknown>>;
-    expect(models["claude"]).toBeDefined();
-    expect(models["codex"]).toBeDefined();
+    expect(models.claude).toBeDefined();
+    expect(models.codex).toBeDefined();
   });
 
   test("per-agent config: claude agent entries are preserved intact", () => {
@@ -117,9 +117,9 @@ describe("ModelsSchema — new per-agent config (no migration)", () => {
     if (!result.success) return;
 
     const models = result.data.models as Record<string, Record<string, unknown>>;
-    expect(models["claude"]["fast"]).toBe("haiku");
-    expect(models["claude"]["balanced"]).toBe("sonnet");
-    expect(models["claude"]["powerful"]).toBe("opus");
+    expect(models.claude.fast).toBe("haiku");
+    expect(models.claude.balanced).toBe("sonnet");
+    expect(models.claude.powerful).toBe("opus");
   });
 
   test("per-agent config: codex agent entries are preserved intact", () => {
@@ -133,7 +133,7 @@ describe("ModelsSchema — new per-agent config (no migration)", () => {
     if (!result.success) return;
 
     const models = result.data.models as Record<string, Record<string, unknown>>;
-    expect(models["codex"]["fast"]).toBe("gpt-5");
+    expect(models.codex.fast).toBe("gpt-5");
   });
 
   test("per-agent config: ModelDef objects at tier level are preserved", () => {
@@ -149,7 +149,7 @@ describe("ModelsSchema — new per-agent config (no migration)", () => {
     if (!result.success) return;
 
     const models = result.data.models as Record<string, Record<string, unknown>>;
-    expect(models["claude"]["fast"]).toEqual({ provider: "anthropic", model: "claude-haiku-4-5" });
+    expect(models.claude.fast).toEqual({ provider: "anthropic", model: "claude-haiku-4-5" });
   });
 
   test("per-agent config: no legacy tier names appear at top level", () => {
@@ -164,9 +164,9 @@ describe("ModelsSchema — new per-agent config (no migration)", () => {
 
     const models = result.data.models as Record<string, unknown>;
     // Tier names should NOT be top-level keys
-    expect(models["fast"]).toBeUndefined();
-    expect(models["balanced"]).toBeUndefined();
-    expect(models["powerful"]).toBeUndefined();
+    expect(models.fast).toBeUndefined();
+    expect(models.balanced).toBeUndefined();
+    expect(models.powerful).toBeUndefined();
   });
 
   test("per-agent config: mixed string and object tier entries are preserved", () => {
@@ -182,8 +182,8 @@ describe("ModelsSchema — new per-agent config (no migration)", () => {
     if (!result.success) return;
 
     const models = result.data.models as Record<string, Record<string, unknown>>;
-    expect(models["claude"]["fast"]).toBe("haiku");
-    expect(models["claude"]["balanced"]).toEqual({ provider: "anthropic", model: "claude-sonnet-4-5" });
+    expect(models.claude.fast).toBe("haiku");
+    expect(models.claude.balanced).toEqual({ provider: "anthropic", model: "claude-sonnet-4-5" });
   });
 });
 
@@ -196,18 +196,36 @@ describe("StorySizeGateConfigSchema — action and maxReplanAttempts (US-001)", 
   }
 
   test("action defaults to 'block' and maxReplanAttempts defaults to 3 when omitted", () => {
-    const withoutAction = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, maxReplanAttempts: 3 });
+    const withoutAction = basePrecheckConfig({
+      enabled: true,
+      maxAcCount: 10,
+      maxDescriptionLength: 3000,
+      maxBulletPoints: 12,
+      maxReplanAttempts: 3,
+    });
     const r1 = NaxConfigSchema.safeParse(withoutAction);
     expect(r1.success).toBe(true);
     if (!r1.success) return;
-    const ssg1 = ((r1.data as Record<string, unknown>).precheck as Record<string, unknown>).storySizeGate as Record<string, unknown>;
+    const ssg1 = ((r1.data as Record<string, unknown>).precheck as Record<string, unknown>).storySizeGate as Record<
+      string,
+      unknown
+    >;
     expect(ssg1.action).toBe("block");
 
-    const withoutMax = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block" });
+    const withoutMax = basePrecheckConfig({
+      enabled: true,
+      maxAcCount: 10,
+      maxDescriptionLength: 3000,
+      maxBulletPoints: 12,
+      action: "block",
+    });
     const r2 = NaxConfigSchema.safeParse(withoutMax);
     expect(r2.success).toBe(true);
     if (!r2.success) return;
-    const ssg2 = ((r2.data as Record<string, unknown>).precheck as Record<string, unknown>).storySizeGate as Record<string, unknown>;
+    const ssg2 = ((r2.data as Record<string, unknown>).precheck as Record<string, unknown>).storySizeGate as Record<
+      string,
+      unknown
+    >;
     expect(ssg2.maxReplanAttempts).toBe(3);
   });
 
@@ -225,10 +243,24 @@ describe("StorySizeGateConfigSchema — action and maxReplanAttempts (US-001)", 
   });
 
   test("action rejects invalid values; maxReplanAttempts rejects 0 (must be >= 1)", () => {
-    const badAction = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, maxReplanAttempts: 3, action: "invalid" });
+    const badAction = basePrecheckConfig({
+      enabled: true,
+      maxAcCount: 10,
+      maxDescriptionLength: 3000,
+      maxBulletPoints: 12,
+      maxReplanAttempts: 3,
+      action: "invalid",
+    });
     expect(NaxConfigSchema.safeParse(badAction).success).toBe(false);
 
-    const badMax = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 0 });
+    const badMax = basePrecheckConfig({
+      enabled: true,
+      maxAcCount: 10,
+      maxDescriptionLength: 3000,
+      maxBulletPoints: 12,
+      action: "block",
+      maxReplanAttempts: 0,
+    });
     expect(NaxConfigSchema.safeParse(badMax).success).toBe(false);
   });
 });
@@ -293,7 +325,7 @@ describe("ModelsSchema — DEFAULT_CONFIG compatibility", () => {
 
     const models = result.data.models as Record<string, unknown>;
     // Should contain agent key (defaultAgent = "claude"), not tier keys
-    expect(models["claude"]).toBeDefined();
+    expect(models.claude).toBeDefined();
   });
 });
 
@@ -373,10 +405,7 @@ describe("NaxConfigSchema — superRefine: tierOrder agent cross-section validat
     claude: { balanced: "sonnet", powerful: "opus" },
   };
 
-  function withTierOrder(
-    tierOrder: Array<{ tier: string; agent?: string; attempts: number }>,
-    models?: unknown,
-  ) {
+  function withTierOrder(tierOrder: Array<{ tier: string; agent?: string; attempts: number }>, models?: unknown) {
     return NaxConfigSchema.safeParse({
       ...(DEFAULT_CONFIG as Record<string, unknown>),
       ...(models !== undefined ? { models } : {}),
@@ -403,28 +432,20 @@ describe("NaxConfigSchema — superRefine: tierOrder agent cross-section validat
   });
 
   test("unknown agent in tierOrder produces exactly one issue (not two)", () => {
-    const result = withTierOrder(
-      [{ tier: "balanced", agent: "nonexistent", attempts: 3 }],
-      MODELS,
-    );
+    const result = withTierOrder([{ tier: "balanced", agent: "nonexistent", attempts: 3 }], MODELS);
     expect(result.success).toBe(false);
     if (result.success) return;
-    const agentIssues = result.error.issues.filter((e) =>
-      e.message.includes("nonexistent"),
-    );
+    const agentIssues = result.error.issues.filter((e) => e.message.includes("nonexistent"));
     expect(agentIssues).toHaveLength(1);
     expect(agentIssues[0].message).toMatch(/not defined in config\.models/);
   });
 
   test("valid agent but unknown tier produces one issue on the tier path", () => {
-    const result = withTierOrder(
-      [{ tier: "powerful", agent: "opencode", attempts: 2 }],
-      MODELS,
-    );
+    const result = withTierOrder([{ tier: "powerful", agent: "opencode", attempts: 2 }], MODELS);
     expect(result.success).toBe(false);
     if (result.success) return;
-    const tierIssues = result.error.issues.filter((e) =>
-      e.message.includes('"powerful"') && e.message.includes('"opencode"'),
+    const tierIssues = result.error.issues.filter(
+      (e) => e.message.includes('"powerful"') && e.message.includes('"opencode"'),
     );
     expect(tierIssues).toHaveLength(1);
     expect(tierIssues[0].message).toMatch(/not defined for agent/);
@@ -447,9 +468,7 @@ describe("NaxConfigSchema — superRefine: tierOrder agent cross-section validat
         agents: {
           enabled: true,
           strategy: "off",
-          profiles: [
-            { id: "oc-bal", target: { agent: "opencode", model: "balanced" }, strengths: ["impl"] },
-          ],
+          profiles: [{ id: "oc-bal", target: { agent: "opencode", model: "balanced" }, strengths: ["impl"] }],
         },
       },
       // DEFAULT_CONFIG tierOrder is tier-only: fast/balanced/powerful with no agent fields
@@ -533,7 +552,7 @@ describe("ContextV2RulesConfigSchema — enforceBudget (US-002)", () => {
     const context = config.context as Record<string, unknown>;
     const v2 = context.v2 as Record<string, unknown>;
     const rules = v2.rules as Record<string, unknown>;
-    expect(rules["enforceBudget"]).toBe(true);
+    expect(rules.enforceBudget).toBe(true);
   });
 
   test("[US-002 AC 11] enforceBudget defaults to true when context.v2.rules is supplied without enforceBudget (US-003 flipped default)", () => {
@@ -541,7 +560,7 @@ describe("ContextV2RulesConfigSchema — enforceBudget (US-002)", () => {
     const context = config.context as Record<string, unknown>;
     const v2 = context.v2 as Record<string, unknown>;
     const rules = v2.rules as Record<string, unknown>;
-    expect(rules["enforceBudget"]).toBe(true);
+    expect(rules.enforceBudget).toBe(true);
   });
 
   test("[US-002 AC 12] enforceBudget resolves to true when explicitly set true via context.v2.rules.enforceBudget", () => {
@@ -549,7 +568,7 @@ describe("ContextV2RulesConfigSchema — enforceBudget (US-002)", () => {
     const context = config.context as Record<string, unknown>;
     const v2 = context.v2 as Record<string, unknown>;
     const rules = v2.rules as Record<string, unknown>;
-    expect(rules["enforceBudget"]).toBe(true);
+    expect(rules.enforceBudget).toBe(true);
   });
 
   test("enforceBudget: false is accepted as an explicit override", () => {
@@ -557,7 +576,7 @@ describe("ContextV2RulesConfigSchema — enforceBudget (US-002)", () => {
     const context = config.context as Record<string, unknown>;
     const v2 = context.v2 as Record<string, unknown>;
     const rules = v2.rules as Record<string, unknown>;
-    expect(rules["enforceBudget"]).toBe(false);
+    expect(rules.enforceBudget).toBe(false);
   });
 
   test("enforceBudget rejects non-boolean values", () => {
@@ -592,7 +611,7 @@ describe("ContextV2RulesConfigSchema — rulesShare (US-003)", () => {
     const context = config.context as Record<string, unknown>;
     const v2 = context.v2 as Record<string, unknown>;
     const rules = v2.rules as Record<string, unknown>;
-    expect(rules["rulesShare"]).toBe(0.4);
+    expect(rules.rulesShare).toBe(0.4);
   });
 
   test("[US-003 AC 1] rulesShare defaults to 0.4 when context.v2.rules is supplied without rulesShare", () => {
@@ -600,7 +619,7 @@ describe("ContextV2RulesConfigSchema — rulesShare (US-003)", () => {
     const context = config.context as Record<string, unknown>;
     const v2 = context.v2 as Record<string, unknown>;
     const rules = v2.rules as Record<string, unknown>;
-    expect(rules["rulesShare"]).toBe(0.4);
+    expect(rules.rulesShare).toBe(0.4);
   });
 
   test("[US-003 AC 3] rulesShare rejects values above 1", () => {
@@ -641,14 +660,14 @@ describe("RectificationConfigSchema — no-progress fields (US-1496)", () => {
     const config = NaxConfigSchema.parse({});
     const execution = config.execution as Record<string, unknown>;
     const rectification = execution.rectification as Record<string, unknown>;
-    expect(rectification["abortOnNoProgress"]).toBe(true);
+    expect(rectification.abortOnNoProgress).toBe(true);
   });
 
   test("[US-1496 AC 2] consecutiveNoProgressToBail defaults to 3 when execution.rectification is omitted", () => {
     const config = NaxConfigSchema.parse({});
     const execution = config.execution as Record<string, unknown>;
     const rectification = execution.rectification as Record<string, unknown>;
-    expect(rectification["consecutiveNoProgressToBail"]).toBe(3);
+    expect(rectification.consecutiveNoProgressToBail).toBe(3);
   });
 
   test("[US-1496 AC 3] consecutiveNoProgressToBail rejects 0 (below min 1)", () => {
@@ -675,7 +694,7 @@ describe("RectificationConfigSchema — no-progress fields (US-1496)", () => {
     const config = NaxConfigSchema.parse(rectificationConfig({ abortOnNoProgress: false }));
     const execution = config.execution as Record<string, unknown>;
     const rectification = execution.rectification as Record<string, unknown>;
-    expect(rectification["abortOnNoProgress"]).toBe(false);
+    expect(rectification.abortOnNoProgress).toBe(false);
   });
 
   /**
@@ -693,7 +712,7 @@ describe("RectificationConfigSchema — no-progress fields (US-1496)", () => {
     const config = NaxConfigSchema.parse(rectificationConfig({ maxAttemptsTotal: 5 }));
     const execution = config.execution as Record<string, unknown>;
     const rectification = execution.rectification as Record<string, unknown>;
-    expect(rectification["abortOnNoProgress"]).toBe(true);
+    expect(rectification.abortOnNoProgress).toBe(true);
   });
 });
 
@@ -720,21 +739,21 @@ describe("RectificationConfigSchema — storyScopedFixBudget (US-004)", () => {
     const config = NaxConfigSchema.parse({});
     const execution = config.execution as Record<string, unknown>;
     const rectification = execution.rectification as Record<string, unknown>;
-    expect(rectification["storyScopedFixBudget"]).toBe(true);
+    expect(rectification.storyScopedFixBudget).toBe(true);
   });
 
   test("[US-004 AC 1] storyScopedFixBudget defaults to true when execution.rectification is supplied without storyScopedFixBudget", () => {
     const config = NaxConfigSchema.parse(rectificationConfig({ enabled: true, maxAttemptsTotal: 5 }));
     const execution = config.execution as Record<string, unknown>;
     const rectification = execution.rectification as Record<string, unknown>;
-    expect(rectification["storyScopedFixBudget"]).toBe(true);
+    expect(rectification.storyScopedFixBudget).toBe(true);
   });
 
   test("[US-004 AC 2] storyScopedFixBudget explicit override to false is preserved", () => {
     const config = NaxConfigSchema.parse(rectificationConfig({ storyScopedFixBudget: false }));
     const execution = config.execution as Record<string, unknown>;
     const rectification = execution.rectification as Record<string, unknown>;
-    expect(rectification["storyScopedFixBudget"]).toBe(false);
+    expect(rectification.storyScopedFixBudget).toBe(false);
   });
 
   test("[US-004 AC 3] storyScopedFixBudget rejects string 'yes' (no boolean coercion)", () => {

@@ -1,19 +1,19 @@
-import { describe, expect, it, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { globalConfigDir } from "@/config/paths";
 import { NaxError } from "@/errors";
 import {
-  globalOutputDir,
-  projectInputDir,
-  projectOutputDir,
-  identityPath,
-  readProjectIdentity,
-  writeProjectIdentity,
+  type ProjectIdentity,
   claimProjectIdentity,
   curatorRollupPath,
-  type ProjectIdentity,
+  globalOutputDir,
+  identityPath,
+  projectInputDir,
+  projectOutputDir,
+  readProjectIdentity,
+  writeProjectIdentity,
 } from "@/runtime";
 
 describe("projectInputDir", () => {
@@ -93,7 +93,11 @@ describe("identity I/O", () => {
 
 describe("curatorRollupPath", () => {
   it.each([
-    ["no override (defaults to globalDir/curator/rollup.jsonl)", undefined, "/home/user/.nax/global/curator/rollup.jsonl"],
+    [
+      "no override (defaults to globalDir/curator/rollup.jsonl)",
+      undefined,
+      "/home/user/.nax/global/curator/rollup.jsonl",
+    ],
     ["absolute path override", "/mnt/team/rollup.jsonl", "/mnt/team/rollup.jsonl"],
   ] as const)("%s", (_label, override, expected) => {
     expect(curatorRollupPath("/home/user/.nax/global", override)).toBe(expected);

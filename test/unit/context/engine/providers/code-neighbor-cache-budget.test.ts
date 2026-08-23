@@ -38,7 +38,6 @@ beforeEach(() => {
   origDetectLanguage = _codeNeighborDeps.detectLanguage;
   origDiscoverWorkspacePackages = _codeNeighborDeps.discoverWorkspacePackages;
   origGetLogger = _codeNeighborDeps.getLogger;
-  // biome-ignore lint/suspicious/noExplicitAny: minimal test logger stub
   _codeNeighborDeps.getLogger = () => ({ debug: () => {}, warn: () => {}, info: () => {}, error: () => {} }) as any;
 });
 

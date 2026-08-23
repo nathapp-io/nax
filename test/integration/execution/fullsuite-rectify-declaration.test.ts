@@ -11,13 +11,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { join, dirname } from "node:path";
 import { mkdir } from "node:fs/promises";
-import { buildPlanForStrategy, _storyOrchestratorDeps } from "@/execution";
+import { dirname, join } from "node:path";
+import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
 import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
 import type { FullSuiteRectifyInput, FullSuiteRectifyOutput } from "@/operations/full-suite-rectify-op";
 import type { CallContext } from "@/operations/types";
+import type { NaxRuntime } from "@/runtime";
 import {
   makeMockCallContext,
   makeMockPlanInputs,
@@ -26,7 +27,6 @@ import {
   makeTestRuntime,
   withTempDir,
 } from "@test/helpers";
-import type { NaxRuntime } from "@/runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared setup/teardown
@@ -91,120 +91,22 @@ function makeRetryInputs(story: ReturnType<typeof makeStory>, packageDir: string
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC8: full-suite-rectify sink integration — test-writer receives mock-restructure handoff", () => {
-  test(
-    "AC8: after extractApplied + postValidate, autofix-test-writer appliesTo returns true and buildInput has mock-restructure mode",
-    async () => {
-      await withTempDir(async (tmpDir) => {
-        // Create the test file that will be referenced in the mock_structure declaration.
-        const testFilePath = join(tmpDir, "test/unit/service.test.ts");
-        await mkdir(dirname(testFilePath), { recursive: true });
-        await Bun.write(testFilePath, "// test file for integration test");
+  test("AC8: after extractApplied + postValidate, autofix-test-writer appliesTo returns true and buildInput has mock-restructure mode", async () => {
+    await withTempDir(async (tmpDir) => {
+      // Create the test file that will be referenced in the mock_structure declaration.
+      const testFilePath = join(tmpDir, "test/unit/service.test.ts");
+      await mkdir(dirname(testFilePath), { recursive: true });
+      await Bun.write(testFilePath, "// test file for integration test");
 
-        const story = makeStory({ id: "US-decl", attempts: 1 }); // retry: no test-writer phase
-        const config = makeNaxConfig({
-          quality: { autofix: { enabled: true } },
-          execution: { rectification: { enabled: true, maxAttemptsTotal: 3 } },
-        });
-        const ctx = makeCtxWithRuntime(tmpDir, config);
-        const inputs = makeRetryInputs(story, tmpDir);
-
-        // Mock callOp: full-suite-gate fails with a test-runner finding; other ops pass.
-        _storyOrchestratorDeps.callOp = mock(async (_ctx, op) => {
-          if (op.name === "full-suite-gate") {
-            return { success: false, findings: [makeTestRunnerFinding()] };
-          }
-          return { success: true };
-        }) as typeof _storyOrchestratorDeps.callOp;
-
-        let capturedCycle: FixCycle<Finding> | null = null;
-        let capturedCycleCtx: FixCycleContext | null = null;
-        _storyOrchestratorDeps.runFixCycle = mock(async (cycle, cycleCtx) => {
-          capturedCycle = cycle as FixCycle<Finding>;
-          capturedCycleCtx = cycleCtx as FixCycleContext;
-          return {
-            iterations: [],
-            finalFindings: [],
-            exitReason: "no-strategy" as FixCycleExitReason,
-            costUsd: 0,
-          };
-        }) as typeof _storyOrchestratorDeps.runFixCycle;
-
-        const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
-        await plan.run();
-
-        expect(capturedCycle).not.toBeNull();
-        expect(capturedCycleCtx).not.toBeNull();
-
-        // Find the full-suite-rectify strategy in the cycle.
-        const fullSuiteStrategy = capturedCycle!.strategies.find((s) => s.name === "full-suite-rectify");
-        expect(fullSuiteStrategy).toBeDefined();
-
-        // Simulate extractApplied with a mock_structure declaration referencing the real test file.
-        const mockOutput: FullSuiteRectifyOutput = {
-          applied: true,
-          testEditDeclarations: [
-            {
-              reason: "mock_structure",
-              file: "test/unit/service.test.ts",
-              files: ["test/unit/service.test.ts"],
-              reasonDetail: "Mock setup needs restructuring to use factory pattern",
-            },
-          ],
-        };
-        const mockInput: FullSuiteRectifyInput = { story, findings: [] };
-        await fullSuiteStrategy!.extractApplied!(mockOutput as any, mockInput as any);
-
-        // Set up callOp for the validate re-run (all phases pass).
-        _storyOrchestratorDeps.callOp = mock(async () => ({
-          success: true,
-        })) as typeof _storyOrchestratorDeps.callOp;
-
-        // Call validate to trigger postValidate, which validates the file and updates the sink.
-        await capturedCycle!.validate(capturedCycleCtx!, {
-          mode: "full",
-          strategiesRun: ["full-suite-rectify"],
-        });
-
-        // After postValidate, autofix-test-writer should apply (sink.mockHandoffs has valid entry).
-        const testWriterStrategy = capturedCycle!.strategies.find((s) => s.name === "autofix-test-writer");
-        expect(testWriterStrategy).toBeDefined();
-
-        const dummyFinding: Finding = {
-          source: "lint",
-          severity: "error",
-          category: "style",
-          message: "dummy",
-        };
-        // AC8: appliesTo returns true because sink.mockHandoffs has the validated entry.
-        expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(true);
-
-        // AC8: buildInput reflects mock-restructure mode with the handoff file.
-        const builtInput = testWriterStrategy!.buildInput([dummyFinding], [], capturedCycleCtx!);
-        expect((builtInput as any).mode).toBe("mock-restructure");
-        expect((builtInput as any).handoffFiles).toContain("test/unit/service.test.ts");
-      });
-    },
-  );
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AC9: invalid mock_structure files → no unclaimable finding minted (#1327)
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("AC9: invalid mock_structure files → diagnostic only, no unclaimable finding", () => {
-  test(
-    "AC9: postValidate mints no finding when mock_structure files do not exist or do not match test patterns",
-    async () => {
-      // Use a packageDir where the declared test file does not exist.
-      const packageDir = "/tmp/nax-test-ac9-nonexistent-dir";
-      const story = makeStory({ id: "US-decl-ac9", attempts: 1 });
+      const story = makeStory({ id: "US-decl", attempts: 1 }); // retry: no test-writer phase
       const config = makeNaxConfig({
         quality: { autofix: { enabled: true } },
         execution: { rectification: { enabled: true, maxAttemptsTotal: 3 } },
       });
-      const ctx = makeCtxWithRuntime(packageDir, config);
-      const inputs = makeRetryInputs(story, packageDir);
+      const ctx = makeCtxWithRuntime(tmpDir, config);
+      const inputs = makeRetryInputs(story, tmpDir);
 
+      // Mock callOp: full-suite-gate fails with a test-runner finding; other ops pass.
       _storyOrchestratorDeps.callOp = mock(async (_ctx, op) => {
         if (op.name === "full-suite-gate") {
           return { success: false, findings: [makeTestRunnerFinding()] };
@@ -229,58 +131,150 @@ describe("AC9: invalid mock_structure files → diagnostic only, no unclaimable 
       await plan.run();
 
       expect(capturedCycle).not.toBeNull();
+      expect(capturedCycleCtx).not.toBeNull();
 
+      // Find the full-suite-rectify strategy in the cycle.
       const fullSuiteStrategy = capturedCycle!.strategies.find((s) => s.name === "full-suite-rectify");
       expect(fullSuiteStrategy).toBeDefined();
 
-      // Declare a mock_structure that references a file that does not exist.
-      const invalidMockOutput: FullSuiteRectifyOutput = {
+      // Simulate extractApplied with a mock_structure declaration referencing the real test file.
+      const mockOutput: FullSuiteRectifyOutput = {
         applied: true,
         testEditDeclarations: [
           {
             reason: "mock_structure",
-            file: "test/unit/nonexistent.test.ts",
-            files: ["test/unit/nonexistent.test.ts"],
-            reasonDetail: "This file does not exist on disk",
+            file: "test/unit/service.test.ts",
+            files: ["test/unit/service.test.ts"],
+            reasonDetail: "Mock setup needs restructuring to use factory pattern",
           },
         ],
       };
       const mockInput: FullSuiteRectifyInput = { story, findings: [] };
-      await fullSuiteStrategy!.extractApplied!(invalidMockOutput as any, mockInput as any);
+      await fullSuiteStrategy!.extractApplied!(mockOutput as any, mockInput as any);
 
-      const testWriterStrategy = capturedCycle!.strategies.find((s) => s.name === "autofix-test-writer");
-      expect(testWriterStrategy).toBeDefined();
-      const dummyFinding: Finding = { source: "lint", severity: "error", category: "style", message: "dummy" };
+      // Set up callOp for the validate re-run (all phases pass).
+      _storyOrchestratorDeps.callOp = mock(async () => ({
+        success: true,
+      })) as typeof _storyOrchestratorDeps.callOp;
 
-      // Precondition: extractApplied populated the sink, so the test-writer's
-      // `sink.mockHandoffs.length > 0` clause claims. Without this, the
-      // assertions below would also hold on the `postValidate` early-return
-      // path (empty sink → returns findings untouched) and prove nothing.
-      expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(true);
-
-      // Set up callOp for validate re-run.
-      _storyOrchestratorDeps.callOp = mock(async () => ({ success: true })) as typeof _storyOrchestratorDeps.callOp;
-
-      // Call validate to trigger postValidate.
-      const validateResult = await capturedCycle!.validate(capturedCycleCtx!, {
+      // Call validate to trigger postValidate, which validates the file and updates the sink.
+      await capturedCycle!.validate(capturedCycleCtx!, {
         mode: "full",
         strategiesRun: ["full-suite-rectify"],
       });
 
-      const findings = Array.isArray(validateResult) ? validateResult : validateResult.findings;
+      // After postValidate, autofix-test-writer should apply (sink.mockHandoffs has valid entry).
+      const testWriterStrategy = capturedCycle!.strategies.find((s) => s.name === "autofix-test-writer");
+      expect(testWriterStrategy).toBeDefined();
 
-      // postValidate reached the validation branch and rejected the handoff: the
-      // sink is now drained, so the test-writer no longer claims. This is the
-      // positive artifact that the invalid-declaration path actually ran.
-      expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(false);
+      const dummyFinding: Finding = {
+        source: "lint",
+        severity: "error",
+        category: "style",
+        message: "dummy",
+      };
+      // AC8: appliesTo returns true because sink.mockHandoffs has the validated entry.
+      expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(true);
 
-      // AC9 (#1327): every phase passed, so validate yields no findings — and the
-      // rejected handoff must not add one. It is reported as a log diagnostic
-      // instead. An appended advisory here is claimed by no strategy's appliesTo,
-      // so the cycle would exit "no-strategy" and fail this green story.
-      expect(findings).toEqual([]);
-    },
-  );
+      // AC8: buildInput reflects mock-restructure mode with the handoff file.
+      const builtInput = testWriterStrategy!.buildInput([dummyFinding], [], capturedCycleCtx!);
+      expect((builtInput as any).mode).toBe("mock-restructure");
+      expect((builtInput as any).handoffFiles).toContain("test/unit/service.test.ts");
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC9: invalid mock_structure files → no unclaimable finding minted (#1327)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("AC9: invalid mock_structure files → diagnostic only, no unclaimable finding", () => {
+  test("AC9: postValidate mints no finding when mock_structure files do not exist or do not match test patterns", async () => {
+    // Use a packageDir where the declared test file does not exist.
+    const packageDir = "/tmp/nax-test-ac9-nonexistent-dir";
+    const story = makeStory({ id: "US-decl-ac9", attempts: 1 });
+    const config = makeNaxConfig({
+      quality: { autofix: { enabled: true } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 3 } },
+    });
+    const ctx = makeCtxWithRuntime(packageDir, config);
+    const inputs = makeRetryInputs(story, packageDir);
+
+    _storyOrchestratorDeps.callOp = mock(async (_ctx, op) => {
+      if (op.name === "full-suite-gate") {
+        return { success: false, findings: [makeTestRunnerFinding()] };
+      }
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    let capturedCycle: FixCycle<Finding> | null = null;
+    let capturedCycleCtx: FixCycleContext | null = null;
+    _storyOrchestratorDeps.runFixCycle = mock(async (cycle, cycleCtx) => {
+      capturedCycle = cycle as FixCycle<Finding>;
+      capturedCycleCtx = cycleCtx as FixCycleContext;
+      return {
+        iterations: [],
+        finalFindings: [],
+        exitReason: "no-strategy" as FixCycleExitReason,
+        costUsd: 0,
+      };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
+
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    await plan.run();
+
+    expect(capturedCycle).not.toBeNull();
+
+    const fullSuiteStrategy = capturedCycle!.strategies.find((s) => s.name === "full-suite-rectify");
+    expect(fullSuiteStrategy).toBeDefined();
+
+    // Declare a mock_structure that references a file that does not exist.
+    const invalidMockOutput: FullSuiteRectifyOutput = {
+      applied: true,
+      testEditDeclarations: [
+        {
+          reason: "mock_structure",
+          file: "test/unit/nonexistent.test.ts",
+          files: ["test/unit/nonexistent.test.ts"],
+          reasonDetail: "This file does not exist on disk",
+        },
+      ],
+    };
+    const mockInput: FullSuiteRectifyInput = { story, findings: [] };
+    await fullSuiteStrategy!.extractApplied!(invalidMockOutput as any, mockInput as any);
+
+    const testWriterStrategy = capturedCycle!.strategies.find((s) => s.name === "autofix-test-writer");
+    expect(testWriterStrategy).toBeDefined();
+    const dummyFinding: Finding = { source: "lint", severity: "error", category: "style", message: "dummy" };
+
+    // Precondition: extractApplied populated the sink, so the test-writer's
+    // `sink.mockHandoffs.length > 0` clause claims. Without this, the
+    // assertions below would also hold on the `postValidate` early-return
+    // path (empty sink → returns findings untouched) and prove nothing.
+    expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(true);
+
+    // Set up callOp for validate re-run.
+    _storyOrchestratorDeps.callOp = mock(async () => ({ success: true })) as typeof _storyOrchestratorDeps.callOp;
+
+    // Call validate to trigger postValidate.
+    const validateResult = await capturedCycle!.validate(capturedCycleCtx!, {
+      mode: "full",
+      strategiesRun: ["full-suite-rectify"],
+    });
+
+    const findings = Array.isArray(validateResult) ? validateResult : validateResult.findings;
+
+    // postValidate reached the validation branch and rejected the handoff: the
+    // sink is now drained, so the test-writer no longer claims. This is the
+    // positive artifact that the invalid-declaration path actually ran.
+    expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(false);
+
+    // AC9 (#1327): every phase passed, so validate yields no findings — and the
+    // rejected handoff must not add one. It is reported as a log diagnostic
+    // instead. An appended advisory here is claimed by no strategy's appliesTo,
+    // so the cycle would exit "no-strategy" and fail this green story.
+    expect(findings).toEqual([]);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -288,55 +282,52 @@ describe("AC9: invalid mock_structure files → diagnostic only, no unclaimable 
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC11: single-session story with mock_structure output → no test-writer dispatched, no throw", () => {
-  test(
-    "AC11: single-session (regressionGate.mode=per-story) cycle has no autofix-test-writer strategy",
-    async () => {
-      const packageDir = "/tmp/nax-test-ac11";
-      const story = makeStory({ id: "US-decl-ac11", attempts: 1 });
-      // tdd-simple is a single-session strategy: isThreeSession = false
-      // regressionGate.mode=per-story forces fullSuiteGate (and thus full-suite-rectify) into plan
-      const config = makeNaxConfig({
-        execution: {
-          regressionGate: { mode: "per-story" },
-          rectification: { enabled: true, maxAttemptsTotal: 3 },
-        },
-        quality: { autofix: { enabled: true } },
-      });
-      const ctx = makeCtxWithRuntime(packageDir, config);
-      const inputs = makeMockPlanInputs({
-        story,
-        implementer: { story },
-        fullSuiteGate: { story, workdir: packageDir },
-        rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
-      });
+  test("AC11: single-session (regressionGate.mode=per-story) cycle has no autofix-test-writer strategy", async () => {
+    const packageDir = "/tmp/nax-test-ac11";
+    const story = makeStory({ id: "US-decl-ac11", attempts: 1 });
+    // tdd-simple is a single-session strategy: isThreeSession = false
+    // regressionGate.mode=per-story forces fullSuiteGate (and thus full-suite-rectify) into plan
+    const config = makeNaxConfig({
+      execution: {
+        regressionGate: { mode: "per-story" },
+        rectification: { enabled: true, maxAttemptsTotal: 3 },
+      },
+      quality: { autofix: { enabled: true } },
+    });
+    const ctx = makeCtxWithRuntime(packageDir, config);
+    const inputs = makeMockPlanInputs({
+      story,
+      implementer: { story },
+      fullSuiteGate: { story, workdir: packageDir },
+      rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+    });
 
-      _storyOrchestratorDeps.callOp = mock(async (_ctx, op) => {
-        if (op.name === "full-suite-gate") {
-          return { success: false, findings: [makeTestRunnerFinding()] };
-        }
-        return { success: true };
-      }) as typeof _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.callOp = mock(async (_ctx, op) => {
+      if (op.name === "full-suite-gate") {
+        return { success: false, findings: [makeTestRunnerFinding()] };
+      }
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
 
-      let capturedCycle: FixCycle<Finding> | null = null;
-      _storyOrchestratorDeps.runFixCycle = mock(async (cycle) => {
-        capturedCycle = cycle as FixCycle<Finding>;
-        return {
-          iterations: [],
-          finalFindings: [],
-          exitReason: "no-strategy" as FixCycleExitReason,
-          costUsd: 0,
-        };
-      }) as typeof _storyOrchestratorDeps.runFixCycle;
+    let capturedCycle: FixCycle<Finding> | null = null;
+    _storyOrchestratorDeps.runFixCycle = mock(async (cycle) => {
+      capturedCycle = cycle as FixCycle<Finding>;
+      return {
+        iterations: [],
+        finalFindings: [],
+        exitReason: "no-strategy" as FixCycleExitReason,
+        costUsd: 0,
+      };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
 
-      // Should not throw even with mock_structure output
-      const plan = await buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
-      await plan.run();
+    // Should not throw even with mock_structure output
+    const plan = await buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    await plan.run();
 
-      expect(capturedCycle).not.toBeNull();
+    expect(capturedCycle).not.toBeNull();
 
-      // AC11: no autofix-test-writer strategy in the single-session cycle.
-      const hasTestWriter = capturedCycle!.strategies.some((s) => s.name === "autofix-test-writer");
-      expect(hasTestWriter).toBe(false);
-    },
-  );
+    // AC11: no autofix-test-writer strategy in the single-session cycle.
+    const hasTestWriter = capturedCycle!.strategies.some((s) => s.name === "autofix-test-writer");
+    expect(hasTestWriter).toBe(false);
+  });
 });

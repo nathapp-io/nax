@@ -3,6 +3,7 @@ import { ContextV2ConfigSchema } from "@/config/schemas";
 import { _stageAssemblerDeps, assembleForStage } from "@/context/engine/stage-assembler";
 import type { ContextBundle, ContextRequest } from "@/context/engine/types";
 import type { PipelineContext } from "@/pipeline/types";
+import { makeContextBundle } from "@test/helpers";
 
 function makeCtx(extraProviderIds?: string[]): PipelineContext {
   return {
@@ -37,7 +38,7 @@ function makeMockOrchestrator() {
     orchestrator: {
       assemble: async (request: ContextRequest): Promise<ContextBundle> => {
         captured.request = request;
-        return {
+        return makeContextBundle({
           pushMarkdown: "",
           digest: "digest",
           manifest: {
@@ -51,8 +52,7 @@ function makeMockOrchestrator() {
             digestTokens: 0,
             buildMs: 0,
           },
-          packedChunks: [],
-        } as unknown as ContextBundle;
+        });
       },
     },
   };

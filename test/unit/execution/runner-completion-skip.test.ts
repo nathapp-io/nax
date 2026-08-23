@@ -13,21 +13,15 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "@/config";
-import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { AcceptanceLoopResult } from "@/execution/lifecycle/acceptance-loop";
-import {
-  _runnerCompletionDeps,
-  runCompletionPhase,
-  type RunnerCompletionOptions,
-} from "@/execution/runner-completion";
-import {
-  _runCompletionDeps,
-} from "@/execution/lifecycle/run-completion";
+import { _runCompletionDeps } from "@/execution/lifecycle/run-completion";
 import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
-import type { LoadedHooksConfig } from "@/hooks";
-import type { PRD, UserStory } from "@/prd";
+import { type RunnerCompletionOptions, _runnerCompletionDeps, runCompletionPhase } from "@/execution/runner-completion";
 import type { PostRunStatus } from "@/execution/status-file";
-import { makeNaxConfig } from "@test/helpers";
+import type { LoadedHooksConfig } from "@/hooks";
+import { pipelineEventBus } from "@/pipeline/event-bus";
+import type { PRD, UserStory } from "@/prd";
+import { type MockStatusWriter, makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -91,29 +85,16 @@ function makePostRunStatus(
   };
 }
 
-function makeStatusWriter(postRunStatus: PostRunStatus = makePostRunStatus("not-run", "not-run")) {
-  return {
-    setPrd: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    setRunStatus: mock(() => {}),
-    setPostRunPhase: mock((_phase: string, _update: Record<string, unknown>) => {}),
-    update: mock(async () => {}),
-    writeFeatureStatus: mock(async () => {}),
-    getPostRunStatus: mock(() => postRunStatus),
-    resetPostRunStatus: mock(() => {}),
-  };
+function makeWriter(postRunStatus: PostRunStatus = makePostRunStatus("not-run", "not-run")) {
+  return makeStatusWriter({ getPostRunStatus: mock(() => postRunStatus) });
 }
 
 const WORKDIR = `/tmp/nax-test-rerun-skip-${randomUUID()}`;
 
-function makeOpts(
-  config: NaxConfig,
-  prd: PRD,
-  statusWriter: ReturnType<typeof makeStatusWriter>,
-): RunnerCompletionOptions {
+function makeOpts(config: NaxConfig, prd: PRD, statusWriter: MockStatusWriter): RunnerCompletionOptions {
   return {
     config,
-    hooks: { hooks: {}, _skipGlobal: false } as unknown as LoadedHooksConfig,
+    hooks: { hooks: {}, _skipGlobal: false },
     feature: "test-feature",
     workdir: WORKDIR,
     statusFile: `${WORKDIR}/status.json`,
@@ -128,23 +109,46 @@ function makeOpts(
     totalCost: 0,
     storiesCompleted: 1,
     iterations: 1,
-    statusWriter: statusWriter as unknown as RunnerCompletionOptions["statusWriter"],
-    pluginRegistry: { getAll: () => [], get: () => undefined } as unknown as RunnerCompletionOptions["pluginRegistry"],
+    statusWriter: statusWriter,
+    pluginRegistry: { getAll: () => [], get: () => undefined },
     prdPath: `${WORKDIR}/prd.json`,
-    runtime: {
+    runtime: Object.assign(makeMockRuntime(), {
       outputDir: `${WORKDIR}/output`,
       close: async () => {},
       costAggregator: {
-        snapshot: () => ({ totalCostUsd: 0, totalEstimatedCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }),
+        snapshot: () => ({
+          totalCostUsd: 0,
+          totalEstimatedCostUsd: 0,
+          totalExactCostUsd: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          callCount: 0,
+          errorCount: 0,
+        }),
         byStage: () => ({}),
         byStory: () => ({}),
         byAgent: () => ({}),
+        byCall: () => ({}),
+        byScope: () => ({}),
+        openScope: () => ({
+          scopeId: "test-scope",
+          snapshot: () => ({
+            totalCostUsd: 0,
+            totalEstimatedCostUsd: 0,
+            totalExactCostUsd: 0,
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            callCount: 0,
+            errorCount: 0,
+          }),
+          close: () => {},
+        }),
         record: () => {},
         recordError: () => {},
         recordOperationSummary: () => {},
         drain: async () => {},
       },
-    } as unknown as RunnerCompletionOptions["runtime"],
+    }),
   };
 }
 
@@ -171,7 +175,9 @@ const origRunDeps = { ..._runCompletionDeps };
 
 beforeEach(() => {
   _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => defaultAcceptanceResult);
-  _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => defaultRegressionResult);
+  _runCompletionDeps.runDeferredRegression = mock(
+    async (): Promise<DeferredRegressionResult> => defaultRegressionResult,
+  );
 });
 
 afterEach(() => {
@@ -187,7 +193,7 @@ afterEach(() => {
 
 describe("runCompletionPhase - AC1: skips both when both postRun phases are already passed", () => {
   test("does not call runAcceptanceLoop when both phases are passed", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("passed", "passed"));
+    const statusWriter = makeWriter(makePostRunStatus("passed", "passed"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
 
@@ -197,7 +203,7 @@ describe("runCompletionPhase - AC1: skips both when both postRun phases are alre
   });
 
   test("does not call runDeferredRegression when both phases are passed", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("passed", "passed"));
+    const statusWriter = makeWriter(makePostRunStatus("passed", "passed"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
 
@@ -207,7 +213,7 @@ describe("runCompletionPhase - AC1: skips both when both postRun phases are alre
   });
 
   test("calls getPostRunStatus to check existing phase status", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("passed", "passed"));
+    const statusWriter = makeWriter(makePostRunStatus("passed", "passed"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
 
@@ -223,7 +229,7 @@ describe("runCompletionPhase - AC1: skips both when both postRun phases are alre
 
 describe("runCompletionPhase - AC2: skips acceptance but runs regression when acceptance already passed", () => {
   test("does not call runAcceptanceLoop when acceptance is already passed", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("passed", "not-run"));
+    const statusWriter = makeWriter(makePostRunStatus("passed", "not-run"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
 
@@ -233,7 +239,7 @@ describe("runCompletionPhase - AC2: skips acceptance but runs regression when ac
   });
 
   test("calls runDeferredRegression when acceptance is passed but regression is not-run", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("passed", "not-run"));
+    const statusWriter = makeWriter(makePostRunStatus("passed", "not-run"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
 
@@ -243,7 +249,7 @@ describe("runCompletionPhase - AC2: skips acceptance but runs regression when ac
   });
 
   test("calls runDeferredRegression when acceptance is passed but regression is failed", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("passed", "failed"));
+    const statusWriter = makeWriter(makePostRunStatus("passed", "failed"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
 
@@ -259,7 +265,7 @@ describe("runCompletionPhase - AC2: skips acceptance but runs regression when ac
 
 describe("runCompletionPhase - AC3: runs both when acceptance.status is not-run", () => {
   test("calls runAcceptanceLoop when acceptance is not-run and PRD is complete", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("not-run", "not-run"));
+    const statusWriter = makeWriter(makePostRunStatus("not-run", "not-run"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
 
@@ -269,7 +275,7 @@ describe("runCompletionPhase - AC3: runs both when acceptance.status is not-run"
   });
 
   test("calls runDeferredRegression when acceptance is not-run and deferred mode is set", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("not-run", "not-run"));
+    const statusWriter = makeWriter(makePostRunStatus("not-run", "not-run"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
 
@@ -285,7 +291,7 @@ describe("runCompletionPhase - AC3: runs both when acceptance.status is not-run"
 
 describe("runCompletionPhase - AC4: runs both when acceptance.status is failed", () => {
   test("calls runAcceptanceLoop when acceptance previously failed", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("failed", "not-run"));
+    const statusWriter = makeWriter(makePostRunStatus("failed", "not-run"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
 
@@ -295,7 +301,7 @@ describe("runCompletionPhase - AC4: runs both when acceptance.status is failed",
   });
 
   test("calls runDeferredRegression when acceptance previously failed", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("failed", "not-run"));
+    const statusWriter = makeWriter(makePostRunStatus("failed", "not-run"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
 
@@ -305,7 +311,7 @@ describe("runCompletionPhase - AC4: runs both when acceptance.status is failed",
   });
 
   test("calls runDeferredRegression when both acceptance and regression previously failed", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("failed", "failed"));
+    const statusWriter = makeWriter(makePostRunStatus("failed", "failed"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
 
@@ -321,7 +327,7 @@ describe("runCompletionPhase - AC4: runs both when acceptance.status is failed",
 
 describe("runCompletionPhase - skip only applies when acceptance/regression config is active", () => {
   test("does not call runAcceptanceLoop when acceptance is disabled, regardless of status", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("not-run", "not-run"));
+    const statusWriter = makeWriter(makePostRunStatus("not-run", "not-run"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     // acceptance disabled
     const config = makeConfig(false);
@@ -338,7 +344,7 @@ describe("runCompletionPhase - skip only applies when acceptance/regression conf
 
 describe("runCompletionPhase - cost-limit exitReason surfaces distinctly", () => {
   test("sets feature-level run status to cost-limit when exitReason is cost-limit, even with incomplete stories", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("passed", "passed"));
+    const statusWriter = makeWriter(makePostRunStatus("passed", "passed"));
     const prd = makePRD([
       { id: "US-001", status: "passed" },
       { id: "US-002", status: "pending" },
@@ -355,7 +361,7 @@ describe("runCompletionPhase - cost-limit exitReason surfaces distinctly", () =>
   });
 
   test("falls back to completed/failed classification when exitReason is not cost-limit", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("passed", "passed"));
+    const statusWriter = makeWriter(makePostRunStatus("passed", "passed"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig(true);
 
@@ -369,7 +375,7 @@ describe("runCompletionPhase - cost-limit exitReason surfaces distinctly", () =>
   });
 
   test("a gating plugin-reviewer failure is not masked by a cost-limit exitReason", async () => {
-    const statusWriter = makeStatusWriter(makePostRunStatus("passed", "passed"));
+    const statusWriter = makeWriter(makePostRunStatus("passed", "passed"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeNaxConfig({
       acceptance: { enabled: true, maxRetries: 3 },

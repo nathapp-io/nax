@@ -31,7 +31,7 @@ describe("categoryToFixTarget", () => {
     });
 
     test("categoryToFixTarget(null) returns test", () => {
-      expect(categoryToFixTarget(null as unknown as undefined)).toBe("test");
+      expect(categoryToFixTarget(null)).toBe("test");
     });
   });
 });

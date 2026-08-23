@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, test, expect } from "bun:test";
-import { startHeartbeat, stopHeartbeat, _heartbeatDeps, _isHeartbeatActive } from "@/execution/crash-heartbeat";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { _heartbeatDeps, _isHeartbeatActive, startHeartbeat, stopHeartbeat } from "@/execution/crash-heartbeat";
 
 let origSleep: typeof _heartbeatDeps.sleep;
 let origGetLogger: typeof _heartbeatDeps.getSafeLogger;
@@ -19,7 +19,13 @@ afterEach(() => {
 describe("crash-heartbeat — startHeartbeat", () => {
   test("starts without throwing when given a valid status writer", () => {
     const writer = { update: async () => {} };
-    expect(() => startHeartbeat(writer as any, () => 0, () => 0)).not.toThrow();
+    expect(() =>
+      startHeartbeat(
+        writer as any,
+        () => 0,
+        () => 0,
+      ),
+    ).not.toThrow();
   });
 
   test("catch handler logs a warning when heartbeat loop throws (e.g. sleep interrupted)", async () => {
@@ -43,7 +49,11 @@ describe("crash-heartbeat — startHeartbeat", () => {
       throw new Error("sleep interrupted");
     };
 
-    startHeartbeat({ update: async () => {} } as any, () => 0, () => 0);
+    startHeartbeat(
+      { update: async () => {} } as any,
+      () => 0,
+      () => 0,
+    );
 
     // Give the microtask queue one macro-task tick to process the rejection.
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -72,7 +82,11 @@ describe("crash-heartbeat — startHeartbeat", () => {
       });
     };
 
-    startHeartbeat({ update: async () => {} } as any, () => 0, () => 0);
+    startHeartbeat(
+      { update: async () => {} } as any,
+      () => 0,
+      () => 0,
+    );
     // Let the loop reach the sleep call.
     await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -108,7 +122,11 @@ describe("crash-heartbeat — startHeartbeat", () => {
         signal?.addEventListener("abort", () => reject(signal.reason));
       });
 
-    startHeartbeat({ update: async () => {} } as any, () => 0, () => 0);
+    startHeartbeat(
+      { update: async () => {} } as any,
+      () => 0,
+      () => 0,
+    );
     await new Promise((resolve) => setTimeout(resolve, 10));
     stopHeartbeat();
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -131,7 +149,15 @@ describe("crash-heartbeat — startHeartbeat", () => {
         releaseSleep = resolve;
       });
 
-    startHeartbeat({ update: async () => { updates++; } } as any, () => 0, () => 0);
+    startHeartbeat(
+      {
+        update: async () => {
+          updates++;
+        },
+      } as any,
+      () => 0,
+      () => 0,
+    );
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Supersede the loop while it is parked in sleep, then let the sleep resolve.

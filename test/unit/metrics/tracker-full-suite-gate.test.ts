@@ -9,12 +9,12 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { collectBatchMetrics, collectStoryMetrics } from "@/metrics/tracker";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
-import { collectBatchMetrics, collectStoryMetrics } from "@/metrics/tracker";
-import { makeMockRuntime } from "@test/helpers";
+import { makeMockRuntime, makeTestContext } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-tracker-gate-test-${randomUUID()}`;
 
@@ -54,29 +54,32 @@ function makeCtx(
   routingOverrides?: Partial<PipelineContext["routing"]>,
   ctxOverrides?: Partial<PipelineContext>,
 ): PipelineContext {
-  return {
-    config: { ...DEFAULT_CONFIG } as NaxConfig,
-    prd: makePRD(story),
-    story,
-    stories: [story],
-    routing: {
-      complexity: "medium",
-      modelTier: "balanced",
-      testStrategy: "three-session-tdd",
-      reasoning: "test",
-      ...routingOverrides,
+  return Object.assign(
+    makeTestContext({
+      config: { ...DEFAULT_CONFIG } as NaxConfig,
+      prd: makePRD(story),
+      story,
+      stories: [story],
+      routing: {
+        complexity: "medium",
+        modelTier: "balanced",
+        testStrategy: "three-session-tdd",
+        reasoning: "test",
+        ...routingOverrides,
+      },
+      workdir: WORKDIR,
+    }),
+    {
+      agentResult: {
+        success: true,
+        output: "",
+        estimatedCostUsd: 0.01,
+        durationMs: 5000,
+      },
+      runtime: makeMockRuntime(),
     },
-    workdir: WORKDIR,
-    hooks: { hooks: {} },
-    agentResult: {
-      success: true,
-      output: "",
-      estimatedCostUsd: 0.01,
-      durationMs: 5000,
-    },
-    runtime: makeMockRuntime(),
-    ...ctxOverrides,
-  } as unknown as PipelineContext;
+    ctxOverrides ?? {},
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -195,28 +198,31 @@ describe("collectBatchMetrics - fullSuiteGatePassed always false", () => {
       updatedAt: new Date().toISOString(),
       userStories: [story1, story2],
     };
-    const ctx = {
-      config: { ...DEFAULT_CONFIG } as NaxConfig,
-      prd,
-      story: story1,
-      stories: [story1, story2],
-      routing: {
-        complexity: "medium",
-        modelTier: "balanced",
-        testStrategy: "three-session-tdd",
-        reasoning: "test",
+    const ctx = Object.assign(
+      makeTestContext({
+        config: { ...DEFAULT_CONFIG } as NaxConfig,
+        prd,
+        story: story1,
+        stories: [story1, story2],
+        routing: {
+          complexity: "medium",
+          modelTier: "balanced",
+          testStrategy: "three-session-tdd",
+          reasoning: "test",
+        },
+        workdir: WORKDIR,
+      }),
+      {
+        agentResult: {
+          success: true,
+          output: "",
+          estimatedCostUsd: 0.02,
+          durationMs: 10000,
+        },
+        fullSuiteGatePassed: true,
+        runtime: makeMockRuntime(),
       },
-      workdir: WORKDIR,
-      hooks: { hooks: {} },
-      agentResult: {
-        success: true,
-        output: "",
-        estimatedCostUsd: 0.02,
-        durationMs: 10000,
-      },
-      fullSuiteGatePassed: true,
-      runtime: makeMockRuntime(),
-    } as unknown as PipelineContext;
+    );
 
     const metrics = collectBatchMetrics(ctx, new Date().toISOString());
 

@@ -6,7 +6,7 @@
 
 import { beforeEach, describe, expect, test } from "bun:test";
 import { findingKey, recordIteration } from "@/findings";
-import type { FixCycle, Finding } from "@/findings";
+import type { Finding, FixCycle } from "@/findings";
 import { makeLogger } from "@test/helpers";
 
 let cycle: FixCycle<Finding>;
@@ -144,9 +144,7 @@ describe("recordIteration — log emission (AC5)", () => {
       logger,
     );
 
-    const call = logger.calls.find(
-      (c) => c.stage === "findings.cycle" && c.message === "iteration completed",
-    );
+    const call = logger.calls.find((c) => c.stage === "findings.cycle" && c.message === "iteration completed");
     expect(call?.data).toMatchObject({
       cycleName: "my-cycle",
       iterationNum: 1,
@@ -175,9 +173,7 @@ describe("recordIteration — storyId first key (AC6)", () => {
       logger,
     );
 
-    const call = logger.calls.find(
-      (c) => c.stage === "findings.cycle" && c.message === "iteration completed",
-    );
+    const call = logger.calls.find((c) => c.stage === "findings.cycle" && c.message === "iteration completed");
     expect(call?.data).toBeDefined();
     expect(Object.keys(call!.data!)[0]).toBe("storyId");
   });
@@ -198,9 +194,7 @@ describe("recordIteration — storyId first key (AC6)", () => {
       logger,
     );
 
-    const call = logger.calls.find(
-      (c) => c.stage === "findings.cycle" && c.message === "iteration completed",
-    );
+    const call = logger.calls.find((c) => c.stage === "findings.cycle" && c.message === "iteration completed");
     expect(call?.data).toBeDefined();
     expect(Object.keys(call!.data!)[0]).toBe("storyId");
   });
@@ -262,9 +256,7 @@ function findingFixture(overrides: Partial<Finding> = {}): Finding {
 }
 
 function recordCall(logger: ReturnType<typeof makeLogger>) {
-  return logger.calls.find(
-    (c) => c.stage === "findings.cycle" && c.message === "iteration completed",
-  );
+  return logger.calls.find((c) => c.stage === "findings.cycle" && c.message === "iteration completed");
 }
 
 describe("recordIteration — findingKeysBefore (US-002 AC1)", () => {

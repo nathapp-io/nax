@@ -40,7 +40,8 @@ describe("builder.buildGeneratorFromPRDPrompt()", () => {
       expect(
         builder.buildGeneratorFromPRDPrompt({
           ...base,
-          frameworkOverrideLine: "\n[FRAMEWORK OVERRIDE: Use vitest as the test framework regardless of what you detect.]",
+          frameworkOverrideLine:
+            "\n[FRAMEWORK OVERRIDE: Use vitest as the test framework regardless of what you detect.]",
         }),
       ).toMatchSnapshot();
     });
@@ -141,7 +142,8 @@ describe("builder.buildDiagnosisPromptTemplate()", () => {
       expect(
         builder.buildDiagnosisPromptTemplate({
           ...base,
-          verdictSection: "\nSEMANTIC VERDICTS:\n- US-001: likely test bug (semantic review confirmed AC implementation)\n",
+          verdictSection:
+            "\nSEMANTIC VERDICTS:\n- US-001: likely test bug (semantic review confirmed AC implementation)\n",
         }),
       ).toMatchSnapshot();
     });
@@ -206,7 +208,10 @@ describe("builder.buildSourceFixPrompt()", () => {
   });
 
   test("includes prior iterations block when provided", () => {
-    const result = builder.buildSourceFixPrompt({ ...base, priorIterationsBlock: "## Prior Iterations\n\nprior table\n\n" });
+    const result = builder.buildSourceFixPrompt({
+      ...base,
+      priorIterationsBlock: "## Prior Iterations\n\nprior table\n\n",
+    });
     expect(result).toContain("## Prior Iterations");
     expect(result).toContain("prior table");
   });
@@ -225,7 +230,8 @@ describe("builder.buildSourceFixPrompt()", () => {
 
 describe("builder.buildTestFixPrompt()", () => {
   const base = {
-    testOutput: "(pass) AC-1: ok [1ms]\n(fail) AC-2: assertion failed [2ms]\n  Error: Expected 1 got 0\n\n 1 pass\n 1 fail",
+    testOutput:
+      "(pass) AC-1: ok [1ms]\n(fail) AC-2: assertion failed [2ms]\n  Error: Expected 1 got 0\n\n 1 pass\n 1 fail",
     diagnosisReasoning: "Test uses wrong assertion type",
     failedACs: ["AC-2"],
     acceptanceTestPath: "/project/.nax/features/feat/.nax-acceptance.test.ts",
@@ -248,7 +254,10 @@ describe("builder.buildTestFixPrompt()", () => {
   });
 
   test("includes prior iterations block when provided", () => {
-    const result = builder.buildTestFixPrompt({ ...base, priorIterationsBlock: "## Prior Iterations\n\nprior table\n\n" });
+    const result = builder.buildTestFixPrompt({
+      ...base,
+      priorIterationsBlock: "## Prior Iterations\n\nprior table\n\n",
+    });
     expect(result).toContain("## Prior Iterations");
     expect(result).toContain("prior table");
   });

@@ -49,12 +49,16 @@ describe("installSignalHandlers", () => {
     const ctx: SignalHandlerContext = {
       ...minimalCtx,
       pidRegistry: {
-        killAll: async () => { callOrder.push("killAll"); },
+        killAll: async () => {
+          callOrder.push("killAll");
+        },
         register: async () => {},
         unregister: async () => {},
         cleanupStale: async () => {},
       } as never,
-      onShutdown: async () => { callOrder.push("onShutdown"); },
+      onShutdown: async () => {
+        callOrder.push("onShutdown");
+      },
     };
 
     // Just verify the context is accepted without error

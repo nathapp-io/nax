@@ -9,9 +9,9 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "@/config/defaults";
-import type { PRD, UserStory } from "@/prd";
-import type { PipelineContext } from "@/pipeline/types";
 import type { _routingDeps as RoutingDeps } from "@/pipeline/stages/routing";
+import type { PipelineContext } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd";
 import type { StoryRouting } from "@/prd/types";
 import { makeNaxConfig, makeStory } from "@test/helpers";
 
@@ -71,15 +71,13 @@ describe("routingStage - initialComplexity set on first classification", () => {
   afterEach(() => {
     mock.restore();
     if (origRoutingDeps) {
-      const { _routingDeps } = require("../../../../src/pipeline/stages/routing");
+      const { _routingDeps } = require("@/pipeline/stages/routing");
       Object.assign(_routingDeps, origRoutingDeps);
     }
   });
 
   test("story.routing.initialComplexity is set to classified complexity on first classify", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 
@@ -97,9 +95,7 @@ describe("routingStage - initialComplexity set on first classification", () => {
   });
 
   test("story.routing.initialComplexity matches complexity on first classify", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 
@@ -124,9 +120,7 @@ describe("routingStage - initialComplexity set on first classification", () => {
   });
 
   test("initialComplexity is written to PRD passed to savePRD on first classify", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 
@@ -159,15 +153,13 @@ describe("routingStage - initialComplexity never overwritten after first classif
   afterEach(() => {
     mock.restore();
     if (origRoutingDeps) {
-      const { _routingDeps } = require("../../../../src/pipeline/stages/routing");
+      const { _routingDeps } = require("@/pipeline/stages/routing");
       Object.assign(_routingDeps, origRoutingDeps);
     }
   });
 
   test("initialComplexity is preserved when story.routing already exists (escalation path)", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 
@@ -202,16 +194,14 @@ describe("routingStage - initialComplexity never overwritten after first classif
   });
 
   test("only modelTier changes during escalation, initialComplexity stays the same", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 
     const routingAfterFirstClassify: StoryRouting = {
       complexity: "medium",
       initialComplexity: "medium", // set on first classify
-      modelTier: "powerful",       // escalated tier
+      modelTier: "powerful", // escalated tier
       testStrategy: "three-session-tdd",
       reasoning: "persisted from first classify, escalated",
     };
@@ -240,9 +230,7 @@ describe("routingStage - initialComplexity never overwritten after first classif
   });
 
   test("initialComplexity absent on story.routing with no initialComplexity is not touched (backward compat)", async () => {
-    const { routingStage, _routingDeps } = await import(
-      "../../../../src/pipeline/stages/routing"
-    );
+    const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
 

@@ -89,7 +89,12 @@ describe("attachReviewAuditSubscriber", () => {
     const bus = new DispatchEventBus();
     attachReviewAuditSubscriber(
       bus,
-      { recordDispatch() {}, recordDecision: (e) => decisions.push(e), getAdvisoryFindings: () => [], async flush() {} },
+      {
+        recordDispatch() {},
+        recordDecision: (e) => decisions.push(e),
+        getAdvisoryFindings: () => [],
+        async flush() {},
+      },
       "run-1",
     );
 
@@ -119,7 +124,12 @@ describe("attachReviewAuditSubscriber", () => {
     const bus = new DispatchEventBus();
     const off = attachReviewAuditSubscriber(
       bus,
-      { recordDispatch() {}, recordDecision: (e) => decisions.push(e), getAdvisoryFindings: () => [], async flush() {} },
+      {
+        recordDispatch() {},
+        recordDecision: (e) => decisions.push(e),
+        getAdvisoryFindings: () => [],
+        async flush() {},
+      },
       "run-1",
     );
 

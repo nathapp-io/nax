@@ -51,7 +51,7 @@ const SAMPLE_ENTRIES = [
 function writeFixture(dir: string, name: string, entries: typeof SAMPLE_ENTRIES): string {
   const path = join(dir, name);
   // Realistic JSONL: each line is newline-terminated.
-  writeFileSync(path, entries.map((e) => JSON.stringify(e)).join("\n") + "\n");
+  writeFileSync(path, `${entries.map((e) => JSON.stringify(e)).join("\n")}\n`);
   return path;
 }
 
@@ -145,11 +145,7 @@ describe("followLogs", () => {
         },
       };
 
-      const outcome = await followLogs(
-        fixture,
-        { story: "US-001" },
-        { signal: controller.signal, _deps: deps },
-      );
+      const outcome = await followLogs(fixture, { story: "US-001" }, { signal: controller.signal, _deps: deps });
 
       expect(outcome).toBe("cancelled");
       expect(emitted.length).toBe(1);

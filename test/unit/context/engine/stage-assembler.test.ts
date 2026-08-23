@@ -15,6 +15,7 @@ import {
 } from "@/context/engine/stage-assembler";
 import type { ContextBundle, ContextRequest } from "@/context/engine/types";
 import type { PipelineContext } from "@/pipeline/types";
+import { makeContextBundle } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -267,7 +268,7 @@ function makeMockOrchestrator() {
   const orchestrator = {
     assemble: async (r: ContextRequest): Promise<ContextBundle> => {
       ref.captured = r;
-      return {
+      return makeContextBundle({
         pushMarkdown: "",
         digest: "abc",
         manifest: {
@@ -281,8 +282,7 @@ function makeMockOrchestrator() {
           digestTokens: 0,
           buildMs: 0,
         },
-        packedChunks: [],
-      } as unknown as ContextBundle;
+      });
     },
   };
   return { ref, orchestrator };
@@ -386,7 +386,8 @@ describe("assembleForStage — ADR-009 / .naxignore threading", () => {
 
   test("threads the engine-wide providerTimeoutMs from config into the request", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
 
     const ctx = makeCtx();
     (ctx.config as unknown as { context: { v2: Record<string, unknown> } }).context.v2.providerTimeoutMs = 9000;
@@ -397,7 +398,8 @@ describe("assembleForStage — ADR-009 / .naxignore threading", () => {
 
   test("a per-stage providerTimeoutMs override wins over the engine-wide value", async () => {
     const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    _stageAssemblerDeps.createOrchestrator = () =>
+      mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
 
     const ctx = makeCtx({ stages: { execution: { providerTimeoutMs: 2000 } } });
     (ctx.config as unknown as { context: { v2: Record<string, unknown> } }).context.v2.providerTimeoutMs = 9000;
@@ -549,11 +551,9 @@ describe("assembleForStage — provider-weights threading (effectiveness-scoring
     const mock = makeMockOrchestrator();
     _stageAssemblerDeps.createOrchestrator = () =>
       mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
-    _stageAssemblerDeps.loadFeatureManifests =
-      (async () => []) as typeof _stageAssemblerDeps.loadFeatureManifests;
+    _stageAssemblerDeps.loadFeatureManifests = (async () => []) as typeof _stageAssemblerDeps.loadFeatureManifests;
     const weights = { "static-rules": 1.0, "code-neighbor": 0.4 };
-    _stageAssemblerDeps.deriveProviderWeights =
-      (() => weights) as typeof _stageAssemblerDeps.deriveProviderWeights;
+    _stageAssemblerDeps.deriveProviderWeights = (() => weights) as typeof _stageAssemblerDeps.deriveProviderWeights;
 
     await assembleForStage(makeCtx(), "execution");
 
@@ -600,8 +600,7 @@ describe("assembleForStage — provider-weights threading (effectiveness-scoring
     const mock = makeMockOrchestrator();
     _stageAssemblerDeps.createOrchestrator = () =>
       mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
-    _stageAssemblerDeps.loadFeatureManifests =
-      (async () => []) as typeof _stageAssemblerDeps.loadFeatureManifests;
+    _stageAssemblerDeps.loadFeatureManifests = (async () => []) as typeof _stageAssemblerDeps.loadFeatureManifests;
     _stageAssemblerDeps.deriveProviderWeights = (() => {
       throw new Error("boom");
     }) as typeof _stageAssemblerDeps.deriveProviderWeights;

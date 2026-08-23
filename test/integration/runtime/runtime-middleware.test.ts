@@ -1,12 +1,12 @@
-import { afterEach, describe, test, expect } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { createRuntime } from "@/runtime";
-import { _promptAuditorDeps } from "@/runtime/prompt-auditor";
-import { _costAggDeps } from "@/runtime/cost-aggregator";
 import { DEFAULT_CONFIG } from "@/config";
-import { makeNaxConfig, makeMockAgentManager, makeTestRuntime } from "@test/helpers";
-import { withTempDir } from "@test/helpers";
+import { createRuntime } from "@/runtime";
 import type { NaxRuntime } from "@/runtime";
+import { _costAggDeps } from "@/runtime/cost-aggregator";
+import { _promptAuditorDeps } from "@/runtime/prompt-auditor";
+import { makeMockAgentManager, makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -19,9 +19,7 @@ const auditEnabledConfig = makeNaxConfig({ agent: { promptAudit: { enabled: true
 describe("Wave 2 exit criteria", () => {
   test("EC-1: createRuntime() produces a NaxRuntime with a UUID runId", () => {
     const rt = createRuntime(DEFAULT_CONFIG, "/tmp/ec1");
-    expect(rt.runId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-    );
+    expect(rt.runId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 
   test("EC-2: CostAggregator.snapshot() reflects recorded events", () => {
@@ -45,11 +43,15 @@ describe("Wave 2 exit criteria", () => {
       const appendedPaths: string[] = [];
       const origAppend = _promptAuditorDeps.appendLine;
       const origWrite = _promptAuditorDeps.write;
-      _promptAuditorDeps.appendLine = async (p, _d) => { appendedPaths.push(p); };
+      _promptAuditorDeps.appendLine = async (p, _d) => {
+        appendedPaths.push(p);
+      };
       _promptAuditorDeps.write = async (_p, _d) => 0;
 
       try {
-        const rt = createRuntime({ ...auditEnabledConfig, outputDir: join(dir, ".nax") }, dir, { featureName: "my-feature" });
+        const rt = createRuntime({ ...auditEnabledConfig, outputDir: join(dir, ".nax") }, dir, {
+          featureName: "my-feature",
+        });
         rt.promptAuditor.record({
           ts: Date.now(),
           runId: rt.runId,
@@ -62,9 +64,7 @@ describe("Wave 2 exit criteria", () => {
         await rt.close();
 
         // JSONL goes to .nax/prompt-audit/<feature>/<runId>.jsonl (written via appendLine)
-        expect(appendedPaths[0]).toBe(
-          join(dir, ".nax", "prompt-audit", "my-feature", `${rt.runId}.jsonl`),
-        );
+        expect(appendedPaths[0]).toBe(join(dir, ".nax", "prompt-audit", "my-feature", `${rt.runId}.jsonl`));
       } finally {
         _promptAuditorDeps.appendLine = origAppend;
         _promptAuditorDeps.write = origWrite;
@@ -94,9 +94,7 @@ describe("Wave 2 exit criteria", () => {
         });
         await rt.close();
 
-        expect(drainedPath).toBe(
-          join(dir, ".nax", "cost", `${rt.runId}.jsonl`),
-        );
+        expect(drainedPath).toBe(join(dir, ".nax", "cost", `${rt.runId}.jsonl`));
       } finally {
         _costAggDeps.write = orig;
       }
@@ -127,7 +125,9 @@ describe("Wave 2 exit criteria", () => {
       };
 
       try {
-        const rt = createRuntime({ ...auditEnabledConfig, outputDir: join(dir, ".nax") }, dir, { featureName: "my-feature" });
+        const rt = createRuntime({ ...auditEnabledConfig, outputDir: join(dir, ".nax") }, dir, {
+          featureName: "my-feature",
+        });
         rt.promptAuditor.record({
           ts: Date.now(),
           runId: rt.runId,

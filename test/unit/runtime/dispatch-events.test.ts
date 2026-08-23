@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
-  DispatchEventBus,
-  type DispatchEvent,
   type DispatchErrorEvent,
+  type DispatchEvent,
+  DispatchEventBus,
   type OperationCompletedEvent,
   type ReviewDecisionEvent,
   type ReviewRepromptEvent,
@@ -104,7 +104,9 @@ describe("DispatchEventBus", () => {
     test("listener that throws does not break other listeners", () => {
       const bus = new DispatchEventBus();
       const received: DispatchEvent[] = [];
-      bus.onDispatch(() => { throw new Error("boom"); });
+      bus.onDispatch(() => {
+        throw new Error("boom");
+      });
       bus.onDispatch((e) => received.push(e));
 
       expect(() => bus.emitDispatch(makeSessionTurnEvent())).not.toThrow();
@@ -140,7 +142,9 @@ describe("DispatchEventBus", () => {
     test("error listener that throws does not break others", () => {
       const bus = new DispatchEventBus();
       const received: DispatchErrorEvent[] = [];
-      bus.onDispatchError(() => { throw new Error("listener broke"); });
+      bus.onDispatchError(() => {
+        throw new Error("listener broke");
+      });
       bus.onDispatchError((e) => received.push(e));
 
       expect(() => bus.emitDispatchError(makeErrorEvent())).not.toThrow();
@@ -261,7 +265,9 @@ describe("onReviewDecision / emitReviewDecision", () => {
   test("listener that throws does not break other listeners", () => {
     const bus = new DispatchEventBus();
     const received: ReviewDecisionEvent[] = [];
-    bus.onReviewDecision(() => { throw new Error("boom"); });
+    bus.onReviewDecision(() => {
+      throw new Error("boom");
+    });
     bus.onReviewDecision((e) => received.push(e));
 
     expect(() => bus.emitReviewDecision(makeReviewDecisionEvent())).not.toThrow();
@@ -321,7 +327,9 @@ describe("onReviewReprompt / emitReviewReprompt", () => {
   test("listener that throws does not break other listeners", () => {
     const bus = new DispatchEventBus();
     const received: ReviewRepromptEvent[] = [];
-    bus.onReviewReprompt(() => { throw new Error("boom"); });
+    bus.onReviewReprompt(() => {
+      throw new Error("boom");
+    });
     bus.onReviewReprompt((e) => received.push(e));
 
     expect(() => bus.emitReviewReprompt(makeReviewRepromptEvent())).not.toThrow();
@@ -377,13 +385,15 @@ describe("ReviewRepromptEvent payload", () => {
     const repromptEvents: ReviewRepromptEvent[] = [];
     bus.onReviewReprompt((e) => repromptEvents.push(e));
 
-    bus.emitReviewReprompt(makeReviewRepromptEvent({
-      storyId: "story-abc",
-      reviewer: "adversarial",
-      dropCount: 3,
-      repromptOutcome: "recovered-blocking",
-      costUsd: 0.005,
-    }));
+    bus.emitReviewReprompt(
+      makeReviewRepromptEvent({
+        storyId: "story-abc",
+        reviewer: "adversarial",
+        dropCount: 3,
+        repromptOutcome: "recovered-blocking",
+        costUsd: 0.005,
+      }),
+    );
 
     expect(repromptEvents).toHaveLength(1);
     const event = repromptEvents[0];

@@ -7,8 +7,8 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_ORPHAN_TTL_MS, sweepOrphansImpl } from "@/session/manager-sweep";
 import { _sessionManagerDeps } from "@/session/manager-deps";
+import { DEFAULT_ORPHAN_TTL_MS, sweepOrphansImpl } from "@/session/manager-sweep";
 import type { SessionDescriptor, SessionState } from "@/session/types";
 
 function makeSession(overrides: Partial<SessionDescriptor> & { id: string; state: SessionState }): SessionDescriptor {
@@ -113,10 +113,30 @@ describe("sweepOrphansImpl — MEM-1 non-terminal (stuck) sessions", () => {
   test("sweeps a mixed batch: only stuck-old and terminal-old are evicted", () => {
     const now = Date.now();
     const sessions = new Map<string, SessionDescriptor>([
-      ["running-old", makeSession({ id: "running-old", state: "RUNNING", lastActivityAt: new Date(now - (DEFAULT_ORPHAN_TTL_MS + 1000)).toISOString() })],
-      ["running-recent", makeSession({ id: "running-recent", state: "RUNNING", lastActivityAt: new Date(now).toISOString() })],
-      ["term-old", makeSession({ id: "term-old", state: "FAILED", lastActivityAt: new Date(now - (DEFAULT_ORPHAN_TTL_MS + 1000)).toISOString() })],
-      ["term-recent", makeSession({ id: "term-recent", state: "COMPLETED", lastActivityAt: new Date(now).toISOString() })],
+      [
+        "running-old",
+        makeSession({
+          id: "running-old",
+          state: "RUNNING",
+          lastActivityAt: new Date(now - (DEFAULT_ORPHAN_TTL_MS + 1000)).toISOString(),
+        }),
+      ],
+      [
+        "running-recent",
+        makeSession({ id: "running-recent", state: "RUNNING", lastActivityAt: new Date(now).toISOString() }),
+      ],
+      [
+        "term-old",
+        makeSession({
+          id: "term-old",
+          state: "FAILED",
+          lastActivityAt: new Date(now - (DEFAULT_ORPHAN_TTL_MS + 1000)).toISOString(),
+        }),
+      ],
+      [
+        "term-recent",
+        makeSession({ id: "term-recent", state: "COMPLETED", lastActivityAt: new Date(now).toISOString() }),
+      ],
     ]);
 
     const removed = sweepOrphansImpl(sessions, DEFAULT_ORPHAN_TTL_MS);

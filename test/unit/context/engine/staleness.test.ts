@@ -138,7 +138,17 @@ describe("detectContradictions", () => {
         index: 1,
         text: "Authentication tokens are no longer stored in cookies. Instead use Bearer headers for JWT authentication session",
         establishedIn: "US-005",
-        terms: new Set(["authentication", "tokens", "longer", "cookies", "instead", "bearer", "headers", "jwt", "session"]),
+        terms: new Set([
+          "authentication",
+          "tokens",
+          "longer",
+          "cookies",
+          "instead",
+          "bearer",
+          "headers",
+          "jwt",
+          "session",
+        ]),
       },
     ];
     const stale = detectContradictions(entries);
@@ -240,7 +250,23 @@ describe("selectStaleByAge", () => {
 
   test("flags entries more than maxStoryAge positions behind latest", () => {
     // 15 entries, maxStoryAge=10 → entries 0–4 are stale (at positions < 15-10=5)
-    const entries = makeEntries(["US-001", "US-002", "US-003", "US-004", "US-005", "US-006", "US-007", "US-008", "US-009", "US-010", "US-011", "US-012", "US-013", "US-014", "US-015"]);
+    const entries = makeEntries([
+      "US-001",
+      "US-002",
+      "US-003",
+      "US-004",
+      "US-005",
+      "US-006",
+      "US-007",
+      "US-008",
+      "US-009",
+      "US-010",
+      "US-011",
+      "US-012",
+      "US-013",
+      "US-014",
+      "US-015",
+    ]);
     const stale = selectStaleByAge(entries, 10);
     // 15 entries total. age = (14 - index). Stale when age > 10.
     // index 0 → age 14 (stale), index 3 → age 11 (stale), index 4 → age 10 (NOT stale)
@@ -258,7 +284,13 @@ describe("selectStaleByAge", () => {
 
   test("entries without establishedIn are not flagged", () => {
     const entries = [
-      { section: "Auth", index: 0, text: "Entry without established marker", establishedIn: undefined, terms: new Set<string>(["auth"]) },
+      {
+        section: "Auth",
+        index: 0,
+        text: "Entry without established marker",
+        establishedIn: undefined,
+        terms: new Set<string>(["auth"]),
+      },
     ];
     const stale = selectStaleByAge(entries, 0);
     expect(stale.size).toBe(0);

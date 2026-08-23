@@ -5,13 +5,13 @@
  * the new digest after. Tests use _contextStageDeps injection — no mock.module().
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { NaxError } from "@/errors";
 import type { ContextBundle, ContextRequest } from "@/context/engine";
+import { NaxError } from "@/errors";
 import { _contextStageDeps, contextStage } from "@/pipeline/stages/context";
 import type { PipelineContext } from "@/pipeline/types";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeContextOrchestrator, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals (restored per test)
@@ -66,12 +66,12 @@ function makeBundle(digest = "bundle digest"): ContextBundle {
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
-    config: {
+    config: makeNaxConfig({
       context: {
         v2: { enabled: true },
-        featureEngine: { budgetTokens: 8_000 },
+        featureEngine: { enabled: false, budgetTokens: 8_000 },
       },
-    } as unknown as PipelineContext["config"],
+    }),
     rootConfig: {} as PipelineContext["rootConfig"],
     prd: {} as PipelineContext["prd"],
     story: { id: "US-001" } as PipelineContext["story"],
@@ -87,14 +87,15 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
 }
 
 function mockOrchestrator(bundle: ContextBundle, captureRequest?: (req: ContextRequest) => void) {
-  _contextStageDeps.createOrchestrator = () =>
-    ({
+  _contextStageDeps.createOrchestrator = mock(() =>
+    makeContextOrchestrator({
       async assemble(req: ContextRequest) {
         captureRequest?.(req);
         return bundle;
       },
       rebuildForAgent: () => bundle,
-    }) as unknown as ReturnType<typeof _contextStageDeps.createOrchestrator>;
+    }),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -271,12 +272,12 @@ describe("context stage — Phase 2 digest threading", () => {
 describe("contextStage — v2.stages.context overrides", () => {
   function ctxWithStages(stage: { budgetTokens?: number; extraProviderIds?: string[] }): PipelineContext {
     return makeCtx({
-      config: {
+      config: makeNaxConfig({
         context: {
           v2: { enabled: true, stages: { context: stage } },
-          featureEngine: { budgetTokens: 8_000 },
+          featureEngine: { enabled: false, budgetTokens: 8_000 },
         },
-      } as unknown as PipelineContext["config"],
+      }),
     });
   }
 
@@ -326,7 +327,12 @@ describe("contextStage — v2.stages.context overrides", () => {
     mockOrchestrator(makeBundle(), (req) => {
       capturedRequest = req;
     });
-    const index = { getMatchers: () => [] } as unknown as PipelineContext["naxIgnoreIndex"];
+    const index: NonNullable<PipelineContext["naxIgnoreIndex"]> = {
+      repoRoot: "/repo",
+      getMatchers: () => [],
+      filter: (paths) => [...paths],
+      toPathspecExcludes: () => [],
+    };
 
     await contextStage.execute(makeCtx({ naxIgnoreIndex: index }));
 
@@ -336,15 +342,16 @@ describe("contextStage — v2.stages.context overrides", () => {
   test("rethrows CONTEXT_UNKNOWN_PROVIDER_IDS instead of degrading to no v2 context", async () => {
     _contextStageDeps.readDigest = async () => "";
     _contextStageDeps.writeDigest = async () => {};
-    _contextStageDeps.createOrchestrator = () =>
-      ({
+    _contextStageDeps.createOrchestrator = mock(() =>
+      makeContextOrchestrator({
         async assemble() {
           throw new NaxError("Unknown context provider ID(s): rgu", "CONTEXT_UNKNOWN_PROVIDER_IDS", {
             stage: "context",
           });
         },
         rebuildForAgent: () => makeBundle(),
-      }) as unknown as ReturnType<typeof _contextStageDeps.createOrchestrator>;
+      }),
+    );
 
     let threw: unknown;
     try {

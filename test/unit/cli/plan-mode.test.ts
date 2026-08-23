@@ -103,9 +103,7 @@ describe("planCommand — pipeline branch stub", () => {
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
     _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
-    _planDeps.createRuntime = mock(() =>
-      makeMockRuntime({ agentManager: makeMockAgentManager() }),
-    );
+    _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager: makeMockAgentManager() }));
   });
 
   afterEach(async () => {
@@ -152,9 +150,9 @@ describe("planCommand — pipeline branch stub", () => {
       },
     });
 
-    await expect(
-      planCommand(tmpDir, config, { from: "/spec.md", feature: "my-feature" }),
-    ).rejects.toBeInstanceOf(NaxError);
+    await expect(planCommand(tmpDir, config, { from: "/spec.md", feature: "my-feature" })).rejects.toBeInstanceOf(
+      NaxError,
+    );
 
     const warnCalls = logger.calls.filter((c) => c.level === "warn" && c.stage === "plan");
     expect(warnCalls).toHaveLength(1);

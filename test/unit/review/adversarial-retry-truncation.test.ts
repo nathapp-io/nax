@@ -7,13 +7,13 @@
  */
 
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import * as loggerModule from "@/logger";
 import { ParseValidationError } from "@/agents/retry/types";
+import * as loggerModule from "@/logger";
 import { adversarialReviewOp } from "@/operations/adversarial-review";
 import type { AdversarialReviewConfig } from "@/review/types";
 import type { SemanticStory } from "@/review/types";
-import { makeTestRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeTestRuntime } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -94,11 +94,7 @@ describe("adversarialReviewOp.retry — truncation-detected condensed retry", ()
       ctx,
     );
 
-    const result = strategy.shouldRetry(
-      new ParseValidationError("parse failed"),
-      0,
-      makeRetryCtx(UNFINISHED_JSON),
-    );
+    const result = strategy.shouldRetry(new ParseValidationError("parse failed"), 0, makeRetryCtx(UNFINISHED_JSON));
 
     expect(result.retry).toBe(true);
     expect(result.nextPrompt).toContain("truncated");
@@ -128,11 +124,7 @@ describe("adversarialReviewOp.retry — truncation-detected condensed retry", ()
       ctx,
     );
 
-    const result = strategy.shouldRetry(
-      new ParseValidationError("parse failed"),
-      0,
-      makeRetryCtx(UNFINISHED_JSON),
-    );
+    const result = strategy.shouldRetry(new ParseValidationError("parse failed"), 0, makeRetryCtx(UNFINISHED_JSON));
 
     expect(result.retry).toBe(true);
   });
@@ -149,11 +141,7 @@ describe("adversarialReviewOp.retry — truncation logging", () => {
       ctx,
     );
 
-    strategy.shouldRetry(
-      new ParseValidationError("parse failed"),
-      0,
-      makeRetryCtx(UNFINISHED_JSON),
-    );
+    strategy.shouldRetry(new ParseValidationError("parse failed"), 0, makeRetryCtx(UNFINISHED_JSON));
 
     const truncatedLog = logger.warnCalls.find((c) => c.message.includes("truncated"));
     expect(truncatedLog).toBeDefined();
@@ -207,11 +195,7 @@ describe("adversarialReviewOp.retry — Bug 4 regression: parser-first, length i
       ctx,
     );
 
-    const result = strategy.shouldRetry(
-      new ParseValidationError("shape invalid"),
-      0,
-      makeRetryCtx(validNearCap),
-    );
+    const result = strategy.shouldRetry(new ParseValidationError("shape invalid"), 0, makeRetryCtx(validNearCap));
 
     // The strategy parses the output internally — since it's valid, no retry
     expect(result.retry).toBe(false);
@@ -224,11 +208,7 @@ describe("adversarialReviewOp.retry — Bug 4 regression: parser-first, length i
       ctx,
     );
 
-    const result = strategy.shouldRetry(
-      new ParseValidationError("parse failed"),
-      0,
-      makeRetryCtx(UNFINISHED_JSON),
-    );
+    const result = strategy.shouldRetry(new ParseValidationError("parse failed"), 0, makeRetryCtx(UNFINISHED_JSON));
 
     expect(result.retry).toBe(true);
     expect(result.nextPrompt).toContain("truncated");
@@ -243,11 +223,7 @@ describe("adversarialReviewOp.retry — Bug 4 regression: parser-first, length i
       ctx,
     );
 
-    const result = strategy.shouldRetry(
-      new ParseValidationError("shape invalid"),
-      0,
-      makeRetryCtx(wrongShape),
-    );
+    const result = strategy.shouldRetry(new ParseValidationError("shape invalid"), 0, makeRetryCtx(wrongShape));
 
     expect(result.retry).toBe(true);
     expect(result.nextPrompt).not.toContain("truncated");

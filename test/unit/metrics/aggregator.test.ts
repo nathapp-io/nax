@@ -56,8 +56,8 @@ describe("calculateAggregateMetrics - complexityAccuracy uses initialComplexity"
     // Story originally predicted as 'simple' but escalated (finalTier = 'powerful')
     const story = makeStoryMetrics({
       storyId: "US-001",
-      complexity: "medium",          // post-escalation complexity
-      initialComplexity: "simple",   // original prediction
+      complexity: "medium", // post-escalation complexity
+      initialComplexity: "simple", // original prediction
       modelTier: "fast",
       finalTier: "powerful",
       attempts: 2,
@@ -68,8 +68,8 @@ describe("calculateAggregateMetrics - complexityAccuracy uses initialComplexity"
     const aggregate = calculateAggregateMetrics(runs);
 
     // complexityAccuracy should be keyed by initialComplexity ("simple"), not complexity ("medium")
-    expect(aggregate.complexityAccuracy["simple"]).toBeDefined();
-    expect(aggregate.complexityAccuracy["medium"]).toBeUndefined();
+    expect(aggregate.complexityAccuracy.simple).toBeDefined();
+    expect(aggregate.complexityAccuracy.medium).toBeUndefined();
   });
 
   test("mismatch detected when initialComplexity tier != finalTier", () => {
@@ -87,7 +87,7 @@ describe("calculateAggregateMetrics - complexityAccuracy uses initialComplexity"
     const aggregate = calculateAggregateMetrics(runs);
 
     // simple -> powerful: mismatch expected
-    expect(aggregate.complexityAccuracy["simple"].mismatchRate).toBeGreaterThan(0);
+    expect(aggregate.complexityAccuracy.simple.mismatchRate).toBeGreaterThan(0);
   });
 
   test("no mismatch when initialComplexity tier matches finalTier", () => {
@@ -104,7 +104,7 @@ describe("calculateAggregateMetrics - complexityAccuracy uses initialComplexity"
     const runs = [makeRun([successStory])];
     const aggregate = calculateAggregateMetrics(runs);
 
-    expect(aggregate.complexityAccuracy["medium"].mismatchRate).toBe(0);
+    expect(aggregate.complexityAccuracy.medium.mismatchRate).toBe(0);
   });
 
   test("falls back to complexity when initialComplexity is absent (backward compat)", () => {
@@ -121,7 +121,7 @@ describe("calculateAggregateMetrics - complexityAccuracy uses initialComplexity"
     const aggregate = calculateAggregateMetrics(runs);
 
     // Falls back to complexity as key
-    expect(aggregate.complexityAccuracy["complex"]).toBeDefined();
+    expect(aggregate.complexityAccuracy.complex).toBeDefined();
   });
 
   test("mixes initialComplexity-keyed and legacy entries correctly", () => {
@@ -143,23 +143,28 @@ describe("calculateAggregateMetrics - complexityAccuracy uses initialComplexity"
     const runs = [makeRun([modernStory, legacyStory])];
     const aggregate = calculateAggregateMetrics(runs);
 
-    expect(aggregate.complexityAccuracy["simple"]).toBeDefined();   // from initialComplexity
-    expect(aggregate.complexityAccuracy["complex"]).toBeDefined();  // from complexity fallback
-    expect(aggregate.complexityAccuracy["medium"]).toBeUndefined(); // NOT used (initialComplexity takes over)
+    expect(aggregate.complexityAccuracy.simple).toBeDefined(); // from initialComplexity
+    expect(aggregate.complexityAccuracy.complex).toBeDefined(); // from complexity fallback
+    expect(aggregate.complexityAccuracy.medium).toBeUndefined(); // NOT used (initialComplexity takes over)
   });
 
   test("complexityAccuracy.predicted count matches number of stories with that initialComplexity", () => {
     const stories = [
       makeStoryMetrics({ storyId: "US-001", complexity: "medium", initialComplexity: "simple", finalTier: "balanced" }),
       makeStoryMetrics({ storyId: "US-002", complexity: "medium", initialComplexity: "simple", finalTier: "balanced" }),
-      makeStoryMetrics({ storyId: "US-003", complexity: "complex", initialComplexity: "complex", finalTier: "powerful" }),
+      makeStoryMetrics({
+        storyId: "US-003",
+        complexity: "complex",
+        initialComplexity: "complex",
+        finalTier: "powerful",
+      }),
     ];
 
     const runs = [makeRun(stories)];
     const aggregate = calculateAggregateMetrics(runs);
 
-    expect(aggregate.complexityAccuracy["simple"].predicted).toBe(2);
-    expect(aggregate.complexityAccuracy["complex"].predicted).toBe(1);
+    expect(aggregate.complexityAccuracy.simple.predicted).toBe(2);
+    expect(aggregate.complexityAccuracy.complex.predicted).toBe(1);
   });
 });
 

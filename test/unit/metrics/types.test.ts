@@ -44,7 +44,12 @@ describe("TokenUsage class", () => {
   });
 
   test("cache fields can be set to numbers including 0", () => {
-    const usage = new TokenUsage({ inputTokens: 1000, outputTokens: 500, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 });
+    const usage = new TokenUsage({
+      inputTokens: 1000,
+      outputTokens: 500,
+      cacheReadInputTokens: 0,
+      cacheCreationInputTokens: 0,
+    });
 
     expect(usage.cacheReadInputTokens).toBe(0);
     expect(usage.cacheCreationInputTokens).toBe(0);

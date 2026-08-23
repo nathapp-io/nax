@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { routingConfigSelector } from "@/config";
 import type { ClassifyRouteInput } from "@/operations/classify-route";
 import { classifyRouteBatchOp, classifyRouteOp } from "@/operations/classify-route";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -78,9 +78,9 @@ describe("classifyRouteOp shape", () => {
         tags: [],
       },
     ];
-    expect(classifyRouteBatchOp.model?.(stories as unknown as Parameters<typeof classifyRouteBatchOp.model>[0], ctx)).toBe(
-      "powerful",
-    );
+    expect(
+      classifyRouteBatchOp.model?.(stories as unknown as Parameters<typeof classifyRouteBatchOp.model>[0], ctx),
+    ).toBe("powerful");
   });
 });
 

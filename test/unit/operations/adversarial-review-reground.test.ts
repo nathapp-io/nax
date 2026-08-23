@@ -35,12 +35,12 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { adversarialReviewOp } from "@/operations/adversarial-review";
-import type { AdversarialReviewInput } from "@/operations/adversarial-review";
-import { makeTestRuntime, withTempDir } from "@test/helpers";
-import type { NaxRuntime } from "@/runtime";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { adversarialReviewOp } from "@/operations/adversarial-review";
+import type { AdversarialReviewInput } from "@/operations/adversarial-review";
+import type { NaxRuntime } from "@/runtime";
+import { makeTestRuntime, withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -738,7 +738,14 @@ describe("AdversarialReviewPromptBuilder.regroundDroppedFindings — unit", () =
 
   test("regroundDroppedFindings includes DROP_CODE_MESSAGES_QUOTE translation for each rejection code", () => {
     const { AdversarialReviewPromptBuilder } = require("../../../src/prompts/builders/adversarial-review-builder");
-    const codes: Array<{ code: "missing_ac_quote" | "ac_index_out_of_range" | "ac_quote_not_substring" | "ac_quote_does_not_constrain_locus"; expected: string }> = [
+    const codes: Array<{
+      code:
+        | "missing_ac_quote"
+        | "ac_index_out_of_range"
+        | "ac_quote_not_substring"
+        | "ac_quote_does_not_constrain_locus";
+      expected: string;
+    }> = [
       { code: "missing_ac_quote", expected: "no `acQuote` field was provided" },
       { code: "ac_index_out_of_range", expected: "ACs are 1-indexed" },
       { code: "ac_quote_not_substring", expected: "does not appear verbatim" },

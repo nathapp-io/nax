@@ -21,13 +21,14 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import { _bakeoffCliDeps, handleRunAction, pipeline, runBakeoff, runContestant } from "@/bakeoff";
 import type { BakeoffCliDeps, BakeoffResult, ContestantRunnerDeps, HandleRunActionOptions } from "@/bakeoff";
 import type { NaxConfig } from "@/config";
+import { makeNaxConfig } from "@test/helpers";
 
 function baseOptions(overrides: Partial<HandleRunActionOptions> = {}): HandleRunActionOptions {
   return {
     feature: "test-feature",
     projectRoot: "/tmp/proj",
     outputDir: "/tmp/out",
-    config: {} as unknown as NaxConfig,
+    config: makeNaxConfig(),
     ...overrides,
   };
 }
@@ -65,8 +66,8 @@ describe("handleRunAction (AC-10: --compare routes to runBakeoff)", () => {
 
     await withCliDeps(
       {
-        runBakeoff: runBakeoffSpy as unknown as BakeoffCliDeps["runBakeoff"],
-        runSingleAgent: runSingleAgentSpy as unknown as BakeoffCliDeps["runSingleAgent"],
+        runBakeoff: runBakeoffSpy,
+        runSingleAgent: runSingleAgentSpy,
         assertPrdCommitted: async () => undefined,
       },
       () =>
@@ -98,8 +99,8 @@ describe("handleRunAction (AC-10: --compare routes to runBakeoff)", () => {
 
     await withCliDeps(
       {
-        runBakeoff: runBakeoffSpy as unknown as BakeoffCliDeps["runBakeoff"],
-        runSingleAgent: runSingleAgentSpy as unknown as BakeoffCliDeps["runSingleAgent"],
+        runBakeoff: runBakeoffSpy,
+        runSingleAgent: runSingleAgentSpy,
         assertPrdCommitted: async () => undefined,
       },
       () =>
@@ -130,8 +131,8 @@ describe("handleRunAction (AC-10: --compare routes to runBakeoff)", () => {
 
     await withCliDeps(
       {
-        runBakeoff: runBakeoffSpy as unknown as BakeoffCliDeps["runBakeoff"],
-        runSingleAgent: runSingleAgentSpy as unknown as BakeoffCliDeps["runSingleAgent"],
+        runBakeoff: runBakeoffSpy,
+        runSingleAgent: runSingleAgentSpy,
         assertPrdCommitted: async () => undefined,
       },
       () => handleRunAction(baseOptions({ compare: "claude,codex", maxCostUsd: 5 })),
@@ -155,8 +156,8 @@ describe("handleRunAction (AC-11: no --compare routes to runSingleAgent)", () =>
 
     await withCliDeps(
       {
-        runBakeoff: runBakeoffSpy as unknown as BakeoffCliDeps["runBakeoff"],
-        runSingleAgent: runSingleAgentSpy as unknown as BakeoffCliDeps["runSingleAgent"],
+        runBakeoff: runBakeoffSpy,
+        runSingleAgent: runSingleAgentSpy,
       },
       () => handleRunAction(baseOptions()),
     );
@@ -180,8 +181,8 @@ describe("handleRunAction (AC-11: no --compare routes to runSingleAgent)", () =>
 
     await withCliDeps(
       {
-        runBakeoff: runBakeoffSpy as unknown as BakeoffCliDeps["runBakeoff"],
-        runSingleAgent: runSingleAgentSpy as unknown as BakeoffCliDeps["runSingleAgent"],
+        runBakeoff: runBakeoffSpy,
+        runSingleAgent: runSingleAgentSpy,
       },
       () => handleRunAction(baseOptions({ compare: "   " })),
     );
@@ -266,7 +267,7 @@ describe("handleRunAction (US-004 AC1, AC10: PRD-tracking guard)", () => {
       withCliDeps(
         {
           runBakeoff: stubbedRunBakeoff,
-          assertPrdCommitted: rejectingGuard as unknown as BakeoffCliDeps["assertPrdCommitted"],
+          assertPrdCommitted: rejectingGuard,
         },
         () => handleRunAction(baseOptions({ compare: "profile-a" })),
       ),
@@ -306,7 +307,7 @@ describe("handleRunAction (US-004 AC1, AC10: PRD-tracking guard)", () => {
       withCliDeps(
         {
           runBakeoff: stubbedRunBakeoff,
-          assertPrdCommitted: rejectingGuard as unknown as BakeoffCliDeps["assertPrdCommitted"],
+          assertPrdCommitted: rejectingGuard,
         },
         () => handleRunAction(baseOptions({ compare: "profile-a" })),
       ),

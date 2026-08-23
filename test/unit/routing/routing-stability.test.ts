@@ -10,9 +10,9 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { initLogger, resetLogger } from "@/logger";
+import { classifyRouteBatchOp, classifyRouteOp } from "@/operations";
 import type { UserStory } from "@/prd/types";
 import { classifyComplexity, complexityToModelTier, determineTestStrategy } from "@/routing";
-import { classifyRouteOp, classifyRouteBatchOp } from "@/operations";
 import { makeStory } from "@test/helpers";
 
 /** Minimal keyword-route helper replacing the deleted keywordStrategy object. */
@@ -60,7 +60,8 @@ describe("keyword classifier produces identical results across retries", () => {
     const clean = makeStory({ title: "Add color picker", description: "Simple UI change" });
     const withErrors = makeStory({
       title: "Add color picker",
-      description: "Simple UI change\n\nPrior errors:\n- auth token expired\n- security check failed\n- refactor needed",
+      description:
+        "Simple UI change\n\nPrior errors:\n- auth token expired\n- security check failed\n- refactor needed",
     });
 
     const cleanResult = keywordRoute(clean, routeCtxConfig);
@@ -131,7 +132,11 @@ describe("LLM routing config accepts retry and timeout fields with correct defau
       ...DEFAULT_CONFIG,
       routing: {
         ...DEFAULT_CONFIG.routing,
-        llm: { mode: "per-story" as const, fallbackToKeywords: true, cacheDecisions: true } as NaxConfig["routing"]["llm"],
+        llm: {
+          mode: "per-story" as const,
+          fallbackToKeywords: true,
+          cacheDecisions: true,
+        } as NaxConfig["routing"]["llm"],
       },
     };
 
@@ -143,7 +148,11 @@ describe("LLM routing config accepts retry and timeout fields with correct defau
       ...DEFAULT_CONFIG,
       routing: {
         ...DEFAULT_CONFIG.routing,
-        llm: { mode: "per-story" as const, fallbackToKeywords: true, cacheDecisions: true } as NaxConfig["routing"]["llm"],
+        llm: {
+          mode: "per-story" as const,
+          fallbackToKeywords: true,
+          cacheDecisions: true,
+        } as NaxConfig["routing"]["llm"],
       },
     };
 
@@ -225,7 +234,10 @@ describe("classifyRouteOp declares retry preset (issue #856 site #4)", () => {
       packageView: null as never,
       config: { routing: config.routing, autoMode: config.autoMode } as never,
     };
-    const resolver = classifyRouteOp.retry as (input: unknown, ctx: typeof buildCtx) => { maxAttempts: number; baseDelayMs: number } | undefined;
+    const resolver = classifyRouteOp.retry as (
+      input: unknown,
+      ctx: typeof buildCtx,
+    ) => { maxAttempts: number; baseDelayMs: number } | undefined;
     const preset = resolver({}, buildCtx);
     expect(preset?.maxAttempts).toBe(4); // retries: 3 → maxAttempts: 4
     expect(preset?.baseDelayMs).toBe(2000);
@@ -240,7 +252,10 @@ describe("classifyRouteOp declares retry preset (issue #856 site #4)", () => {
       packageView: null as never,
       config: { routing: config.routing, autoMode: config.autoMode } as never,
     };
-    const resolver = classifyRouteOp.retry as (input: unknown, ctx: typeof buildCtx) => { maxAttempts: number } | undefined;
+    const resolver = classifyRouteOp.retry as (
+      input: unknown,
+      ctx: typeof buildCtx,
+    ) => { maxAttempts: number } | undefined;
     const preset = resolver({}, buildCtx);
     expect(preset?.maxAttempts).toBe(1);
   });

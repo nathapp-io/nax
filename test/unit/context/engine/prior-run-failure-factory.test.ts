@@ -8,11 +8,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { NaxConfig } from "@/config";
 import {
-  createDefaultOrchestrator,
+  PriorRunFailureProvider,
   _codeNeighborDeps,
   _gitHistoryDeps,
-  PriorRunFailureProvider,
   _priorRunFailureDeps,
+  createDefaultOrchestrator,
 } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
 import type { UserStory } from "@/prd";

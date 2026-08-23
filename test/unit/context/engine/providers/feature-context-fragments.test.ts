@@ -17,12 +17,12 @@
  * distinguish from the new fragment chunks (different id prefix).
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { NaxConfig } from "@/config/types";
 import { FeatureContextProviderV2, _featureContextV2Deps } from "@/context/engine";
 import type { ContextRequest, RawChunk } from "@/context/engine/types";
-import type { NaxConfig } from "@/config/types";
 import type { PRD, UserStory } from "@/prd";
-import { makePRD, makeStory } from "@test/helpers";
+import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixture builders
@@ -38,7 +38,7 @@ function prdWith(stories: readonly UserStory[], featureId = "TEST-FEATURE"): PRD
 }
 
 function makeFragmentsConfig(overrides: { decay?: number; maxTokens?: number; enabled?: boolean } = {}): NaxConfig {
-  return {
+  return makeNaxConfig({
     context: {
       v2: {
         fragments: {
@@ -49,7 +49,7 @@ function makeFragmentsConfig(overrides: { decay?: number; maxTokens?: number; en
         },
       },
     },
-  } as unknown as NaxConfig;
+  });
 }
 
 function makeRequest(overrides: Partial<ContextRequest> = {}): ContextRequest {
@@ -109,10 +109,14 @@ function mockV1Empty(): void {
 }
 
 function mockV1WithContextMd(content = "## Pre-existing context\n\nold notes"): void {
-  _featureContextV2Deps.createV1Provider = () =>
-    ({
-      getContext: async () => ({ content, estimatedTokens: 50, featureId: "TEST-FEATURE" }),
-    }) as unknown as ReturnType<typeof _featureContextV2Deps.createV1Provider>;
+  _featureContextV2Deps.createV1Provider = () => ({
+    getContext: async () => ({
+      content,
+      estimatedTokens: 50,
+      label: "feature-context",
+      featureId: "TEST-FEATURE",
+    }),
+  });
 }
 
 function mockLoadPRD(prd: PRD | null): void {
@@ -270,7 +274,7 @@ describe("FeatureContextProviderV2 US-003 — fragment dependency walk", () => {
     mockReadFragment({ "US-002": "b-body" });
 
     const provider = new FeatureContextProviderV2(a, makeFragmentsConfig());
-    let result;
+    let result: Awaited<ReturnType<typeof provider.fetch>> | undefined;
     let raised: unknown = null;
     try {
       result = await provider.fetch(makeRequest({ storyId: "US-001" }));
@@ -445,7 +449,9 @@ describe("FeatureContextProviderV2 US-003 — fragment dependency walk", () => {
     const provider = new FeatureContextProviderV2(a, makeFragmentsConfig());
     const result = await provider.fetch(makeRequest({ storyId: "US-001" }));
 
-    const ids = fragmentChunks(result.chunks).map((chunk) => chunk.id).sort();
+    const ids = fragmentChunks(result.chunks)
+      .map((chunk) => chunk.id)
+      .sort();
     expect(ids).toEqual(["feature-fragment:US-002"]);
   });
 
@@ -466,7 +472,9 @@ describe("FeatureContextProviderV2 US-003 — fragment dependency walk", () => {
     const provider = new FeatureContextProviderV2(a, makeFragmentsConfig());
     const result = await provider.fetch(makeRequest({ storyId: "US-001" }));
 
-    const ids = fragmentChunks(result.chunks).map((chunk) => chunk.id).sort();
+    const ids = fragmentChunks(result.chunks)
+      .map((chunk) => chunk.id)
+      .sort();
     expect(ids).toEqual(["feature-fragment:US-002", "feature-fragment:US-003"]);
   });
 });

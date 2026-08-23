@@ -22,7 +22,10 @@ import {
   makeMockRuntime,
   makeNaxConfig,
   makePRD,
+  makeSpawn,
+  makeSpawnResult,
   makeStory,
+  makeTestContext,
   withTempDir,
 } from "@test/helpers";
 
@@ -88,23 +91,33 @@ function makeCtx(
   overrides: Partial<PipelineContext> = {},
 ): PipelineContext {
   const story = prd.userStories[0]!;
-  return {
-    config,
-    rootConfig: makeNaxConfig(),
-    prd,
-    story,
-    stories: [story],
-    routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-    workdir: tempDir,
-    projectDir: tempDir,
-    featureDir: tempDir,
-    prdPath: `${tempDir}/prd.json`,
-    agentResult: { success: true, estimatedCostUsd: 0.01, output: "", stderr: "", exitCode: 0, rateLimited: false },
-    hooks: {} as PipelineContext["hooks"],
-    storyStartTime: new Date().toISOString(),
-    runtime: makeMockRuntime(),
-    ...overrides,
-  } as unknown as PipelineContext;
+  return Object.assign(
+    makeTestContext({
+      config,
+      rootConfig: makeNaxConfig(),
+      prd,
+      story,
+      stories: [story],
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+      workdir: tempDir,
+      projectDir: tempDir,
+    }),
+    {
+      featureDir: tempDir,
+      prdPath: `${tempDir}/prd.json`,
+      agentResult: {
+        success: true,
+        estimatedCostUsd: 0.01,
+        output: "",
+        stderr: "",
+        exitCode: 0,
+        rateLimited: false,
+      },
+      storyStartTime: new Date().toISOString(),
+      runtime: makeMockRuntime(),
+    },
+    overrides,
+  );
 }
 
 beforeEach(() => {
@@ -217,7 +230,7 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(1);
-      const calls = (writeMock.mock.calls as any[]);
+      const calls = writeMock.mock.calls as any[];
       const body = calls[0]?.[3];
       expect(body).toContain("Add the fragment store");
     });
@@ -240,7 +253,7 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(1);
-      const calls = (writeMock.mock.calls as any[]);
+      const calls = writeMock.mock.calls as any[];
       const body = calls[0]?.[3];
       expect(body).toContain("First criterion");
       expect(body).toContain("Second criterion");
@@ -262,7 +275,7 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(1);
-      const calls = (writeMock.mock.calls as any[]);
+      const calls = writeMock.mock.calls as any[];
       const body = calls[0]?.[3];
       expect(body).toContain("src/foo.ts");
       expect(body).toContain("src/bar.ts");
@@ -280,14 +293,12 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
 
       const writeMock = mock(async () => {});
       _completionDeps.writeFragment = writeMock;
-      _completionDeps.getDiffFilePaths = mock(
-        async () => new Set(["src/foo.ts", "src/gone.ts", "src/new.ts"]),
-      );
+      _completionDeps.getDiffFilePaths = mock(async () => new Set(["src/foo.ts", "src/gone.ts", "src/new.ts"]));
 
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(1);
-      const calls = (writeMock.mock.calls as any[]);
+      const calls = writeMock.mock.calls as any[];
       const body = calls[0]?.[3];
       expect(body).toContain("src/foo.ts");
       expect(body).toContain("src/gone.ts");
@@ -322,7 +333,7 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(1);
-      const calls = (writeMock.mock.calls as any[]);
+      const calls = writeMock.mock.calls as any[];
       const body = calls[0]?.[3] as string;
       // Spot-check the first and last file paths appear in the body.
       expect(body).toContain("src/file-0000.ts");
@@ -400,7 +411,7 @@ describe("completionStage — fragment capture on re-run (AC8)", () => {
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(2);
-      const calls = (writeMock.mock.calls as any[]);
+      const calls = writeMock.mock.calls as any[];
       expect(calls[0]?.[2]).toBe("US-001");
       expect(calls[1]?.[2]).toBe("US-001");
     });
@@ -421,23 +432,12 @@ describe("completionStage — getDiffFilePaths reads --name-only output in full 
     // capped read would drop every path after ~58,250 lines; the full read
     // keeps all 60,000.
     const pathCount = 60_000;
-    const output = Array.from({ length: pathCount }, (_, i) => `src/file-${i.toString().padStart(5, "0")}.ts\n`).join("");
+    const output = Array.from({ length: pathCount }, (_, i) => `src/file-${i.toString().padStart(5, "0")}.ts\n`).join(
+      "",
+    );
     expect(output.length).toBeGreaterThan(1_048_576);
 
-    _completionDeps.spawn = (() => ({
-      stdout: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(encoder.encode(output));
-          controller.close();
-        },
-      }),
-      stderr: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.close();
-        },
-      }),
-      exited: Promise.resolve(0),
-    })) as unknown as typeof _completionDeps.spawn;
+    _completionDeps.spawn = makeSpawn(() => output).spawn;
 
     const paths = await _completionDeps.getDiffFilePaths("/repo", "base-ref");
 
@@ -456,21 +456,22 @@ describe("completionStage — getDiffFilePaths reads --name-only output in full 
     for (let i = 0; i < bytes.length; i += 7) chunks.push(bytes.slice(i, i + 7));
 
     let chunkIndex = 0;
-    _completionDeps.spawn = (() => ({
-      stdout: new ReadableStream<Uint8Array>({
-        pull(controller) {
-          const chunk = chunks[chunkIndex++];
-          if (chunk) controller.enqueue(chunk);
-          else controller.close();
-        },
-      }),
-      stderr: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.close();
-        },
-      }),
-      exited: Promise.resolve(0),
-    })) as unknown as typeof _completionDeps.spawn;
+    _completionDeps.spawn = makeSpawn(() => {
+      const proc = makeSpawnResult();
+      // Pull-based stdout emitting fixed-size chunks so every path is split
+      // across at least one read, exercising the partial-line carry-over in
+      // the streaming reader.
+      Object.defineProperty(proc, "stdout", {
+        value: new ReadableStream<Uint8Array>({
+          pull(controller) {
+            const chunk = chunks[chunkIndex++];
+            if (chunk) controller.enqueue(chunk);
+            else controller.close();
+          },
+        }),
+      });
+      return proc;
+    }).spawn;
 
     const result = await _completionDeps.getDiffFilePaths("/repo", "base-ref");
 

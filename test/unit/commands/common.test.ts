@@ -144,7 +144,6 @@ describe("resolveProject", () => {
       expect(result.featureDir).toBe(featureDir);
     });
 
-
     test("lists available features when feature not found", () => {
       // Setup: Create nax/features with multiple features
       const naxDir = join(testDir, ".nax");
@@ -209,7 +208,10 @@ describe("resolveProject", () => {
       const s1 = join(testDir, "s1-empty");
       mkdirSync(s1, { recursive: true });
       process.chdir(s1);
-      try { resolveProject(); expect.unreachable(); } catch (err) {
+      try {
+        resolveProject();
+        expect.unreachable();
+      } catch (err) {
         expect(err).toBeInstanceOf(NaxError);
         expect((err as NaxError).code).toBe("PROJECT_NOT_FOUND");
         expect((err as NaxError).context?.cwd).toBe(s1);
@@ -218,7 +220,10 @@ describe("resolveProject", () => {
       // NAX_DIR_NOT_FOUND
       const s2 = join(testDir, "s2-no-nax");
       mkdirSync(s2, { recursive: true });
-      try { resolveProject({ dir: s2 }); expect.unreachable(); } catch (err) {
+      try {
+        resolveProject({ dir: s2 });
+        expect.unreachable();
+      } catch (err) {
         expect(err).toBeInstanceOf(NaxError);
         expect((err as NaxError).code).toBe("NAX_DIR_NOT_FOUND");
         expect((err as NaxError).context?.projectRoot).toBe(s2);
@@ -229,7 +234,10 @@ describe("resolveProject", () => {
       const s3Nax = join(s3, ".nax");
       mkdirSync(s3Nax, { recursive: true });
       process.chdir(s3);
-      try { resolveProject(); expect.unreachable(); } catch (err) {
+      try {
+        resolveProject();
+        expect.unreachable();
+      } catch (err) {
         expect(err).toBeInstanceOf(NaxError);
         expect((err as NaxError).code).toBe("CONFIG_NOT_FOUND");
         expect((err as NaxError).context?.configPath).toBe(join(s3Nax, "config.json"));
@@ -241,7 +249,10 @@ describe("resolveProject", () => {
       mkdirSync(join(s4Nax, "features", "existing-feature"), { recursive: true });
       writeFileSync(join(s4Nax, "config.json"), "{}");
       process.chdir(s4);
-      try { resolveProject({ feature: "nonexistent" }); expect.unreachable(); } catch (err) {
+      try {
+        resolveProject({ feature: "nonexistent" });
+        expect.unreachable();
+      } catch (err) {
         expect(err).toBeInstanceOf(NaxError);
         expect((err as NaxError).code).toBe("FEATURE_NOT_FOUND");
         expect((err as NaxError).context?.feature).toBe("nonexistent");
@@ -294,7 +305,10 @@ describe("resolveProjectAsync", () => {
     const { globalConfigDir } = await import("@/config/paths");
     const registryDir = join(globalConfigDir(), "my-project");
     mkdirSync(registryDir, { recursive: true });
-    writeFileSync(join(registryDir, ".identity"), JSON.stringify({ workdir: projectDir, name: "my-project", createdAt: "", lastSeen: "", remoteUrl: null }));
+    writeFileSync(
+      join(registryDir, ".identity"),
+      JSON.stringify({ workdir: projectDir, name: "my-project", createdAt: "", lastSeen: "", remoteUrl: null }),
+    );
 
     const result = await resolveProjectAsync({ dir: "my-project" });
     expect(result.projectDir).toBe(projectDir);
@@ -346,5 +360,4 @@ describe("resolveProjectAsync", () => {
     const result = await resolveProjectAsync();
     expect(result.projectDir).toBe(testDir);
   });
-
 });

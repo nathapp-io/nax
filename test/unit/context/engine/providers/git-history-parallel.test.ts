@@ -5,7 +5,7 @@
  * rather than serially. All git calls are intercepted via _gitHistoryDeps injection.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { GitHistoryProvider, _gitHistoryDeps } from "@/context/engine/providers/git-history";
 import type { ContextRequest } from "@/context/engine/types";
 

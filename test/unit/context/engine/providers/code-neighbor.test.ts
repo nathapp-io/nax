@@ -5,16 +5,16 @@
  * No real files are read.
  */
 
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } from "bun:test";
 import { CodeNeighborProvider, _codeNeighborDeps } from "@/context/engine/providers/code-neighbor";
 import type { CodeNeighborProviderOptions } from "@/context/engine/providers/code-neighbor";
 import type { ContextRequest } from "@/context/engine/types";
-import type { NaxIgnoreMatcher, NaxIgnoreIndex } from "@/utils/path-filters";
-import type { ResolvedTestPatterns } from "@/test-runners/resolver";
 import { extractTestDirs, globsToPathspec, globsToTestRegex } from "@/test-runners/conventions";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import type { ResolvedTestPatterns } from "@/test-runners/resolver";
+import type { NaxIgnoreIndex, NaxIgnoreMatcher } from "@/utils/path-filters";
+import { cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
 
 /**
  * Build a ResolvedTestPatterns value from test-file globs.
@@ -143,16 +143,23 @@ describe("CodeNeighborProvider", () => {
 
   test("includes forward deps (imports) and reverse deps (importers of touched file)", async () => {
     setupDeps({
-      files: { "src/service.ts": 'import { helper } from "./utils/helper"', "src/utils/helper.ts": "export const helper = () => {}" },
+      files: {
+        "src/service.ts": 'import { helper } from "./utils/helper"',
+        "src/utils/helper.ts": "export const helper = () => {}",
+      },
       globFiles: [],
     });
-    expect((await provider.fetch(makeRequest({ touchedFiles: ["src/service.ts"] }))).chunks[0]?.content ?? "").toContain("src/utils/helper");
+    expect(
+      (await provider.fetch(makeRequest({ touchedFiles: ["src/service.ts"] }))).chunks[0]?.content ?? "",
+    ).toContain("src/utils/helper");
 
     setupDeps({
       files: { "src/utils/helper.ts": "", "src/service.ts": 'import { helper } from "./utils/helper"' },
       globFiles: ["src/service.ts"],
     });
-    expect((await provider.fetch(makeRequest({ touchedFiles: ["src/utils/helper.ts"] }))).chunks[0]?.content ?? "").toContain("src/service.ts");
+    expect(
+      (await provider.fetch(makeRequest({ touchedFiles: ["src/utils/helper.ts"] }))).chunks[0]?.content ?? "",
+    ).toContain("src/service.ts");
   });
 
   test("reverse deps are not starved when forward deps alone reach MAX_NEIGHBORS_PER_FILE (#1611)", async () => {
@@ -254,48 +261,65 @@ describe("CodeNeighborProvider", () => {
     // When the caller has not threaded the resolver output, providers must NOT
     // fall back to hardcoded test/unit/ + .test.ts assumptions (#526 ADR-009).
     setupDeps({ globFiles: [] });
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/missing.ts"], resolvedTestPatterns: undefined }));
+    const result = await provider.fetch(
+      makeRequest({ touchedFiles: ["src/missing.ts"], resolvedTestPatterns: undefined }),
+    );
     expect(result.chunks).toHaveLength(0);
   });
 
   test("colocated test preferred when on disk; falls back to mirrored hint when absent (#526 Bug 2)", async () => {
     setupDeps({ files: { "src/calc.ts": "", "src/calc.test.ts": "" }, globFiles: [] });
-    const colocated = await provider.fetch(makeRequest({ touchedFiles: ["src/calc.ts"], resolvedTestPatterns: makePatterns(["**/*.test.ts"]) }));
+    const colocated = await provider.fetch(
+      makeRequest({ touchedFiles: ["src/calc.ts"], resolvedTestPatterns: makePatterns(["**/*.test.ts"]) }),
+    );
     const c1 = colocated.chunks[0]?.content ?? "";
     expect(c1).toContain("src/calc.test.ts");
     expect(c1).not.toContain("test/unit/");
 
     setupDeps({ files: { "src/calc.ts": "" }, globFiles: [] });
-    const mirrored = await provider.fetch(makeRequest({ touchedFiles: ["src/calc.ts"], resolvedTestPatterns: makePatterns(["test/unit/**/*.test.ts"]) }));
+    const mirrored = await provider.fetch(
+      makeRequest({ touchedFiles: ["src/calc.ts"], resolvedTestPatterns: makePatterns(["test/unit/**/*.test.ts"]) }),
+    );
     expect(mirrored.chunks[0]?.content ?? "").toContain("test/unit/calc.test.ts");
   });
 
   test("Go pattern: src/foo.go → src/foo_test.go; src/foo_test.go does not hallucinate _test_test.go (#526 Bug 1)", async () => {
     setupDeps({ files: { "src/foo.go": "", "src/foo_test.go": "" }, globFiles: [] });
-    const r1 = await provider.fetch(makeRequest({
-      touchedFiles: ["src/foo.go"],
-      resolvedTestPatterns: makePatterns(["**/*_test.go"]),
-    }));
+    const r1 = await provider.fetch(
+      makeRequest({
+        touchedFiles: ["src/foo.go"],
+        resolvedTestPatterns: makePatterns(["**/*_test.go"]),
+      }),
+    );
     expect(r1.chunks[0]?.content ?? "").toContain("src/foo_test.go");
     expect(r1.chunks[0]?.content ?? "").not.toContain(".test.ts");
 
     setupDeps({ files: { "src/foo_test.go": "" }, globFiles: [] });
-    const r2 = await provider.fetch(makeRequest({
-      touchedFiles: ["src/foo_test.go"],
-      resolvedTestPatterns: makePatterns(["**/*_test.go"]),
-    }));
+    const r2 = await provider.fetch(
+      makeRequest({
+        touchedFiles: ["src/foo_test.go"],
+        resolvedTestPatterns: makePatterns(["**/*_test.go"]),
+      }),
+    );
     expect(r2.chunks[0]?.content ?? "").not.toContain("_test_test.go");
   });
 
   test("monorepo-tiny: colocated test wins; mirrored hint preserves package prefix when absent", async () => {
     setupDeps({ files: { "packages/lib/src/util.ts": "", "packages/lib/src/util.test.ts": "" }, globFiles: [] });
-    const colocated = await provider.fetch(makeRequest({ touchedFiles: ["packages/lib/src/util.ts"], resolvedTestPatterns: makePatterns(["**/*.test.ts"]) }));
+    const colocated = await provider.fetch(
+      makeRequest({ touchedFiles: ["packages/lib/src/util.ts"], resolvedTestPatterns: makePatterns(["**/*.test.ts"]) }),
+    );
     const c1 = colocated.chunks[0]?.content ?? "";
     expect(c1).toContain("packages/lib/src/util.test.ts");
     expect(c1).not.toContain("test/unit/");
 
     setupDeps({ files: { "packages/lib/src/util.ts": "" }, globFiles: [] });
-    const mirrored = await provider.fetch(makeRequest({ touchedFiles: ["packages/lib/src/util.ts"], resolvedTestPatterns: makePatterns(["test/unit/**/*.test.ts"]) }));
+    const mirrored = await provider.fetch(
+      makeRequest({
+        touchedFiles: ["packages/lib/src/util.ts"],
+        resolvedTestPatterns: makePatterns(["test/unit/**/*.test.ts"]),
+      }),
+    );
     expect(mirrored.chunks[0]?.content ?? "").toContain("packages/lib/test/unit/util.test.ts");
   });
 
@@ -317,7 +341,6 @@ describe("CodeNeighborProvider", () => {
       expect(line).not.toBe("- src/a.ts");
     }
   });
-
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -362,7 +385,10 @@ describe("CodeNeighborProvider — AC-56/AC-62 neighborScope + crossPackageDepth
 
     // package scope crossPackageDepth=0 → only packageDir
     const cwds3 = captureGlobCwds();
-    await new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 0 } as CodeNeighborProviderOptions).fetch(MONOREPO_REQUEST);
+    await new CodeNeighborProvider({
+      neighborScope: "package",
+      crossPackageDepth: 0,
+    } as CodeNeighborProviderOptions).fetch(MONOREPO_REQUEST);
     expect(cwds3).toContain("/repo/packages/api");
     expect(cwds3.filter((c) => c === "/repo/packages/api")).toHaveLength(1);
     expect(cwds3).not.toContain("/repo");
@@ -375,21 +401,30 @@ describe("CodeNeighborProvider — AC-56/AC-62 neighborScope + crossPackageDepth
     expect(cwds1).toContain("/repo");
 
     const cwds2 = captureGlobCwds();
-    const p2 = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 1 } as CodeNeighborProviderOptions);
+    const p2 = new CodeNeighborProvider({
+      neighborScope: "package",
+      crossPackageDepth: 1,
+    } as CodeNeighborProviderOptions);
     await p2.fetch(makeRequest({ touchedFiles: ["src/a.ts"] }));
     expect(cwds2.filter((c) => c === "/repo")).toHaveLength(1);
   });
 
   test("crossPackageDepth 1: falls back to repoRoot when no workspace; scans detected packages otherwise", async () => {
     const cwds1 = captureGlobCwds();
-    const p1 = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 1 } as CodeNeighborProviderOptions);
+    const p1 = new CodeNeighborProvider({
+      neighborScope: "package",
+      crossPackageDepth: 1,
+    } as CodeNeighborProviderOptions);
     await p1.fetch(MONOREPO_REQUEST);
     expect(cwds1).toContain("/repo/packages/api");
     expect(cwds1).toContain("/repo");
 
     const cwds2 = captureGlobCwds();
     _codeNeighborDeps.discoverWorkspacePackages = async () => ["packages/api", "packages/web"];
-    const p2 = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 1 } as CodeNeighborProviderOptions);
+    const p2 = new CodeNeighborProvider({
+      neighborScope: "package",
+      crossPackageDepth: 1,
+    } as CodeNeighborProviderOptions);
     await p2.fetch(MONOREPO_REQUEST);
     expect(cwds2).toContain("/repo/packages/api");
     expect(cwds2).toContain("/repo/packages/web");
@@ -407,7 +442,10 @@ describe("CodeNeighborProvider — SEC-503 path traversal prevention", () => {
     ["absolute path", "/etc/passwd"],
   ])("drops touchedFiles with %s — never reads them", async (_label, malicious) => {
     const readPaths: string[] = [];
-    _codeNeighborDeps.fileExists = async (rp: string) => { readPaths.push(rp); return false; };
+    _codeNeighborDeps.fileExists = async (rp: string) => {
+      readPaths.push(rp);
+      return false;
+    };
     _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
 
     const p = new CodeNeighborProvider();
@@ -464,27 +502,21 @@ describe("CodeNeighborProvider — #508-M11 glob cap debug logging", () => {
   });
 
   test("logs warn when glob truncated at cap; no warn when below cap", () => {
-    let warnCalls: Array<[string, string, Record<string, unknown>]> = [];
-    _codeNeighborDeps.getLogger = () =>
-      ({
-        debug: () => {},
-        warn: (stage: string, msg: string, ctx: Record<string, unknown>) => warnCalls.push([stage, msg, ctx]),
-        info: () => {},
-        error: () => {},
-      }) as unknown as ReturnType<typeof _codeNeighborDeps.getLogger>;
+    const logger = makeLogger();
+    _codeNeighborDeps.getLogger = () => logger;
 
     const { files, truncated } = _codeNeighborDeps.glob("src/**/*.ts", tmpDir, [], 200);
     expect(files).toHaveLength(200);
     expect(truncated).toBe(true);
-    expect(warnCalls.length).toBeGreaterThan(0);
-    expect(warnCalls[0]?.[0]).toBe("context-v2");
-    expect(warnCalls[0]?.[2]).toMatchObject({ cap: 200 });
+    expect(logger.calls.length).toBeGreaterThan(0);
+    expect(logger.calls[0]?.stage).toBe("context-v2");
+    expect(logger.calls[0]?.data).toMatchObject({ cap: 200 });
 
-    warnCalls = [];
+    logger.reset();
     const { files: files2, truncated: truncated2 } = _codeNeighborDeps.glob("src/file0.ts", tmpDir, [], 500);
     expect(files2.length).toBeLessThan(200);
     expect(truncated2).toBe(false);
-    expect(warnCalls.length).toBe(0);
+    expect(logger.calls.length).toBe(0);
   });
 });
 
@@ -589,9 +621,7 @@ describe("CodeNeighborProvider — US-002 scope attribution", () => {
     // Test files are dropped (sibling-test derivation returns [] for them)
     // — and there are no reverse-deps or forward-deps.
     setupDeps({ globFiles: [] });
-    const result = await provider.fetch(
-      makeRequest({ touchedFiles: ["test/unit/existing.test.ts"] }),
-    );
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["test/unit/existing.test.ts"] }));
     expect(result.chunks).toHaveLength(0);
   });
 
@@ -605,9 +635,7 @@ describe("CodeNeighborProvider — US-002 scope attribution", () => {
       },
       globFiles: [],
     });
-    const result = await provider.fetch(
-      makeRequest({ touchedFiles: ["src/foo.ts", "src/bar.ts"] }),
-    );
+    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/foo.ts", "src/bar.ts"] }));
     expect(result.chunks).toHaveLength(1);
 
     const scope = result.chunks[0]?.scopePaths ?? [];
@@ -688,10 +716,7 @@ describe("CodeNeighborProvider — cooperative cancellation (PERF-2)", () => {
     controller.abort();
 
     const p = new CodeNeighborProvider();
-    const result = await p.fetch(
-      makeRequest({ touchedFiles: ["src/foo.ts", "src/bar.ts"] }),
-      controller.signal,
-    );
+    const result = await p.fetch(makeRequest({ touchedFiles: ["src/foo.ts", "src/bar.ts"] }), controller.signal);
 
     // The fetch must bail out before reading any file or scanning neighbors.
     expect(result.chunks).toHaveLength(0);
@@ -714,13 +739,9 @@ describe("CodeNeighborProvider — cooperative cancellation (PERF-2)", () => {
     _codeNeighborDeps.detectLanguage = async () => undefined;
 
     const p = new CodeNeighborProvider();
-    await p.fetch(
-      makeRequest({ touchedFiles: ["src/foo.ts", "src/bar.ts", "src/baz.ts"] }),
-      controller.signal,
-    );
+    await p.fetch(makeRequest({ touchedFiles: ["src/foo.ts", "src/bar.ts", "src/baz.ts"] }), controller.signal);
 
     // After the first file triggers the abort, no further files are processed.
     expect(reads.length).toBeLessThan(3);
   });
 });
-

@@ -1,6 +1,6 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { SessionManager, _sessionManagerDeps } from "@/session/manager";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { NaxError } from "@/errors";
+import { SessionManager, _sessionManagerDeps } from "@/session/manager";
 import type { SessionState } from "@/session/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,7 +13,8 @@ let _timeSeq = 0;
 beforeEach(() => {
   _uuidSeq = 0;
   _timeSeq = 0;
-  _sessionManagerDeps.uuid = () => `00000000-0000-0000-0000-${String(++_uuidSeq).padStart(12, "0")}` as `${string}-${string}-${string}-${string}-${string}`;
+  _sessionManagerDeps.uuid = () =>
+    `00000000-0000-0000-0000-${String(++_uuidSeq).padStart(12, "0")}` as `${string}-${string}-${string}-${string}-${string}`;
   _sessionManagerDeps.now = () => `2025-01-01T00:${String(_timeSeq++).padStart(2, "0")}:00.000Z`;
 });
 
@@ -38,7 +39,14 @@ describe("SessionManager.create()", () => {
 
   test("storyId and featureName stored; derives scratch dir when projectDir and featureName provided", () => {
     const mgr = new SessionManager();
-    const desc = mgr.create({ role: "test-writer", agent: "claude", workdir: "/repo", projectDir: "/repo", featureName: "auth", storyId: "US-001" });
+    const desc = mgr.create({
+      role: "test-writer",
+      agent: "claude",
+      workdir: "/repo",
+      projectDir: "/repo",
+      featureName: "auth",
+      storyId: "US-001",
+    });
     expect(desc.storyId).toBe("US-001");
     expect(desc.featureName).toBe("auth");
     expect(desc.scratchDir).toBe("/repo/.nax/features/auth/sessions/sess-00000000-0000-0000-0000-000000000001");
@@ -77,9 +85,7 @@ describe("SessionManager.create() — descriptor persistence", () => {
     await Promise.resolve();
 
     expect(writes).toHaveLength(1);
-    expect(writes[0]?.scratchDir).toBe(
-      "/repo/.nax/features/auth/sessions/sess-00000000-0000-0000-0000-000000000001",
-    );
+    expect(writes[0]?.scratchDir).toBe("/repo/.nax/features/auth/sessions/sess-00000000-0000-0000-0000-000000000001");
     const persisted = writes[0]?.descriptor as { storyId?: string; role?: string };
     expect(persisted.storyId).toBe("US-001");
     expect(persisted.role).toBe("test-writer");
@@ -90,16 +96,29 @@ describe("SessionManager.create() — descriptor persistence", () => {
 
   test("skips descriptor write when scratchDir unresolved; write failure does not throw from create()", async () => {
     const writes: Array<unknown> = [];
-    _sessionManagerDeps.writeDescriptor = async (scratchDir) => { writes.push(scratchDir); };
+    _sessionManagerDeps.writeDescriptor = async (scratchDir) => {
+      writes.push(scratchDir);
+    };
     const mgr = new SessionManager();
     mgr.create({ role: "main", agent: "claude", workdir: "/repo" });
     await Promise.resolve();
     await Promise.resolve();
     expect(writes).toHaveLength(0);
 
-    _sessionManagerDeps.writeDescriptor = async () => { throw new Error("disk full"); };
+    _sessionManagerDeps.writeDescriptor = async () => {
+      throw new Error("disk full");
+    };
     const mgr2 = new SessionManager();
-    expect(() => mgr2.create({ role: "main", agent: "claude", workdir: "/repo", projectDir: "/repo", featureName: "auth", storyId: "US-001" })).not.toThrow();
+    expect(() =>
+      mgr2.create({
+        role: "main",
+        agent: "claude",
+        workdir: "/repo",
+        projectDir: "/repo",
+        featureName: "auth",
+        storyId: "US-001",
+      }),
+    ).not.toThrow();
     await Promise.resolve();
     await Promise.resolve();
 
@@ -113,7 +132,12 @@ describe("SessionManager.create() — descriptor persistence", () => {
 
 describe("SessionManager — descriptor re-persistence on mutation", () => {
   let originalWriteDescriptor: typeof _sessionManagerDeps.writeDescriptor;
-  let writes: Array<{ state: string; protocolIds: { recordId: string | null; sessionId: string | null }; agent: string; handle?: string }>;
+  let writes: Array<{
+    state: string;
+    protocolIds: { recordId: string | null; sessionId: string | null };
+    agent: string;
+    handle?: string;
+  }>;
 
   beforeEach(() => {
     originalWriteDescriptor = _sessionManagerDeps.writeDescriptor;
@@ -288,7 +312,10 @@ describe("SessionManager.transition()", () => {
   });
 
   test.each([
-    ["invalid transition (CREATED → COMPLETED)", (mgr: SessionManager, id: string) => () => mgr.transition(id, "COMPLETED")],
+    [
+      "invalid transition (CREATED → COMPLETED)",
+      (mgr: SessionManager, id: string) => () => mgr.transition(id, "COMPLETED"),
+    ],
     ["unknown session ID", (mgr: SessionManager) => () => mgr.transition("sess-fake", "RUNNING")],
   ] as const)("%s throws NaxError", (_label, makeCall) => {
     const mgr = new SessionManager();

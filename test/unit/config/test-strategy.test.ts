@@ -174,12 +174,9 @@ describe("getAcQualityRules", () => {
       expect(getAcQualityRules()).toBe(AC_QUALITY_RULES);
     });
 
-    test.each([[undefined], [{}]])(
-      "returns AC_QUALITY_RULES for profile %j",
-      (profile) => {
-        expect(getAcQualityRules(profile as Parameters<typeof getAcQualityRules>[0])).toBe(AC_QUALITY_RULES);
-      },
-    );
+    test.each([[undefined], [{}]])("returns AC_QUALITY_RULES for profile %j", (profile) => {
+      expect(getAcQualityRules(profile as Parameters<typeof getAcQualityRules>[0])).toBe(AC_QUALITY_RULES);
+    });
   });
 });
 

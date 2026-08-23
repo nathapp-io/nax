@@ -12,7 +12,6 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeLogger, withDepsRestore } from "@test/helpers";
 import { buildEvidenceTerms, classifyWithTerms } from "@/context/engine/effectiveness";
 import {
   type Classifier,
@@ -26,6 +25,7 @@ import {
   loadLabelSet,
   scoreEffectiveness,
 } from "@/context/engine/effectiveness-eval";
+import { makeLogger, withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared fixtures
@@ -517,15 +517,7 @@ describe("scoreEffectiveness (AC15)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("scoreEffectiveness (US-001 AC6 — git-history chunk in fixture)", () => {
-  const COMMITTED_FIXTURE = join(
-    import.meta.dir,
-    "..",
-    "..",
-    "..",
-    "fixtures",
-    "effectiveness",
-    "labels.sample.json",
-  );
+  const COMMITTED_FIXTURE = join(import.meta.dir, "..", "..", "..", "fixtures", "effectiveness", "labels.sample.json");
 
   // Pre-change whole-diff classifier: 3+ shared terms with the whole diff
   // text → followed. Mirrors the pre-change classifyEffectiveness logic so
@@ -592,9 +584,7 @@ describe("scoreEffectiveness (US-001 AC6 — git-history chunk in fixture)", () 
     // terms). Adding this long-diff "ignored" under the scoped classifier
     // breaks the monotonic size→followed relationship and reduces the
     // |sizeCorrelation| below the whole-diff reference.
-    expect(Math.abs(scopedReport.sizeCorrelation)).toBeLessThan(
-      Math.abs(wholeDiffReport.sizeCorrelation),
-    );
+    expect(Math.abs(scopedReport.sizeCorrelation)).toBeLessThan(Math.abs(wholeDiffReport.sizeCorrelation));
   });
 });
 
@@ -607,15 +597,7 @@ describe("scoreEffectiveness (US-001 AC6 — git-history chunk in fixture)", () 
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("scoreEffectiveness (US-002 AC6 — code-neighbor chunk in fixture)", () => {
-  const COMMITTED_FIXTURE = join(
-    import.meta.dir,
-    "..",
-    "..",
-    "..",
-    "fixtures",
-    "effectiveness",
-    "labels.sample.json",
-  );
+  const COMMITTED_FIXTURE = join(import.meta.dir, "..", "..", "..", "fixtures", "effectiveness", "labels.sample.json");
 
   function makeWholeDiffClassifier(): Classifier {
     return (c) => {
@@ -676,9 +658,7 @@ describe("scoreEffectiveness (US-002 AC6 — code-neighbor chunk in fixture)", (
     // terms). Adding this long-diff "ignored" under the scoped classifier
     // breaks the monotonic size→followed relationship and reduces the
     // |sizeCorrelation| below the whole-diff reference.
-    expect(Math.abs(scopedReport.sizeCorrelation)).toBeLessThan(
-      Math.abs(wholeDiffReport.sizeCorrelation),
-    );
+    expect(Math.abs(scopedReport.sizeCorrelation)).toBeLessThan(Math.abs(wholeDiffReport.sizeCorrelation));
   });
 });
 

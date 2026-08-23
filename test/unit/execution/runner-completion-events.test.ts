@@ -7,19 +7,16 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { pipelineEventBus } from "@/pipeline";
-import type { PostRunPhaseCompletedEvent } from "@/pipeline";
-import {
-  _runnerCompletionDeps,
-  runCompletionPhase,
-} from "@/execution";
+import type { NaxConfig } from "@/config";
+import { _runnerCompletionDeps, runCompletionPhase } from "@/execution";
 import type { RunnerCompletionOptions } from "@/execution";
 import type { AcceptanceLoopResult } from "@/execution/lifecycle/acceptance-loop";
 import type { RunCompletionResult } from "@/execution/lifecycle/run-completion";
-import type { NaxConfig } from "@/config";
-import type { PRD, UserStory } from "@/prd";
 import type { LoadedHooksConfig } from "@/hooks";
-import { makeNaxConfig, makeStory } from "@test/helpers";
+import { pipelineEventBus } from "@/pipeline";
+import type { PostRunPhaseCompletedEvent } from "@/pipeline";
+import type { PRD, UserStory } from "@/prd";
+import { makeNaxConfig, makeStatusWriter, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -53,19 +50,6 @@ function acceptanceConfig(): NaxConfig {
   });
 }
 
-function makeStatusWriter() {
-  return {
-    setPrd: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    setRunStatus: mock(() => {}),
-    setPostRunPhase: mock((_phase: string, _update: Record<string, unknown>) => {}),
-    update: mock(async () => {}),
-    writeFeatureStatus: mock(async () => {}),
-    // Return null so acceptance is not treated as already-passed
-    getPostRunStatus: mock(() => null),
-  };
-}
-
 const WORKDIR = `/tmp/nax-test-runner-completion-events-${randomUUID()}`;
 
 function makeOpts(
@@ -75,7 +59,7 @@ function makeOpts(
 ): RunnerCompletionOptions {
   return {
     config: acceptanceConfig(),
-    hooks: { hooks: {}, _skipGlobal: false } as unknown as LoadedHooksConfig,
+    hooks: { hooks: {}, _skipGlobal: false },
     feature: "test-feature",
     workdir: WORKDIR,
     statusFile: `${WORKDIR}/status.json`,
@@ -90,11 +74,11 @@ function makeOpts(
     totalCost: 0,
     storiesCompleted: 1,
     iterations: 1,
-    statusWriter: statusWriter as unknown as RunnerCompletionOptions["statusWriter"],
+    statusWriter: statusWriter,
     pluginRegistry: {
       getAll: () => [],
       get: () => undefined,
-    } as unknown as RunnerCompletionOptions["pluginRegistry"],
+    },
     prdPath: `${WORKDIR}/prd.json`,
     featureDir,
   };
@@ -135,15 +119,17 @@ describe("runCompletionPhase — AC5: acceptance completed event details.retries
 
     const prd = makePRD(["US-001"]);
 
-    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
-      success: true,
-      prd,
-      totalCost: 0,
-      iterations: 1,
-      storiesCompleted: 1,
-      prdDirty: false,
-      retries: 2,
-    }));
+    _runnerCompletionDeps.runAcceptanceLoop = mock(
+      async (): Promise<AcceptanceLoopResult> => ({
+        success: true,
+        prd,
+        totalCost: 0,
+        iterations: 1,
+        storiesCompleted: 1,
+        prdDirty: false,
+        retries: 2,
+      }),
+    );
 
     await runCompletionPhase(makeOpts(prd, makeStatusWriter(), `${WORKDIR}/.nax/features/test-feature`));
 
@@ -161,16 +147,18 @@ describe("runCompletionPhase — AC5: acceptance completed event details.retries
 
     const prd = makePRD(["US-001"]);
 
-    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
-      success: false,
-      prd,
-      totalCost: 0,
-      iterations: 3,
-      storiesCompleted: 1,
-      prdDirty: false,
-      retries: 3,
-      failedACs: ["AC-1", "AC-2"],
-    }));
+    _runnerCompletionDeps.runAcceptanceLoop = mock(
+      async (): Promise<AcceptanceLoopResult> => ({
+        success: false,
+        prd,
+        totalCost: 0,
+        iterations: 3,
+        storiesCompleted: 1,
+        prdDirty: false,
+        retries: 3,
+        failedACs: ["AC-1", "AC-2"],
+      }),
+    );
 
     await runCompletionPhase(makeOpts(prd, makeStatusWriter(), `${WORKDIR}/.nax/features/test-feature`));
 
@@ -188,15 +176,17 @@ describe("runCompletionPhase — AC5: acceptance completed event details.retries
 
     const prd = makePRD(["US-001"]);
 
-    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
-      success: true,
-      prd,
-      totalCost: 0,
-      iterations: 1,
-      storiesCompleted: 1,
-      prdDirty: false,
-      retries: 0,
-    }));
+    _runnerCompletionDeps.runAcceptanceLoop = mock(
+      async (): Promise<AcceptanceLoopResult> => ({
+        success: true,
+        prd,
+        totalCost: 0,
+        iterations: 1,
+        storiesCompleted: 1,
+        prdDirty: false,
+        retries: 0,
+      }),
+    );
 
     await runCompletionPhase(makeOpts(prd, makeStatusWriter(), `${WORKDIR}/.nax/features/test-feature`));
 
@@ -219,16 +209,18 @@ describe("runCompletionPhase — AC6: acceptance completed event details.failedA
 
     const prd = makePRD(["US-001"]);
 
-    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
-      success: false,
-      prd,
-      totalCost: 0,
-      iterations: 2,
-      storiesCompleted: 1,
-      prdDirty: false,
-      retries: 2,
-      failedACs: ["AC-1", "AC-2", "AC-3"],
-    }));
+    _runnerCompletionDeps.runAcceptanceLoop = mock(
+      async (): Promise<AcceptanceLoopResult> => ({
+        success: false,
+        prd,
+        totalCost: 0,
+        iterations: 2,
+        storiesCompleted: 1,
+        prdDirty: false,
+        retries: 2,
+        failedACs: ["AC-1", "AC-2", "AC-3"],
+      }),
+    );
 
     await runCompletionPhase(makeOpts(prd, makeStatusWriter(), `${WORKDIR}/.nax/features/test-feature`));
 
@@ -246,16 +238,18 @@ describe("runCompletionPhase — AC6: acceptance completed event details.failedA
 
     const prd = makePRD(["US-001"]);
 
-    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
-      success: true,
-      prd,
-      totalCost: 0,
-      iterations: 1,
-      storiesCompleted: 1,
-      prdDirty: false,
-      retries: 0,
-      failedACs: [],
-    }));
+    _runnerCompletionDeps.runAcceptanceLoop = mock(
+      async (): Promise<AcceptanceLoopResult> => ({
+        success: true,
+        prd,
+        totalCost: 0,
+        iterations: 1,
+        storiesCompleted: 1,
+        prdDirty: false,
+        retries: 0,
+        failedACs: [],
+      }),
+    );
 
     await runCompletionPhase(makeOpts(prd, makeStatusWriter(), `${WORKDIR}/.nax/features/test-feature`));
 
@@ -279,15 +273,17 @@ describe("runCompletionPhase — AC7: acceptance completed event details.fixStor
 
     const prd = makePRD(["US-001"]);
 
-    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
-      success: true,
-      prd,
-      totalCost: 0,
-      iterations: 1,
-      storiesCompleted: 1,
-      prdDirty: false,
-      retries: 0,
-    }));
+    _runnerCompletionDeps.runAcceptanceLoop = mock(
+      async (): Promise<AcceptanceLoopResult> => ({
+        success: true,
+        prd,
+        totalCost: 0,
+        iterations: 1,
+        storiesCompleted: 1,
+        prdDirty: false,
+        retries: 0,
+      }),
+    );
 
     await runCompletionPhase(makeOpts(prd, makeStatusWriter(), `${WORKDIR}/.nax/features/test-feature`));
 
@@ -305,16 +301,18 @@ describe("runCompletionPhase — AC7: acceptance completed event details.fixStor
 
     const prd = makePRD(["US-001"]);
 
-    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
-      success: false,
-      prd,
-      totalCost: 0,
-      iterations: 3,
-      storiesCompleted: 1,
-      prdDirty: false,
-      retries: 3,
-      failedACs: ["AC-1"],
-    }));
+    _runnerCompletionDeps.runAcceptanceLoop = mock(
+      async (): Promise<AcceptanceLoopResult> => ({
+        success: false,
+        prd,
+        totalCost: 0,
+        iterations: 3,
+        storiesCompleted: 1,
+        prdDirty: false,
+        retries: 3,
+        failedACs: ["AC-1"],
+      }),
+    );
 
     await runCompletionPhase(makeOpts(prd, makeStatusWriter(), `${WORKDIR}/.nax/features/test-feature`));
 
@@ -338,15 +336,17 @@ describe("runCompletionPhase — AC11: acceptance completed event durationMs", (
     });
 
     const prd = makePRD(["US-001"]);
-    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
-      success: true,
-      prd,
-      totalCost: 0,
-      iterations: 1,
-      storiesCompleted: 1,
-      prdDirty: false,
-      retries: 0,
-    }));
+    _runnerCompletionDeps.runAcceptanceLoop = mock(
+      async (): Promise<AcceptanceLoopResult> => ({
+        success: true,
+        prd,
+        totalCost: 0,
+        iterations: 1,
+        storiesCompleted: 1,
+        prdDirty: false,
+        retries: 0,
+      }),
+    );
 
     await runCompletionPhase(makeOpts(prd, makeStatusWriter(), `${WORKDIR}/.nax/features/test-feature`));
 
@@ -362,16 +362,18 @@ describe("runCompletionPhase — AC11: acceptance completed event durationMs", (
     });
 
     const prd = makePRD(["US-001"]);
-    _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => ({
-      success: false,
-      prd,
-      totalCost: 0,
-      iterations: 2,
-      storiesCompleted: 1,
-      prdDirty: false,
-      retries: 2,
-      failedACs: ["AC-1"],
-    }));
+    _runnerCompletionDeps.runAcceptanceLoop = mock(
+      async (): Promise<AcceptanceLoopResult> => ({
+        success: false,
+        prd,
+        totalCost: 0,
+        iterations: 2,
+        storiesCompleted: 1,
+        prdDirty: false,
+        retries: 2,
+        failedACs: ["AC-1"],
+      }),
+    );
 
     await runCompletionPhase(makeOpts(prd, makeStatusWriter(), `${WORKDIR}/.nax/features/test-feature`));
 

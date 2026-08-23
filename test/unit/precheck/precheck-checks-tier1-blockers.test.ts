@@ -8,7 +8,6 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExecutionConfig, NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd/types";
-import { makeTempDir } from "@test/helpers";
 import {
   checkCanonicalRulesLint,
   checkClaudeCLI,
@@ -20,6 +19,7 @@ import {
   checkWorkingTreeClean,
 } from "@/precheck/checks";
 import { _checkCanonicalRulesDeps } from "@/precheck/checks-system";
+import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -128,7 +128,6 @@ describe("checkGitRepoExists (Tier 1 blocker)", () => {
     expect(result.passed).toBe(false);
     expect(result.message).toContain("not a git repository");
   });
-
 });
 
 describe("checkWorkingTreeClean (Tier 1 blocker)", () => {

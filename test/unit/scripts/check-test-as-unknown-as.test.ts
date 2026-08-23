@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  formatReport,
-  scanAsUnknownAs,
-} from "@scripts/check-test-as-unknown-as";
+import { formatReport, scanAsUnknownAs } from "@scripts/check-test-as-unknown-as";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function write(root: string, rel: string, content: string) {
@@ -27,6 +24,40 @@ describe("scanAsUnknownAs", () => {
     expect(count).toBe(3);
     expect(byFile["test/unit/a.test.ts"]).toBe(2);
     expect(byFile["test/unit/b.test.ts"]).toBe(1);
+  });
+
+  test("counts every cast on a line, not the line once", async () => {
+    // A line-based count lets `a as unknown as B, c as unknown as D` read as one
+    // cast, so joining two cast lines lowers the number without removing a cast.
+    write(root, "test/unit/a.test.ts", "call(x as unknown as B, y as unknown as C);\n");
+    const { count, byFile } = await scanAsUnknownAs(root);
+    expect(count).toBe(2);
+    expect(byFile["test/unit/a.test.ts"]).toBe(2);
+  });
+
+  test("a line's allow marker suppresses every cast on that line", async () => {
+    write(
+      root,
+      "test/unit/a.test.ts",
+      "call(x as unknown as B, y as unknown as C); // test-ratchet-allow: as-unknown-as\n",
+    );
+    expect((await scanAsUnknownAs(root)).count).toBe(0);
+  });
+
+  test("an allow marker on the preceding line suppresses the cast", async () => {
+    write(root, "test/unit/a.test.ts", "// test-ratchet-allow: as-unknown-as\nconst x = foo as unknown as Bar;\n");
+    expect((await scanAsUnknownAs(root)).count).toBe(0);
+  });
+
+  test("an allow marker on the following line suppresses the cast", async () => {
+    // The formatter reflows long lines and can move a trailing comment onto its
+    // own line, which silently un-suppresses a deliberately allowed cast.
+    write(
+      root,
+      "test/unit/a.test.ts",
+      "const x = foo as unknown as {\n  // test-ratchet-allow: as-unknown-as\n  a: string;\n};\n",
+    );
+    expect((await scanAsUnknownAs(root)).count).toBe(0);
   });
 
   test("matches across multiple files in nested dirs", async () => {
@@ -54,10 +85,7 @@ describe("scanAsUnknownAs", () => {
 
 describe("formatReport", () => {
   test("returns OK when count equals baseline", () => {
-    const { ok, message } = formatReport(
-      { count: 1, byFile: { "test/a.test.ts": 1 } },
-      { count: 1, updatedAt: "" },
-    );
+    const { ok, message } = formatReport({ count: 1, byFile: { "test/a.test.ts": 1 } }, { count: 1, updatedAt: "" });
     expect(ok).toBe(true);
     expect(message).toContain("[OK]");
     expect(message).toContain("baseline: 1");

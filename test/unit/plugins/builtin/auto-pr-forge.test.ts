@@ -7,12 +7,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { PostRunActionResult } from "@/plugins/extensions";
 import { type ForgeDeps as AutoPrDeps, hasOpenPr, openPr as openDraft } from "@/forge";
 // `_autoPrDeps` is not exported from the `@/plugins` barrel — it is a test-only
 // injection seam on the plugin module itself. Import it the way the sibling
 // suite already does (`test/unit/plugins/builtin/auto-pr-acceptance.test.ts:27`).
 import { _autoPrDeps } from "@/plugins/builtin/auto-pr";
+import type { PostRunActionResult } from "@/plugins/extensions";
 
 interface CapturedRun {
   cmd: string[];

@@ -1,5 +1,5 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { TestCoverageProvider, _testCoverageProviderDeps } from "@/context/engine/providers/test-coverage";
 import type { ContextRequest } from "@/context/engine/types";
 import { makeNaxConfig, makeStory } from "@test/helpers";
@@ -33,7 +33,6 @@ function mockScanner(result: ScannerResult) {
   _testCoverageProviderDeps.generateTestCoverageSummary = async () => result as any;
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: test stub — accepts partial shapes for convenience
 function mockResolvePatterns(result: any) {
   _testCoverageProviderDeps.resolveTestFilePatterns = async () => result;
 }
@@ -48,14 +47,16 @@ afterEach(() => {
   _testCoverageProviderDeps.resolveTestFilePatterns = origResolvePatterns;
 });
 
-function makeConfigWithTestCoverage(overrides: Partial<{
-  enabled: boolean;
-  testDir?: string;
-  maxTokens: number;
-  detail: "names-only" | "names-and-counts" | "describe-blocks";
-  scopeToStory: boolean;
-  contextFiles: string[];
-}> = {}) {
+function makeConfigWithTestCoverage(
+  overrides: Partial<{
+    enabled: boolean;
+    testDir?: string;
+    maxTokens: number;
+    detail: "names-only" | "names-and-counts" | "describe-blocks";
+    scopeToStory: boolean;
+    contextFiles: string[];
+  }> = {},
+) {
   return makeNaxConfig({
     context: {
       testCoverage: {
@@ -259,11 +260,7 @@ describe("TestCoverageProvider", () => {
       let receivedWorkdir: string | undefined;
       let receivedPackageDir: string | undefined;
 
-      _testCoverageProviderDeps.resolveTestFilePatterns = async (
-        config: any,
-        workdir: string,
-        packageDir?: string,
-      ) => {
+      _testCoverageProviderDeps.resolveTestFilePatterns = async (config: any, workdir: string, packageDir?: string) => {
         receivedConfig = config;
         receivedWorkdir = workdir;
         receivedPackageDir = packageDir;
@@ -284,7 +281,7 @@ describe("TestCoverageProvider", () => {
       const resolvedPatterns = ["packages/api/**/*.test.ts", "packages/api/**/*.spec.ts"];
 
       _testCoverageProviderDeps.resolveTestFilePatterns = async () =>
-        ({ patterns: resolvedPatterns, strategy: "per-package" } as any);
+        ({ patterns: resolvedPatterns, strategy: "per-package" }) as any;
 
       let receivedGlobs: readonly string[] | undefined;
       _testCoverageProviderDeps.generateTestCoverageSummary = async (opts: any) => {
@@ -395,8 +392,7 @@ describe("TestCoverageProvider", () => {
     test("warning log includes storyId as first key and packageDir as second", async () => {
       const cfg = makeConfigWithTestCoverage();
 
-      _testCoverageProviderDeps.resolveTestFilePatterns = async () =>
-        ({ patterns: [], strategy: "none" } as any);
+      _testCoverageProviderDeps.resolveTestFilePatterns = async () => ({ patterns: [], strategy: "none" }) as any;
 
       _testCoverageProviderDeps.generateTestCoverageSummary = async () => {
         throw new Error("simulated scan failure");

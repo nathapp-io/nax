@@ -30,17 +30,31 @@ function iter(beforeCount: number, afterCount: number, num = 1): Iteration<Findi
 }
 
 function baseStrategy(): FixStrategy<Finding, unknown, unknown, unknown> {
+  const fixOp: FixStrategy<Finding, unknown, unknown, unknown>["fixOp"] = {
+    name: "noop",
+    kind: "complete",
+    stage: "verify",
+    config: [],
+    build: () => ({
+      role: { id: "role", content: "", overridable: false },
+      task: { id: "task", content: "", overridable: false },
+    }),
+    parse: () => null,
+    jsonMode: false,
+  };
   return {
     name: "autofix-test-writer",
     appliesTo: () => true,
-    fixOp: { name: "noop" } as unknown as FixStrategy<Finding, unknown, unknown, unknown>["fixOp"],
+    fixOp,
     buildInput: () => ({}),
     maxAttempts: 3,
     coRun: "co-run-sequential",
   };
 }
 
-function bailOf(strategies: FixStrategy<Finding, unknown, unknown, unknown>[]): (iters: Iteration<Finding>[]) => string | null {
+function bailOf(
+  strategies: FixStrategy<Finding, unknown, unknown, unknown>[],
+): (iters: Iteration<Finding>[]) => string | null {
   const fn = strategies[0]?.bailWhen;
   if (!fn) throw new Error("expected bailWhen to be wrapped");
   return fn;

@@ -61,31 +61,29 @@ const mockStory: UserStory = {
 /**
  * Build a minimal PipelineContext with configurable quality overrides.
  */
-function makeCtx(
-  qualityOverrides: Partial<{ testCommand: string | undefined }> = {},
-): PipelineContext {
+function makeCtx(qualityOverrides: Partial<{ testCommand: string | undefined }> = {}): PipelineContext {
   const { testCommand = undefined } = qualityOverrides;
   const config = makeNaxConfig({
-      quality: {
-        commands: { test: testCommand },
+    quality: {
+      commands: { test: testCommand },
+    },
+    review: undefined,
+    execution: {
+      sessionTimeoutSeconds: 60,
+      verificationTimeoutSeconds: 60,
+      costLimit: 10,
+      maxIterations: 50,
+      iterationDelayMs: 0,
+    },
+    models: {
+      claude: {
+        fast: "claude-3-haiku-20240307",
+        balanced: "claude-3-5-sonnet-20241022",
+        powerful: "claude-opus-4-20250514",
       },
-      review: undefined,
-      execution: {
-        sessionTimeoutSeconds: 60,
-        verificationTimeoutSeconds: 60,
-        costLimit: 10,
-        maxIterations: 50,
-        iterationDelayMs: 0,
-      },
-      models: {
-        claude: {
-          fast: "claude-3-haiku-20240307",
-          balanced: "claude-3-5-sonnet-20241022",
-          powerful: "claude-opus-4-20250514",
-        },
-      },
-      agent: { default: "claude" },
-      tdd: { rollbackOnFailure: false },
+    },
+    agent: { default: "claude" },
+    tdd: { rollbackOnFailure: false },
   });
   return {
     config,

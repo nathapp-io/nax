@@ -1,6 +1,7 @@
 // test/unit/tdd/capture-snapshot-ref.test.ts
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _rollbackDeps, captureSnapshotRef } from "@/tdd/rollback";
+import { makeSpawn } from "@test/helpers";
 
 describe("captureSnapshotRef", () => {
   let origAutoCommit: typeof _rollbackDeps.autoCommitIfDirty;
@@ -21,11 +22,13 @@ describe("captureSnapshotRef", () => {
 
   test("commits dirty state then returns HEAD sha plus the untracked-paths snapshot (BUG-07)", async () => {
     const calls: string[][] = [];
-    _rollbackDeps.autoCommitIfDirty = async () => { calls.push(["autoCommitIfDirty"]); };
-    _rollbackDeps.spawn = ((args: string[]) => {
-      calls.push(args);
-      return { stdout: new Response("cafebabecafebabecafebabecafebabecafebabe\n").body, exited: Promise.resolve(0) };
-    }) as unknown as typeof Bun.spawn;
+    _rollbackDeps.autoCommitIfDirty = async () => {
+      calls.push(["autoCommitIfDirty"]);
+    };
+    _rollbackDeps.spawn = makeSpawn(({ cmd }) => {
+      calls.push(cmd);
+      return "cafebabecafebabecafebabecafebabecafebabe\n";
+    }).spawn;
     _rollbackDeps.getUntrackedPaths = async () => {
       calls.push(["getUntrackedPaths"]);
       return [".env"];
@@ -43,10 +46,7 @@ describe("captureSnapshotRef", () => {
 
   test("throws NaxError when git rev-parse fails", async () => {
     _rollbackDeps.autoCommitIfDirty = async () => {};
-    _rollbackDeps.spawn = (() => ({
-      stdout: new Response("").body,
-      exited: Promise.resolve(128),
-    })) as unknown as typeof Bun.spawn;
+    _rollbackDeps.spawn = makeSpawn(() => ({ exitCode: 128 })).spawn;
 
     let threw = false;
     try {

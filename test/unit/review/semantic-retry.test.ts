@@ -12,11 +12,18 @@ import { join } from "node:path";
 import type { AgentRunRequest } from "@/agents";
 import * as loggerModule from "@/logger";
 import { callOp, semanticReviewOp } from "@/operations";
-import { _semanticDeps, runSemanticReview } from "@/review/semantic";
 import { _diffUtilsDeps } from "@/review/diff-utils";
+import { _semanticDeps, runSemanticReview } from "@/review/semantic";
 import type { SemanticStory } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime, makeMockRuntime, withTempDir } from "@test/helpers";
+import {
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeSessionManager,
+  makeSpawn,
+  makeTestRuntime,
+  withTempDir,
+} from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -24,9 +31,7 @@ const STORY: SemanticStory = {
   id: "US-002",
   title: "Implement semantic review runner",
   description: "Create src/review/semantic.ts with runSemanticReview()",
-  acceptanceCriteria: [
-    "runSemanticReview() accepts workdir, storyGitRef, story, semanticConfig, and modelResolver",
-  ],
+  acceptanceCriteria: ["runSemanticReview() accepts workdir, storyGitRef, story, semanticConfig, and modelResolver"],
 };
 
 const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
@@ -100,17 +105,7 @@ function restoreAllDeps() {
 function setupHappyPathDeps() {
   _diffUtilsDeps.isGitRefValid = mock(async () => true);
   _diffUtilsDeps.getMergeBase = mock(async () => undefined);
-  _diffUtilsDeps.spawn = mock((_opts: unknown) => ({
-    exited: Promise.resolve(0),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode("src/foo.ts | 5 +++++\n 1 file changed, 5 insertions(+)"));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({ start(controller) { controller.close(); } }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
+  _diffUtilsDeps.spawn = makeSpawn(() => "src/foo.ts | 5 +++++\n 1 file changed, 5 insertions(+)").spawn;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -152,7 +147,12 @@ describe("runSemanticReview — JSON retry outcomes", () => {
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({
       agentManager,
-      reviewAuditor: { recordDispatch() {}, recordDecision: (entry) => auditCalls.push(entry), getAdvisoryFindings: () => [], async flush() {} },
+      reviewAuditor: {
+        recordDispatch() {},
+        recordDecision: (entry) => auditCalls.push(entry),
+        getAdvisoryFindings: () => [],
+        async flush() {},
+      },
     });
 
     const result = await runSemanticReview({
@@ -220,7 +220,17 @@ describe("runSemanticReview — JSON retry outcomes", () => {
   test("returns failure with blocking findings when callOp returns findings", async () => {
     _semanticDeps.callOp = mock(async () => ({
       passed: false,
-      findings: [{ severity: "error", file: "src/workdir.ts", line: 1, issue: "Bug", suggestion: "Fix", acQuote: "accepts workdir, storyGitRef", acIndex: 1 }],
+      findings: [
+        {
+          severity: "error",
+          file: "src/workdir.ts",
+          line: 1,
+          issue: "Bug",
+          suggestion: "Fix",
+          acQuote: "accepts workdir, storyGitRef",
+          acIndex: 1,
+        },
+      ],
     }));
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
@@ -240,7 +250,9 @@ describe("runSemanticReview — JSON retry outcomes", () => {
   });
 
   test("returns fail-open when callOp throws", async () => {
-    _semanticDeps.callOp = mock(async () => { throw new Error("LLM call failed"); });
+    _semanticDeps.callOp = mock(async () => {
+      throw new Error("LLM call failed");
+    });
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 

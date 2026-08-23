@@ -8,12 +8,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "@/config";
-import type { PRD, UserStory } from "@/prd";
+import { _regressionDeps, runDeferredRegression } from "@/execution/lifecycle/run-regression";
 import type { StoryMetrics } from "@/metrics";
-import {
-  _regressionDeps,
-  runDeferredRegression,
-} from "@/execution/lifecycle/run-regression";
+import type { PRD, UserStory } from "@/prd";
 import type { VerificationResult } from "@/verification";
 import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
@@ -59,10 +56,7 @@ function makePRD(stories: Array<{ id: string; status: UserStory["status"] }>): P
   };
 }
 
-function makeConfig(
-  regressionMode?: "deferred" | "per-story" | "disabled",
-  testCommand?: string,
-): NaxConfig {
+function makeConfig(regressionMode?: "deferred" | "per-story" | "disabled", testCommand?: string): NaxConfig {
   return makeNaxConfig({
     execution: {
       regressionGate: {
@@ -90,9 +84,7 @@ function makeRuntime() {
 
 describe("runDeferredRegression", () => {
   test("returns success immediately when mode is 'disabled'", async () => {
-    const { runDeferredRegression } = await import(
-      "../../../src/execution/lifecycle/run-regression"
-    );
+    const { runDeferredRegression } = await import("@/execution/lifecycle/run-regression");
 
     const result = await runDeferredRegression({
       config: makeConfig("disabled", "bun test"),
@@ -108,9 +100,7 @@ describe("runDeferredRegression", () => {
   });
 
   test("runs the deferred suite when mode is 'per-story' (superset of deferred)", async () => {
-    const { runDeferredRegression } = await import(
-      "../../../src/execution/lifecycle/run-regression"
-    );
+    const { runDeferredRegression } = await import("@/execution/lifecycle/run-regression");
 
     // per-story no longer short-circuits — it runs the full suite. Mock it so we
     // don't spawn a real `bun test` in a nonexistent temp dir.
@@ -141,9 +131,7 @@ describe("runDeferredRegression", () => {
   });
 
   test("returns success when no passed stories exist (partial completion)", async () => {
-    const { runDeferredRegression } = await import(
-      "../../../src/execution/lifecycle/run-regression"
-    );
+    const { runDeferredRegression } = await import("@/execution/lifecycle/run-regression");
 
     const result = await runDeferredRegression({
       config: makeConfig("deferred", "bun test"),
@@ -162,9 +150,7 @@ describe("runDeferredRegression", () => {
   });
 
   test("result shape has all required fields", async () => {
-    const { runDeferredRegression } = await import(
-      "../../../src/execution/lifecycle/run-regression"
-    );
+    const { runDeferredRegression } = await import("@/execution/lifecycle/run-regression");
 
     const result = await runDeferredRegression({
       config: makeConfig("disabled", "bun test"),
@@ -181,9 +167,7 @@ describe("runDeferredRegression", () => {
   });
 
   test("affectedStories contains only string values", async () => {
-    const { runDeferredRegression } = await import(
-      "../../../src/execution/lifecycle/run-regression"
-    );
+    const { runDeferredRegression } = await import("@/execution/lifecycle/run-regression");
 
     const result = await runDeferredRegression({
       config: makeConfig("disabled", "bun test"),
@@ -198,9 +182,7 @@ describe("runDeferredRegression", () => {
   });
 
   test("passedTests is non-negative integer", async () => {
-    const { runDeferredRegression } = await import(
-      "../../../src/execution/lifecycle/run-regression"
-    );
+    const { runDeferredRegression } = await import("@/execution/lifecycle/run-regression");
 
     const result = await runDeferredRegression({
       config: makeConfig("disabled", "bun test"),
@@ -240,12 +222,14 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
   });
 
   test("full suite passes → success with 0 rectification attempts", async () => {
-    _regressionDeps.runVerification = mock(async (): Promise<VerificationResult> => ({
-      status: "SUCCESS",
-      success: true,
-      countsTowardEscalation: true,
-      passCount: 42,
-    }));
+    _regressionDeps.runVerification = mock(
+      async (): Promise<VerificationResult> => ({
+        status: "SUCCESS",
+        success: true,
+        countsTowardEscalation: true,
+        passCount: 42,
+      }),
+    );
 
     const result = await runDeferredRegression({
       config: makeConfig("deferred", "bun test"),
@@ -261,11 +245,13 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
   });
 
   test("TIMEOUT + acceptOnTimeout=true → success", async () => {
-    _regressionDeps.runVerification = mock(async (): Promise<VerificationResult> => ({
-      status: "TIMEOUT",
-      success: false,
-      countsTowardEscalation: false,
-    }));
+    _regressionDeps.runVerification = mock(
+      async (): Promise<VerificationResult> => ({
+        status: "TIMEOUT",
+        success: false,
+        countsTowardEscalation: false,
+      }),
+    );
 
     const config = makeConfig("deferred", "bun test");
     const result = await runDeferredRegression({
@@ -280,11 +266,13 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
   });
 
   test("TIMEOUT + acceptOnTimeout=false → failure", async () => {
-    _regressionDeps.runVerification = mock(async (): Promise<VerificationResult> => ({
-      status: "TIMEOUT",
-      success: false,
-      countsTowardEscalation: false,
-    }));
+    _regressionDeps.runVerification = mock(
+      async (): Promise<VerificationResult> => ({
+        status: "TIMEOUT",
+        success: false,
+        countsTowardEscalation: false,
+      }),
+    );
 
     const config: NaxConfig = {
       ...makeConfig("deferred", "bun test"),
@@ -310,12 +298,14 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
   });
 
   test("full suite fails with no output → failure immediately (no rectification)", async () => {
-    _regressionDeps.runVerification = mock(async (): Promise<VerificationResult> => ({
-      status: "TEST_FAILURE",
-      success: false,
-      countsTowardEscalation: true,
-      failCount: 3,
-    }));
+    _regressionDeps.runVerification = mock(
+      async (): Promise<VerificationResult> => ({
+        status: "TEST_FAILURE",
+        success: false,
+        countsTowardEscalation: true,
+        failCount: 3,
+      }),
+    );
 
     const result = await runDeferredRegression({
       config: makeConfig("deferred", "bun test"),
@@ -352,8 +342,8 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
     _regressionDeps.parseTestOutput = mock(() => ({
       failed: 1,
       passed: 5,
-      failures: [{ testName: "some test", error: "boom" }],
-    })) as unknown as typeof _regressionDeps.parseTestOutput;
+      failures: [{ file: "test/some.test.ts", testName: "some test", error: "boom", stackTrace: [] }],
+    }));
 
     _regressionDeps.runFixCycle = mock(async () => ({
       iterations: [],

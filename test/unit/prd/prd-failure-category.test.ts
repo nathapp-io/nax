@@ -91,15 +91,14 @@ describe("markStoryFailed()", () => {
     expect(prd.userStories[0].status).toBe("failed");
   });
 
-  test.each([
-    ["isolation-violation" as const],
-    ["tests-failing" as const],
-    ["verifier-rejected" as const],
-  ])("stores failureCategory='%s'", (category) => {
-    const prd = makePrd([makeStory("US-001")]);
-    markStoryFailed(prd, "US-001", category);
-    expect(prd.userStories[0].failureCategory).toBe(category);
-  });
+  test.each([["isolation-violation" as const], ["tests-failing" as const], ["verifier-rejected" as const]])(
+    "stores failureCategory='%s'",
+    (category) => {
+      const prd = makePrd([makeStory("US-001")]);
+      markStoryFailed(prd, "US-001", category);
+      expect(prd.userStories[0].failureCategory).toBe(category);
+    },
+  );
 
   test("increments attempts when failureCategory is given", () => {
     const prd = makePrd([makeStory("US-001")]);

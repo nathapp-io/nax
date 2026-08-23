@@ -135,7 +135,7 @@ describe("execution stage — contextToolRunCounter threading (AC-18)", () => {
   test("forwards the SAME counter object from PipelineContext onto CallContext", async () => {
     const counter = { count: 0, calls: [] };
     const ctx = makePipelineContext();
-    (ctx as unknown as { contextToolRunCounter: unknown }).contextToolRunCounter = counter;
+    ctx.contextToolRunCounter = counter;
 
     await executionStage.execute(ctx);
 

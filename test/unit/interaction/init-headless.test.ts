@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { NaxConfig } from "@/config";
 import { makeNaxConfig } from "@test/helpers";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

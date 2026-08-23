@@ -10,10 +10,11 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd/types";
 import { _precheckDeps, runPrecheck } from "@/precheck";
-import type { StorySizeGateResult } from "@/precheck/story-size-gate";
 import { _checkCliDeps } from "@/precheck/checks-cli";
+import type { StorySizeGateResult } from "@/precheck/story-size-gate";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { makeNaxConfig } from "@test/helpers";
 
@@ -27,8 +28,7 @@ beforeAll(async () => {
   tempDir = makeTempDir("nax-routing-test-");
 
   // Create a clean git repo with an initial commit
-  const git = (args: string[]) =>
-    Bun.spawnSync(["git", ...args], { cwd: tempDir, stdout: "pipe", stderr: "pipe" });
+  const git = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: tempDir, stdout: "pipe", stderr: "pipe" });
 
   git(["init"]);
   git(["config", "user.email", "test@test.com"]);
@@ -108,7 +108,13 @@ function makeConfig(action: "block" | "warn" | "skip") {
     plan: { model: "balanced", outputPath: "" },
     acceptance: { enabled: false, maxRetries: 0, testPath: "" },
     context: {
-      testCoverage: { enabled: false, detail: "names-only", maxTokens: 500, testPattern: "**/*.test.ts", scopeToStory: false },
+      testCoverage: {
+        enabled: false,
+        detail: "names-only",
+        maxTokens: 500,
+        testPattern: "**/*.test.ts",
+        scopeToStory: false,
+      },
       autoDetect: { enabled: false, maxFiles: 5, traceImports: false },
     },
   });

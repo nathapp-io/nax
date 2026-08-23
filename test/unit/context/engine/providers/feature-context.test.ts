@@ -1,20 +1,19 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { NaxConfig } from "@/config/types";
 import { FeatureContextProviderV2, _featureContextV2Deps } from "@/context/engine/providers/feature-context";
 import type { ContextRequest } from "@/context/engine/types";
-import type { NaxConfig } from "@/config/types";
 import type { UserStory } from "@/prd";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
-const STORY: UserStory = {
+const STORY: UserStory = makeStory({
   id: "story-001",
   title: "Test story",
   description: "",
-  acceptanceCriteria: [],
-  status: "pending",
-} as unknown as UserStory;
+});
 
 const CONFIG = {} as NaxConfig;
 
@@ -153,9 +152,9 @@ describe("FeatureContextProviderV2 — #508-M6 per-entry staleness scoring", () 
   const NO_STALE_CONTENT = "## Summary\n\nThe project is a standard TypeScript CLI.";
 
   function makeStaleConfig(): NaxConfig {
-    return {
+    return makeNaxConfig({
       context: { v2: { staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 } } },
-    } as unknown as NaxConfig;
+    });
   }
 
   test("chunk has no scoreMultiplier when no entries are stale", async () => {

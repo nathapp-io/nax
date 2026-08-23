@@ -13,10 +13,20 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { CallOpFn } from "@/findings/cycle";
 import { runFixCycle } from "@/findings";
 import type { Finding } from "@/findings";
-import { lintA, lintB, makeCallOpMock, makeCallOpSpy, makeCtx, makeCycle, makeFinding, makeStrategy, typecheckC } from "./_cycle-fixtures";
+import type { CallOpFn } from "@/findings/cycle";
+import {
+  lintA,
+  lintB,
+  makeCallOpMock,
+  makeCallOpSpy,
+  makeCtx,
+  makeCycle,
+  makeFinding,
+  makeStrategy,
+  typecheckC,
+} from "./_cycle-fixtures";
 
 // ─── runFixCycle — partial give-up in a co-run group (#1369) ─────────────────
 
@@ -39,7 +49,7 @@ describe("runFixCycle — one strategy gives up, a co-run sibling does not", () 
       return []; // the sibling's fix resolved the finding
     });
     const r = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
     });
     expect(validateCalled).toBe(true);
     expect(r.exitReason).toBe("resolved");
@@ -65,7 +75,7 @@ describe("runFixCycle — one strategy gives up, a co-run sibling does not", () 
     });
     const cycle = makeCycle([lintA, typecheckC], [implementer, testWriter], async () => [lintA]);
     const r = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
     });
     expect(r.exitReason).toBe("no-strategy");
     expect(r.unresolvedDetail).toBe("cannot edit test files");
@@ -91,7 +101,7 @@ describe("runFixCycle — one strategy gives up, a co-run sibling does not", () 
       [track("implementer", "cannot edit test files"), track("test-writer")],
       async () => [lintA],
     );
-    await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: makeCallOpMock() as unknown as CallOpFn });
+    await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: makeCallOpMock() });
     expect(dispatched.filter((n) => n === "implementer")).toHaveLength(1);
     expect(dispatched.filter((n) => n === "test-writer").length).toBeGreaterThan(1);
   });
@@ -103,7 +113,7 @@ describe("runFixCycle — one strategy gives up, a co-run sibling does not", () 
       return [];
     });
     const r = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
     });
     expect(validateCalled).toBe(false);
     expect(r.exitReason).toBe("agent-gave-up");
@@ -157,7 +167,7 @@ describe("runFixCycle — per-finding retirement", () => {
     // and claimed only by the implementer.
     const cycle = makeCycle([lintA, typecheckC], [implementer, testWriter], async () => [lintB]);
     const r = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
     });
     // Before #1384 this was 1: the implementer was retired cycle-wide and lintB orphaned,
     // exiting `no-strategy` so the caller discarded the sibling's work too.
@@ -172,7 +182,7 @@ describe("runFixCycle — per-finding retirement", () => {
     const implementer = tracked("implementer", dispatched, { unresolved: "cannot fix" });
     const cycle = makeCycle([lintA], [implementer], async () => [lintA]);
     const r = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
     });
     expect(dispatched).toEqual(["implementer"]);
     expect(r.exitReason).toBe("agent-gave-up");
@@ -188,7 +198,7 @@ describe("runFixCycle — per-finding retirement", () => {
     });
     const testWriter = tracked("test-writer", dispatched, { appliesTo: (f) => f.source === "typecheck" });
     const cycle = makeCycle([lintA, typecheckC], [implementer, testWriter], async () => [lintA, typecheckC]);
-    await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: makeCallOpMock() as unknown as CallOpFn });
+    await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: makeCallOpMock() });
     expect(dispatched.filter((n) => n === "implementer")).toHaveLength(1);
     expect(dispatched.filter((n) => n === "test-writer").length).toBeGreaterThan(1);
   });
@@ -199,7 +209,7 @@ describe("runFixCycle — per-finding retirement", () => {
     const implementer = tracked("implementer", dispatched, { appliesTo: (f) => f.source === "lint" });
     const cycle = makeCycle([lintA], [implementer], async () => [typecheckC]);
     const r = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
     });
     expect(r.exitReason).toBe("no-strategy");
     expect(r.finalFindings).toEqual([typecheckC]);
@@ -226,7 +236,7 @@ describe("runFixCycle — per-finding retirement", () => {
       ];
     });
     const r = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
     });
     // Re-dispatched because the key changed — but the per-strategy cap still binds.
     expect(dispatched.filter((n) => n === "implementer")).toHaveLength(3);
@@ -264,7 +274,7 @@ describe("runFixCycle — verdict-driven dispatch", () => {
     const sibling = verdictStrategy("acceptance-test-fix", dispatched);
     const cycle = makeCycle([], [gaveUp, sibling], async () => [], { verdict: "source_bug" });
     const r = await runFixCycle(cycle, makeCtx(), "test-cycle", {
-      callOp: makeCallOpMock() as unknown as CallOpFn,
+      callOp: makeCallOpMock(),
     });
     expect(r.exitReason).toBe("resolved");
     expect(cycle.iterations).toHaveLength(1);
@@ -344,7 +354,10 @@ describe("runFixCycle — give-up falls through to a remaining claimant (#1654)"
     const dispatched: string[] = [];
     const cycle = makeCycle(
       [lintA],
-      [scoped("full-suite-rectify", dispatched), unscoped("repo-scoped-test-fix", dispatched, "cannot fix this either")],
+      [
+        scoped("full-suite-rectify", dispatched),
+        unscoped("repo-scoped-test-fix", dispatched, "cannot fix this either"),
+      ],
       async () => [lintA],
     );
     const r = await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: makeCallOpSpy().fn });
@@ -407,7 +420,11 @@ describe("runFixCycle — strategy.sessionRole isolates the dispatch session", (
 
   test("leaves sessionOverride unset for a strategy that declares no sessionRole", async () => {
     const spy = makeCallOpSpy();
-    const cycle = makeCycle([lintA], [makeStrategy({ name: "full-suite-rectify", coRun: "exclusive" })], async () => []);
+    const cycle = makeCycle(
+      [lintA],
+      [makeStrategy({ name: "full-suite-rectify", coRun: "exclusive" })],
+      async () => [],
+    );
     await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: spy.fn });
     expect(spy.calls[0]?.ctx.sessionOverride).toBeUndefined();
   });

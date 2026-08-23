@@ -22,11 +22,11 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { loadPlugins } from "@/plugins";
-import type { PostRunContext } from "@/plugins/extensions";
-import { makeStory } from "@test/helpers";
 import { _autoPrDeps, autoPrPlugin } from "@/plugins/builtin/auto-pr";
 import { buildBody, buildTitle } from "@/plugins/builtin/auto-pr/pr-body";
 import type { AutoPrDeps } from "@/plugins/builtin/auto-pr/types";
+import type { PostRunContext } from "@/plugins/extensions";
+import { makeStory } from "@test/helpers";
 
 const PLUGIN_NAME = "nax-auto-pr";
 
@@ -281,7 +281,7 @@ describe("autoPrPlugin.execute", () => {
 
     const ctx = makeContext();
     let threw = false;
-    let result;
+    let result: Awaited<ReturnType<NonNullable<typeof autoPrPlugin.extensions.postRunAction>["execute"]>> | undefined;
     try {
       result = await autoPrPlugin.extensions.postRunAction!.execute(ctx);
     } catch {
@@ -304,10 +304,10 @@ describe("autoPrPlugin.execute", () => {
     const consoleCalls: string[] = [];
     const spy = (kind: keyof typeof originalConsole) => {
       const original = originalConsole[kind];
-      return mock((...args: unknown[]) => {
+      return mock<typeof console.log>((...args: unknown[]) => {
         consoleCalls.push(`${kind}:${args.map(String).join(" ")}`);
         return original.apply(console, args);
-      }) as unknown as typeof console.log;
+      });
     };
     console.log = spy("log");
     console.warn = spy("warn");
@@ -331,7 +331,7 @@ describe("autoPrPlugin.execute", () => {
       },
     });
 
-    let result;
+    let result: Awaited<ReturnType<NonNullable<typeof autoPrPlugin.extensions.postRunAction>["execute"]>> | undefined;
     let threw = false;
     try {
       result = await autoPrPlugin.extensions.postRunAction!.execute(ctx);

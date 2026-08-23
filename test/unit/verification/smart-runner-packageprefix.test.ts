@@ -16,7 +16,6 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mapSourceToTests } from "@/verification/smart-runner";
 
 function mockFileExists(existingPaths: string[]) {
-  // biome-ignore lint/suspicious/noExplicitAny: mocking Bun.file
   (Bun as any).file = (path: string) => ({
     exists: () => Promise.resolve(existingPaths.includes(path)),
   });
@@ -30,18 +29,13 @@ describe("mapSourceToTests — packagePrefix (monorepo)", () => {
   });
 
   afterEach(() => {
-    // biome-ignore lint/suspicious/noExplicitAny: restoring original
     (Bun as any).file = originalFile;
   });
 
   test("maps monorepo source to package-local test/unit when packagePrefix is set", async () => {
     mockFileExists(["/repo/apps/api/test/unit/foo/bar.test.ts"]);
 
-    const result = await mapSourceToTests(
-      ["apps/api/src/foo/bar.ts"],
-      "/repo",
-      "apps/api",
-    );
+    const result = await mapSourceToTests(["apps/api/src/foo/bar.ts"], "/repo", "apps/api");
 
     expect(result).toEqual(["/repo/apps/api/test/unit/foo/bar.test.ts"]);
   });
@@ -49,11 +43,7 @@ describe("mapSourceToTests — packagePrefix (monorepo)", () => {
   test("maps monorepo source to package-local test/integration when packagePrefix is set", async () => {
     mockFileExists(["/repo/apps/api/test/integration/foo/bar.test.ts"]);
 
-    const result = await mapSourceToTests(
-      ["apps/api/src/foo/bar.ts"],
-      "/repo",
-      "apps/api",
-    );
+    const result = await mapSourceToTests(["apps/api/src/foo/bar.ts"], "/repo", "apps/api");
 
     expect(result).toEqual(["/repo/apps/api/test/integration/foo/bar.test.ts"]);
   });
@@ -62,11 +52,7 @@ describe("mapSourceToTests — packagePrefix (monorepo)", () => {
     // Only the wrong (root-level) path exists — should not be returned
     mockFileExists(["/repo/test/unit/foo/bar.test.ts"]);
 
-    const result = await mapSourceToTests(
-      ["apps/api/src/foo/bar.ts"],
-      "/repo",
-      "apps/api",
-    );
+    const result = await mapSourceToTests(["apps/api/src/foo/bar.ts"], "/repo", "apps/api");
 
     expect(result).toEqual([]);
   });
@@ -74,11 +60,7 @@ describe("mapSourceToTests — packagePrefix (monorepo)", () => {
   test("returns empty array when no packagePrefix match exists on disk", async () => {
     mockFileExists([]);
 
-    const result = await mapSourceToTests(
-      ["apps/api/src/foo/bar.ts"],
-      "/repo",
-      "apps/api",
-    );
+    const result = await mapSourceToTests(["apps/api/src/foo/bar.ts"], "/repo", "apps/api");
 
     expect(result).toEqual([]);
   });
@@ -99,19 +81,15 @@ describe("mapSourceToTests — co-located test files (testFilePatterns)", () => 
   });
 
   afterEach(() => {
-    // biome-ignore lint/suspicious/noExplicitAny: restoring original
     (Bun as any).file = originalFile;
   });
 
   test("finds co-located .spec.ts in monorepo src/ when pattern includes src/**/*.spec.ts (NestJS)", async () => {
     mockFileExists(["/repo/apps/api/src/agents/agents.service.spec.ts"]);
 
-    const result = await mapSourceToTests(
-      ["apps/api/src/agents/agents.service.ts"],
-      "/repo",
-      "apps/api",
-      ["src/**/*.spec.ts"],
-    );
+    const result = await mapSourceToTests(["apps/api/src/agents/agents.service.ts"], "/repo", "apps/api", [
+      "src/**/*.spec.ts",
+    ]);
 
     expect(result).toEqual(["/repo/apps/api/src/agents/agents.service.spec.ts"]);
   });
@@ -119,12 +97,9 @@ describe("mapSourceToTests — co-located test files (testFilePatterns)", () => 
   test("finds co-located .test.ts in monorepo src/ when pattern includes test/**/*.test.ts (Vitest/Jest)", async () => {
     mockFileExists(["/repo/apps/api/src/agents/agents.service.test.ts"]);
 
-    const result = await mapSourceToTests(
-      ["apps/api/src/agents/agents.service.ts"],
-      "/repo",
-      "apps/api",
-      ["test/**/*.test.ts"],
-    );
+    const result = await mapSourceToTests(["apps/api/src/agents/agents.service.ts"], "/repo", "apps/api", [
+      "test/**/*.test.ts",
+    ]);
 
     expect(result).toEqual(["/repo/apps/api/src/agents/agents.service.test.ts"]);
   });
@@ -132,12 +107,7 @@ describe("mapSourceToTests — co-located test files (testFilePatterns)", () => 
   test("finds co-located .spec.ts in single-package src/ when pattern includes src/**/*.spec.ts", async () => {
     mockFileExists(["/repo/src/utils/helper.spec.ts"]);
 
-    const result = await mapSourceToTests(
-      ["src/utils/helper.ts"],
-      "/repo",
-      undefined,
-      ["src/**/*.spec.ts"],
-    );
+    const result = await mapSourceToTests(["src/utils/helper.ts"], "/repo", undefined, ["src/**/*.spec.ts"]);
 
     expect(result).toEqual(["/repo/src/utils/helper.spec.ts"]);
   });
@@ -146,12 +116,7 @@ describe("mapSourceToTests — co-located test files (testFilePatterns)", () => 
     // .spec.ts exists but suffix not covered by the configured pattern
     mockFileExists(["/repo/src/utils/helper.spec.ts"]);
 
-    const result = await mapSourceToTests(
-      ["src/utils/helper.ts"],
-      "/repo",
-      undefined,
-      ["test/**/*.test.ts"],
-    );
+    const result = await mapSourceToTests(["src/utils/helper.ts"], "/repo", undefined, ["test/**/*.test.ts"]);
 
     expect(result).toEqual([]);
   });
@@ -162,12 +127,10 @@ describe("mapSourceToTests — co-located test files (testFilePatterns)", () => 
       "/repo/apps/api/src/agents/agents.service.spec.ts",
     ]);
 
-    const result = await mapSourceToTests(
-      ["apps/api/src/agents/agents.service.ts"],
-      "/repo",
-      "apps/api",
-      ["test/**/*.test.ts", "src/**/*.spec.ts"],
-    );
+    const result = await mapSourceToTests(["apps/api/src/agents/agents.service.ts"], "/repo", "apps/api", [
+      "test/**/*.test.ts",
+      "src/**/*.spec.ts",
+    ]);
 
     expect(result).toEqual([
       "/repo/apps/api/test/unit/agents/agents.service.test.ts",

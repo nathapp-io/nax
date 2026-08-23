@@ -17,15 +17,15 @@
  * the original path defect ship.
  */
 
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { ContextToolRuntimeConfig } from "@/config/selectors";
 import { PullToolBudget, createRunCallCounter, handleQueryFeatureContext } from "@/context/engine";
 import { _featureContextV2Deps } from "@/context/engine";
 import { renderFragmentBody, writeFragment } from "@/context/fragments";
-import type { ContextToolRuntimeConfig } from "@/config/selectors";
 import type { UserStory } from "@/prd";
-import { cleanupTempDir, makeTempDir, makePRD, makeStory } from "@test/helpers";
+import { cleanupTempDir, makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 const FEATURE_ID = "feat-pull";
 const FRAGMENT_MAX_TOKENS = 400;

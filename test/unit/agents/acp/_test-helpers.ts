@@ -11,11 +11,7 @@ import { _acpAdapterDeps } from "@/agents/acp";
  * Create a mock process that returns the given stdout text and exit code.
  * Compatible with the _acpAdapterDeps.spawn() return type.
  */
-export function mockProcess(
-  stdout: string,
-  exitCode = 0,
-  stderr = "",
-): ReturnType<typeof _acpAdapterDeps.spawn> {
+export function mockProcess(stdout: string, exitCode = 0, stderr = ""): ReturnType<typeof _acpAdapterDeps.spawn> {
   const encoder = new TextEncoder();
   return {
     stdout: new ReadableStream({
@@ -96,9 +92,7 @@ export function captureCmdSpy(): [() => string[], () => void] {
  * Install a spawn mock that returns the given process mock.
  * Returns a restore function.
  */
-export function installSpawnMock(
-  processMock: ReturnType<typeof _acpAdapterDeps.spawn>,
-): () => void {
+export function installSpawnMock(processMock: ReturnType<typeof _acpAdapterDeps.spawn>): () => void {
   const original = _acpAdapterDeps.spawn;
   _acpAdapterDeps.spawn = () => processMock;
   return () => {

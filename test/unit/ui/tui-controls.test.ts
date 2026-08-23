@@ -7,10 +7,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { render } from "ink-testing-library";
-import { createElement } from "react";
+import { unlink } from "node:fs/promises";
 import type { UserStory } from "@/prd/types";
 import { CostOverlay } from "@/tui/components/CostOverlay";
 import { HelpOverlay } from "@/tui/components/HelpOverlay";
@@ -18,6 +16,8 @@ import type { KeyboardAction } from "@/tui/hooks/useKeyboard";
 import { PanelFocus } from "@/tui/types";
 import type { StoryDisplayState } from "@/tui/types";
 import { writeQueueCommand } from "@/utils/queue-writer";
+import { render } from "ink-testing-library";
+import { createElement } from "react";
 
 // Helper to create mock stories
 function createMockStory(id: string, status: StoryDisplayState["status"], cost = 0.01): StoryDisplayState {
@@ -93,9 +93,7 @@ describe("CostOverlay", () => {
       createMockStory("US-003", "pending", 0),
     ];
 
-    const { lastFrame } = render(
-      createElement(CostOverlay, { visible: true, stories, totalCost: 0.038 }),
-    );
+    const { lastFrame } = render(createElement(CostOverlay, { visible: true, stories, totalCost: 0.038 }));
 
     const output = lastFrame();
     expect(output).toContain("Cost Breakdown");
@@ -107,9 +105,7 @@ describe("CostOverlay", () => {
   test("displays executed stories with costs and total", () => {
     const stories = [createMockStory("US-001", "passed", 0.023), createMockStory("US-002", "failed", 0.015)];
 
-    const { lastFrame } = render(
-      createElement(CostOverlay, { visible: true, stories, totalCost: 0.123456 }),
-    );
+    const { lastFrame } = render(createElement(CostOverlay, { visible: true, stories, totalCost: 0.123456 }));
 
     const output = lastFrame();
     expect(output).toContain("US-001");
@@ -124,9 +120,7 @@ describe("CostOverlay", () => {
 
   test("shows message when no stories executed", () => {
     const stories = [createMockStory("US-001", "pending", 0)];
-    const { lastFrame } = render(
-      createElement(CostOverlay, { visible: true, stories, totalCost: 0 }),
-    );
+    const { lastFrame } = render(createElement(CostOverlay, { visible: true, stories, totalCost: 0 }));
     expect(lastFrame()).toContain("No stories executed yet");
   });
 });
@@ -174,11 +168,19 @@ describe("Queue command writer", () => {
   const tempQueueFile = `/tmp/nax-test-queue-${randomUUID()}.txt`;
 
   beforeEach(async () => {
-    try { await unlink(tempQueueFile); } catch { /* ignore */ }
+    try {
+      await unlink(tempQueueFile);
+    } catch {
+      /* ignore */
+    }
   });
 
   afterEach(async () => {
-    try { await unlink(tempQueueFile); } catch { /* ignore */ }
+    try {
+      await unlink(tempQueueFile);
+    } catch {
+      /* ignore */
+    }
   });
 
   test.each([
@@ -206,7 +208,11 @@ describe("Queue command writer", () => {
   });
 
   test("creates queue file if it doesn't exist", async () => {
-    try { await unlink(tempQueueFile); } catch { /* ignore */ }
+    try {
+      await unlink(tempQueueFile);
+    } catch {
+      /* ignore */
+    }
     await writeQueueCommand(tempQueueFile, { type: "PAUSE" });
     const file = Bun.file(tempQueueFile);
     expect(await file.exists()).toBe(true);

@@ -12,7 +12,7 @@ import { generateMutants } from "@/verification";
 describe("generateMutants — US-003 AC1: lineRanges covering only line 5", () => {
   test("returns mutants only for line 5 when lineRanges is [{ start: 5, end: 5 }]", () => {
     // Five distinct comparison lines — without filtering, all five would mutate.
-    const source = ["a == b", "c == d", "e == f", "g == h", "i == j"].join("\n") + "\n";
+    const source = `${["a == b", "c == d", "e == f", "g == h", "i == j"].join("\n")}\n`;
     const mutants = generateMutants({
       source,
       language: "typescript",
@@ -29,7 +29,7 @@ describe("generateMutants — US-003 AC1: lineRanges covering only line 5", () =
 
 describe("generateMutants — US-003 AC2: range start is eligible", () => {
   test("includes a mutant for the start boundary of the range", () => {
-    const source = ["a == b", "c == d", "e == f", "g == h", "i == j"].join("\n") + "\n";
+    const source = `${["a == b", "c == d", "e == f", "g == h", "i == j"].join("\n")}\n`;
     const mutants = generateMutants({
       source,
       language: "typescript",
@@ -43,7 +43,7 @@ describe("generateMutants — US-003 AC2: range start is eligible", () => {
 
 describe("generateMutants — US-003 AC3: range end is eligible", () => {
   test("includes a mutant for the end boundary of the range", () => {
-    const source = ["a == b", "c == d", "e == f", "g == h", "i == j"].join("\n") + "\n";
+    const source = `${["a == b", "c == d", "e == f", "g == h", "i == j"].join("\n")}\n`;
     const mutants = generateMutants({
       source,
       language: "typescript",
@@ -57,7 +57,7 @@ describe("generateMutants — US-003 AC3: range end is eligible", () => {
 
 describe("generateMutants — US-003 AC4: two disjoint ranges, no mutants in between", () => {
   test("returns mutants from both ranges and none from lines between them", () => {
-    const source = ["a == b", "c == d", "e == f", "g == h", "i == j", "k == l", "m == n"].join("\n") + "\n";
+    const source = `${["a == b", "c == d", "e == f", "g == h", "i == j", "k == l", "m == n"].join("\n")}\n`;
     const mutants = generateMutants({
       source,
       language: "typescript",
@@ -83,7 +83,7 @@ describe("generateMutants — US-003 AC4: two disjoint ranges, no mutants in bet
 
 describe("generateMutants — US-003 AC5: omitted lineRanges preserves whole-file behaviour", () => {
   test("without lineRanges, returns mutants for every mutable source line", () => {
-    const source = ["a == b", "c == d", "e == f", "g == h", "i == j"].join("\n") + "\n";
+    const source = `${["a == b", "c == d", "e == f", "g == h", "i == j"].join("\n")}\n`;
     const mutants = generateMutants({
       source,
       language: "typescript",
@@ -100,7 +100,7 @@ describe("generateMutants — US-003 AC5: omitted lineRanges preserves whole-fil
 
 describe("generateMutants — US-003 AC6: empty lineRanges array yields no mutants", () => {
   test("with lineRanges = [] returns empty array even when source has mutable lines", () => {
-    const source = ["a == b", "c == d", "e == f"].join("\n") + "\n";
+    const source = `${["a == b", "c == d", "e == f"].join("\n")}\n`;
     const mutants = generateMutants({
       source,
       language: "typescript",

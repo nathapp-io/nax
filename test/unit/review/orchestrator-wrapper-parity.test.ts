@@ -11,17 +11,17 @@
  * US-002 (adversarial) is covered in the second describe block (Task 13).
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { semanticReviewOp } from "@/operations/semantic-review";
-import type { SemanticReviewInput } from "@/operations/semantic-review";
+import { join } from "node:path";
+import type { IAgentManager } from "@/agents";
 import { adversarialReviewOp } from "@/operations/adversarial-review";
 import type { AdversarialReviewInput } from "@/operations/adversarial-review";
+import { semanticReviewOp } from "@/operations/semantic-review";
+import type { SemanticReviewInput } from "@/operations/semantic-review";
 import { _adversarialDeps, _diffUtilsDeps, runAdversarialReview } from "@/review";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review";
-import type { IAgentManager } from "@/agents";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeTestRuntime, withTempDir } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeTestRuntime, withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -74,10 +74,7 @@ describe("Semantic op verify() parity with wrapper consumer (AC10, AC11)", () =>
   test("blocking findings from verify() appear in normalizedFindings — wrapper reads them as-is", async () => {
     return withTempDir(async (workdir) => {
       mkdirSync(join(workdir, "src"), { recursive: true });
-      writeFileSync(
-        join(workdir, "src", "auth.ts"),
-        "function login(u, p) { return db.rawQuery(u + p); }\n",
-      );
+      writeFileSync(join(workdir, "src", "auth.ts"), "function login(u, p) { return db.rawQuery(u + p); }\n");
 
       const ctx = makeVerifyCtx();
       const input: SemanticReviewInput = {
@@ -229,10 +226,7 @@ describe("Adversarial op verify() parity with wrapper consumer (AC10, AC11 adver
   test("blocking finding with valid acQuote survives — wrapper reads from normalizedFindings", async () => {
     return withTempDir(async (workdir) => {
       mkdirSync(join(workdir, "src"), { recursive: true });
-      writeFileSync(
-        join(workdir, "src", "auth.ts"),
-        "function login(u, p) { return db.rawQuery(u + p); }\n",
-      );
+      writeFileSync(join(workdir, "src", "auth.ts"), "function login(u, p) { return db.rawQuery(u + p); }\n");
 
       const ctx = makeAdversarialVerifyCtx();
       const input: AdversarialReviewInput = {
@@ -341,10 +335,7 @@ describe("Adversarial op verify() parity with wrapper consumer (AC10, AC11 adver
   test("AC-dropped blocking finding → wrapper sees empty normalizedFindings and passed:false", async () => {
     return withTempDir(async (workdir) => {
       mkdirSync(join(workdir, "src"), { recursive: true });
-      writeFileSync(
-        join(workdir, "src", "auth.ts"),
-        "function login(u, p) { return db.rawQuery(u + p); }\n",
-      );
+      writeFileSync(join(workdir, "src", "auth.ts"), "function login(u, p) { return db.rawQuery(u + p); }\n");
 
       const ctx = makeAdversarialVerifyCtx();
       const input: AdversarialReviewInput = {
@@ -460,7 +451,6 @@ describe("Recurrence-demotion parity: op verify() vs wrapper recomputation", () 
         message: "No error handling on login",
       },
     ],
-    // biome-ignore lint/suspicious/noExplicitAny: minimal Iteration/Finding shape for fingerprint matching
   })) as any;
 
   const STAT_OUTPUT = "src/log.ts | 5 +++++\n 1 file changed, 5 insertions(+)";
@@ -480,7 +470,6 @@ describe("Recurrence-demotion parity: op verify() vs wrapper recomputation", () 
         },
       }),
       kill: () => {},
-      // biome-ignore lint/suspicious/noExplicitAny: minimal Bun.spawn-shaped mock
     })) as any;
   }
 
@@ -498,7 +487,10 @@ describe("Recurrence-demotion parity: op verify() vs wrapper recomputation", () 
         estimatedCostUsd: 0.001,
         internalRoundTrips: 0,
       }),
-      completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: 0.001, source: "mock" }, fallbacks: [] }),
+      completeWithFallbackFn: async () => ({
+        result: { output: llmResponse, costUsd: 0.001, source: "mock" },
+        fallbacks: [],
+      }),
       completeAsFn: async () => ({ output: llmResponse, costUsd: 0.001, source: "mock" }),
       getAgentFn: () => makeAgentAdapter(),
     });
@@ -546,7 +538,6 @@ describe("Recurrence-demotion parity: op verify() vs wrapper recomputation", () 
       findings: [RECURRING_FINDING],
       normalizedFindings: [],
       acDropped: [],
-      // biome-ignore lint/suspicious/noExplicitAny: minimal AdversarialLLMFinding shape
     } as any;
     const opResult = await adversarialReviewOp.verify!(opParsed, opInput, opCtx);
 

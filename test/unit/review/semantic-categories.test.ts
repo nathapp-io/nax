@@ -165,7 +165,9 @@ describe("validateLLMShape() — severity normalization at the parse boundary", 
   test("normalizes a capitalized severity before any consumer sees it", () => {
     const parsed = validateLLMShape({
       passed: false,
-      findings: [{ severity: "Critical", file: "src/a.ts", line: 4, issue: "SQL injection", suggestion: "parameterize" }],
+      findings: [
+        { severity: "Critical", file: "src/a.ts", line: 4, issue: "SQL injection", suggestion: "parameterize" },
+      ],
     });
     expect(parsed?.findings[0].severity).toBe("critical");
   });
@@ -175,7 +177,9 @@ describe("downstream consumers read the normalized category", () => {
   const parse = (category: string) =>
     validateLLMShape({
       passed: false,
-      findings: [{ severity: "error", category, file: "test/unit/a.test.ts", line: 1, issue: "AC 1 unmet", suggestion: "fix" }],
+      findings: [
+        { severity: "error", category, file: "test/unit/a.test.ts", line: 1, issue: "AC 1 unmet", suggestion: "fix" },
+      ],
     })?.findings ?? [];
 
   test("review-audit / curator ruleId is derived from the canonical category", () => {
@@ -195,7 +199,10 @@ describe("downstream consumers read the normalized category", () => {
     expect(findings[0].category).toBe("other");
     const { blocking, demoted } = classifyRecurrence(
       findings,
-      [priorIterationWith("test/unit/a.test.ts", "other", "AC 1 unmet"), priorIterationWith("test/unit/a.test.ts", "other", "AC 1 unmet")],
+      [
+        priorIterationWith("test/unit/a.test.ts", "other", "AC 1 unmet"),
+        priorIterationWith("test/unit/a.test.ts", "other", "AC 1 unmet"),
+      ],
       { enabled: true, maxBlockingRounds: 1 },
       () => true,
       "error",

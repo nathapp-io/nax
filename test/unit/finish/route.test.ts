@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
-  gateCommitRoute,
   MAX_FIX_ATTEMPTS,
   MAX_INCOMPLETE_ATTEMPTS,
+  gateCommitRoute,
   partitionTestFiles,
   routeAcceptance,
   routeQualityGates,
@@ -75,9 +75,7 @@ describe("routeReview", () => {
     const st = { ...zeroedState(), incompleteAttempts: MAX_INCOMPLETE_ATTEMPTS };
     const r = routeReview("spec", { findings: [], gaps: ["never opened the caller"] }, st);
     expect(r.route).toBe("escalate");
-    expect(r.escalationReason).toBe(
-      "spec review never discharged its reading obligations: never opened the caller",
-    );
+    expect(r.escalationReason).toBe("spec review never discharged its reading obligations: never opened the caller");
   });
 
   // A clean review (zero findings) with unresolved gaps must never read as

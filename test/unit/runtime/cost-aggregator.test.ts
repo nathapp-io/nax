@@ -1,7 +1,7 @@
-import { describe, test, expect, mock } from "bun:test";
-import { CostAggregator, _costAggDeps, createNoOpCostAggregator, type CostEvent } from "@/runtime/cost-aggregator";
-import { withTempDir } from "@test/helpers";
+import { describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
+import { CostAggregator, type CostEvent, _costAggDeps, createNoOpCostAggregator } from "@/runtime/cost-aggregator";
+import { withTempDir } from "@test/helpers";
 
 function makeEvent(overrides: Partial<CostEvent> = {}): CostEvent {
   return {
@@ -43,13 +43,27 @@ describe("CostAggregator", () => {
   test("byCall() and byScope() include errorCount for matching id", () => {
     const agg = new CostAggregator("r-001", "/tmp/drain");
     agg.record(makeEvent({ callId: "call-1", costUsd: 0.01 }));
-    agg.recordError({ ts: Date.now(), runId: "r-001", agentName: "claude", callId: "call-1", errorCode: "TIMEOUT", durationMs: 100 });
+    agg.recordError({
+      ts: Date.now(),
+      runId: "r-001",
+      agentName: "claude",
+      callId: "call-1",
+      errorCode: "TIMEOUT",
+      durationMs: 100,
+    });
     const byCall = agg.byCall();
     expect(byCall["call-1"].callCount).toBe(1);
     expect(byCall["call-1"].errorCount).toBe(1);
 
     agg.record(makeEvent({ scopeId: "scope-1", costUsd: 0.01 }));
-    agg.recordError({ ts: Date.now(), runId: "r-001", agentName: "claude", scopeId: "scope-1", errorCode: "TIMEOUT", durationMs: 100 });
+    agg.recordError({
+      ts: Date.now(),
+      runId: "r-001",
+      agentName: "claude",
+      scopeId: "scope-1",
+      errorCode: "TIMEOUT",
+      durationMs: 100,
+    });
     const byScope = agg.byScope();
     expect(byScope["scope-1"].callCount).toBe(1);
     expect(byScope["scope-1"].errorCount).toBe(1);
@@ -61,10 +75,10 @@ describe("CostAggregator", () => {
     agg.record(makeEvent({ agentName: "claude", costUsd: 0.002 }));
     agg.record(makeEvent({ agentName: "codex", costUsd: 0.005 }));
     const by = agg.byAgent();
-    expect(by["claude"].callCount).toBe(2);
-    expect(by["claude"].totalCostUsd).toBeCloseTo(0.003);
-    expect(by["codex"].callCount).toBe(1);
-    expect(by["codex"].totalCostUsd).toBeCloseTo(0.005);
+    expect(by.claude.callCount).toBe(2);
+    expect(by.claude.totalCostUsd).toBeCloseTo(0.003);
+    expect(by.codex.callCount).toBe(1);
+    expect(by.codex.totalCostUsd).toBeCloseTo(0.005);
   });
 
   test("byStage() groups events by stage", () => {
@@ -73,9 +87,9 @@ describe("CostAggregator", () => {
     agg.record(makeEvent({ stage: "verify", costUsd: 0.02 }));
     agg.record(makeEvent({ stage: undefined }));
     const by = agg.byStage();
-    expect(by["run"].callCount).toBe(1);
-    expect(by["verify"].callCount).toBe(1);
-    expect(by["unknown"].callCount).toBe(1);
+    expect(by.run.callCount).toBe(1);
+    expect(by.verify.callCount).toBe(1);
+    expect(by.unknown.callCount).toBe(1);
   });
 
   test("byStory() groups events by storyId", () => {
@@ -91,7 +105,10 @@ describe("CostAggregator", () => {
   test("drain() does nothing when no events", async () => {
     const writes: string[] = [];
     const origWrite = _costAggDeps.write;
-    _costAggDeps.write = async (p) => { writes.push(p); return 0; };
+    _costAggDeps.write = async (p) => {
+      writes.push(p);
+      return 0;
+    };
     const agg = new CostAggregator("r-001", "/tmp/drain");
     await agg.drain();
     expect(writes).toHaveLength(0);
@@ -104,7 +121,11 @@ describe("CostAggregator", () => {
       let captured = "";
       let capturedPath = "";
       const origWrite = _costAggDeps.write;
-      _costAggDeps.write = async (p, data) => { capturedPath = p; captured = String(data); return 0; };
+      _costAggDeps.write = async (p, data) => {
+        capturedPath = p;
+        captured = String(data);
+        return 0;
+      };
       const agg = new CostAggregator("my-run-id", drainDir);
       agg.record(makeEvent({ ts: 2000 }));
       agg.record(makeEvent({ ts: 1000 }));
@@ -123,9 +144,14 @@ describe("CostAggregator", () => {
       const drainDir = join(dir, "cost");
       const written: string[] = [];
       let resolveWrite: () => void;
-      const writePromise = new Promise<number>((r) => { resolveWrite = r; });
+      const writePromise = new Promise<number>((r) => {
+        resolveWrite = r;
+      });
       const origWrite = _costAggDeps.write;
-      _costAggDeps.write = async (_p, d) => { written.push(String(d)); return writePromise; };
+      _costAggDeps.write = async (_p, d) => {
+        written.push(String(d));
+        return writePromise;
+      };
       const agg = new CostAggregator("r-test", drainDir);
       agg.record(makeEvent({ ts: 1000 }));
 
@@ -149,9 +175,14 @@ describe("CostAggregator", () => {
       const drainDir = join(dir, "cost");
       const written: string[] = [];
       let resolveWrite: () => void;
-      const writePromise = new Promise<number>((r) => { resolveWrite = r; });
+      const writePromise = new Promise<number>((r) => {
+        resolveWrite = r;
+      });
       const origWrite = _costAggDeps.write;
-      _costAggDeps.write = async (_p, d) => { written.push(String(d)); return writePromise; };
+      _costAggDeps.write = async (_p, d) => {
+        written.push(String(d));
+        return writePromise;
+      };
       const agg = new CostAggregator("r-test", drainDir);
       agg.record(makeEvent({ ts: 1000 }));
 
@@ -173,7 +204,9 @@ describe("CostAggregator", () => {
     await withTempDir(async (dir) => {
       const drainDir = join(dir, "cost");
       let resolveWrite: () => void;
-      const writePromise = new Promise<number>((r) => { resolveWrite = r; });
+      const writePromise = new Promise<number>((r) => {
+        resolveWrite = r;
+      });
       const origWrite = _costAggDeps.write;
       _costAggDeps.write = async (_p, _d) => writePromise;
       const agg = new CostAggregator("r-test", drainDir);
@@ -224,7 +257,10 @@ describe("CostAggregator", () => {
       const drainDir = join(dir, "cost");
       let captured = "";
       const origWrite = _costAggDeps.write;
-      _costAggDeps.write = async (_p, data) => { captured = String(data); return 0; };
+      _costAggDeps.write = async (_p, data) => {
+        captured = String(data);
+        return 0;
+      };
       const agg = new CostAggregator("r-test", drainDir);
       agg.record(makeEvent({ exactCostUsd: 0.012 }));
       await agg.drain();
@@ -249,7 +285,7 @@ describe("CostAggregator", () => {
     expect(by["scope-A"].totalCostUsd).toBeCloseTo(0.03);
     expect(by["scope-B"].callCount).toBe(1);
     expect(by["scope-B"].totalCostUsd).toBeCloseTo(0.05);
-    expect(by["unknown"]).toBeUndefined();
+    expect(by.unknown).toBeUndefined();
   });
 
   // --- AC4: byCall ---
@@ -291,7 +327,14 @@ describe("CostAggregator", () => {
     expect(snap.callCount).toBe(2);
     expect(snap.totalCostUsd).toBeCloseTo(0.03);
 
-    agg.recordError({ ts: Date.now(), runId: "r-001", agentName: "claude", scopeId: "region-X", errorCode: "TIMEOUT", durationMs: 100 });
+    agg.recordError({
+      ts: Date.now(),
+      runId: "r-001",
+      agentName: "claude",
+      scopeId: "region-X",
+      errorCode: "TIMEOUT",
+      durationMs: 100,
+    });
     expect(handle.snapshot().errorCount).toBe(1);
     handle.close();
 
@@ -323,27 +366,37 @@ describe("CostAggregator", () => {
     // Scenario 1: unclosed scope → warn with openScopeCount
     const warnCalls1: Array<[string, string, Record<string, unknown>]> = [];
     _costAggDeps.getSafeLogger = mock(() => ({
-      warn: (stage: string, msg: string, data: Record<string, unknown>) => { warnCalls1.push([stage, msg, data]); },
-      info: () => {}, error: () => {}, debug: () => {},
+      warn: (stage: string, msg: string, data: Record<string, unknown>) => {
+        warnCalls1.push([stage, msg, data]);
+      },
+      info: () => {},
+      error: () => {},
+      debug: () => {},
     })) as never;
     const agg1 = new CostAggregator("r-001", "/tmp/drain");
     agg1.openScope("unclosed-scope");
     await agg1.drain();
     expect(warnCalls1.length).toBeGreaterThanOrEqual(1);
-    const drainWarn = warnCalls1.find(([, , data]) => typeof (data as Record<string, unknown>)["openScopeCount"] === "number");
+    const drainWarn = warnCalls1.find(
+      ([, , data]) => typeof (data as Record<string, unknown>).openScopeCount === "number",
+    );
     expect(drainWarn).toBeDefined();
-    expect((drainWarn![2] as Record<string, unknown>)["openScopeCount"]).toBe(1);
+    expect((drainWarn![2] as Record<string, unknown>).openScopeCount).toBe(1);
 
     // Scenario 2: closed scope → no warn with openScopeCount
     const warnCalls2: Array<Record<string, unknown>> = [];
     _costAggDeps.getSafeLogger = mock(() => ({
-      warn: (_stage: string, _msg: string, data: Record<string, unknown>) => { warnCalls2.push(data); },
-      info: () => {}, error: () => {}, debug: () => {},
+      warn: (_stage: string, _msg: string, data: Record<string, unknown>) => {
+        warnCalls2.push(data);
+      },
+      info: () => {},
+      error: () => {},
+      debug: () => {},
     })) as never;
     const agg2 = new CostAggregator("r-001", "/tmp/drain");
     agg2.openScope("closed-scope").close();
     await agg2.drain();
-    expect(warnCalls2.find((d) => typeof d["openScopeCount"] === "number")).toBeUndefined();
+    expect(warnCalls2.find((d) => typeof d.openScopeCount === "number")).toBeUndefined();
 
     _costAggDeps.getSafeLogger = origGetSafeLogger;
     _costAggDeps.write = origWrite;

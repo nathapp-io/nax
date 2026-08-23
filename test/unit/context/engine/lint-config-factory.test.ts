@@ -7,11 +7,11 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
-  createDefaultOrchestrator,
+  LintConfigProvider,
   _codeNeighborDeps,
   _gitHistoryDeps,
-  LintConfigProvider,
   _lintConfigProviderDeps,
+  createDefaultOrchestrator,
 } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
 import { makeNaxConfig } from "@test/helpers";

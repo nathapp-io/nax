@@ -8,19 +8,19 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config/defaults";
 import {
+  type RunCompletionOptions,
   _runCompletionDeps,
   handleRunCompletion,
-  type RunCompletionOptions,
 } from "@/execution/lifecycle/run-completion";
 import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
 import type { AgentFallbackHop, StoryMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { RunCompletedEvent } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
-import { makeMockRuntime } from "@test/helpers";
+import { makeMockRuntime, makeStatusWriter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -52,17 +52,6 @@ function makePRD(stories: Array<{ id: string; status: UserStory["status"] }>): P
   };
 }
 
-function makeStatusWriter() {
-  return {
-    setPrd: mock(() => {}),
-    setCurrentStory: mock(() => {}),
-    setRunStatus: mock(() => {}),
-    setPostRunPhase: mock((_phase: string, _update: Record<string, unknown>) => {}),
-    update: mock(async () => {}),
-    writeFeatureStatus: mock(async () => {}),
-  };
-}
-
 function makeStoryMetrics(storyId: string, success: boolean, hops: AgentFallbackHop[]): StoryMetrics {
   return {
     storyId,
@@ -83,10 +72,7 @@ function makeStoryMetrics(storyId: string, success: boolean, hops: AgentFallback
 
 const WORKDIR = `/tmp/nax-test-pr2-fallback-${randomUUID()}`;
 
-function makeOpts(
-  prd: PRD,
-  allStoryMetrics: StoryMetrics[],
-): RunCompletionOptions {
+function makeOpts(prd: PRD, allStoryMetrics: StoryMetrics[]): RunCompletionOptions {
   const config: NaxConfig = {
     ...DEFAULT_CONFIG,
     execution: {
@@ -105,7 +91,7 @@ function makeOpts(
     iterations: 1,
     startTime: Date.now() - 1000,
     workdir: WORKDIR,
-    statusWriter: makeStatusWriter() as unknown as RunCompletionOptions["statusWriter"],
+    statusWriter: makeStatusWriter(),
     config,
     isSequential: true,
     runtime: makeMockRuntime(),

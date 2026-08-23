@@ -277,10 +277,12 @@ describe("Integration: 6 roles with no override — story title and AC present",
 
 describe("Structural: call sites migrated away from old prompt functions", () => {
   test("session-runner.ts deleted; prompt.ts uses PromptBuilder not old functions", async () => {
-    const { existsSync } = require("fs");
+    const { existsSync } = require("node:fs");
     expect(existsSync(new URL("../../../src/tdd/session-runner.ts", import.meta.url).pathname)).toBe(false);
 
-    const promptSrc = await Bun.file(new URL("../../../src/pipeline/stages/prompt.ts", import.meta.url).pathname).text();
+    const promptSrc = await Bun.file(
+      new URL("../../../src/pipeline/stages/prompt.ts", import.meta.url).pathname,
+    ).text();
     expect(promptSrc).not.toContain("buildSingleSessionPrompt");
     expect(promptSrc).not.toContain("buildBatchPrompt");
     expect(promptSrc).toContain("PromptBuilder");
@@ -301,14 +303,22 @@ describe("Structural: call sites migrated away from old prompt functions", () =>
 describe("Internal prompts: not migrated, still accessible", () => {
   test("tdd/prompts.ts and execution/prompts.ts deleted; RectifierPromptBuilder exported (Phase 5)", async () => {
     let tddErr: unknown = null;
-    try { await import("@/tdd/prompts"); } catch (err) { tddErr = err; }
+    try {
+      await import("@/tdd/prompts");
+    } catch (err) {
+      tddErr = err;
+    }
     expect(tddErr).not.toBeNull();
 
     const mod = await import("@/prompts");
     expect(typeof mod.RectifierPromptBuilder).toBe("function");
 
     let execErr: unknown = null;
-    try { await import("@/execution/prompts"); } catch (err) { execErr = err; }
+    try {
+      await import("@/execution/prompts");
+    } catch (err) {
+      execErr = err;
+    }
     expect(execErr).not.toBeNull();
   });
 
@@ -323,9 +333,27 @@ describe("Internal prompts: not migrated, still accessible", () => {
 describe("PromptBuilder.withLoader override content integration", () => {
   test("override for implementer, verifier, and single-session roles replaces role body", async () => {
     const scenarios = [
-      { role: "implementer", opts: { variant: "standard" }, key: "implementer", marker: "IMPLEMENTER_CUSTOM_ROLE_BODY_MARKER", title: "OVERRIDE_STORY_TITLE" },
-      { role: "verifier", opts: {}, key: "verifier", marker: "VERIFIER_CUSTOM_ROLE_BODY_MARKER", title: "VERIFIER_OVERRIDE_TITLE" },
-      { role: "single-session", opts: {}, key: "single-session", marker: "SINGLE_SESSION_CUSTOM_ROLE_BODY_MARKER", title: "SINGLE_SESSION_OVERRIDE_TITLE" },
+      {
+        role: "implementer",
+        opts: { variant: "standard" },
+        key: "implementer",
+        marker: "IMPLEMENTER_CUSTOM_ROLE_BODY_MARKER",
+        title: "OVERRIDE_STORY_TITLE",
+      },
+      {
+        role: "verifier",
+        opts: {},
+        key: "verifier",
+        marker: "VERIFIER_CUSTOM_ROLE_BODY_MARKER",
+        title: "VERIFIER_OVERRIDE_TITLE",
+      },
+      {
+        role: "single-session",
+        opts: {},
+        key: "single-session",
+        marker: "SINGLE_SESSION_CUSTOM_ROLE_BODY_MARKER",
+        title: "SINGLE_SESSION_OVERRIDE_TITLE",
+      },
     ] as const;
 
     for (const { role, opts, key, marker, title } of scenarios) {
@@ -335,7 +363,10 @@ describe("PromptBuilder.withLoader override content integration", () => {
       writeFileSync(absPath, marker);
       const config = makeConfig({ prompts: { overrides: { [key]: relPath } } });
       const story = makeStory({ title });
-      const prompt = await (PromptBuilder.for(role, opts as never) as any).withLoader(tmpDir, config).story(story).build();
+      const prompt = await (PromptBuilder.for(role, opts as never) as any)
+        .withLoader(tmpDir, config)
+        .story(story)
+        .build();
       expect(prompt, role).toContain(marker);
       expect(prompt, role).toContain(title);
     }

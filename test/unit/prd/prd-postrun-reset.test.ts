@@ -10,9 +10,9 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import type { PRD, UserStory } from "@/prd";
 import { markStoryFailed, markStoryPassed } from "@/prd/index";
 import { markStoryAsBlocked } from "@/prd/types";
-import type { PRD, UserStory } from "@/prd";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -76,17 +76,16 @@ describe("markStoryFailed - AC5: resetPostRunStatus when story was passed", () =
     expect(prd.userStories[0].status).toBe("failed");
   });
 
-  test.each([
-    ["failed" as const],
-    ["pending" as const],
-    ["in-progress" as const],
-  ])("does NOT call resetPostRunStatus when story's previous status was %s", (status) => {
-    const story = makeStory("US-001", status);
-    const prd = makePRD([story]);
-    const sw = makeStatusWriter();
-    markStoryFailed(prd, "US-001", undefined, undefined, sw);
-    expect(sw.resetPostRunStatus).not.toHaveBeenCalled();
-  });
+  test.each([["failed" as const], ["pending" as const], ["in-progress" as const]])(
+    "does NOT call resetPostRunStatus when story's previous status was %s",
+    (status) => {
+      const story = makeStory("US-001", status);
+      const prd = makePRD([story]);
+      const sw = makeStatusWriter();
+      markStoryFailed(prd, "US-001", undefined, undefined, sw);
+      expect(sw.resetPostRunStatus).not.toHaveBeenCalled();
+    },
+  );
 
   test("does NOT call resetPostRunStatus when statusWriter is not provided", () => {
     // Verifies the parameter is truly optional (no error thrown)
@@ -132,17 +131,16 @@ describe("markStoryAsBlocked - AC6: resetPostRunStatus when story was passed", (
     expect(prd.userStories[0].status).toBe("blocked");
   });
 
-  test.each([
-    ["pending" as const],
-    ["failed" as const],
-    ["in-progress" as const],
-  ])("does NOT call resetPostRunStatus when story's previous status was %s", (status) => {
-    const story = makeStory("US-001", status);
-    const prd = makePRD([story]);
-    const sw = makeStatusWriter();
-    markStoryAsBlocked(prd, "US-001", "dependency failed", sw);
-    expect(sw.resetPostRunStatus).not.toHaveBeenCalled();
-  });
+  test.each([["pending" as const], ["failed" as const], ["in-progress" as const]])(
+    "does NOT call resetPostRunStatus when story's previous status was %s",
+    (status) => {
+      const story = makeStory("US-001", status);
+      const prd = makePRD([story]);
+      const sw = makeStatusWriter();
+      markStoryAsBlocked(prd, "US-001", "dependency failed", sw);
+      expect(sw.resetPostRunStatus).not.toHaveBeenCalled();
+    },
+  );
 
   test("does NOT call resetPostRunStatus when statusWriter is not provided", () => {
     const story = makeStory("US-001", "passed");
@@ -180,10 +178,7 @@ describe("markStoryAsBlocked - MEM-23: priorErrors dedupe", () => {
     const prd = makePRD([makeStory("US-001", "pending")]);
     markStoryAsBlocked(prd, "US-001", "deps broken");
     markStoryAsBlocked(prd, "US-001", "permission denied");
-    expect(prd.userStories[0].priorErrors).toEqual([
-      "BLOCKED: deps broken",
-      "BLOCKED: permission denied",
-    ]);
+    expect(prd.userStories[0].priorErrors).toEqual(["BLOCKED: deps broken", "BLOCKED: permission denied"]);
   });
 });
 
@@ -192,17 +187,16 @@ describe("markStoryAsBlocked - MEM-23: priorErrors dedupe", () => {
 // ---------------------------------------------------------------------------
 
 describe("markStoryPassed - AC7: does NOT call resetPostRunStatus for forward transitions", () => {
-  test.each([
-    ["pending" as const],
-    ["in-progress" as const],
-    ["failed" as const],
-  ])("does NOT call resetPostRunStatus when story's previous status was %s", (status) => {
-    const story = makeStory("US-001", status);
-    const prd = makePRD([story]);
-    const sw = makeStatusWriter();
-    markStoryPassed(prd, "US-001", sw);
-    expect(sw.resetPostRunStatus).not.toHaveBeenCalled();
-  });
+  test.each([["pending" as const], ["in-progress" as const], ["failed" as const]])(
+    "does NOT call resetPostRunStatus when story's previous status was %s",
+    (status) => {
+      const story = makeStory("US-001", status);
+      const prd = makePRD([story]);
+      const sw = makeStatusWriter();
+      markStoryPassed(prd, "US-001", sw);
+      expect(sw.resetPostRunStatus).not.toHaveBeenCalled();
+    },
+  );
 
   test("story status is set to passed for forward transition", () => {
     const story = makeStory("US-001", "pending");

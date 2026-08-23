@@ -14,17 +14,17 @@ import type { UserStory } from "@/prd";
 import { _isolationDeps } from "@/tdd/isolation";
 import { _rollbackDeps } from "@/tdd/rollback";
 import { _gitDeps } from "@/utils/git";
-import { fakeAgentManager, makeMockCallContext, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import {
+  fakeAgentManager,
+  makeMockCallContext,
+  makeMockRuntime,
+  makeNaxConfig,
+  makeSpawn,
+  makeStory as makeStoryBase,
+} from "@test/helpers";
 
 // Mock spawn-based deps so the post-dispatch isolation/getChangedFiles/autoCommit
 // helpers don't try to invoke real `git`. This test asserts on cost/duration aggregation.
-function emptySpawn(): unknown {
-  return {
-    exited: Promise.resolve(0),
-    stdout: new Response("").body,
-    stderr: new Response("").body,
-  };
-}
 let savedIsolation: typeof _isolationDeps.spawn;
 let savedRollback: typeof _rollbackDeps.spawn;
 let savedGit: typeof _gitDeps.spawn;
@@ -34,9 +34,9 @@ beforeAll(() => {
   savedRollback = _rollbackDeps.spawn;
   savedGit = _gitDeps.spawn;
   savedRunTests = _fullSuiteGateDeps.runTests;
-  _isolationDeps.spawn = mock(emptySpawn) as unknown as typeof _isolationDeps.spawn;
-  _rollbackDeps.spawn = mock(emptySpawn) as unknown as typeof _rollbackDeps.spawn;
-  _gitDeps.spawn = mock(emptySpawn) as unknown as typeof _gitDeps.spawn;
+  _isolationDeps.spawn = makeSpawn().spawn;
+  _rollbackDeps.spawn = makeSpawn().spawn;
+  _gitDeps.spawn = makeSpawn().spawn;
   _fullSuiteGateDeps.runTests = mock(async () => ({ passed: true, failed: 0, output: "all pass" }));
 });
 afterAll(() => {
@@ -47,15 +47,13 @@ afterAll(() => {
 });
 
 function makeStory(): UserStory {
-  return {
+  return makeStoryBase({
     id: "US-001",
     title: "Impl",
     description: "desc",
     acceptanceCriteria: ["AC-1"],
-    status: "pending",
-    attempts: 0,
     priorFailures: [],
-  } as unknown as UserStory;
+  });
 }
 
 function makeConfig() {
@@ -143,7 +141,13 @@ describe("buildPlanForStrategy — cost + duration aggregation", () => {
     });
 
     const callCtx = makeMockCallContext({ runtime });
-    const plan = await buildPlanForStrategy(callCtx, story, config, "three-session-tdd", makePlanInputsNoGreenfield(story, config));
+    const plan = await buildPlanForStrategy(
+      callCtx,
+      story,
+      config,
+      "three-session-tdd",
+      makePlanInputsNoGreenfield(story, config),
+    );
     const result = await plan.run();
 
     // totalCostUsd should be non-negative (may be 0 if agent doesn't emit costs in test mode)
@@ -166,7 +170,13 @@ describe("buildPlanForStrategy — cost + duration aggregation", () => {
     });
 
     const callCtx = makeMockCallContext({ runtime });
-    const plan = await buildPlanForStrategy(callCtx, story, config, "three-session-tdd", makePlanInputsNoGreenfield(story, config));
+    const plan = await buildPlanForStrategy(
+      callCtx,
+      story,
+      config,
+      "three-session-tdd",
+      makePlanInputsNoGreenfield(story, config),
+    );
     const result = await plan.run();
 
     expect(typeof result.durationMs).toBe("number");
@@ -188,7 +198,13 @@ describe("buildPlanForStrategy — cost + duration aggregation", () => {
     });
 
     const callCtx = makeMockCallContext({ runtime });
-    const plan = await buildPlanForStrategy(callCtx, story, config, "three-session-tdd", makePlanInputsNoGreenfield(story, config));
+    const plan = await buildPlanForStrategy(
+      callCtx,
+      story,
+      config,
+      "three-session-tdd",
+      makePlanInputsNoGreenfield(story, config),
+    );
     const result = await plan.run();
 
     // phaseCosts should have entries for at least the executed phases

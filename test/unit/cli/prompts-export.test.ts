@@ -52,7 +52,11 @@ describe("exportPromptCommand — stdout mode", () => {
     const out = consoleOutput.join("\n");
     const outLower = out.toLowerCase();
     expect(outLower).toMatch(/isolation/);
-    const hasStoryContent = outLower.includes("story") || outLower.includes("acceptance criteria") || outLower.includes("example") || outLower.includes("ac-1");
+    const hasStoryContent =
+      outLower.includes("story") ||
+      outLower.includes("acceptance criteria") ||
+      outLower.includes("example") ||
+      outLower.includes("ac-1");
     expect(hasStoryContent).toBe(true);
     expect(outLower).toMatch(/convention/);
     expect(out.length).toBeGreaterThan(500);

@@ -12,8 +12,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { PromptsConfigSchema, NaxConfigSchema } from "@/config/schemas";
 import { DEFAULT_CONFIG } from "@/config/defaults";
+import { NaxConfigSchema, PromptsConfigSchema } from "@/config/schemas";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PromptsConfigSchema — individual role validation
@@ -31,7 +31,7 @@ describe("PromptsConfigSchema — valid roles", () => {
   test("schema accepts 'implementer' override", () => {
     // FAILS until PT-001 is implemented
     const result = PromptsConfigSchema.safeParse({
-      overrides: { "implementer": ".nax/templates/implementer.md" },
+      overrides: { implementer: ".nax/templates/implementer.md" },
     });
     expect(result.success).toBe(true);
   });
@@ -39,7 +39,7 @@ describe("PromptsConfigSchema — valid roles", () => {
   test("schema accepts 'verifier' override", () => {
     // FAILS until PT-001 is implemented
     const result = PromptsConfigSchema.safeParse({
-      overrides: { "verifier": ".nax/templates/verifier.md" },
+      overrides: { verifier: ".nax/templates/verifier.md" },
     });
     expect(result.success).toBe(true);
   });
@@ -65,8 +65,8 @@ describe("PromptsConfigSchema — valid roles", () => {
     const result = PromptsConfigSchema.safeParse({
       overrides: {
         "test-writer": ".nax/templates/test-writer.md",
-        "implementer": ".nax/templates/implementer.md",
-        "verifier": ".nax/templates/verifier.md",
+        implementer: ".nax/templates/implementer.md",
+        verifier: ".nax/templates/verifier.md",
         "single-session": ".nax/templates/single-session.md",
         "tdd-simple": ".nax/templates/tdd-simple.md",
       },
@@ -131,8 +131,8 @@ describe("NaxConfigSchema — prompts section with tdd-simple", () => {
       prompts: {
         overrides: {
           "test-writer": ".nax/templates/test-writer.md",
-          "implementer": ".nax/templates/implementer.md",
-          "verifier": ".nax/templates/verifier.md",
+          implementer: ".nax/templates/implementer.md",
+          verifier: ".nax/templates/verifier.md",
           "single-session": ".nax/templates/single-session.md",
           "tdd-simple": ".nax/templates/tdd-simple.md",
         },

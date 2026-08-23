@@ -1,12 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import {
-  acceptanceSetupStage,
-  _acceptanceSetupDeps,
-  computeACFingerprint,
-} from "@/pipeline/stages/acceptance-setup";
-import type { PipelineContext } from "@/pipeline/types";
 import { DEFAULT_CONFIG } from "@/config";
+import { _acceptanceSetupDeps, acceptanceSetupStage, computeACFingerprint } from "@/pipeline/stages/acceptance-setup";
 import { preRunPipeline } from "@/pipeline/stages/index";
+import type { PipelineContext } from "@/pipeline/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -348,9 +344,13 @@ describe("config defaults: acceptance.refinement, acceptance.redGate, acceptance
 describe("acceptanceSetupStage.enabled()", () => {
   test("enabled when acceptance.enabled and featureDir set; disabled when either absent", () => {
     expect(acceptanceSetupStage.enabled(makeCtx())).toBe(true);
-    expect(acceptanceSetupStage.enabled(makeCtx({
-      config: { ...DEFAULT_CONFIG, acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false } } as any,
-    }))).toBe(false);
+    expect(
+      acceptanceSetupStage.enabled(
+        makeCtx({
+          config: { ...DEFAULT_CONFIG, acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false } } as any,
+        }),
+      ),
+    ).toBe(false);
     expect(acceptanceSetupStage.enabled(makeCtx({ featureDir: undefined }))).toBe(false);
   });
 });
@@ -365,7 +365,11 @@ describe("acceptance stage (GREEN gate): works with pre-generated test file", ()
 
     const stories = [makeStory("US-001", ["AC-1: criterion"])];
     stories[0].status = "passed" as any;
-    expect(acceptanceStage.enabled(makeCtx({ prd: makePrd(stories) as any, story: stories[0], featureDir: "/tmp/fake-feature-dir" }))).toBe(true);
+    expect(
+      acceptanceStage.enabled(
+        makeCtx({ prd: makePrd(stories) as any, story: stories[0], featureDir: "/tmp/fake-feature-dir" }),
+      ),
+    ).toBe(true);
 
     const stories2 = [makeStory("US-001", ["AC-1"])];
     stories2[0].status = "passed" as any;
@@ -373,7 +377,9 @@ describe("acceptance stage (GREEN gate): works with pre-generated test file", ()
     // and acceptanceEnabled defaults to true, so a missing target is a hard
     // fail. The fallback path itself is still reached; the action reports the
     // synthesized package dir in the failure reason.
-    const result = await acceptanceStage.execute(makeCtx({ prd: makePrd(stories2) as any, story: stories2[0], featureDir: "/tmp/non-existent-feature-dir" }));
+    const result = await acceptanceStage.execute(
+      makeCtx({ prd: makePrd(stories2) as any, story: stories2[0], featureDir: "/tmp/non-existent-feature-dir" }),
+    );
     expect(result.action).toBe("fail");
     if (result.action === "fail") {
       expect(result.reason).toContain("/tmp/test-workdir");

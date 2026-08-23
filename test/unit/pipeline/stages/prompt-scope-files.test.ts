@@ -11,14 +11,14 @@
  * the captured `scopeFiles`.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ContextBundle, ContextRequest } from "@/context/engine";
 import { _stageAssemblerDeps } from "@/context/engine";
 import { _scopeFilesDeps, resolveScopeFiles } from "@/pipeline";
 import { promptStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
-import { makeNaxConfig, makeStory } from "@test/helpers";
+import { makeContextBundle, makeContextOrchestrator, makeNaxConfig, makeStory, makeTestContext } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals
@@ -63,7 +63,7 @@ function makePRD(story: UserStory): PRD {
 
 function makeCtx(story: UserStory): PipelineContext {
   const prd = makePRD(story);
-  return {
+  return makeTestContext({
     config: makeNaxConfig({ context: { v2: { enabled: true, pluginProviders: [] } } }),
     rootConfig: makeNaxConfig(),
     prd,
@@ -72,8 +72,7 @@ function makeCtx(story: UserStory): PipelineContext {
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "tdd-simple", reasoning: "" },
     projectDir: "/repo",
     workdir: "/repo",
-    hooks: {} as PipelineContext["hooks"],
-  } as unknown as PipelineContext;
+  } as Partial<PipelineContext>);
 }
 
 /**
@@ -83,11 +82,11 @@ function makeCtx(story: UserStory): PipelineContext {
  */
 function captureOrchestratorRequest(): { captured: ContextRequest | null } {
   const ref: { captured: ContextRequest | null } = { captured: null };
-  _stageAssemblerDeps.createOrchestrator = () =>
-    ({
+  _stageAssemblerDeps.createOrchestrator = mock(() =>
+    makeContextOrchestrator({
       async assemble(req: ContextRequest) {
         ref.captured = req;
-        return {
+        return makeContextBundle({
           pushMarkdown: "",
           digest: "stub",
           manifest: {
@@ -101,11 +100,11 @@ function captureOrchestratorRequest(): { captured: ContextRequest | null } {
             digestTokens: 0,
             buildMs: 0,
           },
-          packedChunks: [],
-        } as unknown as ContextBundle;
+        });
       },
-      rebuildForAgent: () => ({}) as unknown as ContextBundle,
-    }) as unknown as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+      rebuildForAgent: () => makeContextBundle(),
+    }),
+  );
   _stageAssemblerDeps.readdir = async () => {
     throw new Error("ENOENT");
   };

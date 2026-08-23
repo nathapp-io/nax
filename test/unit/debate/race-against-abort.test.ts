@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { NaxError } from "@/errors";
 import * as debateModule from "@/debate";
+import { NaxError } from "@/errors";
 
 function getRaceAgainstAbort(): <T>(
   promise: Promise<T>,

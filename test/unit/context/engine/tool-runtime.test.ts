@@ -7,7 +7,7 @@ import { createContextToolRuntime, createSessionToolBudgets } from "@/context/en
 import type { ContextBundle } from "@/context/engine";
 import { appendScratchEntry, scratchFilePath } from "@/session";
 import type { ScratchEntry } from "@/session";
-import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeContextBundle, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 describe("createContextToolRuntime — slice acceptance", () => {
   test("contextToolRuntimeConfigSelector picks context, execution, project, quality", () => {
@@ -23,11 +23,10 @@ describe("createContextToolRuntime — slice acceptance", () => {
       project: undefined,
       quality: undefined,
     };
-    const emptyBundle: ContextBundle = {
+    const emptyBundle: ContextBundle = makeContextBundle({
       pushMarkdown: "",
       pullTools: [],
-      meta: { stage: "test", schemaVersion: 1, totalTokens: 0 },
-    } as unknown as ContextBundle;
+    });
     const story = { id: "S-001", workdir: "" } as Parameters<typeof createContextToolRuntime>[0]["story"];
     const runtime = createContextToolRuntime({
       bundle: emptyBundle,
@@ -49,7 +48,7 @@ describe("createContextToolRuntime — slice acceptance", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function makeBundleWithTool(maxCallsPerSession: number): ContextBundle {
-  return {
+  return makeContextBundle({
     pushMarkdown: "",
     pullTools: [
       {
@@ -60,8 +59,7 @@ function makeBundleWithTool(maxCallsPerSession: number): ContextBundle {
         maxTokensPerCall: 100,
       },
     ],
-    meta: { stage: "test", schemaVersion: 1, totalTokens: 0 },
-  } as unknown as ContextBundle;
+  });
 }
 
 const RUNTIME_CONFIG: ContextToolRuntimeConfig = {

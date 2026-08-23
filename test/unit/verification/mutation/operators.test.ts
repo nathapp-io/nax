@@ -71,9 +71,7 @@ describe("cmp-flip — strict equality must not be shredded (#1487)", () => {
   });
 
   test("=== flips only to !==", () => {
-    expect(applied(operator("typescript", "ts:cmp-flip"), "const x = a === b;")).toEqual([
-      "const x = a !== b;",
-    ]);
+    expect(applied(operator("typescript", "ts:cmp-flip"), "const x = a === b;")).toEqual(["const x = a !== b;"]);
   });
 
   test("a line mixing strict and loose equality mutates each independently", () => {
@@ -96,9 +94,7 @@ describe("cmp-flip — loose and relational operators", () => {
   });
 
   test("every occurrence of an operator on the line is flipped together", () => {
-    expect(applied(operator("go", "go:cmp-flip"), "if a == b && c == d {")).toEqual([
-      "if a != b && c != d {",
-    ]);
+    expect(applied(operator("go", "go:cmp-flip"), "if a == b && c == d {")).toEqual(["if a != b && c != d {"]);
   });
 
   test("a snippet with no comparison operator produces nothing", () => {
@@ -113,9 +109,9 @@ describe("cmp-flip — loose and relational operators", () => {
 
 describe("cmp-bracket-flip — bare > and < require whitespace on both sides", () => {
   test.each(["python", "go", "rust"])("%s flips a bare > to <", (language) => {
-    expect(applied(operator(language, `${language === "python" ? "py" : language}:cmp-bracket-flip`), "if a > b")).toEqual(
-      ["if a < b"],
-    );
+    expect(
+      applied(operator(language, `${language === "python" ? "py" : language}:cmp-bracket-flip`), "if a > b"),
+    ).toEqual(["if a < b"]);
   });
 
   test("a bare < flips to >", () => {
@@ -127,9 +123,7 @@ describe("cmp-bracket-flip — bare > and < require whitespace on both sides", (
   });
 
   test("a generic parameter list is not a comparison", () => {
-    expect(applied(operator("typescript", "ts:cmp-bracket-flip"), "let xs: Array<string> = [];")).toEqual(
-      [],
-    );
+    expect(applied(operator("typescript", "ts:cmp-bracket-flip"), "let xs: Array<string> = [];")).toEqual([]);
   });
 
   test(">= and <= are left to cmp-flip", () => {
@@ -178,9 +172,7 @@ describe("arith-flip — whitespace-guarded binary operators", () => {
   });
 
   test("a module specifier is not arithmetic", () => {
-    expect(applied(operator("typescript", "ts:arith-flip"), 'import { x } from "../config";')).toEqual(
-      [],
-    );
+    expect(applied(operator("typescript", "ts:arith-flip"), 'import { x } from "../config";')).toEqual([]);
   });
 
   test("a URL is not arithmetic", () => {

@@ -1,45 +1,38 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
-import { initLogger, resetLogger } from "@/logger";
 import type { LoadedHooksConfig } from "@/hooks";
+import { initLogger, resetLogger } from "@/logger";
 import type { PluginRegistry } from "@/plugins";
-import type { PRD, UserStory } from "@/prd/types";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import type { PRD, StoryStatus, UserStory } from "@/prd/types";
+import { cleanupTempDir, makePRD, makeStory as makeStoryBase, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeStory(
-  id: string,
-  dependencies: string[] = [],
-  status: "pending" | "passed" | "failed" | "completed" = "pending",
-): UserStory {
-  return {
+function makeStory(id: string, dependencies: string[] = [], status: StoryStatus = "pending"): UserStory {
+  return makeStoryBase({
     id,
     title: `Story ${id}`,
     description: "Test story",
     acceptanceCriteria: [`AC-1: ${id} feature works`],
-    tags: [],
     dependencies,
     status,
-    passes: status === "passed" || status === "completed",
-    escalations: [],
-    attempts: 0,
+    passes: status === "passed",
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
-  } as unknown as UserStory;
+  });
 }
 
 function makePrd(stories: UserStory[]): PRD {
-  return {
+  return makePRD({
     project: "test-project",
     feature: "test-feature",
     branchName: "feat/test",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     userStories: stories,
-  } as unknown as PRD;
+  });
 }
 
 let tmpDir: string;
@@ -71,8 +64,9 @@ describe("AC-1: runParallelBatch completed stories", () => {
     const origWorktree = _parallelBatchDeps.createWorktreeManager;
     const origMerge = _parallelBatchDeps.createMergeEngine;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
+    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createMergeEngine = async () =>
+      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: stories,
       merged: stories,
@@ -104,7 +98,6 @@ describe("AC-1: runParallelBatch completed stories", () => {
       _parallelBatchDeps.createMergeEngine = origMerge;
     }
   });
-
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -122,12 +115,19 @@ describe("AC-2: runParallelBatch failed stories", () => {
     const origWorktree = _parallelBatchDeps.createWorktreeManager;
     const origMerge = _parallelBatchDeps.createMergeEngine;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
+    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createMergeEngine = async () =>
+      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],
-      failed: [{ story: stories[0], error: "pipeline failed", pipelineResult: { success: false, finalAction: "fail", reason: "pipeline failed", context: failureContext } }],
+      failed: [
+        {
+          story: stories[0],
+          error: "pipeline failed",
+          pipelineResult: { success: false, finalAction: "fail", reason: "pipeline failed", context: failureContext },
+        },
+      ],
       totalCost: 0,
       mergeConflicts: [],
       storyCosts: new Map([["US-001", 0]]),
@@ -155,7 +155,6 @@ describe("AC-2: runParallelBatch failed stories", () => {
       _parallelBatchDeps.createMergeEngine = origMerge;
     }
   });
-
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -173,8 +172,9 @@ describe("AC-3: runParallelBatch merge conflicts", () => {
     const origMerge = _parallelBatchDeps.createMergeEngine;
     const origRectify = _parallelBatchDeps.rectifyConflictedStory;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
+    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createMergeEngine = async () =>
+      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],
@@ -207,7 +207,6 @@ describe("AC-3: runParallelBatch merge conflicts", () => {
       _parallelBatchDeps.rectifyConflictedStory = origRectify;
     }
   });
-
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -220,13 +219,17 @@ describe("AC-4: runParallelBatch per-story costs", () => {
 
     const stories = [makeStory("US-001"), makeStory("US-002")];
     const prd = makePrd(stories);
-    const storyCosts = new Map([["US-001", 0.5], ["US-002", 0.3]]);
+    const storyCosts = new Map([
+      ["US-001", 0.5],
+      ["US-002", 0.3],
+    ]);
     const origExecute = _parallelBatchDeps.executeParallelBatch;
     const origWorktree = _parallelBatchDeps.createWorktreeManager;
     const origMerge = _parallelBatchDeps.createMergeEngine;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
+    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createMergeEngine = async () =>
+      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: stories,
       merged: stories,
@@ -257,7 +260,6 @@ describe("AC-4: runParallelBatch per-story costs", () => {
       _parallelBatchDeps.createMergeEngine = origMerge;
     }
   });
-
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -270,13 +272,18 @@ describe("AC-5: runParallelBatch totalCost", () => {
 
     const stories = [makeStory("US-001"), makeStory("US-002"), makeStory("US-003")];
     const prd = makePrd(stories);
-    const storyCosts = new Map([["US-001", 0.5], ["US-002", 0.3], ["US-003", 0.2]]);
+    const storyCosts = new Map([
+      ["US-001", 0.5],
+      ["US-002", 0.3],
+      ["US-003", 0.2],
+    ]);
     const origExecute = _parallelBatchDeps.executeParallelBatch;
     const origWorktree = _parallelBatchDeps.createWorktreeManager;
     const origMerge = _parallelBatchDeps.createMergeEngine;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
+    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createMergeEngine = async () =>
+      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: stories,
       merged: stories,
@@ -306,5 +313,4 @@ describe("AC-5: runParallelBatch totalCost", () => {
       _parallelBatchDeps.createMergeEngine = origMerge;
     }
   });
-
 });

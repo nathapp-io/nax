@@ -4,7 +4,9 @@ import type { NaxRuntime } from "@/runtime";
 import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 let runtime: NaxRuntime | undefined;
-afterEach(async () => { await runtime?.close(); });
+afterEach(async () => {
+  await runtime?.close();
+});
 
 describe("operation timeout resolvers", () => {
   test("planInteractiveOp timeoutMs resolves from plan.timeoutSeconds", () => {

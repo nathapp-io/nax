@@ -11,20 +11,20 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { DiagnosisResult } from "@/acceptance";
-import type { Finding } from "@/findings";
-import { acFailureToFinding, acSentinelToFinding } from "@/findings";
-import type { FixCycle, FixCycleContext, FixCycleResult } from "@/findings";
+import { _diagnosisDeps } from "@/execution/lifecycle/acceptance-fix";
 import {
+  type AcceptanceLoopContext,
   _acceptanceFixCycleDeps,
   _acceptanceLoopDeps,
   _runAcceptanceTestsOnceDeps,
   runAcceptanceFixCycle,
   runAcceptanceLoop,
-  type AcceptanceLoopContext,
 } from "@/execution/lifecycle/acceptance-loop";
-import { _diagnosisDeps } from "@/execution/lifecycle/acceptance-fix";
-import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import type { Finding } from "@/findings";
+import { acFailureToFinding, acSentinelToFinding } from "@/findings";
+import type { FixCycle, FixCycleContext, FixCycleResult } from "@/findings";
 import type { PRD } from "@/prd";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -78,7 +78,7 @@ function makeCtx(): AcceptanceLoopContext {
     sessionManager: runtime.sessionManager,
     acceptanceTestPaths: [{ testPath: "/tmp/test.ts", packageDir: "/tmp/workdir" }],
     runtime,
-    abortSignal: undefined as unknown as AbortSignal,
+    abortSignal: new AbortController().signal,
   };
 }
 
@@ -191,8 +191,20 @@ describe("runAcceptanceFixCycle", () => {
     await runAcceptanceFixCycle(makeCtx(), makePrd(), { failedACs: [], testOutput: "" }, makeDiagnosis(), "", "");
 
     const sourceStrategy = capturedCycle!.strategies[0];
-    const sourceFinding: Finding = { source: "test-runner", severity: "error", category: "assertion-failure", message: "fail", fixTarget: "source" };
-    const testFinding: Finding = { source: "test-runner", severity: "error", category: "hook-failure", message: "fail", fixTarget: "test" };
+    const sourceFinding: Finding = {
+      source: "test-runner",
+      severity: "error",
+      category: "assertion-failure",
+      message: "fail",
+      fixTarget: "source",
+    };
+    const testFinding: Finding = {
+      source: "test-runner",
+      severity: "error",
+      category: "hook-failure",
+      message: "fail",
+      fixTarget: "test",
+    };
     expect(sourceStrategy.appliesTo(sourceFinding)).toBe(true);
     expect(sourceStrategy.appliesTo(testFinding)).toBe(false);
   });
@@ -207,8 +219,20 @@ describe("runAcceptanceFixCycle", () => {
     await runAcceptanceFixCycle(makeCtx(), makePrd(), { failedACs: [], testOutput: "" }, makeDiagnosis(), "", "");
 
     const testStrategy = capturedCycle!.strategies[1];
-    const testFinding: Finding = { source: "test-runner", severity: "error", category: "hook-failure", message: "fail", fixTarget: "test" };
-    const sourceFinding: Finding = { source: "test-runner", severity: "error", category: "assertion-failure", message: "fail", fixTarget: "source" };
+    const testFinding: Finding = {
+      source: "test-runner",
+      severity: "error",
+      category: "hook-failure",
+      message: "fail",
+      fixTarget: "test",
+    };
+    const sourceFinding: Finding = {
+      source: "test-runner",
+      severity: "error",
+      category: "assertion-failure",
+      message: "fail",
+      fixTarget: "source",
+    };
     expect(testStrategy.appliesTo(testFinding)).toBe(true);
     expect(testStrategy.appliesTo(sourceFinding)).toBe(false);
   });
@@ -250,7 +274,14 @@ describe("runAcceptanceFixCycle", () => {
       return resolvedCycleResult;
     }) as typeof _acceptanceFixCycleDeps.runFixCycle;
 
-    await runAcceptanceFixCycle(makeCtx(), makePrd(), { failedACs: [], testOutput: "" }, makeDiagnosis("test_bug"), "", "");
+    await runAcceptanceFixCycle(
+      makeCtx(),
+      makePrd(),
+      { failedACs: [], testOutput: "" },
+      makeDiagnosis("test_bug"),
+      "",
+      "",
+    );
 
     expect(capturedCycle?.verdict).toBe("test_bug");
   });
@@ -425,7 +456,9 @@ describe("runAcceptanceFixCycle", () => {
       exitReason: "max-attempts-per-strategy",
       exhaustedStrategy: "acceptance-source-fix",
     };
-    _acceptanceFixCycleDeps.runFixCycle = mock(async () => expectedResult) as typeof _acceptanceFixCycleDeps.runFixCycle;
+    _acceptanceFixCycleDeps.runFixCycle = mock(
+      async () => expectedResult,
+    ) as typeof _acceptanceFixCycleDeps.runFixCycle;
 
     const result = await runAcceptanceFixCycle(
       makeCtx(),
@@ -501,7 +534,10 @@ describe("strategy buildInput closures", () => {
       "/path/to/test.ts",
     );
 
-    const input = capturedCycle!.strategies[0].buildInput([], [makeIteration()], {} as never) as Record<string, unknown>;
+    const input = capturedCycle!.strategies[0].buildInput([], [makeIteration()], {} as never) as Record<
+      string,
+      unknown
+    >;
     expect(input.priorIterationsBlock).toContain("## Prior Iterations");
     expect(input.priorIterationsBlock).toContain("AC-1 failed");
   });
@@ -550,9 +586,19 @@ describe("strategy buildInput closures", () => {
       return resolvedCycleResult;
     }) as typeof _acceptanceFixCycleDeps.runFixCycle;
 
-    await runAcceptanceFixCycle(makeCtx(), makePrd(), { failedACs: ["AC-1"], testOutput: "" }, makeDiagnosis("test_bug"), "", "");
+    await runAcceptanceFixCycle(
+      makeCtx(),
+      makePrd(),
+      { failedACs: ["AC-1"], testOutput: "" },
+      makeDiagnosis("test_bug"),
+      "",
+      "",
+    );
 
-    const input = capturedCycle!.strategies[1].buildInput([], [makeIteration()], {} as never) as Record<string, unknown>;
+    const input = capturedCycle!.strategies[1].buildInput([], [makeIteration()], {} as never) as Record<
+      string,
+      unknown
+    >;
     expect(input.priorIterationsBlock).toContain("## Prior Iterations");
     expect(input.priorIterationsBlock).toContain("unchanged");
   });
@@ -568,8 +614,18 @@ describe("runAcceptanceLoop per-package fan-out", () => {
       return { iterations: [], finalFindings: [], exitReason: "resolved" };
     };
 
-    const apiPkg = { testPath: "/repo/apps/api/t.test.ts", packageDir: "/repo/apps/api", output: "api boom", failedACs: ["AC-1"] };
-    const webPkg = { testPath: "/repo/apps/web/t.test.ts", packageDir: "/repo/apps/web", output: "web boom", failedACs: ["AC-2"] };
+    const apiPkg = {
+      testPath: "/repo/apps/api/t.test.ts",
+      packageDir: "/repo/apps/api",
+      output: "api boom",
+      failedACs: ["AC-1"],
+    };
+    const webPkg = {
+      testPath: "/repo/apps/web/t.test.ts",
+      packageDir: "/repo/apps/web",
+      output: "web boom",
+      failedACs: ["AC-2"],
+    };
 
     // Stub the dynamically-imported acceptanceStage via _deps: first call reports both
     // failed packages, subsequent calls (final validation pass) pass.
@@ -646,9 +702,7 @@ describe("runAcceptanceLoop retry-index threading (#1424)", () => {
           failedACs: ["AC-1"],
           findings: [],
           testOutput: "boom",
-          failedPackages: [
-            { testPath: "/repo/t.test.ts", packageDir: "/repo", output: "boom", failedACs: ["AC-1"] },
-          ],
+          failedPackages: [{ testPath: "/repo/t.test.ts", packageDir: "/repo", output: "boom", failedACs: ["AC-1"] }],
         };
         return Promise.resolve({ action: "fail" as const });
       }
@@ -742,11 +796,12 @@ describe("US-003 rect: runAcceptanceTestsOnce propagates missing-target failures
     _runAcceptanceTestsOnceDeps.importAcceptanceStage = async () =>
       ({ acceptanceStage: { execute: stubbedExecute } }) as any;
 
-    _acceptanceFixCycleDeps.runFixCycle = async () => ({
-      iterations: [],
-      finalFindings: [],
-      exitReason: "resolved",
-    }) as any;
+    _acceptanceFixCycleDeps.runFixCycle = async () =>
+      ({
+        iterations: [],
+        finalFindings: [],
+        exitReason: "resolved",
+      }) as any;
 
     const origLoadContent = _acceptanceLoopDeps.loadAcceptanceTestContent;
     _acceptanceLoopDeps.loadAcceptanceTestContent = async () => [];

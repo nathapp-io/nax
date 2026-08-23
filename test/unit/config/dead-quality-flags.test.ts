@@ -19,8 +19,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { NaxError } from "@/errors";
 import { loadConfig } from "@/config";
+import { NaxError } from "@/errors";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const tempDirs: string[] = [];
