@@ -1,6 +1,6 @@
 {
-  "count": 262,
-  "updatedAt": "2026-08-23T03:05:03.256Z",
+  "count": 260,
+  "updatedAt": "2026-08-23T03:07:26.622Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": 1,
     "test/helpers/status-writer.ts": 1,
@@ -18,7 +18,6 @@
     "test/integration/operations/complete-empty-output-retry.test.ts": 6,
     "test/integration/cli/cli-routing-calibrate.test.ts": 2,
     "test/integration/pipeline/gating-preservation.test.ts": 1,
-    "test/unit/session/manager-pid-lifecycle.test.ts": 1,
     "test/unit/interaction/triggers-narrowed.test.ts": 2,
     "test/unit/interaction/telegram-timeout.test.ts": 1,
     "test/unit/interaction/interaction-network-failures.test.ts": 16,
@@ -83,7 +82,6 @@
     "test/unit/agents/manager-narrowed.test.ts": 1,
     "test/unit/agents/manager.test.ts": 3,
     "test/unit/agents/phase4-registry-cleanup.test.ts": 2,
-    "test/unit/agents/manager-complete.test.ts": 1,
     "test/unit/agents/model-resolution.test.ts": 4,
     "test/unit/agents/manager-abort.test.ts": 1,
     "test/unit/agents/acp/adapter.test.ts": 5,

@@ -30,18 +30,17 @@ describe("SessionManager PID lifecycle — configureRuntime", () => {
     });
 
     const registry = makeRegistry();
-    const registerSpy = mock((pid: number) => registry.register(pid));
-    const unregisterSpy = mock((pid: number) => registry.unregister(pid));
-    const patchedRegistry = {
-      ...registry,
-      register: registerSpy,
-      unregister: unregisterSpy,
-    } as unknown as PidRegistry;
+    const originalRegister = registry.register.bind(registry);
+    const originalUnregister = registry.unregister.bind(registry);
+    const registerSpy = mock<PidRegistry["register"]>((pid: number) => originalRegister(pid));
+    const unregisterSpy = mock<PidRegistry["unregister"]>((pid: number) => originalUnregister(pid));
+    registry.register = registerSpy;
+    registry.unregister = unregisterSpy;
 
     const sm = new SessionManager({ getAdapter: () => adapter });
     sm.configureRuntime({
       config: makeNaxConfig(),
-      pidRegistry: patchedRegistry,
+      pidRegistry: registry,
     });
 
     const modelDef = { model: "claude-3-5-sonnet-20241022", provider: "anthropic" } as never;

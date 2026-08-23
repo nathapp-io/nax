@@ -62,15 +62,14 @@ describe("AgentManager PID lifecycle — configureRuntime", () => {
 
     const m = new AgentManager(makeNaxConfig(), registry);
     const pidRegistry = new PidRegistry("/tmp/test-pid-manager");
-    const registerSpy = mock((pid: number) => pidRegistry.register(pid));
-    const unregisterSpy = mock((pid: number) => pidRegistry.unregister(pid));
-    const patchedRegistry = {
-      ...pidRegistry,
-      register: registerSpy,
-      unregister: unregisterSpy,
-    } as unknown as PidRegistry;
+    const originalRegister = pidRegistry.register.bind(pidRegistry);
+    const originalUnregister = pidRegistry.unregister.bind(pidRegistry);
+    const registerSpy = mock<PidRegistry["register"]>((pid: number) => originalRegister(pid));
+    const unregisterSpy = mock<PidRegistry["unregister"]>((pid: number) => originalUnregister(pid));
+    pidRegistry.register = registerSpy;
+    pidRegistry.unregister = unregisterSpy;
 
-    m.configureRuntime({ pidRegistry: patchedRegistry });
+    m.configureRuntime({ pidRegistry });
 
     await m.completeWithFallback("prompt", {
       modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
