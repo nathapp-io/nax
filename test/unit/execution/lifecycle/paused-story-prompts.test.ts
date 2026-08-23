@@ -11,6 +11,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { promptForPausedStories } from "@/execution/lifecycle/paused-story-prompts";
 import type { InteractionChain } from "@/interaction/chain";
 import type { PRD, UserStory } from "@/prd/types";
+import { makeInteractionChain } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -44,10 +45,10 @@ function makePrd(stories: UserStory[]): PRD {
 }
 
 function makeChain(action: string): InteractionChain {
-  return {
+  return makeInteractionChain({
     prompt: mock(async () => ({ id: "ix-1", action, createdAt: Date.now() })),
     applyFallback: mock((_response: unknown, _fallback: string) => action),
-  } as unknown as InteractionChain;
+  });
 }
 
 // ---------------------------------------------------------------------------
