@@ -18,6 +18,7 @@ import { join } from "node:path";
 import type { DecomposedStory } from "@/agents/shared/types-extended";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import type { DebateResult } from "@/debate/types";
+import type { PRD, UserStory } from "@/prd";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 

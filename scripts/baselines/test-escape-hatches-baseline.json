@@ -7,7 +7,7 @@
     "anyType": 1890,
     "looseCast": 2011
   },
-  "updatedAt": "2026-08-23T06:35:41.318Z",
+  "updatedAt": "2026-08-23T06:38:26.345Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1

@@ -8,6 +8,12 @@
  * Spying on the globals (rather than injecting a timer dep) keeps the assertion
  * out of production signatures and works for module-local helpers.
  */
+/**
+ * DOM-lib `TimerHandler` isn't available with `lib: ["ESNext"]`; every caller
+ * passes a plain callback (or a string), so mirror that shape locally.
+ */
+type TimerHandler = string | ((...args: unknown[]) => void);
+
 export interface TimerSpyResult<T> {
   result: T;
   /** Timer ids armed during the call. */

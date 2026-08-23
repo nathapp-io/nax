@@ -5,8 +5,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import type { DecomposedStory } from "@/agents/shared/types-extended";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import { NaxError } from "@/errors";
+import type { PRD, UserStory } from "@/prd";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { makeMockAgentManager, makeNaxConfig, makePRD } from "@test/helpers";
 

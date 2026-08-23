@@ -15,6 +15,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { IAgentManager } from "@/agents";
 import type { AgentRunRequest } from "@/agents/manager-types";
 import type { AgentResult } from "@/agents/types";
 import type { AdapterFailure } from "@/context/engine";

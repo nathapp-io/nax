@@ -13,6 +13,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { DecomposedStory } from "@/agents/shared/types-extended";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
+import type { PRD, UserStory } from "@/prd";
 import { makeTempDir } from "@test/helpers";
 import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 

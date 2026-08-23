@@ -21,6 +21,7 @@
  * The helper registers `beforeEach` (save) and `afterEach` (restore) inside
  * the enclosing `describe` block, so it scopes naturally to that block.
  */
+import { afterEach, beforeEach } from "bun:test";
 
 /**
  * Save and restore injectable deps around each test in the enclosing describe.
