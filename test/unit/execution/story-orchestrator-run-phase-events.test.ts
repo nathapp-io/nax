@@ -68,7 +68,9 @@ describe("runPhase — story:phase:completed event emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const received: StoryPhaseCompletedEvent[] = [];
-    const unsub = pipelineEventBus.on("story:phase:completed", (e) => received.push(e));
+    const unsub = pipelineEventBus.on("story:phase:completed", (e) => {
+      received.push(e);
+    });
 
     const ctx = makeCallCtx();
     await runPhase(ctx, makeSlot("verifier"), {}, {});
@@ -82,7 +84,9 @@ describe("runPhase — story:phase:completed event emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const received: StoryPhaseCompletedEvent[] = [];
-    const unsub = pipelineEventBus.on("story:phase:completed", (e) => received.push(e));
+    const unsub = pipelineEventBus.on("story:phase:completed", (e) => {
+      received.push(e);
+    });
 
     const ctx = makeCallCtx();
     await runPhase(ctx, makeSlot("lint-check"), {}, {});
@@ -96,7 +100,9 @@ describe("runPhase — story:phase:completed event emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const received: StoryPhaseCompletedEvent[] = [];
-    const unsub = pipelineEventBus.on("story:phase:completed", (e) => received.push(e));
+    const unsub = pipelineEventBus.on("story:phase:completed", (e) => {
+      received.push(e);
+    });
 
     const ctx = makeCallCtx();
     await runPhase(ctx, makeSlot("verifier"), {}, {});
@@ -110,7 +116,9 @@ describe("runPhase — story:phase:completed event emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const received: StoryPhaseCompletedEvent[] = [];
-    const unsub = pipelineEventBus.on("story:phase:completed", (e) => received.push(e));
+    const unsub = pipelineEventBus.on("story:phase:completed", (e) => {
+      received.push(e);
+    });
 
     const ctx = makeCallCtx();
     await runPhase(ctx, makeSlot("verifier"), {}, {});
@@ -124,7 +132,9 @@ describe("runPhase — story:phase:completed event emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const received: StoryPhaseCompletedEvent[] = [];
-    const unsub = pipelineEventBus.on("story:phase:completed", (e) => received.push(e));
+    const unsub = pipelineEventBus.on("story:phase:completed", (e) => {
+      received.push(e);
+    });
 
     const ctx = makeCallCtx();
     await runPhase(ctx, makeSlot("lint-check"), {}, {});
@@ -140,7 +150,9 @@ describe("runPhase — story:phase:completed event emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const received: StoryPhaseCompletedEvent[] = [];
-    const unsub = pipelineEventBus.on("story:phase:completed", (e) => received.push(e));
+    const unsub = pipelineEventBus.on("story:phase:completed", (e) => {
+      received.push(e);
+    });
 
     const ctx = makeCallCtx();
     await expect(runPhase(ctx, makeSlot("verifier"), {}, {})).rejects.toThrow("boom");
@@ -167,7 +179,9 @@ describe("runPhase — story:phase:completed event emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const received: StoryPhaseCompletedEvent[] = [];
-    const unsub = pipelineEventBus.on("story:phase:completed", (e) => received.push(e));
+    const unsub = pipelineEventBus.on("story:phase:completed", (e) => {
+      received.push(e);
+    });
 
     const ctx = makeCallCtx();
     await runPhase(ctx, makeSlot("verifier"), {}, {});
@@ -181,7 +195,9 @@ describe("runPhase — story:phase:completed event emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const received: StoryPhaseCompletedEvent[] = [];
-    const unsub = pipelineEventBus.on("story:phase:completed", (e) => received.push(e));
+    const unsub = pipelineEventBus.on("story:phase:completed", (e) => {
+      received.push(e);
+    });
 
     const ctx = makeCallCtx();
     await runPhase(ctx, makeSlot("verifier"), {}, {});
@@ -199,7 +215,9 @@ describe("runPhase — story:phase:completed event emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const received: StoryPhaseCompletedEvent[] = [];
-    const unsub = pipelineEventBus.on("story:phase:completed", (e) => received.push(e));
+    const unsub = pipelineEventBus.on("story:phase:completed", (e) => {
+      received.push(e);
+    });
 
     const ctx = makeCallCtx();
     await runPhase(ctx, makeSlot("full-suite-gate"), {}, {});
@@ -221,7 +239,9 @@ describe("runPhase — story:phase:completed event emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const received: StoryPhaseCompletedEvent[] = [];
-    const unsub = pipelineEventBus.on("story:phase:completed", (e) => received.push(e));
+    const unsub = pipelineEventBus.on("story:phase:completed", (e) => {
+      received.push(e);
+    });
 
     const ctx = makeCallCtx();
     await runPhase(ctx, makeSlot("full-suite-gate"), {}, {});
@@ -238,7 +258,9 @@ describe("runPhase — story:phase:completed event emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const received: StoryPhaseCompletedEvent[] = [];
-    const unsub = pipelineEventBus.on("story:phase:completed", (e) => received.push(e));
+    const unsub = pipelineEventBus.on("story:phase:completed", (e) => {
+      received.push(e);
+    });
 
     const ctx = makeCallCtx();
     await runPhase(ctx, makeSlot("semantic-review"), {}, {});
@@ -272,7 +294,9 @@ describe("runPhase — story:phase:completed event emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const received: StoryPhaseCompletedEvent[] = [];
-    const unsub = pipelineEventBus.on("story:phase:completed", (e) => received.push(e));
+    const unsub = pipelineEventBus.on("story:phase:completed", (e) => {
+      received.push(e);
+    });
 
     const ctx: CallContext = {
       runtime,
@@ -301,7 +325,9 @@ describe("runPhase — story:phase:completed event emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const received: StoryPhaseCompletedEvent[] = [];
-    const unsub = pipelineEventBus.on("story:phase:completed", (e) => received.push(e));
+    const unsub = pipelineEventBus.on("story:phase:completed", (e) => {
+      received.push(e);
+    });
 
     const ctx = makeCallCtx();
     await runPhase(ctx, makeSlot("verifier"), {}, {});

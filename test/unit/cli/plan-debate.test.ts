@@ -20,7 +20,7 @@ import type { NaxConfig } from "@/config";
 import type { DebateResult } from "@/debate/types";
 import type { PRD } from "@/prd/types";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import { makeDebateRunner, makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -272,7 +272,7 @@ describe("planCommand — debate integration (US-004)", () => {
 
   test("AC1: createDebateRunner is called when debate.enabled=true and stages.plan.enabled=true", async () => {
     const runPlanMock = mock(async () => DEBATE_PASSED_RESULT);
-    _planDeps.createDebateRunner = mock(() => ({ runPlan: runPlanMock }));
+    _planDeps.createDebateRunner = mock(() => makeDebateRunner({ runPlan: runPlanMock }));
 
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
       from: "/spec.md",
@@ -285,7 +285,7 @@ describe("planCommand — debate integration (US-004)", () => {
 
   test("AC1: DebateSession.runPlan() is called with the planning prompt and options", async () => {
     const runPlanMock = mock(async () => DEBATE_PASSED_RESULT);
-    _planDeps.createDebateRunner = mock(() => ({ runPlan: runPlanMock }));
+    _planDeps.createDebateRunner = mock(() => makeDebateRunner({ runPlan: runPlanMock }));
 
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
       from: "/spec.md",
@@ -332,9 +332,7 @@ describe("planCommand — debate integration (US-004)", () => {
       }),
     );
 
-    _planDeps.createDebateRunner = mock(() => ({
-      runPlan: mock(async () => DEBATE_PASSED_RESULT),
-    }));
+    _planDeps.createDebateRunner = mock(() => makeDebateRunner({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
 
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
       from: "/spec.md",
@@ -347,7 +345,7 @@ describe("planCommand — debate integration (US-004)", () => {
 
   test("AC1: debate fires in interactive mode (no --auto flag) when debate.enabled=true", async () => {
     const runPlanMock = mock(async () => DEBATE_PASSED_RESULT);
-    _planDeps.createDebateRunner = mock(() => ({ runPlan: runPlanMock }));
+    _planDeps.createDebateRunner = mock(() => makeDebateRunner({ runPlan: runPlanMock }));
     // No auto: true — interactive mode
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
       from: "/spec.md",
@@ -482,9 +480,7 @@ describe("planCommand — debate integration (US-004)", () => {
       adapterPlan();
     });
 
-    _planDeps.createDebateRunner = mock(() => ({
-      runPlan: mock(async () => DEBATE_FAILED_RESULT),
-    }));
+    _planDeps.createDebateRunner = mock(() => makeDebateRunner({ runPlan: mock(async () => DEBATE_FAILED_RESULT) }));
 
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
       from: "/spec.md",
@@ -500,9 +496,7 @@ describe("planCommand — debate integration (US-004)", () => {
       adapterPlan();
     });
 
-    _planDeps.createDebateRunner = mock(() => ({
-      runPlan: mock(async () => DEBATE_FAILED_RESULT),
-    }));
+    _planDeps.createDebateRunner = mock(() => makeDebateRunner({ runPlan: mock(async () => DEBATE_FAILED_RESULT) }));
 
     await expect(
       planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
@@ -531,9 +525,7 @@ describe("planCommand — debate integration (US-004)", () => {
     // outputPath as if the PRD on disk were valid — silent contract violation.
 
     // Debate always fails so the fallback callOp path is exercised.
-    _planDeps.createDebateRunner = mock(() => ({
-      runPlan: mock(async () => DEBATE_FAILED_RESULT),
-    }));
+    _planDeps.createDebateRunner = mock(() => makeDebateRunner({ runPlan: mock(async () => DEBATE_FAILED_RESULT) }));
 
     // Force the fallback callOp to throw so the catch(err) recovery block is entered.
     _planDeps.createRuntime = mock(() =>
