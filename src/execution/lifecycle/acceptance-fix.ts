@@ -14,6 +14,7 @@ import { NaxError } from "@/errors";
 import type { FixTarget } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import { callOp as _callOp, acceptanceDiagnoseOp } from "@/operations";
+import type { AcceptanceDiagnoseInput, AcceptanceDiagnoseOutput } from "@/operations/acceptance-diagnose";
 import type { CallContext } from "@/operations/types";
 import { isTestLevelFailure } from "./acceptance-helpers";
 import type { AcceptanceLoopContext } from "./acceptance-loop";
@@ -52,8 +53,19 @@ export interface ResolveAcceptanceDiagnosisOptions {
 }
 
 /** Injectable dependencies for resolveAcceptanceDiagnosis. */
-export const _diagnosisDeps = {
-  callOp: _callOp as typeof _callOp,
+export const _diagnosisDeps: {
+  /**
+   * Monomorphic on purpose: this module dispatches exactly one op, so the
+   * inferred generic signature over-stated the seam and no stub could satisfy
+   * it without a cast (#1514 callop-seam).
+   */
+  callOp: (
+    ctx: CallContext,
+    op: typeof acceptanceDiagnoseOp,
+    input: AcceptanceDiagnoseInput,
+  ) => Promise<AcceptanceDiagnoseOutput>;
+} = {
+  callOp: _callOp,
 };
 
 /**

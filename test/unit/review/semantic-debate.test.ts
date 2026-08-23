@@ -20,6 +20,7 @@ import type { SemanticReviewConfig } from "@/review/types";
 import { makeDebateRunner, makeMockAgentManager, makeSpawn } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
 import { makeNaxConfig } from "@test/helpers";
+import { makeSemanticOutput } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -372,7 +373,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
   test("ref mode + requote enabled skips debate and uses the normal sessioned semantic path", async () => {
     const createDebateMock = mock(() => makeDebateRunner({ run: mock(async () => DEBATE_MAJORITY_PASS_RESULT) }));
     _semanticDeps.createDebateRunner = createDebateMock;
-    _semanticDeps.callOp = mock(async () => ({ passed: true, findings: [] }));
+    _semanticDeps.callOp = mock(async () => makeSemanticOutput({ passed: true, findings: [] }));
 
     const agentManager = makeAgentManager(PROPOSAL_PASS);
     const runtime = makeMockRuntime({ agentManager });

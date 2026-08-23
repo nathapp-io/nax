@@ -19,6 +19,7 @@ import type { SemanticReviewConfig } from "@/review/types";
 import {
   makeMockAgentManager,
   makeMockRuntime,
+  makeSemanticOutput,
   makeSessionManager,
   makeSpawn,
   makeTestRuntime,
@@ -139,10 +140,7 @@ describe("runSemanticReview — JSON retry outcomes", () => {
   afterEach(restoreAllDeps);
 
   test("returns success when callOp returns valid findings", async () => {
-    _semanticDeps.callOp = mock(async () => ({
-      passed: true,
-      findings: [],
-    }));
+    _semanticDeps.callOp = mock(async () => makeSemanticOutput({ passed: true, findings: [] }));
     const auditCalls: unknown[] = [];
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({
@@ -173,11 +171,7 @@ describe("runSemanticReview — JSON retry outcomes", () => {
   });
 
   test("returns fail-open when callOp returns failOpen", async () => {
-    _semanticDeps.callOp = mock(async () => ({
-      passed: true,
-      findings: [],
-      failOpen: true,
-    }));
+    _semanticDeps.callOp = mock(async () => makeSemanticOutput({ passed: true, findings: [], failOpen: true }));
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
@@ -196,11 +190,7 @@ describe("runSemanticReview — JSON retry outcomes", () => {
   });
 
   test("returns failure when callOp returns looksLikeFail", async () => {
-    _semanticDeps.callOp = mock(async () => ({
-      passed: false,
-      findings: [],
-      looksLikeFail: true,
-    }));
+    _semanticDeps.callOp = mock(async () => makeSemanticOutput({ passed: false, findings: [], looksLikeFail: true }));
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
@@ -218,20 +208,22 @@ describe("runSemanticReview — JSON retry outcomes", () => {
   });
 
   test("returns failure with blocking findings when callOp returns findings", async () => {
-    _semanticDeps.callOp = mock(async () => ({
-      passed: false,
-      findings: [
-        {
-          severity: "error",
-          file: "src/workdir.ts",
-          line: 1,
-          issue: "Bug",
-          suggestion: "Fix",
-          acQuote: "accepts workdir, storyGitRef",
-          acIndex: 1,
-        },
-      ],
-    }));
+    _semanticDeps.callOp = mock(async () =>
+      makeSemanticOutput({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            file: "src/workdir.ts",
+            line: 1,
+            issue: "Bug",
+            suggestion: "Fix",
+            acQuote: "accepts workdir, storyGitRef",
+            acIndex: 1,
+          },
+        ],
+      }),
+    );
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
@@ -288,7 +280,7 @@ describe("runSemanticReview — logging", () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    _semanticDeps.callOp = mock(async () => ({ passed: true, findings: [] }));
+    _semanticDeps.callOp = mock(async () => makeSemanticOutput({ passed: true, findings: [] }));
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
@@ -310,7 +302,7 @@ describe("runSemanticReview — logging", () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    _semanticDeps.callOp = mock(async () => ({ passed: true, findings: [], failOpen: true }));
+    _semanticDeps.callOp = mock(async () => makeSemanticOutput({ passed: true, findings: [], failOpen: true }));
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
@@ -332,7 +324,7 @@ describe("runSemanticReview — logging", () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    _semanticDeps.callOp = mock(async () => ({ passed: false, findings: [], looksLikeFail: true }));
+    _semanticDeps.callOp = mock(async () => makeSemanticOutput({ passed: false, findings: [], looksLikeFail: true }));
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
@@ -354,7 +346,7 @@ describe("runSemanticReview — logging", () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    _semanticDeps.callOp = mock(async () => ({ passed: true, findings: [] }));
+    _semanticDeps.callOp = mock(async () => makeSemanticOutput({ passed: true, findings: [] }));
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 

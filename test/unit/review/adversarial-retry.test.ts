@@ -13,6 +13,7 @@ import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { AdversarialReviewConfig } from "@/review/types";
 import type { SemanticStory } from "@/review/types";
 import { makeMockAgentManager, makeSpawn } from "@test/helpers";
+import { makeAdversarialOutput } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -130,10 +131,7 @@ describe("runAdversarialReview — JSON retry outcomes", () => {
   afterEach(restoreAllDeps);
 
   test("returns success when callOp returns valid findings", async () => {
-    _adversarialDeps.callOp = mock(async () => ({
-      passed: true,
-      findings: [],
-    }));
+    _adversarialDeps.callOp = mock(async () => makeAdversarialOutput({ passed: true, findings: [] }));
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
@@ -151,11 +149,7 @@ describe("runAdversarialReview — JSON retry outcomes", () => {
   });
 
   test("returns fail-open when callOp returns failOpen", async () => {
-    _adversarialDeps.callOp = mock(async () => ({
-      passed: true,
-      findings: [],
-      failOpen: true,
-    }));
+    _adversarialDeps.callOp = mock(async () => makeAdversarialOutput({ passed: true, findings: [], failOpen: true }));
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
@@ -174,11 +168,9 @@ describe("runAdversarialReview — JSON retry outcomes", () => {
   });
 
   test("returns failure when callOp returns looksLikeFail", async () => {
-    _adversarialDeps.callOp = mock(async () => ({
-      passed: false,
-      findings: [],
-      looksLikeFail: true,
-    }));
+    _adversarialDeps.callOp = mock(async () =>
+      makeAdversarialOutput({ passed: false, findings: [], looksLikeFail: true }),
+    );
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
@@ -196,21 +188,23 @@ describe("runAdversarialReview — JSON retry outcomes", () => {
   });
 
   test("returns failure with blocking findings when callOp returns findings", async () => {
-    _adversarialDeps.callOp = mock(async () => ({
-      passed: false,
-      findings: [
-        {
-          severity: "error",
-          file: "src/log.ts",
-          line: 1,
-          issue: "Bug",
-          suggestion: "Fix",
-          acQuote: "can log in",
-          acIndex: 1,
-          verifiedBy: { file: "src/log.ts", observed: "bug stub" },
-        },
-      ],
-    }));
+    _adversarialDeps.callOp = mock(async () =>
+      makeAdversarialOutput({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            file: "src/log.ts",
+            line: 1,
+            issue: "Bug",
+            suggestion: "Fix",
+            acQuote: "can log in",
+            acIndex: 1,
+            verifiedBy: { file: "src/log.ts", observed: "bug stub" },
+          },
+        ],
+      }),
+    );
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
@@ -229,10 +223,7 @@ describe("runAdversarialReview — JSON retry outcomes", () => {
   });
 
   test("passes resolver-derived testGlobs and refExcludePatterns to callOp input", async () => {
-    const callOpMock = mock(async () => ({
-      passed: true,
-      findings: [],
-    }));
+    const callOpMock = mock(async () => makeAdversarialOutput({ passed: true, findings: [] }));
     _adversarialDeps.callOp = callOpMock;
 
     const agentManager = makeAgentManager(PASSING_RESPONSE);
@@ -302,7 +293,7 @@ describe("runAdversarialReview — logging", () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    _adversarialDeps.callOp = mock(async () => ({ passed: true, findings: [] }));
+    _adversarialDeps.callOp = mock(async () => makeAdversarialOutput({ passed: true, findings: [] }));
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
@@ -324,7 +315,7 @@ describe("runAdversarialReview — logging", () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    _adversarialDeps.callOp = mock(async () => ({ passed: true, findings: [], failOpen: true }));
+    _adversarialDeps.callOp = mock(async () => makeAdversarialOutput({ passed: true, findings: [], failOpen: true }));
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
@@ -346,7 +337,9 @@ describe("runAdversarialReview — logging", () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    _adversarialDeps.callOp = mock(async () => ({ passed: false, findings: [], looksLikeFail: true }));
+    _adversarialDeps.callOp = mock(async () =>
+      makeAdversarialOutput({ passed: false, findings: [], looksLikeFail: true }),
+    );
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 
@@ -368,7 +361,7 @@ describe("runAdversarialReview — logging", () => {
     const logger = makeLogger();
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    _adversarialDeps.callOp = mock(async () => ({ passed: true, findings: [] }));
+    _adversarialDeps.callOp = mock(async () => makeAdversarialOutput({ passed: true, findings: [] }));
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });
 

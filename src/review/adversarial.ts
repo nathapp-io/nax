@@ -26,9 +26,10 @@ import type { ContextBundle } from "../context/engine";
 import { NaxError } from "../errors";
 import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
-import type { AdversarialReviewOutput } from "../operations/adversarial-review";
+import type { AdversarialReviewInput, AdversarialReviewOutput } from "../operations/adversarial-review";
 import { adversarialReviewOp } from "../operations/adversarial-review";
 import { callOp as _callOp } from "../operations/call";
+import type { CallContext } from "../operations/types";
 import type { NaxRuntime } from "../runtime";
 import type { ResolvedTestPatterns } from "../test-runners";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
@@ -53,7 +54,20 @@ import { writeReviewAudit } from "./review-audit";
 import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
 
 /** Injectable dependencies for adversarial.ts — allows tests to mock without mock.module() */
-export const _adversarialDeps = {
+export const _adversarialDeps: {
+  writeReviewAudit: typeof writeReviewAudit;
+  /**
+   * Monomorphic on purpose: this module dispatches exactly one op, so the
+   * inferred generic signature over-stated the seam and no stub could satisfy
+   * it without a cast (#1514 callop-seam).
+   */
+  callOp: (
+    ctx: CallContext,
+    op: typeof adversarialReviewOp,
+    input: AdversarialReviewInput,
+  ) => Promise<AdversarialReviewOutput>;
+  collectDiffFileList: typeof _collectDiffFileList;
+} = {
   writeReviewAudit,
   callOp: _callOp,
   collectDiffFileList: _collectDiffFileList,
