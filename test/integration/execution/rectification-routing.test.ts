@@ -220,7 +220,7 @@ describe("AC2.5: rectification routing — gate failure halts loop, gate finding
     // runFixCycle must have been called (gate findings are present)
     expect(capturedCycle).not.toBeNull();
 
-    const cycle = capturedCycle as unknown as FixCycle<Finding>;
+    const cycle = capturedCycle!;
 
     // AC2.5a: exactly 6 findings (gate findings, not semantic)
     expect(cycle.findings).toHaveLength(6);
@@ -302,7 +302,7 @@ describe("AC3.8: verifier op dispatched during initial run and re-dispatched dur
     }) as typeof _storyOrchestratorDeps.callOp;
 
     // Invoke validate with autofix-implementer strategiesRun
-    await (capturedCycle as unknown as FixCycle<Finding>).validate(capturedCtx as unknown as FixCycleContext, {
+    await capturedCycle!.validate(capturedCtx!, {
       mode: "full",
       strategiesRun: ["autofix-implementer"],
     });
@@ -374,7 +374,7 @@ describe("AC3.9: after autofix-implementer iteration, full-suite-gate and semant
     }) as typeof _storyOrchestratorDeps.callOp;
 
     // Simulate: after an autofix-implementer iteration, call validate
-    await (capturedCycle as unknown as FixCycle<Finding>).validate(capturedCtx as unknown as FixCycleContext, {
+    await capturedCycle!.validate(capturedCtx!, {
       mode: "full",
       strategiesRun: ["autofix-implementer"],
     });

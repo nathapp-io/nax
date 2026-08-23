@@ -12,7 +12,7 @@ import { mock } from "bun:test";
 import type { FixCycle, FixCycleContext, FixStrategy } from "@/findings";
 import type { Finding } from "@/findings";
 import type { CallOpFn } from "@/findings/cycle";
-import { makeMockAgentManager, makeNaxConfig } from "@test/helpers";
+import { makeMockCallContext } from "@test/helpers";
 
 export function makeFinding(overrides: Partial<Finding> & Pick<Finding, "source" | "message">): Finding {
   return { severity: "error", category: "test", ...overrides };
@@ -28,20 +28,8 @@ export const typecheckC = makeFinding({
 });
 
 export function makeCtx(): FixCycleContext {
-  const config = makeNaxConfig();
-  return {
-    runtime: {
-      configLoader: { current: () => config },
-      agentManager: makeMockAgentManager(),
-      sessionManager: {} as FixCycleContext["runtime"]["sessionManager"],
-      packages: { resolve: () => ({ select: () => config }) } as unknown as FixCycleContext["runtime"]["packages"],
-      projectDir: "/tmp/test",
-    } as unknown as FixCycleContext["runtime"],
-    packageView: { select: () => config } as unknown as FixCycleContext["packageView"],
-    packageDir: "/tmp/test",
-    storyId: "story-1",
-    agentName: "claude",
-  };
+  const ctx = makeMockCallContext({ storyId: "story-1" });
+  return { ...ctx, storyId: "story-1" };
 }
 
 export const noopOp = {

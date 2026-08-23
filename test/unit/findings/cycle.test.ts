@@ -721,7 +721,7 @@ describe("runFixCycle — exclusive strategy exhausted with uncapped companion",
       validateCall++;
       // Short-circuit on first lite-validate (mechanical fix ran but couldn't fix);
       // resolve on second full-validate (LLM fix succeeded).
-      if (validateCall === 1) return { findings: [lintA], shortCircuited: true } as unknown as Finding[];
+      if (validateCall === 1) return { findings: [lintA], shortCircuited: true };
       return [];
     });
 
@@ -741,7 +741,7 @@ describe("runFixCycle — exclusive strategy exhausted with uncapped companion",
       appliesTo: (f) => f.source === "lint",
     });
     const validateResult: ValidateResult<Finding> = { findings: [lintA], shortCircuited: true };
-    const cycle = makeCycle([lintA], [exclusiveOnly], async () => validateResult as unknown as Finding[]);
+    const cycle = makeCycle([lintA], [exclusiveOnly], async () => validateResult);
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
       callOp: makeCallOpMock(),
@@ -759,7 +759,7 @@ describe("runFixCycle — ValidateResult short-circuit flag", () => {
     // validate signals that it short-circuited (a phase failed); runFixCycle must NOT classify this as "resolved"
     const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
     const validateResult: ValidateResult<Finding> = { findings: [], shortCircuited: true };
-    const cycle = makeCycle([lintA], [strategy], async () => validateResult as unknown as Finding[]);
+    const cycle = makeCycle([lintA], [strategy], async () => validateResult);
 
     const result = await runFixCycle(cycle, makeCtx(), "sc-cycle", {
       callOp: makeCallOpMock(),
@@ -773,7 +773,7 @@ describe("runFixCycle — ValidateResult short-circuit flag", () => {
     // validate completed without short-circuiting; empty findings should still be "resolved"
     const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
     const validateResult: ValidateResult<Finding> = { findings: [], shortCircuited: false };
-    const cycle = makeCycle([lintA], [strategy], async () => validateResult as unknown as Finding[]);
+    const cycle = makeCycle([lintA], [strategy], async () => validateResult);
 
     const result = await runFixCycle(cycle, makeCtx(), "sc-cycle", {
       callOp: makeCallOpMock(),
@@ -847,7 +847,7 @@ describe("runFixCycle — iteration-completed log emission", () => {
     const mockLogger = makeLogger();
     const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
     const validateResult: ValidateResult<Finding> = { findings: [lintA], shortCircuited: true };
-    const cycle = makeCycle([lintA], [strategy], async () => validateResult as unknown as Finding[]);
+    const cycle = makeCycle([lintA], [strategy], async () => validateResult);
 
     const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
       callOp: makeCallOpMock(),

@@ -130,7 +130,9 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
 
     await runRectification(ctx, state, {}, phaseOutputs, overrides);
     failGateOnly();
-    return { cycle: cycle as unknown as FixCycle<Finding>, cycleCtx: cycleCtx as unknown as FixCycleContext };
+    expect(cycle).not.toBeNull();
+    expect(cycleCtx).not.toBeNull();
+    return { cycle: cycle!, cycleCtx: cycleCtx! };
   }
 
   test("US-002 production composition: no-progress reason outranks count-increase", async () => {
@@ -167,7 +169,8 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
       startedAt: "2026-01-01T00:00:00.000Z",
       finishedAt: "2026-01-01T00:00:01.000Z",
     }));
-    const reason = (capturedCycle as unknown as FixCycle<Finding>).strategies[0]?.bailWhen?.(iterations);
+    expect(capturedCycle).not.toBeNull();
+    const reason = capturedCycle!.strategies[0]?.bailWhen?.(iterations);
     expect(reason).toContain("no finding resolved");
   });
 
@@ -238,7 +241,9 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
     );
     failGateOnly();
 
-    const result = await (cycle as unknown as FixCycle<Finding>).validate(cycleCtx as unknown as FixCycleContext, {
+    expect(cycle).not.toBeNull();
+    expect(cycleCtx).not.toBeNull();
+    const result = await cycle!.validate(cycleCtx!, {
       mode: "full",
       strategiesRun: ["autofix-implementer"],
     });

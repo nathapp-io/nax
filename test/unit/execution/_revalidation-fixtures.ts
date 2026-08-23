@@ -54,22 +54,22 @@ export const mockTypecheckCheckOp = makePhaseOp("typecheck-check", "verify", "ve
 export const mockSemanticReviewOp = makePhaseOp("semantic-review", "review", "reviewer-semantic");
 export const mockAdversarialReviewOp = makePhaseOp("adversarial-review", "review", "reviewer-adversarial");
 
-export const ADVISORY = {
+export const ADVISORY: Finding = {
   source: "adversarial-review",
   severity: "warning",
   category: "style",
   message: "advisory — seeds the nbf pass",
-} as unknown as Finding;
+};
 
 /** The regression a rectification pass introduces: a test-runner failure with a stable identity. */
-export const GATE_FAILURE = {
+export const GATE_FAILURE: Finding = {
   source: "test-runner",
   severity: "error",
   category: "",
   message: "the regression the nbf pass introduced",
   file: "test/integration/tdd/story-orchestrator-verdict.test.ts",
   rule: "verifier session fails",
-} as unknown as Finding;
+};
 
 /** Identity key for {@link GATE_FAILURE}, matching `gateFindingKey`. */
 export const GATE_FAILURE_KEY = `${GATE_FAILURE.file}::${GATE_FAILURE.rule}`;

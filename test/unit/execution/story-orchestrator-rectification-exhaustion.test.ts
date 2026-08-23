@@ -381,7 +381,7 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
 
     // Gate findings flow through to the cycle — verifier never ran so carve-out doesn't fire.
     expect(capturedCycle).not.toBeNull();
-    const findings = (capturedCycle as unknown as FixCycle<Finding>).findings;
+    const findings = capturedCycle!.findings;
     const hasTestRunnerFinding = findings.some((f) => f.source === "test-runner");
     expect(hasTestRunnerFinding).toBe(true);
   });
@@ -414,7 +414,7 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
     // phaseOutputs[verifier] is undefined (verifier never ran), so the cross-iteration
     // carve-out never fires. Gate findings flow to cycle unfiltered.
     expect(capturedCycle).not.toBeNull();
-    const findings = (capturedCycle as unknown as FixCycle<Finding>).findings;
+    const findings = capturedCycle!.findings;
     const hasTestRunnerFinding = findings.some((f) => f.source === "test-runner");
     expect(hasTestRunnerFinding).toBe(true);
   });
@@ -441,7 +441,7 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
     await plan.run();
 
     expect(capturedCycle).not.toBeNull();
-    const findings = (capturedCycle as unknown as FixCycle<Finding>).findings;
+    const findings = capturedCycle!.findings;
     const hasTestRunnerFinding = findings.some((f) => f.source === "test-runner");
     expect(hasTestRunnerFinding).toBe(true);
   });
