@@ -12,6 +12,7 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { NaxConfigSchema } from "@/config/schemas";
+import { assertDefined } from "@test/helpers";
 
 describe("DEFAULT_CONFIG review.checks", () => {
   test("default review.checks is ['typecheck', 'lint'] without 'test'", () => {
@@ -101,6 +102,7 @@ describe("DEFAULT_CONFIG.precheck.storySizeGate (US-001)", () => {
     ["maxDescriptionLength" as const, 3000 as const],
     ["maxBulletPoints" as const, 12 as const],
   ])("precheck.storySizeGate.%s defaults to %s", (field, expected) => {
+    assertDefined(DEFAULT_CONFIG.precheck, "DEFAULT_CONFIG.precheck");
     expect(DEFAULT_CONFIG.precheck.storySizeGate[field]).toBe(expected);
   });
 });

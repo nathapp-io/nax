@@ -228,6 +228,7 @@ describe("LLM Routing Mode Config", () => {
     };
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
+    if (!result.success) return;
     // Default is applied by loader, schema allows undefined
     expect(result.data.routing.llm?.mode).toBeUndefined();
   });

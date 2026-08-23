@@ -435,7 +435,7 @@ describe("StoryOrchestratorBuilder — AC6: Result shape (costs, outputs, durati
       agentName: "claude",
       storyId: "story-1",
     };
-    const result = await new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+    const result = await new StoryOrchestratorBuilder()
       .addImplementer({ op: mockImplementerOp, input: { code: "test" } })
       .addVerifier({ op: mockVerifierOp, input: { code: "test" } })
       .build(ctx)

@@ -13,7 +13,7 @@ import { adversarialReviewOp } from "@/operations/adversarial-review";
 import type { AdversarialReviewInput, AdversarialReviewOutput } from "@/operations/adversarial-review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { NaxRuntime } from "@/runtime";
-import { makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
+import { assertDefined, makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -308,6 +308,7 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
     };
     const parsed = makeOutput({ passed: false, findings: [finding], normalizedFindings: [], acDropped: [] });
     const out = await adversarialReviewOp.verify!(parsed, input, ctx);
+    assertDefined(out, "verify() result");
     expect(out.passed).toBe(true);
     expect(out.normalizedFindings.length).toBe(0);
     expect((out.advisoryFindings ?? []).length).toBe(1);
@@ -361,6 +362,7 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
     };
     const parsed = makeOutput({ passed: false, findings: [finding], normalizedFindings: [], acDropped: [] });
     const out = await adversarialReviewOp.verify!(parsed, input, ctx);
+    assertDefined(out, "verify() result");
     // n=2, prev=warning → entry guard suppresses → advisory, not blocking
     expect(out.passed).toBe(true);
     expect(out.normalizedFindings.length).toBe(0);

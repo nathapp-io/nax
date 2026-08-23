@@ -22,6 +22,7 @@ import { _adversarialDeps, _diffUtilsDeps, runAdversarialReview } from "@/review
 import type { AdversarialReviewConfig, SemanticStory } from "@/review";
 import type { NaxRuntime } from "@/runtime";
 import {
+  assertDefined,
   makeAgentAdapter,
   makeMockAgentManager,
   makeMockRuntime,
@@ -547,6 +548,7 @@ describe("Recurrence-demotion parity: op verify() vs wrapper recomputation", () 
       acDropped: [],
     } as any;
     const opResult = await adversarialReviewOp.verify!(opParsed, opInput, opCtx);
+    assertDefined(opResult, "verify() result");
 
     // --- Path B: full wrapper dispatch — runAdversarialReview() -> callOp -> adversarialReviewOp. ---
     const agentManager = makeAgentManager(llmResponse);

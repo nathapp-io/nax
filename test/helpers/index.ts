@@ -81,3 +81,4 @@ export type { FakeAgentManagerOptions } from "./fake-agent-manager";
 export { absentValue, nullValue } from "./absent";
 export { makeAdversarialOutput, makeDiagnoseOutput, makeSemanticOutput } from "./review-outputs";
 export { makeOptimizerResult } from "./optimizer-result";
+export { assertDefined, firstCall } from "./assert-defined";

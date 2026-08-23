@@ -178,7 +178,7 @@ describe("runScopedLintCheck", () => {
     expect(result.output).not.toContain("src/out.ts");
     expect(result.lintScope?.status).toBe("in_scope");
     expect(result.lintScope?.outOfScopeDiagnosticCount).toBe(1);
-    expect(result.findings?.every((f) => f.file.includes("src/in.ts"))).toBe(true);
+    expect(result.findings?.every((f) => f.file?.includes("src/in.ts") ?? false)).toBe(true);
   });
 
   test("degraded mode fails closed when lint output is unparseable", async () => {

@@ -651,3 +651,118 @@ suite green across all three phases; 25/25 gates green, including
 
 Residue at this commit: **994 errors across 270 files.** The branch has taken 1030 → 994
 (−36) over four commits.
+
+## 16. The `possibly-undefined` cluster — done (994 → 950, −44)
+
+On `chore/1514-delegable-clusters`, one commit. This is §5.1, the cluster the handoff
+explicitly refused to delegate. It was right to refuse, but not for the reason it gave.
+
+### It was never one cluster
+
+The handoff treated all 43 `TS18046/18047/18048` as one problem with one trap (`!`).
+Enumerating them first split them into five causes with five different correct fixes —
+and one that has no test-side fix at all:
+
+| Cause | Count | Fix |
+|:---|---:|:---|
+| `verify()` returns `O \| null` | 15 | `assertDefined(out)` |
+| Zero-arg `mock()` → `calls[0]` is the empty tuple | 5 | type the mock with the real signature |
+| `result.hooks` optional on merged config | 6 | `assertDefined(result.hooks)` |
+| `require()` erases the class to `any` | 2 | use the static import already at the top of the file |
+| Optional fields / unnarrowed `safeParse` | 5 | per-site |
+| **Zod `z.preprocess` type erasure** | **10** | **none — see below** |
+
+**The `!` trap was real but narrower than described.** `!` is genuinely uncounted by all six
+ratchets, and it would have been the "obvious" fix for the 26 nullability errors. It would
+*not* have worked on the 12 `TS18046` ones — `foo!` does not narrow `unknown`, so that
+sub-cluster could only ever have been hidden with a cast, which `looseCast` does count.
+
+### The helper
+
+`test/helpers/assert-defined.ts` — `assertDefined(value, label)` and `firstCall(mock, label)`,
+both barrel-exported. G5 was lifted for §5.2's helper; this extends that, since §5.1 is
+unfixable without it by the handoff's own analysis.
+
+`assertDefined` uses an `asserts value is NonNullable<T>` signature: it narrows for
+TypeScript *and* throws at runtime. That is why it is **not** an escape hatch and why no
+new counter was added for it — unlike `absentValue`, it contains no type-lie, casts
+nothing, and makes the test fail louder than the code it replaces. `out!.passed` on a null
+`out` gives an opaque `TypeError`; `assertDefined(out, "verify() result")` names the thing
+that was missing.
+
+The two alternatives the handoff worried about were both confirmed bad:
+`expect(out).not.toBeNull()` does not narrow, and `expect(out?.passed).toBe(x)` can go
+**vacuously true** — if the value really is null, `out?.passed` is `undefined`, and an
+expectation of `undefined` passes.
+
+`firstCall` exists because `expect(m).toHaveBeenCalledTimes(1)` does not narrow
+`m.mock.calls[0]` either, and under `noUncheckedIndexedAccess` destructuring it yields
+possibly-undefined elements.
+
+### What the drain unmasked
+
+- **`plan-debate.test.ts` went 15 → 1.** Only 5 of its errors were §5.1; the rest were
+  §5.3-class, and all had the *same* root cause — `mock(async () => RESULT)` declares a
+  zero-arg mock, so `calls[0]` is `[]` and every downstream assertion breaks. Typing it
+  `mock(async (..._args: Parameters<DebateRunner["runPlan"]>) => ...)` cleared all of them.
+  **This is a working recipe for part of §5.3.**
+- **Three `createDebateRunner` sites §13 missed.** §13's grep was
+  `createDebateRunner = mock(() => ({`; these bind to a variable first
+  (`const createDebateMock = mock(() => ({ runPlan: ... }))`) and so never matched. The §13
+  recipe applied unchanged. Grep patterns anchored on an assignment target miss the
+  bind-then-assign form.
+- **`require("@/execution/story-orchestrator")` in `story-orchestrator.test.ts`** while the
+  class is statically imported at line 27. `require()` returns `any`, which is what made
+  `Object.values(result.phaseCosts)` land as `unknown[]` even though `phaseCosts` is
+  `Record<string, number>`. One site fixed (the one that errored); **three more remain** at
+  lines 261, 280, 720 — they compile only because nothing downstream reads through them.
+
+### What is NOT fixable in test/ — escalate
+
+The 10 remaining `TS18046` are a **src/ type-inference defect**, not a test defect. Probed
+directly:
+
+```
+Debate["stages"]["plan"] = Record<string, unknown> | { enabled; resolver; ... }
+```
+
+`makeDebateStageSchema` in `src/config/schemas-debate.ts` wraps every stage in
+`z.preprocess(toObject, ...)` where `toObject: (val: unknown) => unknown`. Under Zod 4 the
+result is a **union with `Record<string, unknown>`**, so *every* field of a debate stage
+infers as `unknown` — `plan.resolver`, `plan.sessionMode`, all of them. The tests only
+error where they read a property *through* one (`plan?.resolver.type`); `expect(plan?.sessionMode)`
+accepts `unknown` silently, which is why this looked like it affected only `resolver`.
+
+No test-side fix exists. `"resolver" in plan` does not narrow away an index-signature
+member, so the only test-layer option is a cast — real `looseCast` debt for a defect
+whose home is `src/`. Fixing it properly means making `makeDebateStageSchema` generic over
+its `extensions` shape and typing `toObject`, which is a `src/` change and out of scope for
+this drain. **Filed as the one genuine escalation from §5.1.**
+
+Verify: G1 flat at 1 (same pre-existing `TS1355`). 994 → 950, files 270 → 267; the
+`TS18046/47/48` cluster 43 → 10, and no file regressed (per-file counts diffed against the
+994 baseline). All six counters flat (`asAny=1388, tsSuppress=40, ratchetAllow=106,
+absentValue=17, anyType=1880, looseCast=1994`); `as unknown as` flat at 102.
+
+**Non-null assertions in `test/` went 831 → 832.** The +1 is the string `out!.passed`
+inside the new helper's docstring, where it is quoted as the *wrong* fix. No `!` was added
+to any code path — the whole point of the cluster. A future reader re-running that count
+should expect this one.
+
+203 tests pass across the 10 touched files; full suite green across all three phases;
+25/25 gates green.
+
+## Next
+
+- **§5.3 — `Mock<() => X>` drift.** Re-measured: `story-orchestrator-*` **87**, config
+  suites **146**, `parallel-batch.test.ts` **36**. §16 produced a real recipe for part of
+  it (type the mock from `Parameters<T["method"]>`), and `plan-debate.test.ts` 15 → 1 is
+  the worked example.
+- **Escalation — Zod stage-schema erasure (10 errors).** `src/config/schemas-debate.ts`.
+  Needs a `src/` fix; out of scope for a test drain. Nothing else in this file's remaining
+  residue is blocked on it.
+- **Leftovers named above:** three `require()` sites in `story-orchestrator.test.ts`, and
+  a `TS2554` at `plan-debate.test.ts:326` on a local `makeMockPlanManager` helper.
+
+Residue at this commit: **950 errors across 267 files.** The branch has taken 1030 → 950
+(−80) over six commits.
