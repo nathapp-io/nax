@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
 import { _runPlanDeps } from "@/debate";
+import type { PreDebatePhase } from "@/debate/pre-phase";
 import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
@@ -635,11 +636,14 @@ describe("runner-plan — preDebatePhase invocation", () => {
     } as any;
     let receivedPackageView: unknown;
 
-    _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) => async (preCtx) => {
-      receivedPackageView = preCtx.ctx.packageView;
-      preCtx.ctx.packageView.select(() => DEFAULT_CONFIG);
-      return { manifestSection: "## Grounded Facts\n- F-001", costUsd: 0 };
-    }) as any;
+    _runPlanDeps.resolvePreDebatePhase = mock(
+      (_kind: string): PreDebatePhase =>
+        async (preCtx) => {
+          receivedPackageView = preCtx.ctx.packageView;
+          preCtx.ctx.packageView.select(() => DEFAULT_CONFIG);
+          return { manifestSection: "## Grounded Facts\n- F-001", costUsd: 0 };
+        },
+    ) as any;
 
     const sm = makeSessionManager({
       runInSession: mock(async () => ({
