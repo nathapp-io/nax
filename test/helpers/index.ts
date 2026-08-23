@@ -36,6 +36,7 @@ export {
 } from "./review-audit";
 export { makeAgentRegistry } from "./agent-registry";
 export { makeAgentResult } from "./agent-result";
+export { makeTurnResult } from "./turn-result";
 export { makeContextBundle, makeContextManifest } from "./context-bundle";
 export { makeContextOrchestrator, type MockContextOrchestrator } from "./context-orchestrator";
 export { makeInteractionChain, type MockInteractionChain } from "./interaction-chain";

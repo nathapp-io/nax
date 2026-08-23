@@ -1,6 +1,6 @@
 {
-  "count": 1645,
-  "updatedAt": "2026-08-23T08:16:21.946Z",
+  "count": 1633,
+  "updatedAt": "2026-08-23T08:50:30.354Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -172,12 +172,12 @@
     "test/unit/execution/story-orchestrator-logs.test.ts": 2,
     "test/unit/execution/story-orchestrator-no-progress-bail.test.ts": 2,
     "test/unit/execution/story-orchestrator-rectification-exhaustion.test.ts": 2,
-    "test/unit/execution/story-orchestrator-resume-guard.test.ts": 19,
+    "test/unit/execution/story-orchestrator-resume-guard.test.ts": 18,
     "test/unit/execution/story-orchestrator-resume-integration.test.ts": 33,
     "test/unit/execution/story-orchestrator-revalidation-carveout.test.ts": 5,
     "test/unit/execution/story-orchestrator-revalidation.test.ts": 1,
     "test/unit/execution/story-orchestrator-run-phase-events.test.ts": 28,
-    "test/unit/execution/story-orchestrator.test.ts": 30,
+    "test/unit/execution/story-orchestrator.test.ts": 19,
     "test/unit/execution/story-orchestrator/phase-details.test.ts": 2,
     "test/unit/execution/story-orchestrator/run-phase-telemetry.test.ts": 2,
     "test/unit/execution/story-orchestrator/semantic-iteration-wiring.test.ts": 1,
