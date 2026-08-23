@@ -504,3 +504,88 @@ Delegable, with validated recipes, in `docs/plans/HANDOFF-1514-delegable-cluster
 Explicitly not delegable, with reasons: the `!` cluster above (43), `plugins/loader.test.ts`
 (22, needs a `makeOptimizerResult()` helper designed first), and the `Mock<() => X>` signature
 drift in `parallel-batch` / `story-orchestrator-*` / the config suites (170+, no single recipe).
+
+## 13. `createDebateRunner` residue — done (1030 → 1029, −1)
+
+On `chore/1514-delegable-clusters`, one commit. The §2 follow-up from the
+delegable-clusters handoff.
+
+**The estimate was right for the wrong reason.** The handoff listed 2 files: `plan-callop.test.ts`
+(1) and `plan-decompose-ac-repair.test.ts` (0, masked by `as never`). Cluster B was **1 typecheck
+error**, not 7 (the 7 from the prior commit had already cleared). `as never` is matched by none
+of the six escape-hatch patterns, so the second site left no measurable debt — only the cast
+itself, which the conversion retires.
+
+- `plan-callop.test.ts:364` — `{ runPlan: ... }` literal → `makeDebateRunner({ runPlan })`.
+  Removes 1 DebateRunner-shape `TS2322`. Two unrelated errors in this file
+  (`InteractionChain` `Mock<() => X>`, `'tier' not in DeepPartial<Debater>`) are
+  §5.3-class.
+- `plan-decompose-ac-repair.test.ts:120` — same recipe. 0 typecheck errors before
+  (`as never` was masking); 0 after. The conversion retires the `as never` cast and
+  aligns the pattern with the 7 sites already cleared in `plan-debate.test.ts`.
+
+`makeDebateRunner` was added to the existing `@test/helpers` import in both files (per
+the handoff: "do not add a second import line").
+
+Verify: G1 stayed flat at 1 (pre-existing `TS1355` in `smart-runner.test.ts:516`). All
+six counters flat (`asAny=1388, tsSuppress=40, ratchetAllow=106, absentValue=17,
+anyType=1880, looseCast=1994`). Full suite green; 25/25 gates green.
+
+## 14. PRD/UserStory literals — done (1029 → 1016, −13)
+
+On `chore/1514-delegable-clusters`, one commit. The §3 follow-up from the
+delegable-clusters handoff.
+
+**The estimate was right for one cluster, wrong for the rest.** Handoff listed 11 errors
+across 4 files. Live count was **13 across 6 files** — `verdict.test.ts` and
+`utils-helpers.test.ts` were not in the handoff, but matched the recipe exactly
+(UserStory missing `escalations, attempts`; PRD missing `project, branchName, createdAt,
+updatedAt`). Fifth time the re-measure rule has mattered; see §11 and §12.
+
+Each literal converted to `makePRD({ userStories: [makeStory({ ... })] })` and dropped
+`as const` from `status` (the parameter type supplies the contextual type, so it is
+not needed). Hand-edited one literal at a time per G6:
+
+- `reporter-lifecycle-basic.test.ts` — 6 PRD literals at lines 154, 208, 255, 313, 353, 387.
+  File 10 → 4 typecheck errors. The two `paused`-status literals at 313/353 dropped their
+  `tags: []` (the field is required on `UserStory` and `makeStory()` supplies it).
+- `reporter-lifecycle-resilience.test.ts` — `minimalPrd()` helper (line 82) refactored;
+  three call sites inherit the fix. File 7 → 4.
+- `storyid-events.test.ts` — `mockStory` literal (line 53). File 2 → 1.
+- `subscribers/interaction.test.ts` — `createStoryFailedEvent`'s `story` literal (line 53).
+  File 1 → 0.
+- `verdict.test.ts` (new since handoff) — `mockStory` literal (line 6). File 1 → 0.
+- `utils-helpers.test.ts` (new since handoff) — `createMockPRD` helper (line 43)
+  refactored. File 1 → 0.
+
+No `as const` is removed by any counter — `as const` matches none of the six patterns
+intentionally. They were a counted form of debt only in the sense that the literal
+they guarded would not typecheck without them.
+
+Verify: G1 stayed flat at 1 (same pre-existing `TS1355`). All six counters flat
+(`asAny=1388, tsSuppress=40, ratchetAllow=106, absentValue=17, anyType=1880, looseCast=1994`).
+47 tests pass across the 6 touched files; full suite 1174 pass across 116 files; 25/25
+gates green.
+
+### One mild near-miss
+
+The handoff's two recipes worked. The third possibility — running a single `sed` over
+nested literals — was correctly NOT attempted (G6), and that decision saved a repeat
+of the §3 recorded failure (10 → 19 errors). Each PRD literal here nests one or two
+`userStories` items, exactly the shape that defeated the prior regex.
+
+## Next
+
+Delegable clusters B and C are now drained. What remains from `HANDOFF-1514-delegable-clusters.md`:
+
+- **§5.1 — `TS18046/18047/18048` (`!` cluster, 43 errors).** Not delegable. Needs a per-site
+  decision or a counted helper designed first.
+- **§5.2 — `plugins/loader.test.ts` (22 errors).** Needs a `makeOptimizerResult()` helper,
+  which is a `test/helpers/` change forbidden by G5. Escalate.
+- **§5.3 — `parallel-batch.test.ts` (36), `story-orchestrator-*` (73), config suites (63+).**
+  `Mock<() => X>` values assigned to multi-parameter function slots, plus config-shape drift.
+  No single recipe.
+
+Total residue at this commit: **1016 errors across 271 files** (was 1030/276 at the start of
+`chore/1514-delegable-clusters`). −14 errors, −5 files, both clusters delegated, two
+follow-up commits per the handoff's "one cluster per commit" rule.
