@@ -109,8 +109,8 @@ gate `worse: 0`, tree clean at `f3d7a4646`. 46 commits on the branch.
 **§10 is DONE (session 7).** Every bucket with mechanical follow-through is now closed.
 What remains needs a ruling from the repo owner — see §8.
 
-**→ §9 and §10 are both DONE. There is no queued task.** Read §8 for the remaining
-decisions, and §Patterns learned before touching anything.
+**→ §9 and §10 are DONE. The queued task is §11** — the §3e ruling is made and its
+Groups A–C are mechanical. Read §Patterns learned first (especially items 8, 12, 13).
 **§9 is DONE (session 6) — do not start it.** It is kept only as the worked record of
 how the seams were built.
 
@@ -792,7 +792,12 @@ live behind a seam that contains the cast once, the same shape as the existing
 Also class-typed, found session 3: `feature-context-fragments.test.ts:115` —
 `_featureContextV2Deps.createV1Provider` returns `new FeatureContextProviderV1()`.
 
-### Decision 2 — rule on §3e private-member reach-ins (49 casts) — **OPEN, needs the repo owner**
+### Decision 2 — §3e private-member reach-ins — ✅ **RULED (session 8), see §11**
+
+No `src/` member is made public. 29 reach-ins get three contained accessors in
+`test/helpers/`; 2 were noise; 4 were real defects (one of which unblocks the 4 §3a casts
+in `selector.test.ts`); 13 reclassify as §3d; 1 is a scanner false positive.
+**§11 has the executable detail.** The survey below is superseded.
 
 `(plugin as unknown as { backoffMs: number }).backoffMs`. For each: should the member be
 public, or should the test go through the public API? Concentrated in
@@ -860,13 +865,14 @@ closed as done.
 
 | # | Open decision | Casts | Who must decide |
 |:--|:--|--:|:--|
-| 2 | §3e private-member reach-ins | 49 | **repo owner** — make the member public, or route the test through the public API? Each ruling widens a `src/` API, which §4 otherwise forbids |
+| 2 | §3e private-member reach-ins | 49 | ✅ **RULED — see §11.** Ready to execute, ~32 casts |
 | 4 | tail remnant | 58 | **repo owner** — most are fixtures wrong *on purpose*; the honest resolution is reclassification, not repair |
 | 5 | §3d | 29 | load-bearing; leave unless a better negative-test idiom appears |
 | — | §3a remnant / §3b / §3c-i survivors | 15 | §3d-shaped or §3e-entangled; they move only after Decision 2 |
 
-**Decision 2 is the one that matters** — largest bucket, and `config/selector.test.ts` is
-blocked behind it (its §3a cast and its §3e cast must move together).
+**Decision 2 is resolved in §11**, which also unblocks `config/selector.test.ts` — its
+§3e cast reads `execution.parallel`, a field that does not exist, so fixing the test to read
+a real field clears its 4 §3a casts at the same time.
 
 **A caution on Decision 4.** Reclassifying ~40 deliberate-wrong-fixture casts as reviewed
 exceptions would drop the counter with **zero real improvement**. The escape hatches are
@@ -1117,3 +1123,145 @@ Re-derive with `grep -rn "as unknown as" --include='*.ts' test | grep -E "NaxCon
 - `execution/deferred-review.test.ts` (2) — partial inline PRD; needs fixture tightening.
 
 **Expected landing:** 163 → roughly **154**.
+
+---
+
+## 11. §3e resolved — the ruling, and the work it unblocks
+
+**Decision 2 is answered.** All 49 §3e casts were triaged against `src/`. They are not 49
+judgement calls; they are five groups. **No `src/` member is made public** — widening a
+production API to satisfy a test is what §4 forbids, and none of these members earn it.
+
+**Starting state:** ratchet = 151, typecheck = 1946, gate `worse: 0`, tree clean at
+`494856cd1`. **Expected landing: ~119.**
+
+Do the groups in order. A is the bulk; B and C are quick.
+
+---
+
+### Group A — private internals: contain the cast in a named accessor (29 → 3)
+
+These tests exercise genuinely `private` members, verified in `src/`:
+
+| Class | Private members reached | Casts | File |
+|:--|:--|--:|:--|
+| `TelegramInteractionPlugin` | `getUpdates` (`telegram.ts:337`), `backoffMs` (`:66`) | 6 | `interaction-network-failures.test.ts` |
+| `WebhookInteractionPlugin` | `handleRequest` (`webhook.ts:492`), `startServer` (`:444`), `server` (`:107`), `serverStartPromise` (`:121`), `pendingResponses`, `receiveCallbacks`, `receiveTimers`, `registeredRequestIds` | 15 | same file |
+| `AgentManager` | `_resolveRegistry` (`manager.ts:773`) | 8 | `complete-empty-output-retry.test.ts` (6), `call-exhaustion.test.ts` (2) |
+
+**Ruling.** These are retry / backoff / network-failure paths. Making the members public
+would widen three production APIs purely for tests. Routing through the public API would
+change what the tests assert (§5 says escalate, not rewrite). So: **keep reaching in, but
+contain the cast once per class in a named accessor in `test/helpers/`** — the same seam
+pattern as `makeLogger` / `makeStatusWriter` / `makeDebateRunner`.
+
+```ts
+// test/helpers/interaction-internals.ts
+import type { TelegramInteractionPlugin } from "@/interaction/plugins";
+
+/** The private surface `interaction-network-failures.test.ts` drives directly. */
+export type TelegramInternals = {
+  getUpdates: () => Promise<unknown[]>;
+  backoffMs: number;
+};
+
+export function telegramInternals(p: TelegramInteractionPlugin): TelegramInternals {
+  return p as unknown as TelegramInternals; // one contained cast — see #1514 §11 Group A
+}
+```
+
+Then every site reads `telegramInternals(plugin).backoffMs` with no cast. Three accessors
+(`telegramInternals`, `webhookInternals`, `agentManagerInternals`), three contained casts,
+**29 → 3**.
+
+**Be honest about what this does.** It does **not** decouple the tests from private state —
+it names that coupling and puts it in one reviewed place instead of twenty-nine. If a
+private member is renamed, one file breaks loudly rather than twenty-nine breaking
+obscurely. That is the whole benefit; do not oversell it in the commit message.
+
+**Leave alone:** `spawn-client.test.ts` (2 `env` casts) — already `// test-ratchet-allow`.
+
+---
+
+### Group B — not §3e at all, the cast is noise (2 → 0)
+
+`contextToolRunCounter` **is a real declared field** — `src/pipeline/types.ts:159`,
+`contextToolRunCounter?: RunCallCounter`. The cast reaches a member that was never private.
+
+- `test/unit/metrics/tracker-context-metrics.test.ts:576`
+- `test/unit/pipeline/stages/execution-phase-telemetry.test.ts:138`
+
+**Ruling: delete both casts** (§Patterns item 12). Access the field directly. If the
+optionality bites, narrow it — do not re-cast.
+
+---
+
+### Group C — real defects behind the cast (4 → 0, and unblocks 4 more)
+
+**`test/unit/config/selector.test.ts` (2 casts, and this is the §3a blocker).**
+The two `reshapeSelector` tests build a fake config and read it back through a cast:
+
+```ts
+isParallel: (c as unknown as { execution: { parallel: boolean } }).execution.parallel,
+const cfg = { execution: { parallel: true } } as unknown as NaxConfig;
+```
+
+**`execution.parallel` does not exist.** The only `parallel` in the config schema is
+`review.parallel` (`schemas-review.ts:104`). The test is really about `reshapeSelector`
+applying an arbitrary transform — the field is incidental.
+
+**Ruling: read a field that exists.** Use `makeNaxConfig()` and a real field (`review.parallel`,
+or `execution.maxIterations`). That removes the §3e cast *and* the fake-`NaxConfig` cast
+beside it — which is what has been blocking the **4 §3a casts** in this file since session 1.
+**Net −6 in one file.** The doc's long-standing "leave both together, needs design" note in
+§3a is superseded by this ruling.
+
+**`test/unit/execution/lifecycle/acceptance-loop.test.ts` (2 casts).**
+`(spawnMock as unknown as { mock: { calls: … } }).mock.calls` reaches bun `Mock` internals
+only because the variable lost its `Mock<T>` type. **Ruling: type the mock at its
+declaration** so `.mock.calls` is available without a cast — §Patterns item 12, and note the
+inverse trap in that same item (annotate the *use*, not a narrow dep-slot type on the const).
+
+---
+
+### Group D — reclassify as §3d, leave in place (13)
+
+Triaged and confirmed **not** private reach-ins. They are deliberate negative tests, union
+narrowing, or mutation of a real field. Record them as §3d and move on:
+
+`stage-assembler.test.ts` (3 — `config.context.v2` mutation ×2, `prd.feature = undefined`
+negative test), `schemas.test.ts` (2 — widening a zod-parsed result), `manager.test.ts`
+(2 — overriding methods for a stub), `curator-seam.test.ts` (1), `curator-gc.test.ts` (1),
+`telegram.test.ts` (1), `call.test.ts` (1), `crash-signals-idempotency.test.ts`
+(1 — `process.exit` override, legitimate), `manager-abort.test.ts` (1 — `_testAbort` hook).
+
+---
+
+### Group E — a scanner bug, not a cast (1)
+
+`test/unit/scripts/check-test-as-unknown-as.test.ts:58` is a **string literal** — the
+sample input the scanner's own test feeds it:
+
+```ts
+"const x = foo as unknown as {\n  // test-ratchet-allow: as-unknown-as\n  a: string;\n};\n",
+```
+
+The ratchet is counting its own fixture. **Ruling: fix the scanner**, not the test — it
+should skip string literals, or the scanner's own test file should be exempt the way
+generated files are. Small, and it removes a permanent false positive from every future
+count. File it separately if it is not a quick change; do not delete the fixture.
+
+---
+
+### Summary
+
+| Group | Casts | After | Action |
+|:--|--:|--:|:--|
+| A — private internals | 29 | 3 | three contained accessors in `test/helpers/` |
+| B — noise | 2 | 0 | delete the cast |
+| C — real defects | 4 | 0 | fix; **also unblocks 4 §3a** |
+| D — reclassify | 13 | 13 | leave, record as §3d |
+| E — scanner bug | 1 | 1 | fix the scanner separately |
+
+**151 → ~119.** Groups A–C are mechanical against these rulings; nothing below needs
+another decision.
