@@ -98,13 +98,13 @@ bun scripts/report-cast-buckets.ts
 | §3b seam sweeps — helper exists, example committed | **157** | **5** | -152 | survivors only |
 | §3c-i typed dep stubs | **23** | **1** | -22 | survivor only |
 | §3c-ii dep members returning a class | 31 | **0** | -31 | **CLOSED** (§9 Task B, session 6) |
-| §3d holding bucket | 61 | 29 | -32 | load-bearing |
+| §3d holding bucket | 61 | 20 | -41 | load-bearing; all deliberate-absent negatives absorbed by §12 (session 10) |
 | §3e private-member reach-ins | 49 | 19 | -30 | **§11 Groups A–C DONE (session 8)** — remaining are 3 contained accessor casts + §3d-reclassified + scanner bug |
-| tail — everything under 4 per cluster | **191** | **61** | -130 | **drained of tractable work** |
-| **Total** | **681** | **120** | **-561** | |
+| tail — everything under 4 per cluster | **191** | **52** | -139 | **drained of tractable work**; 9 deliberate-absent sites absorbed by §12 (session 10) |
+| **Total** | **681** | **102** | **-579** | |
 
-**Last verified:** ratchet = 120, typecheck errors = 1946 (was 1969; **−23**), per-file
-gate `worse: 0`, tree clean at `603eb9e57`. 48 commits on the branch.
+**Last verified:** ratchet = 102, typecheck errors = 1946 (was 1969; **−23**), per-file
+gate `worse: 0`, tree clean at `c37fab4dd`. 53 commits on the branch.
 
 **§11 is DONE (session 8).** Groups A–C of the §3e ruling are executed — 151 → 120. What
 remains needs a ruling from the repo owner — see §8.
@@ -117,18 +117,15 @@ how the seams were built.
 
 **The unassisted mechanical work is finished.** Sessions 1–2 drained 3a/3b/3c-i;
 session 3 drained the tail; session 4 drained the §3d bakeoff builders; sessions 5–6
-built four seams and closed **§3c-ii entirely**; session 8 executed §11 Groups A–C.
-Remaining: tail remnant 61, §3e 19 (3 accessor-contained + reclassified + scanner bug),
-§3d 29, §3a remnant 5, §3b/§3c-i survivors 6.
+built four seams and closed **§3c-ii entirely**; session 8 executed §11 Groups A–C;
+**session 10 executed §12** (absentValue idiom, 120 → 102, Decision 5 closed).
 
 **§10 is DONE.** As of session 9 the one bucket with mechanical follow-through is **§12**.
 
-**Do not dispatch another sweep agent against this doc.** There is no factory-swap
-cluster left.
-
-**→ Session 9 resolved Decisions 4 and 5 and found Group E already fixed. The single
-queued task is now §12 (`absentValue<T>()`, 18 substitutions, 120 → 102). Start there;
-it is the last one.**
+**→ §12 is DONE (session 10, commits `555ae2fc3`, `1b02827a1`, `c37fab4dd`).**
+Ratchet 120 → **102**, `absentValue` counter at **18**, typecheck flat at 1946,
+per-file `worse: 0`, full suite green. Every decision in this document is resolved;
+the remaining 102 casts are documented exceptions. The sweep is over.
 
 ### 3a. Shape A — a factory already returns this exact type
 
@@ -267,16 +264,19 @@ Building those is a design call. **Leave them and report.**
 Rule of thumb: `grep -rn "export class <ReturnedType>" src/`. If it is a class, it is
 3c-ii.
 
-### 3d. Holding bucket — bakeoff builders done, 30 load-bearing left
+### 3d. Holding bucket — bakeoff builders done, 20 load-bearing left
 
 The bakeoff deps bags were drained in session 4 (`ffc423b4e`, `64d1c823e`, `5be8fb7a3`).
 What remains is load-bearing: negative tests, `DEFAULT_CONFIG` spread-widening, and
-allow-marked lines.
+allow-marked lines. **Session 10 (§12) absorbed every deliberate-absent
+(`undefined`/`null`) negative in this bucket — 9 `string`/`string[]` sites — leaving 20.**
+Re-triaged and **Decision 5 closed** — see §8.
 
 | Cast target | Casts | Why |
 |:--|--:|:--|
-| `Record<string, unknown>` | 20 | Deliberate negative tests (`"not-an-object"`) and `DEFAULT_CONFIG` spread-widening |
-| `as unknown as string` / `string[]` | 9 | Deliberate negative tests — `42 as unknown as string`, `undefined as unknown as string`. Feeding a wrong type on purpose is the assertion |
+| `Record<string, unknown>` | 19 | Deliberate negative tests (`"not-an-object"`), `DEFAULT_CONFIG` spread-widening (typed spreads pin optional-field types, §Patterns item 11), property-existence assertions (`loader-legacy-shim` ×4), spy-capture bags and `_registry` internals (`phase4-registry-cleanup` ×2) |
+| `as unknown as string` | 1 | `profile.test.ts:299` — `42 as unknown as string` in a non-string-entry negative test. A wrong *value*, not an absence — the §12 idiom does not apply |
+| ~~`as unknown as string` / `string[]` (undefined/null)~~ | ~~8~~ **0** | **DONE (session 10)** — all 8 deliberate-absent negatives became `absentValue`/`nullValue` call sites (§12) |
 | ~~`BakeoffCoordinatorDeps[…]`, `BakeoffCliDeps[…]`, `ContestantRunnerDeps[…]`~~ | ~~31~~ **0** | **DONE (session 4).** No builder was needed in the end — see §Patterns learned item 12. The casts were pure noise: the mocks and the `FakeWorktreeManager` were already structurally assignable to their dep slots |
 | anything carrying `// test-ratchet-allow: as-unknown-as` | 116 | Reviewed and accepted. Do not touch |
 
@@ -851,13 +851,29 @@ would need a real migration:
 The last two are §3d-shaped: the cleanest resolution may be to reclassify them as
 reviewed exceptions rather than fix them.
 
-### Decision 5 — §3d: bakeoff DONE, 29 load-bearing left — ⏸ **RULED (session 9): leave, re-triage after §12**
+### Decision 5 — §3d: bakeoff DONE, 20 load-bearing left — ✅ **CLOSED (session 10)**
 
 **Ruling: leave §3d in place — feeding a wrong type on purpose is the assertion — but
 re-derive the bucket after §12 lands.** Some §3d entries are deliberate-*absent* negatives
 (`undefined as unknown as NaxConfig["autoMode"]` and friends) which the `absentValue<T>()`
 idiom absorbs. Run `bun scripts/report-cast-buckets.ts` after §12 and re-triage what is
 actually left before treating this as final.
+
+**Re-triage after §12 (session 10):** the bucket is **29 → 20**, and the prediction held
+exactly — the 9 casts it lost were the deliberate-absent `string`/`string[]` negatives
+(smart-runner-discovery ×5, crash-detector ×2, parse-retry ×1, fix-generator ×1), all
+now `absentValue`/`nullValue` call sites. The remaining 20 are **not** absent-value
+negatives and no idiom absorbs them:
+
+| Shape | Casts | Load-bearing because |
+|:--|--:|:--|
+| `Record<string, unknown>` — `DEFAULT_CONFIG` spread-widening | 6 | A typed spread pins optional-field types (§Patterns item 11); re-widening is deliberate |
+| `Record<string, unknown>` — property-existence assertions | 4 | `loader-legacy-shim` asserts on keys (`toHaveProperty`), not types |
+| `Record<string, unknown>` — spy-capture bags / internals | 7 | Capturing typed values into an untyped bag (`run-completion-postrun`, `run-cleanup`, `verify-scoped`, `unified-executor-abort`, `manager`, `phase4-registry-cleanup` ×2 — the last two reach `_registry`) |
+| `Record<string, unknown>` — deliberate wrong type | 2 | `"not-an-object"` and a `dynamicImport` returning a non-module — feeding a wrong type on purpose is the assertion |
+| `string` — deliberate wrong type | 1 | `profile.test.ts:299` — `42` in a non-string-entry negative. A wrong *value*, not an absence; §12 does not apply |
+
+All 20 stay as documented exceptions. **Decision 5 is closed.**
 
 
 **Not closed as permanent.** §3d is a holding bucket, not a verdict, and it splits into
@@ -877,20 +893,19 @@ markers in the three files — so the "allow-marked neighbours" explanation for 
 wrong. The 28 was simply stale. Patterns item 10 again: re-derive, never trust a recorded
 number in this doc, including the ones in §8.
 
-### Status: 120, and no queued work
+### Status: 102, and every decision is resolved
 
-**681 → 120 is −82%.** Decisions 1, 2 and 3 are done; §3c-ii is closed entirely.
-**Every bucket with mechanical follow-through is finished.** There is no task a
-delegated agent can pick up from this document without a ruling first.
-
-120 is a defensible resting point, but it is **not a floor**, and this issue should not be
-closed as done.
+**681 → 102 is −85%.** Decisions 1–5 are all closed; §3c-ii is closed entirely.
+**§12 landed in session 10** (`555ae2fc3`, `1b02827a1`, `c37fab4dd`): the 18
+deliberate-absence casts became `absentValue`/`nullValue` call sites, ratcheted as a
+fourth escape-hatch counter. The remaining 102 casts are documented exceptions — the
+tail remnant, §3e accessors, §3d load-bearing set, and allow-marked lines.
 
 | # | Open decision | Casts | Who must decide |
 |:--|:--|--:|:--|
-| 2 | §3e private-member reach-ins | 49 | ✅ **DONE (session 8)** — Groups A–C landed (`129ef87a0`); Group E (scanner bug) still open, file separately |
-| 4 | tail remnant | 58 | ✅ **RESOLVED (session 9)** — do not reclassify, do not repair; carve out the 22 deliberate-absent casts to §12 |
-| 5 | §3d | 29 | ⏸ **RULED (session 9)** — leave; re-derive and re-triage after §12 lands |
+| 2 | §3e private-member reach-ins | 49 | ✅ **DONE (session 8)** — Groups A–C landed (`129ef87a0`); Group E (scanner bug) already fixed |
+| 4 | tail remnant | 58 | ✅ **RESOLVED (session 9)** — do not reclassify, do not repair; the 22 deliberate-absent casts went to §12 |
+| 5 | §3d | 29 | ✅ **CLOSED (session 10)** — 9 deliberate-absent negatives absorbed by §12; the remaining 20 are load-bearing (see Decision 5) |
 | — | §3a remnant / §3b / §3c-i survivors | 11 | §3d-shaped or §3e-entangled; all moved that could move — survivors are allow-marked / deliberate negatives |
 
 **Decision 2 was resolved in §11 and executed in session 8**, which also unblocked
@@ -1309,9 +1324,18 @@ doc. **§3e is fully closed.**
 
 ---
 
-## 12. The `absentValue<T>()` idiom — the one queued mechanical task
+## 12. The `absentValue<T>()` idiom — the one queued mechanical task — ✅ **DONE (session 10)**
 
-**Ruled session 9 (Decisions 4 + 5).** This is the *only* work queued from this document.
+**Ruled session 9 (Decisions 4 + 5). Executed session 10 in three commits**
+(`555ae2fc3` helper + ratchet, `1b02827a1` the 18 substitutions, `c37fab4dd`
+baselines). Two small corrections were made while executing, both noted in the commit
+bodies: `test/helpers/absent.ts` was added to the checker's `EXEMPT_FILES` so its own
+function declarations do not self-count (the counter ratchets call sites, per the
+docstring), and the docstring was rephrased so the literal `as unknown as` sequence
+does not appear in the file — keeping the helper's contribution to the cast ratchet at
+zero. `category-fix-target.test.ts` kept `nullValue<undefined>()`: the suggested
+`null | undefined` parameter widening was declined because it changes a `src/` type
+to fit a fixture (§4). This is the *only* work queued from this document.
 Everything else is closed, declined, or waiting on the re-triage at the end of this
 section. It is pure substitution: no type is designed, no `src/` signature changes.
 
@@ -1431,14 +1455,14 @@ not an absent-value case at all:
 Anything that does not substitute cleanly: leave it, and note why in the commit body.
 Do not design a type. See §5 Escalate.
 
-### Expected numbers
+### Expected numbers — **landed exactly (session 10)**
 
 | Counter | Before | After |
 |:--|--:|--:|
-| `as unknown as` | 120 | **102** |
-| escape hatches `absentValue` | — (new) | 18 |
-| `asAny` / `tsSuppress` / `ratchetAllow` | 1398 / 54 / 108 | unchanged |
-| typecheck errors | 1946 | unchanged, per-file `worse: 0` |
+| `as unknown as` | 120 | **102** ✅ |
+| escape hatches `absentValue` | — (new) | **18** ✅ |
+| `asAny` / `tsSuppress` / `ratchetAllow` | 1398 / 54 / 108 | unchanged ✅ |
+| typecheck errors | 1946 | 1946, per-file `worse: 0` ✅ |
 
 Suggested commits: (1) helper + ratchet counter + its test, (2) the 18 substitutions,
 (3) baselines. Or fold 1–2 together; do not fold in the baseline update — §1 step 5
@@ -1458,3 +1482,5 @@ load-bearing, and mark Decision 5 closed.
 
 At that point every decision in this document is resolved and the remaining casts are
 documented exceptions. **That is the end of the sweep** — do not open a new bucket.
+(Step 4 executed session 10: buckets re-derived, §3 table updated, Decision 5 re-triaged
+and closed.)
