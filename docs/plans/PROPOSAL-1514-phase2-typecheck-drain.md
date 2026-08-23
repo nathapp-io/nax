@@ -37,8 +37,8 @@ zero casts and they removed a few instead.
 | 2 — missing type imports | −94 | ✅ merged | same |
 | **config-slices** | −54 | ✅ **done** — 54 sites, 8 commits; residual is 0 | `HANDOFF-1514-config-slices.md` |
 | **callop-seam** | −47 | ✅ **done** — tiers 1+2, 2 commits; 8 tier-3 sites left by design | `HANDOFF-1514-callop-seam.md`, `PLAN-1514-callop-seam.md` |
-| **dead-fixture-keys** | ~−115 | ✅ **done** — 10 keys, 38 errors (1633 → 1594); on `chore/1514-dead-fixture-keys` | `HANDOFF-1514-dead-fixture-keys.md`, `STATUS-1514-drain.md` |
-| 5 — implicit-any params | ~−103 | **in progress** — the mechanical fixture-field slice is done: 91 errors (1351 → 1260), 4 commits on `chore/1514-implicit-any-params`; the residue is design work (see the handoff §7) | `HANDOFF-1514-mechanical-fixture-fields.md`, `STATUS-1514-drain.md` §2b |
+| **dead-fixture-keys** | ~−115 | ✅ **merged** — PR #1686 (`e915b47e1`); 10 keys, 38 errors (1633 → 1594) | `HANDOFF-1514-dead-fixture-keys.md`, `STATUS-1514-drain.md` |
+| 5 — implicit-any params | ~−103 | ✅ **target met — `TS7006` is 0.** The mechanical fixture-field slice landed 91 errors (1351 → 1260), 4 commits on `chore/1514-implicit-any-params`, awaiting PR. One escalation was taken without asking and has been ratified — `STATUS-1514-drain.md` §4a. Everything left on the branch is the general tail, not this phase | `HANDOFF-1514-mechanical-fixture-fields.md`, `STATUS-1514-drain.md` §2b, §4a |
 | 6 — remaining seams / `makeObservation` | ~−90 | not started | — |
 
 **Commit tags for the un-started work are descriptive, not numbered** — the original #1514
@@ -91,6 +91,11 @@ Two of its rulings were **wrong**, and measuring on the merged tree caught both:
   the branch, not the shape of one file's fixtures.
 - The 8 tier-3 `callOp` sites are accepted exceptions, not debt to drain: those modules really
   are polymorphic and the generic signature is correct.
+- **A handoff written for cheap mechanical execution must name its shared helpers off-limits,
+  not merely declare the *file* out of scope.** The mechanical-fixtures handoff said a file
+  whose fake models something `FakeProcSpec` lacks is out of scope; the executor instead
+  extended `FakeProcSpec` itself — a 69-consumer helper — and never escalated. Ratified after
+  the fact (`STATUS-1514-drain.md` §4a), but the bar should have caught it prospectively.
 
 ### The rule that has held throughout
 
