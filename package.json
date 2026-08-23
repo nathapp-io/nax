@@ -30,6 +30,7 @@
     "check:file-sizes:update": "bun run scripts/check-file-sizes.ts --update-baseline",
     "check:no-control-bytes": "bun run scripts/check-no-control-bytes.ts",
     "check:review-prompts": "bun run scripts/check-review-prompts-generated.ts",
+    "check:rules-drift": "bun run scripts/check-rules-drift.ts",
     "gen:review-prompts": "bun run scripts/generate-review-prompts.ts",
     "release": "bun scripts/release.ts",
     "test": "AGENT=1 bun run scripts/run-tests.ts",
@@ -63,7 +64,7 @@
     "check:test-escape-hatches": "bun run scripts/check-test-escape-hatches.ts",
     "check:test-escape-hatches:update": "bun run scripts/check-test-escape-hatches.ts --update-baseline",
     "check:gate-reachability": "bun run scripts/check-gate-reachability.ts",
-    "check:all": "bun run lint && bun run check:test-mocks && bun run check:process-cwd && bun run check:no-adapter-wrap && bun run check:scripts && bun run check:dispatch-context && bun run check:naxconfig-cast && bun run check:runtime-cleanup && bun run check:adapter-no-config-import && bun run check:test-typecheck && bun run check:test-as-unknown-as && bun run check:test-escape-hatches && bun run check:gate-reachability",
+    "check:all": "bun run lint && bun run check:test-mocks && bun run check:process-cwd && bun run check:no-adapter-wrap && bun run check:scripts && bun run check:dispatch-context && bun run check:naxconfig-cast && bun run check:runtime-cleanup && bun run check:adapter-no-config-import && bun run check:test-typecheck && bun run check:test-as-unknown-as && bun run check:test-escape-hatches && bun run check:rules-drift && bun run check:gate-reachability",
     "prepublishOnly": "bun run build",
     "test:full": "FULL=1 NAX_PRECHECK=1 bun test test/ --timeout=60000"
   },
