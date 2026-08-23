@@ -38,7 +38,7 @@ zero casts and they removed a few instead.
 | **config-slices** | −54 | ✅ **done** — 54 sites, 8 commits; residual is 0 | `HANDOFF-1514-config-slices.md` |
 | **callop-seam** | −47 | ✅ **done** — tiers 1+2, 2 commits; 8 tier-3 sites left by design | `HANDOFF-1514-callop-seam.md`, `PLAN-1514-callop-seam.md` |
 | **dead-fixture-keys** | ~−115 | ✅ **done** — 10 keys, 38 errors (1633 → 1594); on `chore/1514-dead-fixture-keys` | `HANDOFF-1514-dead-fixture-keys.md`, `STATUS-1514-drain.md` |
-| 5 — implicit-any params | ~−103 | not started; `anyType` guards the cheap non-fix | — |
+| 5 — implicit-any params | ~−103 | **in progress** — the mechanical fixture-field slice is done: 91 errors (1351 → 1260), 4 commits on `chore/1514-implicit-any-params`; the residue is design work (see the handoff §7) | `HANDOFF-1514-mechanical-fixture-fields.md`, `STATUS-1514-drain.md` §2b |
 | 6 — remaining seams / `makeObservation` | ~−90 | not started | — |
 
 **Commit tags for the un-started work are descriptive, not numbered** — the original #1514
