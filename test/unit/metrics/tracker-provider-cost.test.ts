@@ -13,7 +13,14 @@ import { _manifestStoreDeps } from "@/context/engine/manifest-store";
 import type { ContextManifest } from "@/context/engine/types";
 import { collectStoryMetrics } from "@/metrics/tracker";
 import type { PipelineContext } from "@/pipeline/types";
-import { makeMockRuntime } from "@test/helpers";
+import {
+  DEFAULT_TEST_ROUTING,
+  makeMockRuntime,
+  makeNaxConfig,
+  makePRD,
+  makeStory,
+  makeTestContext,
+} from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals
@@ -65,22 +72,17 @@ function setupManifest(featureId: string, _storyId: string, manifest: ContextMan
 }
 
 function makeCtx(id: string, featureId: string): PipelineContext {
-  return {
-    story: {
-      id,
-      title: "Test Story",
-      description: "",
-      acceptanceCriteria: [],
-      status: "pending",
-    },
-    prd: { feature: featureId, userStories: [], project: "test", branchName: "main", createdAt: "", updatedAt: "" },
-    config: { autoMode: { defaultAgent: "claude" } } as unknown as PipelineContext["config"],
-    projectDir: "/repo",
-    workdir: "/repo",
-    routing: { tier: "balanced" },
-    agentResult: { success: true, cost: 0 },
-    runtime: makeMockRuntime(),
-  } as unknown as PipelineContext;
+  return Object.assign(
+    makeTestContext({
+      story: makeStory({ id, title: "Test Story" }),
+      prd: makePRD({ feature: featureId, project: "test", branchName: "main" }),
+      config: makeNaxConfig({ agent: { default: "claude" } }),
+      projectDir: "/repo",
+      workdir: "/repo",
+      routing: { ...DEFAULT_TEST_ROUTING, modelTier: "balanced" },
+    }),
+    { agentResult: { success: true, cost: 0 }, runtime: makeMockRuntime() },
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

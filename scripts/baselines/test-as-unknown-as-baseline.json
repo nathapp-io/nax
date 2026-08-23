@@ -1,6 +1,6 @@
 {
-  "count": 165,
-  "updatedAt": "2026-08-23T04:44:03.283Z",
+  "count": 163,
+  "updatedAt": "2026-08-23T04:50:59.817Z",
   "byFile": {
     "test/helpers/status-writer.ts": 1,
     "test/helpers/context-orchestrator.ts": 1,
@@ -84,7 +84,6 @@
     "test/unit/pipeline/stages/context-digest.test.ts": 1,
     "test/unit/pipeline/stages/context-rules-fallback.test.ts": 1,
     "test/unit/metrics/tracker-context-metrics.test.ts": 2,
-    "test/unit/metrics/tracker-provider-cost.test.ts": 2,
     "test/unit/metrics/fallback-aggregates.test.ts": 1
   }
 }
