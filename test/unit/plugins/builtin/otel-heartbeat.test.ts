@@ -59,7 +59,7 @@ afterEach(() => {
 describe("startHeartbeat", () => {
   test("AC1: issues a tick once intervalMs has elapsed", async () => {
     const ticks: HeartbeatSnapshot[] = [];
-    track(startHeartbeat({ intervalMs: 40, getSnapshot: () => snapshot(), onTick: (s) => ticks.push(s) }));
+    track(startHeartbeat({ intervalMs: 40, getSnapshot: () => snapshot(), onTick: (s) => void ticks.push(s) }));
 
     await clock.advance(40);
     expect(ticks).toHaveLength(1);
@@ -67,7 +67,7 @@ describe("startHeartbeat", () => {
 
   test("AC1: keeps ticking once per interval", async () => {
     const ticks: HeartbeatSnapshot[] = [];
-    track(startHeartbeat({ intervalMs: 40, getSnapshot: () => snapshot(), onTick: (s) => ticks.push(s) }));
+    track(startHeartbeat({ intervalMs: 40, getSnapshot: () => snapshot(), onTick: (s) => void ticks.push(s) }));
 
     await clock.advance(160);
     expect(ticks).toHaveLength(4);
@@ -75,7 +75,7 @@ describe("startHeartbeat", () => {
 
   test("AC1 boundary: issues no tick before intervalMs has elapsed", async () => {
     const ticks: HeartbeatSnapshot[] = [];
-    track(startHeartbeat({ intervalMs: 200, getSnapshot: () => snapshot(), onTick: (s) => ticks.push(s) }));
+    track(startHeartbeat({ intervalMs: 200, getSnapshot: () => snapshot(), onTick: (s) => void ticks.push(s) }));
 
     await clock.advance(199);
     expect(ticks).toHaveLength(0);
@@ -83,7 +83,7 @@ describe("startHeartbeat", () => {
 
   test("AC6: intervalMs=0 disables the heartbeat regardless of elapsed time", async () => {
     const ticks: HeartbeatSnapshot[] = [];
-    track(startHeartbeat({ intervalMs: 0, getSnapshot: () => snapshot(), onTick: (s) => ticks.push(s) }));
+    track(startHeartbeat({ intervalMs: 0, getSnapshot: () => snapshot(), onTick: (s) => void ticks.push(s) }));
 
     await clock.advance(10_000);
     expect(ticks).toHaveLength(0);
@@ -93,7 +93,7 @@ describe("startHeartbeat", () => {
 
   test("AC7: stop() prevents further ticks", async () => {
     const ticks: HeartbeatSnapshot[] = [];
-    const hb = startHeartbeat({ intervalMs: 30, getSnapshot: () => snapshot(), onTick: (s) => ticks.push(s) });
+    const hb = startHeartbeat({ intervalMs: 30, getSnapshot: () => snapshot(), onTick: (s) => void ticks.push(s) });
 
     await clock.advance(90);
     expect(ticks).toHaveLength(3);
@@ -149,7 +149,7 @@ describe("startHeartbeat", () => {
       startHeartbeat({
         intervalMs: 30,
         getSnapshot: () => snapshot({ phaseElapsedMs: 42, costUsd: 1.23 }),
-        onTick: (s) => ticks.push(s),
+        onTick: (s) => void ticks.push(s),
       }),
     );
 

@@ -453,3 +453,54 @@ and should go, or the type is wrong.
 `makeObservation` (9), and the `semantic-*` review mock-signature cluster surfaced while
 working here (~9 in three files, all `CompleteResult` shape drift). Both small. The
 `run-completion-session-close` contradiction above needs a decision, not a fix.
+
+## 12. Void-return handlers + `makeDebateRunner` — done (1067 → 1030, −37)
+
+Two mechanical clusters, cleared together as the worked example for
+`docs/plans/HANDOFF-1514-delegable-clusters.md`.
+
+- **30 errors, 5 files** — `(e) => received.push(e)` returns `number` where the listener
+  wants `void | Promise<void>`. Braces discard it; `void x.push(e)` where braces do not fit
+  (and `void` is not a counted hatch).
+- **7 sites, 1 file** — `createDebateRunner = mock(() => ({ runPlan }))`. `DebateRunner` is a
+  class with eight `private readonly` fields, so a bare literal can never satisfy it
+  structurally; `makeDebateRunner()` has existed for this since §3c-ii and was simply not
+  being used. `plan-debate.test.ts` 22 → 15.
+
+All six counters flat. Full suite green, 25 gates green.
+
+### The near-miss worth recording: a syntax error reads as a triumph
+
+A regex introduced `TS1005` into `otel-heartbeat.test.ts`. The project-wide count went
+**1067 → 16**. Nothing was fixed — a parse failure stops `tsc` reporting *semantic* errors
+across the whole project, so 1051 real errors just stopped being counted. Had that been
+committed on the strength of the number, the typecheck baseline would have been rewritten to
+16 and the drain would have "finished" with ~1000 errors invisible behind one broken file.
+
+**The guard, now G1 in the handoff:** after any edit, `grep -E "error TS1[0-9]{3}:"` must
+print nothing, and any drop larger than the cluster you touched is a bug report about
+yourself. (`TS18046`/`18047`/`18048` are five digits and are *not* syntax errors.)
+
+### Regex is for finding, not for fixing
+
+The same regex approach applied to the PRD/UserStory literals in
+`reporter-lifecycle-basic.test.ts` took it from **10 errors to 19** — the story literals nest
+inside the PRD literal and brace-matching went wrong. Reverted. Flat call expressions are
+safe to rewrite mechanically; nested object literals are not.
+
+### The uncounted hole: `!`
+
+`TS18046/18047/18048` ("possibly undefined", 43 errors) is the most inviting-looking cluster
+left and is deliberately **not** delegated. The natural fix `foo!.bar` is matched by none of
+the six escape-hatch patterns, so it would retire 43 typecheck errors and create 43 pieces of
+debt no gate can ever see. `expect(x).toBeDefined()` does not narrow, and `foo?.bar` inside an
+assertion can make it vacuously true. Needs a per-site decision or a counted helper.
+
+## Next
+
+Delegable, with validated recipes, in `docs/plans/HANDOFF-1514-delegable-clusters.md`:
+`createDebateRunner` (2 files left) and the PRD/UserStory literals (~11, hand-edit only).
+
+Explicitly not delegable, with reasons: the `!` cluster above (43), `plugins/loader.test.ts`
+(22, needs a `makeOptimizerResult()` helper designed first), and the `Mock<() => X>` signature
+drift in `parallel-batch` / `story-orchestrator-*` / the config suites (170+, no single recipe).

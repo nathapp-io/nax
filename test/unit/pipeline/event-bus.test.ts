@@ -28,7 +28,9 @@ describe("PipelineEventBus", () => {
   test("subscribes and receives event", () => {
     const bus = new PipelineEventBus();
     const received: PipelineEvent[] = [];
-    bus.on("story:completed", (e) => received.push(e));
+    bus.on("story:completed", (e) => {
+      received.push(e);
+    });
 
     const evt = makeStoryCompletedEvent();
     bus.emit(evt);
@@ -40,7 +42,9 @@ describe("PipelineEventBus", () => {
   test("onAll receives all event types", () => {
     const bus = new PipelineEventBus();
     const received: string[] = [];
-    bus.onAll((e) => received.push(e.type));
+    bus.onAll((e) => {
+      received.push(e.type);
+    });
 
     bus.emit(makeStoryCompletedEvent());
     bus.emit({ type: "run:completed", totalStories: 1, passedStories: 1, failedStories: 0, durationMs: 5000 });
@@ -51,7 +55,9 @@ describe("PipelineEventBus", () => {
   test("unsubscribe stops receiving events", () => {
     const bus = new PipelineEventBus();
     const received: PipelineEvent[] = [];
-    const unsub = bus.on("story:completed", (e) => received.push(e));
+    const unsub = bus.on("story:completed", (e) => {
+      received.push(e);
+    });
 
     bus.emit(makeStoryCompletedEvent());
     unsub();
@@ -67,7 +73,9 @@ describe("PipelineEventBus", () => {
     bus.on("story:completed", () => {
       throw new Error("boom");
     });
-    bus.on("story:completed", () => results.push("second"));
+    bus.on("story:completed", () => {
+      results.push("second");
+    });
 
     bus.emit(makeStoryCompletedEvent());
 
@@ -86,7 +94,9 @@ describe("PipelineEventBus", () => {
   test("clear removes all subscribers", () => {
     const bus = new PipelineEventBus();
     const received: PipelineEvent[] = [];
-    bus.on("story:completed", (e) => received.push(e));
+    bus.on("story:completed", (e) => {
+      received.push(e);
+    });
     bus.clear();
     bus.emit(makeStoryCompletedEvent());
 
@@ -110,7 +120,9 @@ describe("PipelineEventBus", () => {
     const bus = new PipelineEventBus();
     const received: PipelineEvent[] = [];
 
-    bus.on("run:completed", (e) => received.push(e));
+    bus.on("run:completed", (e) => {
+      received.push(e);
+    });
     bus.emit(makeStoryCompletedEvent());
 
     expect(received).toHaveLength(0);
@@ -119,7 +131,9 @@ describe("PipelineEventBus", () => {
   test("story:skipped event is typed and receivable", () => {
     const bus = new PipelineEventBus();
     const received: PipelineEvent[] = [];
-    bus.on("story:skipped", (e) => received.push(e));
+    bus.on("story:skipped", (e) => {
+      received.push(e);
+    });
 
     bus.emit({ type: "story:skipped", storyId: "US-001", reason: "user requested skip" });
 
@@ -184,7 +198,9 @@ describe("PipelineEventBus", () => {
   test("AC5: onAll receives story phase completion", () => {
     const bus = new PipelineEventBus();
     const received: PipelineEvent[] = [];
-    bus.onAll((event) => received.push(event));
+    bus.onAll((event) => {
+      received.push(event);
+    });
 
     const event = makeStoryPhaseCompletedEvent();
     bus.emit(event);
@@ -195,7 +211,9 @@ describe("PipelineEventBus", () => {
   test("story:escalated event is typed and receivable", () => {
     const bus = new PipelineEventBus();
     const received: PipelineEvent[] = [];
-    bus.on("story:escalated", (e) => received.push(e));
+    bus.on("story:escalated", (e) => {
+      received.push(e);
+    });
 
     bus.emit({ type: "story:escalated", storyId: "US-001", fromTier: "fast", toTier: "balanced" });
 

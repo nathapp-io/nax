@@ -41,7 +41,9 @@ function makeSlot(opName: string): AnySlot {
 
 async function capturePhaseEvent(fn: () => Promise<unknown>): Promise<StoryPhaseCompletedEvent | undefined> {
   const events: StoryPhaseCompletedEvent[] = [];
-  const unsub = pipelineEventBus.on("story:phase:completed", (e) => events.push(e));
+  const unsub = pipelineEventBus.on("story:phase:completed", (e) => {
+    events.push(e);
+  });
   try {
     await fn();
   } finally {
