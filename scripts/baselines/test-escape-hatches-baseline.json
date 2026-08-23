@@ -1,13 +1,13 @@
 {
   "counts": {
-    "asAny": 1394,
+    "asAny": 1393,
     "tsSuppress": 54,
     "ratchetAllow": 107,
     "absentValue": 17,
-    "anyType": 1886,
+    "anyType": 1885,
     "looseCast": 2008
   },
-  "updatedAt": "2026-08-23T08:26:43.009Z",
+  "updatedAt": "2026-08-23T12:00:20.139Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -25,8 +25,6 @@
       "looseCast": 4
     },
     "test/helpers/mock-agent-manager.ts": {
-      "asAny": 1,
-      "anyType": 1,
       "looseCast": 1
     },
     "test/helpers/pipeline-context.ts": {

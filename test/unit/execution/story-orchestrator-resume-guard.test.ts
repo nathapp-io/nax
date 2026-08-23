@@ -99,7 +99,7 @@ describe("AC3: validate-short-circuit + empty findings → liteScopeIncomplete",
   test("AC3: returns liteScopeIncomplete: true when exitReason=validate-short-circuit and finalFindings.length=0", async () => {
     const config = makeNaxConfig();
     const agentManager = makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) =>
+      runWithFallbackTransportFn: async (_req, onSuccess) =>
         onSuccess(
           makeTurnResult({
             output: JSON.stringify({ success: true }),
