@@ -3,7 +3,7 @@ import { callOp } from "@/operations";
 import { adversarialReviewOp } from "@/operations/adversarial-review";
 import type { AdversarialReviewInput } from "@/operations/adversarial-review";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime, opSelector } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -40,7 +40,7 @@ function makeBuildCtx() {
   const runtime = makeTestRuntime();
   createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
-  return { packageView: view, config: view.select(adversarialReviewOp.config) };
+  return { packageView: view, config: view.select(opSelector(adversarialReviewOp.config)) };
 }
 
 describe("adversarialReviewOp shape", () => {

@@ -16,7 +16,10 @@ import { makeTestRuntime } from "@test/helpers";
 
 const testSel = pickSelector("test-orchestrator-sel", "execution");
 
-const mockImplementerOp: RunOperation<{ code: string }, { success: boolean }, typeof DEFAULT_CONFIG> = {
+/** The op fixtures' config slice, derived from the selector so the two cannot drift. */
+type TestOpConfig = ReturnType<(typeof testSel)["select"]>;
+
+const mockImplementerOp: RunOperation<{ code: string }, { success: boolean }, TestOpConfig> = {
   kind: "run",
   name: "mock-implementer",
   stage: "run",
@@ -34,7 +37,7 @@ function makeCheckOp(
 ): DeterministicOperation<
   { workdir: string; storyId: string },
   { success: boolean; findings: never[]; durationMs: number },
-  typeof DEFAULT_CONFIG
+  TestOpConfig
 > {
   return {
     kind: "deterministic",

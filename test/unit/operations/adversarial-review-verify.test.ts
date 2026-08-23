@@ -13,7 +13,7 @@ import { adversarialReviewOp } from "@/operations/adversarial-review";
 import type { AdversarialReviewInput, AdversarialReviewOutput } from "@/operations/adversarial-review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { NaxRuntime } from "@/runtime";
-import { makeTestRuntime, withTempDir } from "@test/helpers";
+import { makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -55,7 +55,7 @@ function makeVerifyCtx() {
   const view = runtime.packages.repo();
   return {
     packageView: view,
-    config: view.select(adversarialReviewOp.config),
+    config: view.select(opSelector(adversarialReviewOp.config)),
     readFile: async (_path: string) => null as string | null,
     fileExists: async (_path: string) => false,
   };

@@ -4,7 +4,7 @@ import type { AcceptanceConfig } from "@/config/selectors";
 import type { AcceptanceRefineInput } from "@/operations/acceptance-refine";
 import type { BuildContext } from "@/operations/types";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { makeNaxConfig, makeTestRuntime, opSelector } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -28,7 +28,7 @@ function makeBuildCtx() {
   const runtime = makeTestRuntime();
   createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
-  return { packageView: view, config: view.select(acceptanceRefineOp.config) };
+  return { packageView: view, config: view.select(opSelector(acceptanceRefineOp.config)) };
 }
 
 describe("acceptanceRefineOp shape", () => {

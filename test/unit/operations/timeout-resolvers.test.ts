@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { adversarialReviewOp, decomposeOp, planInteractiveOp, semanticReviewOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { makeNaxConfig, makeTestRuntime, opSelector } from "@test/helpers";
 
 let runtime: NaxRuntime | undefined;
 afterEach(async () => {
@@ -12,7 +12,7 @@ describe("operation timeout resolvers", () => {
   test("planInteractiveOp timeoutMs resolves from plan.timeoutSeconds", () => {
     runtime = makeTestRuntime();
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(planInteractiveOp.config) };
+    const ctx = { packageView: view, config: view.select(opSelector(planInteractiveOp.config)) };
     const timeoutMs = planInteractiveOp.timeoutMs?.(
       {
         specContent: "spec",
@@ -34,7 +34,7 @@ describe("operation timeout resolvers", () => {
     });
     runtime = makeTestRuntime({ config });
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(planInteractiveOp.config) };
+    const ctx = { packageView: view, config: view.select(opSelector(planInteractiveOp.config)) };
 
     const model = planInteractiveOp.model?.(
       {
@@ -53,7 +53,7 @@ describe("operation timeout resolvers", () => {
   test("decomposeOp timeoutMs prefers plan.decomposeTimeoutSeconds", () => {
     runtime = makeTestRuntime();
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(decomposeOp.config) };
+    const ctx = { packageView: view, config: view.select(opSelector(decomposeOp.config)) };
     const timeoutMs = decomposeOp.timeoutMs?.(
       {
         specContent: "spec",
@@ -72,7 +72,7 @@ describe("operation timeout resolvers", () => {
     });
     runtime = makeTestRuntime({ config });
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(decomposeOp.config) };
+    const ctx = { packageView: view, config: view.select(opSelector(decomposeOp.config)) };
 
     const model = decomposeOp.model?.(
       {
@@ -88,7 +88,7 @@ describe("operation timeout resolvers", () => {
   test("semanticReviewOp timeoutMs resolves from semanticConfig.timeoutMs input", () => {
     runtime = makeTestRuntime();
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(semanticReviewOp.config) };
+    const ctx = { packageView: view, config: view.select(opSelector(semanticReviewOp.config)) };
     const timeoutMs = semanticReviewOp.timeoutMs?.(
       {
         workdir: "/tmp/test",
@@ -115,7 +115,7 @@ describe("operation timeout resolvers", () => {
   test("adversarialReviewOp timeoutMs resolves from adversarialConfig.timeoutMs input", () => {
     runtime = makeTestRuntime();
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(adversarialReviewOp.config) };
+    const ctx = { packageView: view, config: view.select(opSelector(adversarialReviewOp.config)) };
     const timeoutMs = adversarialReviewOp.timeoutMs?.(
       {
         workdir: "/tmp/test",

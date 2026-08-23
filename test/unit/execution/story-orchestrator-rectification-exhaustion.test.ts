@@ -29,7 +29,10 @@ import { makeStory, makeTestRuntime } from "@test/helpers";
 
 const testSel = pickSelector("test-exhaustion-sel", "execution");
 
-const mockImplementerOp: RunOperation<{ story: string }, { success: boolean }, typeof DEFAULT_CONFIG> = {
+/** The op fixtures' config slice, derived from the selector so the two cannot drift. */
+type TestOpConfig = ReturnType<(typeof testSel)["select"]>;
+
+const mockImplementerOp: RunOperation<{ story: string }, { success: boolean }, TestOpConfig> = {
   kind: "run",
   name: "implementer",
   stage: "run",
@@ -42,11 +45,7 @@ const mockImplementerOp: RunOperation<{ story: string }, { success: boolean }, t
   parse: () => ({ success: true }),
 };
 
-const mockVerifierOp: RunOperation<
-  { story: string },
-  { success: boolean; findings: Finding[] },
-  typeof DEFAULT_CONFIG
-> = {
+const mockVerifierOp: RunOperation<{ story: string }, { success: boolean; findings: Finding[] }, TestOpConfig> = {
   kind: "run",
   name: "verifier",
   stage: "verify",
@@ -290,11 +289,7 @@ describe("ExecutionPlan.run() — AC6: rectificationExhausted on cycle exhaustio
 // AC1.1–AC1.4: gatherRectificationFindings — verifier-as-SSOT carve-out
 // ─────────────────────────────────────────────────────────────────────────────
 
-const mockFullSuiteGateOp: RunOperation<
-  { story: string },
-  { success: boolean; findings: Finding[] },
-  typeof DEFAULT_CONFIG
-> = {
+const mockFullSuiteGateOp: RunOperation<{ story: string }, { success: boolean; findings: Finding[] }, TestOpConfig> = {
   kind: "run",
   name: "full-suite-gate",
   stage: "verify",

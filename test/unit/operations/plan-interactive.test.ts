@@ -16,7 +16,7 @@ import type { RetryStrategy } from "@/agents";
 import { planInteractiveOp } from "@/operations";
 import { validatePlanOutput } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
-import { makePRD, makeStory } from "@test/helpers";
+import { makePRD, makeStory, opSelector } from "@test/helpers";
 import { makeTestRuntime, withWarnSpy } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -32,7 +32,7 @@ function makeInteractiveVerifyCtx() {
   const view = runtime.packages.repo();
   return {
     packageView: view,
-    config: view.select(planInteractiveOp.config),
+    config: view.select(opSelector(planInteractiveOp.config)),
     readFile: async (_p: string) => null as string | null,
     fileExists: async (_p: string) => false,
   };
@@ -65,7 +65,7 @@ describe("planInteractiveOp.retry", () => {
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(planInteractiveOp.config) };
+    const ctx = { packageView: view, config: view.select(opSelector(planInteractiveOp.config)) };
 
     const input = {
       specContent: "Test spec",
@@ -108,7 +108,7 @@ describe("planInteractiveOp.parse()", () => {
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(planInteractiveOp.config) };
+    const ctx = { packageView: view, config: view.select(opSelector(planInteractiveOp.config)) };
 
     const validPRD = {
       project: "test-project",
@@ -157,7 +157,7 @@ describe("planInteractiveOp.parse()", () => {
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(planInteractiveOp.config) };
+    const ctx = { packageView: view, config: view.select(opSelector(planInteractiveOp.config)) };
     const input = {
       specContent: "Test spec",
       codebaseContext: "Test context",
@@ -188,7 +188,7 @@ describe("planInteractiveOp.recover", () => {
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(planInteractiveOp.config), readFile, fileExists };
+    const ctx = { packageView: view, config: view.select(opSelector(planInteractiveOp.config)), readFile, fileExists };
     const input = {
       specContent: "Test spec",
       codebaseContext: "Test context",
@@ -234,7 +234,7 @@ describe("planInteractiveOp.recover", () => {
 
     const ctx = {
       packageView: view,
-      config: view.select(planInteractiveOp.config),
+      config: view.select(opSelector(planInteractiveOp.config)),
       readFile: async (_path: string) => JSON.stringify(validPRD),
       fileExists: async (_path: string) => true,
     };
@@ -261,7 +261,7 @@ describe("planInteractiveOp.verify", () => {
     const view = runtime.packages.repo();
     const ctx = {
       packageView: view,
-      config: view.select(planInteractiveOp.config),
+      config: view.select(opSelector(planInteractiveOp.config)),
       readFile: async (_p: string) => null,
       fileExists: async (_p: string) => false,
     };
@@ -409,7 +409,7 @@ describe("planInteractiveOp.recover — disk-recovery escape hatch (#993)", () =
     const view = runtime.packages.repo();
     const ctx = {
       packageView: view,
-      config: view.select(planInteractiveOp.config),
+      config: view.select(opSelector(planInteractiveOp.config)),
       readFile: async (_path: string) => validPrdJson,
       fileExists: async (_path: string) => true,
     };
@@ -432,7 +432,7 @@ describe("planInteractiveOp.recover — disk-recovery escape hatch (#993)", () =
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(planInteractiveOp.config), readFile, fileExists };
+    const ctx = { packageView: view, config: view.select(opSelector(planInteractiveOp.config)), readFile, fileExists };
     const result = await planInteractiveOp.recover!(baseInput, ctx as any);
     expect(result).toBeNull();
   });

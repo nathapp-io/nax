@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { NaxRuntime } from "@/runtime";
-import { makeTestRuntime } from "@test/helpers";
+import { makeTestRuntime, opSelector } from "@test/helpers";
 import { makeStory } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -37,7 +37,7 @@ function makeBuildCtx() {
   const runtime = makeTestRuntime();
   createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
-  return { packageView: view, config: view.select(rectifyOp.config) };
+  return { packageView: view, config: view.select(opSelector(rectifyOp.config)) };
 }
 
 describe("rectifyOp shape", () => {

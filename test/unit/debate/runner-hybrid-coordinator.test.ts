@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import type { ConfigSelector } from "@/config";
 import { runHybrid } from "@/debate/runner-hybrid";
 import { _hybridDeps } from "@/debate/runner-hybrid";
 import type { HybridCtx } from "@/debate/runner-hybrid";
 import type { DebateStageConfig } from "@/debate/types";
 import { NaxError } from "@/errors";
 import { DebatePromptBuilder } from "@/prompts";
+import type { PackageView } from "@/runtime";
 import { makeMockAgentManager, makeNaxConfig, makeSessionManager, withDepsRestore } from "@test/helpers";
 
 function installCallOp(impl: typeof _hybridDeps.callOp) {
@@ -36,6 +38,14 @@ function makeHybridCtx(stageConfigOverrides: Partial<DebateStageConfig> = {}): H
       maxConcurrentDebaters: 3,
     },
   });
+  const testView: PackageView = {
+    packageDir: "/tmp/work",
+    relativeFromRoot: "",
+    repoRoot: "/tmp/work",
+    hasOverride: false,
+    config: fullConfig,
+    select: (sel) => sel.select(fullConfig),
+  };
   const agentManager = makeMockAgentManager({
     runAsSessionFn: async (agentName) => ({
       output: `proposal-${agentName}`,
@@ -64,14 +74,14 @@ function makeHybridCtx(stageConfigOverrides: Partial<DebateStageConfig> = {}): H
         sessionManager,
         configLoader: {
           current: () => fullConfig,
-          select: (_sel: unknown) => fullConfig,
+          select: <C>(sel: ConfigSelector<C>) => sel.select(fullConfig),
         },
         packages: {
-          resolve: () => ({ config: fullConfig, select: (_sel: unknown) => fullConfig }),
+          resolve: () => testView,
         },
         signal: undefined,
       },
-      packageView: { config: fullConfig, select: (_sel: unknown) => fullConfig },
+      packageView: testView,
       packageDir: "/tmp/work",
       agentName: "claude",
       storyId: "US-hybrid",

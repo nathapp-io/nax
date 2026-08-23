@@ -4,7 +4,7 @@ import { callOp } from "@/operations";
 import { semanticReviewOp } from "@/operations/semantic-review";
 import type { SemanticReviewInput } from "@/operations/semantic-review";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime, opSelector } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -41,7 +41,7 @@ function makeBuildCtx() {
   const runtime = makeTestRuntime();
   createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
-  return { packageView: view, config: view.select(semanticReviewOp.config) };
+  return { packageView: view, config: view.select(opSelector(semanticReviewOp.config)) };
 }
 
 describe("semanticReviewOp shape", () => {

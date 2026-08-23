@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { semanticReviewOp } from "@/operations/semantic-review";
 import type { SemanticReviewInput, SemanticReviewOutput } from "@/operations/semantic-review";
 import type { NaxRuntime } from "@/runtime";
-import { makeTestRuntime, withTempDir } from "@test/helpers";
+import { makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -46,7 +46,7 @@ function makeVerifyCtx() {
   const view = runtime.packages.repo();
   return {
     packageView: view,
-    config: view.select(semanticReviewOp.config),
+    config: view.select(opSelector(semanticReviewOp.config)),
     readFile: async (_path: string) => null as string | null,
     fileExists: async (_path: string) => false,
   };

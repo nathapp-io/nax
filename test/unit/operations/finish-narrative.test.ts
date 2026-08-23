@@ -20,7 +20,7 @@ import {
   resolveNarrative,
 } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeTestRuntime } from "@test/helpers";
+import { makeTestRuntime, opSelector } from "@test/helpers";
 
 describe("resolveNarrative", () => {
   test("prefers the agent's text over the spec summary", () => {
@@ -254,7 +254,7 @@ function makeCtx() {
   const runtime = makeTestRuntime();
   createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
-  return { packageView: view, config: view.select(finishNarrativeOp.config as ConfigSelector<FinishConfig>) };
+  return { packageView: view, config: view.select(opSelector(finishNarrativeOp.config)) };
 }
 
 const NARRATIVE_INPUT: FinishNarrativeInput = { base: "origin/main" };

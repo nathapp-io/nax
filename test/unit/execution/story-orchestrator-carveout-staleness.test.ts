@@ -24,7 +24,10 @@ import { makeMockCallContext, makeNaxConfig, makeTestRuntime } from "@test/helpe
 
 const testSel = pickSelector("carveout-staleness-selector", "execution");
 
-const mockImplementerOp: RunOperation<{ code: string }, { success: boolean }, typeof DEFAULT_CONFIG> = {
+/** The op fixtures' config slice, derived from the selector so the two cannot drift. */
+type TestOpConfig = ReturnType<(typeof testSel)["select"]>;
+
+const mockImplementerOp: RunOperation<{ code: string }, { success: boolean }, TestOpConfig> = {
   kind: "run",
   name: "mock-implementer",
   stage: "run",
@@ -40,7 +43,7 @@ const mockImplementerOp: RunOperation<{ code: string }, { success: boolean }, ty
 function makeDeterministicOp(
   name: string,
   result: { success: boolean; findings?: unknown[] },
-): DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> {
+): DeterministicOperation<unknown, unknown, TestOpConfig> {
   return {
     kind: "deterministic",
     name,
@@ -267,8 +270,8 @@ describe("ExecutionPlan.run — carve-out staleness", () => {
 
   function buildPlan(
     ctx: CallContext,
-    gateOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG>,
-    reviewOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG>,
+    gateOp: DeterministicOperation<unknown, unknown, TestOpConfig>,
+    reviewOp: DeterministicOperation<unknown, unknown, TestOpConfig>,
   ) {
     return new StoryOrchestratorBuilder()
       .addImplementer({ op: mockImplementerOp, input: { code: "" } })
@@ -287,7 +290,7 @@ describe("ExecutionPlan.run — carve-out staleness", () => {
 
     // Gate: green on the main-loop run, red (new failing test) on every re-run.
     let gateCalls = 0;
-    const gateOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+    const gateOp: DeterministicOperation<unknown, unknown, TestOpConfig> = {
       kind: "deterministic",
       name: "full-suite-gate",
       stage: "verify",
@@ -305,7 +308,7 @@ describe("ExecutionPlan.run — carve-out staleness", () => {
     };
     // Semantic review: fails first (seeds rectification), passes on re-run.
     let reviewCalls = 0;
-    const reviewOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+    const reviewOp: DeterministicOperation<unknown, unknown, TestOpConfig> = {
       kind: "deterministic",
       name: "semantic-review",
       stage: "verify",
@@ -364,7 +367,7 @@ describe("ExecutionPlan.run — carve-out staleness", () => {
     rt = makeTestRuntime({ config });
 
     let gateCalls = 0;
-    const gateOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+    const gateOp: DeterministicOperation<unknown, unknown, TestOpConfig> = {
       kind: "deterministic",
       name: "full-suite-gate",
       stage: "verify",
@@ -377,7 +380,7 @@ describe("ExecutionPlan.run — carve-out staleness", () => {
       },
     };
     let reviewCalls = 0;
-    const reviewOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+    const reviewOp: DeterministicOperation<unknown, unknown, TestOpConfig> = {
       kind: "deterministic",
       name: "semantic-review",
       stage: "verify",
@@ -436,7 +439,7 @@ describe("ExecutionPlan.run — carve-out staleness", () => {
     rt.quarantineMemo.add("flaky.test.ts::sometimes");
 
     let gateCalls = 0;
-    const gateOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+    const gateOp: DeterministicOperation<unknown, unknown, TestOpConfig> = {
       kind: "deterministic",
       name: "full-suite-gate",
       stage: "verify",
@@ -454,7 +457,7 @@ describe("ExecutionPlan.run — carve-out staleness", () => {
       },
     };
     let reviewCalls = 0;
-    const reviewOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+    const reviewOp: DeterministicOperation<unknown, unknown, TestOpConfig> = {
       kind: "deterministic",
       name: "semantic-review",
       stage: "verify",
@@ -507,7 +510,7 @@ describe("ExecutionPlan.run — carve-out staleness", () => {
 
     const gateOp = makeDeterministicOp("full-suite-gate", { success: true });
     let reviewCalls = 0;
-    const reviewOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+    const reviewOp: DeterministicOperation<unknown, unknown, TestOpConfig> = {
       kind: "deterministic",
       name: "semantic-review",
       stage: "verify",
@@ -582,7 +585,7 @@ describe("ExecutionPlan.run — completeness guard (configured review must run)"
 
     // Gate: red with the SAME finding on every run (main loop + every re-run).
     // Identical finding → post-rect keys ⊆ baseline → gateRegressedDuringRect=false.
-    const gateOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+    const gateOp: DeterministicOperation<unknown, unknown, TestOpConfig> = {
       kind: "deterministic",
       name: "full-suite-gate",
       stage: "verify",
@@ -597,7 +600,7 @@ describe("ExecutionPlan.run — completeness guard (configured review must run)"
     const semanticOp = makeDeterministicOp("semantic-review", { success: true });
 
     let adversarialRuns = 0;
-    const adversarialOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+    const adversarialOp: DeterministicOperation<unknown, unknown, TestOpConfig> = {
       kind: "deterministic",
       name: "adversarial-review",
       stage: "verify",

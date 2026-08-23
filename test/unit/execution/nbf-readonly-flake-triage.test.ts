@@ -18,6 +18,9 @@ const FLAKE_KEY = "test/unit/flaky.test.ts::sometimes";
 const REAL_KEY = "test/unit/real.test.ts::breaks";
 const testSelector = pickSelector("nbf-readonly-flake-triage", "execution");
 
+/** The op fixtures' config slice, derived from the selector so the two cannot drift. */
+type TestOpConfig = ReturnType<(typeof testSelector)["select"]>;
+
 const ADVISORY: Finding = {
   source: "adversarial-review",
   severity: "warning",
@@ -50,7 +53,7 @@ function memoFixture(): { memo: QuarantineMemo; keys: Set<string> } {
   };
 }
 
-function gateOp(): RunOperation<{ story: string }, { success: boolean; findings: Finding[] }, typeof DEFAULT_CONFIG> {
+function gateOp(): RunOperation<{ story: string }, { success: boolean; findings: Finding[] }, TestOpConfig> {
   return {
     kind: "run",
     name: GATE_NAME,

@@ -4,7 +4,7 @@ import type { RetryStrategy } from "@/agents";
 import { NaxError } from "@/errors";
 import { groundOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { makeNaxConfig, makeTestRuntime, opSelector } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -18,7 +18,7 @@ function makeBuildCtx(grounderOverrides?: { model?: unknown; timeoutSeconds?: nu
   const runtime = makeTestRuntime({ config });
   createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
-  return { packageView: view, config: view.select(groundOp.config) };
+  return { packageView: view, config: view.select(opSelector(groundOp.config)) };
 }
 
 describe("groundOp — identity", () => {

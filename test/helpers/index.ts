@@ -37,6 +37,7 @@ export {
 export { makeAgentRegistry } from "./agent-registry";
 export { makeAgentResult } from "./agent-result";
 export { makeTurnResult } from "./turn-result";
+export { opSelector } from "./config-selector";
 export { makeFinding } from "./finding";
 export { makeContextBundle, makeContextManifest } from "./context-bundle";
 export { makeContextOrchestrator, type MockContextOrchestrator } from "./context-orchestrator";

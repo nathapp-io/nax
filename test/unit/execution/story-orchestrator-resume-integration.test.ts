@@ -46,10 +46,13 @@ import { makeMockAgentManager, makeMockCallContext, makeNaxConfig, makeTestRunti
 
 const testSel = pickSelector("test-resume-integration-selector", "execution");
 
+/** The op fixtures' config slice, derived from the selector so the two cannot drift. */
+type TestOpConfig = ReturnType<(typeof testSel)["select"]>;
+
 function makePassOp(
   name: string,
   output: unknown = { success: true },
-): DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> {
+): DeterministicOperation<unknown, unknown, TestOpConfig> {
   return {
     kind: "deterministic",
     name,
@@ -62,7 +65,7 @@ function makePassOp(
 function makeFailOp(
   name: string,
   output: unknown = { success: false },
-): DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> {
+): DeterministicOperation<unknown, unknown, TestOpConfig> {
   return {
     kind: "deterministic",
     name,
@@ -73,7 +76,7 @@ function makeFailOp(
 }
 
 // Implementer has to be a RunOperation (semantic constraint of StoryOrchestratorBuilder).
-function makeRunOp<I, O>(name: string, sessionRole: string, output: O): RunOperation<I, O, typeof DEFAULT_CONFIG> {
+function makeRunOp<I, O>(name: string, sessionRole: string, output: O): RunOperation<I, O, TestOpConfig> {
   return {
     kind: "run",
     name,

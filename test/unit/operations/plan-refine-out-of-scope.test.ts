@@ -15,7 +15,7 @@ import type { PlanRefineInput } from "@/operations";
 import type { HopBodyContext } from "@/operations/types";
 import { PlanPromptBuilder } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
-import { makePRD, makeStory, makeTestRuntime, withWarnSpy } from "@test/helpers";
+import { makePRD, makeStory, makeTestRuntime, opSelector, withWarnSpy } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 const origReadFile = _planRefineDeps.readFile;
@@ -115,7 +115,7 @@ describe("planRefineOp.verify — out-of-scope backfill", () => {
     const view = runtime.packages.repo();
     return {
       packageView: view,
-      config: view.select(planRefineOp.config),
+      config: view.select(opSelector(planRefineOp.config)),
       readFile: async (_p: string) => null,
       fileExists: async (_p: string) => false,
     };
@@ -177,7 +177,7 @@ describe("planRefineOp.verify — story-local hoist demotion (#1446)", () => {
     const view = runtime.packages.repo();
     return {
       packageView: view,
-      config: view.select(planRefineOp.config),
+      config: view.select(opSelector(planRefineOp.config)),
       readFile: async (_p: string) => null,
       fileExists: async (_p: string) => false,
     };

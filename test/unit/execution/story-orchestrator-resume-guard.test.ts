@@ -28,7 +28,10 @@ import { makeMockAgentManager, makeNaxConfig, makeTestRuntime, makeTurnResult } 
 
 const testSel = pickSelector("test-resume-guard-selector", "execution");
 
-const mockImplementerOp: RunOperation<{ code: string }, { success: boolean }, typeof DEFAULT_CONFIG> = {
+/** The op fixtures' config slice, derived from the selector so the two cannot drift. */
+type TestOpConfig = ReturnType<(typeof testSel)["select"]>;
+
+const mockImplementerOp: RunOperation<{ code: string }, { success: boolean }, TestOpConfig> = {
   kind: "run",
   name: "mock-implementer",
   stage: "run",
@@ -50,7 +53,7 @@ const mockImplementerOp: RunOperation<{ code: string }, { success: boolean }, ty
 function makeDeterministicOp(
   name: string,
   result: { success: boolean; findings?: unknown[] },
-): DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> {
+): DeterministicOperation<unknown, unknown, TestOpConfig> {
   return {
     kind: "deterministic",
     name,

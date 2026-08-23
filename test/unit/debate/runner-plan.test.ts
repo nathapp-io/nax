@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { NaxConfig } from "@/config";
-import { DEFAULT_CONFIG } from "@/config";
+import { DEFAULT_CONFIG, reshapeSelector } from "@/config";
 import { _runPlanDeps } from "@/debate";
 import type { PreDebatePhase } from "@/debate/pre-phase";
 import { DebateRunner } from "@/debate/runner";
@@ -641,7 +641,7 @@ describe("runner-plan — preDebatePhase invocation", () => {
       (_kind: string): PreDebatePhase =>
         async (preCtx) => {
           receivedPackageView = preCtx.ctx.packageView;
-          preCtx.ctx.packageView.select(() => DEFAULT_CONFIG);
+          preCtx.ctx.packageView.select(reshapeSelector("runner-plan-test", () => DEFAULT_CONFIG));
           return { manifestSection: "## Grounded Facts\n- F-001", costUsd: 0 };
         },
     ) as any;
