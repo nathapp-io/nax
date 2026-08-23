@@ -18,7 +18,7 @@ import { routingStage } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
 import { PluginRegistry } from "@/plugins/registry";
 import type { PRD, UserStory } from "@/prd/types";
-import { makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makeTempDir } from "@test/helpers";
 
 function createTestContext(workdir: string, overrides?: Partial<PipelineContext>): PipelineContext {
   const story: UserStory = {
@@ -43,7 +43,7 @@ function createTestContext(workdir: string, overrides?: Partial<PipelineContext>
     userStories: [story],
   };
 
-  const config: NaxConfig = {
+  const config: NaxConfig = makeNaxConfig({
     version: 1,
     models: {
       fast: "claude-haiku-4-5",
@@ -139,7 +139,7 @@ function createTestContext(workdir: string, overrides?: Partial<PipelineContext>
         scopeToStory: true,
       },
     },
-  };
+  });
 
   return {
     workdir,

@@ -1,6 +1,6 @@
 {
-  "count": 1721,
-  "updatedAt": "2026-08-23T07:48:49.832Z",
+  "count": 1711,
+  "updatedAt": "2026-08-23T07:50:44.422Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -44,8 +44,8 @@
     "test/integration/prompts/pb-004-migration.test.ts": 5,
     "test/integration/routing/plugin-routing-advanced.test.ts": 1,
     "test/integration/routing/plugin-routing-core.test.ts": 20,
-    "test/integration/routing/routing-stage-final-state.test.ts": 11,
-    "test/integration/routing/routing-stage-greenfield.test.ts": 11,
+    "test/integration/routing/routing-stage-final-state.test.ts": 6,
+    "test/integration/routing/routing-stage-greenfield.test.ts": 6,
     "test/integration/runtime/runtime-middleware.test.ts": 3,
     "test/integration/tdd/_tdd-test-helpers.ts": 1,
     "test/integration/tdd/story-orchestrator-failureCategory.test.ts": 1,
