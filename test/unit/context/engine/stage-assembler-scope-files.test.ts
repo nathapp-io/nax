@@ -17,7 +17,14 @@ import type { ContextBundle, ContextRequest } from "@/context/engine";
 import { _stageAssemblerDeps, assembleForStage } from "@/context/engine";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
-import { makeStory as makeBaseStory, makeContextBundle } from "@test/helpers";
+import {
+  DEFAULT_TEST_ROUTING,
+  makeStory as makeBaseStory,
+  makeContextBundle,
+  makeNaxConfig,
+  makePRD,
+  makeTestContext,
+} from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals
@@ -54,20 +61,19 @@ const STORY_ID = "US-005";
 const makeStory = (overrides: Partial<UserStory> = {}): UserStory => makeBaseStory({ id: STORY_ID, ...overrides });
 
 function makeCtx(story: UserStory): PipelineContext {
-  return {
-    config: {
+  return makeTestContext({
+    config: makeNaxConfig({
       context: { v2: { enabled: true, pluginProviders: [] } },
-      autoMode: { defaultAgent: "claude" },
-    } as unknown as PipelineContext["config"],
-    rootConfig: { autoMode: { defaultAgent: "claude" } } as PipelineContext["rootConfig"],
-    prd: { feature: "test-feature", userStories: [] } as PipelineContext["prd"],
+      agent: { default: "claude" },
+    }),
+    rootConfig: makeNaxConfig({ agent: { default: "claude" } }),
+    prd: makePRD({ feature: "test-feature" }),
     story,
     stories: [],
-    routing: { agent: undefined, testStrategy: "tdd-simple" } as PipelineContext["routing"],
+    routing: { ...DEFAULT_TEST_ROUTING, testStrategy: "tdd-simple" },
     projectDir: PROJECT_DIR,
     workdir: PROJECT_DIR,
-    hooks: {},
-  } as unknown as PipelineContext;
+  });
 }
 
 function makeMockOrchestrator() {

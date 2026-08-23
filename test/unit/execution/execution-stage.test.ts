@@ -6,11 +6,12 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import type { ConfigSelector } from "@/config";
 import { NaxError } from "@/errors";
 import { _executionDeps, executionStage, routeTddFailure } from "@/pipeline/stages/execution";
 import type { PipelineContext } from "@/pipeline/types";
 import type { FailureCategory } from "@/tdd";
-import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
+import { makeAgentAdapter, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 import { makeTestContext, makeTestStory, withExecutionDeps } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -221,16 +222,15 @@ describe("executionStage.execute — runtime-crash on thrown infra errors", () =
         complexity: "simple",
         reasoning: "",
       },
-      packageView: { select: () => cfg } as unknown as PipelineContext["packageView"],
-      // runtime lives on the DispatchContext parent — cast to satisfy Partial<PipelineContext>
-      ...({
-        runtime: {
-          dispatchEvents: { onDispatch: () => () => {} },
-          signal: undefined,
-          packages: undefined,
-          onPidSpawned: undefined,
-        },
-      } as unknown as Partial<PipelineContext>),
+      packageView: {
+        packageDir: "/tmp/nax-crash-test",
+        relativeFromRoot: "",
+        repoRoot: "/tmp/nax-crash-test",
+        hasOverride: false,
+        config: cfg,
+        select: <C>(selector: ConfigSelector<C>) => selector.select(cfg),
+      },
+      runtime: makeMockRuntime(),
     });
   }
 
