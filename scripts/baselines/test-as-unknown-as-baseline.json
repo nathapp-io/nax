@@ -1,6 +1,6 @@
 {
-  "count": 157,
-  "updatedAt": "2026-08-23T04:58:17.208Z",
+  "count": 151,
+  "updatedAt": "2026-08-23T05:03:24.730Z",
   "byFile": {
     "test/helpers/status-writer.ts": 1,
     "test/helpers/context-orchestrator.ts": 1,
@@ -13,8 +13,6 @@
     "test/helpers/debate-runner.ts": 1,
     "test/helpers/mock-logger.ts": 2,
     "test/e2e/exhaustion-edge.e2e.test.ts": 1,
-    "test/integration/execution/deferred-review-integration.test.ts": 2,
-    "test/integration/acceptance/red-green-cycle.test.ts": 4,
     "test/integration/operations/complete-empty-output-retry.test.ts": 6,
     "test/integration/cli/cli-routing-calibrate.test.ts": 2,
     "test/integration/pipeline/gating-preservation.test.ts": 1,
