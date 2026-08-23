@@ -351,7 +351,7 @@ rest are on review.
   listed so you can recognise and skip them, not so you can attempt them.
 
 **As of session 3 this whole document is the escalate set.** The mechanical work is
-finished — see §8 for the 235 survivors grouped by the decision that unblocks each.
+finished — see §8 for the 151 survivors grouped by the decision that unblocks each.
 Class-typed blockers found in session 3 and *not* in the §3c-ii table above:
 `InteractionChain` (3), `PlanModeContext` via `createDebateRunner` (2),
 `createV1Provider` (1). Always confirm with `grep -rn "export class <T>" src/`.
@@ -763,7 +763,7 @@ cast (the src-side `isRuntimeWithAgentManager` check then takes the direct path)
 
 ---
 
-## 8. What is left: 235 casts, five design decisions
+## 8. What is left: 151 casts, three open decisions
 
 The sweep is over. Everything below needs a judgement call, so it is organised by the
 **decision** that unblocks it, not by cast shape. Each row is independent — they can be
