@@ -65,11 +65,10 @@ describe("worktree creation gating (EXEC-002)", () => {
     // When storyIsolation === "shared", no worktree operations should occur.
     // We verify by checking that create() is never called on the manager.
     const createMock = mock(async () => {});
-    _iterationRunnerDeps.worktreeManager = {
-      ...origWorktreeManager,
-      create: createMock,
-      ensureGitExcludes: mock(async () => {}),
-    } as unknown as typeof _iterationRunnerDeps.worktreeManager;
+    const manager = new WorktreeManager();
+    manager.create = createMock;
+    manager.ensureGitExcludes = mock(async () => {});
+    _iterationRunnerDeps.worktreeManager = manager;
 
     // In "shared" mode, the worktree code path is gated by:
     //   if (ctx.config.execution.storyIsolation === "worktree") { ... }
@@ -87,11 +86,10 @@ describe("worktree creation gating (EXEC-002)", () => {
     // existsSync returns true → create() should be skipped.
     const createMock = mock(async () => {});
     _iterationRunnerDeps.existsSync = mock(() => true);
-    _iterationRunnerDeps.worktreeManager = {
-      ...origWorktreeManager,
-      create: createMock,
-      ensureGitExcludes: mock(async () => {}),
-    } as unknown as typeof _iterationRunnerDeps.worktreeManager;
+    const manager = new WorktreeManager();
+    manager.create = createMock;
+    manager.ensureGitExcludes = mock(async () => {});
+    _iterationRunnerDeps.worktreeManager = manager;
 
     // The gating logic: if (!worktreeExists) { create() }
     // Since existsSync returns true, create() must not be called.
