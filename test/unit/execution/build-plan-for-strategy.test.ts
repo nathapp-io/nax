@@ -413,6 +413,7 @@ describe("buildPlanForStrategy — AC3: new check phase wiring (US-005)", () => 
     const inputs = makeNonTddInputs(story, {
       adversarialReview: {
         story,
+        workdir: "/tmp/test",
         adversarialConfig: config.review.adversarial!,
         mode: config.review.adversarial!.diffMode,
       },
@@ -459,6 +460,7 @@ describe("buildPlanForStrategy — AC3: new check phase wiring (US-005)", () => 
       },
       adversarialReview: {
         story,
+        workdir: "/tmp/test",
         adversarialConfig: config.review.adversarial!,
         mode: config.review.adversarial!.diffMode,
       },

@@ -147,6 +147,7 @@ describe("buildPlanForStrategy — AC2/AC3/AC4: triage strategy predicate behavi
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
+        workdir: "/tmp/test",
         adversarialConfig: config.review.adversarial!,
         mode: config.review.adversarial!.diffMode,
       },

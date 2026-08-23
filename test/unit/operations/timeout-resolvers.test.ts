@@ -91,6 +91,7 @@ describe("operation timeout resolvers", () => {
     const ctx = { packageView: view, config: view.select(semanticReviewOp.config) };
     const timeoutMs = semanticReviewOp.timeoutMs?.(
       {
+        workdir: "/tmp/test",
         story: {
           id: "US-001",
           title: "title",
@@ -117,6 +118,7 @@ describe("operation timeout resolvers", () => {
     const ctx = { packageView: view, config: view.select(adversarialReviewOp.config) };
     const timeoutMs = adversarialReviewOp.timeoutMs?.(
       {
+        workdir: "/tmp/test",
         story: {
           id: "US-002",
           title: "title",

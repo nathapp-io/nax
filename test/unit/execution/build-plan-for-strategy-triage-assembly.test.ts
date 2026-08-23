@@ -172,6 +172,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
+        workdir: "/tmp/test",
         adversarialConfig: config.review.adversarial!,
         mode: config.review.adversarial!.diffMode,
       },
@@ -216,6 +217,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
+        workdir: "/tmp/test",
         adversarialConfig: config.review.adversarial!,
         mode: config.review.adversarial!.diffMode,
       },
@@ -252,6 +254,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
+        workdir: "/tmp/test",
         adversarialConfig: config.review.adversarial!,
         mode: config.review.adversarial!.diffMode,
       },
@@ -292,6 +295,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
+        workdir: "/tmp/test",
         adversarialConfig: config.review.adversarial!,
         mode: config.review.adversarial!.diffMode,
       },
@@ -317,6 +321,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
       verifyScoped: { workdir: "/tmp/test", storyId: story.id },
       adversarialReview: {
         story,
+        workdir: "/tmp/test",
         adversarialConfig: config.review.adversarial!,
         mode: config.review.adversarial!.diffMode,
       },
