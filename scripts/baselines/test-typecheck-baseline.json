@@ -1,6 +1,6 @@
 {
-  "count": 1757,
-  "updatedAt": "2026-08-23T06:38:26.232Z",
+  "count": 1745,
+  "updatedAt": "2026-08-23T07:12:37.785Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -42,7 +42,6 @@
     "test/integration/plugins/plugins-registry.test.ts": 3,
     "test/integration/plugins/validator.test.ts": 1,
     "test/integration/prompts/pb-004-migration.test.ts": 5,
-    "test/integration/review/review-config-commands.test.ts": 12,
     "test/integration/review/review.test.ts": 7,
     "test/integration/routing/plugin-routing-advanced.test.ts": 1,
     "test/integration/routing/plugin-routing-core.test.ts": 20,
