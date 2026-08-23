@@ -5,13 +5,13 @@
  * the new digest after. Tests use _contextStageDeps injection — no mock.module().
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import type { ContextBundle, ContextRequest } from "@/context/engine";
 import { NaxError } from "@/errors";
 import { _contextStageDeps, contextStage } from "@/pipeline/stages/context";
 import type { PipelineContext } from "@/pipeline/types";
-import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeContextOrchestrator, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals (restored per test)
@@ -87,14 +87,15 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
 }
 
 function mockOrchestrator(bundle: ContextBundle, captureRequest?: (req: ContextRequest) => void) {
-  _contextStageDeps.createOrchestrator = () =>
-    ({
+  _contextStageDeps.createOrchestrator = mock(() =>
+    makeContextOrchestrator({
       async assemble(req: ContextRequest) {
         captureRequest?.(req);
         return bundle;
       },
       rebuildForAgent: () => bundle,
-    }) as unknown as ReturnType<typeof _contextStageDeps.createOrchestrator>;
+    }),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
