@@ -98,7 +98,7 @@ bun scripts/report-cast-buckets.ts
 | §3b seam sweeps — helper exists, example committed | **157** | **5** | -152 | done except survivors |
 | §3c-i typed dep stubs | **23** | **4** | -19 | done except misfiled |
 | §3c-ii dep members returning a class | 31 | 31 | 0 | escalate |
-| §3d leave alone | 61 | 61 | 0 | nobody |
+| §3d holding bucket | 61 | 61 | 0 | **28 open** (bakeoff builders), 33 load-bearing |
 | §3e private-member reach-ins | 49 | 49 | 0 | escalate |
 | tail — everything under 4 per cluster | **191** | **63** | -128 | **drained of tractable work** |
 | **Total** | **681** | **235** | **-446** | |
@@ -251,13 +251,17 @@ Building those is a design call. **Leave them and report.**
 Rule of thumb: `grep -rn "export class <ReturnedType>" src/`. If it is a class, it is
 3c-ii.
 
-### 3d. Leave alone
+### 3d. Holding bucket — 28 of these are still open work
+
+Despite the historical name, this is not a closed set. The bakeoff deps bags below are
+tractable (see §8 Decision 5); only the negative tests and allow-marked lines are
+load-bearing.
 
 | Cast target | Casts | Why |
 |:--|--:|:--|
 | `Record<string, unknown>` | 20 | Deliberate negative tests (`"not-an-object"`) and `DEFAULT_CONFIG` spread-widening |
 | `as unknown as string` / `string[]` | 9 | Deliberate negative tests — `42 as unknown as string`, `undefined as unknown as string`. Feeding a wrong type on purpose is the assertion |
-| `BakeoffCoordinatorDeps[…]`, `BakeoffCliDeps[…]`, `ContestantRunnerDeps[…]` | 28 | One file each. A typed builder local to that file is the right fix, not a shared helper — nothing else uses these deps bags. Low priority; skip unless asked |
+| `BakeoffCoordinatorDeps[…]`, `BakeoffCliDeps[…]`, `ContestantRunnerDeps[…]` | 28 | **OPEN — not leave-alone.** One file each. A typed builder local to that file is the right fix, not a shared helper — nothing else uses these deps bags. No design call needed; largest un-attempted mechanical cluster left. Low priority, but take it when asked |
 | anything carrying `// test-ratchet-allow: as-unknown-as` | 116 | Reviewed and accepted. Do not touch |
 
 ### 3e. Not classified — do not start here
@@ -666,15 +670,38 @@ would need a real migration:
 The last two are §3d-shaped: the cleanest resolution may be to reclassify them as
 reviewed exceptions rather than fix them.
 
-### Decision 5 — leave §3d alone (61 casts)
+### Decision 5 — §3d stays OPEN (61 casts)
 
-Deliberate negative tests, `DEFAULT_CONFIG` spread-widening, the three bakeoff deps bags,
-and 116 allow-marked lines. **Recommendation: close this out as permanent.** Feeding a
-wrong type on purpose *is* the assertion; a ratchet exception is the honest record of it.
+**Not closed as permanent.** §3d is a holding bucket, not a verdict, and it splits into
+two halves that deserve different answers:
+
+| Half | Casts | Standing |
+|:--|--:|:--|
+| The three bakeoff deps bags (`BakeoffCoordinatorDeps`, `BakeoffCliDeps`, `ContestantRunnerDeps`) | 28 | **Genuinely open work.** One file each; a typed builder local to that file is the right fix — nothing else uses these bags, so they do not earn a shared helper. Low priority, but tractable whenever someone wants it. This is the largest un-attempted mechanical cluster left in the repo |
+| Deliberate negative tests + `DEFAULT_CONFIG` spread-widening | 33 | Feeding a wrong type on purpose *is* the assertion. Removing these casts would delete the test's point. Revisit only if a better negative-test idiom appears |
+
+So §3d is ~28 casts of real remaining work plus ~33 that are load-bearing. Whoever picks
+up the bakeoff builders should re-derive the counts first (§Patterns learned item 10 —
+bucket numbers drift), and the 116 allow-marked lines across the repo stay untouched
+regardless; they are reviewed exceptions, separate from this decision.
 
 ### If nothing above is taken
 
-235 is a defensible floor: 681 → 235 is **−65%**, and every survivor is either a
-reviewed exception or a documented design call with its blocker named. Decisions 1 and 3
-are the only ones with real mechanical follow-through (~46 casts); Decision 2 is the
-largest single bucket (49) and the most contentious.
+235 is a defensible resting point — 681 → 235 is **−65%**, and every survivor is either
+load-bearing or a documented design call with its blocker named — but it is **not a
+floor**, and this issue should not be closed as done.
+
+Ranked by effort-to-value for whoever picks it up next:
+
+1. **§3d bakeoff builders (28)** — Decision 5. The only sizeable cluster left that needs
+   no design call at all. Best first move.
+2. **Seams (~36)** — Decision 1. Mechanical once each seam is designed; six small seams,
+   independently landable.
+3. **Legacy-key fixtures (~10)** — Decision 3. ~3 hours, plus a schema question for
+   `deferred-review-integration.test.ts`.
+4. **§3e ruling (49)** — Decision 2. Largest single bucket and the most contentious;
+   needs a visibility policy before any edit.
+5. **Tail remnant (63)** — Decision 4. Mostly fixtures that are wrong on purpose; expect
+   several to be reclassified rather than fixed.
+
+Taking 1–3 would land roughly 74 more casts and put the branch near 160.
