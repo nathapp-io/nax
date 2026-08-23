@@ -17,7 +17,7 @@ import { NaxError } from "@/errors";
 import type { PRD, UserStory } from "@/prd/types";
 import { buildDecomposePromptAsync } from "@/prompts";
 import { cleanupTempDir, makeMockRuntime, makeTempDir } from "@test/helpers";
-import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { makeDebateRunner, makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
@@ -117,7 +117,7 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     _planDeps.readPackageJsonAt = mock(async () => null);
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
-    _planDeps.createDebateRunner = mock(() => ({ run: mock(async () => ({ outcome: "failed" })) }) as never);
+    _planDeps.createDebateRunner = mock(() => makeDebateRunner({ run: mock(async () => ({ outcome: "failed" })) }));
   }
 
   beforeEach(async () => {

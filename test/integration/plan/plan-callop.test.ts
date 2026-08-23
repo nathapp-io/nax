@@ -10,7 +10,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planCommand } from "@/cli";
 import type { PRD } from "@/prd/types";
-import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { makeDebateRunner, makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -361,12 +361,14 @@ describe("planCommand integration — callOp + planInteractiveOp", () => {
 
     // Mock createDebateRunner to verify it's called
     const origCreateDebateRunner = _planDeps.createDebateRunner;
-    _planDeps.createDebateRunner = mock(() => ({
-      runPlan: mock(async () => ({
-        outcome: "failed" as const,
-        output: null,
-      })),
-    }));
+    _planDeps.createDebateRunner = mock(() =>
+      makeDebateRunner({
+        runPlan: mock(async () => ({
+          outcome: "failed" as const,
+          output: null,
+        })),
+      }),
+    );
 
     try {
       await planCommand(tmpDir, config, {
