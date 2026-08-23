@@ -20,11 +20,17 @@ typecheck **1745**.
 | 0 — escape-hatch guard | — | ✅ merged | this doc §4 D0 |
 | 1 — `DeterministicOperation<D>` | −95 | ✅ merged | `HANDOFF-1514-phase2-delegable.md` |
 | 2 — missing type imports | −94 | ✅ merged | same |
-| **3a — config slices** | **−54** | seam + worked example landed (`0dd7ba9ac`); 54 sites **ready to delegate** | `HANDOFF-1514-phase3a-config-slices.md` |
-| **3b — `callOp` dep slot** | **−47** | prototyped both tiers; **ready to delegate** | `HANDOFF-1514-phase3b-callop.md`, `PLAN-1514-phase3b-callop-seam.md` |
+| **config-slices** | **−54** | seam + worked example landed (`0dd7ba9ac`); 54 sites **ready to delegate** | `HANDOFF-1514-config-slices.md` |
+| **callop-seam** | **−47** | prototyped both tiers; **ready to delegate** | `HANDOFF-1514-callop-seam.md`, `PLAN-1514-callop-seam.md` |
 | 4 — dead fixture keys | ~−115 | not started; needs judgement per deletion | — |
 | 5 — implicit-any params | ~−103 | not started; `anyType` guards the cheap non-fix | — |
 | 6 — remaining seams / `makeObservation` | ~−90 | not started | — |
+
+**Commit tags for the un-started work are descriptive, not numbered** — `(#1514 config-slices)`
+and `(#1514 callop-seam)`. The original #1514 plan already used "phase 3a" for scaffolding the
+ratchets and "phase 3c" for the escape-hatch ratchet, so `#1514 phase 3a` means two different
+things in this repo's history. Phases 4–6 below should pick descriptive tags too when they start.
+
 
 ### What phase 3 changed about this proposal
 
@@ -48,9 +54,9 @@ Two of its rulings were **wrong**, and measuring on the merged tree caught both:
 - **Nothing in the suite exercises the review normalization path.** Every adversarial and
   semantic fixture omits `normalizedFindings` and `acDropped` — the fields
   `src/review/adversarial.ts` reads to decide what is *blocking*. They pass because the code
-  tolerates `undefined` there. Exposed by phase 3b tier 1; not yet fixed.
+  tolerates `undefined` there. Exposed by callop-seam tier 1; not yet fixed.
 - **`_diagnosisDeps` carries `callOp: _callOp as typeof _callOp`** — a redundant self-cast
-  that does nothing. Slated for deletion in phase 3b.
+  that does nothing. Slated for deletion in callop-seam.
 - **`.claude/rules/` had drifted from `.nax/rules/` and nothing checked it**; `test-ratchets.md`
   described two ratchets after a third had shipped. Fixed, and `check:rules-drift` now gates it.
 

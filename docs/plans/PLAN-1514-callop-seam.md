@@ -1,4 +1,4 @@
-# Plan: #1514 phase 3b — the `callOp` dep slot (55 errors)
+# Plan: #1514 callop-seam — the `callOp` dep slot (55 errors)
 
 Branch `chore/1514-phase3-drain` @ `86fb9d5b8`. Measured on that tree: typecheck **1745**,
 casts **102**, `anyType=1890`, `looseCast=2011`.

@@ -1,4 +1,4 @@
-# Handoff: #1514 phase 3b — the `callOp` dep slot (47 sites)
+# Handoff: #1514 callop-seam — the `callOp` dep slot (47 sites)
 
 Self-contained. You do not need to read the plan, the proposal, or any commit.
 
@@ -11,6 +11,12 @@ prototyped and measured — the numbers below are real, not estimates.
 
 **Read §2 before touching tier 2.** It contains the one mistake that will cost you an hour
 and look like the approach is broken.
+
+
+> **Commit tag:** use `(#1514 callop-seam)`, **not** `(#1514 phase 3b)`. The original
+> #1514 plan already used "phase 3a" for scaffolding the ratchets (`9bbf651bc`, `8d30cf977`)
+> and "phase 3c" for the escape-hatch ratchet, so the phase numbers are ambiguous across two
+> independent plans. Descriptive tags keep `git log --grep` able to separate them.
 
 ---
 
@@ -64,7 +70,7 @@ export const _adversarialDeps: {
   /**
    * Monomorphic on purpose: this module dispatches exactly one op, so the
    * inferred generic signature over-stated the seam and no stub could satisfy
-   * it without a cast (#1514 phase 3b).
+   * it without a cast (#1514 callop-seam).
    */
   callOp: (
     ctx: CallContext,
@@ -302,7 +308,7 @@ bun run check:test-typecheck:update
 git diff scripts/baselines/   # must have gone DOWN
 ```
 
-Commit as `refactor(<area>): type callOp monomorphically (#1514 phase 3b)` with a body line
+Commit as `refactor(<area>): type callOp monomorphically (#1514 callop-seam)` with a body line
 `typecheck: P -> Q`.
 
 **A typecheck count that drops implausibly far means the tree stopped compiling.** tsc

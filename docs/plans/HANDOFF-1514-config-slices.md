@@ -1,4 +1,4 @@
-# Handoff: #1514 phase 3a — config-slice fixtures
+# Handoff: #1514 config-slices — sliced-config fixtures
 
 Self-contained. You do not need to read the proposal, the issue, or any commit.
 
@@ -9,6 +9,12 @@ Self-contained. You do not need to read the proposal, the issue, or any commit.
 One mechanical substitution, repeated ~54 times across 14 files. **The seam is already
 built and one file is already converted as a worked example** — read `0dd7ba9ac` before
 you start. There is no design work in this document.
+
+
+> **Commit tag:** use `(#1514 config-slices)`, **not** `(#1514 phase 3a)`. The original
+> #1514 plan already used "phase 3a" for scaffolding the ratchets (`9bbf651bc`, `8d30cf977`)
+> and "phase 3c" for the escape-hatch ratchet, so the phase numbers are ambiguous across two
+> independent plans. Descriptive tags keep `git log --grep` able to separate them.
 
 ---
 
@@ -121,7 +127,7 @@ bun run check:test-typecheck:update
 git diff scripts/baselines/   # must have gone DOWN
 ```
 
-Commit as `test(<area>): convert <slice> fixtures to makeConfigSlice (#1514 phase 3a)`
+Commit as `test(<area>): convert <slice> fixtures to makeConfigSlice (#1514 config-slices)`
 with a body line `typecheck: P -> Q`.
 
 **A typecheck count that drops implausibly far means the tree stopped compiling.** tsc
