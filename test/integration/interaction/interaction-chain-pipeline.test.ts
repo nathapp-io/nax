@@ -255,6 +255,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
     // Import and invoke the failure handler or sequential executor path
     // that should fire 'human-review' when a story has exceeded max retries
     const { handlePipelineFailure } = await import("@/execution/pipeline-result-handler");
+    const runtime1 = makeMockRuntime();
     await handlePipelineFailure(
       {
         config: baseConfig as NaxConfig,
@@ -273,9 +274,11 @@ describe("AC2: max retries triggers human-review interaction", () => {
         routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
         isBatchExecution: false,
         allStoryMetrics: [],
-        timeoutRetryCountMap: new Map(),
         storyGitRef: null,
-        runtime: makeMockRuntime(),
+        runtime: runtime1,
+        agentManager: runtime1.agentManager,
+        sessionManager: runtime1.sessionManager,
+        abortSignal: runtime1.signal,
         // @ts-expect-error — interactionChain not in PipelineHandlerContext yet
         interactionChain: chain,
       },
@@ -326,6 +329,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
 
     // Call handlePipelineFailure to trigger the human-review request
     const { handlePipelineFailure } = await import("@/execution/pipeline-result-handler");
+    const runtime2 = makeMockRuntime();
     await handlePipelineFailure(
       {
         config: baseConfig as NaxConfig,
@@ -344,9 +348,11 @@ describe("AC2: max retries triggers human-review interaction", () => {
         routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
         isBatchExecution: false,
         allStoryMetrics: [],
-        timeoutRetryCountMap: new Map(),
         storyGitRef: null,
-        runtime: makeMockRuntime(),
+        runtime: runtime2,
+        agentManager: runtime2.agentManager,
+        sessionManager: runtime2.sessionManager,
+        abortSignal: runtime2.signal,
         interactionChain: chain,
       },
       {
