@@ -769,12 +769,12 @@ The sweep is over. Everything below needs a judgement call, so it is organised b
 **decision** that unblocks it, not by cast shape. Each row is independent — they can be
 taken in any order, or declined.
 
-### Decision 1 — seams (§3c-ii) — **DECIDED, now §9 Task B**
+### Decision 1 — seams (§3c-ii) — ✅ **DONE (sessions 5–6). Bucket is 0.**
 
-`makeDebateRunner` is built and its 13 sites are swapped (session 5). The remaining 16
-casts are specified as **§9 Task B**, including the correction that `AcpClient` is an
-interface rather than a class. The table below is the original survey, kept for context;
-**§9 Task B has the re-derived counts — use those.**
+Four seams built (`makeDebateRunner`, `makeMergeEngine`, `makeContextOrchestrator`,
+`makeInteractionChain`); `AcpClient` turned out to be an **interface** and its 6 casts were
+simply deleted; `WorktreeManager` and `createV1Provider` were below the seam threshold and
+were written out in place. The table below is the original survey, kept only for context.
 
 A class with private fields cannot be satisfied by an object literal, so the stub has to
 live behind a seam that contains the cast once, the same shape as the existing
@@ -792,7 +792,7 @@ live behind a seam that contains the cast once, the same shape as the existing
 Also class-typed, found session 3: `feature-context-fragments.test.ts:115` —
 `_featureContextV2Deps.createV1Provider` returns `new FeatureContextProviderV1()`.
 
-### Decision 2 — rule on §3e private-member reach-ins (49 casts)
+### Decision 2 — rule on §3e private-member reach-ins (49 casts) — **OPEN, needs the repo owner**
 
 `(plugin as unknown as { backoffMs: number }).backoffMs`. For each: should the member be
 public, or should the test go through the public API? Concentrated in
@@ -801,17 +801,18 @@ Entangled with `selector.test.ts`, where the §3a `NaxConfig` cast and the §3e 
 move together (removing the former surfaces an obsolete `parallel` field the latter
 reads; `toEqual` would have to become `toMatchObject`).
 
-### Decision 3 — migrate the legacy-key fixtures (§3a remnant, ~10 casts)
+### Decision 3 — legacy-key fixtures — ✅ **DONE (session 7), see §10**
 
-`stage-assembler{,-extra-provider-ids,-scope-files}.test.ts` and
-`tracker-provider-cost.test.ts` use `autoMode.defaultAgent` (migrated to `agent.default`)
-plus partial PRD/story that the cast was hiding. Either rewrite the fixtures against the
-new keys or route the test through the public API. Estimated ~3 hours.
-`deferred-review-integration.test.ts` is the same family but worse: it uses
-`pluginMode: "deferred"`, **removed from the schema in ADR-012 Phase 6**. Restore the
-value or rewrite the test — it cannot be a mechanical edit.
+The ruling: `autoMode.defaultAgent` is dead (nothing reads it; `resolveDefaultAgent` reads
+`config.agent.default`), so it was deleted rather than translated. Six files migrated.
 
-### Decision 4 — accept or fix the tail remnant (63 casts)
+**The `pluginMode` product question was answered: rewrite the test, do not restore the
+value.** Per-story plugin gating was removed in ADR-023 / #1146, so deferred **is** the
+timing and `review.pluginMode` selects only `gating` vs `observational`. See §7 session 7
+for the catalogue of fixture defects the casts in these files were hiding — it is the most
+useful record this document holds.
+
+### Decision 4 — accept or fix the tail remnant (58 casts) — OPEN
 
 All escalated in session 3. Each is a fixture deliberately built wrong, or a fake that
 would need a real migration:
@@ -829,7 +830,7 @@ would need a real migration:
 The last two are §3d-shaped: the cleanest resolution may be to reclassify them as
 reviewed exceptions rather than fix them.
 
-### Decision 5 — §3d: bakeoff DONE, 30 load-bearing left
+### Decision 5 — §3d: bakeoff DONE, 29 load-bearing left — OPEN
 
 **Not closed as permanent.** §3d is a holding bucket, not a verdict, and it splits into
 two halves that deserve different answers:
@@ -848,31 +849,36 @@ markers in the three files — so the "allow-marked neighbours" explanation for 
 wrong. The 28 was simply stale. Patterns item 10 again: re-derive, never trust a recorded
 number in this doc, including the ones in §8.
 
-### If nothing above is taken
+### Status: 151, and no queued work
 
-235 is a defensible resting point — 681 → 235 is **−65%**, and every survivor is either
-load-bearing or a documented design call with its blocker named — but it is **not a
-floor**, and this issue should not be closed as done.
+**681 → 151 is −78%.** Decisions 1, 3 and 5's bakeoff half are done; §3c-ii is closed
+entirely. **Every bucket with mechanical follow-through is finished.** There is no task a
+delegated agent can pick up from this document without a ruling first.
 
-Ranked by effort-to-value for whoever picks it up next. **Every remaining item needs a
-design call** — the no-judgement work ran out in session 4.
+151 is a defensible resting point, but it is **not a floor**, and this issue should not be
+closed as done.
 
-1. **§9 Task A — the `DeepPartial` fix** — infrastructure correctness; do it first, it
-   is what the other fixtures depend on. Does not move the cast count.
-2. **§9 Task B — remaining seams (16)** — `makeDebateRunner` proved the pattern.
-3. **Legacy-key fixtures (~10)** — Decision 3. ~3 hours, plus a schema question for
-   `deferred-review-integration.test.ts` that is a decision in its own right.
-4. **§3e ruling (49)** — Decision 2. Largest single bucket and the most contentious;
-   needs a member-visibility policy before a single edit is safe.
-5. **Tail remnant (63)** — Decision 4. Mostly fixtures that are wrong on purpose; expect
-   several to be reclassified as exceptions rather than fixed.
-6. **§3d (30)** — Decision 5. Load-bearing; leave unless a better negative-test idiom appears.
+| # | Open decision | Casts | Who must decide |
+|:--|:--|--:|:--|
+| 2 | §3e private-member reach-ins | 49 | **repo owner** — make the member public, or route the test through the public API? Each ruling widens a `src/` API, which §4 otherwise forbids |
+| 4 | tail remnant | 58 | **repo owner** — most are fixtures wrong *on purpose*; the honest resolution is reclassification, not repair |
+| 5 | §3d | 29 | load-bearing; leave unless a better negative-test idiom appears |
+| — | §3a remnant / §3b / §3c-i survivors | 15 | §3d-shaped or §3e-entangled; they move only after Decision 2 |
 
-Taking §9 Tasks A and B lands ~13 more casts (to roughly 178) plus a real correctness
-fix. Before starting
-any of them, read §Patterns learned item 12 — session 4 found that a cluster this doc had
-specified a builder for actually needed nothing but the cast deleted. **Try deleting the
-cast before designing anything.**
+**Decision 2 is the one that matters** — largest bucket, and `config/selector.test.ts` is
+blocked behind it (its §3a cast and its §3e cast must move together).
+
+**A caution on Decision 4.** Reclassifying ~40 deliberate-wrong-fixture casts as reviewed
+exceptions would drop the counter with **zero real improvement**. The escape hatches are
+themselves ratcheted (`asAny`, `tsSuppress`, `ratchetAllow`), so it would be visible rather
+than hidden — but converting real numbers into marker numbers is not progress. Prefer
+leaving them documented.
+
+**Before starting anything here**, read §Patterns learned — in particular item 12 (try
+deleting the cast before designing anything; sessions 4 and 6 both found clusters this
+document had specified a builder for that needed nothing at all), item 8 (one error
+suppresses the missing-required-property check — only the per-file baseline diff is
+evidence), and item 13 (never run two agents in one working directory).
 
 ---
 
