@@ -98,17 +98,18 @@ bun scripts/report-cast-buckets.ts
 | §3b seam sweeps — helper exists, example committed | **157** | **5** | -152 | done except survivors |
 | §3c-i typed dep stubs | **23** | **4** | -19 | done except misfiled |
 | §3c-ii dep members returning a class | 31 | 31 | 0 | escalate |
-| §3d holding bucket | 61 | 61 | 0 | **28 open** (bakeoff builders), 33 load-bearing |
+| §3d holding bucket | 61 | 30 | -31 | bakeoff builders **done**; 30 load-bearing |
 | §3e private-member reach-ins | 49 | 49 | 0 | escalate |
 | tail — everything under 4 per cluster | **191** | **63** | -128 | **drained of tractable work** |
-| **Total** | **681** | **235** | **-446** | |
+| **Total** | **681** | **204** | **-477** | |
 
-**Last verified:** ratchet = 235, typecheck errors = 1961 (was 1969; **−8**), per-file
-gate `worse: 0`, tree clean at `4bf6081da`. 24 commits on the branch.
+**Last verified:** ratchet = 204, typecheck errors = 1961 (was 1969; **−8**), per-file
+gate `worse: 0`, tree clean at `5be8fb7a3`. 27 commits on the branch.
 
 **THE MECHANICAL WORK IS FINISHED.** Sessions 1–2 drained 3a/3b/3c-i; session 3 drained
-the tail. All 235 remaining casts are either reviewed exceptions (§3d, 61), or need a
-design call (§3e 49, §3c-ii 31, §3a remnant 22, tail remnant 63, §3b/§3c-i survivors 9).
+the tail; session 4 drained the §3d bakeoff builders — the last cluster needing no design
+call. All 204 remaining casts are either load-bearing (§3d, 30) or need a design call
+(§3e 49, §3c-ii 31, §3a remnant 22, tail remnant 63, §3b/§3c-i survivors 9).
 
 **Do not dispatch another sweep agent against this doc.** There is no factory-swap
 cluster left. The next step is one of the design decisions in §8, not more repetition.
@@ -251,17 +252,17 @@ Building those is a design call. **Leave them and report.**
 Rule of thumb: `grep -rn "export class <ReturnedType>" src/`. If it is a class, it is
 3c-ii.
 
-### 3d. Holding bucket — 28 of these are still open work
+### 3d. Holding bucket — bakeoff builders done, 30 load-bearing left
 
-Despite the historical name, this is not a closed set. The bakeoff deps bags below are
-tractable (see §8 Decision 5); only the negative tests and allow-marked lines are
-load-bearing.
+The bakeoff deps bags were drained in session 4 (`ffc423b4e`, `64d1c823e`, `5be8fb7a3`).
+What remains is load-bearing: negative tests, `DEFAULT_CONFIG` spread-widening, and
+allow-marked lines.
 
 | Cast target | Casts | Why |
 |:--|--:|:--|
 | `Record<string, unknown>` | 20 | Deliberate negative tests (`"not-an-object"`) and `DEFAULT_CONFIG` spread-widening |
 | `as unknown as string` / `string[]` | 9 | Deliberate negative tests — `42 as unknown as string`, `undefined as unknown as string`. Feeding a wrong type on purpose is the assertion |
-| `BakeoffCoordinatorDeps[…]`, `BakeoffCliDeps[…]`, `ContestantRunnerDeps[…]` | 28 | **OPEN — not leave-alone.** One file each. A typed builder local to that file is the right fix, not a shared helper — nothing else uses these deps bags. No design call needed; largest un-attempted mechanical cluster left. Low priority, but take it when asked |
+| ~~`BakeoffCoordinatorDeps[…]`, `BakeoffCliDeps[…]`, `ContestantRunnerDeps[…]`~~ | ~~31~~ **0** | **DONE (session 4).** No builder was needed in the end — see §Patterns learned item 12. The casts were pure noise: the mocks and the `FakeWorktreeManager` were already structurally assignable to their dep slots |
 | anything carrying `// test-ratchet-allow: as-unknown-as` | 116 | Reviewed and accepted. Do not touch |
 
 ### 3e. Not classified — do not start here
@@ -355,6 +356,38 @@ numbers for casts and typecheck errors.
 ---
 
 ## 7. Progress log
+
+### Phase 1a — session 4 (2026-08-23): §3d bakeoff builders, 3 commits
+
+The last cluster needing no design call. **235 → 204 (−31)**, typecheck flat at 1961,
+per-file gate `worse: 0`, tree clean at `5be8fb7a3`.
+
+- `ffc423b4e` — `ContestantRunnerDeps.worktreeManager` (4). `FakeWorktreeManager` was
+  already structurally compatible — an interface, not a class. No fixture change needed.
+- `64d1c823e` — `BakeoffCliDeps` spy stubs (12).
+- `5be8fb7a3` — `BakeoffCoordinatorDeps` stubs (15).
+
+**No escalations.** No dep member in the three files returns a class — confirmed with
+`grep -rn "export class" src/bakeoff/`.
+
+**The prescribed fix was wrong, in a useful way.** §8 Decision 5 specified "a typed
+builder local to each file". No builder was needed: all 31 casts were unnecessary from
+the start, because `mock()` spies and interface-shaped stubs are already structurally
+assignable to plain-function dep slots. Recorded as §Patterns learned item 12, which also
+covers the one place an annotation actively hurts (annotating the *variable* erases the
+`Mock<T>` shape and breaks later `.mock.calls` assertions — annotate at the object-literal
+property instead).
+
+**One real defect surfaced**, not a masking artifact: in `coordinator.test.ts` the AC3
+test's `runContestantSpy` declared its second parameter as an ad-hoc `{ feature: string }`
+rather than the real `ContestantOptions`, whose `feature` is optional — a genuine
+contravariance violation. Fixed by typing the parameter properly and reading
+`opts.feature ?? ""`.
+
+**Counting note:** the 28-vs-31 gap did not resolve as predicted. Raw grep and the
+ratchet's `byFile` both said 31 with zero allow-markers in these files; this doc's 28 was
+simply stale drift. See §Patterns learned item 10.
+
 
 ### Phase 1a — session 3 (2026-08-23): the tail drained, 18 commits
 
@@ -550,6 +583,24 @@ factory-swap cluster is left untouched.
     don't spread the *typed* const. Spread an **untyped** object carrying only the
     fields you need copied, so it brings no conflicting optional-field type.
 
+12. **Annotate at the point of use, never at the declaration — and check whether the
+    cast was needed at all (session 4).** All 31 bakeoff casts turned out to be pure
+    noise: a `mock()` spy assigned to a plain-function dep slot, and an interface-shaped
+    stub object, are *already* structurally assignable. TypeScript's contravariant
+    function-assignability accepts a fewer-parameter mock without help. Before designing
+    a builder, try simply deleting the cast.
+
+    Where a type IS needed, put it on the object-literal property, not the variable:
+    ```ts
+    // ❌ breaks later `.mock.calls` / `.mock.results` — erases the Mock<T> shape
+    const runBakeoff: BakeoffCliDeps["runBakeoff"] = mock(async () => {});
+    // ✅ leave the const inferred; the literal site does the checking
+    const runBakeoff = mock(async () => {});
+    const deps: BakeoffCliDeps = { runBakeoff, ... };
+    ```
+    This is why §8 Decision 5's prescribed "typed builder per file" was not what the work
+    actually needed. **The doc specified a fix; the code needed a smaller one.**
+
 ### Open §3a sites (escalate, 24 casts — all design-call)
 
 Everything "no judgement required" from this list is done. What remains is exactly
@@ -670,20 +721,24 @@ would need a real migration:
 The last two are §3d-shaped: the cleanest resolution may be to reclassify them as
 reviewed exceptions rather than fix them.
 
-### Decision 5 — §3d stays OPEN (61 casts)
+### Decision 5 — §3d: bakeoff DONE, 30 load-bearing left
 
 **Not closed as permanent.** §3d is a holding bucket, not a verdict, and it splits into
 two halves that deserve different answers:
 
 | Half | Casts | Standing |
 |:--|--:|:--|
-| The three bakeoff deps bags (`BakeoffCoordinatorDeps`, `BakeoffCliDeps`, `ContestantRunnerDeps`) | 28 | **Genuinely open work.** One file each; a typed builder local to that file is the right fix — nothing else uses these bags, so they do not earn a shared helper. Low priority, but tractable whenever someone wants it. This is the largest un-attempted mechanical cluster left in the repo |
-| Deliberate negative tests + `DEFAULT_CONFIG` spread-widening | 33 | Feeding a wrong type on purpose *is* the assertion. Removing these casts would delete the test's point. Revisit only if a better negative-test idiom appears |
+| ~~The three bakeoff deps bags~~ | ~~31~~ **0** | **Done, session 4.** Needed no builder — the casts were unnecessary from the start (§Patterns learned item 12) |
+| Deliberate negative tests + `DEFAULT_CONFIG` spread-widening | 30 | Feeding a wrong type on purpose *is* the assertion. Removing these casts would delete the test's point. Revisit only if a better negative-test idiom appears |
 
-So §3d is ~28 casts of real remaining work plus ~33 that are load-bearing. Whoever picks
-up the bakeoff builders should re-derive the counts first (§Patterns learned item 10 —
-bucket numbers drift), and the 116 allow-marked lines across the repo stay untouched
-regardless; they are reviewed exceptions, separate from this decision.
+§3d is now 30 load-bearing casts. The 116 allow-marked lines across the repo stay
+untouched regardless; they are reviewed exceptions, separate from this decision.
+
+**A counting note worth keeping.** This doc recorded the bakeoff cluster as 28; raw grep
+and the ratchet's own `byFile` both said **31**, and there were zero `// test-ratchet-allow`
+markers in the three files — so the "allow-marked neighbours" explanation for the gap was
+wrong. The 28 was simply stale. Patterns item 10 again: re-derive, never trust a recorded
+number in this doc, including the ones in §8.
 
 ### If nothing above is taken
 
@@ -691,17 +746,20 @@ regardless; they are reviewed exceptions, separate from this decision.
 load-bearing or a documented design call with its blocker named — but it is **not a
 floor**, and this issue should not be closed as done.
 
-Ranked by effort-to-value for whoever picks it up next:
+Ranked by effort-to-value for whoever picks it up next. **Every remaining item needs a
+design call** — the no-judgement work ran out in session 4.
 
-1. **§3d bakeoff builders (28)** — Decision 5. The only sizeable cluster left that needs
-   no design call at all. Best first move.
-2. **Seams (~36)** — Decision 1. Mechanical once each seam is designed; six small seams,
-   independently landable.
-3. **Legacy-key fixtures (~10)** — Decision 3. ~3 hours, plus a schema question for
-   `deferred-review-integration.test.ts`.
-4. **§3e ruling (49)** — Decision 2. Largest single bucket and the most contentious;
-   needs a visibility policy before any edit.
-5. **Tail remnant (63)** — Decision 4. Mostly fixtures that are wrong on purpose; expect
-   several to be reclassified rather than fixed.
+1. **Seams (~36)** — Decision 1. Six small seams, independently landable, mechanical once
+   each is designed. Best next move. Start with `makeDebateRunner` (15 casts, the largest).
+2. **Legacy-key fixtures (~10)** — Decision 3. ~3 hours, plus a schema question for
+   `deferred-review-integration.test.ts` that is a decision in its own right.
+3. **§3e ruling (49)** — Decision 2. Largest single bucket and the most contentious;
+   needs a member-visibility policy before a single edit is safe.
+4. **Tail remnant (63)** — Decision 4. Mostly fixtures that are wrong on purpose; expect
+   several to be reclassified as exceptions rather than fixed.
+5. **§3d (30)** — Decision 5. Load-bearing; leave unless a better negative-test idiom appears.
 
-Taking 1–3 would land roughly 74 more casts and put the branch near 160.
+Taking 1–2 would land roughly 46 more casts and put the branch near 158. Before starting
+any of them, read §Patterns learned item 12 — session 4 found that a cluster this doc had
+specified a builder for actually needed nothing but the cast deleted. **Try deleting the
+cast before designing anything.**
