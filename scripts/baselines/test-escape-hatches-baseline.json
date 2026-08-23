@@ -2,9 +2,10 @@
   "counts": {
     "asAny": 1398,
     "tsSuppress": 54,
-    "ratchetAllow": 108
+    "ratchetAllow": 108,
+    "absentValue": 18
   },
-  "updatedAt": "2026-08-23T05:21:30.515Z",
+  "updatedAt": "2026-08-23T05:46:30.494Z",
   "byFile": {
     "test/helpers/mock-agent-manager.ts": {
       "asAny": 1
@@ -57,6 +58,9 @@
     },
     "test/integration/execution/verdict-cleanup.test.ts": {
       "asAny": 1
+    },
+    "test/integration/cli/cli-routing-calibrate.test.ts": {
+      "absentValue": 2
     },
     "test/integration/cli/cli-precheck-integration.test.ts": {
       "asAny": 1
@@ -169,6 +173,9 @@
     },
     "test/unit/review/runner.test.ts": {
       "asAny": 1
+    },
+    "test/unit/review/category-fix-target.test.ts": {
+      "absentValue": 1
     },
     "test/unit/finish/review-audit-gaps-quality-walk.test.ts": {
       "ratchetAllow": 1
@@ -316,6 +323,9 @@
     "test/unit/verification/import-grep-fallback.test.ts": {
       "asAny": 4
     },
+    "test/unit/verification/fix-generator.test.ts": {
+      "absentValue": 1
+    },
     "test/unit/verification/tdd-verdict.test.ts": {
       "asAny": 3
     },
@@ -329,7 +339,11 @@
       "asAny": 3
     },
     "test/unit/verification/smart-runner-discovery.test.ts": {
-      "asAny": 15
+      "asAny": 15,
+      "absentValue": 5
+    },
+    "test/unit/verification/crash-detector.test.ts": {
+      "absentValue": 2
     },
     "test/unit/operations/mechanical-lintfix-strategy.test.ts": {
       "asAny": 8
@@ -494,7 +508,8 @@
       "asAny": 27
     },
     "test/unit/debate/session-helpers-resolver-model.test.ts": {
-      "asAny": 5
+      "asAny": 5,
+      "absentValue": 5
     },
     "test/unit/debate/prompt-builder.test.ts": {
       "asAny": 1
@@ -580,6 +595,9 @@
     "test/unit/agents/cost/calculate.test.ts": {
       "ratchetAllow": 4
     },
+    "test/unit/agents/retry/parse-retry.test.ts": {
+      "absentValue": 1
+    },
     "test/unit/agents/retry/types.test.ts": {
       "asAny": 3
     },
@@ -624,6 +642,9 @@
     },
     "test/unit/config/regression-gate-schema.test.ts": {
       "asAny": 4
+    },
+    "test/unit/config/merge.test.ts": {
+      "absentValue": 1
     },
     "test/unit/config/reporters-schema.test.ts": {
       "asAny": 5
