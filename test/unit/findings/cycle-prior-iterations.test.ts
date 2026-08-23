@@ -308,7 +308,7 @@ describe("US-002 AC4/AC5 — bailWhen predicates read carried history", () => {
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
       callOp: makeCallOpMock(),
-      logger: logger as unknown as Parameters<typeof runFixCycle>[3]["logger"],
+      logger,
     });
 
     expect(result.exitReason).toBe("bail-when");
@@ -326,7 +326,7 @@ describe("US-002 AC4/AC5 — bailWhen predicates read carried history", () => {
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
       callOp: makeCallOpMock(),
-      logger: logger as unknown as Parameters<typeof runFixCycle>[3]["logger"],
+      logger,
     });
 
     expect(result.exitReason).toBe("bail-when");

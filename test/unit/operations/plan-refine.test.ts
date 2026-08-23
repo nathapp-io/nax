@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { AgentRunRequest } from "@/agents/manager-types";
 import { _planRefineDeps, callOp, normalizeCreatedContextFiles, planRefineOp } from "@/operations";
 import { planInteractiveOp } from "@/operations";
-import type { VerifyContext } from "@/operations";
+import type { PlanRefineInput, VerifyContext } from "@/operations";
 import type { HopBodyContext } from "@/operations/types";
 import { PlanPromptBuilder } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
@@ -303,21 +303,19 @@ describe("planRefineOp.hopBody — specGuard spec-drift repair turn", () => {
       sendCount += 1;
       return turn(sendCount === 1 ? "refined" : "drift-repaired", 2);
     });
-    return {
-      ctx: {
-        input: {
-          specContent: SPEC,
-          codebaseContext: "",
-          featureName: "f",
-          branchName: "feat/f",
-          outputPath: "/tmp/p.json",
-          specGuard,
-        },
-        send,
-        sendWithParseRetry,
-      } as unknown as Parameters<NonNullable<typeof planRefineOp.hopBody>>[1],
+    const ctx: HopBodyContext<PlanRefineInput> = {
+      input: {
+        specContent: SPEC,
+        codebaseContext: "",
+        featureName: "f",
+        branchName: "feat/f",
+        outputPath: "/tmp/p.json",
+        specGuard,
+      },
       send,
+      sendWithParseRetry,
     };
+    return { ctx, send };
   }
 
   function makeDriftPrd() {

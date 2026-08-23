@@ -1,6 +1,6 @@
 {
-  "count": 1963,
-  "updatedAt": "2026-08-23T03:24:24.598Z",
+  "count": 1961,
+  "updatedAt": "2026-08-23T03:27:11.662Z",
   "byFile": {
     "test/helpers/deps.ts": 2,
     "test/helpers/fake-agent-manager.ts": 3,
@@ -198,7 +198,6 @@
     "test/unit/execution/unified-executor-rl007.test.ts": 1,
     "test/unit/execution/unified-executor-session-close.test.ts": 3,
     "test/unit/findings/adapters/acceptance-diagnose.test.ts": 1,
-    "test/unit/findings/cycle-prior-iterations.test.ts": 2,
     "test/unit/findings/cycle.test.ts": 3,
     "test/unit/hooks/on-all-stories-complete.test.ts": 10,
     "test/unit/interaction/init-headless.test.ts": 2,
