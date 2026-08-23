@@ -68,8 +68,6 @@ function makeConfig(action: "block" | "warn" | "skip") {
     models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
     autoMode: {
       enabled: false,
-      defaultAgent: "claude",
-      fallbackOrder: ["claude"],
       complexityRouting: { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" },
       escalation: { enabled: false, tierOrder: [] },
     },

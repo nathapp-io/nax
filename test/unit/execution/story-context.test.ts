@@ -39,7 +39,6 @@ function makePrd(story: UserStory): PRD {
 
 function makeConfig() {
   return makeNaxConfig({
-    autoMode: { defaultAgent: "claude" },
     execution: { sessionTimeoutSeconds: 30, verificationTimeoutSeconds: 60 },
     models: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
     quality: { commands: {} },

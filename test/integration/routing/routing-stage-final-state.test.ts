@@ -52,8 +52,6 @@ function createTestContext(workdir: string, overrides?: Partial<PipelineContext>
     },
     autoMode: {
       enabled: true,
-      defaultAgent: "nax-agent-claude",
-      fallbackOrder: ["nax-agent-claude"],
       complexityRouting: {
         simple: "fast",
         medium: "balanced",
