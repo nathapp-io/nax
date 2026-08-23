@@ -11,7 +11,13 @@
 export { makeAgentAdapter } from "./mock-agent-adapter";
 export { createMockAgentManager, makeMockAgentManager } from "./mock-agent-manager";
 export { makeLogger, type LogCall, type MockLogger } from "./mock-logger";
-export { makeNaxConfig, makeSparseNaxConfig, type DeepPartial } from "./mock-nax-config";
+export {
+  makeConfigSlice,
+  makeNaxConfig,
+  makeSparseNaxConfig,
+  makeStorySizeGateConfig,
+  type DeepPartial,
+} from "./mock-nax-config";
 export { makeSessionManager } from "./mock-session-manager";
 export {
   makeMockRuntime,
@@ -69,3 +75,4 @@ export { waitForFile } from "./fs";
 export { fakeAgentManager } from "./fake-agent-manager";
 export type { FakeAgentManagerOptions } from "./fake-agent-manager";
 export { absentValue, nullValue } from "./absent";
+export { makeAdversarialOutput, makeDiagnoseOutput, makeSemanticOutput } from "./review-outputs";

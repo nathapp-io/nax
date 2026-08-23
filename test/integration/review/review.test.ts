@@ -9,19 +9,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ReviewConfig } from "@/review";
 import { runReview } from "@/review/runner";
-import { makeTempDir } from "@test/helpers";
+import { makeConfigSlice, makeTempDir } from "@test/helpers";
 
 describe("Review Phase", () => {
   test("runReview - all checks pass", async () => {
     const tempDir = makeTempDir("nax-review-test-");
 
-    const config: ReviewConfig = {
+    const config: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["test"],
       commands: {
         test: "echo 'Tests passed'",
       },
-    };
+    });
 
     const result = await runReview({ config, workdir: tempDir });
 
@@ -36,13 +36,13 @@ describe("Review Phase", () => {
   test("runReview - check fails", async () => {
     const tempDir = makeTempDir("nax-review-test-");
 
-    const config: ReviewConfig = {
+    const config: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["typecheck"],
       commands: {
         typecheck: "sh -c 'exit 1'",
       },
-    };
+    });
 
     const result = await runReview({ config, workdir: tempDir });
 
@@ -57,7 +57,7 @@ describe("Review Phase", () => {
   test("runReview - multiple checks, stop on first failure", async () => {
     const tempDir = makeTempDir("nax-review-test-");
 
-    const config: ReviewConfig = {
+    const config: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["typecheck", "lint", "test"],
       commands: {
@@ -65,7 +65,7 @@ describe("Review Phase", () => {
         lint: "sh -c 'exit 1'",
         test: "echo 'test ok'",
       },
-    };
+    });
 
     const result = await runReview({ config, workdir: tempDir });
 
@@ -82,13 +82,13 @@ describe("Review Phase", () => {
   test("runReview - uses review config commands when specified", async () => {
     const tempDir = makeTempDir("nax-review-test-");
 
-    const config: ReviewConfig = {
+    const config: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["test"],
       commands: {
         test: "echo 'custom test command'",
       },
-    };
+    });
 
     const result = await runReview({ config, workdir: tempDir });
 
@@ -99,11 +99,11 @@ describe("Review Phase", () => {
   test("runReview - empty checks array", async () => {
     const tempDir = makeTempDir("nax-review-test-");
 
-    const config: ReviewConfig = {
+    const config: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: [],
       commands: {},
-    };
+    });
 
     const result = await runReview({ config, workdir: tempDir });
 
@@ -115,13 +115,13 @@ describe("Review Phase", () => {
   test("runReview - captures command output", async () => {
     const tempDir = makeTempDir("nax-review-test-");
 
-    const config: ReviewConfig = {
+    const config: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["test"],
       commands: {
         test: "echo 'Test output line 1' && echo 'Test output line 2'",
       },
-    };
+    });
 
     const result = await runReview({ config, workdir: tempDir });
 
@@ -133,13 +133,13 @@ describe("Review Phase", () => {
   test("runReview - records duration", async () => {
     const tempDir = makeTempDir("nax-review-test-");
 
-    const config: ReviewConfig = {
+    const config: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["test"],
       commands: {
         test: "echo 'done'",
       },
-    };
+    });
 
     const result = await runReview({ config, workdir: tempDir });
 

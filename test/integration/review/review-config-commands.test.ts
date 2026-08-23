@@ -16,17 +16,17 @@ import { join } from "node:path";
 import type { ExecutionConfig } from "@/config/schema";
 import type { ReviewConfig } from "@/review";
 import { runReview } from "@/review/runner";
-import { makeTempDir } from "@test/helpers";
+import { makeConfigSlice, makeTempDir } from "@test/helpers";
 
 describe("Review Config-Driven Commands (US-005)", () => {
   test("uses explicit executionConfig.lintCommand when provided", async () => {
     const tempDir = makeTempDir("nax-review-config-");
 
-    const reviewConfig: ReviewConfig = {
+    const reviewConfig: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["lint"],
       commands: {},
-    };
+    });
 
     const executionConfig: Partial<ExecutionConfig> = {
       lintCommand: "echo 'custom lint command'",
@@ -47,11 +47,11 @@ describe("Review Config-Driven Commands (US-005)", () => {
   test("uses explicit executionConfig.typecheckCommand when provided", async () => {
     const tempDir = makeTempDir("nax-review-config-");
 
-    const reviewConfig: ReviewConfig = {
+    const reviewConfig: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["typecheck"],
       commands: {},
-    };
+    });
 
     const executionConfig: Partial<ExecutionConfig> = {
       typecheckCommand: "echo 'custom typecheck command'",
@@ -72,11 +72,11 @@ describe("Review Config-Driven Commands (US-005)", () => {
   test("skips check when executionConfig command is null (explicitly disabled)", async () => {
     const tempDir = makeTempDir("nax-review-config-");
 
-    const reviewConfig: ReviewConfig = {
+    const reviewConfig: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["lint", "typecheck"],
       commands: {},
-    };
+    });
 
     const executionConfig: Partial<ExecutionConfig> = {
       lintCommand: null,
@@ -107,11 +107,11 @@ describe("Review Config-Driven Commands (US-005)", () => {
     };
     writeFileSync(join(tempDir, "package.json"), JSON.stringify(packageJson, null, 2));
 
-    const reviewConfig: ReviewConfig = {
+    const reviewConfig: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["lint"],
       commands: {},
-    };
+    });
 
     const result = await runReview({ config: reviewConfig, workdir: tempDir });
 
@@ -133,11 +133,11 @@ describe("Review Config-Driven Commands (US-005)", () => {
     };
     writeFileSync(join(tempDir, "package.json"), JSON.stringify(packageJson, null, 2));
 
-    const reviewConfig: ReviewConfig = {
+    const reviewConfig: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["lint", "typecheck"],
       commands: {},
-    };
+    });
 
     const result = await runReview({ config: reviewConfig, workdir: tempDir });
 
@@ -158,11 +158,11 @@ describe("Review Config-Driven Commands (US-005)", () => {
     };
     writeFileSync(join(tempDir, "package.json"), JSON.stringify(packageJson, null, 2));
 
-    const reviewConfig: ReviewConfig = {
+    const reviewConfig: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["lint"],
       commands: {},
-    };
+    });
 
     const executionConfig: Partial<ExecutionConfig> = {
       lintCommand: "echo 'config override'",
@@ -193,13 +193,13 @@ describe("Review Config-Driven Commands (US-005)", () => {
     };
     writeFileSync(join(tempDir, "package.json"), JSON.stringify(packageJson, null, 2));
 
-    const reviewConfig: ReviewConfig = {
+    const reviewConfig: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["lint"],
       commands: {
         lint: "echo 'review config lint'",
       },
-    };
+    });
 
     const result = await runReview({ config: reviewConfig, workdir: tempDir });
 
@@ -212,13 +212,13 @@ describe("Review Config-Driven Commands (US-005)", () => {
   test("executionConfig takes precedence over reviewConfig.commands", async () => {
     const tempDir = makeTempDir("nax-review-config-");
 
-    const reviewConfig: ReviewConfig = {
+    const reviewConfig: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["lint"],
       commands: {
         lint: "echo 'review config lint'",
       },
-    };
+    });
 
     const executionConfig: Partial<ExecutionConfig> = {
       lintCommand: "echo 'execution config lint'",
@@ -241,11 +241,11 @@ describe("Review Config-Driven Commands (US-005)", () => {
     const tempDir = makeTempDir("nax-review-config-");
     // No package.json created
 
-    const reviewConfig: ReviewConfig = {
+    const reviewConfig: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["lint"],
       commands: {},
-    };
+    });
 
     const result = await runReview({ config: reviewConfig, workdir: tempDir });
 
@@ -258,11 +258,11 @@ describe("Review Config-Driven Commands (US-005)", () => {
     const tempDir = makeTempDir("nax-review-config-");
     writeFileSync(join(tempDir, "package.json"), "invalid json {{{");
 
-    const reviewConfig: ReviewConfig = {
+    const reviewConfig: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["lint"],
       commands: {},
-    };
+    });
 
     const result = await runReview({ config: reviewConfig, workdir: tempDir });
 
@@ -285,13 +285,13 @@ describe("Review Config-Driven Commands (US-005)", () => {
     };
     writeFileSync(join(tempDir, "package.json"), JSON.stringify(packageJson, null, 2));
 
-    const reviewConfig: ReviewConfig = {
+    const reviewConfig: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["lint", "typecheck", "test"],
       commands: {
         typecheck: "echo 'review typecheck'",
       },
-    };
+    });
 
     const executionConfig: Partial<ExecutionConfig> = {
       lintCommand: "echo 'exec lint'",
@@ -322,13 +322,13 @@ describe("Review Config-Driven Commands (US-005)", () => {
   test("test command ignores executionConfig (not affected by this story)", async () => {
     const tempDir = makeTempDir("nax-review-config-");
 
-    const reviewConfig: ReviewConfig = {
+    const reviewConfig: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["test"],
       commands: {
         test: "echo 'custom test'",
       },
-    };
+    });
 
     const executionConfig: Partial<ExecutionConfig> = {
       lintCommand: "echo 'exec lint'",

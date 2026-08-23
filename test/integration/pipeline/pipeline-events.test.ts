@@ -12,10 +12,11 @@ import { PipelineEventEmitter } from "@/pipeline/events";
 import { runPipeline } from "@/pipeline/runner";
 import type { PipelineContext, PipelineStage, StageResult } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
+import { makeNaxConfig } from "@test/helpers";
 
 // ── Test Fixtures ────────────────────────────────────
 
-const mockConfig: NaxConfig = {
+const mockConfig: NaxConfig = makeNaxConfig({
   version: 1,
   models: {
     fast: { provider: "anthropic", model: "claude-haiku-4-5" },
@@ -78,7 +79,7 @@ const mockConfig: NaxConfig = {
     maxRetries: 2,
     testPath: "acceptance.test.ts",
   },
-};
+});
 
 const mockStory: UserStory = {
   id: "US-001",

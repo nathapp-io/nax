@@ -11,7 +11,7 @@ import type { SemanticVerdict } from "@/acceptance/types";
 import type { NaxConfig } from "@/config/schema";
 import { _diagnosisDeps, resolveAcceptanceDiagnosis } from "@/execution/lifecycle/acceptance-fix";
 import type { AcceptanceLoopContext } from "@/execution/lifecycle/acceptance-loop";
-import { makeNaxConfig } from "@test/helpers";
+import { makeDiagnoseOutput, makeNaxConfig } from "@test/helpers";
 
 function makeConfig(): NaxConfig {
   return makeNaxConfig({
@@ -82,7 +82,11 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     let callOpCalled = false;
     _diagnosisDeps.callOp = async () => {
       callOpCalled = true;
-      return { verdict: "source_bug", reasoning: "unreachable — fast path should not invoke callOp", confidence: 1 };
+      return makeDiagnoseOutput({
+        verdict: "source_bug",
+        reasoning: "unreachable — fast path should not invoke callOp",
+        confidence: 1,
+      });
     };
 
     const result = await resolveAcceptanceDiagnosis({
@@ -102,7 +106,11 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     let callOpCalled = false;
     _diagnosisDeps.callOp = async () => {
       callOpCalled = true;
-      return { verdict: "source_bug", reasoning: "unreachable — fast path should not invoke callOp", confidence: 1 };
+      return makeDiagnoseOutput({
+        verdict: "source_bug",
+        reasoning: "unreachable — fast path should not invoke callOp",
+        confidence: 1,
+      });
     };
 
     const verdicts: SemanticVerdict[] = [
@@ -127,7 +135,11 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     let callOpCalled = false;
     _diagnosisDeps.callOp = async () => {
       callOpCalled = true;
-      return { verdict: "source_bug", reasoning: "unreachable — fast path should not invoke callOp", confidence: 1 };
+      return makeDiagnoseOutput({
+        verdict: "source_bug",
+        reasoning: "unreachable — fast path should not invoke callOp",
+        confidence: 1,
+      });
     };
 
     const result = await resolveAcceptanceDiagnosis({
@@ -151,7 +163,11 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     let callOpCalled = false;
     _diagnosisDeps.callOp = async () => {
       callOpCalled = true;
-      return { verdict: "source_bug", reasoning: "unreachable — fast path should not invoke callOp", confidence: 1 };
+      return makeDiagnoseOutput({
+        verdict: "source_bug",
+        reasoning: "unreachable — fast path should not invoke callOp",
+        confidence: 1,
+      });
     };
 
     const result = await resolveAcceptanceDiagnosis({
@@ -170,7 +186,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     let callOpCalled = false;
     _diagnosisDeps.callOp = async () => {
       callOpCalled = true;
-      return { verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 };
+      return makeDiagnoseOutput({ verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 });
     };
 
     const result = await resolveAcceptanceDiagnosis({
@@ -191,7 +207,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     let capturedInput: Record<string, unknown> | undefined;
     _diagnosisDeps.callOp = async (_callCtx, _op, input) => {
       capturedInput = input as Record<string, unknown>;
-      return { verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 };
+      return makeDiagnoseOutput({ verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 });
     };
 
     const semanticVerdicts: SemanticVerdict[] = [

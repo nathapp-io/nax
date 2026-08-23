@@ -23,8 +23,9 @@ import { NaxError } from "../errors";
 import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
 import { callOp as _callOp } from "../operations/call";
-import type { SemanticReviewOutput } from "../operations/semantic-review";
+import type { SemanticReviewInput, SemanticReviewOutput } from "../operations/semantic-review";
 import { semanticReviewOp } from "../operations/semantic-review";
+import type { CallContext } from "../operations/types";
 import { ReviewPromptBuilder } from "../prompts";
 import type { NaxRuntime } from "../runtime";
 import type { ResolvedTestPatterns } from "../test-runners";
@@ -50,7 +51,16 @@ import type { ReviewCheckResult, SemanticReviewConfig, SemanticStory } from "./t
 export type { SemanticStory };
 
 /** Injectable dependencies for semantic.ts — allows tests to mock without mock.module() */
-export const _semanticDeps = {
+export const _semanticDeps: {
+  createDebateRunner: (opts: DebateRunnerOptions) => DebateRunner;
+  writeReviewAudit: typeof writeReviewAudit;
+  /**
+   * Monomorphic on purpose: this module dispatches exactly one op, so the
+   * inferred generic signature over-stated the seam and no stub could satisfy
+   * it without a cast (#1514 callop-seam).
+   */
+  callOp: (ctx: CallContext, op: typeof semanticReviewOp, input: SemanticReviewInput) => Promise<SemanticReviewOutput>;
+} = {
   createDebateRunner: (opts: DebateRunnerOptions): DebateRunner => new DebateRunner(opts),
   writeReviewAudit,
   callOp: _callOp,

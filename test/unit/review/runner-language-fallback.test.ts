@@ -9,13 +9,14 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _reviewGitDeps, _reviewRunnerDeps, resolveCommand, resolveLanguageCommand } from "@/review/runner";
 import type { ReviewConfig } from "@/review/types";
+import { makeConfigSlice } from "@test/helpers";
 
 /** Minimal ReviewConfig with no explicit commands — lets fallback logic run */
-const emptyConfig: ReviewConfig = {
+const emptyConfig: ReviewConfig = makeConfigSlice("review", {
   enabled: true,
   checks: [],
   commands: {},
-};
+});
 
 // ---------------------------------------------------------------------------
 // resolveLanguageCommand — lookup table + binary check
@@ -164,11 +165,11 @@ describe("resolveCommand — language-aware fallback (US-004)", () => {
     _reviewRunnerDeps.which = mock((_name: string) => "/usr/local/bin/go");
     mockNoPackageJson();
 
-    const configWithExplicit: ReviewConfig = {
+    const configWithExplicit: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: [],
       commands: { test: "bun test --coverage" },
-    };
+    });
 
     const result = await resolveCommand("test", configWithExplicit, undefined, "/tmp/workdir", undefined, {
       language: "go",

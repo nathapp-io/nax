@@ -1,14 +1,19 @@
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
 import { debateConfigSelector } from "@/config";
 import { DebateRunner, _debateSessionDeps } from "@/debate";
 import type { DebateRunnerOptions, DebateStageConfig } from "@/debate";
+import { _hybridDeps } from "@/debate/runner-hybrid";
 import type { HybridCtx } from "@/debate/runner-hybrid";
 import type { CallContext } from "@/operations";
-import * as callModule from "@/operations";
-import type { DebateStatefulInput } from "@/operations/debate-stateful";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
-import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
+import { makeMockAgentManager, makeSessionManager, withDepsRestore } from "@test/helpers";
+
+function installCallOp(impl: typeof _hybridDeps.callOp) {
+  const spy = mock(impl);
+  _hybridDeps.callOp = spy;
+  return spy;
+}
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -425,9 +430,11 @@ describe("DebateRunner hybrid mode — single-agent fallback when fewer than 2 p
 // ─── AC5: successful proposal outputs collected ───────────────────────────────
 
 describe("DebateRunner hybrid mode — successful proposal outputs collected (AC5)", () => {
+  withDepsRestore(_hybridDeps);
+
   test("both proposal outputs appear in result.proposals when 2 proposals succeed", async () => {
     const runner = makeRunner();
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateStatefulInput) => {
+    installCallOp(async (_callCtx, _op, input) => {
       if (!input.proposePrompt.includes("## Proposals")) {
         input.proposalBarriers[0]?.resolve(`proposal-from-${input.debater.agent}`);
         return { success: true, rebut: `proposal-from-${input.debater.agent}` };
@@ -556,6 +563,8 @@ describe("HybridCtx — callContext field (AC4)", () => {
 // ─── US-005: Two-scope cost tracking (hybrid) ────────────────────────────────
 
 describe("runHybrid() — two-scope cost tracking (US-005)", () => {
+  withDepsRestore(_hybridDeps);
+
   function makeScopedCostAgg(debaterCost = 0, resolverCost = 0) {
     let callCount = 0;
     const closed: string[] = [];
@@ -633,9 +642,9 @@ describe("runHybrid() — two-scope cost tracking (US-005)", () => {
     const costAgg = makeScopedCostAgg(0.1, 0.02);
     const ctx = makeCtxWithCostAgg(costAgg);
     const sm = (ctx.runtime as any).sessionManager;
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx: unknown, _op: unknown, input: unknown) => {
-      (input as any).proposalBarriers?.[0]?.resolve("ok");
-      return { success: true, rebut: "ok" } as any;
+    installCallOp(async (_callCtx, _op, input) => {
+      input.proposalBarriers[0]?.resolve("ok");
+      return { success: true, rebut: "ok" };
     });
     const runner = new DebateRunner({
       ctx,

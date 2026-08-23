@@ -7,7 +7,7 @@
 import type { DebateConfig } from "../config/selectors";
 import { NaxError } from "../errors";
 import * as callModule from "../operations/call";
-import { type DebateHybridInput, hybridDebaterOp } from "../operations/debate-hybrid";
+import { type DebateHybridInput, type DebateHybridOutput, hybridDebaterOp } from "../operations/debate-hybrid";
 import type { CallContext } from "../operations/types";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
@@ -35,6 +35,18 @@ export interface HybridCtx extends DispatchContext {
   readonly callContext: CallContext;
   readonly resolverCallContext?: CallContext;
 }
+
+/** Injectable dependencies for runHybrid — allows tests to mock without mock.module() */
+export const _hybridDeps: {
+  /**
+   * Monomorphic on purpose: this module dispatches exactly one op, so the
+   * inferred generic signature over-stated the seam and no stub could satisfy
+   * it without a cast (#1514 callop-seam).
+   */
+  callOp: (ctx: CallContext, op: typeof hybridDebaterOp, input: DebateHybridInput) => Promise<DebateHybridOutput>;
+} = {
+  callOp: callModule.callOp,
+};
 
 export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateResult> {
   const logger = _debateSessionDeps.getSafeLogger();
@@ -106,7 +118,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
   const settled = await allSettledBounded(
     resolved.map(({ debater, agentName }, index) => async () => {
       try {
-        const result = await callModule.callOp(debaterCallContext(agentName, index), hybridDebaterOp, {
+        const result = await _hybridDeps.callOp(debaterCallContext(agentName, index), hybridDebaterOp, {
           debater,
           index,
           proposePrompt: proposalBuilder.buildProposalPrompt(index),

@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { _promptStageDeps, promptStage } from "@/pipeline/stages/prompt";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
-import { makeSparseNaxConfig, makeStory, makeTestContext } from "@test/helpers";
+import { makeConfigSlice, makeSparseNaxConfig, makeStory, makeTestContext } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-prompt-acceptance-${randomUUID()}`;
 
@@ -40,7 +40,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
         dangerouslySkipPermissions: false,
         costLimit: 10,
         maxIterations: 10,
-        rectification: { maxAttemptsTotal: 3 },
+        rectification: makeConfigSlice("execution", { rectification: { maxAttemptsTotal: 3 } }).rectification,
       },
     }),
     rootConfig: makeSparseNaxConfig({
@@ -51,7 +51,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
         dangerouslySkipPermissions: false,
         costLimit: 10,
         maxIterations: 10,
-        rectification: { maxAttemptsTotal: 3 },
+        rectification: makeConfigSlice("execution", { rectification: { maxAttemptsTotal: 3 } }).rectification,
       },
     }),
     prd: makePRD(),

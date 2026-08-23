@@ -1,19 +1,18 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { runStateful } from "@/debate/runner-stateful";
-import * as callModule from "@/operations";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/helpers";
+import { _statefulDeps } from "@/debate/runner-stateful-helpers";
+import { makeMockAgentManager, makeNaxConfig, makeSessionManager, withDepsRestore } from "@test/helpers";
+
+function installCallOp(impl: typeof _statefulDeps.callOp) {
+  const spy = mock(impl);
+  _statefulDeps.callOp = spy;
+  return spy;
+}
 
 interface PromiseWithResolvers<T> {
   readonly promise: Promise<T>;
   resolve: (value: T | PromiseLike<T>) => void;
   reject: (reason?: unknown) => void;
-}
-
-interface StatefulDebaterInput {
-  readonly debater: { readonly agent: string; readonly model?: string };
-  readonly index: number;
-  readonly proposePrompt: string;
-  readonly proposalBarriers: PromiseWithResolvers<string>[];
 }
 
 function defer<T>(): PromiseWithResolvers<T> {
@@ -96,7 +95,7 @@ function makeRunStatefulCtx(overrides: Partial<Record<string, unknown>> = {}) {
 }
 
 function makeResultingCallOpMock() {
-  return spyOn(callModule, "callOp").mockImplementation(async (_ctx, _op, input: StatefulDebaterInput) => {
+  return installCallOp(async (_ctx, _op, input) => {
     if (!input.proposePrompt.includes("Other Agents' Proposals")) {
       input.proposalBarriers[0]?.resolve(`proposal-${input.index}`);
       return {
@@ -117,10 +116,12 @@ afterEach(() => {
 });
 
 describe("runStateful coordinator", () => {
+  withDepsRestore(_statefulDeps);
+
   test("launches one callOp per resolved debater and caps in-flight work using runtime.configLoader.current().debate.maxConcurrentDebaters", async () => {
     const callStarts: number[] = [];
     const permits = [defer<void>(), defer<void>(), defer<void>()];
-    const callOpSpy = spyOn(callModule, "callOp").mockImplementation(async (_ctx, _op, input: StatefulDebaterInput) => {
+    const callOpSpy = installCallOp(async (_ctx, _op, input) => {
       callStarts.push(input.index);
       input.proposalBarriers[0]?.resolve(`proposal-${input.index}`);
       await permits[input.index].promise;
@@ -184,7 +185,7 @@ describe("runStateful coordinator", () => {
     // Regression guard: stateful barriers are local (1-element, per-debater), so a
     // failing debater cannot block others. This test verifies the runner returns
     // quickly even when one debater's callOp throws instead of resolving its barrier.
-    spyOn(callModule, "callOp").mockImplementation(async (_ctx, _op, input: StatefulDebaterInput) => {
+    installCallOp(async (_ctx, _op, input) => {
       if (input.index === 1) throw new Error("debater 1 failed");
       input.proposalBarriers[0]?.resolve(`proposal-${input.index}`);
       return { success: true, rebut: `proposal-${input.index}` };
@@ -216,7 +217,7 @@ describe("runStateful coordinator", () => {
   });
 
   test("does not generate rebuttals when rounds is 1", async () => {
-    spyOn(callModule, "callOp").mockImplementation(async (_ctx, _op, input: StatefulDebaterInput) => {
+    installCallOp(async (_ctx, _op, input) => {
       input.proposalBarriers[0]?.resolve(`proposal-${input.index}`);
       return { success: true, rebut: `proposal-${input.index}` };
     });
