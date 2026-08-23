@@ -361,6 +361,7 @@ describe("DebateRunner.runPlan()", () => {
         return {
           output: "run-output",
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       },

@@ -24,6 +24,7 @@ describe("Curator Plugin Integration", () => {
         const obs: Observation[] = [
           {
             schemaVersion: 1,
+            projectKey: "test-proj",
             runId: "run-1",
             featureId: "feat-1",
             storyId: "story-1",

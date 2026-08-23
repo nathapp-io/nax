@@ -40,6 +40,7 @@ function makeHybridCtx(stageConfigOverrides: Partial<DebateStageConfig> = {}): H
     runAsSessionFn: async (agentName) => ({
       output: `proposal-${agentName}`,
       tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: 0,
       internalRoundTrips: 0,
     }),
   });

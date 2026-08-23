@@ -121,6 +121,7 @@ describe("DebateRunner.run() mode routing — AC2: panel + stateful", () => {
       runAsSessionFn: async (_name, _handle, _prompt) => ({
         output: `{"passed": true}`,
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
         internalRoundTrips: 0,
       }),
     });
@@ -181,6 +182,7 @@ describe("DebateRunner.run() mode routing — AC4: hybrid + stateful", () => {
       runAsSessionFn: async (_name, _handle, _prompt) => ({
         output: `{"passed": true}`,
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
         internalRoundTrips: 0,
       }),
     });

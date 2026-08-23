@@ -24,6 +24,7 @@ describe("runHeuristics", () => {
     const obs: Observation[] = [
       {
         schemaVersion: 1,
+        projectKey: "test-proj",
         runId: "run-1",
         featureId: "feat-story-1",
         storyId: "story-1",
@@ -40,6 +41,7 @@ describe("runHeuristics", () => {
     const obs: Observation[] = [
       {
         schemaVersion: 1,
+        projectKey: "test-proj",
         runId: "run-1",
         featureId: "feat-story-1",
         storyId: "story-1",
@@ -66,6 +68,7 @@ describe("runHeuristics", () => {
       const obs: Observation[] = [
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-story-1",
           storyId: "story-1",
@@ -82,6 +85,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-story-2",
           storyId: "story-2",
@@ -115,6 +119,7 @@ describe("runHeuristics", () => {
     test("produces HIGH severity at wide feature spread; does not trigger for 1 feature", () => {
       const highObs: Observation[] = Array.from({ length: 5 }, (_, i) => ({
         schemaVersion: 1 as const,
+        projectKey: "test-proj",
         runId: "run-1",
         featureId: `feat-${i}`,
         storyId: `story-${i}`,
@@ -130,6 +135,7 @@ describe("runHeuristics", () => {
       const singleObs: Observation[] = [
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-story-1",
           storyId: "story-1",
@@ -148,6 +154,7 @@ describe("runHeuristics", () => {
       const obs: Observation[] = [
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-story-a",
           storyId: "story-a",
@@ -164,6 +171,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-story-b",
           storyId: "story-b",
@@ -194,6 +202,7 @@ describe("runHeuristics", () => {
       const emptyObs: Observation[] = [
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
@@ -204,6 +213,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-2",
@@ -222,6 +232,7 @@ describe("runHeuristics", () => {
       const nonEmptyObs: Observation[] = [
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
@@ -232,6 +243,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-2",
@@ -252,6 +264,7 @@ describe("runHeuristics", () => {
       const sameStoryObs: Observation[] = [
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
@@ -262,6 +275,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
@@ -272,6 +286,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
@@ -289,6 +304,7 @@ describe("runHeuristics", () => {
       const diffStoryObs: Observation[] = [
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
@@ -299,6 +315,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-2",
@@ -319,6 +336,7 @@ describe("runHeuristics", () => {
       const samePathObs: Observation[] = [
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
@@ -329,6 +347,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-2",
@@ -346,6 +365,7 @@ describe("runHeuristics", () => {
       const diffPathObs: Observation[] = [
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
@@ -356,6 +376,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-2",
@@ -376,6 +397,7 @@ describe("runHeuristics", () => {
       const staleObs: Observation[] = [
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
@@ -386,6 +408,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-2",
           featureId: "feat-1",
           storyId: "story-1",
@@ -403,6 +426,7 @@ describe("runHeuristics", () => {
       const noMatchObs: Observation[] = [
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
@@ -413,6 +437,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-2",
           featureId: "feat-1",
           storyId: "story-1",
@@ -433,6 +458,7 @@ describe("runHeuristics", () => {
       const unchangedObs: Observation[] = [
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
@@ -443,6 +469,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
@@ -453,6 +480,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
@@ -470,6 +498,7 @@ describe("runHeuristics", () => {
       const mixedObs: Observation[] = [
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
@@ -480,6 +509,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
@@ -501,6 +531,7 @@ describe("runHeuristics", () => {
         // H1: Repeated finding
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-story-1",
           storyId: "story-1",
@@ -517,6 +548,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-story-2",
           storyId: "story-2",
@@ -534,6 +566,7 @@ describe("runHeuristics", () => {
         // H2: Pull-tool empty
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-story-1",
           storyId: "story-1",
@@ -544,6 +577,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-story-3",
           storyId: "story-3",
@@ -567,6 +601,7 @@ describe("runHeuristics", () => {
       const obs: Observation[] = [
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-story-1",
           storyId: "story-1",
@@ -583,6 +618,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-story-2",
           storyId: "story-2",
@@ -609,6 +645,7 @@ describe("runHeuristics", () => {
       const obs: Observation[] = [
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-story-1",
           storyId: "story-1",
@@ -625,6 +662,7 @@ describe("runHeuristics", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-story-2",
           storyId: "story-2",

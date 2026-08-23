@@ -14,6 +14,7 @@ import { withTempDir } from "@test/helpers";
 describe("appendToRollup", () => {
   const baseObservation: Observation = {
     schemaVersion: 1,
+    projectKey: "test-proj",
     runId: "run-1",
     featureId: "feat-1",
     storyId: "story-1",
@@ -123,6 +124,7 @@ describe("appendToRollup", () => {
       const obs: Observation[] = [
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-123",
           featureId: "feat-abc",
           storyId: "story-xyz",
@@ -250,6 +252,7 @@ describe("appendToRollup", () => {
       const obs: Observation[] = [
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
@@ -260,6 +263,7 @@ describe("appendToRollup", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
@@ -270,6 +274,7 @@ describe("appendToRollup", () => {
         },
         {
           schemaVersion: 1,
+          projectKey: "test-proj",
           runId: "run-1",
           featureId: "feat-1",
           storyId: "story-1",
