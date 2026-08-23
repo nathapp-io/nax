@@ -94,28 +94,29 @@ bun scripts/report-cast-buckets.ts
 
 | Bucket | Casts (start) | Casts (current) | Δ | Who |
 |:--|--:|--:|--:|:--|
-| §3a Shape A — factory exists | **169** | **22** | -147 | done except design calls |
-| §3b seam sweeps — helper exists, example committed | **157** | **5** | -152 | done except survivors |
-| §3c-i typed dep stubs | **23** | **4** | -19 | done except misfiled |
-| §3c-ii dep members returning a class | 31 | 16 | -15 | **§9 Task B** — seam built for the largest |
+| §3a Shape A — factory exists | **169** | **15** | -154 | **§10** — legacy-key fixtures |
+| §3b seam sweeps — helper exists, example committed | **157** | **5** | -152 | survivors only |
+| §3c-i typed dep stubs | **23** | **1** | -22 | survivor only |
+| §3c-ii dep members returning a class | 31 | **0** | -31 | **CLOSED** (§9 Task B, session 6) |
 | §3d holding bucket | 61 | 30 | -31 | bakeoff builders **done**; 30 load-bearing |
 | §3e private-member reach-ins | 49 | 49 | 0 | escalate |
 | tail — everything under 4 per cluster | **191** | **63** | -128 | **drained of tractable work** |
-| **Total** | **681** | **191** | **-490** | |
+| **Total** | **681** | **163** | **-518** | |
 
-**Last verified:** ratchet = 191, typecheck errors = 1961 (was 1969; **−8**), per-file
-gate `worse: 0`, tree clean at `42117eb0f`. 29 commits on the branch.
+**Last verified:** ratchet = 163, typecheck errors = 1949 (was 1969; **−20**), per-file
+gate `worse: 0`, tree clean at `41b9ee603`. 42 commits on the branch.
 
-**→ If you are a fresh session picking this up, go straight to §9.** It contains the
-next two tasks, fully specified, in the order they should be done.
+**→ If you are a fresh session picking this up, go straight to §10.**
+**§9 is DONE (session 6) — do not start it.** It is kept only as the worked record of
+how the seams were built.
 
 **The unassisted mechanical work is finished.** Sessions 1–2 drained 3a/3b/3c-i;
-session 3 drained the tail; session 4 drained the §3d bakeoff builders; session 5 built
-the first seam (`makeDebateRunner`) and swapped its 13 sites. Remaining: §3e 49,
-tail remnant 63, §3d 30, §3a remnant 22, §3c-ii 16, §3b/§3c-i survivors 9.
+session 3 drained the tail; session 4 drained the §3d bakeoff builders; sessions 5–6
+built four seams and closed **§3c-ii entirely**. Remaining: tail remnant 63, §3e 49,
+§3d 30, §3a remnant 17, §3b/§3c-i survivors 6.
 
-**§9 has two tasks that ARE delegable** — a design decision has already been made for
-each, and what is left is execution against a worked example.
+**§10 is the one remaining bucket with mechanical follow-through.** Everything else needs
+a ruling from the repo owner first.
 
 **Do not dispatch another sweep agent against this doc.** There is no factory-swap
 cluster left. The next step is one of the design decisions in §8, not more repetition.
@@ -812,7 +813,7 @@ cast before designing anything.**
 
 ---
 
-## 9. The next two tasks — do A before B
+## 9. Seams and the `DeepPartial` fix — **DONE (session 6)**
 
 Both are delegable. The design decision is made in each case; what is left is execution
 against a worked example. **Do Task A first** — it fixes shared test infrastructure that
@@ -821,8 +822,9 @@ Task B and every future fixture depend on.
 Everything in §1 (the five-step verify loop), §4 (forbidden), §5 (escalate) and
 §Patterns learned applies to both. Read those first.
 
-**Starting state for both:** ratchet = 191, typecheck = 1961, per-file gate `worse: 0`,
-tree clean at `42117eb0f`.
+**BOTH TASKS ARE DONE (session 6).** Starting state when they were written was
+ratchet = 191 / typecheck = 1961; they finished at **165 / 1949**. Kept as the worked
+record — see §7 session 6 for what each one actually turned out to need.
 
 ---
 
@@ -953,3 +955,96 @@ next (`test(<area>): swap X casts onto makeX seam (#1514 phase 1b)`). That is ho
 **Escalate, do not improvise:** if a seam cannot express a site (a test needing real class
 behaviour rather than a stub), leave that site cast and report it. Do not widen the seam
 to cover one awkward caller.
+
+---
+
+## 10. Legacy-key fixture migration (§3a remnant, ~15 casts)
+
+**The design call is made and one file is done as a worked example** (`41b9ee603`).
+What is left is repetition. Everything in §1 (verify loop), §4 (forbidden), §5 (escalate)
+and §Patterns learned applies.
+
+**Starting state:** ratchet = 163, typecheck = 1949, per-file gate `worse: 0`, tree clean
+at `41b9ee603`.
+
+### The ruling
+
+`autoMode.defaultAgent` was removed in **ADR-012 Phase 6**. It is dead in these fixtures —
+**nothing reads it.** `AutoModeConfigSchema` (`src/config/schemas.ts:80`) has no such
+field, and the canonical resolution is `resolveDefaultAgent()`
+(`src/agents/utils.ts:5`), which reads **`config.agent.default`**. Pipeline code reaches
+it via `ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config)`.
+
+**So: delete `autoMode.defaultAgent` and set `agent: { default: "…" }` instead.**
+Do not preserve the old key, and do not add it back to the schema.
+
+### The worked example — `test/unit/metrics/tracker-provider-cost.test.ts`
+
+```ts
+// before — two casts, both masking dead or wrong fields
+return {
+  story: { id, title: "Test Story", description: "", acceptanceCriteria: [], status: "pending" },
+  prd: { feature: featureId, userStories: [], project: "test", branchName: "main", createdAt: "", updatedAt: "" },
+  config: { autoMode: { defaultAgent: "claude" } } as unknown as PipelineContext["config"],
+  projectDir: "/repo",
+  workdir: "/repo",
+  routing: { tier: "balanced" },
+  agentResult: { success: true, cost: 0 },
+  runtime: makeMockRuntime(),
+} as unknown as PipelineContext;
+
+// after — zero casts
+return Object.assign(
+  makeTestContext({
+    story: makeStory({ id, title: "Test Story" }),
+    prd: makePRD({ feature: featureId, project: "test", branchName: "main" }),
+    config: makeNaxConfig({ agent: { default: "claude" } }),
+    projectDir: "/repo",
+    workdir: "/repo",
+    routing: { ...DEFAULT_TEST_ROUTING, modelTier: "balanced" },
+  }),
+  { agentResult: { success: true, cost: 0 }, runtime: makeMockRuntime() },
+);
+```
+
+`makeTestContext` + `Object.assign` for the test-only extras is §Patterns learned item 1.
+`DEFAULT_TEST_ROUTING` is exported from `@test/helpers`.
+
+### What the cast was hiding — expect this
+
+Removing the cast on this one file surfaced a **second** bogus field:
+`routing: { tier: "balanced" }`. `RoutingResult` (`src/pipeline/types.ts:24`) has no
+`tier` — the field is **`modelTier`**, and the tracker reads `routing.modelTier`. The
+fixture had been silently supplying `modelTier: undefined` for as long as the cast existed,
+and the tests passed either way.
+
+**This is the norm, not the exception** (§2, §Patterns item 5). For every rejected field,
+`grep` the type in `src/` and check whether the field exists at all before trying to make
+it fit. Usually you delete it or rename it to the real one.
+
+### The files
+
+Re-derive with `grep -rn "as unknown as" --include='*.ts' test | grep -E "NaxConfig|PipelineContext"`
+(§Patterns item 10 — these drift):
+
+| File | Casts | Note |
+|:--|--:|:--|
+| ~~`metrics/tracker-provider-cost.test.ts`~~ | ~~2~~ **0** | **DONE** — the worked example |
+| `context/engine/stage-assembler-scope-files.test.ts` | 2 | same `autoMode.defaultAgent` shape, plus a `rootConfig` sibling cast |
+| `execution/execution-stage.test.ts` | 2 | verify the shape before assuming |
+| `pipeline/stages/context-digest.test.ts` | 1 | |
+| `pipeline/stages/context-rules-fallback.test.ts` | 1 | partial prd fixture |
+| `integration/acceptance/red-green-cycle.test.ts` | 3 | local `makePrd` could become `makePRD`; also has `PipelineContext["hooks"]` |
+
+### Do NOT touch in this task
+
+- `config/selector.test.ts` (4) — entangled with §3e; removing the `NaxConfig` cast
+  surfaces an obsolete `parallel` field that a §3e cast reads. Needs the §3e ruling first.
+- `config/merge.test.ts` (5) and `debate/session-helpers-resolver-model.test.ts` (5) —
+  deliberate negative tests / spread-widening. Really §3d.
+- `integration/execution/deferred-review-integration.test.ts` (2) — uses
+  `pluginMode: "deferred"`, **removed from the schema in ADR-012 Phase 6**. Restoring the
+  value versus rewriting the test is a product decision for the repo owner. **Blocked.**
+- `execution/deferred-review.test.ts` (2) — partial inline PRD; needs fixture tightening.
+
+**Expected landing:** 163 → roughly **154**.
