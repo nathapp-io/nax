@@ -9,7 +9,7 @@ function write(root: string, rel: string, content: string) {
   writeFileSync(join(root, rel), content);
 }
 
-const BASE = { asAny: 0, tsSuppress: 0, ratchetAllow: 0 };
+const BASE = { asAny: 0, tsSuppress: 0, ratchetAllow: 0, absentValue: 0 };
 
 describe("scanEscapeHatches", () => {
   let root: string;
@@ -30,7 +30,7 @@ describe("scanEscapeHatches", () => {
       ].join("\n"),
     );
     const { counts } = await scanEscapeHatches(root);
-    expect(counts).toEqual({ asAny: 1, tsSuppress: 1, ratchetAllow: 1 });
+    expect(counts).toEqual({ asAny: 1, tsSuppress: 1, ratchetAllow: 1, absentValue: 0 });
   });
 
   test("counts every hatch on a line, not the line once", async () => {
@@ -46,6 +46,25 @@ describe("scanEscapeHatches", () => {
   test("counts @ts-ignore and @ts-nocheck alongside @ts-expect-error", async () => {
     write(root, "test/unit/a.test.ts", "// @ts-ignore\n// @ts-nocheck\n// @ts-expect-error\n");
     expect((await scanEscapeHatches(root)).counts.tsSuppress).toBe(3);
+  });
+
+  test("counts absentValue and nullValue call sites", async () => {
+    write(
+      root,
+      "test/unit/a.test.ts",
+      [
+        "const a = absentValue<IAgentManager>();",
+        "const b = nullValue<string>();",
+        "const c = absentValue<Logger>();",
+      ].join("\n"),
+    );
+    const { counts } = await scanEscapeHatches(root);
+    expect(counts.absentValue).toBe(3);
+  });
+
+  test("does not match absentValue or nullValue without a type argument", async () => {
+    write(root, "test/unit/a.test.ts", "const x = absentValue;\nconst y = nullValue;\n");
+    expect((await scanEscapeHatches(root)).counts.absentValue).toBe(0);
   });
 
   test("does not scan src/, scripts/ or bin/", async () => {

@@ -4,7 +4,7 @@
  * `check-test-typecheck` nor `check-test-as-unknown-as` counts.
  *
  * Issue #1514 phase 3c. Draining those two baselines is only real progress if
- * the debt cannot walk out through a side door, and there are three:
+ * the debt cannot walk out through a side door, and there are four:
  *
  *   asAny        `as any` — invisible to both ratchets. Biome's noExplicitAny
  *                would catch it, but that rule is deferred for test/** until
@@ -15,8 +15,13 @@
  *   ratchetAllow `test-ratchet-allow: as-unknown-as` — the cast ratchet's own
  *                escape hatch. Legitimate occasionally, so it is ratcheted
  *                rather than banned.
+ *   absentValue  `absentValue<T>()` / `nullValue<T>()` from
+ *                test/helpers/absent.ts — a deliberately-absent value fed to a
+ *                parameter whose type forbids it, because the absence is the
+ *                assertion. Counts the call sites of the idiom that replaced
+ *                `undefined as unknown as T` / `null as unknown as T`.
  *
- * Every counter fails on growth only; all three shrink as the drain proceeds.
+ * Every counter fails on growth only; all four shrink as the drain proceeds.
  *
  * Usage:
  *   bun scripts/check-test-escape-hatches.ts                   # check (CI mode)
@@ -41,6 +46,7 @@ const PATTERNS = {
   asAny: /\bas\s+any\b/g,
   tsSuppress: /@ts-(expect-error|ignore|nocheck)\b/g,
   ratchetAllow: /test-ratchet-allow:\s*as-unknown-as/g,
+  absentValue: /\b(absentValue|nullValue)\s*</g,
 } as const;
 
 export type HatchKind = keyof typeof PATTERNS;
@@ -57,6 +63,10 @@ const EXEMPT_FILES = new Set<string>([
   "test/unit/scripts/check-test-typecheck.test.ts",
   "test/unit/scripts/check-test-as-unknown-as.test.ts",
   "test/unit/scripts/check-test-escape-hatches.test.ts",
+  // The idiom's own definition — its `absentValue<T>()` / `nullValue<T>()`
+  // declarations match the call-site pattern. Counting definitions would
+  // double-count the type-lie: the counter exists to ratchet CALL SITES.
+  "test/helpers/absent.ts",
 ]);
 
 interface Baseline {
@@ -77,7 +87,7 @@ export interface ScanResult {
 }
 
 function emptyCounts(): Counts {
-  return { asAny: 0, tsSuppress: 0, ratchetAllow: 0 };
+  return { asAny: 0, tsSuppress: 0, ratchetAllow: 0, absentValue: 0 };
 }
 
 export async function scanEscapeHatches(rootDir: string): Promise<ScanResult> {

@@ -68,3 +68,4 @@ export { fullTest, fullDescribe } from "./env";
 export { waitForFile } from "./fs";
 export { fakeAgentManager } from "./fake-agent-manager";
 export type { FakeAgentManagerOptions } from "./fake-agent-manager";
+export { absentValue, nullValue } from "./absent";
