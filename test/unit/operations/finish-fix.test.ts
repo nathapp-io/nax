@@ -13,7 +13,7 @@ import type { Finding } from "@/finish";
 import type { FinishFixInput } from "@/operations";
 import { finishFixOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeTestRuntime, withTempDir } from "@test/helpers";
+import { makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -29,7 +29,7 @@ function makeCtx() {
   const runtime = makeTestRuntime();
   createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
-  return { packageView: view, config: view.select(finishFixOp.config as ConfigSelector<FinishConfig>) };
+  return { packageView: view, config: view.select(opSelector(finishFixOp.config)) };
 }
 
 const GATE_INPUT: FinishFixInput = {

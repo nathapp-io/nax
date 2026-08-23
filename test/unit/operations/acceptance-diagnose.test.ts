@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { AcceptanceDiagnoseInput } from "@/operations/acceptance-diagnose";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { makeNaxConfig, makeTestRuntime, opSelector } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -22,7 +22,7 @@ function makeBuildCtx() {
   const runtime = makeTestRuntime({ config });
   createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
-  return { packageView: view, config: view.select(acceptanceDiagnoseOp.config) };
+  return { packageView: view, config: view.select(opSelector(acceptanceDiagnoseOp.config)) };
 }
 
 describe("acceptanceDiagnoseOp shape", () => {
@@ -46,7 +46,7 @@ describe("acceptanceDiagnoseOp shape", () => {
     const runtime = makeTestRuntime({ config });
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(acceptanceDiagnoseOp.config) };
+    const ctx = { packageView: view, config: view.select(opSelector(acceptanceDiagnoseOp.config)) };
 
     expect(acceptanceDiagnoseOp.model?.(SAMPLE_INPUT, ctx)).toEqual({
       agent: "opencode",

@@ -13,7 +13,7 @@ import type { FinishReviewInput } from "@/operations";
 import { finishReviewOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 import { _gitDeps } from "@/utils/git";
-import { makeTestRuntime, withTempDir } from "@test/helpers";
+import { makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -26,7 +26,7 @@ function makeCtx() {
   const runtime = makeTestRuntime();
   createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
-  return { packageView: view, config: view.select(finishReviewOp.config as ConfigSelector<FinishConfig>) };
+  return { packageView: view, config: view.select(opSelector(finishReviewOp.config)) };
 }
 
 const QUALITY_INPUT: FinishReviewInput = {

@@ -33,7 +33,10 @@ import { makeMockCallContext, makeTestRuntime } from "@test/helpers";
 
 const testSel = pickSelector("flake-triage-integration", "execution");
 
-const mockImplementerOp: RunOperation<{ story: string }, { success: boolean }, typeof DEFAULT_CONFIG> = {
+/** The op fixtures' config slice, derived from the selector so the two cannot drift. */
+type TestOpConfig = ReturnType<(typeof testSel)["select"]>;
+
+const mockImplementerOp: RunOperation<{ story: string }, { success: boolean }, TestOpConfig> = {
   kind: "run",
   name: "implementer",
   stage: "run",
@@ -48,11 +51,7 @@ const mockImplementerOp: RunOperation<{ story: string }, { success: boolean }, t
 
 const GATE_NAME = "full-suite-gate";
 
-function makeGateOp(): RunOperation<
-  { story: string },
-  { success: boolean; findings: Finding[] },
-  typeof DEFAULT_CONFIG
-> {
+function makeGateOp(): RunOperation<{ story: string }, { success: boolean; findings: Finding[] }, TestOpConfig> {
   return {
     kind: "run",
     name: GATE_NAME,

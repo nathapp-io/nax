@@ -86,7 +86,10 @@ interface TestTestWriterOutput {
 
 const testSel = pickSelector("test-orchestrator-selector", "execution");
 
-const mockImplementerOp: RunOperation<TestImplementerInput, TestImplementerOutput, typeof DEFAULT_CONFIG> = {
+/** The op fixtures' config slice, derived from the selector so the two cannot drift. */
+type TestOpConfig = ReturnType<(typeof testSel)["select"]>;
+
+const mockImplementerOp: RunOperation<TestImplementerInput, TestImplementerOutput, TestOpConfig> = {
   kind: "run",
   name: "mock-implementer",
   stage: "run",
@@ -105,7 +108,7 @@ const mockImplementerOp: RunOperation<TestImplementerInput, TestImplementerOutpu
   },
 };
 
-const mockTestWriterOp: RunOperation<TestTestWriterInput, TestTestWriterOutput, typeof DEFAULT_CONFIG> = {
+const mockTestWriterOp: RunOperation<TestTestWriterInput, TestTestWriterOutput, TestOpConfig> = {
   kind: "run",
   name: "mock-test-writer",
   stage: "run",
@@ -124,7 +127,7 @@ const mockTestWriterOp: RunOperation<TestTestWriterInput, TestTestWriterOutput, 
   },
 };
 
-const mockVerifierOp: RunOperation<TestVerifierInput, TestVerifierOutput, typeof DEFAULT_CONFIG> = {
+const mockVerifierOp: RunOperation<TestVerifierInput, TestVerifierOutput, TestOpConfig> = {
   kind: "run",
   name: "mock-verifier",
   stage: "verify",
@@ -143,7 +146,7 @@ const mockVerifierOp: RunOperation<TestVerifierInput, TestVerifierOutput, typeof
   },
 };
 
-const mockSemanticReviewOp: RunOperation<TestSemanticReviewInput, TestSemanticReviewOutput, typeof DEFAULT_CONFIG> = {
+const mockSemanticReviewOp: RunOperation<TestSemanticReviewInput, TestSemanticReviewOutput, TestOpConfig> = {
   kind: "run",
   name: "mock-semantic-review",
   stage: "review",
@@ -162,11 +165,7 @@ const mockSemanticReviewOp: RunOperation<TestSemanticReviewInput, TestSemanticRe
   },
 };
 
-const mockAdversarialReviewOp: RunOperation<
-  TestAdversarialReviewInput,
-  TestAdversarialReviewOutput,
-  typeof DEFAULT_CONFIG
-> = {
+const mockAdversarialReviewOp: RunOperation<TestAdversarialReviewInput, TestAdversarialReviewOutput, TestOpConfig> = {
   kind: "run",
   name: "mock-adversarial-review",
   stage: "review",
@@ -817,7 +816,7 @@ describe("StoryOrchestratorBuilder — AC10: TDD wrapper retains responsibilitie
 function makeDeterministicOp(
   name: string,
   result: { success: boolean; findings?: unknown[] },
-): DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> {
+): DeterministicOperation<unknown, unknown, TestOpConfig> {
   return {
     kind: "deterministic",
     name,
@@ -1007,7 +1006,7 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
 
     const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [] });
     // Malformed verifier output — neither `success` nor `passed` set.
-    const malformedVerifierOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+    const malformedVerifierOp: DeterministicOperation<unknown, unknown, TestOpConfig> = {
       kind: "deterministic",
       name: "verifier",
       stage: "verify",
@@ -1046,7 +1045,7 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     const config = makeNaxConfig();
     rt = makeTestRuntime({ config });
 
-    const malformedGateOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+    const malformedGateOp: DeterministicOperation<unknown, unknown, TestOpConfig> = {
       kind: "deterministic",
       name: "full-suite-gate",
       stage: "verify",
@@ -1091,7 +1090,7 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     const config = makeNaxConfig();
     rt = makeTestRuntime({ config });
 
-    const malformedStrictOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+    const malformedStrictOp: DeterministicOperation<unknown, unknown, TestOpConfig> = {
       kind: "deterministic",
       name: phaseName,
       stage: "verify",

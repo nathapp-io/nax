@@ -21,7 +21,14 @@ import type { SemanticReviewInput } from "@/operations/semantic-review";
 import { _adversarialDeps, _diffUtilsDeps, runAdversarialReview } from "@/review";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review";
 import type { NaxRuntime } from "@/runtime";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeTestRuntime, withTempDir } from "@test/helpers";
+import {
+  makeAgentAdapter,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeTestRuntime,
+  opSelector,
+  withTempDir,
+} from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -42,7 +49,7 @@ function makeVerifyCtx() {
   const view = runtime.packages.repo();
   return {
     packageView: view,
-    config: view.select(semanticReviewOp.config),
+    config: view.select(opSelector(semanticReviewOp.config)),
     readFile: async (_path: string) => null as string | null,
     fileExists: async (_path: string) => false,
   };
@@ -54,7 +61,7 @@ function makeAdversarialVerifyCtx() {
   const view = runtime.packages.repo();
   return {
     packageView: view,
-    config: view.select(adversarialReviewOp.config),
+    config: view.select(opSelector(adversarialReviewOp.config)),
     readFile: async (_path: string) => null as string | null,
     fileExists: async (_path: string) => false,
   };

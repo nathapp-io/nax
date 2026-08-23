@@ -7,7 +7,14 @@ import type { PlanRefineInput, VerifyContext } from "@/operations";
 import type { HopBodyContext } from "@/operations/types";
 import { PlanPromptBuilder } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime, withTempDir, withWarnSpy } from "@test/helpers";
+import {
+  makeMockAgentManager,
+  makeSessionManager,
+  makeTestRuntime,
+  opSelector,
+  withTempDir,
+  withWarnSpy,
+} from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 
@@ -96,7 +103,7 @@ describe("planRefineOp.build()", () => {
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(planInteractiveOp.config) };
+    const ctx = { packageView: view, config: view.select(opSelector(planInteractiveOp.config)) };
 
     const result = planRefineOp.build(
       {
@@ -375,7 +382,7 @@ describe("planRefineOp.verify — specGuard warnOnSpecDrift", () => {
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
-    const base = view.select(planRefineOp.config) as Record<string, unknown>;
+    const base = view.select(opSelector(planRefineOp.config)) as Record<string, unknown>;
     return {
       packageView: view,
       config: { ...base, plan: { ...(base.plan as object), specGuard } } as never,
@@ -433,7 +440,7 @@ describe("planRefineOp.recover()", () => {
     const view = runtime.packages.repo();
     const ctx: VerifyContext<unknown> = {
       packageView: view,
-      config: view.select(planInteractiveOp.config),
+      config: view.select(opSelector(planInteractiveOp.config)),
       readFile: async () => null,
       fileExists: async () => false,
     };
@@ -461,7 +468,7 @@ describe("planRefineOp.recover()", () => {
     const validPrd = makeValidPrd("checkout-flow", "feat/checkout");
     const ctx: VerifyContext<unknown> = {
       packageView: view,
-      config: view.select(planInteractiveOp.config),
+      config: view.select(opSelector(planInteractiveOp.config)),
       readFile: async () => JSON.stringify(validPrd),
       fileExists: async () => true,
     };
@@ -491,7 +498,7 @@ describe("planRefineOp.recover()", () => {
     const view = runtime.packages.repo();
     const ctx: VerifyContext<unknown> = {
       packageView: view,
-      config: view.select(planInteractiveOp.config),
+      config: view.select(opSelector(planInteractiveOp.config)),
       readFile: async () => "not valid json {",
       fileExists: async () => true,
     };
