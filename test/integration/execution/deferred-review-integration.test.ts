@@ -1,11 +1,16 @@
 /**
  * Integration test for DR-003: Deferred plugin review runs once at end of run
  *
- * Verifies that when pluginMode is "deferred":
+ * Deferred IS the plugin-review timing — per-story plugin gating was removed in
+ * ADR-023 / #1146, and `review.pluginMode` now selects only whether findings gate
+ * the run ("gating") or are observational ("observational"). There is no mode in
+ * which reviewers run per-story, so these tests no longer parameterise on one.
+ *
+ * Verifies:
  * 1. Plugin reviewers are NOT called during per-story review stages
  * 2. Plugin reviewers are called ONCE after all stories complete
  * 3. The diff range covers run-start ref to HEAD (full run diff)
- * 4. Reviewer failures do NOT fail the overall run
+ * 4. Under the default "observational" mode, reviewer failures do NOT fail the run
  * 5. When no reviewers are registered, deferred review is silently skipped
  *
  * Uses executeUnified directly with mocked deps to avoid spawning real agents.
@@ -22,7 +27,16 @@ import { executeUnified } from "@/execution/unified-executor";
 import type { PluginRegistry } from "@/plugins";
 import type { IReviewPlugin } from "@/plugins/extensions";
 import type { PRD } from "@/prd/types";
-import { makePluginRegistry, makeSpawn, makeStatusWriter, makeTempDir, makeTestRuntime } from "@test/helpers";
+import {
+  makeNaxConfig,
+  makePRD,
+  makePluginRegistry,
+  makeSpawn,
+  makeStatusWriter,
+  makeStory,
+  makeTempDir,
+  makeTestRuntime,
+} from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -31,23 +45,19 @@ import { makePluginRegistry, makeSpawn, makeStatusWriter, makeTempDir, makeTestR
 const HEAD_REF = "cafebabe1234567890abcdef1234567890abcdef";
 
 function makeCompletedPRD(): PRD {
-  return {
+  return makePRD({
     feature: "test-feature",
     userStories: [
-      {
+      makeStory({
         id: "US-001",
         title: "Test story",
         description: "Already done",
-        acceptanceCriteria: [],
-        dependencies: [],
-        tags: [],
         status: "passed",
         passes: true,
-        escalations: [],
         attempts: 1,
-      },
+      }),
     ],
-  } as unknown as PRD;
+  });
 }
 
 function makeReviewer(name: string, passed = true): IReviewPlugin {
@@ -66,32 +76,16 @@ function makeRegistry(reviewers: IReviewPlugin[]): PluginRegistry {
   return makePluginRegistry({ getReviewers: mock(() => reviewers) });
 }
 
-function makeConfig(pluginMode?: "per-story" | "deferred"): NaxConfig {
-  return {
-    autoMode: {
-      defaultAgent: "claude-code",
-      complexityRouting: { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" },
-      escalation: { enabled: false, tierOrder: [] },
-    },
-    models: {
-      fast: { provider: "anthropic", modelName: "claude-3-5-haiku-20241022" },
-      balanced: { provider: "anthropic", modelName: "claude-3-5-sonnet-20241022" },
-      powerful: { provider: "anthropic", modelName: "claude-3-7-sonnet-20250219" },
-    },
+function makeConfig(pluginMode?: NaxConfig["review"]["pluginMode"]): NaxConfig {
+  return makeNaxConfig({
     execution: { maxIterations: 5, costLimit: 100, iterationDelayMs: 0, maxStoriesPerFeature: 100 },
-    routing: { strategy: "simple" },
-    tdd: { mode: "standard", testStrategy: "test-after", testCommand: "echo ok" },
-    quality: { commands: {} },
-    acceptance: { enabled: false, testCommand: "", maxRetries: 0 },
-    analyze: { model: "balanced", maxContextTokens: 100000 },
-    plugins: [],
-    review: {
-      enabled: false,
-      checks: [],
-      commands: {},
-      pluginMode,
-    },
-  } as unknown as NaxConfig;
+    // The whole `tdd` block the cast used to carry was fictional — TddConfig has
+    // none of `mode`, `testStrategy`, or `testCommand` (it has `strategy`, with
+    // different values). Nothing read it, so it is gone rather than translated.
+    // AcceptanceConfig likewise has no `testCommand` (it has `command`).
+    acceptance: { enabled: false, maxRetries: 0 },
+    review: { enabled: false, checks: [], commands: {}, ...(pluginMode ? { pluginMode } : {}) },
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -127,6 +121,7 @@ async function writeCompletedPRD() {
 }
 
 function makeCtx(registry: PluginRegistry, config: NaxConfig): SequentialExecutionContext {
+  const runtime = makeTestRuntime({ config });
   return {
     prdPath,
     workdir,
@@ -141,7 +136,10 @@ function makeCtx(registry: PluginRegistry, config: NaxConfig): SequentialExecuti
     startTime: Date.now(),
     batchPlan: [],
     interactionChain: null,
-    runtime: makeTestRuntime({ config }),
+    runtime,
+    agentManager: runtime.agentManager,
+    sessionManager: runtime.sessionManager,
+    abortSignal: new AbortController().signal,
   };
 }
 
@@ -150,11 +148,11 @@ function makeCtx(registry: PluginRegistry, config: NaxConfig): SequentialExecuti
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("Deferred plugin review — integration (DR-003)", () => {
-  test("plugin reviewers run exactly once after all stories complete when pluginMode is deferred", async () => {
+  test("plugin reviewers run exactly once after all stories complete", async () => {
     await writeCompletedPRD();
     const reviewer = makeReviewer("semgrep", true);
     const registry = makeRegistry([reviewer]);
-    const config = makeConfig("deferred");
+    const config = makeConfig();
     const ctx = makeCtx(registry, config);
 
     const result = await executeUnified(ctx, makeCompletedPRD());
@@ -164,13 +162,13 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     expect(result.exitReason).toBe("completed");
   });
 
-  test("plugin reviewers are NOT called during per-story review when pluginMode is deferred", async () => {
+  test("plugin reviewers are NOT called during the per-story review stage", async () => {
     // With a pre-completed PRD, the story loop exits immediately
     // The reviewer should only be called during the deferred phase, not the per-story phase
     await writeCompletedPRD();
     const reviewer = makeReviewer("semgrep", true);
     const registry = makeRegistry([reviewer]);
-    const config = makeConfig("deferred");
+    const config = makeConfig();
     const ctx = makeCtx(registry, config);
 
     await executeUnified(ctx, makeCompletedPRD());
@@ -179,11 +177,13 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     expect(reviewer.check).toHaveBeenCalledTimes(1);
   });
 
-  test("reviewer failure in deferred mode does NOT fail the overall run", async () => {
+  test("reviewer failure does NOT fail the run under the default observational mode", async () => {
     await writeCompletedPRD();
     const failingReviewer = makeReviewer("semgrep", false);
     const registry = makeRegistry([failingReviewer]);
-    const config = makeConfig("deferred");
+    // Pinned explicitly: it is "observational", not the deferred timing, that keeps
+    // a failing reviewer from failing the run. "gating" would fail it.
+    const config = makeConfig("observational");
     const ctx = makeCtx(registry, config);
 
     const result = await executeUnified(ctx, makeCompletedPRD());
@@ -199,7 +199,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     await writeCompletedPRD();
     const reviewer = makeReviewer("semgrep", true);
     const registry = makeRegistry([reviewer]);
-    const config = makeConfig("deferred");
+    const config = makeConfig();
     const ctx = makeCtx(registry, config);
 
     const result = await executeUnified(ctx, makeCompletedPRD());
@@ -214,7 +214,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     await writeCompletedPRD();
     const reviewer = makeReviewer("semgrep", true);
     const registry = makeRegistry([reviewer]);
-    const config = makeConfig("deferred");
+    const config = makeConfig();
     const ctx = makeCtx(registry, config);
 
     await executeUnified(ctx, makeCompletedPRD());
@@ -231,7 +231,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
   test("deferred review is silently skipped when no plugin reviewers are registered", async () => {
     await writeCompletedPRD();
     const registry = makeRegistry([]); // no reviewers
-    const config = makeConfig("deferred");
+    const config = makeConfig();
     const ctx = makeCtx(registry, config);
 
     const result = await executeUnified(ctx, makeCompletedPRD());
@@ -258,7 +258,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
 
     const reviewer = makeReviewer("semgrep", true);
     const registry = makeRegistry([reviewer]);
-    const config = makeConfig("deferred");
+    const config = makeConfig();
     const ctx = makeCtx(registry, config);
 
     await executeUnified(ctx, makeCompletedPRD());
