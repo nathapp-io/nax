@@ -10,6 +10,7 @@ import { describe, expect, test } from "bun:test";
 import type { NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd/types";
 import { checkStorySizeGate } from "@/precheck/story-size-gate";
+import { makeStorySizeGateConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -119,7 +120,12 @@ const createMockPRD = (stories: UserStory[] = []): PRD => ({
 describe("checkStorySizeGate", () => {
   test("passes when gate is disabled", async () => {
     const config = createMockConfig({
-      storySizeGate: { enabled: false, maxAcCount: 6, maxDescriptionLength: 2000, maxBulletPoints: 8 },
+      storySizeGate: makeStorySizeGateConfig({
+        enabled: false,
+        maxAcCount: 6,
+        maxDescriptionLength: 2000,
+        maxBulletPoints: 8,
+      }),
     });
     const story = createMockStory({ acceptanceCriteria: Array(10).fill("AC") });
     const prd = createMockPRD([story]);
@@ -134,7 +140,12 @@ describe("checkStorySizeGate", () => {
 
   test("passes when no stories exceed thresholds", async () => {
     const config = createMockConfig({
-      storySizeGate: { enabled: true, maxAcCount: 6, maxDescriptionLength: 2000, maxBulletPoints: 8 },
+      storySizeGate: makeStorySizeGateConfig({
+        enabled: true,
+        maxAcCount: 6,
+        maxDescriptionLength: 2000,
+        maxBulletPoints: 8,
+      }),
     });
     const story = createMockStory({
       acceptanceCriteria: ["AC1", "AC2", "AC3"],
@@ -151,7 +162,13 @@ describe("checkStorySizeGate", () => {
 
   test("flags story when AC count exceeds threshold", async () => {
     const config = createMockConfig({
-      storySizeGate: { enabled: true, maxAcCount: 6, maxDescriptionLength: 2000, maxBulletPoints: 8 },
+      storySizeGate: makeStorySizeGateConfig({
+        enabled: true,
+        maxAcCount: 6,
+        maxDescriptionLength: 2000,
+        maxBulletPoints: 8,
+        action: "warn",
+      }),
     });
     const story = createMockStory({
       id: "US-001",
@@ -173,7 +190,12 @@ describe("checkStorySizeGate", () => {
 
   test("flags story when description length exceeds threshold", async () => {
     const config = createMockConfig({
-      storySizeGate: { enabled: true, maxAcCount: 6, maxDescriptionLength: 100, maxBulletPoints: 8 },
+      storySizeGate: makeStorySizeGateConfig({
+        enabled: true,
+        maxAcCount: 6,
+        maxDescriptionLength: 100,
+        maxBulletPoints: 8,
+      }),
     });
     const longDescription = "a".repeat(150);
     const story = createMockStory({
@@ -193,7 +215,12 @@ describe("checkStorySizeGate", () => {
 
   test("flags story when bullet point count exceeds threshold", async () => {
     const config = createMockConfig({
-      storySizeGate: { enabled: true, maxAcCount: 6, maxDescriptionLength: 2000, maxBulletPoints: 5 },
+      storySizeGate: makeStorySizeGateConfig({
+        enabled: true,
+        maxAcCount: 6,
+        maxDescriptionLength: 2000,
+        maxBulletPoints: 5,
+      }),
     });
     const description = `
 Requirements:
@@ -222,7 +249,12 @@ Requirements:
 
   test("flags multiple stories when multiple exceed thresholds", async () => {
     const config = createMockConfig({
-      storySizeGate: { enabled: true, maxAcCount: 3, maxDescriptionLength: 50, maxBulletPoints: 5 },
+      storySizeGate: makeStorySizeGateConfig({
+        enabled: true,
+        maxAcCount: 3,
+        maxDescriptionLength: 50,
+        maxBulletPoints: 5,
+      }),
     });
     const story1 = createMockStory({
       id: "US-001",
@@ -244,7 +276,12 @@ Requirements:
 
   test("only checks pending stories, ignores completed/failed/skipped", async () => {
     const config = createMockConfig({
-      storySizeGate: { enabled: true, maxAcCount: 3, maxDescriptionLength: 2000, maxBulletPoints: 8 },
+      storySizeGate: makeStorySizeGateConfig({
+        enabled: true,
+        maxAcCount: 3,
+        maxDescriptionLength: 2000,
+        maxBulletPoints: 8,
+      }),
     });
     const pendingStory = createMockStory({
       id: "US-001",
@@ -287,7 +324,12 @@ Requirements:
 
   test("includes recommendation message in flagged story", async () => {
     const config = createMockConfig({
-      storySizeGate: { enabled: true, maxAcCount: 3, maxDescriptionLength: 2000, maxBulletPoints: 8 },
+      storySizeGate: makeStorySizeGateConfig({
+        enabled: true,
+        maxAcCount: 3,
+        maxDescriptionLength: 2000,
+        maxBulletPoints: 8,
+      }),
     });
     const story = createMockStory({
       id: "US-001",

@@ -1,6 +1,6 @@
 {
-  "count": 1708,
-  "updatedAt": "2026-08-23T07:53:39.926Z",
+  "count": 1700,
+  "updatedAt": "2026-08-23T07:57:20.387Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -292,7 +292,7 @@
     "test/unit/precheck/precheck-checks-tier1-blockers.test.ts": 4,
     "test/unit/precheck/precheck-checks-tier2-warnings.test.ts": 7,
     "test/unit/precheck/precheck-run-story-size-gate-routing.test.ts": 4,
-    "test/unit/precheck/precheck-story-size-gate.test.ts": 9,
+    "test/unit/precheck/precheck-story-size-gate.test.ts": 1,
     "test/unit/prompts/builders/critic-builder.test.ts": 3,
     "test/unit/prompts/builders/one-shot-builder.test.ts": 1,
     "test/unit/prompts/builders/rectifier-builder-review-labels.test.ts": 3,

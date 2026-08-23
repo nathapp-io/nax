@@ -1,5 +1,6 @@
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
+import type { StorySizeGateConfig } from "@/config/runtime-types";
 
 /**
  * `NonNullable` before the `extends object` test: for an OPTIONAL nested config
@@ -70,4 +71,15 @@ export function makeConfigSlice<K extends keyof NaxConfig>(
   overrides: DeepPartial<NaxConfig[K]> = {},
 ): NaxConfig[K] {
   return deepMerge(makeNaxConfig()[key], overrides);
+}
+
+/**
+ * `precheck` is optional on NaxConfig, so the generic slice helper cannot reach
+ * through it without asserting. DEFAULT_CONFIG always supplies it; the throw
+ * states that invariant instead of hiding it behind a non-null assertion.
+ */
+export function makeStorySizeGateConfig(overrides: DeepPartial<StorySizeGateConfig> = {}): StorySizeGateConfig {
+  const slice = makeNaxConfig({ precheck: { storySizeGate: overrides } }).precheck?.storySizeGate;
+  if (slice === undefined) throw new Error("DEFAULT_CONFIG.precheck.storySizeGate is missing");
+  return slice;
 }
