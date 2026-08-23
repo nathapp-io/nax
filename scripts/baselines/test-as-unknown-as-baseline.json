@@ -1,6 +1,6 @@
 {
-  "count": 256,
-  "updatedAt": "2026-08-23T03:15:56.679Z",
+  "count": 254,
+  "updatedAt": "2026-08-23T03:18:21.078Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": 1,
     "test/helpers/status-writer.ts": 1,
@@ -34,7 +34,6 @@
     "test/unit/execution/story-orchestrator-bail.test.ts": 1,
     "test/unit/execution/post-run-inspection-exhaustion.test.ts": 1,
     "test/unit/execution/pipeline-result-handler.test.ts": 8,
-    "test/unit/execution/parallel-batch.test.ts": 1,
     "test/unit/execution/iteration-runner-memory.test.ts": 1,
     "test/unit/execution/story-scoped-fix-budget.test.ts": 1,
     "test/unit/execution/deferred-review.test.ts": 3,
@@ -43,7 +42,6 @@
     "test/unit/execution/pid-registry.test.ts": 1,
     "test/unit/execution/crash-signals-idempotency.test.ts": 2,
     "test/unit/execution/execution-stage.test.ts": 2,
-    "test/unit/execution/parallel-batch-rectification-context.test.ts": 1,
     "test/unit/execution/rectification-budget-invariants.test.ts": 1,
     "test/unit/execution/unified-executor-rl007.test.ts": 2,
     "test/unit/execution/story-orchestrator-run-phase-events.test.ts": 1,

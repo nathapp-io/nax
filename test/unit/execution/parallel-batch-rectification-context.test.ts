@@ -22,7 +22,7 @@ import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD, UserStory } from "@/prd/types";
-import { makePRD, makeStory as makeSharedStory } from "@test/helpers";
+import { makePRD, makeStory as makeSharedStory, makeTestContext } from "@test/helpers";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function makeConflictStory(id: string, opts: Partial<UserStory> = {}): UserStory {
@@ -58,14 +58,14 @@ function makeCtx(tmpDir: string): ParallelBatchCtx {
     hooks: {} as LoadedHooksConfig,
     pluginRegistry: {} as PluginRegistry,
     maxConcurrency: 2,
-    pipelineContext: {
+    pipelineContext: makeTestContext({
       config: DEFAULT_CONFIG as NaxConfig,
       rootConfig: DEFAULT_CONFIG as NaxConfig,
       prd: {} as PRD,
       hooks: {} as LoadedHooksConfig,
       plugins: {} as PluginRegistry,
       storyStartTime: new Date().toISOString(),
-    } as unknown as Omit<PipelineContext, "story" | "stories" | "workdir" | "routing">,
+    }),
   };
 }
 
