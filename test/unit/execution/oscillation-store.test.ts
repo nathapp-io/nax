@@ -73,39 +73,42 @@ describe("countOscillationOutcomes — ping-pong detection (issue #1355)", () =>
     // The US-003 shape: a typecheck seed reveals semantic, then adversarial —
     // each source appears once, none reappears after being resolved.
     const iterations = [
-      iteration(["typecheck"], ["semantic"]),
-      iteration(["semantic"], ["semantic"]),
-      iteration(["semantic"], ["adversarial"]),
+      iteration(["typecheck"], ["semantic-review"]),
+      iteration(["semantic-review"], ["semantic-review"]),
+      iteration(["semantic-review"], ["adversarial-review"]),
     ];
     expect(countOscillationOutcomes(iterations)).toBe(0);
   });
 
   test("a source coming back after being resolved counts as one reversal", () => {
     // semantic resolved in iter1, then reappears in iter2's findingsAfter.
-    const iterations = [iteration(["semantic"], ["adversarial"]), iteration(["adversarial"], ["semantic"])];
+    const iterations = [
+      iteration(["semantic-review"], ["adversarial-review"]),
+      iteration(["adversarial-review"], ["semantic-review"]),
+    ];
     expect(countOscillationOutcomes(iterations)).toBe(1);
   });
 
   test("two full round-trips count two reversals (trips default max=2)", () => {
     // semantic ↔ adversarial ping-pong: A→B→A→B.
     const iterations = [
-      iteration(["semantic"], ["adversarial"]),
-      iteration(["adversarial"], ["semantic"]),
-      iteration(["semantic"], ["adversarial"]),
+      iteration(["semantic-review"], ["adversarial-review"]),
+      iteration(["adversarial-review"], ["semantic-review"]),
+      iteration(["semantic-review"], ["adversarial-review"]),
     ];
     expect(countOscillationOutcomes(iterations)).toBe(2);
   });
 
   test("monotonic progress within a single source counts zero", () => {
-    const iterations = [iteration(["semantic"], ["semantic"]), iteration(["semantic"], [])];
+    const iterations = [iteration(["semantic-review"], ["semantic-review"]), iteration(["semantic-review"], [])];
     expect(countOscillationOutcomes(iterations)).toBe(0);
   });
 
   test("multiple resolved sources reappearing in one iteration each count", () => {
     const iterations = [
-      iteration(["lint"], ["semantic"]), // lint resolved
-      iteration(["semantic"], ["typecheck"]), // semantic resolved
-      iteration(["typecheck"], ["lint", "semantic"]), // both reappear
+      iteration(["lint"], ["semantic-review"]), // lint resolved
+      iteration(["semantic-review"], ["typecheck"]), // semantic resolved
+      iteration(["typecheck"], ["lint", "semantic-review"]), // both reappear
     ];
     expect(countOscillationOutcomes(iterations)).toBe(2);
   });
