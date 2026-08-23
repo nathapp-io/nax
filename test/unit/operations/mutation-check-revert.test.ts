@@ -3,7 +3,13 @@ import { join } from "node:path";
 import { _mutationCheckDeps, mutationCheckOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 import { applyMutant, journalPathFor, recordInFlight } from "@/verification";
-import { cleanupTempDir, makeMutationCheckDeps as fakeDeps, makeMutationCheckCtx, makeTempDir } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeMutationCheckDeps as fakeDeps,
+  makeMutationCheckCtx,
+  makeResolvedTestPatterns,
+  makeTempDir,
+} from "@test/helpers";
 
 const FAKE_STORY = { id: "US-004", title: "mutation-check op" } as any;
 
@@ -42,12 +48,12 @@ describe("mutationCheckOp — AC9: regression throw still reverts and reports su
           storyId: "US-004",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,

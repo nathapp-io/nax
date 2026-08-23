@@ -40,7 +40,12 @@ function buildCommand(
   return null;
 }
 
-const mechanicalLintFixOp: DeterministicOperation<MechanicalLintFixInput, MechanicalLintFixOutput, QualityConfig> = {
+const mechanicalLintFixOp: DeterministicOperation<
+  MechanicalLintFixInput,
+  MechanicalLintFixOutput,
+  QualityConfig,
+  MechanicalLintFixDeps
+> = {
   kind: "deterministic",
   name: "mechanical-lintfix",
   stage: "rectification",

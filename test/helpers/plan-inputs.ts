@@ -13,14 +13,15 @@ import type { ResolvedTestPatterns } from "@/test-runners";
 import { makeNaxConfig } from "./mock-nax-config";
 import { makeStory } from "./mock-story";
 
-/** Minimal resolved test patterns sufficient for plan input assembly. */
-function makeResolvedTestPatterns(): ResolvedTestPatterns {
+/** Minimal resolved test patterns. Total by construction — pass overrides, never a literal. */
+export function makeResolvedTestPatterns(overrides: Partial<ResolvedTestPatterns> = {}): ResolvedTestPatterns {
   return {
     globs: ["test/**/*.test.ts"],
     regex: [/\.test\.ts$/],
     pathspec: [":(exclude)test/**/*.test.ts"],
     testDirs: ["test/unit", "test/integration"],
     resolution: "detected",
+    ...overrides,
   };
 }
 

@@ -78,7 +78,7 @@ async function captureToolDiagnostics(
   }
 }
 
-export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput, QualityConfig> = {
+export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput, QualityConfig, LintCheckDeps> = {
   kind: "deterministic",
   name: "lint-check",
   stage: "review",

@@ -126,7 +126,7 @@ export type ReviewDecisionPayload =
     };
 
 // biome-ignore lint/suspicious/noExplicitAny: heterogeneous slot list is intentionally erased internally
-export type AnySlot = { op: RunOperation<any, any, any> | DeterministicOperation<any, any, any>; input: unknown };
+export type AnySlot = { op: RunOperation<any, any, any> | DeterministicOperation<any, any, any, any>; input: unknown };
 
 export interface InternalPhase {
   readonly kind: PhaseKind;

@@ -20,6 +20,7 @@ import {
   cleanupTempDir,
   makeMutationCheckCtx as ctxWithConfig,
   makeMutationCheckDeps as fakeDeps,
+  makeResolvedTestPatterns,
   makeTempDir,
 } from "@test/helpers";
 
@@ -68,12 +69,12 @@ describe("mutationCheckOp — US-002 AC11: regression capped to maxMutants even 
           storyId: "US-004",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 2, timeoutSeconds: 60 } }),
         deps,
@@ -128,12 +129,12 @@ describe("mutationCheckOp — US-002 AC12: even-spread selection across multiple
           storyId: "US-004",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 2, timeoutSeconds: 60 } }),
         deps,
@@ -178,12 +179,12 @@ describe("mutationCheckOp — US-002 AC13: no candidates means regression never 
           storyId: "US-004",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -238,12 +239,12 @@ describe("mutationCheckOp — US-002 AC14: empty selection returns all-zero outc
           storyId: "US-004",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -294,12 +295,12 @@ describe("mutationCheckOp — US-002 AC14: empty selection returns all-zero outc
           storyId: "US-004",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,
@@ -339,12 +340,12 @@ describe("mutationCheckOp — US-002 AC14: empty selection returns all-zero outc
           storyId: "US-004",
           storyGitRef: "abc",
           repoRoot: dir,
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } }),
         deps,

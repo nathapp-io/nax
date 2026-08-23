@@ -43,7 +43,8 @@ function buildCommand(
 const mechanicalFormatFixOp: DeterministicOperation<
   MechanicalFormatFixInput,
   MechanicalFormatFixOutput,
-  QualityConfig
+  QualityConfig,
+  MechanicalFormatFixDeps
 > = {
   kind: "deterministic",
   name: "mechanical-formatfix",

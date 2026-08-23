@@ -206,7 +206,8 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
 export const fullSuiteGateOp: DeterministicOperation<
   FullSuiteGateInput,
   FullSuiteGateOutput,
-  ReturnType<typeof fullSuiteGateConfigSelector.select>
+  ReturnType<typeof fullSuiteGateConfigSelector.select>,
+  FullSuiteGateDeps
 > = {
   kind: "deterministic",
   name: "full-suite-gate",

@@ -302,11 +302,19 @@ export type OperationModel<I, C> = ConfiguredModel | ((input: I, ctx: BuildConte
  * execute(input, ctx) is called directly by callOp, with no agent dispatch.
  * No cost tracking (no LLM involved), no session management.
  */
-export interface DeterministicOperation<I, O, C = NaxConfig>
+export interface DeterministicOperation<I, O, C = NaxConfig, D = void>
   extends Pick<OperationBase<I, O, C>, "name" | "stage" | "config"> {
   readonly kind: "deterministic";
   readonly timeoutMs?: never;
-  execute(input: I, ctx: CallContext): Promise<O>;
+  /**
+   * `deps` is the op's injectable seam and is part of its public type — an
+   * implementation may declare it optional with a default, but the interface
+   * must name it, or tests cannot pass it. See #1514 phase 2.
+   */
+  execute(input: I, ctx: CallContext, deps?: D): Promise<O>;
 }
 
-export type Operation<I, O, C> = RunOperation<I, O, C> | CompleteOperation<I, O, C> | DeterministicOperation<I, O, C>;
+export type Operation<I, O, C> =
+  | RunOperation<I, O, C>
+  | CompleteOperation<I, O, C>
+  | DeterministicOperation<I, O, C, never>;

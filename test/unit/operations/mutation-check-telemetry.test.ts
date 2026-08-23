@@ -21,6 +21,7 @@ import {
   cleanupTempDir,
   makeMutationCheckDeps as fakeDeps,
   makeMutationCheckCtx,
+  makeResolvedTestPatterns,
   makeTempDir,
   withInfoSpy,
 } from "@test/helpers";
@@ -81,12 +82,12 @@ async function runAndCaptureInfo(
           storyId: "US-004",
           storyGitRef: "abc123",
           repoRoot: dir,
-          resolvedTestPatterns: {
+          resolvedTestPatterns: makeResolvedTestPatterns({
             globs: ["**/*.test.ts"],
             regex: [/\.test\.ts$/],
             pathspec: [":!*.test.ts"],
             testDirs: ["test"],
-          },
+          }),
         },
         ctxWithConfig({ mutationCheck: mutationsConfig }, {}, opts.quality),
         deps,
@@ -211,12 +212,12 @@ describe("mutationCheckOp — outcome telemetry flags an unrestored worktree", (
             storyId: "US-004",
             storyGitRef: "abc123",
             repoRoot: dir,
-            resolvedTestPatterns: {
+            resolvedTestPatterns: makeResolvedTestPatterns({
               globs: ["**/*.test.ts"],
               regex: [/\.test\.ts$/],
               pathspec: [":!*.test.ts"],
               testDirs: ["test"],
-            },
+            }),
           },
           ctxWithConfig({ mutationCheck: ENABLED }),
           deps,
