@@ -27,6 +27,19 @@ const runEchoOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONF
   parse: (output) => output.trim(),
 };
 
+// Untyped (no RunOperation<..., string, ...> annotation) so its optional fields
+// (verify, etc.) don't carry runEchoOp's O=string signature when spread into an
+// O=TurnResult op below — a typed spread source pins optional-field types to its
+// own generic even when the field is absent at runtime.
+const echoOpBaseFields = {
+  kind: "run" as const,
+  name: runEchoOp.name,
+  stage: runEchoOp.stage,
+  config: runEchoOp.config,
+  session: runEchoOp.session,
+  build: runEchoOp.build,
+};
+
 describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
   test("synthetic hopBody respects { retry: false } and resolves with lastTurnResult (not rejects)", async () => {
     const agentOutput = "final output";
@@ -47,18 +60,18 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
     const sessionManager = makeSessionManager();
     runtime = makeTestRuntime({ agentManager, sessionManager });
 
-    const opNoRetry = {
-      ...runEchoOp,
+    const opNoRetry: RunOperation<
+      { text: string },
+      import("@/agents/types").TurnResult,
+      Pick<typeof DEFAULT_CONFIG, "routing">
+    > = {
+      ...echoOpBaseFields,
       name: "no-retry-resolves-turn-result-op",
       parse: (_output: string) => {
         throw new Error("Parse always fails — expect TurnResult returned, not this thrown");
       },
       retry: { shouldRetry: () => ({ retry: false as const }) },
-    } as unknown as RunOperation<
-      { text: string },
-      import("@/agents/types").TurnResult,
-      Pick<typeof DEFAULT_CONFIG, "routing">
-    >;
+    };
 
     const result = await callOp(
       {
@@ -227,18 +240,18 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
 
     // O = TurnResult: parse always throws, so callOp returns lastRetryTurn via the
     // parse-failure path when the strategy has no fallback.
-    const opWithCostTracking = {
-      ...runEchoOp,
+    const opWithCostTracking: RunOperation<
+      { text: string },
+      import("@/agents/types").TurnResult,
+      Pick<typeof DEFAULT_CONFIG, "routing">
+    > = {
+      ...echoOpBaseFields,
       name: "cost-accumulation-op",
       parse: (_output: string) => {
         throw new Error("Trigger retry");
       },
       retry: costAccumulationStrategy,
-    } as unknown as RunOperation<
-      { text: string },
-      import("@/agents/types").TurnResult,
-      Pick<typeof DEFAULT_CONFIG, "routing">
-    >;
+    };
 
     const result = await callOp(
       {
@@ -282,18 +295,18 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
       shouldRetry: () => ({ retry: false as const }),
     };
 
-    const opAlwaysFailsParse = {
-      ...runEchoOp,
+    const opAlwaysFailsParse: RunOperation<
+      { text: string },
+      import("@/agents/types").TurnResult,
+      Pick<typeof DEFAULT_CONFIG, "routing">
+    > = {
+      ...echoOpBaseFields,
       name: "no-retry-returns-turn-result-op",
       parse: (_output: string) => {
         throw new Error("parse always fails — expect TurnResult returned, not this thrown");
       },
       retry: noRetryStrategy,
-    } as unknown as RunOperation<
-      { text: string },
-      import("@/agents/types").TurnResult,
-      Pick<typeof DEFAULT_CONFIG, "routing">
-    >;
+    };
 
     // AC-2: when { retry: false }, the synthesized hop body returns the latest
     // TurnResult. callOp should RESOLVE, not reject with the parse error.

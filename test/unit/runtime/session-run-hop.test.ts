@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { SessionTurnError } from "@/agents";
 import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents/types";
 import { createSessionRunHop } from "@/runtime/session-run-hop";
-import type { ISessionManager } from "@/session";
+import { makeSessionManager } from "@test/helpers";
 
 function makeRunOptions(): AgentRunOptions {
   return {
@@ -32,12 +32,12 @@ describe("createSessionRunHop", () => {
       estimatedCostUsd: 0.003,
       internalRoundTrips: 2,
     };
-    const sessionManager = {
+    const sessionManager = makeSessionManager({
       nameFor: mock(() => "nax-session"),
       openSession: mock(async () => handle),
       sendPrompt: mock(async () => turnResult),
       closeSession: mock(async () => {}),
-    } as unknown as ISessionManager;
+    });
 
     const hop = createSessionRunHop(sessionManager);
     const result = await hop("claude", makeRunOptions());
@@ -60,14 +60,14 @@ describe("createSessionRunHop", () => {
       0.0055,
       0.0049,
     );
-    const sessionManager = {
+    const sessionManager = makeSessionManager({
       nameFor: mock(() => "nax-session"),
       openSession: mock(async () => handle),
       sendPrompt: mock(async () => {
         throw turnError;
       }),
       closeSession: mock(async () => {}),
-    } as unknown as ISessionManager;
+    });
 
     const hop = createSessionRunHop(sessionManager);
     const result = await hop("claude", makeRunOptions());
