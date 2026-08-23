@@ -589,3 +589,65 @@ Delegable clusters B and C are now drained. What remains from `HANDOFF-1514-dele
 Total residue at this commit: **1016 errors across 271 files** (was 1030/276 at the start of
 `chore/1514-delegable-clusters`). −14 errors, −5 files, both clusters delegated, two
 follow-up commits per the handoff's "one cluster per commit" rule.
+
+## 15. `plugins/loader.test.ts` optimizer stubs — done (1016 → 994, −22)
+
+On `chore/1514-delegable-clusters`, one commit. This is the §5.2 escalation from the
+delegable-clusters handoff, **taken with explicit approval**: G5 (no `test/helpers/` edits)
+was lifted by the user for this one helper, and for nothing else.
+
+**The first estimate that did not move.** Handoff said 22 errors; live count was 22; the
+fix removed 22. Five prior clusters drifted on re-measure (§11–§14) — this one did not,
+because the errors all came from one copy-pasted stub rather than from drift accumulating
+across unrelated files.
+
+### What was actually wrong
+
+The stubs returned `{ optimizedPrompt, estimatedTokens, tokensSaved, appliedStrategies }`
+and read `input.estimatedTokens`. The real `PromptOptimizerResult`
+(`src/optimizer/types.ts:34`) is `{ prompt, originalTokens, optimizedTokens, savings,
+appliedRules }`, and `PromptOptimizerInput` has never had an `estimatedTokens` field. So
+each of 11 byte-identical stubs produced exactly 2 errors: one `TS2322` on the return
+shape, one `TS2339` on the phantom input field.
+
+**No test ever calls `optimize()`.** The stub exists only so `provides: ["optimizer"]`
+validates and the plugin loads. That is why the wrong shape survived an interface change
+undetected — nothing exercised it, and the file's 17 tests all passed throughout.
+
+### The helper
+
+`test/helpers/optimizer-result.ts` — `makeOptimizerResult(overrides?)`, exported from the
+barrel. Defaults describe a no-op optimizer: prompt echoed, `originalTokens ===
+optimizedTokens` via the real `estimateTokens()`, `savings: 0`, `appliedRules: []`.
+
+Unlike `makeDebateRunner`, it needs **no cast** — `PromptOptimizerResult` is a plain
+interface, so the factory satisfies it structurally. `as unknown as` stayed flat at 102,
+which is the measurable form of that claim.
+
+### The two sites tsc could not see
+
+`writePluginFile()` (line ~44) and the inline `pluginCode` template (line ~427) emit the
+*same* stale shape into generated plugin source. They are string literals, so they
+contributed 0 typecheck errors and would have survived a fix that only chased the count.
+Both were corrected to the real shape inline (a generated file cannot import a helper).
+Behaviour is unchanged — nothing calls the generated `optimize()` either — but the
+fixtures no longer teach a shape that has not existed for several releases.
+
+Verify: G1 flat at 1 (same pre-existing `TS1355` in `smart-runner.test.ts:516`). Drop is
+exactly cluster-sized, 1016 → 994, files 271 → 270, `loader.test.ts` 22 → 0. All six
+counters flat (`asAny=1388, tsSuppress=40, ratchetAllow=106, absentValue=17, anyType=1880,
+looseCast=1994`); `as unknown as` flat at 102. 17 tests pass in the touched file; full
+suite green across all three phases; 25/25 gates green, including
+`check-inline-test-mocks --strict`, which the new helper satisfies rather than evades.
+
+## Next
+
+- **§5.1 — `TS18046/18047/18048` (`!` cluster).** Re-measured at this commit: still **43**.
+  Not delegable. The `!` fix is invisible to all six counters, so it needs a per-site
+  decision or a *counted* helper designed first — the same approval §15 just used.
+- **§5.3 — `Mock<() => X>` drift.** Re-measured: `parallel-batch.test.ts` **36**,
+  `story-orchestrator-*` **89**, config suites **146**. No single recipe; each needs the
+  real signature read and the mock's parameters annotated individually.
+
+Residue at this commit: **994 errors across 270 files.** The branch has taken 1030 → 994
+(−36) over four commits.
