@@ -131,18 +131,65 @@ annotate.** Files: `runner-hybrid-rebuttal` 8, `runner-stateful-coordinator` 4,
 `runner-hybrid-cross-debater` 4, `runner-hybrid-coordinator` 4, `runner-stateful` 2,
 `runner-hybrid` 1.
 
-Two options, and this is the **decision this plan does not make**:
+**Decision: (a) — give these modules a dep bag.** Ruled 2026-08-23. It is the same
+"make the type say what the code does" move as tier 1 and phase 2, it costs zero casts, and
+it removes a module-namespace spy the repo otherwise avoids (`_runPlanDeps` and
+`_debateSessionDeps` already exist in `src/debate/`, so the convention is established here).
+The rejected option (b) — a `makeCallOpSpy` helper holding one cast — buys a smaller diff
+by keeping the spy pattern, and hides the fixture shape the annotated slot exposes.
 
-- **(a) Give these modules a `_debateDeps` bag**, monomorphically typed, and switch the
-  tests from `spyOn(callModule, …)` to mutating the bag. Consistent with the `_xDeps`
-  convention used everywhere else in `src/`, removes a fragile module-namespace spy, and
-  costs zero casts. Bigger diff: it changes how six test files install their stub.
-- **(b) A `makeCallOpSpy` helper** holding one cast, leaving the spies in place. Small
-  diff, `+1 looseCast` in `test/helpers`, and it leaves the module-namespace spy pattern.
+### Prototyped, and it works — plus one trap that will bite
 
-I lean (a) — it is the same "make the type say what the code does" move as tier 1 and
-phase 2, and (b) buys a smaller diff by keeping a pattern the repo otherwise avoids. But
-it touches working debate tests, so it wants a human ruling before anyone starts.
+`_hybridDeps` added to `runner-hybrid.ts` with `callOp` typed to `hybridDebaterOp`, and
+`runner-hybrid-coordinator.test.ts` moved off `spyOn`:
+
+```ts
+// src/debate/runner-hybrid.ts
+export const _hybridDeps: {
+  callOp: (ctx: CallContext, op: typeof hybridDebaterOp, input: DebateHybridInput) => Promise<DebateHybridOutput>;
+} = { callOp: callModule.callOp };
+
+// test — installer keeps the bun mock, so toHaveBeenCalledTimes() still works
+function installCallOp(impl: typeof _hybridDeps.callOp) {
+  const spy = mock(impl);
+  _hybridDeps.callOp = spy;
+  return spy;
+}
+withDepsRestore(_hybridDeps);   // from @test/helpers
+```
+
+Result: `src` tsc **0**, that file's 4 callOp errors → **0**, its 5 tests green, zero casts.
+`DebateHybridOutput` is only `{ success, rebut }`, so **tier 2 needs no output factory** —
+unlike tier 1.
+
+> **TRAP — the migration is atomic per `src` module, not per test file.**
+> The moment `runHybrid` calls `_hybridDeps.callOp`, every `spyOn(callModule, "callOp")`
+> aimed at it stops intercepting. Converting one file of four left the other three
+> spying on a function no longer called: **13 tests failed**, and they fail with confusing
+> assertion diffs (`Expected "proposal-from-claude", received ["proposal-claude", …]`),
+> not with an obvious wiring error. Convert **all** test files for a module in the **same
+> commit**, and run the module's whole test directory — not just the file you edited.
+
+Two more things found while prototyping, both cheap once you know:
+
+- Some sites annotate the op parameter explicitly, e.g.
+  `installCallOp(async (_c, op: RunOperation<DebateHybridInput, unknown, unknown>, input) => …)`.
+  That stale annotation no longer matches the monomorphic slot — **delete the annotation**
+  and let it infer. One site in `runner-hybrid-cross-debater.test.ts`.
+- `runner-hybrid.test.ts` drives the public `DebateRunner` class rather than `runHybrid`
+  directly, and one of its stubs is annotated `DebateStatefulInput` while routing through
+  the hybrid path. Check which op each stub really serves before converting; do this file
+  last.
+
+**Per-module file sets that must move together:**
+
+| `src` module | Test files (all in one commit) | callOp errors |
+|:--|:--|--:|
+| `runner-hybrid.ts` | `runner-hybrid-rebuttal` (8), `runner-hybrid-cross-debater` (4), `runner-hybrid-coordinator` (4), `runner-hybrid` (1) | 17 |
+| `runner-stateful.ts` + `runner-stateful-helpers.ts` | `runner-stateful-coordinator` (4), `runner-stateful` (2) | 6 |
+
+Both stateful files dispatch `statefulDebaterOp`, so they share one bag — check whether the
+tests target one or both before splitting.
 
 ### Tier 3 — genuinely polymorphic, leave alone (8 errors)
 
@@ -168,7 +215,7 @@ errors justifies.
 | Tier | Errors | Casts added | Confidence |
 |:--|--:|--:|:--|
 | 1 — annotate bag + output factory | **24** | **0** | measured on 1 of 3 modules |
-| 2 — pending the (a)/(b) ruling | 23 | 0 or +1 | not started |
+| 2 — dep bag + move tests off `spyOn` (**decision (a)**) | **23** | **0** | prototyped on 1 of 6 files |
 | 3 — accept as documented | 8 | 0 | — |
 
 Tier 1 alone: **1745 → ~1721**. Tiers 1+2: **→ ~1698**.
@@ -185,8 +232,10 @@ missing from every adversarial fixture in the suite.
 
 ## 7. Before starting
 
-- Tier 1 is delegable once someone writes the per-module handoff; tier 2 is **blocked on the
-  (a)/(b) decision**; tier 3 is a documentation task.
+- Tier 1 and tier 2 are both delegable once someone writes the per-module handoff. Tier 2
+  carries the atomicity trap above — a delegate who converts file-by-file will hit 13 red
+  tests and may "fix" them by reverting the src change. Say so in the handoff.
+- Tier 3 is a documentation task.
 - Every commit: `bun x tsc --noEmit` = 0, `check:all` green, `bun run test` green, per-file
   gate `worse: 0`, and **no counter trades against another** — a typecheck drop with an
   `anyType` or `looseCast` rise is a failed step.
