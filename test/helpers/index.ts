@@ -54,6 +54,7 @@ export { withExecutionDeps, type ExecutionDepsOverrides } from "./execution-deps
 export { waitForCondition, withTimeout } from "./timeout";
 export { makeLinkWithCosts } from "./link-with-costs";
 export { makeMockCallContext } from "./call-context";
+export { makeDispatchContext, type DispatchContextOptions } from "./dispatch-context";
 export { makeMockPlanInputs, makeResolvedTestPatterns } from "./plan-inputs";
 export { withWarnSpy, withInfoSpy } from "./warn-spy";
 export { withTimerSpy } from "./timer-spy";

@@ -18,6 +18,7 @@
 import { DEFAULT_CONFIG } from "@/config";
 import type { PipelineContext, RoutingResult } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
+import { makeDispatchContext } from "./dispatch-context";
 
 export const DEFAULT_TEST_ROUTING: RoutingResult = {
   complexity: "simple",
@@ -72,6 +73,7 @@ export function makeTestContext(overrides: Partial<PipelineContext> = {}): Pipel
     projectDir: "/tmp/nax-test",
     workdir: "/tmp/nax-test",
     hooks: { hooks: {} },
+    ...makeDispatchContext(),
     ...overrides,
-  } as PipelineContext;
+  };
 }

@@ -18,7 +18,7 @@ import { routingStage } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
 import { PluginRegistry } from "@/plugins/registry";
 import type { PRD, UserStory } from "@/prd/types";
-import { makeNaxConfig, makeTempDir } from "@test/helpers";
+import { makeDispatchContext, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 function createTestContext(workdir: string, overrides?: Partial<PipelineContext>): PipelineContext {
   const story: UserStory = {
@@ -147,6 +147,7 @@ function createTestContext(workdir: string, overrides?: Partial<PipelineContext>
     prd,
     config,
     plugins: new PluginRegistry([]),
+    ...makeDispatchContext(),
     ...overrides,
   };
 }

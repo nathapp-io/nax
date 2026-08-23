@@ -11,7 +11,7 @@ import { addSink, initLogger, resetLogger } from "@/logger";
 import { acceptanceStage, parseTestFailures } from "@/pipeline/stages/acceptance";
 import type { PipelineContext } from "@/pipeline/types";
 import { _executorDeps } from "@/verification";
-import { makeStory } from "@test/helpers";
+import { makeDispatchContext, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -43,8 +43,10 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     stories,
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
     workdir: "/tmp/test-workdir",
+    projectDir: "/tmp/test-workdir",
     featureDir: "/tmp/test-workdir/.nax/features/test-feature",
     hooks: {} as any,
+    ...makeDispatchContext(),
     ...overrides,
   };
 }

@@ -363,3 +363,93 @@ one identical line; the rest are heterogeneous. `makeTestContext`
 `as PipelineContext`, so the open question is whether to build a real `makeDispatchContext()`
 from `makeMockRuntime()` — which touches runtime lifecycle and must satisfy
 `check:runtime-cleanup`. **Not mechanical; plan it.**
+
+## 11. `DispatchContext` fixtures — done (1132 → 1067, −65)
+
+On `chore/1514-dispatch-context`, one commit. The largest single drop of the drain so far,
+and the first to retire debt on **four** counters at once: `asAny` 1393 → 1388,
+`anyType` 1885 → 1880, `looseCast` 2008 → 1994, `tsSuppress` 54 → 40 (the last carried
+over from §10, whose baseline update had missed the escape-hatch file).
+
+### The estimate was wrong again — and this time in the useful direction
+
+§10 carried this cluster as **18 errors**. Live it was **46**, across **38 files**. The
+handoff had counted only the two files someone had looked at. Fourth estimate, fourth
+miss: 32→73, 190→149, 90→9, 18→46.
+
+### The helper
+
+`test/helpers/dispatch-context.ts` — `makeDispatchContext()` returns the four ADR-020
+fields as a spreadable object. The design decision that matters:
+
+```ts
+const runtime = opts.runtime ?? makeMockRuntime(opts);
+return { runtime, agentManager: runtime.agentManager, sessionManager: runtime.sessionManager, ... };
+```
+
+The three object fields come from **one** runtime, not three independent mocks. In
+production `ctx.agentManager === ctx.runtime.agentManager`; a fixture that breaks that
+identity lets a test pass while the code under test dispatches through a manager the test
+never observes. Where a file already had a runtime, it is threaded in
+(`makeDispatchContext({ runtime })`) rather than a second one being built beside it.
+
+`check:runtime-cleanup` was the flagged hazard and turned out not to bind: it polices
+direct `createRuntime()` calls in test files only, and helper-built runtimes are tracked
+and closed by the central `afterEach` in `test/helpers/runtime.ts`.
+
+### `makeTestContext` was lying, and it was the cheapest 13 errors
+
+`test/helpers/pipeline-context.ts` returned `... as PipelineContext` while supplying none
+of the four fields. Making it spread `makeDispatchContext()` let the cast be **deleted
+outright**, and 13 errors in files that never touched the helper disappeared with it. The
+full suite passed unchanged, so no test was depending on those fields being `undefined`.
+
+This is the `callop-seam` precedent again: the shared helper was the fix, not each call site.
+
+### Three bugs the casts were hiding
+
+1. **`interaction-chain-pipeline.test.ts`** — seven assertions read the field under test
+   through `(ctx as Record<string, unknown>).interaction`. The cast is what let the
+   literals compile while missing four required fields; once the fixtures were honest the
+   cast itself stopped compiling. Reading `ctx.interaction` directly is both the fix and a
+   strictly stronger assertion — the test claims to verify that `PipelineContext` *has* the
+   field, and now it does so through the type. Seven `looseCast` retired.
+2. **`runner-stateful-coordinator.test.ts`** — `as Parameters<typeof runStateful>[0]` was
+   masking `config: sliceConfig.debate`, where `DebateConfig` is
+   `Pick<NaxConfig, "agent" | "debate">` — the *slice*, not the inner object. The fixture
+   had been passing the wrong shape. Replacing the cast with a return-type annotation, the
+   hand-rolled `callContext` with `makeMockCallContext({ runtime: dispatch.runtime })`, and
+   the config with the real slice makes the concurrency test meaningful again: `ctx.config`
+   (99) and the runtime's config (2) now genuinely diverge, so the assertion that the cap
+   comes from `runtime.configLoader.current()` actually discriminates.
+3. **`acceptance-missing-target` / `acceptance.test.ts`** — fixing the dispatch fields
+   unmasked a missing `projectDir`. Real gap, added.
+
+### Not fixed: a src/test contradiction worth its own issue
+
+`run-completion-session-close.test.ts` test 2 is *"does not call closeAllRunSessions when
+sessionManager is omitted"*. `RunCompletionOptions extends DispatchContext`, so
+`sessionManager` is **required** — yet `src/execution/lifecycle/run-completion.ts:403` still
+guards with `if (options.sessionManager)`. The test pins a branch the type says is
+unreachable.
+
+Making it compile needs `absentValue<ISessionManager>()`, which trades a typecheck error for
+an `absentValue` increment — **the one thing this drain does not do**. Left erroring (1 of
+the 1067). The decision belongs with whoever owns ADR-020: either the runtime guard is dead
+and should go, or the type is wrong.
+
+### Rules
+
+- **Fix the shared helper before the call sites.** 13 of the 65 came from one cast deletion
+  in `makeTestContext`, in files that were never edited.
+- **A fixture's cast is load-bearing evidence.** Every cast removed here was hiding a second
+  defect — a wrong config shape, a missing field, or an assertion reading around the type it
+  claimed to test. Budget for the unmask; do not assume the cast was merely cosmetic.
+- **Derive related fixture fields from one source.** Three mocks that *should* be the same
+  object will silently stop being the same object.
+
+## Next
+
+`makeObservation` (9), and the `semantic-*` review mock-signature cluster surfaced while
+working here (~9 in three files, all `CompleteResult` shape drift). Both small. The
+`run-completion-session-close` contradiction above needs a decision, not a fix.

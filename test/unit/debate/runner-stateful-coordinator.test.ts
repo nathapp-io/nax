@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { runStateful } from "@/debate/runner-stateful";
 import { _statefulDeps } from "@/debate/runner-stateful-helpers";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager, withDepsRestore } from "@test/helpers";
+import {
+  makeDispatchContext,
+  makeMockAgentManager,
+  makeMockCallContext,
+  makeNaxConfig,
+  makeSessionManager,
+  withDepsRestore,
+} from "@test/helpers";
 
 function installCallOp(impl: typeof _statefulDeps.callOp) {
   const spy = mock(impl);
@@ -25,7 +32,9 @@ function defer<T>(): PromiseWithResolvers<T> {
   return { promise, resolve, reject };
 }
 
-function makeRunStatefulCtx(overrides: Partial<Record<string, unknown>> = {}) {
+type RunStatefulCtx = Parameters<typeof runStateful>[0];
+
+function makeRunStatefulCtx(overrides: Partial<RunStatefulCtx> = {}): RunStatefulCtx {
   const fullConfig = makeNaxConfig({
     debate: {
       maxConcurrentDebaters: 2,
@@ -50,6 +59,7 @@ function makeRunStatefulCtx(overrides: Partial<Record<string, unknown>> = {}) {
     nameFor: mock(() => "nax-stateful"),
     getLiveHandle: mock(() => undefined),
   });
+  const dispatch = makeDispatchContext({ agentManager, sessionManager, config: fullConfig });
   return {
     storyId: "US-855",
     stage: "review",
@@ -65,33 +75,27 @@ function makeRunStatefulCtx(overrides: Partial<Record<string, unknown>> = {}) {
         { agent: "gemini", model: "powerful" },
       ],
     },
-    config: sliceConfig.debate,
+    // Deliberately divergent from `fullConfig` (which backs the runtime): the
+    // concurrency test below proves the cap is read from
+    // runtime.configLoader.current(), not from ctx.config. DebateConfig is the
+    // Pick<NaxConfig, "agent" | "debate"> slice, not the inner debate object.
+    config: sliceConfig,
     workdir: "/tmp/work",
     featureName: "feat-stateful",
     timeoutSeconds: 60,
-    callContext: {
-      runtime: {
-        agentManager,
-        sessionManager,
-        configLoader: {
-          current: () => fullConfig,
-          select: (_sel: unknown) => fullConfig,
-        },
-        packages: {
-          resolve: () => ({ config: fullConfig, select: (_sel: unknown) => fullConfig }),
-        },
-        signal: undefined,
-      },
-      packageView: { config: fullConfig, select: (_sel: unknown) => fullConfig },
+    // The callContext runs off the SAME runtime as the dispatch fields, so
+    // ctx.agentManager and ctx.callContext.runtime.agentManager are one object
+    // — as they are in production.
+    callContext: makeMockCallContext({
+      runtime: dispatch.runtime,
       packageDir: "/tmp/work",
       agentName: "claude",
       storyId: "US-855",
       featureName: "feat-stateful",
-    },
-    agentManager,
-    sessionManager,
+    }),
+    ...dispatch,
     ...overrides,
-  } as Parameters<typeof runStateful>[0];
+  };
 }
 
 function makeResultingCallOpMock() {

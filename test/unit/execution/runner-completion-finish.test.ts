@@ -19,7 +19,7 @@ import type { LoadedHooksConfig } from "@/hooks";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import { PluginRegistry } from "@/plugins";
 import type { PRD, UserStory } from "@/prd";
-import { makeNaxConfig, makeStatusWriter, makeTestRuntime } from "@test/helpers";
+import { makeDispatchContext, makeNaxConfig, makeStatusWriter, makeTestRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -90,6 +90,7 @@ function makeOpts(
     statusWriter,
     pluginRegistry: new PluginRegistry([]),
     prdPath: `${WORKDIR}/prd.json`,
+    ...makeDispatchContext(),
   };
 }
 
@@ -130,13 +131,9 @@ function makeOptsWithRuntime(
   prd: PRD,
   statusWriter: ReturnType<typeof makeStatusWriter>,
 ): RunnerCompletionOptions {
-  const runtime = makeTestRuntime({ config });
   return {
     ...makeOpts(config, prd, statusWriter),
-    runtime,
-    agentManager: runtime.agentManager,
-    sessionManager: runtime.sessionManager,
-    abortSignal: runtime.signal,
+    ...makeDispatchContext({ runtime: makeTestRuntime({ config }) }),
   };
 }
 

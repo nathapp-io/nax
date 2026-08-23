@@ -1,13 +1,13 @@
 {
   "counts": {
-    "asAny": 1393,
-    "tsSuppress": 54,
+    "asAny": 1388,
+    "tsSuppress": 40,
     "ratchetAllow": 106,
     "absentValue": 17,
-    "anyType": 1885,
-    "looseCast": 2008
+    "anyType": 1880,
+    "looseCast": 1994
   },
-  "updatedAt": "2026-08-23T12:41:25.321Z",
+  "updatedAt": "2026-08-23T14:30:59.645Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -27,7 +27,7 @@
     "test/helpers/mock-agent-manager.ts": {
       "looseCast": 1
     },
-    "test/helpers/pipeline-context.ts": {
+    "test/helpers/config-selector.ts": {
       "looseCast": 1
     },
     "test/helpers/mutation-check.ts": {
@@ -62,9 +62,8 @@
     },
     "test/integration/interaction/interaction-chain-pipeline.test.ts": {
       "asAny": 16,
-      "tsSuppress": 3,
       "anyType": 16,
-      "looseCast": 25
+      "looseCast": 18
     },
     "test/integration/tdd/_tdd-test-helpers.ts": {
       "asAny": 5,
@@ -248,7 +247,7 @@
     "test/integration/config/merger.test.ts": {
       "asAny": 3,
       "anyType": 3,
-      "looseCast": 6
+      "looseCast": 5
     },
     "test/integration/config/profile-loader.test.ts": {
       "looseCast": 5
@@ -566,7 +565,7 @@
       "looseCast": 1
     },
     "test/unit/hooks/on-all-stories-complete.test.ts": {
-      "tsSuppress": 12,
+      "tsSuppress": 2,
       "looseCast": 1
     },
     "test/unit/hooks/shell-security.test.ts": {
@@ -627,7 +626,6 @@
     },
     "test/unit/execution/story-orchestrator-resume-integration.test.ts": {
       "asAny": 1,
-      "tsSuppress": 1,
       "anyType": 1,
       "looseCast": 1
     },
@@ -637,9 +635,6 @@
     },
     "test/unit/execution/story-orchestrator-carveout-staleness.test.ts": {
       "looseCast": 2
-    },
-    "test/unit/execution/new-package-setup.test.ts": {
-      "looseCast": 1
     },
     "test/unit/execution/story-orchestrator-revalidation-carveout.test.ts": {
       "anyType": 2,
@@ -1012,8 +1007,7 @@
       "anyType": 1
     },
     "test/unit/operations/finish-review-quality-walk.test.ts": {
-      "ratchetAllow": 2,
-      "looseCast": 1
+      "ratchetAllow": 2
     },
     "test/unit/operations/debate-propose.test.ts": {
       "asAny": 2,
@@ -1038,8 +1032,7 @@
       "anyType": 1
     },
     "test/unit/operations/finish-narrative.test.ts": {
-      "ratchetAllow": 2,
-      "looseCast": 1
+      "ratchetAllow": 2
     },
     "test/unit/operations/quality-gate-packageview.test.ts": {
       "asAny": 12,
@@ -1169,7 +1162,7 @@
     },
     "test/unit/operations/finish-review.test.ts": {
       "ratchetAllow": 1,
-      "looseCast": 2
+      "looseCast": 1
     },
     "test/unit/operations/debate-plan.test.ts": {
       "looseCast": 6
@@ -1177,9 +1170,6 @@
     "test/unit/operations/full-suite-rectify-op.test.ts": {
       "asAny": 3,
       "anyType": 3
-    },
-    "test/unit/operations/finish-fix.test.ts": {
-      "looseCast": 1
     },
     "test/unit/operations/mutation-check-diff-scope.test.ts": {
       "asAny": 1,
@@ -1245,9 +1235,6 @@
       "looseCast": 22
     },
     "test/unit/debate/runner-plan-helpers.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/debate/runner-stateful-coordinator.test.ts": {
       "looseCast": 1
     },
     "test/unit/debate/runner-plan-signal.test.ts": {
@@ -1668,8 +1655,7 @@
       "anyType": 7
     },
     "test/unit/plugins/builtin/otel-resource-git.test.ts": {
-      "asAny": 5,
-      "anyType": 9
+      "anyType": 4
     },
     "test/unit/plugins/builtin/curator-registration.test.ts": {
       "asAny": 1,

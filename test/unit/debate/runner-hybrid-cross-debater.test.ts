@@ -13,7 +13,13 @@ import { _debateSessionDeps, runHybrid } from "@/debate";
 import type { DebateStageConfig, HybridCtx } from "@/debate";
 import { _hybridDeps } from "@/debate/runner-hybrid";
 import type { DebateHybridInput } from "@/operations/debate-hybrid";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager, withDepsRestore } from "@test/helpers";
+import {
+  makeDispatchContext,
+  makeMockAgentManager,
+  makeNaxConfig,
+  makeSessionManager,
+  withDepsRestore,
+} from "@test/helpers";
 
 function installCallOp(impl: typeof _hybridDeps.callOp) {
   const spy = mock(impl);
@@ -68,9 +74,7 @@ function makeHybridCtx(stageConfigOverrides: Partial<DebateStageConfig> = {}): H
       storyId: "US-cross-debater",
       featureName: "feat-hybrid",
     },
-    agentManager,
-    sessionManager,
-    abortSignal: new AbortController().signal,
+    ...makeDispatchContext({ agentManager, sessionManager }),
   };
 }
 

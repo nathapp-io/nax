@@ -20,7 +20,7 @@ import {
 import type { AgentGetFn, PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd";
 import { makeNaxConfig } from "@test/helpers";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeDispatchContext, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -168,6 +168,7 @@ describe("runAcceptanceLoop threads agentGetFn through the pipeline context", ()
       prd,
       prdPath: "/tmp/test-prd.json",
       workdir: "/tmp",
+      ...makeDispatchContext(),
       hooks: {} as never,
       feature: "test-feature",
       totalCost: 0,
@@ -413,7 +414,9 @@ function makeMinimalPipelineContext(overrides: Partial<PipelineContext> = {}): P
     stories: [],
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "no-test", reasoning: "" },
     workdir: "/tmp/workdir",
+    projectDir: "/tmp/workdir",
     hooks: {} as never,
+    ...makeDispatchContext(),
     ...overrides,
   };
 }

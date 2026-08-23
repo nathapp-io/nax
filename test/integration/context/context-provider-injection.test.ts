@@ -14,6 +14,7 @@ import type { PipelineContext } from "@/pipeline/types";
 import { PluginRegistry } from "@/plugins/registry";
 import type { IContextProvider, NaxPlugin } from "@/plugins/types";
 import type { PRD, UserStory } from "@/prd/types";
+import { DEFAULT_TEST_ROUTING, makeDispatchContext } from "@test/helpers";
 
 /**
  * Create a minimal test context for context stage testing
@@ -66,14 +67,12 @@ function createTestContext(overrides?: Partial<PipelineContext>): PipelineContex
     prd,
     story,
     stories: [story],
-    routing: {
-      complexity: "simple",
-      modelTier: "fast",
-      testStrategy: "test-after",
-      reasoning: "test",
-    },
+    routing: DEFAULT_TEST_ROUTING,
     workdir: "/test/workdir",
+    projectDir: "/test/workdir",
+    rootConfig: config,
     hooks: { hooks: {} },
+    ...makeDispatchContext(),
     ...overrides,
   };
   // Force v2.enabled=false regardless of what overrides.config sets

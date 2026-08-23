@@ -23,6 +23,7 @@ import { wireInteraction } from "@/pipeline/subscribers/interaction";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
 import { type DeepPartial, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import { makeDispatchContext, makePRD, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -50,20 +51,13 @@ const baseConfig: DeepPartial<NaxConfig> = {
   },
 };
 
-const baseStory: UserStory = {
+const baseStory: UserStory = makeStory({
   id: "US-001",
   title: "Test story",
   description: "A story that fails repeatedly",
-  acceptanceCriteria: [],
-  status: "pending",
-  attempts: 0,
-};
+});
 
-const basePrd: PRD = {
-  feature: "test-feature",
-  version: "1",
-  userStories: [baseStory],
-};
+const basePrd: PRD = makePRD({ feature: "test-feature", userStories: [baseStory] });
 
 /** Build a mock InteractionPlugin that records sent requests */
 function buildCapturingPlugin(): { plugin: InteractionPlugin; sentRequests: InteractionRequest[] } {
@@ -100,6 +94,8 @@ describe("AC1: interactionChain accessible in PipelineContext", () => {
     const chain = buildInteractionChain();
 
     const ctx: PipelineContext = {
+      ...makeDispatchContext(),
+      projectDir: "/tmp",
       config: baseConfig as NaxConfig,
       rootConfig: baseConfig as NaxConfig,
       prd: basePrd,
@@ -112,13 +108,15 @@ describe("AC1: interactionChain accessible in PipelineContext", () => {
     };
 
     // The interaction field should be accessible
-    expect((ctx as Record<string, unknown>).interaction).toBe(chain);
+    expect(ctx.interaction).toBe(chain);
   });
 
   test("PipelineContext 'interaction' field is optional (not required)", () => {
     // FAILS until BUG-025 adds the field (or if it becomes required incorrectly)
     // A context without 'interaction' should still be valid
     const ctx: PipelineContext = {
+      ...makeDispatchContext(),
+      projectDir: "/tmp",
       config: baseConfig as NaxConfig,
       rootConfig: baseConfig as NaxConfig,
       prd: basePrd,
@@ -130,7 +128,7 @@ describe("AC1: interactionChain accessible in PipelineContext", () => {
     };
 
     // Without the field, it should be undefined (not cause errors)
-    expect((ctx as Record<string, unknown>).interaction).toBeUndefined();
+    expect(ctx.interaction).toBeUndefined();
   });
 
   test("interactionChain stored in PipelineContext survives pipeline execution (via runPipeline)", async () => {
@@ -141,6 +139,8 @@ describe("AC1: interactionChain accessible in PipelineContext", () => {
     chain.register(plugin, 10);
 
     const ctx: PipelineContext = {
+      ...makeDispatchContext(),
+      projectDir: "/tmp",
       config: baseConfig as NaxConfig,
       rootConfig: baseConfig as NaxConfig,
       prd: basePrd,
@@ -153,8 +153,8 @@ describe("AC1: interactionChain accessible in PipelineContext", () => {
     };
 
     // The interaction chain is preserved in the context
-    expect((ctx as Record<string, unknown>).interaction).toBeInstanceOf(InteractionChain);
-    expect((ctx as Record<string, unknown>).interaction).toBe(chain);
+    expect(ctx.interaction).toBeInstanceOf(InteractionChain);
+    expect(ctx.interaction).toBe(chain);
   });
 });
 
@@ -168,6 +168,7 @@ describe("SequentialExecutionContext accepts interactionChain", () => {
     const chain = buildInteractionChain();
 
     const ctx: SequentialExecutionContext = {
+      ...makeDispatchContext(),
       prdPath: "/tmp/prd.json",
       workdir: "/tmp",
       config: baseConfig as NaxConfig,
@@ -189,7 +190,7 @@ describe("SequentialExecutionContext accepts interactionChain", () => {
       interactionChain: chain,
     };
 
-    expect((ctx as Record<string, unknown>).interactionChain).toBe(chain);
+    expect(ctx.interactionChain).toBe(chain);
   });
 
   test("runner.ts passes interactionChain from setupRun result to executeSequential", () => {
@@ -198,6 +199,7 @@ describe("SequentialExecutionContext accepts interactionChain", () => {
     const chain = buildInteractionChain();
 
     const ctx: SequentialExecutionContext = {
+      ...makeDispatchContext(),
       prdPath: "/tmp/prd.json",
       workdir: "/tmp",
       config: baseConfig as NaxConfig,
@@ -220,8 +222,8 @@ describe("SequentialExecutionContext accepts interactionChain", () => {
     };
 
     // interactionChain is accessible and preserved in the context
-    expect((ctx as Record<string, unknown>).interactionChain).toBe(chain);
-    expect((ctx as Record<string, unknown>).interactionChain).toBeInstanceOf(InteractionChain);
+    expect(ctx.interactionChain).toBe(chain);
+    expect(ctx.interactionChain).toBeInstanceOf(InteractionChain);
   });
 });
 

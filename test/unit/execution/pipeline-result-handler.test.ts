@@ -17,8 +17,8 @@ import { PluginRegistry } from "@/plugins/registry";
 import { loadPRD, savePRD } from "@/prd";
 import type { PRD, UserStory } from "@/prd/types";
 import { _gitDeps } from "@/utils/git";
-import { makeAgentResult, makeMergeEngine, makeMockRuntime, makeSpawn, makeTestContext } from "@test/helpers";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { makeAgentResult, makeMergeEngine, makeSpawn, makeTestContext } from "@test/helpers";
+import { cleanupTempDir, makeDispatchContext, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -81,7 +81,7 @@ function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = 
     isBatchExecution: false,
     allStoryMetrics: [],
     storyGitRef: "abc123",
-    runtime: makeMockRuntime(),
+    ...makeDispatchContext(),
     ...overrides,
   };
 }

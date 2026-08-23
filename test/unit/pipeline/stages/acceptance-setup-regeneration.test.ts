@@ -14,6 +14,7 @@ import {
   computeACFingerprint,
 } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
+import { makeDispatchContext } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -70,6 +71,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     projectDir: "/tmp/test-workdir",
     featureDir: "/tmp/test-workdir/.nax/features/test-feature",
     hooks: {} as any,
+    ...makeDispatchContext(),
     ...overrides,
   };
 }

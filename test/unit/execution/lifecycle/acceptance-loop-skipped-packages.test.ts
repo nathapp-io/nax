@@ -31,6 +31,7 @@ import { pipelineEventBus } from "@/pipeline";
 import type { PRD, UserStory } from "@/prd";
 import {
   cleanupTempDir,
+  makeDispatchContext,
   makeMockAgentManager,
   makeMockRuntime,
   makeNaxConfig,
@@ -139,6 +140,43 @@ function makeWriter(postRunStatus: PostRunStatus = makePostRunStatus("not-run", 
 const WORKDIR = `/tmp/nax-us-004-${randomUUID()}`;
 
 function makeOpts(config: NaxConfig, prd: PRD, statusWriter: StatusWriter): RunnerCompletionOptions {
+  const runtime = Object.assign(makeMockRuntime(), {
+    outputDir: `${WORKDIR}/output`,
+    close: async () => {},
+    costAggregator: {
+      snapshot: () => ({
+        totalCostUsd: 0,
+        totalEstimatedCostUsd: 0,
+        totalExactCostUsd: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        callCount: 0,
+        errorCount: 0,
+      }),
+      byStage: () => ({}),
+      byStory: () => ({}),
+      byAgent: () => ({}),
+      byCall: () => ({}),
+      byScope: () => ({}),
+      openScope: () => ({
+        scopeId: "test-scope",
+        snapshot: () => ({
+          totalCostUsd: 0,
+          totalEstimatedCostUsd: 0,
+          totalExactCostUsd: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          callCount: 0,
+          errorCount: 0,
+        }),
+        close: () => {},
+      }),
+      record: () => {},
+      recordError: () => {},
+      recordOperationSummary: () => {},
+      drain: async () => {},
+    },
+  });
   return {
     config,
     hooks: { hooks: {}, _skipGlobal: false },
@@ -159,43 +197,7 @@ function makeOpts(config: NaxConfig, prd: PRD, statusWriter: StatusWriter): Runn
     statusWriter: statusWriter,
     pluginRegistry: makePluginRegistry(),
     prdPath: `${WORKDIR}/prd.json`,
-    runtime: Object.assign(makeMockRuntime(), {
-      outputDir: `${WORKDIR}/output`,
-      close: async () => {},
-      costAggregator: {
-        snapshot: () => ({
-          totalCostUsd: 0,
-          totalEstimatedCostUsd: 0,
-          totalExactCostUsd: 0,
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          callCount: 0,
-          errorCount: 0,
-        }),
-        byStage: () => ({}),
-        byStory: () => ({}),
-        byAgent: () => ({}),
-        byCall: () => ({}),
-        byScope: () => ({}),
-        openScope: () => ({
-          scopeId: "test-scope",
-          snapshot: () => ({
-            totalCostUsd: 0,
-            totalEstimatedCostUsd: 0,
-            totalExactCostUsd: 0,
-            totalInputTokens: 0,
-            totalOutputTokens: 0,
-            callCount: 0,
-            errorCount: 0,
-          }),
-          close: () => {},
-        }),
-        record: () => {},
-        recordError: () => {},
-        recordOperationSummary: () => {},
-        drain: async () => {},
-      },
-    }),
+    ...makeDispatchContext({ runtime }),
   };
 }
 

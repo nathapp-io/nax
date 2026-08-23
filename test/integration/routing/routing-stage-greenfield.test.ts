@@ -15,7 +15,7 @@ import { routingStage } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
 import { PluginRegistry } from "@/plugins/registry";
 import type { PRD, UserStory } from "@/prd/types";
-import { makeNaxConfig, makeTempDir } from "@test/helpers";
+import { makeDispatchContext, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Helpers
@@ -175,6 +175,7 @@ function createTestContext(
     prd,
     config,
     plugins: new PluginRegistry([]),
+    ...makeDispatchContext(),
     ...overrides,
   };
 }

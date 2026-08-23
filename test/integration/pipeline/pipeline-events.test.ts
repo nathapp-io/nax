@@ -12,7 +12,7 @@ import { PipelineEventEmitter } from "@/pipeline/events";
 import { runPipeline } from "@/pipeline/runner";
 import type { PipelineContext, PipelineStage, StageResult } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
-import { makeNaxConfig } from "@test/helpers";
+import { makeDispatchContext, makeNaxConfig } from "@test/helpers";
 
 // ── Test Fixtures ────────────────────────────────────
 
@@ -95,6 +95,7 @@ const mockStory: UserStory = {
 };
 
 const createMockContext = (): PipelineContext => ({
+  ...makeDispatchContext(),
   config: mockConfig,
   prd: {
     project: "test-project",
@@ -113,6 +114,8 @@ const createMockContext = (): PipelineContext => ({
     reasoning: "Simple story",
   },
   workdir: "/test/workdir",
+  projectDir: "/test/workdir",
+  rootConfig: mockConfig,
   hooks: {
     hooks: {},
   },

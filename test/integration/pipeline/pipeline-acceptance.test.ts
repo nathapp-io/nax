@@ -12,7 +12,7 @@ import { initLogger, resetLogger } from "@/logger";
 import { acceptanceStage } from "@/pipeline/stages/acceptance";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
-import { cleanupTempDir, makeConfigSlice, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeConfigSlice, makeDispatchContext, makeTempDir } from "@test/helpers";
 
 let testDir: string;
 let featureDir: string;
@@ -45,8 +45,11 @@ function createTestContext(prd: PRD, config: Partial<NaxConfig> = {}): PipelineC
       reasoning: "test",
     },
     workdir: testDir,
+    projectDir: testDir,
     featureDir,
     hooks: { hooks: {} },
+    rootConfig: DEFAULT_CONFIG,
+    ...makeDispatchContext(),
   };
 }
 

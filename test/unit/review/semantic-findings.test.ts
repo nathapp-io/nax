@@ -355,6 +355,8 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
       storyGitRef: undefined,
       story: STORY,
       semanticConfig: CFG,
+      // No agentManager: this path must skip the review before any dispatch.
+      agentManager: undefined,
     });
 
     expect(!result.findings || result.findings.length === 0).toBe(true);

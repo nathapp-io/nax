@@ -220,6 +220,8 @@ describe("runSemanticReview — missing storyGitRef", () => {
       storyGitRef: undefined,
       story: STORY,
       semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+      // No agentManager: this path must skip the review before any dispatch.
+      agentManager: undefined,
     });
 
     expect(spawnMock).not.toHaveBeenCalled();
@@ -233,6 +235,8 @@ describe("runSemanticReview — missing storyGitRef", () => {
       storyGitRef: undefined,
       story: STORY,
       semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+      // No agentManager: this path must skip the review before any dispatch.
+      agentManager: undefined,
     });
 
     expect(result.check).toBe("semantic");

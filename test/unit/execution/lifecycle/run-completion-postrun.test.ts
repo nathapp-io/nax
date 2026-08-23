@@ -22,7 +22,7 @@ import {
 import type { StoryMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
-import { makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
+import { makeDispatchContext, makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -114,7 +114,7 @@ function makeOpts(
     workdir: WORKDIR,
     statusWriter: statusWriter ?? makeStatusWriter(),
     config,
-    runtime: makeMockRuntime(),
+    ...makeDispatchContext(),
     ...rest,
   };
 }

@@ -53,6 +53,7 @@ function createTestContext(overrides?: Partial<PipelineContext>): PipelineContex
     workdir: "/test/workdir",
     projectDir: "/test/workdir",
     hooks: { hooks: {} },
+    ...makeDispatchContext(),
     ...overrides,
   };
 }
@@ -441,6 +442,7 @@ describe("Pipeline Runner", () => {
 
 import { routeTddFailure } from "@/pipeline/stages/execution";
 import type { FailureCategory } from "@/tdd/types";
+import { makeDispatchContext } from "@test/helpers";
 
 describe("routeTddFailure", () => {
   /** Minimal context stub — only retryAsLite is used */
