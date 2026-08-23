@@ -6,6 +6,13 @@ at `f91e94fb2`. Every number below was measured on that tree, not recalled.
 **State at hand-off:** casts **102** (from 681), typecheck errors **1946** (from 1969),
 `asAny=1398`, `tsSuppress=54`, `ratchetAllow=107`, `absentValue=17`.
 
+**Status (updated after phases 0–2, commit `a43f02dd1`):** phases 0–2 are done and
+landed on `chore/1514-test-debt-drain` in three commits (`c307fdf9` D0, `158177af` D1,
+`a43f02dd` F2). Typecheck **1946 → 1757 (−189)**, casts still **102**, all six hatch
+counters flat at their phase-0 baselines
+(`asAny=1398, tsSuppress=54, ratchetAllow=107, absentValue=17, anyType=1890, looseCast=2011`).
+Phases 3–6 are untouched — they need the design work §4 D2–D4 describes.
+
 The cast ratchet is done — its remaining 102 are documented exceptions. The typecheck
 ratchet moved **1.2%** across ten sessions. That asymmetry is the thing to explain
 before proposing anything.
@@ -263,6 +270,15 @@ before `check:all` is green").
 
 Phases 0–2 are ~172 errors of pure mechanical, zero-judgement work and should be one
 session. Phase 3 onward needs the escalate discipline from handoff §5.
+
+**Actuals for phases 0–2 (verified by the full §6 gate: `check:all` green, `bun run test`
+green, per-file `worse: 0`, baselines updated only after):**
+
+| Phase | Planned Δ | Actual Δ | Notes |
+|:--|--:|--:|:--|
+| 0 | 0 | **0** | `anyType=1890`, `looseCast=2011` exactly as specified; the four original counters did not move |
+| 1 | −95 | **−95** (1946 → 1851) | 39 `TS2741` `resolution` sites replaced via `makeResolvedTestPatterns`; the six `autofix-implementer-strategy` `TS2554` left per handoff (different signature) |
+| 2 | −77 | **−94** (1851 → 1757) | extra −17 = masked collateral in the six `plan-decompose-*` files (TS7006 implicit-any on `.map((s) => …)` and TS2322 Mock assignability) that resolved once the type names existed — already counted in the baseline, so the drop is real. One residual: `precheck-run-story-size-gate-routing.test.ts` swapped its two `TS2304 Cannot find name 'NaxConfig'` for two `TS2322` (`_c: NaxConfig` vs `PrecheckConfig`, a sliced view) — file count unchanged (4 = baseline 4), fixture annotation predates the config slicing, out of this phase's import-only scope |
 
 The residue after phase 6 is F7's harder half plus the long tail — those are the ones
 where the fixture is deliberately wrong, and they should be documented as exceptions the
