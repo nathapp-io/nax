@@ -109,9 +109,6 @@ afterEach(async () => {
   runtime = undefined;
   // Reset the deps that tests mutate.
   for (const key of Object.keys(_storyOrchestratorDeps)) {
-    // @ts-expect-error — dynamic key reset for injected deps; the readonly
-    // surface is intentional for production and tests restore via per-test
-    // stashes stored in this module.
     if (key === "recordGreen" || key === "runFixCycle" || key === "callOp") {
       // We can't truly reset these because the deps object is shared, but each
       // test installs its own mock from `orig…` stash variables below.

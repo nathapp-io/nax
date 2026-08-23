@@ -108,7 +108,6 @@ describe("AC1: interactionChain accessible in PipelineContext", () => {
       routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
       workdir: "/tmp",
       hooks: { hooks: {} },
-      // @ts-expect-error — will fail until PipelineContext adds 'interaction' field
       interaction: chain,
     };
 
@@ -187,7 +186,6 @@ describe("SequentialExecutionContext accepts interactionChain", () => {
       runId: "run-test-001",
       startTime: Date.now(),
       batchPlan: [],
-      // @ts-expect-error — will fail until SequentialExecutionContext adds 'interactionChain' field
       interactionChain: chain,
     };
 
@@ -279,7 +277,6 @@ describe("AC2: max retries triggers human-review interaction", () => {
         agentManager: runtime1.agentManager,
         sessionManager: runtime1.sessionManager,
         abortSignal: runtime1.signal,
-        // @ts-expect-error — interactionChain not in PipelineHandlerContext yet
         interactionChain: chain,
       },
       {
