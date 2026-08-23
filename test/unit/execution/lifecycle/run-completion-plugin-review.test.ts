@@ -44,6 +44,7 @@ function makeOpts(
   deferredReview: DeferredReviewResult | undefined,
   statusWriter: ReturnType<typeof makeStatusWriter>,
 ): RunCompletionOptions {
+  const runtime = makeMockRuntime();
   return {
     runId: randomUUID(),
     feature: "f",
@@ -58,8 +59,11 @@ function makeOpts(
     statusWriter: statusWriter,
     config: makePluginModeConfig(pluginMode),
     deferredReview,
-    runtime: makeMockRuntime(),
-  } as unknown as RunCompletionOptions;
+    runtime,
+    agentManager: runtime.agentManager,
+    sessionManager: runtime.sessionManager,
+    abortSignal: new AbortController().signal,
+  };
 }
 
 describe("handleRunCompletion deferred plugin review (#1146 G2)", () => {

@@ -4,7 +4,7 @@
     "tsSuppress": 54,
     "ratchetAllow": 114
   },
-  "updatedAt": "2026-08-23T03:35:06.183Z",
+  "updatedAt": "2026-08-23T03:38:06.466Z",
   "byFile": {
     "test/helpers/mock-agent-manager.ts": {
       "asAny": 1

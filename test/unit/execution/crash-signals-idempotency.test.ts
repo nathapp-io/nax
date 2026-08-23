@@ -12,12 +12,9 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { type SignalHandlerContext, installSignalHandlers } from "@/execution/crash-signals";
-import type { StatusWriter } from "@/execution/status-writer";
+import { makeStatusWriter } from "@test/helpers";
 
-const noopStatusWriter = {
-  setRunStatus: () => {},
-  update: async () => {},
-} as unknown as StatusWriter;
+const noopStatusWriter = makeStatusWriter();
 
 /** Invoke every SIGTERM listener registered on `process`. */
 async function fireSignal(signal: NodeJS.Signals): Promise<void> {
