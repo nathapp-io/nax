@@ -304,10 +304,10 @@ describe("autoPrPlugin.execute", () => {
     const consoleCalls: string[] = [];
     const spy = (kind: keyof typeof originalConsole) => {
       const original = originalConsole[kind];
-      return mock((...args: unknown[]) => {
+      return mock<typeof console.log>((...args: unknown[]) => {
         consoleCalls.push(`${kind}:${args.map(String).join(" ")}`);
         return original.apply(console, args);
-      }) as unknown as typeof console.log;
+      });
     };
     console.log = spy("log");
     console.warn = spy("warn");

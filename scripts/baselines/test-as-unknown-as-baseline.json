@@ -1,6 +1,6 @@
 {
-  "count": 265,
-  "updatedAt": "2026-08-23T02:59:44.587Z",
+  "count": 262,
+  "updatedAt": "2026-08-23T03:05:03.256Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": 1,
     "test/helpers/status-writer.ts": 1,
@@ -55,10 +55,9 @@
     "test/unit/execution/lifecycle/acceptance-loop-skipped-packages.test.ts": 2,
     "test/unit/execution/lifecycle/paused-story-prompts.test.ts": 1,
     "test/unit/execution/lifecycle/run-completion-plugin-review.test.ts": 1,
-    "test/unit/execution/lifecycle/headless-formatter.test.ts": 1,
     "test/unit/execution/lifecycle/acceptance-loop-routing.test.ts": 1,
     "test/unit/execution/lifecycle/run-completion-postrun.test.ts": 1,
-    "test/unit/execution/lifecycle/mutation-summary-completion.test.ts": 2,
+    "test/unit/execution/lifecycle/mutation-summary-completion.test.ts": 1,
     "test/unit/execution/lifecycle/run-cleanup.test.ts": 1,
     "test/unit/execution/lifecycle/acceptance-loop-cycle.test.ts": 1,
     "test/unit/execution/lifecycle/acceptance-fix.test.ts": 3,
@@ -94,7 +93,6 @@
     "test/unit/plan/fidelity-survives-recovery.test.ts": 4,
     "test/unit/plan/strategies/single.test.ts": 1,
     "test/unit/plugins/builtin/curator-seam.test.ts": 1,
-    "test/unit/plugins/builtin/auto-pr-acceptance.test.ts": 1,
     "test/unit/config/profile.test.ts": 1,
     "test/unit/config/schemas.test.ts": 2,
     "test/unit/config/worktree-dependencies-schema.test.ts": 2,
