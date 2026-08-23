@@ -1,13 +1,13 @@
 {
   "counts": {
-    "asAny": 1398,
+    "asAny": 1394,
     "tsSuppress": 54,
     "ratchetAllow": 107,
     "absentValue": 17,
-    "anyType": 1890,
-    "looseCast": 2011
+    "anyType": 1886,
+    "looseCast": 2008
   },
-  "updatedAt": "2026-08-23T06:38:26.345Z",
+  "updatedAt": "2026-08-23T08:26:43.009Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -1272,9 +1272,8 @@
       "anyType": 4
     },
     "test/unit/debate/runner-stateful.test.ts": {
-      "asAny": 27,
-      "anyType": 27,
-      "looseCast": 3
+      "asAny": 25,
+      "anyType": 25
     },
     "test/unit/debate/session-helpers-resolver-model.test.ts": {
       "asAny": 5,
@@ -1313,8 +1312,8 @@
       "anyType": 4
     },
     "test/unit/debate/runner-hybrid.test.ts": {
-      "asAny": 43,
-      "anyType": 43
+      "asAny": 41,
+      "anyType": 41
     },
     "test/unit/debate/selectors/pick.test.ts": {
       "looseCast": 1

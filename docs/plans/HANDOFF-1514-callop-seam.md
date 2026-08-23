@@ -12,6 +12,55 @@ prototyped and measured — the numbers below are real, not estimates.
 **Read §2 before touching tier 2.** It contains the one mistake that will cost you an hour
 and look like the approach is broken.
 
+---
+
+## ✅ Status: COMPLETE (2026-08-23)
+
+Both tiers landed on `chore/1514-phase3-drain` in two commits, one per tier, tagged
+`(#1514 callop-seam)`:
+
+| Commit | Tier | Content |
+|:--|:--|:--|
+| `40d1955a4` | 1 | review + acceptance-fix bags, output factories, 24 sites |
+| `0d58a6b8c` | 2 | debate bags (`_hybridDeps`, `_statefulDeps`, `_synthesisDeps`), 24 sites |
+
+The tree had already drained to **1691** by the time this phase started (handoff's 1745 was
+stale — prior config-slice phases landed). Actual before/after:
+
+| Counter | Before | After |
+|:--|--:|--:|
+| src tsc | 0 | 0 |
+| test typecheck (baseline) | 1691 | **1645** (−46) |
+| casts (`as unknown as`) | 102 | 102 |
+| asAny | 1398 | 1394 (↓4) |
+| tsSuppress | 54 | 54 |
+| ratchetAllow | 107 | 107 |
+| absentValue | 17 | 17 |
+| anyType | 1890 | 1886 (↓4) |
+| looseCast | 2011 | 2008 (↓3) |
+
+All gates green at landing: `check:all`, full suite (1175 tests), per-file baseline gate
+`worse: 0`, §3 modules untouched. The hatch-counter drops came from removing pre-existing
+`as any` casts at three sites (not from new casts).
+
+### Deviations from this plan, for the record
+
+1. **`runner-hybrid.test.ts` had 2 callOp sites, not 1** (the US-005 cost stub at what was
+   line 636). Counts in the tier-2 table were slightly off; actual total was 24 tier-2 sites.
+2. **`src/debate/selectors/synthesis.ts` gained a `_synthesisDeps` bag — a scope extension.**
+   The stateful fixture (`runner-stateful.test.ts`, "synthesis resolver receives sessionName…")
+   reaches the synthesis dispatch via `resolveOutcome` → `synthesisSelector`. The selector
+   dispatches exactly one op (`synthesisOp`, a concrete `CompleteOperation`), so it is the
+   same inference-artifact case as the in-scope modules, and the bag was the only cast-free
+   way to clear that site. `judge.ts` was left alone (its tests don't need the seam).
+3. **Two stateful callOp stubs carried `as any` casts** (cost-tracking sites) and had no type
+   error, so they were not in the baseline count — but they still had to move to the bag in
+   the same commit or the runtime spy would have stopped intercepting (the §2 TRAP).
+4. **The §1 finding is confirmed:** every adversarial/semantic fixture in the suite omits
+   `normalizedFindings` and `acDropped`, so nothing exercises the normalization path.
+   Reported; not fixed here.
+
+---
 
 > **Commit tag:** use `(#1514 callop-seam)`, **not** `(#1514 phase 3b)`. The original
 > #1514 plan already used "phase 3a" for scaffolding the ratchets (`9bbf651bc`, `8d30cf977`)
@@ -345,6 +394,7 @@ you broke the syntax — do not update a baseline.
 
 `bun run check:all` green, `bun run test` green, `bun x tsc --noEmit` = 0, per-file gate
 `worse: 0`, typecheck baseline lower. Expected landing: **1745 → ~1698 (−47)**.
+**Actual landing: 1691 → 1645 (−46) — see the status block at the top.**
 
 **Casts stay at 102 and all six hatch counters stay at their baselines.** No step may trade
 one counter against another — a typecheck drop paired with an `anyType` or `looseCast` rise
