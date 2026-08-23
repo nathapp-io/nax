@@ -65,7 +65,7 @@ function makeOptions(opts: {
     workdir: "/tmp/test-workdir",
     runtime: makeMockRuntime(),
     ...(opts.quarantineMemo ? { quarantineMemo: opts.quarantineMemo } : {}),
-  } as unknown as DeferredRegressionOptions;
+  };
 }
 
 let savedDeps: typeof _regressionDeps;
@@ -231,13 +231,13 @@ describe("runDeferredRegression — genuine vs flake (AC4)", () => {
       { storyId: "US-001", completedAt: "2026-01-01T00:00:00.000Z", failingTestFiles: ["real.test.ts"] },
       { storyId: "US-002", completedAt: "2026-01-01T00:01:00.000Z", failingTestFiles: [] },
     ];
-    const options = {
+    const options: DeferredRegressionOptions = {
       config: TEST_CONFIG,
-      prd: makePrd(["US-001", "US-002"]) as unknown as DeferredRegressionOptions["prd"],
+      prd: makePrd(["US-001", "US-002"]),
       workdir: "/tmp/test-workdir",
       runtime: makeMockRuntime(),
       storyMetrics,
-    } as unknown as DeferredRegressionOptions;
+    };
 
     const result = await runDeferredRegression(options);
 
@@ -436,13 +436,14 @@ describe("runDeferredRegression — flakeDetection.enabled === false", () => {
       { storyId: "US-001", completedAt: "2026-01-01T00:00:00.000Z", failingTestFiles: ["real.test.ts"] },
     ];
 
-    const result = await runDeferredRegression({
+    const options: DeferredRegressionOptions = {
       config: makeDisabledConfig(),
-      prd: makePrd(["US-001"]) as unknown as DeferredRegressionOptions["prd"],
+      prd: makePrd(["US-001"]),
       workdir: "/tmp/test-workdir",
       runtime: makeMockRuntime(),
       storyMetrics,
-    } as unknown as DeferredRegressionOptions);
+    };
+    const result = await runDeferredRegression(options);
 
     // Triage was still called, but produced no quarantine.
     expect(triageInvocations).toBe(1);

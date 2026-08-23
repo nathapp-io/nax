@@ -136,7 +136,7 @@ function makeOptions(storyIds: string[], runtimeOverride?: NaxRuntime): Deferred
       completedAt: new Date(index * 1_000).toISOString(),
       failingTestFiles: [`${storyId}.test.ts`],
     })),
-  } as unknown as DeferredRegressionOptions;
+  };
 }
 
 // Save/restore pattern — no mock.module() to avoid Bun 1.x global leaks
@@ -427,7 +427,7 @@ describe("runDeferredRegression — mode gating", () => {
       prd: makePrd(["US-001"]),
       workdir: "/tmp/test",
       runtime: makeMockRuntime(),
-    } as unknown as DeferredRegressionOptions);
+    });
 
     expect(result.success).toBe(true);
     expect(_regressionDeps.runVerification).not.toHaveBeenCalled();
@@ -446,7 +446,7 @@ describe("runDeferredRegression — mode gating", () => {
       prd: makePrd(["US-001"]),
       workdir: "/tmp/test",
       runtime: makeMockRuntime(),
-    } as unknown as DeferredRegressionOptions);
+    });
 
     expect(result.success).toBe(true);
     // per-story no longer short-circuits — the full suite is actually run.

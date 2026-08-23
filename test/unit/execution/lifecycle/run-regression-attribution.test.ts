@@ -157,7 +157,7 @@ describe("runDeferredRegression — transition attribution", () => {
         snap("US-002", "2026-01-01T00:01:00.000Z", ["foo.test.ts"]),
         snap("US-003", "2026-01-01T00:02:00.000Z", ["foo.test.ts"]),
       ],
-    } as unknown as DeferredRegressionOptions;
+    };
 
     const result = await runDeferredRegression(options);
 
@@ -194,7 +194,7 @@ describe("runDeferredRegression — transition attribution", () => {
         snap("US-001", "2026-01-01T00:00:00.000Z", []),
         snap("US-002", "2026-01-01T00:01:00.000Z", ["bar.test.ts"]),
       ],
-    } as unknown as DeferredRegressionOptions);
+    });
 
     expect(result.success).toBe(false);
     expect(result.affectedStories).toEqual([]);
@@ -232,7 +232,7 @@ describe("runDeferredRegression — transition attribution", () => {
         workdir: "/tmp/test-workdir",
         runtime: makeMockRuntime(),
         storyMetrics: [snap("US-003", "2026-01-01T00:01:00.000Z", ["foo.test.ts"])],
-      } as unknown as DeferredRegressionOptions);
+      });
 
       expect(result.success).toBe(false);
       expect(result.affectedStories).not.toContain("US-004");
