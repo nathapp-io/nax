@@ -23,6 +23,7 @@ import { callOp } from "@/operations";
 import type { CompleteOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 import {
+  agentManagerInternals,
   makeMockAgentManager,
   makeMockRuntime,
   makeNaxConfig,
@@ -179,8 +180,7 @@ describe("AC7: complete-kind — all retries exhaust → parse receives empty st
         };
       },
     };
-    (rt.agentManager as unknown as { _resolveRegistry: () => { getAgent: () => typeof adapter } })._resolveRegistry =
-      () => ({ getAgent: () => adapter });
+    agentManagerInternals(rt.agentManager)._resolveRegistry = () => ({ getAgent: () => adapter });
 
     // complete-kind: completeWithFallback exhausts, completeAs returns empty output,
     // callOp calls op.parse("") → returns "" (trim of empty string).
@@ -217,8 +217,7 @@ describe("AC7: complete-kind — all retries exhaust → parse receives empty st
         estimatedCostUsd: 0,
       }),
     };
-    (rt.agentManager as unknown as { _resolveRegistry: () => { getAgent: () => typeof adapter } })._resolveRegistry =
-      () => ({ getAgent: () => adapter });
+    agentManagerInternals(rt.agentManager)._resolveRegistry = () => ({ getAgent: () => adapter });
 
     // Op that throws on empty output (no retry strategy)
     const rejectEmptyOp: CompleteOperation<string, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {

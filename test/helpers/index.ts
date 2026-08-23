@@ -51,6 +51,13 @@ export { withTimerSpy } from "./timer-spy";
 export type { TimerSpyResult } from "./timer-spy";
 export { makeFakeClock } from "./fake-clock";
 export type { FakeClock } from "./fake-clock";
+export { agentManagerInternals, type AgentManagerInternals } from "./agent-manager-internals";
+export {
+  telegramInternals,
+  webhookInternals,
+  type TelegramInternals,
+  type WebhookInternals,
+} from "./interaction-internals";
 export { mockFetch } from "./mock-fetch";
 export { makeScriptedAgent, runOrchestratorE2E } from "./e2e";
 export type { ScriptedAgentSpec, ScriptedTurn, E2EOptions, E2EResult, E2EGates } from "./e2e";

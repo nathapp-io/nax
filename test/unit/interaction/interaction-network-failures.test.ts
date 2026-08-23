@@ -9,7 +9,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import type { InteractionRequest } from "@/interaction";
 import { TelegramInteractionPlugin, _telegramPluginDeps } from "@/interaction/plugins/telegram";
 import { WebhookInteractionPlugin, _webhookPluginDeps } from "@/interaction/plugins/webhook";
-import { mockFetch } from "@test/helpers";
+import { mockFetch, telegramInternals, webhookInternals } from "@test/helpers";
 
 function timeoutResult<T>(value: T, delayMs = 0): Promise<T> {
   return new Promise((resolve) => {
@@ -114,8 +114,8 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
       throw new Error("Network timeout");
     });
 
-    // Access private method via type assertion for testing
-    const getUpdates = (plugin as unknown as { getUpdates: () => Promise<unknown[]> }).getUpdates;
+    // Access private method via contained accessor (test/helpers/interaction-internals)
+    const getUpdates = telegramInternals(plugin).getUpdates;
     const updates = await getUpdates.call(plugin);
 
     expect(updates).toEqual([]);
@@ -137,7 +137,7 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
     });
 
     // Access private getUpdates
-    const getUpdates = (plugin as unknown as { getUpdates: () => Promise<unknown[]> }).getUpdates;
+    const getUpdates = telegramInternals(plugin).getUpdates;
 
     // Call getUpdates multiple times to trigger backoff
     await getUpdates.call(plugin);
@@ -145,7 +145,7 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
     await getUpdates.call(plugin);
 
     // Verify backoff is increasing (check private backoffMs property)
-    const backoffMs = (plugin as unknown as { backoffMs: number }).backoffMs;
+    const backoffMs = telegramInternals(plugin).backoffMs;
     expect(backoffMs).toBeGreaterThan(1000); // Should have increased from initial 1000ms
 
     // Restore
@@ -169,16 +169,16 @@ describe("TelegramInteractionPlugin - Network Failures", () => {
       return new Response(JSON.stringify({ ok: true, result: [] }), { status: 200 });
     });
 
-    const getUpdates = (plugin as unknown as { getUpdates: () => Promise<unknown[]> }).getUpdates;
+    const getUpdates = telegramInternals(plugin).getUpdates;
 
     // First call - triggers backoff
     await getUpdates.call(plugin);
-    const backoffAfterFailure = (plugin as unknown as { backoffMs: number }).backoffMs;
+    const backoffAfterFailure = telegramInternals(plugin).backoffMs;
     expect(backoffAfterFailure).toBeGreaterThan(1000);
 
     // Second call - should reset backoff
     await getUpdates.call(plugin);
-    const backoffAfterSuccess = (plugin as unknown as { backoffMs: number }).backoffMs;
+    const backoffAfterSuccess = telegramInternals(plugin).backoffMs;
     expect(backoffAfterSuccess).toBe(1000); // Reset to initial value
 
     // Restore
@@ -341,7 +341,7 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
     const plugin = new WebhookInteractionPlugin();
     await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
 
-    const handleRequest = (plugin as unknown as { handleRequest: (req: Request) => Promise<Response> }).handleRequest;
+    const handleRequest = webhookInternals(plugin).handleRequest;
 
     const earlyResponse = await handleRequest.call(
       plugin,
@@ -363,11 +363,7 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
     await plugin.destroy();
     await receivePromise;
 
-    const internals = plugin as unknown as {
-      pendingResponses: Map<string, unknown>;
-      receiveCallbacks: Map<string, unknown>;
-      receiveTimers?: Map<string, unknown>;
-    };
+    const internals = webhookInternals(plugin);
 
     expect(internals.pendingResponses.size).toBe(0);
     expect(internals.receiveCallbacks.size).toBe(0);
@@ -397,10 +393,7 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
     ]);
     expect(secondSettled).toBe("resolved");
 
-    const internals = plugin as unknown as {
-      receiveCallbacks: Map<string, unknown>;
-      receiveTimers?: Map<string, unknown>;
-    };
+    const internals = webhookInternals(plugin);
     expect(internals.receiveCallbacks.size).toBe(0);
     expect(internals.receiveTimers?.size ?? -1).toBe(0);
   });
@@ -412,10 +405,7 @@ describe("WebhookInteractionPlugin - Capacity & Startup Recovery", () => {
     await plugin.init({ url: "https://example.com/webhook", requireSecret: false });
 
     // Reaching private plugin state — no public accessor.
-    const internals = plugin as unknown as {
-      registeredRequestIds: Set<string>;
-      pendingResponses: Map<string, unknown>;
-    }; // test-ratchet-allow: as-unknown-as
+    const internals = webhookInternals(plugin);
 
     // Fill the early-pickup store to MAX_PENDING_RESPONSES (500) with
     // registered-but-unclaimed IDs, then deliver one more.
@@ -432,7 +422,7 @@ describe("WebhookInteractionPlugin - Capacity & Startup Recovery", () => {
     const overflowId = "capacity-overflow";
     internals.registeredRequestIds.add(overflowId);
 
-    const handleRequest = (plugin as unknown as { handleRequest: (req: Request) => Promise<Response> }).handleRequest; // test-ratchet-allow: as-unknown-as
+    const handleRequest = webhookInternals(plugin).handleRequest;
     const response = await handleRequest.call(
       plugin,
       new Request(`http://localhost:8765/nax/interact/${overflowId}`, {
@@ -459,18 +449,18 @@ describe("WebhookInteractionPlugin - Capacity & Startup Recovery", () => {
       throw new Error("simulated Bun.serve startup failure");
     }) as typeof Bun.serve;
 
-    const startServer = (plugin as unknown as { startServer: () => Promise<void> }).startServer.bind(plugin); // test-ratchet-allow: as-unknown-as
+    const startServer = webhookInternals(plugin).startServer.bind(plugin);
 
     await expect(startServer()).rejects.toThrow("simulated Bun.serve startup failure");
 
-    const internals = plugin as unknown as { serverStartPromise: Promise<void> | null }; // test-ratchet-allow: as-unknown-as
+    const internals = webhookInternals(plugin);
     expect(internals.serverStartPromise).toBeNull();
 
     // Restore Bun.serve and confirm a subsequent start attempt is not
     // permanently wedged on the old rejected promise.
     (Bun as { serve: typeof Bun.serve }).serve = originalServe;
     await startServer();
-    expect((plugin as unknown as { server: unknown }).server).not.toBeNull(); // test-ratchet-allow: as-unknown-as
+    expect(webhookInternals(plugin).server).not.toBeNull();
 
     await plugin.destroy();
   });
@@ -491,7 +481,7 @@ describe("WebhookInteractionPlugin - Payload Security", () => {
       body: JSON.stringify({ requestId: "test-id", action: "approve" }),
     });
 
-    const handleRequest = (plugin as unknown as { handleRequest: (req: Request) => Promise<Response> }).handleRequest;
+    const handleRequest = webhookInternals(plugin).handleRequest;
     const response = await handleRequest.call(plugin, req);
 
     expect(response.status).toBe(413); // Payload Too Large
@@ -516,7 +506,7 @@ describe("WebhookInteractionPlugin - Payload Security", () => {
       body: largePayload,
     });
 
-    const handleRequest = (plugin as unknown as { handleRequest: (req: Request) => Promise<Response> }).handleRequest;
+    const handleRequest = webhookInternals(plugin).handleRequest;
     const response = await handleRequest.call(plugin, req);
 
     expect(response.status).toBe(413); // Payload Too Large
@@ -550,7 +540,7 @@ describe("WebhookInteractionPlugin - Payload Security", () => {
       duplex: "half",
     } as RequestInit & { duplex: string });
 
-    const handleRequest = (plugin as unknown as { handleRequest: (req: Request) => Promise<Response> }).handleRequest; // test-ratchet-allow: as-unknown-as
+    const handleRequest = webhookInternals(plugin).handleRequest;
     const response = await handleRequest.call(plugin, req);
 
     expect(response.status).toBe(413);
@@ -570,7 +560,7 @@ describe("WebhookInteractionPlugin - Payload Security", () => {
       body: "not valid json{",
     });
 
-    const handleRequest = (plugin as unknown as { handleRequest: (req: Request) => Promise<Response> }).handleRequest;
+    const handleRequest = webhookInternals(plugin).handleRequest;
     const response = await handleRequest.call(plugin, req);
 
     expect(response.status).toBe(400);
@@ -596,7 +586,7 @@ describe("WebhookInteractionPlugin - Payload Security", () => {
       body: JSON.stringify({ malicious: "payload", action: "invalid-action" }),
     });
 
-    const handleRequest = (plugin as unknown as { handleRequest: (req: Request) => Promise<Response> }).handleRequest;
+    const handleRequest = webhookInternals(plugin).handleRequest;
     const response = await handleRequest.call(plugin, req);
 
     expect(response.status).toBe(400);
@@ -621,7 +611,7 @@ describe("WebhookInteractionPlugin - Payload Security", () => {
       body: JSON.stringify({ requestId: "test-id", action: "approve", respondedAt: Date.now() }),
     });
 
-    const handleRequest = (plugin as unknown as { handleRequest: (req: Request) => Promise<Response> }).handleRequest;
+    const handleRequest = webhookInternals(plugin).handleRequest;
     const response = await handleRequest.call(plugin, req);
 
     expect(response.status).toBe(401); // Unauthorized
@@ -643,7 +633,7 @@ describe("WebhookInteractionPlugin - Payload Security", () => {
       body: JSON.stringify({ requestId: "test-id", action: "approve", respondedAt: Date.now() }),
     });
 
-    const handleRequest = (plugin as unknown as { handleRequest: (req: Request) => Promise<Response> }).handleRequest;
+    const handleRequest = webhookInternals(plugin).handleRequest;
     const response = await handleRequest.call(plugin, req);
 
     expect(response.status).toBe(401); // Unauthorized

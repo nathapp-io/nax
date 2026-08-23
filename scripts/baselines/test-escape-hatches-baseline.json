@@ -1,10 +1,10 @@
 {
   "counts": {
-    "asAny": 1399,
+    "asAny": 1398,
     "tsSuppress": 54,
-    "ratchetAllow": 114
+    "ratchetAllow": 108
   },
-  "updatedAt": "2026-08-23T05:03:24.799Z",
+  "updatedAt": "2026-08-23T05:21:30.515Z",
   "byFile": {
     "test/helpers/mock-agent-manager.ts": {
       "asAny": 1
@@ -58,9 +58,6 @@
     "test/integration/execution/verdict-cleanup.test.ts": {
       "asAny": 1
     },
-    "test/integration/operations/complete-empty-output-retry.test.ts": {
-      "asAny": 1
-    },
     "test/integration/cli/cli-precheck-integration.test.ts": {
       "asAny": 1
     },
@@ -102,9 +99,6 @@
     },
     "test/unit/interaction/chain.test.ts": {
       "ratchetAllow": 1
-    },
-    "test/unit/interaction/interaction-network-failures.test.ts": {
-      "ratchetAllow": 6
     },
     "test/unit/interaction/plugins/telegram.test.ts": {
       "tsSuppress": 2,

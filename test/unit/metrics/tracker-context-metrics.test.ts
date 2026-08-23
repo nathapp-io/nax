@@ -8,6 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
+import type { PullCallRecord } from "@/context/engine";
 import { _manifestStoreDeps } from "@/context/engine/manifest-store";
 import type { ContextManifest } from "@/context/engine/types";
 import { collectStoryMetrics } from "@/metrics/tracker";
@@ -572,8 +573,8 @@ describe("collectStoryMetrics — context.pullCalls (AC-18)", () => {
     chunkIds: ["code-neighbor:a:001"],
   };
 
-  function ctxWithCalls(calls: unknown[]) {
-    const ctx = makeCtx() as unknown as { contextToolRunCounter?: unknown };
+  function ctxWithCalls(calls: PullCallRecord[]) {
+    const ctx = makeCtx();
     ctx.contextToolRunCounter = { count: calls.length, calls };
     return ctx as never;
   }

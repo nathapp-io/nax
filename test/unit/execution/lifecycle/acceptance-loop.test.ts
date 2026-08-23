@@ -459,8 +459,7 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
     await regenerateAcceptanceTest(testPath, ctx);
 
     expect(spawnMock).toHaveBeenCalledTimes(1);
-    const [calledWorkdir, calledRef] = (spawnMock as unknown as { mock: { calls: Array<[string, string]> } }).mock
-      .calls[0];
+    const [calledWorkdir, calledRef] = spawnMock.mock.calls[0];
     expect(calledWorkdir).toBe(tmpDir);
     expect(calledRef).toBe("abc1234");
   });
@@ -488,7 +487,7 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
 
     const changedFiles = ["src/add.ts", "src/utils.ts"];
     (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = mock(async () => changedFiles.join("\n"));
-    const readMock = mock(async () => "// file content");
+    const readMock = mock(async (_path: string) => "// file content");
     (_regenerateDeps as { readFile: unknown }).readFile = readMock;
 
     const ctx = makeMinimalPipelineContext({
@@ -499,7 +498,7 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
     await regenerateAcceptanceTest(testPath, ctx);
 
     expect(readMock).toHaveBeenCalledTimes(2);
-    const readPaths = (readMock as unknown as { mock: { calls: Array<[string]> } }).mock.calls.map((c) => c[0]);
+    const readPaths = readMock.mock.calls.map((c) => c[0]);
     expect(readPaths.some((p) => p.includes("src/add.ts"))).toBe(true);
     expect(readPaths.some((p) => p.includes("src/utils.ts"))).toBe(true);
   });

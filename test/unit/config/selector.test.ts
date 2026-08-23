@@ -1,15 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { pickSelector, reshapeSelector } from "@/config/selector";
 import type { NaxConfig } from "@/config/types";
+import { makeNaxConfig } from "@test/helpers";
 
 describe("ConfigSelector", () => {
   describe("pickSelector", () => {
     test("select() picks named keys from config", () => {
       const sel = pickSelector("test", "routing");
-      const cfg = {
-        routing: { strategy: "keyword" },
-      } as unknown as NaxConfig;
-      expect(sel.select(cfg)).toEqual({
+      const cfg = makeNaxConfig({ routing: { strategy: "keyword" } });
+      expect(sel.select(cfg)).toMatchObject({
         routing: { strategy: "keyword" },
       });
     });
@@ -21,10 +20,10 @@ describe("ConfigSelector", () => {
 
     test("picks multiple keys", () => {
       const sel = pickSelector("multi", "routing", "execution");
-      const cfg = {
+      const cfg = makeNaxConfig({
         routing: { strategy: "keyword" },
-        execution: { parallel: true },
-      } as unknown as NaxConfig;
+        execution: { maxIterations: 3 },
+      });
       const result = sel.select(cfg);
       expect(result).toHaveProperty("routing");
       expect(result).toHaveProperty("execution");
@@ -34,9 +33,9 @@ describe("ConfigSelector", () => {
   describe("reshapeSelector", () => {
     test("applies transform fn", () => {
       const sel = reshapeSelector("flat", (c: NaxConfig) => ({
-        strategy: (c as unknown as { routing: { strategy: string } }).routing.strategy,
+        strategy: c.routing.strategy,
       }));
-      const cfg = { routing: { strategy: "llm" } } as unknown as NaxConfig;
+      const cfg = makeNaxConfig({ routing: { strategy: "llm" } });
       expect(sel.select(cfg).strategy).toBe("llm");
     });
 
@@ -47,12 +46,10 @@ describe("ConfigSelector", () => {
 
     test("returns arbitrary shape", () => {
       const sel = reshapeSelector("custom", (c: NaxConfig) => ({
-        isParallel: (c as unknown as { execution: { parallel: boolean } }).execution.parallel,
+        isParallel: c.review.adversarial?.parallel,
         agentName: "test",
       }));
-      const cfg = {
-        execution: { parallel: true },
-      } as unknown as NaxConfig;
+      const cfg = makeNaxConfig({ review: { adversarial: { parallel: true } } });
       const result = sel.select(cfg);
       expect(result.isParallel).toBe(true);
       expect(result.agentName).toBe("test");
