@@ -17,7 +17,7 @@ import { PluginRegistry } from "@/plugins/registry";
 import { loadPRD, savePRD } from "@/prd";
 import type { PRD, UserStory } from "@/prd/types";
 import { _gitDeps } from "@/utils/git";
-import { makeAgentResult, makeMockRuntime, makeSpawn, makeTestContext } from "@test/helpers";
+import { makeAgentResult, makeMergeEngine, makeMockRuntime, makeSpawn, makeTestContext } from "@test/helpers";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
@@ -289,7 +289,7 @@ describe("handlePipelineSuccess — worktree mode (EXEC-002)", () => {
     const ctx = makeCtx(story, { config: WORKTREE_CONFIG });
 
     const mergeMock = mock(async () => ({ success: true as const }));
-    _resultHandlerDeps.mergeEngine = { merge: mergeMock } as unknown as typeof _resultHandlerDeps.mergeEngine;
+    _resultHandlerDeps.mergeEngine = makeMergeEngine({ merge: mergeMock });
     // Silence git spawn (no storyGitRef)
     _gitDeps.spawn = mockSpawnReturning("");
 
