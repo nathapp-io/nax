@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { _newPackageSetupDeps, markNewPackageDirs } from "@/execution";
 import { _fullSuiteGateDeps, fullSuiteGateOp } from "@/operations";
 import { _commandDefaultsDeps, clearCommandDefaultsCache } from "@/quality";
+import { makeSpawn } from "@test/helpers";
 
 function ctxWithConfig(config: any = {}, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
   return {
@@ -333,17 +334,11 @@ describe("fullSuiteGateOp — new-package setup wiring (C1 regression)", () => {
   });
 
   function spawnCapture(capture: { cwd?: string; count: number }) {
-    return mock((_argv: string[], opts: { cwd: string }) => {
-      capture.cwd = opts.cwd;
+    return makeSpawn(({ opts }) => {
+      capture.cwd = String(opts.cwd);
       capture.count += 1;
-      return {
-        exited: Promise.resolve(0),
-        stdout: new Response("").body,
-        stderr: new Response("").body,
-        pid: 1,
-        kill: () => {},
-      };
-    });
+      return { exitCode: 0 };
+    }).spawn;
   }
 
   test("setup fires when dirs are registered as ABSOLUTE but packageView.packageDir is RELATIVE", async () => {

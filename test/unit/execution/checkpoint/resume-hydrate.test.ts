@@ -43,6 +43,7 @@ import {
   hydrateFromResumePlan,
   phasePassed,
 } from "@/execution";
+import { makeSpawn, makeSpawnResult } from "@test/helpers";
 
 // _gitDeps is the project's injectable Bun.spawn seam. Tests must NOT depend
 // on real git — we substitute a fake spawn and observe the args it receives.
@@ -77,23 +78,8 @@ type PhaseKind =
 // ===========================================================================
 
 /** Build a fake `_gitDeps.spawn` whose stdout is the given string. */
-function mockSpawnOutput(stdout: string, exitCode = 0): ReturnType<typeof mock> {
-  const bytes = new TextEncoder().encode(stdout);
-  return mock((_args: string[], _opts: unknown) => ({
-    stdout: new ReadableStream({
-      start(c) {
-        c.enqueue(bytes);
-        c.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(c) {
-        c.close();
-      },
-    }),
-    exited: Promise.resolve(exitCode),
-    kill: mock(() => {}),
-  }));
+function mockSpawnOutput(stdout: string, exitCode = 0): typeof _gitDeps.spawn {
+  return makeSpawn(() => ({ stdout, exitCode })).spawn;
 }
 
 let origGitSpawn: typeof _gitDeps.spawn;
@@ -124,26 +110,10 @@ describe("captureTreeState (AC8)", () => {
     // First spawn: `git rev-parse HEAD` → fake head sha.
     // Second spawn: `git status --porcelain` → fake dirty listing.
     const capturedArgs: string[][] = [];
-    _gitDeps.spawn = mock((args: string[]) => {
-      capturedArgs.push(args as string[]);
-      const stdout = capturedArgs.length === 1 ? "abc123\n" : " M src/foo.ts\n M src/bar.ts\n?? untracked.txt\n";
-      const bytes = new TextEncoder().encode(stdout);
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
-    });
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      capturedArgs.push(cmd);
+      return capturedArgs.length === 1 ? "abc123\n" : " M src/foo.ts\n M src/bar.ts\n?? untracked.txt\n";
+    }).spawn;
 
     const state = await captureTreeState(tempDir!, { _deps: _gitDeps });
 
@@ -168,25 +138,11 @@ describe("captureTreeState (AC8)", () => {
     // Track args to differentiate the two spawn calls.
     let callIndex = 0;
     let dirtyOutput = " M src/dirty.ts\n";
-    _gitDeps.spawn = mock((_args: string[]) => {
-      const bytes = new TextEncoder().encode(callIndex === 0 ? "cleanhead\n" : dirtyOutput);
+    _gitDeps.spawn = makeSpawn(() => {
+      const output = callIndex === 0 ? "cleanhead\n" : dirtyOutput;
       callIndex++;
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
-    });
+      return output;
+    }).spawn;
 
     const dirty = await captureTreeState(tempDir!, { _deps: _gitDeps });
     dirtyOutput = "";
@@ -206,34 +162,18 @@ describe("captureTreeState (AC8)", () => {
     const porcelain = " M src/foo.ts\n";
     let diffOutput = "diff --git a/src/foo.ts b/src/foo.ts\n-old line\n+new line v1\n";
 
-    _gitDeps.spawn = mock((args: string[]) => {
-      let stdout: string;
-      if (args.includes("rev-parse")) {
-        stdout = "abc123\n";
-      } else if (args.includes("status")) {
-        stdout = porcelain;
-      } else if (args.includes("--cached")) {
-        stdout = ""; // nothing staged
-      } else {
-        stdout = diffOutput; // `git diff`
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      if (cmd.includes("rev-parse")) {
+        return "abc123\n";
       }
-      const bytes = new TextEncoder().encode(stdout);
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
-    });
+      if (cmd.includes("status")) {
+        return porcelain;
+      }
+      if (cmd.includes("--cached")) {
+        return ""; // nothing staged
+      }
+      return diffOutput; // `git diff`
+    }).spawn;
 
     const first = await captureTreeState(tempDir!, { _deps: _gitDeps });
 
@@ -256,36 +196,21 @@ describe("captureTreeState (AC8)", () => {
     const porcelain = "?? src/new-file.ts\n";
     let untrackedBlobSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n";
 
-    _gitDeps.spawn = mock((args: string[]) => {
-      let stdout: string;
-      if (args.includes("rev-parse")) {
-        stdout = "abc123\n";
-      } else if (args.includes("status")) {
-        stdout = porcelain;
-      } else if (args.includes("ls-files")) {
-        stdout = "src/new-file.ts\u0000";
-      } else if (args.includes("hash-object")) {
-        stdout = untrackedBlobSha;
-      } else {
-        stdout = ""; // both `git diff` and `git diff --cached` are empty
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      if (cmd.includes("rev-parse")) {
+        return "abc123\n";
       }
-      const bytes = new TextEncoder().encode(stdout);
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
-    });
+      if (cmd.includes("status")) {
+        return porcelain;
+      }
+      if (cmd.includes("ls-files")) {
+        return "src/new-file.ts\u0000";
+      }
+      if (cmd.includes("hash-object")) {
+        return untrackedBlobSha;
+      }
+      return ""; // both `git diff` and `git diff --cached` are empty
+    }).spawn;
 
     const first = await captureTreeState(tempDir!, { _deps: _gitDeps });
 
@@ -313,29 +238,18 @@ describe("captureTreeState (AC8)", () => {
     // proc.exited resolves and the outer Promise.all completes; without it,
     // this test times out.
     let killCalls = 0;
-    _gitDeps.spawn = mock((_args: string[]) => {
+    _gitDeps.spawn = makeSpawn(() => {
       // proc.exited NEVER resolves — the hung-process scenario.
       // proc.kill is a spy; the helper (after fix) MUST call kill on the
       // hung proc to enforce its timeout budget.
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            // Never enqueue — proc.stdout stays open.
-            // Close is intentionally NOT called, mimicking a subprocess whose
-            // stdout pipe is held open by the parent (the hung git binary).
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: new Promise<number>(() => {}),
-        kill: mock(() => {
-          killCalls++;
-        }),
+      const proc = makeSpawnResult({ hang: true });
+      const kill = proc.kill;
+      proc.kill = (signalCode) => {
+        killCalls++;
+        kill(signalCode);
       };
-    });
+      return proc;
+    }).spawn;
 
     const start = Date.now();
     // Shrink the per-call deadline from the production TREE_CAPTURE_TIMEOUT_MS

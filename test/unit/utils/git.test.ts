@@ -19,7 +19,7 @@ import {
   parsePorcelainForNaxPaths,
   parsePorcelainUntrackedPaths,
 } from "@/utils/git";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeSpawn, makeTempDir } from "@test/helpers";
 
 describe("detectMergeConflict", () => {
   // True positives — real git conflict signals
@@ -57,24 +57,7 @@ describe("detectMergeConflict", () => {
 // ---------------------------------------------------------------------------
 
 function mockSpawnOutput(output: string, exitCode = 0): typeof _gitDeps.spawn {
-  return mock((_args: string[], _opts: unknown) => {
-    const bytes = new TextEncoder().encode(output);
-    return {
-      stdout: new ReadableStream({
-        start(c) {
-          c.enqueue(bytes);
-          c.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(c) {
-          c.close();
-        },
-      }),
-      exited: Promise.resolve(exitCode),
-      kill: mock(() => {}),
-    };
-  }) as typeof _gitDeps.spawn;
+  return makeSpawn(() => ({ stdout: output, exitCode })).spawn;
 }
 
 let origSpawn: typeof _gitDeps.spawn;
@@ -108,50 +91,20 @@ describe("captureOutputFiles", () => {
 
   test("passes baseRef in diff args", async () => {
     let capturedArgs: string[] = [];
-    _gitDeps.spawn = mock((args: string[], _opts: unknown) => {
-      capturedArgs = args as string[];
-      const bytes = new TextEncoder().encode("src/a.ts\n");
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
-    });
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      capturedArgs = cmd;
+      return "src/a.ts\n";
+    }).spawn;
     await captureOutputFiles("/tmp/repo", "abc123");
     expect(capturedArgs).toContain("abc123..HEAD");
   });
 
   test("scopes to scopePrefix when provided", async () => {
     let capturedArgs: string[] = [];
-    _gitDeps.spawn = mock((args: string[], _opts: unknown) => {
-      capturedArgs = args as string[];
-      const bytes = new TextEncoder().encode("apps/api/src/index.ts\n");
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
-    });
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      capturedArgs = cmd;
+      return "apps/api/src/index.ts\n";
+    }).spawn;
     const result = await captureOutputFiles("/tmp/repo", "abc123", "apps/api");
     expect(capturedArgs).toContain("--");
     expect(capturedArgs).toContain("apps/api/");
@@ -206,25 +159,7 @@ describe("captureOutputFiles", () => {
 
 function mockSequentialSpawn(outputs: string[]): typeof _gitDeps.spawn {
   let callIdx = 0;
-  return mock((_args: unknown[], _opts: unknown) => {
-    const out = outputs[callIdx++] ?? "";
-    const bytes = new TextEncoder().encode(out);
-    return {
-      stdout: new ReadableStream({
-        start(c) {
-          c.enqueue(bytes);
-          c.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(c) {
-          c.close();
-        },
-      }),
-      exited: Promise.resolve(0),
-      kill: mock(() => {}),
-    };
-  });
+  return makeSpawn(() => outputs[callIdx++] ?? "").spawn;
 }
 
 describe("captureWorkingTreeChanges", () => {
@@ -269,23 +204,10 @@ describe("captureWorkingTreeChanges", () => {
 
   test("scopes to scopePrefix when provided", async () => {
     const capturedArgs: string[][] = [];
-    _gitDeps.spawn = mock((args: string[], _opts: unknown) => {
-      capturedArgs.push(args as string[]);
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
-    });
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      capturedArgs.push(cmd);
+      return "";
+    }).spawn;
     await captureWorkingTreeChanges("/tmp/repo", "abc123", "apps/api");
     // All three git calls must scope to apps/api.
     for (const args of capturedArgs) {
@@ -513,29 +435,12 @@ function captureSpawn(outputs: Array<{ output: string; exitCode?: number; stderr
 } {
   const calls: CapturedCall[] = [];
   let callIdx = 0;
-  const spawn = mock((args: unknown[], opts: { cwd?: string } = {}) => {
-    calls.push({ args: args as string[], cwd: opts.cwd });
+  const stub = makeSpawn(({ cmd, opts }) => {
+    calls.push({ args: cmd, cwd: opts.cwd === undefined ? undefined : String(opts.cwd) });
     const spec = outputs[callIdx++] ?? { output: "", exitCode: 0 };
-    const bytes = new TextEncoder().encode(spec.output);
-    const stderrBytes = new TextEncoder().encode(spec.stderr ?? "");
-    return {
-      stdout: new ReadableStream({
-        start(c) {
-          c.enqueue(bytes);
-          c.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(c) {
-          c.enqueue(stderrBytes);
-          c.close();
-        },
-      }),
-      exited: Promise.resolve(spec.exitCode ?? 0),
-      kill: mock(() => {}),
-    };
-  }) as typeof _gitDeps.spawn;
-  return { spawn, calls };
+    return { stdout: spec.output, stderr: spec.stderr ?? "", exitCode: spec.exitCode ?? 0 };
+  });
+  return { spawn: stub.spawn, calls };
 }
 
 describe("autoCommitIfDirty .nax/ restore", () => {

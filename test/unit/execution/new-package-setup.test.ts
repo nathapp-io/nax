@@ -4,26 +4,17 @@
  * un-marked dirs are never set up.
  */
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { _newPackageSetupDeps, markNewPackageDirs, maybeRunNewPackageSetup } from "@/execution";
+import { type SpawnStub, makeSpawn } from "@test/helpers";
 
-function textStream(text = ""): ReadableStream<Uint8Array> {
-  return new Response(text).body as ReadableStream<Uint8Array>;
-}
-
-function spawnOk(exitCode = 0, capture?: { argv?: string[]; cwd?: string }) {
-  return mock((argv: string[], opts: { cwd: string }) => {
+function spawnOk(exitCode = 0, capture?: { argv?: string[]; cwd?: string }): SpawnStub {
+  return makeSpawn(({ cmd, opts }) => {
     if (capture) {
-      capture.argv = argv;
-      capture.cwd = opts.cwd;
+      capture.argv = cmd;
+      capture.cwd = String(opts.cwd);
     }
-    return {
-      exited: Promise.resolve(exitCode),
-      stdout: textStream(),
-      stderr: textStream(exitCode === 0 ? "" : "boom"),
-      pid: 1,
-      kill: () => {},
-    };
+    return { stdout: "", stderr: exitCode === 0 ? "" : "boom", exitCode };
   });
 }
 
@@ -36,7 +27,8 @@ describe("maybeRunNewPackageSetup", () => {
 
   test("runs the setup command in the package dir for a newly-created package", async () => {
     const capture: { argv?: string[]; cwd?: string } = {};
-    _newPackageSetupDeps.spawn = spawnOk(0, capture) as typeof _newPackageSetupDeps.spawn;
+    const stub = spawnOk(0, capture);
+    _newPackageSetupDeps.spawn = stub.spawn;
     const runtime = {};
     markNewPackageDirs(runtime, ["/repo/packages/portfolio"]);
 
@@ -53,7 +45,7 @@ describe("maybeRunNewPackageSetup", () => {
 
   test("runs at most once per package even across multiple gates", async () => {
     const spawnMock = spawnOk(0);
-    _newPackageSetupDeps.spawn = spawnMock as typeof _newPackageSetupDeps.spawn;
+    _newPackageSetupDeps.spawn = spawnMock.spawn;
     const runtime = {};
     markNewPackageDirs(runtime, ["/repo/packages/portfolio"]);
 
@@ -66,12 +58,12 @@ describe("maybeRunNewPackageSetup", () => {
     await maybeRunNewPackageSetup(opts);
     await maybeRunNewPackageSetup(opts);
 
-    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(spawnMock.calls).toHaveLength(1);
   });
 
   test("does nothing for a package that was not created this run", async () => {
     const spawnMock = spawnOk(0);
-    _newPackageSetupDeps.spawn = spawnMock as typeof _newPackageSetupDeps.spawn;
+    _newPackageSetupDeps.spawn = spawnMock.spawn;
     const runtime = {};
     // No markNewPackageDirs for this package.
 
@@ -82,12 +74,12 @@ describe("maybeRunNewPackageSetup", () => {
       setupCommand: "uv sync",
     });
 
-    expect(spawnMock).not.toHaveBeenCalled();
+    expect(spawnMock.calls).toHaveLength(0);
   });
 
   test("does nothing when no setup command is configured", async () => {
     const spawnMock = spawnOk(0);
-    _newPackageSetupDeps.spawn = spawnMock as typeof _newPackageSetupDeps.spawn;
+    _newPackageSetupDeps.spawn = spawnMock.spawn;
     const runtime = {};
     markNewPackageDirs(runtime, ["/repo/packages/portfolio"]);
 
@@ -98,12 +90,12 @@ describe("maybeRunNewPackageSetup", () => {
       setupCommand: undefined,
     });
 
-    expect(spawnMock).not.toHaveBeenCalled();
+    expect(spawnMock.calls).toHaveLength(0);
   });
 
   test("normalizes paths so trailing-slash variants match the registry", async () => {
     const spawnMock = spawnOk(0);
-    _newPackageSetupDeps.spawn = spawnMock as typeof _newPackageSetupDeps.spawn;
+    _newPackageSetupDeps.spawn = spawnMock.spawn;
     const runtime = {};
     markNewPackageDirs(runtime, ["/repo/packages/portfolio/"]);
 
@@ -114,11 +106,11 @@ describe("maybeRunNewPackageSetup", () => {
       setupCommand: "uv sync",
     });
 
-    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(spawnMock.calls).toHaveLength(1);
   });
 
   test("swallows a failing setup command (verify gate surfaces the impact)", async () => {
-    _newPackageSetupDeps.spawn = spawnOk(1) as typeof _newPackageSetupDeps.spawn;
+    _newPackageSetupDeps.spawn = spawnOk(1).spawn;
     const runtime = {};
     markNewPackageDirs(runtime, ["/repo/packages/portfolio"]);
 
@@ -134,7 +126,7 @@ describe("maybeRunNewPackageSetup", () => {
 
   test("no-op when runtime is undefined", async () => {
     const spawnMock = spawnOk(0);
-    _newPackageSetupDeps.spawn = spawnMock as typeof _newPackageSetupDeps.spawn;
+    _newPackageSetupDeps.spawn = spawnMock.spawn;
 
     await maybeRunNewPackageSetup({
       runtime: undefined,
@@ -143,6 +135,6 @@ describe("maybeRunNewPackageSetup", () => {
       setupCommand: "uv sync",
     });
 
-    expect(spawnMock).not.toHaveBeenCalled();
+    expect(spawnMock.calls).toHaveLength(0);
   });
 });

@@ -6,10 +6,9 @@
  * Covers: claude, codex, opencode, gemini, aider, missing-binary, default behavior.
  */
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { _deps, checkAgentCLI } from "@/precheck/checks-blockers";
-import { withDepsRestore } from "@test/helpers";
-import { makeNaxConfig } from "@test/helpers";
+import { makeNaxConfig, makeSpawn, withDepsRestore } from "@test/helpers";
 
 // --- helpers ---
 
@@ -36,14 +35,14 @@ describe("checkAgentCLI — default behavior (claude)", () => {
   test("uses claude by default and on explicit config; passes with correct fields and success message", async () => {
     for (const agent of [undefined, "claude"] as const) {
       const calls: string[][] = [];
-      _deps.spawn = mock((cmd: string[]) => {
+      _deps.spawn = makeSpawn(({ cmd }) => {
         calls.push(cmd);
-        return { exited: Promise.resolve(0), stdout: null, stderr: null };
-      });
+        return { exitCode: 0 };
+      }).spawn;
       await checkAgentCLI(makeConfig(agent));
       expect(calls[0][0], `agent=${agent}`).toBe("claude");
     }
-    _deps.spawn = mock((_cmd: string[]) => ({ exited: Promise.resolve(0), stdout: null, stderr: null }));
+    _deps.spawn = makeSpawn(() => ({ exitCode: 0 })).spawn;
     const result = await checkAgentCLI(makeConfig("claude"));
     expect(result.passed).toBe(true);
     expect(result.tier).toBe("blocker");
@@ -56,10 +55,10 @@ describe("checkAgentCLI — non-claude agents", () => {
   test("spawns correct binary and passes when exit 0 for codex, opencode, gemini, aider", async () => {
     for (const agent of ["codex", "opencode", "gemini", "aider"] as const) {
       const calls: string[][] = [];
-      _deps.spawn = mock((cmd: string[]) => {
+      _deps.spawn = makeSpawn(({ cmd }) => {
         calls.push(cmd);
-        return { exited: Promise.resolve(0), stdout: null, stderr: null };
-      });
+        return { exitCode: 0 };
+      }).spawn;
       const result = await checkAgentCLI(makeConfig(agent));
       expect(calls[0][0], agent).toBe(agent);
       expect(result.passed, agent).toBe(true);
@@ -68,9 +67,9 @@ describe("checkAgentCLI — non-claude agents", () => {
 
   test("failure message contains the binary name when binary is missing for all agents", async () => {
     for (const agent of ["claude", "codex", "opencode", "gemini", "aider"] as const) {
-      _deps.spawn = mock((_cmd: string[]) => {
+      _deps.spawn = makeSpawn(() => {
         throw new Error("ENOENT: not found");
-      });
+      }).spawn;
       const result = await checkAgentCLI(makeConfig(agent));
       expect(result.passed, agent).toBe(false);
       expect(result.message, agent).toContain(agent);
@@ -80,14 +79,14 @@ describe("checkAgentCLI — non-claude agents", () => {
 
 describe("checkAgentCLI — missing binary (non-zero exit)", () => {
   test("returns blocker on non-zero exit or ENOENT; check name is agent-cli-available", async () => {
-    _deps.spawn = mock((_cmd: string[]) => ({ exited: Promise.resolve(1), stdout: null, stderr: null }));
+    _deps.spawn = makeSpawn(() => ({ exitCode: 1 })).spawn;
     const r1 = await checkAgentCLI(makeConfig("claude"));
     expect(r1.passed).toBe(false);
     expect(r1.tier).toBe("blocker");
 
-    _deps.spawn = mock((_cmd: string[]) => {
+    _deps.spawn = makeSpawn(() => {
       throw new Error("ENOENT");
-    });
+    }).spawn;
     const r2 = await checkAgentCLI(makeConfig("codex"));
     expect(r2.passed).toBe(false);
     expect(r2.tier).toBe("blocker");
@@ -99,10 +98,10 @@ describe("checkAgentCLI — --version flag patterns", () => {
   test("all agents invoke binary with --version flag", async () => {
     for (const agent of ["claude", "aider", "codex"] as const) {
       const calls: string[][] = [];
-      _deps.spawn = mock((cmd: string[]) => {
+      _deps.spawn = makeSpawn(({ cmd }) => {
         calls.push(cmd);
-        return { exited: Promise.resolve(0), stdout: null, stderr: null };
-      });
+        return { exitCode: 0 };
+      }).spawn;
       await checkAgentCLI(makeConfig(agent));
       expect(calls[0], agent).toContain("--version");
     }
@@ -113,11 +112,7 @@ describe("checkAgentCLI — no regression on checkClaudeCLI", () => {
   test("checkClaudeCLI still exists and works as before", async () => {
     const { checkClaudeCLI } = await import("@/precheck/checks-blockers");
 
-    _deps.spawn = mock((_cmd: string[]) => ({
-      exited: Promise.resolve(0),
-      stdout: null,
-      stderr: null,
-    }));
+    _deps.spawn = makeSpawn(() => ({ exitCode: 0 })).spawn;
 
     const result = await checkClaudeCLI();
 

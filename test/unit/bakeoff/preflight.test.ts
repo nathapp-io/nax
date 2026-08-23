@@ -18,7 +18,7 @@ import {
 import { NaxError } from "@/errors";
 import { getSafeLogger, initLogger, resetLogger } from "@/logger";
 import { _gitDeps } from "@/utils/git";
-import { makeNaxConfig } from "@test/helpers";
+import { makeNaxConfig, makeSpawn } from "@test/helpers";
 
 describe("parseCompareList", () => {
   // AC-1: comma-separated list with surrounding whitespace
@@ -239,25 +239,10 @@ describe("reclaimStaleBakeoffBranches — failed branch deletion", () => {
   });
 
   function mockSpawnFor(handler: (args: string[]) => { output: string; exitCode: number }): typeof _gitDeps.spawn {
-    return mock((args: string[], _opts: unknown) => {
-      const { output, exitCode } = handler(args);
-      const bytes = new TextEncoder().encode(output);
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(exitCode),
-        kill: mock(() => {}),
-      };
-    }) as typeof _gitDeps.spawn;
+    return makeSpawn(({ cmd }) => {
+      const { output, exitCode } = handler(cmd);
+      return { stdout: output, exitCode };
+    }).spawn;
   }
 
   // A stale branch whose `git branch -D` call fails must be logged as a

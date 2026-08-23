@@ -15,7 +15,7 @@ import type { PRD, UserStory } from "@/prd/types";
 import { _precheckDeps, runPrecheck } from "@/precheck";
 import { _checkCliDeps } from "@/precheck/checks-cli";
 import type { StorySizeGateResult } from "@/precheck/story-size-gate";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeSpawn, makeTempDir } from "@test/helpers";
 import { makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -158,11 +158,7 @@ beforeEach(() => {
   origSpawn = _checkCliDeps.spawn;
 
   // Mock agent CLI check to always succeed — avoids dependency on installed CLI tools
-  _checkCliDeps.spawn = ((_args: string[], _opts: unknown) => ({
-    exited: Promise.resolve(0),
-    stdout: null,
-    stderr: null,
-  })) as typeof _checkCliDeps.spawn;
+  _checkCliDeps.spawn = makeSpawn(() => ({ exitCode: 0 })).spawn;
 });
 
 afterEach(() => {

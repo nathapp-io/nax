@@ -22,6 +22,7 @@ import {
   type makeMockCallContext,
   makeMockPlanInputs,
   makeNaxConfig,
+  makeSpawn,
   makeStory,
   makeTestRuntime,
   withTempDir,
@@ -49,11 +50,7 @@ beforeEach(() => {
   _storyOrchestratorDeps.captureGitRef = mock(async () => "HEAD");
   // captureSnapshotRef uses _rollbackDeps.spawn for git rev-parse HEAD.
   _rollbackDeps.autoCommitIfDirty = mock(async () => {});
-  _rollbackDeps.spawn = mock((_cmd: string[], _opts: unknown) => ({
-    stdout: new Response("abc1234\n").body,
-    stderr: new Response("").body,
-    exited: Promise.resolve(0),
-  })) as typeof _rollbackDeps.spawn;
+  _rollbackDeps.spawn = makeSpawn(() => "abc1234\n").spawn;
   // captureSnapshotRef also snapshots untracked paths (BUG-07) — stub deterministic.
   _rollbackDeps.getUntrackedPaths = mock(async () => []) as typeof _rollbackDeps.getUntrackedPaths;
 });

@@ -5,7 +5,7 @@ import {
   _worktreeDependencyDeps,
   prepareWorktreeDependencies,
 } from "@/worktree/dependencies";
-import { makeNaxConfig } from "@test/helpers";
+import { makeNaxConfig, makeSpawn } from "@test/helpers";
 
 function textStream(text = ""): ReadableStream<Uint8Array> {
   return new Response(text).body as ReadableStream<Uint8Array>;
@@ -23,10 +23,10 @@ describe("prepareWorktreeDependencies", () => {
   // fixture here — `prepareWorktreeDependencies` no longer touches the filesystem,
   // so writing a package.json would assert nothing.
   test("off returns the story package cwd without spawning setup", async () => {
-    const spawnMock = mock(() => {
+    const spawnMock = makeSpawn(() => {
       throw new Error("spawn should not be called");
     });
-    _worktreeDependencyDeps.spawn = spawnMock as typeof _worktreeDependencyDeps.spawn;
+    _worktreeDependencyDeps.spawn = spawnMock.spawn;
 
     const result = await prepareWorktreeDependencies({
       projectRoot: "/repo",
@@ -37,18 +37,12 @@ describe("prepareWorktreeDependencies", () => {
     });
 
     expect(result).toEqual({ cwd: "/repo/.nax-wt/US-001/packages/app" });
-    expect(spawnMock).not.toHaveBeenCalled();
+    expect(spawnMock.calls).toHaveLength(0);
   });
 
   test("provision parses setupCommand to argv and runs it from the worktree root", async () => {
-    const spawnMock = mock(() => ({
-      exited: Promise.resolve(0),
-      stdout: textStream(),
-      stderr: textStream(),
-      pid: 123,
-      kill: () => {},
-    }));
-    _worktreeDependencyDeps.spawn = spawnMock as typeof _worktreeDependencyDeps.spawn;
+    const spawnMock = makeSpawn(() => ({}));
+    _worktreeDependencyDeps.spawn = spawnMock.spawn;
 
     const result = await prepareWorktreeDependencies({
       projectRoot: "/repo",
@@ -61,10 +55,9 @@ describe("prepareWorktreeDependencies", () => {
     });
 
     expect(result).toEqual({ cwd: "/repo/.nax-wt/US-002/packages/web" });
-    expect(spawnMock).toHaveBeenCalledWith(["bun", "install", "--frozen-lockfile"], {
-      cwd: "/repo/.nax-wt/US-002",
-      stdout: "pipe",
-      stderr: "pipe",
+    expect(spawnMock.calls[0]).toEqual({
+      cmd: ["bun", "install", "--frozen-lockfile"],
+      opts: { cwd: "/repo/.nax-wt/US-002", stdout: "pipe", stderr: "pipe" },
     });
   });
 

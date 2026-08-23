@@ -11,7 +11,7 @@ import type { ExecutionConfig, NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd/types";
 import { runEnvironmentPrecheck, runPrecheck } from "@/precheck";
 import { _checkCliDeps } from "@/precheck/checks-cli";
-import { makeConfigSlice, makeTempDir } from "@test/helpers";
+import { makeConfigSlice, makeSpawn, makeTempDir } from "@test/helpers";
 
 const createMockConfig = (cwd: string, overrides: Partial<ExecutionConfig> = {}): NaxConfig => ({
   execution: {
@@ -95,11 +95,7 @@ describe("runPrecheck canonical-rules-lint blocker", () => {
     git(["commit", "-m", "init"]);
 
     originalSpawn = _checkCliDeps.spawn;
-    _checkCliDeps.spawn = ((_args: string[], _opts: unknown) => ({
-      exited: Promise.resolve(0),
-      stdout: null,
-      stderr: null,
-    })) as typeof _checkCliDeps.spawn;
+    _checkCliDeps.spawn = makeSpawn(() => ({ exitCode: 0 })).spawn;
   });
 
   afterEach(() => {
