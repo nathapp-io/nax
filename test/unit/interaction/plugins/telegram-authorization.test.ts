@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { InteractionRequest } from "@/interaction";
 import { TelegramInteractionPlugin, _telegramPluginDeps, normalizeChatId } from "@/interaction";
+import { mockFetch } from "@test/helpers";
 
 // The poll loop sleeps `basePollBackoffMs` between getUpdates calls, so with the
 // production 1s base every multi-poll test costs seconds of wall-clock. The
@@ -63,7 +64,7 @@ describe("TelegramInteractionPlugin - inbound chat authorization", () => {
     const offsets: number[] = [];
     let posted = false;
 
-    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
       const body = JSON.parse((init?.body as string) ?? "{}");
 
@@ -84,7 +85,7 @@ describe("TelegramInteractionPlugin - inbound chat authorization", () => {
         return new Response(JSON.stringify({ ok: true, result: visible }), { status: 200 });
       }
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
-    }) as typeof fetch;
+    });
 
     return { acked, offsets };
   }
@@ -271,7 +272,7 @@ describe("TelegramInteractionPlugin - backlog drain with foreign traffic", () =>
   function stubPagedTelegram(updates: Array<Record<string, unknown>>) {
     const getUpdatesCalls: number[] = [];
 
-    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
       const body = JSON.parse((init?.body as string) ?? "{}");
 
@@ -287,7 +288,7 @@ describe("TelegramInteractionPlugin - backlog drain with foreign traffic", () =>
         return new Response(JSON.stringify({ ok: true, result: next ? [next] : [] }), { status: 200 });
       }
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
-    }) as typeof fetch;
+    });
 
     return { getUpdatesCalls };
   }
@@ -394,7 +395,7 @@ describe("TelegramInteractionPlugin - configured chat id normalization", () => {
 
   test("a whitespace-padded chatId still accepts a callback from that chat", async () => {
     let posted = false;
-    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
       const body = JSON.parse((init?.body as string) ?? "{}");
       if (urlStr.includes("sendMessage")) {
@@ -413,7 +414,7 @@ describe("TelegramInteractionPlugin - configured chat id normalization", () => {
         return new Response(JSON.stringify({ ok: true, result: visible }), { status: 200 });
       }
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
-    }) as typeof fetch;
+    });
 
     const plugin = new TelegramInteractionPlugin();
     // Trailing whitespace is easy to pick up from a .env file or a copy-paste.

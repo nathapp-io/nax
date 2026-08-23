@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { InteractionRequest } from "@/interaction";
 import { TelegramInteractionPlugin, _telegramPluginDeps, truncateIdForCallbackData } from "@/interaction";
+import { mockFetch } from "@test/helpers";
 
 describe("TelegramInteractionPlugin", () => {
   let savedToken: string | undefined;
@@ -99,17 +100,15 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
   test("send() degrades to a button-free message when the request id cannot round-trip", async () => {
     const calls: Array<Record<string, unknown>> = [];
 
-    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
       if (urlStr.includes("sendMessage")) calls.push(JSON.parse((init?.body as string) ?? "{}"));
       if (urlStr.includes("getUpdates")) {
         return new Response(JSON.stringify({ ok: true, result: [] }), { status: 200 });
       }
-      return new Response(JSON.stringify({ ok: true, result: { message_id: 7, chat: { id: 12345 } } }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }) as typeof fetch;
+      const body = JSON.stringify({ ok: true, result: { message_id: 7, chat: { id: 12345 } } });
+      return new Response(body, { status: 200, headers: { "Content-Type": "application/json" } });
+    });
 
     const plugin = new TelegramInteractionPlugin();
     await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
@@ -123,7 +122,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
   test("send() POSTs to correct Telegram API URL with message text and inline keyboard", async () => {
     const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
 
-    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
       // Only track sendMessage calls — init() also calls getUpdates() to drain any backlog.
       if (urlStr.includes("sendMessage")) {
@@ -137,7 +136,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
-    }) as typeof fetch;
+    });
 
     const plugin = new TelegramInteractionPlugin();
     await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
@@ -169,7 +168,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
   });
 
   test("receive() parses callback_query correctly", async () => {
-    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
@@ -203,7 +202,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       }
 
       return new Response("not found", { status: 404 });
-    }) as typeof fetch;
+    });
 
     const plugin = new TelegramInteractionPlugin();
     await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
@@ -219,7 +218,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
   });
 
   test("receive() handles choose callback_query with value", async () => {
-    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request) => {
+    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
@@ -253,7 +252,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       }
 
       return new Response("not found", { status: 404 });
-    }) as typeof fetch;
+    });
 
     const plugin = new TelegramInteractionPlugin();
     await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
@@ -383,7 +382,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
     // still resolve it to the original (full) requestId.
     const longId = `req-${"z".repeat(80)}`;
 
-    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
@@ -429,7 +428,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       }
 
       return new Response("not found", { status: 404 });
-    }) as unknown as typeof fetch; // test-ratchet-allow: as-unknown-as
+    });
 
     const plugin = new TelegramInteractionPlugin();
     await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
@@ -447,7 +446,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
   // (a no-op) so a malformed callback can never silently route through —
   // receive() must time out instead of resolving with the bogus action.
   test("BUG-42: receive() ignores a callback with an unknown action", async () => {
-    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request) => {
+    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request) => {
       const urlStr = url.toString();
       if (urlStr.includes("sendMessage")) {
         return new Response(JSON.stringify({ ok: true, result: { message_id: 30, chat: { id: 99999 } } }));
@@ -471,7 +470,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
         );
       }
       return new Response(JSON.stringify({ ok: true }));
-    }) as typeof fetch;
+    });
 
     const plugin = new TelegramInteractionPlugin();
     await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
@@ -498,7 +497,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       resolveCurrentAck = resolve;
     });
 
-    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
@@ -553,7 +552,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       }
 
       return new Response("not found", { status: 404 });
-    }) as typeof fetch;
+    });
 
     const plugin = new TelegramInteractionPlugin();
     await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
@@ -586,7 +585,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       },
     };
 
-    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
@@ -609,7 +608,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       }
 
       return new Response("not found", { status: 404 });
-    }) as typeof fetch;
+    });
 
     const plugin = new TelegramInteractionPlugin();
     await plugin.init({ botToken: "bot-abc123", chatId: "99999" }); // no network call — nothing drained here
@@ -653,7 +652,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
     // prompt was actually posted.
     let getUpdatesCallCount = 0;
 
-    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request) => {
+    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
@@ -681,7 +680,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       }
 
       return new Response("not found", { status: 404 });
-    }) as typeof fetch;
+    });
 
     const plugin = new TelegramInteractionPlugin();
     await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
@@ -716,7 +715,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       resolveMarkupClear = resolve;
     });
 
-    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
@@ -757,7 +756,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
       }
 
       return new Response("not found", { status: 404 });
-    }) as typeof fetch;
+    });
 
     const plugin = new TelegramInteractionPlugin();
     await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
@@ -787,7 +786,7 @@ describe("TelegramInteractionPlugin - fetch deps seam", () => {
 
   test("send() routes through _telegramPluginDeps.fetch, not the global", async () => {
     const urls: string[] = [];
-    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request) => {
+    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request) => {
       const urlStr = url.toString();
       urls.push(urlStr);
       if (urlStr.includes("getUpdates")) {
@@ -796,7 +795,7 @@ describe("TelegramInteractionPlugin - fetch deps seam", () => {
       return new Response(JSON.stringify({ ok: true, result: { message_id: 1, chat: { id: 99999 } } }), {
         status: 200,
       });
-    }) as typeof fetch;
+    });
 
     const plugin = new TelegramInteractionPlugin();
     await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
@@ -829,7 +828,7 @@ describe("TelegramInteractionPlugin - sendMessage timeout (BUG-7)", () => {
   test("aborts sendMessage via AbortController when fetch never resolves", async () => {
     _telegramPluginDeps.sendTimeoutMs = 50; // shrunk from the 5s production cap
     let observedSignal: AbortSignal | undefined;
-    _telegramPluginDeps.fetch = mock(async (_url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mockFetch(async (_url: string | URL | Request, init?: RequestInit) => {
       observedSignal = init?.signal ?? undefined;
       // Honor the abort signal: reject immediately when it fires.
       return await new Promise<Response>((_resolve, reject) => {
@@ -843,7 +842,7 @@ describe("TelegramInteractionPlugin - sendMessage timeout (BUG-7)", () => {
           reject(new Error("aborted"));
         });
       });
-    }) as typeof fetch;
+    });
 
     const plugin = new TelegramInteractionPlugin();
     // @ts-expect-error bypass init to avoid getUpdates poller in this test

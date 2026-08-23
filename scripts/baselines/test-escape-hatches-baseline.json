@@ -2,12 +2,12 @@
   "counts": {
     "asAny": 1393,
     "tsSuppress": 54,
-    "ratchetAllow": 107,
+    "ratchetAllow": 106,
     "absentValue": 17,
     "anyType": 1885,
     "looseCast": 2008
   },
-  "updatedAt": "2026-08-23T12:00:20.139Z",
+  "updatedAt": "2026-08-23T12:41:25.321Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -331,7 +331,6 @@
     },
     "test/unit/interaction/plugins/telegram.test.ts": {
       "tsSuppress": 2,
-      "ratchetAllow": 1,
       "looseCast": 4
     },
     "test/unit/interaction/plugins/cli.test.ts": {

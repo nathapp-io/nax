@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { TelegramInteractionPlugin, _telegramPluginDeps } from "@/interaction/plugins/telegram";
 import type { InteractionRequest } from "@/interaction/types";
+import { mockFetch } from "@test/helpers";
 
 describe("TelegramInteractionPlugin - Regression BUG-116", () => {
   let savedFetch: typeof _telegramPluginDeps.fetch;
@@ -26,7 +27,7 @@ describe("TelegramInteractionPlugin - Regression BUG-116", () => {
     let editCalled = false;
     let editBody: Record<string, unknown> | null = null;
 
-    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request) => {
+    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
@@ -56,7 +57,7 @@ describe("TelegramInteractionPlugin - Regression BUG-116", () => {
       }
 
       return new Response("not found", { status: 404 });
-    }) as typeof fetch;
+    });
 
     const plugin = new TelegramInteractionPlugin();
     await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
@@ -79,9 +80,12 @@ describe("TelegramInteractionPlugin - Regression BUG-116", () => {
   });
 
   test("sendTimeoutMessage clears inline keyboard (reply_markup empty)", async () => {
-    let editBody: Record<string, unknown> | null = null;
+    // A holder, not a `let`: TypeScript narrows a `let` initialised to null and
+    // only reassigned inside a callback down to `null`, so the assertions below
+    // would read `never`. A property keeps its declared union.
+    const captured: { editBody: Record<string, unknown> | null } = { editBody: null };
 
-    _telegramPluginDeps.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+    _telegramPluginDeps.fetch = mockFetch(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = url.toString();
 
       if (urlStr.includes("sendMessage")) {
@@ -100,13 +104,13 @@ describe("TelegramInteractionPlugin - Regression BUG-116", () => {
 
       if (urlStr.includes("editMessageText")) {
         if (init?.body) {
-          editBody = JSON.parse(init.body as string) as Record<string, unknown>;
+          captured.editBody = JSON.parse(init.body as string) as Record<string, unknown>;
         }
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
       }
 
       return new Response("not found", { status: 404 });
-    }) as typeof fetch;
+    });
 
     const plugin = new TelegramInteractionPlugin();
     await plugin.init({ botToken: "bot-abc123", chatId: "99999" });
@@ -126,8 +130,8 @@ describe("TelegramInteractionPlugin - Regression BUG-116", () => {
 
     // The editMessageText call must include reply_markup with empty inline_keyboard
     // so that expired checkpoints can't be re-tapped by accident
-    expect(editBody).not.toBeNull();
-    expect(editBody?.reply_markup).toBeDefined();
-    expect((editBody?.reply_markup as { inline_keyboard: unknown[] }).inline_keyboard).toEqual([]);
+    expect(captured.editBody).not.toBeNull();
+    expect(captured.editBody?.reply_markup).toBeDefined();
+    expect((captured.editBody?.reply_markup as { inline_keyboard: unknown[] }).inline_keyboard).toEqual([]);
   });
 });
