@@ -35,24 +35,22 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     config: makeSparseNaxConfig({
       agent: { default: "test-agent" },
       models: {},
-      execution: {
+      execution: makeConfigSlice("execution", {
         sessionTimeoutSeconds: 60,
-        dangerouslySkipPermissions: false,
         costLimit: 10,
         maxIterations: 10,
-        rectification: makeConfigSlice("execution", { rectification: { maxAttemptsTotal: 3 } }).rectification,
-      },
+        rectification: { maxAttemptsTotal: 3 },
+      }),
     }),
     rootConfig: makeSparseNaxConfig({
       agent: { default: "test-agent" },
       models: {},
-      execution: {
+      execution: makeConfigSlice("execution", {
         sessionTimeoutSeconds: 60,
-        dangerouslySkipPermissions: false,
         costLimit: 10,
         maxIterations: 10,
-        rectification: makeConfigSlice("execution", { rectification: { maxAttemptsTotal: 3 } }).rectification,
-      },
+        rectification: { maxAttemptsTotal: 3 },
+      }),
     }),
     prd: makePRD(),
     story,

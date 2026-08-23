@@ -53,7 +53,6 @@ function makeConfig(triggers: Record<string, unknown>) {
     models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
     execution: {
       sessionTimeoutSeconds: 60,
-      dangerouslySkipPermissions: false,
       costLimit: 10,
       maxIterations: 10,
       rectification: { maxAttemptsTotal: 3 },

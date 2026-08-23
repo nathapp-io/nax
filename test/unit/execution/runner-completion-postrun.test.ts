@@ -18,7 +18,7 @@ import { type RunnerCompletionOptions, _runnerCompletionDeps, runCompletionPhase
 import type { LoadedHooksConfig } from "@/hooks";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
-import { makeNaxConfig, makeStatusWriter } from "@test/helpers";
+import { makeMockRuntime, makeNaxConfig, makePluginRegistry, makeStatusWriter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -69,6 +69,7 @@ function makeOpts(
   prd: PRD,
   statusWriter: ReturnType<typeof makeStatusWriter>,
 ): RunnerCompletionOptions {
+  const runtime = makeMockRuntime();
   return {
     config,
     hooks: { hooks: {}, _skipGlobal: false },
@@ -87,8 +88,12 @@ function makeOpts(
     storiesCompleted: 1,
     iterations: 1,
     statusWriter: statusWriter,
-    pluginRegistry: { getAll: () => [], get: () => undefined },
+    pluginRegistry: makePluginRegistry(),
     prdPath: `${WORKDIR}/prd.json`,
+    runtime,
+    agentManager: runtime.agentManager,
+    sessionManager: runtime.sessionManager,
+    abortSignal: runtime.signal,
   };
 }
 
