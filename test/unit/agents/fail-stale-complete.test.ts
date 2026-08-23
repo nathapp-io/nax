@@ -20,7 +20,7 @@ describe("complete() with fail-stale failures", () => {
   test("returns CompleteResult with adapterFailure when stale timeout occurs", () => {
     const result: CompleteResult = {
       output: "", // Empty output when stale cancellation occurs
-      tokenUsage: { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
+      tokenUsage: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 },
       estimatedCostUsd: 0,
       adapterFailure: staleFailure,
     };
@@ -33,7 +33,7 @@ describe("complete() with fail-stale failures", () => {
   test("empty output field when fail-stale occurs (not passed to parser)", () => {
     const result: CompleteResult = {
       output: "", // Stale cancellation produces empty output
-      tokenUsage: { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
+      tokenUsage: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 },
       estimatedCostUsd: 0,
       adapterFailure: staleFailure,
     };
@@ -46,7 +46,7 @@ describe("complete() with fail-stale failures", () => {
   test("fail-stale.retriable indicates whether same agent can be retried", () => {
     const retryable: CompleteResult = {
       output: "",
-      tokenUsage: { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
+      tokenUsage: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 },
       estimatedCostUsd: 0,
       adapterFailure: staleFailure,
     };
@@ -54,7 +54,7 @@ describe("complete() with fail-stale failures", () => {
 
     const terminal: CompleteResult = {
       output: "",
-      tokenUsage: { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
+      tokenUsage: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 },
       estimatedCostUsd: 0,
       adapterFailure: staleTerminal,
     };

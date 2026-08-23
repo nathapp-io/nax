@@ -1,6 +1,6 @@
 {
-  "count": 1598,
-  "updatedAt": "2026-08-23T11:32:56.172Z",
+  "count": 1594,
+  "updatedAt": "2026-08-23T11:33:58.696Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -54,7 +54,6 @@
     "test/unit/agents/acp/adapter.test.ts": 2,
     "test/unit/agents/acp/spawn-client-pid-callback.test.ts": 1,
     "test/unit/agents/cost/calculate.test.ts": 1,
-    "test/unit/agents/fail-stale-complete.test.ts": 4,
     "test/unit/agents/manager-credentials.test.ts": 2,
     "test/unit/agents/manager-iface-run.test.ts": 2,
     "test/unit/agents/manager-narrowed.test.ts": 1,
