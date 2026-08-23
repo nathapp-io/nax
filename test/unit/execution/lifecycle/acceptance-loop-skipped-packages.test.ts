@@ -141,7 +141,7 @@ const WORKDIR = `/tmp/nax-us-004-${randomUUID()}`;
 function makeOpts(config: NaxConfig, prd: PRD, statusWriter: StatusWriter): RunnerCompletionOptions {
   return {
     config,
-    hooks: { hooks: {}, _skipGlobal: false } as unknown as LoadedHooksConfig,
+    hooks: { hooks: {}, _skipGlobal: false },
     feature: "test-feature",
     workdir: WORKDIR,
     statusFile: `${WORKDIR}/status.json`,

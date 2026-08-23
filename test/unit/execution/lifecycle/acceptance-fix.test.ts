@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { DiagnosisResult, SemanticVerdict } from "@/acceptance/types";
+import type { SemanticVerdict } from "@/acceptance/types";
 import type { NaxConfig } from "@/config/schema";
 import { _diagnosisDeps, resolveAcceptanceDiagnosis } from "@/execution/lifecycle/acceptance-fix";
 import type { AcceptanceLoopContext } from "@/execution/lifecycle/acceptance-loop";
@@ -82,7 +82,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     let callOpCalled = false;
     _diagnosisDeps.callOp = async () => {
       callOpCalled = true;
-      return {} as unknown as DiagnosisResult;
+      return { verdict: "source_bug", reasoning: "unreachable — fast path should not invoke callOp", confidence: 1 };
     };
 
     const result = await resolveAcceptanceDiagnosis({
@@ -102,7 +102,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     let callOpCalled = false;
     _diagnosisDeps.callOp = async () => {
       callOpCalled = true;
-      return {} as unknown as DiagnosisResult;
+      return { verdict: "source_bug", reasoning: "unreachable — fast path should not invoke callOp", confidence: 1 };
     };
 
     const verdicts: SemanticVerdict[] = [
@@ -127,7 +127,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     let callOpCalled = false;
     _diagnosisDeps.callOp = async () => {
       callOpCalled = true;
-      return {} as unknown as DiagnosisResult;
+      return { verdict: "source_bug", reasoning: "unreachable — fast path should not invoke callOp", confidence: 1 };
     };
 
     const result = await resolveAcceptanceDiagnosis({
@@ -151,7 +151,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     let callOpCalled = false;
     _diagnosisDeps.callOp = async () => {
       callOpCalled = true;
-      return {} as unknown as DiagnosisResult;
+      return { verdict: "source_bug", reasoning: "unreachable — fast path should not invoke callOp", confidence: 1 };
     };
 
     const result = await resolveAcceptanceDiagnosis({
@@ -170,7 +170,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     let callOpCalled = false;
     _diagnosisDeps.callOp = async () => {
       callOpCalled = true;
-      return { verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 } as unknown as DiagnosisResult;
+      return { verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 };
     };
 
     const result = await resolveAcceptanceDiagnosis({
@@ -191,7 +191,7 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
     let capturedInput: Record<string, unknown> | undefined;
     _diagnosisDeps.callOp = async (_callCtx, _op, input) => {
       capturedInput = input as Record<string, unknown>;
-      return { verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 } as unknown as DiagnosisResult;
+      return { verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 };
     };
 
     const semanticVerdicts: SemanticVerdict[] = [

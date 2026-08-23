@@ -71,7 +71,7 @@ function makeOpts(
 ): RunnerCompletionOptions {
   return {
     config,
-    hooks: { hooks: {}, _skipGlobal: false } as unknown as LoadedHooksConfig,
+    hooks: { hooks: {}, _skipGlobal: false },
     feature: "test-feature",
     workdir: WORKDIR,
     statusFile: `${WORKDIR}/status.json`,
