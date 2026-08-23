@@ -23,8 +23,8 @@ in this handoff. Stop and escalate (§6).
 
 | Cluster | Errors | Files | Fix |
 |:--|--:|--:|:--|
-| `maxScanFiles` missing on `SmartTestRunnerConfig` | 12 | 4 | add `maxScanFiles: 200` |
-| `workdir` missing on `AdversarialReviewInput` / `SemanticReviewInput` | 10 | 4 | add `workdir` |
+| `maxScanFiles` missing on `SmartTestRunnerConfig` | 12 | 5 | add `maxScanFiles: 200` |
+| `workdir` missing on `AdversarialReviewInput` | 10 | 4 | add `workdir` |
 
 **Total: 22 errors.** Nothing else. Both are "the fixture omits a required field that the
 production type declares" — the same class as `projectKey` (`1db22cbc1`) and
@@ -33,10 +33,11 @@ production type declares" — the same class as `projectKey` (`1db22cbc1`) and
 ### Cluster A — `maxScanFiles` (12)
 
 ```
-test/unit/test-runners/resolver.test.ts                    9
-test/unit/execution/plan-inputs-review-wiring.test.ts       2
-test/integration/routing/routing-stage-greenfield.test.ts   2
-test/integration/routing/routing-stage-final-state.test.ts  2
+test/unit/test-runners/resolver.test.ts                     8
+test/unit/config/merge.test.ts                              1
+test/unit/execution/plan-inputs-review-wiring.test.ts       1
+test/integration/routing/routing-stage-greenfield.test.ts   1
+test/integration/routing/routing-stage-final-state.test.ts  1
 ```
 
 The value is **200** — the schema default at `src/config/schemas-execution.ts:114`
@@ -51,15 +52,26 @@ cares about the cap, escalate rather than guess.
 ### Cluster B — `workdir` (10)
 
 ```
-test/unit/execution/build-plan-for-strategy-triage-assembly.test.ts    6
-test/unit/operations/timeout-resolvers.test.ts                         4
-test/unit/execution/build-plan-for-strategy-triage-predicates.test.ts  3
+test/unit/execution/build-plan-for-strategy-triage-assembly.test.ts    5
 test/unit/execution/build-plan-for-strategy.test.ts                    2
+test/unit/operations/timeout-resolvers.test.ts                         2
+test/unit/execution/build-plan-for-strategy-triage-predicates.test.ts  1
 ```
 
-(9 are `AdversarialReviewInput`, 1 is `SemanticReviewInput`.) Use the workdir value the
-surrounding test already uses — most of these files have a story or context fixture with a
-workdir already set. Match it; do not introduce a new path convention.
+All 10 are `AdversarialReviewInput`, and every one is the same literal shape — an
+`adversarialReview: { story, adversarialConfig, mode }` that omits `workdir`. Use the
+workdir value the surrounding test already uses: each of these files already sets
+`workdir: "/tmp/test"` in its own story/context fixture. Match it; do not introduce a new
+path convention.
+
+**Piloted before writing this.** Adding `workdir: "/tmp/test"` to the two sites in
+`build-plan-for-strategy.test.ts` took the total 1369 → **1367** — exactly −2, no unmask —
+and the file stayed green (30 pass, 0 fail). The pilot was reverted; those two sites are
+still yours to do. Expect the same 1:1 ratio for the rest of this cluster. **If the total
+drops by less than the number of sites you fixed, you have hit an unmask** (TypeScript
+reports the missing property *instead of* a second fault underneath); that is expected and
+fine — see `HANDOFF-1514-dead-fixture-keys.md` §1 — but escalate if clearing it needs a
+value you cannot derive.
 
 ---
 
@@ -79,7 +91,7 @@ bun run lint:fix                          # biome; formatting is a gate
 bun run test                              # full suite, all phases
 bun run test:coverage                     # SEPARATE from check:all — see §5
 bun run scripts/check-test-typecheck.ts --update-baseline
-bun run check:all                         # all 25 gates
+bun run check:all                         # every gate
 ```
 
 Then commit. **The baseline update goes in the same commit as the fix it accounts for** —
@@ -87,7 +99,8 @@ otherwise the per-file gate fails at the intermediate commit.
 
 ### Definition of done
 
-- `bun run check:all` green (25/25) and `bun run test` green **before** any baseline update.
+- `bun run check:all` green (every gate reports `[OK]`/`OK:`; 24 lines at the time of writing)
+  and `bun run test` green **before** any baseline update.
 - `bun run test:coverage` at or above floor, per-file ratchet **not worse**.
 - `check:test-typecheck` baseline **lower**.
 - `check:test-as-unknown-as` baseline **equal or lower** (must stay 102).
@@ -142,19 +155,28 @@ Commit tags are **descriptive, never `phase N`** — the original #1514 plan alr
    broke and two tests failed. After a rename, grep the file for the old token and expect
    **zero** hits.
 
-6. **A grep-based negative is not proof.** A `\b` word boundary silently fails on a quoted
+6. **Count errors by the property message, not by neighbouring file lines.** A `TS2741`
+   puts `Property 'X' is missing` on the error's *head* line; a `TS2322` nests it two lines
+   below. So `grep -B2 "Property 'X' is missing" | <file>` mixes in the file names of
+   unrelated adjacent errors. The reliable count is
+   `grep -c "Property 'X' is missing"`, and for the per-file split, attribute each match to
+   the nearest preceding line matching `^<file>(<line>,<col>): error TS`. **This trap fired
+   on the first draft of this very handoff** — it reported one cluster as 4 files with a
+   9/2/2/2 split when the truth was 5 files at 8/1/1/1/1, and omitted a file entirely.
+
+7. **A grep-based negative is not proof.** A `\b` word boundary silently fails on a quoted
    key (`"on-story-complete"`); a plain substring over-matches (`getAll` "hits"
    `getAllAgents`). Use two independent greps before concluding something is unused.
 
-7. **`check:file-sizes` rejects line-adding fixes to grandfathered files.**
+8. **`check:file-sizes` rejects line-adding fixes to grandfathered files.**
    `story-orchestrator.test.ts` is capped at 2006 lines; fixes there must be line-neutral.
    Neither cluster in §2 touches it, but the gate will tell you if that changes.
 
-8. **Do not widen a `src/` type to fit a fixture.** If the fixture cannot satisfy the type,
+9. **Do not widen a `src/` type to fit a fixture.** If the fixture cannot satisfy the type,
    the fixture is wrong, or the work is out of scope. Never make a required field optional
    to clear an error.
 
-9. **Do not fix anything with `: any`, `as any`, or `@ts-expect-error`.** The `anyType`,
+10. **Do not fix anything with `: any`, `as any`, or `@ts-expect-error`.** The `anyType`,
    `asAny`, and `tsSuppress` counters exist precisely to make that impossible to land
    quietly, and they are checked on every commit.
 
