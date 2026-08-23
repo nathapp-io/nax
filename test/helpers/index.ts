@@ -83,3 +83,5 @@ export { makeAdversarialOutput, makeDiagnoseOutput, makeSemanticOutput } from ".
 export { makeOptimizerResult } from "./optimizer-result";
 export { assertDefined, firstCall } from "./assert-defined";
 export { makeWorktreeManager, type MockWorktreeManager } from "./worktree-manager";
+export { makeFixCycleResult, makeIteration } from "./fix-cycle-result";
+export { makeCallOp, DEFAULT_AGENT_ENVELOPE, type CallOpStubOptions } from "./call-op";

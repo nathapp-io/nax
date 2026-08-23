@@ -36,9 +36,19 @@ import {
   _storyOrchestratorDeps,
   buildResumePlan,
 } from "@/execution";
+import type { Finding } from "@/findings";
 import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeMockCallContext, makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import type { SessionRole } from "@/runtime/session-role";
+import {
+  DEFAULT_AGENT_ENVELOPE,
+  makeCallOp,
+  makeFixCycleResult,
+  makeMockAgentManager,
+  makeMockCallContext,
+  makeNaxConfig,
+  makeTestRuntime,
+} from "@test/helpers";
 
 // ===========================================================================
 // Shared ops
@@ -76,7 +86,7 @@ function makeFailOp(
 }
 
 // Implementer has to be a RunOperation (semantic constraint of StoryOrchestratorBuilder).
-function makeRunOp<I, O>(name: string, sessionRole: string, output: O): RunOperation<I, O, TestOpConfig> {
+function makeRunOp<I, O>(name: string, sessionRole: SessionRole, output: O): RunOperation<I, O, TestOpConfig> {
   return {
     kind: "run",
     name,
@@ -139,15 +149,13 @@ describe("AC1: passing phase triggers exactly one recordGreen call", () => {
       });
       return Promise.resolve();
     };
-    _storyOrchestratorDeps.callOp = async (_ctx, op, input) => {
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
-    _storyOrchestratorDeps.runFixCycle = async () => ({
-      iterations: [],
-      finalFindings: [],
-      costUsd: 0,
-    });
+    _storyOrchestratorDeps.callOp = makeCallOp();
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
+      makeFixCycleResult<F>({
+        iterations: [],
+        finalFindings: [],
+        costUsd: 0,
+      });
 
     try {
       const ctx = makeCtx(runtime!, "AC1");
@@ -186,17 +194,17 @@ describe("AC2: failing phase does not trigger recordGreen", () => {
       recordGreenCalls.push({ storyId, phase });
       return Promise.resolve();
     };
-    _storyOrchestratorDeps.callOp = async (_ctx, op, input) => {
-      dispatched.push(op.name);
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      // Implementer fails — return success:false envelope.
-      return { success: false, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
-    _storyOrchestratorDeps.runFixCycle = async () => ({
-      iterations: [],
-      finalFindings: [],
-      costUsd: 0,
+    // Implementer fails — return a success:false envelope.
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      fallback: { ...DEFAULT_AGENT_ENVELOPE, success: false },
+      onDispatch: (op) => dispatched.push(op.name),
     });
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
+      makeFixCycleResult<F>({
+        iterations: [],
+        finalFindings: [],
+        costUsd: 0,
+      });
 
     try {
       const ctx = makeCtx(runtime!, "AC2");
@@ -235,16 +243,14 @@ describe("AC2: failing phase does not trigger recordGreen", () => {
       recordGreenCalls.push({ storyId, phase });
       return Promise.resolve();
     };
-    _storyOrchestratorDeps.callOp = async (_ctx, op, input) => {
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      // Implementer succeeds, anything else (gate) is handled by the op's execute.
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
-    _storyOrchestratorDeps.runFixCycle = async () => ({
-      iterations: [],
-      finalFindings: [],
-      costUsd: 0,
-    });
+    // Implementer succeeds; anything else (gate) is handled by the op's execute.
+    _storyOrchestratorDeps.callOp = makeCallOp();
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
+      makeFixCycleResult<F>({
+        iterations: [],
+        finalFindings: [],
+        costUsd: 0,
+      });
 
     try {
       const ctx = makeCtx(runtime!, "AC2-multi");
@@ -285,19 +291,16 @@ describe("AC3: resume plan skipPhases are not dispatched; later non-skipped phas
     const origBuildResumePlan = _storyOrchestratorDeps.buildResumePlan;
 
     _storyOrchestratorDeps.recordGreen = () => Promise.resolve();
-    _storyOrchestratorDeps.callOp = async (_ctx, op, input) => {
-      dispatched.push(op.name);
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
-    _storyOrchestratorDeps.runFixCycle = async () => ({
-      iterations: [],
-      finalFindings: [],
-      costUsd: 0,
-    });
+    _storyOrchestratorDeps.callOp = makeCallOp({ onDispatch: (op) => dispatched.push(op.name) });
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
+      makeFixCycleResult<F>({
+        iterations: [],
+        finalFindings: [],
+        costUsd: 0,
+      });
     // Override the planner to return a fixed skip set — saves us from mocking
     // checkpoints/gits.
-    _storyOrchestratorDeps.buildResumePlan = () =>
+    _storyOrchestratorDeps.buildResumePlan = async () =>
       ({
         skipPhases: ["test-writer", "implementer"],
         revalidateGates: ["verify-scoped", "lint-check", "typecheck-check"],
@@ -357,17 +360,14 @@ describe("AC5: cheap gates dispatch on resume", () => {
     const origBuildResumePlan = _storyOrchestratorDeps.buildResumePlan;
 
     _storyOrchestratorDeps.recordGreen = () => Promise.resolve();
-    _storyOrchestratorDeps.callOp = async (_ctx, op, input) => {
-      dispatched.push(op.name);
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
-    _storyOrchestratorDeps.runFixCycle = async () => ({
-      iterations: [],
-      finalFindings: [],
-      costUsd: 0,
-    });
-    _storyOrchestratorDeps.buildResumePlan = () =>
+    _storyOrchestratorDeps.callOp = makeCallOp({ onDispatch: (op) => dispatched.push(op.name) });
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
+      makeFixCycleResult<F>({
+        iterations: [],
+        finalFindings: [],
+        costUsd: 0,
+      });
+    _storyOrchestratorDeps.buildResumePlan = async () =>
       ({
         skipPhases: ["test-writer", "implementer", "verifier"],
         revalidateGates: ["verify-scoped", "lint-check", "typecheck-check"],
@@ -430,17 +430,14 @@ describe("AC6: failing re-run cheap gate short-circuits", () => {
       recordGreenCalls.push({ storyId, phase });
       return Promise.resolve();
     };
-    _storyOrchestratorDeps.callOp = async (_ctx, op, input) => {
-      dispatched.push(op.name);
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
-    _storyOrchestratorDeps.runFixCycle = async () => ({
-      iterations: [],
-      finalFindings: [],
-      costUsd: 0,
-    });
-    _storyOrchestratorDeps.buildResumePlan = () =>
+    _storyOrchestratorDeps.callOp = makeCallOp({ onDispatch: (op) => dispatched.push(op.name) });
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
+      makeFixCycleResult<F>({
+        iterations: [],
+        finalFindings: [],
+        costUsd: 0,
+      });
+    _storyOrchestratorDeps.buildResumePlan = async () =>
       ({
         skipPhases: ["test-writer", "implementer", "verifier"],
         revalidateGates: ["verify-scoped", "lint-check", "typecheck-check"],
@@ -500,16 +497,14 @@ describe("AC7: buildResumePlan invoked once; phaseOutputs seeded", () => {
     const origBuildResumePlan = _storyOrchestratorDeps.buildResumePlan;
 
     _storyOrchestratorDeps.recordGreen = () => Promise.resolve();
-    _storyOrchestratorDeps.callOp = async (_ctx, op, input) => {
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
-    _storyOrchestratorDeps.runFixCycle = async () => ({
-      iterations: [],
-      finalFindings: [],
-      costUsd: 0,
-    });
-    _storyOrchestratorDeps.buildResumePlan = (cp, current) => {
+    _storyOrchestratorDeps.callOp = makeCallOp();
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
+      makeFixCycleResult<F>({
+        iterations: [],
+        finalFindings: [],
+        costUsd: 0,
+      });
+    _storyOrchestratorDeps.buildResumePlan = async (cp, current) => {
       buildCalls++;
       // Mirror the real planner's behaviour for this test.
       return buildResumePlanOrig(cp, current);

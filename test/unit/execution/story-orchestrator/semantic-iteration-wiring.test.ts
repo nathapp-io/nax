@@ -12,7 +12,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { _storyOrchestratorDeps, runPhase } from "@/execution";
-import type { AnySlot } from "@/execution";
+import type { AnySlot } from "@/execution/story-orchestrator";
 import type { Finding, Iteration } from "@/findings";
 import { makeMockCallContext } from "@test/helpers";
 

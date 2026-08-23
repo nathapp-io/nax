@@ -20,7 +20,13 @@ import type { Finding } from "@/findings";
 import type { CallContext, DeterministicOperation } from "@/operations";
 import type { RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeNaxConfig, makeTestRuntime, makeTurnResult } from "@test/helpers";
+import {
+  makeFixCycleResult,
+  makeMockAgentManager,
+  makeNaxConfig,
+  makeTestRuntime,
+  makeTurnResult,
+} from "@test/helpers";
 
 // ============================================================================
 // Shared helpers
@@ -177,12 +183,13 @@ describe("AC4: validate-short-circuit + non-empty findings → rectificationExha
     };
     // Simulate cycle exiting with validate-short-circuit but still has unfixed findings.
     const unfixed: Finding[] = [GATE_FINDING];
-    _storyOrchestratorDeps.runFixCycle = async () => ({
-      iterations: [],
-      finalFindings: unfixed,
-      exitReason: "validate-short-circuit" as const,
-      costUsd: 0,
-    });
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
+      makeFixCycleResult<F>({
+        iterations: [],
+        finalFindings: unfixed,
+        exitReason: "validate-short-circuit" as const,
+        costUsd: 0,
+      });
 
     try {
       const ctx: CallContext = {
@@ -235,12 +242,13 @@ describe("AC5: rectificationExhausted: true → resume NOT entered", () => {
       return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
     };
     // validate-short-circuit + non-empty → runRectification should return rectificationExhausted: true
-    _storyOrchestratorDeps.runFixCycle = async () => ({
-      iterations: [],
-      finalFindings: [GATE_FINDING],
-      exitReason: "validate-short-circuit" as const,
-      costUsd: 0,
-    });
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
+      makeFixCycleResult<F>({
+        iterations: [],
+        finalFindings: [GATE_FINDING],
+        exitReason: "validate-short-circuit" as const,
+        costUsd: 0,
+      });
 
     try {
       const ctx: CallContext = {
@@ -377,24 +385,25 @@ describe("AC7: mechanical-only rectificationExhausted → resume IS entered for 
       return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
     };
     // rectificationExhausted=true with mechanical-only unfixedFindings
-    _storyOrchestratorDeps.runFixCycle = async () => ({
-      iterations: [
-        {
-          iterationNum: 1,
-          findingsBefore: [LINT_FINDING],
-          fixesApplied: [
-            { strategyName: "mechanical-lintfix", op: "mechanical-lintfix", targetFiles: [], summary: "" },
-          ],
-          findingsAfter: [LINT_FINDING],
-          outcome: "unchanged" as const,
-          startedAt: "",
-          finishedAt: "",
-        },
-      ],
-      finalFindings: [LINT_FINDING],
-      exitReason: "validate-short-circuit" as const,
-      costUsd: 0,
-    });
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
+      makeFixCycleResult<F>({
+        iterations: [
+          {
+            iterationNum: 1,
+            findingsBefore: [LINT_FINDING],
+            fixesApplied: [
+              { strategyName: "mechanical-lintfix", op: "mechanical-lintfix", targetFiles: [], summary: "" },
+            ],
+            findingsAfter: [LINT_FINDING],
+            outcome: "unchanged" as const,
+            startedAt: "",
+            finishedAt: "",
+          },
+        ],
+        finalFindings: [LINT_FINDING],
+        exitReason: "validate-short-circuit" as const,
+        costUsd: 0,
+      });
 
     try {
       const ctx: any = {
@@ -445,12 +454,13 @@ describe("AC7: mechanical-only rectificationExhausted → resume IS entered for 
       if (op.kind === "deterministic") return op.execute(input, _ctx);
       return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
     };
-    _storyOrchestratorDeps.runFixCycle = async () => ({
-      iterations: [],
-      finalFindings: [GATE_FINDING],
-      exitReason: "validate-short-circuit" as const,
-      costUsd: 0,
-    });
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
+      makeFixCycleResult<F>({
+        iterations: [],
+        finalFindings: [GATE_FINDING],
+        exitReason: "validate-short-circuit" as const,
+        costUsd: 0,
+      });
 
     try {
       const ctx: any = {

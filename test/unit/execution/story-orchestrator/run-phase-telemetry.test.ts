@@ -9,7 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _storyOrchestratorDeps, runPhase } from "@/execution";
-import type { AnySlot } from "@/execution";
+import type { AnySlot } from "@/execution/story-orchestrator";
 import { pipelineEventBus } from "@/pipeline";
 import type { StoryPhaseCompletedEvent } from "@/pipeline/event-bus";
 import { makeMockCallContext } from "@test/helpers";

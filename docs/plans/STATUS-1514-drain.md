@@ -766,3 +766,109 @@ should expect this one.
 
 Residue at this commit: **950 errors across 267 files.** The branch has taken 1030 → 950
 (−80) over six commits.
+
+## 17. §5.3 part 1 — parallel-batch dep stubs — done (950 → 914, −36)
+
+On `chore/1514-delegable-clusters`, one commit. `parallel-batch.test.ts` **36 → 0**.
+
+Three causes, all "a stub cast into a dep slot it cannot satisfy structurally":
+
+- **16 `createWorktreeManager` stubs** — `{ create, remove }` cast with `as typeof …`,
+  two already downgraded to a ratcheted double cast. Added `makeWorktreeManager()`,
+  mirroring the existing `makeMergeEngine`.
+- **16 `createMergeEngine` stubs** — same shape, and **the helper already existed**.
+  `makeMergeEngine` was written for `pipeline-result-handler.test.ts` in §3c-ii and
+  simply never reached this file. Worth remembering: check `test/helpers/` before
+  concluding a cluster needs a new factory.
+- **4 shape mismatches** — `mock(async () => ({ success: true, … }))` widens `success`
+  to `boolean`, so it misses the `RectificationResult` *discriminated union*. Annotating
+  the mock's return type (`async (): Promise<RectificationResult> => …`) fixes it with no
+  cast. Plus one stale import (`PipelineRunResult` moved to the pipeline barrel) and one
+  param-arity mismatch on `loadConfigForWorkdir`.
+
+**Counters went down.** `ratchetAllow` 106 → 105 and `as unknown as` held at 102 while
+16 call-site casts were deleted — the helper keeps one marked cast in place of sixteen.
+
+## 18. §5.3 part 2 — story-orchestrator dep stubs — done (914 → 886, −28)
+
+On `chore/1514-delegable-clusters`, one commit. Four causes, two fixed, **two escalated**.
+
+### Fixed
+
+- **13 `runFixCycle` stubs (−13).** Two problems at once: `exitReason` is required and
+  the fixtures predate it, *and* the dep slot is **generic**
+  (`<F extends Finding>(…) => Promise<FixCycleResult<F>>`), so even a complete
+  `FixCycleResult<Finding>` is not assignable — `F` could be narrower. This is the shape
+  the handoff called "`Mock<() => X>` assigned to a multi-parameter slot"; the parameters
+  were never the problem, the **type parameter** was. Added `makeFixCycleResult()` +
+  `makeIteration()`, and stub with a generic arrow so `F` flows through:
+  `async <F extends Finding>() => makeFixCycleResult<F>()`.
+- **7 `callOp` stubs (−7).** The stub returns a fixed envelope for non-deterministic ops,
+  which is not `O`, so the return type widens to a union. Added `makeCallOp({ fallback,
+  onDispatch })`; deterministic ops still dispatch to their real `execute`.
+- **4 sync `buildResumePlan` stubs + 1 `SessionRole` widening (−5).** The dep slot is
+  `async`; the stubs were sync. And a local `makeRunOp(name, sessionRole: string, …)`
+  widened the role — typing the parameter `SessionRole` fixes it at the source.
+- **3 `AnySlot` imports (−3).** `AnySlot` exists and is exported — from
+  `@/execution/story-orchestrator`, not the `@/execution` barrel the tests reached for.
+
+### What the drain unmasked
+
+Rewriting the `runFixCycle` stubs turned **1 error into 4** in `story-orchestrator.test.ts`
+before the file came out ahead. The old fixture had `findingsBefore: 1` and `startedAt: 0`
+where `Iteration` wants `F[]` and an ISO string — nonsense that survived because the
+enclosing object was already failing to typecheck *as a whole*, so TypeScript never
+reported the fields individually. The test only asserts `iterationCount === 1`, so nothing
+ever caught it at runtime either. That fixture is now `makeIteration()`.
+
+**This is the general hazard of factory conversion:** replacing a wholesale-rejected
+literal with a typed `Partial<>` override moves errors from one-per-object to
+one-per-field. A file can legitimately get worse for a step before it gets better.
+
+### Escalated — both need `src/` changes, both out of scope by G5
+
+1. **Builder slot overloads are narrower than the runtime they front — 50 errors.**
+   `addLintCheck`/`addVerifier`/`addFullSuiteGate`/… declare
+   `<I, O, C>(slot: OrchestratorSlot<I, O, C>)`, and `OrchestratorSlot.op` is a
+   `RunOperation`. But the implementation calls `setPhase(…: AnySlot)`, and `AnySlot`
+   is `RunOperation | DeterministicOperation`. So passing a deterministic op — which the
+   orchestrator runs perfectly well — fails the public overload and falls through to the
+   input-only one, whose error ("`op` does not exist in type `LintCheckInput`") is what
+   gets reported. Fix is to widen the slot overloads to `AnySlot`. **50 errors across 10
+   files, one root cause, one-line-per-method fix in `src/execution/story-orchestrator/builder.ts`.**
+   This is the single largest remaining item in the whole drain.
+2. **Zod stage-schema erasure — 10 errors.** Unchanged from §16.
+
+### A counter note worth recording
+
+Three new helpers each need one genuine cast (a class, and two caller-chosen type
+parameters), which would have pushed `ratchetAllow` 106 → 107 — a G4 violation. Rather
+than raise the baseline, two things closed the gap honestly:
+
+- `makeIteration` was rewritten to need **no cast at all**: every default is an empty
+  array, and `never[]` is assignable to `F[]` whatever `F` is.
+- A **stale marker** was removed at `cycle.test.ts:799` — `callOp: makeCallOpMock(), //
+  test-ratchet-allow: as-unknown-as` guards a line with no cast on it, copy-pasted from
+  the line above. It was inflating the counter while protecting nothing.
+
+`story-orchestrator.test.ts` also breached the file-size ratchet (2006 → 2020) because the
+factory form is taller than the literal. Dropping overrides that merely restate the
+helper's defaults, plus `makeIteration()`, brought it back to exactly 2006.
+
+Verify: G1 flat at 1 (same pre-existing `TS1355`). 950 → 886 across both commits, files
+267 → 263; no file regressed (per-file counts diffed against the 950 baseline). All six
+counters flat (`asAny=1388, tsSuppress=40, ratchetAllow=106, absentValue=17, anyType=1880,
+looseCast=1994`); `as unknown as` flat at 102. Full suite green across all three phases;
+25/25 gates green.
+
+## Next
+
+- **Builder slot overloads (50 errors).** The largest single win left, and it is a `src/`
+  fix — see §18. Nothing in `test/` can address it without casting.
+- **Zod stage-schema erasure (10 errors).** `src/config/schemas-debate.ts`, see §16.
+- **Config suites (~146) and the story-orchestrator remainder.** Not yet enumerated by
+  cause; every cluster so far has decomposed into 3–5 distinct causes on inspection, and
+  none of the handoff's original size estimates survived contact.
+
+Residue at this commit: **886 errors across 263 files.** The branch has taken 1030 → 886
+(−144) over eight commits.
