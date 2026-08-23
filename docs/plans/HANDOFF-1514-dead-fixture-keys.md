@@ -10,7 +10,7 @@ Self-contained. You do not need to read the proposal, the issue, or any commit.
 > #1514 plan already used "phase 3a"/"phase 3c" for unrelated work, so the numbers are
 > ambiguous in this repo's history.
 
-**49 errors, 12 keys, 21 files.** Every verdict below was decided against `src/` before this
+**38 errors, 10 keys, 19 files.** Every verdict below was decided against `src/` before this
 document was written — the evidence is given so you can confirm, not re-derive. **There is no
 judgement work here.** If a site does not match its described shape, escalate.
 
@@ -44,7 +44,7 @@ When a deletion reveals a missing required field:
 
 ---
 
-## 2. Category A — delete these keys (33 errors)
+## 2. Category A — delete these keys (24 errors)
 
 Each was verified to have **zero mentions anywhere in `src/`**, by two independent greps: a
 word-boundary regex *and* a plain fixed-string search. Both are needed — a word-boundary
@@ -57,7 +57,6 @@ The fixture is setting a field nothing reads and no type declares. Delete the wh
 
 | Key | On type | Errors | Files |
 |:--|:--|--:|:--|
-| `defaultTier` | `RoutingConfig` | 9 | `test/integration/cli/cli-plugins.test.ts` |
 | `skipGeneratedVerificationTests` | `TddConfig` | 5 | `cli-precheck-checks`, `cli-precheck-integration`, `precheck-canonical-lint-orchestrator`, `precheck-checks-tier1-blockers`, `precheck-checks-tier2-warnings` (1 each) |
 | `minTestCoverage` | `QualityConfig` | 5 | same five files as above |
 | `dangerouslySkipPermissions` | `ExecutionConfig`, `DeepPartial<ExecutionConfig>` | 3 | `prompt-acceptance` (2), `completion-review-gate` (1) |
@@ -80,7 +79,7 @@ Two of these deserve a sentence each, because they look riskier than they are:
   including `src/config/`. Delete the fixture key. **Do not** update `CLAUDE.md` — that is a
   separate finding, and it is noted in §6 for someone to file.
 
-## 3. Category B — rename these keys (16 errors)
+## 3. Category B — rename these keys (14 errors)
 
 TypeScript names the target itself (`TS2561: … Did you mean to write 'X'?`), and each target
 was confirmed to exist on the type. Rename the key; **keep the value unchanged**.
@@ -89,11 +88,25 @@ was confirmed to exist on the type. Rename the key; **keep the value unchanged**
 |:--|:--|:--|--:|:--|
 | `ruleId` | `rule` | `Finding` | 10 | `semantic-verdict` (3), `rectifier-builder-review-labels` (3), `prompts/builders/rectifier-builder` (2), `prompts/rectifier-builder` (2) |
 | `cacheCreationTokens` | `cacheCreationInputTokens` | `TokenUsage` | 4 | `test/unit/agents/fail-stale-complete.test.ts` |
-| `naxConfig` | `config` | `RunAdversarialReviewOptions` | 2 | `test/unit/review/adversarial-metadata-audit.test.ts` |
 
 `Finding.rule` is declared `rule?: string` (`src/findings/types.ts:111`) — optional, so
 deleting `ruleId` would also typecheck. **Rename, do not delete**: these tests assert on the
 value, and dropping it would silently weaken them.
+
+**`fail-stale-complete.test.ts` has TWO wrong keys on the same line**, and TypeScript reports
+only the first:
+
+```ts
+tokenUsage: { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
+//                                             ^ reported                ^ NOT reported yet
+```
+
+`cacheReadTokens` is equally dead (0 occurrences in `src/`) and its target is
+`cacheReadInputTokens`. **Rename both in the same edit**, or the count will not move: fixing
+only the reported key just promotes the second one into its place. Both are optional fields on
+`TokenUsage` — note there are two identical declarations of that interface
+(`src/metrics/types.ts:12` and `src/agents/cost/types.ts:16`), so the target name is the same
+either way.
 
 ---
 
@@ -179,7 +192,7 @@ Commit as `test(<area>): drop the dead <key> fixture key (#1514 dead-fixture-key
 ## 8. Definition of done
 
 `bun run check:all` green, `bun run test` green, `bun x tsc --noEmit` = 0, per-file gate
-`worse: 0`, typecheck baseline lower. Expected landing: **1633 → ~1584**, though see §1 —
+`worse: 0`, typecheck baseline lower. Expected landing: **1633 → ~1595**, though see §1 —
 revealed errors may offset some of the drop, and that is acceptable as long as the per-file
 gate holds.
 
@@ -191,12 +204,33 @@ revealed-required-field findings and the `CLAUDE.md` discrepancy from §2.
 
 ## 9. Not in scope
 
-The other ~73 errors of this class, where the key **does** exist in `src/` but not on the type
+The other ~84 errors of this class, where the key **does** exist in `src/` but not on the type
 the fixture claims (`timeout` 318 mentions, `durationMs` 266, `run` 1845, `defaultAgent` 70,
 …). Those need someone to read what each test meant to say, one site at a time. They are a
 separate pass — do not attempt them.
 
 **Specifically excluded, and worth knowing why:**
+
+`defaultTier` in `test/integration/cli/cli-plugins.test.ts` (9 errors) was in an earlier draft
+of §2. **It is not a mechanical deletion**, and this was established by trying it: deleting
+`defaultTier` reveals `defaultTestStrategy` (also dead) in the same `routing` literal; deleting
+both leaves `routing: {}`, which then fails as an incomplete `RoutingConfig`. The file's error
+count stayed at 35 through both steps. That fixture is a hand-built `NaxConfig` whose nested
+literals are stale throughout — `execution.timeout`, `autoMode.defaultAgent`,
+`routing.defaultTestStrategy` — and it needs replacing with `makeNaxConfig({ … })` as a unit,
+the same ruling phase 1 reached for legacy-key fixtures. A migration, not a key deletion.
+
+
+`naxConfig` in `test/unit/review/adversarial-metadata-audit.test.ts` (2 errors) was in an
+earlier draft of §3 as a rename to `config`. **A rename alone would be wrong.** The option is
+`config?: ReviewConfig` (`src/review/adversarial.ts:82`), and `ReviewConfig.audit` sits at the
+top level (`src/review/types.ts:299`) — but the fixture's value is `{ review: { audit: … } }`,
+NaxConfig-shaped and one level too deep. Renaming the key would start passing a value the code
+then reads as `config.audit === undefined`. The test asserts the audit *did* fire
+(`expect(auditCalls).toHaveLength(1)`) and currently passes while the property is ignored
+entirely, so the fix needs someone to determine what actually enables the audit before
+reshaping. Judgement, not mechanics.
+
 `"on-story-complete"` in `test/unit/pipeline/subscribers/hooks.test.ts:47` was in an earlier
 draft of §2 as a deletion. **That was wrong.** It *is* a valid `HookEvent`
 (`src/hooks/types.ts:11`); the fixture just nests it wrongly — `HooksConfig` is
