@@ -101,7 +101,7 @@ function makeCtx(written: { value: string | null }): PlanModeContext {
     interactionChain: null,
     interactionBridge: {} as never,
     deps,
-  } as unknown as PlanModeContext;
+  };
 }
 
 function expectModifiedFilesSurvived(written: { value: string | null }): void {
