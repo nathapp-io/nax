@@ -356,7 +356,7 @@ describe("complete()", () => {
     _acpAdapterDeps.createClient = mock(
       (_cmd: string, _cwd: string, _timeout?: number, onPidSpawned?: (pid: number) => void) => {
         capturedOnPidSpawned = onPidSpawned;
-        return makeClient(session) as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
+        return makeClient(session);
       },
     );
 
@@ -506,7 +506,7 @@ describe("complete() — modelDef primitive consumption", () => {
     let capturedCmd = "";
     _acpAdapterDeps.createClient = mock((cmd: string) => {
       capturedCmd = cmd;
-      return makePassClient() as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
+      return makePassClient();
     });
 
     await new AcpAgentAdapter("claude").complete(
@@ -530,7 +530,7 @@ describe("complete() — modelDef primitive consumption", () => {
           return origCreate(opts);
         },
       );
-      return client as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
+      return client;
     });
 
     await new AcpAgentAdapter("claude").complete(
@@ -547,7 +547,7 @@ describe("complete() — modelDef primitive consumption", () => {
     _acpAdapterDeps.createClient = mock(
       (_cmd: string, _cwd: string, _timeout?: number, _onPid?: unknown, promptRetries?: number) => {
         capturedRetries = promptRetries;
-        return makePassClient() as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
+        return makePassClient();
       },
     );
 
@@ -559,7 +559,7 @@ describe("complete() — modelDef primitive consumption", () => {
     let capturedCmd = "";
     _acpAdapterDeps.createClient = mock((cmd: string) => {
       capturedCmd = cmd;
-      return makePassClient() as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
+      return makePassClient();
     });
 
     await new AcpAgentAdapter("claude").complete(
