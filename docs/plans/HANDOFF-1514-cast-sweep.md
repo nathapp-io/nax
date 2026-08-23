@@ -97,19 +97,25 @@ bun scripts/report-cast-buckets.ts
 | §3a Shape A — factory exists | **169** | **22** | -147 | done except design calls |
 | §3b seam sweeps — helper exists, example committed | **157** | **5** | -152 | done except survivors |
 | §3c-i typed dep stubs | **23** | **4** | -19 | done except misfiled |
-| §3c-ii dep members returning a class | 31 | 31 | 0 | escalate |
+| §3c-ii dep members returning a class | 31 | 16 | -15 | **§9 Task B** — seam built for the largest |
 | §3d holding bucket | 61 | 30 | -31 | bakeoff builders **done**; 30 load-bearing |
 | §3e private-member reach-ins | 49 | 49 | 0 | escalate |
 | tail — everything under 4 per cluster | **191** | **63** | -128 | **drained of tractable work** |
-| **Total** | **681** | **204** | **-477** | |
+| **Total** | **681** | **191** | **-490** | |
 
-**Last verified:** ratchet = 204, typecheck errors = 1961 (was 1969; **−8**), per-file
-gate `worse: 0`, tree clean at `5be8fb7a3`. 27 commits on the branch.
+**Last verified:** ratchet = 191, typecheck errors = 1961 (was 1969; **−8**), per-file
+gate `worse: 0`, tree clean at `42117eb0f`. 29 commits on the branch.
 
-**THE MECHANICAL WORK IS FINISHED.** Sessions 1–2 drained 3a/3b/3c-i; session 3 drained
-the tail; session 4 drained the §3d bakeoff builders — the last cluster needing no design
-call. All 204 remaining casts are either load-bearing (§3d, 30) or need a design call
-(§3e 49, §3c-ii 31, §3a remnant 22, tail remnant 63, §3b/§3c-i survivors 9).
+**→ If you are a fresh session picking this up, go straight to §9.** It contains the
+next two tasks, fully specified, in the order they should be done.
+
+**The unassisted mechanical work is finished.** Sessions 1–2 drained 3a/3b/3c-i;
+session 3 drained the tail; session 4 drained the §3d bakeoff builders; session 5 built
+the first seam (`makeDebateRunner`) and swapped its 13 sites. Remaining: §3e 49,
+tail remnant 63, §3d 30, §3a remnant 22, §3c-ii 16, §3b/§3c-i survivors 9.
+
+**§9 has two tasks that ARE delegable** — a design decision has already been made for
+each, and what is left is execution against a worked example.
 
 **Do not dispatch another sweep agent against this doc.** There is no factory-swap
 cluster left. The next step is one of the design decisions in §8, not more repetition.
@@ -356,6 +362,39 @@ numbers for casts and typecheck errors.
 ---
 
 ## 7. Progress log
+
+### Phase 1a/1b — session 5 (2026-08-23): first seam built, `DeepPartial` bug found
+
+**204 → 191 (−13)**, typecheck flat at 1961, per-file gate `worse: 0`, tree clean at
+`42117eb0f`.
+
+- `8a2e0c2f4` — `makeDebateRunner` seam + one worked example. **Net-zero on the count by
+  design**: the helper adds the one contained cast while the converted site removes one.
+- `42117eb0f` — the remaining 13 sites (12 in `semantic-debate.test.ts`, 1 in
+  `fidelity-survives-recovery.test.ts`).
+
+**The seam design that made it work.** The dep slot is
+`(opts: DebateRunnerOptions) => DebateRunner`, and a zero-arg `mock()` is assignable to it
+under function contravariance — so `mock(() => makeDebateRunner({ run }))` needs no cast
+*and* keeps the outer bun mock assertable. A helper that returned the runner directly, or
+one whose `const` was annotated with the dep-slot type, would have broken the existing
+`toHaveBeenCalled()` assertions (§Patterns item 12).
+
+**Two corrections to this doc, both found by verification rather than assumption:**
+- `fidelity-survives-recovery.test.ts:104` was `createDebateRunner`-downstream as recorded,
+  but needed **no seam call** — the inner fields were already typed and the outer cast was
+  noise (§Patterns item 12 again).
+- `:164` is **not** a debate-runner cast at all. It is a `DeepPartial` problem → §9 Task A.
+
+**`makeNaxConfig`'s `DeepPartial` is buggy for optional nested config.** Root-caused,
+fixed, measured, and then **reverted** — the one-line fix takes the total 1961 → 1958 but
+leaves 8 files worse than baseline, which §6 forbids. The fix and the 8 fixture repairs
+must land together. Fully specified as **§9 Task A**, including the exact patch and the
+file list. This also upgrades §Patterns item 2 from a workaround to a known root cause.
+
+**Also corrected:** `AcpClient` is an `interface`, not a class — this doc had it in the
+§3c-ii "class-shaped" table. Its 6 casts may need no seam at all. See §9 Task B.
+
 
 ### Phase 1a — session 4 (2026-08-23): §3d bakeoff builders, 3 commits
 
@@ -666,7 +705,12 @@ The sweep is over. Everything below needs a judgement call, so it is organised b
 **decision** that unblocks it, not by cast shape. Each row is independent — they can be
 taken in any order, or declined.
 
-### Decision 1 — build five `makeX` seams (§3c-ii, ~36 casts)
+### Decision 1 — seams (§3c-ii) — **DECIDED, now §9 Task B**
+
+`makeDebateRunner` is built and its 13 sites are swapped (session 5). The remaining 16
+casts are specified as **§9 Task B**, including the correction that `AcpClient` is an
+interface rather than a class. The table below is the original survey, kept for context;
+**§9 Task B has the re-derived counts — use those.**
 
 A class with private fields cannot be satisfied by an object literal, so the stub has to
 live behind a seam that contains the cast once, the same shape as the existing
@@ -674,7 +718,7 @@ live behind a seam that contains the cast once, the same shape as the existing
 
 | Seam to build | Class | Casts | Sites |
 |:--|:--|--:|:--|
-| `makeDebateRunner` | `DebateRunner` (`src/debate/runner.ts:41`) | 13 + 2 | `semantic-debate.test.ts`; **plus `fidelity-survives-recovery.test.ts:104,164`**, whose `PlanModeContext` casts are `createDebateRunner` downstream — this doc previously counted them separately |
+| ~~`makeDebateRunner`~~ | `DebateRunner` (`src/debate/runner.ts:41`) | ~~15~~ **DONE** | Built `8a2e0c2f4`, swapped `42117eb0f`. 13 sites went; `fidelity-survives-recovery.test.ts:104` needed no seam call (cast was noise); `:164` escalated — it is a `DeepPartial` problem, see §9 Task A |
 | `makeMergeEngine` | `MergeEngine` (`src/worktree/merge.ts:35`) | 7 | `pipeline-result-handler.test.ts` |
 | `makeContextOrchestrator` | `ContextOrchestrator` (`src/context/engine/orchestrator.ts:166`) | 6 | `_contextStageDeps` / `stageAssemblerDeps` |
 | `makeAcpClient` | ACP client (class-shaped) | 6 | `_acpAdapterDeps.createClient` |
@@ -749,17 +793,163 @@ floor**, and this issue should not be closed as done.
 Ranked by effort-to-value for whoever picks it up next. **Every remaining item needs a
 design call** — the no-judgement work ran out in session 4.
 
-1. **Seams (~36)** — Decision 1. Six small seams, independently landable, mechanical once
-   each is designed. Best next move. Start with `makeDebateRunner` (15 casts, the largest).
-2. **Legacy-key fixtures (~10)** — Decision 3. ~3 hours, plus a schema question for
+1. **§9 Task A — the `DeepPartial` fix** — infrastructure correctness; do it first, it
+   is what the other fixtures depend on. Does not move the cast count.
+2. **§9 Task B — remaining seams (16)** — `makeDebateRunner` proved the pattern.
+3. **Legacy-key fixtures (~10)** — Decision 3. ~3 hours, plus a schema question for
    `deferred-review-integration.test.ts` that is a decision in its own right.
-3. **§3e ruling (49)** — Decision 2. Largest single bucket and the most contentious;
+4. **§3e ruling (49)** — Decision 2. Largest single bucket and the most contentious;
    needs a member-visibility policy before a single edit is safe.
-4. **Tail remnant (63)** — Decision 4. Mostly fixtures that are wrong on purpose; expect
+5. **Tail remnant (63)** — Decision 4. Mostly fixtures that are wrong on purpose; expect
    several to be reclassified as exceptions rather than fixed.
-5. **§3d (30)** — Decision 5. Load-bearing; leave unless a better negative-test idiom appears.
+6. **§3d (30)** — Decision 5. Load-bearing; leave unless a better negative-test idiom appears.
 
-Taking 1–2 would land roughly 46 more casts and put the branch near 158. Before starting
+Taking §9 Tasks A and B lands ~13 more casts (to roughly 178) plus a real correctness
+fix. Before starting
 any of them, read §Patterns learned item 12 — session 4 found that a cluster this doc had
 specified a builder for actually needed nothing but the cast deleted. **Try deleting the
 cast before designing anything.**
+
+---
+
+## 9. The next two tasks — do A before B
+
+Both are delegable. The design decision is made in each case; what is left is execution
+against a worked example. **Do Task A first** — it fixes shared test infrastructure that
+Task B and every future fixture depend on.
+
+Everything in §1 (the five-step verify loop), §4 (forbidden), §5 (escalate) and
+§Patterns learned applies to both. Read those first.
+
+**Starting state for both:** ratchet = 191, typecheck = 1961, per-file gate `worse: 0`,
+tree clean at `42117eb0f`.
+
+---
+
+### Task A — fix `DeepPartial`, then repair the 8 fixtures it unmasks
+
+**Not a cast task.** The cast count will not move. This is a correctness fix to
+`test/helpers/mock-nax-config.ts` plus the fallout it exposes.
+
+**The bug.** `DeepPartial` is written:
+
+```ts
+type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
+```
+
+For an **optional** nested config — `debate?: DebateConfig` on `NaxConfig` — `T[K]` is
+`DebateConfig | undefined`, and a union with `undefined` does **not** extend `object`. So
+it falls through to `: T[K]` and demands the *full* `DebateConfig` for a one-field
+override. This is the root cause of §Patterns learned item 2, which until now was
+recorded only as a workaround ("don't spread").
+
+**The fix — already written and measured, apply it verbatim:**
+
+```ts
+/**
+ * `NonNullable` before the `extends object` test: for an OPTIONAL nested config
+ * (`debate?: DebateConfig`), `T[K]` is `DebateConfig | undefined`, and a union
+ * with `undefined` does not extend `object` — so the old form fell through to
+ * `: T[K]` and demanded the FULL `DebateConfig` for a one-field override.
+ * See #1514 §Patterns learned item 2.
+ */
+type DeepPartial<T> = {
+  [K in keyof T]?: NonNullable<T[K]> extends object ? DeepPartial<NonNullable<T[K]>> : T[K];
+};
+```
+
+**Measured effect (session 5, verified then reverted — the tree does NOT contain it):**
+total typecheck errors **1961 → 1958**. But it is *not* a clean win, and this is the
+whole point of the task:
+
+| | Files | Errors |
+|:--|--:|--:|
+| Improved | 9 | −11 |
+| **Regressed** | **8** | **+8** |
+
+The 8 regressions are **real fixture bugs the loose type was masking** — the fixture
+passed a wrong shape and `DeepPartial` was too permissive to notice. They are not caused
+by the fix; they are revealed by it.
+
+**The 8 files to repair** (baseline → after the fix):
+
+| File | Was | Becomes |
+|:--|--:|--:|
+| `test/helpers/e2e/orchestrator-harness.ts` | 0 | 1 |
+| `test/integration/interaction/interaction-chain-pipeline.test.ts` | 20 | 21 |
+| `test/unit/commands/curator-gc.test.ts` | 2 | 3 |
+| `test/unit/commands/curator.test.ts` | 13 | 14 |
+| `test/unit/context/engine/orchestrator-factory.test.ts` | 0 | 1 |
+| `test/unit/execution/lifecycle-completion.test.ts` | 6 | 7 |
+| `test/unit/precheck/checks-warnings.test.ts` | 2 | 3 |
+| `test/unit/prompts/loader.test.ts` | 1 | 2 |
+
+The 9 that improve on their own, no action needed: `plan-replan.test.ts`,
+`runner-hybrid-{coordinator,cross-debater,rebuttal}.test.ts`, `runner-plan-signal.test.ts`,
+`runner-stateful-coordinator.test.ts`, `selectors/verifier-pick-signal.test.ts`,
+`story-orchestrator/phase-details.test.ts`, `plan/strategies.test.ts`.
+
+**Definition of done for Task A:** the fix applied, all 8 files repaired, per-file gate
+back to **`worse: 0`**, and the total at **1958 or lower**. §6 forbids landing with any
+file worse than baseline, so **the fix and the 8 repairs must land together** — do not
+commit the type change on its own.
+
+**Method for each of the 8:** apply the fix, run the §1 step-2 per-file script, and read
+the actual error. It will name a fixture field. Per §2 and §Patterns item 5, check whether
+that field exists at all (`grep` the type in `src/`) before trying to make it fit —
+usually the answer is to delete it. **Escalate rather than widen `DeepPartial` back** —
+if a file cannot be repaired, that is a finding, not a reason to loosen the type.
+
+**Watch for §Patterns item 8:** a file showing one error may be hiding others behind it.
+Re-run the per-file script after each repair, not just at the end.
+
+---
+
+### Task B — the remaining seams (16 casts, and one may need no seam at all)
+
+**The worked example is committed.** `makeDebateRunner` in `test/helpers/debate-runner.ts`
+(seam, commit `8a2e0c2f4`) and its 13 site swaps (commit `42117eb0f`). Read both before
+starting. The pattern:
+
+1. The helper intersects the class type with mock-typed methods and keeps **one** cast
+   inside itself — `return runner as unknown as MockDebateRunner`.
+2. Call sites then need **no** cast, because a stub factory is assignable to the dep slot
+   under function contravariance:
+   ```ts
+   _semanticDeps.createDebateRunner = mock(() => makeDebateRunner({ run: runMock }));
+   ```
+3. The outer `mock()` stays a bun mock, so existing
+   `expect(dep).toHaveBeenCalled()` assertions keep working. **This is the part a naive
+   helper breaks** — see §Patterns item 12.
+
+Net effect per seam: `+1` cast in the helper, `−N` at the sites. A seam covering fewer
+than ~3 sites is not worth building; write the stub out in that file instead.
+
+**Counts re-derived by grep at `42117eb0f`** (§Patterns item 10 — do it again yourself,
+these drift):
+
+| Target | Casts | Files | Kind — **verify before building** |
+|:--|--:|:--|:--|
+| `_acpAdapterDeps.createClient` | 6 | `agents/acp/adapter.test.ts` | **`AcpClient` is an `interface`** (`src/agents/acp/adapter-session-types.ts:92`), NOT a class. This doc previously recorded it as "class-shaped" — wrong. **Try §Patterns item 12 first: just delete the cast.** These 6 may need no seam at all |
+| `_resultHandlerDeps.mergeEngine` | 7 | `execution/pipeline-result-handler.test.ts` | `MergeEngine` IS a class (`src/worktree/merge.ts:35`), with a `private worktreeManager` parameter property. Needs `makeMergeEngine`. Public surface is `merge()` and `mergeAll()` |
+| `createOrchestrator` | 7 | 5 files under `pipeline/stages/` (`context-digest` 2, `context-rules-fallback` 2, `context-scope-files` 1, `context-us004` 1, `prompt-scope-files` 1) | `ContextOrchestrator` IS a class (`src/context/engine/orchestrator.ts:166`), `constructor(private readonly providers)`. Needs `makeContextOrchestrator`. Spans 5 files — best seam-per-cast ratio after mergeEngine |
+| `InteractionChain` | 3 | `interaction/triggers-narrowed.test.ts` 2, `execution/lifecycle/paused-story-prompts.test.ts` 1 | IS a class (`src/interaction/chain.ts:27`), `private plugins`, `private config`. Borderline at 3 sites — build the seam only if the stub is non-trivial |
+| `worktreeManager` | 2 | `execution/iteration-runner-worktree.test.ts` | IS a class (`src/worktree/manager.ts:12`). The test **spreads a real instance then overrides 2 methods**. Below the seam threshold — try typing the override in place first |
+| `createV1Provider` | 1 | `context/engine/providers/feature-context-fragments.test.ts` | Returns `new FeatureContextProvider()` (`src/context/providers/feature-context.ts:46`), aliased `V1`. One site — write it out, do not build a seam |
+
+**Order:** `mergeEngine` (7, one file) → `createOrchestrator` (7, five files) → `createClient`
+(6, and test the delete-the-cast hypothesis first) → the three small ones last, only if a
+seam is genuinely warranted.
+
+**Expected landing:** 191 → roughly **178** if every seam is built (each adds one contained
+cast back), or lower if the `createClient` six need no seam.
+
+**Commit shape:** seam and worked example in one commit
+(`test(helpers): add makeX seam + worked example (#1514 phase 1b)`), site swaps in the
+next (`test(<area>): swap X casts onto makeX seam (#1514 phase 1b)`). That is how
+`8a2e0c2f4` / `42117eb0f` were split, and it keeps a broken seam from being buried in a
+30-file diff.
+
+**Escalate, do not improvise:** if a seam cannot express a site (a test needing real class
+behaviour rather than a stub), leave that site cast and report it. Do not widen the seam
+to cover one awkward caller.
