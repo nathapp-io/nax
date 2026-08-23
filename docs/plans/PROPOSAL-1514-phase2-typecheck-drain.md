@@ -20,7 +20,7 @@ typecheck **1745**.
 | 0 — escape-hatch guard | — | ✅ merged | this doc §4 D0 |
 | 1 — `DeterministicOperation<D>` | −95 | ✅ merged | `HANDOFF-1514-phase2-delegable.md` |
 | 2 — missing type imports | −94 | ✅ merged | same |
-| **3a — config slices** | **−54** | seam + worked example landed (`0dd7ba9ac`); 54 sites **ready to delegate** | `HANDOFF-1514-phase3-config-slices.md` |
+| **3a — config slices** | **−54** | seam + worked example landed (`0dd7ba9ac`); 54 sites **ready to delegate** | `HANDOFF-1514-phase3a-config-slices.md` |
 | **3b — `callOp` dep slot** | **−47** | prototyped both tiers; **ready to delegate** | `HANDOFF-1514-phase3b-callop.md`, `PLAN-1514-phase3b-callop-seam.md` |
 | 4 — dead fixture keys | ~−115 | not started; needs judgement per deletion | — |
 | 5 — implicit-any params | ~−103 | not started; `anyType` guards the cheap non-fix | — |
