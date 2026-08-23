@@ -337,15 +337,16 @@ describe("contextStage — v2.stages.context overrides", () => {
   test("rethrows CONTEXT_UNKNOWN_PROVIDER_IDS instead of degrading to no v2 context", async () => {
     _contextStageDeps.readDigest = async () => "";
     _contextStageDeps.writeDigest = async () => {};
-    _contextStageDeps.createOrchestrator = () =>
-      ({
+    _contextStageDeps.createOrchestrator = mock(() =>
+      makeContextOrchestrator({
         async assemble() {
           throw new NaxError("Unknown context provider ID(s): rgu", "CONTEXT_UNKNOWN_PROVIDER_IDS", {
             stage: "context",
           });
         },
         rebuildForAgent: () => makeBundle(),
-      }) as unknown as ReturnType<typeof _contextStageDeps.createOrchestrator>;
+      }),
+    );
 
     let threw: unknown;
     try {

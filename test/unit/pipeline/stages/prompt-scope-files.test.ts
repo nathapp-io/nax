@@ -11,14 +11,14 @@
  * the captured `scopeFiles`.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ContextBundle, ContextRequest } from "@/context/engine";
 import { _stageAssemblerDeps } from "@/context/engine";
 import { _scopeFilesDeps, resolveScopeFiles } from "@/pipeline";
 import { promptStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
-import { makeContextBundle, makeNaxConfig, makeStory, makeTestContext } from "@test/helpers";
+import { makeContextBundle, makeContextOrchestrator, makeNaxConfig, makeStory, makeTestContext } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals
@@ -82,8 +82,8 @@ function makeCtx(story: UserStory): PipelineContext {
  */
 function captureOrchestratorRequest(): { captured: ContextRequest | null } {
   const ref: { captured: ContextRequest | null } = { captured: null };
-  _stageAssemblerDeps.createOrchestrator = () =>
-    ({
+  _stageAssemblerDeps.createOrchestrator = mock(() =>
+    makeContextOrchestrator({
       async assemble(req: ContextRequest) {
         ref.captured = req;
         return makeContextBundle({
@@ -103,7 +103,8 @@ function captureOrchestratorRequest(): { captured: ContextRequest | null } {
         });
       },
       rebuildForAgent: () => makeContextBundle(),
-    }) as unknown as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
+    }),
+  );
   _stageAssemblerDeps.readdir = async () => {
     throw new Error("ENOENT");
   };
