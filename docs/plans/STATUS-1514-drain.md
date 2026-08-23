@@ -25,7 +25,8 @@ typecheck, per-file gate `worse: 0`, `check:all`, full suite, baseline update).
 | `config-slices` (`makeConfigSlice`) | ✅ merged | #1684 |
 | `callop-seam` (monomorphic dep bags) | ✅ merged | #1684 |
 | **`dead-fixture-keys`** | ✅ merged | #1686 |
-| **implicit-any params (~103)** | **in progress** — mechanical slice done (91 errors, §2b); the rest is design work (§7 of the handoff) | — |
+| implicit-any params (`TS7006` → 0) | ✅ merged | #1687 |
+| **dead-config-keys (ADR-012 legacy)** | ✅ **done — 40 errors (1260 → 1220)** | — |
 | `makeObservation` / remaining seams (~90) | not started | — |
 
 **Branches:**
@@ -169,7 +170,8 @@ its shared helpers as off-limits, not merely say the *file* is out of scope. Ext
 2. **Open a PR for `chore/1514-implicit-any-params`** (14 commits, never pushed). Call out
    the `test/helpers/spawn.ts` contract change (§4a) in the PR body — the subject line of
    `b5fb516` does not mention it and a reviewer would miss it.
-3. **Then continue on `chore/1514-implicit-any-params`.** The mechanical slice is done (91 of 1351
+3. ~~Dead config keys.~~ **Done** — see §8.
+4. **Then continue.** The mechanical slice is done (91 of 1351
    errors). The residue at `b5fb516` is **1260 errors**, and per `HANDOFF-1514-mechanical-fixture-fields.md`
    §7 the overwhelming majority is design work, not mechanical: `as unknown as`-shaped
    (190, concentrated in 6 files), `ConfigSelector<Pick<…>>` variance (32), the
@@ -177,7 +179,7 @@ its shared helpers as off-limits, not merely say the *file* is out of scope. Ext
    (`defaultAgent`/`defaultTier`/`timeout` — the dead-fixture-keys method applies, see
    `HANDOFF-1514-dead-fixture-keys.md`). Plan each cluster the same way: measure, prototype,
    then decide what is genuinely delegable.
-4. Then `makeObservation` / remaining seams (~90) — same planning discipline.
+5. Then `makeObservation` / remaining seams (~90) — same planning discipline.
 
 **Re-cluster before starting any of them — the handoff's numbers have already moved.**
 Measured on branch head `12651f098`: `TS2352` is **149**, not the 190 the handoff recorded,
@@ -228,3 +230,37 @@ Ranked pick: dead config keys (~30, proven method) → `ConfigSelector` variance
 Commit tags for un-started work are **descriptive** (`#1514 dead-fixture-keys`,
 `#1514 mechanical-fixtures`), never `phase N` — the original #1514 plan already used
 "phase 3a"/"phase 3c" for unrelated work.
+
+## 8. dead-config-keys — done (1260 → 1220, −40)
+
+On `chore/1514-dead-config-keys`, two commits, both through the full six-step loop.
+
+`autoMode.defaultAgent`, `autoMode.fallbackOrder`, `routing.defaultTier` and
+`execution.timeout` are absent from the runtime types. The first two are not merely dead:
+`src/config/config-guards.ts` **rejects** them as pre-migration ADR-012 Phase 6 keys, so
+every fixture carrying them described a config the loader would refuse to load. That made
+the deletion verdict evidence-backed rather than a judgement call.
+
+- `cd56ec941` — **27 of the 30 were one 14-line literal copy-pasted 9× in
+  `cli-plugins.test.ts`.** `pluginsListCommand` reads only `plugins` and `disabledPlugins`
+  (`src/cli/plugins.ts:27,33,48`), so all nine collapse to `makeNaxConfig({…})` carrying
+  just those. Behaviour-identical — `DEFAULT_CONFIG` leaves both `undefined`, verified
+  before the edit. Plus 4 inert `defaultAgent`/`fallbackOrder` fixture keys in 4 files.
+- `59d90eb81` — retargeted `merger.test.ts`'s deep-merge test at live keys (−10).
+
+### Three things worth keeping
+
+- **TypeScript reports only the FIRST excess property per object literal.** Clearing
+  `defaultAgent` alone unmasks `fallbackOrder` at zero net gain — they had to go together.
+  This is the §6 unmask trap, hit *prospectively* for once instead of after the fact.
+- **A cluster counted by error can be one fixture by cause.** "~30 per-key judgements" in
+  the handoff was really one duplicated literal plus five strays. **Group the error list by
+  file before estimating effort** — the 27/9 concentration was invisible in the key counts.
+- **A stale fixture hides more than the key it names.** `merger.test.ts` also carried the
+  wrong `models` shape (`ModelsConfig` is `Record<agentName, Record<ModelTier, ModelEntry>>`,
+  `schema-types.ts:29`), and its `override` was typed `Partial<NaxConfig>` when a merge
+  override is a `DeepPartial`. Fixing the two dead keys cleared **10** errors, not 2.
+- **Negative control before committing a rewritten assertion.** Flipping the `tierOrder`
+  expectation to `attempts: 5` failed the test (20 pass / 1 fail), proving the retargeted
+  assertions bite rather than passing vacuously. A rewritten test that still passes proves
+  nothing on its own.
