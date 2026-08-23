@@ -159,13 +159,14 @@ function makeOpts(config: NaxConfig, prd: PRD, statusWriter: StatusWriter): Runn
     statusWriter: statusWriter,
     pluginRegistry: makePluginRegistry(),
     prdPath: `${WORKDIR}/prd.json`,
-    runtime: {
+    runtime: Object.assign(makeMockRuntime(), {
       outputDir: `${WORKDIR}/output`,
       close: async () => {},
       costAggregator: {
         snapshot: () => ({
           totalCostUsd: 0,
           totalEstimatedCostUsd: 0,
+          totalExactCostUsd: 0,
           totalInputTokens: 0,
           totalOutputTokens: 0,
           callCount: 0,
@@ -174,12 +175,27 @@ function makeOpts(config: NaxConfig, prd: PRD, statusWriter: StatusWriter): Runn
         byStage: () => ({}),
         byStory: () => ({}),
         byAgent: () => ({}),
+        byCall: () => ({}),
+        byScope: () => ({}),
+        openScope: () => ({
+          scopeId: "test-scope",
+          snapshot: () => ({
+            totalCostUsd: 0,
+            totalEstimatedCostUsd: 0,
+            totalExactCostUsd: 0,
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            callCount: 0,
+            errorCount: 0,
+          }),
+          close: () => {},
+        }),
         record: () => {},
         recordError: () => {},
         recordOperationSummary: () => {},
         drain: async () => {},
       },
-    } as unknown as RunnerCompletionOptions["runtime"],
+    }),
   };
 }
 

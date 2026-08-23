@@ -21,7 +21,7 @@ import type { PostRunStatus } from "@/execution/status-file";
 import type { LoadedHooksConfig } from "@/hooks";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
-import { type MockStatusWriter, makeNaxConfig, makeStatusWriter } from "@test/helpers";
+import { type MockStatusWriter, makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -112,13 +112,14 @@ function makeOpts(config: NaxConfig, prd: PRD, statusWriter: MockStatusWriter): 
     statusWriter: statusWriter,
     pluginRegistry: { getAll: () => [], get: () => undefined },
     prdPath: `${WORKDIR}/prd.json`,
-    runtime: {
+    runtime: Object.assign(makeMockRuntime(), {
       outputDir: `${WORKDIR}/output`,
       close: async () => {},
       costAggregator: {
         snapshot: () => ({
           totalCostUsd: 0,
           totalEstimatedCostUsd: 0,
+          totalExactCostUsd: 0,
           totalInputTokens: 0,
           totalOutputTokens: 0,
           callCount: 0,
@@ -127,12 +128,27 @@ function makeOpts(config: NaxConfig, prd: PRD, statusWriter: MockStatusWriter): 
         byStage: () => ({}),
         byStory: () => ({}),
         byAgent: () => ({}),
+        byCall: () => ({}),
+        byScope: () => ({}),
+        openScope: () => ({
+          scopeId: "test-scope",
+          snapshot: () => ({
+            totalCostUsd: 0,
+            totalEstimatedCostUsd: 0,
+            totalExactCostUsd: 0,
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            callCount: 0,
+            errorCount: 0,
+          }),
+          close: () => {},
+        }),
         record: () => {},
         recordError: () => {},
         recordOperationSummary: () => {},
         drain: async () => {},
       },
-    } as unknown as RunnerCompletionOptions["runtime"],
+    }),
   };
 }
 
