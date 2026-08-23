@@ -450,7 +450,6 @@ describe("AC9 — spawn failure emits call_ended without prior call_started", ()
 
     const client = new SpawnAcpClient("acpx --model claude-sonnet-4-5 claude", "/tmp", 30, undefined, 0, undefined, {
       onStreamActivity: () => {},
-      onWatchdogRegister: (callId, cancelFn) => registry.set(callId, cancelFn),
     });
 
     const session = await client.loadSession("test-session", "claude", "approve-reads");
