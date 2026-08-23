@@ -327,7 +327,12 @@ describe("contextStage — v2.stages.context overrides", () => {
     mockOrchestrator(makeBundle(), (req) => {
       capturedRequest = req;
     });
-    const index = { getMatchers: () => [] } as unknown as PipelineContext["naxIgnoreIndex"];
+    const index: NonNullable<PipelineContext["naxIgnoreIndex"]> = {
+      repoRoot: "/repo",
+      getMatchers: () => [],
+      filter: (paths) => [...paths],
+      toPathspecExcludes: () => [],
+    };
 
     await contextStage.execute(makeCtx({ naxIgnoreIndex: index }));
 

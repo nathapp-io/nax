@@ -15,7 +15,15 @@ import { NeutralityLintError } from "@/context";
 import type { PipelineContext } from "@/pipeline";
 // _contextStageDeps is test-only and not re-exported from the pipeline/stages barrel.
 import { _contextStageDeps, contextStage } from "@/pipeline/stages/context";
-import { cleanupTempDir, makeContextOrchestrator, makeNaxConfig, makeTempDir } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeContextOrchestrator,
+  makeNaxConfig,
+  makePRD,
+  makeStory,
+  makeTempDir,
+  makeTestContext,
+} from "@test/helpers";
 
 let origCreateOrchestrator: typeof _contextStageDeps.createOrchestrator;
 let origReadDigest: typeof _contextStageDeps.readDigest;
@@ -40,25 +48,23 @@ afterEach(() => {
 });
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
-  return {
+  const story = makeStory({ id: "US-001", workdir: "" });
+  return makeTestContext({
     config: makeNaxConfig({
       context: {
         v2: { enabled: true },
         featureEngine: { enabled: false, budgetTokens: 8_000 },
       },
     }),
-    rootConfig: {} as PipelineContext["rootConfig"],
-    prd: { userStories: [] } as unknown as PipelineContext["prd"],
-    story: { id: "US-001", workdir: "" } as PipelineContext["story"],
+    prd: makePRD({ userStories: [] }),
+    story,
     stories: [],
-    routing: {} as PipelineContext["routing"],
     projectDir: tmpDir,
     workdir: tmpDir,
-    hooks: {} as PipelineContext["hooks"],
     sessionScratchDir: join(tmpDir, "sessions", "sess-001"),
     sessionId: "sess-001",
     ...overrides,
-  } as PipelineContext;
+  });
 }
 
 describe("context stage — rules-integrity fallback", () => {
