@@ -29,6 +29,13 @@ export interface FakeProcSpec {
   pid?: number;
   /** `exited` never settles — for deadline and SIGKILL-contract tests. */
   hang?: boolean;
+  /**
+   * `kill()` resolves `exited` with 137 (128 + SIGKILL) — real Bun.spawn
+   * behaviour, needed by tests that assert the SIGKILL contract end-to-end.
+   */
+  killResolvesExited?: boolean;
+  /** `stdout` stream errors immediately — for read-error contract tests. */
+  stdoutError?: Error;
 }
 
 /** One recorded `spawn()` call. */
@@ -60,6 +67,14 @@ function stream(text: string): ReadableStream<Uint8Array> {
   });
 }
 
+function errorStream(err: Error): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      controller.error(err);
+    },
+  });
+}
+
 /**
  * A fake `Subprocess` typed as what `Bun.spawn` returns.
  *
@@ -69,12 +84,17 @@ export function makeSpawnResult(result: FakeProcSpec | string = {}): SpawnResult
   const spec = toSpec(result);
   const exitCode = spec.exitCode ?? 0;
   let killed = false;
+  let resolveExited: (code: number) => void = () => {};
+  const exited = new Promise<number>((resolve) => {
+    resolveExited = resolve;
+  });
+  if (spec.hang !== true) resolveExited(exitCode);
   const proc = {
-    stdout: stream(spec.stdout ?? ""),
+    stdout: spec.stdoutError !== undefined ? errorStream(spec.stdoutError) : stream(spec.stdout ?? ""),
     stderr: stream(spec.stderr ?? ""),
     stdin: null,
     pid: spec.pid ?? 4242,
-    exited: spec.hang === true ? new Promise<number>(() => {}) : Promise.resolve(exitCode),
+    exited,
     exitCode: spec.hang === true ? null : exitCode,
     signalCode: null,
     get killed() {
@@ -83,6 +103,7 @@ export function makeSpawnResult(result: FakeProcSpec | string = {}): SpawnResult
     success: exitCode === 0,
     kill: () => {
       killed = true;
+      if (spec.killResolvesExited === true) resolveExited(137);
     },
     ref: () => {},
     unref: () => {},

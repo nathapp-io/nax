@@ -19,7 +19,7 @@ import {
   parsePorcelainForNaxPaths,
   parsePorcelainUntrackedPaths,
 } from "@/utils/git";
-import { cleanupTempDir, makeSpawn, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeSpawn, makeSpawnResult, makeTempDir } from "@test/helpers";
 
 describe("detectMergeConflict", () => {
   // True positives — real git conflict signals
@@ -230,29 +230,18 @@ describe("captureWorkingTreeChanges", () => {
     // duration. Waiting the real 3s made this the slowest test in the suite.
     _gitDeps.timeoutRetryGitTimeoutMs = 50;
     let killCount = 0;
-    _gitDeps.spawn = mock((_args: unknown[], _opts: unknown) => {
-      let resolveExited: (code: number) => void = () => {};
-      const proc = {
-        stdout: new ReadableStream({
-          start(c) {
-            /* never closes */
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            /* never closes */
-          },
-        }),
-        exited: new Promise<number>((r) => {
-          resolveExited = r;
-        }),
-        kill: () => {
-          killCount++;
-          resolveExited(137); // 128 + SIGKILL(9)
-        },
+    _gitDeps.spawn = makeSpawn(() => {
+      // Real Bun.spawn behaviour: proc.kill() resolves the exited promise so
+      // the await unblocks and the function returns the empty-on-failure
+      // contract. kill is wrapped to count SIGKILLs (one per git call).
+      const proc = makeSpawnResult({ hang: true, killResolvesExited: true });
+      const kill = proc.kill;
+      proc.kill = (signalCode) => {
+        killCount++;
+        kill(signalCode);
       };
       return proc;
-    });
+    }).spawn;
 
     const start = Date.now();
     const result = await captureWorkingTreeChanges("/tmp/repo", "abc123");
