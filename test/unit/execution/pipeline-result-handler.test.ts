@@ -304,7 +304,7 @@ describe("handlePipelineSuccess — worktree mode (EXEC-002)", () => {
     const ctx = makeCtx(story); // DEFAULT_CONFIG has storyIsolation: "shared"
 
     const mergeMock = mock(async () => ({ success: true as const }));
-    _resultHandlerDeps.mergeEngine = { merge: mergeMock } as unknown as typeof _resultHandlerDeps.mergeEngine;
+    _resultHandlerDeps.mergeEngine = makeMergeEngine({ merge: mergeMock });
     _gitDeps.spawn = mockSpawnReturning("");
 
     await handlePipelineSuccess(ctx, makeMinimalResult());
@@ -316,9 +316,9 @@ describe("handlePipelineSuccess — worktree mode (EXEC-002)", () => {
     const story = makeStory("US-001");
     const ctx = makeCtx(story, { config: WORKTREE_CONFIG });
 
-    _resultHandlerDeps.mergeEngine = {
+    _resultHandlerDeps.mergeEngine = makeMergeEngine({
       merge: mock(async () => ({ success: false as const, conflictFiles: ["foo.ts"] })),
-    } as unknown as typeof _resultHandlerDeps.mergeEngine;
+    });
     _gitDeps.spawn = mockSpawnReturning("");
 
     // rectifyConflictedStory is dynamically imported inside handlePipelineSuccess.
@@ -478,9 +478,9 @@ describe("handlePipelineSuccess — a failed worktree merge is not a passed stor
   test("a non-conflict merge failure marks the story failed on disk", async () => {
     const { ctx } = await seedPassedStory();
     stubSpawn();
-    _resultHandlerDeps.mergeEngine = {
+    _resultHandlerDeps.mergeEngine = makeMergeEngine({
       merge: mock(async () => ({ success: false as const, failureKind: "error" as const, error: "dirty tree" })),
-    } as unknown as typeof _resultHandlerDeps.mergeEngine;
+    });
 
     const result = await handlePipelineSuccess(ctx, makeMinimalResult());
 
@@ -492,9 +492,9 @@ describe("handlePipelineSuccess — a failed worktree merge is not a passed stor
   test("the reported failure survives the executor's reload-from-disk", async () => {
     const { ctx } = await seedPassedStory();
     stubSpawn();
-    _resultHandlerDeps.mergeEngine = {
+    _resultHandlerDeps.mergeEngine = makeMergeEngine({
       merge: mock(async () => ({ success: false as const, failureKind: "error" as const, error: "missing branch" })),
-    } as unknown as typeof _resultHandlerDeps.mergeEngine;
+    });
 
     const result = await handlePipelineSuccess(ctx, makeMinimalResult());
 
@@ -507,9 +507,9 @@ describe("handlePipelineSuccess — a failed worktree merge is not a passed stor
   test("a non-conflict merge failure reclaims the worktree directory", async () => {
     const { ctx } = await seedPassedStory();
     const calls = stubSpawn();
-    _resultHandlerDeps.mergeEngine = {
+    _resultHandlerDeps.mergeEngine = makeMergeEngine({
       merge: mock(async () => ({ success: false as const, failureKind: "error" as const, error: "dirty tree" })),
-    } as unknown as typeof _resultHandlerDeps.mergeEngine;
+    });
 
     await handlePipelineSuccess(ctx, makeMinimalResult());
 
@@ -519,9 +519,9 @@ describe("handlePipelineSuccess — a failed worktree merge is not a passed stor
   test("a clean merge still reports the story as passed", async () => {
     const { ctx } = await seedPassedStory();
     stubSpawn();
-    _resultHandlerDeps.mergeEngine = {
+    _resultHandlerDeps.mergeEngine = makeMergeEngine({
       merge: mock(async () => ({ success: true as const })),
-    } as unknown as typeof _resultHandlerDeps.mergeEngine;
+    });
 
     const result = await handlePipelineSuccess(ctx, makeMinimalResult());
 
