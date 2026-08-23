@@ -109,10 +109,14 @@ function mockV1Empty(): void {
 }
 
 function mockV1WithContextMd(content = "## Pre-existing context\n\nold notes"): void {
-  _featureContextV2Deps.createV1Provider = () =>
-    ({
-      getContext: async () => ({ content, estimatedTokens: 50, featureId: "TEST-FEATURE" }),
-    }) as unknown as ReturnType<typeof _featureContextV2Deps.createV1Provider>;
+  _featureContextV2Deps.createV1Provider = () => ({
+    getContext: async () => ({
+      content,
+      estimatedTokens: 50,
+      label: "feature-context",
+      featureId: "TEST-FEATURE",
+    }),
+  });
 }
 
 function mockLoadPRD(prd: PRD | null): void {
