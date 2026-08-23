@@ -78,7 +78,7 @@ function makeCtx(): AcceptanceLoopContext {
     sessionManager: runtime.sessionManager,
     acceptanceTestPaths: [{ testPath: "/tmp/test.ts", packageDir: "/tmp/workdir" }],
     runtime,
-    abortSignal: undefined as unknown as AbortSignal,
+    abortSignal: new AbortController().signal,
   };
 }
 

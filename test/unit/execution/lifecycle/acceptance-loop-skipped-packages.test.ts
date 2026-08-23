@@ -85,7 +85,7 @@ function makeAcceptanceCtx(): AcceptanceLoopContext {
     agentManager: makeMockAgentManager(),
     sessionManager: runtime.sessionManager,
     runtime,
-    abortSignal: undefined as unknown as AbortSignal,
+    abortSignal: new AbortController().signal,
   };
 }
 

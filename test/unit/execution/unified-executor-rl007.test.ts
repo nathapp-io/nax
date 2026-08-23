@@ -153,7 +153,7 @@ describe("RL-007 AC#2: heartbeat remains active after executeUnified returns", (
     const statusWriter = makeStatusWriter();
     // Simulate what runner.ts does: start heartbeat before delegating to executor
     startHeartbeat(
-      statusWriter as unknown as Parameters<typeof startHeartbeat>[0],
+      statusWriter,
       () => 0,
       () => 0,
     );
@@ -172,7 +172,7 @@ describe("RL-007 AC#2: heartbeat remains active after executeUnified returns", (
   test("heartbeat is still running when all stories are skipped", async () => {
     const statusWriter = makeStatusWriter();
     startHeartbeat(
-      statusWriter as unknown as Parameters<typeof startHeartbeat>[0],
+      statusWriter,
       () => 0,
       () => 0,
     );
