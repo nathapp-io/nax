@@ -27,8 +27,10 @@ typecheck, per-file gate `worse: 0`, `check:all`, full suite, baseline update).
 | **`dead-fixture-keys`** | ✅ merged | #1686 |
 | implicit-any params (`TS7006` → 0) | ✅ merged | #1687 |
 | dead-config-keys (ADR-012 legacy) | ✅ merged — 40 errors (1260 → 1220) | #1688 |
-| **`ConfigSelector` variance** | ✅ **done — 72 errors (1220 → 1148)** | — |
-| `makeObservation` / remaining seams (~90) | not started | — |
+| `ConfigSelector` variance | ✅ merged — 72 errors (1220 → 1148) | #1689 |
+| **dead `@ts-expect-error` suppressions** | ✅ **done — 16 errors (1148 → 1132), tsSuppress 54 → 40** | — |
+| `DispatchContext` fixtures (18) | not started — see §10 | — |
+| ~~`makeObservation` (~90)~~ — **really 9** | not started | — |
 
 **Branches:**
 - `chore/1514-dead-fixture-keys` — **merged as #1686** (`e915b47e1` on `main`); branch gone.
@@ -173,7 +175,8 @@ its shared helpers as off-limits, not merely say the *file* is out of scope. Ext
    `b5fb516` does not mention it and a reviewer would miss it.
 3. ~~Dead config keys.~~ **Done** — see §8.
 4. ~~`ConfigSelector<Pick<…>>` variance.~~ **Done** — see §9.
-5. **Then continue.** The mechanical slice is done (91 of 1351
+5. ~~Dead `@ts-expect-error` directives.~~ **Done** — see §10.
+6. **Then continue.** The mechanical slice is done (91 of 1351
    errors). The residue at `b5fb516` is **1260 errors**, and per `HANDOFF-1514-mechanical-fixture-fields.md`
    §7 the overwhelming majority is design work, not mechanical: `as unknown as`-shaped
    (190, concentrated in 6 files), `ConfigSelector<Pick<…>>` variance (32), the
@@ -181,7 +184,7 @@ its shared helpers as off-limits, not merely say the *file* is out of scope. Ext
    (`defaultAgent`/`defaultTier`/`timeout` — the dead-fixture-keys method applies, see
    `HANDOFF-1514-dead-fixture-keys.md`). Plan each cluster the same way: measure, prototype,
    then decide what is genuinely delegable.
-6. Then `makeObservation` / remaining seams (~90) — same planning discipline.
+7. Then the `DispatchContext` fixture cluster (18) — needs a factory decision, see §10.
 
 **Re-cluster before starting any of them — the handoff's numbers have already moved.**
 Measured on branch head `12651f098`: `TS2352` is **149**, not the 190 the handoff recorded,
@@ -310,3 +313,53 @@ contain a cast) held for all of them:
   the same fake. Kept because the file still went **6 → 4**; had it gone the other way the
   right move was to revert and leave the variance errors. The unmasked class is a different
   cluster and is left for its own pass.
+
+
+## 10. Dead `@ts-expect-error` suppressions — done (1148 → 1132, −16)
+
+On `chore/1514-dead-suppressions`, one commit. **`TS2578` is now 0** and `tsSuppress`
+went **54 → 40** — a typecheck drop that also retires debt on a second counter, which no
+earlier phase managed.
+
+15 `TS2578` "unused directive" errors. 14 were genuinely stale — the thing each one was
+waiting for had shipped:
+
+- 10 in `on-all-stories-complete.test.ts` — "not yet in HookEvent"; it is, at
+  `src/hooks/types.ts:16`.
+- 3 in `interaction-chain-pipeline.test.ts` — one waited on `PipelineContext.interaction`,
+  which exists at `src/pipeline/types.ts:143`.
+- 1 in `story-orchestrator-resume-integration.test.ts` — on a reset loop whose body is a
+  no-op.
+
+### The one that was not stale — and the bug it was hiding
+
+`run-regression.test.ts` AC3/AC4 is a **negative type test**: a deliberately-invalid literal
+whose `@ts-expect-error` is the assertion. Its header documents the RED/GREEN contract
+explicitly. The directive was unused **not because the guard passed, but because it was on
+the wrong line** — TypeScript reports the excess-property error at the `agentManager:`
+property (line 590), not at the `const` declaration (586) where the directive sat. So the
+directive asserted nothing *and* the real error went unsuppressed, showing up as a plain
+`TS2353` in the baseline.
+
+Fixed by **moving** it onto the property, not deleting it. −2 for that file, and the AC4
+guard actually guards now.
+
+**The rule:** an unused `@ts-expect-error` is not automatically dead. Check whether the error
+it wanted still exists *somewhere else in the same statement* before deleting — a directive
+one line off is indistinguishable from a stale one by its own error code, and deleting it
+silently retires a compile-time AC.
+
+## Re-measurement, third time
+
+`makeObservation` was carried as **~90**. Live it is **9** (`merge.test.ts` 7,
+`effective-config` 1, `curator-gc` 1). Every handoff estimate so far has been wrong in a
+different direction — 32→73, 190→149, 90→9. **Measure the cluster before writing the plan.**
+
+The real next cluster is `DispatchContext` fixtures: **18 errors** (`plugin-routing-core` 12,
+`interaction-chain-pipeline` 5, plus 4 singles) all missing
+`agentManager`/`sessionManager`/`runtime`/`abortSignal`. The 12 in `plugin-routing-core` are
+one identical line; the rest are heterogeneous. `makeTestContext`
+(`test/helpers/pipeline-context.ts:61`) papers over the same four fields with its own
+`as PipelineContext`, so the open question is whether to build a real `makeDispatchContext()`
+from `makeMockRuntime()` — which touches runtime lifecycle and must satisfy
+`check:runtime-cleanup`. **Not mechanical; plan it.**

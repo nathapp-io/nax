@@ -582,11 +582,14 @@ describe("runDeferredRegression — storyDurations + storyOutcomes", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // AC4: runtime is required even when agentManager is present
-// @ts-expect-error — agentManager is not a substitute for the required runtime field
 const _ac4TypeCheck: DeferredRegressionOptions = {
   config: {} as NaxConfig,
   prd: {} as PRD,
   workdir: "/tmp",
+  // @ts-expect-error — agentManager is not a substitute for the required runtime
+  // field. The directive sits on the property, not the declaration: TS reports the
+  // excess-property error at `agentManager`, so anchoring it above `const` left it
+  // unused while the real error went unsuppressed.
   agentManager: {} as import("@/agents").IAgentManager,
 };
 void _ac4TypeCheck;

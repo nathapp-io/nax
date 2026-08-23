@@ -58,7 +58,6 @@ describe("on-all-stories-complete hook payload (env vars + stdin)", () => {
 
     const config: HooksConfig = {
       hooks: {
-        // @ts-expect-error on-all-stories-complete not yet in HookEvent
         "on-all-stories-complete": {
           command: `bun ${scriptFile}`,
           enabled: true,
@@ -69,7 +68,6 @@ describe("on-all-stories-complete hook payload (env vars + stdin)", () => {
 
     await fireHook(
       config,
-      // @ts-expect-error on-all-stories-complete not yet in HookEvent
       "on-all-stories-complete",
       {
         event: "on-start", // placeholder; fireHook overrides with the passed event
@@ -93,7 +91,6 @@ describe("on-all-stories-complete hook payload (env vars + stdin)", () => {
 
     const config: HooksConfig = {
       hooks: {
-        // @ts-expect-error on-all-stories-complete not yet in HookEvent
         "on-all-stories-complete": {
           command: `bun ${scriptFile}`,
           enabled: true,
@@ -104,7 +101,6 @@ describe("on-all-stories-complete hook payload (env vars + stdin)", () => {
 
     await fireHook(
       config,
-      // @ts-expect-error on-all-stories-complete not yet in HookEvent
       "on-all-stories-complete",
       {
         event: "on-start",
@@ -127,7 +123,6 @@ describe("on-all-stories-complete hook payload (env vars + stdin)", () => {
 
     const config: HooksConfig = {
       hooks: {
-        // @ts-expect-error on-all-stories-complete not yet in HookEvent
         "on-all-stories-complete": {
           command: `bun ${scriptFile}`,
           enabled: true,
@@ -138,7 +133,6 @@ describe("on-all-stories-complete hook payload (env vars + stdin)", () => {
 
     await fireHook(
       config,
-      // @ts-expect-error on-all-stories-complete not yet in HookEvent
       "on-all-stories-complete",
       {
         event: "on-start",
@@ -162,7 +156,6 @@ describe("on-all-stories-complete hook payload (env vars + stdin)", () => {
 
     const config: HooksConfig = {
       hooks: {
-        // @ts-expect-error on-all-stories-complete not yet in HookEvent
         "on-all-stories-complete": {
           command: `bun ${scriptFile}`,
           enabled: true,
@@ -173,7 +166,6 @@ describe("on-all-stories-complete hook payload (env vars + stdin)", () => {
 
     await fireHook(
       config,
-      // @ts-expect-error on-all-stories-complete not yet in HookEvent
       "on-all-stories-complete",
       {
         event: "on-start",
@@ -205,7 +197,6 @@ await Bun.write(${JSON.stringify(outputFile)}, raw);`,
 
     const config: HooksConfig = {
       hooks: {
-        // @ts-expect-error on-all-stories-complete not yet in HookEvent
         "on-all-stories-complete": {
           command: `bun ${scriptFile}`,
           enabled: true,
@@ -216,7 +207,6 @@ await Bun.write(${JSON.stringify(outputFile)}, raw);`,
 
     await fireHook(
       config,
-      // @ts-expect-error on-all-stories-complete not yet in HookEvent
       "on-all-stories-complete",
       {
         event: "on-start",
