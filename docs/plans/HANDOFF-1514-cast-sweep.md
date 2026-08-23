@@ -106,12 +106,10 @@ bun scripts/report-cast-buckets.ts
 **Last verified:** ratchet = 102, typecheck errors = 1946 (was 1969; **−23**), per-file
 gate `worse: 0`, tree clean at `c37fab4dd`. 53 commits on the branch.
 
-**§11 is DONE (session 8).** Groups A–C of the §3e ruling are executed — 151 → 120. What
-remains needs a ruling from the repo owner — see §8.
+**§11 is DONE (session 8).** Groups A–C of the §3e ruling are executed — 151 → 120.
 
 **→ §9, §10 and §11 are DONE.** Every bucket with mechanical follow-through is now
-closed. §11's Groups A–C landed in session 8 (see §7 session 8); what remains needs a
-ruling from the repo owner — see §8.
+closed. §11's Groups A–C landed in session 8; §12 (session 10) closed the final queue.
 **§9 is DONE (session 6) — do not start it.** It is kept only as the worked record of
 how the seams were built.
 
@@ -120,7 +118,7 @@ session 3 drained the tail; session 4 drained the §3d bakeoff builders; session
 built four seams and closed **§3c-ii entirely**; session 8 executed §11 Groups A–C;
 **session 10 executed §12** (absentValue idiom, 120 → 102, Decision 5 closed).
 
-**§10 is DONE.** As of session 9 the one bucket with mechanical follow-through is **§12**.
+**§10 is DONE (session 7).** Its one queued successor, **§12**, landed in session 10 — see below.
 
 **→ §12 is DONE (session 10, commits `555ae2fc3`, `1b02827a1`, `c37fab4dd`).**
 Ratchet 120 → **102**, `absentValue` counter at **18**, typecheck flat at 1946,
@@ -767,12 +765,13 @@ cast (the src-side `isRuntimeWithAgentManager` check then takes the direct path)
 
 ---
 
-## 8. What is left: 120 casts, two open decisions
+## 8. What is left: 102 casts, every decision resolved
 
-The sweep is over. Everything below needs a judgement call, so it is organised by the
-**decision** that unblocks it, not by cast shape. Each row is independent — they can be
-taken in any order, or declined. Decisions 1–3 are done (see their blocks); the open
-ones are 4 (tail remnant) and 5 (§3d).
+The sweep is over. Everything below needed a judgement call, so it is organised by the
+**decision** that unblocks it, not by cast shape. Each row was independent — they could be
+taken in any order, or declined. **All five decisions are closed** (see their blocks):
+1–3 in sessions 5–8, 4 in session 9 (§12), 5 in session 10 (§12 step 4). The remaining
+102 casts are documented exceptions.
 
 ### Decision 1 — seams (§3c-ii) — ✅ **DONE (sessions 5–6). Bucket is 0.**
 
@@ -805,8 +804,8 @@ in `selector.test.ts`); 13 reclassify as §3d; 1 is a scanner false positive.
 **§11 has the executable detail and the session-8 record.** The survey below is superseded.
 
 All Groups A–C landed in `129ef87a0` (ratchet 151 → 120, typecheck flat at 1946, per-file
-gate `worse: 0`). Group E — the scanner counting its own fixture — is the only §3e piece
-still open; file it separately per the ruling.
+gate `worse: 0`). Group E — the scanner counting its own fixture — was found already
+fixed in session 9 (the Summary below records it; the fixture was never double-counted).
 
 `(plugin as unknown as { backoffMs: number }).backoffMs`. For each: should the member be
 public, or should the test go through the public API? Concentrated in
@@ -1179,8 +1178,8 @@ typecheck flat at 1946, per-file gate `worse: 0`, tree clean. Group A's three ac
 (`telegramInternals`, `webhookInternals`, `agentManagerInternals`) contain the 3 remaining
 casts; the 6 allow-marked webhook sites were swapped too (their markers removed, since the
 accessor supersedes the reach-in). Group D's 13 are reclassified §3d, in place. Group E
-(scanner counting its own fixture) is **still open** — file it separately, do not delete the
-fixture. One field-path correction while executing: the ruling's `review.parallel` does not
+(scanner counting its own fixture) was already fixed — session 9 found it stale (see the
+Summary). One field-path correction while executing: the ruling's `review.parallel` does not
 exist — the field is `review.adversarial.parallel` (`schemas-review.ts:104`, same line the
 doc cited, nested under `adversarial`).
 
