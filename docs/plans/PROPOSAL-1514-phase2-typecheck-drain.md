@@ -37,7 +37,7 @@ zero casts and they removed a few instead.
 | 2 — missing type imports | −94 | ✅ merged | same |
 | **config-slices** | −54 | ✅ **done** — 54 sites, 8 commits; residual is 0 | `HANDOFF-1514-config-slices.md` |
 | **callop-seam** | −47 | ✅ **done** — tiers 1+2, 2 commits; 8 tier-3 sites left by design | `HANDOFF-1514-callop-seam.md`, `PLAN-1514-callop-seam.md` |
-| 4 — dead fixture keys | ~−115 | not started; needs judgement per deletion | — |
+| **dead-fixture-keys** | ~−115 | ✅ **done** — 10 keys, 38 errors (1633 → 1594); on `chore/1514-dead-fixture-keys` | `HANDOFF-1514-dead-fixture-keys.md`, `STATUS-1514-drain.md` |
 | 5 — implicit-any params | ~−103 | not started; `anyType` guards the cheap non-fix | — |
 | 6 — remaining seams / `makeObservation` | ~−90 | not started | — |
 
