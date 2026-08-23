@@ -26,7 +26,8 @@ typecheck, per-file gate `worse: 0`, `check:all`, full suite, baseline update).
 | `callop-seam` (monomorphic dep bags) | ✅ merged | #1684 |
 | **`dead-fixture-keys`** | ✅ merged | #1686 |
 | implicit-any params (`TS7006` → 0) | ✅ merged | #1687 |
-| **dead-config-keys (ADR-012 legacy)** | ✅ **done — 40 errors (1260 → 1220)** | — |
+| dead-config-keys (ADR-012 legacy) | ✅ merged — 40 errors (1260 → 1220) | #1688 |
+| **`ConfigSelector` variance** | ✅ **done — 72 errors (1220 → 1148)** | — |
 | `makeObservation` / remaining seams (~90) | not started | — |
 
 **Branches:**
@@ -171,7 +172,8 @@ its shared helpers as off-limits, not merely say the *file* is out of scope. Ext
    the `test/helpers/spawn.ts` contract change (§4a) in the PR body — the subject line of
    `b5fb516` does not mention it and a reviewer would miss it.
 3. ~~Dead config keys.~~ **Done** — see §8.
-4. **Then continue.** The mechanical slice is done (91 of 1351
+4. ~~`ConfigSelector<Pick<…>>` variance.~~ **Done** — see §9.
+5. **Then continue.** The mechanical slice is done (91 of 1351
    errors). The residue at `b5fb516` is **1260 errors**, and per `HANDOFF-1514-mechanical-fixture-fields.md`
    §7 the overwhelming majority is design work, not mechanical: `as unknown as`-shaped
    (190, concentrated in 6 files), `ConfigSelector<Pick<…>>` variance (32), the
@@ -179,7 +181,7 @@ its shared helpers as off-limits, not merely say the *file* is out of scope. Ext
    (`defaultAgent`/`defaultTier`/`timeout` — the dead-fixture-keys method applies, see
    `HANDOFF-1514-dead-fixture-keys.md`). Plan each cluster the same way: measure, prototype,
    then decide what is genuinely delegable.
-5. Then `makeObservation` / remaining seams (~90) — same planning discipline.
+6. Then `makeObservation` / remaining seams (~90) — same planning discipline.
 
 **Re-cluster before starting any of them — the handoff's numbers have already moved.**
 Measured on branch head `12651f098`: `TS2352` is **149**, not the 190 the handoff recorded,
@@ -264,3 +266,47 @@ the deletion verdict evidence-backed rather than a judgement call.
   expectation to `attempts: 5` failed the test (20 pass / 1 fail), proving the retargeted
   assertions bite rather than passing vacuously. A rewritten test that still passes proves
   nothing on its own.
+
+
+## 9. ConfigSelector variance — done (1220 → 1148, −72)
+
+On `chore/1514-config-selector-variance`, one commit through the full six-step loop.
+
+**The handoff sized this at 32; live it was 73 across 24 files.** Re-measure before planning —
+that is now twice this has mattered (`TS2352` was 149, not 190).
+
+Root cause, single: `OperationBase.config` is declared
+`ConfigSelector<C> | readonly (keyof NaxConfig)[]` (`src/operations/types.ts:102`) while
+`ConfigSelector<C>` is **covariant** in `C` (`select(config): C` puts C in output position).
+So `ConfigSelector<Pick<NaxConfig, "execution">>` is not assignable to
+`ConfigSelector<NaxConfig>` — the assignment runs the wrong way down the subtype order.
+
+Three patterns, **zero casts added** — the `callop-seam` precedent (fix the type, don't
+contain a cast) held for all of them:
+
+1. **`view.select(op.config)` — the union is a dead end at the call site (~40).**
+   `test/helpers/config-selector.ts` narrows on the discriminant:
+   `if (!("select" in config)) throw …; return config`. The `in` operator narrows the union
+   cast-free, and `C` is **inferred** from the argument rather than asserted.
+2. **Fixtures declared the wrong `C` (32).** All 8 story-orchestrator-family files typed
+   their ops `typeof DEFAULT_CONFIG` while the selector was `pickSelector(…, "execution")`.
+   Fixed by deriving C from the selector: `type TestOpConfig = ReturnType<(typeof testSel)["select"]>`.
+3. **Two debate fakes stubbed `select` as `(_sel: unknown) => fullConfig`** — it never
+   projected anything. Replaced with a faithful `(sel) => sel.select(fullConfig)`.
+
+### Worth keeping
+
+- **A narrowing cast that restates the type parameter silently kills the check it looks like
+  it is preserving.** The three `finish-*` tests used `op.config as ConfigSelector<FinishConfig>`.
+  Because the cast re-asserts `C`, a selector whose real slice drifted from `FinishConfig`
+  stopped being a compile error — the cast was load-bearing in the wrong direction.
+  `looseCast` 2006 → 2003 when they moved to the helper.
+- **Derive a fixture's type parameter from the fixture, not from a constant.** `typeof DEFAULT_CONFIG`
+  looked like "the config type" and was really "the widest possible slice". `ReturnType<(typeof sel)["select"]>`
+  cannot drift from the selector it describes. Bonus: it is shorter than `typeof DEFAULT_CONFIG`,
+  so the change stayed line-neutral inside the grandfathered `story-orchestrator.test.ts` cap.
+- **Check the arithmetic before keeping an unmask.** Making `select` faithful in
+  `runner-hybrid-coordinator` unmasked a `PackageRegistry`/`AbortSignal`/readonly cluster in
+  the same fake. Kept because the file still went **6 → 4**; had it gone the other way the
+  right move was to revert and leave the variance errors. The unmasked class is a different
+  cluster and is left for its own pass.
