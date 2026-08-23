@@ -1,11 +1,26 @@
 import * as callModule from "../operations/call";
-import { type DebateStatefulInput, statefulDebaterOp } from "../operations/debate-stateful";
+import { type DebateStatefulInput, type DebateStatefulOutput, statefulDebaterOp } from "../operations/debate-stateful";
 import type { CallContext } from "../operations/types";
 import { DebatePromptBuilder } from "../prompts";
 import type { ResolvedDebater, SuccessfulProposal } from "./session-helpers";
 import type { Debater } from "./types";
 
 const DEFAULT_ABORT_SIGNAL = new AbortController().signal;
+
+/**
+ * Injectable dependencies for the stateful debate runners (runner-stateful.ts
+ * and runner-stateful-helpers.ts) — allows tests to mock without mock.module().
+ */
+export const _statefulDeps: {
+  /**
+   * Monomorphic on purpose: this module dispatches exactly one op, so the
+   * inferred generic signature over-stated the seam and no stub could satisfy
+   * it without a cast (#1514 callop-seam).
+   */
+  callOp: (ctx: CallContext, op: typeof statefulDebaterOp, input: DebateStatefulInput) => Promise<DebateStatefulOutput>;
+} = {
+  callOp: callModule.callOp,
+};
 
 export interface ProposalBarrierState {
   readonly barrier: PromiseWithResolvers<string>;
@@ -158,7 +173,7 @@ export async function runZeroSuccessFallback(
   const signal = resolveStatefulSignal(ctx);
 
   try {
-    await callModule.callOp(createDebaterCallContext(ctx, firstDebater.agentName), statefulDebaterOp, {
+    await _statefulDeps.callOp(createDebaterCallContext(ctx, firstDebater.agentName), statefulDebaterOp, {
       debater: firstDebater.debater,
       index: 0,
       proposePrompt: prompt,

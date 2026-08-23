@@ -1,5 +1,4 @@
 import { NaxError } from "../errors";
-import * as callModule from "../operations/call";
 import { type DebateStatefulInput, statefulDebaterOp } from "../operations/debate-stateful";
 import type { CallContext } from "../operations/types";
 import { DebatePromptBuilder } from "../prompts";
@@ -8,6 +7,7 @@ import type { SessionRole } from "../session/types";
 import { allSettledBounded } from "./concurrency";
 import { resolvePersonas } from "./personas";
 import {
+  _statefulDeps,
   buildRebuttalPromptBuilder,
   createDebaterCallContext,
   resolveStatefulSignal,
@@ -88,7 +88,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
     resolved.map(
       ({ debater, agentName }, index) =>
         () =>
-          callModule
+          _statefulDeps
             .callOp(debaterCallContext(agentName, index), statefulDebaterOp, {
               debater,
               index,
@@ -185,7 +185,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
         await allSettledBounded(
           successfulProposals.map(
             (proposal, index) => () =>
-              callModule
+              _statefulDeps
                 .callOp(debaterCallContext(proposal.agentName, proposal.resolvedIndex), statefulDebaterOp, {
                   debater: proposal.debater,
                   index,

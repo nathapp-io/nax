@@ -1,12 +1,18 @@
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
 import { DebateRunner } from "@/debate/runner";
+import { _hybridDeps } from "@/debate/runner-hybrid";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
-import * as callModule from "@/operations";
 import type { DebateHybridInput } from "@/operations/debate-hybrid";
 import type { CallContext } from "@/operations/types";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/helpers";
+import { makeMockAgentManager, makeNaxConfig, makeSessionManager, withDepsRestore } from "@test/helpers";
+
+function installCallOp(impl: typeof _hybridDeps.callOp) {
+  const spy = mock(impl);
+  _hybridDeps.callOp = spy;
+  return spy;
+}
 
 function makeHybridStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -105,11 +111,13 @@ afterEach(() => {
 });
 
 describe("DebateRunner hybrid rebuttal", () => {
+  withDepsRestore(_hybridDeps);
+
   test("with 2 debaters and rounds=1, the coordinator assigns distinct session roles per debater", async () => {
     const runner = makeRunner();
     const sessionRoles: string[] = [];
 
-    spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, input: DebateHybridInput) => {
+    installCallOp(async (callCtx, _op, input) => {
       sessionRoles.push((callCtx as CallContext).sessionOverride?.role ?? "");
       input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
       input.rebutBarriers[0][input.index].resolve(`rebuttal-${input.index}`);
@@ -132,7 +140,7 @@ describe("DebateRunner hybrid rebuttal", () => {
     });
     const barrierShapes: Array<{ slots: number; rounds: number }> = [];
 
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
+    installCallOp(async (_callCtx, _op, input) => {
       barrierShapes.push({ slots: input.proposalBarriers.length, rounds: input.rebutBarriers.length });
       input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
       for (let r = 0; r < input.rounds; r++) {
@@ -154,7 +162,7 @@ describe("DebateRunner hybrid rebuttal", () => {
     const runner = makeRunner();
     const capturedBuildRebutPrompts: Array<DebateHybridInput["buildRebutPrompt"]> = [];
 
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
+    installCallOp(async (_callCtx, _op, input) => {
       capturedBuildRebutPrompts.push(input.buildRebutPrompt);
       input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
       input.rebutBarriers[0][input.index].resolve(`rebuttal-${input.index}`);
@@ -175,7 +183,7 @@ describe("DebateRunner hybrid rebuttal", () => {
     const runner = makeRunner({ rounds: 2 });
     const capturedBuildRebutPrompts: Array<DebateHybridInput["buildRebutPrompt"]> = [];
 
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
+    installCallOp(async (_callCtx, _op, input) => {
       capturedBuildRebutPrompts.push(input.buildRebutPrompt);
       input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
       for (let r = 0; r < input.rounds; r++) {
@@ -196,7 +204,7 @@ describe("DebateRunner hybrid rebuttal", () => {
   test("when one callOp fails, the runner still returns a result with the remaining debater", async () => {
     const runner = makeRunner();
 
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
+    installCallOp(async (_callCtx, _op, input) => {
       if (input.index === 0) {
         input.proposalBarriers[input.index].resolve("proposal-0");
         input.rebutBarriers[0][input.index].resolve("rebuttal-0");
@@ -217,7 +225,7 @@ describe("DebateRunner hybrid rebuttal", () => {
     const runner = makeRunner({ rounds: 2 });
     const rolesByIndex = new Map<number, string>();
 
-    spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, input: DebateHybridInput) => {
+    installCallOp(async (callCtx, _op, input) => {
       rolesByIndex.set(input.index, (callCtx as CallContext).sessionOverride?.role ?? "");
       input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
       for (let r = 0; r < input.rounds; r++) {
@@ -237,7 +245,7 @@ describe("DebateRunner hybrid rebuttal", () => {
     const runner = makeRunner();
     let capturedCallCtx: CallContext | undefined;
 
-    spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, input: DebateHybridInput) => {
+    installCallOp(async (callCtx, _op, input) => {
       capturedCallCtx = callCtx as CallContext;
       input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
       input.rebutBarriers[0][input.index].resolve(`rebuttal-${input.index}`);
@@ -253,7 +261,7 @@ describe("DebateRunner hybrid rebuttal", () => {
   test("DebateResult.rebuttals contains one entry per debater per round, collected from shared barriers", async () => {
     const runner = makeRunner();
 
-    spyOn(callModule, "callOp").mockImplementation(makeHybridOpMock());
+    installCallOp(makeHybridOpMock());
 
     const result = await runner.run("test prompt");
 

@@ -1,14 +1,20 @@
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { computeAcpHandle } from "@/agents/acp/adapter";
 import { DEFAULT_CONFIG } from "@/config";
 import { DebateRunner } from "@/debate/runner";
+import { _statefulDeps } from "@/debate/runner-stateful-helpers";
+import { _synthesisDeps } from "@/debate/selectors/synthesis";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
-import * as callModule from "@/operations";
-import type { DebateStatefulInput } from "@/operations/debate-stateful";
 import type { CallContext } from "@/operations/types";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
-import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
+import { makeMockAgentManager, makeSessionManager, withDepsRestore } from "@test/helpers";
+
+function installCallOp(impl: typeof _statefulDeps.callOp) {
+  const spy = mock(impl);
+  _statefulDeps.callOp = spy;
+  return spy;
+}
 
 // ─── Compile-time check ───────────────────────────────────────────────────────
 
@@ -296,6 +302,8 @@ describe("DebateRunner.run() — stateful mode", () => {
 // ─── Stateful SSOT tests (from session-stateful) ─────────────────────────────
 
 describe("DebateRunner.run() — stateful mode uses runAsSession SSOT", () => {
+  withDepsRestore(_statefulDeps);
+
   test("proposal round calls runAsSession for each debater", async () => {
     const runAsSessionCalls: Array<{ agentName: string; prompt: string; handleId: string }> = [];
 
@@ -352,7 +360,7 @@ describe("DebateRunner.run() — stateful mode uses runAsSession SSOT", () => {
       sessionManager: mockSM,
     });
 
-    spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, input: DebateStatefulInput) => {
+    installCallOp(async (callCtx, _op, input) => {
       const role = callCtx.sessionOverride?.role ?? "";
       const kind = input.proposePrompt.includes("reviewing proposals") ? "critique" : "proposal";
       const calls = roleCallMap.get(role) ?? [];
@@ -412,6 +420,9 @@ describe("DebateRunner.run() — stateful mode uses runAsSession SSOT", () => {
 // ─── resolveOutcome with computeAcpHandle ────────────────────────────────────
 
 describe("runStateful() — resolveOutcome receives workdir and featureName (US-004 AC4)", () => {
+  withDepsRestore(_statefulDeps);
+  withDepsRestore(_synthesisDeps);
+
   test("synthesis resolver receives sessionName built from ctx.workdir and ctx.featureName", async () => {
     const mockSM = makeSessionManager({
       openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
@@ -442,22 +453,18 @@ describe("runStateful() — resolveOutcome receives workdir and featureName (US-
     });
 
     const resolverCalls: Array<{ workdir: string; featureName: string; role?: string }> = [];
-    spyOn(callModule, "callOp").mockImplementation(
-      async (callCtx, op, input: DebateStatefulInput | Record<string, unknown>) => {
-        if (op.name === "debate-synthesis") {
-          resolverCalls.push({
-            workdir: callCtx.packageDir,
-            featureName: callCtx.featureName ?? "",
-            role: callCtx.sessionOverride?.role,
-          });
-          return "synthesis resolved";
-        }
-
-        const statefulInput = input as DebateStatefulInput;
-        statefulInput.proposalBarriers[0]?.resolve('{"passed": true}');
-        return { success: true, rebut: '{"passed": true}' };
-      },
-    );
+    installCallOp(async (_callCtx, _op, input) => {
+      input.proposalBarriers[0]?.resolve('{"passed": true}');
+      return { success: true, rebut: '{"passed": true}' };
+    });
+    _synthesisDeps.callOp = mock(async (callCtx) => {
+      resolverCalls.push({
+        workdir: callCtx.packageDir,
+        featureName: callCtx.featureName ?? "",
+        role: callCtx.sessionOverride?.role,
+      });
+      return "synthesis resolved";
+    });
 
     await runner.run("review prompt");
 
@@ -514,6 +521,8 @@ describe("DebateRunner.run() — one-shot mode unchanged", () => {
 // ─── US-005: Two-scope cost tracking ─────────────────────────────────────────
 
 describe("runStateful() — two-scope cost tracking (US-005)", () => {
+  withDepsRestore(_statefulDeps);
+
   function makeScopedCostAgg(debaterCost = 0, resolverCost = 0) {
     let callCount = 0;
     const closed: string[] = [];
@@ -592,10 +601,10 @@ describe("runStateful() — two-scope cost tracking (US-005)", () => {
     const costAgg = makeScopedCostAgg();
     const ctx = makeCtxWithCostAgg(costAgg);
     const capturedIds: (string | undefined)[] = [];
-    spyOn(callModule, "callOp").mockImplementation(async (callCtx, op, input) => {
-      if ((op as { name?: string }).name === "debate-stateful") capturedIds.push(callCtx.scopeId);
-      (input as DebateStatefulInput).proposalBarriers[0]?.resolve("ok");
-      return { success: true, rebut: "ok" } as any;
+    installCallOp(async (callCtx, op, input) => {
+      if (op.name === "debate-stateful") capturedIds.push(callCtx.scopeId);
+      input.proposalBarriers[0]?.resolve("ok");
+      return { success: true, rebut: "ok" };
     });
     await makeStatefulCostRunner(ctx).run("prompt");
     expect(capturedIds.length).toBeGreaterThan(0);
@@ -605,9 +614,9 @@ describe("runStateful() — two-scope cost tracking (US-005)", () => {
   test("AC6: totalCostUsd = debaterScope (0.10) + resolverScope (0.02) = 0.12", async () => {
     const costAgg = makeScopedCostAgg(0.1, 0.02);
     const ctx = makeCtxWithCostAgg(costAgg);
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input) => {
-      (input as DebateStatefulInput).proposalBarriers[0]?.resolve("ok");
-      return { success: true, rebut: "ok" } as any;
+    installCallOp(async (_callCtx, _op, input) => {
+      input.proposalBarriers[0]?.resolve("ok");
+      return { success: true, rebut: "ok" };
     });
     const result = await makeStatefulCostRunner(ctx).run("prompt");
     expect(result.totalCostUsd).toBeCloseTo(0.12);

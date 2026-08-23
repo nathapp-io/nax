@@ -1,12 +1,17 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { runHybrid } from "@/debate/runner-hybrid";
+import { _hybridDeps } from "@/debate/runner-hybrid";
 import type { HybridCtx } from "@/debate/runner-hybrid";
 import type { DebateStageConfig } from "@/debate/types";
 import { NaxError } from "@/errors";
-import * as callModule from "@/operations";
-import type { DebateHybridInput } from "@/operations/debate-hybrid";
 import { DebatePromptBuilder } from "@/prompts";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/helpers";
+import { makeMockAgentManager, makeNaxConfig, makeSessionManager, withDepsRestore } from "@test/helpers";
+
+function installCallOp(impl: typeof _hybridDeps.callOp) {
+  const spy = mock(impl);
+  _hybridDeps.callOp = spy;
+  return spy;
+}
 
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -82,19 +87,19 @@ afterEach(() => {
 });
 
 describe("runHybrid coordinator", () => {
+  withDepsRestore(_hybridDeps);
+
   test("launches one callOp per debater, builds proposal prompts through DebatePromptBuilder, and returns the expected DebateResult shape", async () => {
     const ctx = makeHybridCtx(); // 3 debaters, rounds=2
     const proposalPromptSpy = spyOn(DebatePromptBuilder.prototype, "buildProposalPrompt");
-    const callOpSpy = spyOn(callModule, "callOp").mockImplementation(
-      async (_callCtx, _op, input: DebateHybridInput) => {
-        // Each callOp simulates hybridDebaterOp: resolve shared proposal + rebuttal barriers
-        input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
-        for (let r = 0; r < input.rounds; r++) {
-          input.rebutBarriers[r][input.index].resolve(`rebut-${r + 1}-${input.index}`);
-        }
-        return { success: true, rebut: `rebut-${input.rounds}-${input.index}` };
-      },
-    );
+    const callOpSpy = installCallOp(async (_callCtx, _op, input) => {
+      // Each callOp simulates hybridDebaterOp: resolve shared proposal + rebuttal barriers
+      input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
+      for (let r = 0; r < input.rounds; r++) {
+        input.rebutBarriers[r][input.index].resolve(`rebut-${r + 1}-${input.index}`);
+      }
+      return { success: true, rebut: `rebut-${input.rounds}-${input.index}` };
+    });
     const result = await runHybrid(ctx, "hybrid debate prompt");
 
     expect(result.storyId).toBe("US-hybrid");
@@ -121,7 +126,7 @@ describe("runHybrid coordinator", () => {
 
   test("falls back to a failed result instead of throwing when debaters fail", async () => {
     const ctx = makeHybridCtx();
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
+    installCallOp(async (_callCtx, _op, input) => {
       if (input.index === 0) {
         input.proposalBarriers[input.index].resolve("proposal-0");
         for (let r = 0; r < input.rounds; r++) {
@@ -144,7 +149,7 @@ describe("runHybrid coordinator", () => {
     ctx.abortSignal = controller.signal;
     ctx.callContext.runtime.signal = controller.signal;
 
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
+    installCallOp(async (_callCtx, _op, input) => {
       if (input.index === 0) {
         input.proposalBarriers[input.index].resolve("proposal-0");
         return { success: true, rebut: "proposal-0" };
@@ -161,7 +166,7 @@ describe("runHybrid coordinator", () => {
     // AgentResult (success:false), so callOp returns normally. The coordinator must
     // still reject unresolved barriers so the other debater's hopBody can proceed.
     const ctx = makeHybridCtx(); // 3 debaters, rounds=2
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
+    installCallOp(async (_callCtx, _op, input) => {
       if (input.index === 1) {
         // Simulate callOp returning success:false without resolving barriers
         // (mirrors what happens when hopBody throws before resolving proposalBarriers)

@@ -8,13 +8,18 @@
  * hybridDebaterOp with shared N-element barriers.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _debateSessionDeps, runHybrid } from "@/debate";
 import type { DebateStageConfig, HybridCtx } from "@/debate";
-import * as callModule from "@/operations";
+import { _hybridDeps } from "@/debate/runner-hybrid";
 import type { DebateHybridInput } from "@/operations/debate-hybrid";
-import type { RunOperation } from "@/operations/types";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/helpers";
+import { makeMockAgentManager, makeNaxConfig, makeSessionManager, withDepsRestore } from "@test/helpers";
+
+function installCallOp(impl: typeof _hybridDeps.callOp) {
+  const spy = mock(impl);
+  _hybridDeps.callOp = spy;
+  return spy;
+}
 
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -87,17 +92,17 @@ afterEach(() => {
 });
 
 describe("runHybrid — cross-debater in-round visibility", () => {
+  withDepsRestore(_hybridDeps);
+
   test("dispatches hybridDebaterOp (not statefulDebaterOp) for every debater", async () => {
     const ctx = makeHybridCtx();
     const opNames: string[] = [];
 
-    spyOn(callModule, "callOp").mockImplementation(
-      async (_callCtx, op: RunOperation<DebateHybridInput, unknown, unknown>, input: DebateHybridInput) => {
-        opNames.push(op.name);
-        input.proposalBarriers[input.index]?.resolve(`proposal-${input.index}`);
-        return { success: true, rebut: `proposal-${input.index}` };
-      },
-    );
+    installCallOp(async (_callCtx, op, input) => {
+      opNames.push(op.name);
+      input.proposalBarriers[input.index]?.resolve(`proposal-${input.index}`);
+      return { success: true, rebut: `proposal-${input.index}` };
+    });
 
     await runHybrid(ctx, "debate prompt");
 
@@ -112,7 +117,7 @@ describe("runHybrid — cross-debater in-round visibility", () => {
     const ctx = makeHybridCtx();
     const capturedBarrierLengths: number[] = [];
 
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
+    installCallOp(async (_callCtx, _op, input) => {
       capturedBarrierLengths.push(input.proposalBarriers.length);
       input.proposalBarriers[input.index]?.resolve(`proposal-${input.index}`);
       return { success: true, rebut: `proposal-${input.index}` };
@@ -132,7 +137,7 @@ describe("runHybrid — cross-debater in-round visibility", () => {
     const ctx = makeHybridCtx();
     const capturedBuildRebutPrompts: Array<DebateHybridInput["buildRebutPrompt"]> = [];
 
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
+    installCallOp(async (_callCtx, _op, input) => {
       capturedBuildRebutPrompts.push(input.buildRebutPrompt);
       input.proposalBarriers[input.index]?.resolve(`proposal-${input.index}`);
       return { success: true, rebut: `proposal-${input.index}` };
@@ -156,7 +161,7 @@ describe("runHybrid — cross-debater in-round visibility", () => {
     const ctx = makeHybridCtx({ rounds: 2 });
     const capturedRebutBarrierShapes: Array<{ rounds: number; slots: number }> = [];
 
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
+    installCallOp(async (_callCtx, _op, input) => {
       capturedRebutBarrierShapes.push({
         rounds: input.rebutBarriers.length,
         slots: input.rebutBarriers[0]?.length ?? 0,
