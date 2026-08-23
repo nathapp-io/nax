@@ -13,7 +13,6 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { randomUUID } from "node:crypto";
 import { pickSelector } from "@/config";
 import type { DEFAULT_CONFIG } from "@/config";
 import { EXHAUSTED_EXIT_REASONS, StoryOrchestratorBuilder, _storyOrchestratorDeps } from "@/execution";
@@ -21,7 +20,7 @@ import type { Finding } from "@/findings";
 import type { CallContext, DeterministicOperation } from "@/operations";
 import type { RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { makeMockAgentManager, makeNaxConfig, makeTestRuntime, makeTurnResult } from "@test/helpers";
 
 // ============================================================================
 // Shared helpers
@@ -101,12 +100,13 @@ describe("AC3: validate-short-circuit + empty findings → liteScopeIncomplete",
     const config = makeNaxConfig();
     const agentManager = makeMockAgentManager({
       runAsSessionFn: async (_req, onSuccess) =>
-        onSuccess({
-          turnId: randomUUID(),
-          output: JSON.stringify({ success: true }),
-          tokenUsage: { inputTokens: 10, outputTokens: 5 },
-          estimatedCostUsd: 0.001,
-        }),
+        onSuccess(
+          makeTurnResult({
+            output: JSON.stringify({ success: true }),
+            tokenUsage: { inputTokens: 10, outputTokens: 5 },
+            estimatedCostUsd: 0.001,
+          }),
+        ),
     });
     runtime = makeTestRuntime({ config, agentManager });
 

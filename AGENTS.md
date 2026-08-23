@@ -107,7 +107,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/queue/` | Mid-run queue control (PAUSE, ABORT, SKIP) |
 | `src/worktree/` | Git worktree management for parallel execution |
 | `src/tui/` | React/Ink terminal UI |
-| `src/optimizer/` | Prompt optimization (rule-based, no-op) |
+| `src/optimizer/` | Prompt optimization seam (no-op built-in, plugin-provided) |
 | `src/project/` | Auto-detect project type, language, frameworks |
 
 ### Plugin Extension Points
@@ -140,7 +140,7 @@ All agent permission decisions go through `resolvePermissions(config, stage)` in
 **Rules — no exceptions:**
 - **Always call `resolvePermissions(config, stage)`** — single source of truth
 - **Never hardcode** `?? true`, `?? false`, or literal `"approve-all"` / `"approve-reads"`
-- **Never read `dangerouslySkipPermissions` directly** — deprecated, the resolver handles it
+- **Never reintroduce `dangerouslySkipPermissions`** — removed, not deprecated: it has zero occurrences in `src/`, and `test/unit/config/permissions.test.ts` pins that at zero
 - **Always pass `config` and `pipelineStage`** to adapter calls (`run()`, `complete()`, `plan()`, `decompose()`)
 
 ```typescript
@@ -148,15 +148,16 @@ All agent permission decisions go through `resolvePermissions(config, stage)` in
 import { resolvePermissions } from "../config/permissions";
 const { mode } = resolvePermissions(config, "run");
 
-// ❌ Wrong — local fallback
+// ❌ Wrong — local fallback on a field that no longer exists
 const skip = config?.execution?.dangerouslySkipPermissions ?? true;
 
 // ❌ Wrong — hardcoded
 args.push("--dangerously-skip-permissions");
 ```
 
-`mode` is the only resolved value. The old `skipPermissions` field belonged to
-the CLI adapter, which no longer exists, and was removed — do not reintroduce it.
+`mode` is the only resolved value. Both `dangerouslySkipPermissions` and the older
+`skipPermissions` field belonged to the CLI adapter, which no longer exists, and were
+removed — do not reintroduce either.
 
 **Profiles:** `unrestricted` (approve-all), `safe` (approve-reads), `scoped` (Phase 2).
 `scoped` and the per-stage `execution.permissions` block are both rejected at

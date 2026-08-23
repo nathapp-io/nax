@@ -11,13 +11,12 @@ import type { ExecutionConfig, NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd/types";
 import { runEnvironmentPrecheck, runPrecheck } from "@/precheck";
 import { _checkCliDeps } from "@/precheck/checks-cli";
-import { makeTempDir } from "@test/helpers";
+import { makeConfigSlice, makeTempDir } from "@test/helpers";
 
 const createMockConfig = (cwd: string, overrides: Partial<ExecutionConfig> = {}): NaxConfig => ({
   execution: {
     maxIterations: 10,
     iterationDelayMs: 0,
-    maxCostUSD: 10,
     testCommand: "echo 'test'",
     lintCommand: "echo 'lint'",
     typecheckCommand: "echo 'typecheck'",
@@ -42,13 +41,8 @@ const createMockConfig = (cwd: string, overrides: Partial<ExecutionConfig> = {})
       tierOrder: [],
     },
   },
-  quality: {
-    minTestCoverage: 80,
-  },
-  tdd: {
-    strategy: "auto",
-    skipGeneratedVerificationTests: false,
-  },
+  quality: makeConfigSlice("quality", {}),
+  tdd: makeConfigSlice("tdd", { strategy: "auto" }),
   models: {},
   rectification: {
     enabled: true,

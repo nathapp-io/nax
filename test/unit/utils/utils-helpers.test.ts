@@ -18,7 +18,7 @@ import {
   releaseLock,
 } from "@/execution/helpers";
 import type { PRD, UserStory } from "@/prd";
-import { makeTempDir } from "@test/helpers";
+import { makeStory, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -29,16 +29,16 @@ const mockStory = (
   passes: boolean,
   status: "pending" | "skipped",
   dependencies: string[] = [],
-): UserStory => ({
-  id,
-  title: `Story ${id}`,
-  description: `Description for ${id}`,
-  acceptanceCriteria: [],
-  dependencies,
-  passes,
-  status,
-  estimatedComplexity: "medium",
-});
+): UserStory =>
+  makeStory({
+    id,
+    title: `Story ${id}`,
+    description: `Description for ${id}`,
+    acceptanceCriteria: [],
+    dependencies,
+    passes,
+    status,
+  });
 
 const createMockPRD = (stories: UserStory[]): PRD => ({
   feature: "test-feature",

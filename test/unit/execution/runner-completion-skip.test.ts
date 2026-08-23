@@ -21,7 +21,13 @@ import type { PostRunStatus } from "@/execution/status-file";
 import type { LoadedHooksConfig } from "@/hooks";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
-import { type MockStatusWriter, makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
+import {
+  type MockStatusWriter,
+  makeMockRuntime,
+  makeNaxConfig,
+  makePluginRegistry,
+  makeStatusWriter,
+} from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -92,6 +98,43 @@ function makeWriter(postRunStatus: PostRunStatus = makePostRunStatus("not-run", 
 const WORKDIR = `/tmp/nax-test-rerun-skip-${randomUUID()}`;
 
 function makeOpts(config: NaxConfig, prd: PRD, statusWriter: MockStatusWriter): RunnerCompletionOptions {
+  const runtime = Object.assign(makeMockRuntime(), {
+    outputDir: `${WORKDIR}/output`,
+    close: async () => {},
+    costAggregator: {
+      snapshot: () => ({
+        totalCostUsd: 0,
+        totalEstimatedCostUsd: 0,
+        totalExactCostUsd: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        callCount: 0,
+        errorCount: 0,
+      }),
+      byStage: () => ({}),
+      byStory: () => ({}),
+      byAgent: () => ({}),
+      byCall: () => ({}),
+      byScope: () => ({}),
+      openScope: () => ({
+        scopeId: "test-scope",
+        snapshot: () => ({
+          totalCostUsd: 0,
+          totalEstimatedCostUsd: 0,
+          totalExactCostUsd: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          callCount: 0,
+          errorCount: 0,
+        }),
+        close: () => {},
+      }),
+      record: () => {},
+      recordError: () => {},
+      recordOperationSummary: () => {},
+      drain: async () => {},
+    },
+  });
   return {
     config,
     hooks: { hooks: {}, _skipGlobal: false },
@@ -110,45 +153,12 @@ function makeOpts(config: NaxConfig, prd: PRD, statusWriter: MockStatusWriter): 
     storiesCompleted: 1,
     iterations: 1,
     statusWriter: statusWriter,
-    pluginRegistry: { getAll: () => [], get: () => undefined },
+    pluginRegistry: makePluginRegistry(),
     prdPath: `${WORKDIR}/prd.json`,
-    runtime: Object.assign(makeMockRuntime(), {
-      outputDir: `${WORKDIR}/output`,
-      close: async () => {},
-      costAggregator: {
-        snapshot: () => ({
-          totalCostUsd: 0,
-          totalEstimatedCostUsd: 0,
-          totalExactCostUsd: 0,
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          callCount: 0,
-          errorCount: 0,
-        }),
-        byStage: () => ({}),
-        byStory: () => ({}),
-        byAgent: () => ({}),
-        byCall: () => ({}),
-        byScope: () => ({}),
-        openScope: () => ({
-          scopeId: "test-scope",
-          snapshot: () => ({
-            totalCostUsd: 0,
-            totalEstimatedCostUsd: 0,
-            totalExactCostUsd: 0,
-            totalInputTokens: 0,
-            totalOutputTokens: 0,
-            callCount: 0,
-            errorCount: 0,
-          }),
-          close: () => {},
-        }),
-        record: () => {},
-        recordError: () => {},
-        recordOperationSummary: () => {},
-        drain: async () => {},
-      },
-    }),
+    runtime,
+    agentManager: runtime.agentManager,
+    sessionManager: runtime.sessionManager,
+    abortSignal: runtime.signal,
   };
 }
 

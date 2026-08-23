@@ -9,12 +9,15 @@
  * - loadSemanticVerdicts parses all *.json files (AC-8)
  * - loadSemanticVerdicts skips invalid JSON and logs debug warning (AC-9)
  * - loadSemanticVerdicts ignores non-.json files (AC-8)
+ * - loadSemanticVerdicts migrates legacy ReviewFinding-shaped verdicts (ADR-021 phase 7)
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import path from "node:path";
 import { _semanticVerdictDeps, loadSemanticVerdicts, persistSemanticVerdict } from "@/acceptance/semantic-verdict";
 import type { SemanticVerdict } from "@/acceptance/types";
+import type { ReviewFinding } from "@/plugins/types";
+import { makeFinding } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Save and restore _deps around each test
@@ -57,17 +60,17 @@ describe("SemanticVerdict type", () => {
       timestamp: "2026-01-01T00:00:00.000Z",
       acCount: 2,
       findings: [
-        {
-          ruleId: "no-unused-vars",
+        makeFinding({
+          rule: "no-unused-vars",
           severity: "warning",
           file: "src/a.ts",
           line: 10,
           message: "unused variable",
-        },
+        }),
       ],
     };
     expect(verdict.findings).toHaveLength(1);
-    expect(verdict.findings[0].ruleId).toBe("no-unused-vars");
+    expect(verdict.findings[0].rule).toBe("no-unused-vars");
     expect(verdict.findings[0].severity).toBe("warning");
   });
 
@@ -143,7 +146,7 @@ describe("persistSemanticVerdict — file path", () => {
       passed: false,
       timestamp: "2026-04-05T10:00:00.000Z",
       acCount: 2,
-      findings: [{ ruleId: "r1", severity: "error", file: "src/a.ts", line: 5, message: "bad code" }],
+      findings: [makeFinding({ rule: "r1", severity: "error", file: "src/a.ts", line: 5, message: "bad code" })],
     };
 
     await persistSemanticVerdict("/feat/dir", "US-001", verdict);
@@ -153,7 +156,7 @@ describe("persistSemanticVerdict — file path", () => {
     expect(parsed.passed).toBe(false);
     expect(parsed.acCount).toBe(2);
     expect(parsed.findings).toHaveLength(1);
-    expect(parsed.findings[0].ruleId).toBe("r1");
+    expect(parsed.findings[0].rule).toBe("r1");
     expect(typeof parsed.timestamp).toBe("string");
   });
 });
@@ -266,7 +269,7 @@ describe("loadSemanticVerdicts — parses JSON files", () => {
       passed: false,
       timestamp: "2026-01-01T00:00:00.000Z",
       acCount: 1,
-      findings: [{ ruleId: "r1", severity: "error", file: "src/b.ts", line: 3, message: "oops" }],
+      findings: [makeFinding({ rule: "r1", severity: "error", file: "src/b.ts", line: 3, message: "oops" })],
     };
     _semanticVerdictDeps.readdir = async () => ["US-001.json", "US-002.json"];
     _semanticVerdictDeps.readFile = async (p) => {
@@ -377,5 +380,93 @@ describe("loadSemanticVerdicts — skips invalid JSON", () => {
     const result = await loadSemanticVerdicts("/feat/dir");
 
     expect(result).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Legacy migration — verdicts persisted before ADR-021 phase 7 carry the old
+// ReviewFinding shape (ruleId, no source). migrateSemanticVerdict converts them
+// on load via reviewFindingToFinding. Detection is the absence of `source`, so
+// the fixture below must stay ReviewFinding-shaped: giving it a `source` (or
+// renaming ruleId -> rule) silently skips the branch this test exists to cover.
+// ---------------------------------------------------------------------------
+
+/** A verdict as persisted on disk before the Finding migration. */
+interface LegacySemanticVerdict {
+  storyId: string;
+  passed: boolean;
+  timestamp: string;
+  acCount: number;
+  findings: ReviewFinding[];
+}
+
+describe("loadSemanticVerdicts — legacy ReviewFinding migration", () => {
+  test("converts a legacy ruleId finding to the unified Finding shape", async () => {
+    const legacy: LegacySemanticVerdict = {
+      storyId: "US-001",
+      passed: false,
+      timestamp: "2026-01-01T00:00:00.000Z",
+      acCount: 1,
+      findings: [
+        {
+          ruleId: "no-unused-vars",
+          severity: "warning",
+          category: "style",
+          file: "src/a.ts",
+          line: 10,
+          column: 4,
+          message: "unused variable",
+        },
+      ],
+    };
+    _semanticVerdictDeps.readdir = async () => ["US-001.json"];
+    _semanticVerdictDeps.readFile = async () => JSON.stringify(legacy);
+
+    const [verdict] = await loadSemanticVerdicts("/feat/dir");
+
+    expect(verdict.findings).toHaveLength(1);
+    const finding = verdict.findings[0];
+    expect(finding.source).toBe("semantic-review");
+    expect(finding.rule).toBe("no-unused-vars");
+    expect(finding.category).toBe("style");
+    expect(finding.severity).toBe("warning");
+    expect(finding.file).toBe("src/a.ts");
+    expect(finding.line).toBe(10);
+    expect(finding.column).toBe(4);
+    expect(finding.message).toBe("unused variable");
+    expect(finding.fixTarget).toBe("source");
+  });
+
+  test("defaults category to empty string when the legacy finding omits it", async () => {
+    const legacy: LegacySemanticVerdict = {
+      storyId: "US-002",
+      passed: false,
+      timestamp: "2026-01-01T00:00:00.000Z",
+      acCount: 1,
+      findings: [{ ruleId: "r1", severity: "error", file: "src/b.ts", line: 3, message: "oops" }],
+    };
+    _semanticVerdictDeps.readdir = async () => ["US-002.json"];
+    _semanticVerdictDeps.readFile = async () => JSON.stringify(legacy);
+
+    const [verdict] = await loadSemanticVerdicts("/feat/dir");
+
+    expect(verdict.findings[0].category).toBe("");
+    expect(verdict.findings[0].rule).toBe("r1");
+  });
+
+  test("leaves an already-migrated verdict untouched", async () => {
+    const modern: SemanticVerdict = {
+      storyId: "US-003",
+      passed: false,
+      timestamp: "2026-01-01T00:00:00.000Z",
+      acCount: 1,
+      findings: [makeFinding({ rule: "r1", severity: "error", file: "src/c.ts", line: 7, message: "keep me" })],
+    };
+    _semanticVerdictDeps.readdir = async () => ["US-003.json"];
+    _semanticVerdictDeps.readFile = async () => JSON.stringify(modern);
+
+    const [verdict] = await loadSemanticVerdicts("/feat/dir");
+
+    expect(verdict.findings).toEqual(modern.findings);
   });
 });

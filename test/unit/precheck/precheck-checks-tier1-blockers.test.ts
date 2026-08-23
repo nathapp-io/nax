@@ -19,7 +19,7 @@ import {
   checkWorkingTreeClean,
 } from "@/precheck/checks";
 import { _checkCanonicalRulesDeps } from "@/precheck/checks-system";
-import { makeTempDir } from "@test/helpers";
+import { makeConfigSlice, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -29,7 +29,6 @@ const createMockConfig = (overrides: Partial<ExecutionConfig> = {}): NaxConfig =
   execution: {
     maxIterations: 10,
     iterationDelayMs: 1000,
-    maxCostUSD: 10,
     testCommand: "bun test",
     lintCommand: "bun run lint",
     typecheckCommand: "bun run typecheck",
@@ -54,13 +53,8 @@ const createMockConfig = (overrides: Partial<ExecutionConfig> = {}): NaxConfig =
       tierOrder: [],
     },
   },
-  quality: {
-    minTestCoverage: 80,
-  },
-  tdd: {
-    strategy: "auto",
-    skipGeneratedVerificationTests: false,
-  },
+  quality: makeConfigSlice("quality", {}),
+  tdd: makeConfigSlice("tdd", { strategy: "auto" }),
   models: {},
   rectification: {
     enabled: true,

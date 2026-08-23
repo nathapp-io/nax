@@ -242,10 +242,10 @@ describe("StoryOrchestratorBuilder — AC3: Canonical execution order", () => {
           const role = _req.sessionRole ?? "unknown";
           roles.push(role);
           return onSuccess({
-            turnId: randomUUID(),
             output: JSON.stringify({ success: true }),
             tokenUsage: { inputTokens: 10, outputTokens: 5 },
             estimatedCostUsd: 0.001,
+            internalRoundTrips: 1,
           });
         },
       });
@@ -328,10 +328,10 @@ describe("StoryOrchestratorBuilder — AC5: Error handling and success=false", (
     const mockAgentManager = makeMockAgentManager({
       runAsSessionFn: async (_req, onSuccess) => {
         return onSuccess({
-          turnId: randomUUID(),
           output: JSON.stringify({ success: false }),
           tokenUsage: { inputTokens: 10, outputTokens: 5 },
           estimatedCostUsd: 0.001,
+          internalRoundTrips: 1,
         });
       },
     });
@@ -385,10 +385,10 @@ describe("StoryOrchestratorBuilder — AC6: Result shape (costs, outputs, durati
     const mockAgentManager = makeMockAgentManager({
       runAsSessionFn: async (_req, onSuccess) => {
         return onSuccess({
-          turnId: randomUUID(),
           output: JSON.stringify({ success: true }),
           tokenUsage: { inputTokens: 10, outputTokens: 5 },
           estimatedCostUsd: 0.002,
+          internalRoundTrips: 1,
         });
       },
     });
@@ -422,10 +422,10 @@ describe("StoryOrchestratorBuilder — AC6: Result shape (costs, outputs, durati
     const mockAgentManager = makeMockAgentManager({
       runAsSessionFn: async (_req, onSuccess) =>
         onSuccess({
-          turnId: randomUUID(),
           output: JSON.stringify({ success: true }),
           tokenUsage: { inputTokens: 10, outputTokens: 5 },
           estimatedCostUsd: 0.005,
+          internalRoundTrips: 1,
         }),
     });
     runtime = makeTestRuntime({ config, agentManager: mockAgentManager });
@@ -459,10 +459,10 @@ describe("StoryOrchestratorBuilder — AC6: Result shape (costs, outputs, durati
             : JSON.stringify({ success: true, findings: [] });
 
         return onSuccess({
-          turnId: randomUUID(),
           output,
           tokenUsage: { inputTokens: 10, outputTokens: 5 },
           estimatedCostUsd: 0.001,
+          internalRoundTrips: 1,
         });
       },
     });
@@ -527,10 +527,10 @@ describe("StoryOrchestratorBuilder — AC7: Rectification phase loop", () => {
             : JSON.stringify({ success: true });
 
         return onSuccess({
-          turnId: randomUUID(),
           output,
           tokenUsage: { inputTokens: 10, outputTokens: 5 },
           estimatedCostUsd: 0.001,
+          internalRoundTrips: 1,
         });
       },
     });
@@ -571,10 +571,10 @@ describe("StoryOrchestratorBuilder — AC7: Rectification phase loop", () => {
         }
 
         return onSuccess({
-          turnId: randomUUID(),
           output: JSON.stringify({ success: false, findings: [] }),
           tokenUsage: { inputTokens: 10, outputTokens: 5 },
           estimatedCostUsd: 0.001,
+          internalRoundTrips: 1,
         });
       },
     });
@@ -615,10 +615,10 @@ describe("StoryOrchestratorBuilder — AC7: Rectification phase loop", () => {
             : JSON.stringify({ success: true });
 
         return onSuccess({
-          turnId: randomUUID(),
           output,
           tokenUsage: { inputTokens: 10, outputTokens: 5 },
           estimatedCostUsd: 0.001,
+          internalRoundTrips: 1,
         });
       },
     });
@@ -658,13 +658,13 @@ describe("StoryOrchestratorBuilder — AC7: Rectification phase loop", () => {
         const findingCount = callCount === 1 ? 1 : 2; // Increase from 1 to 2
 
         return onSuccess({
-          turnId: randomUUID(),
           output: JSON.stringify({
             success: false,
             findings: Array(findingCount).fill({ message: "error" }),
           }),
           tokenUsage: { inputTokens: 10, outputTokens: 5 },
           estimatedCostUsd: 0.001,
+          internalRoundTrips: 1,
         });
       },
     });
@@ -703,10 +703,10 @@ describe("StoryOrchestratorBuilder — AC8: SessionKeeper reuse", () => {
       runAsSessionFn: async (_req, onSuccess) => {
         if (_req.sessionRole === "implementer") sessionCount++;
         return onSuccess({
-          turnId: randomUUID(),
           output: JSON.stringify({ success: true }),
           tokenUsage: { inputTokens: 10, outputTokens: 5 },
           estimatedCostUsd: 0.001,
+          internalRoundTrips: 1,
         });
       },
     });
@@ -744,10 +744,10 @@ describe("StoryOrchestratorBuilder — AC8: SessionKeeper reuse", () => {
       },
       runAsSessionFn: async (_req, onSuccess) => {
         return onSuccess({
-          turnId: randomUUID(),
           output: JSON.stringify({ success: false, findings: [] }),
           tokenUsage: { inputTokens: 10, outputTokens: 5 },
           estimatedCostUsd: 0.001,
+          internalRoundTrips: 1,
         });
       },
     });

@@ -15,7 +15,7 @@ import { describe, expect, test } from "bun:test";
 import type { Finding } from "@/findings";
 import { RectifierPromptBuilder } from "@/prompts";
 import type { ReviewCheckResult } from "@/review";
-import { makeStory } from "@test/helpers";
+import { makeFinding, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -36,14 +36,14 @@ function makeCheckWithFindings(check: string, output: string): ReviewCheckResult
   return {
     ...makeCheck(check, output),
     findings: [
-      {
-        ruleId: "semantic",
+      makeFinding({
+        source: "semantic-review",
+        rule: "semantic",
         severity: "error",
         file: "src/foo.ts",
         line: 42,
         message: "Missing implementation for AC-1",
-        source: "semantic-review",
-      },
+      }),
     ],
   };
 }
@@ -230,14 +230,14 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
       output: "adversarial output",
       durationMs: 100,
       findings: [
-        {
-          ruleId: "adversarial",
+        makeFinding({
+          source: "adversarial-review",
+          rule: "adversarial",
           severity: "error",
           file,
           line: 10,
           message,
-          source: "adversarial-review",
-        },
+        }),
       ],
     };
   }

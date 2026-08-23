@@ -71,7 +71,7 @@ New code goes through `callOp`. If you think you need Layer 3, check with the te
 
 ## Rule 5: Permissions resolve at the resource opener
 
-Only `SessionManager.openSession` and `AgentManager.completeAs` call `resolvePermissions`. Everyone above passes `pipelineStage` upward; never resolve in middle layers, never hardcode `dangerouslySkipPermissions`.
+Only `SessionManager.openSession` and `AgentManager.completeAs` call `resolvePermissions`. Everyone above passes `pipelineStage` upward; never resolve in middle layers. `dangerouslySkipPermissions` is **removed**, not deprecated — zero occurrences in `src/`, pinned by `test/unit/config/permissions.test.ts`; do not reintroduce it.
 
 ## Rule 6: CallContext fields — input only, no result-side data
 

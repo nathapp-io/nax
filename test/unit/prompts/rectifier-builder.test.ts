@@ -13,7 +13,7 @@ import type { Finding } from "@/findings/types";
 import { RectifierPromptBuilder, repoScopedRectification } from "@/prompts";
 import type { FailureRecord } from "@/prompts";
 import type { ReviewCheckResult } from "@/review/types";
-import { makeStory } from "@test/helpers";
+import { makeFinding, makeStory } from "@test/helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -199,13 +199,13 @@ describe("RectifierPromptBuilder.firstAttemptDelta", () => {
         makeReviewCheck("build", { exitCode: 2 }),
         makeReviewCheck("semantic", {
           findings: [
-            {
-              ruleId: "semantic-ac3",
+            makeFinding({
+              rule: "semantic-ac3",
               severity: "error",
               file: "src/foo.ts",
               line: 42,
               message: "Implementation does not satisfy AC#3",
-            },
+            }),
           ],
         }),
         makeReviewCheck("test"),
@@ -261,13 +261,13 @@ describe("RectifierPromptBuilder.continuation", () => {
         makeReviewCheck("build", { exitCode: 2 }),
         makeReviewCheck("semantic", {
           findings: [
-            {
-              ruleId: "semantic-ac3",
+            makeFinding({
+              rule: "semantic-ac3",
               severity: "error",
               file: "src/foo.ts",
               line: 42,
               message: "Implementation does not satisfy AC#3",
-            },
+            }),
           ],
         }),
         makeReviewCheck("test"),

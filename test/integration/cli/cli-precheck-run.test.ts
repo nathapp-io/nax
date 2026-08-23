@@ -11,7 +11,7 @@ import { DEFAULT_CONFIG } from "@/config";
 import { run } from "@/execution";
 import type { PRD } from "@/prd/types";
 import { EXIT_CODES, runPrecheck } from "@/precheck";
-import { fullTest, makeTempDir } from "@test/helpers";
+import { fullTest, makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 // Requires real claude binary — skipped by default, run with FULL=1.
 const skipInCI = fullTest;
@@ -265,12 +265,12 @@ describe("Precheck Integration with nax run", () => {
   });
 
   function createBasicPRD(feature: string): PRD {
-    return {
+    return makePRD({
       feature,
       project: "test-project",
       branchName: `feat/${feature}`,
       userStories: [
-        {
+        makeStory({
           id: "US-001",
           title: "Test Story",
           description: "A test story",
@@ -278,10 +278,9 @@ describe("Precheck Integration with nax run", () => {
           status: "pending",
           dependencies: [],
           tags: [],
-          estimatedComplexity: "simple",
-        },
+        }),
       ],
-    };
+    });
   }
 
   async function setupFeature(feature: string): Promise<string> {
