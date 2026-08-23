@@ -1135,6 +1135,16 @@ production API to satisfy a test is what §4 forbids, and none of these members 
 **Starting state:** ratchet = 151, typecheck = 1946, gate `worse: 0`, tree clean at
 `494856cd1`. **Expected landing: ~119.**
 
+**DONE (session 8):** Groups A–C executed at commit `129ef87a0` — ratchet **151 → 120**,
+typecheck flat at 1946, per-file gate `worse: 0`, tree clean. Group A's three accessors
+(`telegramInternals`, `webhookInternals`, `agentManagerInternals`) contain the 3 remaining
+casts; the 6 allow-marked webhook sites were swapped too (their markers removed, since the
+accessor supersedes the reach-in). Group D's 13 are reclassified §3d, in place. Group E
+(scanner counting its own fixture) is **still open** — file it separately, do not delete the
+fixture. One field-path correction while executing: the ruling's `review.parallel` does not
+exist — the field is `review.adversarial.parallel` (`schemas-review.ts:104`, same line the
+doc cited, nested under `adversarial`).
+
 Do the groups in order. A is the bulk; B and C are quick.
 
 ---
