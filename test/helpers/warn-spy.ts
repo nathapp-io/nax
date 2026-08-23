@@ -21,9 +21,16 @@
  * ```
  */
 
-import { spyOn } from "bun:test";
+import { type Mock, spyOn } from "bun:test";
+import type { Logger } from "@/logger";
 
-type LogSpy = ReturnType<typeof spyOn>;
+/**
+ * The spy's call tuples must carry the logger method's real parameters —
+ * `ReturnType<typeof spyOn>` instantiates the generic at its constraint, which
+ * degrades `spy.mock.calls` to `any[]` and makes every `(c) => …` callback an
+ * implicit any at the call site (#1514).
+ */
+type LogSpy = Mock<Logger["warn"]>;
 
 /**
  * Install a spy on one logger level for the duration of `fn`, then restore it.
@@ -33,7 +40,7 @@ type LogSpy = ReturnType<typeof spyOn>;
 async function withLogSpy<T>(level: "warn" | "info", fn: (spy: LogSpy) => Promise<T>): Promise<T> {
   const { resetLogger, initLogger } = await import("@/logger");
   resetLogger();
-  const spy = spyOn(initLogger({ level: "silent" }), level);
+  const spy: LogSpy = spyOn(initLogger({ level: "silent" }), level);
   try {
     return await fn(spy);
   } finally {
