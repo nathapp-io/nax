@@ -104,7 +104,7 @@ function nrState(maxAttempts: number): InternalBuildState {
     fullSuiteGate: { kind: "full-suite-gate", slot: { op: nrGateOp, input: {} } },
     rectification: {
       maxAttempts: 20,
-      strategies: [nrStrategy(maxAttempts) as unknown as FixStrategy<Finding, unknown, unknown, unknown>],
+      strategies: [nrStrategy(maxAttempts)],
       abortOnIncreasingFailures: false,
       abortOnNoProgress: false,
     },

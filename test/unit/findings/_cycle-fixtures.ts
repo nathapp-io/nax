@@ -32,15 +32,18 @@ export function makeCtx(): FixCycleContext {
   return { ...ctx, storyId: "story-1" };
 }
 
-export const noopOp = {
+export const noopOp: FixStrategy<Finding, unknown, unknown>["fixOp"] = {
   name: "noop-op",
-  kind: "complete" as const,
-  stage: "verify" as const,
+  kind: "complete",
+  stage: "verify",
   config: [],
-  build: () => "",
+  build: () => ({
+    role: { id: "role", content: "", overridable: false },
+    task: { id: "task", content: "", overridable: false },
+  }),
   parse: () => null,
   jsonMode: false,
-} as unknown as FixStrategy<Finding, unknown, unknown>["fixOp"];
+};
 
 export function makeStrategy(
   overrides: Partial<FixStrategy<Finding, unknown, unknown>> & Pick<FixStrategy<Finding, unknown, unknown>, "name">,

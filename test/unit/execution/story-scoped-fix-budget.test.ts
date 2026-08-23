@@ -103,7 +103,7 @@ function rbState(maxAttempts: number): InternalBuildState {
     fullSuiteGate: { kind: "full-suite-gate", slot: { op: rbGateOp, input: {} } },
     rectification: {
       maxAttempts: 20,
-      strategies: [rbFixStrategy(maxAttempts) as unknown as FixStrategy<Finding, unknown, unknown, unknown>],
+      strategies: [rbFixStrategy(maxAttempts)],
       abortOnIncreasingFailures: false,
       abortOnNoProgress: false,
     },
