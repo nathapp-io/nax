@@ -250,6 +250,8 @@ describe("runSemanticReview — BUG-114 storyGitRef fallback (merge-base)", () =
       storyGitRef: undefined,
       story: STORY,
       semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+      // No agentManager: this path must skip the review before any dispatch.
+      agentManager: undefined,
     });
 
     expect(result.success).toBe(true);
@@ -266,6 +268,8 @@ describe("runSemanticReview — BUG-114 storyGitRef fallback (merge-base)", () =
       storyGitRef: "bad-sha",
       story: STORY,
       semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+      // No agentManager: this path must skip the review before any dispatch.
+      agentManager: undefined,
     });
 
     expect(result.success).toBe(true);

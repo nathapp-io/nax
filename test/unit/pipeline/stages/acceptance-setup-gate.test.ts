@@ -3,6 +3,7 @@ import { DEFAULT_CONFIG } from "@/config";
 import { _acceptanceSetupDeps, acceptanceSetupStage, computeACFingerprint } from "@/pipeline/stages/acceptance-setup";
 import { preRunPipeline } from "@/pipeline/stages/index";
 import type { PipelineContext } from "@/pipeline/types";
+import { makeDispatchContext } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -59,6 +60,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     projectDir: "/tmp/test-workdir",
     featureDir: "/tmp/test-workdir/.nax/features/test-feature",
     hooks: {} as any,
+    ...makeDispatchContext(),
     ...overrides,
   };
 }

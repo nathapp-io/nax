@@ -15,7 +15,7 @@ import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineEvent, RunCompletedEvent } from "@/pipeline/event-bus";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd/types";
-import { makePRD, makePluginRegistry, makeStatusWriter, makeTestRuntime } from "@test/helpers";
+import { makeDispatchContext, makePRD, makePluginRegistry, makeStatusWriter, makeTestRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -75,7 +75,7 @@ function makeMinimalContext(): SequentialExecutionContext {
     logFilePath: undefined,
     // Real cost aggregator via a real runtime — a fresh instance already reports
     // an all-zero snapshot, which is all this test needs.
-    runtime: makeTestRuntime({ config }),
+    ...makeDispatchContext({ runtime: makeTestRuntime({ config }) }),
   };
 }
 
@@ -196,7 +196,7 @@ describe("RL-002: run:completed event payload requirements", () => {
         workdir: ctx.workdir,
         statusWriter: ctx.statusWriter as never,
         config: ctx.config,
-        runtime: ctx.runtime,
+        ...makeDispatchContext({ runtime: ctx.runtime }),
       });
 
       // handleRunCompletion should emit run:completed with real counts from countStories(prd)
@@ -251,7 +251,7 @@ describe("RL-002: run:completed event payload requirements", () => {
         workdir: ctx.workdir,
         statusWriter: ctx.statusWriter as never,
         config: ctx.config,
-        runtime: ctx.runtime,
+        ...makeDispatchContext({ runtime: ctx.runtime }),
       });
 
       const ev = capturedRunCompleted[0];

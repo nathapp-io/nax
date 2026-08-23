@@ -20,6 +20,7 @@ import type { NaxPlugin } from "@/plugins/types";
 import type { UserStory } from "@/prd/types";
 import type { RoutingContext, RoutingDecision, RoutingStrategy } from "@/routing";
 import { routeStory } from "@/routing/router";
+import { makeDispatchContext } from "@test/helpers";
 
 // ============================================================================
 // Test Helpers
@@ -44,6 +45,7 @@ function createTestStory(overrides?: Partial<UserStory>): UserStory {
 function createTestContext(overrides?: Partial<RoutingContext>): RoutingContext {
   return {
     config: DEFAULT_CONFIG,
+    ...makeDispatchContext(),
     ...overrides,
   };
 }

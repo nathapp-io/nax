@@ -12,7 +12,7 @@ import { DEFAULT_CONFIG } from "@/config";
 import { _acceptanceSetupDeps, acceptanceSetupStage, pipelineEventBus } from "@/pipeline";
 import type { PipelineContext } from "@/pipeline";
 import type { PostRunPhaseCompletedEvent, PostRunPhaseStartedEvent } from "@/pipeline";
-import { makeStory } from "@test/helpers";
+import { makeDispatchContext, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -59,6 +59,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     projectDir: "/tmp/test-acceptance-events",
     featureDir: "/tmp/test-acceptance-events/.nax/features/test-feature",
     hooks: {} as PipelineContext["hooks"],
+    ...makeDispatchContext(),
     ...overrides,
   };
 }

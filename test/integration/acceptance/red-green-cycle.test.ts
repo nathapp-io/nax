@@ -18,7 +18,7 @@ import { acceptanceStage } from "@/pipeline/stages/acceptance";
 import { _acceptanceSetupDeps, acceptanceSetupStage, computeACFingerprint } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
-import { makeNaxConfig, makePRD, makeTempDir } from "@test/helpers";
+import { makeDispatchContext, makeNaxConfig, makePRD, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -80,6 +80,7 @@ function makeCtx(tmpDir: string, overrides: Partial<PipelineContext> = {}): Pipe
     projectDir: tmpDir,
     featureDir,
     hooks: { hooks: {} },
+    ...makeDispatchContext(),
     ...overrides,
   };
 }

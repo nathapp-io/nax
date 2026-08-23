@@ -20,10 +20,15 @@ import type { NaxPlugin } from "@/plugins/types";
 import type { UserStory } from "@/prd/types";
 import type { RoutingContext, RoutingDecision, RoutingStrategy } from "@/routing";
 import { resolveRouting, routeStory } from "@/routing/router";
+import { makeDispatchContext } from "@test/helpers";
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
+
+function makeRoutingContext(): RoutingContext {
+  return { config: DEFAULT_CONFIG, ...makeDispatchContext() };
+}
 
 function createTestStory(overrides?: Partial<UserStory>): UserStory {
   return {
@@ -139,7 +144,7 @@ describe("Plugin router precedence", () => {
     const registry = new PluginRegistry([createMockPlugin("plugin-1", router1), createMockPlugin("plugin-2", router2)]);
 
     const story = createTestStory();
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const context = makeRoutingContext();
 
     const decision = await routeStory(story, context, "/tmp", registry);
 
@@ -161,7 +166,7 @@ describe("Plugin router precedence", () => {
     const registry = new PluginRegistry([createMockPlugin("plugin-1", router1), createMockPlugin("plugin-2", router2)]);
 
     const story = createTestStory();
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const context = makeRoutingContext();
 
     const decision = await routeStory(story, context, "/tmp", registry);
 
@@ -192,7 +197,7 @@ describe("Plugin router precedence", () => {
       tags: ["security"],
     });
 
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const context = makeRoutingContext();
     const decision = await routeStory(story, context, "/tmp", registry);
 
     // Plugin decision wins over keyword strategy
@@ -218,7 +223,7 @@ describe("Plugin router precedence", () => {
     ]);
 
     const story = createTestStory();
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const context = makeRoutingContext();
 
     const decision = await routeStory(story, context, "/tmp", registry);
 
@@ -245,7 +250,7 @@ describe("Plugin router fallback to built-in strategy", () => {
       tags: [],
     });
 
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const context = makeRoutingContext();
     const decision = await routeStory(story, context, "/tmp", registry);
 
     // Keyword strategy decision (not from plugin)
@@ -266,7 +271,7 @@ describe("Plugin router fallback to built-in strategy", () => {
       tags: ["security", "auth"],
     });
 
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const context = makeRoutingContext();
     const decision = await routeStory(story, context, "/tmp", registry);
 
     // Keyword strategy should classify as complex
@@ -286,7 +291,7 @@ describe("Plugin router fallback to built-in strategy", () => {
       tags: [],
     });
 
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const context = makeRoutingContext();
     const decision = await routeStory(story, context, "/tmp", registry);
 
     // Keyword strategy decision
@@ -318,7 +323,7 @@ describe("Plugin router context", () => {
       tags: ["ui", "security"],
     });
 
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const context = makeRoutingContext();
     await routeStory(story, context, "/tmp", registry);
 
     // Verify plugin received the story
@@ -340,7 +345,7 @@ describe("Plugin router context", () => {
     const registry = new PluginRegistry([createMockPlugin("test-plugin", pluginRouter)]);
 
     const story = createTestStory();
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const context = makeRoutingContext();
 
     await routeStory(story, context, "/tmp", registry);
 
@@ -366,7 +371,7 @@ describe("Plugin router context", () => {
     const registry = new PluginRegistry([createMockPlugin("plugin-1", router1), createMockPlugin("plugin-2", router2)]);
 
     const story = createTestStory();
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const context = makeRoutingContext();
 
     await routeStory(story, context, "/tmp", registry);
 
@@ -399,7 +404,7 @@ describe("Plugin router error handling", () => {
     ]);
 
     const story = createTestStory();
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const context = makeRoutingContext();
 
     const decision = await routeStory(story, context, "/tmp", registry);
 
@@ -426,7 +431,7 @@ describe("Plugin router error handling", () => {
       tags: [],
     });
 
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const context = makeRoutingContext();
     const decision = await routeStory(story, context, "/tmp", registry);
 
     // Should fall back to keyword strategy

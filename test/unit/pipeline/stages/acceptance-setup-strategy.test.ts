@@ -12,6 +12,7 @@ import { DEFAULT_CONFIG } from "@/config";
 import { _acceptanceSetupDeps, acceptanceSetupStage } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
+import { makeDispatchContext } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -66,6 +67,7 @@ function makeCtx(acceptanceOverrides: Record<string, unknown> = {}): PipelineCon
     projectDir: "/tmp/test-workdir",
     featureDir: "/tmp/test-workdir/nax/features/test-feature",
     hooks: {} as any,
+    ...makeDispatchContext(),
   };
 }
 

@@ -15,7 +15,7 @@ import { _isHeartbeatActive, resetCrashHandlers, startHeartbeat, stopHeartbeat }
 import { type SequentialExecutionContext, executeUnified } from "@/execution/unified-executor";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { PRD, UserStory } from "@/prd/types";
-import { makePRD, makePluginRegistry, makeStatusWriter, makeTestRuntime } from "@test/helpers";
+import { makeDispatchContext, makePRD, makePluginRegistry, makeStatusWriter, makeTestRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -74,7 +74,7 @@ function makeMinimalContext(): SequentialExecutionContext {
     logFilePath: undefined,
     // Real cost aggregator via a real runtime — a fresh instance already reports
     // an all-zero snapshot, which is all this test needs.
-    runtime: makeTestRuntime({ config }),
+    ...makeDispatchContext({ runtime: makeTestRuntime({ config }) }),
   };
 }
 

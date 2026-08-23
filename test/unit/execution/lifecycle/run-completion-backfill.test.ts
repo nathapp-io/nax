@@ -22,7 +22,14 @@ import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regress
 import type { StoryMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD } from "@/prd";
-import { makeMockRuntime, makeNaxConfig, makePRD as makePRDHelper, makeStatusWriter, makeStory } from "@test/helpers";
+import {
+  makeDispatchContext,
+  makeMockRuntime,
+  makeNaxConfig,
+  makePRD as makePRDHelper,
+  makeStatusWriter,
+  makeStory,
+} from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -88,7 +95,7 @@ function makeOpts(config: NaxConfig, prd: PRD, metrics: StoryMetrics[]): RunComp
     workdir: WORKDIR,
     statusWriter: makeStatusWriter(),
     config,
-    runtime: makeMockRuntime(),
+    ...makeDispatchContext(),
   };
 }
 

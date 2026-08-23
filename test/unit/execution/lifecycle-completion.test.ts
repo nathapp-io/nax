@@ -16,7 +16,7 @@ import type { StoryMetrics } from "@/metrics";
 import type { RunCompletedEvent } from "@/pipeline";
 import { pipelineEventBus } from "@/pipeline";
 import type { PRD, UserStory } from "@/prd";
-import { type DeepPartial, makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
+import { type DeepPartial, makeDispatchContext, makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -111,7 +111,7 @@ function makeOpts(
     workdir,
     statusWriter: makeStatusWriter(),
     config,
-    runtime: makeMockRuntime(),
+    ...makeDispatchContext(),
     ...overrides,
   };
 }

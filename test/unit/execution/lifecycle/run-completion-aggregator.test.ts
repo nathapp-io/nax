@@ -24,7 +24,14 @@ import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { RunCompletedEvent } from "@/pipeline/event-bus";
 import type { PRD } from "@/prd";
 import type { CostSnapshot, ICostAggregator } from "@/runtime/cost-aggregator";
-import { makeMockRuntime, makeNaxConfig, makePRD as makePRDHelper, makeStatusWriter, makeStory } from "@test/helpers";
+import {
+  makeDispatchContext,
+  makeMockRuntime,
+  makeNaxConfig,
+  makePRD as makePRDHelper,
+  makeStatusWriter,
+  makeStory,
+} from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -91,7 +98,7 @@ function makeOpts(prd: PRD, metrics: StoryMetrics[], aggregator: ICostAggregator
     workdir: WORKDIR,
     statusWriter: makeStatusWriter(),
     config: DISABLED_REGRESSION_CONFIG,
-    runtime,
+    ...makeDispatchContext({ runtime }),
   };
 }
 

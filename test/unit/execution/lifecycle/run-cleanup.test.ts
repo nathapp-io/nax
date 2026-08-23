@@ -16,7 +16,7 @@ import type { RunCleanupOptions } from "@/execution/lifecycle/run-cleanup";
 import * as loggerModule from "@/logger";
 import type { IPostRunAction, PostRunActionResult, PostRunContext } from "@/plugins/extensions";
 import type { PRD, StoryStatus } from "@/prd/types";
-import { makePluginRegistry as makePluginRegistryHelper, makeStory } from "@test/helpers";
+import { makeDispatchContext, makePluginRegistry as makePluginRegistryHelper, makeStory } from "@test/helpers";
 
 // ============================================================================
 // Helpers
@@ -628,6 +628,7 @@ describe("runner-completion.ts — does not invoke post-run actions", () => {
         statusWriter: { write: mock(async () => {}) },
         pluginRegistry: registry,
         prdPath: "/tmp/test/.nax/features/test-feat/prd.json",
+        ...makeDispatchContext(),
       });
     } catch {
       // runCompletionPhase may throw in this minimal context — that's fine

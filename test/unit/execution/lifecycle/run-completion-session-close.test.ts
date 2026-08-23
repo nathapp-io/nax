@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _runCompletionDeps, handleRunCompletion } from "@/execution/lifecycle/run-completion";
-import { makeMockRuntime, makeSessionManager, makeStatusWriter } from "@test/helpers";
+import { makeDispatchContext, makeMockRuntime, makeSessionManager, makeStatusWriter } from "@test/helpers";
 
 const makePrd = () => ({
   project: "test-project",
@@ -57,8 +57,9 @@ describe("handleRunCompletion session teardown", () => {
           },
         },
       } as never,
-      sessionManager: makeSessionManager({ closeStory: mock(() => []), listActive: mock(() => []) }),
-      runtime: makeMockRuntime() as never,
+      ...makeDispatchContext({
+        sessionManager: makeSessionManager({ closeStory: mock(() => []), listActive: mock(() => []) }),
+      }),
     });
 
     expect(_runCompletionDeps.closeAllRunSessions).toHaveBeenCalledTimes(1);

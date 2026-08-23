@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
 import { _acceptanceSetupDeps, acceptanceSetupStage } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
-import { makePRD, makeStory } from "@test/helpers";
+import { makeDispatchContext, makePRD, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -51,6 +51,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     projectDir: "/tmp/test-agent-file",
     featureDir: "/tmp/test-agent-file/.nax/features/test-feature",
     hooks: {} as any,
+    ...makeDispatchContext(),
     ...overrides,
   };
 }
