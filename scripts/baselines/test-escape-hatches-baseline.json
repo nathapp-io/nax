@@ -2,9 +2,9 @@
   "counts": {
     "asAny": 1399,
     "tsSuppress": 54,
-    "ratchetAllow": 115
+    "ratchetAllow": 114
   },
-  "updatedAt": "2026-08-23T03:30:27.555Z",
+  "updatedAt": "2026-08-23T03:35:06.183Z",
   "byFile": {
     "test/helpers/mock-agent-manager.ts": {
       "asAny": 1
@@ -202,9 +202,6 @@
     },
     "test/unit/execution/pipeline-result-handler-bug12.test.ts": {
       "ratchetAllow": 5
-    },
-    "test/unit/execution/unified-executor-tier-budget.test.ts": {
-      "ratchetAllow": 1
     },
     "test/unit/execution/build-plan-for-strategy.test.ts": {
       "asAny": 1

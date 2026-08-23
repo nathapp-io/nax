@@ -117,8 +117,7 @@ function depsView() {
   // dispatch/logging test files. The actual field is added by the
   // implementer; until then the read returns `undefined` and the write
   // installs a stub the source never calls.
-  return require("../../../src/execution/unified-executor") as unknown as {
-    // test-ratchet-allow: as-unknown-as
+  return require("../../../src/execution/unified-executor") as {
     _unifiedExecutorDeps: Record<string, unknown>;
     executeUnified: typeof executeUnified;
   };

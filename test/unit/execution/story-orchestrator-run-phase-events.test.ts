@@ -36,9 +36,13 @@ function makeOp(name: string): AnyOp {
     stage: "verify",
     kind: "run",
     config: [],
-    build: () => ({ prompt: "", user: "", extras: {} }),
+    session: { role: "main", lifetime: "fresh" },
+    build: () => ({
+      role: { id: "role", content: "", overridable: false },
+      task: { id: "task", content: "", overridable: false },
+    }),
     parse: () => ({}),
-  } as unknown as AnyOp;
+  };
 }
 
 function makeSlot(opName: string) {

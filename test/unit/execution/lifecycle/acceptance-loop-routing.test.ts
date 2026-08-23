@@ -180,7 +180,7 @@ describe("AC-1: runAcceptanceLoop obtains agent via (ctx.agentGetFn ?? _acceptan
 
   test("falls back to _acceptanceLoopDeps.getAgent when agentGetFn is not provided", () => {
     // When agentGetFn is undefined, the code should fall back to _acceptanceLoopDeps.getAgent
-    const agentGetFn = undefined as unknown as AgentGetFn | undefined;
+    const agentGetFn: AgentGetFn | undefined = undefined;
     const agent = agentGetFn ?? (() => makeMockAgentAdapter())();
     expect(agent).toBeDefined();
   });
