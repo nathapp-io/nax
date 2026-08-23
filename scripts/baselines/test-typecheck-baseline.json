@@ -1,6 +1,6 @@
 {
-  "count": 1029,
-  "updatedAt": "2026-08-23T15:41:59.233Z",
+  "count": 1016,
+  "updatedAt": "2026-08-23T15:48:00.679Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -29,8 +29,8 @@
     "test/integration/pipeline/gating-preservation.test.ts": 4,
     "test/integration/pipeline/pipeline-events.test.ts": 1,
     "test/integration/pipeline/pipeline.test.ts": 3,
-    "test/integration/pipeline/reporter-lifecycle-basic.test.ts": 10,
-    "test/integration/pipeline/reporter-lifecycle-resilience.test.ts": 7,
+    "test/integration/pipeline/reporter-lifecycle-basic.test.ts": 4,
+    "test/integration/pipeline/reporter-lifecycle-resilience.test.ts": 4,
     "test/integration/plan/plan.test.ts": 1,
     "test/integration/plugins/config-resolution.test.ts": 16,
     "test/integration/plugins/loader.test.ts": 22,
@@ -203,10 +203,9 @@
     "test/unit/pipeline/stages/routing-initial-complexity.test.ts": 3,
     "test/unit/pipeline/stages/routing-initial-model-tier.test.ts": 1,
     "test/unit/pipeline/stages/routing-persistence.test.ts": 4,
-    "test/unit/pipeline/storyid-events.test.ts": 2,
+    "test/unit/pipeline/storyid-events.test.ts": 1,
     "test/unit/pipeline/subscribers/events-writer.test.ts": 5,
     "test/unit/pipeline/subscribers/hooks.test.ts": 4,
-    "test/unit/pipeline/subscribers/interaction.test.ts": 1,
     "test/unit/pipeline/subscribers/reporters.test.ts": 3,
     "test/unit/plan/debate-strategy.test.ts": 7,
     "test/unit/plan/pipeline-strategy.test.ts": 7,
@@ -237,7 +236,6 @@
     "test/unit/prompts/builders/critic-builder.test.ts": 3,
     "test/unit/prompts/builders/one-shot-builder.test.ts": 1,
     "test/unit/prompts/loader.test.ts": 1,
-    "test/unit/prompts/sections/verdict.test.ts": 1,
     "test/unit/quality/runner.test.ts": 2,
     "test/unit/review/adversarial-metadata-audit.test.ts": 3,
     "test/unit/review/adversarial-pass-fail.test.ts": 3,
@@ -273,7 +271,6 @@
     "test/unit/ui/tui-controls.test.ts": 2,
     "test/unit/utils/git.test.ts": 2,
     "test/unit/utils/process-kill.test.ts": 6,
-    "test/unit/utils/utils-helpers.test.ts": 1,
     "test/unit/verification/smart-runner.test.ts": 1,
     "test/unit/verification/tdd-verdict.test.ts": 2
   }

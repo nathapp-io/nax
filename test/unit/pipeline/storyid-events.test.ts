@@ -15,7 +15,7 @@ import { DEFAULT_CONFIG } from "@/config";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
-import { fakeAgentManager, makeAgentAdapter, makeNaxConfig } from "@test/helpers";
+import { fakeAgentManager, makeAgentAdapter, makeNaxConfig, makeStory } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-test-storyid-${randomUUID()}`;
 
@@ -50,13 +50,13 @@ const _origExecutionDeps = { ..._executionDeps };
 
 const STORY_ID = "story-bug020-test";
 
-const mockStory: UserStory = {
+const mockStory: UserStory = makeStory({
   id: STORY_ID,
   title: "Test story for BUG-020",
   description: "Verifies storyId appears in event payloads",
   acceptanceCriteria: [],
   status: "pending",
-};
+});
 
 /**
  * Build a minimal PipelineContext with configurable quality overrides.
