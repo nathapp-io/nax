@@ -52,7 +52,7 @@ The first argument is the `NaxConfig` key, not the type name:
 | `QualityConfig` | `"quality"` |
 | `ExecutionConfig` | `"execution"` |
 | `RectificationConfig` | nested — `makeConfigSlice("execution").rectification` |
-| `StorySizeGateConfig` | nested — `makeConfigSlice("precheck").storySizeGate` |
+| `StorySizeGateConfig` | **needs `makeStorySizeGateConfig` — see §4** |
 
 ---
 
@@ -132,12 +132,12 @@ you broke the syntax — do not update a baseline.
 
 ## 4. The four sites that are NOT the plain substitution
 
-Both nested slices are reachable — verified on this tree, so no hunting needed. They just
-need a second property access, and `makeConfigSlice` takes the **parent** key:
+The two nested slices behave differently, because one parent key is **optional** on
+`NaxConfig`. Both forms below were compiled against this tree — use them verbatim.
 
-**`RectificationConfig`** lives at `execution.rectification`. 4 sites
-(`rectification.test.ts` ×2, `prompt-acceptance.test.ts` ×2, plus one inside each
-`routing-stage-*` file):
+**`RectificationConfig`** lives at `execution.rectification`, and `execution` is required,
+so the plain nested access compiles. 4 sites (`rectification.test.ts` x2,
+`prompt-acceptance.test.ts` x2, plus one inside each `routing-stage-*` file):
 
 ```ts
 const cfg: RectificationConfig = makeConfigSlice("execution", {
@@ -145,19 +145,41 @@ const cfg: RectificationConfig = makeConfigSlice("execution", {
 }).rectification;
 ```
 
-**`StorySizeGateConfig`** lives at `precheck.storySizeGate` — 8 sites in
-`precheck-story-size-gate.test.ts`. The two fields those literals are missing come out as
-`action: "block"`, `maxReplanAttempts: 3`:
+**`StorySizeGateConfig` needs its own helper — `makeConfigSlice` alone does NOT work here.**
+It lives at `precheck.storySizeGate`, and `precheck?: PrecheckConfig` is **optional**
+(`src/config/runtime-types.ts:532`). `makeConfigSlice("precheck")` therefore returns
+`PrecheckConfig | undefined` and the property access fails with
+`TS2532: Object is possibly 'undefined'`. That is the helper working correctly — it reports
+optionality honestly rather than asserting it away.
+
+Add this next to `makeConfigSlice` in `test/helpers/mock-nax-config.ts` and export it from
+`test/helpers/index.ts`. **Do not** reach for `!`, `as`, or a `?.` that leaves the type
+optional:
 
 ```ts
-const gate: StorySizeGateConfig = makeConfigSlice("precheck", {
-  storySizeGate: { enabled: true, maxAcCount: 10 },
-}).storySizeGate;
+/**
+ * `precheck` is optional on NaxConfig, so the generic slice helper cannot reach
+ * through it without asserting. DEFAULT_CONFIG always supplies it; the throw
+ * states that invariant instead of hiding it behind a non-null assertion.
+ */
+export function makeStorySizeGateConfig(
+  overrides: DeepPartial<StorySizeGateConfig> = {},
+): StorySizeGateConfig {
+  const slice = makeNaxConfig({ precheck: { storySizeGate: overrides } }).precheck?.storySizeGate;
+  if (slice === undefined) throw new Error("DEFAULT_CONFIG.precheck.storySizeGate is missing");
+  return slice;
+}
 ```
 
-If either override does not typecheck through the parent, take the parent slice plain
-(`makeConfigSlice("execution").rectification`) and spread your overrides onto it — still
-cast-free.
+Then the 8 sites in `precheck-story-size-gate.test.ts` become:
+
+```ts
+const gate: StorySizeGateConfig = makeStorySizeGateConfig({ enabled: true, maxAcCount: 10 });
+```
+
+Verified: compiles, and yields
+`{ enabled, maxAcCount, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 3 }`
+— the two fields those literals are missing are `action` and `maxReplanAttempts`.
 
 **`runner-language-fallback.test.ts` has two sites of a different shape** — the literal
 already sets `pluginMode` and `semantic`, and is missing only `parseRetryMaxAttempts` and
