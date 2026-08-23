@@ -1,10 +1,10 @@
 # Handoff: mechanical fixture-field drain (#1514)
 
-Written against `chore/1514-implicit-any-params` at `d83fff7f9`. Every number below was
+Written against `chore/1514-implicit-any-params` at `666b9e0a7`. Every number below was
 measured on that tree with `bun x tsc --project tsconfig.test.json --noEmit`, not recalled.
 
-**State at hand-off:** `test/` typecheck **1369**, casts **102**, `asAny` 1393,
-`tsSuppress` 54, `ratchetAllow` 107, `absentValue` 17, `anyType` 1885, `looseCast` 2008.
+**State at hand-off:** `test/` typecheck **1351**, casts **102**, `asAny` 1393,
+`tsSuppress` 54, `ratchetAllow` 106, `absentValue` 17, `anyType` 1885, `looseCast` 2008.
 
 ---
 
@@ -19,16 +19,18 @@ in this handoff. Stop and escalate (§6).
 
 ---
 
-## 2. Scope — exactly these two clusters
+## 2. Scope — exactly these three clusters
 
 | Cluster | Errors | Files | Fix |
 |:--|--:|--:|:--|
-| `maxScanFiles` missing on `SmartTestRunnerConfig` | 12 | 5 | add `maxScanFiles: 200` |
-| `workdir` missing on `AdversarialReviewInput` | 10 | 4 | add `workdir` |
+| A — `maxScanFiles` missing on `SmartTestRunnerConfig` | 12 | 5 | add `maxScanFiles: 200` |
+| B — `workdir` missing on `AdversarialReviewInput` | 10 | 4 | add `workdir` |
+| C — local spawn fakes not migrated to `makeSpawn` | 69 | 17 | replace with the existing helper |
 
-**Total: 22 errors.** Nothing else. Both are "the fixture omits a required field that the
-production type declares" — the same class as `projectKey` (`1db22cbc1`) and
-`estimatedCostUsd` (same commit), which are the worked examples to copy.
+**Total: 91 errors.** Nothing else. A and B are "the fixture omits a required field that
+the production type declares" — the same class as `projectKey` (`1db22cbc1`) and
+`estimatedCostUsd` (same commit), which are the worked examples to copy. C is a migration
+to a helper that already exists.
 
 ### Cluster A — `maxScanFiles` (12)
 
@@ -72,6 +74,34 @@ drops by less than the number of sites you fixed, you have hit an unmask** (Type
 reports the missing property *instead of* a second fault underneath); that is expected and
 fine — see `HANDOFF-1514-dead-fixture-keys.md` §1 — but escalate if clearing it needs a
 value you cannot derive.
+
+### Cluster C — unmigrated spawn fakes (69)
+
+```
+test/unit/execution/checkpoint/resume-hydrate.test.ts                 15
+test/unit/execution/pipeline-result-handler.test.ts                    9
+test/unit/precheck/checks-blockers-agent.test.ts                       8
+test/unit/execution/new-package-setup.test.ts                          7
+test/unit/utils/git-auto-commit-block.test.ts                          7
+test/unit/utils/git.test.ts                                            7
+test/unit/plugins/builtin/otel-resource-git.test.ts                    5
+test/unit/execution/build-plan-for-strategy-triage-predicates.test.ts  2
++ 5 files with 1 each
+```
+
+**`makeSpawn` already exists** — `test/helpers/spawn.ts`, exported from `@test/helpers`,
+already used by 58 files. It holds the only two sanctioned casts for this shape, accepts
+both `Bun.spawn` call forms (`(cmd, opts)` and a single options object), records every call,
+and `makeSpawnResult` models `stdout`/`stderr`/`exitCode`/`pid`/`kill`/`hang`. These 17
+files were simply never migrated: each still hand-rolls a local fake ending in
+`as typeof _xDeps.spawn`.
+
+The migration is: delete the local fake, call `makeSpawn(...)`, assign `.spawn`.
+
+**Check the local fake's surface first.** If it models something `FakeProcSpec` does not
+(a custom `kill` observer, a stdout that changes between calls, a stream that errors),
+that file is out of scope — escalate rather than approximating. Read `test/helpers/spawn.ts`
+before starting; it documents the intended usage.
 
 ---
 
@@ -167,6 +197,10 @@ Commit tags are **descriptive, never `phase N`** — the original #1514 plan alr
 7. **A grep-based negative is not proof.** A `\b` word boundary silently fails on a quoted
    key (`"on-story-complete"`); a plain substring over-matches (`getAll` "hits"
    `getAllAgents`). Use two independent greps before concluding something is unused.
+   **Fired again in `666b9e0a7`:** `grep -c "mock("` returned 0, so `mock` was dropped from
+   an import — but the file used it as `mock.restore()`, and 14 tests died with
+   `ReferenceError: mock is not defined`. When checking whether an identifier is unused,
+   search the bare name, not a name plus a following character.
 
 8. **`check:file-sizes` rejects line-adding fixes to grandfathered files.**
    `story-orchestrator.test.ts` is capped at 2006 lines; fixes there must be line-neutral.
@@ -206,13 +240,18 @@ not mechanical work. Recorded here so nobody mistakes the list for a queue:
 |:--|--:|:--|
 | `as unknown as`-shaped (TS2352) | 190 | Concentrated in 6 files (`parallel-batch` 31, `schemas` 21, `verify-op-normalized-findings` 15). Each needs a per-file seam design. |
 | `ConfigSelector<Pick<…>>` variance | 32 | A generics/variance problem. The `callop-seam` phase is the precedent: prefer typing the seam monomorphically over containing a cast. |
-| `typeof fetch` mocks (`preconnect`) | 16 | Needs a `makeFetchMock()` helper in `test/helpers` that is assignable to `typeof fetch`. **Once that helper exists, the 16 call-site migrations become mechanical** and can be handed off. |
-| `Bun.spawn` signature (`cmd`) | 10 | Same shape: needs a typed spawn-mock helper designed first, then the sites are mechanical. |
 | `CompleteOperation` vs `RunOperation` (`session`) | 15 | Looks like a missing field in the error text; it is actually a union-assignability failure. **Do not treat it as mechanical.** |
 | Dead config keys (`defaultAgent`, `defaultTier`, `timeout`) | ~30 | Deletions need per-key judgement — see `HANDOFF-1514-dead-fixture-keys.md` for the method and the escalation bar. |
 
-**The honest ratio: ~22 of 1369 errors are mechanical today**, and ~26 more become
-mechanical after two helpers are designed. The rest is engineering.
+**The honest ratio: 91 of 1351 errors are mechanical.** The rest is engineering.
+
+**Correction to an earlier draft of this handoff.** It claimed a fetch helper and a spawn
+helper still had to be designed. Both already existed — `mockFetch`
+(`test/helpers/mock-fetch.ts`, 8 files) and `makeSpawn` (`test/helpers/spawn.ts`, 58 files).
+The fetch cluster has since been done (`666b9e0a7`): the helper's own cast was removed and
+all 17 telegram sites migrated. The spawn cluster is Cluster C above. **Grep
+`test/helpers/` for an existing helper before building one** — that draft nearly added a
+duplicate `makeFetchMock` alongside `mockFetch`.
 
 ---
 
