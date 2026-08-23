@@ -10,7 +10,7 @@
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _storyOrchestratorDeps, runRectification } from "@/execution";
-import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
+import type { FixCycle, FixCycleContext, FixCycleExitReason, FixStrategy } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
 import type { CallContext } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -78,14 +78,17 @@ afterEach(async () => {
 
 describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale verifier pass (#1401)", () => {
   /** Gate + verifier + the cheap checks: the minimum to reproduce the stale read. */
-  function makeRectifyState(strategies: unknown[] = []): Parameters<typeof runRectification>[1] {
+  // Strategies passed here have heterogeneous concrete op I/O types (e.g. mockImplementerOp's
+  // { story: string } -> { success: boolean }); `unknown` rejects them on variance, so this
+  // mirrors FixStrategy's own C=any default.
+  function makeRectifyState(strategies: FixStrategy<Finding, any, any>[] = []): Parameters<typeof runRectification>[1] {
     return {
       fullSuiteGate: { kind: "full-suite-gate", slot: { op: mockFullSuiteGateOp, input: { story: "US-1401" } } },
       verifier: { kind: "verifier", slot: { op: mockVerifierOp, input: { story: "US-1401" } } },
       lintCheck: { kind: "lint-check", slot: { op: mockLintCheckOp, input: { story: "US-1401" } } },
       typecheckCheck: { kind: "typecheck-check", slot: { op: mockTypecheckCheckOp, input: { story: "US-1401" } } },
       rectification: { maxAttempts: 3, strategies, abortOnIncreasingFailures: false },
-    } as unknown as Parameters<typeof runRectification>[1];
+    };
   }
 
   /** Mirrors ExecutionPlan's nbf wiring: seeded advisories + verifierGuard extra phase. */
@@ -330,12 +333,12 @@ describe("nbf regressionAttempts is actually spendable once the gate regression 
       maxAttempts: 2,
     };
 
-    const state = {
+    const state: Parameters<typeof runRectification>[1] = {
       fullSuiteGate: { kind: "full-suite-gate", slot: { op: mockFullSuiteGateOp, input: { story: "US-1401" } } },
       verifier: { kind: "verifier", slot: { op: mockVerifierOp, input: { story: "US-1401" } } },
       lintCheck: { kind: "lint-check", slot: { op: mockLintCheckOp, input: { story: "US-1401" } } },
       rectification: { maxAttempts: 3, strategies: [strategy], abortOnIncreasingFailures: false },
-    } as unknown as Parameters<typeof runRectification>[1];
+    };
 
     await runRectification(
       ctx,

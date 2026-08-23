@@ -648,7 +648,7 @@ function makePluginLogger(): import("@/plugins/types").PluginLogger {
     info: mock(() => {}),
     warn: mock(() => {}),
     error: mock(() => {}),
-  } as unknown as import("@/plugins/types").PluginLogger;
+  };
 }
 
 // ============================================================================

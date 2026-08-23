@@ -265,7 +265,7 @@ describe("withNoProgressBail — US-002 AC-2.9/AC-2.10: driven through runRectif
         abortOnNoProgress,
         consecutiveNoProgressToBail: 3,
       },
-    } as unknown as Parameters<typeof runRectification>[1];
+    };
   }
 
   /** The gate stays red with the identical finding on every re-run — a pure stall, no progress ever made. */

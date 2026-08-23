@@ -114,7 +114,7 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
         throw new Error("Always fail to trigger retry");
       },
       retry: retryWithNextPromptStrategy,
-    } as unknown as RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">>;
+    };
 
     try {
       await callOp(
@@ -169,7 +169,7 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
         throw new Error("Trigger retry");
       },
       retry: originalPromptShouldBeResent,
-    } as unknown as RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">>;
+    };
 
     try {
       await callOp(

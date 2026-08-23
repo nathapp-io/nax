@@ -700,11 +700,11 @@ describe("describeGateRegression — quarantine-memo filter (#1383)", () => {
 
 describe("runRectification — seeded findings do not invoke initial gate triage", () => {
   /** Minimal state: rectification needs one validation phase, and triage needs the gate slot. */
-  function makeRectifyState() {
+  function makeRectifyState(): Parameters<typeof runRectification>[1] {
     return {
       fullSuiteGate: { kind: "full-suite-gate" as const, slot: { op: makeGateOp(), input: { story: "US-003" } } },
       rectification: { maxAttempts: 1, strategies: [], abortOnIncreasingFailures: false },
-    } as unknown as Parameters<typeof runRectification>[1];
+    };
   }
 
   /** A failing gate output carrying one structured failure — triage's precondition. */
