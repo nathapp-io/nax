@@ -4,45 +4,11 @@ Written 2026-08-23 to resume later. Supersedes nothing; it points at the docs th
 
 ---
 
-## ⚠️ Read this first — the branch has UNVERIFIED work on it
+## ✅ The dead-fixture-keys handoff is COMPLETE
 
-A subagent was dispatched to execute `HANDOFF-1514-dead-fixture-keys.md` and **was stopped
-mid-task**. What it left, established by inspection:
-
-**Three commits landed** (on top of `a2547c3aa`):
-
-- `d174bdc4f` — drop dead `skipGeneratedVerificationTests` / `minTestCoverage` (+ maxCostUSD)
-- `1d997a92f` — drop dead `dangerouslySkipPermissions` / `getAll`
-- `38da84486` — drop dead `estimatedComplexity` / `onWatchdogRegister`
-
-**One file left modified and uncommitted:**
-`test/integration/interaction/interaction-chain-pipeline.test.ts` — the `timeoutRetryCountMap`
-key (Category A, 2 errors). The partial edit looks *correct in approach*: it deletes the dead
-key and then supplies the required fields the deletion unmasked (`agentManager`,
-`sessionManager`, `abortSignal`), hoisting `makeMockRuntime()` into a local so the three
-can be drawn from one runtime. That is exactly the §1 behaviour the handoff describes, handled
-the right way — but it was interrupted before verification.
-
-**None of this has been verified by a full gate run.** Before continuing:
-
-```bash
-bun x tsc --noEmit                 # must be 0
-bun x tsc --project tsconfig.test.json --noEmit 2>&1 | grep -c 'error TS'
-bun run check:all
-bun run test
-# and the per-file gate, against the baseline as of a2547c3aa
-```
-
-If those are green, finish the uncommitted file and carry on from Category A's remaining keys.
-If they are red — or the typecheck count reads as a single digit, meaning broken syntax — revert
-the uncommitted file only (`git checkout -- <path>`) and re-verify before touching the commits.
-
-**Do not re-do the three committed keys.** Re-derive what is left with:
-
-```bash
-bun x tsc --project tsconfig.test.json --noEmit 2>&1 \
-  | grep -cE 'error TS(2353|2561):'
-```
+`HANDOFF-1514-dead-fixture-keys.md` finished on 2026-08-23: all 10 keys, 38 errors, fully
+gate-verified. Every commit below was run through the full six-step loop (src tsc, test
+typecheck, per-file gate `worse: 0`, `check:all`, full suite, baseline update).
 
 ## 1. Where the work stands
 
@@ -52,19 +18,19 @@ bun x tsc --project tsconfig.test.json --noEmit 2>&1 \
 | escape-hatch guard, `DeterministicOperation<D>`, type imports | ✅ merged | #1683 |
 | `config-slices` (`makeConfigSlice`) | ✅ merged | #1684 |
 | `callop-seam` (monomorphic dep bags) | ✅ merged | #1684 |
-| **`dead-fixture-keys`** | **in progress** | — |
+| **`dead-fixture-keys`** | ✅ **done — ready for PR** | — |
 | implicit-any params (~103) | not started | — |
 | `makeObservation` / remaining seams (~90) | not started | — |
 
 **Branch:** `chore/1514-dead-fixture-keys`, off `main` @ `df9bb89b1`. **Local only — never
 pushed.**
 
-## 2. Last numbers I verified personally (at `a2547c3aa`)
+## 2. Last numbers I verified personally (at `d38bbb87`, branch head)
 
 | | value |
 |:--|--:|
 | `tsc --noEmit` (src) | **0** |
-| test typecheck | **1633** |
+| test typecheck | **1594** |
 | `as unknown as` casts | **102** |
 | `asAny` | 1394 |
 | `tsSuppress` | 54 |
@@ -73,33 +39,55 @@ pushed.**
 | `anyType` | 1886 |
 | `looseCast` | 2008 |
 
-Against the original #1514 start: casts **815 → 102 (−87%)**, typecheck **2009 → 1633**.
+Against the original #1514 start: casts **815 → 102 (−87%)**, typecheck **2009 → 1594**.
 
-## 3. The commits I verified myself
+## 3. The commits on the branch
 
-The branch now holds **six** commits: these three, plus the subagent's three listed in the
-warning block above, which I have *not* gate-verified.
+**Handoff groundwork (verified by me):**
 
 - `59674c69b` — dropped the dead `turnId` fixture key, supplied `internalRoundTrips`
   (1645 → 1633). The worked example for the handoff.
 - `38de504e8` — the dead-fixture-keys handoff (initial, 49 errors).
 - `a2547c3aa` — **corrected** that handoff to 38 errors after review found three bad verdicts.
 
-## 4. Next actions, in order
+**Dead-fixture-keys execution (all gate-verified end-to-end):**
 
-1. **Reconcile the subagent's partial work** (see the warning block above).
-2. Finish `HANDOFF-1514-dead-fixture-keys.md` — 38 errors, 10 keys, 19 files, expected
-   ~1633 → ~1595. Category A deletes, Category B renames, both cast-free.
-3. Open a PR for the branch. It is test-only so far, so it should review quickly.
-4. Then the two remaining phases (implicit-any, `makeObservation`) — both need planning
+- `d174bdc4f` — drop dead `skipGeneratedVerificationTests` / `minTestCoverage` (+ maxCostUSD)
+- `1d997a92f` — drop dead `dangerouslySkipPermissions` / `getAll`
+- `38da84486` — drop dead `estimatedComplexity` / `onWatchdogRegister`
+- `fbaaa8a57` — drop dead `timeoutRetryCountMap` (1612 → 1610); deletion unmasked required
+  `agentManager`/`sessionManager`/`abortSignal` on `PipelineHandlerContext`, supplied from
+  `makeMockRuntime()` per §1 of the handoff
+- `7400726e` — rename `ruleId` → `rule` on `Finding` fixtures, add `makeFinding`
+  (`test/helpers/finding.ts`, same shape as `makeTurnResult`) (1610 → 1598); the rename
+  unmasked required `source`/`category` on 10 literals in 4 files — **escalated per §7,
+  user approved the factory** (59674c69b precedent)
+- `d38bbb87` — rename `cacheCreationTokens`/`cacheReadTokens` → `*InputTokens` (1598 → 1594)
+
+## 4. Revealed findings worth recording
+
+- **`dangerouslySkipPermissions` documented as live, is not.** `CLAUDE.md` still says it is
+  "deprecated — the resolver handles it", but it has **zero** occurrences in `src/`,
+  including `src/config/`. **To file separately** — deliberately not touched (handoff §6).
+- **The handoff's `ruleId` count (10) undercounted by 2**: `semantic-verdict.test.ts` also
+  had two TS2551 property *reads* (`.ruleId`) alongside the three TS2561 literals; renaming
+  only the literals would have broken the reads at runtime. All five renamed.
+- **The handoff's landing estimate held**: 1633 → ~1595 predicted, landed 1594.
+
+## 5. Next actions, in order
+
+1. **Open a PR for the branch.** It is test-only (plus `test/helpers/finding.ts`), so it
+   should review quickly. The baseline files move in the same commits — expected.
+2. Then the two remaining phases (implicit-any, `makeObservation`) — both need planning
    the same way: measure, prototype, then decide what is genuinely delegable.
 
-## 5. Traps this branch has already hit — do not relearn them
+## 6. Traps this branch has already hit — do not relearn them
 
 - **Deleting a dead key unmasks a second bug.** TypeScript reports an unknown property
   *instead of* a missing required one, so the typecheck total often does not drop by the
   number of keys removed. That is expected. The real gates are `src` tsc 0, per-file
-  `worse: 0`, suite green.
+  `worse: 0`, suite green. When the unmask exceeds ~2 sites with no factory, **escalate —
+  do not invent values** (the `makeFinding` decision was an approved escalation).
 - **Never regex over a nested object literal.** A non-greedy pattern matches the inner
   `JSON.stringify({…})` brace and shreds the file. Tell: the typecheck count collapses to a
   single digit, because tsc aborts at the first parse error.
@@ -110,16 +98,20 @@ warning block above, which I have *not* gate-verified.
   substring search over-matches (`getAll` "hits" `getAllAgents`), and "no fixture supplies a
   non-empty X" does not mean X is untested when a sibling file builds X from real inputs.
   Check the *consumers*, and use two independent greps.
+- **A split commit needs its baseline regenerated at the intermediate state.** Committing
+  the `ruleId` work while `fail-stale-complete.test.ts` still carried its 4 errors would
+  have left the baseline claiming 0 for that file — the per-file gate would fail at the
+  intermediate commit. Stash the later key's file, update the baseline, commit, pop.
 - **No change may trade one counter against another.** A typecheck drop paired with an
   `anyType` or `looseCast` rise is a failed step. The `looseCast` counter has already
   rejected one of my own commits, correctly.
 
-## 6. Doc map
+## 7. Doc map
 
 | Doc | Holds |
 |:--|:--|
 | `PROPOSAL-1514-phase2-typecheck-drain.md` | the root-cause analysis and per-phase status |
-| `HANDOFF-1514-dead-fixture-keys.md` | **the active task** — 38 errors, per-key verdicts, evidence |
+| `HANDOFF-1514-dead-fixture-keys.md` | **done** — 38 errors, per-key verdicts, evidence, worked example |
 | `HANDOFF-1514-config-slices.md` | done — `makeConfigSlice` |
 | `HANDOFF-1514-callop-seam.md` | done — monomorphic dep bags |
 | `PLAN-1514-callop-seam.md` | the three-tier analysis behind it |
