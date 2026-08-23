@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { type Mock, afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { NaxConfig } from "@/config";
+import type { Logger } from "@/logger";
 import { verifierOp } from "@/operations";
 import type { RunOperation } from "@/operations";
 
@@ -147,7 +148,9 @@ describe("verifierOp.parse — verdict logging", () => {
   // property that shadows the prototype, so a prototype spy silently misses the
   // call in a full-suite run (passes in isolation, fails in CI). Spy on the
   // exact instance getSafeLogger() returns, and reset to a clean baseline after.
-  let infoSpy: ReturnType<typeof spyOn> | undefined;
+  // Mock<Logger["info"]>, not ReturnType<typeof spyOn> — the latter degrades
+  // mock.calls to any[] and makes every call-tuple callback an implicit any.
+  let infoSpy: Mock<Logger["info"]> | undefined;
 
   beforeEach(async () => {
     const { resetLogger, initLogger } = await import("@/logger");

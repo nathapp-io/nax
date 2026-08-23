@@ -26,13 +26,14 @@
  *   AC9 — checkpoint log data object lists storyId as the first key
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  type CaptureTreeStateDeps,
   type ResumePlan,
   type StoryCheckpoint,
   type TreeState,
@@ -43,10 +44,7 @@ import {
   hydrateFromResumePlan,
   phasePassed,
 } from "@/execution";
-
-// _gitDeps is the project's injectable Bun.spawn seam. Tests must NOT depend
-// on real git — we substitute a fake spawn and observe the args it receives.
-import { _gitDeps } from "@/utils/git";
+import { type SpawnStub, makeSpawn, makeSpawnResult } from "@test/helpers";
 
 // ===========================================================================
 // Test fixtures
@@ -76,36 +74,26 @@ type PhaseKind =
 // captureTreeState (AC8)
 // ===========================================================================
 
-/** Build a fake `_gitDeps.spawn` whose stdout is the given string. */
-function mockSpawnOutput(stdout: string, exitCode = 0): ReturnType<typeof mock> {
-  const bytes = new TextEncoder().encode(stdout);
-  return mock((_args: string[], _opts: unknown) => ({
-    stdout: new ReadableStream({
-      start(c) {
-        c.enqueue(bytes);
-        c.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(c) {
-        c.close();
-      },
-    }),
-    exited: Promise.resolve(exitCode),
-    kill: mock(() => {}),
-  }));
+/**
+ * Wrap a makeSpawn stub in the plain `(cmd, opts) => unknown` signature
+ * `CaptureTreeStateDeps` declares (src/execution/checkpoint/resume-hydrate.ts:5).
+ * `typeof Bun.spawn` is not assignable to it (strict overload rule), so the
+ * src side wraps it the same way (story-orchestrator/run-phase.ts:56-58); the
+ * one-arg call picks Bun.spawn's `(cmd, opts?)` overload, cast-free.
+ */
+function treeDeps(stub: SpawnStub, timeoutMs?: number): CaptureTreeStateDeps {
+  const deps: CaptureTreeStateDeps = { spawn: (cmd, _opts) => stub.spawn(cmd) };
+  if (timeoutMs !== undefined) deps.timeoutMs = timeoutMs;
+  return deps;
 }
 
-let origGitSpawn: typeof _gitDeps.spawn;
 let tempDir: string | undefined;
 
 beforeEach(() => {
-  origGitSpawn = _gitDeps.spawn;
   tempDir = mkdtempSync(join(tmpdir(), "nax-resume-hydrate-"));
 });
 
 afterEach(() => {
-  _gitDeps.spawn = origGitSpawn;
   if (tempDir) {
     rmSync(tempDir, { recursive: true, force: true });
     tempDir = undefined;
@@ -115,8 +103,9 @@ afterEach(() => {
 describe("captureTreeState (AC8)", () => {
   test("AC8: returns a TreeState whose headSha equals captureGitRef's value", async () => {
     // captureGitRef runs `git rev-parse HEAD` — fake that to return the sha.
-    _gitDeps.spawn = mockSpawnOutput("deadbeef-head-sha\n");
-    const state = await captureTreeState(tempDir!, { _deps: _gitDeps });
+    const state = await captureTreeState(tempDir!, {
+      _deps: treeDeps(makeSpawn(() => "deadbeef-head-sha\n")),
+    });
     expect(state.headSha).toBe("deadbeef-head-sha");
   });
 
@@ -124,28 +113,13 @@ describe("captureTreeState (AC8)", () => {
     // First spawn: `git rev-parse HEAD` → fake head sha.
     // Second spawn: `git status --porcelain` → fake dirty listing.
     const capturedArgs: string[][] = [];
-    _gitDeps.spawn = mock((args: string[]) => {
-      capturedArgs.push(args as string[]);
-      const stdout = capturedArgs.length === 1 ? "abc123\n" : " M src/foo.ts\n M src/bar.ts\n?? untracked.txt\n";
-      const bytes = new TextEncoder().encode(stdout);
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
+    const stub = makeSpawn(({ cmd }) => {
+      capturedArgs.push(cmd);
+      return capturedArgs.length === 1 ? "abc123\n" : " M src/foo.ts\n M src/bar.ts\n?? untracked.txt\n";
     });
+    const deps = treeDeps(stub);
 
-    const state = await captureTreeState(tempDir!, { _deps: _gitDeps });
+    const state = await captureTreeState(tempDir!, { _deps: deps });
 
     // Must have called both `git rev-parse HEAD` and `git status --porcelain`.
     const calledRevParse = capturedArgs.some((a) => a.includes("rev-parse") && a.includes("HEAD"));
@@ -160,7 +134,7 @@ describe("captureTreeState (AC8)", () => {
     expect(typeof state.dirtyDigest).toBe("string");
     expect(state.dirtyDigest.length).toBeGreaterThan(0);
 
-    const repeated = await captureTreeState(tempDir!, { _deps: _gitDeps });
+    const repeated = await captureTreeState(tempDir!, { _deps: deps });
     expect(repeated.dirtyDigest).toBe(state.dirtyDigest);
   });
 
@@ -168,30 +142,17 @@ describe("captureTreeState (AC8)", () => {
     // Track args to differentiate the two spawn calls.
     let callIndex = 0;
     let dirtyOutput = " M src/dirty.ts\n";
-    _gitDeps.spawn = mock((_args: string[]) => {
-      const bytes = new TextEncoder().encode(callIndex === 0 ? "cleanhead\n" : dirtyOutput);
+    const stub = makeSpawn(() => {
+      const output = callIndex === 0 ? "cleanhead\n" : dirtyOutput;
       callIndex++;
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
+      return output;
     });
+    const deps = treeDeps(stub);
 
-    const dirty = await captureTreeState(tempDir!, { _deps: _gitDeps });
+    const dirty = await captureTreeState(tempDir!, { _deps: deps });
     dirtyOutput = "";
     callIndex = 0;
-    const clean = await captureTreeState(tempDir!, { _deps: _gitDeps });
+    const clean = await captureTreeState(tempDir!, { _deps: deps });
     expect(clean.dirtyDigest).not.toBe(dirty.dirtyDigest);
   });
 
@@ -206,42 +167,27 @@ describe("captureTreeState (AC8)", () => {
     const porcelain = " M src/foo.ts\n";
     let diffOutput = "diff --git a/src/foo.ts b/src/foo.ts\n-old line\n+new line v1\n";
 
-    _gitDeps.spawn = mock((args: string[]) => {
-      let stdout: string;
-      if (args.includes("rev-parse")) {
-        stdout = "abc123\n";
-      } else if (args.includes("status")) {
-        stdout = porcelain;
-      } else if (args.includes("--cached")) {
-        stdout = ""; // nothing staged
-      } else {
-        stdout = diffOutput; // `git diff`
+    const stub = makeSpawn(({ cmd }) => {
+      if (cmd.includes("rev-parse")) {
+        return "abc123\n";
       }
-      const bytes = new TextEncoder().encode(stdout);
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
+      if (cmd.includes("status")) {
+        return porcelain;
+      }
+      if (cmd.includes("--cached")) {
+        return ""; // nothing staged
+      }
+      return diffOutput; // `git diff`
     });
+    const deps = treeDeps(stub);
 
-    const first = await captureTreeState(tempDir!, { _deps: _gitDeps });
+    const first = await captureTreeState(tempDir!, { _deps: deps });
 
     // Simulate the escalated agent rewriting the same already-modified file:
     // `git status --porcelain` is unchanged (still just " M src/foo.ts"),
     // but the actual diff content differs.
     diffOutput = "diff --git a/src/foo.ts b/src/foo.ts\n-old line\n+new line v2 (rewritten by escalated agent)\n";
-    const second = await captureTreeState(tempDir!, { _deps: _gitDeps });
+    const second = await captureTreeState(tempDir!, { _deps: deps });
 
     expect(first.dirtyDigest).not.toBe(second.dirtyDigest);
   });
@@ -256,43 +202,29 @@ describe("captureTreeState (AC8)", () => {
     const porcelain = "?? src/new-file.ts\n";
     let untrackedBlobSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n";
 
-    _gitDeps.spawn = mock((args: string[]) => {
-      let stdout: string;
-      if (args.includes("rev-parse")) {
-        stdout = "abc123\n";
-      } else if (args.includes("status")) {
-        stdout = porcelain;
-      } else if (args.includes("ls-files")) {
-        stdout = "src/new-file.ts\u0000";
-      } else if (args.includes("hash-object")) {
-        stdout = untrackedBlobSha;
-      } else {
-        stdout = ""; // both `git diff` and `git diff --cached` are empty
+    const stub = makeSpawn(({ cmd }) => {
+      if (cmd.includes("rev-parse")) {
+        return "abc123\n";
       }
-      const bytes = new TextEncoder().encode(stdout);
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
+      if (cmd.includes("status")) {
+        return porcelain;
+      }
+      if (cmd.includes("ls-files")) {
+        return "src/new-file.ts\u0000";
+      }
+      if (cmd.includes("hash-object")) {
+        return untrackedBlobSha;
+      }
+      return ""; // both `git diff` and `git diff --cached` are empty
     });
+    const deps = treeDeps(stub);
 
-    const first = await captureTreeState(tempDir!, { _deps: _gitDeps });
+    const first = await captureTreeState(tempDir!, { _deps: deps });
 
     // The agent rewrites the same untracked file: identical status line, still
     // absent from both diffs, but git's content hash for it changes.
     untrackedBlobSha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n";
-    const second = await captureTreeState(tempDir!, { _deps: _gitDeps });
+    const second = await captureTreeState(tempDir!, { _deps: deps });
 
     expect(first.dirtyDigest).not.toBe(second.dirtyDigest);
   });
@@ -313,28 +245,17 @@ describe("captureTreeState (AC8)", () => {
     // proc.exited resolves and the outer Promise.all completes; without it,
     // this test times out.
     let killCalls = 0;
-    _gitDeps.spawn = mock((_args: string[]) => {
+    const stub = makeSpawn(() => {
       // proc.exited NEVER resolves — the hung-process scenario.
       // proc.kill is a spy; the helper (after fix) MUST call kill on the
       // hung proc to enforce its timeout budget.
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            // Never enqueue — proc.stdout stays open.
-            // Close is intentionally NOT called, mimicking a subprocess whose
-            // stdout pipe is held open by the parent (the hung git binary).
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: new Promise<number>(() => {}),
-        kill: mock(() => {
-          killCalls++;
-        }),
+      const proc = makeSpawnResult({ hang: true });
+      const kill = proc.kill;
+      proc.kill = (signalCode) => {
+        killCalls++;
+        kill(signalCode);
       };
+      return proc;
     });
 
     const start = Date.now();
@@ -347,7 +268,7 @@ describe("captureTreeState (AC8)", () => {
     const RACE_CEILING_MS = 1000;
     const timedCapture = async (): Promise<TreeState | "TIMEOUT"> => {
       return Promise.race<Promise<TreeState> | Promise<"TIMEOUT">>([
-        captureTreeState(tempDir!, { _deps: { ..._gitDeps, timeoutMs: TEST_CALL_TIMEOUT_MS } }),
+        captureTreeState(tempDir!, { _deps: treeDeps(stub, TEST_CALL_TIMEOUT_MS) }),
         new Promise<"TIMEOUT">((resolve) => setTimeout(() => resolve("TIMEOUT"), RACE_CEILING_MS)),
       ]);
     };

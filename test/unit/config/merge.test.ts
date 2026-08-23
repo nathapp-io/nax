@@ -116,7 +116,12 @@ describe("mergePackageConfig", () => {
         ...makeRoot(),
         execution: {
           ...DEFAULT_CONFIG.execution,
-          smartTestRunner: { enabled: true, testFilePatterns: ["test/**/*.test.ts"], fallback: "import-grep" },
+          smartTestRunner: {
+            enabled: true,
+            testFilePatterns: ["test/**/*.test.ts"],
+            fallback: "import-grep",
+            maxScanFiles: 200,
+          },
         },
       };
       const result2 = mergePackageConfig(rootWithSmart, {

@@ -193,6 +193,7 @@ describe("DebateRunner.toStatefulCtx — callContext included (AC5)", () => {
       runAsSessionFn: async () => ({
         output: '{"passed":true}',
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
         internalRoundTrips: 0,
       }),
     });

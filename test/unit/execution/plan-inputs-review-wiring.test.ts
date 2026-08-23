@@ -170,7 +170,12 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     const ctx = makeCtx({
       execution: {
         ...DEFAULT_CONFIG.execution,
-        smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: [SENTINEL_GLOB] },
+        smartTestRunner: {
+          enabled: true,
+          fallback: "import-grep",
+          maxScanFiles: 200,
+          testFilePatterns: [SENTINEL_GLOB],
+        },
       },
       review: {
         ...DEFAULT_CONFIG.review,

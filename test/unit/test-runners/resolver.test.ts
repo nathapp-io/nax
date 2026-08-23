@@ -66,7 +66,12 @@ describe("resolveTestFilePatterns — resolution chain", () => {
   test("root-config: returns user patterns when smartTestRunner.testFilePatterns is set", async () => {
     const config = makeNaxConfig({
       execution: {
-        smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["src/**/*.spec.ts"] },
+        smartTestRunner: {
+          enabled: true,
+          fallback: "import-grep",
+          maxScanFiles: 200,
+          testFilePatterns: ["src/**/*.spec.ts"],
+        },
       },
     });
     const resolved = await resolveTestFilePatterns(config, WORKDIR);
@@ -76,7 +81,9 @@ describe("resolveTestFilePatterns — resolution chain", () => {
 
   test("root-config: explicit empty array is honoured (no test files)", async () => {
     const config = makeNaxConfig({
-      execution: { smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: [] } },
+      execution: {
+        smartTestRunner: { enabled: true, fallback: "import-grep", maxScanFiles: 200, testFilePatterns: [] },
+      },
     });
     const resolved = await resolveTestFilePatterns(config, WORKDIR);
     expect(resolved.resolution).toBe("root-config");
@@ -87,7 +94,12 @@ describe("resolveTestFilePatterns — resolution chain", () => {
   test("per-package: wins over root-config when mono config file present", async () => {
     const config = makeNaxConfig({
       execution: {
-        smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["src/**/*.spec.ts"] },
+        smartTestRunner: {
+          enabled: true,
+          fallback: "import-grep",
+          maxScanFiles: 200,
+          testFilePatterns: ["src/**/*.spec.ts"],
+        },
       },
     }); // root-config would return this
     const monoConfigPath = `${WORKDIR}/.nax/mono/packages/api/config.json`;
@@ -104,7 +116,12 @@ describe("resolveTestFilePatterns — resolution chain", () => {
   test("per-package: falls through when mono config exists but omits testFilePatterns", async () => {
     const config = makeNaxConfig({
       execution: {
-        smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["src/**/*.spec.ts"] },
+        smartTestRunner: {
+          enabled: true,
+          fallback: "import-grep",
+          maxScanFiles: 200,
+          testFilePatterns: ["src/**/*.spec.ts"],
+        },
       },
     });
     _resolverDeps.fileExists = async () => true;
@@ -171,7 +188,12 @@ describe("resolveTestFilePatterns — field consistency", () => {
   test("regex correctly classifies a path from the resolved globs", async () => {
     const config = makeNaxConfig({
       execution: {
-        smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["test/**/*.test.ts"] },
+        smartTestRunner: {
+          enabled: true,
+          fallback: "import-grep",
+          maxScanFiles: 200,
+          testFilePatterns: ["test/**/*.test.ts"],
+        },
       },
     });
     const resolved = await resolveTestFilePatterns(config, WORKDIR);
@@ -182,7 +204,9 @@ describe("resolveTestFilePatterns — field consistency", () => {
   test("empty globs produces empty pathspec, regex, and testDirs", async () => {
     const resolved = await resolveTestFilePatterns(
       makeNaxConfig({
-        execution: { smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: [] } },
+        execution: {
+          smartTestRunner: { enabled: true, fallback: "import-grep", maxScanFiles: 200, testFilePatterns: [] },
+        },
       }),
       WORKDIR,
     );
@@ -229,7 +253,12 @@ describe("resolveReviewExcludePatterns", () => {
   test("undefined user patterns: derives from resolved patterns + well-known noise", async () => {
     const config = makeNaxConfig({
       execution: {
-        smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["test/**/*.test.ts"] },
+        smartTestRunner: {
+          enabled: true,
+          fallback: "import-grep",
+          maxScanFiles: 200,
+          testFilePatterns: ["test/**/*.test.ts"],
+        },
       },
     });
     const resolved = await resolveTestFilePatterns(config, WORKDIR);
@@ -271,7 +300,12 @@ describe("resolveReviewExcludePatterns", () => {
   test("no duplicates in derived list", async () => {
     const config = makeNaxConfig({
       execution: {
-        smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: ["test/**/*.test.ts"] },
+        smartTestRunner: {
+          enabled: true,
+          fallback: "import-grep",
+          maxScanFiles: 200,
+          testFilePatterns: ["test/**/*.test.ts"],
+        },
       },
     });
     const resolved = await resolveTestFilePatterns(config, WORKDIR);

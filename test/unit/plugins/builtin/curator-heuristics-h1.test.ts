@@ -19,6 +19,7 @@ function makeReviewFindingObs942(
 ): Observation {
   return {
     schemaVersion: 1,
+    projectKey: "test-proj",
     runId: "run-test",
     // One feature per story: H1 measures recurrence across FEATURES (#1422), so
     // fixtures that mean "this recurred" must spread across them.
@@ -185,6 +186,7 @@ describe("H1 — cross-feature recurrence (#1422)", () => {
   ): Observation {
     return {
       schemaVersion: 1,
+      projectKey: "test-proj",
       runId: "run-1",
       featureId,
       storyId,

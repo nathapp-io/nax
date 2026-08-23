@@ -12,7 +12,7 @@ import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { createOtelReporterPlugin } from "@/plugins";
 import type { PostJsonDeps } from "@/plugins/builtin/reporter-shared";
 import { _gitDeps } from "@/utils/git";
-import { mockFetch } from "@test/helpers";
+import { makeSpawn, mockFetch } from "@test/helpers";
 
 const baseCfg: OtelReporterConfig = {
   enabled: true,
@@ -49,70 +49,22 @@ function capturingPosts() {
 
 /** Mock spawn that produces a stderr-throwing proc to simulate any git failure. */
 function spawnAlwaysFails(): typeof _gitDeps.spawn {
-  return mock((_args: string[], _opts: unknown) => {
-    const bytes = new TextEncoder().encode("fatal: not a git repository\n");
-    return {
-      stdout: new ReadableStream({
-        start(c) {
-          c.enqueue(bytes);
-          c.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(c) {
-          c.enqueue(bytes);
-          c.close();
-        },
-      }),
-      exited: Promise.resolve(128),
-      kill: mock(() => {}),
-    } as any;
-  }) as typeof _gitDeps.spawn;
+  const fatal = "fatal: not a git repository\n";
+  return makeSpawn(() => ({ stdout: fatal, stderr: fatal, exitCode: 128 })).spawn;
 }
 
 /** Mock spawn whose `exited` resolves synchronously then rejects from stdout text(). */
 function spawnThrowsOnRead(): typeof _gitDeps.spawn {
-  return mock((_args: string[], _opts: unknown) => {
-    return {
-      stdout: new ReadableStream({
-        start(c) {
-          c.error(new Error("spawn EACCES"));
-        },
-      }),
-      stderr: new ReadableStream({
-        start(c) {
-          c.close();
-        },
-      }),
-      exited: Promise.resolve(1),
-      kill: mock(() => {}),
-    } as any;
-  }) as typeof _gitDeps.spawn;
+  return makeSpawn(() => ({ stdoutError: new Error("spawn EACCES"), exitCode: 1 })).spawn;
 }
 
 describe("US-007 AC7: git branch and sha resolution failure does not throw onRunStart", () => {
   test("success: onRunStart attempts git resolution via _gitDeps.spawn and does not throw on failure", async () => {
     const spawnCalls: string[][] = [];
-    _gitDeps.spawn = mock((args: string[], _opts: unknown) => {
-      spawnCalls.push(args as string[]);
-      const bytes = new TextEncoder().encode("fatal: not a git repository\n");
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(128),
-        kill: mock(() => {}),
-      } as any;
-    }) as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      spawnCalls.push(cmd);
+      return { stdout: "fatal: not a git repository\n", stderr: "fatal: not a git repository\n", exitCode: 128 };
+    }).spawn;
 
     const plugin = createOtelReporterPlugin(baseCfg, undefined, "/tmp/nax-test-repo");
     const r = plugin.extensions.reporter!;
@@ -186,26 +138,10 @@ describe("US-007 AC7: git branch and sha resolution failure does not throw onRun
 describe("US-007 AC8: when git branch resolution fails, exported payloads omit nax.git.branch", () => {
   test("success: resource block on the run-end traces payload omits nax.git.branch after a git failure, but keeps identity attrs that did resolve", async () => {
     const spawnCalls: string[][] = [];
-    _gitDeps.spawn = mock((args: string[], _opts: unknown) => {
-      spawnCalls.push(args as string[]);
-      const bytes = new TextEncoder().encode("fatal: not a git repository\n");
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(128),
-        kill: mock(() => {}),
-      } as any;
-    }) as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      spawnCalls.push(cmd);
+      return { stdout: "fatal: not a git repository\n", stderr: "fatal: not a git repository\n", exitCode: 128 };
+    }).spawn;
     const { posts, deps } = capturingPosts();
     const plugin = createOtelReporterPlugin(baseCfg, deps, "/tmp/nax-test-repo");
     const r = plugin.extensions.reporter!;
@@ -244,23 +180,10 @@ describe("US-007 AC8: when git branch resolution fails, exported payloads omit n
 
   test("success: a metrics payload exported after a git failure also carries no nax.git.branch", async () => {
     const spawnCalls: string[][] = [];
-    _gitDeps.spawn = mock((args: string[], _opts: unknown) => {
-      spawnCalls.push(args as string[]);
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.error(new Error("spawn EACCES"));
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(1),
-        kill: mock(() => {}),
-      } as any;
-    }) as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      spawnCalls.push(cmd);
+      return { stdoutError: new Error("spawn EACCES"), exitCode: 1 };
+    }).spawn;
     const { posts, deps } = capturingPosts();
     const plugin = createOtelReporterPlugin(baseCfg, deps, "/tmp/nax-test-repo");
     const r = plugin.extensions.reporter!;

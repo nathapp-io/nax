@@ -38,6 +38,7 @@ function makeCallCtx(overrides: Partial<CallContext> = {}): CallContext {
     runAsSessionFn: async (agentName) => ({
       output: `proposal-${agentName}`,
       tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: 0,
       internalRoundTrips: 0,
     }),
   });
@@ -120,6 +121,7 @@ describe("DebateRunner hybrid mode — handle IDs correspond to sessionRole (AC1
       runAsSessionFn: async (agentName) => ({
         output: `proposal-${agentName}`,
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
         internalRoundTrips: 0,
       }),
     });
@@ -162,6 +164,7 @@ describe("DebateRunner hybrid mode — handle IDs correspond to sessionRole (AC1
       runAsSessionFn: async (agentName) => ({
         output: `proposal-${agentName}`,
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
         internalRoundTrips: 0,
       }),
     });
@@ -214,6 +217,7 @@ describe("DebateRunner hybrid mode — parallel proposals via allSettledBounded 
         return {
           output: `proposal-${agentName}`,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       },
@@ -263,6 +267,7 @@ describe("DebateRunner hybrid mode — parallel proposals via allSettledBounded 
         return {
           output: `proposal-${agentName}`,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       },
@@ -312,7 +317,12 @@ describe("DebateRunner hybrid mode — pre-opened sessions per debater (AC3)", (
     const agentManager = makeMockAgentManager({
       runAsSessionFn: async () => {
         runAsSessionCalls.push(1);
-        return { output: "proposal", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+        return {
+          output: "proposal",
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+          internalRoundTrips: 0,
+        };
       },
     });
     const ctx = makeCallCtx({
@@ -360,6 +370,7 @@ describe("DebateRunner hybrid mode — single-agent fallback when fewer than 2 p
         return {
           output: `proposal-${agentName}`,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       },
@@ -470,6 +481,7 @@ describe("DebateRunner hybrid mode — adapter resolution via getAgent (AC6)", (
       runAsSessionFn: async (agentName) => ({
         output: `proposal-${agentName}`,
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
         internalRoundTrips: 0,
       }),
     });
@@ -508,6 +520,7 @@ describe("DebateRunner hybrid mode — adapter resolution via getAgent (AC6)", (
       runAsSessionFn: async (agentName) => ({
         output: `proposal-${agentName}`,
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
         internalRoundTrips: 0,
       }),
     });
@@ -595,6 +608,7 @@ describe("runHybrid() — two-scope cost tracking (US-005)", () => {
       runAsSessionFn: async (agentName) => ({
         output: `proposal-${agentName}`,
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
         internalRoundTrips: 0,
       }),
     });

@@ -4,7 +4,14 @@ import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
 import { shouldRunNonBlockingFix } from "@/execution/non-blocking-fix";
 import type { NaxRuntime } from "@/runtime";
 import { _rollbackDeps } from "@/tdd";
-import { makeMockCallContext, makeMockPlanInputs, makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
+import {
+  makeMockCallContext,
+  makeMockPlanInputs,
+  makeNaxConfig,
+  makeSpawn,
+  makeStory,
+  makeTestRuntime,
+} from "@test/helpers";
 
 describe("non-blocking-fix wiring gate", () => {
   test("gate is off without config", () => {
@@ -92,11 +99,7 @@ describe("non-blocking-fix runtime wiring", () => {
     })) as typeof _storyOrchestratorDeps.runFixCycle;
 
     _rollbackDeps.autoCommitIfDirty = mock(async () => {});
-    _rollbackDeps.spawn = mock((_cmd: string[], _opts: unknown) => ({
-      stdout: new Response("abc1234\n").body,
-      stderr: new Response("").body,
-      exited: Promise.resolve(0),
-    })) as typeof _rollbackDeps.spawn;
+    _rollbackDeps.spawn = makeSpawn(() => "abc1234\n").spawn;
   });
 
   afterEach(async () => {

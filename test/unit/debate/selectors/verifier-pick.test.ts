@@ -234,6 +234,7 @@ describe("verifierPickSelector", () => {
           return {
             output: "Patched proposal output",
             tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            internalRoundTrips: 1,
             estimatedCostUsd: 0.1,
           };
         },
@@ -273,6 +274,7 @@ describe("verifierPickSelector", () => {
         runAsSessionFn: async () => ({
           output: patchedOutput,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          internalRoundTrips: 1,
           estimatedCostUsd: 0.1,
         }),
       });
@@ -312,6 +314,7 @@ describe("verifierPickSelector", () => {
         runAsSessionFn: async () => ({
           output: "Patched output",
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          internalRoundTrips: 1,
           estimatedCostUsd: 0.1,
         }),
       });
@@ -354,6 +357,7 @@ describe("verifierPickSelector", () => {
           return {
             output: "Patched output",
             tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            internalRoundTrips: 1,
             estimatedCostUsd: 0.1,
           };
         },
@@ -396,6 +400,7 @@ describe("verifierPickSelector", () => {
           return {
             output: "Patched output",
             tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            internalRoundTrips: 1,
             estimatedCostUsd: 0.1,
           };
         },
@@ -437,6 +442,7 @@ describe("verifierPickSelector", () => {
           return {
             output: "Patched output",
             tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            internalRoundTrips: 1,
             estimatedCostUsd: 0.1,
           };
         },
@@ -478,6 +484,7 @@ describe("verifierPickSelector", () => {
         runAsSessionFn: async () => ({
           output: "Final patched proposal",
           tokenUsage: { inputTokens: 100, outputTokens: 200 },
+          internalRoundTrips: 1,
           estimatedCostUsd: 0.25,
         }),
       });

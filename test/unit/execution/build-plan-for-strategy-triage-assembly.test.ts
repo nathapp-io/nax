@@ -4,7 +4,14 @@ import type { PlanInputs } from "@/execution";
 import type { UserStory } from "@/prd/types";
 import type { NaxRuntime } from "@/runtime";
 import { _rollbackDeps } from "@/tdd";
-import { makeMockCallContext, makeMockPlanInputs, makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
+import {
+  makeMockCallContext,
+  makeMockPlanInputs,
+  makeNaxConfig,
+  makeSpawn,
+  makeStory,
+  makeTestRuntime,
+} from "@test/helpers";
 
 function makeImplementerInput(story: UserStory): import("@/operations").ImplementerInput {
   return { story };
@@ -53,11 +60,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
 
     _storyOrchestratorDeps.captureGitRef = mock(async () => "HEAD");
     _rollbackDeps.autoCommitIfDirty = mock(async () => {});
-    _rollbackDeps.spawn = mock((_cmd: string[], _opts: unknown) => ({
-      stdout: new Response("abc1234\n").body,
-      stderr: new Response("").body,
-      exited: Promise.resolve(0),
-    })) as typeof _rollbackDeps.spawn;
+    _rollbackDeps.spawn = makeSpawn(() => "abc1234\n").spawn;
     _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
       if (op.name === "adversarial-review") {
         return {
@@ -172,6 +175,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
+        workdir: "/tmp/test",
         adversarialConfig: config.review.adversarial!,
         mode: config.review.adversarial!.diffMode,
       },
@@ -216,6 +220,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
+        workdir: "/tmp/test",
         adversarialConfig: config.review.adversarial!,
         mode: config.review.adversarial!.diffMode,
       },
@@ -252,6 +257,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
+        workdir: "/tmp/test",
         adversarialConfig: config.review.adversarial!,
         mode: config.review.adversarial!.diffMode,
       },
@@ -292,6 +298,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
+        workdir: "/tmp/test",
         adversarialConfig: config.review.adversarial!,
         mode: config.review.adversarial!.diffMode,
       },
@@ -317,6 +324,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
       verifyScoped: { workdir: "/tmp/test", storyId: story.id },
       adversarialReview: {
         story,
+        workdir: "/tmp/test",
         adversarialConfig: config.review.adversarial!,
         mode: config.review.adversarial!.diffMode,
       },

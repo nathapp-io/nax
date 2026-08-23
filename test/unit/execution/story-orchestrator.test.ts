@@ -238,7 +238,7 @@ describe("StoryOrchestratorBuilder — AC3: Canonical execution order", () => {
     const config = makeNaxConfig();
     const makeOrderTracker = (roles: string[]) =>
       makeMockAgentManager({
-        runAsSessionFn: async (_req, onSuccess) => {
+        runWithFallbackTransportFn: async (_req, onSuccess) => {
           const role = _req.sessionRole ?? "unknown";
           roles.push(role);
           return onSuccess({
@@ -326,7 +326,7 @@ describe("StoryOrchestratorBuilder — AC5: Error handling and success=false", (
   test("returns success=false when an op returns { success: false }", async () => {
     const config = makeNaxConfig();
     const mockAgentManager = makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) => {
+      runWithFallbackTransportFn: async (_req, onSuccess) => {
         return onSuccess({
           output: JSON.stringify({ success: false }),
           tokenUsage: { inputTokens: 10, outputTokens: 5 },
@@ -383,7 +383,7 @@ describe("StoryOrchestratorBuilder — AC6: Result shape (costs, outputs, durati
   test("returns StoryOrchestratorResult with success, phaseCosts, totalCostUsd, durationMs", async () => {
     const config = makeNaxConfig();
     const mockAgentManager = makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) => {
+      runWithFallbackTransportFn: async (_req, onSuccess) => {
         return onSuccess({
           output: JSON.stringify({ success: true }),
           tokenUsage: { inputTokens: 10, outputTokens: 5 },
@@ -420,7 +420,7 @@ describe("StoryOrchestratorBuilder — AC6: Result shape (costs, outputs, durati
   test("aggregates per-phase costs keyed by op.name and sums into totalCostUsd", async () => {
     const config = makeNaxConfig();
     const mockAgentManager = makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) =>
+      runWithFallbackTransportFn: async (_req, onSuccess) =>
         onSuccess({
           output: JSON.stringify({ success: true }),
           tokenUsage: { inputTokens: 10, outputTokens: 5 },
@@ -452,7 +452,7 @@ describe("StoryOrchestratorBuilder — AC6: Result shape (costs, outputs, durati
   test("stores parsed phase outputs keyed by op.name in phaseOutputs", async () => {
     const config = makeNaxConfig();
     const mockAgentManager = makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) => {
+      runWithFallbackTransportFn: async (_req, onSuccess) => {
         const output =
           _req.sessionRole === "implementer"
             ? JSON.stringify({ success: true, generatedCode: "code123" })
@@ -517,7 +517,7 @@ describe("StoryOrchestratorBuilder — AC7: Rectification phase loop", () => {
   test("rectification reads failures from verifier output", async () => {
     const config = makeNaxConfig();
     const mockAgentManager = makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) => {
+      runWithFallbackTransportFn: async (_req, onSuccess) => {
         const output =
           _req.sessionRole === "verifier"
             ? JSON.stringify({
@@ -565,7 +565,7 @@ describe("StoryOrchestratorBuilder — AC7: Rectification phase loop", () => {
     let attemptCount = 0;
 
     const mockAgentManager = makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) => {
+      runWithFallbackTransportFn: async (_req, onSuccess) => {
         if (_req.sessionRole === "verifier") {
           attemptCount++;
         }
@@ -608,7 +608,7 @@ describe("StoryOrchestratorBuilder — AC7: Rectification phase loop", () => {
   test("rectification terminates on success", async () => {
     const config = makeNaxConfig();
     const mockAgentManager = makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) => {
+      runWithFallbackTransportFn: async (_req, onSuccess) => {
         const output =
           _req.sessionRole === "verifier"
             ? JSON.stringify({ success: true, findings: [] })
@@ -653,7 +653,7 @@ describe("StoryOrchestratorBuilder — AC7: Rectification phase loop", () => {
     let callCount = 0;
 
     const mockAgentManager = makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) => {
+      runWithFallbackTransportFn: async (_req, onSuccess) => {
         callCount++;
         const findingCount = callCount === 1 ? 1 : 2; // Increase from 1 to 2
 
@@ -700,7 +700,7 @@ describe("StoryOrchestratorBuilder — AC8: SessionKeeper reuse", () => {
     const config = makeNaxConfig();
     let sessionCount = 0;
     const mockAgentManager = makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) => {
+      runWithFallbackTransportFn: async (_req, onSuccess) => {
         if (_req.sessionRole === "implementer") sessionCount++;
         return onSuccess({
           output: JSON.stringify({ success: true }),
@@ -742,7 +742,7 @@ describe("StoryOrchestratorBuilder — AC8: SessionKeeper reuse", () => {
           sessionManager: {} as any,
         };
       },
-      runAsSessionFn: async (_req, onSuccess) => {
+      runWithFallbackTransportFn: async (_req, onSuccess) => {
         return onSuccess({
           output: JSON.stringify({ success: false, findings: [] }),
           tokenUsage: { inputTokens: 10, outputTokens: 5 },

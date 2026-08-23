@@ -88,25 +88,7 @@ function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = 
 
 /** Build a mock spawn that returns the given output as stdout */
 function mockSpawnReturning(output: string) {
-  return mock((_args: string[], _opts: unknown) => {
-    const encoder = new TextEncoder();
-    const bytes = encoder.encode(output);
-    return {
-      stdout: new ReadableStream({
-        start(controller) {
-          controller.enqueue(bytes);
-          controller.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(c) {
-          c.close();
-        },
-      }),
-      exited: Promise.resolve(0),
-      kill: mock(() => {}),
-    };
-  });
+  return makeSpawn(() => output).spawn;
 }
 
 // ---------------------------------------------------------------------------
@@ -164,25 +146,10 @@ describe("handlePipelineSuccess — outputFiles capture (ENH-005)", () => {
     const ctx = makeCtx(story, { storyGitRef: "abc123" });
 
     let capturedArgs: string[] = [];
-    _gitDeps.spawn = mock((args: string[], _opts: unknown) => {
-      capturedArgs = args as string[];
-      const bytes = new TextEncoder().encode("apps/api/src/index.ts\n");
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
-    });
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      capturedArgs = cmd;
+      return "apps/api/src/index.ts\n";
+    }).spawn;
 
     await handlePipelineSuccess(ctx, makeMinimalResult());
 

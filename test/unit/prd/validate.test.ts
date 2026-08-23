@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertPrdCommitted, validateStoryId } from "@/prd";
 import { _gitDeps } from "@/utils/git";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeSpawn, makeTempDir } from "@test/helpers";
 
 describe("validateStoryId", () => {
   test("accepts valid story IDs", () => {
@@ -139,26 +139,11 @@ describe("assertPrdCommitted — git status failure", () => {
   // stdout, which must not be read as "clean" — that would let the bake-off
   // proceed when git cannot actually determine whether the PRD is modified.
   test("rejects when git status exits non-zero, even though stdout is empty", async () => {
-    _gitDeps.spawn = mock((args: string[], _opts: unknown) => {
-      // args[0] is the "git" executable itself — the subcommand is args[1].
-      const isStatus = args[1] === "status";
-      const bytes = new TextEncoder().encode("");
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(isStatus ? 1 : 0),
-        kill: mock(() => {}),
-      };
-    }) as typeof _gitDeps.spawn;
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      // cmd[0] is the "git" executable itself — the subcommand is cmd[1].
+      const isStatus = cmd[1] === "status";
+      return { stdout: "", exitCode: isStatus ? 1 : 0 };
+    }).spawn;
 
     await expect(assertPrdCommitted("/repo/.nax/features/f/prd.json", "/repo")).rejects.toThrow(
       "/repo/.nax/features/f/prd.json",

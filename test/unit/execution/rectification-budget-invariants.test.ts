@@ -52,7 +52,7 @@ const testSel = pickSelector("test-us005b-sel", "execution");
 const NR_FIXOP_NAME = "nr-fixop";
 
 const GATE_FINDING: Finding = {
-  source: "full-suite-gate",
+  source: "test-runner",
   severity: "error",
   category: "failed-test",
   message: "gate finding",
@@ -91,7 +91,7 @@ const RBI_AGENT = "claude";
 function nrStrategy(maxAttempts: number): FixStrategy<Finding, { story: string }, { applied: boolean }> {
   return {
     name: "nr-fix-strategy",
-    appliesTo: (f) => f.source === "full-suite-gate",
+    appliesTo: (f) => f.source === "test-runner",
     fixOp: nrFixOp,
     buildInput: () => ({ story: "S" }),
     maxAttempts,
@@ -381,15 +381,15 @@ async function nrRunWithStaticIterations(
  */
 function oneReversalIters(): Iteration[] {
   return [
-    iterFromSources(1, ["full-suite-gate"], ["semantic-review"]),
-    iterFromSources(2, ["semantic-review"], ["full-suite-gate"]),
+    iterFromSources(1, ["test-runner"], ["semantic-review"]),
+    iterFromSources(2, ["semantic-review"], ["test-runner"]),
   ];
 }
 
 /** Forward-only sequence — no source ever reappears. Counts zero. */
 function monotonicForwardIters(): Iteration[] {
   return [
-    iterFromSources(1, ["full-suite-gate"], ["semantic-review"]),
+    iterFromSources(1, ["test-runner"], ["semantic-review"]),
     iterFromSources(2, ["semantic-review"], ["semantic-review"]),
   ];
 }
@@ -451,7 +451,7 @@ describe("US-005b AC4: phase output iterationCount reports this cycle's count, n
       storyId,
       tier: "fast",
       iterations: [
-        iterFromSources(1, ["full-suite-gate"], ["semantic-review"]),
+        iterFromSources(1, ["test-runner"], ["semantic-review"]),
         iterFromSources(2, ["semantic-review"], []),
       ],
       exitReason: "resolved",
@@ -460,7 +460,7 @@ describe("US-005b AC4: phase output iterationCount reports this cycle's count, n
     const second = await nrRunWithStaticIterations(runtime, {
       storyId,
       tier: "fast",
-      iterations: [iterFromSources(1, ["full-suite-gate"], [])],
+      iterations: [iterFromSources(1, ["test-runner"], [])],
       exitReason: "resolved",
     });
 
@@ -476,7 +476,7 @@ describe("US-005b AC4: phase output iterationCount reports this cycle's count, n
       storyId,
       tier: "fast",
       iterations: [
-        iterFromSources(1, ["full-suite-gate"], ["semantic-review"]),
+        iterFromSources(1, ["test-runner"], ["semantic-review"]),
         iterFromSources(2, ["semantic-review"], []),
       ],
       exitReason: "resolved",
@@ -485,7 +485,7 @@ describe("US-005b AC4: phase output iterationCount reports this cycle's count, n
     const second = await nrRunWithStaticIterations(runtime, {
       storyId,
       tier: "fast",
-      iterations: [iterFromSources(1, ["full-suite-gate"], [])],
+      iterations: [iterFromSources(1, ["test-runner"], [])],
       exitReason: "resolved",
     });
 

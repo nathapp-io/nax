@@ -11,34 +11,18 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { _gitDeps, autoCommitIfDirty } from "@/utils/git";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeSpawn, makeTempDir } from "@test/helpers";
 
 /**
  * Spawn stub that answers each git invocation by subcommand, so the guard under
  * test sees a repo that IS dirty — the only state in which a commit would run.
  */
-function makeSpawn(gitRoot: string, calls: string[][]) {
-  return mock((args: string[], _opts: unknown) => {
-    calls.push(args);
-    const sub = args[1];
-    const out = sub === "rev-parse" ? `${gitRoot}\n` : sub === "status" ? " M src/a.ts\n" : "";
-    const bytes = new TextEncoder().encode(out);
-    return {
-      stdout: new ReadableStream({
-        start(c) {
-          c.enqueue(bytes);
-          c.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(c) {
-          c.close();
-        },
-      }),
-      exited: Promise.resolve(0),
-      kill: mock(() => {}),
-    };
-  });
+function makeGitSpawn(gitRoot: string, calls: string[][]) {
+  return makeSpawn(({ cmd }) => {
+    calls.push(cmd);
+    const sub = cmd[1];
+    return sub === "rev-parse" ? `${gitRoot}\n` : sub === "status" ? " M src/a.ts\n" : "";
+  }).spawn;
 }
 
 let origSpawn: typeof _gitDeps.spawn;
@@ -65,7 +49,7 @@ describe("autoCommitIfDirty — blocked worktrees", () => {
   test("commits normally when no worktree is blocked", async () => {
     const repo = makeRepo();
     const calls: string[][] = [];
-    _gitDeps.spawn = makeSpawn(repo, calls);
+    _gitDeps.spawn = makeGitSpawn(repo, calls);
 
     await autoCommitIfDirty(repo, "execution", "implementer", "US-001");
 
@@ -75,7 +59,7 @@ describe("autoCommitIfDirty — blocked worktrees", () => {
   test("refuses to commit when the target tree is blocked", async () => {
     const repo = makeRepo();
     const calls: string[][] = [];
-    _gitDeps.spawn = makeSpawn(repo, calls);
+    _gitDeps.spawn = makeGitSpawn(repo, calls);
 
     await autoCommitIfDirty(repo, "execution", "implementer", "US-001", new Set([repo]));
 
@@ -92,7 +76,7 @@ describe("autoCommitIfDirty — blocked worktrees", () => {
     const linked = join(repo, ".nax-wt", "US-002");
     mkdirSync(linked, { recursive: true });
     const calls: string[][] = [];
-    _gitDeps.spawn = makeSpawn(repo, calls);
+    _gitDeps.spawn = makeGitSpawn(repo, calls);
 
     await autoCommitIfDirty(repo, "execution", "implementer", "US-001", new Set([linked]));
 
@@ -106,7 +90,7 @@ describe("autoCommitIfDirty — blocked worktrees", () => {
     const calls: string[][] = [];
     // `git rev-parse --show-toplevel` inside a linked worktree answers with
     // that worktree, so this is the root the commit would stage from.
-    _gitDeps.spawn = makeSpawn(linked, calls);
+    _gitDeps.spawn = makeGitSpawn(linked, calls);
 
     await autoCommitIfDirty(linked, "execution", "implementer", "US-002", new Set([linked]));
 
@@ -119,7 +103,7 @@ describe("autoCommitIfDirty — blocked worktrees", () => {
     const repo = makeRepo();
     const pkg = join(repo, "src");
     const calls: string[][] = [];
-    _gitDeps.spawn = makeSpawn(repo, calls);
+    _gitDeps.spawn = makeGitSpawn(repo, calls);
 
     await autoCommitIfDirty(pkg, "execution", "implementer", "US-001", new Set([repo]));
 
@@ -130,7 +114,7 @@ describe("autoCommitIfDirty — blocked worktrees", () => {
     const repo = makeRepo();
     const other = makeRepo();
     const calls: string[][] = [];
-    _gitDeps.spawn = makeSpawn(repo, calls);
+    _gitDeps.spawn = makeGitSpawn(repo, calls);
 
     await autoCommitIfDirty(repo, "execution", "implementer", "US-001", new Set([other]));
 
@@ -140,7 +124,7 @@ describe("autoCommitIfDirty — blocked worktrees", () => {
   test("an empty blocked set is treated as no block", async () => {
     const repo = makeRepo();
     const calls: string[][] = [];
-    _gitDeps.spawn = makeSpawn(repo, calls);
+    _gitDeps.spawn = makeGitSpawn(repo, calls);
 
     await autoCommitIfDirty(repo, "execution", "implementer", "US-001", new Set());
 

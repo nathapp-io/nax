@@ -36,6 +36,7 @@ function makeCallCtx(overrides: Partial<CallContext> = {}): CallContext {
     runAsSessionFn: async (_name, _handle, _prompt) => ({
       output: "stateful-output",
       tokenUsage: { inputTokens: 10, outputTokens: 20 },
+      estimatedCostUsd: 0,
       internalRoundTrips: 1,
     }),
   });
@@ -132,6 +133,7 @@ describe("DebateRunner.run() — stateful mode", () => {
       runAsSessionFn: async (_agentName, _handle, _prompt) => ({
         output: "proposal-output",
         tokenUsage: { inputTokens: 10, outputTokens: 20 },
+        estimatedCostUsd: 0,
         internalRoundTrips: 1,
       }),
     });
@@ -171,6 +173,7 @@ describe("DebateRunner.run() — stateful mode", () => {
         return {
           output: "session-output",
           tokenUsage: { inputTokens: 10, outputTokens: 20 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 1,
         };
       },
@@ -221,6 +224,7 @@ describe("DebateRunner.run() — stateful mode", () => {
       runAsSessionFn: async (_agentName, _handle, _prompt) => ({
         output: '{"passed":true}',
         tokenUsage: { inputTokens: 10, outputTokens: 20 },
+        estimatedCostUsd: 0,
         internalRoundTrips: 1,
       }),
     });
@@ -266,6 +270,7 @@ describe("DebateRunner.run() — stateful mode", () => {
         return {
           output: `proposal from ${agentName}`,
           tokenUsage: { inputTokens: 10, outputTokens: 20 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 1,
         };
       },
@@ -318,6 +323,7 @@ describe("DebateRunner.run() — stateful mode uses runAsSession SSOT", () => {
         return {
           output: `proposal-${agentName}`,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       },
@@ -396,6 +402,7 @@ describe("DebateRunner.run() — stateful mode uses runAsSession SSOT", () => {
         return {
           output: `proposal-${agentName}`,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       },
@@ -433,6 +440,7 @@ describe("runStateful() — resolveOutcome receives workdir and featureName (US-
       runAsSessionFn: async () => ({
         output: '{"passed": true}',
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
         internalRoundTrips: 0,
       }),
     });
@@ -489,7 +497,12 @@ describe("DebateRunner.run() — one-shot mode unchanged", () => {
     const agentManager = makeMockAgentManager({
       runAsSessionFn: async () => {
         runAsSessionCount += 1;
-        return { output: "run-session", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+        return {
+          output: "run-session",
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+          internalRoundTrips: 0,
+        };
       },
       completeFn: async () => {
         completeCount += 1;
@@ -553,6 +566,7 @@ describe("runStateful() — two-scope cost tracking (US-005)", () => {
       runAsSessionFn: async () => ({
         output: "ok",
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
         internalRoundTrips: 0,
       }),
     });

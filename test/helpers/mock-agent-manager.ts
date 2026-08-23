@@ -21,11 +21,30 @@ const DEFAULT_COMPLETE_RESULT: CompleteResult = {
 };
 
 /**
- * Callback-style runAsSession override.
- * `req` is the AgentRunOptions passed to runWithFallback (carries sessionRole, etc.).
- * `onSuccess` is a passthrough — call it with a TurnResult to produce the turn output.
+ * Override for `IAgentManager.runAsSession`. Mirrors the real method's signature,
+ * so a callback written here receives exactly what production code passes.
+ *
+ * The mock also uses this as the hop transport for `runWithFallback` when no
+ * `runWithFallbackTransportFn` is set — see buildRunWithFallback, which adapts
+ * the AgentRunRequest into these four arguments so the callback sees a string
+ * agent name on both paths.
  */
 export type RunAsSessionOverrideFn = (
+  agentName: string,
+  handle: SessionHandle,
+  prompt: string,
+  opts: RunAsSessionOpts,
+) => Promise<TurnResult>;
+
+/**
+ * Callback-style `runWithFallback` transport override.
+ * `req` is the AgentRunOptions passed to runWithFallback (carries sessionRole, etc.).
+ * `onSuccess` is a passthrough — call it with a TurnResult to produce the turn output.
+ *
+ * Use this when the assertion needs the request (e.g. `req.sessionRole`); use
+ * `runAsSessionFn` when it needs the agent name, handle, or prompt.
+ */
+export type RunWithFallbackTransportFn = (
   req: AgentRunOptions,
   onSuccess: (turn: TurnResult) => TurnResult,
 ) => Promise<TurnResult>;
@@ -39,6 +58,16 @@ export type OpenSessionOverrideFn = (req: AgentRunOptions) => Promise<{
   sessionHandle: SessionHandle;
   sessionManager: unknown;
 }>;
+
+/**
+ * Adapt a runWithFallback request into the four runAsSession arguments, so a
+ * `runAsSessionFn` callback sees the same shape on both dispatch paths. The
+ * handle is synthetic — the mock never opens a real session.
+ */
+function runAsSessionHop(fn: RunAsSessionOverrideFn, req: AgentRunRequest, agentName: string): Promise<TurnResult> {
+  const handle: SessionHandle = { id: `mock-session-${agentName}`, agentName };
+  return fn(agentName, handle, req.runOptions.prompt, { workdir: req.runOptions.workdir });
+}
 
 export interface MockAgentManagerOptions {
   getDefaultAgent?: string;
@@ -90,13 +119,19 @@ export interface MockAgentManagerOptions {
   }>;
   completeAsFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
   /**
-   * Callback-style runAsSession override. When provided, the mock's runWithFallback
-   * calls this instead of returning DEFAULT_RESULT. Receives runOptions (with sessionRole)
-   * and an identity onSuccess callback.
+   * runAsSession override, in the real method's shape: (agentName, handle, prompt, opts).
+   * When provided, the mock's runWithFallback also routes hops through it (with the
+   * request adapted to those four arguments) instead of returning DEFAULT_RESULT.
    *
-   * Takes priority over runWithFallbackFn when both are set.
+   * runWithFallbackFn takes priority over this when both are set.
    */
   runAsSessionFn?: RunAsSessionOverrideFn;
+  /**
+   * runWithFallback hop transport, receiving the AgentRunOptions and an identity
+   * onSuccess callback. Takes priority over runAsSessionFn on the runWithFallback
+   * path; it does not affect runAsSession.
+   */
+  runWithFallbackTransportFn?: RunWithFallbackTransportFn;
   /**
    * Optional session-open observer. Receives the runOptions that triggered the open.
    * Return value is unused by the mock — set sessionIds from within the callback.
@@ -137,23 +172,28 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
         } satisfies CompleteResult),
       );
 
-  // buildRunWithFallback priority: runWithFallbackFn > runAsSessionFn > default.
+  // buildRunWithFallback priority:
+  //   runWithFallbackFn > runWithFallbackTransportFn > runAsSessionFn > default.
   // runWithFallbackFn must take priority because it wires req.executeHop, which
-  // is required for callOp's retry logic. runAsSessionFn is only used as the
-  // hop transport when no explicit runWithFallbackFn is set.
+  // is required for callOp's retry logic. The transport callbacks are only used
+  // as the hop transport when no explicit runWithFallbackFn is set.
   const buildRunWithFallback = () => {
     if (opts.runWithFallbackFn) {
       return mock((req: AgentRunRequest, primaryAgentOverride?: string) =>
         opts.runWithFallbackFn!(req, primaryAgentOverride),
       );
     }
-    if (opts.runAsSessionFn) {
-      return mock(async (req: AgentRunRequest) => {
+    const transport = opts.runWithFallbackTransportFn;
+    const asSession = opts.runAsSessionFn;
+    if (transport || asSession) {
+      return mock(async (req: AgentRunRequest, primaryAgentOverride?: string) => {
         if (opts.openSessionFn) {
           // Notify observer (return value is ignored).
           await opts.openSessionFn(req.runOptions).catch(() => {});
         }
-        const turn = await opts.runAsSessionFn!(req.runOptions, (t: TurnResult) => t);
+        const turn = transport
+          ? await transport(req.runOptions, (t: TurnResult) => t)
+          : await runAsSessionHop(asSession!, req, primaryAgentOverride ?? opts.getDefaultAgent ?? "claude");
         const result: AgentResult = {
           success: true,
           exitCode: 0,
@@ -218,8 +258,7 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
           ),
     runAsSession: opts.runAsSessionFn
       ? mock((agentName: string, handle: SessionHandle, prompt: string, sessionOpts: RunAsSessionOpts) =>
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (opts.runAsSessionFn as any)(agentName, handle, prompt, sessionOpts),
+          opts.runAsSessionFn!(agentName, handle, prompt, sessionOpts),
         )
       : mock((_agentName: string, _handle: SessionHandle, _prompt: string, _sessionOpts: RunAsSessionOpts) =>
           Promise.resolve({

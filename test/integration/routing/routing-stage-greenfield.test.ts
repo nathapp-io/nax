@@ -105,6 +105,7 @@ function createTestContext(
       smartTestRunner: {
         enabled: true,
         fallback: "import-grep",
+        maxScanFiles: 200,
         testFilePatterns: [
           "**/*.test.ts",
           "**/*.test.tsx",

@@ -10,7 +10,13 @@
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { type RectificationOverrides, _storyOrchestratorDeps, runRectification } from "@/execution";
-import type { FixCycle, FixCycleContext, FixCycleExitReason, FixStrategy } from "@/findings/cycle-types";
+import type {
+  FixCycle,
+  FixCycleContext,
+  FixCycleExitReason,
+  FixStrategy,
+  ValidateResult,
+} from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
 import type { CallContext } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -117,6 +123,15 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
   }
 
   /** Capture the FixCycle runRectification builds, without running it. */
+  /**
+   * `FixCycle.validate` returns `F[] | ValidateResult<F>`. Narrow it instead of
+   * reaching for `.findings` on the union (which collapses to any and makes the
+   * predicate below an implicit any).
+   */
+  function validateFindings(result: Finding[] | ValidateResult<Finding>): readonly Finding[] {
+    return Array.isArray(result) ? result : result.findings;
+  }
+
   async function captureNbfCycle(
     ctx: CallContext,
     state: Parameters<typeof runRectification>[1],
@@ -186,7 +201,7 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
 
     // The gate's failure must reach the cycle — this is what makes the next
     // iteration happen at all, i.e. what makes `regressionAttempts` spendable.
-    expect(result.findings.some((f) => f.source === "test-runner")).toBe(true);
+    expect(validateFindings(result).some((f) => f.source === "test-runner")).toBe(true);
     // And the halt-on-failure contract must hold: nothing downstream of a red
     // gate may run, so the expensive verifier session is never dispatched.
     expect((result as { shortCircuited?: boolean }).shortCircuited).toBe(true);
@@ -251,8 +266,8 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
       strategiesRun: ["autofix-implementer"],
     });
     return {
-      findings: result.findings,
-      shortCircuited: (result as { shortCircuited?: boolean }).shortCircuited === true,
+      findings: validateFindings(result),
+      shortCircuited: !Array.isArray(result) && result.shortCircuited === true,
     };
   }
 
@@ -296,7 +311,7 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
 
     // No blame ⇒ no finding ⇒ the cycle resolves and `keptTreeRegressed` (which excludes
     // the same key) keeps the pass, exactly as it did before #1401.
-    expect(result.findings.some((f) => f.source === "test-runner")).toBe(false);
+    expect(validateFindings(result).some((f) => f.source === "test-runner")).toBe(false);
   });
 });
 
