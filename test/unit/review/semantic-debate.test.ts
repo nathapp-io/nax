@@ -17,7 +17,7 @@ import { _diffUtilsDeps } from "@/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "@/review/semantic";
 import type { SemanticStory } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
-import { makeMockAgentManager, makeSpawn } from "@test/helpers";
+import { makeDebateRunner, makeMockAgentManager, makeSpawn } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
 import { makeNaxConfig } from "@test/helpers";
 
@@ -308,9 +308,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
 
   test("AC3: createDebateRunner is called when debate.stages.review.enabled=true", async () => {
     const runMock = mock(async () => DEBATE_MAJORITY_PASS_RESULT);
-    _semanticDeps.createDebateRunner = mock(() => ({
-      run: runMock,
-    })) as unknown as typeof _semanticDeps.createDebateRunner;
+    _semanticDeps.createDebateRunner = mock(() => makeDebateRunner({ run: runMock }));
 
     const agentManager = makeAgentManager(PROPOSAL_PASS);
     const runtime = makeMockRuntime({ agentManager });

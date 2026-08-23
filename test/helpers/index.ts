@@ -34,6 +34,7 @@ export { makeContextBundle, makeContextManifest } from "./context-bundle";
 export { makeEscalationContext } from "./escalation-context";
 export { makePluginRegistry, type MockPluginRegistry } from "./plugin-registry";
 export { makeSpawn, makeSpawnResult } from "./spawn";
+export { makeDebateRunner, DEFAULT_DEBATE_RESULT, type MockDebateRunner } from "./debate-runner";
 export { makeStatusWriter, type MockStatusWriter } from "./status-writer";
 export type { FakeProcSpec, SpawnCall, SpawnResult, SpawnStub } from "./spawn";
 export { withDepsRestore } from "./deps";
