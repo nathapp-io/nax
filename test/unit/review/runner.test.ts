@@ -16,28 +16,28 @@ import {
 } from "@/review/runner";
 import type { ReviewConfig } from "@/review/types";
 import { _gitDeps } from "@/utils/git";
-import { makeSpawn, makeSpawnResult } from "@test/helpers";
+import { makeConfigSlice, makeSpawn, makeSpawnResult } from "@test/helpers";
 
 /** Minimal ReviewConfig with typecheck enabled but command set to disable via executionConfig */
-const typecheckConfig: ReviewConfig = {
+const typecheckConfig: ReviewConfig = makeConfigSlice("review", {
   enabled: true,
   checks: ["typecheck"],
   commands: {},
-};
+});
 
 /** ReviewConfig with no checks — used to isolate the dirty-tree guard logic */
-const noChecksConfig: ReviewConfig = {
+const noChecksConfig: ReviewConfig = makeConfigSlice("review", {
   enabled: true,
   checks: [],
   commands: {},
-};
+});
 
 /** Build check config with explicit command */
-const buildConfig: ReviewConfig = {
+const buildConfig: ReviewConfig = makeConfigSlice("review", {
   enabled: true,
   checks: ["build"],
   commands: { build: "echo 'build passed'" },
-};
+});
 
 describe("runReview — dirty working tree guard (RQ-001)", () => {
   let originalGetUncommittedFiles: typeof _deps.getUncommittedFiles;
@@ -118,7 +118,7 @@ describe("runReview — scoped lint integration", () => {
     _lintDeps.runScopedLintCheck = scopedLintMock;
 
     const result = await runReview({
-      config: { enabled: true, checks: ["lint"], commands: { lint: "bun run lint" } },
+      config: makeConfigSlice("review", { enabled: true, checks: ["lint"], commands: { lint: "bun run lint" } }),
       workdir: "/tmp/fake-workdir",
       storyGitRef: "abc123",
       storyId: "US-001",
@@ -148,7 +148,11 @@ describe("runReview — typecheck findings normalization", () => {
     })).spawn;
 
     const result = await runReview({
-      config: { enabled: true, checks: ["typecheck"], commands: { typecheck: "bun run typecheck" } },
+      config: makeConfigSlice("review", {
+        enabled: true,
+        checks: ["typecheck"],
+        commands: { typecheck: "bun run typecheck" },
+      }),
       workdir: "/tmp/fake-workdir",
     });
 
@@ -298,7 +302,7 @@ describe("runReview — build check (BUILD-001)", () => {
       return "";
     }).spawn;
     const r2 = await runReview({
-      config: { enabled: true, checks: ["build"], commands: {} },
+      config: makeConfigSlice("review", { enabled: true, checks: ["build"], commands: {} }),
       workdir: "/tmp/fake-workdir",
     });
     expect(r2.success).toBe(true);
@@ -313,11 +317,11 @@ describe("runReview — build check (BUILD-001)", () => {
     _runnerDeps.spawn = makeSpawn(() => "build output").spawn;
 
     // Config with build in checks but no explicit command - should use quality.commands.build
-    const configWithQualityBuild: ReviewConfig = {
+    const configWithQualityBuild: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["build"],
       commands: {},
-    };
+    });
     const qualityCommands = { build: "bun run build" };
 
     const result = await runReview({ config: configWithQualityBuild, workdir: "/tmp/fake-workdir", qualityCommands });
@@ -338,11 +342,11 @@ describe("runReview — build check (BUILD-001)", () => {
       return { exitCode: 1, stderr: "Build failed" };
     }).spawn;
 
-    const configWithMultipleChecks: ReviewConfig = {
+    const configWithMultipleChecks: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["build", "lint"],
       commands: { build: "echo build", lint: "echo lint" },
-    };
+    });
 
     const result = await runReview({ config: configWithMultipleChecks, workdir: "/tmp/fake-workdir" });
 
@@ -375,11 +379,11 @@ describe("runReview — semantic check integration (AC-9)", () => {
     _runnerDeps.spawn = originalSpawn;
   });
 
-  const semanticConfig: ReviewConfig = {
+  const semanticConfig: ReviewConfig = makeConfigSlice("review", {
     enabled: true,
     checks: ["semantic"],
     commands: {},
-  };
+  });
 
   test("calls runSemanticReview (not spawn); result appears in checks array", async () => {
     _deps.getUncommittedFiles = mock(async () => []);
