@@ -12,6 +12,7 @@
 import { describe, expect, test } from "bun:test";
 import { deepMergeConfig } from "@/config/merger";
 import type { NaxConfig } from "@/config/schema";
+import type { DeepPartial } from "@test/helpers";
 
 describe("config/merger", () => {
   describe("basic object merging", () => {
@@ -267,14 +268,10 @@ describe("config/merger", () => {
       const base: Partial<NaxConfig> = {
         version: 1,
         models: {
-          fast: "haiku",
-          balanced: "sonnet",
-          powerful: "opus",
+          claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
         },
         autoMode: {
           enabled: true,
-          defaultAgent: "claude",
-          fallbackOrder: ["claude", "codex"],
           complexityRouting: {
             simple: "fast",
             medium: "balanced",
@@ -283,6 +280,7 @@ describe("config/merger", () => {
           },
           escalation: {
             enabled: true,
+            resetMode: "initial",
             tierOrder: [
               { tier: "fast", attempts: 5 },
               { tier: "balanced", attempts: 3 },
@@ -291,26 +289,30 @@ describe("config/merger", () => {
         },
       };
 
-      const override: Partial<NaxConfig> = {
+      const override: DeepPartial<NaxConfig> = {
         models: {
-          fast: "gemini-flash",
+          claude: { fast: "gemini-flash" },
         },
         autoMode: {
-          defaultAgent: "gpt",
-          fallbackOrder: ["gpt", "claude"],
+          enabled: false,
           escalation: {
             tierOrder: [{ tier: "fast", attempts: 3 }],
           },
         },
       };
 
-      const result = deepMergeConfig(base, override) as Partial<NaxConfig>;
+      const result = deepMergeConfig<Partial<NaxConfig>>(base, override);
 
-      expect(result.models?.fast).toBe("gemini-flash");
-      expect(result.models?.balanced).toBe("sonnet");
-      expect(result.autoMode?.defaultAgent).toBe("gpt");
-      expect(result.autoMode?.fallbackOrder).toEqual(["gpt", "claude"]);
+      // nested scalar overridden, its sibling preserved
+      expect(result.models?.claude?.fast).toBe("gemini-flash");
+      expect(result.models?.claude?.balanced).toBe("sonnet");
+      // scalar overridden in a second nested block
+      expect(result.autoMode?.enabled).toBe(false);
+      // a block the override never mentions survives untouched
+      expect(result.autoMode?.complexityRouting?.simple).toBe("fast");
+      // arrays are REPLACED, not element-merged — and the sibling key survives
       expect(result.autoMode?.escalation?.tierOrder).toEqual([{ tier: "fast", attempts: 3 }]);
+      expect(result.autoMode?.escalation?.enabled).toBe(true);
     });
 
     test("handles removal of nested config keys", () => {
