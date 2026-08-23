@@ -9,7 +9,7 @@ function write(root: string, rel: string, content: string) {
   writeFileSync(join(root, rel), content);
 }
 
-const BASE = { asAny: 0, tsSuppress: 0, ratchetAllow: 0, absentValue: 0 };
+const BASE = { asAny: 0, tsSuppress: 0, ratchetAllow: 0, absentValue: 0, anyType: 0, looseCast: 0 };
 
 describe("scanEscapeHatches", () => {
   let root: string;
@@ -30,7 +30,7 @@ describe("scanEscapeHatches", () => {
       ].join("\n"),
     );
     const { counts } = await scanEscapeHatches(root);
-    expect(counts).toEqual({ asAny: 1, tsSuppress: 1, ratchetAllow: 1, absentValue: 0 });
+    expect(counts).toEqual({ asAny: 1, tsSuppress: 1, ratchetAllow: 1, absentValue: 0, anyType: 1, looseCast: 0 });
   });
 
   test("counts every hatch on a line, not the line once", async () => {
@@ -81,6 +81,45 @@ describe("scanEscapeHatches", () => {
     const { byFile } = await scanEscapeHatches(root);
     expect(byFile["test/unit/a.test.ts"]?.asAny).toBe(2);
     expect(byFile["test/unit/b.test.ts"]?.tsSuppress).toBe(1);
+  });
+
+  test("a file exempt for absentValue is still graded by asAny", async () => {
+    write(
+      root,
+      "test/helpers/absent.ts",
+      [
+        "export function absentValue<T>(): T { throw new Error(); }",
+        "export function nullValue<T>(): T { throw new Error(); }",
+        "const _probe = {} as any;",
+      ].join("\n"),
+    );
+    const { counts } = await scanEscapeHatches(root);
+    expect(counts.absentValue).toBe(0);
+    expect(counts.asAny).toBe(1);
+  });
+
+  test("anyType counts `: any` and `<any>` as well as `as any`", async () => {
+    write(
+      root,
+      "test/unit/a.test.ts",
+      ["const x: any = foo();", "const y = bar<any>();", "const z = baz as any;"].join("\n"),
+    );
+    const { counts } = await scanEscapeHatches(root);
+    expect(counts.anyType).toBe(3);
+  });
+
+  // test-ratchet-allow: as-unknown-as — title and fixture quote the phrase
+  test("looseCast counts `x as Foo` but not `as unknown as`, `as const`, or `as any`", async () => {
+    write(
+      root,
+      "test/unit/a.test.ts",
+      // test-ratchet-allow: as-unknown-as
+      ["const a = x as Foo;", "const b = x as unknown as Foo;", "const c = x as const;", "const d = x as any;"].join(
+        "\n",
+      ),
+    );
+    const { counts } = await scanEscapeHatches(root);
+    expect(counts.looseCast).toBe(1);
   });
 });
 

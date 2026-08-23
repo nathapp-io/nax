@@ -20,8 +20,16 @@
  *                parameter whose type forbids it, because the absence is the
  *                assertion. Counts the call sites of the idiom that replaced
  *                `undefined as unknown as T` / `null as unknown as T`.
+ *   anyType      `any` in TYPE position — `: any`, `<any>`, `as any`. The
+ *                cheapest way to silence a TS7006 implicit any without fixing
+ *                it. A superset of `asAny`; both retire together when biome's
+ *                noExplicitAny turns on for test/**.
+ *   looseCast    single `as T` casts. NOT a drain target — guards the 189
+ *                TS2352 errors ("convert the expression to `unknown` first")
+ *                from escaping into unmarked single casts while the cast
+ *                ratchet is at its floor.
  *
- * Every counter fails on growth only; all four shrink as the drain proceeds.
+ * Every counter fails on growth only; all six shrink as the drain proceeds.
  *
  * Usage:
  *   bun scripts/check-test-escape-hatches.ts                   # check (CI mode)
@@ -47,6 +55,24 @@ const PATTERNS = {
   tsSuppress: /@ts-(expect-error|ignore|nocheck)\b/g,
   ratchetAllow: /test-ratchet-allow:\s*as-unknown-as/g,
   absentValue: /\b(absentValue|nullValue)\s*</g,
+  /**
+   * `any` in TYPE position — `: any`, `<any>`, `Record<string, any>`, `as any`.
+   * Uncounted until now, and the cheapest possible way to silence a
+   * `TS7006 implicit any` without fixing it. A superset of `asAny`; both
+   * retire together when biome's `noExplicitAny` is enabled for `test/**`.
+   *
+   * Anchored to a type-position prefix on purpose. A bare /\bany\b/ also
+   * matches the ENGLISH WORD in comments and fixture strings — 262 of them
+   * in test/ today — so writing a doc comment containing "any" would trip
+   * the ratchet and invite gaming it. Do not "simplify" this pattern.
+   */
+  anyType: /(?:\bas\s+any\b|[:<|&,(]\s*any\b)/g,
+  /**
+   * Single `as T` casts. NOT a drain target — this exists so the 189 `TS2352`
+   * errors ("convert the expression to `unknown` first") cannot escape into
+   * unmarked single casts while the cast ratchet is at its floor.
+   */
+  looseCast: /\bas\s+[A-Z]\w*/g,
 } as const;
 
 export type HatchKind = keyof typeof PATTERNS;
@@ -55,18 +81,20 @@ export type Counts = Record<HatchKind, number>;
 const HATCH_KINDS = Object.keys(PATTERNS) as HatchKind[];
 
 /**
- * The ratchet scripts' own test files contain these patterns inside fixture
- * strings that verify the scanner finds them. Skip them so the ratchet does
- * not grade its own scaffolding.
+ * Per-kind exemptions. Scoped deliberately: a file exempt from one counter is
+ * still graded by the other three. See GitHub #1682.
  */
-const EXEMPT_FILES = new Set<string>([
-  "test/unit/scripts/check-test-typecheck.test.ts",
-  "test/unit/scripts/check-test-as-unknown-as.test.ts",
-  "test/unit/scripts/check-test-escape-hatches.test.ts",
-  // The idiom's own definition — its `absentValue<T>()` / `nullValue<T>()`
-  // declarations match the call-site pattern. Counting definitions would
-  // double-count the type-lie: the counter exists to ratchet CALL SITES.
-  "test/helpers/absent.ts",
+const ALL_KINDS: ReadonlySet<HatchKind> = new Set(["asAny", "tsSuppress", "ratchetAllow", "absentValue", "anyType", "looseCast"]);
+
+const EXEMPT_BY_KIND: ReadonlyMap<string, ReadonlySet<HatchKind>> = new Map([
+  // Scanner scaffolding: fixture strings legitimately contain all four patterns.
+  ["test/unit/scripts/check-test-typecheck.test.ts", ALL_KINDS],
+  ["test/unit/scripts/check-test-as-unknown-as.test.ts", ALL_KINDS],
+  ["test/unit/scripts/check-test-escape-hatches.test.ts", ALL_KINDS],
+  // The idiom's own definition. Its declarations match the CALL-SITE pattern;
+  // counting them would inflate `absentValue` by 2 forever. Every other
+  // counter still applies to this file.
+  ["test/helpers/absent.ts", new Set(["absentValue"])],
 ]);
 
 interface Baseline {
@@ -87,7 +115,7 @@ export interface ScanResult {
 }
 
 function emptyCounts(): Counts {
-  return { asAny: 0, tsSuppress: 0, ratchetAllow: 0, absentValue: 0 };
+  return { asAny: 0, tsSuppress: 0, ratchetAllow: 0, absentValue: 0, anyType: 0, looseCast: 0 };
 }
 
 export async function scanEscapeHatches(rootDir: string): Promise<ScanResult> {
@@ -97,10 +125,14 @@ export async function scanEscapeHatches(rootDir: string): Promise<ScanResult> {
   for await (const file of glob.scan({ cwd: join(rootDir, SCAN_DIR), absolute: false })) {
     if (file.endsWith(".d.ts")) continue;
     const rel = join(SCAN_DIR, file);
-    if (EXEMPT_FILES.has(rel)) continue;
+    const exempt = EXEMPT_BY_KIND.get(rel);
     const text = await Bun.file(join(rootDir, rel)).text();
+    // `as unknown as Foo` ends in something `looseCast` would match, and the
+    // cast ratchet already counts it. Strip it for that counter only.
+    const looseText = text.replace(/\bas\s+unknown\s+as\b/g, "");
     for (const kind of HATCH_KINDS) {
-      const matches = text.match(PATTERNS[kind]);
+      if (exempt?.has(kind)) continue;
+      const matches = (kind === "looseCast" ? looseText : text).match(PATTERNS[kind]);
       if (matches === null) continue;
       counts[kind] += matches.length;
       byFile[rel] = { ...byFile[rel], [kind]: matches.length };
