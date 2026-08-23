@@ -13,6 +13,7 @@ import { _fullSuiteGateDeps, _lintCheckDeps, _typecheckCheckDeps } from "@/opera
 import type { UserStory } from "@/prd/types";
 import type { QualityCommandResult } from "@/quality/runner";
 import {
+  type DeepPartial,
   cleanupTempDir,
   makeMockCallContext,
   makeMockPlanInputs,
@@ -58,7 +59,7 @@ export interface E2EOptions {
   agent: ScriptedAgentSpec;
   gates?: E2EGates;
   story?: Partial<UserStory>;
-  config?: Partial<NaxConfig>;
+  config?: DeepPartial<NaxConfig>;
   /**
    * Seed `test/placeholder.test.ts` so greenfield-gate detects pre-existing tests
    * and does NOT pause with "greenfield-no-tests". Defaults to `true`. Set to
@@ -118,7 +119,7 @@ export interface E2EResult {
   nonBlockingFix?: E2ENonBlockingFix;
 }
 
-function makeE2EConfig(overrides?: Partial<NaxConfig>): NaxConfig {
+function makeE2EConfig(overrides?: DeepPartial<NaxConfig>): NaxConfig {
   // Spread overrides at the sub-key level so a partial `quality` or `review` override
   // does not wipe out the harness-required keys (e.g. `lintFix: "lint --fix"` for
   // mechanical-lintfix, or `enabled/checks` for review). Other top-level overrides
@@ -139,7 +140,7 @@ function makeE2EConfig(overrides?: Partial<NaxConfig>): NaxConfig {
       ...(reviewOverride ?? {}),
     },
     ...topLevelRest,
-  } as Partial<NaxConfig>);
+  });
 }
 
 export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {

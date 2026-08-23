@@ -9,6 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { NaxConfig } from "@/config";
+import type { ContextV2Config } from "@/config/runtime-types";
 import { createDefaultOrchestrator } from "@/context/engine/orchestrator-factory";
 import { _codeNeighborDeps } from "@/context/engine/providers/code-neighbor";
 import { _gitHistoryDeps } from "@/context/engine/providers/git-history";
@@ -16,7 +17,7 @@ import { TestCoverageProvider, _testCoverageProviderDeps } from "@/context/engin
 import { ToolDiagnosticsProvider, _toolDiagnosticsDeps } from "@/context/engine/providers/tool-diagnostics";
 import type { ContextRequest } from "@/context/engine/types";
 import type { UserStory } from "@/prd";
-import { makeNaxConfig } from "@test/helpers";
+import { type DeepPartial, makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -37,6 +38,18 @@ function makeStory(): UserStory {
   };
 }
 
+const V2_OVERRIDE: DeepPartial<ContextV2Config> = {
+  enabled: true,
+  minScore: 0.1,
+  deterministic: false,
+  pluginProviders: [],
+  stages: {},
+  pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5 },
+  rules: { allowLegacyClaudeMd: true },
+  session: { retentionDays: 7, archiveOnFeatureArchive: true },
+  staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
+};
+
 function makeConfig(
   providerOverrides: {
     historyScope?: "repo" | "package";
@@ -47,15 +60,7 @@ function makeConfig(
   return makeNaxConfig({
     context: {
       v2: {
-        enabled: true,
-        minScore: 0.1,
-        deterministic: false,
-        pluginProviders: [],
-        stages: {},
-        pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5 },
-        rules: { allowLegacyClaudeMd: true },
-        session: { retentionDays: 7, archiveOnFeatureArchive: true },
-        staleness: { enabled: true, maxStoryAge: 10, scoreMultiplier: 0.4 },
+        ...V2_OVERRIDE,
         providers: {
           historyScope: providerOverrides.historyScope ?? "package",
           neighborScope: providerOverrides.neighborScope ?? "package",
@@ -121,10 +126,10 @@ afterEach(() => {
 describe("createDefaultOrchestrator — #508-M7 optional chaining on rules", () => {
   test("does not throw when config.context.v2.rules is undefined", () => {
     const configNoRules = makeNaxConfig({
-      ...makeConfig(),
       context: {
         v2: {
-          ...makeConfig().context.v2,
+          ...V2_OVERRIDE,
+          providers: { historyScope: "package", neighborScope: "package", crossPackageDepth: 1 },
           rules: undefined,
         },
       },

@@ -16,7 +16,7 @@ import type { StoryMetrics } from "@/metrics";
 import type { RunCompletedEvent } from "@/pipeline";
 import { pipelineEventBus } from "@/pipeline";
 import type { PRD, UserStory } from "@/prd";
-import { makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
+import { type DeepPartial, makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -48,7 +48,11 @@ function makePRD(stories: Array<{ id: string; status: UserStory["status"] }>): P
   };
 }
 
-function makeConfig(regressionMode?: "deferred" | "per-story" | "disabled", testCommand?: string): NaxConfig {
+function makeConfig(
+  regressionMode?: "deferred" | "per-story" | "disabled",
+  testCommand?: string,
+  extra: DeepPartial<NaxConfig> = {},
+): NaxConfig {
   return makeNaxConfig({
     execution: {
       regressionGate: {
@@ -63,6 +67,7 @@ function makeConfig(regressionMode?: "deferred" | "per-story" | "disabled", test
         ...(testCommand ? { test: testCommand } : {}),
       },
     },
+    ...extra,
   });
 }
 
@@ -634,17 +639,9 @@ describe("US-002: handleRunCompletion — manifest retention sweep", () => {
   }
 
   function makeConfigWithManifest(retentionDays?: number): NaxConfig {
-    const base = makeConfig("disabled");
-    if (retentionDays === undefined) return base;
-    return makeNaxConfig({
-      ...base,
-      context: {
-        ...base.context,
-        v2: {
-          ...base.context.v2,
-          manifest: { retentionDays },
-        },
-      },
+    if (retentionDays === undefined) return makeConfig("disabled");
+    return makeConfig("disabled", undefined, {
+      context: { v2: { manifest: { retentionDays } } },
     });
   }
 

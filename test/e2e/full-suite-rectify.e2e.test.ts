@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import type { NaxConfig } from "@/config";
 import { runOrchestratorE2E } from "@test/helpers";
 
 const PASS_REVIEW = () => ({ output: JSON.stringify({ passed: true, findings: [] }) });
@@ -91,7 +90,7 @@ describe("E2E: full-suite-rectify (success path)", () => {
     // the point is that full-suite-rectify FIRED (was matched), not that it resolved.
     const { result, strategiesFired } = await runOrchestratorE2E({
       strategy: "test-after",
-      config: { quality: { commands: { test: "false" } } } as unknown as Partial<NaxConfig>,
+      config: { quality: { commands: { test: "false" } } },
       agent: { implementer: impl, "reviewer-semantic": PASS_REVIEW, "reviewer-adversarial": PASS_REVIEW },
     });
 
@@ -210,7 +209,7 @@ describe("E2E: repo-scoped test fix (#1654)", () => {
     let repoScopedDispatched = false;
     const { result } = await runOrchestratorE2E({
       strategy: "three-session-tdd",
-      config: { execution: { rectification: { repoScopedFallback: false } } } as Partial<NaxConfig>,
+      config: { execution: { rectification: { repoScopedFallback: false } } },
       agent: {
         "test-writer": tw,
         implementer: decliningImplementer,

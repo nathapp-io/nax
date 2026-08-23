@@ -22,13 +22,13 @@ import { pipelineEventBus } from "@/pipeline/event-bus";
 import { wireInteraction } from "@/pipeline/subscribers/interaction";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
-import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import { type DeepPartial, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
-const baseConfig: Partial<NaxConfig> = {
+const baseConfig: DeepPartial<NaxConfig> = {
   execution: {
     maxIterations: 10,
     costLimit: 100,
@@ -48,7 +48,7 @@ const baseConfig: Partial<NaxConfig> = {
       fallback: "skip" as const,
     },
   },
-} as Partial<NaxConfig>;
+};
 
 const baseStory: UserStory = {
   id: "US-001",

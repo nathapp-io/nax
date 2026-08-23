@@ -16,12 +16,12 @@ import type { ResolvedProject } from "@/commands/common";
 import { _curatorCmdDeps as _deps, curatorCommit, curatorDryrun, curatorGc, curatorStatus } from "@/commands/curator";
 import type { NaxConfig } from "@/config";
 import type { Observation } from "@/plugins/builtin/curator/types";
-import { makeNaxConfig } from "@test/helpers";
+import { type DeepPartial, makeNaxConfig } from "@test/helpers";
 import { makeTempDir } from "@test/helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function buildCuratorConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
+function buildCuratorConfig(overrides: DeepPartial<NaxConfig> = {}): NaxConfig {
   return makeNaxConfig({
     name: "test-proj",
     curator: {
@@ -754,7 +754,7 @@ describe("curatorDryrun", () => {
               unchangedOutcome: 3,
             },
           },
-        } as Partial<NaxConfig>),
+        }),
       );
 
       const obs: Observation[] = [

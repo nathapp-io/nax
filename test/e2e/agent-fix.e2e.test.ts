@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import type { NaxConfig } from "@/config";
 import type { QualityCommandResult } from "@/quality/runner";
 import { runOrchestratorE2E } from "@test/helpers";
 
@@ -164,7 +163,7 @@ describe("E2E: agent-fix", () => {
 
     const { result, phaseLog, strategiesFired } = await runOrchestratorE2E({
       strategy: "three-session-tdd",
-      config: { review: { blockingThreshold: "warning" } } as unknown as Partial<NaxConfig>,
+      config: { review: { blockingThreshold: "warning" } },
       agent: {
         "test-writer": tw,
         implementer: impl,
@@ -251,7 +250,7 @@ describe("E2E: agent-fix", () => {
 
     const { result, phaseLog, strategiesFired } = await runOrchestratorE2E({
       strategy: "three-session-tdd",
-      config: { review: { blockingThreshold: "warning" } } as unknown as Partial<NaxConfig>,
+      config: { review: { blockingThreshold: "warning" } },
       agent: {
         "test-writer": tw,
         implementer: impl,

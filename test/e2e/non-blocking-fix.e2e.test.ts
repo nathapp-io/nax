@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { NaxConfig } from "@/config";
-import { runOrchestratorE2E } from "@test/helpers";
+import { type DeepPartial, runOrchestratorE2E } from "@test/helpers";
 
 const PASS_SEMANTIC = () => ({ output: JSON.stringify({ passed: true, findings: [] }) });
 
@@ -46,7 +46,7 @@ const PASSING_VERDICT = JSON.stringify({
 // and nonBlockingFix is schema-`.optional()` (undefined by default), so zod defaults are NOT
 // re-applied to a freshly-introduced object — omitted fields (e.g. sourceDiffCap) would be
 // undefined and silently skip the cap check.
-const NBF_CONFIG = {
+const NBF_CONFIG: DeepPartial<NaxConfig> = {
   review: {
     adversarial: {
       nonBlockingFix: {
@@ -58,12 +58,12 @@ const NBF_CONFIG = {
       },
     },
   },
-} as unknown as Partial<NaxConfig>;
+};
 
 // Scope "both" — nbf runs autofix-implementer + autofix-test-writer, and verifierGuard
 // adds the verifier to the deterministic revalidation. This is the config under which the
 // verifier-SSOT exemption can mask a red full-suite gate (the downstream US-001 shape).
-const NBF_BOTH_CONFIG = {
+const NBF_BOTH_CONFIG: DeepPartial<NaxConfig> = {
   review: {
     adversarial: {
       nonBlockingFix: {
@@ -75,7 +75,7 @@ const NBF_BOTH_CONFIG = {
       },
     },
   },
-} as unknown as Partial<NaxConfig>;
+};
 
 describe("E2E: non-blocking fix (ADR-024)", () => {
   test("advisory findings + clean best-effort fix -> ran + kept", async () => {

@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import type { NaxConfig } from "@/config";
 import { runOrchestratorE2E } from "@test/helpers";
 
 // Acceptance criterion the recurring finding cites. `AC_QUOTE` is a verbatim
@@ -74,7 +73,7 @@ describe("E2E: adversarial recurrence demotion (Phase 0)", () => {
           checks: ["semantic", "adversarial"],
           adversarial: { recurrenceDemotion: { enabled: true, maxBlockingRounds: 2 } },
         },
-      } as Partial<NaxConfig>,
+      },
     });
 
     // Round 1 (main loop) and round 2 (first rectification pass) both block —
@@ -101,7 +100,7 @@ describe("E2E: adversarial recurrence demotion (Phase 0)", () => {
           checks: ["semantic", "adversarial"],
           adversarial: { recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 } },
         },
-      } as Partial<NaxConfig>,
+      },
       rectification: { maxAttempts: 2 },
     });
 

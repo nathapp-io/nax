@@ -11,7 +11,7 @@ import { promptLoaderConfigSelector } from "@/config";
 import type { NaxConfig } from "@/config";
 import type { PromptRole } from "@/prompts/core/types";
 import { loadOverride } from "@/prompts/loader";
-import { fullTest, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { type DeepPartial, fullTest, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -20,8 +20,6 @@ import { fullTest, makeNaxConfig, makeTempDir } from "@test/helpers";
 function makeConfig(overrides: DeepPartial<NaxConfig> = {}) {
   return makeNaxConfig(overrides);
 }
-
-type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
 
 // ---------------------------------------------------------------------------
 // Fixtures

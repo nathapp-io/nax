@@ -1,7 +1,16 @@
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
 
-type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
+/**
+ * `NonNullable` before the `extends object` test: for an OPTIONAL nested config
+ * (`debate?: DebateConfig`), `T[K]` is `DebateConfig | undefined`, and a union
+ * with `undefined` does not extend `object` — so the old form fell through to
+ * `: T[K]` and demanded the FULL `DebateConfig` for a one-field override.
+ * See #1514 §Patterns learned item 2.
+ */
+export type DeepPartial<T> = {
+  [K in keyof T]?: NonNullable<T[K]> extends object ? DeepPartial<NonNullable<T[K]>> : T[K];
+};
 
 function isEmptyObject(val: unknown): boolean {
   return typeof val === "object" && val !== null && !Array.isArray(val) && Object.keys(val).length === 0;

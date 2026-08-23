@@ -15,11 +15,11 @@ import { _curatorCmdDeps as _deps, curatorCommit, curatorDryrun, curatorGc, cura
 import type { ResolvedProject } from "@/commands/common";
 import type { NaxConfig } from "@/config";
 import type { Observation } from "@/plugins/builtin/curator/types";
-import { makeNaxConfig, makeTempDir } from "@test/helpers";
+import { type DeepPartial, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function buildCuratorConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
+function buildCuratorConfig(overrides: DeepPartial<NaxConfig> = {}): NaxConfig {
   return makeNaxConfig({
     name: "test-proj",
     curator: {
