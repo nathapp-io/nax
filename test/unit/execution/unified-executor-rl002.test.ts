@@ -15,7 +15,7 @@ import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineEvent, RunCompletedEvent } from "@/pipeline/event-bus";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd/types";
-import { makePRD, makePluginRegistry, makeStatusWriter } from "@test/helpers";
+import { makePRD, makePluginRegistry, makeStatusWriter, makeTestRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -51,16 +51,17 @@ const RL002_WORKDIR = `/tmp/nax-rl002-test-workdir-${randomUUID()}`;
 const RL002_PRD_PATH = `/tmp/nax-rl002-test-prd-${randomUUID()}.json`;
 
 function makeMinimalContext(): SequentialExecutionContext {
+  const config = {
+    ...DEFAULT_CONFIG,
+    execution: {
+      ...DEFAULT_CONFIG.execution,
+      iterationDelayMs: 0,
+    },
+  };
   return {
     prdPath: RL002_PRD_PATH,
     workdir: RL002_WORKDIR,
-    config: {
-      ...DEFAULT_CONFIG,
-      execution: {
-        ...DEFAULT_CONFIG.execution,
-        iterationDelayMs: 0,
-      },
-    },
+    config,
     hooks: EMPTY_HOOKS,
     feature: "test-feature",
     dryRun: false,
@@ -72,26 +73,9 @@ function makeMinimalContext(): SequentialExecutionContext {
     batchPlan: [],
     interactionChain: null,
     logFilePath: undefined,
-    runtime: {
-      outputDir: "/tmp/nax-test-rl002-output",
-      costAggregator: {
-        snapshot: () => ({
-          totalCostUsd: 0,
-          totalEstimatedCostUsd: 0,
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          callCount: 0,
-          errorCount: 0,
-        }),
-        byStage: () => ({}),
-        byStory: () => ({}),
-        byAgent: () => ({}),
-        record: () => {},
-        recordError: () => {},
-        recordOperationSummary: () => {},
-        drain: async () => {},
-      },
-    } as unknown as SequentialExecutionContext["runtime"],
+    // Real cost aggregator via a real runtime — a fresh instance already reports
+    // an all-zero snapshot, which is all this test needs.
+    runtime: makeTestRuntime({ config }),
   };
 }
 

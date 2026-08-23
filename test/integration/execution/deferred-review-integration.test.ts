@@ -22,7 +22,7 @@ import { executeUnified } from "@/execution/unified-executor";
 import type { PluginRegistry } from "@/plugins";
 import type { IReviewPlugin } from "@/plugins/extensions";
 import type { PRD } from "@/prd/types";
-import { makePluginRegistry, makeSpawn, makeStatusWriter, makeTempDir } from "@test/helpers";
+import { makePluginRegistry, makeSpawn, makeStatusWriter, makeTempDir, makeTestRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -141,7 +141,7 @@ function makeCtx(registry: PluginRegistry, config: NaxConfig): SequentialExecuti
     startTime: Date.now(),
     batchPlan: [],
     interactionChain: null,
-    runtime: { outputDir: "/tmp/nax-test-deferred-review-output" } as unknown as SequentialExecutionContext["runtime"],
+    runtime: makeTestRuntime({ config }),
   };
 }
 

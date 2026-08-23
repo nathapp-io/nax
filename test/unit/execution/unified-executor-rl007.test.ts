@@ -15,7 +15,7 @@ import { _isHeartbeatActive, resetCrashHandlers, startHeartbeat, stopHeartbeat }
 import { type SequentialExecutionContext, executeUnified } from "@/execution/unified-executor";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { PRD, UserStory } from "@/prd/types";
-import { makePRD, makePluginRegistry, makeStatusWriter } from "@test/helpers";
+import { makePRD, makePluginRegistry, makeStatusWriter, makeTestRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -50,16 +50,17 @@ const RL007_WORKDIR = `/tmp/nax-rl007-test-workdir-${randomUUID()}`;
 const RL007_PRD_PATH = `/tmp/nax-rl007-test-prd-${randomUUID()}.json`;
 
 function makeMinimalContext(): SequentialExecutionContext {
+  const config = {
+    ...DEFAULT_CONFIG,
+    execution: {
+      ...DEFAULT_CONFIG.execution,
+      iterationDelayMs: 0,
+    },
+  };
   return {
     prdPath: RL007_PRD_PATH,
     workdir: RL007_WORKDIR,
-    config: {
-      ...DEFAULT_CONFIG,
-      execution: {
-        ...DEFAULT_CONFIG.execution,
-        iterationDelayMs: 0,
-      },
-    },
+    config,
     hooks: EMPTY_HOOKS,
     feature: "test-feature",
     dryRun: false,
@@ -71,26 +72,9 @@ function makeMinimalContext(): SequentialExecutionContext {
     batchPlan: [],
     interactionChain: null,
     logFilePath: undefined,
-    runtime: {
-      outputDir: "/tmp/nax-test-rl007-output",
-      costAggregator: {
-        snapshot: () => ({
-          totalCostUsd: 0,
-          totalEstimatedCostUsd: 0,
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          callCount: 0,
-          errorCount: 0,
-        }),
-        byStage: () => ({}),
-        byStory: () => ({}),
-        byAgent: () => ({}),
-        record: () => {},
-        recordError: () => {},
-        recordOperationSummary: () => {},
-        drain: async () => {},
-      },
-    } as unknown as SequentialExecutionContext["runtime"],
+    // Real cost aggregator via a real runtime — a fresh instance already reports
+    // an all-zero snapshot, which is all this test needs.
+    runtime: makeTestRuntime({ config }),
   };
 }
 
