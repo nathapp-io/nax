@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { SinglePlanStrategy, _singlePlanDeps } from "@/plan";
 import type { PlanModeContext } from "@/plan/strategies";
 import type { PRD } from "@/prd/types";
-import { makeMockRuntime, makeNaxConfig, makePRD } from "@test/helpers";
+import { makeLogger, makeMockRuntime, makeNaxConfig, makePRD } from "@test/helpers";
 
 // Minimal PRD returned by the stubbed callOp
 function makePrd(agentProfileId?: string): PRD {
@@ -88,7 +88,7 @@ function makeCtx(overrides: {
       initInteractionChain: async () => null,
       createInteractionBridge: () => ({}) as PlanModeContext["interactionBridge"],
       createDebateRunner: () => ({}) as ReturnType<PlanModeContext["deps"]["createDebateRunner"]>,
-      getLogger: () => null as unknown as ReturnType<PlanModeContext["deps"]["getLogger"]>,
+      getLogger: () => makeLogger(),
     },
   };
 }

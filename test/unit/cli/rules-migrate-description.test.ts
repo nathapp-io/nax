@@ -6,6 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _rulesCLIDeps, rulesMigrateCommand } from "@/cli/rules";
+import { makeLogger } from "@test/helpers";
 
 let origReadFile: typeof _rulesCLIDeps.readFile;
 let origWriteFile: typeof _rulesCLIDeps.writeFile;
@@ -92,10 +93,7 @@ describe("rulesMigrateCommand + loadCanonicalRules — US-001 AC9 description ro
       if (p === targetPath) return migrated;
       throw new Error(`unexpected file: ${p}`);
     };
-    _canonicalLoaderDeps.getLogger = () =>
-      ({ warn: () => {}, debug: () => {}, info: () => {}, error: () => {} }) as unknown as ReturnType<
-        typeof _canonicalLoaderDeps.getLogger
-      >;
+    _canonicalLoaderDeps.getLogger = () => makeLogger();
     try {
       const rules = await loadCanonicalRules("/repo");
       expect(rules).toHaveLength(1);

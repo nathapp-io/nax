@@ -295,7 +295,7 @@ describe("StoryOrchestratorBuilder — AC4: callOp dispatch only", () => {
     const origCallOp = _storyOrchestratorDeps.callOp;
     _storyOrchestratorDeps.callOp = mock(async () => {
       callOpInvoked = true;
-      return { success: true } as unknown as ReturnType<typeof origCallOp>;
+      return { success: true };
     });
 
     const mockAgentManager = makeMockAgentManager();

@@ -621,7 +621,7 @@ describe("preIterationTierCheck — M2: unmatched rung on non-empty agent ladder
     const origGetSafeLogger = _tierEscalationDeps.getSafeLogger;
     const mockLogger = makeLogger();
     _tierEscalationDeps.savePRD = () => Promise.resolve();
-    _tierEscalationDeps.getSafeLogger = () => mockLogger as unknown as ReturnType<typeof origGetSafeLogger>;
+    _tierEscalationDeps.getSafeLogger = () => mockLogger;
 
     try {
       // Story whose agent ("codex") is not in the tierOrder (which only has "claude" rungs)

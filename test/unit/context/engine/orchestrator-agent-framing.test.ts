@@ -71,7 +71,7 @@ describe("US-002 — ContextOrchestrator.assemble() agent framing", () => {
   test("AC-5: unknown agent emits a warning naming the agent id", async () => {
     const originalGetLogger = _orchestratorDeps.getLogger;
     const mockLogger: MockLogger = makeLogger();
-    _orchestratorDeps.getLogger = () => mockLogger as unknown as ReturnType<typeof originalGetLogger>;
+    _orchestratorDeps.getLogger = () => mockLogger;
     try {
       await new ContextOrchestrator([]).assemble({ ...BASE_REQUEST, agentId: "unknown-agent" });
     } finally {

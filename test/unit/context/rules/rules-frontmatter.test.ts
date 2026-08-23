@@ -364,10 +364,7 @@ describe("loadCanonicalRules — AC7 stages propagation", () => {
     origGetLogger = _canonicalLoaderDeps.getLogger;
     _canonicalLoaderDeps.globInDir = () => [];
     _canonicalLoaderDeps.readFile = async () => "";
-    _canonicalLoaderDeps.getLogger = () =>
-      ({ warn: () => {}, debug: () => {}, info: () => {}, error: () => {} }) as unknown as ReturnType<
-        typeof _canonicalLoaderDeps.getLogger
-      >;
+    _canonicalLoaderDeps.getLogger = () => makeLogger();
   });
 
   afterEach(() => {
@@ -407,10 +404,7 @@ describe("loadCanonicalRules — AC13 displaced-frontmatter warning propagation"
     origGetLogger = _canonicalLoaderDeps.getLogger;
     _canonicalLoaderDeps.globInDir = () => [];
     _canonicalLoaderDeps.readFile = async () => "";
-    _canonicalLoaderDeps.getLogger = () =>
-      ({ warn: () => {}, debug: () => {}, info: () => {}, error: () => {} }) as unknown as ReturnType<
-        typeof _canonicalLoaderDeps.getLogger
-      >;
+    _canonicalLoaderDeps.getLogger = () => makeLogger();
   });
 
   afterEach(() => {
@@ -578,10 +572,7 @@ describe("loadCanonicalRules — HTML-comment displaced-frontmatter warning prop
     origGetLogger = _canonicalLoaderDeps.getLogger;
     _canonicalLoaderDeps.globInDir = () => [];
     _canonicalLoaderDeps.readFile = async () => "";
-    _canonicalLoaderDeps.getLogger = () =>
-      ({ warn: () => {}, debug: () => {}, info: () => {}, error: () => {} }) as unknown as ReturnType<
-        typeof _canonicalLoaderDeps.getLogger
-      >;
+    _canonicalLoaderDeps.getLogger = () => makeLogger();
   });
 
   afterEach(() => {
