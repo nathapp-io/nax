@@ -94,30 +94,32 @@ bun scripts/report-cast-buckets.ts
 
 | Bucket | Casts (start) | Casts (current) | Δ | Who |
 |:--|--:|--:|--:|:--|
-| §3a Shape A — factory exists | **169** | **9** | -160 | remaining are §3d-shaped / §3e-entangled |
+| §3a Shape A — factory exists | **169** | **5** | -164 | remaining are §3d-shaped / §3e-entangled (selector.test.ts 4 cleared in session 8) |
 | §3b seam sweeps — helper exists, example committed | **157** | **5** | -152 | survivors only |
 | §3c-i typed dep stubs | **23** | **1** | -22 | survivor only |
 | §3c-ii dep members returning a class | 31 | **0** | -31 | **CLOSED** (§9 Task B, session 6) |
 | §3d holding bucket | 61 | 29 | -32 | load-bearing |
-| §3e private-member reach-ins | 49 | 49 | 0 | escalate |
-| tail — everything under 4 per cluster | **191** | **58** | -133 | **drained of tractable work** |
-| **Total** | **681** | **151** | **-530** | |
+| §3e private-member reach-ins | 49 | 19 | -30 | **§11 Groups A–C DONE (session 8)** — remaining are 3 contained accessor casts + §3d-reclassified + scanner bug |
+| tail — everything under 4 per cluster | **191** | **61** | -130 | **drained of tractable work** |
+| **Total** | **681** | **120** | **-561** | |
 
-**Last verified:** ratchet = 151, typecheck errors = 1946 (was 1969; **−23**), per-file
-gate `worse: 0`, tree clean at `f3d7a4646`. 46 commits on the branch.
+**Last verified:** ratchet = 120, typecheck errors = 1946 (was 1969; **−23**), per-file
+gate `worse: 0`, tree clean at `603eb9e57`. 48 commits on the branch.
 
-**§10 is DONE (session 7).** Every bucket with mechanical follow-through is now closed.
-What remains needs a ruling from the repo owner — see §8.
+**§11 is DONE (session 8).** Groups A–C of the §3e ruling are executed — 151 → 120. What
+remains needs a ruling from the repo owner — see §8.
 
-**→ §9 and §10 are DONE. The queued task is §11** — the §3e ruling is made and its
-Groups A–C are mechanical. Read §Patterns learned first (especially items 8, 12, 13).
+**→ §9, §10 and §11 are DONE.** Every bucket with mechanical follow-through is now
+closed. §11's Groups A–C landed in session 8 (see §7 session 8); what remains needs a
+ruling from the repo owner — see §8.
 **§9 is DONE (session 6) — do not start it.** It is kept only as the worked record of
 how the seams were built.
 
 **The unassisted mechanical work is finished.** Sessions 1–2 drained 3a/3b/3c-i;
 session 3 drained the tail; session 4 drained the §3d bakeoff builders; sessions 5–6
-built four seams and closed **§3c-ii entirely**. Remaining: tail remnant 63, §3e 49,
-§3d 30, §3a remnant 17, §3b/§3c-i survivors 6.
+built four seams and closed **§3c-ii entirely**; session 8 executed §11 Groups A–C.
+Remaining: tail remnant 61, §3e 19 (3 accessor-contained + reclassified + scanner bug),
+§3d 29, §3a remnant 5, §3b/§3c-i survivors 6.
 
 **§10 is the one remaining bucket with mechanical follow-through.** Everything else needs
 a ruling from the repo owner first.
@@ -154,13 +156,12 @@ those locals are gone.
 
 **§3a skipped sites (escalate — design call needed):**
 
-- `test/unit/config/selector.test.ts` (4 `NaxConfig` casts) — same file has §3e
-  private-member reach-ins that read `c.execution.parallel` after the cast was masking
-  an obsolete `parallel` field. Removing the NaxConfig cast breaks the §3e assertion.
-  The test is exercising `makeSparseNaxConfig({...parallel})` and reading parallel via
-  `as unknown as { execution: { parallel: boolean } }`. Removing parallel changes test
-  semantics (toEqual would need toEqual-like → toMatchObject, against "Nothing else
-  changes"). Leave both NaxConfig and §3e casts together; needs design.
+- `test/unit/config/selector.test.ts` (4 `NaxConfig` casts) — **DONE (session 8)**, part of
+  §11 Group C. The §3e cast read `c.execution.parallel`, a field that does not exist;
+  reading a real field (`review.adversarial.parallel`, `execution.maxIterations`) cleared
+  both the §3e cast and all 4 §3a casts, with `toEqual` → `toMatchObject` on the one pick
+  test whose strictness depended on the fake config. The "leave both together, needs
+  design" note is superseded.
 - `test/unit/acceptance/hardening.test.ts` line 517 — has `// test-ratchet-allow`.
 - `test/unit/cli/config-display.test.ts` line 39 — has `// test-ratchet-allow`.
 - `test/unit/context/engine/stage-assembler*.test.ts` (3 files) — fixtures use legacy
@@ -763,11 +764,12 @@ cast (the src-side `isRuntimeWithAgentManager` check then takes the direct path)
 
 ---
 
-## 8. What is left: 151 casts, three open decisions
+## 8. What is left: 120 casts, two open decisions
 
 The sweep is over. Everything below needs a judgement call, so it is organised by the
 **decision** that unblocks it, not by cast shape. Each row is independent — they can be
-taken in any order, or declined.
+taken in any order, or declined. Decisions 1–3 are done (see their blocks); the open
+ones are 4 (tail remnant) and 5 (§3d).
 
 ### Decision 1 — seams (§3c-ii) — ✅ **DONE (sessions 5–6). Bucket is 0.**
 
@@ -792,12 +794,16 @@ live behind a seam that contains the cast once, the same shape as the existing
 Also class-typed, found session 3: `feature-context-fragments.test.ts:115` —
 `_featureContextV2Deps.createV1Provider` returns `new FeatureContextProviderV1()`.
 
-### Decision 2 — §3e private-member reach-ins — ✅ **RULED (session 8), see §11**
+### Decision 2 — §3e private-member reach-ins — ✅ **DONE (session 8), see §11**
 
 No `src/` member is made public. 29 reach-ins get three contained accessors in
 `test/helpers/`; 2 were noise; 4 were real defects (one of which unblocks the 4 §3a casts
 in `selector.test.ts`); 13 reclassify as §3d; 1 is a scanner false positive.
-**§11 has the executable detail.** The survey below is superseded.
+**§11 has the executable detail and the session-8 record.** The survey below is superseded.
+
+All Groups A–C landed in `129ef87a0` (ratchet 151 → 120, typecheck flat at 1946, per-file
+gate `worse: 0`). Group E — the scanner counting its own fixture — is the only §3e piece
+still open; file it separately per the ruling.
 
 `(plugin as unknown as { backoffMs: number }).backoffMs`. For each: should the member be
 public, or should the test go through the public API? Concentrated in
@@ -854,25 +860,26 @@ markers in the three files — so the "allow-marked neighbours" explanation for 
 wrong. The 28 was simply stale. Patterns item 10 again: re-derive, never trust a recorded
 number in this doc, including the ones in §8.
 
-### Status: 151, and no queued work
+### Status: 120, and no queued work
 
-**681 → 151 is −78%.** Decisions 1, 3 and 5's bakeoff half are done; §3c-ii is closed
-entirely. **Every bucket with mechanical follow-through is finished.** There is no task a
+**681 → 120 is −82%.** Decisions 1, 2 and 3 are done; §3c-ii is closed entirely.
+**Every bucket with mechanical follow-through is finished.** There is no task a
 delegated agent can pick up from this document without a ruling first.
 
-151 is a defensible resting point, but it is **not a floor**, and this issue should not be
+120 is a defensible resting point, but it is **not a floor**, and this issue should not be
 closed as done.
 
 | # | Open decision | Casts | Who must decide |
 |:--|:--|--:|:--|
-| 2 | §3e private-member reach-ins | 49 | ✅ **RULED — see §11.** Ready to execute, ~32 casts |
+| 2 | §3e private-member reach-ins | 49 | ✅ **DONE (session 8)** — Groups A–C landed (`129ef87a0`); Group E (scanner bug) still open, file separately |
 | 4 | tail remnant | 58 | **repo owner** — most are fixtures wrong *on purpose*; the honest resolution is reclassification, not repair |
 | 5 | §3d | 29 | load-bearing; leave unless a better negative-test idiom appears |
-| — | §3a remnant / §3b / §3c-i survivors | 15 | §3d-shaped or §3e-entangled; they move only after Decision 2 |
+| — | §3a remnant / §3b / §3c-i survivors | 11 | §3d-shaped or §3e-entangled; all moved that could move — survivors are allow-marked / deliberate negatives |
 
-**Decision 2 is resolved in §11**, which also unblocks `config/selector.test.ts` — its
-§3e cast reads `execution.parallel`, a field that does not exist, so fixing the test to read
-a real field clears its 4 §3a casts at the same time.
+**Decision 2 was resolved in §11 and executed in session 8**, which also unblocked
+`config/selector.test.ts` — its §3e cast read `execution.parallel`, a field that does not
+exist, so reading a real field (`review.adversarial.parallel`, `execution.maxIterations`)
+cleared its 4 §3a casts at the same time.
 
 **A caution on Decision 4.** Reclassifying ~40 deliberate-wrong-fixture casts as reviewed
 exceptions would drop the counter with **zero real improvement**. The escape hatches are
@@ -1265,13 +1272,14 @@ count. File it separately if it is not a quick change; do not delete the fixture
 
 ### Summary
 
-| Group | Casts | After | Action |
-|:--|--:|--:|:--|
-| A — private internals | 29 | 3 | three contained accessors in `test/helpers/` |
-| B — noise | 2 | 0 | delete the cast |
-| C — real defects | 4 | 0 | fix; **also unblocks 4 §3a** |
-| D — reclassify | 13 | 13 | leave, record as §3d |
-| E — scanner bug | 1 | 1 | fix the scanner separately |
+| Group | Casts | After | Action | Status |
+|:--|--:|--:|:--|:--|
+| A — private internals | 29 | 3 | three contained accessors in `test/helpers/` | ✅ **DONE** (`129ef87a0`) |
+| B — noise | 2 | 0 | delete the cast | ✅ **DONE** |
+| C — real defects | 4 | 0 | fix; **also unblocks 4 §3a** | ✅ **DONE** |
+| D — reclassify | 13 | 13 | leave, record as §3d | in place |
+| E — scanner bug | 1 | 1 | fix the scanner separately | **OPEN** — file separately, do not delete the fixture |
 
-**151 → ~119.** Groups A–C are mechanical against these rulings; nothing below needs
-another decision.
+**151 → 120 (landed session 8, `129ef87a0`).** Groups A–C are executed; nothing below
+needs another decision. Group E is the one remaining §3e item — a small scanner fix,
+tracked separately per the ruling.
