@@ -11,7 +11,7 @@ import { join } from "node:path";
 import type { NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd/types";
 import { runPrecheck } from "@/precheck";
-import { fullDescribe, makeTempDir } from "@test/helpers";
+import { fullDescribe, makeConfigSlice, makeTempDir } from "@test/helpers";
 
 // Requires real claude binary — skipped by default, run with FULL=1.
 const describeWithClaude = fullDescribe;
@@ -33,7 +33,6 @@ const createMockConfig = (cwd: string, overrides: any = {}): NaxConfig => ({
   execution: {
     maxIterations: 10,
     iterationDelayMs: 0,
-    maxCostUSD: 10,
     testCommand: "echo 'test'",
     lintCommand: "echo 'lint'",
     typecheckCommand: "echo 'typecheck'",
@@ -58,13 +57,8 @@ const createMockConfig = (cwd: string, overrides: any = {}): NaxConfig => ({
       tierOrder: [],
     },
   },
-  quality: {
-    minTestCoverage: 80,
-  },
-  tdd: {
-    strategy: "auto",
-    skipGeneratedVerificationTests: false,
-  },
+  quality: makeConfigSlice("quality", {}),
+  tdd: makeConfigSlice("tdd", { strategy: "auto" }),
   models: {},
   rectification: {
     enabled: true,
