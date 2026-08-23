@@ -1,6 +1,6 @@
 {
-  "count": 258,
-  "updatedAt": "2026-08-23T03:13:44.728Z",
+  "count": 256,
+  "updatedAt": "2026-08-23T03:15:56.679Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": 1,
     "test/helpers/status-writer.ts": 1,
@@ -32,7 +32,6 @@
     "test/unit/review/category-fix-target.test.ts": 1,
     "test/unit/finish/machine-invariants.test.ts": 1,
     "test/unit/execution/story-orchestrator-bail.test.ts": 1,
-    "test/unit/execution/story-orchestrator-revalidation-carveout.test.ts": 2,
     "test/unit/execution/post-run-inspection-exhaustion.test.ts": 1,
     "test/unit/execution/pipeline-result-handler.test.ts": 8,
     "test/unit/execution/parallel-batch.test.ts": 1,

@@ -9,7 +9,7 @@
  * discarded and then failed on by the staleness guard).
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _storyOrchestratorDeps, runRectification } from "@/execution";
+import { type RectificationOverrides, _storyOrchestratorDeps, runRectification } from "@/execution";
 import type { FixCycle, FixCycleContext, FixCycleExitReason, FixStrategy } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
 import type { CallContext } from "@/operations";
@@ -92,14 +92,14 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
   }
 
   /** Mirrors ExecutionPlan's nbf wiring: seeded advisories + verifierGuard extra phase. */
-  function nbfOverrides(extra: Record<string, unknown> = {}) {
+  function nbfOverrides(extra: Partial<RectificationOverrides> = {}): RectificationOverrides {
     return {
       initialFindings: [ADVISORY],
       extraRevalidationKinds: ["verifier"],
       // 1 + review.nonBlockingFix.regressionAttempts (default 1).
       maxAttempts: 2,
       ...extra,
-    } as unknown as Parameters<typeof runRectification>[4];
+    };
   }
 
   /** Pre-rectification state: the story was green, verifier included. */
@@ -352,7 +352,7 @@ describe("nbf regressionAttempts is actually spendable once the gate regression 
         extraRevalidationKinds: ["verifier"],
         // 1 + review.nonBlockingFix.regressionAttempts (default 1).
         maxAttempts: 2,
-      } as unknown as Parameters<typeof runRectification>[4],
+      },
     );
 
     // Iteration 1 fixes the advisory; the gate then goes red and that finding now
