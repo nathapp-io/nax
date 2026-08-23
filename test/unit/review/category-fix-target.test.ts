@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { BLOCKING_CATEGORIES } from "@/review";
 import { categoryToFixTarget, resolveFixTarget } from "@/review";
+import { nullValue } from "@test/helpers";
 
 describe("categoryToFixTarget", () => {
   describe("BLOCKING_CATEGORIES members return source", () => {
@@ -31,7 +32,7 @@ describe("categoryToFixTarget", () => {
     });
 
     test("categoryToFixTarget(null) returns test", () => {
-      expect(categoryToFixTarget(null as unknown as undefined)).toBe("test");
+      expect(categoryToFixTarget(nullValue<undefined>())).toBe("test");
     });
   });
 });

@@ -11,6 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { importGrepFallback, mapSourceToTests } from "@/verification/smart-runner";
+import { absentValue } from "@test/helpers";
 
 describe("Pass 1: mapSourceToTests (path convention)", () => {
   let originalFile: typeof Bun.file;
@@ -134,7 +135,7 @@ describe("Pass 2: importGrepFallback", () => {
             return {
               async next() {
                 if (i < files.length) return { value: files[i++], done: false };
-                return { value: undefined as unknown as string, done: true };
+                return { value: absentValue<string>(), done: true };
               },
             };
           },
@@ -261,7 +262,7 @@ describe("Pass 3: full-suite fallback (empty return from both passes)", () => {
           [Symbol.asyncIterator]() {
             return {
               async next() {
-                return { value: undefined as unknown as string, done: true };
+                return { value: absentValue<string>(), done: true };
               },
             };
           },
@@ -286,7 +287,7 @@ describe("Pass 3: full-suite fallback (empty return from both passes)", () => {
                   done = true;
                   return { value: "test/unit/unrelated.test.ts", done: false };
                 }
-                return { value: undefined as unknown as string, done: true };
+                return { value: absentValue<string>(), done: true };
               },
             };
           },
@@ -329,7 +330,7 @@ describe("Custom testFilePatterns", () => {
           [Symbol.asyncIterator]() {
             return {
               async next() {
-                return { value: undefined as unknown as string, done: true };
+                return { value: absentValue<string>(), done: true };
               },
             };
           },
@@ -352,7 +353,7 @@ describe("Custom testFilePatterns", () => {
           [Symbol.asyncIterator]() {
             return {
               async next() {
-                return { value: undefined as unknown as string, done: true };
+                return { value: absentValue<string>(), done: true };
               },
             };
           },

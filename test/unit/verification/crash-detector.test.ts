@@ -9,6 +9,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { CRASH_PATTERNS, detectRuntimeCrash } from "@/verification/crash-detector";
+import { absentValue, nullValue } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // CRASH_PATTERNS constant
@@ -135,8 +136,8 @@ describe("detectRuntimeCrash — non-crash output", () => {
   test.each([
     ["timeout output", "Test suite exceeded 30 second timeout\n"],
     ["empty string", ""],
-    ["undefined", undefined as unknown as string],
-    ["null", null as unknown as string],
+    ["undefined", absentValue<string>()],
+    ["null", nullValue<string>()],
     ["partial 'panic' without full pattern", "don't panic, everything is fine"],
     ["partial 'crashed' without Bun prefix", "The test process crashed unexpectedly"],
   ])("returns false for %s", (_label, output) => {

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { makeParseRetryStrategy } from "@/agents/retry/parse-retry";
 import { ParseValidationError } from "@/agents/retry/types";
 import type { RetryContext } from "@/agents/retry/types";
+import { absentValue } from "@test/helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -42,7 +43,7 @@ describe("makeParseRetryStrategy", () => {
 
   describe("AC-2: ParseValidationError with empty/undefined lastOutput", () => {
     test.each([
-      ["undefined", undefined as unknown as string],
+      ["undefined", absentValue<string>()],
       ["empty string", ""],
     ])("returns { retry: false } when lastOutput is %s", (_label, lastOutput) => {
       const strategy = makeParseRetryStrategy({

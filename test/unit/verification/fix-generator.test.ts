@@ -30,6 +30,7 @@ function buildFixPrompt(
   });
 }
 import type { PRD, UserStory } from "@/prd/types";
+import { absentValue } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -368,7 +369,7 @@ describe("convertFixStoryToUserStory", () => {
       id: "US-FIX-001",
       title: "Fix: AC-2 TTL expiry timing",
       failedAC: "AC-2",
-      batchedACs: undefined as unknown as string[],
+      batchedACs: absentValue<string[]>(),
       testOutput: "test output",
       relatedStories: ["US-002", "US-005"],
       description: "Update TTL implementation.",

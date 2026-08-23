@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { mergePackageConfig } from "@/config/merge";
 import type { NaxConfig } from "@/config/schema";
-import { makeNaxConfig } from "@test/helpers";
+import { absentValue, makeNaxConfig } from "@test/helpers";
 
 function makeRoot(): NaxConfig {
   return {
@@ -33,7 +33,7 @@ describe("mergePackageConfig", () => {
   test("returns root unchanged when packageOverride.quality has no commands", () => {
     const root = makeRoot();
     const result = mergePackageConfig(root, {
-      quality: { ...DEFAULT_CONFIG.quality, commands: undefined as unknown as NaxConfig["quality"]["commands"] },
+      quality: { ...DEFAULT_CONFIG.quality, commands: absentValue<NaxConfig["quality"]["commands"]>() },
     } as Partial<NaxConfig>);
     // quality without commands — no merge happens (no recognized overrideable fields)
     expect(result).not.toBe(root); // quality is present → merge occurs

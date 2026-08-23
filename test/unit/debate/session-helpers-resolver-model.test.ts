@@ -7,12 +7,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { CompleteOptions } from "@/agents";
+import type { CompleteOptions, IAgentManager } from "@/agents";
 import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
 import { _debateSessionDeps, resolveOutcome } from "@/debate";
 import type { DebateStageConfig } from "@/debate";
 import type { CallContext } from "@/operations";
-import { makeMockAgentManager } from "@test/helpers";
+import { absentValue, makeMockAgentManager } from "@test/helpers";
 
 function makeCallCtx(): CallContext {
   return {
@@ -85,7 +85,7 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
       undefined,
       undefined,
       undefined,
-      undefined as unknown as import("@/agents").IAgentManager,
+      absentValue<IAgentManager>(),
     );
 
     expect(captured.length).toBeGreaterThan(0);
@@ -112,7 +112,7 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
       undefined,
       undefined,
       undefined,
-      undefined as unknown as import("@/agents").IAgentManager,
+      absentValue<IAgentManager>(),
     );
 
     expect(captured.length).toBeGreaterThan(0);
@@ -138,7 +138,7 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
       undefined,
       undefined,
       undefined,
-      undefined as unknown as import("@/agents").IAgentManager,
+      absentValue<IAgentManager>(),
     );
 
     expect(captured.length).toBeGreaterThan(0);
@@ -179,7 +179,7 @@ describe("resolveOutcome() custom/judge — resolver.model → modelDef (#352)",
       undefined,
       undefined,
       undefined,
-      undefined as unknown as import("@/agents").IAgentManager,
+      absentValue<IAgentManager>(),
     );
 
     expect(captured.length).toBeGreaterThan(0);
@@ -205,7 +205,7 @@ describe("resolveOutcome() custom/judge — resolver.model → modelDef (#352)",
       undefined,
       undefined,
       undefined,
-      undefined as unknown as import("@/agents").IAgentManager,
+      absentValue<IAgentManager>(),
     );
 
     expect(captured.length).toBeGreaterThan(0);
