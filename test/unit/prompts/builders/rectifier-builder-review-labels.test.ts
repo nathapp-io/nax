@@ -12,6 +12,7 @@
 import { describe, expect, test } from "bun:test";
 import { RectifierPromptBuilder } from "@/prompts/builders/rectifier-builder";
 import type { ReviewCheckResult } from "@/review/types";
+import { makeFinding } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -181,14 +182,14 @@ describe("RectifierPromptBuilder.reviewRectification — mechanical-only regress
       {
         ...makeCheck("lint", "src/foo.ts:1:1 raw lint line"),
         findings: [
-          {
-            ruleId: "lint/rule",
+          makeFinding({
+            source: "lint",
+            rule: "lint/rule",
             severity: "error",
             file: "src/foo.ts",
             line: 1,
             message: "Structured lint issue",
-            source: "lint",
-          },
+          }),
         ],
       },
     ];
@@ -207,14 +208,14 @@ describe("RectifierPromptBuilder.reviewRectification — mechanical-only regress
       {
         ...makeCheck("lint", hugeOutput),
         findings: [
-          {
-            ruleId: "lint/rule",
+          makeFinding({
+            source: "lint",
+            rule: "lint/rule",
             severity: "error",
             file: "src/foo.ts",
             line: 1,
             message: "Structured lint issue",
-            source: "lint",
-          },
+          }),
         ],
       },
     ];
@@ -229,14 +230,14 @@ describe("RectifierPromptBuilder.reviewRectification — mechanical-only regress
       {
         ...makeCheck("semantic", "raw semantic output"),
         findings: [
-          {
-            ruleId: "semantic/rule",
+          makeFinding({
+            source: "semantic-review",
+            rule: "semantic/rule",
             severity: "warning",
             file: "src/foo.ts",
             line: 12,
             message: "Warning-level finding",
-            source: "semantic-review",
-          },
+          }),
         ],
       },
     ];

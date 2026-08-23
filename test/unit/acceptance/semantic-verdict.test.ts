@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import path from "node:path";
 import { _semanticVerdictDeps, loadSemanticVerdicts, persistSemanticVerdict } from "@/acceptance/semantic-verdict";
 import type { SemanticVerdict } from "@/acceptance/types";
+import { makeFinding } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Save and restore _deps around each test
@@ -57,17 +58,17 @@ describe("SemanticVerdict type", () => {
       timestamp: "2026-01-01T00:00:00.000Z",
       acCount: 2,
       findings: [
-        {
-          ruleId: "no-unused-vars",
+        makeFinding({
+          rule: "no-unused-vars",
           severity: "warning",
           file: "src/a.ts",
           line: 10,
           message: "unused variable",
-        },
+        }),
       ],
     };
     expect(verdict.findings).toHaveLength(1);
-    expect(verdict.findings[0].ruleId).toBe("no-unused-vars");
+    expect(verdict.findings[0].rule).toBe("no-unused-vars");
     expect(verdict.findings[0].severity).toBe("warning");
   });
 
@@ -143,7 +144,7 @@ describe("persistSemanticVerdict — file path", () => {
       passed: false,
       timestamp: "2026-04-05T10:00:00.000Z",
       acCount: 2,
-      findings: [{ ruleId: "r1", severity: "error", file: "src/a.ts", line: 5, message: "bad code" }],
+      findings: [makeFinding({ rule: "r1", severity: "error", file: "src/a.ts", line: 5, message: "bad code" })],
     };
 
     await persistSemanticVerdict("/feat/dir", "US-001", verdict);
@@ -153,7 +154,7 @@ describe("persistSemanticVerdict — file path", () => {
     expect(parsed.passed).toBe(false);
     expect(parsed.acCount).toBe(2);
     expect(parsed.findings).toHaveLength(1);
-    expect(parsed.findings[0].ruleId).toBe("r1");
+    expect(parsed.findings[0].rule).toBe("r1");
     expect(typeof parsed.timestamp).toBe("string");
   });
 });
@@ -266,7 +267,7 @@ describe("loadSemanticVerdicts — parses JSON files", () => {
       passed: false,
       timestamp: "2026-01-01T00:00:00.000Z",
       acCount: 1,
-      findings: [{ ruleId: "r1", severity: "error", file: "src/b.ts", line: 3, message: "oops" }],
+      findings: [makeFinding({ rule: "r1", severity: "error", file: "src/b.ts", line: 3, message: "oops" })],
     };
     _semanticVerdictDeps.readdir = async () => ["US-001.json", "US-002.json"];
     _semanticVerdictDeps.readFile = async (p) => {
