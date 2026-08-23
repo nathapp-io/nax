@@ -105,8 +105,8 @@ bun scripts/report-cast-buckets.ts
 
 **Last verified:** ratchet = 352, typecheck errors = 1963 (was 1969; **−6**).
 
-**349 casts are yours with no judgement required** (3a + 3b + 3c-i). Do those first
-and in that order; the tail is where you will slow down.
+**349 casts were yours with no judgement required** (3a + 3b + 3c-i) — all drained
+in sessions 1–2. What remains is the escalate/leave-alone set plus the tail.
 
 ### 3a. Shape A — a factory already returns this exact type
 
@@ -115,31 +115,25 @@ Replace `{ …literal… } as unknown as T` with `makeX({ …literal… })`, imp
 
 | Cast target | Casts (start) | Casts (now) | Files | Replace with | Status |
 |:--|--:|--:|--:|:--|:--|
-| `NaxConfig` | 48 | **7** | 25 | `makeNaxConfig(…)` | partial — see "skipped" below |
-| `PipelineContext` | 25 | **6** | 22 | `makeTestContext(…)` + `Object.assign` for extras | partial — see "skipped" below |
-| `PRD` | 16 | **7** | 15 | `makePRD(…)` | partial — integration files left |
-| `ReturnType<typeof import("@/logger").getSafeLogger>` | 11 | 11 | — | `makeLogger()` | untouched |
-| `Partial<NaxConfig>` | 11 | **8** | 5 | `makeNaxConfig(…)` — takes `DeepPartial` | partial — `merge-agent-models-routing` mostly done; e2e/allow-marked left |
-| `UserStory` | 10 | 10 | 10 | `makeStory(…)` | untouched |
-| `CallContext` | 9 | 9 | 4 | `makeMockCallContext(…)` | untouched |
-| `PipelineContext["config"]` | 7 | 7 | 6 | `makeNaxConfig(…)` | untouched |
-| `NaxRuntime` | 6 | 6 | 6 | `makeMockRuntime(…)` | untouched |
-| `ReturnType<typeof origGetSafeLogger>` | 6 | 6 | — | `makeLogger()` | untouched |
-| `ReturnType<typeof _rulesCLIDeps.getLogger>` | 5 | 5 | 3 | `makeLogger()` | untouched |
-| `ReturnType<typeof _packagesDeps.getSafeLogger>` | 5 | 5 | 1 | `makeLogger()` | untouched |
-| `import("@/agents").IAgentManager` | 5 | 5 | — | `makeMockAgentManager()` | untouched |
-| `Parameters<typeof preIterationTierCheck>[0]` | 4 | 4 | 1 | `makeStory(…)` | untouched |
-| `Parameters<typeof preIterationTierCheck>[2]` | 4 | 4 | 1 | `makeNaxConfig(…)` | untouched |
-| `Parameters<typeof preIterationTierCheck>[3]` | 4 | 4 | 1 | `makePRD(…)` | untouched |
-| `import("@/prd/types").PRD` | 2 | 2 | — | `makePRD(…)` | untouched |
-| `import("@/runtime").NaxRuntime`, `import("@/config").NaxConfig`, `import("@/plugins/registry").PluginRegistry` | 3 | 3 | — | `makeMockRuntime()` / `makeNaxConfig()` / `makePluginRegistry()` | untouched |
+| `ReturnType<typeof …getSafeLogger/getLogger>` ×4 spellings | 27 | **0** | ~15 | `makeLogger()` | done (`8a42ec6f5`, `932896694`) |
+| `NaxConfig` | 48 | **4** | 25 | `makeNaxConfig(…)` | done except design-call sites |
+| `PipelineContext` | 25 | **4** | 22 | `makeTestContext(…)` + `Object.assign` for extras | done except design-call sites |
+| `PRD` | 16 | **0** | 15 | `makePRD(…)` | done (incl. integration helpers) |
+| `Partial<NaxConfig>` | 11 | **8** | 5 | `makeNaxConfig(…)` | remaining are allow-marked BUG-06 edge cases + deliberate `undefined` negative tests |
+| `UserStory` | 10 | **0** | 10 | `makeStory(…)` | done (`3d05b2872`) |
+| `CallContext` | 9 | **0** | 4 | `makeMockCallContext(…)` | done (`1046db345`) |
+| `PipelineContext["config"]` | 7 | **2** | 6 | `makeNaxConfig(…)` | done except legacy-key fixtures (tracker-provider-cost, stage-assembler-scope-files) |
+| `NaxRuntime` | 6 | **0** | 6 | `makeMockRuntime(…)` | done (`1046db345`) |
+| `import("@/agents").IAgentManager` | 5 | **3** | — | `makeMockAgentManager()` | remaining 3 are deliberate `undefined as unknown as IAgentManager` negative tests |
+| `Parameters<typeof preIterationTierCheck>[0]/[2]/[3]` | 12 | **0** | 1 | `makeStory` / `makeNaxConfig` / `makePRD` | done (`333882475`) |
+| `import("@/prd/types").PRD`, `import("@/runtime").NaxRuntime`, `import("@/config").NaxConfig`, `PluginRegistry` | 5 | **1** | — | factories | remaining 2 PRD casts in deferred-review.test.ts need fixture tightening (design) |
 
 The four `getSafeLogger` / `getLogger` spellings all resolve to `Logger`, which
-`makeLogger()` returns since commit `ef0b154e0`. They look like four clusters and are
-one.
+`makeLogger()` returns since commit `ef0b154e0`. They looked like four clusters and
+were one.
 
-Several `PipelineContext` sites are a *local* `makeCtx()` in the test file that casts
-on the way out. Delete the local, use `makeTestContext`.
+Several `PipelineContext` sites were a *local* `makeCtx()` casting on the way out;
+those locals are gone.
 
 **§3a skipped sites (escalate — design call needed):**
 
@@ -179,35 +173,31 @@ on the way out. Delete the local, use `makeTestContext`.
 
 ### 3b. Seam sweeps — helper exists, one file done as a worked example
 
-Same edit as 3a. Read the worked example first: `git show <commit> -- <file>`.
-**157 casts — untouched.** Largest sub-clusters:
+Swept: **157 → 5** (session 2, commits `151b23d2f`, `9460a487e`, `0d58e943e`). The
+survivors are wedged-stream / hang-path sites whose hand-built streams cannot be
+expressed by `FakeProcSpec` (never-closing stdout + custom `kill()`), or sit next to
+a `// test-ratchet-allow` line. Leave them.
 
-| Cast target | Casts | Helper | Worked example |
-|:--|--:|:--|:--|
-| `typeof Bun.spawn` | 39 | `makeSpawn().spawn` | `577570f96` — `test/unit/quality/runner-env-strip.test.ts` |
-| `typeof _gitDeps.spawn` | 36 | `makeSpawn().spawn` | `577570f96` — `test/unit/utils/auto-commit.test.ts` |
-| `typeof _diffUtilsDeps.spawn` | 26 | `makeSpawn().spawn` | same |
-| `ReturnType<typeof Bun.spawn>` | 25 | `makeSpawnResult(…)` | same |
-| `typeof _deferredReviewDeps.spawn` | 10 | `makeSpawn().spawn` | same |
-| `Parameters<typeof handleTierEscalation>[0]` | 8 | `makeEscalationContext(…)` | `f3aa6b248` |
-| `typeof _completionDeps.spawn` | 4 | `makeSpawn().spawn` | `577570f96` |
-| `typeof _executorDeps.spawn`, `_resultHandlerDeps.spawn`, `_isolationDeps.spawn`, `_reconcileDeps.spawn` | ~12 | `makeSpawn().spawn` | same |
+| Cast target | Casts (start) | Casts (now) | Helper | Status |
+|:--|--:|--:|:--|:--|
+| `typeof Bun.spawn` | 39 | **0** | `makeSpawn().spawn` | done |
+| `typeof _gitDeps.spawn` | 36 | **1** | `makeSpawn().spawn` | survivor allow-marked (`git-capture-diff-summary`) |
+| `typeof _diffUtilsDeps.spawn` | 26 | **1** | `makeSpawn().spawn` | survivor needs never-closing streams (`adversarial-audit-shape`) |
+| `ReturnType<typeof Bun.spawn>` | 25 | **2** | `makeSpawnResult(…)` | survivors: allow-marked PERF-3 wedge tests (`pid-registry`) + `_spawnClientDeps.spawn` |
+| `typeof _deferredReviewDeps.spawn` | 10 | **0** | `makeSpawn().spawn` | done |
+| `Parameters<typeof handleTierEscalation>[0]` | 8 | **0** | typed `EscalationHandlerContext` literals | done (`0d58e943e`) |
+| `_completionDeps/_executorDeps/_resultHandlerDeps/_isolationDeps/_reconcileDeps.spawn` | ~12 | **1** | `makeSpawn().spawn` | survivor allow-marked BUG-13 site |
 
-| Cast target | Casts | Helper | Worked example |
-|:--|--:|:--|:--|
-| `typeof Bun.spawn` | 39 | `makeSpawn().spawn` | `577570f96` — `test/unit/quality/runner-env-strip.test.ts` |
-| `typeof _gitDeps.spawn` | 36 | `makeSpawn().spawn` | `577570f96` — `test/unit/utils/auto-commit.test.ts` |
-| `typeof _diffUtilsDeps.spawn` | 26 | `makeSpawn().spawn` | same |
-| `ReturnType<typeof Bun.spawn>` | 25 | `makeSpawnResult(…)` | same |
-| `typeof _deferredReviewDeps.spawn` | 10 | `makeSpawn().spawn` | same |
-| `Parameters<typeof handleTierEscalation>[0]` | 8 | `makeEscalationContext(…)` | `f3aa6b248` |
-| `typeof _completionDeps.spawn` | 4 | `makeSpawn().spawn` | `577570f96` |
-| `typeof _executorDeps.spawn`, `_resultHandlerDeps.spawn`, `_isolationDeps.spawn`, `_reconcileDeps.spawn` | ~12 | `makeSpawn().spawn` | same |
+Seam notes (current behaviour of `test/helpers/spawn.ts`):
 
-Every `_xDeps.spawn` in `src/` is declared `spawn as typeof spawn` off
-`src/utils/bun-deps`, so one `makeSpawn().spawn` is assignable to all of them. The
-handler is `({ cmd, opts }) => stdoutString | FakeProcSpec`; `calls` and `lastEnv()`
-cover recording and env assertions.
+- `makeSpawn().spawn` is a bun `mock()`, so `toHaveBeenCalledWith` /
+  `toHaveBeenCalled` work directly on it; `stub.calls` and `lastEnv()` remain the
+  structured way to assert.
+- Wedged-stream fixtures that still need custom streams use
+  `Object.defineProperty(proc, "stdout"|"stderr"|"exited"|"kill", …)` on a
+  `makeSpawnResult()` proc returned from the handler — see
+  `quality/runner.test.ts` (timeout flow), `review/runner.test.ts` (BUG-1),
+  `completion-skip-persistence.test.ts` (pull-based stderr).
 
 ### 3c. `_xDeps.<member>` — two kinds, and only one is yours
 
@@ -215,7 +205,12 @@ I tested the obvious rule ("declare the stub with the slot's type so the compile
 forces it to conform") on a real site and **it does not work for half of these**, so
 check which kind you have before touching anything.
 
-**3c-i — plain function or value members. Yours. ~23 casts.**
+**3c-i — plain function or value members. Yours. Done: 23 → 4.**
+
+`_planDeps.createRuntime` (11) and `_regressionDeps.parseTestOutput` (2) were
+converted in `1a7f807a5`; logger members went with the makeLogger sweep. The 4 the
+classifier still counts as 3c-i are `worktreeManager` ×2 (actually a class return —
+reclassify as 3c-ii) plus 2 allow-neighbours.
 
 Declare the stub with the dep's own type instead of casting into the slot:
 
@@ -273,7 +268,7 @@ Concentrated in `test/unit/interaction/interaction-network-failures.test.ts` and
 deciding whether the member should be public, or whether the test should go through
 the public API — a design call. Escalate rather than guess.
 
-### The tail — 191 casts, ~40 clusters of fewer than four
+### The tail — ~172 casts, ~40 clusters of fewer than four
 
 Not leftovers: this is 28% of the work and the second-biggest bucket. It has no table
 because each cluster is 1–3 sites, but it is not unstructured — apply §3a's habit:
@@ -446,26 +441,27 @@ factory-swap cluster is left untouched.
    break when an override has no `models` field. Don't migrate those — keep the
    partial cast.
 
-### Open §3a sites (escalate, 92 casts)
+### Open §3a sites (escalate, 24 casts — all design-call)
 
-See the updated §3a table above for per-cluster counts. Summary of "no judgement
-required" clusters still untouched:
+Everything "no judgement required" from this list is done. What remains is exactly
+the design-call set:
 
-- `UserStory` (10), `CallContext` (9), `NaxRuntime` (6) — straightforward helpers exist
-  but not yet applied. Should batch through quickly.
-- `PipelineContext["config"]` (7) — likely `makeNaxConfig({...})` in field position.
-- `ReturnType<typeof getLogger>` × 4 variants (~27 total) — `makeLogger()` drop-in.
-- `IAgentManager` (5), `preIterationTierCheck` params (12), `PluginRegistry` (3) — small
-  clusters, each one a few sites.
-- `PRD` integration leftovers (~7) — `_parallel-metrics-helpers.ts`,
-  `parallel-batch-results.test.ts`, `parallel-batch-rectification.test.ts`,
-  `red-green-cycle.test.ts`.
+- `test/unit/config/selector.test.ts` (4 `NaxConfig`) — entangled with §3e, see blockers below.
+- `stage-assembler{,-extra-provider-ids,-scope-files}.test.ts` (3 `PipelineContext`
+  + 1 `PipelineContext["config"]`) and `tracker-provider-cost.test.ts` (2) — legacy-key fixtures.
+- `merge.test.ts` (4 `Partial<NaxConfig["context"]>` + 1 `undefined as unknown as …commands`)
+  — deliberate negative tests / spread-widening; arguably §3d.
+- `session-helpers-resolver-model.test.ts` (3 `undefined as unknown as IAgentManager`)
+  — deliberate negative tests; leave.
+- `deferred-review.test.ts` (2 inline PRD) + `context-rules-fallback.test.ts` (1 partial prd)
+  + `context-digest.test.ts` (1 naxIgnoreIndex stub) — partial-field fixtures, tighten or design.
 
 ### Blockers requiring design (do not attempt mechanically)
 
 - `test/integration/execution/deferred-review-integration.test.ts` — uses
   `pluginMode: "deferred"` (REMOVED from schema). Either restore the value or rewrite
-  the test. **Not a cast sweep task.**
+  the test. **Not a cast sweep task.** (Its spawn casts were swept in session 2;
+  only the ReviewConfig fixture remains.)
 - `test/unit/config/selector.test.ts` — §3e cast and §3a NaxConfig cast in same file;
   removing the NaxConfig cast surfaces an obsolete `parallel` field that the §3e cast
   reads. Either delete the test or accept `toMatchObject` instead of `toEqual`.
@@ -476,27 +472,21 @@ required" clusters still untouched:
 - `test/unit/execution/deferred-review.test.ts` (2 inline `import("@/prd/types").PRD`)
   — partial PRD; mechanical fix is `makePRD({...})` but needs an `as Partial<PRD>` cast
   on the overrides (TS2352).
+- **New (session 2):** `semantic-debate.test.ts` (12 `createDebateRunner`) and
+  `pipeline-result-handler.test.ts` (7 `mergeEngine`) are confirmed 3c-ii — stubs
+  return bare objects for classes with private state. Need a `makeX` seam each.
+- **New (session 2):** `iteration-runner-worktree.test.ts` (2) spreads a real
+  `WorktreeManager` then overrides 2 methods — needs a seam or an interface; design.
 
-### §3b seam sweeps (157 casts, untouched)
+### §3b seam sweeps — done (session 2)
 
-Still fully pending. Pattern from the worked example:
-```ts
-// before
-_deferredReviewDeps.spawn = mock(...) as unknown as typeof _deferredReviewDeps.spawn;
-// after
-_deferredReviewDeps.spawn = mock(...);
-```
-Or for return types:
-```ts
-// before
-mock(...) as unknown as ReturnType<typeof Bun.spawn>
-// after
-makeSpawnResult({ exitCode: 0, stdout: "", stderr: "" })
-```
+All non-allow-marked spawn casts went through the `makeSpawn`/`makeSpawnResult`
+seam. See the §3b table above for the 5 survivors and why they stay.
 
-### §3c-i typed dep stubs (23 casts, untouched)
+### §3c-i typed dep stubs — done (session 2)
 
-Pattern from the plan:
+`createRuntime` (11), `parseTestOutput` (2), and all logger members converted.
+Pattern used:
 ```ts
 // before
 _queueLockDeps.readdir = mock(async () => []) as unknown as typeof _queueLockDeps.readdir;
@@ -504,4 +494,7 @@ _queueLockDeps.readdir = mock(async () => []) as unknown as typeof _queueLockDep
 const readdir: typeof _queueLockDeps.readdir = async () => [];
 _queueLockDeps.readdir = readdir;
 ```
+For `createRuntime` specifically, build a real runtime inside the stub —
+`makeMockRuntime({ agentManager: … })` — so the slot type is satisfied without a
+cast (the src-side `isRuntimeWithAgentManager` check then takes the direct path).
 
