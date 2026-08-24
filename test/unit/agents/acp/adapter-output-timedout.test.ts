@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { AcpSessionResponse, InteractionExchange } from "@/agents";
+import type { AcpSessionResponse } from "@/agents";
 import { buildTurnResult } from "@/agents";
+import type { InteractionExchange } from "@/agents/types";
 import type { ModelDef } from "@/config/schema";
 
 const MODEL: ModelDef = { provider: "anthropic", model: "claude-sonnet-4-5", env: {} };

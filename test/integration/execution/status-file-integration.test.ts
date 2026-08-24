@@ -16,6 +16,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { _registryTestAdapters } from "@/agents/registry";
+import type { PlanOptions, PlanResult } from "@/agents/shared/types-extended";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -23,8 +24,6 @@ import type {
   AgentRunOptions,
   DecomposeOptions,
   DecomposeResult,
-  PlanOptions,
-  PlanResult,
 } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";

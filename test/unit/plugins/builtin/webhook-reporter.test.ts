@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { WebhookReporterConfig } from "@/config/schemas-reporters";
-import type { PhaseCompleteEvent, PhaseStartEvent } from "@/plugins";
 import { type PostJsonDeps, createWebhookReporterPlugin } from "@/plugins";
+import type { PhaseCompleteEvent, PhaseStartEvent } from "@/plugins/extensions";
 import { mockFetch } from "@test/helpers";
 
 const baseCfg: WebhookReporterConfig = {

@@ -10,7 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
 import { inspectOscillationBreaker, recordOscillations } from "@/execution";
-import type { PipelineContext } from "@/runtime";
+import type { PipelineContext } from "@/pipeline/types";
 import { makeTestContext, makeTestRuntime } from "@test/helpers";
 
 function makeCtx(
