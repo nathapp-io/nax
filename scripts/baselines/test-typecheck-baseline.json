@@ -1,6 +1,6 @@
 {
-  "count": 792,
-  "updatedAt": "2026-08-24T02:54:10.955Z",
+  "count": 777,
+  "updatedAt": "2026-08-24T03:02:10.739Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -170,7 +170,6 @@
     "test/unit/operations/semantic-review-verify.test.ts": 1,
     "test/unit/operations/setup-generate.test.ts": 1,
     "test/unit/operations/timeout-resolvers.test.ts": 2,
-    "test/unit/operations/verify-op-normalized-findings.test.ts": 15,
     "test/unit/operations/verify-op.test.ts": 2,
     "test/unit/pipeline/effective-config.test.ts": 1,
     "test/unit/pipeline/event-bus.test.ts": 3,
