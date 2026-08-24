@@ -524,12 +524,10 @@ describe("complete() — modelDef primitive consumption", () => {
     const client = makePassClient();
     _acpAdapterDeps.createClient = mock((_cmd: string) => {
       const origCreate = client.createSession.bind(client);
-      (client as Record<string, unknown>).createSession = mock(
-        async (opts: { agentName: string; permissionMode: string }) => {
-          capturedPermissionMode = opts.permissionMode;
-          return origCreate(opts);
-        },
-      );
+      client.createSession = mock(async (opts: { agentName: string; permissionMode: string }) => {
+        capturedPermissionMode = opts.permissionMode;
+        return origCreate(opts);
+      });
       return client;
     });
 
