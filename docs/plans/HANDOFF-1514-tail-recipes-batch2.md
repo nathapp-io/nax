@@ -47,8 +47,9 @@ bun x tsc -p tsconfig.test.json --noEmit 2>&1 | grep TS1355
 # 3. src must stay 0
 bun run typecheck
 
-# 4. total must move by the expected amount — see §2's per-cluster note, and read
-#    the TS2353 warning in §5 before trusting "no more, no less"
+# 4. total must move by the amount §3's per-file table gives for THIS file — which is
+#    0 for verifier-pick.test.ts (§2B). Read the TS2353 warning in §5 before trusting
+#    "no more, no less"; it is a floor, not a census.
 bun x tsc -p tsconfig.test.json --noEmit 2>&1 | grep -cE '^[^(]+\([0-9]+,[0-9]+\): error TS'
 
 # 5. formatting + import order on just this file (4ms, catches the import trap early)
@@ -88,15 +89,27 @@ Each was applied to the live tree at one representative site, measured, and reve
 
 | # | Cluster | Errors | Files | State | Measured |
 |:--|:--|--:|--:|:--|:--|
-| A | `durationMs` → `runElapsedMs` | 7 | 4 | DELEGABLE | −1 at 1 site |
-| B | dead `models: {}` in debate selectors | 4 | 4 | DELEGABLE | −1 at 1 site |
-| C | otel `logs` fixture field | 4 | 4 | DELEGABLE | −1 at 1 site |
-| D | `untrackedBefore` on `InspectionOptions` | 4 | 3 | DELEGABLE | −1 at 1 site |
-| E | `failedTestFiles` on `DeferredRegressionResult` | 5 | 1 | DELEGABLE | −1 at 1 site |
-| F | `featureName` on `TriggerContext` | 4 | 1 | DELEGABLE, read §2F first | −1 at 1 site |
+| A | `durationMs` → `runElapsedMs` | 7 | 4 | DELEGABLE | **−7**, all sites |
+| B | dead `models: {}` in debate selectors | 4 sites, **3 errors** | 4 | DELEGABLE, read the warning in §2B | **−3**, all sites |
+| C | otel `logs` fixture field | 4 | 4 | DELEGABLE | **−4**, all sites |
+| D | `untrackedBefore` on `InspectionOptions` | 4 | 3 | DELEGABLE | **−4**, all sites |
+| E | `failedTestFiles` on `DeferredRegressionResult` | 5 | 1 | DELEGABLE | **−5**, all sites |
+| F | `featureName` on `TriggerContext` | 4 | 1 | DELEGABLE, read §2F first | **−4**, all sites |
 | G | precheck config fixtures | ≥11 | 5 | **OWNER — see §5** | −2 on one file, after 3 wrong attempts |
 
-Clusters A–F land **28 errors across 17 files, 383 → 355**. Cluster G is not in that number.
+Clusters A–F are **28 edits worth 27 errors across 17 files, 383 → 356**. Cluster G is not
+in that number.
+
+> **The "measured" column is a whole-batch measurement, not six single-site ones.** The
+> first draft of this handoff sized each cluster from one representative site and published
+> 355. Applying all 28 edits together landed **356**: cluster B has 4 sites but yields 3
+> errors, because one of them is masked (§2B). **A single-site measurement does not
+> generalize to its cluster** — that is the same floor effect §5 describes, appearing inside
+> a cluster marked delegable. Multi-site files were otherwise additive (events-writer 5→3,
+> hooks 4→2, reporters 3→1, post-run-isolation 2→0, lifecycle-completion 5→0).
+>
+> Verified on the full batch before reverting: **258 tests across the 22 touched files, 0
+> fail**, and all eight counters plus `as unknown as` flat.
 
 ### 2A. `durationMs` → `runElapsedMs` (7 errors, 4 files)
 
@@ -134,6 +147,13 @@ test/unit/debate/selectors/synthesis.test.ts(37,3)  verifier-pick.test.ts(52,7)
 ```
 
 Measured on `judge.test.ts`: 383 → 382, file clean, nothing unmasked.
+
+> **`verifier-pick.test.ts` yields ZERO — and it is still the right edit.** That file carries
+> four other errors, and its `models` line sits inside a context literal whose own `TS2322`
+> (line 28) masks it. Deleting the dead key there is correct and changes the total by
+> **nothing**. Expect it, make the edit anyway, and say so in the commit — do **not** treat
+> the flat total as a failed edit and revert it, and do **not** go hunting for a second thing
+> to fix in that file to make the arithmetic come out. The other three sites are −1 each.
 
 This is the **fourth sighting** of the `models` rename (§8, §31, batch 1 §5). It is finally
 just a dead key; do not go looking for a wider migration behind it.
@@ -205,17 +225,33 @@ the meantime, since every production caller does have a `featureName`.
 
 ## 3. Expected landing
 
-**28 errors across 17 files, in 17 commits — 383 → 355.**
+**28 edits worth 27 errors across 17 files, in 17 commits — 383 → 356.**
 
-A total *below* 355 means something in §1 did not hold, most likely G1 or an unmasking you
+Per file, the expected drop is:
+
+| file | drop |
+|:--|--:|
+| `pipeline/event-bus` | −1 |
+| `pipeline/subscribers/events-writer` | −2 |
+| `pipeline/subscribers/hooks` | −2 |
+| `pipeline/subscribers/reporters` | −2 |
+| `debate/selectors/judge`, `majority`, `synthesis` | −1 each |
+| `debate/selectors/verifier-pick` | **0 — see §2B** |
+| the four `plugins/builtin/otel-*` | −1 each |
+| `execution/post-run-isolation` | −2 |
+| `integration/execution/scratch-per-role`, `verdict-cleanup` | −1 each |
+| `execution/lifecycle-completion` | −5 |
+| `interaction/triggers` | −4 |
+
+A total *below* 356 means something in §1 did not hold, most likely G1 or an unmasking you
 did not name: say so in the report rather than adjusting the baseline to match. A total
-above 355 means a file was reverted; name it and say what you saw.
+above 356 means a file was reverted; name it and say what you saw.
 
-Every counter must be flat or lower at the end. All six recipes were verified counter-flat
-during prototyping, so a rise is your edit, not the recipe.
+Every counter must be flat or lower at the end. Verified counter-flat across the whole
+batch, so a rise is your edit, not the recipe.
 
-Also run the touched files' own tests — all six prototypes passed theirs (96 tests across
-the 6 representative files, 0 fail).
+Also run the touched files' own tests: **258 tests across the 22 touched files, 0 fail** on
+the full batch.
 
 ---
 
@@ -273,6 +309,8 @@ Worked example to copy, plus the three dead-end attempts, are above; the convers
 and reverted cleanly on `chore/1514-tail-recipes-batch2`.
 
 **The wider finding is the valuable part: any cluster whose errors are TS2353 needs its
-expected yield measured, not counted from the baseline.** Clusters A–F are TS2353/TS2741
-too, but each was measured at a site and moved the total by exactly 1 — so their listed
-counts are real.
+expected yield measured, not counted from the baseline — and measured across the whole
+cluster, not at one site.** Clusters A–F are TS2353/TS2741 too, and sizing them from one
+representative site each gave 355 when the true figure is 356: `verifier-pick.test.ts`'s
+`models` line is masked by a sibling error in the same file. One masked site in six clusters
+is the error rate you should assume for the counts in this document.
