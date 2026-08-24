@@ -16,7 +16,7 @@ import type { NaxConfig } from "@/config";
 import { run } from "@/execution/runner";
 import { loadHooksConfig } from "@/hooks";
 import { savePRD } from "@/prd";
-import { makeTempDir } from "@test/helpers";
+import { makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 // ============================================================================
 // Mock agent
@@ -80,20 +80,18 @@ function makeBaseConfig(): Omit<NaxConfig, "plugins"> {
 }
 
 function minimalPrd(storyId = "US-001") {
-  return {
+  return makePRD({
     feature: "test-feature",
     userStories: [
-      {
+      makeStory({
         id: storyId,
         title: "Story 1",
         description: "Test story 1",
         acceptanceCriteria: ["AC1: Should work"],
-        status: "pending" as const,
-        dependencies: [],
-        tags: [],
-      },
+        status: "pending",
+      }),
     ],
-  };
+  });
 }
 
 describe("Reporter Lifecycle Events — resilience (US-004)", () => {

@@ -8,7 +8,7 @@ import type { PlanDeps, PlanModeContext } from "@/plan/strategies";
 import type { PRD } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager } from "@test/helpers";
+import { assertDefined, makeMockAgentManager } from "@test/helpers";
 
 const MOCK_FULL_CONFIG = {} as never;
 
@@ -175,6 +175,7 @@ describe("DebatePlanStrategy", () => {
       undefined,
       [],
     );
+    assertDefined(ctx.config.debate, "ctx.config.debate");
     expect(_debatePlanDeps.buildPlanComposition).toHaveBeenCalledWith(ctx.config.debate.stages.plan);
     expect(createDebateRunnerMock).toHaveBeenCalledTimes(1);
 

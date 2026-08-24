@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
+import type { RectificationResult } from "@/execution/merge-conflict-rectify";
 import {
   type ParallelBatchCtx,
   type RunParallelBatchResult,
@@ -19,10 +20,19 @@ import {
 } from "@/execution/parallel-batch";
 import type { ParallelBatchResult } from "@/execution/parallel-worker";
 import type { LoadedHooksConfig } from "@/hooks";
-import type { PipelineContext, PipelineRunResult } from "@/pipeline/types";
+import type { PipelineRunResult } from "@/pipeline";
+import type { PipelineContext } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD, UserStory } from "@/prd/types";
-import { cleanupTempDir, makePRD, makeStory as makeStoryBase, makeTempDir, makeTestContext } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeMergeEngine,
+  makePRD,
+  makeStory as makeStoryBase,
+  makeTempDir,
+  makeTestContext,
+  makeWorktreeManager,
+} from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -123,13 +133,10 @@ describe("AC-1: runParallelBatch — completed stories", () => {
     });
 
     _parallelBatchDeps.executeParallelBatch = mock(async () => workerResult);
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => [{ success: true, storyId: "US-001" }]),
-    })) as typeof _parallelBatchDeps.createMergeEngine;
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
+    _parallelBatchDeps.createMergeEngine = mock(async () =>
+      makeMergeEngine({ mergeAll: mock(async () => [{ success: true, storyId: "US-001" }]) }),
+    );
 
     const result = await runParallelBatch({ stories: [story], ctx, prd });
 
@@ -156,13 +163,10 @@ describe("AC-1: runParallelBatch — completed stories", () => {
     });
 
     _parallelBatchDeps.executeParallelBatch = mock(async () => workerResult);
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => [{ success: true, storyId: "US-001" }]),
-    })) as typeof _parallelBatchDeps.createMergeEngine;
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
+    _parallelBatchDeps.createMergeEngine = mock(async () =>
+      makeMergeEngine({ mergeAll: mock(async () => [{ success: true, storyId: "US-001" }]) }),
+    );
 
     const result = await runParallelBatch({ stories: [story1, story2], ctx, prd });
 
@@ -191,13 +195,8 @@ describe("AC-2: runParallelBatch — failed stories", () => {
     });
 
     _parallelBatchDeps.executeParallelBatch = mock(async () => workerResult);
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => []),
-    })) as typeof _parallelBatchDeps.createMergeEngine;
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
+    _parallelBatchDeps.createMergeEngine = mock(async () => makeMergeEngine({ mergeAll: mock(async () => []) }));
 
     const result = await runParallelBatch({ stories: [story], ctx, prd });
 
@@ -222,13 +221,10 @@ describe("AC-2: runParallelBatch — failed stories", () => {
     });
 
     _parallelBatchDeps.executeParallelBatch = mock(async () => workerResult);
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => [{ success: true, storyId: "US-001" }]),
-    })) as typeof _parallelBatchDeps.createMergeEngine;
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
+    _parallelBatchDeps.createMergeEngine = mock(async () =>
+      makeMergeEngine({ mergeAll: mock(async () => [{ success: true, storyId: "US-001" }]) }),
+    );
 
     const result = await runParallelBatch({ stories: [story], ctx, prd });
 
@@ -243,10 +239,7 @@ describe("worktree dependency preparation", () => {
     const ctx = makeCtx(tmpDir);
     const callOrder: string[] = [];
 
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
     _parallelBatchDeps.prepareWorktreeDependencies = mock(async () => {
       callOrder.push("prepare");
       return { cwd: `${tmpDir}/.nax-wt/US-010/packages/app`, env: { PATH: "/tmp/bin" } };
@@ -271,10 +264,7 @@ describe("worktree dependency preparation", () => {
     const prd = makePrd([failing, surviving]);
     const ctx = makeCtx(tmpDir);
 
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as unknown as typeof _parallelBatchDeps.createWorktreeManager; // test-ratchet-allow: as-unknown-as
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
 
     _parallelBatchDeps.prepareWorktreeDependencies = mock(async (opts: { storyId: string }) => {
       if (opts.storyId === "US-011") {
@@ -289,9 +279,9 @@ describe("worktree dependency preparation", () => {
       await new Promise((r) => setTimeout(r, 50));
       return makeWorkerBatchResult({ pipelinePassed: [surviving], merged: [surviving] });
     });
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => [{ success: true, storyId: "US-012" }]),
-    })) as unknown as typeof _parallelBatchDeps.createMergeEngine; // test-ratchet-allow: as-unknown-as
+    _parallelBatchDeps.createMergeEngine = mock(async () =>
+      makeMergeEngine({ mergeAll: mock(async () => [{ success: true, storyId: "US-012" }]) }),
+    );
 
     const result = await runParallelBatch({ stories: [failing, surviving], ctx, prd });
 
@@ -325,18 +315,19 @@ describe("AC-3: runParallelBatch — merge conflicts", () => {
     });
 
     _parallelBatchDeps.executeParallelBatch = mock(async () => workerResult);
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => [{ success: false, storyId: "US-001", conflictFiles: ["src/foo.ts"] }]),
-    })) as typeof _parallelBatchDeps.createMergeEngine;
-    _parallelBatchDeps.rectifyConflictedStory = mock(async () => ({
-      success: true,
-      storyId: "US-001",
-      cost: 0.2,
-    }));
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
+    _parallelBatchDeps.createMergeEngine = mock(async () =>
+      makeMergeEngine({
+        mergeAll: mock(async () => [{ success: false, storyId: "US-001", conflictFiles: ["src/foo.ts"] }]),
+      }),
+    );
+    _parallelBatchDeps.rectifyConflictedStory = mock(
+      async (): Promise<RectificationResult> => ({
+        success: true,
+        storyId: "US-001",
+        cost: 0.2,
+      }),
+    );
 
     const result = await runParallelBatch({ stories: [story], ctx, prd });
 
@@ -362,13 +353,10 @@ describe("AC-3: runParallelBatch — merge conflicts", () => {
     });
 
     _parallelBatchDeps.executeParallelBatch = mock(async () => workerResult);
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => [{ success: true, storyId: "US-001" }]),
-    })) as typeof _parallelBatchDeps.createMergeEngine;
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
+    _parallelBatchDeps.createMergeEngine = mock(async () =>
+      makeMergeEngine({ mergeAll: mock(async () => [{ success: true, storyId: "US-001" }]) }),
+    );
 
     const result = await runParallelBatch({ stories: [story], ctx, prd });
 
@@ -399,16 +387,15 @@ describe("AC-4: runParallelBatch — per-story costs from storyCosts Map", () =>
     });
 
     _parallelBatchDeps.executeParallelBatch = mock(async () => workerResult);
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => [
-        { success: true, storyId: "US-001" },
-        { success: true, storyId: "US-002" },
-      ]),
-    })) as typeof _parallelBatchDeps.createMergeEngine;
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
+    _parallelBatchDeps.createMergeEngine = mock(async () =>
+      makeMergeEngine({
+        mergeAll: mock(async () => [
+          { success: true, storyId: "US-001" },
+          { success: true, storyId: "US-002" },
+        ]),
+      }),
+    );
 
     const result = await runParallelBatch({ stories: [story1, story2], ctx, prd });
 
@@ -435,16 +422,15 @@ describe("AC-4: runParallelBatch — per-story costs from storyCosts Map", () =>
     });
 
     _parallelBatchDeps.executeParallelBatch = mock(async () => workerResult);
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => [
-        { success: true, storyId: "US-001" },
-        { success: true, storyId: "US-002" },
-      ]),
-    })) as typeof _parallelBatchDeps.createMergeEngine;
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
+    _parallelBatchDeps.createMergeEngine = mock(async () =>
+      makeMergeEngine({
+        mergeAll: mock(async () => [
+          { success: true, storyId: "US-001" },
+          { success: true, storyId: "US-002" },
+        ]),
+      }),
+    );
 
     const result = await runParallelBatch({ stories: [story1, story2], ctx, prd });
 
@@ -481,17 +467,16 @@ describe("AC-5: runParallelBatch — totalCost equals sum of storyCosts", () => 
     });
 
     _parallelBatchDeps.executeParallelBatch = mock(async () => workerResult);
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => [
-        { success: true, storyId: "US-001" },
-        { success: true, storyId: "US-002" },
-        { success: true, storyId: "US-003" },
-      ]),
-    })) as typeof _parallelBatchDeps.createMergeEngine;
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
+    _parallelBatchDeps.createMergeEngine = mock(async () =>
+      makeMergeEngine({
+        mergeAll: mock(async () => [
+          { success: true, storyId: "US-001" },
+          { success: true, storyId: "US-002" },
+          { success: true, storyId: "US-003" },
+        ]),
+      }),
+    );
 
     const result = await runParallelBatch({ stories: [story1, story2, story3], ctx, prd });
 
@@ -509,13 +494,8 @@ describe("AC-5: runParallelBatch — totalCost equals sum of storyCosts", () => 
     });
 
     _parallelBatchDeps.executeParallelBatch = mock(async () => workerResult);
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => []),
-    })) as typeof _parallelBatchDeps.createMergeEngine;
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
+    _parallelBatchDeps.createMergeEngine = mock(async () => makeMergeEngine({ mergeAll: mock(async () => []) }));
 
     const result = await runParallelBatch({ stories: [], ctx, prd });
 
@@ -542,14 +522,15 @@ describe("AC-6: runParallelBatch — rectification success", () => {
     });
 
     _parallelBatchDeps.executeParallelBatch = mock(async () => workerResult);
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => [{ success: false, storyId: "US-001", conflictFiles: ["src/x.ts"] }]),
-    })) as typeof _parallelBatchDeps.createMergeEngine;
-    const rectifyMock = mock(async () => ({ success: true, storyId: "US-001", cost: 0.2 }));
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
+    _parallelBatchDeps.createMergeEngine = mock(async () =>
+      makeMergeEngine({
+        mergeAll: mock(async () => [{ success: false, storyId: "US-001", conflictFiles: ["src/x.ts"] }]),
+      }),
+    );
+    const rectifyMock = mock(
+      async (): Promise<RectificationResult> => ({ success: true, storyId: "US-001", cost: 0.2 }),
+    );
     _parallelBatchDeps.rectifyConflictedStory = rectifyMock;
 
     await runParallelBatch({ stories: [story], ctx, prd });
@@ -571,18 +552,19 @@ describe("AC-6: runParallelBatch — rectification success", () => {
     });
 
     _parallelBatchDeps.executeParallelBatch = mock(async () => workerResult);
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => [{ success: false, storyId: "US-001", conflictFiles: ["src/x.ts"] }]),
-    })) as typeof _parallelBatchDeps.createMergeEngine;
-    _parallelBatchDeps.rectifyConflictedStory = mock(async () => ({
-      success: true,
-      storyId: "US-001",
-      cost: 0.2,
-    }));
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
+    _parallelBatchDeps.createMergeEngine = mock(async () =>
+      makeMergeEngine({
+        mergeAll: mock(async () => [{ success: false, storyId: "US-001", conflictFiles: ["src/x.ts"] }]),
+      }),
+    );
+    _parallelBatchDeps.rectifyConflictedStory = mock(
+      async (): Promise<RectificationResult> => ({
+        success: true,
+        storyId: "US-001",
+        cost: 0.2,
+      }),
+    );
 
     const result = await runParallelBatch({ stories: [story], ctx, prd });
 
@@ -612,19 +594,20 @@ describe("AC-7: runParallelBatch — rectification failure", () => {
     });
 
     _parallelBatchDeps.executeParallelBatch = mock(async () => workerResult);
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => [{ success: false, storyId: "US-001", conflictFiles: ["src/x.ts"] }]),
-    })) as typeof _parallelBatchDeps.createMergeEngine;
-    _parallelBatchDeps.rectifyConflictedStory = mock(async () => ({
-      success: false,
-      storyId: "US-001",
-      cost: 0.1,
-      finalConflict: true,
-    }));
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
+    _parallelBatchDeps.createMergeEngine = mock(async () =>
+      makeMergeEngine({
+        mergeAll: mock(async () => [{ success: false, storyId: "US-001", conflictFiles: ["src/x.ts"] }]),
+      }),
+    );
+    _parallelBatchDeps.rectifyConflictedStory = mock(
+      async (): Promise<RectificationResult> => ({
+        success: false,
+        storyId: "US-001",
+        cost: 0.1,
+        finalConflict: true,
+      }),
+    );
 
     const result = await runParallelBatch({ stories: [story], ctx, prd });
 
@@ -647,13 +630,12 @@ describe("AC-7: runParallelBatch — rectification failure", () => {
     });
 
     _parallelBatchDeps.executeParallelBatch = mock(async () => workerResult);
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => [{ success: false, storyId: "US-001", conflictFiles: ["src/x.ts"] }]),
-    })) as typeof _parallelBatchDeps.createMergeEngine;
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
+    _parallelBatchDeps.createMergeEngine = mock(async () =>
+      makeMergeEngine({
+        mergeAll: mock(async () => [{ success: false, storyId: "US-001", conflictFiles: ["src/x.ts"] }]),
+      }),
+    );
     _parallelBatchDeps.rectifyConflictedStory = mock(async () => {
       throw new Error("rectification unexpectedly failed");
     });
@@ -755,24 +737,25 @@ describe("per-story config loading — resilience", () => {
     const ctx = makeCtx(tmpDir);
 
     let configLoadCallCount = 0;
-    _parallelBatchDeps.loadConfigForWorkdir = mock(async (_root: string, workdir: string, _prof: unknown) => {
-      configLoadCallCount++;
-      if (workdir === "packages/bad") throw new Error("Malformed per-package config");
-      return DEFAULT_CONFIG as NaxConfig;
-    });
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
+    _parallelBatchDeps.loadConfigForWorkdir = mock(
+      async (_root: string, workdir?: string, _prof?: Record<string, unknown>) => {
+        configLoadCallCount++;
+        if (workdir === "packages/bad") throw new Error("Malformed per-package config");
+        return DEFAULT_CONFIG as NaxConfig;
+      },
+    );
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
     _parallelBatchDeps.executeParallelBatch = mock(async () =>
       makeWorkerBatchResult({ pipelinePassed: [goodStory, badStory], merged: [goodStory, badStory] }),
     );
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => [
-        { success: true, storyId: "good" },
-        { success: true, storyId: "bad" },
-      ]),
-    })) as typeof _parallelBatchDeps.createMergeEngine;
+    _parallelBatchDeps.createMergeEngine = mock(async () =>
+      makeMergeEngine({
+        mergeAll: mock(async () => [
+          { success: true, storyId: "good" },
+          { success: true, storyId: "bad" },
+        ]),
+      }),
+    );
 
     let threwOnConfigLoad = false;
     try {

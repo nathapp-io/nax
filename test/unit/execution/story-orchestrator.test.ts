@@ -33,7 +33,14 @@ import {
 import type { Finding, ReviewCheckResult } from "@/findings";
 import type { CallContext, CompleteOperation, DeterministicOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeLinkWithCosts, makeMockAgentManager, makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import {
+  makeFixCycleResult,
+  makeIteration,
+  makeLinkWithCosts,
+  makeMockAgentManager,
+  makeNaxConfig,
+  makeTestRuntime,
+} from "@test/helpers";
 
 // ============================================================================
 // Test Helper: Mock Operations
@@ -435,7 +442,7 @@ describe("StoryOrchestratorBuilder — AC6: Result shape (costs, outputs, durati
       agentName: "claude",
       storyId: "story-1",
     };
-    const result = await new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+    const result = await new StoryOrchestratorBuilder()
       .addImplementer({ op: mockImplementerOp, input: { code: "test" } })
       .addVerifier({ op: mockVerifierOp, input: { code: "test" } })
       .build(ctx)
@@ -1904,22 +1911,10 @@ describe("rectification phase envelope", () => {
       if (op.kind === "deterministic") return op.execute(input, _ctx);
       return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
     };
-    _storyOrchestratorDeps.runFixCycle = async () => ({
-      iterations: [
-        {
-          iterationNum: 1,
-          findingsBefore: 1,
-          fixesApplied: [],
-          findingsAfter: 0,
-          outcome: "resolved" as const,
-          startedAt: 0,
-          finishedAt: 0,
-        },
-      ],
-      finalFindings: [],
-      exitReason: "resolved" as const,
-      costUsd: 0,
-    });
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
+      makeFixCycleResult<F>({
+        iterations: [makeIteration()],
+      });
 
     try {
       const ctx: CallContext = {
@@ -1969,14 +1964,20 @@ describe("rectification phase envelope", () => {
       if (op.kind === "deterministic") return op.execute(input, _ctx);
       return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
     };
-    _storyOrchestratorDeps.runFixCycle = async () => ({
-      iterations: [],
-      finalFindings: [
-        { source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "t.ts" },
-      ],
-      exitReason: "max-attempts-total" as const,
-      costUsd: 0,
-    });
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
+      makeFixCycleResult<F>({
+        finalFindings: [
+          {
+            source: "test-runner",
+            category: "failed-test",
+            severity: "error",
+            message: "fail",
+            rule: "t",
+            file: "t.ts",
+          },
+        ],
+        exitReason: "max-attempts-total" as const,
+      });
 
     try {
       const ctx: CallContext = {

@@ -16,7 +16,7 @@ import type { NaxConfig } from "@/config";
 import { run } from "@/execution/runner";
 import { loadHooksConfig } from "@/hooks";
 import { savePRD } from "@/prd";
-import { makeTempDir } from "@test/helpers";
+import { makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 // ============================================================================
 // Mock agent
@@ -151,29 +151,25 @@ describe("Reporter Lifecycle Events — basic (US-004)", () => {
   });
 
   test("AC1: onRunStart fires once at run start with runId, feature, totalStories, startTime", async () => {
-    const prd = {
+    const prd = makePRD({
       feature: "test-feature",
       userStories: [
-        {
+        makeStory({
           id: "US-001",
           title: "Story 1",
           description: "Test story 1",
           acceptanceCriteria: ["AC1: Should work"],
-          status: "pending" as const,
-          dependencies: [],
-          tags: [],
-        },
-        {
+          status: "pending",
+        }),
+        makeStory({
           id: "US-002",
           title: "Story 2",
           description: "Test story 2",
           acceptanceCriteria: ["AC1: Should work"],
-          status: "pending" as const,
-          dependencies: [],
-          tags: [],
-        },
+          status: "pending",
+        }),
       ],
-    };
+    });
 
     await savePRD(prd, prdPath);
     const hooks = await loadHooksConfig(workdir);
@@ -205,20 +201,18 @@ describe("Reporter Lifecycle Events — basic (US-004)", () => {
   });
 
   test("AC2: onStoryComplete fires after each story with storyId, status, runElapsedMs, cost, tier, testStrategy", async () => {
-    const prd = {
+    const prd = makePRD({
       feature: "test-feature",
       userStories: [
-        {
+        makeStory({
           id: "US-001",
           title: "Story 1",
           description: "Test story 1",
           acceptanceCriteria: ["AC1: Should work"],
-          status: "pending" as const,
-          dependencies: [],
-          tags: [],
-        },
+          status: "pending",
+        }),
       ],
-    };
+    });
 
     await savePRD(prd, prdPath);
     const hooks = await loadHooksConfig(workdir);
@@ -252,29 +246,25 @@ describe("Reporter Lifecycle Events — basic (US-004)", () => {
   });
 
   test("AC3: onRunEnd fires once at run end with runId, totalDurationMs, totalCost, storySummary counts", async () => {
-    const prd = {
+    const prd = makePRD({
       feature: "test-feature",
       userStories: [
-        {
+        makeStory({
           id: "US-001",
           title: "Story 1",
           description: "Test story 1",
           acceptanceCriteria: ["AC1: Should work"],
-          status: "pending" as const,
-          dependencies: [],
-          tags: [],
-        },
-        {
+          status: "pending",
+        }),
+        makeStory({
           id: "US-002",
           title: "Story 2",
           description: "Test story 2",
           acceptanceCriteria: ["AC1: Should work"],
-          status: "pending" as const,
-          dependencies: [],
-          tags: [],
-        },
+          status: "pending",
+        }),
       ],
-    };
+    });
 
     await savePRD(prd, prdPath);
     const hooks = await loadHooksConfig(workdir);
@@ -310,19 +300,18 @@ describe("Reporter Lifecycle Events — basic (US-004)", () => {
   });
 
   test("AC6: Events fire even when the run exits with incomplete stories (onRunEnd still fires)", async () => {
-    const prd = {
+    const prd = makePRD({
       feature: "test-feature",
       userStories: [
-        {
+        makeStory({
           id: "US-001",
           title: "Story 1",
           description: "Test story 1",
           acceptanceCriteria: ["AC1: Should work"],
-          status: "paused" as const,
-          dependencies: [],
-        },
+          status: "paused",
+        }),
       ],
-    };
+    });
 
     await savePRD(prd, prdPath);
     const hooks = await loadHooksConfig(workdir);
@@ -350,19 +339,18 @@ describe("Reporter Lifecycle Events — basic (US-004)", () => {
   });
 
   test("onStoryComplete receives correct status for paused stories", async () => {
-    const prd = {
+    const prd = makePRD({
       feature: "test-feature",
       userStories: [
-        {
+        makeStory({
           id: "US-001",
           title: "Story 1",
           description: "Test story 1",
           acceptanceCriteria: ["AC1: Should work"],
-          status: "paused" as const,
-          dependencies: [],
-        },
+          status: "paused",
+        }),
       ],
-    };
+    });
 
     await savePRD(prd, prdPath);
     const hooks = await loadHooksConfig(workdir);
@@ -384,29 +372,25 @@ describe("Reporter Lifecycle Events — basic (US-004)", () => {
   });
 
   test("onStoryComplete receives all required fields for different story outcomes", async () => {
-    const prd = {
+    const prd = makePRD({
       feature: "test-feature",
       userStories: [
-        {
+        makeStory({
           id: "US-001",
           title: "Story 1",
           description: "Test story 1",
           acceptanceCriteria: ["AC1: Should work"],
-          status: "pending" as const,
-          dependencies: [],
-          tags: [],
-        },
-        {
+          status: "pending",
+        }),
+        makeStory({
           id: "US-002",
           title: "Story 2",
           description: "Test story 2",
           acceptanceCriteria: ["AC1: Should work"],
-          status: "pending" as const,
-          dependencies: [],
-          tags: [],
-        },
+          status: "pending",
+        }),
       ],
-    };
+    });
 
     await savePRD(prd, prdPath);
     const hooks = await loadHooksConfig(workdir);

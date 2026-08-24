@@ -16,7 +16,7 @@ import {
   loadPlugins as loadPluginsWithBuiltins,
 } from "@/plugins/loader";
 import type { NaxPlugin, PluginConfigEntry } from "@/plugins/types";
-import { makeTempDir } from "@test/helpers";
+import { makeOptimizerResult, makeTempDir } from "@test/helpers";
 
 const DISABLE_BUILTIN_PLUGINS = ["nax-curator", "nax-auto-pr"];
 
@@ -43,10 +43,11 @@ async function writePluginFile(dir: string, filename: string, plugin: NaxPlugin)
       name: "${plugin.extensions.optimizer.name}",
       async optimize(input) {
         return {
-          optimizedPrompt: input.prompt,
-          estimatedTokens: input.estimatedTokens,
-          tokensSaved: 0,
-          appliedStrategies: []
+          prompt: input.prompt,
+          originalTokens: 0,
+          optimizedTokens: 0,
+          savings: 0,
+          appliedRules: []
         };
       }
     },`;
@@ -159,12 +160,7 @@ describe("loadPlugins", () => {
           optimizer: {
             name: "test",
             async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
+              return makeOptimizerResult({ prompt: input.prompt });
             },
           },
         },
@@ -217,12 +213,7 @@ describe("loadPlugins", () => {
           optimizer: {
             name: "opt1",
             async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
+              return makeOptimizerResult({ prompt: input.prompt });
             },
           },
         },
@@ -293,12 +284,7 @@ describe("loadPlugins", () => {
           optimizer: {
             name: "global",
             async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
+              return makeOptimizerResult({ prompt: input.prompt });
             },
           },
         },
@@ -341,12 +327,7 @@ describe("loadPlugins", () => {
           optimizer: {
             name: "test",
             async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
+              return makeOptimizerResult({ prompt: input.prompt });
             },
           },
         },
@@ -376,12 +357,7 @@ describe("loadPlugins", () => {
           optimizer: {
             name: "test",
             async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
+              return makeOptimizerResult({ prompt: input.prompt });
             },
           },
         },
@@ -427,10 +403,11 @@ export default {
       name: "test",
       async optimize(input) {
         return {
-          optimizedPrompt: input.prompt,
-          estimatedTokens: input.estimatedTokens,
-          tokensSaved: 0,
-          appliedStrategies: []
+          prompt: input.prompt,
+          originalTokens: 0,
+          optimizedTokens: 0,
+          savings: 0,
+          appliedRules: []
         };
       }
     }
@@ -500,12 +477,7 @@ export default {
           optimizer: {
             name: "test",
             async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
+              return makeOptimizerResult({ prompt: input.prompt });
             },
           },
         },
@@ -537,12 +509,7 @@ export default {
           optimizer: {
             name: "global",
             async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
+              return makeOptimizerResult({ prompt: input.prompt });
             },
           },
         },
@@ -556,12 +523,7 @@ export default {
           optimizer: {
             name: "project",
             async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
+              return makeOptimizerResult({ prompt: input.prompt });
             },
           },
         },
@@ -575,12 +537,7 @@ export default {
           optimizer: {
             name: "config",
             async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
+              return makeOptimizerResult({ prompt: input.prompt });
             },
           },
         },
@@ -622,12 +579,7 @@ export default {
           optimizer: {
             name: "global",
             async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
+              return makeOptimizerResult({ prompt: input.prompt });
             },
           },
         },
@@ -641,12 +593,7 @@ export default {
           optimizer: {
             name: "project",
             async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
+              return makeOptimizerResult({ prompt: input.prompt });
             },
           },
         },

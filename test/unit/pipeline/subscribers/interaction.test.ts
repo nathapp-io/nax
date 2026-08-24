@@ -4,6 +4,7 @@ import { DEFAULT_CONFIG } from "@/config";
 import { PipelineEventBus, type StoryFailedEvent } from "@/pipeline/event-bus";
 import { wireInteraction } from "@/pipeline/subscribers/interaction";
 import type { UserStory } from "@/prd";
+import { makeStory } from "@test/helpers";
 
 describe("wireInteraction", () => {
   test("no subscriptions when interactionChain is null", () => {
@@ -50,12 +51,12 @@ describe("wireInteraction - max-retries trigger", () => {
   });
 
   function createStoryFailedEvent(overrides: Partial<StoryFailedEvent> = {}): StoryFailedEvent {
-    const story: UserStory = {
+    const story: UserStory = makeStory({
       id: "US-001",
       title: "Test Story",
       description: "Test",
       acceptanceCriteria: [],
-    };
+    });
     return {
       type: "story:failed",
       storyId: "story-1",

@@ -17,10 +17,11 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planCommand } from "@/cli";
 import type { NaxConfig } from "@/config";
+import type { DebateRunner, DebateRunnerOptions } from "@/debate";
 import type { DebateResult } from "@/debate/types";
 import type { PRD } from "@/prd/types";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { makeDebateRunner, makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import { firstCall, makeDebateRunner, makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -271,7 +272,7 @@ describe("planCommand — debate integration (US-004)", () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   test("AC1: createDebateRunner is called when debate.enabled=true and stages.plan.enabled=true", async () => {
-    const runPlanMock = mock(async () => DEBATE_PASSED_RESULT);
+    const runPlanMock = mock(async (..._args: Parameters<DebateRunner["runPlan"]>) => DEBATE_PASSED_RESULT);
     _planDeps.createDebateRunner = mock(() => makeDebateRunner({ runPlan: runPlanMock }));
 
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
@@ -284,7 +285,7 @@ describe("planCommand — debate integration (US-004)", () => {
   });
 
   test("AC1: DebateSession.runPlan() is called with the planning prompt and options", async () => {
-    const runPlanMock = mock(async () => DEBATE_PASSED_RESULT);
+    const runPlanMock = mock(async (..._args: Parameters<DebateRunner["runPlan"]>) => DEBATE_PASSED_RESULT);
     _planDeps.createDebateRunner = mock(() => makeDebateRunner({ runPlan: runPlanMock }));
 
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
@@ -294,7 +295,7 @@ describe("planCommand — debate integration (US-004)", () => {
     });
 
     expect(runPlanMock).toHaveBeenCalledTimes(1);
-    const [taskContextArg, outputFormatArg, optsArg] = runPlanMock.mock.calls[0];
+    const [taskContextArg, outputFormatArg, optsArg] = firstCall(runPlanMock, "runPlan");
     expect(typeof taskContextArg).toBe("string");
     expect(taskContextArg.length).toBeGreaterThan(100);
     expect(typeof outputFormatArg).toBe("string");
@@ -304,8 +305,8 @@ describe("planCommand — debate integration (US-004)", () => {
   });
 
   test("AC1: createDebateRunner receives the plan stage config", async () => {
-    const runPlanMock = mock(async () => DEBATE_PASSED_RESULT);
-    const createMock = mock(() => ({ runPlan: runPlanMock }));
+    const runPlanMock = mock(async (..._args: Parameters<DebateRunner["runPlan"]>) => DEBATE_PASSED_RESULT);
+    const createMock = mock((_opts: DebateRunnerOptions) => makeDebateRunner({ runPlan: runPlanMock }));
     _planDeps.createDebateRunner = createMock;
 
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
@@ -314,7 +315,7 @@ describe("planCommand — debate integration (US-004)", () => {
       auto: true,
     });
 
-    const [opts] = createMock.mock.calls[0];
+    const [opts] = firstCall(createMock, "createDebateRunner");
     expect(opts.stage).toBe("plan");
     expect(opts.stageConfig.enabled).toBe(true);
   });
@@ -344,7 +345,7 @@ describe("planCommand — debate integration (US-004)", () => {
   });
 
   test("AC1: debate fires in interactive mode (no --auto flag) when debate.enabled=true", async () => {
-    const runPlanMock = mock(async () => DEBATE_PASSED_RESULT);
+    const runPlanMock = mock(async (..._args: Parameters<DebateRunner["runPlan"]>) => DEBATE_PASSED_RESULT);
     _planDeps.createDebateRunner = mock(() => makeDebateRunner({ runPlan: runPlanMock }));
     // No auto: true — interactive mode
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
@@ -383,7 +384,7 @@ describe("planCommand — debate integration (US-004)", () => {
       }),
     );
 
-    const createDebateMock = mock(() => ({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
+    const createDebateMock = mock(() => makeDebateRunner({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
     _planDeps.createDebateRunner = createDebateMock;
 
     await planCommand(tmpDir, makeNaxConfig({ debate: { enabled: false } } as any), {
@@ -420,7 +421,7 @@ describe("planCommand — debate integration (US-004)", () => {
       }),
     );
 
-    const createDebateMock = mock(() => ({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
+    const createDebateMock = mock(() => makeDebateRunner({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
     _planDeps.createDebateRunner = createDebateMock;
 
     await planCommand(tmpDir, makeNaxConfig(), {
@@ -457,7 +458,7 @@ describe("planCommand — debate integration (US-004)", () => {
       }),
     );
 
-    const createDebateMock = mock(() => ({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
+    const createDebateMock = mock(() => makeDebateRunner({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
     _planDeps.createDebateRunner = createDebateMock;
 
     await planCommand(

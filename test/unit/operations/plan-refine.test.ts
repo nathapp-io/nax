@@ -8,6 +8,7 @@ import type { HopBodyContext } from "@/operations/types";
 import { PlanPromptBuilder } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
 import {
+  assertDefined,
   makeMockAgentManager,
   makeSessionManager,
   makeTestRuntime,
@@ -163,6 +164,7 @@ describe("planRefineOp.hopBody()", () => {
       sendWithParseRetry,
     };
 
+    assertDefined(planRefineOp.hopBody, "planRefineOp.hopBody");
     const result = await planRefineOp.hopBody(initialPrompt, ctx);
 
     expect(sendWithParseRetry).toHaveBeenCalledTimes(1);

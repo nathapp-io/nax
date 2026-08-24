@@ -796,7 +796,7 @@ describe("runFixCycle — ValidateResult short-circuit flag", () => {
     const cycle = makeCycle([lintA], [strategy], async () => validateResult as unknown as Finding[]); // test-ratchet-allow: as-unknown-as
 
     const result = await runFixCycle(cycle, makeCtx(), "sc-cycle", {
-      callOp: makeCallOpMock(), // test-ratchet-allow: as-unknown-as
+      callOp: makeCallOpMock(),
     });
 
     expect(result.exitReason).toBe("validate-short-circuit");

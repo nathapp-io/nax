@@ -12,6 +12,7 @@
 import { describe, expect, test } from "bun:test";
 import { deepMergeConfig } from "@/config/merger";
 import type { NaxConfig } from "@/config/schema";
+import { assertDefined } from "@test/helpers";
 import type { DeepPartial } from "@test/helpers";
 
 describe("config/merger", () => {
@@ -120,6 +121,7 @@ describe("config/merger", () => {
         },
       };
       const result = deepMergeConfig(base, override);
+      assertDefined(result.hooks, "merged hooks");
 
       // When both configs have the same hook event, they are concatenated into an array
       expect(result.hooks.hooks["on-start"]).toEqual([
@@ -152,6 +154,7 @@ describe("config/merger", () => {
         },
       };
       const result = deepMergeConfig(base, override);
+      assertDefined(result.hooks, "merged hooks");
 
       expect(result.hooks.hooks["on-start"]).toEqual({
         command: "echo base",
@@ -179,6 +182,7 @@ describe("config/merger", () => {
         },
       };
       const result = deepMergeConfig(base, override);
+      assertDefined(result.hooks, "merged hooks");
 
       expect(result.hooks.hooks).toEqual({
         "on-start": { command: "echo base", enabled: true },

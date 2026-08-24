@@ -1,18 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import type { UserStory } from "@/prd/types";
 import { buildVerdictSection } from "@/prompts/sections/verdict";
+import { makeStory } from "@test/helpers";
 
 describe("buildVerdictSection", () => {
-  const mockStory: UserStory = {
+  const mockStory: UserStory = makeStory({
     id: "STORY-001",
     title: "Verify Feature",
     description: "A feature to verify",
     acceptanceCriteria: ["Criterion 1", "Criterion 2"],
-    status: "pending",
-    passes: false,
-    dependencies: [],
-    tags: [],
-  };
+  });
 
   test("includes JSON schema example", () => {
     const result = buildVerdictSection(mockStory);

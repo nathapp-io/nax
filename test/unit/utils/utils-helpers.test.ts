@@ -18,7 +18,7 @@ import {
   releaseLock,
 } from "@/execution/helpers";
 import type { PRD, UserStory } from "@/prd";
-import { makeStory, makeTempDir } from "@test/helpers";
+import { makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -40,10 +40,11 @@ const mockStory = (
     status,
   });
 
-const createMockPRD = (stories: UserStory[]): PRD => ({
-  feature: "test-feature",
-  userStories: stories,
-});
+const createMockPRD = (stories: UserStory[]): PRD =>
+  makePRD({
+    feature: "test-feature",
+    userStories: stories,
+  });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // hookCtx
