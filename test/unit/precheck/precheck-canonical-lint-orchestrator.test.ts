@@ -11,48 +11,42 @@ import type { ExecutionConfig, NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd/types";
 import { runEnvironmentPrecheck, runPrecheck } from "@/precheck";
 import { _checkCliDeps } from "@/precheck/checks-cli";
-import { makeConfigSlice, makeSpawn, makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makeSpawn, makeTempDir } from "@test/helpers";
 
-const createMockConfig = (cwd: string, overrides: Partial<ExecutionConfig> = {}): NaxConfig => ({
-  execution: {
-    maxIterations: 10,
-    iterationDelayMs: 0,
-    testCommand: "echo 'test'",
-    lintCommand: "echo 'lint'",
-    typecheckCommand: "echo 'typecheck'",
-    contextProviderTokenBudget: 2000,
-    requireExplicitContextFiles: false,
-    preflightExpectedFilesEnabled: false,
-    cwd,
-    ...overrides,
-  },
-  autoMode: {
-    enabled: false,
-    defaultAgent: "test-agent",
-    fallbackOrder: [],
-    complexityRouting: {
-      simple: "fast",
-      medium: "balanced",
-      complex: "powerful",
-      expert: "ultra",
+const createMockConfig = (_cwd: string, overrides: Partial<ExecutionConfig> = {}): NaxConfig =>
+  makeNaxConfig({
+    execution: {
+      maxIterations: 10,
+      iterationDelayMs: 0,
+      testCommand: "echo 'test'",
+      lintCommand: "echo 'lint'",
+      typecheckCommand: "echo 'typecheck'",
+      contextProviderTokenBudget: 2000,
+      rectification: {
+        enabled: true,
+        maxAttemptsTotal: 2,
+        fullSuiteTimeoutSeconds: 120,
+        maxFailureSummaryChars: 2000,
+        abortOnIncreasingFailures: true,
+      },
+      ...overrides,
     },
-    escalation: {
-      enabled: true,
-      tierOrder: [],
-      resetMode: "initial",
+    autoMode: {
+      enabled: false,
+      complexityRouting: {
+        simple: "fast",
+        medium: "balanced",
+        complex: "powerful",
+        expert: "ultra",
+      },
+      escalation: {
+        enabled: true,
+        tierOrder: [],
+        resetMode: "initial",
+      },
     },
-  },
-  quality: makeConfigSlice("quality", {}),
-  tdd: makeConfigSlice("tdd", { strategy: "auto" }),
-  models: {},
-  rectification: {
-    enabled: true,
-    maxAttemptsTotal: 2,
-    fullSuiteTimeoutSeconds: 120,
-    maxFailureSummaryChars: 2000,
-    abortOnIncreasingFailures: true,
-  },
-});
+    tdd: { strategy: "auto" },
+  });
 
 const createMockStory = (overrides: Partial<UserStory> = {}): UserStory => ({
   id: "US-001",
