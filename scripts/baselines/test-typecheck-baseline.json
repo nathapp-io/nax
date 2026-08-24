@@ -1,6 +1,6 @@
 {
-  "count": 657,
-  "updatedAt": "2026-08-24T04:30:53.659Z",
+  "count": 649,
+  "updatedAt": "2026-08-24T04:34:39.129Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -225,7 +225,6 @@
     "test/unit/review/semantic-threshold.test.ts": 3,
     "test/unit/review/semantic-unverifiable.test.ts": 3,
     "test/unit/routing/llm-batch-route.test.ts": 3,
-    "test/unit/runtime/cost-aggregator.test.ts": 8,
     "test/unit/runtime/middleware/cancellation.test.ts": 3,
     "test/unit/runtime/runtime.test.ts": 5,
     "test/unit/runtime/session-role-plan-critic.test.ts": 1,
