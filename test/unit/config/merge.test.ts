@@ -8,6 +8,36 @@ import { mergePackageConfig } from "@/config/merge";
 import type { NaxConfig } from "@/config/schema";
 import { absentValue, makeNaxConfig } from "@test/helpers";
 
+type SemanticConfig = NonNullable<NaxConfig["review"]["semantic"]>;
+
+/**
+ * A complete `ReviewConfig` from the schema defaults plus the fields a test
+ * actually cares about. Written as a factory because these literals only ever
+ * set `enabled` / `checks` / `commands` / `pluginMode`, while `ReviewConfig`
+ * also requires `parseRetryMaxAttempts` and `conflictDetection` — fields no
+ * merge assertion here reads.
+ */
+function makeReview(overrides: Partial<NaxConfig["review"]>): NaxConfig["review"] {
+  return { ...DEFAULT_CONFIG.review, ...overrides };
+}
+
+/**
+ * `review.semantic` has no schema `.default()` (the field is `.optional()`), so
+ * `DEFAULT_CONFIG.review.semantic` is `undefined` and there is nothing to
+ * spread. The required fields are written out to the schema's own declared
+ * defaults — see `SemanticReviewConfigSchema` in `src/config/schemas-review.ts`.
+ */
+function makeSemantic(overrides: Partial<SemanticConfig>): SemanticConfig {
+  return {
+    model: "balanced",
+    diffMode: "ref",
+    resetRefOnRerun: false,
+    rules: [],
+    timeoutMs: 600_000,
+    ...overrides,
+  };
+}
+
 function makeRoot(): NaxConfig {
   return {
     ...DEFAULT_CONFIG,
@@ -132,9 +162,9 @@ describe("mergePackageConfig", () => {
   });
 
   describe("execution.regressionGate deep merge", () => {
-    test.each([
-      ["mode", { mode: "per-story" as const }, (r: NaxConfig) => r.execution.regressionGate.mode, "per-story"],
-      ["timeoutSeconds", { timeoutSeconds: 600 }, (r: NaxConfig) => r.execution.regressionGate.timeoutSeconds, 600],
+    test.each<[string, Partial<NaxConfig["execution"]["regressionGate"]>, (r: NaxConfig) => unknown, unknown]>([
+      ["mode", { mode: "per-story" }, (r) => r.execution.regressionGate.mode, "per-story"],
+      ["timeoutSeconds", { timeoutSeconds: 600 }, (r) => r.execution.regressionGate.timeoutSeconds, 600],
     ])("overrides regressionGate.%s per package", (_field, override, getField, expected) => {
       const root: NaxConfig = {
         ...makeRoot(),
@@ -168,12 +198,12 @@ describe("mergePackageConfig", () => {
     test("overrides review.enabled/checks independently; deep merges commands; overrides pluginMode", () => {
       const base: NaxConfig = {
         ...makeRoot(),
-        review: {
+        review: makeReview({
           enabled: true,
           checks: ["typecheck", "lint"],
           commands: { typecheck: "bun typecheck", lint: "bun lint" },
-          pluginMode: "per-story",
-        },
+          pluginMode: "observational",
+        }),
       };
       const r1 = mergePackageConfig(base, {
         review: { enabled: false } as Partial<NaxConfig["review"]>,
@@ -186,27 +216,27 @@ describe("mergePackageConfig", () => {
       expect(r2.review.commands.lint).toBe("eslint .");
       expect(r2.review.commands.typecheck).toBe("bun typecheck");
       const r3 = mergePackageConfig(base, {
-        review: { pluginMode: "deferred" } as Partial<NaxConfig["review"]>,
+        review: { pluginMode: "gating" } as Partial<NaxConfig["review"]>,
       } as Partial<NaxConfig>);
-      expect(r3.review.pluginMode).toBe("deferred");
+      expect(r3.review.pluginMode).toBe("gating");
     });
 
-    test("deep merges review.semantic: rules override and modelTier override both preserve other field", () => {
-      const makeSemanticRoot = (semantic: NaxConfig["review"]["semantic"]) => ({
+    test("deep merges review.semantic: rules override and model override both preserve other field", () => {
+      const makeSemanticRoot = (semantic: SemanticConfig): NaxConfig => ({
         ...makeRoot(),
-        review: { enabled: true, checks: ["semantic"], commands: {}, pluginMode: "per-story" as const, semantic },
+        review: makeReview({ enabled: true, checks: ["semantic"], commands: {}, semantic }),
       });
 
-      const rulesResult = mergePackageConfig(makeSemanticRoot({ modelTier: "balanced", rules: ["rule1"] }), {
+      const rulesResult = mergePackageConfig(makeSemanticRoot(makeSemantic({ rules: ["rule1"] })), {
         review: { semantic: { rules: ["rule1", "rule2"] } } as Partial<NaxConfig["review"]>,
       } as Partial<NaxConfig>);
-      expect(rulesResult.review.semantic?.modelTier).toBe("balanced");
+      expect(rulesResult.review.semantic?.model).toBe("balanced");
       expect(rulesResult.review.semantic?.rules).toEqual(["rule1", "rule2"]);
 
-      const tierResult = mergePackageConfig(makeSemanticRoot({ modelTier: "balanced", rules: [] }), {
-        review: { semantic: { modelTier: "powerful" } } as Partial<NaxConfig["review"]>,
+      const tierResult = mergePackageConfig(makeSemanticRoot(makeSemantic({ rules: [] })), {
+        review: { semantic: { model: "powerful" } } as Partial<NaxConfig["review"]>,
       } as Partial<NaxConfig>);
-      expect(tierResult.review.semantic?.modelTier).toBe("powerful");
+      expect(tierResult.review.semantic?.model).toBe("powerful");
       expect(tierResult.review.semantic?.rules).toEqual([]);
     });
 
@@ -228,7 +258,7 @@ describe("mergePackageConfig", () => {
       ] as const)("quality.commands.%s bridges to review.commands.%s", (_label, key, newCmd, rootReviewCmds) => {
         const root: NaxConfig = {
           ...makeRoot(),
-          review: { enabled: true, checks: ["lint"], commands: rootReviewCmds, pluginMode: "per-story" },
+          review: makeReview({ enabled: true, checks: ["lint"], commands: rootReviewCmds }),
         };
         const result = mergePackageConfig(root, {
           quality: { commands: { [key]: newCmd } },
@@ -239,15 +269,14 @@ describe("mergePackageConfig", () => {
       test("quality scoped fix commands bridge to review scoped fix commands", () => {
         const root: NaxConfig = {
           ...makeRoot(),
-          review: {
+          review: makeReview({
             enabled: true,
             checks: ["lint"],
             commands: {
               lintFixScoped: "eslint --fix {{files}}",
               formatFixScoped: "prettier --write {{files}}",
             },
-            pluginMode: "per-story",
-          },
+          }),
         };
         const result = mergePackageConfig(root, {
           quality: {
@@ -265,7 +294,7 @@ describe("mergePackageConfig", () => {
       test("explicit review.commands takes precedence over bridged quality.commands", () => {
         const root: NaxConfig = {
           ...makeRoot(),
-          review: { enabled: true, checks: ["lint"], commands: { lint: "bunx turbo lint" }, pluginMode: "per-story" },
+          review: makeReview({ enabled: true, checks: ["lint"], commands: { lint: "bunx turbo lint" } }),
         };
         const result = mergePackageConfig(root, {
           quality: { commands: { lint: "bun run lint" } },
@@ -279,12 +308,11 @@ describe("mergePackageConfig", () => {
       test("all three checks bridge together when quality.commands provides all", () => {
         const root: NaxConfig = {
           ...makeRoot(),
-          review: {
+          review: makeReview({
             enabled: true,
             checks: ["typecheck", "lint", "test"],
             commands: { typecheck: "bunx turbo type-check", lint: "bunx turbo lint", test: "bunx turbo test" },
-            pluginMode: "per-story",
-          },
+          }),
         };
         const result = mergePackageConfig(root, {
           quality: { commands: { typecheck: "bun run type-check", lint: "bun run lint", test: "bun run test" } },
@@ -298,12 +326,11 @@ describe("mergePackageConfig", () => {
       test("bridge does not affect unset quality.commands keys", () => {
         const root: NaxConfig = {
           ...makeRoot(),
-          review: {
+          review: makeReview({
             enabled: true,
             checks: ["typecheck", "lint"],
             commands: { typecheck: "bunx turbo type-check", lint: "bunx turbo lint" },
-            pluginMode: "per-story",
-          },
+          }),
         };
         // Only lint is set in quality.commands — typecheck should stay as root value
         const result = mergePackageConfig(root, {
@@ -317,12 +344,7 @@ describe("mergePackageConfig", () => {
       test("quality.commands.build bridges to review.commands.build (BUILD-001)", () => {
         const root: NaxConfig = {
           ...makeRoot(),
-          review: {
-            enabled: true,
-            checks: ["build"],
-            commands: {},
-            pluginMode: "per-story",
-          },
+          review: makeReview({ enabled: true, checks: ["build"], commands: {} }),
         };
         const result = mergePackageConfig(root, {
           quality: { commands: { build: "bun run build" } },
