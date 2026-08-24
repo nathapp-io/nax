@@ -1,6 +1,6 @@
 {
-  "count": 485,
-  "updatedAt": "2026-08-24T06:44:53.891Z",
+  "count": 479,
+  "updatedAt": "2026-08-24T07:15:14.642Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -111,7 +111,6 @@
     "test/unit/execution/rectification-budget-invariants.test.ts": 1,
     "test/unit/execution/rectification-oscillation-circuit-breaker.test.ts": 1,
     "test/unit/execution/runner-completion-finish.test.ts": 1,
-    "test/unit/execution/runner-completion-postrun.test.ts": 6,
     "test/unit/execution/story-context.test.ts": 3,
     "test/unit/execution/story-orchestrator-no-progress-bail.test.ts": 2,
     "test/unit/execution/story-orchestrator-revalidation.test.ts": 1,

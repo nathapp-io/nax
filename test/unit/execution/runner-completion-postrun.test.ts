@@ -18,7 +18,7 @@ import { type RunnerCompletionOptions, _runnerCompletionDeps, runCompletionPhase
 import type { LoadedHooksConfig } from "@/hooks";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
-import { makeMockRuntime, makeNaxConfig, makePluginRegistry, makeStatusWriter } from "@test/helpers";
+import { assertDefined, makeMockRuntime, makeNaxConfig, makePluginRegistry, makeStatusWriter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -101,7 +101,9 @@ function makeOpts(
 const defaultCompletionResult: RunCompletionResult = {
   durationMs: 100,
   runCompletedAt: new Date().toISOString(),
+  reportedTotal: 0,
   finalCounts: { total: 1, passed: 1, failed: 0, skipped: 0, pending: 0 },
+  pluginGateFailed: false,
 };
 
 const origDeps = { ..._runnerCompletionDeps };
@@ -125,11 +127,12 @@ describe("runCompletionPhase - AC1: sets acceptance running before runAcceptance
   test("calls setPostRunPhase('acceptance', { status: 'running' }) before runAcceptanceLoop()", async () => {
     const callOrder: string[] = [];
 
-    const statusWriter = makeStatusWriter();
-    statusWriter.setPostRunPhase = mock((phase: string, update: { status: string }) => {
-      if (phase === "acceptance") {
-        callOrder.push(`setPostRunPhase-acceptance-${update.status}`);
-      }
+    const statusWriter = makeStatusWriter({
+      setPostRunPhase: mock((phase: string, update: { status: string }) => {
+        if (phase === "acceptance") {
+          callOrder.push(`setPostRunPhase-acceptance-${update.status}`);
+        }
+      }),
     });
 
     _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => {
@@ -192,13 +195,14 @@ describe("runCompletionPhase - AC1: sets acceptance running before runAcceptance
 
 describe("runCompletionPhase - AC2: sets acceptance passed when loop succeeds", () => {
   test("calls setPostRunPhase('acceptance', { status: 'passed', lastRunAt }) when runAcceptanceLoop returns success=true", async () => {
-    const acceptanceCalls: Array<Record<string, unknown>> = [];
+    const acceptanceCalls: Array<{ status: string; lastRunAt?: string }> = [];
 
-    const statusWriter = makeStatusWriter();
-    statusWriter.setPostRunPhase = mock((phase: string, update: Record<string, unknown>) => {
-      if (phase === "acceptance") {
-        acceptanceCalls.push(update);
-      }
+    const statusWriter = makeStatusWriter({
+      setPostRunPhase: mock((phase: string, update: { status: string; lastRunAt?: string }) => {
+        if (phase === "acceptance") {
+          acceptanceCalls.push(update);
+        }
+      }),
     });
 
     _runnerCompletionDeps.runAcceptanceLoop = mock(
@@ -218,20 +222,21 @@ describe("runCompletionPhase - AC2: sets acceptance passed when loop succeeds", 
     await runCompletionPhase(makeOpts(config, prd, statusWriter));
 
     const passedCall = acceptanceCalls.find((u) => u.status === "passed");
-    expect(passedCall).toBeDefined();
-    expect(typeof passedCall?.lastRunAt).toBe("string");
+    assertDefined(passedCall, "acceptance passed call");
+    assertDefined(passedCall.lastRunAt, "acceptance lastRunAt");
     // Must be valid ISO 8601
-    expect(new Date(passedCall?.lastRunAt as string).toISOString()).toBe(passedCall?.lastRunAt);
+    expect(new Date(passedCall.lastRunAt).toISOString()).toBe(passedCall.lastRunAt);
   });
 
   test("setPostRunPhase called in order: running then passed on success", async () => {
     const callOrder: string[] = [];
 
-    const statusWriter = makeStatusWriter();
-    statusWriter.setPostRunPhase = mock((phase: string, update: { status: string }) => {
-      if (phase === "acceptance") {
-        callOrder.push(update.status);
-      }
+    const statusWriter = makeStatusWriter({
+      setPostRunPhase: mock((phase: string, update: { status: string }) => {
+        if (phase === "acceptance") {
+          callOrder.push(update.status);
+        }
+      }),
     });
 
     _runnerCompletionDeps.runAcceptanceLoop = mock(
@@ -260,13 +265,14 @@ describe("runCompletionPhase - AC2: sets acceptance passed when loop succeeds", 
 
 describe("runCompletionPhase - AC3: sets acceptance failed when loop fails", () => {
   test("calls setPostRunPhase('acceptance', { status: 'failed', failedACs, retries, lastRunAt }) when runAcceptanceLoop returns success=false", async () => {
-    const acceptanceCalls: Array<Record<string, unknown>> = [];
+    const acceptanceCalls: Array<{ status: string; lastRunAt?: string }> = [];
 
-    const statusWriter = makeStatusWriter();
-    statusWriter.setPostRunPhase = mock((phase: string, update: Record<string, unknown>) => {
-      if (phase === "acceptance") {
-        acceptanceCalls.push(update);
-      }
+    const statusWriter = makeStatusWriter({
+      setPostRunPhase: mock((phase: string, update: { status: string; lastRunAt?: string }) => {
+        if (phase === "acceptance") {
+          acceptanceCalls.push(update);
+        }
+      }),
     });
 
     _runnerCompletionDeps.runAcceptanceLoop = mock(
@@ -288,9 +294,9 @@ describe("runCompletionPhase - AC3: sets acceptance failed when loop fails", () 
     await runCompletionPhase(makeOpts(config, prd, statusWriter));
 
     const failedCall = acceptanceCalls.find((u) => u.status === "failed");
-    expect(failedCall).toBeDefined();
-    expect(typeof failedCall?.lastRunAt).toBe("string");
-    expect(new Date(failedCall?.lastRunAt as string).toISOString()).toBe(failedCall?.lastRunAt);
+    assertDefined(failedCall, "acceptance failed call");
+    assertDefined(failedCall.lastRunAt, "acceptance lastRunAt");
+    expect(new Date(failedCall.lastRunAt).toISOString()).toBe(failedCall.lastRunAt);
   });
 
   test("failed call includes failedACs from runAcceptanceLoop result", async () => {
@@ -360,11 +366,12 @@ describe("runCompletionPhase - AC3: sets acceptance failed when loop fails", () 
   test("setPostRunPhase called in order: running then failed on failure", async () => {
     const callOrder: string[] = [];
 
-    const statusWriter = makeStatusWriter();
-    statusWriter.setPostRunPhase = mock((phase: string, update: { status: string }) => {
-      if (phase === "acceptance") {
-        callOrder.push(update.status);
-      }
+    const statusWriter = makeStatusWriter({
+      setPostRunPhase: mock((phase: string, update: { status: string }) => {
+        if (phase === "acceptance") {
+          callOrder.push(update.status);
+        }
+      }),
     });
 
     _runnerCompletionDeps.runAcceptanceLoop = mock(
