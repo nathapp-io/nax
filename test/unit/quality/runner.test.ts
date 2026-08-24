@@ -128,17 +128,18 @@ describe("runQualityCommand — timeout flow", () => {
   });
 
   test("returns timedOut=true and exitCode=-1 when process exceeds timeoutMs", async () => {
-    const killMock = mock(() => {});
+    const killMock = mock((_pid: number, _signal?: string | number) => {});
     let resolveExited!: (code: number) => void;
     const exitedPromise = new Promise<number>((res) => {
       resolveExited = res;
     });
 
     // Mock process.kill to track calls and resolve the process promise
-    process.kill = mock((pid, signal) => {
+    process.kill = mock((pid: number, signal?: string | number) => {
       killMock(pid, signal);
       // Simulate process dying after SIGTERM
       if (signal === "SIGTERM") resolveExited(143);
+      return true;
     }) as typeof process.kill;
 
     _qualityRunnerDeps.spawn = makeSpawn(() => {
