@@ -28,6 +28,7 @@ import {
   runReplay,
 } from "@/commands";
 import { NaxError } from "@/errors";
+import type { NaxStatusFile } from "@/execution/status-file";
 import type { LogEntry } from "@/logger/types";
 import type { RunMetrics } from "@/metrics";
 import type { MetaJson } from "@/pipeline/subscribers/registry";
@@ -381,7 +382,7 @@ describe("runReplay — AC10: crashed-run end-to-end", () => {
   });
 
   test("AC10: injected registry with a crash-signal status.json and no metrics writes CRASHED and resolves to exit 0", async () => {
-    const crashStatus = {
+    const crashStatus: NaxStatusFile = {
       version: 1,
       run: {
         id: "run-crash-x",
@@ -435,7 +436,7 @@ describe("runReplay — AC10: crashed-run end-to-end", () => {
         }
         return entries;
       }),
-      readStatus: mock(async () => ({
+      readStatus: mock<typeof _replayCmdDeps.readStatus>(async () => ({
         version: 1,
         run: crashStatus.run,
         progress: crashStatus.progress,
