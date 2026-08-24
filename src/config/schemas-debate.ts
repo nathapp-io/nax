@@ -61,14 +61,33 @@ const PlanStageExtensions = z.object({
   evidenceMode: z.enum(["current", "asymmetric"]).default("current"),
 });
 
-const makeDebateStageSchema = (
+/**
+ * Non-plan stages explicitly reject `evidenceMode` so Zod throws if it is provided.
+ *
+ * This is passed as a real extension rather than applied in a `?:` branch inside
+ * `makeDebateStageSchema`. A ternary over two `.extend()` calls types the result as
+ * the *union* of both branches, and the branch that extended by a non-generic
+ * `z.ZodObject<z.ZodRawShape>` erased to `Record<string, unknown>` — which then
+ * unioned into every stage and made every field of every stage infer as `unknown`.
+ * See #1514.
+ */
+const NonPlanStageExtensions = z.object({
+  evidenceMode: z.undefined(),
+});
+
+/**
+ * `E` must stay generic. Typing `extensions` as `z.ZodObject<z.ZodRawShape>` makes
+ * `extensions.shape` the index signature `Record<string, ZodType>`, and
+ * `base.extend()` of that widens the entire stage to `Record<string, unknown>`.
+ */
+const makeDebateStageSchema = <E extends z.ZodRawShape>(
   defaults: {
     enabled: boolean;
     resolverType: (typeof RESOLVER_TYPES)[number];
     sessionMode: "one-shot" | "stateful";
     rounds: number;
   },
-  extensions?: z.ZodObject<z.ZodRawShape>,
+  extensions: z.ZodObject<E>,
 ) => {
   const base = z.object({
     enabled: z.boolean().default(defaults.enabled),
@@ -101,9 +120,7 @@ const makeDebateStageSchema = (
       .optional(),
   });
 
-  // Non-plan stages explicitly reject evidenceMode so Zod throws if it is provided.
-  const extended = extensions ? base.extend(extensions.shape) : base.extend({ evidenceMode: z.undefined() });
-  return z.preprocess(toObject, extended);
+  return z.preprocess(toObject, base.extend(extensions.shape));
 };
 
 export const DebateConfigSchema = z.preprocess(
@@ -120,30 +137,42 @@ export const DebateConfigSchema = z.preprocess(
           { enabled: true, resolverType: "synthesis", sessionMode: "stateful", rounds: 3 },
           PlanStageExtensions,
         ),
-        review: makeDebateStageSchema({
-          enabled: true,
-          resolverType: "majority-fail-closed",
-          sessionMode: "one-shot",
-          rounds: 2,
-        }),
-        acceptance: makeDebateStageSchema({
-          enabled: false,
-          resolverType: "majority-fail-closed",
-          sessionMode: "one-shot",
-          rounds: 1,
-        }),
-        rectification: makeDebateStageSchema({
-          enabled: false,
-          resolverType: "synthesis",
-          sessionMode: "one-shot",
-          rounds: 1,
-        }),
-        escalation: makeDebateStageSchema({
-          enabled: false,
-          resolverType: "majority-fail-closed",
-          sessionMode: "one-shot",
-          rounds: 1,
-        }),
+        review: makeDebateStageSchema(
+          {
+            enabled: true,
+            resolverType: "majority-fail-closed",
+            sessionMode: "one-shot",
+            rounds: 2,
+          },
+          NonPlanStageExtensions,
+        ),
+        acceptance: makeDebateStageSchema(
+          {
+            enabled: false,
+            resolverType: "majority-fail-closed",
+            sessionMode: "one-shot",
+            rounds: 1,
+          },
+          NonPlanStageExtensions,
+        ),
+        rectification: makeDebateStageSchema(
+          {
+            enabled: false,
+            resolverType: "synthesis",
+            sessionMode: "one-shot",
+            rounds: 1,
+          },
+          NonPlanStageExtensions,
+        ),
+        escalation: makeDebateStageSchema(
+          {
+            enabled: false,
+            resolverType: "majority-fail-closed",
+            sessionMode: "one-shot",
+            rounds: 1,
+          },
+          NonPlanStageExtensions,
+        ),
       }),
     ),
   }),

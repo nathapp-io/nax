@@ -1,4 +1,3 @@
-import type { DebateStageConfig } from "@/debate/types";
 import { NaxError } from "@/errors";
 import { callOp, planInteractiveOp } from "@/operations";
 import type { CallContext, PlanInteractiveInput } from "@/operations";
@@ -43,9 +42,7 @@ export class DebatePlanStrategy implements IPlanStrategy {
         },
       );
     }
-    const stageConfig = _debatePlanDeps.buildPlanComposition(
-      planStage as DebateStageConfig & { evidenceMode?: "current" | "asymmetric" },
-    );
+    const stageConfig = _debatePlanDeps.buildPlanComposition(planStage);
 
     const callCtx = {
       runtime: ctx.runtime,
