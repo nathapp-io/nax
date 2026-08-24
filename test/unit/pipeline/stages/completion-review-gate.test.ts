@@ -9,6 +9,7 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import type { InteractionConfig } from "@/config/selectors";
 import { InteractionChain } from "@/interaction/chain";
 import type { InteractionPlugin, InteractionResponse } from "@/interaction/types";
 import { _completionDeps } from "@/pipeline/stages/completion";
@@ -47,7 +48,7 @@ function makeChain(action: InteractionResponse["action"]): InteractionChain {
   return chain;
 }
 
-function makeConfig(triggers: Record<string, unknown>) {
+function makeConfig(triggers: NonNullable<InteractionConfig["interaction"]>["triggers"]) {
   return makeNaxConfig({
     agent: { default: "test-agent" },
     models: { "test-agent": { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" } },
