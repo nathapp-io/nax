@@ -43,9 +43,13 @@ function makeAgentManager(runFn: (req: AgentRunRequest) => Promise<AgentResult>)
   return makeMockAgentManager({
     getDefaultAgent: "claude",
     runFn: async (agent, opts) => {
-      return await runFn({ runOptions: opts } as AgentRunRequest);
+      const result = await runFn({ runOptions: opts } as AgentRunRequest);
+      return { ...result, agentFallbacks: [] };
     },
-    runWithFallbackFn: async (req) => ({ result: await runFn(req), fallbacks: [] }),
+    runWithFallbackFn: async (req) => {
+      const result = await runFn(req);
+      return { result: { ...result, agentFallbacks: [] }, fallbacks: [] };
+    },
   });
 }
 
