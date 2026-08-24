@@ -75,17 +75,30 @@ describe("AC3: STRICT_VERDICT_PHASE_NAMES excludes mutation-check", () => {
 // AC4: builder.addMutationCheck + spied mutationCheckOp runs after full-suite-gate
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeMutationCheckOp(result: { success: true; survivors?: readonly unknown[] }): DeterministicOperation<
-  MutationCheckInput,
-  MutationCheckOutput,
-  MutationCheckConfig
-> {
+function makeMutationCheckOp(result: {
+  success: true;
+  survivors?: readonly { file: string }[];
+}): DeterministicOperation<MutationCheckInput, MutationCheckOutput, MutationCheckConfig> {
+  const survivors = (result.survivors ?? []).map((s) => ({
+    file: s.file,
+    line: 1,
+    before: "before",
+    after: "after",
+    operatorId: "test-operator",
+    outcome: "survived" as const,
+  }));
   return {
     kind: "deterministic",
     name: "mutation-check",
     stage: "verify",
     config: (() => DEFAULT_CONFIG) as any,
-    execute: async () => ({ ...result }),
+    execute: async () => ({
+      success: true,
+      survivors,
+      outcomes: { killed: 0, survived: survivors.length, errored: 0 },
+      candidates: survivors.length,
+      checked: true,
+    }),
   };
 }
 
