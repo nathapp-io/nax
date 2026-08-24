@@ -11,38 +11,20 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { _registryTestAdapters } from "@/agents/registry";
-import type { AgentAdapter, AgentCapabilities, AgentResult, AgentRunOptions } from "@/agents/types";
 import type { NaxConfig } from "@/config";
 import { run } from "@/execution/runner";
 import { loadHooksConfig } from "@/hooks";
 import { savePRD } from "@/prd";
-import { makePRD, makeStory, makeTempDir } from "@test/helpers";
+import { makeAgentAdapter, makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 // ============================================================================
 // Mock agent
 // ============================================================================
-class MockAgentAdapter implements AgentAdapter {
-  readonly name = "mock";
-  readonly displayName = "Mock Agent";
-  readonly binary = "mock-agent";
-  readonly capabilities: AgentCapabilities = {
-    supportedTiers: ["fast", "balanced", "powerful"],
-    maxContextTokens: 200_000,
-    features: new Set(["tdd", "review", "refactor", "batch"]),
-  };
-  async isInstalled(): Promise<boolean> {
-    return true;
-  }
-  buildCommand(_o: AgentRunOptions): string[] {
-    return [this.binary];
-  }
-  async run(_o: AgentRunOptions): Promise<AgentResult> {
-    return { success: true, exitCode: 0, output: "", durationMs: 10, estimatedCostUsd: 0 };
-  }
-  async complete(_prompt: string): Promise<import("@/agents/types").CompleteResult> {
-    return { output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
-  }
-}
+const mockAgentAdapter = makeAgentAdapter({
+  displayName: "Mock Agent",
+  binary: "mock-agent",
+  buildCommand: () => ["mock-agent"],
+});
 
 // ============================================================================
 // Shared setup helpers
@@ -121,7 +103,7 @@ describe("Reporter Lifecycle Events — basic (US-004)", () => {
   let config: NaxConfig;
 
   beforeAll(() => {
-    _registryTestAdapters.set("mock", new MockAgentAdapter());
+    _registryTestAdapters.set("mock", mockAgentAdapter);
   });
 
   afterAll(() => {
