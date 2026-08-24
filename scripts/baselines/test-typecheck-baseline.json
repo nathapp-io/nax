@@ -1,6 +1,6 @@
 {
-  "count": 649,
-  "updatedAt": "2026-08-24T04:34:39.129Z",
+  "count": 641,
+  "updatedAt": "2026-08-24T04:38:40.623Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -126,7 +126,6 @@
     "test/unit/execution/story-orchestrator-run-phase-events.test.ts": 15,
     "test/unit/execution/story-orchestrator.test.ts": 2,
     "test/unit/execution/story-scoped-fix-budget.test.ts": 3,
-    "test/unit/execution/unified-executor-dispatch.test.ts": 8,
     "test/unit/execution/unified-executor-logging.test.ts": 5,
     "test/unit/execution/unified-executor-session-close.test.ts": 3,
     "test/unit/findings/adapters/acceptance-diagnose.test.ts": 1,

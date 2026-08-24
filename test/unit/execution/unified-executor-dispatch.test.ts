@@ -13,12 +13,14 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import { precomputeBatchPlan } from "@/execution/batching";
+import type { PipelineEvent } from "@/pipeline/event-bus";
+import type { UserStory } from "@/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixture helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makePendingStory(id: string) {
+function makePendingStory(id: string): UserStory {
   return {
     id,
     title: `Story ${id}`,
@@ -26,10 +28,10 @@ function makePendingStory(id: string) {
     acceptanceCriteria: [],
     tags: [],
     dependencies: [],
-    status: "pending" as const,
+    status: "pending",
     passes: false,
+    escalations: [],
     attempts: 0,
-    priorFailures: [],
   };
 }
 
@@ -312,12 +314,12 @@ describe("AC-5 — story:started per-batch story via _deps injection", () => {
 
     const { pipelineEventBus } = await import("@/pipeline/event-bus");
     const origEmit = pipelineEventBus.emit.bind(pipelineEventBus);
-    pipelineEventBus.emit = mock((event: Record<string, unknown>) => {
+    pipelineEventBus.emit = mock((event: PipelineEvent) => {
       if (event.type === "story:started") {
         eventLog.push(`story:started:${event.storyId}`);
       }
-      return origEmit(event as never);
-    }) as typeof pipelineEventBus.emit;
+      return origEmit(event);
+    });
 
     const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
@@ -360,16 +362,16 @@ describe("useBatch scheduling refresh", () => {
   });
 
   test("recomputes the batch plan after a story completes so newly unblocked stories run next", async () => {
-    const us000 = {
+    const us000: UserStory = {
       ...makePendingStory("US-000"),
       routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
     };
-    const us001 = {
+    const us001: UserStory = {
       ...makePendingStory("US-001"),
       dependencies: ["US-000"],
       routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
     };
-    const us006 = {
+    const us006: UserStory = {
       ...makePendingStory("US-006"),
       routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
     };
@@ -426,11 +428,11 @@ describe("useBatch scheduling refresh", () => {
     // This test needs a second, unrelated, always-ready story so the batch
     // plan is never empty after US-000 fails — proving the fix wins retry
     // priority over competing work, not just over an empty batch plan.
-    const us000 = {
+    const us000: UserStory = {
       ...makePendingStory("US-000"),
       routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
     };
-    const us001 = {
+    const us001: UserStory = {
       ...makePendingStory("US-001"),
       routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
     };
@@ -490,11 +492,11 @@ describe("useBatch scheduling refresh", () => {
     // would keep re-selecting it every iteration — preIterationTierCheck skips
     // it again every time, dispatching nothing and starving every other story
     // in the PRD until maxIterations/maxAttemptsTotal is exhausted.
-    const us000 = {
+    const us000: UserStory = {
       ...makePendingStory("US-000"),
       routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
     };
-    const us001 = {
+    const us001: UserStory = {
       ...makePendingStory("US-001"),
       routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
     };
@@ -578,11 +580,11 @@ describe("useBatch scheduling refresh", () => {
     // the failed one. resolveRetryCandidate must pre-empt
     // selectIndependentBatch here too, exactly as it does for the
     // batch-plan-active path in selectNextStories.
-    const us000 = {
+    const us000: UserStory = {
       ...makePendingStory("US-000"),
       routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
     };
-    const us001 = {
+    const us001: UserStory = {
       ...makePendingStory("US-001"),
       routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
     };
