@@ -4,7 +4,7 @@ import { RefinePlanStrategy, _refinePlanDeps } from "@/plan";
 import type { PlanDeps, PlanModeContext } from "@/plan/strategies/types";
 import type { PackageSummary } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeMockRuntime } from "@test/helpers";
+import { firstCall, makeLogger, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 
 function makeRuntime(closeImpl?: () => Promise<void>): NaxRuntime {
   const runtime = makeMockRuntime({
@@ -42,12 +42,13 @@ function makeDeps(exists = false): PlanDeps {
       onQuestionDetected: async () => "",
     }),
     createDebateRunner: () => ({}) as never,
-    getLogger: () => null,
+    getLogger: makeLogger,
   };
 }
 
 function makeCtx(overrides: Partial<PlanModeContext> = {}): PlanModeContext {
   return {
+    profileName: "default",
     workdir: "/tmp/workdir",
     naxDir: "/tmp/workdir/.nax",
     outputDir: "/tmp/workdir/.nax/features/feat-x",
@@ -56,7 +57,16 @@ function makeCtx(overrides: Partial<PlanModeContext> = {}): PlanModeContext {
     codebaseContext: "context",
     normalizedRoots: [],
     relativePackages: ["packages/api"],
-    packageDetails: [{ path: "packages/api", packageName: "@acme/api", stackSummary: "TypeScript" } as PackageSummary],
+    packageDetails: [
+      {
+        path: "packages/api",
+        name: "@acme/api",
+        runtime: "bun",
+        framework: "oak",
+        testRunner: "bun:test",
+        keyDeps: [],
+      },
+    ],
     projectName: "acme",
     branchName: "feat/feat-x",
     timeoutSeconds: 30,
@@ -80,7 +90,7 @@ describe("RefinePlanStrategy", () => {
     const strategy = new RefinePlanStrategy();
     const closeSpy = mock(async () => {});
     const ctx = makeCtx({ runtime: makeRuntime(closeSpy) });
-    const callOpMock = mock(async () => ({ userStories: [{}] }));
+    const callOpMock = mock(async (..._args: Parameters<typeof _refinePlanDeps.callOp>) => ({ userStories: [{}] }));
     const originalCallOp = _refinePlanDeps.callOp;
     _refinePlanDeps.callOp = callOpMock as typeof _refinePlanDeps.callOp;
 
@@ -88,11 +98,8 @@ describe("RefinePlanStrategy", () => {
       const result = await strategy.execute(ctx);
       expect(result.outputPath).toBe(ctx.outputPath);
       expect(callOpMock).toHaveBeenCalledTimes(1);
-      const [callCtx, operation, input] = callOpMock.mock.calls[0] as [
-        Record<string, unknown>,
-        unknown,
-        Record<string, unknown>,
-      ];
+      const [callCtx, operation, input] = firstCall(callOpMock, "callOp");
+      const dispatchedOp: unknown = operation;
       expect(callCtx.runtime).toBe(ctx.runtime);
       expect(callCtx.packageDir).toBe(ctx.workdir);
       expect(callCtx.agentName).toBe("agent-refine");
@@ -100,7 +107,7 @@ describe("RefinePlanStrategy", () => {
       expect(callCtx.featureName).toBe(ctx.options.feature);
       expect(callCtx.interactionBridge).toBe(ctx.interactionBridge);
       expect(callCtx.maxInteractionTurns).toBe(ctx.config.agent?.maxInteractionTurns);
-      expect(operation).toBe(_refinePlanDeps.planRefineOp);
+      expect(dispatchedOp).toBe(_refinePlanDeps.planRefineOp);
       expect(input).toEqual({
         specContent: ctx.specContent,
         codebaseContext: ctx.codebaseContext,
