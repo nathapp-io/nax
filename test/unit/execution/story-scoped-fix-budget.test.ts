@@ -539,10 +539,10 @@ async function runPlanResumeScenario(
         };
       }
       if (op.name === "lint-check") {
-        return lintOp.execute({});
+        return lintOp.execute({}, rbCtx(runtime, storyId));
       }
       if (op.name === "verifier") {
-        return verifierOp.execute({});
+        return verifierOp.execute({}, rbCtx(runtime, storyId));
       }
       return { success: true, findings: [], normalizedFindings: [], estimatedCostUsd: 0 };
     }
