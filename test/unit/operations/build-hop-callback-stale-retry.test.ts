@@ -116,7 +116,7 @@ describe("buildHopCallback — run counter threading", () => {
     const cb = buildHopCallback(ctx, undefined, STUB_RUN_OPTIONS);
 
     const bundle = { pushMarkdown: "", pullTools: [], digest: "", manifest: {} } as never;
-    await cb("claude", bundle, { kind: "primary", attempt: 1 }, STUB_RUN_OPTIONS);
+    await cb("claude", bundle, { kind: "primary" }, STUB_RUN_OPTIONS);
 
     expect(seen[0]).toBe(counter);
   });
@@ -133,7 +133,7 @@ describe("buildHopCallback — session-scoped pull budget registry", () => {
     const cb = buildHopCallback(makeCtx(sessionMgr), undefined, STUB_RUN_OPTIONS);
 
     const bundle = { pushMarkdown: "", pullTools: [], digest: "", manifest: {} } as any;
-    await cb("claude", bundle, { kind: "primary", attempt: 1 }, STUB_RUN_OPTIONS);
+    await cb("claude", bundle, { kind: "primary" }, STUB_RUN_OPTIONS);
     await cb("claude", bundle, { kind: "stale-retry", attempt: 2 }, STUB_RUN_OPTIONS);
 
     expect(seen).toHaveLength(2);
