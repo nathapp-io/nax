@@ -2332,3 +2332,58 @@ drop-in swap because they assert against local capture arrays and `makeLogger` e
 E's number is also marked **soft** in the handoff: 29 errors across 9 small groups plus a tail of
 singletons is not one recipe applied 29 times, and a handoff that quotes a hard number invites
 the executor to reach it.
+
+## 40. Batch 3 landed (289 → 246) and its two escalations — one fixed, one refused
+
+PR #1700 drained clusters B and E: **289 → 248**, 22 commits, one file per commit. Verified
+independently on the branch, not taken from the report: test typecheck 248, `src` tsc 0, every
+escape-hatch counter flat (`asAny=1386 … nonNullAssert=827`), `as unknown as` 102, per-file gate
+**no file worse and no new file with errors**, `check:all` 25/25, full suite green
+(14132 + 1137 + 38 pass, 0 fail). −41 against a −38 forecast; the surplus is masked collateral
+the commits name individually.
+
+Both escalations were the same shape — **an error whose wrong side is `src/`** — and they
+resolve in opposite directions. That is the point of this section.
+
+### Escalation 1 — `ModelsConfig` was stricter than its own runtime contract. Fixed.
+
+`schema-types.test.ts` had to keep an incomplete `codex` tier map to exercise
+`resolveModelForAgent`'s fallback, and ate a `TS2739` for it. The type said every agent defines
+all three tiers; **nothing else in the system agreed**: `resolveModelForAgent` reads
+`models[agent]?.[tier]`, falls back to the default agent, and throws `MODEL_NOT_FOUND` only when
+neither has it, while `PerAgentModelMapSchema` is a plain `z.record` with no tier requirement.
+The type made its own fallback branch unexpressible.
+
+`ModelsConfig = Record<string, Partial<ModelMap>>` — **0 src errors, 248 → 246**, clearing the
+escalated site *and a second, unflagged instance at line 184*. No ADR governs this type.
+`fix/1514-escalations-src-types` @ `873277a76`.
+
+### Escalation 2 — `DispatchContext.sessionManager`. Refused: the test is wrong, not the type.
+
+`run-completion-session-close.test.ts:69` asserts `closeAllRunSessions` is *not* called when
+`sessionManager` is omitted, and cannot construct that input without a forbidden cast.
+
+Making the field optional measures beautifully — **0 src errors** — and is still the wrong fix.
+**ADR-020 §D3 deliberately dropped the `?` from `sessionManager` and fixed every resulting `??`
+fallback site in the same PR**, so that "the compiler surfaces every consumer that must thread
+them". Re-adding the `?` reverses a shipped decision to buy one test-typecheck error.
+
+What the measurement actually found is two **ADR-020 misses**: `run-completion.ts:403`
+(`if (options.sessionManager)`) and the `options.agentManager ? … : undefined` on the next line
+are pre-ADR-020 residue. Every typed caller supplies both — `runner-completion.ts:323` threads
+them explicitly — so both branches are now always taken, and the test at :69 pins the false
+branch of a condition that can no longer be false. The honest fix is to retire the dead guards
+and the test with them; that is a small correctness change to run completion and an ADR
+follow-up, not a test-debt edit. **Left open for a decision.**
+
+### The control that made the difference
+
+`agentManager` looks identical to `sessionManager` at the call site — `context.ts:74` even
+optional-chains it. Measuring it the same way gives **9 src errors**: it is genuinely required
+and the optional-chain is noise. One field of the same interface is a lie and its neighbour is
+not, and only the compiler could tell them apart.
+
+**The rule:** "0 src errors when I loosen it" proves the *code* tolerates the change. It says
+nothing about whether the constraint was **intended** — grep `docs/adr/` for the type before
+concluding the type is wrong. Escalation 1 had no ADR and the schema on its side; escalation 2
+had an ADR that had explicitly considered and rejected the change.
