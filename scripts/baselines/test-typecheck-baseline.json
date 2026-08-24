@@ -1,6 +1,6 @@
 {
-  "count": 326,
-  "updatedAt": "2026-08-24T12:53:55.204Z",
+  "count": 325,
+  "updatedAt": "2026-08-24T12:54:42.803Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -40,7 +40,6 @@
     "test/unit/analyze/scanner.test.ts": 1,
     "test/unit/bakeoff/coordinator.test.ts": 3,
     "test/unit/bakeoff/ranking.test.ts": 4,
-    "test/unit/cli/features-resolve.test.ts": 1,
     "test/unit/cli/plan-callop.test.ts": 2,
     "test/unit/cli/plan-debate.test.ts": 1,
     "test/unit/cli/plan-decompose-guards.test.ts": 1,

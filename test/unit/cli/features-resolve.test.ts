@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { resolveFeatureSpec } from "@/cli/features-resolve";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -386,7 +386,8 @@ describe("testPatterns", () => {
     const naxDir = initNaxRepo();
     createFeature(naxDir, "feat-x", { specMd: "# spec" });
     const r = await resolveFeatureSpec("feat-x", tempDir);
-    expect(["per-package", "root-config", "detected", "fallback"]).toContain(r.testPatterns?.resolution);
+    assertDefined(r.testPatterns, "testPatterns");
+    expect(["per-package", "root-config", "detected", "fallback"]).toContain(r.testPatterns.resolution);
   });
 
   test("survives JSON round-trip, which is how the flow consumes it", async () => {
