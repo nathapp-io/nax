@@ -12,6 +12,7 @@ const makeSlicedConfig = (
 ): AgentManagerConfig => ({
   agent: agent as AgentManagerConfig["agent"],
   execution: execution as unknown as AgentManagerConfig["execution"],
+  profile: "default",
 });
 
 describe("AgentManager — narrowed config (Pick<NaxConfig, 'agent' | 'execution'>)", () => {

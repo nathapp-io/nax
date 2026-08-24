@@ -193,7 +193,12 @@ describe("getNextStory() — run order S1-I1 -> S1-I2 (retry) -> S2-I1", () => {
     // Simulate: US-001 was escalated — status reset to "pending" but has prior attempts
     prd.userStories[0].status = "pending";
     prd.userStories[0].attempts = 1;
-    prd.userStories[0].routing = { complexity: "simple", modelTier: "balanced", testStrategy: "test-after" };
+    prd.userStories[0].routing = {
+      complexity: "simple",
+      modelTier: "balanced",
+      testStrategy: "test-after",
+      reasoning: "",
+    };
 
     // getNextStory should prioritize US-001 (escalated, pending with attempts)
     const pick = getNextStory(prd, "US-001", maxRetries);

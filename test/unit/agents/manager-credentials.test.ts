@@ -48,7 +48,8 @@ describe("AgentManager.validateCredentials (#518)", () => {
       protocol: "acp" as const,
     };
     const warn = mock(() => {});
-    const manager = new AgentManager(config, registry, { logger: { warn } });
+    const info = mock(() => {});
+    const manager = new AgentManager(config, registry, { logger: { warn, info } });
     await manager.validateCredentials();
     expect(
       manager.resolveFallbackChain("claude", {

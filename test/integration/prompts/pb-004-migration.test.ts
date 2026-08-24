@@ -150,7 +150,9 @@ describe("PromptBuilder.withLoader(workdir, config)", () => {
     mkdirSync(dirname(absPath), { recursive: true });
     writeFileSync(absPath, overrideContent);
 
-    const config = makeConfig({ prompts: { overrides: { "test-writer": relPath } } });
+    const config = makeConfig({
+      prompts: { overrides: { "test-writer": relPath }, behavioralGuardrails: "lite" },
+    });
     const story = makeStory();
 
     // FAILS: withLoader does not exist on PromptBuilder
@@ -163,7 +165,10 @@ describe("PromptBuilder.withLoader(workdir, config)", () => {
 
   test("withLoader falls back to default when override file is absent", async () => {
     const config = makeConfig({
-      prompts: { overrides: { "test-writer": ".nax/prompts/nonexistent.md" } },
+      prompts: {
+        overrides: { "test-writer": ".nax/prompts/nonexistent.md" },
+        behavioralGuardrails: "lite",
+      },
     });
     const story = makeStory({ title: "FALLBACK_STORY_TITLE" });
 
@@ -361,7 +366,9 @@ describe("PromptBuilder.withLoader override content integration", () => {
       const absPath = join(tmpDir, relPath);
       mkdirSync(dirname(absPath), { recursive: true });
       writeFileSync(absPath, marker);
-      const config = makeConfig({ prompts: { overrides: { [key]: relPath } } });
+      const config = makeConfig({
+        prompts: { overrides: { [key]: relPath }, behavioralGuardrails: "lite" },
+      });
       const story = makeStory({ title });
       const prompt = await (PromptBuilder.for(role, opts as never) as any)
         .withLoader(tmpDir, config)

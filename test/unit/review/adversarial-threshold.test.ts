@@ -156,7 +156,11 @@ function makeAgentManager(llmResponse: string, cost = 0): IAgentManager {
       estimatedCostUsd: cost,
       agentFallbacks: [] as unknown[],
     }),
-    completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" as const }),
+    completeFn: async () => ({
+      output: llmResponse,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: cost,
+    }),
     runWithFallbackFn: async () => ({
       result: {
         success: true as const,

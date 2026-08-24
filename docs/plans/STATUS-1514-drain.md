@@ -2402,3 +2402,109 @@ not, and only the compiler could tell them apart.
 nothing about whether the constraint was **intended** — grep `docs/adr/` for the type before
 concluding the type is wrong. Escalation 1 had no ADR and the schema on its side; escalation 2
 had an ADR that had explicitly considered and rejected the change.
+
+## 41. Batch-4 prep — the A2 recipe prototyped, and A is smaller than §38 measured (2026-08-24)
+
+Nothing landed. Four sites were edited on `main` @ `aba3f9b84`, measured, and reverted; the
+tree is back at 245 with every counter at baseline. `HANDOFF-1514-tail-recipes-batch4.md`
+carries the result.
+
+### The recipe needs a discovery step, and that is the finding
+
+§38 left cluster A's A2 sub-family as "looks mechanical, unverified". It is mechanical — but
+**the error message does not say what is wrong**, because `mock()` wraps the callback and tsc
+reports the whole `Mock<…>` as unassignable. Dropping the `mock()` wrapper and annotating the
+local with `typeof _deps.<slot>` makes tsc name the missing properties exactly. That also
+solves the "the result type is not exported" problem for free: `RunTestsResult` is private to
+`full-suite-gate.ts`, but `FullSuiteGateDeps` is exported and the indexed slot type reaches
+through it.
+
+The same discovery step separates A2 from A1 in one compile: "missing the following
+properties" → add the fields; "`string` is not assignable to `"typescript" | …`" → keep the
+annotation, that *was* the fix.
+
+| Prototype | Fix | Errors | Tests |
+|:--|:--|--:|:--|
+| `orchestrator-totals.test.ts:40` | add `parsedSummary`, `timedOut` | 245 → 244 | 3 pass / 7 expect, identical |
+| `story-orchestrator-failureCategory.test.ts:154` | add `timedOut` | 245 → 244 | 6 pass / 6 expect, identical |
+| `semantic-agent-session.test.ts:60,73` | `CompleteResult` re-shape | 245 → **243** | 20 pass / 37 expect, identical |
+| `plan.test.ts:578` | annotate `Promise<SourceRoot[]>` | 245 → 244 | 46 pass / 99 expect, identical |
+
+### Cluster A is 11 errors, not 42 — and that is why batch 4 is not "cluster A"
+
+§38 sized A at 46 by pattern-matching the target type against `^\(`. Reading all 42 surviving
+rows one at a time reclassifies most of them: 12 are `TS2352` sites that **already carry an
+`as` cast** (touching them risks `looseCast`/`asNever`, and there is no slack), 5 are the
+`AgentResult`-vs-anonymous-clone family whose wrong side is `src/`, 7 are parameter-type or
+return-type mismatches that share nothing with the recipe, 2 are §38's load-bearing A3, 2 are
+the `CallOpFn` tier-3 exception, 2 the known config-slice annotation residue, and 1 a retired
+`PromptOptimizerResult` contract. What is left that the recipe actually fits is **11**
+(11 + 12 + 5 + 7 + 2 + 2 + 2 + 1 = 42, checked against the row list, not estimated).
+
+Eleven is below §39's delegable bar. The batch clears it only because the same recipe covers
+the **16 surviving `TS2741` rows** — cluster E's residue, where tsc names the missing property
+outright and no discovery step is needed. F1 + F2 = ~27 errors, ~20 files, one family.
+
+**The lesson is §39's, one level up:** a cluster sized by pattern-matching the *error text* is
+an upper bound, not a count. §38 sized A from the target type's shape and got 46; reading the
+rows got 11 in scope. The re-read cost an hour and it moved five rows into "escalate, the
+wrong side is `src/`" that a delegate would otherwise have fixed the fast way.
+
+### Two hazards worth carrying forward
+
+- **A dead fixture key can be carrying a live value.** The `CompleteResult` mocks pass
+  `costUsd: cost` — a key the type does not have — while `estimatedCostUsd` (which the type
+  requires) is absent. The fix is only correct because the `cost` parameter is plainly meant to
+  reach the consumer. Deleting a dead key that holds a non-default value is a behaviour change.
+- **`bun run lint:fix` after every edit.** An added return-type annotation pushes lines past
+  biome's width and reorders imports; all four prototypes failed `biome check` until formatted.
+
+## 42. Batch 4 landed — the fixture-shape family (245 → 219, 2026-08-24)
+
+On `chore/1514-tail-batch4-handoff`. §41's estimate was ~218; the tree landed at **219** — the
+handoff's declared "soft" number (27 errors across ~20 files, some files carrying a second
+masked error). 26 errors cleared across **21 files**, one commit per file, all per-file gates
+green, no file's count rose, no new file with errors.
+
+### All rolls in the in-scope table landed
+
+- **F1 (function-slot `TS2322`, 11 rows):** the four proven recipes reproduced exactly
+  (`orchestrator-totals`, `failureCategory`, `semantic-agent-session` 245→243 second error was
+  a dead key left alone, `plan.test.ts`), plus `adversarial-threshold`, `acceptance-loop-routing`,
+  `manager-phase-b-session`, `replay.test.ts`, `unified-executor-session-close`.
+- **F2 (`TS2741`, 16 rows):** all named properties added inert, including `report.test.ts`'s
+  `toJSON` handled per §41's caveat via `new TokenUsage(...)` (`TokenUsage` is a value import
+  from `@/metrics/types`, not the type-only `@/metrics` re-export).
+
+### Two unmasks the handoff's hazard section predicted
+
+- **`acceptance-loop-routing`** — dropping the `complete` mock's wrong shape unmasked
+  `run`/`plan`/`decompose`, which do not exist on `AgentAdapter` (ACP has no `run`). Nothing in
+  the test reads any of the three; the keys were dead. Removed them and the unpassed `result`
+  param (2 → 1, the surviving `analyze` TS2339 was pre-existing).
+- **`runner-retry.test.ts`** — fixing the `hooks` key unmasked a `PipelineContext` missing
+  `rootConfig`/`projectDir`/dispatch fields; the hand-rolled `makeCtx` simply predates
+  `makeDispatchContext()`. Completed it with `makeDispatchContext()` (1 → 0). The extra fields
+  were never read, so this is the §6 danger ("check:file-sizes rejects line-adding fixes")
+  avoided, not a behaviour change.
+
+### Three things worth recording
+
+- **`check:file-sizes` rejects a line-adding annotation in a grandfathered file.** The F1b
+  fix at `plan.test.ts:578` grew the file 1202 → 1204 and the pre-commit gate failed. The
+  annotation moved onto `mock`'s type parameter
+  (`mock<typeof _planDeps.scanSourceRoots>`) which is line-neutral. This is §6's
+  `check:file-sizes` trap, hit *by* the annotation recipe §41 prescribed; the recipe's "keep
+  the annotation" and the file-size ratchet do not always agree.
+- **`manager-*` fixtures needed sibling fields.** `manager-credentials` wanted `info` next to
+  `warn` on `LoggerLike`; `manager-narrowed`'s `AgentManagerConfig` pick grew `profile`. Both
+  are the ordinary "add the named property and its sibling" shape — the sibling was only
+  visible because tsc names one property at a time.
+- **All eight escape hatches and `as unknown as` stayed flat** (102; `asAny=1386 …
+  nonNullAssert=827`). The only counter that moved was the typecheck ratchet, re-baselined
+  245 → 219 in the same PR. The §40 slack-leak instruction applied; it has now recurred four
+  times and each was closed the same way.
+
+Verify: `bun run check:all` 25/25 green, full suite green across all three phases
+(1174 tests / 116 files), per-file typecheck diff against the 245 baseline showed zero risen
+files.

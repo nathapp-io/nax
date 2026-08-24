@@ -10,7 +10,7 @@
 
 import { describe, expect, mock, test } from "bun:test";
 import type { DiagnosisResult } from "@/acceptance/types";
-import type { AgentAdapter, AgentResult } from "@/agents/types";
+import type { AgentAdapter } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { AcceptanceFixConfig, NaxConfig } from "@/config/schema";
 import type { PipelineEventEmitter } from "@/pipeline/events";
@@ -22,19 +22,12 @@ import { makeAgentAdapter } from "@test/helpers";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeMockAgentAdapter(result?: Partial<AgentResult>): AgentAdapter {
-  const defaultResult: AgentResult = {
-    success: true,
-    exitCode: 0,
-    output: '{"verdict":"source_bug","reasoning":"test reasoning","confidence":0.9}',
-    rateLimited: false,
-    durationMs: 1000,
-    estimatedCostUsd: 0.05,
-  };
-  const mockRun = mock(async () => ({ ...defaultResult, ...result }));
-  const mockComplete = mock(async () => ({ output: "{}", costUsd: 0.01, source: "exact" as const }));
-  const mockPlan = mock(async () => ({ stories: [], output: "", specContent: "" }));
-  const mockDecompose = mock(async () => ({ stories: [], output: "" }));
+function makeMockAgentAdapter(): AgentAdapter {
+  const mockComplete = mock(async () => ({
+    output: "{}",
+    tokenUsage: { inputTokens: 0, outputTokens: 0 },
+    estimatedCostUsd: 0.01,
+  }));
   const mockIsInstalled = mock(async () => true);
   const mockBuildCommand = mock(() => ["mock", "cmd"]);
   return makeAgentAdapter({
@@ -47,10 +40,7 @@ function makeMockAgentAdapter(result?: Partial<AgentResult>): AgentAdapter {
       features: new Set(["tdd", "review", "refactor"]),
     },
     isInstalled: mockIsInstalled,
-    run: mockRun,
     buildCommand: mockBuildCommand,
-    plan: mockPlan,
-    decompose: mockDecompose,
     complete: mockComplete,
   });
 }

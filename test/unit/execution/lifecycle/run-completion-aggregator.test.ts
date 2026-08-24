@@ -52,6 +52,7 @@ function makeEmptySnapshot(): CostSnapshot {
   return {
     totalCostUsd: 0,
     totalEstimatedCostUsd: 0,
+    totalExactCostUsd: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
     callCount: 0,

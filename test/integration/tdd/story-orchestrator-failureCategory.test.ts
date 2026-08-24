@@ -155,6 +155,7 @@ describe("buildPlanForStrategy — failure scenarios", () => {
       passed: false,
       failed: 1,
       output: "forced suite failure\n",
+      timedOut: false,
       parsedSummary: {
         passed: 0,
         failed: 1,

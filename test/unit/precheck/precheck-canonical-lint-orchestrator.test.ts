@@ -39,6 +39,7 @@ const createMockConfig = (cwd: string, overrides: Partial<ExecutionConfig> = {})
     escalation: {
       enabled: true,
       tierOrder: [],
+      resetMode: "initial",
     },
   },
   quality: makeConfigSlice("quality", {}),
