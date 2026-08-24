@@ -2062,8 +2062,50 @@ deferred, unmeasured beyond a baseline count:
   batch 2 §4).
 - **`TS7024`** implicit-`any` recursive return — 9, needs a real return type worked out per
   function; cheap to get wrong and invisible when wrong.
-- **`TS2352` → `Record<string, unknown>`** — 7 errors, 7 files, still unverified against
-  either the `src/` side or the siblings. Do not assume it matches §22's drained cluster
-  without measuring first.
-- **`triggers.test.ts:75`** — one `TS2322`, left over from batch 2 cluster F.
+- **`DispatchContext`** (3) and the rest of the long tail: per-site, no recipe.
+
+## 36. `triggers.test.ts` + the `TS2352` → `Record<string, unknown>` cluster, measured (346 → 340)
+
+Still on `chore/1514-tail-cluster-g`, 6 more commits, one file each per G4.
+
+`triggers.test.ts:75` (347 → 346): `makeConfig(triggers: Record<string, unknown>)` was looser
+than what `makeNaxConfig({interaction: {triggers}}` actually needs.
+`InteractionConfig["triggers"]` (imported from `@/config/runtime-types` — not re-exported
+through the `@/config` barrel) is the real type; every call site already passed values
+matching it.
+
+§35's finding generalises: **measure the `TS2352` → `Record<string, unknown>` cluster before
+assuming it matches §22.** It didn't, on both counts. §22 was `NaxConfigSchema.safeParse`'s
+input side (a cast on the source of a spread feeding something typed `unknown` — almost none
+of those casts did anything). This round's 7 sites, re-grepped fresh (6 files, not 7 — one
+file had 2), were read/write sites instead — a value with a real, narrower type being
+force-cast to `Record<string, unknown>` so a property read or reassignment would compile:
+
+| file | what the cast was hiding | fix | landed |
+|:--|:--|:--|--:|
+| `agents/acp/adapter.test.ts` | none — `client.createSession = mock(...)` already matched `MockAcpClient`'s declared signature | cast deleted outright (§22-shaped: did nothing) | −1 |
+| `cli/plan.test.ts` | `(s as Record<string, unknown>).complexity` read a property `UserStory` doesn't have (`routing.complexity` is the real path) — **but the field's presence in the fixture is load-bearing**, `validatePlanOutput` accepts a legacy top-level `complexity` too (`routing.complexity ?? complexity`, `src/prd/schema.ts:187`). Deleting it outright breaks 5 tests; the read was dead, the write wasn't | literal `complexity: "simple"` (line-neutral — file is grandfathered at 1202 lines) | −1 |
+| `execution/lifecycle/acceptance-fix.test.ts` | `capturedInput` declared `Record<string, unknown>` for no reason — the real type (`AcceptanceDiagnoseInput`, the actual param type of `_diagnosisDeps.callOp`) was one import away | typed directly, cast dropped | −1 |
+| `execution/lifecycle/mutation-summary-completion.test.ts` | `mock(() => {})` with no declared params makes every `.mock.calls[n]` element `undefined` — cast was compensating for an untyped mock, not a real narrowing | typed the mock against `Logger.warn(stage, message, data?)`; cleared a second latent error alongside the targeted one | −2 |
+| `operations/setup-generate.test.ts` | double-cast (`Record<string, unknown>` then a hand-rolled shape) around `result.config`, which is already `NaxConfig` (non-null) on `setupGenerateOp`'s Output type | direct `.quality.commands.test` access | −1 |
+| `bakeoff/coordinator.test.ts` (2 sites) | **genuinely load-bearing — left alone.** `withCoordinatorDeps` saves/restores `_coordinatorDeps` by dynamic key (`Object.keys(overrides) as Array<keyof BakeoffCoordinatorDeps>`, `saved[key] = _coordinatorDeps[key]`). Tried and reverted: this hits TypeScript's correlated-union-key problem — assigning `T[K]` to `Partial<T>[K]` for a `K` that's a *union* of several unrelated function-signature types doesn't type-check, because TS can't prove `saved[key]` and `_coordinatorDeps[key]` pick the same union member at the same iteration. The `Record<string, unknown>` cast is the least-bad way to do this generic save/restore pattern | reverted, unchanged | 0 |
+
+Every commit: syntax guard, per-file typecheck diff, `check:test-escape-hatches` /
+`check:test-as-unknown-as` flat or better (both `anyType` and `looseCast` dropped as a
+bonus — untyped `mock()` calls and single-`as` casts were removed alongside the targeted
+`TS2352`s, never added), matching test pass/fail counts before and after (`git stash` /
+`git stash pop` around each file), `check:all` 25/25 green, full suite green after the final
+commit (1137/37/0 unit+integration, 38/0 UI). `346 → 340`, 170 files.
+
+**The `TS2352` → `Record<string, unknown>` cluster is drained** except `bakeoff/coordinator.test.ts`'s
+2 sites, which are a correct, documented exception — not deferred debt.
+
+## Next
+
+Residue: **340 across 170 files.**
+
+- **`TS2769`** — 23, scattered, no shared cause found across three prior passes now (batch 1
+  §5, batch 2 §4, this round did not re-check it).
+- **`TS7024`** implicit-`any` recursive return — 9, needs a real return type worked out per
+  function; cheap to get wrong and invisible when wrong.
 - **`DispatchContext`** (3) and the rest of the long tail: per-site, no recipe.
