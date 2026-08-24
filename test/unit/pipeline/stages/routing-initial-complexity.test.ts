@@ -13,6 +13,7 @@ import type { _routingDeps as RoutingDeps } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
 import type { StoryRouting } from "@/prd/types";
+import type { RoutingDecision } from "@/routing";
 import { makeNaxConfig, makeStory } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-routing-initial-complexity-test-${randomUUID()}`;
@@ -172,13 +173,14 @@ describe("routingStage - initialComplexity never overwritten after first classif
       reasoning: "escalated after failure",
     };
 
-    _routingDeps.resolveRouting = mock(() =>
-      Promise.resolve({
-        complexity: "expert",
-        modelTier: "powerful",
-        testStrategy: "three-session-tdd",
-        reasoning: "re-classified",
-      }),
+    _routingDeps.resolveRouting = mock(
+      (): Promise<RoutingDecision> =>
+        Promise.resolve({
+          complexity: "expert",
+          modelTier: "powerful",
+          testStrategy: "three-session-tdd",
+          reasoning: "re-classified",
+        }),
     );
     _routingDeps.complexityToModelTier = mock(() => "fast" as const);
     _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
@@ -206,13 +208,14 @@ describe("routingStage - initialComplexity never overwritten after first classif
       reasoning: "persisted from first classify, escalated",
     };
 
-    _routingDeps.resolveRouting = mock(() =>
-      Promise.resolve({
-        complexity: "complex",
-        modelTier: "balanced",
-        testStrategy: "three-session-tdd",
-        reasoning: "fresh",
-      }),
+    _routingDeps.resolveRouting = mock(
+      (): Promise<RoutingDecision> =>
+        Promise.resolve({
+          complexity: "complex",
+          modelTier: "balanced",
+          testStrategy: "three-session-tdd",
+          reasoning: "fresh",
+        }),
     );
     _routingDeps.complexityToModelTier = mock(() => "balanced" as const);
     _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
@@ -241,13 +244,14 @@ describe("routingStage - initialComplexity never overwritten after first classif
       reasoning: "legacy persisted routing",
     };
 
-    _routingDeps.resolveRouting = mock(() =>
-      Promise.resolve({
-        complexity: "medium",
-        modelTier: "balanced",
-        testStrategy: "three-session-tdd",
-        reasoning: "re-classified",
-      }),
+    _routingDeps.resolveRouting = mock(
+      (): Promise<RoutingDecision> =>
+        Promise.resolve({
+          complexity: "medium",
+          modelTier: "balanced",
+          testStrategy: "three-session-tdd",
+          reasoning: "re-classified",
+        }),
     );
     _routingDeps.complexityToModelTier = mock(() => "fast" as const);
     _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));

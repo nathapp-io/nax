@@ -1,6 +1,6 @@
 {
-  "count": 411,
-  "updatedAt": "2026-08-24T08:36:35.545Z",
+  "count": 408,
+  "updatedAt": "2026-08-24T08:38:24.434Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -149,7 +149,6 @@
     "test/unit/pipeline/stages/queue-check.test.ts": 1,
     "test/unit/pipeline/stages/routing-greenfield-monorepo.test.ts": 3,
     "test/unit/pipeline/stages/routing-idempotence.test.ts": 1,
-    "test/unit/pipeline/stages/routing-initial-complexity.test.ts": 3,
     "test/unit/pipeline/stages/routing-initial-model-tier.test.ts": 1,
     "test/unit/pipeline/storyid-events.test.ts": 1,
     "test/unit/pipeline/subscribers/events-writer.test.ts": 5,
