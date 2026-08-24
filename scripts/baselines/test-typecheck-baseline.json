@@ -1,6 +1,6 @@
 {
-  "count": 593,
-  "updatedAt": "2026-08-24T05:18:12.895Z",
+  "count": 583,
+  "updatedAt": "2026-08-24T05:23:28.567Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -19,7 +19,6 @@
     "test/integration/execution/rectification-routing.test.ts": 3,
     "test/integration/execution/runner-parallel-metrics-rectification-events.test.ts": 2,
     "test/integration/execution/runner-parallel-metrics.test.ts": 2,
-    "test/integration/execution/runner-plugin-integration.test.ts": 10,
     "test/integration/execution/scratch-per-role.test.ts": 1,
     "test/integration/execution/status-file-integration.test.ts": 4,
     "test/integration/execution/verdict-cleanup.test.ts": 1,

@@ -12,16 +12,15 @@
  * 5. Plugin loading errors are logged but do not abort the run
  */
 
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import * as agentModule from "@/agents";
 import type { NaxConfig } from "@/config/schema";
 import { run } from "@/execution/runner";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { NaxPlugin } from "@/plugins/types";
-import { makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // Test fixture helpers
 async function createTempDir(): Promise<string> {
@@ -62,56 +61,10 @@ async function createMinimalPRD(workdir: string, feature: string): Promise<strin
 }
 
 async function createMinimalConfig(): Promise<NaxConfig> {
-  return {
-    autoMode: {
-      defaultAgent: "claude-code",
-      complexityRouting: {
-        simple: "fast",
-        medium: "balanced",
-        complex: "powerful",
-        expert: "powerful",
-      },
-      escalation: {
-        enabled: true,
-        tierOrder: [
-          { tier: "fast", attempts: 1 },
-          { tier: "balanced", attempts: 1 },
-        ],
-      },
-    },
-    models: {
-      fast: { provider: "anthropic", modelName: "claude-3-5-haiku-20241022" },
-      balanced: { provider: "anthropic", modelName: "claude-3-5-sonnet-20241022" },
-      powerful: { provider: "anthropic", modelName: "claude-3-7-sonnet-20250219" },
-    },
-    execution: {
-      maxIterations: 2,
-      costLimit: 100,
-      iterationDelayMs: 0,
-      maxStoriesPerFeature: 100,
-    },
-    routing: {
-      strategy: "simple",
-    },
-    tdd: {
-      mode: "standard",
-      testStrategy: "test-after",
-      testCommand: "echo 'tests pass'",
-    },
-    quality: {
-      commands: {},
-    },
-    acceptance: {
-      enabled: false,
-      testCommand: "",
-      maxRetries: 0,
-    },
-    analyze: {
-      model: "balanced",
-      maxContextTokens: 100000,
-    },
-    plugins: [],
-  } as NaxConfig;
+  return makeNaxConfig({
+    execution: { maxIterations: 2, costLimit: 100, iterationDelayMs: 0, maxStoriesPerFeature: 100 },
+    acceptance: { enabled: false },
+  });
 }
 
 async function createPluginFile(dir: string, filename: string, plugin: NaxPlugin): Promise<void> {
@@ -145,27 +98,13 @@ export default {
 
 describe("Runner Plugin Integration (US-001)", () => {
   let tempDir: string;
-  let getAgentSpy: any;
 
   beforeEach(async () => {
     tempDir = await createTempDir();
-
-    // Mock getAgent to return a valid agent
-    getAgentSpy = spyOn(agentModule, "getAgent").mockReturnValue({
-      name: "claude-code",
-      binary: "claude",
-      isInstalled: async () => true,
-      spawn: async () => ({
-        success: true,
-        estimatedCostUsd: 0,
-        transcript: "",
-      }),
-    } as any);
   });
 
   afterEach(async () => {
     await cleanupTempDir(tempDir);
-    getAgentSpy?.mockRestore();
   });
 
   test("AC1: Runner calls loadPlugins() during initialization before story loop starts", async () => {
@@ -203,7 +142,8 @@ describe("Runner Plugin Integration (US-001)", () => {
         prdPath,
         workdir: tempDir,
         config,
-        hooks: { hooks: [] },
+        hooks: { hooks: {} },
+        statusFile: path.join(tempDir, "status.json"),
         feature: "test-feature",
         dryRun: true,
         skipPrecheck: true,
@@ -247,7 +187,8 @@ describe("Runner Plugin Integration (US-001)", () => {
       prdPath,
       workdir: tempDir,
       config,
-      hooks: { hooks: [] },
+      hooks: { hooks: {} },
+      statusFile: path.join(tempDir, "status.json"),
       feature: "test-feature",
       dryRun: true,
       skipPrecheck: true,
@@ -294,7 +235,8 @@ export default {
       prdPath,
       workdir: tempDir,
       config,
-      hooks: { hooks: [] },
+      hooks: { hooks: {} },
+      statusFile: path.join(tempDir, "status.json"),
       feature: "test-feature",
       dryRun: true,
       skipPrecheck: true,
@@ -348,7 +290,8 @@ export default {
         prdPath,
         workdir: tempDir,
         config,
-        hooks: { hooks: [] },
+        hooks: { hooks: {} },
+        statusFile: path.join(tempDir, "status.json"),
         feature: "test-feature",
         dryRun: true,
         skipPrecheck: true,
@@ -381,7 +324,8 @@ export default {
         prdPath,
         workdir: tempDir,
         config,
-        hooks: { hooks: [] },
+        hooks: { hooks: {} },
+        statusFile: path.join(tempDir, "status.json"),
         feature: "test-feature",
         dryRun: true,
         skipPrecheck: true,
@@ -430,7 +374,8 @@ export default {
       prdPath,
       workdir: tempDir,
       config,
-      hooks: { hooks: [] },
+      hooks: { hooks: {} },
+      statusFile: path.join(tempDir, "status.json"),
       feature: "test-feature",
       dryRun: true,
       skipPrecheck: true,
@@ -486,7 +431,8 @@ export default {
         prdPath,
         workdir: tempDir,
         config,
-        hooks: { hooks: [] },
+        hooks: { hooks: {} },
+        statusFile: path.join(tempDir, "status.json"),
         feature: "test-feature",
         dryRun: true,
         skipPrecheck: true,
@@ -534,7 +480,8 @@ export default {
       prdPath,
       workdir: tempDir,
       config,
-      hooks: { hooks: [] },
+      hooks: { hooks: {} },
+      statusFile: path.join(tempDir, "status.json"),
       feature: "test-feature",
       dryRun: true,
       skipPrecheck: true,
