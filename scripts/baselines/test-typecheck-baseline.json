@@ -1,6 +1,6 @@
 {
-  "count": 525,
-  "updatedAt": "2026-08-24T06:04:14.469Z",
+  "count": 522,
+  "updatedAt": "2026-08-24T06:05:51.739Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -201,7 +201,6 @@
     "test/unit/review/runner.test.ts": 3,
     "test/unit/review/semantic-agent-session.test.ts": 2,
     "test/unit/review/semantic-categories.test.ts": 3,
-    "test/unit/review/semantic-parsing.test.ts": 3,
     "test/unit/review/semantic-prompt-response.test.ts": 3,
     "test/unit/review/semantic-signature-diff.test.ts": 4,
     "test/unit/routing/llm-batch-route.test.ts": 3,

@@ -48,7 +48,11 @@ function makeAgentManager(response: string, cost = 0) {
       estimatedCostUsd: cost,
       agentFallbacks: [],
     }),
-    completeFn: async () => ({ output: response, costUsd: cost, source: "mock" }),
+    completeFn: async () => ({
+      output: response,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: cost,
+    }),
     runWithFallbackFn: async (request) => {
       const result = {
         success: true,
@@ -62,7 +66,11 @@ function makeAgentManager(response: string, cost = 0) {
       return { result, fallbacks: [], bundle: request.bundle };
     },
     completeWithFallbackFn: async () => ({
-      result: { output: response, costUsd: cost, source: "mock" },
+      result: {
+        output: response,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: cost,
+      },
       fallbacks: [],
     }),
     runAsFn: async () => ({
@@ -74,7 +82,11 @@ function makeAgentManager(response: string, cost = 0) {
       estimatedCostUsd: cost,
       agentFallbacks: [] as unknown[],
     }),
-    completeAsFn: async () => ({ output: response, costUsd: cost, source: "mock" }),
+    completeAsFn: async () => ({
+      output: response,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: cost,
+    }),
     getAgentFn: () => makeAgentAdapter(),
   });
 }
