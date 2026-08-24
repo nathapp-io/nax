@@ -4,7 +4,7 @@ import type { RetryStrategy } from "@/agents";
 import { NaxError } from "@/errors";
 import { groundOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime, opSelector } from "@test/helpers";
+import { makeNaxConfig, makeTestRuntime, opModelResolver, opSelector } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -40,10 +40,10 @@ describe("groundOp — model resolution", () => {
   };
 
   test("model resolver returns tier string, ConfiguredModelObject, or default 'fast'; GrounderInput has no model field", () => {
-    expect(groundOp.model?.(input, makeBuildCtx({ model: "balanced" }))).toBe("balanced");
+    expect(opModelResolver(groundOp)(input, makeBuildCtx({ model: "balanced" }))).toBe("balanced");
     const modelObj = { agent: "claude", model: "claude-opus-4-7" };
-    expect(groundOp.model?.(input, makeBuildCtx({ model: modelObj }))).toEqual(modelObj);
-    expect(groundOp.model?.(input, makeBuildCtx())).toBe("fast");
+    expect(opModelResolver(groundOp)(input, makeBuildCtx({ model: modelObj }))).toEqual(modelObj);
+    expect(opModelResolver(groundOp)(input, makeBuildCtx())).toBe("fast");
     expect(Object.keys(input)).not.toContain("model");
   });
 });
