@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { validatePlanOutput } from "@/prd";
+import { assertDefined } from "@test/helpers";
 
 describe("PRD sanitizer preserves agentProfileId", () => {
   test("keeps routing.agentProfileId emitted by the planner", () => {
@@ -25,7 +26,10 @@ describe("PRD sanitizer preserves agentProfileId", () => {
       ],
     });
     const prd = validatePlanOutput(raw, "f", "feat/f");
-    expect(prd.userStories[0].routing.agentProfileId).toBe("opencode-structural");
+    const story = prd.userStories[0];
+    assertDefined(story, "prd.userStories[0]");
+    assertDefined(story.routing, "story.routing");
+    expect(story.routing.agentProfileId).toBe("opencode-structural");
   });
 
   test("omits agentProfileId when the planner did not emit one", () => {
@@ -46,6 +50,9 @@ describe("PRD sanitizer preserves agentProfileId", () => {
       ],
     });
     const prd = validatePlanOutput(raw, "f", "feat/f");
-    expect(prd.userStories[0].routing.agentProfileId).toBeUndefined();
+    const story = prd.userStories[0];
+    assertDefined(story, "prd.userStories[0]");
+    assertDefined(story.routing, "story.routing");
+    expect(story.routing.agentProfileId).toBeUndefined();
   });
 });
