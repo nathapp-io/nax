@@ -36,6 +36,13 @@ function makeMockRuntime() {
 }
 
 function makeAcceptanceCtx(withRuntime = false): AcceptanceLoopContext {
+  // `withRuntime` is retained for readability at call sites (fast-path tests
+  // never dereference `ctx.runtime`), but DispatchContext requires `runtime`
+  // (and its `agentManager`/`sessionManager` siblings) unconditionally, so
+  // both branches must supply a valid mock — sourced from ONE runtime so
+  // `ctx.agentManager === ctx.runtime.agentManager`, as in production.
+  const runtime = makeMockRuntime();
+  void withRuntime;
   return {
     config: makeConfig(),
     prd: { userStories: [{ id: "US-001", acceptanceCriteria: [] }] } as unknown as AcceptanceLoopContext["prd"],
@@ -50,9 +57,11 @@ function makeAcceptanceCtx(withRuntime = false): AcceptanceLoopContext {
     allStoryMetrics: [],
     pluginRegistry: {} as AcceptanceLoopContext["pluginRegistry"],
     statusWriter: {} as AcceptanceLoopContext["statusWriter"],
-    agentManager: { getDefault: () => "claude" } as unknown as AcceptanceLoopContext["agentManager"],
+    agentManager: runtime.agentManager,
+    sessionManager: runtime.sessionManager,
+    abortSignal: new AbortController().signal,
     acceptanceTestPaths: [{ testPath: "/tmp/features/test/.nax-acceptance.test.ts", packageDir: "/tmp/workdir" }],
-    runtime: withRuntime ? makeMockRuntime() : undefined,
+    runtime,
   };
 }
 
