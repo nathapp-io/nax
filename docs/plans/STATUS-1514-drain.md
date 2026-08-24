@@ -2458,3 +2458,53 @@ wrong side is `src/`" that a delegate would otherwise have fixed the fast way.
   reach the consumer. Deleting a dead key that holds a non-default value is a behaviour change.
 - **`bun run lint:fix` after every edit.** An added return-type annotation pushes lines past
   biome's width and reorders imports; all four prototypes failed `biome check` until formatted.
+
+## 42. Batch 4 landed — the fixture-shape family (245 → 219, 2026-08-24)
+
+On `chore/1514-tail-batch4-handoff`. §41's estimate was ~218; the tree landed at **219** — the
+handoff's declared "soft" number (27 errors across ~20 files, some files carrying a second
+masked error). 26 errors cleared across **21 files**, one commit per file, all per-file gates
+green, no file's count rose, no new file with errors.
+
+### All rolls in the in-scope table landed
+
+- **F1 (function-slot `TS2322`, 11 rows):** the four proven recipes reproduced exactly
+  (`orchestrator-totals`, `failureCategory`, `semantic-agent-session` 245→243 second error was
+  a dead key left alone, `plan.test.ts`), plus `adversarial-threshold`, `acceptance-loop-routing`,
+  `manager-phase-b-session`, `replay.test.ts`, `unified-executor-session-close`.
+- **F2 (`TS2741`, 16 rows):** all named properties added inert, including `report.test.ts`'s
+  `toJSON` handled per §41's caveat via `new TokenUsage(...)` (`TokenUsage` is a value import
+  from `@/metrics/types`, not the type-only `@/metrics` re-export).
+
+### Two unmasks the handoff's hazard section predicted
+
+- **`acceptance-loop-routing`** — dropping the `complete` mock's wrong shape unmasked
+  `run`/`plan`/`decompose`, which do not exist on `AgentAdapter` (ACP has no `run`). Nothing in
+  the test reads any of the three; the keys were dead. Removed them and the unpassed `result`
+  param (2 → 1, the surviving `analyze` TS2339 was pre-existing).
+- **`runner-retry.test.ts`** — fixing the `hooks` key unmasked a `PipelineContext` missing
+  `rootConfig`/`projectDir`/dispatch fields; the hand-rolled `makeCtx` simply predates
+  `makeDispatchContext()`. Completed it with `makeDispatchContext()` (1 → 0). The extra fields
+  were never read, so this is the §6 danger ("check:file-sizes rejects line-adding fixes")
+  avoided, not a behaviour change.
+
+### Three things worth recording
+
+- **`check:file-sizes` rejects a line-adding annotation in a grandfathered file.** The F1b
+  fix at `plan.test.ts:578` grew the file 1202 → 1204 and the pre-commit gate failed. The
+  annotation moved onto `mock`'s type parameter
+  (`mock<typeof _planDeps.scanSourceRoots>`) which is line-neutral. This is §6's
+  `check:file-sizes` trap, hit *by* the annotation recipe §41 prescribed; the recipe's "keep
+  the annotation" and the file-size ratchet do not always agree.
+- **`manager-*` fixtures needed sibling fields.** `manager-credentials` wanted `info` next to
+  `warn` on `LoggerLike`; `manager-narrowed`'s `AgentManagerConfig` pick grew `profile`. Both
+  are the ordinary "add the named property and its sibling" shape — the sibling was only
+  visible because tsc names one property at a time.
+- **All eight escape hatches and `as unknown as` stayed flat** (102; `asAny=1386 …
+  nonNullAssert=827`). The only counter that moved was the typecheck ratchet, re-baselined
+  245 → 219 in the same PR. The §40 slack-leak instruction applied; it has now recurred four
+  times and each was closed the same way.
+
+Verify: `bun run check:all` 25/25 green, full suite green across all three phases
+(1174 tests / 116 files), per-file typecheck diff against the 245 baseline showed zero risen
+files.
