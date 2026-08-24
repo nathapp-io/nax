@@ -9,7 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { ContextOrchestrator, DIGEST_RESERVE_TOKENS, FIXED_RENDER_OVERHEAD_TOKENS, _orchestratorDeps } from "@/context";
-import type { ContextProviderResult, ContextRequest, IContextProvider } from "@/context/engine/types";
+import type { ChunkKind, ContextProviderResult, ContextRequest, IContextProvider } from "@/context/engine/types";
 import { type MockLogger, makeLogger } from "@test/helpers";
 
 const BASE_REQUEST: ContextRequest = {
@@ -36,7 +36,7 @@ function makeProvider(id: string, result: Partial<ContextProviderResult> = {}): 
 
 function makeChunkResult(overrides: {
   id: string;
-  kind?: string;
+  kind?: ChunkKind;
   content?: string;
   tokens?: number;
   rawScore?: number;
