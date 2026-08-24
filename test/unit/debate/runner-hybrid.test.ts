@@ -7,7 +7,7 @@ import { _hybridDeps } from "@/debate/runner-hybrid";
 import type { HybridCtx } from "@/debate/runner-hybrid";
 import type { CallContext } from "@/operations";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
-import { makeMockAgentManager, makeSessionManager, withDepsRestore } from "@test/helpers";
+import { makeLogger, makeMockAgentManager, makeSessionManager, withDepsRestore } from "@test/helpers";
 
 function installCallOp(impl: typeof _hybridDeps.callOp) {
   const spy = mock(impl);
@@ -91,12 +91,7 @@ let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
 beforeEach(() => {
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
-  _debateSessionDeps.getSafeLogger = mock(() => ({
-    info: mock(() => {}),
-    debug: mock(() => {}),
-    warn: mock(() => {}),
-    error: mock(() => {}),
-  }));
+  _debateSessionDeps.getSafeLogger = mock(() => makeLogger());
 });
 
 afterEach(() => {
