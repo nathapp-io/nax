@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import type { SourceRoot } from "@/analyze/types";
 import { _planDeps, planCommand } from "@/cli";
 import type { PRD } from "@/prd/types";
 import { makeTempDir } from "@test/helpers";
@@ -140,10 +141,12 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   });
 
   test("injects monorepo hint when packages are discovered", async () => {
-    _planDeps.scanSourceRoots = mock(async () => [
-      { path: `${tmpDir}/packages/api`, language: "typescript", framework: "Express", testRunner: "jest" },
-      { path: `${tmpDir}/packages/web`, language: "typescript", framework: "Next.js", testRunner: "vitest" },
-    ]);
+    _planDeps.scanSourceRoots = mock(
+      async (): Promise<SourceRoot[]> => [
+        { path: `${tmpDir}/packages/api`, language: "typescript", framework: "Express", testRunner: "jest" },
+        { path: `${tmpDir}/packages/web`, language: "typescript", framework: "Next.js", testRunner: "vitest" },
+      ],
+    );
 
     await planCommand(tmpDir, makeNaxConfig(), {
       from: "/spec.md",
@@ -158,9 +161,11 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   });
 
   test("includes workdir field in schema when monorepo detected", async () => {
-    _planDeps.scanSourceRoots = mock(async () => [
-      { path: `${tmpDir}/packages/api`, language: "typescript", framework: "Express", testRunner: "jest" },
-    ]);
+    _planDeps.scanSourceRoots = mock(
+      async (): Promise<SourceRoot[]> => [
+        { path: `${tmpDir}/packages/api`, language: "typescript", framework: "Express", testRunner: "jest" },
+      ],
+    );
 
     await planCommand(tmpDir, makeNaxConfig(), {
       from: "/spec.md",
@@ -173,9 +178,11 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   });
 
   test("monorepo hint includes instruction to set workdir per story", async () => {
-    _planDeps.scanSourceRoots = mock(async () => [
-      { path: `${tmpDir}/packages/api`, language: "typescript", framework: "Express", testRunner: "jest" },
-    ]);
+    _planDeps.scanSourceRoots = mock(
+      async (): Promise<SourceRoot[]> => [
+        { path: `${tmpDir}/packages/api`, language: "typescript", framework: "Express", testRunner: "jest" },
+      ],
+    );
 
     await planCommand(tmpDir, makeNaxConfig(), {
       from: "/spec.md",
@@ -216,10 +223,12 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   });
 
   test("package paths in prompt are relative to repo root", async () => {
-    _planDeps.scanSourceRoots = mock(async () => [
-      { path: `${tmpDir}/packages/api`, language: "typescript", framework: "Express", testRunner: "jest" },
-      { path: `${tmpDir}/apps/web`, language: "typescript", framework: "Next.js", testRunner: "vitest" },
-    ]);
+    _planDeps.scanSourceRoots = mock(
+      async (): Promise<SourceRoot[]> => [
+        { path: `${tmpDir}/packages/api`, language: "typescript", framework: "Express", testRunner: "jest" },
+        { path: `${tmpDir}/apps/web`, language: "typescript", framework: "Next.js", testRunner: "vitest" },
+      ],
+    );
 
     await planCommand(tmpDir, makeNaxConfig(), {
       from: "/spec.md",
@@ -310,10 +319,12 @@ describe("planCommand — per-package tech stack in prompt", () => {
   });
 
   test("includes Package Tech Stacks table when packages have package.json", async () => {
-    _planDeps.scanSourceRoots = mock(async () => [
-      { path: "packages/api", language: "typescript", framework: "Express", testRunner: "jest" },
-      { path: "packages/web", language: "typescript", framework: "Next.js", testRunner: "vitest" },
-    ]);
+    _planDeps.scanSourceRoots = mock(
+      async (): Promise<SourceRoot[]> => [
+        { path: "packages/api", language: "typescript", framework: "Express", testRunner: "jest" },
+        { path: "packages/web", language: "typescript", framework: "Next.js", testRunner: "vitest" },
+      ],
+    );
     _planDeps.readPackageJsonAt = mock(async (path: string) => {
       if (path.includes("packages/api"))
         return {
@@ -342,9 +353,9 @@ describe("planCommand — per-package tech stack in prompt", () => {
   });
 
   test("omits Package Tech Stacks section for single-package repos", async () => {
-    _planDeps.scanSourceRoots = mock(async () => [
-      { path: ".", language: "typescript", framework: "", testRunner: "" },
-    ]);
+    _planDeps.scanSourceRoots = mock(
+      async (): Promise<SourceRoot[]> => [{ path: ".", language: "typescript", framework: "", testRunner: "" }],
+    );
 
     await planCommand(tmpDir, makeNaxConfig(), { from: "/spec.md", feature: "test", auto: true });
 
