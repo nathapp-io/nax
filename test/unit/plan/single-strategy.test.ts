@@ -4,7 +4,7 @@ import { SinglePlanStrategy, _singlePlanDeps } from "@/plan";
 import type { PlanDeps, PlanModeContext } from "@/plan/strategies/types";
 import type { PackageSummary } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeMockRuntime } from "@test/helpers";
+import { firstCall, makeLogger, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 
 function makeRuntime(closeImpl?: () => Promise<void>): NaxRuntime {
   const runtime = makeMockRuntime({
@@ -42,11 +42,13 @@ function makeDeps(exists = false): PlanDeps {
       onQuestionDetected: async () => "",
     }),
     createDebateRunner: () => ({}) as never,
+    getLogger: makeLogger,
   };
 }
 
 function makeCtx(overrides: Partial<PlanModeContext> = {}): PlanModeContext {
   return {
+    profileName: "default",
     workdir: "/tmp/workdir",
     naxDir: "/tmp/workdir/.nax",
     outputDir: "/tmp/workdir/.nax/features/feat-x",
@@ -55,7 +57,16 @@ function makeCtx(overrides: Partial<PlanModeContext> = {}): PlanModeContext {
     codebaseContext: "context",
     normalizedRoots: [],
     relativePackages: ["packages/api"],
-    packageDetails: [{ path: "packages/api", packageName: "@acme/api", stackSummary: "TypeScript" } as PackageSummary],
+    packageDetails: [
+      {
+        path: "packages/api",
+        name: "@acme/api",
+        runtime: "bun",
+        framework: "oak",
+        testRunner: "bun:test",
+        keyDeps: [],
+      },
+    ],
     projectName: "acme",
     branchName: "feat/feat-x",
     timeoutSeconds: 30,
@@ -73,7 +84,7 @@ describe("SinglePlanStrategy", () => {
   test("AC1/AC2: calls callOp with planInteractiveOp and mapped input fields, then returns outputPath", async () => {
     const strategy = new SinglePlanStrategy();
     const ctx = makeCtx();
-    const callOpMock = mock(async () => ({ userStories: [{}] }));
+    const callOpMock = mock(async (..._args: Parameters<typeof _singlePlanDeps.callOp>) => ({ userStories: [{}] }));
     const originalCallOp = _singlePlanDeps.callOp;
     _singlePlanDeps.callOp = callOpMock as typeof _singlePlanDeps.callOp;
 
@@ -81,11 +92,8 @@ describe("SinglePlanStrategy", () => {
       const result = await strategy.execute(ctx);
       expect(result.outputPath).toBe(ctx.outputPath);
       expect(callOpMock).toHaveBeenCalledTimes(1);
-      const [callCtx, operation, input] = callOpMock.mock.calls[0] as [
-        Record<string, unknown>,
-        unknown,
-        Record<string, unknown>,
-      ];
+      const [callCtx, operation, input] = firstCall(callOpMock, "callOp");
+      const dispatchedOp: unknown = operation;
       expect(callCtx.runtime).toBe(ctx.runtime);
       expect(callCtx.packageDir).toBe(ctx.workdir);
       expect(callCtx.agentName).toBe("agent-single");
@@ -93,7 +101,7 @@ describe("SinglePlanStrategy", () => {
       expect(callCtx.featureName).toBe(ctx.options.feature);
       expect(callCtx.interactionBridge).toBe(ctx.interactionBridge);
       expect(callCtx.maxInteractionTurns).toBe(ctx.config.agent?.maxInteractionTurns);
-      expect(operation).toBe(_singlePlanDeps.planInteractiveOp);
+      expect(dispatchedOp).toBe(_singlePlanDeps.planInteractiveOp);
       expect(input).toEqual({
         specContent: ctx.specContent,
         codebaseContext: ctx.codebaseContext,
