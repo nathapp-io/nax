@@ -11,10 +11,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _regressionDeps, findResponsibleStoryByTransition, runDeferredRegression } from "@/execution";
 import type { DeferredRegressionOptions, StorySnapshot } from "@/execution";
-import type { Finding } from "@/findings/types";
 import type { PRD } from "@/prd";
 import { _gitDeps } from "@/utils/git";
-import type { VerificationResult } from "@/verification";
+import type { FlakeTriageInput, FlakeTriageResult, VerificationResult } from "@/verification";
 import { makeMockRuntime, makeNaxConfig, makePRD, makeSpawn, makeStory } from "@test/helpers";
 
 function snap(storyId: string, completedAt: string, failingTestFiles?: string[]): StorySnapshot {
@@ -98,12 +97,10 @@ describe("runDeferredRegression — transition attribution", () => {
     // These tests don't exercise triage behaviour; using a no-op stub isolates
     // them from the real triage implementation (which would otherwise invoke
     // a probe loop in the test environment).
-    _regressionDeps.triageFlakyFindings = (async (input: {
-      findings: Finding[];
-    }) => ({
+    _regressionDeps.triageFlakyFindings = async (input: FlakeTriageInput): Promise<FlakeTriageResult> => ({
       findings: input.findings.map((f) => ({ ...f })),
       quarantineReport: { keys: [], reasons: [] },
-    })) as typeof _regressionDeps.triageFlakyFindings;
+    });
   });
   afterEach(() => {
     Object.assign(_regressionDeps, savedDeps);
