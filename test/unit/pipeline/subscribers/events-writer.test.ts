@@ -90,6 +90,8 @@ describe("wireEventsWriter", () => {
       totalStories: 1,
       passedStories: 1,
       failedStories: 0,
+      skippedStories: 0,
+      pausedStories: 0,
       durationMs: 100,
       totalCost: 0.01,
     });
@@ -183,6 +185,8 @@ describe("wireEventsWriter", () => {
       totalStories: 1,
       passedStories: 1,
       failedStories: 0,
+      skippedStories: 0,
+      pausedStories: 0,
       durationMs: 200,
     });
 
@@ -228,6 +232,8 @@ describe("wireEventsWriter", () => {
       totalStories: 1,
       passedStories: 1,
       failedStories: 0,
+      skippedStories: 0,
+      pausedStories: 0,
       durationMs: 100,
     });
 
