@@ -160,7 +160,7 @@ describe("resolvePricingSource", () => {
     // Real July models with no MODEL_PRICING entry.
     ["minimax/MiniMax-M2.7", "fallback-rates"],
     ["gpt-5.6-luna[medium]", "fallback-rates"],
-  ])("%s resolves to %s", (model, expected) => {
+  ] as const)("%s resolves to %s", (model, expected) => {
     expect(resolvePricingSource(model)).toBe(expected);
   });
 
