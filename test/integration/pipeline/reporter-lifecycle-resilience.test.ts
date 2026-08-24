@@ -15,7 +15,7 @@ import type { NaxConfig } from "@/config";
 import { run } from "@/execution/runner";
 import { loadHooksConfig } from "@/hooks";
 import { savePRD } from "@/prd";
-import { makeAgentAdapter, makePRD, makeStory, makeTempDir } from "@test/helpers";
+import { makeAgentAdapter, makeNaxConfig, makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 // ============================================================================
 // Mock agent
@@ -31,26 +31,21 @@ const mockAgentAdapter = makeAgentAdapter({
 // ============================================================================
 
 function makeBaseConfig(): Omit<NaxConfig, "plugins"> {
-  return {
+  const { plugins: _plugins, ...base } = makeNaxConfig({
     agent: { protocol: "acp", default: "mock" },
-    agents: { mock: { enabled: true } },
     routing: {
-      strategy: "complexity",
-      defaultTier: "fast",
-      defaultTestStrategy: "unit",
+      strategy: "keyword",
     },
     autoMode: {
-      complexityRouting: { simple: "fast", moderate: "balanced", complex: "advanced" },
+      complexityRouting: { simple: "fast", medium: "balanced", complex: "advanced" },
       escalation: { enabled: false, tierOrder: [] },
     },
     execution: {
       maxIterations: 20,
-      timeout: 1800000,
       costLimit: 100,
       iterationDelayMs: 0,
       maxStoriesPerFeature: 100,
     },
-    analyze: { model: "balanced" },
     models: {
       fast: { model: "claude-3-5-haiku-20241022", apiKeyEnvVar: "ANTHROPIC_API_KEY" },
       balanced: { model: "claude-3-5-sonnet-20241022", apiKeyEnvVar: "ANTHROPIC_API_KEY" },
@@ -58,7 +53,8 @@ function makeBaseConfig(): Omit<NaxConfig, "plugins"> {
     },
     quality: { commands: {} },
     acceptance: { enabled: false, maxRetries: 3 },
-  } as Omit<NaxConfig, "plugins">;
+  });
+  return base;
 }
 
 function minimalPrd(storyId = "US-001") {
