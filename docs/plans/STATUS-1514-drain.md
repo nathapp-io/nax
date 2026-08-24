@@ -1207,15 +1207,82 @@ two worse ones, and the count gate would not have flagged it.
 
 ---
 
+## 25. Reviewing the handoff before delegating — the review paid for itself
+
+The user asked for a review of `HANDOFF-1514-cast-and-fixture-residue.md` before handing it to
+a cheaper model. It found three defects in a document that read as authoritative, and the
+first was in its own headline.
+
+**1. The doc claimed "every recipe below was prototyped and then reverted". It was false.**
+Two recipes had been prototyped — the `ParseFn` one (which was then simply finished) and the
+`deepMergeConfig` one (which backfired and was recorded as a warning). The two clusters
+actually marked ✅ for the delegate — the only two it would have run — were **not** prototyped
+at all. The strongest sentence in the document was true of the parts nobody was going to
+execute and false of the parts somebody was.
+
+**2. "Four identical blocks" was eight.** `config-resolution.test.ts` was sized from its
+*error lines*. Four of the eight obsolete optimizer fixtures contributed no diagnostic until
+the first four were fixed, because tsc stops reporting a rejected literal once an earlier one
+in the same overload resolution fails. A delegate would have fixed four, found errors
+remaining, and improvised.
+
+**3. "Verified safe: I grepped every reference."** The grep used line-range exclusions that
+could have skipped the assertions it was claiming did not exist. Running the file's 13 tests
+after the change is what actually established it.
+
+Prototyping both ✅ clusters to fix the doc **executed them** — 16 → 0 and 2 → 0, committed as
+`99329ad71`. That is the general result: **for mechanical work, verifying a recipe well
+enough to delegate it costs about what executing it costs.** Delegation pays on volume
+(many files, one proven recipe), not on correctness-checking a recipe once.
+
+### The residue is now a long tail, and that changes the handoff's shape
+
+759 errors / 249 files = **3.0 per file**. 184 files hold ≤3 (319 errors); only 19 hold ≥8
+(207 errors). The big single-cause clusters are gone. The handoff was rewritten from "three
+clusters with recipes" to **"a proven recipe library plus a ranked file list, one file per
+commit"**, with an explicit evidence table separating what was *proven* (the R1–R5 recipes,
+each of which landed a commit) from what is a *hypothesis from reading one error* (the cause
+column of the file table) from what is *uninspected* (everything else).
+
+That table is the part worth keeping. A handoff that does not distinguish its proven claims
+from its guesses invites the reader to treat all of it as proven — which is exactly what the
+first draft did.
+
+## 26. Optimizer fixture + semanticConfig — done (777 → 759, −18)
+
+Commit `99329ad71`, the two clusters above, verified as described.
+
+- **`config-resolution.test.ts` 16 → 0.** Eight fake `IPromptOptimizer` plugins returning
+  `{ optimizedPrompt, estimatedTokens, tokensSaved, appliedStrategies }` where
+  `PromptOptimizerResult` wants `{ prompt, originalTokens, optimizedTokens, savings,
+  appliedRules }`. `estimatedTokens` was read off the **input**, where it has never existed.
+  A ninth copy lives inside a template string that `writePluginFile` writes to disk as a real
+  plugin (lines 54–65) — **tsc cannot see it**, so fixing the typed blocks alone would have
+  left it silently diverged. The file's 13 tests exercise that written plugin and pass.
+- **`story-orchestrator-logs.test.ts` 2 → 0.** `semanticConfig` needs `diffMode`,
+  `resetRefOnRerun` and `rules` as well as `model`/`timeoutMs`. These were the two §19
+  unmasked.
+
+Verify: src tsc **0** incl. contracts. 777 → 759, files 251 → 249, per-file `worse: 0`. All
+counters flat (`asAny=1388, tsSuppress=40, ratchetAllow=106, absentValue=17, anyType=1880,
+looseCast=1932`); `as unknown as` 102. 25/25 gates green; full suite green.
+
+---
+
 ## Next
 
-- **Delegable, in order:** `config-resolution` (16) → `story-orchestrator-logs` (2) →
-  optionally the bakeoff dep-bags (4). Realistic landing point **777 → ~757**.
-- **Owner-only:** `config/merger` (19, per-call-site), its 6 dead keys, and the `debate`
-  default literal (§20).
-- **Method, not file list:** cluster by *conversion target* / *missing-property → target
-  type*, never by file. Both of the last two clusters were invisible in the file view.
+- **Delegable now:** `HANDOFF-1514-cast-and-fixture-residue.md` §2, the six ✅ rows —
+  `curator` 13, `run-regression-flake-triage` 10, `scoped-lint` 9,
+  `tracker-context-metrics` 10, `plan-decompose-regression` 7, `session-helpers` 10.
+  Landing point **759 → ~700**. Their *cause* column is a one-error hypothesis, not a
+  prototype — the doc says so.
+- **Owner only:** `config/merger` 19 (§24 — blanket recipe proven wrong),
+  `story-orchestrator-run-phase-events` 15 (`Operation` includes `CompleteOperation`,
+  `AnySlot` excludes it — likely a `src/` question under amended G5), `config/merge` 17,
+  and the `debate` default literal (§20).
+- **Method:** cluster by *conversion target* and *missing-property → target type*, never by
+  file. And count **constructs, not diagnostics** — see §25 defect 2.
 
-Residue at this commit: **777 errors across 251 files.** The branch has taken 886 → 777
-(−109) over four fixes. Against the original #1514 start: typecheck **2009 → 777 (−61%)**,
-casts **815 → 102 (−87%)**, `looseCast` **1994 → 1932 (−62, none added)**.
+Residue at this commit: **759 errors across 249 files.** The branch has taken 886 → 759
+(−127) over five fixes. Against the original #1514 start: typecheck **2009 → 759 (−62%)**,
+casts **815 → 102 (−87%)**, `looseCast` **1994 → 1932** with none added.
