@@ -16,7 +16,6 @@ function makeRule(overrides: Partial<CanonicalRule> & { content: string }): Cano
   return {
     fileName: "rule.md",
     path: "rule.md",
-    content: overrides.content,
     ...overrides,
   };
 }
