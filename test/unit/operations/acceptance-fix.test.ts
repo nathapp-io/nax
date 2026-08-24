@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { AcceptanceFixSourceInput, AcceptanceFixTestInput } from "@/operations/acceptance-fix";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime, opSelector } from "@test/helpers";
+import { makeNaxConfig, makeTestRuntime, opModelResolver, opSelector } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -58,7 +58,7 @@ describe("acceptanceFixSourceOp shape", () => {
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(opSelector(acceptanceFixSourceOp.config)) };
-    expect(acceptanceFixSourceOp.model?.(SOURCE_INPUT, ctx)).toEqual({
+    expect(opModelResolver(acceptanceFixSourceOp)(SOURCE_INPUT, ctx)).toEqual({
       agent: "opencode",
       model: "opencode-go/minimax-m2.7",
     });
@@ -104,7 +104,7 @@ describe("acceptanceFixTestOp shape", () => {
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(opSelector(acceptanceFixTestOp.config)) };
-    expect(acceptanceFixTestOp.model?.(TEST_INPUT, ctx)).toEqual({
+    expect(opModelResolver(acceptanceFixTestOp)(TEST_INPUT, ctx)).toEqual({
       agent: "opencode",
       model: "opencode-go/minimax-m2.7",
     });
