@@ -32,7 +32,10 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
   };
 }
 
-function makeHybridCtx(stageConfigOverrides: Partial<DebateStageConfig> = {}): HybridCtx {
+function makeHybridCtx(
+  stageConfigOverrides: Partial<DebateStageConfig> = {},
+  abortSignal: AbortSignal = new AbortController().signal,
+): HybridCtx {
   const fullConfig = makeNaxConfig({
     debate: {
       maxConcurrentDebaters: 3,
@@ -82,7 +85,7 @@ function makeHybridCtx(stageConfigOverrides: Partial<DebateStageConfig> = {}): H
           repo: () => testView,
           hydrate: async () => {},
         },
-        signal: undefined,
+        signal: abortSignal,
       },
       packageView: testView,
       packageDir: "/tmp/work",
@@ -92,7 +95,7 @@ function makeHybridCtx(stageConfigOverrides: Partial<DebateStageConfig> = {}): H
     },
     agentManager,
     sessionManager,
-    abortSignal: new AbortController().signal,
+    abortSignal,
   };
 }
 
@@ -159,9 +162,7 @@ describe("runHybrid coordinator", () => {
 
   test("propagates CALL_OP_ABORTED instead of degrading an abort into a normal debate result", async () => {
     const controller = new AbortController();
-    const ctx = makeHybridCtx();
-    ctx.abortSignal = controller.signal;
-    ctx.callContext.runtime.signal = controller.signal;
+    const ctx = makeHybridCtx({}, controller.signal);
 
     installCallOp(async (_callCtx, _op, input) => {
       if (input.index === 0) {
