@@ -28,7 +28,6 @@ const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "quality",
   "tdd",
   "constitution",
-  "analyze",
   "review",
   "plan",
   "acceptance",
