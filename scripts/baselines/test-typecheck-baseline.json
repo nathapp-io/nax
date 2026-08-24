@@ -1,6 +1,6 @@
 {
-  "count": 375,
-  "updatedAt": "2026-08-24T11:45:13.186Z",
+  "count": 374,
+  "updatedAt": "2026-08-24T11:46:17.825Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -70,7 +70,7 @@
     "test/unit/debate/runner-plan-signal.test.ts": 2,
     "test/unit/debate/runner-plan.test.ts": 1,
     "test/unit/debate/runner-stateful.test.ts": 2,
-    "test/unit/debate/selectors/majority.test.ts": 2,
+    "test/unit/debate/selectors/majority.test.ts": 1,
     "test/unit/debate/selectors/synthesis.test.ts": 1,
     "test/unit/debate/selectors/verifier-pick.test.ts": 4,
     "test/unit/debate/verifiers/plan-checklist.test.ts": 1,
