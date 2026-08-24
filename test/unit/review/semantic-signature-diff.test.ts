@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { AgentResult } from "@/agents/types";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import { _semanticDeps, runSemanticReview } from "@/review/semantic";
-import type { SemanticStory } from "@/review/semantic";
+import type { RunSemanticReviewOptions, SemanticStory } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
 import { makeMockAgentManager, makeSpawn } from "@test/helpers";
 import { makeMockRuntime } from "@test/helpers";
@@ -56,7 +56,11 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       estimatedCostUsd: cost,
       agentFallbacks: [],
     }),
-    completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
+    completeFn: async () => ({
+      output: llmResponse,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: cost,
+    }),
     runWithFallbackFn: async () => ({
       result: {
         success: true,
@@ -70,7 +74,11 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       fallbacks: [],
     }),
     completeWithFallbackFn: async () => ({
-      result: { output: llmResponse, costUsd: cost, source: "mock" },
+      result: {
+        output: llmResponse,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: cost,
+      },
       fallbacks: [],
     }),
     runAsFn: async (_agent, opts) => ({
@@ -82,7 +90,11 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       estimatedCostUsd: cost,
       agentFallbacks: [],
     }),
-    completeAsFn: async (_agent, _prompt, _opts) => ({ output: llmResponse, costUsd: cost, source: "mock" }),
+    completeAsFn: async (_agent, _prompt, _opts) => ({
+      output: llmResponse,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: cost,
+    }),
   });
 }
 
@@ -108,14 +120,20 @@ describe("runSemanticReview — signature", () => {
     expect(typeof runSemanticReview).toBe("function");
   });
 
-  test("accepts five parameters without TypeScript errors (compile check)", async () => {
+  test("accepts the options object without TypeScript errors (compile check)", async () => {
     let called = false;
-    const impl = async (..._args: Parameters<typeof runSemanticReview>) => {
+    const impl = async (_opts: RunSemanticReviewOptions) => {
       called = true;
       return { check: "semantic" as const, success: true, command: "", exitCode: 0, output: "", durationMs: 0 };
     };
 
-    await impl("/tmp/workdir", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, undefined);
+    await impl({
+      workdir: "/tmp/workdir",
+      storyGitRef: "abc123",
+      story: STORY,
+      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
+      agentManager: undefined,
+    });
     expect(called).toBe(true);
   });
 });
