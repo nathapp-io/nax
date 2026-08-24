@@ -5,7 +5,7 @@ import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import type { CallContext } from "@/operations/types";
-import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
+import { makeLogger, makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -52,12 +52,7 @@ let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
 beforeEach(() => {
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
-  _debateSessionDeps.getSafeLogger = mock(() => ({
-    info: mock(() => {}),
-    debug: mock(() => {}),
-    warn: mock(() => {}),
-    error: mock(() => {}),
-  }));
+  _debateSessionDeps.getSafeLogger = mock(() => makeLogger());
 });
 
 afterEach(() => {
