@@ -13,6 +13,7 @@ import type { UserStory } from "@/prd";
 import { runQualityCommand } from "@/quality";
 import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
 import type { NaxIgnoreIndex } from "@/utils/path-filters";
+import type { BunFile } from "bun";
 import { runAdversarialReview as _runAdversarialReviewImpl } from "../adversarial";
 import { resolveLanguageCommand } from "../language-commands";
 import { runScopedLintCheck } from "../scoped-lint";
@@ -78,10 +79,15 @@ export const _reviewLintDeps = {
  * Injectable dependencies for runner internals — allows tests to intercept
  * Bun.file and Bun.which calls without mock.module().
  *
+ * `file` is narrowed to the single overload and the single method this module
+ * actually uses (`loadPackageJson` reads `.text()` off a path). The full
+ * `typeof Bun.file` is a three-overload signature returning `BunFile`, which no
+ * test double can satisfy without an `as unknown as` escape hatch.
+ *
  * @internal
  */
 export const _reviewRunnerDeps = {
-  file: Bun.file,
+  file: Bun.file as (path: string) => Pick<BunFile, "text">,
   which: Bun.which as (command: string) => string | null,
 };
 

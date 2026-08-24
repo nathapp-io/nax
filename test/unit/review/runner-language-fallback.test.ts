@@ -122,14 +122,14 @@ describe("resolveCommand — language-aware fallback (US-004)", () => {
   function mockNoPackageJson(): void {
     _reviewRunnerDeps.file = mock((_path: string) => ({
       text: () => Promise.reject(new Error("ENOENT: no such file")),
-    })) as typeof _reviewRunnerDeps.file;
+    }));
   }
 
   /** Mock package.json with given scripts */
   function mockPackageJson(scripts: Record<string, string>): void {
     _reviewRunnerDeps.file = mock((_path: string) => ({
       text: () => Promise.resolve(JSON.stringify({ scripts })),
-    })) as typeof _reviewRunnerDeps.file;
+    }));
   }
 
   // AC-1, AC-3, AC-4, AC-5
