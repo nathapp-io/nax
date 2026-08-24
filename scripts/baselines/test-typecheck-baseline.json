@@ -1,6 +1,6 @@
 {
-  "count": 610,
-  "updatedAt": "2026-08-24T04:52:33.341Z",
+  "count": 593,
+  "updatedAt": "2026-08-24T05:18:12.895Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -132,7 +132,6 @@
     "test/unit/metrics/report.test.ts": 3,
     "test/unit/operations/acceptance-diagnose.test.ts": 1,
     "test/unit/operations/acceptance-fix.test.ts": 2,
-    "test/unit/operations/autofix-implementer-strategy.test.ts": 10,
     "test/unit/operations/build-hop-callback-stale-retry.test.ts": 2,
     "test/unit/operations/call-op-retry.test.ts": 2,
     "test/unit/operations/call-run-counter.test.ts": 1,
@@ -143,7 +142,6 @@
     "test/unit/operations/debate-synthesis.test.ts": 2,
     "test/unit/operations/execution-gates.test.ts": 1,
     "test/unit/operations/fix-strategy-composition.test.ts": 2,
-    "test/unit/operations/full-suite-rectify.test.ts": 7,
     "test/unit/operations/ground.test.ts": 3,
     "test/unit/operations/mutation-check-diff-scope.test.ts": 1,
     "test/unit/operations/mutation-check-revert.test.ts": 1,

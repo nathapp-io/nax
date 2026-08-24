@@ -180,7 +180,7 @@ describe("makeFullSuiteRectifyStrategy — with DeclarationSink", () => {
     expect(sink.mockHandoffs).toHaveLength(0);
   });
 
-  test("AC8: extractApplied forwards unresolvedReason as unresolved when no testEditDeclarations", () => {
+  test("AC8: extractApplied forwards unresolvedReason as unresolved when no testEditDeclarations", async () => {
     const sink = makeDeclarationSink();
     const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink);
     const output: FullSuiteRectifyOutput = {
@@ -189,26 +189,26 @@ describe("makeFullSuiteRectifyStrategy — with DeclarationSink", () => {
       unresolvedReason: "Test uses relative URLs that the library rejects",
     };
     const input: FullSuiteRectifyInput = { story: makeTestStory(), findings: [] };
-    const result = strategy.extractApplied!(output, input);
+    const result = await strategy.extractApplied!(output, input);
     expect(result.unresolved).toBe("Test uses relative URLs that the library rejects");
     expect(result.summary).toBe("Test uses relative URLs that the library rejects");
   });
 
-  test("AC8 boundary: extractApplied without unresolvedReason leaves unresolved undefined", () => {
+  test("AC8 boundary: extractApplied without unresolvedReason leaves unresolved undefined", async () => {
     const sink = makeDeclarationSink();
     const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink);
     const output: FullSuiteRectifyOutput = { applied: true, testEditDeclarations: [] };
     const input: FullSuiteRectifyInput = { story: makeTestStory(), findings: [] };
-    const result = strategy.extractApplied!(output, input);
+    const result = await strategy.extractApplied!(output, input);
     expect(result.unresolved).toBeUndefined();
     expect(result.summary).toBe("Fixed failing tests");
   });
 
-  test("AC8 priority: UNRESOLVED + testEditDeclarations → testEditDeclarations win, unresolved suppressed", () => {
+  test("AC8 priority: UNRESOLVED + testEditDeclarations → testEditDeclarations win, unresolved suppressed", async () => {
     const sink = makeDeclarationSink();
     const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink);
     const decl: TestEditDeclaration = {
-      reason: "required_infrastructure_missing",
+      reason: "prd_contract",
       file: "test/oauth/admin-client.guard.route.spec.ts",
     };
     const output: FullSuiteRectifyOutput = {
@@ -217,7 +217,7 @@ describe("makeFullSuiteRectifyStrategy — with DeclarationSink", () => {
       unresolvedReason: "Test uses relative URLs",
     };
     const input: FullSuiteRectifyInput = { story: makeTestStory(), findings: [] };
-    const result = strategy.extractApplied!(output, input);
+    const result = await strategy.extractApplied!(output, input);
     // Declaration flows through to sink so test-writer handoff can fire via postValidate
     expect(sink.testEdits).toHaveLength(1);
     // unresolved is suppressed — agent-gave-up must NOT fire when a handoff can still run
