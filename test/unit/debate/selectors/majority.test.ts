@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { majorityFailClosedSelector, majorityFailOpenSelector } from "@/debate";
 import type { SelectorContext } from "@/debate/selectors/types";
 import type { SuccessfulProposal } from "@/debate/session-helpers";
-import { makeMockAgentManager } from "@test/helpers";
+import { makeMockAgentManager, makeMockCallContext } from "@test/helpers";
 
 function makeProposals(outputs: string[]): SuccessfulProposal[] {
   return outputs.map((output) => ({
@@ -52,6 +52,7 @@ function makeCtx(overrides: Partial<SelectorContext> = {}): SelectorContext {
     timeoutMs: 30000,
     agentManager: makeMockAgentManager(),
     debaters: [],
+    callContext: makeMockCallContext(),
     ...overrides,
   };
 }
