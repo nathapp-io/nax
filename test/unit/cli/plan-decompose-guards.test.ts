@@ -9,6 +9,7 @@ import type { DecomposedStory } from "@/agents/shared/types-extended";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import { NaxError } from "@/errors";
 import type { PRD, UserStory } from "@/prd";
+import { getContextFiles } from "@/prd";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makePRD } from "@test/helpers";
 
@@ -69,7 +70,7 @@ function toDecomposedStory(story: UserStory): DecomposedStory {
     tags: story.tags,
     dependencies: story.dependencies,
     complexity: story.routing?.complexity ?? "simple",
-    contextFiles: story.contextFiles ?? [],
+    contextFiles: getContextFiles(story),
     reasoning: story.routing?.reasoning ?? "",
     estimatedLOC: 50,
     risks: [],
