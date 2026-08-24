@@ -1340,3 +1340,102 @@ casts **815 → 102 (−87%)**, `looseCast` **1994 → 1932** with none added.
 Residue at this commit: **692 errors across 241 files.** The branch has taken 886 → 692
 (−194) over eleven fixes. Against the original #1514 start: typecheck **2009 → 692 (−66%)**,
 casts **815 → 102 (−87%)**, `looseCast` **1994 → 1932** with none added.
+
+---
+
+## 28. Lane A Batch 1 — done (692 → 610, −82)
+
+Ten commits on `chore/1514-lane-a-drain`, one file per commit, each through the full loop
+(src tsc 0, per-file `worse: 0`, targeted test, 25/25 gates, `bun run test`, `bun run
+test:coverage` at 103/103, `check:test-typecheck:update` last). 692 → 610 across 241 → 231
+files. All six escape-hatch counters flat (`asAny=1388, tsSuppress=40, ratchetAllow=106,
+absentValue=17, anyType=1880, looseCast=1932`); `as unknown as` 102. Covered exactly the 82
+errors the plan's Batch 1 table predicted; the cause columns read right in seven of ten files
+and were partially or fully wrong in three — recorded per file below.
+
+- **`execution/session-manager-runtime` 15 → 0 (692 → 677).** Cause column was **partly
+  wrong**. The 15 split 10× `AgentGetFn` + 5× `SessionManagerLike`, not the plan's 13+2. The
+  plan's R3 move — `makeAgentAdapter({ closePhysicalSession })` — **does not compile**:
+  `AgentAdapter` has no `closePhysicalSession` (it is the `LegacySessionCloser` cast seam in
+  `src/execution/session-manager-runtime.ts`), and the helper's own copy is a cast-through
+  field that the `Partial` override rejects by excess-property check. Used
+  `{ ...makeAgentAdapter(), closePhysicalSession }` (spread + additive field) — same proven
+  factory, no `test/helpers/` change. R5 held: local `SessionManagerLike` deleted in favour of
+  `makeSessionManager`. What the fix unmasked: the helper `mock-agent-adapter.ts` returns a
+  `closePhysicalSession` field that is structurally *extra* to its declared type — worth a
+  look in a later pass, not this one.
+- **`cli/status-cost` 12 → 0 (677 → 665).** Cause column **mostly right** (R2 zero-arg
+  `mock.calls` tuples), with one unmasked defect the plan did not record: `projectOutputDir`
+  grew a second required param (`outputDirOverride`), so `projectOutputDir("workdir")` was
+  `TS2554` — fixed with `(…, undefined)`. R2 typed `loadRuns`/`stdout`/`toCostReport` from the
+  `CostReportEmitDeps` signatures; R6 deleted the four bridges (`as string` ×3 and an
+  `as {…}`). Note the `as {…}` never counted as `looseCast` (the pattern requires an
+  uppercase-initial cast type), so the escape-hatch counters were flat here, as required.
+  Trap 3 respected: types only, no fixture values — coverage stayed 103/103.
+- **`integration/cli/cli-plugins` 8 → 0 (665 → 657).** Cause column right; **Trap 1
+  confirmed exactly**: five `estimatedTokens` constructs, four typed. The fifth lives in
+  `writePluginFile`'s `extensionsCode` template string that is written to disk as a real
+  plugin — tsc cannot see it, and it cannot import the helper, so it was completed inline to
+  `{ prompt, originalTokens: 0, optimizedTokens: 0, savings: 0, appliedRules: [] }`, matching
+  the already-fixed `loader.test.ts` precedent. The four typed stubs use
+  `makeOptimizerResult({ prompt: input.prompt })`. The file's 9 tests exercise the written
+  plugin and pass.
+- **`runtime/cost-aggregator` 8 → 0 (657 → 649).** Cause column right: fixtures omitted the
+  `kind: "error"` discriminant of `CostErrorEvent` (5 sites), and `resolveWrite` was
+  declared `() => void` while the `Promise` executor hands `r` a `(value: number |
+  PromiseLike<number>) => void`. Fixed to the codebase's own external-resolution idiom
+  (`let resolveWrite: (value: …) => void` + `resolveWrite!(0)` — cf. `merge.test.ts`). The `!`
+  is the pre-existing definite-assignment assertion, not a newly introduced silencer.
+- **`execution/unified-executor-dispatch` 8 → 0 (649 → 641).** Cause column **partly wrong**:
+  the real defect was the file-local `makePendingStory` returning a legacy-shaped story
+  (`priorFailures` — a field the `UserStory` type no longer has — and no `escalations`).
+  Typed it `(): UserStory` (drops the dead field), and annotated the routing-bearing consts
+  `const us000: UserStory` so the `routing` literal narrows contextually to `StoryRouting`
+  instead of `{ complexity: string; … }`. The `pipelineEventBus.emit` mock: R4 (param typed as
+  `PipelineEvent`) + R6 (both the `as typeof pipelineEventBus.emit` and the `event as never`
+  cast deleted — mock's call signature is assignable to the method's).
+- **`cli/plan-decompose-ac13-14` 7 → 0 (641 → 634).** Cause column right: R3 via the existing
+  `makeMockRuntime({ agentManager })` at the four `createRuntime` slots (the §27
+  `plan-decompose-regression` template). The "plus one `(string | ContextFileEntry)[]` into
+  `string[]`" was `toDecomposedStory.contextFiles` — resolved by mapping entry objects to
+  `f.path`. Two unmasked: `scanSourceRoots` literal widening (annotated
+  `Promise<SourceRoot[]>`), and a `decomposeFn` fixture returning `UserStory[]` where
+  `DecomposedStory[]` was wanted (missing `.map(toDecomposedStory)`) — a real fixture
+  defect, not a type-only gap.
+- **`review/orchestrator-wrapper-parity` 6 → 0 (634 → 628).** Cause column right for three
+  (semantic fixtures missing `acDropped`); the three `completeFn`/`completeWithFallbackFn`/
+  `completeAsFn` mismatches were the *legacy `{ output, costUsd, source }` `CompleteResult`
+  shape* — the same defect §27 had already hit in `session-helpers.ts`, now fixed by
+  returning a real `CompleteResult` (`tokenUsage`/`estimatedCostUsd`; the extra `costUsd`/
+  `source` fields are never read by the ops). **Cross-file residue:** the identical legacy
+  shape still lives in ~6 more review test files (`adversarial-verifiedby`, `semantic-threshold`,
+  `semantic-unverifiable`, `adversarial-metadata-audit`, …) — those are Batch 3 tail files;
+  this is the recipe to apply.
+- **`cli/plan-monorepo` 6 → 0 (628 → 622).** Cause column exactly right: `SourceRoot.language`
+  literal widening. Annotated each `scanSourceRoots` mock return as `Promise<SourceRoot[]>`.
+- **`context/engine/tool-runtime` 6 → 0 (622 → 616).** Cause column right: `undefined` passed
+  for the required `ContextToolRuntimeConfig` slices. The plan suggested `makeConfigSlice`;
+  the faithful fix selects the real typed defaults through the production selector —
+  `contextToolRuntimeConfigSelector.select(makeNaxConfig())` — since the runtime needs all
+  four slices at once. 8 tests still pass: the config only changes which defaults exist,
+  and `createContextToolRuntime` returns `undefined` on an empty `pullTools` bundle either way.
+- **`utils/process-kill` 6 → 0 (616 → 610).** Cause column exactly right: the recorder array
+  was narrower than the `process.kill` overload's inferred `signal: string | number | undefined`.
+  Widened `killCalls` to `signal?: string | number`. Left the `as typeof process.kill` cast and
+  the `as NodeJS.ErrnoException` alone — both counted `looseCast`s doing real work.
+
+Constructs tsc could not see across the batch: the template-string optimizer stub in
+`cli-plugins` (Trap 1) and the dead `priorFailures` field that only existed in the fixture's
+local helper. Landing point matches the plan: **692 → ~610**.
+
+## Next
+
+- **Done:** Lane A Batch 1 (§28). Next take **Batch 2** top to bottom:
+  `operations/autofix-implementer-strategy` + `operations/full-suite-rectify` (10+7, shared
+  `Promise<X> | X` + `await` cause), `execution/runner-plugin-integration` (10),
+  `execution/nbf-readonly-flake-triage` (9, **read then escalate** — a possible `CallContext`
+  vs `FixCycleContext` `src/` contradiction), `bakeoff/run-action` (8, `measure first, then
+  ask`), `plan/pipeline-strategy` (7), `operations/debate-rebut` + `debate-propose` (7+6,
+  `callOp` seam — check which side of the tier-3 accepted exceptions these fall on).
+  `unit/debate/pre-phase/grounder` (6) is escalation-only, not a fix.
+- **Owner only:** `config/merger` 19, `config/merge` 17, `story-orchestrator-run-phase-events` 15.
