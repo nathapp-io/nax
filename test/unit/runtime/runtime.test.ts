@@ -108,6 +108,7 @@ describe("createRuntime", () => {
       tokens: { input: 10, output: 5 },
       costUsd: 0.001,
       estimatedCostUsd: 0.001,
+      exactCostUsd: 0.001,
       confidence: "exact",
       durationMs: 100,
     });
