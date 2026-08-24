@@ -491,7 +491,8 @@ describe("terminal lite-validate — gate runs LAST as final arbiter (Q1/Q3)", (
     expect((result as { shortCircuited?: boolean }).shortCircuited).toBe(false);
     // No verifier-time baseline was supplied, so the failure counts as introduced by
     // rectification and is handed to the fix cycle rather than discarded (#1452).
-    expect(result.findings).toHaveLength(1);
+    const findings = Array.isArray(result) ? result : result.findings;
+    expect(findings).toHaveLength(1);
   });
 });
 
