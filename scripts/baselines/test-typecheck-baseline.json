@@ -1,6 +1,6 @@
 {
-  "count": 330,
-  "updatedAt": "2026-08-24T12:51:54.412Z",
+  "count": 329,
+  "updatedAt": "2026-08-24T12:52:48.154Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -8,7 +8,6 @@
     "test/integration/agents/stale-then-swap.test.ts": 1,
     "test/integration/agents/timeout-retry-fresh-session.test.ts": 1,
     "test/integration/cli/cli-precheck-run.test.ts": 1,
-    "test/integration/config/paths.test.ts": 1,
     "test/integration/config/security-loader.test.ts": 1,
     "test/integration/context/context-provider-injection.test.ts": 2,
     "test/integration/execution/prd-pause.test.ts": 1,
