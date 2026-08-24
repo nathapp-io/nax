@@ -8,7 +8,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import type { SessionHandle } from "@/agents";
+import type { RunAsSessionOpts, SessionHandle } from "@/agents";
 import { resolveSelector, verifierPickSelector } from "@/debate";
 import type { SelectorContext } from "@/debate";
 import type { SuccessfulProposal } from "@/debate";
@@ -435,7 +435,7 @@ describe("verifierPickSelector", () => {
     });
 
     test("calls runAsSession with correct pipelineStage and storyId", async () => {
-      let capturedOptions: Record<string, unknown> | undefined;
+      let capturedOptions: RunAsSessionOpts | undefined;
       const mockAgentManager = makeMockAgentManager({
         runAsSessionFn: async (agentName, handle, prompt, options) => {
           capturedOptions = options;
