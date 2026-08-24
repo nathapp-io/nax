@@ -11,7 +11,12 @@ import { _planDeps, planCommand, resolvePlanMode } from "@/cli";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
-import { makeLogger, makeMockAgentManager, makeMockRuntime, makeTempDir } from "@test/helpers";
+import { assertDefined, makeLogger, makeMockAgentManager, makeMockRuntime, makeTempDir } from "@test/helpers";
+
+// DEFAULT_CONFIG.debate is typed optional (Zod `.optional().default(...)`) but
+// always populated at runtime — narrow once so the spreads below stay fully typed.
+const DEFAULT_DEBATE = DEFAULT_CONFIG.debate;
+assertDefined(DEFAULT_DEBATE, "DEFAULT_CONFIG.debate");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -47,9 +52,9 @@ describe("resolvePlanMode", () => {
     const config = makeMinimalConfig({
       plan: { ...DEFAULT_CONFIG.plan, mode: "single" },
       debate: {
-        ...DEFAULT_CONFIG.debate,
+        ...DEFAULT_DEBATE,
         enabled: true,
-        stages: { ...DEFAULT_CONFIG.debate?.stages, plan: { ...DEFAULT_CONFIG.debate?.stages?.plan, enabled: true } },
+        stages: { ...DEFAULT_DEBATE.stages, plan: { ...DEFAULT_DEBATE.stages.plan, enabled: true } },
       },
     });
     expect(resolvePlanMode(config)).toBe("single");
@@ -59,9 +64,9 @@ describe("resolvePlanMode", () => {
   test("AC10: debate.enabled + stages.plan.enabled returns debate when mode absent", () => {
     const config = makeMinimalConfig({
       debate: {
-        ...DEFAULT_CONFIG.debate,
+        ...DEFAULT_DEBATE,
         enabled: true,
-        stages: { ...DEFAULT_CONFIG.debate?.stages, plan: { ...DEFAULT_CONFIG.debate?.stages?.plan, enabled: true } },
+        stages: { ...DEFAULT_DEBATE.stages, plan: { ...DEFAULT_DEBATE.stages.plan, enabled: true } },
       },
     });
     expect(resolvePlanMode(config)).toBe("debate");
@@ -76,9 +81,9 @@ describe("resolvePlanMode", () => {
   test("AC12: debate.enabled true but stages.plan.enabled false returns single", () => {
     const config = makeMinimalConfig({
       debate: {
-        ...DEFAULT_CONFIG.debate,
+        ...DEFAULT_DEBATE,
         enabled: true,
-        stages: { ...DEFAULT_CONFIG.debate?.stages, plan: { ...DEFAULT_CONFIG.debate?.stages?.plan, enabled: false } },
+        stages: { ...DEFAULT_DEBATE.stages, plan: { ...DEFAULT_DEBATE.stages.plan, enabled: false } },
       },
     });
     expect(resolvePlanMode(config)).toBe("single");
@@ -144,9 +149,9 @@ describe("planCommand — pipeline branch stub", () => {
     const config = makeMinimalConfig({
       plan: { ...DEFAULT_CONFIG.plan, mode: "pipeline" },
       debate: {
-        ...DEFAULT_CONFIG.debate,
+        ...DEFAULT_DEBATE,
         enabled: true,
-        stages: { ...DEFAULT_CONFIG.debate?.stages, plan: { ...DEFAULT_CONFIG.debate?.stages?.plan, enabled: true } },
+        stages: { ...DEFAULT_DEBATE.stages, plan: { ...DEFAULT_DEBATE.stages.plan, enabled: true } },
       },
     });
 
