@@ -25,7 +25,7 @@ describe("grounderStrategy", () => {
     const ctx: PreDebatePhaseContext = {
       ctx: {
         runtime,
-        packageView: runtime.packageView,
+        packageView: runtime.packages.resolve(),
         packageDir: "/tmp/test",
         featureName: "test-feature",
         storyId: "US-003",
@@ -62,7 +62,7 @@ describe("grounderStrategy", () => {
     const ctx: PreDebatePhaseContext = {
       ctx: {
         runtime,
-        packageView: runtime.packageView,
+        packageView: runtime.packages.resolve(),
         packageDir: "/tmp/test",
         featureName: "test-feature",
         storyId: "US-003",
@@ -96,7 +96,7 @@ describe("grounderStrategy", () => {
     const ctx: PreDebatePhaseContext = {
       ctx: {
         runtime,
-        packageView: runtime.packageView,
+        packageView: runtime.packages.resolve(),
         packageDir: "/tmp/test",
         featureName: "test-feature",
         storyId: "US-003",
@@ -133,7 +133,7 @@ describe("grounderStrategy", () => {
     const ctx: PreDebatePhaseContext = {
       ctx: {
         runtime,
-        packageView: runtime.packageView,
+        packageView: runtime.packages.resolve(),
         packageDir: "/tmp/test",
         featureName: "test-feature",
         storyId: "US-003",
@@ -165,7 +165,7 @@ describe("grounderStrategy", () => {
     const ctx: PreDebatePhaseContext = {
       ctx: {
         runtime,
-        packageView: runtime.packageView,
+        packageView: runtime.packages.resolve(),
         packageDir: "/tmp/test",
         featureName: "test-feature",
         storyId: "US-003",
@@ -209,7 +209,7 @@ describe("grounderStrategy", () => {
     const ctx: PreDebatePhaseContext = {
       ctx: {
         runtime,
-        packageView: runtime.packageView,
+        packageView: runtime.packages.resolve(),
         packageDir: "/tmp/test",
         featureName: "test-feature",
         storyId: "US-003",

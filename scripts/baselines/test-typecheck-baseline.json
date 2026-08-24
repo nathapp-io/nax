@@ -1,6 +1,6 @@
 {
-  "count": 472,
-  "updatedAt": "2026-08-24T07:49:52.952Z",
+  "count": 466,
+  "updatedAt": "2026-08-24T07:51:46.534Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -69,7 +69,6 @@
     "test/unit/context/engine/packing.test.ts": 3,
     "test/unit/context/engine/stage-assembler.test.ts": 3,
     "test/unit/context/rules/rule-sections.test.ts": 1,
-    "test/unit/debate/pre-phase/grounder.test.ts": 6,
     "test/unit/debate/resolvers.test.ts": 6,
     "test/unit/debate/runner-hybrid-coordinator.test.ts": 4,
     "test/unit/debate/runner-hybrid-cross-debater.test.ts": 1,
