@@ -54,7 +54,11 @@ function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
       estimatedCostUsd: cost,
       agentFallbacks: [] as unknown[],
     }),
-    completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" as const }),
+    completeFn: async () => ({
+      output: llmResponse,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: cost,
+    }),
     runWithFallbackFn: async () => ({
       result: {
         success: true as const,
@@ -336,7 +340,7 @@ describe("runAdversarialReview — review audit gate", () => {
         async flush() {},
       },
     });
-    const naxConfig = { review: { audit: { enabled: true } } } as any;
+    const config = { review: { audit: { enabled: true } } } as any;
 
     await runAdversarialReview({
       workdir: "/tmp/wd",
@@ -344,7 +348,7 @@ describe("runAdversarialReview — review audit gate", () => {
       story: STORY,
       adversarialConfig: ADVERSARIAL_CONFIG,
       agentManager,
-      naxConfig,
+      config,
       runtime,
     });
 
@@ -366,7 +370,7 @@ describe("runAdversarialReview — review audit gate", () => {
         async flush() {},
       },
     });
-    const naxConfig = { review: { audit: { enabled: true } } } as any;
+    const config = { review: { audit: { enabled: true } } } as any;
 
     await runAdversarialReview({
       workdir: "/tmp/wd",
@@ -374,7 +378,7 @@ describe("runAdversarialReview — review audit gate", () => {
       story: STORY,
       adversarialConfig: ADVERSARIAL_CONFIG,
       agentManager,
-      naxConfig,
+      config,
       runtime,
     });
 

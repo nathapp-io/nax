@@ -1,6 +1,6 @@
 {
-  "count": 537,
-  "updatedAt": "2026-08-24T05:56:34.466Z",
+  "count": 534,
+  "updatedAt": "2026-08-24T05:58:46.473Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -193,7 +193,6 @@
     "test/unit/prompts/builders/one-shot-builder.test.ts": 1,
     "test/unit/prompts/loader.test.ts": 1,
     "test/unit/quality/runner.test.ts": 2,
-    "test/unit/review/adversarial-metadata-audit.test.ts": 3,
     "test/unit/review/adversarial-pass-fail.test.ts": 3,
     "test/unit/review/adversarial-threshold.test.ts": 1,
     "test/unit/review/orchestrator-vs-reconciliation-parity.test.ts": 1,
