@@ -234,7 +234,7 @@ function makeCtx(
     /** Pre-built .naxignore index carried on the pipeline context. */
     naxIgnoreIndex?: unknown;
     /** Per-stage v2 overrides (config.context.v2.stages). */
-    stages?: Record<string, { budgetTokens?: number; extraProviderIds?: string[] }>;
+    stages?: Record<string, { budgetTokens?: number; extraProviderIds?: string[]; providerTimeoutMs?: number }>;
   } = {},
 ): PipelineContext {
   return {
