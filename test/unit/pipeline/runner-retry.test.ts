@@ -3,16 +3,20 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
 import { MAX_STAGE_RETRIES, runPipeline } from "@/pipeline";
 import type { PipelineContext, PipelineStage } from "@/pipeline";
+import { makeDispatchContext } from "@test/helpers";
 
 function makeCtx(): PipelineContext {
   return {
     config: DEFAULT_CONFIG,
+    rootConfig: DEFAULT_CONFIG,
     prd: { stories: [], acceptanceOverrides: {} } as any,
     story: { id: "US-001", title: "t", status: "pending", acceptanceCriteria: [] } as any,
     stories: [],
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    projectDir: "/tmp",
     workdir: "/tmp",
-    hooks: {},
+    hooks: { hooks: {} },
+    ...makeDispatchContext(),
   };
 }
 
