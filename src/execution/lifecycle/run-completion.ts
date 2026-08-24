@@ -400,15 +400,19 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   const durationMs = Date.now() - startTime;
   const runCompletedAt = new Date().toISOString();
 
-  if (options.sessionManager) {
-    const agentGetFn = options.agentManager ? (name: string) => options.agentManager?.getAgent(name) : undefined;
-    // PERF-1: thread the run's abort signal through so a wedged acpx teardown
-    // spawn can be cut short externally instead of only relying on the
-    // per-call hard deadline inside trackedSpawn.
-    await _runCompletionDeps.closeAllRunSessions(options.sessionManager, agentGetFn, {
-      signal: options.abortSignal,
-    });
-  }
+  // ADR-020 §D3 makes `sessionManager` and `agentManager` non-nullable on every
+  // dispatch context, so the pre-ADR-020 `if (options.sessionManager)` guard and
+  // the `agentManager ? … : undefined` ternary this call used to carry were both
+  // always taken. Removed with the test that pinned their false branch (#1514).
+  //
+  // PERF-1: thread the run's abort signal through so a wedged acpx teardown
+  // spawn can be cut short externally instead of only relying on the
+  // per-call hard deadline inside trackedSpawn.
+  await _runCompletionDeps.closeAllRunSessions(
+    options.sessionManager,
+    (name: string) => options.agentManager.getAgent(name),
+    { signal: options.abortSignal },
+  );
 
   if (options.pluginProviderCache) {
     await options.pluginProviderCache.disposeAll();

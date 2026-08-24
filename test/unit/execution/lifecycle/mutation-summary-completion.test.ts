@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { Mock } from "bun:test";
 import { type RunnerCompletionOptions, runCompletionPhase } from "@/execution";
 import type { MutationStorySummary } from "@/runtime";
-import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import { makeDispatchContext, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 const survivor = {
   file: "src/survivor.ts",
@@ -67,7 +67,9 @@ describe("runCompletionPhase mutation survivor reporting", () => {
       },
       pluginRegistry: { getAll: () => [], get: () => undefined },
       prdPath: "/tmp/test/prd.json",
-      runtime,
+      // ADR-020 §D3: run completion closes the run's sessions unconditionally,
+      // so the dispatch fields must be present and must come from this runtime.
+      ...makeDispatchContext({ runtime }),
     } as unknown as RunnerCompletionOptions;
   }
 
