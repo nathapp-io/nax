@@ -52,6 +52,7 @@ const baseCfg: OtelReporterConfig = {
   maxBatchSize: 64,
   flushIntervalMs: 5_000,
   maxQueueSize: 2_048,
+  logs: { enabled: false, level: "info" },
 };
 
 const originalOtlpToken = process.env.OTLP_TOKEN;
