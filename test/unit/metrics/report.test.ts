@@ -26,7 +26,6 @@ import { TokenUsage } from "@/metrics/types";
 
 function makeStoryMetrics(overrides: Partial<StoryMetrics> & { storyId: string }): StoryMetrics {
   return {
-    storyId: overrides.storyId,
     complexity: "medium",
     modelTier: "balanced",
     modelUsed: "claude-sonnet-4-5",
