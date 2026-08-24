@@ -1,6 +1,6 @@
 {
-  "count": 322,
-  "updatedAt": "2026-08-24T12:57:57.355Z",
+  "count": 319,
+  "updatedAt": "2026-08-24T12:59:34.553Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -134,7 +134,7 @@
     "test/unit/plugins/builtin/otel-span-tree.test.ts": 1,
     "test/unit/plugins/builtin/webhook-reporter.test.ts": 2,
     "test/unit/plugins/loader-reporters.test.ts": 3,
-    "test/unit/plugins/registry.test.ts": 4,
+    "test/unit/plugins/registry.test.ts": 1,
     "test/unit/prd/prd-get-next-story.test.ts": 1,
     "test/unit/prd/prd-queue-actions.test.ts": 1,
     "test/unit/prd/schema-agent-profile.test.ts": 2,
