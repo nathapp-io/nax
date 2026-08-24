@@ -175,3 +175,99 @@ Stop and report instead of guessing when:
 
 An escalation with the row, the two candidate fixes and why you stopped is a **success**, not a
 failure. Batch 4's most valuable output was two such calls.
+
+---
+
+# Outcome — batch 5 complete: 219 → 21 (−198, −90%)
+
+Ten groups, one delegated agent at a time, 59 commits on `chore/1514-tail-batch5-drain`.
+Verified at each step, not taken from the agents' reports: `bun x tsc --noEmit` (src) **0**,
+`bun run check:all` **green**, full suite **green (14138 tests, 0 fail)** after every group.
+
+| Group | Family | Δ |
+|:--|:--|--:|
+| 1 | `TS2353` dead fixture keys | 219 → 191 |
+| 2 | `TS2349` `op.model?.()` union + `TS2783` duplicate keys | 191 → 170 |
+| 3 | callback-assignment `never` narrowing + `TS2554` arity | 170 → 149 |
+| 4 | `TS2345` argument mismatches | 149 → 134 |
+| 5 | fake-agent-manager contract + `TS2540`/`TS2532` + singletons | 134 → 120 |
+| 6 | `ChunkKind` literals + `TS2339` tail | 120 → 101 |
+| 7 | `TS2352` — fixture fixed, cast deleted | 101 → 78 |
+| 8 | `TS2322` function-slot family | 78 → 55 |
+| 9 | `TS2322` wrong-literal / partial-object | 55 → 31 |
+| 10 | final singletons | 31 → 21 |
+
+**No counter was ever traded.** Every escape hatch ended at or below its starting value:
+`as unknown as` 102 → **101**, `looseCast` 1923 → **1910**, `asNever` 615 → **608**,
+`anyType` 1875 → **1872**, `asAny` 1386 → **1385**; `tsSuppress`/`ratchetAllow`/
+`absentValue`/`nonNullAssert` flat. Baselines re-tightened twice (after group 6 and at the
+end) — the slack this drain re-opens has now recurred six times on this issue.
+
+**`src/` was never edited.** One helper was added (`test/helpers/op-model.ts`) and one fixed
+(`fake-agent-manager.ts`); nothing else under `test/helpers/` was touched.
+
+## The 21 survivors — all accepted or deliberately held back
+
+**Do not "fix" these without reading the reason.** None is a missed row.
+
+### Genuine `src/` typing gaps — file these, do not patch the test (5 rows)
+
+1. **`FixStrategy.fixOp` cannot accept deps** — `gating-preservation.test.ts(468)(484)` and
+   `story-scoped-fix-budget.test.ts(568)`. `FixStrategy.fixOp` is typed `Operation<I,O,C>`
+   (`src/findings/cycle-types.ts:168`), and that alias hard-fixes the deterministic variant's
+   `D` to `never` (`src/operations/types.ts:317-320`). So no `fixOp` reached through a
+   `FixStrategy` can take a real deps object — only `undefined`. The tests want to inject a
+   spy dep and assert it is never called. **The tests are right and the type is wrong.**
+   Third sighting adds `RunOperation.model`'s contravariance in `I` as the same shape.
+2. **`TestPatternConfig` requires what the code defends against** — `resolver.test.ts(227)(229)`.
+   `resolveTestFilePatterns` reads `config.execution?.smartTestRunner` with optional chaining
+   *specifically* to tolerate an absent `execution`, but `TestPatternConfig =
+   Pick<NaxConfig,"execution"|"project"|"quality">` types it required. The test exercises the
+   absence the src code handles; the type forbids expressing it.
+
+### Accepted by prior ruling (4 rows)
+
+`non-blocking-fix-wiring.test.ts(127)(181)(261)(282)` — genuinely-polymorphic `callOp` /
+`runFixCycle` seams. `PLAN-1514-callop-seam.md` §4 tier 3 ruled these correct as-is: the
+caller picks `O`, so no concrete stub can satisfy the signature cast-free. `bun:test`'s
+`Mock<T>` collapses to a single call signature, which can never satisfy a generic-in-return
+position — verified empirically in group 8.
+
+### Held back — blast radius (5 rows)
+
+`test/helpers/mock-agent-manager.ts(162)(202)` plus the three dependent `runAsSessionFn` rows
+in `test/integration/agents/*`. **115 consumers.** Same root cause as the fake-agent-manager
+fix in group 5 (the manager *produces* fields the mock reads as if it received them), but too
+wide to hand to a delegate on a mechanical brief. Owner work.
+
+### Escalated with findings — each would change what the test asserts (7 rows)
+
+- `context-provider-injection.test.ts(30)(37)` — using real `makePRD`/`makeStory` factories
+  makes `buildStoryContextFullFromCtx` actually succeed instead of throwing-and-being-caught,
+  flipping 2 tests from "preserves pre-set `contextMarkdown`" to "overwritten".
+- `validator.test.ts(166)` — deleting the dead `run` key makes the fixture type-correct, but
+  `src/plugins/validator.ts:205-215` still hard-requires `run`/`plan`/`decompose` at runtime,
+  a stale pre-ACP check. Fixing the fixture makes `validatePlugin()` reject its own "valid
+  plugin". **The runtime validator disagrees with the `AgentAdapter` type — worth an issue.**
+- `_tdd-test-helpers.ts(84)` — shared helper, 7 consumers.
+- `runner-stateful.test.ts(27)(29)`, `verifier-pick.test.ts(23)` — `handle` on
+  `SuccessfulProposal`. The field exists nowhere in `src/debate/`, but the test is titled
+  "carries optional handle field (compile-time check)" and cites an AC about session
+  continuity. This reads as scaffolding for an unimplemented feature, not stale fixture:
+  deleting it guts the contract the test exists to pin, and adding the field to `src/` to
+  satisfy a fixture is the move this issue forbids.
+
+## What this batch taught
+
+- **Fix the type and the casts fall out.** Group 7 targeted 23 `TS2352` rows and removed
+  10 `looseCast` + 4 `asNever` as a side effect. You do not drain casts by hunting casts.
+- **One tsc message, two different bugs.** `"code-neighbor"` (a real *provider id*, not a
+  `ChunkKind`) and a `string` that merely lost its literal type produce near-identical errors.
+  Swapping the value on the second, or annotating the first, silences tsc and leaves the
+  defect. Groups 6 and 9 both turned on making that call before editing.
+- **The ratchets earn their keep mid-flight.** They rejected an `: any` parameter (group 3),
+  an `as never` (group 6), and a line-adding annotation over `check:file-sizes` (group 8) —
+  each caught inside the loop, before a commit.
+- **Fixtures were asserting against impossible values.** `status: "FAILURE"`,
+  `pluginMode: "per-story"`, `StoryStatus "running"`, `TestStrategy "greenfield"` — none was
+  ever a member of its union. These tests passed while pinning states that cannot occur.
