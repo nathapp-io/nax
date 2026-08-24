@@ -239,7 +239,7 @@ describe("IAgentManager.complete()", () => {
     );
 
     const result = await mgr.complete("hello", {
-      model: "claude-haiku",
+      modelDef: { provider: "anthropic", model: "claude-haiku", env: {} },
       config: makeNaxConfig({
         agent: {
           default: "claude",
