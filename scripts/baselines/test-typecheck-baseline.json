@@ -1,6 +1,6 @@
 {
-  "count": 370,
-  "updatedAt": "2026-08-24T11:52:38.238Z",
+  "count": 369,
+  "updatedAt": "2026-08-24T11:53:52.511Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -147,7 +147,6 @@
     "test/unit/plugins/builtin/auto-route-acceptance.test.ts": 1,
     "test/unit/plugins/builtin/otel-reporter-lifecycle.test.ts": 3,
     "test/unit/plugins/builtin/otel-reporter.test.ts": 2,
-    "test/unit/plugins/builtin/otel-resource-git.test.ts": 1,
     "test/unit/plugins/builtin/otel-span-tree.test.ts": 1,
     "test/unit/plugins/builtin/webhook-reporter.test.ts": 2,
     "test/unit/plugins/loader-reporters.test.ts": 3,
