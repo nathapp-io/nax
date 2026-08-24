@@ -1,6 +1,6 @@
 {
-  "count": 501,
-  "updatedAt": "2026-08-24T06:29:27.715Z",
+  "count": 495,
+  "updatedAt": "2026-08-24T06:36:07.784Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -162,7 +162,6 @@
     "test/unit/pipeline/subscribers/events-writer.test.ts": 5,
     "test/unit/pipeline/subscribers/hooks.test.ts": 4,
     "test/unit/pipeline/subscribers/reporters.test.ts": 3,
-    "test/unit/plan/debate-strategy.test.ts": 6,
     "test/unit/plan/refine-strategy.test.ts": 4,
     "test/unit/plan/single-strategy.test.ts": 4,
     "test/unit/plan/strategies.test.ts": 2,
