@@ -1,6 +1,6 @@
 {
-  "count": 248,
-  "updatedAt": "2026-08-24T14:14:51.750Z",
+  "count": 246,
+  "updatedAt": "2026-08-24T14:23:50.347Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -44,7 +44,6 @@
     "test/unit/cli/setup-write.test.ts": 1,
     "test/unit/commands/replay.test.ts": 1,
     "test/unit/config/defaults-ssot.test.ts": 1,
-    "test/unit/config/schema-types.test.ts": 2,
     "test/unit/config/selectors.test.ts": 1,
     "test/unit/context/engine/orchestrator-floor-overage.test.ts": 1,
     "test/unit/context/engine/orchestrator.test.ts": 2,
