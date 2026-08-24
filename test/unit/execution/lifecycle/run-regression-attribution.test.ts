@@ -73,7 +73,6 @@ const deferredConfig = makeNaxConfig({
     detectOpenHandlesRetries: 0,
     gracePeriodMs: 0,
     drainTimeoutMs: 0,
-    shell: false,
     stripEnvVars: [],
   },
   execution: {
