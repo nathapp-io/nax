@@ -1,6 +1,6 @@
 {
-  "count": 715,
-  "updatedAt": "2026-08-24T03:28:56.115Z",
+  "count": 708,
+  "updatedAt": "2026-08-24T03:31:30.007Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -59,7 +59,6 @@
     "test/unit/cli/plan-decompose-debate.test.ts": 5,
     "test/unit/cli/plan-decompose-guards.test.ts": 3,
     "test/unit/cli/plan-decompose-mapper.test.ts": 1,
-    "test/unit/cli/plan-decompose-regression.test.ts": 7,
     "test/unit/cli/plan-decompose-writeback.test.ts": 3,
     "test/unit/cli/plan-mode.test.ts": 4,
     "test/unit/cli/plan-monorepo.test.ts": 6,
