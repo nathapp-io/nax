@@ -23,6 +23,8 @@ import {
   timeoutRetryShouldRetry,
 } from "@/agents";
 import { DEFAULT_CONFIG } from "@/config";
+import { agentManagerConfigSelector } from "@/config/selectors";
+import { makeNaxConfig } from "@test/helpers";
 
 const TIMEOUT_RETRY_DEFAULTS: TimeoutRetryConfig = {
   maxAttempts: 1,
@@ -44,14 +46,17 @@ function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptio
 
 describe("extractTimeoutRetryConfig — config policy extraction", () => {
   test("uses the on-config timeoutRetry values when both are set", () => {
-    const config = { agent: { timeoutRetry: { maxAttempts: 3, budgetMultiplier: 0.25 } } };
+    const config = agentManagerConfigSelector.select(
+      makeNaxConfig({ agent: { timeoutRetry: { maxAttempts: 3, budgetMultiplier: 0.25 } } }),
+    );
     const result = extractTimeoutRetryConfig(config);
     expect(result.maxAttempts).toBe(3);
     expect(result.budgetMultiplier).toBe(0.25);
   });
 
   test("boundary: returns defaults when agent.timeoutRetry is absent", () => {
-    const result = extractTimeoutRetryConfig({ agent: {} });
+    const config = agentManagerConfigSelector.select(makeNaxConfig({ agent: {} }));
+    const result = extractTimeoutRetryConfig(config);
     expect(result.maxAttempts).toBe(1);
     expect(result.budgetMultiplier).toBe(0.5);
   });
