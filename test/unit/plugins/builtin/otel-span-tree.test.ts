@@ -65,9 +65,9 @@ describe("createSpanTree", () => {
 
   test("AC11: a phase span carries a nax.test_strategy attribute equal to the event's testStrategy", () => {
     const tree = createSpanTree("trace1", "run-span");
-    const event = makePhaseEvent({ testStrategy: "greenfield" });
+    const event = makePhaseEvent({ testStrategy: "no-test" });
     const span = tree.buildPhaseSpan({ event, traceId: "trace1", startUnixNano: "0", endUnixNano: "1000" });
-    expect(span.attributes).toContainEqual(attr("nax.test_strategy", "greenfield"));
+    expect(span.attributes).toContainEqual(attr("nax.test_strategy", "no-test"));
   });
 
   test("boundary: storySpanId returns the same id for repeated calls with the same story", () => {
