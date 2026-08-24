@@ -8,18 +8,17 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { PromptOptimizerResult } from "@/optimizer/types";
 import { PluginRegistry } from "@/plugins/registry";
-import type { NaxPlugin } from "@/plugins/types";
+import type { NaxPlugin, PluginType } from "@/plugins/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
-const createMockPlugin = (name: string, provides: string[], extensions: any = {}): NaxPlugin => ({
+const createMockPlugin = (name: string, provides: PluginType[], extensions: any = {}): NaxPlugin => ({
   name,
   version: "1.0.0",
   provides,
   extensions,
-  init: async () => {},
 });
 
 const optimizerResult: PromptOptimizerResult = {
