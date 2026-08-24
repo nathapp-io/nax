@@ -9,7 +9,7 @@ function makeStoryCompletedEvent(): PipelineEvent {
     storyId: "US-001",
     story: { id: "US-001", title: "Test story", status: "passed", acceptanceCriteria: [] } as any,
     passed: true,
-    durationMs: 1000,
+    runElapsedMs: 1000,
   };
 }
 

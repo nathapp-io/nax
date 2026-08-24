@@ -1,6 +1,6 @@
 {
-  "count": 383,
-  "updatedAt": "2026-08-24T09:21:34.385Z",
+  "count": 382,
+  "updatedAt": "2026-08-24T11:39:30.509Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -132,7 +132,7 @@
     "test/unit/operations/timeout-resolvers.test.ts": 2,
     "test/unit/operations/verify-op.test.ts": 2,
     "test/unit/pipeline/effective-config.test.ts": 1,
-    "test/unit/pipeline/event-bus.test.ts": 3,
+    "test/unit/pipeline/event-bus.test.ts": 2,
     "test/unit/pipeline/runner-retry.test.ts": 1,
     "test/unit/pipeline/stages/completion-review-gate.test.ts": 1,
     "test/unit/pipeline/stages/context-scope-files.test.ts": 1,
