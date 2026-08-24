@@ -1071,19 +1071,99 @@ remove.
 
 ---
 
+## 22. The `Record<string, unknown>` cast cluster — done (818 → 792, −26)
+
+On `chore/1514-builder-slot-overloads`, one commit (`bf055736a`). Back in `test/`, and the
+first change on this branch to move `looseCast`: **1994 → 1958, 36 casts deleted and none
+added**. `config/schemas.test.ts` 21 → 0.
+
+### The cluster
+
+`TS2352` is the largest remaining error code (110). Grouping it by *conversion target* rather
+than by file found one shape holding 34 of them:
+
+| target | count |
+|:--|--:|
+| `Record<string, unknown>` | **34** |
+| `ParseFn` | 15 |
+| `Logger` | 5 |
+| everything else | ≤5 each |
+
+and 18 of the 34 were `NaxConfig → Record<string, unknown>`. **Cluster by what the type
+*is*, not by which file it is in** — the file view had this spread thinly across 12 files
+and invisible as a cluster.
+
+### Almost none of these casts did anything
+
+They sit on the **source of a spread** feeding `NaxConfigSchema.safeParse`, which takes
+`unknown`:
+
+```ts
+...(DEFAULT_CONFIG as Record<string, unknown>),   // before
+...DEFAULT_CONFIG,                                // after — parses identically
+```
+
+The cast was load-bearing only where a helper *annotated its return type*
+`Record<string, unknown>`; dropping the annotation drops the cast with it. Six
+clone-and-override helpers also mutated their copy (`base.execution = { ...execution, … }`),
+which is what needed a `Record` view to assign through — rewritten as immutable literals,
+they need neither the cast nor the mutation and are shorter.
+
+Two more were casts around properties the type **already has** (`result.data.profile`,
+`config.execution?.rectification?.storyScopedFixBudget`), and one cast through a `| undefined`
+that `expect(adv).toBeDefined()` does not narrow — `if (!adv) return;` narrows it properly.
+
+**No cast was contained in a helper here.** Unlike §17's `makeMergeEngine` or §18's
+`makeCallOp`, every one of these was removable outright. Worth checking for before designing
+a seam: *is this cast doing anything at all?*
+
+### What it unmasked
+
+`generate-config-schema.test.ts` had `const allAgents = [...] as const`, which `toEqual`
+cannot accept against the schema's narrow agent union — invisible while the receiver came
+through a `Record`. Now annotated `NonNullable<NonNullable<NaxConfig["generate"]>["agents"]>`,
+which **pins the literal to the schema** instead of restating it: add an agent to the enum and
+this test still compiles, drop one and it fails.
+
+### The near-miss: a botched multi-line replacement that typechecks
+
+Rewriting the six clone-and-override helpers by scripted replacement, one replacement block
+omitted the function's trailing `return base;`. The result was a function with a `return`
+followed by a stale `return base;`. **Unreachable code after a `return` is not a TypeScript
+error and Biome does not flag it** — in a file where `base` was still in scope this would
+have compiled, passed the suite, and sat there as dead code forever. It was caught by reading
+the file after the edit, not by any gate.
+
+§18's G6 says "regex is for finding, hand-editing is for fixing". This is the softer version
+of the same failure: a scripted *exact-string* replacement is safe from the nested-brace
+problem, but not from omitting a line that the block needed to swallow. **Print the touched
+region after every scripted edit.** The two seconds cost less than the gate that cannot see
+this.
+
+Verify: src tsc **0** including `tsconfig.contracts.json`. 818 → 792, files 256 → 252;
+per-file gate `worse: 0`. `looseCast` **1994 → 1958**; all other counters flat
+(`asAny=1388, tsSuppress=40, ratchetAllow=106, absentValue=17, anyType=1880`);
+`as unknown as` flat at 102. 25/25 gates green; full suite green
+(14127 + 1137 + 38 pass, 0 fail).
+
+---
+
 ## Next
 
+- **The other 13 `Record<string, unknown>` casts** are a *different* cause and were left
+  deliberately: dynamic dep-bag save/restore (`bakeoff/coordinator`, `bakeoff/run-action` —
+  `saved[key] = (_deps as Record<…>)[key]`) and captured-argument reads
+  (`acceptance-fix`, `mutation-summary-completion`). A `keyof D`-typed save/restore helper
+  would cover the first four; it needs one cast at `Object.keys`, so measure before building.
+- **`TS2352` after this pass: `ParseFn` 15, `Logger` 5, `(event: PipelineEvent) => void` 5.**
+  Same clustering method — group by conversion target.
 - **Fixture completeness.** The two `story-orchestrator-logs.test.ts` sites §19 unmasked
-  (`semanticConfig` missing `diffMode`/`resetRefOnRerun`/`rules`), plus siblings. Small,
-  mechanical, delegable.
-- **Config suites — 105 as re-measured, and the two debate files are now out of it.**
-  Remaining: `config/schemas` 21, `integration/config/merger` 19, `config/merge` 17,
-  `plugins/config-resolution` 16. Not yet enumerated by cause; every cluster so far has
-  decomposed into 3–5 distinct causes, and no size estimate has survived contact.
-- **The `debate` default literal.** §20's "recorded, not fixed" — its own commit.
-- **No named escalation is outstanding.** Both §18 filed are now closed (§19, §20). The next
-  cluster has to be found by measuring, not by reading this document.
+  (`semanticConfig` missing `diffMode`/`resetRefOnRerun`/`rules`). Small, mechanical, delegable.
+- **Config suites, re-measured again:** `integration/config/merger` 19, `config/merge` 17,
+  `plugins/config-resolution` 16. `config/schemas` is now 0. `merger` is 12 `TS2769` +
+  6 `TS2339`; `config-resolution` is 8 `TS2339` + 8 `TS2322`.
+- **The `debate` default literal** (§20 "recorded, not fixed") — its own commit.
 
-Residue at this commit: **818 errors across 256 files.** The branch has taken 886 → 818
-(−68) over two `src/` commits, touching **no test file at all**. Against the original #1514
-start: typecheck **2009 → 818 (−59%)**, casts **815 → 102 (−87%)**.
+Residue at this commit: **792 errors across 252 files.** The branch has taken 886 → 792
+(−94) over three fixes. Against the original #1514 start: typecheck **2009 → 792 (−61%)**,
+casts **815 → 102 (−87%)**, and `looseCast` moved for the first time since it was created.
