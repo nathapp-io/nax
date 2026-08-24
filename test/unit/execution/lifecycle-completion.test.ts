@@ -128,6 +128,7 @@ describe("RL-002 AC#1: on-complete hook fires after handleRunCompletion()", () =
       async (): Promise<DeferredRegressionResult> => ({
         success: true,
         failedTests: 0,
+        failedTestFiles: [],
         passedTests: 10,
         rectificationAttempts: 0,
         affectedStories: [],
@@ -149,6 +150,7 @@ describe("RL-002 AC#1: on-complete hook fires after handleRunCompletion()", () =
       return {
         success: true,
         failedTests: 0,
+        failedTestFiles: [],
         passedTests: 5,
         rectificationAttempts: 0,
         affectedStories: [],
@@ -191,6 +193,7 @@ describe("RL-002 AC#1: on-complete hook fires after handleRunCompletion()", () =
       return {
         success: true,
         failedTests: 0,
+        failedTestFiles: [],
         passedTests: 3,
         rectificationAttempts: 0,
         affectedStories: [],
@@ -311,6 +314,7 @@ beforeEach(() => {
     async (): Promise<DeferredRegressionResult> => ({
       success: true,
       failedTests: 0,
+      failedTestFiles: [],
       passedTests: 5,
       rectificationAttempts: 0,
       affectedStories: [],
@@ -486,6 +490,7 @@ describe("handleRunCompletion - deferred regression gate", () => {
 const MOCK_REGRESSION_FAILURE: DeferredRegressionResult = {
   success: false,
   failedTests: 3,
+  failedTestFiles: [],
   passedTests: 10,
   rectificationAttempts: 2,
   affectedStories: ["US-001"],
