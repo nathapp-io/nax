@@ -307,9 +307,12 @@ describe("Structural: call sites migrated away from old prompt functions", () =>
 
 describe("Internal prompts: not migrated, still accessible", () => {
   test("tdd/prompts.ts and execution/prompts.ts deleted; RectifierPromptBuilder exported (Phase 5)", async () => {
+    // Specifiers are built at runtime (not string literals) so tsc cannot statically
+    // resolve — and reject — a module that this test asserts was deleted (Phase 5).
+    const tddPromptsPath = ["@/tdd", "prompts"].join("/");
     let tddErr: unknown = null;
     try {
-      await import("@/tdd/prompts");
+      await import(tddPromptsPath);
     } catch (err) {
       tddErr = err;
     }
@@ -318,9 +321,10 @@ describe("Internal prompts: not migrated, still accessible", () => {
     const mod = await import("@/prompts");
     expect(typeof mod.RectifierPromptBuilder).toBe("function");
 
+    const execPromptsPath = ["@/execution", "prompts"].join("/");
     let execErr: unknown = null;
     try {
-      await import("@/execution/prompts");
+      await import(execPromptsPath);
     } catch (err) {
       execErr = err;
     }
