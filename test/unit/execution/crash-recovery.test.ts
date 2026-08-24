@@ -17,7 +17,7 @@ import {
   writeExitSummary,
 } from "@/execution/crash-recovery";
 import { StatusWriter } from "@/execution/status-writer";
-import { makeTempDir } from "@test/helpers";
+import { makePRD, makeTempDir } from "@test/helpers";
 
 let TEST_DIR: string;
 let TEST_JSONL: string;
@@ -125,11 +125,7 @@ describe("crash-recovery", () => {
         pid: process.pid,
       });
 
-      statusWriter.setPrd({
-        version: 1,
-        feature: "test-feature",
-        userStories: [],
-      });
+      statusWriter.setPrd(makePRD({ feature: "test-feature", userStories: [] }));
 
       const totalCost = 0;
       const iterations = 0;
@@ -252,11 +248,7 @@ describe("crash-recovery", () => {
         pid: process.pid,
       });
 
-      statusWriter.setPrd({
-        version: 1,
-        feature: "mock-feature",
-        userStories: [],
-      });
+      statusWriter.setPrd(makePRD({ feature: "mock-feature", userStories: [] }));
 
       const startTime = Date.now() - 5000;
       const ctx: CrashRecoveryContext = {
