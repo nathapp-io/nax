@@ -34,15 +34,10 @@ function baseOptions(overrides: Partial<HandleRunActionOptions> = {}): HandleRun
 }
 
 function withCliDeps<T>(overrides: Partial<BakeoffCliDeps>, fn: () => Promise<T>): Promise<T> {
-  const saved: Record<string, unknown> = {};
-  for (const key of Object.keys(overrides)) {
-    saved[key] = (_bakeoffCliDeps as Record<string, unknown>)[key];
-  }
+  const saved = { ..._bakeoffCliDeps };
   Object.assign(_bakeoffCliDeps, overrides);
   return fn().finally(() => {
-    for (const key of Object.keys(saved)) {
-      (_bakeoffCliDeps as Record<string, unknown>)[key] = saved[key];
-    }
+    Object.assign(_bakeoffCliDeps, saved);
   });
 }
 
@@ -61,7 +56,7 @@ describe("handleRunAction (AC-10: --compare routes to runBakeoff)", () => {
       contestants: [],
     };
 
-    const runBakeoffSpy = mock(async () => expected);
+    const runBakeoffSpy = mock(async (_opts: Parameters<BakeoffCliDeps["runBakeoff"]>[0]) => expected);
     const runSingleAgentSpy = mock(async () => undefined);
 
     await withCliDeps(
@@ -79,7 +74,7 @@ describe("handleRunAction (AC-10: --compare routes to runBakeoff)", () => {
     );
 
     expect(runBakeoffSpy).toHaveBeenCalledTimes(1);
-    const callArg = runBakeoffSpy.mock.calls[0][0] as { agents: string[]; feature: string };
+    const callArg = runBakeoffSpy.mock.calls[0][0];
     expect(callArg.agents).toEqual(["claude", "codex"]);
     expect(callArg.feature).toBe("test-feature");
     expect(runSingleAgentSpy).not.toHaveBeenCalled();
@@ -88,7 +83,7 @@ describe("handleRunAction (AC-10: --compare routes to runBakeoff)", () => {
   // Boundary: extra whitespace in the compare flag is normalised before the
   // dispatch reaches runBakeoff, matching parseCompareList's behaviour.
   it("AC10 (boundary): trims whitespace from --compare list before forwarding to runBakeoff", async () => {
-    const runBakeoffSpy = mock(async () => ({
+    const runBakeoffSpy = mock(async (_opts: Parameters<BakeoffCliDeps["runBakeoff"]>[0]) => ({
       feature: "test-feature",
       completedAt: "",
       outcome: 0,
@@ -112,7 +107,7 @@ describe("handleRunAction (AC-10: --compare routes to runBakeoff)", () => {
     );
 
     expect(runBakeoffSpy).toHaveBeenCalledTimes(1);
-    const callArg = runBakeoffSpy.mock.calls[0][0] as { agents: string[] };
+    const callArg = runBakeoffSpy.mock.calls[0][0];
     expect(callArg.agents).toEqual(["claude", "codex", "gemini"]);
     expect(runSingleAgentSpy).not.toHaveBeenCalled();
   });
@@ -120,7 +115,7 @@ describe("handleRunAction (AC-10: --compare routes to runBakeoff)", () => {
   // maxCostUsd threads through to runBakeoff for per-contestant enforcement
   // (the CLI already confirms N × max-cost before calling handleRunAction).
   it("forwards maxCostUsd from options to runBakeoff", async () => {
-    const runBakeoffSpy = mock(async () => ({
+    const runBakeoffSpy = mock(async (_opts: Parameters<BakeoffCliDeps["runBakeoff"]>[0]) => ({
       feature: "test-feature",
       completedAt: "",
       outcome: 0,
@@ -138,7 +133,7 @@ describe("handleRunAction (AC-10: --compare routes to runBakeoff)", () => {
       () => handleRunAction(baseOptions({ compare: "claude,codex", maxCostUsd: 5 })),
     );
 
-    const callArg = runBakeoffSpy.mock.calls[0][0] as { maxCostUsd?: number };
+    const callArg = runBakeoffSpy.mock.calls[0][0];
     expect(callArg.maxCostUsd).toBe(5);
   });
 });
