@@ -11,6 +11,7 @@ import { _routingDeps, routingStage } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
 import type { StoryRouting } from "@/prd/types";
+import type { RoutingDecision } from "@/routing";
 import { makeNaxConfig, makeStory } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-routing-test-${randomUUID()}`;
@@ -200,13 +201,14 @@ describe("routingStage - skips savePRD when story.routing already set", () => {
       reasoning: "persisted from prior run",
     };
 
-    _routingDeps.resolveRouting = mock(() =>
-      Promise.resolve({
-        complexity: "medium",
-        modelTier: "balanced",
-        testStrategy: "three-session-tdd",
-        reasoning: "re-classified",
-      }),
+    _routingDeps.resolveRouting = mock(
+      (): Promise<RoutingDecision> =>
+        Promise.resolve({
+          complexity: "medium",
+          modelTier: "balanced",
+          testStrategy: "three-session-tdd",
+          reasoning: "re-classified",
+        }),
     );
     _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
     _routingDeps.savePRD = mock(() => {
@@ -234,13 +236,14 @@ describe("routingStage - skips savePRD when story.routing already set", () => {
       reasoning: "persisted",
     };
 
-    _routingDeps.resolveRouting = mock(() =>
-      Promise.resolve({
-        complexity: "expert",
-        modelTier: "powerful",
-        testStrategy: "three-session-tdd",
-        reasoning: "fresh",
-      }),
+    _routingDeps.resolveRouting = mock(
+      (): Promise<RoutingDecision> =>
+        Promise.resolve({
+          complexity: "expert",
+          modelTier: "powerful",
+          testStrategy: "three-session-tdd",
+          reasoning: "fresh",
+        }),
     );
     _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
     _routingDeps.savePRD = mock(() => Promise.resolve());
@@ -285,13 +288,14 @@ describe("routingStage - escalation overwrites modelTier even after persistence"
       reasoning: "escalated",
     };
 
-    _routingDeps.resolveRouting = mock(() =>
-      Promise.resolve({
-        complexity: "simple",
-        modelTier: "fast",
-        testStrategy: "test-after",
-        reasoning: "fresh",
-      }),
+    _routingDeps.resolveRouting = mock(
+      (): Promise<RoutingDecision> =>
+        Promise.resolve({
+          complexity: "simple",
+          modelTier: "fast",
+          testStrategy: "test-after",
+          reasoning: "fresh",
+        }),
     );
     _routingDeps.complexityToModelTier = mock(() => "fast" as const);
     _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
@@ -320,13 +324,14 @@ describe("routingStage - escalation overwrites modelTier even after persistence"
       reasoning: "escalated",
     };
 
-    _routingDeps.resolveRouting = mock(() =>
-      Promise.resolve({
-        complexity: "simple",
-        modelTier: "fast",
-        testStrategy: "test-after",
-        reasoning: "fresh",
-      }),
+    _routingDeps.resolveRouting = mock(
+      (): Promise<RoutingDecision> =>
+        Promise.resolve({
+          complexity: "simple",
+          modelTier: "fast",
+          testStrategy: "test-after",
+          reasoning: "fresh",
+        }),
     );
     _routingDeps.complexityToModelTier = mock(() => "fast" as const);
     _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
