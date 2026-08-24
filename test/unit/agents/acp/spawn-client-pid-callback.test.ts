@@ -81,14 +81,14 @@ describe("SpawnAcpSession — onPidSpawned callback", () => {
   });
 
   test("onPidSpawned receives the process PID", async () => {
-    let capturedPid: number | null = null;
+    const capturedPids: number[] = [];
     const session = makeSession((pid: number) => {
-      capturedPid = pid;
+      capturedPids.push(pid);
     });
 
     await session.prompt("test");
 
-    expect(capturedPid as number).toBe(FIXED_PID);
+    expect(capturedPids[0]).toBe(FIXED_PID);
   });
 
   test("onPidSpawned fires BEFORE prompt() resolves", async () => {
