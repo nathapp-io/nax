@@ -4,12 +4,12 @@
     "tsSuppress": 40,
     "ratchetAllow": 106,
     "absentValue": 17,
-    "anyType": 1877,
-    "looseCast": 1925,
+    "anyType": 1875,
+    "looseCast": 1923,
     "asNever": 619,
     "nonNullAssert": 827
   },
-  "updatedAt": "2026-08-24T08:17:02.222Z",
+  "updatedAt": "2026-08-24T13:22:57.630Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -226,9 +226,6 @@
     },
     "test/integration/cli/cli-precheck-integration.test.ts": {
       "asAny": 1,
-      "anyType": 2
-    },
-    "test/integration/cli/cli-precheck-checks.test.ts": {
       "anyType": 1
     },
     "test/integration/cli/adapter-boundary.test.ts": {
@@ -1049,9 +1046,6 @@
     "test/unit/execution/lifecycle/run-completion-postrun.test.ts": {
       "looseCast": 1
     },
-    "test/unit/execution/lifecycle/mutation-summary-completion.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/execution/lifecycle/run-cleanup.test.ts": {
       "asAny": 2,
       "anyType": 3,
@@ -1075,7 +1069,7 @@
       "looseCast": 1
     },
     "test/unit/execution/lifecycle/acceptance-fix.test.ts": {
-      "looseCast": 4
+      "looseCast": 3
     },
     "test/unit/execution/lifecycle/acceptance-loop-retry-budget.test.ts": {
       "asAny": 7,
@@ -1099,8 +1093,11 @@
     "test/unit/findings/cycle-iteration-log.test.ts": {
       "nonNullAssert": 10
     },
+    "test/unit/findings/adapters/acceptance-diagnose.test.ts": {
+      "looseCast": 1
+    },
     "test/unit/bakeoff/coordinator.test.ts": {
-      "looseCast": 21,
+      "looseCast": 22,
       "nonNullAssert": 1
     },
     "test/unit/bakeoff/preflight.test.ts": {
@@ -1318,7 +1315,7 @@
       "anyType": 5
     },
     "test/unit/operations/setup-generate.test.ts": {
-      "looseCast": 4,
+      "looseCast": 3,
       "asNever": 1
     },
     "test/unit/operations/full-suite-rectify.test.ts": {
@@ -1835,7 +1832,7 @@
     },
     "test/unit/agents/acp/adapter.test.ts": {
       "ratchetAllow": 1,
-      "looseCast": 2
+      "looseCast": 1
     },
     "test/unit/agents/acp/token-mapper.test.ts": {
       "ratchetAllow": 5
