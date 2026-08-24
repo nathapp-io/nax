@@ -10,9 +10,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { AgentManager, _agentManagerDeps } from "@/agents/manager";
 import type { AgentRunRequest } from "@/agents/manager-types";
-import type { AgentAdapter } from "@/agents/types";
+import type { AgentAdapter, CompleteResult } from "@/agents/types";
 import { SessionFailureError } from "@/agents/types";
-import { makeNaxConfig } from "@test/helpers";
+import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 
 describe("IAgentManager.run()", () => {
   test("delegates to runWithFallback and returns AgentResult", async () => {
@@ -219,9 +219,15 @@ describe("IAgentManager.run() — agent swap", () => {
 
 describe("IAgentManager.complete()", () => {
   test("delegates to completeWithFallback and returns CompleteResult", async () => {
-    const adapter = {
-      complete: mock(async () => ({ output: "complete-out", costUsd: 0.001, source: "exact" as const })),
-    } as AgentAdapter;
+    const adapter = makeAgentAdapter({
+      complete: mock(
+        async (): Promise<CompleteResult> => ({
+          output: "complete-out",
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0.001,
+        }),
+      ),
+    });
     const mgr = new AgentManager(
       makeNaxConfig({
         agent: {
