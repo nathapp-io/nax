@@ -1943,9 +1943,20 @@ against those, not against zero.
 ## Next
 
 The residue is 383 across 186 files and, grouped by normalized error message rather than by
-file, is still recipe-shaped — §32's lesson holds a second time. Eight clusters worth ~40
-errors are specified in `HANDOFF-1514-tail-recipes-batch2.md`, each with its `src/` side and
-its sibling fixtures read before being called delegable.
+file, is still recipe-shaped — §32's lesson holds a second time.
+`HANDOFF-1514-tail-recipes-batch2.md` specifies six delegable clusters — **28 edits worth 27
+errors across 17 files, 383 → 356** — each with its `src/` side and its sibling fixtures read
+before being called delegable, and a seventh (the precheck config fixtures) held back for the
+owner with its fix verified but its true size unknown.
+
+That landing is a whole-batch measurement. The draft sized each cluster from one
+representative site and published 355; the pre-delegation review applied all 28 edits at once
+and found 356, because one site in cluster B is masked by a sibling error in its own file.
+**A single-site measurement does not generalize to its cluster** — the TS2353 floor effect
+(§5 of that handoff) reaches inside clusters that are otherwise mechanical. The review also
+turned up the general form: `tsc` emits at most one excess-property error per object literal,
+so the 383 baseline is a floor wherever dead fixture keys are stacked, and the drain loop's
+"total must drop by exactly N" rail inverts on such a file.
 
 Deferred and still unmeasured, from `HANDOFF-1514-tail-recipes.md` §5: `TS2769` (23,
 scattered, no shared cause found) and `TS7024` (9, needs a real return type worked out per
