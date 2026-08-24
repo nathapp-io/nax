@@ -1,6 +1,6 @@
 {
-  "count": 622,
-  "updatedAt": "2026-08-24T04:47:26.523Z",
+  "count": 616,
+  "updatedAt": "2026-08-24T04:50:07.274Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -70,7 +70,6 @@
     "test/unit/context/engine/orchestrator.test.ts": 2,
     "test/unit/context/engine/packing.test.ts": 3,
     "test/unit/context/engine/stage-assembler.test.ts": 3,
-    "test/unit/context/engine/tool-runtime.test.ts": 6,
     "test/unit/context/rules/rule-sections.test.ts": 1,
     "test/unit/debate/pre-phase/grounder.test.ts": 6,
     "test/unit/debate/resolvers.test.ts": 6,

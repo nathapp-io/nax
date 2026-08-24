@@ -17,12 +17,7 @@ describe("createContextToolRuntime — slice acceptance", () => {
   });
 
   test("createContextToolRuntime accepts a ContextToolRuntimeConfig slice (no NaxConfig cast)", () => {
-    const config: ContextToolRuntimeConfig = {
-      context: undefined,
-      execution: undefined,
-      project: undefined,
-      quality: undefined,
-    };
+    const config: ContextToolRuntimeConfig = contextToolRuntimeConfigSelector.select(makeNaxConfig());
     const emptyBundle: ContextBundle = makeContextBundle({
       pushMarkdown: "",
       pullTools: [],
@@ -62,12 +57,7 @@ function makeBundleWithTool(maxCallsPerSession: number): ContextBundle {
   });
 }
 
-const RUNTIME_CONFIG: ContextToolRuntimeConfig = {
-  context: undefined,
-  execution: undefined,
-  project: undefined,
-  quality: undefined,
-};
+const RUNTIME_CONFIG: ContextToolRuntimeConfig = contextToolRuntimeConfigSelector.select(makeNaxConfig());
 
 describe("createContextToolRuntime — session-scoped pull budget", () => {
   const story = { id: "S-001", workdir: "" } as Parameters<typeof createContextToolRuntime>[0]["story"];
