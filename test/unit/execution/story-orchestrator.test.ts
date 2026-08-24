@@ -30,10 +30,11 @@ import {
   phasesToRevalidate,
   refreshReviewInputForDispatch,
 } from "@/execution";
-import type { Finding, ReviewCheckResult } from "@/findings";
+import type { Finding, FixCycle, FixCycleContext, ReviewCheckResult } from "@/findings";
 import type { CallContext, CompleteOperation, DeterministicOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 import {
+  makeCallOp,
   makeFixCycleResult,
   makeIteration,
   makeLinkWithCosts,
@@ -299,9 +300,10 @@ describe("StoryOrchestratorBuilder — AC4: callOp dispatch only", () => {
 
     let callOpInvoked = false;
     const origCallOp = _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.callOp = mock(async () => {
-      callOpInvoked = true;
-      return { success: true };
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: () => {
+        callOpInvoked = true;
+      },
     });
 
     const mockAgentManager = makeMockAgentManager();
@@ -1646,7 +1648,7 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
     // Simulate rectification resolving the gate: swap gateOp.execute to succeed
     // during the validate sweep, then restore. After the swap, the cycle reports
     // "resolved" so the post-rectification resume kicks in.
-    _storyOrchestratorDeps.runFixCycle = async (cycle: any, cycleCtx: any) => {
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>(cycle: FixCycle<F>, cycleCtx: FixCycleContext) => {
       const origGateExecute = gateOp.execute;
       (gateOp as any).execute = () => ({ success: true, findings: [] });
       try {
@@ -1654,12 +1656,7 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
       } finally {
         (gateOp as any).execute = origGateExecute;
       }
-      return {
-        iterations: [{ strategyName: "full-suite-rectify" }],
-        finalFindings: [],
-        exitReason: "resolved" as const,
-        costUsd: 0,
-      };
+      return makeFixCycleResult<F>({ iterations: [makeIteration()] });
     };
 
     try {
