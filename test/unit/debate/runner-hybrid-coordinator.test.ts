@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { ConfigSelector } from "@/config";
 import { runHybrid } from "@/debate/runner-hybrid";
 import { _hybridDeps } from "@/debate/runner-hybrid";
 import type { HybridCtx } from "@/debate/runner-hybrid";
@@ -7,7 +6,13 @@ import type { DebateStageConfig } from "@/debate/types";
 import { NaxError } from "@/errors";
 import { DebatePromptBuilder } from "@/prompts";
 import type { PackageView } from "@/runtime";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager, withDepsRestore } from "@test/helpers";
+import {
+  makeMockAgentManager,
+  makeNaxConfig,
+  makeSessionManager,
+  makeTestRuntime,
+  withDepsRestore,
+} from "@test/helpers";
 
 function installCallOp(impl: typeof _hybridDeps.callOp) {
   const spy = mock(impl);
@@ -63,6 +68,14 @@ function makeHybridCtx(
     nameFor: mock((req) => req.role ?? ""),
   });
 
+  const runtime = makeTestRuntime({
+    agentManager,
+    sessionManager,
+    config: fullConfig,
+    workdir: "/tmp/work",
+    parentSignal: abortSignal,
+  });
+
   return {
     storyId: "US-hybrid",
     stage: "run",
@@ -72,27 +85,14 @@ function makeHybridCtx(
     featureName: "feat-hybrid",
     timeoutSeconds: 60,
     callContext: {
-      runtime: {
-        agentManager,
-        sessionManager,
-        configLoader: {
-          current: () => fullConfig,
-          select: <C>(sel: ConfigSelector<C>) => sel.select(fullConfig),
-        },
-        packages: {
-          resolve: () => testView,
-          all: () => [testView],
-          repo: () => testView,
-          hydrate: async () => {},
-        },
-        signal: abortSignal,
-      },
+      runtime,
       packageView: testView,
       packageDir: "/tmp/work",
       agentName: "claude",
       storyId: "US-hybrid",
       featureName: "feat-hybrid",
     },
+    runtime,
     agentManager,
     sessionManager,
     abortSignal,
