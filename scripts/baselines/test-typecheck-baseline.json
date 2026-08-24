@@ -1,6 +1,6 @@
 {
-  "count": 543,
-  "updatedAt": "2026-08-24T05:53:16.462Z",
+  "count": 540,
+  "updatedAt": "2026-08-24T05:54:58.758Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -209,7 +209,6 @@
     "test/unit/review/semantic-parsing.test.ts": 3,
     "test/unit/review/semantic-prompt-response.test.ts": 3,
     "test/unit/review/semantic-signature-diff.test.ts": 4,
-    "test/unit/review/semantic-threshold.test.ts": 3,
     "test/unit/routing/llm-batch-route.test.ts": 3,
     "test/unit/runtime/middleware/cancellation.test.ts": 3,
     "test/unit/runtime/runtime.test.ts": 5,
