@@ -6,6 +6,7 @@ import { judgeOp } from "@/operations";
 import type { DebateJudgeInput } from "@/operations/debate-judge";
 import { DebatePromptBuilder } from "@/prompts";
 import { composeSections, join } from "@/prompts";
+import { opModelResolver } from "@test/helpers";
 
 function makeBuildCtx() {
   return {
@@ -38,7 +39,7 @@ describe("judgeOp", () => {
       resolverAgent: "judge-agent",
       resolverModel: "fast",
     };
-    expect(judgeOp.model?.(input, makeBuildCtx())).toEqual({
+    expect(opModelResolver(judgeOp)(input, makeBuildCtx())).toEqual({
       agent: "judge-agent",
       model: "fast",
     });
@@ -51,7 +52,7 @@ describe("judgeOp", () => {
       resolverAgent: "custom-resolver",
       resolverModel: "opus",
     };
-    expect(judgeOp.model?.(input, makeBuildCtx())).toEqual({
+    expect(opModelResolver(judgeOp)(input, makeBuildCtx())).toEqual({
       agent: "custom-resolver",
       model: "opus",
     });
