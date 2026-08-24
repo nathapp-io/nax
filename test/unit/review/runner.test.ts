@@ -7,6 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _qualityRunnerDeps as _runnerDeps } from "@/quality/runner";
 import {
   _reviewGitDeps as _deps,
@@ -73,6 +74,7 @@ describe("runReview — dirty working tree guard (RQ-001)", () => {
         config: typecheckConfig,
         workdir: "/tmp/fake-workdir",
         executionConfig: {
+          ...DEFAULT_CONFIG.execution,
           typecheckCommand: null,
           maxIterations: 5,
           iterationDelayMs: 0,
@@ -81,8 +83,8 @@ describe("runReview — dirty working tree guard (RQ-001)", () => {
           verificationTimeoutSeconds: 60,
           maxStoriesPerFeature: 20,
           contextProviderTokenBudget: 2000,
-          rectification: { enabled: false, maxIterations: 3 },
-          regressionGate: { enabled: false },
+          rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: false },
+          regressionGate: { enabled: false, timeoutSeconds: 120 },
         },
       });
       expect(result.success).toBe(true);
@@ -460,7 +462,7 @@ describe("runReview — semantic check integration (AC-9)", () => {
     const configWithSemantic: ReviewConfig = {
       ...semanticConfig,
       semantic: {
-        modelTier: "powerful",
+        model: "powerful",
         rules: ["no stubs"],
         timeoutMs: 600_000,
         excludePatterns: [":!test/"],
@@ -474,7 +476,7 @@ describe("runReview — semantic check integration (AC-9)", () => {
         workdir: "/tmp/fake-workdir",
         storyGitRef: undefined,
         semanticConfig: {
-          modelTier: "powerful",
+          model: "powerful",
           rules: ["no stubs"],
           timeoutMs: 600_000,
           excludePatterns: [":!test/"],
