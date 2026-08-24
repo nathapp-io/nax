@@ -1555,3 +1555,120 @@ Residue at these commits: **546 errors across 223 files.** The branch has taken
 692 → 546 (−146) across the two batches, matching the lane-a plan's Batch 1 + Batch 2 landing
 point (692 → ~610 → ~546). Against the original #1514 start: typecheck **2009 → 546 (−73%)**,
 casts **815 → 102 (−87%)**, `looseCast` **1994 → 1927** with none added.
+
+## 30. Lane A Batch 3 — the tail (546 → 474, −72)
+
+21 commits on `chore/1514-lane-a-drain`, one file per commit, each through the full loop
+(src tsc 0, per-file `worse: 0`, targeted test, 25/25 gates, `bun run test`, `bun run
+test:coverage` at ≤103/103, `check:test-typecheck:update` last). **546 → 474** across
+223 → 202 files. All six escape-hatch counters flat or lower — `looseCast` **1927 → 1925**
+(the only mover, both cast deletions from `parallel-worker`), `as unknown as` flat at 102.
+This is the Batch 3 tail: every file ≤3–6 errors, no table, `grep` the file → read the error
+→ apply a proven recipe or move on.
+
+### The CompleteResult legacy shape — 10 files, the batch's biggest cluster (−27)
+
+`{ output, costUsd, source }` is the pre-`CompleteResult` shape (`src/agents/types.ts:319`
+wants `{ output, tokenUsage, estimatedCostUsd }`). §27 named ~6 surviving review files; the
+live count was **10**, all with the identical `makeAgentManager` fixture:
+
+`semantic-unverifiable`, `semantic-threshold`, `adversarial-verifiedby`,
+`adversarial-metadata-audit`, `adversarial-pass-fail`, `semantic-debate`,
+`semantic-findings`, `semantic-parsing`, `semantic-prompt-response`,
+`semantic-signature-diff`. Each `completeFn`/`completeWithFallbackFn`/`completeAsFn` got
+`tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: cost`. No counter moved —
+the `costUsd`/`source` phantom fields were never read by the ops (§27 confirmed). One
+extra per file: `adversarial-metadata-audit` carried a `naxConfig` key that
+`RunAdversarialReviewOptions` calls `config` (TS2561), renamed; `semantic-signature-diff`
+had a stale "accepts five parameters" compile check for a `runSemanticReview` that now takes
+an options object — rewritten to the real `RunSemanticReviewOptions` form.
+
+### Recipes reused from the province
+
+- **`PlanDeps.getLogger` + `PlanModeContext.profileName`** — `debate-strategy`,
+  `refine-strategy`, `single-strategy`, `strategies.test` all had the §28/§29 pair: missing
+  `getLogger` (fixed with `makeLogger`) and optional-`profileName` (fixed with `"default"`,
+  the runtime's documented fallback). Four files, one recipe.
+- **`PackageSummary` casts** — `refine-strategy`/`single-strategy` cast
+  `{ path, packageName, stackSummary }` to `PackageSummary`; `packageName`/`stackSummary`
+  don't exist on it (the fields are `name`/`keyDeps` etc.). Completed the literal.
+- **`createDebateRunner` stubs** — `debate-strategy`'s `mock(() => ({ runPlan }))` →
+  `mock(() => makeDebateRunner({ runPlan }))` (§13 recipe; keeping the outer `mock` preserves
+  `toHaveBeenCalledTimes`). Also replaced the hand-rolled `makeRuntime` (missing 8 `NaxRuntime`
+  fields after the deps fix) with `makeMockRuntime()` + `runtime.close = closeImpl`.
+- **`callOp` args via `firstCall`** — three files read `mock.calls[0] as [Record<string,
+  unknown>, unknown, Record<string, unknown>]`. The `as` failed (CallContext has no index
+  signature) and the mock was zero-arg so `calls[0]` was `[]`. R2'd the mock
+  (`..._args: Parameters<typeof deps.callOp>`) and read via `firstCall` (§16 helper). One
+  unmask: `expect(op).toBe(planInteractiveOp)` then fails on the generic `Operation` variance,
+  so the identity assertion widens the op through a `const dispatchedOp: unknown` — the op
+  itself is now properly typed as `Operation<unknown, unknown, unknown>` instead of `unknown`.
+- **`setPostRunPhase` overloads** — `runner-completion-postrun` and
+  `lifecycle/run-completion-postrun` both assigned `mock((phase: string, update: { status:
+  string }) => …)` to the overloaded `StatusWriter.setPostRunPhase`. `phase: string` is too
+  wide for the `"acceptance"|"regression"|"finish"` literals, and `{ status: string }` can't
+  overlap `Partial<AcceptancePhaseStatus>` (`status?` is optional). The clean fix is the
+  helper's sanctioned override path: `makeStatusWriter({ setPostRunPhase: mock(…) })` — the
+  `unknown`-typed override param skips the overload check entirely and keeps `update.status:
+  string` in the bodies. 6 sites across 2 files. Two `new Date(x as string)` round-trip
+  assertions per file were reworked to `assertDefined(passedCall)` +
+  `assertDefined(passedCall.lastRunAt)` — **the `as string` casts deleted outright**.
+- **`RoutingDecision` mocks** — `parallel-worker` returned `{ complexity, modelTier,
+  testStrategy }` missing `reasoning`; annotated `(): RoutingDecision` and dropped the two
+  `as typeof` casts (R6 — the mock is now directly assignable).
+
+### What the fixes unmasked (each a real defect, none added a counter)
+
+- **`runner.test.ts`** — the `rectification: { maxIterations: 3 }` dead key was a wholesale
+  rejection hiding **13 required `RectificationConfig` fields** and a `RegressionGateConfig`
+  missing `timeoutSeconds`; the whole `executionConfig` literal was missing 6 `ExecutionConfig`
+  fields. `{ ...DEFAULT_CONFIG.execution }` + explicit overrides. And `modelTier: "powerful"`
+  on `SemanticReviewConfig` is `model:` — the fixture's own `objectContaining` assertion
+  mirrored the phantom key, so both had to change or the assertion would fail at runtime.
+- **`plan-inputs-review-wiring`** — `inlineReview: true` is a **removed legacy key** US-005c
+  (`compat-shims.ts:239` strips it with a warning); the rectification gate only reads
+  `execution.rectification.enabled`. Dropped. The `excludePatterns: undefined` "derive" state
+  (ADR-009 §4.4) can't be spelled as a spread of the interface-typed
+  `DEFAULT_CONFIG.review.semantic` — **spreading an interface-typed value with an optional-key
+  path loses required-field requiredness** (probe-verified; `exactOptionalPropertyTypes` is
+  off, so this is spread semantics, not the flag). File-local `withoutExcludePatterns()`
+  destructures the key out cast-free.
+- **`semantic-categories`** — `outcome: "fixes-applied"` is a phantom `IterationOutcome`
+  (the union is `resolved|partial|regressed|unchanged|regressed-different-source`);
+  `countPriorAppearances` never reads `outcome`, so `"unchanged"` is faithful. The
+  `test.each` tuples widened `expected` to `string`; annotating
+  `test.each<[unknown, SemanticCategory | ""]>` pins it.
+- **`debate-strategy`** — dropping the `as never` on the old `createDebateRunner` stub
+  surfaced the 8-field `NaxRuntime` gap and the generic `Operation` variance.
+
+### Constructs tsc could not see
+
+- **`runner-language-fallback.test.ts` (2 errors) — SKIPPED, needs a design decision.** The
+  dep slot is `_reviewRunnerDeps.file = Bun.file` (a 3-overload `typeof` type); the tests mock
+  it with `{ text: () => Promise<…> }` cast `as typeof _reviewRunnerDeps.file`. The cast now
+  fails with TS2352 because `{ text }` cannot overlap `BunFile`. No cast-free test-side fix
+  exists: `as unknown as` would raise the 102 counter (G4), narrowing the dep is `src/` (G5),
+  and `Bun.file(new Blob([…]))` throws in this Bun (only path/fd overloads accept).
+  `Bun.file` on a real temp file is the only overlap-valid path but changes runtime behaviour
+  per scenario — not a typing commit. **2 errors stay in the 474 baseline.** The right fix is
+  either narrowing `_reviewRunnerDeps.file` to `(path: string) => Pick<BunFile, "text">` in
+  `src/review/runner/index.ts`, or a counted helper.
+- **`debate/pre-phase/grounder` (6) — untouched per the plan's explicit ruling** (§29
+  escalation: `NaxRuntime` has no `packageView`; resolution is a design call for the owner).
+
+### Transient artifact worth recording (NOT a #1514 issue)
+
+During this batch's full-suite runs, `deferred-review-integration` (and the run it drives)
+intermittently wrote run artifacts to a **literal `undefined/` directory** at the repo root
+(`undefined/nax-deferred-review-integration-*/test-feature-run-test-123/meta.json`). One such
+run swept 35 `meta.json` files into a `git add -A` commit; the commit was caught, reset, the
+junk purged, and the commit re-done with explicit file staging. The trigger is a test-isolation
+bug (a temp base resolving to the string `"undefined"`), **not** caused by any drain change and
+not reproducible in isolation. Unrelated to the typecheck drain; filed here so nobody blames a
+`git add -A` in a later lane. **Lesson for this branch: stage files explicitly, never `-A`.**
+
+Verify: src tsc **0** incl. contracts. 546 → 474, files 223 → 202, per-file `worse: 0`. All six
+counters flat or lower (`asAny=1387, tsSuppress=40, ratchetAllow=106, absentValue=17,
+anyType=1878, looseCast=1925`); `as unknown as` flat at 102. 25/25 gates green; full suite green
+across all three phases; `test:coverage` at 102/103 below-floor (one file moved above its floor —
+strictly better, never worse). The branch has taken 692 → 474 (−218) across Batches 1–3.
