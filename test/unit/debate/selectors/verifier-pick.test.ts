@@ -12,7 +12,7 @@ import type { SessionHandle } from "@/agents";
 import { resolveSelector, verifierPickSelector } from "@/debate";
 import type { SelectorContext } from "@/debate";
 import type { SuccessfulProposal } from "@/debate";
-import { makeMockAgentManager, type makeTestRuntime } from "@test/helpers";
+import { makeMockAgentManager, makeMockCallContext, type makeTestRuntime } from "@test/helpers";
 
 function makeProposal(output: string, agentName = "claude", handle?: SessionHandle): SuccessfulProposal {
   return {
@@ -58,6 +58,7 @@ function makeSelectorContext(overrides: Partial<SelectorContext> = {}): Selector
     timeoutMs: 30000,
     agentManager: makeMockAgentManager(),
     debaters: [],
+    callContext: makeMockCallContext(),
     ...overrides,
   };
 }
