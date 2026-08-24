@@ -10,7 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import { _callOpDeps, callOp } from "@/operations";
-import type { RunOperation } from "@/operations";
+import type { BuildHopCallbackContext, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
@@ -41,11 +41,21 @@ describe("callOp — contextToolRunCounter threading", () => {
     const orig = _callOpDeps.buildHopCallback;
     let seen: unknown;
     let stubCalled = false;
-    _callOpDeps.buildHopCallback = ((hopCtx: { contextToolRunCounter?: unknown }) => {
+    _callOpDeps.buildHopCallback = (hopCtx: BuildHopCallbackContext) => {
       stubCalled = true;
       seen = hopCtx.contextToolRunCounter;
-      return async () => ({ result: { success: true, exitCode: 0, output: "ok" }, bundle: undefined });
-    }) as typeof _callOpDeps.buildHopCallback;
+      return async () => ({
+        result: {
+          success: true,
+          exitCode: 0,
+          output: "ok",
+          rateLimited: false,
+          durationMs: 0,
+          estimatedCostUsd: 0,
+        },
+        bundle: undefined,
+      });
+    };
 
     const counter = { count: 3, calls: [] };
     const agentManager = makeMockAgentManager({});
