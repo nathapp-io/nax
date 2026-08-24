@@ -280,7 +280,7 @@ describe("planCommand — callOp + planInteractiveOp migration", () => {
         enabled: true,
         stages: {
           plan: {
-            debaters: [{ agent: "claude", tier: "balanced" }],
+            debaters: [{ agent: "claude", model: "balanced" }],
             rounds: 1,
           },
         },
