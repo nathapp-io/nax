@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _unifiedExecutorDeps, executeUnified } from "@/execution/unified-executor";
+import type { PRD, UserStory } from "@/prd/types";
 import type { ISessionManager } from "@/session";
 import { makeSessionManager as makeMockSessionManager } from "@test/helpers";
 
-function makePendingStory(id: string) {
+function makePendingStory(id: string): UserStory {
   return {
     id,
     title: `Story ${id}`,
@@ -13,17 +14,18 @@ function makePendingStory(id: string) {
     dependencies: [],
     status: "pending" as const,
     passes: false,
+    escalations: [],
     attempts: 0,
-    priorFailures: [],
   };
 }
 
-function makePrd(stories: ReturnType<typeof makePendingStory>[]) {
+function makePrd(stories: UserStory[]): PRD {
   return {
     project: "test-project",
     feature: "test-feature",
     branchName: "test-branch",
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     userStories: stories,
   };
 }
