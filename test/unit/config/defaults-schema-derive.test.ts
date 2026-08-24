@@ -108,7 +108,8 @@ describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
       const schemaDefault = AdversarialReviewConfigSchema.parse({});
       const adv = DEFAULT_CONFIG.review?.adversarial;
       expect(adv).toBeDefined();
-      const { substantiation, ...derived } = adv as Record<string, unknown>;
+      if (!adv) return;
+      const { substantiation, ...derived } = adv;
       expect(derived).toEqual(schemaDefault);
       // substantiation is schema-optional (no `.default()`), spread in explicitly to keep the shape.
       expect(substantiation).toEqual({ requote: true, maxRequotes: 5 });

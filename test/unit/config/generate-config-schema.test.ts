@@ -5,10 +5,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { NaxConfigSchema } from "@/config/schemas";
 
-const BASE = DEFAULT_CONFIG as Record<string, unknown>;
+const BASE = DEFAULT_CONFIG;
 
 describe("GenerateConfigSchema — config.generate.agents", () => {
   test("generate.agents survives safeParse with valid agent list", () => {
@@ -23,7 +24,15 @@ describe("GenerateConfigSchema — config.generate.agents", () => {
   });
 
   test("generate.agents with all valid agent types", () => {
-    const allAgents = ["claude", "codex", "opencode", "cursor", "windsurf", "aider", "gemini"] as const;
+    const allAgents: NonNullable<NonNullable<NaxConfig["generate"]>["agents"]> = [
+      "claude",
+      "codex",
+      "opencode",
+      "cursor",
+      "windsurf",
+      "aider",
+      "gemini",
+    ];
     const raw = { ...BASE, generate: { agents: allAgents } };
     const result = NaxConfigSchema.safeParse(raw);
     expect(result.success).toBe(true);

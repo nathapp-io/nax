@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
-import type { PullCallRecord } from "@/context/engine";
+import type { ProviderBudgetPressure, PullCallRecord } from "@/context/engine";
 import { _manifestStoreDeps } from "@/context/engine/manifest-store";
 import type { ContextManifest } from "@/context/engine/types";
 import { collectStoryMetrics } from "@/metrics/tracker";
@@ -69,8 +69,10 @@ let origListManifestFiles: typeof _manifestStoreDeps.listManifestFiles;
 let origFileExists: typeof _manifestStoreDeps.fileExists;
 let origReadFile: typeof _manifestStoreDeps.readFile;
 
-function mockManifests(manifests: Record<string, ContextManifest>) {
-  // manifests: key = "<featureId>/<stage>" → manifest
+function mockManifests(manifests: Record<string, ContextManifest | string>) {
+  // manifests: key = "<featureId>/<stage>" → manifest, or pre-serialized JSON
+  // text for corrupt-on-disk adversarial cases (the tracker reads manifests as
+  // JSON text, so corruption is expressed here as text, not as a typed object).
   _manifestStoreDeps.listFeatureDirs = async () => [FEATURE];
   _manifestStoreDeps.listManifestFiles = async () =>
     Object.keys(manifests)
@@ -80,7 +82,7 @@ function mockManifests(manifests: Record<string, ContextManifest>) {
   _manifestStoreDeps.readFile = async (path: string) => {
     const stage = path.replace(/.*context-manifest-/, "").replace(/\.json$/, "");
     const m = manifests[`${FEATURE}/${stage}`];
-    return m ? JSON.stringify(m) : "{}";
+    return typeof m === "string" ? m : m ? JSON.stringify(m) : "{}";
   };
 }
 
@@ -364,7 +366,7 @@ describe("collectStoryMetrics — US-003 context.floorOverage (AC-2, AC-3)", () 
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("collectStoryMetrics — US-004 context.providers[].budgetPressure", () => {
-  function providerResultWithPressure(pressure: Record<string, unknown>) {
+  function providerResultWithPressure(pressure: ProviderBudgetPressure) {
     return [
       {
         providerId: "static-rules",
@@ -381,12 +383,22 @@ describe("collectStoryMetrics — US-004 context.providers[].budgetPressure", ()
     mockManifests({
       [`${FEATURE}/execution`]: makeManifest({
         stage: "execution",
-        providerResults: providerResultWithPressure({ overageTokens: 200, droppedCount: 0, droppedTokens: 0 }),
+        providerResults: providerResultWithPressure({
+          overageTokens: 200,
+          droppedCount: 0,
+          droppedTokens: 0,
+          droppedIds: [],
+        }),
         includedChunks: ["static-rules:a:001"],
       }),
       [`${FEATURE}/verify`]: makeManifest({
         stage: "verify",
-        providerResults: providerResultWithPressure({ overageTokens: 300, droppedCount: 0, droppedTokens: 0 }),
+        providerResults: providerResultWithPressure({
+          overageTokens: 300,
+          droppedCount: 0,
+          droppedTokens: 0,
+          droppedIds: [],
+        }),
         includedChunks: ["static-rules:a:001"],
       }),
     });
@@ -400,12 +412,22 @@ describe("collectStoryMetrics — US-004 context.providers[].budgetPressure", ()
     mockManifests({
       [`${FEATURE}/execution`]: makeManifest({
         stage: "execution",
-        providerResults: providerResultWithPressure({ overageTokens: 0, droppedCount: 3, droppedTokens: 0 }),
+        providerResults: providerResultWithPressure({
+          overageTokens: 0,
+          droppedCount: 3,
+          droppedTokens: 0,
+          droppedIds: [],
+        }),
         includedChunks: ["static-rules:a:001"],
       }),
       [`${FEATURE}/verify`]: makeManifest({
         stage: "verify",
-        providerResults: providerResultWithPressure({ overageTokens: 0, droppedCount: 7, droppedTokens: 0 }),
+        providerResults: providerResultWithPressure({
+          overageTokens: 0,
+          droppedCount: 7,
+          droppedTokens: 0,
+          droppedIds: [],
+        }),
         includedChunks: ["static-rules:a:001"],
       }),
     });
@@ -419,12 +441,22 @@ describe("collectStoryMetrics — US-004 context.providers[].budgetPressure", ()
     mockManifests({
       [`${FEATURE}/execution`]: makeManifest({
         stage: "execution",
-        providerResults: providerResultWithPressure({ overageTokens: 0, droppedCount: 0, droppedTokens: 1_000 }),
+        providerResults: providerResultWithPressure({
+          overageTokens: 0,
+          droppedCount: 0,
+          droppedTokens: 1_000,
+          droppedIds: [],
+        }),
         includedChunks: ["static-rules:a:001"],
       }),
       [`${FEATURE}/verify`]: makeManifest({
         stage: "verify",
-        providerResults: providerResultWithPressure({ overageTokens: 0, droppedCount: 0, droppedTokens: 2_000 }),
+        providerResults: providerResultWithPressure({
+          overageTokens: 0,
+          droppedCount: 0,
+          droppedTokens: 2_000,
+          droppedIds: [],
+        }),
         includedChunks: ["static-rules:a:001"],
       }),
     });
@@ -497,24 +529,38 @@ describe("collectStoryMetrics — US-004 context.providers[].budgetPressure", ()
     // Mirrors AC-7's "legacy contributes zero rather than inferring" rule: a
     // stage manifest whose pressure fields are not finite nonnegative numbers
     // contributes zero for that field, never NaN/negative/string.
+    // Corruption is expressed as raw manifest JSON — the disk form the tracker
+    // actually reads — not as a strong-typed object. (NaN serializes to null.)
     mockManifests({
-      [`${FEATURE}/execution`]: makeManifest({
-        stage: "execution",
-        providerResults: providerResultWithPressure({
-          overageTokens: Number.NaN,
-          droppedCount: -5,
-          droppedTokens: "lots",
-        }),
+      [`${FEATURE}/execution`]: JSON.stringify({
+        ...makeManifest(),
         includedChunks: ["static-rules:a:001"],
+        providerResults: [
+          {
+            providerId: "static-rules",
+            status: "ok",
+            chunkCount: 1,
+            durationMs: 10,
+            tokensProduced: 100,
+            budgetPressure: { overageTokens: Number.NaN, droppedCount: -5, droppedTokens: "lots" },
+          },
+        ],
       }),
-      [`${FEATURE}/verify`]: makeManifest({
+      [`${FEATURE}/verify`]: JSON.stringify({
+        ...makeManifest(),
         stage: "verify",
-        providerResults: providerResultWithPressure({
-          // droppedCount missing entirely — should be treated as 0
-          overageTokens: 100,
-          droppedTokens: 50,
-        }),
         includedChunks: ["static-rules:a:001"],
+        providerResults: [
+          {
+            providerId: "static-rules",
+            status: "ok",
+            chunkCount: 1,
+            durationMs: 10,
+            tokensProduced: 100,
+            // droppedCount missing entirely — should be treated as 0
+            budgetPressure: { overageTokens: 100, droppedTokens: 50 },
+          },
+        ],
       }),
     });
     const ctx = makeCtx();
@@ -522,7 +568,7 @@ describe("collectStoryMetrics — US-004 context.providers[].budgetPressure", ()
     const pressure = metrics.context?.providers["static-rules"]?.budgetPressure;
 
     expect(pressure).toBeDefined();
-    expect(pressure?.overageTokens).toBe(100); // NaN→0, then +100
+    expect(pressure?.overageTokens).toBe(100); // invalid (NaN serialized to null)→0, then +100
     expect(pressure?.droppedCount).toBe(0); // -5→0, missing→0
     expect(pressure?.droppedTokens).toBe(50); // "lots"→0, then +50
     // All fields must remain finite numbers, never NaN / Infinity / string
@@ -545,7 +591,7 @@ describe("collectStoryMetrics — US-004 context.providers[].budgetPressure", ()
             chunkCount: 1,
             durationMs: 10,
             tokensProduced: 100,
-            budgetPressure: "not-an-object" as unknown as Record<string, unknown>,
+            budgetPressure: "not-an-object" as unknown as ProviderBudgetPressure,
           },
         ],
         includedChunks: ["static-rules:a:001"],

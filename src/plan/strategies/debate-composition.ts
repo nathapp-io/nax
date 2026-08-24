@@ -1,8 +1,6 @@
 import type { DebateStageConfig } from "@/debate/types";
 
-export function buildPlanComposition(
-  userStageConfig: DebateStageConfig & { evidenceMode?: "current" | "asymmetric" },
-): DebateStageConfig {
+export function buildPlanComposition(userStageConfig: DebateStageConfig): DebateStageConfig {
   if (userStageConfig.evidenceMode !== "asymmetric") return userStageConfig;
   return {
     ...userStageConfig,

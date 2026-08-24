@@ -14,11 +14,8 @@ import { DEFAULT_CONFIG } from "@/config/defaults";
 import { NaxConfigSchema } from "@/config/schemas";
 
 /** Minimal valid config base — everything except models */
-function baseConfig(models: unknown): Record<string, unknown> {
-  return {
-    ...(DEFAULT_CONFIG as Record<string, unknown>),
-    models,
-  };
+function baseConfig(models: unknown) {
+  return { ...DEFAULT_CONFIG, models };
 }
 
 describe("ModelsSchema — legacy flat config migration", () => {
@@ -188,11 +185,8 @@ describe("ModelsSchema — new per-agent config (no migration)", () => {
 });
 
 describe("StorySizeGateConfigSchema — action and maxReplanAttempts (US-001)", () => {
-  function basePrecheckConfig(storySizeGate: Record<string, unknown>): Record<string, unknown> {
-    return {
-      ...(DEFAULT_CONFIG as Record<string, unknown>),
-      precheck: { storySizeGate },
-    };
+  function basePrecheckConfig(storySizeGate: Record<string, unknown>) {
+    return { ...DEFAULT_CONFIG, precheck: { storySizeGate } };
   }
 
   test("action defaults to 'block' and maxReplanAttempts defaults to 3 when omitted", () => {
@@ -268,9 +262,9 @@ describe("StorySizeGateConfigSchema — action and maxReplanAttempts (US-001)", 
 describe("configured model selector schema", () => {
   test("accepts object form for plan.model", () => {
     const result = NaxConfigSchema.safeParse({
-      ...(DEFAULT_CONFIG as Record<string, unknown>),
+      ...DEFAULT_CONFIG,
       plan: {
-        ...(DEFAULT_CONFIG.plan as Record<string, unknown>),
+        ...DEFAULT_CONFIG.plan,
         model: { agent: "codex", model: "gpt-5.4" },
       },
     });
@@ -282,9 +276,9 @@ describe("configured model selector schema", () => {
 
   test("accepts object form for acceptance.model", () => {
     const result = NaxConfigSchema.safeParse({
-      ...(DEFAULT_CONFIG as Record<string, unknown>),
+      ...DEFAULT_CONFIG,
       acceptance: {
-        ...(DEFAULT_CONFIG.acceptance as Record<string, unknown>),
+        ...DEFAULT_CONFIG.acceptance,
         model: { agent: "codex", model: "fast" },
       },
     });
@@ -296,11 +290,11 @@ describe("configured model selector schema", () => {
 
   test("accepts object form for routing.llm.model", () => {
     const result = NaxConfigSchema.safeParse({
-      ...(DEFAULT_CONFIG as Record<string, unknown>),
+      ...DEFAULT_CONFIG,
       routing: {
-        ...(DEFAULT_CONFIG.routing as Record<string, unknown>),
+        ...DEFAULT_CONFIG.routing,
         llm: {
-          ...((DEFAULT_CONFIG.routing.llm as Record<string, unknown>) ?? {}),
+          ...DEFAULT_CONFIG.routing?.llm,
           model: { agent: "claude", model: "sonnet" },
         },
       },
@@ -314,12 +308,12 @@ describe("configured model selector schema", () => {
 
 describe("ModelsSchema — DEFAULT_CONFIG compatibility", () => {
   test("DEFAULT_CONFIG (legacy flat format) parses successfully after migration", () => {
-    const result = NaxConfigSchema.safeParse(DEFAULT_CONFIG as Record<string, unknown>);
+    const result = NaxConfigSchema.safeParse(DEFAULT_CONFIG);
     expect(result.success).toBe(true);
   });
 
   test("DEFAULT_CONFIG after migration has per-agent structure", () => {
-    const result = NaxConfigSchema.safeParse(DEFAULT_CONFIG as Record<string, unknown>);
+    const result = NaxConfigSchema.safeParse(DEFAULT_CONFIG);
     expect(result.success).toBe(true);
     if (!result.success) return;
 
@@ -331,13 +325,13 @@ describe("ModelsSchema — DEFAULT_CONFIG compatibility", () => {
 
 describe("profile field — US-001-A", () => {
   test.each([
-    ["default", DEFAULT_CONFIG as Record<string, unknown>],
-    ["fast", { ...(DEFAULT_CONFIG as Record<string, unknown>), profile: "fast" }],
+    ["default", DEFAULT_CONFIG],
+    ["fast", { ...DEFAULT_CONFIG, profile: "fast" }],
   ])("profile equals '%s' when parsed with that value", (profile, input) => {
     const result = NaxConfigSchema.safeParse(input);
     expect(result.success).toBe(true);
     if (!result.success) return;
-    expect((result.data as Record<string, unknown>).profile).toBe(profile);
+    expect(result.data.profile).toBe(profile);
   });
 });
 
@@ -407,12 +401,12 @@ describe("NaxConfigSchema — superRefine: tierOrder agent cross-section validat
 
   function withTierOrder(tierOrder: Array<{ tier: string; agent?: string; attempts: number }>, models?: unknown) {
     return NaxConfigSchema.safeParse({
-      ...(DEFAULT_CONFIG as Record<string, unknown>),
+      ...DEFAULT_CONFIG,
       ...(models !== undefined ? { models } : {}),
       autoMode: {
-        ...(DEFAULT_CONFIG.autoMode as Record<string, unknown>),
+        ...DEFAULT_CONFIG.autoMode,
         escalation: {
-          ...((DEFAULT_CONFIG.autoMode as Record<string, unknown>).escalation as Record<string, unknown>),
+          ...DEFAULT_CONFIG.autoMode?.escalation,
           tierOrder,
         },
       },
@@ -461,10 +455,10 @@ describe("NaxConfigSchema — superRefine: tierOrder agent cross-section validat
 
   test("profile with the default tier-only ladder fails with an actionable agent-qualify message", () => {
     const result = NaxConfigSchema.safeParse({
-      ...(DEFAULT_CONFIG as Record<string, unknown>),
+      ...DEFAULT_CONFIG,
       models: MODELS,
       routing: {
-        ...(DEFAULT_CONFIG.routing as Record<string, unknown>),
+        ...DEFAULT_CONFIG.routing,
         agents: {
           enabled: true,
           strategy: "off",
@@ -538,13 +532,11 @@ describe("autoRoute config foundation (US-001)", () => {
 
 describe("ContextV2RulesConfigSchema — enforceBudget (US-002)", () => {
   function rulesConfig(rules: Record<string, unknown> | undefined) {
-    const base = { ...(DEFAULT_CONFIG as Record<string, unknown>) };
-    if (rules !== undefined) {
-      const context = base.context as Record<string, unknown>;
-      const v2 = { ...(context.v2 as Record<string, unknown>), rules };
-      base.context = { ...context, v2 };
-    }
-    return base;
+    if (rules === undefined) return { ...DEFAULT_CONFIG };
+    return {
+      ...DEFAULT_CONFIG,
+      context: { ...DEFAULT_CONFIG.context, v2: { ...DEFAULT_CONFIG.context?.v2, rules } },
+    };
   }
 
   test("[US-002 AC 11] enforceBudget defaults to true when context.v2.rules is omitted (US-003 flipped default)", () => {
@@ -597,13 +589,11 @@ describe("ContextV2RulesConfigSchema — enforceBudget (US-002)", () => {
 
 describe("ContextV2RulesConfigSchema — rulesShare (US-003)", () => {
   function rulesConfig(rules: Record<string, unknown> | undefined) {
-    const base = { ...(DEFAULT_CONFIG as Record<string, unknown>) };
-    if (rules !== undefined) {
-      const context = base.context as Record<string, unknown>;
-      const v2 = { ...(context.v2 as Record<string, unknown>), rules };
-      base.context = { ...context, v2 };
-    }
-    return base;
+    if (rules === undefined) return { ...DEFAULT_CONFIG };
+    return {
+      ...DEFAULT_CONFIG,
+      context: { ...DEFAULT_CONFIG.context, v2: { ...DEFAULT_CONFIG.context?.v2, rules } },
+    };
   }
 
   test("[US-003 AC 1] rulesShare defaults to 0.4 when context.v2.rules is omitted", () => {
@@ -648,12 +638,8 @@ describe("ContextV2RulesConfigSchema — rulesShare (US-003)", () => {
 
 describe("RectificationConfigSchema — no-progress fields (US-1496)", () => {
   function rectificationConfig(rect: Record<string, unknown> | undefined) {
-    const base = { ...(DEFAULT_CONFIG as Record<string, unknown>) };
-    if (rect !== undefined) {
-      const execution = base.execution as Record<string, unknown>;
-      base.execution = { ...execution, rectification: rect };
-    }
-    return base;
+    if (rect === undefined) return { ...DEFAULT_CONFIG };
+    return { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, rectification: rect } };
   }
 
   test("[US-1496 AC 1] abortOnNoProgress defaults to true when execution.rectification is omitted", () => {
@@ -727,12 +713,8 @@ describe("RectificationConfigSchema — no-progress fields (US-1496)", () => {
 
 describe("RectificationConfigSchema — storyScopedFixBudget (US-004)", () => {
   function rectificationConfig(rect: Record<string, unknown> | undefined) {
-    const base = { ...(DEFAULT_CONFIG as Record<string, unknown>) };
-    if (rect !== undefined) {
-      const execution = base.execution as Record<string, unknown>;
-      base.execution = { ...execution, rectification: rect };
-    }
-    return base;
+    if (rect === undefined) return { ...DEFAULT_CONFIG };
+    return { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, rectification: rect } };
   }
 
   test("[US-004 AC 1] storyScopedFixBudget defaults to true when execution.rectification is omitted", () => {

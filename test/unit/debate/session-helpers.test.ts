@@ -136,7 +136,7 @@ function makeCaptureManager(captured: { opts?: CompleteOptions }[], output = "re
   return makeMockAgentManager({
     completeFn: async (_agentName: string, _prompt: string, opts?: CompleteOptions) => {
       captured.push({ opts });
-      return { output, costUsd: 0.01, source: "exact" as const };
+      return { output, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.01 };
     },
   });
 }
@@ -155,12 +155,15 @@ describe("resolveOutcome() — workdir and featureName parameters (US-004 AC1)",
       ['{"passed": true}'],
       [],
       stageConfig,
-      undefined,
+      DEFAULT_DEBATE_CONFIG,
       makeMinimalCallCtx(),
       "US-004",
       30_000,
       "/tmp/workdir",
       "my-feature",
+      undefined,
+      undefined,
+      makeMockAgentManager(),
     );
     expect(result).toBeDefined();
   });
@@ -187,7 +190,8 @@ describe("resolveOutcome() — synthesis resolver sessionHandle (US-004 AC2)", (
     const storyId = "US-004";
 
     const captured1: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.agentManager = makeCaptureManager(captured1);
+    const agentManager1 = makeCaptureManager(captured1);
+    _debateSessionDeps.agentManager = agentManager1;
     await resolveOutcome(
       ["proposal-a", "proposal-b"],
       ["critique-a"],
@@ -198,11 +202,15 @@ describe("resolveOutcome() — synthesis resolver sessionHandle (US-004 AC2)", (
       30_000,
       workdir,
       featureName,
+      undefined,
+      undefined,
+      agentManager1,
     );
     expect(captured1[0]?.opts?.sessionName).toBe(computeAcpHandle(workdir, featureName, storyId, "synthesis"));
 
     const captured2: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.agentManager = makeCaptureManager(captured2);
+    const agentManager2 = makeCaptureManager(captured2);
+    _debateSessionDeps.agentManager = agentManager2;
     await resolveOutcome(
       ["proposal-a", "proposal-b"],
       ["critique-a"],
@@ -211,6 +219,11 @@ describe("resolveOutcome() — synthesis resolver sessionHandle (US-004 AC2)", (
       makeMinimalCallCtx(),
       "US-004",
       30_000,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      agentManager2,
     );
     expect(captured2[0]?.opts?.sessionName).toBeUndefined();
   });
@@ -237,7 +250,8 @@ describe("resolveOutcome() — custom/judge resolver sessionHandle (US-004 AC3)"
     const storyId = "US-004";
 
     const captured1: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.agentManager = makeCaptureManager(captured1);
+    const agentManager1 = makeCaptureManager(captured1);
+    _debateSessionDeps.agentManager = agentManager1;
     await resolveOutcome(
       ["proposal-a"],
       ["critique-a"],
@@ -248,11 +262,15 @@ describe("resolveOutcome() — custom/judge resolver sessionHandle (US-004 AC3)"
       30_000,
       workdir,
       featureName,
+      undefined,
+      undefined,
+      agentManager1,
     );
     expect(captured1[0]?.opts?.sessionName).toBe(computeAcpHandle(workdir, featureName, storyId, "judge"));
 
     const captured2: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.agentManager = makeCaptureManager(captured2);
+    const agentManager2 = makeCaptureManager(captured2);
+    _debateSessionDeps.agentManager = agentManager2;
     await resolveOutcome(
       ["proposal-a"],
       ["critique-a"],
@@ -261,6 +279,11 @@ describe("resolveOutcome() — custom/judge resolver sessionHandle (US-004 AC3)"
       makeMinimalCallCtx(),
       "US-004",
       30_000,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      agentManager2,
     );
     expect(captured2[0]?.opts?.sessionName).toBeUndefined();
   });
@@ -293,12 +316,15 @@ describe("resolveOutcome() — majority resolver warns when workdir provided (US
         ['{"passed": true}'],
         [],
         makeResolveStageConfig(resolverType),
-        undefined,
+        DEFAULT_DEBATE_CONFIG,
         makeMinimalCallCtx(),
         "US-004",
         30_000,
         "/tmp/workdir",
         "my-feature",
+        undefined,
+        undefined,
+        makeMockAgentManager(),
       );
       expect(warnCalls.calls.length).toBeGreaterThan(0);
       expect(warnCalls.calls[0]?.message).toContain(
@@ -315,10 +341,15 @@ describe("resolveOutcome() — majority resolver warns when workdir provided (US
       ['{"passed": true}', '{"passed": true}', '{"passed": false}'],
       [],
       stageConfig,
-      undefined,
+      DEFAULT_DEBATE_CONFIG,
       makeMinimalCallCtx(),
       "US-004",
       30_000,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      makeMockAgentManager(),
     );
     expect(baseResult.outcome).toBe("passed"); // 2 pass > 1 fail — majority wins
   });
@@ -392,8 +423,6 @@ describe("resolveOutcome() — callContext parameter (AC2)", () => {
       undefined,
       undefined,
       undefined,
-      undefined,
-      undefined,
       makeMockAgentManager(),
     );
     expect(r1.outcome).toBe("passed");
@@ -408,8 +437,6 @@ describe("resolveOutcome() — callContext parameter (AC2)", () => {
       callCtx,
       "US-ac2b",
       30_000,
-      undefined,
-      undefined,
       undefined,
       undefined,
       undefined,

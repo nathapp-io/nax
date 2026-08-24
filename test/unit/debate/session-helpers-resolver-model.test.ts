@@ -48,7 +48,7 @@ function makeCaptureManager(captured: { opts?: CompleteOptions }[]) {
   return makeMockAgentManager({
     completeFn: async (_agentName: string, _prompt: string, opts?: CompleteOptions) => {
       captured.push({ opts });
-      return { output: "resolved", costUsd: 0.01, source: "exact" as const };
+      return { output: "resolved", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.01 };
     },
   });
 }
@@ -83,8 +83,6 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
       undefined,
       undefined,
       undefined,
-      undefined,
-      undefined,
       absentValue<IAgentManager>(),
     );
 
@@ -110,8 +108,6 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
       undefined,
       undefined,
       undefined,
-      undefined,
-      undefined,
       absentValue<IAgentManager>(),
     );
 
@@ -132,8 +128,6 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
       makeCallCtx(),
       "US-352",
       30_000,
-      undefined,
-      undefined,
       undefined,
       undefined,
       undefined,
@@ -177,8 +171,6 @@ describe("resolveOutcome() custom/judge — resolver.model → modelDef (#352)",
       undefined,
       undefined,
       undefined,
-      undefined,
-      undefined,
       absentValue<IAgentManager>(),
     );
 
@@ -199,8 +191,6 @@ describe("resolveOutcome() custom/judge — resolver.model → modelDef (#352)",
       makeCallCtx(),
       "US-352",
       30_000,
-      undefined,
-      undefined,
       undefined,
       undefined,
       undefined,

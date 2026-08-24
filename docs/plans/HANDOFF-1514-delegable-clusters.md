@@ -67,6 +67,17 @@ not to make the change. A prior handoff (`HANDOFF-1514-mechanical-fixture-fields
 file was "out of scope" but did not say its shared helper was, and the helper got extended
 anyway. Hence this rule stated plainly.
 
+**Amended 2026-08-24 — this rule binds the delegate, not the owner.** `STATUS-1514-drain.md`
+§18 read it as an absolute project bar and parked two clusters (60 errors) behind it that
+`test/` provably could not fix without adding casts. The owner cleared both in §19 and §20
+under a five-clause bar recorded in §21: probe-verified root cause, type gets stricter never
+wider, zero casts added, full suite run (not just the gates), and a write-up naming what the
+fix unmasked.
+
+Nothing about your side of the rule changes. **Escalate — do not edit `src/` or
+`test/helpers/` yourself.** The escalation path now has a defined destination instead of
+being a dead end, which is the only thing that moved.
+
 ### G6. Regex is for finding, hand-editing is for fixing
 
 Two of the recipes below were originally attempted as regex substitutions. One worked

@@ -37,86 +37,86 @@ import type { InternalBuildState, OrchestratorSlot, RectificationPhaseOptions } 
 export class StoryOrchestratorBuilder {
   private readonly state: InternalBuildState = {};
 
-  addImplementer<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addImplementer<I, O, C, D>(slot: OrchestratorSlot<I, O, C, D>): this;
   addImplementer(input: ImplementerInput): this;
-  addImplementer(value: ImplementerInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+  addImplementer(value: ImplementerInput | OrchestratorSlot<unknown, unknown, unknown, unknown>): this {
     setPhase(this.state, "implementer", isSlot(value) ? value : { op: implementerOp, input: value });
     return this;
   }
 
-  addTestWriter<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addTestWriter<I, O, C, D>(slot: OrchestratorSlot<I, O, C, D>): this;
   addTestWriter(input: TestWriterInput): this;
-  addTestWriter(value: TestWriterInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+  addTestWriter(value: TestWriterInput | OrchestratorSlot<unknown, unknown, unknown, unknown>): this {
     setPhase(this.state, "test-writer", isSlot(value) ? value : { op: testWriterOp, input: value });
     return this;
   }
 
-  addGreenfieldGate<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addGreenfieldGate<I, O, C, D>(slot: OrchestratorSlot<I, O, C, D>): this;
   addGreenfieldGate(input: GreenfieldGateInput): this;
-  addGreenfieldGate(value: GreenfieldGateInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+  addGreenfieldGate(value: GreenfieldGateInput | OrchestratorSlot<unknown, unknown, unknown, unknown>): this {
     setPhase(this.state, "greenfield-gate", isSlot(value) ? value : { op: greenfieldGateOp, input: value });
     return this;
   }
 
-  addTestPresenceGate<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addTestPresenceGate<I, O, C, D>(slot: OrchestratorSlot<I, O, C, D>): this;
   addTestPresenceGate(input: TestPresenceGateInput): this;
-  addTestPresenceGate(value: TestPresenceGateInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+  addTestPresenceGate(value: TestPresenceGateInput | OrchestratorSlot<unknown, unknown, unknown, unknown>): this {
     setPhase(this.state, "test-presence-gate", isSlot(value) ? value : { op: testPresenceGateOp, input: value });
     return this;
   }
 
-  addVerifier<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addVerifier<I, O, C, D>(slot: OrchestratorSlot<I, O, C, D>): this;
   addVerifier(input: VerifierInput): this;
-  addVerifier(value: VerifierInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+  addVerifier(value: VerifierInput | OrchestratorSlot<unknown, unknown, unknown, unknown>): this {
     setPhase(this.state, "verifier", isSlot(value) ? value : { op: verifierOp, input: value });
     return this;
   }
 
-  addFullSuiteGate<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addFullSuiteGate<I, O, C, D>(slot: OrchestratorSlot<I, O, C, D>): this;
   addFullSuiteGate(input: FullSuiteGateInput): this;
-  addFullSuiteGate(value: FullSuiteGateInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+  addFullSuiteGate(value: FullSuiteGateInput | OrchestratorSlot<unknown, unknown, unknown, unknown>): this {
     setPhase(this.state, "full-suite-gate", isSlot(value) ? value : { op: fullSuiteGateOp, input: value });
     return this;
   }
 
-  addMutationCheck<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addMutationCheck<I, O, C, D>(slot: OrchestratorSlot<I, O, C, D>): this;
   addMutationCheck(input: MutationCheckInput): this;
-  addMutationCheck(value: MutationCheckInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+  addMutationCheck(value: MutationCheckInput | OrchestratorSlot<unknown, unknown, unknown, unknown>): this {
     setPhase(this.state, "mutation-check", isSlot(value) ? value : { op: mutationCheckOp, input: value });
     return this;
   }
 
-  addVerifyScoped<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addVerifyScoped<I, O, C, D>(slot: OrchestratorSlot<I, O, C, D>): this;
   addVerifyScoped(input: VerifyScopedInput): this;
-  addVerifyScoped(value: VerifyScopedInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+  addVerifyScoped(value: VerifyScopedInput | OrchestratorSlot<unknown, unknown, unknown, unknown>): this {
     setPhase(this.state, "verify-scoped", isSlot(value) ? value : { op: verifyScopedOp, input: value });
     return this;
   }
 
-  addLintCheck<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addLintCheck<I, O, C, D>(slot: OrchestratorSlot<I, O, C, D>): this;
   addLintCheck(input: LintCheckInput): this;
-  addLintCheck(value: LintCheckInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+  addLintCheck(value: LintCheckInput | OrchestratorSlot<unknown, unknown, unknown, unknown>): this {
     setPhase(this.state, "lint-check", isSlot(value) ? value : { op: lintCheckOp, input: value });
     return this;
   }
 
-  addTypecheckCheck<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addTypecheckCheck<I, O, C, D>(slot: OrchestratorSlot<I, O, C, D>): this;
   addTypecheckCheck(input: TypecheckCheckInput): this;
-  addTypecheckCheck(value: TypecheckCheckInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+  addTypecheckCheck(value: TypecheckCheckInput | OrchestratorSlot<unknown, unknown, unknown, unknown>): this {
     setPhase(this.state, "typecheck-check", isSlot(value) ? value : { op: typecheckCheckOp, input: value });
     return this;
   }
 
-  addSemanticReview<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addSemanticReview<I, O, C, D>(slot: OrchestratorSlot<I, O, C, D>): this;
   addSemanticReview(input: SemanticReviewInput): this;
-  addSemanticReview(value: SemanticReviewInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+  addSemanticReview(value: SemanticReviewInput | OrchestratorSlot<unknown, unknown, unknown, unknown>): this {
     setPhase(this.state, "semantic-review", isSlot(value) ? value : { op: semanticReviewOp, input: value });
     return this;
   }
 
-  addAdversarialReview<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addAdversarialReview<I, O, C, D>(slot: OrchestratorSlot<I, O, C, D>): this;
   addAdversarialReview(input: AdversarialReviewInput): this;
-  addAdversarialReview(value: AdversarialReviewInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+  addAdversarialReview(value: AdversarialReviewInput | OrchestratorSlot<unknown, unknown, unknown, unknown>): this {
     setPhase(this.state, "adversarial-review", isSlot(value) ? value : { op: adversarialReviewOp, input: value });
     return this;
   }

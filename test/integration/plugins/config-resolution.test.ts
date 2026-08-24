@@ -56,10 +56,11 @@ async function writePluginFile(filePath: string, plugin: NaxPlugin, setupFn?: st
       name: "${plugin.extensions.optimizer.name}",
       async optimize(input) {
         return {
-          optimizedPrompt: input.prompt,
-          estimatedTokens: input.estimatedTokens,
-          tokensSaved: 0,
-          appliedStrategies: []
+          prompt: input.prompt,
+          originalTokens: 0,
+          optimizedTokens: 0,
+          savings: 0,
+          appliedRules: []
         };
       }
     },`;
@@ -107,10 +108,11 @@ describe("Plugin config path resolution (US-007)", () => {
             name: "test",
             async optimize(input) {
               return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
+                prompt: input.prompt,
+                originalTokens: 0,
+                optimizedTokens: 0,
+                savings: 0,
+                appliedRules: [],
               };
             },
           },
@@ -152,10 +154,11 @@ describe("Plugin config path resolution (US-007)", () => {
             name: "test",
             async optimize(input) {
               return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
+                prompt: input.prompt,
+                originalTokens: 0,
+                optimizedTokens: 0,
+                savings: 0,
+                appliedRules: [],
               };
             },
           },
@@ -171,10 +174,11 @@ describe("Plugin config path resolution (US-007)", () => {
             name: "test",
             async optimize(input) {
               return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
+                prompt: input.prompt,
+                originalTokens: 0,
+                optimizedTokens: 0,
+                savings: 0,
+                appliedRules: [],
               };
             },
           },
@@ -216,10 +220,11 @@ describe("Plugin config path resolution (US-007)", () => {
             name: "test",
             async optimize(input) {
               return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
+                prompt: input.prompt,
+                originalTokens: 0,
+                optimizedTokens: 0,
+                savings: 0,
+                appliedRules: [],
               };
             },
           },
@@ -261,10 +266,11 @@ describe("Plugin config path resolution (US-007)", () => {
             name: "test",
             async optimize(input) {
               return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
+                prompt: input.prompt,
+                originalTokens: 0,
+                optimizedTokens: 0,
+                savings: 0,
+                appliedRules: [],
               };
             },
           },
@@ -305,10 +311,11 @@ describe("Plugin config path resolution (US-007)", () => {
             name: "test",
             async optimize(input) {
               return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
+                prompt: input.prompt,
+                originalTokens: 0,
+                optimizedTokens: 0,
+                savings: 0,
+                appliedRules: [],
               };
             },
           },
@@ -441,10 +448,11 @@ describe("Plugin config path resolution (US-007)", () => {
             name: "test",
             async optimize(input) {
               return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
+                prompt: input.prompt,
+                originalTokens: 0,
+                optimizedTokens: 0,
+                savings: 0,
+                appliedRules: [],
               };
             },
           },
@@ -500,10 +508,11 @@ describe("Plugin config path resolution (US-007)", () => {
             name: "test",
             async optimize(input) {
               return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
+                prompt: input.prompt,
+                originalTokens: 0,
+                optimizedTokens: 0,
+                savings: 0,
+                appliedRules: [],
               };
             },
           },

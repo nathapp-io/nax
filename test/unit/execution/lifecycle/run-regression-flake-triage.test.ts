@@ -43,7 +43,7 @@ const TEST_CONFIG = makeNaxConfig({
     detectOpenHandlesRetries: 0,
     gracePeriodMs: 0,
     drainTimeoutMs: 0,
-    shell: false,
+    shell: "/bin/sh",
     stripEnvVars: [],
   },
   execution: {
@@ -99,7 +99,7 @@ describe("runDeferredRegression — triage wiring (AC1)", () => {
     }));
 
     const triageCalls: Finding[][] = [];
-    _regressionDeps.triageFlakyFindings = mock(async (input: { findings: Finding[] }) => {
+    _regressionDeps.triageFlakyFindings = mock(async (input: FlakeTriageInput) => {
       triageCalls.push([...input.findings]);
       return {
         findings: input.findings.map((f) => ({ ...f })),
@@ -140,7 +140,7 @@ describe("runDeferredRegression — all flakes (AC2)", () => {
       ],
     }));
 
-    _regressionDeps.triageFlakyFindings = mock(async (input: { findings: Finding[] }) => ({
+    _regressionDeps.triageFlakyFindings = mock(async (input: FlakeTriageInput) => ({
       findings: input.findings.map((f) => ({ ...f, category: "flaky-test" })),
       quarantineReport: {
         keys: ["a.test.ts::test a", "b.test.ts::test b"],
@@ -175,7 +175,7 @@ describe("runDeferredRegression — flaky tests excluded from attribution (AC3)"
       failures: [{ file: "a.test.ts", testName: "test a", error: "boom", stackTrace: [] }],
     }));
 
-    _regressionDeps.triageFlakyFindings = mock(async (input: { findings: Finding[] }) => ({
+    _regressionDeps.triageFlakyFindings = mock(async (input: FlakeTriageInput) => ({
       findings: input.findings.map((f) => ({ ...f, category: "flaky-test" })),
       quarantineReport: { keys: ["a.test.ts::test a"], reasons: ["quarantined: a.test.ts::test a"] },
     }));
@@ -209,7 +209,7 @@ describe("runDeferredRegression — genuine vs flake (AC4)", () => {
     }));
 
     // Triage relabels only the flaky test.
-    _regressionDeps.triageFlakyFindings = mock(async (input: { findings: Finding[] }) => ({
+    _regressionDeps.triageFlakyFindings = mock(async (input: FlakeTriageInput) => ({
       findings: input.findings.map((f) =>
         f.file === "flaky.test.ts" && f.rule === "flaky one" ? { ...f, category: "flaky-test" } : { ...f },
       ),
@@ -276,23 +276,21 @@ describe("runDeferredRegression — shared quarantine memo (AC5)", () => {
     })();
 
     // Triage stub uses the memo to short-circuit.
-    _regressionDeps.triageFlakyFindings = mock(
-      async (input: { findings: Finding[]; quarantineMemo?: QuarantineMemo }) => {
-        const memo = input.quarantineMemo;
-        const result = input.findings.map((f) => {
-          const key = `${f.file ?? ""}::${f.rule ?? ""}`;
-          if (memo?.has(key)) return { ...f, category: "flaky-test" as const };
-          return { ...f };
-        });
-        return {
-          findings: result,
-          quarantineReport: {
-            keys: ["shared.test.ts::shared one"],
-            reasons: ["quarantined (memo): shared.test.ts::shared one"],
-          },
-        };
-      },
-    );
+    _regressionDeps.triageFlakyFindings = mock(async (input: FlakeTriageInput) => {
+      const memo = input.quarantineMemo;
+      const result = input.findings.map((f) => {
+        const key = `${f.file ?? ""}::${f.rule ?? ""}`;
+        if (memo?.has(key)) return { ...f, category: "flaky-test" as const };
+        return { ...f };
+      });
+      return {
+        findings: result,
+        quarantineReport: {
+          keys: ["shared.test.ts::shared one"],
+          reasons: ["quarantined (memo): shared.test.ts::shared one"],
+        },
+      };
+    });
 
     let fixCycleCalls = 0;
     _regressionDeps.runFixCycle = mock(async () => {
@@ -323,15 +321,13 @@ describe("runDeferredRegression — shared quarantine memo (AC5)", () => {
     };
 
     let capturedMemo: QuarantineMemo | undefined;
-    _regressionDeps.triageFlakyFindings = mock(
-      async (input: { findings: Finding[]; quarantineMemo?: QuarantineMemo }) => {
-        capturedMemo = input.quarantineMemo;
-        return {
-          findings: input.findings.map((f) => ({ ...f, category: "flaky-test" as const })),
-          quarantineReport: { keys: [], reasons: [] },
-        };
-      },
-    );
+    _regressionDeps.triageFlakyFindings = mock(async (input: FlakeTriageInput) => {
+      capturedMemo = input.quarantineMemo;
+      return {
+        findings: input.findings.map((f) => ({ ...f, category: "flaky-test" as const })),
+        quarantineReport: { keys: [], reasons: [] },
+      };
+    });
     _regressionDeps.runFixCycle = mock(async () => ({
       iterations: [],
       finalFindings: [],
@@ -361,7 +357,7 @@ describe("runDeferredRegression — quarantine report (AC6)", () => {
       ],
     }));
 
-    _regressionDeps.triageFlakyFindings = mock(async (input: { findings: Finding[] }) => ({
+    _regressionDeps.triageFlakyFindings = mock(async (input: FlakeTriageInput) => ({
       findings: input.findings.map((f) =>
         f.file === "flaky.test.ts" ? { ...f, category: "flaky-test" as const } : { ...f },
       ),
@@ -400,7 +396,7 @@ describe("runDeferredRegression — flakeDetection.enabled === false", () => {
         detectOpenHandlesRetries: 0,
         gracePeriodMs: 0,
         drainTimeoutMs: 0,
-        shell: false,
+        shell: "/bin/sh",
         stripEnvVars: [],
       },
       execution: {
@@ -420,10 +416,10 @@ describe("runDeferredRegression — flakeDetection.enabled === false", () => {
 
     // Spy triage to confirm it is invoked but should be a no-op.
     let triageInvocations = 0;
-    _regressionDeps.triageFlakyFindings = mock(async (input: { findings: Finding[] }) => {
+    _regressionDeps.triageFlakyFindings = mock(async (input: FlakeTriageInput) => {
       triageInvocations += 1;
       // Real triage short-circuit when disabled — pass findings through.
-      return { findings: input.findings, quarantineReport: { keys: [], reasons: [] } };
+      return { findings: [...input.findings], quarantineReport: { keys: [], reasons: [] } };
     });
 
     const rectifiedStories: string[] = [];

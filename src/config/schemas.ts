@@ -355,6 +355,7 @@ export const NaxConfigSchema = z
           mode: "panel" as const,
           timeoutSeconds: 600,
           autoPersona: false,
+          evidenceMode: "current" as const,
         },
         review: {
           enabled: true,
@@ -364,6 +365,7 @@ export const NaxConfigSchema = z
           mode: "panel" as const,
           timeoutSeconds: 600,
           autoPersona: false,
+          evidenceMode: undefined,
         },
         acceptance: {
           enabled: false,
@@ -373,6 +375,7 @@ export const NaxConfigSchema = z
           mode: "panel" as const,
           timeoutSeconds: 600,
           autoPersona: false,
+          evidenceMode: undefined,
         },
         rectification: {
           enabled: false,
@@ -382,6 +385,7 @@ export const NaxConfigSchema = z
           mode: "panel" as const,
           timeoutSeconds: 600,
           autoPersona: false,
+          evidenceMode: undefined,
         },
         escalation: {
           enabled: false,
@@ -391,6 +395,7 @@ export const NaxConfigSchema = z
           mode: "panel" as const,
           timeoutSeconds: 600,
           autoPersona: false,
+          evidenceMode: undefined,
         },
       },
     })),
