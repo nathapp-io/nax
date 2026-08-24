@@ -1672,3 +1672,107 @@ counters flat or lower (`asAny=1387, tsSuppress=40, ratchetAllow=106, absentValu
 anyType=1878, looseCast=1925`); `as unknown as` flat at 102. 25/25 gates green; full suite green
 across all three phases; `test:coverage` at 102/103 below-floor (one file moved above its floor —
 strictly better, never worse). The branch has taken 692 → 474 (−218) across Batches 1–3.
+
+## 31. The owner-only residue — the two escalations and the excluded trio (474 → 415, −59)
+
+Branch `chore/1514-owner-residue`, cut from `main` after PR #1695 merged Lane A. Five files,
+five commits, one file per commit, each through the full loop. **474 → 415** across 202 → 197
+files. Every counter flat or lower: `asAny` **1387 → 1386**, `anyType` **1878 → 1877**, the
+other four unchanged, `as unknown as` flat at 102.
+
+The headline finding: **four of the five were misdiagnosed as needing a `src/` decision, and
+did not.** Only one needed a `src/` change at all, and it was a two-line narrowing.
+
+### The two escalations
+
+**`review/runner-language-fallback` (2) — the one real `src/` fix.** `_reviewRunnerDeps.file`
+was declared `Bun.file`, i.e. the three-overload `(string | URL | TypedArray | number, options?)
+=> BunFile` signature. `loadPackageJson` only ever calls it as `file(path).text()`. The gap made
+the file untestable cast-free: `{ text }` cannot overlap `BunFile`, so the existing
+`as typeof _reviewRunnerDeps.file` failed TS2352, `as unknown as` would raise the cast ratchet,
+narrowing was `src/`, and `Bun.file(new Blob([…]))` throws in this Bun. §30 recorded exactly
+this and left the 2 errors in the baseline. Narrowing the slot to
+`(path: string) => Pick<BunFile, "text">` states the module's real dependency; `Bun.file` stays
+assignable, so runtime behaviour is identical, and **both test-side casts were deleted rather
+than rewritten.** The `import type { BunFile } from "bun"` must sit in Biome's third import
+group (after `@/…`), not first — organizeImports rejects the natural placement.
+
+**`debate/pre-phase/grounder` (6) — not a contradiction.** §29 escalated this as "the test
+asserts `NaxRuntime.packageView`, a field the runtime does not have — a design call for the
+owner." Reading it settles it in one grep: `packageView` is a **required** field of
+`CallContext` (`src/operations/types.ts:11`) and is very much real. Only the fixture's accessor
+was stale — the PackageView comes from `runtime.packages.resolve(packageDir?)`, which is what
+all thirteen production call sites use. Six identical fixture lines. **The escalation was
+right to stop rather than cast it away, and wrong about the cause** — "the runtime has no such
+field" was true of the accessor, not of the concept.
+
+### The excluded trio
+
+**`execution/story-orchestrator-run-phase-events` (15) — an alias derived from the wrong
+function.** The plan called this an `Operation`/`AnySlot` variance question under amended G5.
+It is not a variance question: the file wrote
+`type AnyOp = Parameters<typeof _storyOrchestratorDeps.callOp>[1]`, which is the full
+`Operation` union with complete-kind included, while `runPhase` takes an `AnySlot` whose `op`
+is `RunOperation | DeterministicOperation` — narrower on purpose, since a phase slot cannot be
+a one-shot complete. The fixture's own `makeOp` already returns a `kind: "run"` shape, so
+aliasing `AnySlot["op"]` types it as what it always was. **Two lines, all 15 errors, no `src/`
+change.**
+
+**`unit/config/merge` (17) — three phantom keys the fixtures never followed.** The plan called
+it "six codes, uninspected, adjacent to the merge surface". The six codes were one cause seen
+from several angles:
+
+- `review.pluginMode: "per-story"` (8 sites) is a value US-005c **removed**; the live union is
+  `"observational" | "gating"` and `compat-shims.ts:254` strips the old one with a warning. The
+  override test paired it with `"deferred"` — never a member at all — so the assertion proved
+  nothing about a real config. Now `observational → gating`, an override the merger must
+  actually get right.
+- `review.semantic.modelTier` was renamed `model` (migrated by `migrateLegacyReviewModelKey`).
+  **The same defect Batch 3 found in `runner.test.ts`** — third sighting of this rename.
+- The `regressionGate` `test.each` widened its tuple, making `getField` a union of function
+  types. Pinned with an explicit type argument, the §30 `semantic-categories` recipe.
+
+Trap 4 fired on schedule: clearing the wholesale rejections unmasked field-level gaps
+underneath. `ReviewConfig` also requires `parseRetryMaxAttempts` + `conflictDetection`;
+`SemanticReviewConfig` requires `diffMode` + `resetRefOnRerun` + `timeoutMs`. Two file-local
+factories supply them. **`makeReview` spreads `DEFAULT_CONFIG.review`; `makeSemantic` cannot** —
+`review.semantic` is `.optional()` with no `.default()`, so `DEFAULT_CONFIG.review.semantic` is
+`undefined` and there is nothing to spread. Its required fields are written out to the schema's
+own declared defaults, which is faithful transcription, not invention.
+
+**`integration/config/merger` (19) — the per-call-site decision, made.** `deepMergeConfig<T>`
+defaults `T` to `NaxConfig`, so every untyped call in the file claimed its probe fixture was a
+parsed config. It is not: **the merger runs on raw layered JSON, before Zod.** That single fact
+explains both error clusters — the four `result.constitution.content` TS2339s (the merger
+concatenates that key at `merger.ts:113-131` while `ConstitutionConfigSchema` has no such
+field, because the parse strips it) and the nine TS2769s (`toEqual({ a: 1 })` has no overload
+against a `NaxConfig`).
+
+This is why §4's blanket `deepMergeConfig<Record<string, unknown>>` backfired (19→15 while
+adding 6 `TS2339` + 6 `TS18046`): it erased the shape the later tests read fields off. The fix
+is what the exclusion asked for — a **per-call-site type stating the shape each call actually
+merges**, including the null-removal cases, where the removed key is genuinely absent from the
+result type and so absent from the annotation. Two named raw types (`RawConstitution`,
+`RawHooksConfig`) carry the repeated shapes; typing the three-level hook merge also retired the
+file's `(merged2 as any)`, narrowing through `Array.isArray` instead.
+
+### What this says about the exclusion list
+
+Three files were held back for an owner because a delegate could not decide them. Read, all
+three turned out to be stale test-side references — a wrong alias, removed config keys, and a
+default type argument nobody had questioned. The exclusions were still correct *as exclusions*:
+each needed someone willing to check whether a `src/` type was wrong before concluding the test
+was. But the prior on "this needs a `src/` change" should be lower than these notes assumed —
+**one src/ line changed across 59 errors.**
+
+Verify: src tsc **0** incl. contracts. 474 → 415, files 202 → 197, per-file `worse: 0`. 25/25
+gates green; full suite green across all three phases; `test:coverage` 102/103 below floor,
+exit 0, on every commit. Counters: `asAny=1386, tsSuppress=40, ratchetAllow=106,
+absentValue=17, anyType=1877, looseCast=1925`.
+
+### Still open after this
+
+- **The tail** — ~415 errors across 197 files, none above 8, no cluster larger than one file.
+  Batch-3 rules apply: grep, read, apply a recipe or move on.
+- **`test/unit/cli/plan.test.ts`** stays grandfathered in `file-sizes-baseline.json` at 1202
+  lines; a fix there must be line-neutral or shrinking.

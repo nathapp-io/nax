@@ -15,12 +15,30 @@ import type { NaxConfig } from "@/config/schema";
 import { assertDefined } from "@test/helpers";
 import type { DeepPartial } from "@test/helpers";
 
+/**
+ * `deepMergeConfig<T>` defaults `T` to `NaxConfig`, but the merger runs on RAW
+ * config JSON — the layered `~/.nax/config.json` + project objects, before Zod
+ * parses them. Typing a result as `NaxConfig` is therefore wrong twice over:
+ * these fixtures are arbitrary probe shapes, and the raw layer carries keys the
+ * schema does not. `constitution.content` is the clearest case — the merger
+ * concatenates it (`src/config/merger.ts:113-131`) while
+ * `ConstitutionConfigSchema` has no such field, because the parse strips it.
+ *
+ * So every call below states the shape it is actually merging.
+ */
+type RawConstitution = {
+  constitution: { enabled?: boolean; path?: string; maxTokens?: number; content?: string };
+};
+
+type RawHookEntry = { command: string; enabled?: boolean };
+type RawHooksConfig = { hooks?: { hooks?: Record<string, RawHookEntry | RawHookEntry[]> } };
+
 describe("config/merger", () => {
   describe("basic object merging", () => {
     test("merges simple objects", () => {
       const base = { a: 1, b: 2 };
       const override = { b: 3, c: 4 };
-      const result = deepMergeConfig(base, override);
+      const result = deepMergeConfig<typeof base & typeof override>(base, override);
 
       expect(result).toEqual({
         a: 1,
@@ -42,7 +60,7 @@ describe("config/merger", () => {
           c: 4,
         },
       };
-      const result = deepMergeConfig(base, override);
+      const result = deepMergeConfig<{ level1: { a: number; b: number; c: number } }>(base, override);
 
       expect(result).toEqual({
         level1: {
@@ -68,7 +86,7 @@ describe("config/merger", () => {
           },
         },
       };
-      const result = deepMergeConfig(base, override);
+      const result = deepMergeConfig<{ level1: { level2: { a: number; b: number } } }>(base, override);
 
       expect(result).toEqual({
         level1: {
@@ -83,22 +101,31 @@ describe("config/merger", () => {
 
   describe("array replacement", () => {
     test("replaces arrays (flat, nested, and empty) instead of merging", () => {
-      expect(deepMergeConfig({ items: [1, 2, 3] }, { items: [4, 5] })).toEqual({ items: [4, 5] });
-      expect(deepMergeConfig({ config: { tiers: ["fast", "balanced"] } }, { config: { tiers: ["powerful"] } })).toEqual(
-        { config: { tiers: ["powerful"] } },
-      );
-      expect(deepMergeConfig({ items: [1, 2, 3] }, { items: [] })).toEqual({ items: [] });
+      type Items = { items: number[] };
+      type Tiers = { config: { tiers: string[] } };
+      expect(deepMergeConfig<Items>({ items: [1, 2, 3] }, { items: [4, 5] })).toEqual({ items: [4, 5] });
+      expect(
+        deepMergeConfig<Tiers>({ config: { tiers: ["fast", "balanced"] } }, { config: { tiers: ["powerful"] } }),
+      ).toEqual({ config: { tiers: ["powerful"] } });
+      expect(deepMergeConfig<Items>({ items: [1, 2, 3] }, { items: [] })).toEqual({ items: [] });
     });
   });
 
   describe("null value handling", () => {
     test("removes keys when override is null (flat, nested, multiple)", () => {
-      const r1 = deepMergeConfig({ a: 1, b: 2, c: 3 }, { b: null });
+      // Keys the override nulls out are absent from the result, so they are
+      // absent from its type too — that is the behaviour under test.
+      const r1 = deepMergeConfig<{ a: number; c: number }>({ a: 1, b: 2, c: 3 }, { b: null });
       expect(r1).toEqual({ a: 1, c: 3 });
       expect("b" in r1).toBe(false);
 
-      expect(deepMergeConfig({ config: { a: 1, b: 2 } }, { config: { b: null } })).toEqual({ config: { a: 1 } });
-      expect(deepMergeConfig({ a: 1, b: 2, c: 3, d: 4 }, { b: null, d: null })).toEqual({ a: 1, c: 3 });
+      expect(deepMergeConfig<{ config: { a: number } }>({ config: { a: 1, b: 2 } }, { config: { b: null } })).toEqual({
+        config: { a: 1 },
+      });
+      expect(deepMergeConfig<{ a: number; c: number }>({ a: 1, b: 2, c: 3, d: 4 }, { b: null, d: null })).toEqual({
+        a: 1,
+        c: 3,
+      });
     });
   });
 
@@ -205,7 +232,7 @@ describe("config/merger", () => {
           content: "Override constitution rules",
         },
       };
-      const result = deepMergeConfig(base, override);
+      const result = deepMergeConfig<RawConstitution>(base, override);
 
       expect(result.constitution.content).toBe("Base constitution rules\n\nOverride constitution rules");
       expect(result.constitution.enabled).toBe(true);
@@ -225,7 +252,7 @@ describe("config/merger", () => {
           content: "Override constitution rules",
         },
       };
-      const result = deepMergeConfig(base, override);
+      const result = deepMergeConfig<RawConstitution>(base, override);
 
       expect(result.constitution.content).toBe("Override constitution rules");
     });
@@ -244,7 +271,7 @@ describe("config/merger", () => {
           enabled: false,
         },
       };
-      const result = deepMergeConfig(base, override);
+      const result = deepMergeConfig<RawConstitution>(base, override);
 
       expect(result.constitution.content).toBe("Base constitution rules");
       expect(result.constitution.enabled).toBe(false);
@@ -261,7 +288,7 @@ describe("config/merger", () => {
           content: "New content",
         },
       };
-      const result = deepMergeConfig(base, override);
+      const result = deepMergeConfig<RawConstitution>(base, override);
 
       expect(result.constitution.content).toBe("New content");
     });
@@ -360,11 +387,19 @@ describe("config/merger", () => {
 
   describe("edge cases", () => {
     test("handles undefined in override, type changes, object-to-primitive, empty and both-empty objects", () => {
-      expect(deepMergeConfig({ a: 1, b: 2 }, { a: undefined, c: 3 })).toEqual({ a: 1, b: 2, c: 3 });
-      expect(deepMergeConfig({ value: 42 }, { value: "string" }).value).toBe("string");
-      expect(deepMergeConfig({ config: { a: 1, b: 2 } }, { config: "simple" }).config).toBe("simple");
-      expect(deepMergeConfig({}, { a: 1 })).toEqual({ a: 1 });
-      expect(deepMergeConfig({}, {})).toEqual({});
+      expect(deepMergeConfig<{ a: number; b: number; c: number }>({ a: 1, b: 2 }, { a: undefined, c: 3 })).toEqual({
+        a: 1,
+        b: 2,
+        c: 3,
+      });
+      // The override changes the value's type — that is the case under test, so
+      // the result type is the override's, not the base's.
+      expect(deepMergeConfig<{ value: string }>({ value: 42 }, { value: "string" }).value).toBe("string");
+      expect(deepMergeConfig<{ config: string }>({ config: { a: 1, b: 2 } }, { config: "simple" }).config).toBe(
+        "simple",
+      );
+      expect(deepMergeConfig<{ a: number }>({}, { a: 1 })).toEqual({ a: 1 });
+      expect(deepMergeConfig<Record<string, never>>({}, {})).toEqual({});
     });
   });
 
@@ -374,14 +409,15 @@ describe("config/merger", () => {
       const global = { hooks: { hooks: { "on-complete": { command: "echo global" } } } };
       const project = { hooks: { hooks: { "on-complete": { command: "echo project" } } } };
 
-      const merged1 = deepMergeConfig(defaults, global);
-      const merged2 = deepMergeConfig(merged1, project);
+      const merged1 = deepMergeConfig<RawHooksConfig>(defaults, global);
+      const merged2 = deepMergeConfig<RawHooksConfig>(merged1, project);
 
-      const onComplete = (merged2 as any).hooks?.hooks?.["on-complete"];
+      const onComplete = merged2.hooks?.hooks?.["on-complete"];
       expect(Array.isArray(onComplete)).toBe(true);
-      expect(onComplete).toHaveLength(3);
+      const flattened = Array.isArray(onComplete) ? onComplete : [];
+      expect(flattened).toHaveLength(3);
       // No nesting — first element must be a plain object, not an array
-      expect(Array.isArray(onComplete[0])).toBe(false);
+      expect(Array.isArray(flattened[0])).toBe(false);
     });
 
     test("does not assign overrideHooks.hooks when it is not a plain object", () => {
