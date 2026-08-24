@@ -18,18 +18,18 @@ describe("TelegramInteractionPlugin", () => {
     savedToken = process.env.NAX_TELEGRAM_TOKEN;
     savedChatId = process.env.NAX_TELEGRAM_CHAT_ID;
     savedBotToken = process.env.TELEGRAM_BOT_TOKEN;
-    process.env.NAX_TELEGRAM_TOKEN = undefined;
-    process.env.NAX_TELEGRAM_CHAT_ID = undefined;
-    process.env.TELEGRAM_BOT_TOKEN = undefined;
+    delete process.env.NAX_TELEGRAM_TOKEN;
+    delete process.env.NAX_TELEGRAM_CHAT_ID;
+    delete process.env.TELEGRAM_BOT_TOKEN;
   });
 
   afterEach(() => {
     if (savedToken !== undefined) process.env.NAX_TELEGRAM_TOKEN = savedToken;
-    else process.env.NAX_TELEGRAM_TOKEN = undefined;
+    else delete process.env.NAX_TELEGRAM_TOKEN;
     if (savedChatId !== undefined) process.env.NAX_TELEGRAM_CHAT_ID = savedChatId;
-    else process.env.NAX_TELEGRAM_CHAT_ID = undefined;
+    else delete process.env.NAX_TELEGRAM_CHAT_ID;
     if (savedBotToken !== undefined) process.env.TELEGRAM_BOT_TOKEN = savedBotToken;
-    else process.env.TELEGRAM_BOT_TOKEN = undefined;
+    else delete process.env.TELEGRAM_BOT_TOKEN;
   });
 
   test("should validate required config", async () => {
@@ -62,8 +62,8 @@ describe("TelegramInteractionPlugin", () => {
     expect(plugin.name).toBe("telegram");
 
     // Cleanup
-    process.env.NAX_TELEGRAM_TOKEN = undefined;
-    process.env.NAX_TELEGRAM_CHAT_ID = undefined;
+    delete process.env.NAX_TELEGRAM_TOKEN;
+    delete process.env.NAX_TELEGRAM_CHAT_ID;
   });
 });
 
