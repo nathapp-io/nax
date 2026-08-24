@@ -2,7 +2,7 @@ import { NaxError } from "@/errors";
 import type { AnySlot, InternalBuildState, InternalPhase, OrchestratorSlot, PhaseKind } from "./types";
 import { CANONICAL_ORDER, PHASE_KIND_TO_STATE_KEY } from "./types";
 
-export function isSlot<I, O, C>(value: unknown): value is OrchestratorSlot<I, O, C> {
+export function isSlot<I, O, C, D>(value: unknown): value is OrchestratorSlot<I, O, C, D> {
   return (
     value !== null &&
     typeof value === "object" &&

@@ -15,8 +15,18 @@ export const EXHAUSTED_EXIT_REASONS = new Set<string>([
 
 export const TDD_OP_NAMES = new Set<string>(["test-writer", "implementer", "verifier"]);
 
-export interface OrchestratorSlot<I, O, C> {
-  readonly op: RunOperation<I, O, C>;
+/**
+ * A phase slot handed to `StoryOrchestratorBuilder.addX()`.
+ *
+ * `op` is the same union the runtime accepts (`AnySlot`): the orchestrator
+ * dispatches deterministic ops through `callOp` exactly as it does run ops, so
+ * the public signature must not be narrower than `setPhase`'s. `D` is the
+ * deterministic op's injectable deps seam and defaults to `void`, which is the
+ * `DeterministicOperation` default — a three-argument `OrchestratorSlot<I, O, C>`
+ * keeps its previous meaning.
+ */
+export interface OrchestratorSlot<I, O, C, D = void> {
+  readonly op: RunOperation<I, O, C> | DeterministicOperation<I, O, C, D>;
   readonly input: I;
 }
 
