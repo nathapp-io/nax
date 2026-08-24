@@ -15,6 +15,11 @@ function makeSession(overrides: Partial<SessionDescriptor> & { id: string; state
   return {
     storyId: "US-001",
     role: "main",
+    agent: "claude",
+    workdir: "/tmp/test",
+    protocolIds: { recordId: null, sessionId: null },
+    completedStages: [],
+    createdAt: new Date(0).toISOString(),
     lastActivityAt: new Date().toISOString(),
     handle: `handle-${overrides.id}`,
     ...overrides,
