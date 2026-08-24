@@ -25,6 +25,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { RunParallelBatchResult } from "@/execution/parallel-batch";
 import { initLogger, resetLogger } from "@/logger";
+import type { PipelineEvent } from "@/pipeline/event-bus";
 import type { UserStory } from "@/prd/types";
 import { makeCtx, makePendingStory, makePrd } from "./_parallel-metrics-helpers";
 
@@ -352,10 +353,10 @@ describe("AC-4 — story:started emitted with correct storyId before batch execu
 
     const { pipelineEventBus } = await import("@/pipeline/event-bus");
     const origEmit = pipelineEventBus.emit.bind(pipelineEventBus);
-    pipelineEventBus.emit = mock((event: Record<string, unknown>) => {
+    pipelineEventBus.emit = mock((event: PipelineEvent) => {
       if (event.type === "story:started") eventLog.push(`started:${event.storyId}`);
-      return origEmit(event as never);
-    }) as typeof pipelineEventBus.emit;
+      return origEmit(event);
+    });
 
     try {
       const { executeUnified } = await import("@/execution/unified-executor");
@@ -394,10 +395,10 @@ describe("AC-4 — story:started emitted with correct storyId before batch execu
 
     const { pipelineEventBus } = await import("@/pipeline/event-bus");
     const origEmit = pipelineEventBus.emit.bind(pipelineEventBus);
-    pipelineEventBus.emit = mock((event: Record<string, unknown>) => {
+    pipelineEventBus.emit = mock((event: PipelineEvent) => {
       if (event.type === "story:started") startedIds.push(event.storyId as string);
-      return origEmit(event as never);
-    }) as typeof pipelineEventBus.emit;
+      return origEmit(event);
+    });
 
     try {
       const { executeUnified } = await import("@/execution/unified-executor");
