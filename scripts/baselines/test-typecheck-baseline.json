@@ -1,6 +1,6 @@
 {
-  "count": 517,
-  "updatedAt": "2026-08-24T06:09:57.420Z",
+  "count": 514,
+  "updatedAt": "2026-08-24T06:17:37.158Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -105,7 +105,6 @@
     "test/unit/execution/non-blocking-fix.test.ts": 1,
     "test/unit/execution/oscillation-breaker.test.ts": 1,
     "test/unit/execution/parallel-batch-rectification-context.test.ts": 4,
-    "test/unit/execution/plan-inputs-review-wiring.test.ts": 3,
     "test/unit/execution/plan-inputs.test.ts": 1,
     "test/unit/execution/post-run-inspection.test.ts": 1,
     "test/unit/execution/post-run-isolation.test.ts": 2,
