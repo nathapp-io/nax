@@ -82,7 +82,12 @@ function makeUs001Story() {
     id: "US-001",
     title: "Story",
     description: "Test",
-    routing: { modelTier: "fast", testStrategy: "test-after" as const },
+    routing: {
+      modelTier: "fast",
+      testStrategy: "test-after" as const,
+      complexity: "simple",
+      reasoning: "source-tier escalation fixture",
+    },
   });
 }
 
