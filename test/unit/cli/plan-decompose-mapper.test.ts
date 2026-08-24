@@ -15,7 +15,7 @@ import type { DecomposedStory } from "@/agents/shared/types-extended";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import type { PRD, UserStory } from "@/prd";
 import { makeTempDir } from "@test/helpers";
-import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
@@ -138,9 +138,11 @@ describe("planDecomposeCommand — mapper wiring (US-003 AC-5)", () => {
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
     _planDeps.createRuntime = mock(() =>
-      makeMockDecomposeManager(async (_name: string, _opts: any) => ({
-        stories: decomposedStories,
-      })),
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async (_name: string, _opts: any) => ({
+          stories: decomposedStories,
+        })),
+      }),
     );
   }
 
