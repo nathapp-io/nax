@@ -9,7 +9,16 @@ function write(root: string, rel: string, content: string) {
   writeFileSync(join(root, rel), content);
 }
 
-const BASE = { asAny: 0, tsSuppress: 0, ratchetAllow: 0, absentValue: 0, anyType: 0, looseCast: 0 };
+const BASE = {
+  asAny: 0,
+  tsSuppress: 0,
+  ratchetAllow: 0,
+  absentValue: 0,
+  anyType: 0,
+  looseCast: 0,
+  asNever: 0,
+  nonNullAssert: 0,
+};
 
 describe("scanEscapeHatches", () => {
   let root: string;
@@ -30,7 +39,7 @@ describe("scanEscapeHatches", () => {
       ].join("\n"),
     );
     const { counts } = await scanEscapeHatches(root);
-    expect(counts).toEqual({ asAny: 1, tsSuppress: 1, ratchetAllow: 1, absentValue: 0, anyType: 1, looseCast: 0 });
+    expect(counts).toEqual({ ...BASE, asAny: 1, tsSuppress: 1, ratchetAllow: 1, anyType: 1 });
   });
 
   test("counts every hatch on a line, not the line once", async () => {
@@ -120,6 +129,66 @@ describe("scanEscapeHatches", () => {
     );
     const { counts } = await scanEscapeHatches(root);
     expect(counts.looseCast).toBe(1);
+  });
+
+  test("asNever counts `as never`, which looseCast cannot see", async () => {
+    write(
+      root,
+      "test/unit/a.test.ts",
+      ["const a = x as never;", "const b = y as never;", "const c = z as Foo;"].join("\n"),
+    );
+    const { counts } = await scanEscapeHatches(root);
+    expect(counts.asNever).toBe(2);
+    // The reason it needs its own counter: `looseCast` anchors on `as [A-Z]`.
+    expect(counts.looseCast).toBe(1);
+  });
+
+  test("nonNullAssert counts postfix `!` in member, index, argument and terminator position", async () => {
+    write(
+      root,
+      "test/unit/a.test.ts",
+      [
+        "expect(story!.id).toBe(1);", // member
+        "const a = list[0]!.name;", // after ]
+        "const b = arr[i!];", // index
+        "doThing(value!);", // argument
+        "const c = maybe!;", // terminator
+        "f(one!, two!);", // two on one line
+      ].join("\n"),
+    );
+    expect((await scanEscapeHatches(root)).counts.nonNullAssert).toBe(7);
+  });
+
+  test("nonNullAssert does not match negation, `!=`, `!==`, or a trailing `!` in a string", async () => {
+    write(
+      root,
+      "test/unit/a.test.ts",
+      [
+        "if (!ok) return;",
+        "if (!!ok) return;",
+        "if (a != b) return;",
+        "if (a !== b) return;",
+        'const msg = "done!";',
+      ].join("\n"),
+    );
+    expect((await scanEscapeHatches(root)).counts.nonNullAssert).toBe(0);
+  });
+
+  test("nonNullAssert undercounts rather than over-: `x! + 1` and end-of-line `!` are missed", async () => {
+    write(root, "test/unit/a.test.ts", ["const a = x! + 1;", "const b = y!"].join("\n"));
+    expect((await scanEscapeHatches(root)).counts.nonNullAssert).toBe(0);
+  });
+
+  /**
+   * The one known false positive, pinned so it is a documented property and not
+   * a surprise: prose punctuation `!` followed by `,` `.` `;` `)` `]` inside a
+   * string literal reads as postfix. There are zero such strings in test/ today
+   * (checked when the counter landed). Tightening the pattern past this needs a
+   * real parser; every other counter here is a raw-text regex for the same reason.
+   */
+  test("nonNullAssert matches `!` mid-string when prose punctuation follows — known and accepted", async () => {
+    write(root, "test/unit/a.test.ts", 'const msg = "wow!, really";\n');
+    expect((await scanEscapeHatches(root)).counts.nonNullAssert).toBe(1);
   });
 });
 

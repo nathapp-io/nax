@@ -17,7 +17,7 @@ Issue #1514 ships three ratchets in CI to lock in the test/ typecheck invariant:
 
 - `check:test-typecheck` — counts TypeScript errors in `tsconfig.test.json`; fails if grown.
 - `check:test-as-unknown-as` — counts `as unknown as` casts in `test/`; fails if grown.
-- `check:test-escape-hatches` — counts the **six** ways to silence a type error that
+- `check:test-escape-hatches` — counts the **eight** ways to silence a type error that
   neither of the other two can see; fails if any of them grows.
 
 All three behave like the existing `check:nax-error` / `check:import-cycles` ratchets: they have a `--update-baseline` to lower the threshold when intentional improvements land, and `--list` to surface offenders.
@@ -41,6 +41,8 @@ A strict `tsconfig.test.json` gate dropped onto 2140+ errors invites the path of
 | `absentValue<T>()` / `nullValue<T>()` | `check:test-escape-hatches` (`absentValue`) | the sanctioned idiom for "this argument is deliberately missing" (`test/helpers/absent.ts`). Ratcheted, not free — see *Deliberately-absent values* below |
 | `any` in type position — `: any`, `<any>`, `Record<string, any>` | `check:test-escape-hatches` (`anyType`) | a **superset** of `asAny`. Added in phase 2: `: any` was counted by nothing, and annotating a parameter is the cheapest way to clear a `TS7006` without fixing it |
 | single `as T` casts | `check:test-escape-hatches` (`looseCast`) | **not a drain target.** 189 `TS2352` errors say *"convert the expression to `unknown` first"*, so draining typecheck pushes debt toward casts; this counter makes that visible. The `as unknown as` tail is stripped before counting so the cast ratchet does not double-count it |
+| `as never` | `check:test-escape-hatches` (`asNever`) | the bottom type is assignable to **everything**, so one word silences any assignment error. `looseCast` anchors on `as [A-Z]` and missed it for two phases; 619 had accumulated when the counter landed |
+| postfix `!` (non-null assertion) | `check:test-escape-hatches` (`nonNullAssert`) | clears `TS18047`/`TS18048` with no runtime check. Biome's `noNonNullAssertion` is **off** for `test/**`, so before this counter nothing in the repo saw it at all; 827 had accumulated. Use `assertDefined()` from `test/helpers/assert-defined.ts` instead — it narrows *and* throws |
 
 Together they enforce "tests are valid instances of the types they claim to be", and that improvement is monotonic.
 
@@ -89,6 +91,10 @@ moves trailing comments, so all three positions count. The cast ratchet skips it
   a line away from its allow marker. All the scanners count per match for this reason.
 - Don't annotate a parameter `: any` to clear a `TS7006` implicit-any error. That is the
   cheapest possible non-fix; `anyType` exists to catch exactly it. Give the real type.
+- Don't reach for `as never` or a postfix `!`. Both were uncounted through phases 1–2 and
+  are the cheapest fixes for the two error families left in the residue — a `Mock<() => X>`
+  in a typed dep slot, and `TS18047`/`TS18048`. Both are counted now. For `!`, the sanctioned
+  replacement is `assertDefined(value, label)`; there is no sanctioned `as never`.
 - Don't exclude files from a check, or add them to `EXEMPT_BY_KIND`. That map is only for
   the ratchets' own test files, whose fixtures contain the literal patterns — plus
   `test/helpers/absent.ts`, exempt from one counter and one counter only.

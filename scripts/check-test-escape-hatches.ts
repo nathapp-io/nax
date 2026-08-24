@@ -4,7 +4,7 @@
  * `check-test-typecheck` nor `check-test-as-unknown-as` counts.
  *
  * Issue #1514 phase 3c. Draining those two baselines is only real progress if
- * the debt cannot walk out through a side door, and there are four:
+ * the debt cannot walk out through a side door, and there are eight:
  *
  *   asAny        `as any` — invisible to both ratchets. Biome's noExplicitAny
  *                would catch it, but that rule is deferred for test/** until
@@ -28,8 +28,15 @@
  *                TS2352 errors ("convert the expression to `unknown` first")
  *                from escaping into unmarked single casts while the cast
  *                ratchet is at its floor.
+ *   asNever      `as never` — assignable to EVERY type, so it silences any
+ *                assignment error outright. Lowercase, so `looseCast` (which
+ *                anchors on an uppercase initial) never saw it.
+ *   nonNullAssert
+ *                postfix `!`. Narrows away null/undefined with no runtime
+ *                check and no counter — and biome's `noNonNullAssertion` is
+ *                off for test/** (biome.json), so nothing else sees it either.
  *
- * Every counter fails on growth only; all six shrink as the drain proceeds.
+ * Every counter fails on growth only; all eight shrink as the drain proceeds.
  *
  * Usage:
  *   bun scripts/check-test-escape-hatches.ts                   # check (CI mode)
@@ -73,6 +80,33 @@ const PATTERNS = {
    * unmarked single casts while the cast ratchet is at its floor.
    */
   looseCast: /\bas\s+[A-Z]\w*/g,
+  /**
+   * `as never`. The bottom type is assignable to every other type, so this
+   * silences ANY assignment error in one word — including the whole
+   * `Mock<() => X>`-into-a-typed-dep-slot family that dominates the remaining
+   * residue. `looseCast` anchors on `as [A-Z]` and `never` is lowercase, so
+   * for the first two phases of the drain this walked out uncounted; 619 of
+   * them accumulated. Deliberately its own counter rather than a `looseCast`
+   * widening: the two retire on different timelines.
+   */
+  asNever: /\bas\s+never\b/g,
+  /**
+   * Postfix `!` — the non-null assertion. Discards `null`/`undefined` from a
+   * type with no runtime check, so it clears `TS18047`/`TS18048` while leaving
+   * the unsafe access exactly as it was. Nothing else in the repo sees it:
+   * biome's `noNonNullAssertion` is `off` for `test/**` (biome.json).
+   *
+   * Anchored to POSTFIX position — an identifier, `)` or `]`, then `!`, then a
+   * member/argument/terminator character. That excludes prefix negation
+   * (`!x`, `!!x`), `!=`, `!==`, and the common `"…!"` fixture string. It
+   * undercounts rather than over-: `x! + 1` and an end-of-line `!` are missed.
+   *
+   * One false positive survives and is pinned by a test: prose punctuation
+   * inside a string, as in `"wow!, really"`. There are none in test/ today.
+   * Doing better needs a parser — like `anyType` above, this is a raw-text
+   * regex and inherits that ceiling.
+   */
+  nonNullAssert: /[A-Za-z0-9_$)\]]!(?=[.,;)\]])/g,
 } as const;
 
 export type HatchKind = keyof typeof PATTERNS;
@@ -82,12 +116,12 @@ const HATCH_KINDS = Object.keys(PATTERNS) as HatchKind[];
 
 /**
  * Per-kind exemptions. Scoped deliberately: a file exempt from one counter is
- * still graded by the other three. See GitHub #1682.
+ * still graded by every other one. See GitHub #1682.
  */
-const ALL_KINDS: ReadonlySet<HatchKind> = new Set(["asAny", "tsSuppress", "ratchetAllow", "absentValue", "anyType", "looseCast"]);
+const ALL_KINDS: ReadonlySet<HatchKind> = new Set(HATCH_KINDS);
 
 const EXEMPT_BY_KIND: ReadonlyMap<string, ReadonlySet<HatchKind>> = new Map([
-  // Scanner scaffolding: fixture strings legitimately contain all four patterns.
+  // Scanner scaffolding: fixture strings legitimately contain every pattern.
   ["test/unit/scripts/check-test-typecheck.test.ts", ALL_KINDS],
   ["test/unit/scripts/check-test-as-unknown-as.test.ts", ALL_KINDS],
   ["test/unit/scripts/check-test-escape-hatches.test.ts", ALL_KINDS],
@@ -115,7 +149,7 @@ export interface ScanResult {
 }
 
 function emptyCounts(): Counts {
-  return { asAny: 0, tsSuppress: 0, ratchetAllow: 0, absentValue: 0, anyType: 0, looseCast: 0 };
+  return Object.fromEntries(HATCH_KINDS.map((k) => [k, 0])) as Counts;
 }
 
 export async function scanEscapeHatches(rootDir: string): Promise<ScanResult> {
