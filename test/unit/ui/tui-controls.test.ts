@@ -150,8 +150,8 @@ describe("Keyboard action types", () => {
 
 describe("Focus mode", () => {
   test("PanelFocus enum has Stories and Agent values", () => {
-    expect(PanelFocus.Stories).toBe("stories");
-    expect(PanelFocus.Agent).toBe("agent");
+    expect("stories").toBe(PanelFocus.Stories);
+    expect("agent").toBe(PanelFocus.Agent);
   });
 
   test("focus mode toggles between Stories and Agent", () => {
