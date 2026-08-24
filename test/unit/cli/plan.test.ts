@@ -923,7 +923,7 @@ describe("runPlanPipeline (US-005)", () => {
       userStories: prd.userStories.map((s) => ({
         ...s,
         acceptanceCriteria: s.acceptanceCriteria.length > 0 ? s.acceptanceCriteria : ["AC1: test criterion"],
-        complexity: (s as Record<string, unknown>).complexity ?? "simple",
+        complexity: "simple", // legacy top-level fallback the schema accepts (routing.complexity ?? complexity)
       })),
     };
     return JSON.stringify({

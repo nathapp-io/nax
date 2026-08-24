@@ -1,6 +1,6 @@
 {
-  "count": 345,
-  "updatedAt": "2026-08-24T12:33:51.766Z",
+  "count": 344,
+  "updatedAt": "2026-08-24T12:34:30.313Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -50,7 +50,7 @@
     "test/unit/cli/plan-decompose-guards.test.ts": 1,
     "test/unit/cli/plan-decompose-writeback.test.ts": 1,
     "test/unit/cli/plan-mode.test.ts": 4,
-    "test/unit/cli/plan.test.ts": 5,
+    "test/unit/cli/plan.test.ts": 4,
     "test/unit/cli/setup-write.test.ts": 1,
     "test/unit/commands/replay.test.ts": 1,
     "test/unit/config/defaults-ssot.test.ts": 1,
