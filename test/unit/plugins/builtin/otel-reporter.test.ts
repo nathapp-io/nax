@@ -9,6 +9,12 @@ const cfg: OtelReporterConfig = {
   headers: {},
   serviceName: "nax",
   timeoutMs: 1000,
+  detail: "counts",
+  heartbeatIntervalMs: 0,
+  maxBatchSize: 64,
+  flushIntervalMs: 5_000,
+  maxQueueSize: 2_048,
+  logs: { enabled: false, level: "info" },
 };
 
 // Fully-populated config (mirrors what the zod schema fills in via .default()) —
@@ -150,7 +156,21 @@ describe("otel-reporter", () => {
 
   test("does nothing when endpoint is unset", async () => {
     const { posts, deps } = capturing();
-    const plugin = createOtelReporterPlugin({ enabled: true, headers: {}, serviceName: "nax", timeoutMs: 1000 }, deps);
+    const plugin = createOtelReporterPlugin(
+      {
+        enabled: true,
+        headers: {},
+        serviceName: "nax",
+        timeoutMs: 1000,
+        detail: "counts",
+        heartbeatIntervalMs: 0,
+        maxBatchSize: 64,
+        flushIntervalMs: 5_000,
+        maxQueueSize: 2_048,
+        logs: { enabled: false, level: "info" },
+      },
+      deps,
+    );
     await runOnce(plugin);
     expect(posts).toHaveLength(0);
   });

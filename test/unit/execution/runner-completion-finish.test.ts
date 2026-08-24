@@ -98,6 +98,8 @@ function makeOpts(
 const defaultCompletionResult: RunCompletionResult = {
   durationMs: 100,
   runCompletedAt: new Date().toISOString(),
+  reportedTotal: 0,
+  pluginGateFailed: false,
   finalCounts: { total: 1, passed: 1, failed: 0, skipped: 0, pending: 0 },
 };
 

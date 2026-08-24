@@ -10,8 +10,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { PipelineContext } from "@/pipeline/types";
 import { makeMockAgentManager, makeNaxConfig, makeStory } from "@test/helpers";
-import type { PipelineContext } from "@test/src/pipeline";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Helpers

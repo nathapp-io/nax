@@ -16,58 +16,25 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { _registryTestAdapters } from "@/agents/registry";
-import type {
-  AgentAdapter,
-  AgentCapabilities,
-  AgentResult,
-  AgentRunOptions,
-  DecomposeOptions,
-  DecomposeResult,
-  PlanOptions,
-  PlanResult,
-} from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
 import { run } from "@/execution/runner";
 import type { RunOptions } from "@/execution/runner";
 import type { NaxStatusFile } from "@/execution/status-file";
 import type { PRD } from "@/prd/types";
-import { makeTempDir } from "@test/helpers";
+import { makeAgentAdapter, makeTempDir } from "@test/helpers";
 
 // ============================================================================
 // Mock agent (satisfies agent installation check in runner)
 // ============================================================================
-class MockAgentAdapter implements AgentAdapter {
-  readonly name = "mock";
-  readonly displayName = "Mock Agent";
-  readonly binary = "mock-agent";
-  readonly capabilities: AgentCapabilities = {
-    supportedTiers: ["fast", "balanced", "powerful"],
-    maxContextTokens: 200_000,
-    features: new Set(["tdd", "review", "refactor", "batch"]),
-  };
-  async isInstalled(): Promise<boolean> {
-    return true;
-  }
-  buildCommand(_o: AgentRunOptions): string[] {
-    return [this.binary];
-  }
-  async run(_o: AgentRunOptions): Promise<AgentResult> {
-    return { success: true, exitCode: 0, output: "", durationMs: 10, estimatedCostUsd: 0, rateLimited: false };
-  }
-  async plan(_o: PlanOptions): Promise<PlanResult> {
-    return { specContent: "# Feature\n" };
-  }
-  async decompose(_o: DecomposeOptions): Promise<DecomposeResult> {
-    return { stories: [] };
-  }
-  async complete(_prompt: string): Promise<import("@/agents/types").CompleteResult> {
-    return { output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
-  }
-}
+const mockAgentAdapter = makeAgentAdapter({
+  displayName: "Mock Agent",
+  binary: "mock-agent",
+  buildCommand: () => ["mock-agent"],
+});
 
 beforeAll(() => {
-  _registryTestAdapters.set("mock", new MockAgentAdapter());
+  _registryTestAdapters.set("mock", mockAgentAdapter);
 });
 afterAll(() => {
   _registryTestAdapters.delete("mock");

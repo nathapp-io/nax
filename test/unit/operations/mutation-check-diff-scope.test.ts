@@ -11,6 +11,7 @@ import { join } from "node:path";
 import * as loggerModule from "@/logger";
 import { mutationCheckOp } from "@/operations";
 import * as mutationModule from "@/verification/mutation";
+import type { GenerateMutantsInput } from "@/verification/mutation/mutator";
 import {
   cleanupTempDir,
   makeMutationCheckDeps as fakeDeps,
@@ -233,7 +234,7 @@ describe("mutationCheckOp — US-003 AC11: unmapped file emits a debug log with 
 describe("mutationCheckOp — US-003 AC12: generateMutants receives the file's lineRanges", () => {
   test("the lineRanges returned for a mapped file are forwarded to generateMutants", async () => {
     const dir = makeTempDir("nax-mutation-test-");
-    const capturedInputs: mutationModule.GenerateMutantsInput[] = [];
+    const capturedInputs: GenerateMutantsInput[] = [];
     const origGenerateMutants = mutationModule.generateMutants;
     const spy = spyOn(mutationModule, "generateMutants").mockImplementation((input) => {
       capturedInputs.push(input);

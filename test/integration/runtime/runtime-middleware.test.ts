@@ -32,6 +32,9 @@ describe("Wave 2 exit criteria", () => {
       model: "claude-sonnet-4-6",
       tokens: { input: 200, output: 100 },
       costUsd: 0.01,
+      estimatedCostUsd: 0.01,
+      exactCostUsd: 0.01,
+      confidence: "exact",
       durationMs: 300,
     });
     expect(rt.costAggregator.snapshot().callCount).toBe(1);
@@ -90,6 +93,9 @@ describe("Wave 2 exit criteria", () => {
           model: "m",
           tokens: { input: 10, output: 5 },
           costUsd: 0.001,
+          estimatedCostUsd: 0.001,
+          exactCostUsd: 0.001,
+          confidence: "exact",
           durationMs: 100,
         });
         await rt.close();
@@ -144,6 +150,9 @@ describe("Wave 2 exit criteria", () => {
           model: "m",
           tokens: { input: 1, output: 1 },
           costUsd: 0,
+          estimatedCostUsd: 0,
+          exactCostUsd: 0,
+          confidence: "estimated",
           durationMs: 1,
         });
 

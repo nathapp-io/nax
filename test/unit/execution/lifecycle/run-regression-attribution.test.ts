@@ -14,6 +14,7 @@ import type { DeferredRegressionOptions, StorySnapshot } from "@/execution";
 import type { Finding } from "@/findings/types";
 import type { PRD } from "@/prd";
 import { _gitDeps } from "@/utils/git";
+import type { VerificationResult } from "@/verification";
 import { makeMockRuntime, makeNaxConfig, makePRD, makeSpawn, makeStory } from "@test/helpers";
 
 function snap(storyId: string, completedAt: string, failingTestFiles?: string[]): StorySnapshot {
@@ -111,9 +112,9 @@ describe("runDeferredRegression — transition attribution", () => {
   test("attributes a failing test to the story where it went pass -> fail, not the most recent", async () => {
     // foo.test.ts went red at US-002 (and stays red through US-003). The
     // git-recency heuristic would blame US-003 (most recent); transition blames US-002.
-    _regressionDeps.runVerification = mock(async () => {
+    const runVerification = mock(async (): Promise<VerificationResult> => {
       // call 0: initial suite fails; subsequent mid-loop re-runs pass (early exit).
-      return _regressionDeps.runVerification.mock.calls.length === 1
+      return runVerification.mock.calls.length === 1
         ? {
             success: false,
             status: "TEST_FAILURE",
@@ -131,6 +132,7 @@ describe("runDeferredRegression — transition attribution", () => {
             failCount: 0,
           };
     });
+    _regressionDeps.runVerification = runVerification;
     _regressionDeps.parseTestOutput = mock(() => ({
       passed: 0,
       failed: 1,
@@ -167,14 +169,16 @@ describe("runDeferredRegression — transition attribution", () => {
   });
 
   test("leaves a failing test unattributed when no snapshot maps it", async () => {
-    _regressionDeps.runVerification = mock(async () => ({
-      success: false,
-      status: "TEST_FAILURE",
-      countsTowardEscalation: true,
-      output: "fail",
-      passCount: 0,
-      failCount: 1,
-    }));
+    _regressionDeps.runVerification = mock(
+      async (): Promise<VerificationResult> => ({
+        success: false,
+        status: "TEST_FAILURE",
+        countsTowardEscalation: true,
+        output: "fail",
+        passCount: 0,
+        failCount: 1,
+      }),
+    );
     _regressionDeps.parseTestOutput = mock(() => ({
       passed: 0,
       failed: 1,
@@ -202,14 +206,16 @@ describe("runDeferredRegression — transition attribution", () => {
   });
 
   test("does not blame a passed story for a failed story's test", async () => {
-    _regressionDeps.runVerification = mock(async () => ({
-      success: false,
-      status: "TEST_FAILURE",
-      countsTowardEscalation: true,
-      output: "fail",
-      passCount: 0,
-      failCount: 1,
-    }));
+    _regressionDeps.runVerification = mock(
+      async (): Promise<VerificationResult> => ({
+        success: false,
+        status: "TEST_FAILURE",
+        countsTowardEscalation: true,
+        output: "fail",
+        passCount: 0,
+        failCount: 1,
+      }),
+    );
     _regressionDeps.parseTestOutput = mock(() => ({
       passed: 0,
       failed: 1,

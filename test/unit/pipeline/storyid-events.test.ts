@@ -25,19 +25,13 @@ import { _executionDeps, executionStage } from "@/pipeline/stages/execution";
 
 // ── Mock agent ────────────────────────────────────────────────────────────────
 
-const mockAgentRun = mock(async () => ({
-  success: true,
-  rateLimited: false,
-  estimatedCostUsd: 0.01,
-  output: "done",
-  exitCode: 0,
-  durationMs: 100,
-}));
-
 const mockAgent = makeAgentAdapter({
   name: "claude",
-  capabilities: { supportedTiers: ["balanced", "powerful"] },
-  run: mockAgentRun,
+  capabilities: {
+    supportedTiers: ["balanced", "powerful"],
+    maxContextTokens: 200_000,
+    features: new Set(["tdd", "review", "refactor", "batch"]),
+  },
   isInstalled: async () => true,
   buildCommand: () => ["claude"],
 });
@@ -110,7 +104,6 @@ beforeEach(() => {
   _executionDeps.getAgent = () => mockAgent as any;
   resetLogger();
   initLogger({ level: "silent" });
-  mockAgentRun.mockClear();
 });
 
 afterEach(() => {

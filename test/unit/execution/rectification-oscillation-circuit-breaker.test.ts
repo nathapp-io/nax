@@ -30,7 +30,8 @@ import {
 import type { FixCycle, FixCycleContext, FixCycleExitReason, Iteration } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
 import type { CallContext, RunOperation } from "@/operations";
-import type { NaxRuntime, PipelineContext } from "@/runtime";
+import type { PipelineContext } from "@/pipeline/types";
+import type { NaxRuntime } from "@/runtime";
 import { makeTestContext, makeTestRuntime } from "@test/helpers";
 import { LINT_FINDING, TEST_RUNNER_FINDING, makeInspectionOpts, makePlanResult } from "./_post-run-fixtures";
 

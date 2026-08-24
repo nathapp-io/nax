@@ -34,7 +34,15 @@ describe("resetStoryToPending()", () => {
         makeStory({
           id: "US-001",
           status: "failed",
-          routing: { modelTier: "powerful", agent: "codex", initialModelTier: "fast", initialAgent: "claude" },
+          routing: {
+            modelTier: "powerful",
+            agent: "codex",
+            initialModelTier: "fast",
+            initialAgent: "claude",
+            complexity: "complex",
+            testStrategy: "test-after",
+            reasoning: "initial routing fixture",
+          },
           escalations: [{ fromTier: "fast", toTier: "powerful", reason: "retry", timestamp: "now" }],
         }),
       ],

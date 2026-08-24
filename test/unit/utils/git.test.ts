@@ -19,7 +19,7 @@ import {
   parsePorcelainForNaxPaths,
   parsePorcelainUntrackedPaths,
 } from "@/utils/git";
-import { cleanupTempDir, makeSpawn, makeSpawnResult, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeLogger, makeSpawn, makeSpawnResult, makeTempDir } from "@test/helpers";
 
 describe("detectMergeConflict", () => {
   // True positives — real git conflict signals
@@ -472,18 +472,14 @@ describe("autoCommitIfDirty .nax/ restore", () => {
     ]);
     _gitDeps.spawn = spawn;
 
-    const errorCalls: Array<{ message: string; data: Record<string, unknown> }> = [];
-    _gitDeps.getSafeLogger = () => ({
-      error: (stage: string, message: string, data?: Record<string, unknown>) => {
-        errorCalls.push({ message, data: data ?? {} });
-      },
-      warn: () => {},
-      info: () => {},
-      debug: () => {},
-    });
+    const logger = makeLogger();
+    _gitDeps.getSafeLogger = () => logger;
 
     await autoCommitIfDirty("/tmp/repo", "test", "implementer", "US-002");
 
+    const errorCalls = logger.calls
+      .filter((c) => c.level === "error")
+      .map((c) => ({ message: c.message, data: c.data ?? {} }));
     expect(errorCalls.length).toBeGreaterThan(0);
     for (const call of errorCalls) {
       // storyId must be the FIRST key in the data payload
@@ -503,18 +499,14 @@ describe("autoCommitIfDirty .nax/ restore", () => {
     ]);
     _gitDeps.spawn = spawn;
 
-    const errorCalls: Array<{ message: string; data: Record<string, unknown> }> = [];
-    _gitDeps.getSafeLogger = () => ({
-      error: (stage: string, message: string, data?: Record<string, unknown>) => {
-        errorCalls.push({ message, data: data ?? {} });
-      },
-      warn: () => {},
-      info: () => {},
-      debug: () => {},
-    });
+    const logger = makeLogger();
+    _gitDeps.getSafeLogger = () => logger;
 
     await autoCommitIfDirty("/tmp/repo", "test", "implementer", "US-002");
 
+    const errorCalls = logger.calls
+      .filter((c) => c.level === "error")
+      .map((c) => ({ message: c.message, data: c.data ?? {} }));
     expect(errorCalls.length).toBeGreaterThan(0);
     const failureLog = errorCalls.find((c) => c.data.exitCode === 128);
     expect(failureLog).toBeDefined();

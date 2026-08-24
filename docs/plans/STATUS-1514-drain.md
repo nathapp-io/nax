@@ -7,31 +7,34 @@ were written and are not edited afterwards.** For the live state, read §0 and t
 
 ---
 
-## 0. Current state — measured 2026-08-24 on `main` @ `b552fce6a`
+## 0. Current state — measured 2026-08-24 on `chore/1514-tail-batch3-prep` @ `d5016b4e6`
 
 Every number re-measured on a clean tree, not carried forward from a section below.
 
 | | value | baseline |
 |:--|--:|--:|
 | `tsc --noEmit` (src) | **0** | — |
-| test typecheck | **383** | 383 |
+| test typecheck | **289** | 289 |
 | `as unknown as` casts | **102** | 102 |
 | `asAny` | 1386 | 1386 |
 | `tsSuppress` | 40 | 40 |
 | `ratchetAllow` | 106 | 106 |
 | `absentValue` | 17 | 17 |
-| `anyType` | 1877 | 1877 |
-| `looseCast` | 1925 | 1925 |
+| `anyType` | 1875 | 1875 |
+| `looseCast` | 1923 | 1923 |
 | `asNever` | 619 | 619 |
 | `nonNullAssert` | 827 | 827 |
 
-Against the original #1514 start: casts **815 → 102 (−87%)**, typecheck **2009 → 383 (−81%)**.
+Against the original #1514 start: casts **815 → 102 (−87%)**, typecheck **2009 → 289 (−86%)**.
 
 All 25 gates green, every counter sitting **at** its baseline — there is no headroom left in the
-ratchets for a delegate to spend (§32's slack was reclaimed in `b552fce6a`).
+ratchets for a delegate to spend. (§32's slack was reclaimed once in `b552fce6a` and it had
+re-opened by 4 points; `4723c7a7a` reclaimed it again. **Re-check this before every hand-off** —
+it re-opens every time a drain commit lowers a counter without re-baselining.)
 
-The residue is 383 errors across 186 files. It is still recipe-shaped: see §33 and
-`HANDOFF-1514-tail-recipes-batch2.md`.
+The residue is 289 errors across 150 files. Clusters B and E are handed off in
+`HANDOFF-1514-tail-recipes-batch3.md`; §38 has the histogram and §39 has the review that
+re-scoped it.
 
 ## ✅ The dead-fixture-keys handoff is COMPLETE
 
@@ -2204,3 +2207,198 @@ undifferentiated long tail: 87 `TS2322`, 35 `TS2353`, 30 `TS2352`, 28 `TS2339`, 
 smaller tails below that — no cluster has been measured or read yet. Re-run the error-code
 histogram fresh before picking the next one; per this round's lesson, "no shared cause"
 verdicts from earlier passes did not hold up under actual per-site reading.
+
+## 38. Batch-3 prep — the slack re-opened, cluster A1 drained, B and C handed off (303 → 299)
+
+Branch `chore/1514-tail-batch3-prep`. Two drain-relevant commits plus a handoff.
+
+### The baseline slack re-opened, four days after §32 closed it
+
+§37's round removed 2 `anyType` and 2 `looseCast` and did not re-baseline, so the tree arrived
+at this round with 4 points of free headroom under all 25 green gates — the exact defect §32
+diagnosed and fixed once already. `4723c7a7a` reclaims it.
+
+**This is not a one-time cleanup, it is a recurring leak.** §32's rule ("a drain commit that
+lowers a counter must also lower its baseline") is stated but nothing enforces it: the gate
+fails on *growth*, so a counter sitting below baseline is silently tolerated. **Measure the
+gap before every hand-off**, or consider making `check:test-escape-hatches` fail on slack the
+way `check:test-typecheck`'s per-file gate reports `worse: 0`.
+
+### The tail, re-clustered by cause (§32's method, re-run on 303)
+
+By file it is flat — the largest file has 8 errors, and 157 files hold 303. By cause:
+
+| Cluster | Errors | Files | Shape |
+|:--|--:|--:|:--|
+| A — `Mock` into a typed function slot | 46 | ~30 | TS2322/TS2352 whose target type starts with `(` |
+| D — TS2353 dead fixture keys | 35 | many | top key appears 3× — genuinely scattered now |
+| B — flat `models:` fixtures | 9 | 3 | one recipe |
+| C — imports of symbols the barrel does not re-export | 12 | 8 | per-site, 30-second lookups |
+| unread tail | ~200 | — | 87 TS2322, 30 TS2352, 25 TS2339, 22 TS2739, … |
+
+Cluster A is what §32 measured at "~35 errors across ~30 files" and it has grown, not shrunk.
+
+### A is three sub-families, not one recipe — and only the first is safe
+
+- **A1 — literal widening. Drained, `60cdf5ba2`, 303 → 299.** Three sites in
+  `run-regression-attribution.test.ts` assigned a mock whose inferred `status` was the widened
+  `string` into a slot typed `Promise<VerificationResult>`. Annotating the mock's return type
+  gives the literals their union-member type with **no cast**. One site also read
+  `.mock.calls` off the dep slot (a *consequent* TS2339, not a separate defect) — hoisting the
+  mock to a typed local and assigning the local clears both together. `8 pass / 15 expect()`
+  identical before and after.
+- **A2 — fixture missing required fields.** Looks mechanical, unverified.
+- **A3 — the fixture is wrong and the wrongness is load-bearing.** Two mutation-check tests
+  return `status: "FAILURE"`, which is not a `VerificationStatus` member.
+  "Correcting" it to `"TEST_FAILURE"` is **not inert**: `classifyMutant`
+  (`src/verification/mutation/classify.ts:14`) switches on `status`; `"FAILURE"` falls to the
+  `default:` arm and throws `MUTATION_UNHANDLED_STATUS`, while `"TEST_FAILURE"` returns
+  `killed` or `errored` depending on the counts. The test asserts the op continued and stopped
+  after one mutant — the throw may be the thing under test.
+
+**The lesson, and it is §32's rule in a new costume:** an invalid *value* in a fixture is not
+the same defect as a widened *type*, even though tsc reports both as "not assignable to
+`VerificationStatus`". Before "fixing" a wrong literal, find the `switch` that consumes it. A
+union-member error tells you the value is unreachable in the type; it never tells you the code
+ignores it.
+
+### What was handed off, and what was deliberately not
+
+`HANDOFF-1514-tail-recipes-batch3.md` — clusters **B (9) and C (10)**, expected 299 → 280. Both
+recipes were prototyped on the live tree and reverted, per batch-1 practice:
+
+- **B**: `models: { fast, balanced, powerful }` predates the per-agent
+  `Record<agentName, Record<tier, entry>>` shape. Nesting under `claude` (the convention in
+  `validate.test.ts`) measured 299 → 296 on one file with identical pass/expect counts. The
+  handoff carries the one non-mechanical check: these fixtures are **inert today**
+  (`resolveModelForAgent` finds nothing and throws), so nesting makes them *reachable for the
+  first time* — grep for the model strings in assertions before editing.
+- **C**: every symbol exists in `src/`; only the barrel lacks the re-export. Type-only imports
+  from an internal path are explicitly exempt from `check:alias-internals` (its header,
+  exemption 1), so the fix is legal. The handoff names the declaring module for all 10 and
+  flags `PlanResult` as ambiguous between two unrelated interfaces.
+
+**Not delegated:** A (all three sub-families), D, the unread tail, and
+`pb-004-migration.test.ts`'s 2 × TS2307 — that test imports two deleted modules *in order to
+assert they are gone*, so the error is intrinsic and `@ts-expect-error` would breach
+`tsSuppress`. It is an accepted exception awaiting the §8 treatment, not debt.
+
+## 39. Reviewing the batch-3 handoff before delegating — verifying cluster C drained it (299 → 289)
+
+§25 recorded that reviewing a handoff before delegating "paid for itself". This round it paid
+differently: the review **consumed** the cluster it was reviewing.
+
+### What the review found
+
+The draft handed off cluster C — 10 errors, 8 files, "imports naming symbols the barrel does not
+re-export", described as 30-second lookups. Checking the table line by line instead of trusting
+it found:
+
+- **`mutation-check-diff-scope.test.ts:236` is not an import.** It is a namespace-qualified type
+  reference, `mutationModule.GenerateMutantsInput[]`, on an `import * as` used for `spyOn`. The
+  fix is a separate type import plus a bare name — a different edit from every other row.
+- **`status-file-integration.test.ts` was not importing from a barrel.** It imports from
+  `@/agents/types` directly; `PlanOptions`/`PlanResult` simply live in
+  `@/agents/shared/types-extended`. The row's conclusion held, its reasoning did not.
+- **Five of the eight needed a mixed import split** (`{ NaxRuntime, PipelineContext }` →
+  two lines). The draft said "import from the declaring module" and never mentioned it.
+- **The draft never addressed unmasking at all** — the risk that resolving a type turns a
+  silently-`any` file into a newly-typechecked one. It doesn't happen here (the total fell by
+  exactly 10), but that was luck, not analysis.
+
+### Why the cluster is now done rather than handed off
+
+There was no way to check those four things without doing the edits. Once done and verified —
+289, `check:all` 25/25, identical pass/fail/`expect()` across all 8 files — reverting proven,
+zero-risk work to preserve a delegation would have been waste. Committed as `d5016b4e6`.
+
+**The general rule this suggests:** *verifying* a mechanical cluster costs about as much as
+*executing* it. A cluster small enough to hand off cheaply is usually small enough that the
+owner's verification pass finishes it. **The delegable unit is not "a small cluster" — it is a
+recipe already proven on one site, with enough sites left that repetition dominates
+verification.** Cluster B (9 errors, 3 files, one proven recipe) barely clears that bar;
+cluster C never did.
+
+### What replaced it in the handoff
+
+**Cluster E — fixtures missing required properties, 29 errors, ~25 files.** Same family as
+`HANDOFF-1514-mechanical-fixture-fields.md`, which drained 91 errors successfully, and this repo
+has ~50 `makeX` factories in `test/helpers/` that exist precisely to answer it. The handoff
+carries three things the draft of C lacked: the priority order (use a factory → add inert fields
+→ escalate), the hard bar that **shared helpers are off-limits to edit** (§4a's 69-consumer
+`FakeProcSpec` incident), and an explicit warning that the three `Logger` sites are *not* a
+drop-in swap because they assert against local capture arrays and `makeLogger` exposes `.calls`.
+
+E's number is also marked **soft** in the handoff: 29 errors across 9 small groups plus a tail of
+singletons is not one recipe applied 29 times, and a handoff that quotes a hard number invites
+the executor to reach it.
+
+## 40. Batch 3 landed (289 → 246) and its two escalations — one fixed, one refused
+
+PR #1700 drained clusters B and E: **289 → 248**, 22 commits, one file per commit. Verified
+independently on the branch, not taken from the report: test typecheck 248, `src` tsc 0, every
+escape-hatch counter flat (`asAny=1386 … nonNullAssert=827`), `as unknown as` 102, per-file gate
+**no file worse and no new file with errors**, `check:all` 25/25, full suite green
+(14132 + 1137 + 38 pass, 0 fail). −41 against a −38 forecast; the surplus is masked collateral
+the commits name individually.
+
+Both escalations were the same shape — **an error whose wrong side is `src/`** — and they
+resolve in opposite directions. That is the point of this section.
+
+### Escalation 1 — `ModelsConfig` was stricter than its own runtime contract. Fixed.
+
+`schema-types.test.ts` had to keep an incomplete `codex` tier map to exercise
+`resolveModelForAgent`'s fallback, and ate a `TS2739` for it. The type said every agent defines
+all three tiers; **nothing else in the system agreed**: `resolveModelForAgent` reads
+`models[agent]?.[tier]`, falls back to the default agent, and throws `MODEL_NOT_FOUND` only when
+neither has it, while `PerAgentModelMapSchema` is a plain `z.record` with no tier requirement.
+The type made its own fallback branch unexpressible.
+
+`ModelsConfig = Record<string, Partial<ModelMap>>` — **0 src errors, 248 → 246**, clearing the
+escalated site *and a second, unflagged instance at line 184*. No ADR governs this type.
+`fix/1514-escalations-src-types` @ `873277a76`.
+
+### Escalation 2 — `DispatchContext.sessionManager`. Type kept; the dead guards retired instead.
+
+`run-completion-session-close.test.ts:69` asserted `closeAllRunSessions` is *not* called when
+`sessionManager` is omitted, and could not construct that input without a forbidden cast.
+
+Making the field optional measures beautifully — **0 src errors** — and is still the wrong fix.
+**ADR-020 §D3 deliberately dropped the `?` from `sessionManager` and fixed every resulting `??`
+fallback site in the same PR**, so that "the compiler surfaces every consumer that must thread
+them". Re-adding it reverses a shipped decision to buy one test-typecheck error.
+
+What the measurement actually found is two **ADR-020 misses**: `run-completion.ts:403`
+(`if (options.sessionManager)`) and the `options.agentManager ? … : undefined` beside it are
+pre-ADR-020 residue that every typed caller makes unreachable. Both retired, along with the test
+that pinned the false branch. **246 → 245**, `6caf7196c`.
+
+#### The correction: "unreachable" was true of the type, false of the suite
+
+This section first claimed the false branch "can no longer be false". Removing the guard
+**broke four tests** — `mutation-summary-completion.test.ts` reaches `closeAllRunSessions` with
+`sessionManager` undefined at runtime, because its fixture omits all four dispatch fields under
+an `as unknown as RunnerCompletionOptions` cast.
+
+That is not a counter-example to the ruling; it is the contract violation ADR-020 exists to
+prevent, and one of the 102 grandfathered casts is what let it through. The fixtures now spread
+`makeDispatchContext({ runtime })` from the runtime they already build. But the sequence is the
+lesson: **a guard proven unreachable by the type system is still reachable by any fixture that
+casts its way past the type.** Deleting defensive code in a repo with 102 sanctioned casts and
+615 `as never` is a runtime change, not a refactor — the full suite, not the compiler, is what
+tells you.
+
+(Deleting that test also dropped `asNever` 619 → 615; re-baselined immediately, per §38's
+recurring-leak note.)
+
+### The control that made the difference
+
+`agentManager` looks identical to `sessionManager` at the call site — `context.ts:74` even
+optional-chains it. Measuring it the same way gives **9 src errors**: it is genuinely required
+and the optional-chain is noise. One field of the same interface is a lie and its neighbour is
+not, and only the compiler could tell them apart.
+
+**The rule:** "0 src errors when I loosen it" proves the *code* tolerates the change. It says
+nothing about whether the constraint was **intended** — grep `docs/adr/` for the type before
+concluding the type is wrong. Escalation 1 had no ADR and the schema on its side; escalation 2
+had an ADR that had explicitly considered and rejected the change.

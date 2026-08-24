@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "@/config";
+import { AdversarialReviewConfigSchema } from "@/config/schemas-review";
 import { _storyOrchestratorDeps, assemblePlanInputsFromCtx, buildPlanForStrategy } from "@/execution";
 import type { Finding } from "@/findings";
 import { makeMechanicalFormatFixStrategy, makeMechanicalLintFixStrategy } from "@/operations";
@@ -361,8 +362,27 @@ describe("single-session adversarial-review routing", () => {
         implementer: { story },
         fullSuiteGate: { story, workdir: "/tmp/test" },
         verifier: { story },
-        semanticReview: { story },
-        adversarialReview: { story },
+        semanticReview: {
+          story,
+          workdir: "/tmp/test",
+          semanticConfig: {
+            model: "balanced",
+            diffMode: "embedded",
+            resetRefOnRerun: false,
+            rules: [],
+            timeoutMs: 600_000,
+            substantiation: { requote: true, maxRequotes: 5 },
+            demandInspectionTrail: true,
+            recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
+          },
+          mode: "embedded",
+        },
+        adversarialReview: {
+          story,
+          workdir: "/tmp/test",
+          adversarialConfig: AdversarialReviewConfigSchema.parse({}),
+          mode: "embedded",
+        },
         rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
       }),
     };

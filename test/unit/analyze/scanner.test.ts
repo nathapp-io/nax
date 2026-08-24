@@ -164,7 +164,7 @@ describe("scanSourceRoots — discoverWorkspacePackages rejects", () => {
       _scannerDeps.discoverWorkspacePackages = mock(() => Promise.reject(new Error("network error")));
       _scannerDeps.detectLanguage = mock(() => Promise.resolve(undefined));
       _scannerDeps.readPackageJson = mock(() => Promise.resolve(null));
-      _scannerDeps.logger = () => ({ warn: () => {} });
+      _scannerDeps.logger = () => makeLogger();
 
       const roots = await scanSourceRoots(dir);
       expect(roots).toHaveLength(1);

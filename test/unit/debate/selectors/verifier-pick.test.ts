@@ -392,7 +392,7 @@ describe("verifierPickSelector", () => {
 
     test("calls runAsSession with winner.proposal.handle to continue session", async () => {
       let capturedHandle: SessionHandle | undefined;
-      const testHandle = { sessionId: "nax-12345-test" };
+      const testHandle: SessionHandle = { id: "nax-12345-test", agentName: "claude" };
       const mockAgentManager = makeMockAgentManager({
         runAsSessionFn: async (agentName, handle) => {
           capturedHandle = handle;

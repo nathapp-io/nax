@@ -26,7 +26,18 @@ export interface ModelDef {
 
 export type ModelEntry = ModelDef | string;
 export type ModelMap = Record<ModelTier, ModelEntry>;
-export type ModelsConfig = Record<string, Record<ModelTier, ModelEntry>>;
+/**
+ * Per-agent model map: agent name -> tier -> entry.
+ *
+ * The tier map is `Partial` on purpose. An agent may define only some tiers;
+ * `resolveModelForAgent` looks up `models[agent]?.[tier]`, falls back to the
+ * default agent's entry for that tier, and throws `MODEL_NOT_FOUND` only when
+ * neither has it. `PerAgentModelMapSchema` (`schemas-model.ts`) has never
+ * required all three tiers either. Declaring the map total therefore contradicted
+ * both the runtime contract and the validator, and made the fallback branch
+ * unreachable to express in a fixture.
+ */
+export type ModelsConfig = Record<string, Partial<ModelMap>>;
 
 export interface ConfiguredModelObject {
   agent: string;
