@@ -104,17 +104,8 @@ function makeAgentPlugin(agentName: string, displayName: string, binary: string)
         async isInstalled() {
           return true;
         },
-        async run() {
-          return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 };
-        },
         buildCommand() {
           return [binary];
-        },
-        async plan() {
-          return { specContent: "" };
-        },
-        async decompose() {
-          return { stories: [] };
         },
       },
     },
