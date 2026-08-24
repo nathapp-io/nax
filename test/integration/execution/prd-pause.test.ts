@@ -47,12 +47,6 @@ describe("PRD pause functionality", () => {
         attempts: 0,
       },
     ],
-    analyzeConfig: {
-      llmEnhanced: false,
-      model: "balanced",
-      fallbackToKeywords: true,
-      maxCodebaseSummaryTokens: 5000,
-    },
   });
 
   describe("markStoryPaused", () => {
