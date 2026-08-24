@@ -1292,8 +1292,12 @@ absentValue=17, anyType=1880, looseCast=1932`); `as unknown as` 102.
 - **`review/scoped-lint` 9 → 0 (734 → 725).** The `runLintCommand` mocks returned 5 of the 7
   required `QualityCommandResult` fields (`commandName`, `timedOut` missing) — completed all
   six. Three `lintOutputFormat: "eslint"` were a fixture defect: `LintOutputFormat` has no
-  such member (`"auto" | "eslint-json" | "biome-json" | "text" | "none"`); the test output is
-  line-based `text` format, matching the one site that already compiled with `"text"`.
+  such member (`"auto" | "eslint-json" | "biome-json" | "text" | "none"`). The faithful fix was
+  `"auto"`, NOT `"text"`: at runtime the bogus `"eslint"` had fallen through to the full
+  auto chain (`eslint-json → biome-json → ruff → text-block`), so `"text"` would have stripped
+  the eslint-json strategy from the path and dropped `src/review/lint-parsing/strategies/
+  eslint-json.ts` (grandfathered at 32.5%) below its baseline — a coverage-gate failure the
+  PR's CI caught. `"auto"` is the same call chain with a valid member.
 - **`metrics/tracker-context-metrics` 10 → 0 (725 → 715).** The R4 hypothesis held only part
   way: `budgetPressure: Record<string, unknown>` became `ProviderBudgetPressure` for the six
   well-formed fixtures (which then needed `droppedIds: []` — full required shape). Two

@@ -173,7 +173,7 @@ describe("runScopedLintCheck", () => {
     const result = await runScopedLintCheck({
       resolvedLintCommand: "custom-lint",
       configCommands: baseReviewConfig.commands,
-      lintOutputFormat: "text",
+      lintOutputFormat: "auto",
       workdir: "/repo",
       storyId: "US-001",
       storyGitRef: "abc123",
@@ -202,7 +202,7 @@ describe("runScopedLintCheck", () => {
     const result = await runScopedLintCheck({
       resolvedLintCommand: "custom-lint",
       configCommands: baseReviewConfig.commands,
-      lintOutputFormat: "text",
+      lintOutputFormat: "auto",
       workdir: "/repo",
       storyId: "US-001",
       storyGitRef: "abc123",
@@ -226,7 +226,7 @@ describe("runScopedLintCheck", () => {
     const result = await runAutofixLint({
       resolvedLintCommand: "custom-lint",
       configCommands: baseReviewConfig.commands,
-      lintOutputFormat: "text",
+      lintOutputFormat: "auto",
       workdir: "/repo",
       storyId: "US-001",
       scope: {
