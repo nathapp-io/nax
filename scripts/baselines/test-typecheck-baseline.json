@@ -1,13 +1,12 @@
 {
-  "count": 665,
-  "updatedAt": "2026-08-24T04:28:24.224Z",
+  "count": 657,
+  "updatedAt": "2026-08-24T04:30:53.659Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
     "test/integration/agents/stale-retry-session-reuse.test.ts": 1,
     "test/integration/agents/stale-then-swap.test.ts": 1,
     "test/integration/agents/timeout-retry-fresh-session.test.ts": 1,
-    "test/integration/cli/cli-plugins.test.ts": 8,
     "test/integration/cli/cli-precheck-checks.test.ts": 1,
     "test/integration/cli/cli-precheck-command.test.ts": 1,
     "test/integration/cli/cli-precheck-integration.test.ts": 1,
