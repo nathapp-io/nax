@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import { AcpAgentAdapter, _acpAdapterDeps } from "@/agents/acp/adapter";
 import { CompleteError } from "@/agents/types";
 import type { AgentRunOptions } from "@/agents/types";
+import { DEFAULT_CONFIG } from "@/config";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ACP mock types — mirror expected acpx interfaces for test isolation
@@ -122,6 +123,7 @@ export function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentR
     modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
     timeoutSeconds: 60,
     ...overrides,
+    config: overrides.config ?? DEFAULT_CONFIG,
   };
 }
 
