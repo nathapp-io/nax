@@ -36,6 +36,7 @@ function makeCallCtxWithIds(
   agentManager: ReturnType<typeof makeMockAgentManager>,
   sessionManager: ReturnType<typeof makeSessionManager>,
   config: NaxConfig = DEFAULT_CONFIG,
+  packageView: CallContext["packageView"] = { config, select: (_sel: unknown) => config } as any,
 ): CallContext {
   return {
     runtime: {
@@ -45,7 +46,7 @@ function makeCallCtxWithIds(
       packages: { resolve: () => ({ config, select: (_sel: unknown) => config }) } as any,
       signal: undefined,
     } as any,
-    packageView: { config, select: (_sel: unknown) => config } as any,
+    packageView,
     packageDir: "/tmp/work",
     agentName: "claude",
     storyId,
@@ -653,8 +654,7 @@ describe("runner-plan — preDebatePhase invocation", () => {
 
     const config = makePlanDebateConfig(2);
     const agentManager = makeMockAgentManager();
-    const ctx = makeCallCtxWithIds("package-view-test", agentManager, sm, config);
-    ctx.packageView = packageView;
+    const ctx = makeCallCtxWithIds("package-view-test", agentManager, sm, config, packageView);
 
     const runner = new DebateRunner({
       ctx,
