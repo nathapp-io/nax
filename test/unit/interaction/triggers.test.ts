@@ -255,7 +255,7 @@ describe("BUG-17: trigger fallback honored on timeout for every trigger", () => 
 
 describe("substituteTemplate (BUG-43)", () => {
   test("substitutes a plain alphanumeric key", () => {
-    expect(substituteTemplate("hello {{name}}", { name: "world" })).toBe("hello world");
+    expect(substituteTemplate("hello {{name}}", { name: "world", featureName: "f" })).toBe("hello world");
   });
 
   test("substitutes a key with regex metacharacters without throwing or mis-substituting", () => {
@@ -265,7 +265,7 @@ describe("substituteTemplate (BUG-43)", () => {
     // than `{{cost(usd)}}`. TriggerContext has an open index signature
     // so callers can add arbitrary keys — escape the key before use.
     const template = "limit was {{cost(usd)}}";
-    const result = substituteTemplate(template, { "cost(usd)": "$1.23" });
+    const result = substituteTemplate(template, { "cost(usd)": "$1.23", featureName: "f" });
     expect(result).toBe("limit was $1.23");
   });
 
@@ -276,6 +276,7 @@ describe("substituteTemplate (BUG-43)", () => {
       "c[0]": "C",
       "d/e": "D",
       "f\\g": "F",
+      featureName: "f",
     });
     expect(result).toBe("a A b C c D d F");
   });
@@ -283,7 +284,7 @@ describe("substituteTemplate (BUG-43)", () => {
   test("leaves a placeholder untouched when the key is not in context", () => {
     // Verifies the regex wasn't so over-escaped that legitimate keys
     // stop matching. Plain alphanumeric keys must still substitute.
-    const result = substituteTemplate("hi {{name}}", { other: "x" });
+    const result = substituteTemplate("hi {{name}}", { other: "x", featureName: "f" });
     expect(result).toBe("hi {{name}}");
   });
 });

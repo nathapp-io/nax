@@ -1,6 +1,6 @@
 {
-  "count": 360,
-  "updatedAt": "2026-08-24T11:57:43.019Z",
+  "count": 356,
+  "updatedAt": "2026-08-24T11:59:10.906Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -101,7 +101,7 @@
     "test/unit/execution/unified-executor-session-close.test.ts": 3,
     "test/unit/findings/adapters/acceptance-diagnose.test.ts": 1,
     "test/unit/findings/cycle.test.ts": 3,
-    "test/unit/interaction/triggers.test.ts": 5,
+    "test/unit/interaction/triggers.test.ts": 1,
     "test/unit/metrics/aggregator.test.ts": 1,
     "test/unit/metrics/report.test.ts": 3,
     "test/unit/operations/acceptance-diagnose.test.ts": 1,
