@@ -106,7 +106,7 @@ describe("mutationCheckOp — an unconfirmed revert stops the check", () => {
           regressionCalls += 1;
           // Simulate a formatter/codegen step rewriting the mutated line.
           await Bun.write(file, hijacked);
-          return { status: "FAILURE" as const, success: false, countsTowardEscalation: true, output: "1 fail" };
+          return { status: "TEST_FAILURE" as const, success: false, countsTowardEscalation: true, output: "1 fail" };
         },
       });
 
