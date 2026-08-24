@@ -1269,13 +1269,63 @@ looseCast=1932`); `as unknown as` 102. 25/25 gates green; full suite green.
 
 ---
 
+## 27. The six ✅ rows of `HANDOFF-1514-cast-and-fixture-residue.md` — done (759 → 692, −67)
+
+Six commits, one file pair per commit, each through the full loop (src tsc 0, per-file
+`worse: 0`, full suite, 25/25 gates, `check:test-typecheck:update` last). 759 → 692 across
+249 → 241 files. All counters flat (`asAny=1388, tsSuppress=40, ratchetAllow=106,
+absentValue=17, anyType=1880, looseCast=1932`); `as unknown as` 102.
+
+- **`commands/curator` + `curator-gc` 15 → 0 (759 → 744).** R1 at 14 sites — `resolveProject`
+  was a sync mock in an async slot. The handoff's 13-×-TS2322 hypothesis held, but there was
+  a 15th error it hadn't counted: a `TS2353` in `curator-gc` where an oversized-row fixture
+  carried an unmodeled `detail` field (used to inflate the rollup past the 4 MB flush
+  boundary). Bound the row to a `const` before pushing it `as Observation` to lose freshness —
+  the `as Observation` still does work (the union excludes `detail`), so it was kept.
+- **`execution/lifecycle/run-regression-flake-triage` 10 → 0 (744 → 734).** Cause was *not*
+  the plain-R1 hypothesis: two defects. (a) Six `triageFlakyFindings` mocks declared their
+  input as a strict subset (`{ findings }`) of the real 8-field `FlakeTriageInput`, so they
+  were contravariantly unassignable — typed the param as `FlakeTriageInput`. (b) The `shell`
+  quality-command fixture was `false` where the schema wants a string (`/bin/sh`) — two real
+  config defects the typecheck caught. One unmasked `TS2322`: `input.findings` is
+  `readonly`, the slot wants `Finding[]` — `[...input.findings]`.
+- **`review/scoped-lint` 9 → 0 (734 → 725).** The `runLintCommand` mocks returned 5 of the 7
+  required `QualityCommandResult` fields (`commandName`, `timedOut` missing) — completed all
+  six. Three `lintOutputFormat: "eslint"` were a fixture defect: `LintOutputFormat` has no
+  such member (`"auto" | "eslint-json" | "biome-json" | "text" | "none"`); the test output is
+  line-based `text` format, matching the one site that already compiled with `"text"`.
+- **`metrics/tracker-context-metrics` 10 → 0 (725 → 715).** The R4 hypothesis held only part
+  way: `budgetPressure: Record<string, unknown>` became `ProviderBudgetPressure` for the six
+  well-formed fixtures (which then needed `droppedIds: []` — full required shape). Two
+  adversarial tests can't be expressed through the strict field at all (they feed `"lots"` as
+  `droppedTokens`), so they were rewired to inject **raw manifest JSON text** via
+  `mockManifests` (widened to accept pre-serialized strings) — the disk form the tracker
+  actually parses. The `"not-an-object"` case kept its `as unknown as` but re-targeted it to
+  `ProviderBudgetPressure` (TS2739 fixed, counter flat).
+- **`cli/plan-decompose-regression` 7 → 0 (715 → 708).** R3 via the existing
+  `makeMockRuntime({ agentManager })` helper (same template `plan-decompose-ac-repair.test.ts`
+  already used): `createRuntime` slots want `(cfg, wd, featureName) => NaxRuntime`; the tests
+  stubbed a zero-arg mock returning a bare `IAgentManager`.
+- **`debate/session-helpers` + `responder-model` 16 → 0 (708 → 692).** The
+  `resolveOutcome` signature grew to 12 required positional params (workdir/featureName/
+  promptSuffix/debaters/agentManager appended); the tests had calls at 7, 9 and 14 args. 7/9
+  → 12 by appending the missing args (capture-manager reuse via hoisted locals — no new
+  casts; `as NonNullable` is a counted `looseCast`); 14 → 12 by dropping two `undefined`s.
+  Fixing the arity **unmasked three `undefined` passed for `config: DebateConfig`** — replaced
+  with `DEFAULT_DEBATE_CONFIG`. The shared `makeCaptureManager` return was an older
+  `CompleteResult` shape (`{ output, costUsd, source }` — `costUsd`/`source` never existed);
+  replaced with `{ output, tokenUsage, estimatedCostUsd }`.
+
+Residue at these commits: **692 errors across 241 files.** 886 → 692 (−194) over eleven
+fixes on the branch. Against the original #1514 start: typecheck **2009 → 692 (−66%)**,
+casts **815 → 102 (−87%)**, `looseCast` **1994 → 1932** with none added.
+
+---
+
 ## Next
 
-- **Delegable now:** `HANDOFF-1514-cast-and-fixture-residue.md` §2, the six ✅ rows —
-  `curator` 13, `run-regression-flake-triage` 10, `scoped-lint` 9,
-  `tracker-context-metrics` 10, `plan-decompose-regression` 7, `session-helpers` 10.
-  Landing point **759 → ~700**. Their *cause* column is a one-error hypothesis, not a
-  prototype — the doc says so.
+- **Done:** all six ✅ rows (see §27). Next delegates should take the **uninspected ≤8-error
+  files** next, one file per commit, applying the province-proven R1–R6 recipes per file.
 - **Owner only:** `config/merger` 19 (§24 — blanket recipe proven wrong),
   `story-orchestrator-run-phase-events` 15 (`Operation` includes `CompleteOperation`,
   `AnySlot` excludes it — likely a `src/` question under amended G5), `config/merge` 17,
@@ -1283,6 +1333,6 @@ looseCast=1932`); `as unknown as` 102. 25/25 gates green; full suite green.
 - **Method:** cluster by *conversion target* and *missing-property → target type*, never by
   file. And count **constructs, not diagnostics** — see §25 defect 2.
 
-Residue at this commit: **759 errors across 249 files.** The branch has taken 886 → 759
-(−127) over five fixes. Against the original #1514 start: typecheck **2009 → 759 (−62%)**,
+Residue at this commit: **692 errors across 241 files.** The branch has taken 886 → 692
+(−194) over eleven fixes. Against the original #1514 start: typecheck **2009 → 692 (−66%)**,
 casts **815 → 102 (−87%)**, `looseCast` **1994 → 1932** with none added.
