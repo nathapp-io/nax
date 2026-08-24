@@ -1,6 +1,6 @@
 {
-  "count": 744,
-  "updatedAt": "2026-08-24T03:15:01.748Z",
+  "count": 734,
+  "updatedAt": "2026-08-24T03:18:51.068Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -109,7 +109,6 @@
     "test/unit/execution/lifecycle/run-completion-postrun.test.ts": 5,
     "test/unit/execution/lifecycle/run-completion-session-close.test.ts": 1,
     "test/unit/execution/lifecycle/run-regression-attribution.test.ts": 6,
-    "test/unit/execution/lifecycle/run-regression-flake-triage.test.ts": 10,
     "test/unit/execution/lifecycle/run-regression.test.ts": 2,
     "test/unit/execution/mutation-check-wiring.test.ts": 1,
     "test/unit/execution/nbf-readonly-flake-triage.test.ts": 9,
