@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, buildPlanComposition, planCommand, runPlanPipeline } from "@/cli";
-import { DEFAULT_CONFIG } from "@/config";
+import { DEFAULT_CONFIG, type DebateStageConfig } from "@/config";
 import { NaxError } from "@/errors";
 import type { PRD } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
@@ -840,8 +840,8 @@ describe("buildPlanComposition()", () => {
       (r: ReturnType<typeof buildPlanComposition>) => r.postDebateVerifier,
       { kind: "plan-checklist" },
     ],
-  ])("AC-1: injects %s when evidenceMode is 'asymmetric'", (_label, getField, expected) => {
-    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const });
+  ] as const)("AC-1: injects %s when evidenceMode is 'asymmetric'", (_label, getField, expected) => {
+    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const } as DebateStageConfig);
     expect(getField(result)).toEqual(expected);
   });
 
@@ -870,7 +870,7 @@ describe("buildPlanComposition()", () => {
       (r: ReturnType<typeof buildPlanComposition>) => r.proposers,
       { citationsRequired: false },
     ],
-  ])("AC-2: user-specified %s overrides asymmetric default", (_label, override, getField, expected) => {
+  ] as const)("AC-2: user-specified %s overrides asymmetric default", (_label, override, getField, expected) => {
     const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const, ...override } as any);
     expect(getField(result)).toEqual(expected);
   });
