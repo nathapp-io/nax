@@ -139,12 +139,6 @@ function createTestContext(
       path: "constitution.md",
       maxTokens: 2000,
     },
-    analyze: {
-      llmEnhanced: false,
-      model: "balanced",
-      fallbackToKeywords: true,
-      maxCodebaseSummaryTokens: 4000,
-    },
     review: {
       enabled: true,
       checks: ["test"],
