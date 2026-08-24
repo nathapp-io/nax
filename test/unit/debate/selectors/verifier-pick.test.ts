@@ -49,7 +49,6 @@ function makeSelectorContext(overrides: Partial<SelectorContext> = {}): Selector
           escalation: { enabled: false, resolver: { type: "synthesis" }, sessionMode: "one-shot", rounds: 1 },
         },
       },
-      models: {},
       agent: { default: "claude" },
     },
     proposals: [],
