@@ -2022,3 +2022,48 @@ sense — the six regex-recipes of the last handoff are drained (or, in G's case
 As §30 cut it: every drain commit that lowers a counter must also lower its baseline. The 383
 baseline carries into this landing correctly because each of the 17 commits re-ran
 `check:test-typecheck:update` after its gates — no slack was handed onward.
+
+## 35. Cluster G — precheck config fixtures, done (356 → 347, 2026-08-24)
+
+`HANDOFF-1514-tail-recipes-batch2.md` §5 marked cluster G owner-only, off `origin/main` @
+`f2519a395` (test typecheck 356), branch `chore/1514-tail-cluster-g`, 4 commits — one file
+each, per G4:
+
+| file | baseline errors | fix | landed |
+|:--|--:|:--|--:|
+| `precheck-checks-tier1-blockers.test.ts` | 2 | `createMockConfig` deleted — **never called**, confirmed by grep and by identical 30 pass/3 skip before and after | **−2** |
+| `precheck-checks-tier2-warnings.test.ts` | 5 | `createMockConfig` → `makeNaxConfig({execution: {...}})`; `checkOptionalCommands` gained a `workdir` param since the handoff was written, wired to an isolated `makeTempDir()` | **−5** |
+| `test/integration/cli/cli-precheck-checks.test.ts` | 1 | same conversion + dropped dead `execution.cwd` (nothing in `src/` reads it — `runPrecheck` takes `workdir` separately) | **−1** |
+| `test/integration/cli/cli-precheck-integration.test.ts` | 1 | identical fixture, same fix | **−1** |
+
+**§5's own worked example was wrong about tier1-blockers being a conversion case** — the
+handoff measured the `makeNaxConfig` swap landing 383 → 375 on `createMockConfig`, but never
+checked whether anything called it. It didn't. `test-debt-ratchets-uncounted-escape-hatches`
+memory: check fixture usage before applying a documented conversion recipe, every time — a
+dead fixture typechecks the same whether deleted or converted, and deleting is strictly
+cheaper. The other three files' fixtures *were* live (17, 16, and 14 tests respectively) and
+needed the real conversion; §5's recipe was correct for those.
+
+`anyType` dropped 2 as a side effect (`overrides: any` on the two `cli-precheck-*` fixtures
+narrowed to `Partial<ExecutionConfig>` during the conversion) — a bonus, not a violation, all
+other counters flat at baseline throughout. Full suite green after every commit (1137
+pass/37 skip unit+integration, 38 UI pass); the two `cli-precheck-*` files stayed at their
+pre-edit 0 pass/16 skip and 0 pass/14 skip (`FULL=1`-gated, needs a real `claude` binary — not
+run here).
+
+**Cluster G is fully drained.** 356 → **347**, 173 files.
+
+## Next
+
+Residue: **347 across 173 files.** What's left is the tail the batch-2 handoff §4 explicitly
+deferred, unmeasured beyond a baseline count:
+
+- **`TS2769`** — 23, scattered, no shared cause found across two prior passes (batch 1 §5,
+  batch 2 §4).
+- **`TS7024`** implicit-`any` recursive return — 9, needs a real return type worked out per
+  function; cheap to get wrong and invisible when wrong.
+- **`TS2352` → `Record<string, unknown>`** — 7 errors, 7 files, still unverified against
+  either the `src/` side or the siblings. Do not assume it matches §22's drained cluster
+  without measuring first.
+- **`triggers.test.ts:75`** — one `TS2322`, left over from batch 2 cluster F.
+- **`DispatchContext`** (3) and the rest of the long tail: per-site, no recipe.
