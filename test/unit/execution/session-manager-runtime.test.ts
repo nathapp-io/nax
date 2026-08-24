@@ -1,13 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { closeAllRunSessions, closeStorySessions, failAndClose } from "@/execution/session-manager-runtime";
 import type { SessionDescriptor, SessionState } from "@/session/types";
-
-type SessionManagerLike = {
-  closeStory(storyId: string): SessionDescriptor[];
-  listActive(): SessionDescriptor[];
-  transition?(id: string, to: SessionState): SessionDescriptor;
-  get?(id: string): SessionDescriptor | null;
-};
+import { makeAgentAdapter, makeSessionManager } from "@test/helpers";
 
 const makeSessionDescriptor = (overrides: Partial<SessionDescriptor> = {}): SessionDescriptor =>
   ({
@@ -27,12 +21,12 @@ describe("closeStorySessions()", () => {
   test("closes physical handles returned by closeStory() only when handle exists", async () => {
     const withHandle = makeSessionDescriptor({ id: "sess-1", handle: "nax-story-1", workdir: "/workdir/a" });
     const withoutHandle = makeSessionDescriptor({ id: "sess-2" });
-    const sessionManager: SessionManagerLike = {
+    const sessionManager = makeSessionManager({
       closeStory: mock(() => [withHandle, withoutHandle]),
       listActive: mock(() => []),
-    };
+    });
     const closePhysicalSession = mock(async () => {});
-    const agentGetFn = mock(() => ({ closePhysicalSession }));
+    const agentGetFn = mock(() => ({ ...makeAgentAdapter(), closePhysicalSession }));
 
     const closed = await closeStorySessions(sessionManager, "US-001", agentGetFn);
 
@@ -46,12 +40,12 @@ describe("closeStorySessions()", () => {
 
   test("does not close a physical session when the handle is missing", async () => {
     const withoutHandle = makeSessionDescriptor({ id: "sess-1" });
-    const sessionManager: SessionManagerLike = {
+    const sessionManager = makeSessionManager({
       closeStory: mock(() => [withoutHandle]),
       listActive: mock(() => []),
-    };
+    });
     const closePhysicalSession = mock(async () => {});
-    const agentGetFn = mock(() => ({ closePhysicalSession }));
+    const agentGetFn = mock(() => ({ ...makeAgentAdapter(), closePhysicalSession }));
 
     const closed = await closeStorySessions(sessionManager, "US-001", agentGetFn);
 
@@ -62,14 +56,14 @@ describe("closeStorySessions()", () => {
 
   test("swallows adapter.closePhysicalSession rejections", async () => {
     const withHandle = makeSessionDescriptor({ id: "sess-1", handle: "nax-story-1", workdir: "/workdir/a" });
-    const sessionManager: SessionManagerLike = {
+    const sessionManager = makeSessionManager({
       closeStory: mock(() => [withHandle]),
       listActive: mock(() => []),
-    };
+    });
     const closePhysicalSession = mock(async () => {
       throw new Error("boom");
     });
-    const agentGetFn = mock(() => ({ closePhysicalSession }));
+    const agentGetFn = mock(() => ({ ...makeAgentAdapter(), closePhysicalSession }));
 
     await expect(closeStorySessions(sessionManager, "US-001", agentGetFn)).resolves.toBe(1);
     expect(closePhysicalSession).toHaveBeenCalledTimes(1);
@@ -84,12 +78,12 @@ describe("closeStorySessions() — AC-83 force-terminate", () => {
       handle: "nax-1",
       workdir: "/workdir/a",
     });
-    const sessionManager: SessionManagerLike = {
+    const sessionManager = makeSessionManager({
       closeStory: mock(() => [failedDescriptor]),
       listActive: mock(() => []),
-    };
+    });
     const closePhysicalSession = mock(async () => {});
-    const agentGetFn = mock(() => ({ closePhysicalSession }));
+    const agentGetFn = mock(() => ({ ...makeAgentAdapter(), closePhysicalSession }));
 
     await closeStorySessions(sessionManager, "US-001", agentGetFn);
 
@@ -103,12 +97,12 @@ describe("closeStorySessions() — AC-83 force-terminate", () => {
       handle: "nax-1",
       workdir: "/workdir/a",
     });
-    const sessionManager: SessionManagerLike = {
+    const sessionManager = makeSessionManager({
       closeStory: mock(() => [runningDescriptor]),
       listActive: mock(() => []),
-    };
+    });
     const closePhysicalSession = mock(async () => {});
-    const agentGetFn = mock(() => ({ closePhysicalSession }));
+    const agentGetFn = mock(() => ({ ...makeAgentAdapter(), closePhysicalSession }));
 
     await closeStorySessions(sessionManager, "US-001", agentGetFn);
 
@@ -123,8 +117,8 @@ describe("closeAllRunSessions() — idempotency (H-5)", () => {
     const listActive = mock()
       .mockImplementationOnce(() => [session]) // first call — one active session
       .mockImplementationOnce(() => []); // second call — already closed
-    const sessionManager: SessionManagerLike = { closeStory, listActive };
-    const agentGetFn = mock(() => ({ closePhysicalSession: mock(async () => {}) }));
+    const sessionManager = makeSessionManager({ closeStory, listActive });
+    const agentGetFn = mock(() => ({ ...makeAgentAdapter(), closePhysicalSession: mock(async () => {}) }));
 
     const first = await closeAllRunSessions(sessionManager, agentGetFn);
     const second = await closeAllRunSessions(sessionManager, agentGetFn);
@@ -149,7 +143,7 @@ describe("failAndClose() — H-1", () => {
       .mockImplementationOnce(() => failedSession); // after transition
     const transition = mock(() => failedSession);
     const closePhysicalSession = mock(async () => {});
-    const agentGetFn = mock(() => ({ closePhysicalSession }));
+    const agentGetFn = mock(() => ({ ...makeAgentAdapter(), closePhysicalSession }));
 
     await failAndClose({ get, transition }, "sess-1", agentGetFn);
 
@@ -162,7 +156,7 @@ describe("failAndClose() — H-1", () => {
     const get = mock(() => terminalSession);
     const transition = mock(() => terminalSession);
     const closePhysicalSession = mock(async () => {});
-    const agentGetFn = mock(() => ({ closePhysicalSession }));
+    const agentGetFn = mock(() => ({ ...makeAgentAdapter(), closePhysicalSession }));
 
     await failAndClose({ get, transition }, "sess-1", agentGetFn);
 
@@ -174,7 +168,7 @@ describe("failAndClose() — H-1", () => {
     const get = mock(() => null);
     const transition = mock();
     const closePhysicalSession = mock(async () => {});
-    const agentGetFn = mock(() => ({ closePhysicalSession }));
+    const agentGetFn = mock(() => ({ ...makeAgentAdapter(), closePhysicalSession }));
 
     await failAndClose({ get, transition }, "sess-missing", agentGetFn);
 
@@ -189,7 +183,7 @@ describe("failAndClose() — H-1", () => {
       throw new Error("invalid transition");
     });
     const closePhysicalSession = mock(async () => {});
-    const agentGetFn = mock(() => ({ closePhysicalSession }));
+    const agentGetFn = mock(() => ({ ...makeAgentAdapter(), closePhysicalSession }));
 
     await expect(failAndClose({ get, transition }, "sess-1", agentGetFn)).resolves.toBeUndefined();
     expect(closePhysicalSession).not.toHaveBeenCalled();
@@ -203,7 +197,7 @@ describe("failAndClose() — H-1", () => {
       .mockImplementationOnce(() => failedSession);
     const transition = mock(() => failedSession);
     const closePhysicalSession = mock(async () => {});
-    const agentGetFn = mock(() => ({ closePhysicalSession }));
+    const agentGetFn = mock(() => ({ ...makeAgentAdapter(), closePhysicalSession }));
 
     await failAndClose({ get, transition }, "sess-1", agentGetFn);
 
@@ -218,11 +212,11 @@ describe("closeAllRunSessions()", () => {
     const storyOneA = makeSessionDescriptor({ id: "sess-1", storyId: "US-001", handle: "nax-1" });
     const storyOneB = makeSessionDescriptor({ id: "sess-2", storyId: "US-001", handle: "nax-2" });
     const storyTwo = makeSessionDescriptor({ id: "sess-3", storyId: "US-002", handle: "nax-3" });
-    const sessionManager: SessionManagerLike = {
+    const sessionManager = makeSessionManager({
       closeStory: mock(() => [storyOneA]),
       listActive: mock(() => [storyOneA, storyOneB, storyTwo]),
-    };
-    const agentGetFn = mock(() => ({ closePhysicalSession: mock(async () => {}) }));
+    });
+    const agentGetFn = mock(() => ({ ...makeAgentAdapter(), closePhysicalSession: mock(async () => {}) }));
 
     const closed = await closeAllRunSessions(sessionManager, agentGetFn);
 
@@ -235,13 +229,13 @@ describe("closeAllRunSessions()", () => {
   test("closes storyless active sessions via transition and physical close", async () => {
     const storyBound = makeSessionDescriptor({ id: "sess-1", storyId: "US-001", handle: "nax-1" });
     const storyless = makeSessionDescriptor({ id: "sess-2", handle: "nax-2", workdir: "/workdir/b" });
-    const sessionManager: SessionManagerLike = {
+    const sessionManager = makeSessionManager({
       closeStory: mock(() => [storyBound]),
       listActive: mock(() => [storyBound, storyless]),
       transition: mock(() => storyless),
-    };
+    });
     const closePhysicalSession = mock(async () => {});
-    const agentGetFn = mock(() => ({ closePhysicalSession }));
+    const agentGetFn = mock(() => ({ ...makeAgentAdapter(), closePhysicalSession }));
 
     const closed = await closeAllRunSessions(sessionManager, agentGetFn);
 
@@ -257,13 +251,13 @@ describe("closeAllRunSessions()", () => {
 
   test("walks a valid transition chain for a storyless PAUSED session", async () => {
     const storyless = makeSessionDescriptor({ id: "sess-2", state: "PAUSED", handle: "nax-2", workdir: "/workdir/b" });
-    const sessionManager: SessionManagerLike = {
+    const sessionManager = makeSessionManager({
       closeStory: mock(() => []),
       listActive: mock(() => [storyless]),
       transition: mock(() => storyless),
-    };
+    });
     const closePhysicalSession = mock(async () => {});
-    const agentGetFn = mock(() => ({ closePhysicalSession }));
+    const agentGetFn = mock(() => ({ ...makeAgentAdapter(), closePhysicalSession }));
 
     const closed = await closeAllRunSessions(sessionManager, agentGetFn);
 
