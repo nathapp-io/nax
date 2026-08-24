@@ -47,7 +47,15 @@ describe("PipelineEventBus", () => {
     });
 
     bus.emit(makeStoryCompletedEvent());
-    bus.emit({ type: "run:completed", totalStories: 1, passedStories: 1, failedStories: 0, durationMs: 5000 });
+    bus.emit({
+      type: "run:completed",
+      totalStories: 1,
+      passedStories: 1,
+      failedStories: 0,
+      skippedStories: 0,
+      pausedStories: 0,
+      durationMs: 5000,
+    });
 
     expect(received).toEqual(["story:completed", "run:completed"]);
   });
