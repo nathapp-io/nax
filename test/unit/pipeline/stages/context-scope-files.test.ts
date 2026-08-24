@@ -110,7 +110,7 @@ function captureContextRequest(): {
   // Suppress scratch + digests so the stage stays hermetic.
   _contextStageDeps.readDigest = async () => "";
   _contextStageDeps.writeDigest = async () => {};
-  _contextStageDeps.uuid = () => "stub-uuid";
+  _contextStageDeps.uuid = () => "stub-uuid-0000-0000-000000000000";
   return ref;
 }
 
