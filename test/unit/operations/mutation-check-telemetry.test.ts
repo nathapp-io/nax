@@ -200,7 +200,7 @@ describe("mutationCheckOp — outcome telemetry flags an unrestored worktree", (
         regression: async () => {
           // Simulate a formatter rewriting the mutated line mid-check.
           await Bun.write(file, hijacked);
-          return { status: "FAILURE" as const, success: false, countsTowardEscalation: true, output: "1 fail" };
+          return { status: "TEST_FAILURE" as const, success: false, countsTowardEscalation: true, output: "1 fail" };
         },
       });
 
