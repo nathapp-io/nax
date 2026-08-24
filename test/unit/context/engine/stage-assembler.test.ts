@@ -412,7 +412,13 @@ describe("assembleForStage — ADR-009 / .naxignore threading", () => {
     const mock = makeMockOrchestrator();
     _stageAssemblerDeps.createOrchestrator = () =>
       mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
-    const patterns = { regex: [/\.test\.ts$/], globs: ["test/**/*.test.ts"], testDirs: ["test"], pathspec: [] };
+    const patterns = {
+      regex: [/\.test\.ts$/],
+      globs: ["test/**/*.test.ts"],
+      testDirs: ["test"],
+      pathspec: [],
+      resolution: "detected" as const,
+    };
 
     await assembleForStage(makeCtx({ resolvedTestPatterns: patterns }), "tdd-test-writer");
 
@@ -423,7 +429,12 @@ describe("assembleForStage — ADR-009 / .naxignore threading", () => {
     const mock = makeMockOrchestrator();
     _stageAssemblerDeps.createOrchestrator = () =>
       mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
-    const index = { getMatchers: () => [] };
+    const index = {
+      repoRoot: "/repo",
+      getMatchers: () => [],
+      filter: (paths: readonly string[]) => [...paths],
+      toPathspecExcludes: () => [],
+    };
 
     await assembleForStage(makeCtx({ naxIgnoreIndex: index }), "tdd-implementer");
 
