@@ -55,17 +55,23 @@ function baseOptions(overrides: Partial<BakeoffOptions> = {}): BakeoffOptions {
  * Replace `_coordinatorDeps` with the supplied overrides for the duration of
  * the callback. Mirrors the pattern used by other bake-off tests.
  */
+function getCoordinatorDep<K extends keyof BakeoffCoordinatorDeps>(key: K): BakeoffCoordinatorDeps[K] {
+  return _coordinatorDeps[key];
+}
+
+function setCoordinatorDep<K extends keyof BakeoffCoordinatorDeps>(key: K, value: BakeoffCoordinatorDeps[K]): void {
+  _coordinatorDeps[key] = value;
+}
+
 async function withCoordinatorDeps<T>(overrides: Partial<BakeoffCoordinatorDeps>, fn: () => Promise<T>): Promise<T> {
-  const saved: Record<string, unknown> = {};
-  for (const key of Object.keys(overrides)) {
-    saved[key] = (_coordinatorDeps as Record<string, unknown>)[key];
-  }
+  const keys = Object.keys(overrides) as Array<keyof BakeoffCoordinatorDeps>;
+  const saved = keys.map((key) => [key, getCoordinatorDep(key)] as const);
   Object.assign(_coordinatorDeps, overrides);
   try {
     return await fn();
   } finally {
-    for (const key of Object.keys(saved)) {
-      (_coordinatorDeps as Record<string, unknown>)[key] = saved[key];
+    for (const [key, value] of saved) {
+      setCoordinatorDep(key, value);
     }
   }
 }
