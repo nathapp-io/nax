@@ -122,7 +122,7 @@ function makePlanInputsNoGreenfield(story: UserStory, config: ReturnType<typeof 
     config,
     testWriter: { story },
     implementer: { story },
-    fullSuiteGate: { story, workdir: "/tmp/fake", rectificationEnabled: false },
+    fullSuiteGate: { story, workdir: "/tmp/fake" },
     verifier: { story },
   };
 }
