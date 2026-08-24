@@ -872,3 +872,78 @@ looseCast=1994`); `as unknown as` flat at 102. Full suite green across all three
 
 Residue at this commit: **886 errors across 263 files.** The branch has taken 1030 → 886
 (−144) over eight commits.
+
+---
+
+## 19. Builder slot overloads — done (886 → 838, −48)
+
+On `chore/1514-builder-slot-overloads`, one commit (`55c22ae35`). The first `src/` fix in
+this drain, and the escalation §18 filed. **No test file was touched** — 48 test errors
+across 9 files cleared by making one public signature honest.
+
+### The defect
+
+`StoryOrchestratorBuilder.addX()` declared its slot overload as
+`OrchestratorSlot<I, O, C>`, whose `op` is a bare `RunOperation`. The implementation calls
+`setPhase(…: AnySlot)`, and `AnySlot.op` is `RunOperation | DeterministicOperation`. The
+orchestrator dispatches deterministic ops through `callOp` exactly as it does run ops — so
+the **public signature was strictly narrower than the runtime it fronts**, and a
+deterministic op fell through to the input-only overload. The reported error
+(`'op' does not exist in type 'FullSuiteGateInput'`) named the wrong problem entirely,
+which is why this cluster read as ten unrelated fixture bugs for so long.
+
+### The fix
+
+`OrchestratorSlot` gained a fourth type parameter `D` for the deterministic op's deps seam,
+defaulting to `void` — the `DeterministicOperation` default — so an existing three-argument
+`OrchestratorSlot<I, O, C>` keeps its exact previous meaning. `op` widened to the same union
+`AnySlot` uses. The 12 `addX` overloads and `isSlot` carry `D` through. **Zero casts added**
+in `src/` or `test/`; the compiler got stricter, not looser, because the slot overload now
+matches instead of silently deferring to a wrong one.
+
+This is the third confirmation of the phase-3 ruling in `PROPOSAL-1514-phase2-typecheck-drain.md`:
+**prefer fixing the type over containing a cast.** config-slices, callop-seam, and now this.
+
+### Files cleared outright
+
+`story-orchestrator-resume-guard` 12 → 0, `story-orchestrator-resume-integration` 10 → 0,
+`story-orchestrator-carveout-staleness` 7 → 0, `story-orchestrator-check-ops` 3 → 0,
+`verifier-findings-flow` 4 → 0.
+
+### 48 of 50, and what the other 2 were hiding
+
+`story-orchestrator-logs.test.ts:304` and `:373` still fail — but on a **different cause the
+overload error was masking**. Their `semanticConfig` fixture supplies only `model` and
+`timeoutMs`; `SemanticReviewConfig` (`src/review/types.ts:77`) also requires `diffMode`,
+`resetRefOnRerun` and `rules`. That belongs to the fixture-completeness cluster.
+
+Same lesson as §18's `runFixCycle` unmask, from the other direction: **a wholesale overload
+rejection reports one error per call, so it hides every field-level error underneath it.**
+Sizing a cluster by its error count under-counts what is actually there — here by 2, in §18
+by 3. Expect the residue to fall slightly short of the estimate, every time.
+
+A third file, `test/unit/tdd/orchestrator-totals.test.ts:119`
+(`'rectificationEnabled' does not exist in type 'FullSuiteGateInput'`), looks like this
+cluster but is a `TS2353` dead fixture key and was never part of the 50.
+
+Verify: src tsc **0** including `tsconfig.contracts.json`. 886 → 838, files 263 → 258;
+per-file gate `worse: 0`. All six counters flat (`asAny=1388, tsSuppress=40,
+ratchetAllow=106, absentValue=17, anyType=1880, looseCast=1994`); `as unknown as` flat at
+102. 25/25 gates green; full suite green (1137 + 38 pass, 0 fail).
+
+## Next
+
+- **Zod stage-schema erasure (10 errors).** `src/config/schemas-debate.ts`, see §16. Now the
+  only remaining named escalation, and also a `src/` fix.
+- **Config suites — re-measured at 105, not the ~146 previously recorded.**
+  `config/schemas` 21, `integration/config/merger` 19, `config/merge` 17,
+  `plugins/config-resolution` 16, `config/debate-schema` 11, `debate/schemas-debate` 9.
+  Not yet enumerated by cause.
+- **Fixture completeness.** The two `story-orchestrator-logs` sites above, plus whatever
+  else the builder unmask revealed. Small, mechanical, and now unblocked.
+- **Both remaining escalations are `src/` changes.** §18 ruled them "out of scope by G5" when
+  this was a test-only drain; §19 has now crossed that line deliberately and it paid. G5
+  needs an explicit re-ruling rather than being inherited by default.
+
+Residue at this commit: **838 errors across 258 files.** Against the original #1514 start:
+typecheck **2009 → 838 (−58%)**, casts **815 → 102 (−87%)**.
