@@ -22,11 +22,13 @@ describe("runScopedLintCheck", () => {
     _scopedLintDeps.findPackageDir = mock(async () => undefined);
     _scopedLintDeps.fileExists = mock(async () => true);
     _scopedLintDeps.runLintCommand = mock(async (_workdir, _storyId, _env, command) => ({
+      commandName: "lint",
       command,
       success: true,
       exitCode: 0,
       output: "ok",
       durationMs: 12,
+      timedOut: false,
     }));
   });
 
@@ -116,11 +118,13 @@ describe("runScopedLintCheck", () => {
 
   test("uses resolved lint command override when storyGitRef is missing and scope is empty", async () => {
     const runMock = mock(async (_workdir, _storyId, _env, command) => ({
+      commandName: "lint",
       command,
       success: true,
       exitCode: 0,
       output: "ok",
       durationMs: 12,
+      timedOut: false,
     }));
     _scopedLintDeps.runLintCommand = runMock;
 
@@ -157,17 +161,19 @@ describe("runScopedLintCheck", () => {
   test("degraded mode filters out-of-scope diagnostics for unsupported command shape", async () => {
     _scopedLintDeps.listChangedFiles = mock(async () => ["src/in.ts"]);
     _scopedLintDeps.runLintCommand = mock(async () => ({
+      commandName: "lint",
       command: "custom-lint",
       success: false,
       exitCode: 1,
       output: "src/in.ts:1:1 error in scope\nsrc/out.ts:2:2 error out scope",
       durationMs: 9,
+      timedOut: false,
     }));
 
     const result = await runScopedLintCheck({
       resolvedLintCommand: "custom-lint",
       configCommands: baseReviewConfig.commands,
-      lintOutputFormat: "eslint",
+      lintOutputFormat: "text",
       workdir: "/repo",
       storyId: "US-001",
       storyGitRef: "abc123",
@@ -184,17 +190,19 @@ describe("runScopedLintCheck", () => {
   test("degraded mode fails closed when lint output is unparseable", async () => {
     _scopedLintDeps.listChangedFiles = mock(async () => ["src/in.ts"]);
     _scopedLintDeps.runLintCommand = mock(async () => ({
+      commandName: "lint",
       command: "custom-lint",
       success: false,
       exitCode: 1,
       output: "totally unparseable lint output",
       durationMs: 9,
+      timedOut: false,
     }));
 
     const result = await runScopedLintCheck({
       resolvedLintCommand: "custom-lint",
       configCommands: baseReviewConfig.commands,
-      lintOutputFormat: "eslint",
+      lintOutputFormat: "text",
       workdir: "/repo",
       storyId: "US-001",
       storyGitRef: "abc123",
@@ -206,17 +214,19 @@ describe("runScopedLintCheck", () => {
 
   test("dogfood replay shape: sibling-package lint debt is reported as out_of_scope", async () => {
     _scopedLintDeps.runLintCommand = mock(async () => ({
+      commandName: "lint",
       command: "custom-lint",
       success: false,
       exitCode: 1,
       output: "packages/web/src/sibling.ts:3:1 error sibling debt",
       durationMs: 9,
+      timedOut: false,
     }));
 
     const result = await runAutofixLint({
       resolvedLintCommand: "custom-lint",
       configCommands: baseReviewConfig.commands,
-      lintOutputFormat: "eslint",
+      lintOutputFormat: "text",
       workdir: "/repo",
       storyId: "US-001",
       scope: {
@@ -236,11 +246,13 @@ describe("runScopedLintCheck", () => {
 
   test("attaches findings for failing scoped lint results when output is parseable", async () => {
     _scopedLintDeps.runLintCommand = mock(async (_workdir, _storyId, _env, command) => ({
+      commandName: "lint",
       command,
       success: false,
       exitCode: 1,
       output: "src/alpha.ts:10:4 Unexpected console statement",
       durationMs: 7,
+      timedOut: false,
     }));
 
     const result = await runScopedLintCheck({

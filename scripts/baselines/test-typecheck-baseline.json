@@ -1,6 +1,6 @@
 {
-  "count": 734,
-  "updatedAt": "2026-08-24T03:18:51.068Z",
+  "count": 725,
+  "updatedAt": "2026-08-24T03:22:35.688Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -222,7 +222,6 @@
     "test/unit/review/recurrence-demotion.test.ts": 3,
     "test/unit/review/runner-language-fallback.test.ts": 2,
     "test/unit/review/runner.test.ts": 3,
-    "test/unit/review/scoped-lint.test.ts": 9,
     "test/unit/review/semantic-agent-session.test.ts": 2,
     "test/unit/review/semantic-categories.test.ts": 3,
     "test/unit/review/semantic-debate.test.ts": 3,
