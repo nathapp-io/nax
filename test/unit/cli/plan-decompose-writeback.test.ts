@@ -12,7 +12,7 @@ import type { DecomposedStory } from "@/agents/shared/types-extended";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import type { PRD, UserStory } from "@/prd";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
@@ -140,9 +140,11 @@ describe("planDecomposeCommand — PRD write-back", () => {
     _planDeps.mkdirp = mock(async () => {});
 
     _planDeps.createRuntime = mock(() =>
-      makeMockDecomposeManager(async () => ({
-        stories: stories.map(toDecomposedStory),
-      })),
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async () => ({
+          stories: stories.map(toDecomposedStory),
+        })),
+      }),
     );
   }
 
@@ -311,9 +313,11 @@ describe("planDecomposeCommand — PRD write-back", () => {
 
     const adapterDecomposeCalls: unknown[] = [];
     _planDeps.createRuntime = mock(() =>
-      makeMockDecomposeManager(async (_name: string, opts: unknown) => {
-        adapterDecomposeCalls.push(opts);
-        return { stories: stories.map(toDecomposedStory) };
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async (_name: string, opts: unknown) => {
+          adapterDecomposeCalls.push(opts);
+          return { stories: stories.map(toDecomposedStory) };
+        }),
       }),
     );
 
