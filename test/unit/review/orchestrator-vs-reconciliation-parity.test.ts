@@ -37,7 +37,14 @@ const semanticCfg: SemanticReviewConfig = {
   rules: [],
   timeoutMs: 600_000,
 };
-const adversarialCfg: AdversarialReviewConfig = { ...semanticCfg } as AdversarialReviewConfig;
+const adversarialCfg: AdversarialReviewConfig = {
+  model: semanticCfg.model,
+  diffMode: semanticCfg.diffMode,
+  rules: semanticCfg.rules,
+  timeoutMs: semanticCfg.timeoutMs,
+  parallel: false,
+  maxConcurrentSessions: 2,
+};
 
 let origSpawn: typeof _diffUtilsDeps.spawn;
 let origIsValid: typeof _diffUtilsDeps.isGitRefValid;
