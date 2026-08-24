@@ -2358,23 +2358,38 @@ The type made its own fallback branch unexpressible.
 escalated site *and a second, unflagged instance at line 184*. No ADR governs this type.
 `fix/1514-escalations-src-types` @ `873277a76`.
 
-### Escalation 2 — `DispatchContext.sessionManager`. Refused: the test is wrong, not the type.
+### Escalation 2 — `DispatchContext.sessionManager`. Type kept; the dead guards retired instead.
 
-`run-completion-session-close.test.ts:69` asserts `closeAllRunSessions` is *not* called when
-`sessionManager` is omitted, and cannot construct that input without a forbidden cast.
+`run-completion-session-close.test.ts:69` asserted `closeAllRunSessions` is *not* called when
+`sessionManager` is omitted, and could not construct that input without a forbidden cast.
 
 Making the field optional measures beautifully — **0 src errors** — and is still the wrong fix.
 **ADR-020 §D3 deliberately dropped the `?` from `sessionManager` and fixed every resulting `??`
 fallback site in the same PR**, so that "the compiler surfaces every consumer that must thread
-them". Re-adding the `?` reverses a shipped decision to buy one test-typecheck error.
+them". Re-adding it reverses a shipped decision to buy one test-typecheck error.
 
 What the measurement actually found is two **ADR-020 misses**: `run-completion.ts:403`
-(`if (options.sessionManager)`) and the `options.agentManager ? … : undefined` on the next line
-are pre-ADR-020 residue. Every typed caller supplies both — `runner-completion.ts:323` threads
-them explicitly — so both branches are now always taken, and the test at :69 pins the false
-branch of a condition that can no longer be false. The honest fix is to retire the dead guards
-and the test with them; that is a small correctness change to run completion and an ADR
-follow-up, not a test-debt edit. **Left open for a decision.**
+(`if (options.sessionManager)`) and the `options.agentManager ? … : undefined` beside it are
+pre-ADR-020 residue that every typed caller makes unreachable. Both retired, along with the test
+that pinned the false branch. **246 → 245**, `6caf7196c`.
+
+#### The correction: "unreachable" was true of the type, false of the suite
+
+This section first claimed the false branch "can no longer be false". Removing the guard
+**broke four tests** — `mutation-summary-completion.test.ts` reaches `closeAllRunSessions` with
+`sessionManager` undefined at runtime, because its fixture omits all four dispatch fields under
+an `as unknown as RunnerCompletionOptions` cast.
+
+That is not a counter-example to the ruling; it is the contract violation ADR-020 exists to
+prevent, and one of the 102 grandfathered casts is what let it through. The fixtures now spread
+`makeDispatchContext({ runtime })` from the runtime they already build. But the sequence is the
+lesson: **a guard proven unreachable by the type system is still reachable by any fixture that
+casts its way past the type.** Deleting defensive code in a repo with 102 sanctioned casts and
+615 `as never` is a runtime change, not a refactor — the full suite, not the compiler, is what
+tells you.
+
+(Deleting that test also dropped `asNever` 619 → 615; re-baselined immediately, per §38's
+recurring-leak note.)
 
 ### The control that made the difference
 
