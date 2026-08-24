@@ -1,6 +1,6 @@
 {
-  "count": 725,
-  "updatedAt": "2026-08-24T03:22:35.688Z",
+  "count": 715,
+  "updatedAt": "2026-08-24T03:28:56.115Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -140,7 +140,6 @@
     "test/unit/interaction/triggers.test.ts": 5,
     "test/unit/metrics/aggregator.test.ts": 1,
     "test/unit/metrics/report.test.ts": 3,
-    "test/unit/metrics/tracker-context-metrics.test.ts": 10,
     "test/unit/operations/acceptance-diagnose.test.ts": 1,
     "test/unit/operations/acceptance-fix.test.ts": 2,
     "test/unit/operations/autofix-implementer-strategy.test.ts": 10,
