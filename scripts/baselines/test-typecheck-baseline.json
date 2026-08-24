@@ -1,6 +1,6 @@
 {
-  "count": 777,
-  "updatedAt": "2026-08-24T03:02:10.739Z",
+  "count": 759,
+  "updatedAt": "2026-08-24T03:07:13.062Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -30,7 +30,6 @@
     "test/integration/pipeline/reporter-lifecycle-basic.test.ts": 4,
     "test/integration/pipeline/reporter-lifecycle-resilience.test.ts": 4,
     "test/integration/plan/plan.test.ts": 1,
-    "test/integration/plugins/config-resolution.test.ts": 16,
     "test/integration/plugins/plugins-registry.test.ts": 3,
     "test/integration/plugins/validator.test.ts": 1,
     "test/integration/prompts/pb-004-migration.test.ts": 5,
@@ -131,7 +130,6 @@
     "test/unit/execution/runner-completion-postrun.test.ts": 6,
     "test/unit/execution/session-manager-runtime.test.ts": 15,
     "test/unit/execution/story-context.test.ts": 3,
-    "test/unit/execution/story-orchestrator-logs.test.ts": 2,
     "test/unit/execution/story-orchestrator-no-progress-bail.test.ts": 2,
     "test/unit/execution/story-orchestrator-revalidation.test.ts": 1,
     "test/unit/execution/story-orchestrator-run-phase-events.test.ts": 15,

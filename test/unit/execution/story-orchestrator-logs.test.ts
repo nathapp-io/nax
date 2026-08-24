@@ -305,7 +305,7 @@ describe("StoryOrchestrator runPhase — log emission", () => {
         input: {
           workdir: "/tmp/x",
           story: { id: "US-001" } as any,
-          semanticConfig: { model: "balanced", timeoutMs: 1_000 },
+          semanticConfig: { model: "balanced", diffMode: "ref", resetRefOnRerun: false, rules: [], timeoutMs: 1_000 },
           mode: "ref",
         },
       });
@@ -374,7 +374,7 @@ describe("StoryOrchestrator runPhase — log emission", () => {
         input: {
           workdir: "/tmp/x",
           story: { id: "US-001" } as any,
-          semanticConfig: { model: "balanced", timeoutMs: 1_000 },
+          semanticConfig: { model: "balanced", diffMode: "ref", resetRefOnRerun: false, rules: [], timeoutMs: 1_000 },
           mode: "ref",
         },
       });
