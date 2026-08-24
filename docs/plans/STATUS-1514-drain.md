@@ -1148,22 +1148,74 @@ per-file gate `worse: 0`. `looseCast` **1994 → 1958**; all other counters flat
 
 ---
 
+## 23. The `ParseFn` alias — done (792 → 777, −15)
+
+One commit (`ff1826591`). `verify-op-normalized-findings.test.ts` **15 → 0**;
+`looseCast` **1958 → 1932**.
+
+The file declared its own `type ParseFn = (output: string, input: unknown, ctx: unknown) =>
+{ normalizedFindings: readonly unknown[] } & Record<string, unknown>` and cast
+`verifierOp.parse as ParseFn` at 15 sites. The alias describes the real signature *less*
+precisely than the real signature: `VerifierOutput` already has `normalizedFindings`, typed
+`Finding[]` rather than `readonly unknown[]`. Delete the alias, call `verifierOp.parse`
+directly, no cast.
+
+**Two causes again, not one.** Removing the alias took the file 15 → 11 and unmasked 11
+`result.normalizedFindings[i] as Record<string, unknown>` reads — §22's cast family,
+invisible while the elements were `unknown`. With the element typed `Finding`, `.source` /
+`.category` read directly and those casts went too.
+
+This is the same shape as §19 and §20: **a hand-written local type standing in for a real one
+does not merely lose precision, it suppresses the checks underneath it.** Three phases in a
+row now.
+
+Verify: src tsc **0** incl. contracts. 792 → 777, files 252 → 251, per-file `worse: 0`.
+`looseCast` −26, all other counters flat; `as unknown as` 102. 25/25 gates green; full suite
+green (14127 + 1137 + 38 pass, 0 fail).
+
+## 24. What is left, and who should do it
+
+`HANDOFF-1514-cast-and-fixture-residue.md` carries the detail. **Every recipe in it was
+prototyped on this tree and reverted**, so the delegable/not-delegable split is measured
+rather than guessed:
+
+| Cluster | Count | Verdict | Why |
+|:--|--:|:--|:--|
+| `plugins/config-resolution` optimizer fake | 16 | ✅ delegable | One dead interface, four identical blocks, field-by-field mapping supplied. One trap: the same shape lives in an **untypechecked template string** |
+| `story-orchestrator-logs` `semanticConfig` | 2 | ✅ delegable | Five named required fields |
+| `Record<…>` residue (bakeoff dep-bags) | 4 | 🟡 measure | Needs a helper whose `Object.keys` boundary costs one cast — a design call, not a recipe |
+| `config/merger` | 19 | 🔴 owner | **The obvious recipe was prototyped and backfired** — see below |
+| `merger` dead keys (`ConstitutionConfig.content` ×4, `NaxConfig.value`/`.config`) | 6 | 🔴 owner | Per-key dead-or-missing verdicts |
+
+### The merger recipe that backfired — recorded so nobody retries it
+
+`deepMergeConfig<T = NaxConfig>` defaults its return to `NaxConfig`, and the tests merge
+arbitrary objects, so 12 `TS2769`. The obvious fix is a type argument at all 29 call sites:
+
+```ts
+deepMergeConfig<Record<string, unknown>>(base, override)   // ← wrong
+```
+
+19 → 15, **but it introduced six `TS2339` (`'hooks' does not exist on type '{}'`) and six
+`TS18046` (`'result.constitution' is of type 'unknown'`)**. Some call sites merge real
+`NaxConfig` and need the typed result; a blanket argument destroys that. The cluster needs a
+per-call-site decision.
+
+**This is the argument for prototyping before handing off, not after.** Delegated as a
+one-line recipe, it would have read as a −4 win while quietly trading four error kinds for
+two worse ones, and the count gate would not have flagged it.
+
+---
+
 ## Next
 
-- **The other 13 `Record<string, unknown>` casts** are a *different* cause and were left
-  deliberately: dynamic dep-bag save/restore (`bakeoff/coordinator`, `bakeoff/run-action` —
-  `saved[key] = (_deps as Record<…>)[key]`) and captured-argument reads
-  (`acceptance-fix`, `mutation-summary-completion`). A `keyof D`-typed save/restore helper
-  would cover the first four; it needs one cast at `Object.keys`, so measure before building.
-- **`TS2352` after this pass: `ParseFn` 15, `Logger` 5, `(event: PipelineEvent) => void` 5.**
-  Same clustering method — group by conversion target.
-- **Fixture completeness.** The two `story-orchestrator-logs.test.ts` sites §19 unmasked
-  (`semanticConfig` missing `diffMode`/`resetRefOnRerun`/`rules`). Small, mechanical, delegable.
-- **Config suites, re-measured again:** `integration/config/merger` 19, `config/merge` 17,
-  `plugins/config-resolution` 16. `config/schemas` is now 0. `merger` is 12 `TS2769` +
-  6 `TS2339`; `config-resolution` is 8 `TS2339` + 8 `TS2322`.
-- **The `debate` default literal** (§20 "recorded, not fixed") — its own commit.
+- **Delegable, in order:** `config-resolution` (16) → `story-orchestrator-logs` (2) →
+  optionally the bakeoff dep-bags (4). Realistic landing point **777 → ~757**.
+- **Owner-only:** `config/merger` (19, per-call-site), its 6 dead keys, and the `debate`
+  default literal (§20).
+- **Method, not file list:** cluster by *conversion target* / *missing-property → target
+  type*, never by file. Both of the last two clusters were invisible in the file view.
 
-Residue at this commit: **792 errors across 252 files.** The branch has taken 886 → 792
-(−94) over three fixes. Against the original #1514 start: typecheck **2009 → 792 (−61%)**,
-casts **815 → 102 (−87%)**, and `looseCast` moved for the first time since it was created.
+Residue at this commit: **777 errors across 251 files.** The branch has taken 886 → 777
+(−109) over four fixes. Against the original #1514 start: typecheck **2009 → 777 (−61%)**,
+casts **815 → 102 (−87%)**, `looseCast` **1994 → 1932 (−62, none added)**.
