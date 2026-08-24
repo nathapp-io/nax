@@ -15,6 +15,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { precheckCommand } from "@/commands/precheck";
 import { EXIT_CODES } from "@/precheck";
+import { assertDefined } from "@test/helpers";
 
 const TEMP_DIR = join(import.meta.dir, "tmp-precheck-cli");
 
@@ -122,8 +123,9 @@ describe("CLI precheck command", () => {
       process.exit = originalExit;
     }
 
-    expect(exitCode).toBeDefined();
-    expect([EXIT_CODES.SUCCESS, EXIT_CODES.BLOCKER]).toContain(exitCode);
+    assertDefined(exitCode, "exitCode");
+    const validExitCodes: number[] = [EXIT_CODES.SUCCESS, EXIT_CODES.BLOCKER];
+    expect(validExitCodes).toContain(exitCode);
   });
 
   test("should accept -f flag for feature name", async () => {
