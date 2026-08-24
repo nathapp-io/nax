@@ -11,7 +11,18 @@ describe("loadPlugins — built-in reporters", () => {
 
   const enabled = {
     webhook: { enabled: true, url: "https://h/x", headers: {}, timeoutMs: 5000 },
-    otel: { enabled: false, headers: {}, serviceName: "nax", timeoutMs: 5000 },
+    otel: {
+      enabled: false,
+      headers: {},
+      serviceName: "nax",
+      timeoutMs: 5000,
+      detail: "counts",
+      heartbeatIntervalMs: 0,
+      maxBatchSize: 64,
+      flushIntervalMs: 5000,
+      maxQueueSize: 2048,
+      logs: { enabled: false, level: "info" },
+    },
   } as const;
 
   test("registers webhook-reporter when enabled, exposed via getReporters()", async () => {
@@ -26,7 +37,18 @@ describe("loadPlugins — built-in reporters", () => {
     dir = await makeTempDir();
     const reg = await loadPlugins(dir, dir, [], dir, [], undefined, {
       webhook: { enabled: false, headers: {}, timeoutMs: 5000 },
-      otel: { enabled: false, headers: {}, serviceName: "nax", timeoutMs: 5000 },
+      otel: {
+        enabled: false,
+        headers: {},
+        serviceName: "nax",
+        timeoutMs: 5000,
+        detail: "counts",
+        heartbeatIntervalMs: 0,
+        maxBatchSize: 64,
+        flushIntervalMs: 5000,
+        maxQueueSize: 2048,
+        logs: { enabled: false, level: "info" },
+      },
     });
     expect(reg.getReporters()).toHaveLength(0);
   });
