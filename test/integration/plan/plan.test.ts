@@ -38,7 +38,9 @@ describe("planCommand", () => {
     const emptyDir = `/tmp/nax-plan-empty-${Date.now()}`;
     await mkdir(emptyDir, { recursive: true });
 
-    expect(planCommand("Add feature X", emptyDir, DEFAULT_CONFIG)).rejects.toThrow("nax directory not found");
+    expect(planCommand(emptyDir, DEFAULT_CONFIG, { from: "spec.md", feature: "add-feature-x" })).rejects.toThrow(
+      "nax directory not found",
+    );
 
     await rm(emptyDir, { recursive: true, force: true });
   });
