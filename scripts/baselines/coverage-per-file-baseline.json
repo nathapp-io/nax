@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-08-22T10:34:33.926Z",
+  "updatedAt": "2026-08-24T11:20:00.000Z",
   "byFile": {
     "src/acceptance/content-loader.ts": 0,
     "src/agents/acp/adapter-close-physical.ts": 0.0741,
@@ -15,7 +15,7 @@
     "src/cli/generate.ts": 0.0283,
     "src/cli/init.ts": 0.7292,
     "src/cli/plan-helpers.ts": 0.5882,
-    "src/cli/plan-runtime.ts": 0.7342,
+    "src/cli/plan-runtime.ts": 0.7083,
     "src/cli/plugins.ts": 0.0341,
     "src/cli/prompts-main.ts": 0.2818,
     "src/cli/prompts-shared.ts": 0,
