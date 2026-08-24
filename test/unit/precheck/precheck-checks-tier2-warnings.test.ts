@@ -18,51 +18,14 @@ import {
   checkTestCommand,
   checkTypecheckCommand,
 } from "@/precheck";
-import { makeConfigSlice, makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
-const createMockConfig = (overrides: Partial<ExecutionConfig> = {}): NaxConfig => ({
-  execution: {
-    maxIterations: 10,
-    iterationDelayMs: 1000,
-    testCommand: "bun test",
-    lintCommand: "bun run lint",
-    typecheckCommand: "bun run typecheck",
-    contextProviderTokenBudget: 2000,
-    requireExplicitContextFiles: false,
-    preflightExpectedFilesEnabled: false,
-    cwd: process.cwd(),
-    ...overrides,
-  },
-  autoMode: {
-    enabled: false,
-    defaultAgent: "test-agent",
-    fallbackOrder: [],
-    complexityRouting: {
-      simple: "fast",
-      medium: "balanced",
-      complex: "powerful",
-      expert: "ultra",
-    },
-    escalation: {
-      enabled: true,
-      tierOrder: [],
-    },
-  },
-  quality: makeConfigSlice("quality", {}),
-  tdd: makeConfigSlice("tdd", { strategy: "auto" }),
-  models: {},
-  rectification: {
-    enabled: true,
-    maxAttemptsTotal: 2,
-    fullSuiteTimeoutSeconds: 120,
-    maxFailureSummaryChars: 2000,
-    abortOnIncreasingFailures: true,
-  },
-});
+const createMockConfig = (overrides: Partial<ExecutionConfig> = {}): NaxConfig =>
+  makeNaxConfig({ execution: overrides });
 
 const createMockStory = (overrides: Partial<UserStory> = {}): UserStory => ({
   id: "US-001",
@@ -215,9 +178,20 @@ describe("checkPendingStories (Tier 2 warning)", () => {
 });
 
 describe("checkOptionalCommands (Tier 2 warning)", () => {
+  let testDir: string;
+
+  beforeEach(() => {
+    testDir = makeTempDir("nax-test-precheck-");
+  });
+
+  afterEach(() => {
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
   test("warns and lists missing commands when optional commands are absent", async () => {
     let result = await checkOptionalCommands(
       createMockConfig({ testCommand: null as any, lintCommand: null as any, typecheckCommand: null as any }),
+      testDir,
     );
     expect(result.name).toBe("optional-commands-configured");
     expect(result.tier).toBe("warning");
@@ -225,6 +199,7 @@ describe("checkOptionalCommands (Tier 2 warning)", () => {
 
     result = await checkOptionalCommands(
       createMockConfig({ testCommand: "bun test", lintCommand: null as any, typecheckCommand: null as any }),
+      testDir,
     );
     expect(result.message).toContain("lint");
     expect(result.message).toContain("typecheck");
@@ -233,6 +208,7 @@ describe("checkOptionalCommands (Tier 2 warning)", () => {
   test("passes when all optional commands are configured", async () => {
     const result = await checkOptionalCommands(
       createMockConfig({ testCommand: "bun test", lintCommand: "bun run lint", typecheckCommand: "bun run typecheck" }),
+      testDir,
     );
     expect(result.passed).toBe(true);
   });
