@@ -34,6 +34,7 @@ describe("applyPostRunInspection — per-role scratch entries", () => {
         capturedCostUsd: 0,
         tddMode: { isLite: false, rollbackEnabled: false },
         initialRef: null,
+        untrackedBefore: null,
       });
 
       const scratchPath = join(scratchDir, "scratch.jsonl");
