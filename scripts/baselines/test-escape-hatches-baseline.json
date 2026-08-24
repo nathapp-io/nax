@@ -1,15 +1,15 @@
 {
   "counts": {
-    "asAny": 1386,
+    "asAny": 1385,
     "tsSuppress": 40,
     "ratchetAllow": 106,
     "absentValue": 17,
-    "anyType": 1875,
-    "looseCast": 1923,
-    "asNever": 615,
+    "anyType": 1874,
+    "looseCast": 1920,
+    "asNever": 612,
     "nonNullAssert": 827
   },
-  "updatedAt": "2026-08-24T14:30:39.098Z",
+  "updatedAt": "2026-08-24T17:11:04.209Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -1231,8 +1231,8 @@
       "anyType": 2
     },
     "test/unit/operations/plan-refine.test.ts": {
-      "looseCast": 2,
-      "asNever": 24,
+      "looseCast": 1,
+      "asNever": 23,
       "nonNullAssert": 4
     },
     "test/unit/operations/adversarial-review-retry-flip.test.ts": {
@@ -1485,7 +1485,7 @@
       "asNever": 17
     },
     "test/unit/debate/resolvers.test.ts": {
-      "looseCast": 22
+      "looseCast": 20
     },
     "test/unit/debate/runner-hybrid-cross-debater.test.ts": {
       "asNever": 2
@@ -1810,8 +1810,7 @@
       "asNever": 4
     },
     "test/unit/agents/manager-credentials.test.ts": {
-      "looseCast": 1,
-      "asNever": 2
+      "looseCast": 1
     },
     "test/unit/agents/manager-swap-loop.test.ts": {
       "looseCast": 1,
@@ -2403,8 +2402,8 @@
       "anyType": 23
     },
     "test/unit/pipeline/subscribers/hooks.test.ts": {
-      "asAny": 4,
-      "anyType": 4
+      "asAny": 3,
+      "anyType": 3
     },
     "test/unit/pipeline/subscribers/registry.test.ts": {
       "looseCast": 5
