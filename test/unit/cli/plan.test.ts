@@ -575,7 +575,7 @@ describe("planCommand", () => {
         }),
       }),
     );
-    _planDeps.scanSourceRoots = mock(async (_workdir: string) => [
+    _planDeps.scanSourceRoots = mock<typeof _planDeps.scanSourceRoots>(async (_workdir) => [
       { path: "packages/api", language: "typescript", framework: "NestJS", testRunner: "jest" },
     ]);
     try {
