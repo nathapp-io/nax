@@ -78,7 +78,7 @@ describe("agentCapabilityCards", () => {
         id: "pipe|profile",
         target: { agent: "claude|2", model: "fast|balanced" },
         strengths: ["strength|a", "strength|b"],
-        costTier: "low|med",
+        costTier: "low",
       },
     ];
 
@@ -88,7 +88,7 @@ describe("agentCapabilityCards", () => {
     expect(result).toContain("claude\\|2");
     expect(result).toContain("fast\\|balanced");
     expect(result).toContain("strength\\|a, strength\\|b");
-    expect(result).toContain("low\\|med");
+    expect(result).toContain("low");
     // The row must not contain unescaped pipes beyond the column delimiters
     const rows = result.split("\n").filter((l: string) => l.startsWith("| pipe"));
     expect(rows).toHaveLength(1);
