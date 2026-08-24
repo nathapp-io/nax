@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { NeutralityLintError } from "@/context";
 import { ContextOrchestrator, _orchestratorDeps } from "@/context/engine/orchestrator";
-import type { ContextProviderResult, ContextRequest, IContextProvider } from "@/context/engine/types";
+import type {
+  ChunkKind,
+  ChunkScope,
+  ContextProviderResult,
+  ContextRequest,
+  IContextProvider,
+} from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -41,8 +47,8 @@ function makeProvider(id: string, result: Partial<ContextProviderResult> = {}): 
 function makeChunkResult(
   overrides: {
     id: string;
-    kind?: string;
-    scope?: string;
+    kind?: ChunkKind;
+    scope?: ChunkScope;
     content?: string;
     tokens?: number;
     rawScore?: number;
