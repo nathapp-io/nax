@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { routingConfigSelector } from "@/config";
 import type { ClassifyRouteInput } from "@/operations/classify-route";
 import { classifyRouteBatchOp, classifyRouteOp } from "@/operations/classify-route";
+import type { UserStory } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
 import { makeNaxConfig, makeTestRuntime, opModelResolver } from "@test/helpers";
 
@@ -78,12 +79,7 @@ describe("classifyRouteOp shape", () => {
         tags: [],
       },
     ];
-    expect(
-      opModelResolver(classifyRouteBatchOp)(
-        stories as unknown as Parameters<typeof classifyRouteBatchOp.model>[0],
-        ctx,
-      ),
-    ).toBe("powerful");
+    expect(opModelResolver(classifyRouteBatchOp)(stories as unknown as UserStory[], ctx)).toBe("powerful");
   });
 });
 
