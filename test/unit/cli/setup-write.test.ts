@@ -22,7 +22,7 @@ const NO_MONO: MonoPackageConfig[] = [];
 
 const MONO_CONFIGS: MonoPackageConfig[] = [
   { relativeDir: "packages/a", config: {} },
-  { relativeDir: "packages/b", config: { quality: { language: "go" } } },
+  { relativeDir: "packages/b", config: { project: { language: "go" } } },
 ];
 
 // ─── Save / restore _writeSetupDeps ──────────────────────────────────────────
