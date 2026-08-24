@@ -21,12 +21,8 @@ import { NaxConfigSchema, loadConfig } from "@/config";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function rectificationConfig(overrides: Record<string, unknown> | undefined) {
-  const base = { ...(DEFAULT_CONFIG as Record<string, unknown>) };
-  if (overrides !== undefined) {
-    const execution = base.execution as Record<string, unknown>;
-    base.execution = { ...execution, rectification: overrides };
-  }
-  return base;
+  if (overrides === undefined) return { ...DEFAULT_CONFIG };
+  return { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, rectification: overrides } };
 }
 
 describe("execution.rectification.storyScopedFixBudget (US-004)", () => {
@@ -99,8 +95,6 @@ describe("execution.rectification.storyScopedFixBudget — layered resolution (U
 
     const config = await loadConfig(tempDir);
 
-    const execution = config.execution as Record<string, unknown>;
-    const rectification = execution.rectification as Record<string, unknown>;
-    expect(rectification.storyScopedFixBudget).toBe(false);
+    expect(config.execution?.rectification?.storyScopedFixBudget).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 {
-  "count": 818,
-  "updatedAt": "2026-08-24T02:43:30.810Z",
+  "count": 792,
+  "updatedAt": "2026-08-24T02:54:10.955Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -70,14 +70,10 @@
     "test/unit/commands/curator-gc.test.ts": 2,
     "test/unit/commands/curator.test.ts": 13,
     "test/unit/commands/replay.test.ts": 1,
-    "test/unit/config/defaults-schema-derive.test.ts": 1,
     "test/unit/config/defaults-ssot.test.ts": 1,
-    "test/unit/config/generate-config-schema.test.ts": 2,
     "test/unit/config/merge.test.ts": 17,
     "test/unit/config/schema-types.test.ts": 2,
-    "test/unit/config/schemas.test.ts": 21,
     "test/unit/config/selectors.test.ts": 1,
-    "test/unit/config/story-scoped-fix-budget.test.ts": 2,
     "test/unit/context/engine/orchestrator-floor-overage.test.ts": 1,
     "test/unit/context/engine/orchestrator.test.ts": 2,
     "test/unit/context/engine/packing.test.ts": 3,
