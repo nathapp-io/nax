@@ -12,6 +12,7 @@ const routing = (over: Partial<StoryRouting>): StoryRouting => ({
   agent: "claude",
   complexity: "complex",
   testStrategy: "three-session-tdd-lite",
+  reasoning: "test fixture",
   ...over,
 });
 
