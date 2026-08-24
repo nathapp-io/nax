@@ -1,6 +1,6 @@
 {
-  "count": 334,
-  "updatedAt": "2026-08-24T12:47:26.852Z",
+  "count": 333,
+  "updatedAt": "2026-08-24T12:47:58.403Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -157,7 +157,6 @@
     "test/unit/routing/llm-batch-route.test.ts": 3,
     "test/unit/runtime/middleware/cancellation.test.ts": 3,
     "test/unit/runtime/runtime.test.ts": 5,
-    "test/unit/runtime/session-role-plan-critic.test.ts": 1,
     "test/unit/session/manager-early-protocol-ids.test.ts": 2,
     "test/unit/session/manager-phase-b-session.test.ts": 1,
     "test/unit/session/manager-run-in-session.test.ts": 3,

@@ -67,7 +67,7 @@ describe("KNOWN_SESSION_ROLES — plan-critic registration (AC1)", () => {
       "synthesis",
       "judge",
       "plan-critic", // US-003 addition
-    ];
+    ] as const;
 
     for (const role of expectedRoles) {
       expect(KNOWN_SESSION_ROLES).toContain(role);
