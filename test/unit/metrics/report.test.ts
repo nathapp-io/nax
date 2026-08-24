@@ -15,10 +15,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { toCostReport } from "@/metrics";
+import { calculateAggregateMetrics, getLastRun, toCostReport } from "@/metrics";
 import type { CostReportDeps, CostReportV1 } from "@/metrics";
 import type { RunMetrics, StoryMetrics } from "@/metrics";
-import { calculateAggregateMetrics, getLastRun } from "@/metrics";
+import { TokenUsage } from "@/metrics/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -303,12 +303,12 @@ describe("toCostReport — no internal fields leak", () => {
           },
         },
         fallback: { hops: [] },
-        tokens: { inputTokens: 10, outputTokens: 20 },
+        tokens: new TokenUsage({ inputTokens: 10, outputTokens: 20 }),
       }),
     ];
     const runs = [
       makeRun(stories, {
-        totalTokens: { inputTokens: 10, outputTokens: 20 },
+        totalTokens: new TokenUsage({ inputTokens: 10, outputTokens: 20 }),
         fallback: {
           totalHops: 0,
           perPair: {},
