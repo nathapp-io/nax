@@ -187,7 +187,7 @@ describe("PipelineEventBus", () => {
 
   test("AC4: post-run phase completion preserves details payload", () => {
     const bus = new PipelineEventBus();
-    const details = { total: 3, passed: 2, failed: 1 };
+    const details = { retries: 3, failedACCount: 1, fixStoriesCreated: 0 };
     let receivedDetails: unknown;
     bus.on("postrun:phase:completed", (event) => {
       receivedDetails = event.details;
