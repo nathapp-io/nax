@@ -55,7 +55,7 @@ describe("wireHooks", () => {
         storyId: "US-001",
         story: { id: "US-001" } as any,
         passed: true,
-        durationMs: 100,
+        runElapsedMs: 100,
       }),
     ).not.toThrow();
   });
@@ -77,7 +77,7 @@ describe("wireHooks", () => {
         storyId: "US-001",
         story: { id: "US-001" } as any,
         passed: true,
-        durationMs: 100,
+        runElapsedMs: 100,
       }),
     ).not.toThrow();
   });

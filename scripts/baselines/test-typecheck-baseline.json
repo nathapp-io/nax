@@ -1,6 +1,6 @@
 {
-  "count": 380,
-  "updatedAt": "2026-08-24T11:41:02.646Z",
+  "count": 378,
+  "updatedAt": "2026-08-24T11:42:25.907Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -143,7 +143,7 @@
     "test/unit/pipeline/stages/routing-initial-model-tier.test.ts": 1,
     "test/unit/pipeline/storyid-events.test.ts": 1,
     "test/unit/pipeline/subscribers/events-writer.test.ts": 3,
-    "test/unit/pipeline/subscribers/hooks.test.ts": 4,
+    "test/unit/pipeline/subscribers/hooks.test.ts": 2,
     "test/unit/pipeline/subscribers/reporters.test.ts": 3,
     "test/unit/plugins/builtin/auto-pr-acceptance.test.ts": 1,
     "test/unit/plugins/builtin/auto-route-acceptance.test.ts": 1,
