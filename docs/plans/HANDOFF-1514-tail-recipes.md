@@ -34,19 +34,54 @@ counters rather than eight, stop — you are before the guard and the gates cann
 
 ## 1. The loop — every commit, no exceptions
 
-One cluster per commit. One file per commit inside a cluster if the cluster spans files.
+**One file per commit.** Three commits for cluster B, nine for C-1, one for C-2 (its five sites
+are one file and were verified together) — **thirteen commits**. Do not batch a cluster into one
+commit: a single bad file then forces you to unpick a green commit, and per-file is what every
+prior batch in this drain used.
+
+Work on branch `chore/1514-tail-recipes`, cut from this one (`chore/1514-guard-before-delegation`)
+so the guard commits are in your history. Do **not** cut from `main` — see §0.
+
+For each file, in this order:
 
 ```bash
-bun x tsc --noEmit                                   # src: must stay 0
-bunx tsc --project tsconfig.test.json --noEmit \
-  | grep -c "error TS"                               # total: must go DOWN
+# 1. edit the ONE file
+
+# 2. syntax guard — must print the ONE known TS1355 line and nothing else (see G1 below)
+bunx tsc --project tsconfig.test.json --noEmit | grep -E "error TS1[0-9]{3}:"
+
+# 3. src must stay 0
+bun x tsc --noEmit
+
+# 4. total must go DOWN, by the number of errors this file had — no more, no less
+bunx tsc --project tsconfig.test.json --noEmit | grep -c "error TS"
+
+# 5. formatting + import order on just this file (fast; catches the §2 import trap
+#    in 4ms instead of at the end of a 25-gate run)
+bun x biome check <the file you touched>
+
+# 6. the file's own tests
 timeout 60 bun test <the file you touched> --timeout=15000
-bun run check:all                                    # 25 gates
-bun run test                                         # full suite
-bun run check:test-typecheck:update                  # LAST, only when all of the above pass
+
+# 7. 25 gates, including both ratchets
+bun run check:all
+
+# 8. full suite
+bun run test
+
+# 9. baseline LAST, only when 2-8 all passed
+bun run check:test-typecheck:update
+
+# 10. commit - stage EXPLICITLY, never `git add -A` (§30 swept 35 junk artifacts that way)
+git add <the file> scripts/baselines/test-typecheck-baseline.json
+git commit -m "test: <what you did> (#1514 tail-recipes)"
 ```
 
-`check:all` includes both ratchets, so a counter you raised fails the commit before you get to
+Step 9 before step 10 matters: the pre-commit hook re-runs `check:all`, and `check:test-typecheck`
+compares per-file against the baseline. Both orders pass the gate, but updating first keeps the
+commit self-consistent — the baseline in the commit describes the tree in the commit.
+
+`check:all` includes both ratchets, so a counter you raised fails the commit before you reach
 the baseline update. That is the design — do not work around it.
 
 ### G1 — the syntax-error guard (read this one twice)
@@ -57,10 +92,24 @@ After any edit:
 bunx tsc --project tsconfig.test.json --noEmit | grep -E "error TS1[0-9]{3}:"
 ```
 
-It must print nothing. A parse error stops `tsc` reporting *semantic* errors project-wide, so a
-broken file makes the total collapse and look like a triumph. §12 of the status doc records the
-count going 1067 → 16 this way, with nothing fixed. **Any drop larger than the cluster you
-touched is a bug report about yourself.** (`TS18046`/`18047`/`18048` are five digits — not
+**Expected output is exactly one line, and it is not yours:**
+
+```
+test/unit/verification/smart-runner.test.ts(516,7): error TS1355: A 'const' assertion can only
+be applied to references to enum members, or string, number, boolean, array, or object literals.
+```
+
+That `TS1355` is pre-existing and predates this handoff — §13 and §16 of the status doc both
+record G1 "flat at 1" for the same reason. **Leave it alone.** It is in none of your clusters,
+and it is a `const`-assertion error, not a parse failure, so it does not suppress anything.
+
+**Any second line is yours, and means stop and revert that file.** A genuine parse error stops
+`tsc` reporting *semantic* errors project-wide, so a broken file makes the total collapse and
+look like a triumph — §12 records the count going 1067 → 16 this way with nothing fixed. That is
+also why step 4 checks the drop is *exactly* cluster-sized: **any drop larger than the file you
+touched is a bug report about yourself.**
+
+(`TS18046`/`18047`/`18048` are five digits, so this grep does not match them. They are not
 syntax errors.)
 
 ### The bail rule
@@ -76,13 +125,28 @@ does not come back **below its own starting count** by the end of your edit:
 2. Write down the file, the count, and what you saw.
 3. Move to the next file.
 
-Do not add `as never`, `!`, `as any`, `as unknown as`, or a `@ts-expect-error` to close the gap.
-All six are counted; a commit that uses one fails `check:all`. **A reverted file is a good
-outcome. A silenced file is a failed batch.**
+Do not reach for a silencer. Every one of them is counted, and a commit that adds one fails
+`check:all`:
+
+| Silencer | Counter |
+|:--|:--|
+| `as never` | `asNever` (619) |
+| postfix `!` | `nonNullAssert` (827) |
+| `as any` | `asAny` (1386) |
+| `: any`, `<any>` | `anyType` (1877) |
+| `as T` | `looseCast` (1925) |
+| `@ts-expect-error` / `@ts-ignore` / `@ts-nocheck` | `tsSuppress` (40) |
+| `test-ratchet-allow:` marker | `ratchetAllow` (106) |
+| `absentValue<T>()` / `nullValue<T>()` | `absentValue` (17) |
+| `as unknown as` | its own ratchet, floor 102, **zero headroom** |
+
+**A reverted file is a good outcome. A silenced file is a failed batch.** If you finish with
+fewer files done than this handoff lists, that is a result worth reporting, not a failure to
+hide. Say which files you reverted and what you saw.
 
 ---
 
-## 2. Cluster B — `RoutingDecision` widening (8 errors, 6 files) — DELEGABLE
+## 2. Cluster B — `RoutingDecision` widening (8 errors, 3 files) — DELEGABLE
 
 `mock(() => Promise.resolve({ complexity: "medium", ... }))` infers `complexity` as `string`;
 the dep slot wants the `Complexity` union. Nothing is missing from the fixture — it is pure
@@ -98,8 +162,9 @@ _routingDeps.resolveRouting = mock((): Promise<RoutingDecision> =>
 );
 ```
 
-**Prototyped on `routing-persistence.test.ts`:** 4 → 0 errors, 10 tests pass, no counter moved.
-Reverted. This is §30's `parallel-worker` recipe verbatim, third use.
+**Prototyped on `routing-persistence.test.ts`:** 4 → 0 errors, 10 tests pass, all eight hatch
+counters and `as unknown as` measured flat. Reverted. This is §30's `parallel-worker` recipe
+verbatim, third use.
 
 | File | Errors | Lines |
 |:--|--:|:--|
@@ -107,8 +172,26 @@ Reverted. This is §30's `parallel-worker` recipe verbatim, third use.
 | `test/unit/pipeline/stages/routing-initial-complexity.test.ts` | 3 | 175, 209, 244 |
 | `test/unit/pipeline/stages/routing-greenfield-monorepo.test.ts` | 1 | 91 |
 
-Note the import goes in Biome's `@/…` group; `organizeImports` will fail `check:all` if you put
-it first. (§29 lost a cycle to exactly this.)
+**All three files need a NEW import line, and its position is not free.** `organizeImports`
+sorts the `@/…` group as plain strings, so `@/routing` goes **after** `@/prd/types`, not after
+`@/prd`:
+
+```ts
+import type { PipelineContext } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd";
+import type { StoryRouting } from "@/prd/types";
+import type { RoutingDecision } from "@/routing";   // <- here
+import { makeNaxConfig, makeStory } from "@test/helpers";
+```
+
+This is checked, not guessed: putting it one line earlier (the natural spot, next to the other
+`@/prd` imports) fails `bun x biome check` with *"Import statements could be sorted"*, and so
+fails `check:all` and the pre-commit hook. §29 lost a cycle to the same rule.
+`routing-greenfield-monorepo.test.ts` has no `@/prd` line — there `@/routing` follows
+`@/prd/types` all the same.
+
+If you are unsure, run `bun x biome check <file>` right after editing; it names the exact
+ordering it wants.
 
 ## 3. Cluster C — the debate logger stub (14 errors, 10 files) — DELEGABLE
 
@@ -128,7 +211,18 @@ import { makeLogger } from "@test/helpers";   // add to the EXISTING @test/helpe
 _debateSessionDeps.getSafeLogger = mock(() => makeLogger());
 ```
 
-**Prototyped on `debate/runner.test.ts`:** 1 → 0, 9 tests pass, no counter moved. Reverted.
+**Prototyped on `debate/runner.test.ts`:** 1 → 0, 9 tests pass, all eight hatch counters and
+`as unknown as` measured flat. Reverted. All nine C-1 files already have an `@test/helpers`
+import line, so no new import and no ordering question — checked.
+
+**This recipe applies to C-1 only.** It is right there because those stubs are pure scaffolding —
+nothing reads the logger back. C-2 asserts on log output and takes a different fix; see below.
+Before swapping any file, grep it for `logger`-reading assertions. If a file turns out to read
+its logger, stop and treat it as C-2, or revert per the bail rule.
+
+**Size trap:** `runner-plan.test.ts` is grandfathered in `file-sizes-baseline.json` at **1117
+lines**, so `check:file-sizes` caps it. The recipe replaces a 6-line literal with a 1-line call,
+i.e. it *shrinks* the file, so it is safe — but do not let anything else in that file grow.
 
 **C-1 — 9 errors, 9 files, one per file, all `TS2322`, all the dep-assignment form above.**
 All under `test/unit/debate/`: `runner.test.ts:57`, `runner-hybrid.test.ts:94`,
@@ -137,21 +231,48 @@ All under `test/unit/debate/`: `runner.test.ts:57`, `runner-hybrid.test.ts:94`,
 `runner-plan.test.ts:99`, `runner-plan-signal.test.ts:70`, `runner-stateful.test.ts:106`.
 This is the prototyped path. Take it first.
 
-**C-2 — 5 errors, 1 file, all `TS2352`, and a different site shape.** All five are in
-`test/unit/execution/unified-executor-logging.test.ts` (203, 245, 320, 355, 415), where the stub
-is a local object handed to `spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as …)`
-rather than assigned to a dep. Same root cause, same helper, and deleting the five casts lowers
-`looseCast`. **But this file's entire purpose is asserting on log output**, so unlike C-1 it
-*does* read the logger back. Check every assertion before swapping — `makeLogger()` exposes
-`.calls` and per-level mocks, so they are rewritable, but if the mapping is not obvious, revert
-per the bail rule and leave the 5.
+**C-2 — 5 errors, 1 file, all `TS2352`. Different site shape, and `makeLogger()` is the WRONG
+fix here.** All five are in `test/unit/execution/unified-executor-logging.test.ts` (lines 203,
+245, 320, 355, 415).
+
+This file asserts on log output — each stub pushes into a local `infoCalls` array the test then
+filters. `makeLogger()` would work but forces rewiring `infoCalls` and the `loggerSpy?.mockRestore()`
+in three `afterEach` blocks. **Do not do that.** The file already documents its own answer: its
+`installStoryLogSpy()` helper (line 29) types the stub `Partial<Logger>` precisely so *"the
+narrowing cast is a plain widening rather than a double cast"*. Four tests use it correctly; five
+sites are inline copies that were never updated.
+
+The minimal faithful fix is two edits per site, no rewiring, no new import (`Logger` is already
+imported at line 14):
+
+```ts
+const logger: Partial<Logger> = {          // was: const logger = {
+  info: mock((stage, message, data) => { infoCalls.push({ stage, message, data }); }),
+  ...
+};
+loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as Logger);
+//                                    was: logger as ReturnType<typeof loggerModule.getSafeLogger>
+```
+
+**Verified end-to-end on all five sites:** total 415 → 410 (exactly cluster-sized), 12 tests
+pass, all eight counters flat. Reverted.
+
+One wrinkle: the shorter cast makes the call fit on one line, so the formatter reflows it and
+`bun x biome check` fails until you run `bun x biome check --write <file>`. Expected — do that,
+then re-run step 5.
+
+Because C-2 is verified as a whole rather than one-site-prototyped, it is a **single commit**,
+not five.
 
 The first draft of this list also named `runner-hybrid-coordinator`, `story-scoped-fix-budget`,
 `rule-sections` and `story-orchestrator`. They are **not** in this cluster — they came from a
 `grep -B20` that pulled in neighbouring files' errors. Counted exactly, the cluster is 9 + 5.
 Anchor a membership grep on the error line itself, never on context lines.
 
-## 4. Cluster A — `_planDeps.createRuntime` (10 errors, 5 files) — **NOT DELEGABLE, escalate**
+## 4. Cluster A — `_planDeps.createRuntime` (10 errors, 4 files) — **NOT DELEGABLE, escalate**
+
+`plan-decompose-debate` 5, `plan-decompose-guards` 2, `plan-decompose-writeback` 2,
+`plan-decompose-mapper` 1 — all under `test/unit/cli/`.
 
 This was in the first draft of this handoff as the safest cluster. Reading the source removed
 it. **Do not attempt it.**
@@ -175,9 +296,11 @@ which is the G5 boundary.
 Any test-side "fix" here either fabricates a `NaxRuntime` the test does not want or casts the
 mismatch away. **Both are wrong. Leave the 10 errors in the baseline.**
 
-This is the fourth time in this drain a cluster looked mechanical and was not — and the second
-time the cause column was wrong in a load-bearing direction (§29). It is why the bail rule is
-not optional.
+§29 already recorded its plan's cause column being *"wrong in a load-bearing way twice"* out of
+six batches, and §31 found three files held back for an owner that turned out to be plain stale
+test-side references. The prior in both directions is weak. That is why the bail rule is not
+optional, and why §4 exists at all: **an error message tells you two types disagree, never which
+side is wrong.** Read the `src/` side of any seam before touching the fixture.
 
 ---
 
@@ -192,12 +315,18 @@ not optional.
 
 ## 6. Expected landing
 
-22 errors across 16 files — cluster B 8, cluster C-1 9, cluster C-2 5. **415 → ~393**, and
-**→ ~398 if C-2 is correctly abandoned** at its assertions. Either landing is a success; a
-landing *below* 393 means something in §1 did not hold, most likely G1. Say so in the commit
-rather than adjusting the baseline to match.
+**22 errors across 13 files, in 13 commits** — cluster B 8 errors / 3 files, C-1 9 / 9,
+C-2 5 / 1.
 
-Every counter must be flat or lower at the end. The current floor:
+All three clusters land at **415 → 393**. Each has been run against the live tree — B and C-1
+one site each, C-2 in full at 415 → 410 — so 393 is measured arithmetic, not a forecast.
+
+A total *below* 393 is not a better result: it means something in §1 did not hold, most likely
+G1. Say so in the commit rather than adjust the baseline to match. A total above 393 means a
+file was reverted; name it and say what you saw.
+
+Every counter must be flat or lower at the end. Verified flat across both prototypes, so an
+increase is your edit, not the recipe. The current floor:
 
 ```
 asAny=1386  tsSuppress=40  ratchetAllow=106  absentValue=17
