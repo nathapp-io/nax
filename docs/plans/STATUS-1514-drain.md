@@ -2,7 +2,36 @@
 
 Written 2026-08-23 to resume later. Supersedes nothing; it points at the docs that hold detail.
 
+**Sections are a chronological log — §2, §24, §31 and the rest record what was true when they
+were written and are not edited afterwards.** For the live state, read §0 and the last section.
+
 ---
+
+## 0. Current state — measured 2026-08-24 on `main` @ `b552fce6a`
+
+Every number re-measured on a clean tree, not carried forward from a section below.
+
+| | value | baseline |
+|:--|--:|--:|
+| `tsc --noEmit` (src) | **0** | — |
+| test typecheck | **383** | 383 |
+| `as unknown as` casts | **102** | 102 |
+| `asAny` | 1386 | 1386 |
+| `tsSuppress` | 40 | 40 |
+| `ratchetAllow` | 106 | 106 |
+| `absentValue` | 17 | 17 |
+| `anyType` | 1877 | 1877 |
+| `looseCast` | 1925 | 1925 |
+| `asNever` | 619 | 619 |
+| `nonNullAssert` | 827 | 827 |
+
+Against the original #1514 start: casts **815 → 102 (−87%)**, typecheck **2009 → 383 (−81%)**.
+
+All 25 gates green, every counter sitting **at** its baseline — there is no headroom left in the
+ratchets for a delegate to spend (§32's slack was reclaimed in `b552fce6a`).
+
+The residue is 383 errors across 186 files. It is still recipe-shaped: see §33 and
+`HANDOFF-1514-tail-recipes-batch2.md`.
 
 ## ✅ The dead-fixture-keys handoff is COMPLETE
 
@@ -29,13 +58,19 @@ typecheck, per-file gate `worse: 0`, `check:all`, full suite, baseline update).
 | dead-config-keys (ADR-012 legacy) | ✅ merged — 40 errors (1260 → 1220) | #1688 |
 | `ConfigSelector` variance | ✅ merged — 72 errors (1220 → 1148) | #1689 |
 | **dead `@ts-expect-error` suppressions** | ✅ **done — 16 errors (1148 → 1132), tsSuppress 54 → 40** | — |
-| `DispatchContext` fixtures (18) | not started — see §10 | — |
-| ~~`makeObservation` (~90)~~ — **really 9** | not started | — |
+| Lane A (`HANDOFF-1514-lane-a.md`, §28–§30) | ✅ merged — 692 → 474 | #1695 |
+| owner-only residue (§31) | ✅ merged — 474 → 415 | #1696 |
+| escape-hatch guard + tail recipes B/C (§32) | ✅ merged — 415 → 393 | #1697 |
+| **tail cluster A (`_planDeps.createRuntime`)** | ✅ **done — 393 → 383; §4 of the handoff was wrong, see §33** | #1697 |
+| `DispatchContext` fixtures | ~~18~~ → **3 left**, drained incidentally by Lane A | — |
+| ~~`makeObservation` (~90)~~ — ~~**really 9**~~ | ✅ **0 left** — drained incidentally; do not reopen | — |
+| **tail recipes batch 2 (~40 errors, 8 clusters)** | handoff written, not started | — |
 
-**Branches:**
-- `chore/1514-dead-fixture-keys` — **merged as #1686** (`e915b47e1` on `main`); branch gone.
-- `chore/1514-implicit-any-params` — local only, never pushed. Contains `main` @ `e915b47e1`
-  and is 14 commits ahead. **Ready for PR.**
+**Branches:** all merged as of 2026-08-24; nothing is parked locally.
+- `chore/1514-dead-fixture-keys` — merged as #1686 (`e915b47e1`); branch gone.
+- `chore/1514-implicit-any-params` — merged as #1687; branch gone.
+- `chore/1514-guard-before-delegation` / `chore/1514-tail-recipes` — merged as #1697
+  (`b552fce6a`); branches gone.
 
 ## 2. Last numbers I verified personally (at `d38bbb87`, branch head)
 
@@ -1845,3 +1880,73 @@ describes the type mismatch, never which side is wrong.
 prototyped on the live tree and reverted, cluster A escalated with evidence, G1, and an explicit
 bail rule ("a reverted file is a good outcome; a silenced file is a failed batch"). Expected
 landing 415 → ~393.
+
+---
+
+## 33. Cluster A — §4 of the tail handoff was wrong, and the fix was test-side (393 → 383)
+
+`HANDOFF-1514-tail-recipes.md` §4 marked cluster A (`_planDeps.createRuntime`, 10 errors,
+4 files under `test/unit/cli/plan-decompose-*`) **NOT DELEGABLE**, on the reasoning that
+`src/cli/plan-runtime.ts:34-41` duck-types `NaxRuntime | IAgentManager` on purpose, so the
+only honest fix was a `src/` type widening — an owner call, and therefore outside G5.
+
+That verdict came from reading the `src/` side and stopping there. Reading the **sibling
+tests** reverses it: `plan-decompose-ac-repair`, `ac13-14`, `regression` and `plan-debate`
+already wrap their manager in `makeMockRuntime({ agentManager })` and typecheck clean. The
+four erroring files were plain stale stragglers — the same "held back for an owner, actually
+just stale" case §31 found three times.
+
+```ts
+_planDeps.createRuntime = mock(() =>
+  makeMockRuntime({ agentManager: makeMockDecomposeManager(...) }),
+);
+```
+
+Not a fabrication: `makeMockRuntime` is built on the real `createRuntime` — the same call the
+production fallback path makes — plus `trackRuntime` leak tracking. One commit per file,
+**393 → 383**, all eight escape-hatch counters and `as unknown as` flat.
+
+### The rule §4 stated but did not finish applying
+
+§4's own sentence is right: *"an error message tells you two types disagree, never which side
+is wrong."* It applied that to `src/` and not to the neighbouring fixtures. Reading the `src/`
+side is **necessary, not sufficient**.
+
+**Before escalating a test-typecheck cluster as an owner call, grep sibling test files for the
+same dep override. If any sibling already typechecks, the recipe exists and the cluster is
+delegable.** This is now G6 in the batch-2 handoff.
+
+That makes it *three* directions the cause column has been wrong in: §29 recorded it wrong
+twice out of six batches, §31 found three files wrongly held back for an owner, and §4 held
+back a fourth. The prior on any "not delegable" verdict is weak — including the ones in the
+batch-2 handoff.
+
+### Follow-up: the duck-typed fallback was dead, and is gone (`cd5ee7b52`)
+
+Having established the tests do not need the second shape, the second shape had no callers
+left. Confirmed before deleting, rather than argued:
+
+- Patched the branch to append which path it takes to `$PROBE_FILE`, then ran
+  `FULL=1 NAX_PRECHECK=1 bun test test/` — 15381 tests produced **164 calls, all path 1, zero
+  fallback**. `test:e2e` never calls it at all.
+- `NaxRuntime.agentManager` is non-optional and always assigned.
+- The package ships `bin`-only (no `exports`/`main`), so `_planDeps` is not importable public
+  API and there is no external caller to preserve it for.
+
+**Technique worth reusing:** to prove a branch is dead, make it *say so at runtime* under the
+full suite. Static reading could not have settled this one — the guard is a duck-type, so no
+type or grep tells you which shape actually arrives.
+
+Pre-existing `FULL=1` failures are **4** (one Logger, three precheck). Compare a full-mode run
+against those, not against zero.
+
+## Next
+
+The residue is 383 across 186 files and, grouped by normalized error message rather than by
+file, is still recipe-shaped — §32's lesson holds a second time. Eight clusters worth ~40
+errors are specified in `HANDOFF-1514-tail-recipes-batch2.md`, each with its `src/` side and
+its sibling fixtures read before being called delegable.
+
+Deferred and still unmeasured, from `HANDOFF-1514-tail-recipes.md` §5: `TS2769` (23,
+scattered, no shared cause found) and `TS7024` (9, needs a real return type worked out per
+function — cheap to get wrong, invisible when wrong).

@@ -6,7 +6,20 @@ at `f91e94fb2`. Every number below was measured on that tree, not recalled.
 **State at hand-off:** casts **102** (from 681), typecheck errors **1946** (from 1969),
 `asAny=1398`, `tsSuppress=54`, `ratchetAllow=107`, `absentValue=17`.
 
-## Status — 2026-08-23
+## Status — superseded 2026-08-24
+
+**The tables in this section are frozen at 2026-08-23 and are no longer the live state.**
+Typecheck is **383**, not 1645; casts are 102; every counter sits at its baseline. Read
+`STATUS-1514-drain.md` §0 for current numbers and §33 for the most recent round. The rulings
+in §4, §6 and §7 below still hold — it is only the counts and the phase table that are stale.
+
+Phases 4–6 as named below are all done or dissolved: phase 5's `TS7006` is 0, phase 6's
+`makeObservation` cluster turned out to be 9 errors and was drained incidentally by Lane A,
+and `DispatchContext` went 18 → 3 the same way. What is left is the long tail this proposal
+predicted in the line below the actuals table — and it proved to be recipe-shaped rather than
+per-file, which is the one forecast here that was wrong. See `STATUS-1514-drain.md` §32.
+
+## Status — 2026-08-23 (historical)
 
 **Phases 0–2 are merged.** PR #1683 landed on `main` as `16997cb0f`, closing #1682.
 
@@ -39,7 +52,9 @@ zero casts and they removed a few instead.
 | **callop-seam** | −47 | ✅ **done** — tiers 1+2, 2 commits; 8 tier-3 sites left by design | `HANDOFF-1514-callop-seam.md`, `PLAN-1514-callop-seam.md` |
 | **dead-fixture-keys** | ~−115 | ✅ **merged** — PR #1686 (`e915b47e1`); 10 keys, 38 errors (1633 → 1594) | `HANDOFF-1514-dead-fixture-keys.md`, `STATUS-1514-drain.md` |
 | 5 — implicit-any params | ~−103 | ✅ **target met — `TS7006` is 0.** The mechanical fixture-field slice landed 91 errors (1351 → 1260), 4 commits on `chore/1514-implicit-any-params`, awaiting PR. One escalation was taken without asking and has been ratified — `STATUS-1514-drain.md` §4a. Everything left on the branch is the general tail, not this phase | `HANDOFF-1514-mechanical-fixture-fields.md`, `STATUS-1514-drain.md` §2b, §4a |
-| 6 — remaining seams / `makeObservation` | ~−90 | not started | — |
+| 6 — remaining seams / `makeObservation` | ~−90 | ✅ **dissolved — really 9, drained incidentally by Lane A** | `STATUS-1514-drain.md` §28–§30 |
+| Lane A / owner residue / tail recipes | −309 | ✅ merged — 692 → 383 | PRs #1695, #1696, #1697 |
+| tail recipes batch 2 | ~−40 | handoff written, not started | `HANDOFF-1514-tail-recipes-batch2.md` |
 
 **Commit tags for the un-started work are descriptive, not numbered** — the original #1514
 plan already used "phase 3a" for scaffolding the ratchets and "phase 3c" for the escape-hatch
