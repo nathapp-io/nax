@@ -279,7 +279,7 @@ describe("Pipeline Runner", () => {
           name: "setConstitution",
           enabled: () => true,
           execute: async (ctx) => {
-            ctx.constitution = "Test constitution";
+            ctx.constitution = { content: "Test constitution", tokens: 3, truncated: false };
             return { action: "continue" };
           },
         },
@@ -295,7 +295,7 @@ describe("Pipeline Runner", () => {
           name: "verifyContext",
           enabled: () => true,
           execute: async (ctx) => {
-            expect(ctx.constitution).toBe("Test constitution");
+            expect(ctx.constitution?.content).toBe("Test constitution");
             expect(ctx.contextMarkdown).toBe("Test context");
             return { action: "continue" };
           },
@@ -306,7 +306,7 @@ describe("Pipeline Runner", () => {
       const result = await runPipeline(stages, ctx);
 
       expect(result.success).toBe(true);
-      expect(result.context.constitution).toBe("Test constitution");
+      expect(result.context.constitution?.content).toBe("Test constitution");
       expect(result.context.contextMarkdown).toBe("Test context");
     });
 
