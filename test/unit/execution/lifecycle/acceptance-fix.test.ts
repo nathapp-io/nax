@@ -11,6 +11,7 @@ import type { SemanticVerdict } from "@/acceptance/types";
 import type { NaxConfig } from "@/config/schema";
 import { _diagnosisDeps, resolveAcceptanceDiagnosis } from "@/execution/lifecycle/acceptance-fix";
 import type { AcceptanceLoopContext } from "@/execution/lifecycle/acceptance-loop";
+import type { AcceptanceDiagnoseInput } from "@/operations/acceptance-diagnose";
 import { makeDiagnoseOutput, makeNaxConfig } from "@test/helpers";
 
 function makeConfig(): NaxConfig {
@@ -204,9 +205,9 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
   });
 
   test("normal path passes semanticVerdicts to callOp input", async () => {
-    let capturedInput: Record<string, unknown> | undefined;
+    let capturedInput: AcceptanceDiagnoseInput | undefined;
     _diagnosisDeps.callOp = async (_callCtx, _op, input) => {
-      capturedInput = input as Record<string, unknown>;
+      capturedInput = input;
       return makeDiagnoseOutput({ verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 });
     };
 

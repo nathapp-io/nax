@@ -9,10 +9,12 @@ import { describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { featureDir, globalConfigDir, projectConfigDir } from "@/config/paths";
+import { assertDefined } from "@test/helpers";
 
 describe("config/paths", () => {
   describe("globalConfigDir", () => {
     test("returns override when NAX_GLOBAL_CONFIG_DIR is set", () => {
+      assertDefined(process.env.NAX_GLOBAL_CONFIG_DIR, "NAX_GLOBAL_CONFIG_DIR (set by test/preload.ts)");
       expect(globalConfigDir()).toBe(process.env.NAX_GLOBAL_CONFIG_DIR);
     });
 

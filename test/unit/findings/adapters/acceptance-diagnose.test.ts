@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { FixTarget } from "@/findings";
 import { acceptanceDiagnoseRawArrayToFindings, acceptanceDiagnoseRawToFinding } from "@/findings";
 
 describe("acceptanceDiagnoseRawToFinding", () => {
@@ -71,7 +72,7 @@ describe("acceptanceDiagnoseRawToFinding", () => {
       fixTarget: "weird",
     });
 
-    expect(finding?.fixTarget).toBe("weird");
+    expect(finding?.fixTarget).toBe("weird" as FixTarget);
   });
 });
 

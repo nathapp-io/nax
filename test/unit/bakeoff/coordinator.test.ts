@@ -263,7 +263,7 @@ describe("runBakeoff (AC-4: ranking wiring)", () => {
     const spyArg = rankSpy.mock.calls[0][0] as ContestantResult[];
     expect(spyArg.some((r) => r.agent === "claude")).toBe(true);
     expect(spyArg.some((r) => r.agent === "codex")).toBe(true);
-    expect(result.ranking).toEqual(rankSpy.mock.results[0].value);
+    expect(result.ranking).toEqual(rankSpy.mock.results[0].value as ContestantResult[]);
   });
 
   // Boundary: rankContestants may reorder contestants — BakeoffResult.ranking

@@ -2022,3 +2022,185 @@ sense — the six regex-recipes of the last handoff are drained (or, in G's case
 As §30 cut it: every drain commit that lowers a counter must also lower its baseline. The 383
 baseline carries into this landing correctly because each of the 17 commits re-ran
 `check:test-typecheck:update` after its gates — no slack was handed onward.
+
+## 35. Cluster G — precheck config fixtures, done (356 → 347, 2026-08-24)
+
+`HANDOFF-1514-tail-recipes-batch2.md` §5 marked cluster G owner-only, off `origin/main` @
+`f2519a395` (test typecheck 356), branch `chore/1514-tail-cluster-g`, 4 commits — one file
+each, per G4:
+
+| file | baseline errors | fix | landed |
+|:--|--:|:--|--:|
+| `precheck-checks-tier1-blockers.test.ts` | 2 | `createMockConfig` deleted — **never called**, confirmed by grep and by identical 30 pass/3 skip before and after | **−2** |
+| `precheck-checks-tier2-warnings.test.ts` | 5 | `createMockConfig` → `makeNaxConfig({execution: {...}})`; `checkOptionalCommands` gained a `workdir` param since the handoff was written, wired to an isolated `makeTempDir()` | **−5** |
+| `test/integration/cli/cli-precheck-checks.test.ts` | 1 | same conversion + dropped dead `execution.cwd` (nothing in `src/` reads it — `runPrecheck` takes `workdir` separately) | **−1** |
+| `test/integration/cli/cli-precheck-integration.test.ts` | 1 | identical fixture, same fix | **−1** |
+
+**§5's own worked example was wrong about tier1-blockers being a conversion case** — the
+handoff measured the `makeNaxConfig` swap landing 383 → 375 on `createMockConfig`, but never
+checked whether anything called it. It didn't. `test-debt-ratchets-uncounted-escape-hatches`
+memory: check fixture usage before applying a documented conversion recipe, every time — a
+dead fixture typechecks the same whether deleted or converted, and deleting is strictly
+cheaper. The other three files' fixtures *were* live (17, 16, and 14 tests respectively) and
+needed the real conversion; §5's recipe was correct for those.
+
+`anyType` dropped 2 as a side effect (`overrides: any` on the two `cli-precheck-*` fixtures
+narrowed to `Partial<ExecutionConfig>` during the conversion) — a bonus, not a violation, all
+other counters flat at baseline throughout. Full suite green after every commit (1137
+pass/37 skip unit+integration, 38 UI pass); the two `cli-precheck-*` files stayed at their
+pre-edit 0 pass/16 skip and 0 pass/14 skip (`FULL=1`-gated, needs a real `claude` binary — not
+run here).
+
+**Cluster G is fully drained.** 356 → **347**, 173 files.
+
+## Next
+
+Residue: **347 across 173 files.** What's left is the tail the batch-2 handoff §4 explicitly
+deferred, unmeasured beyond a baseline count:
+
+- **`TS2769`** — 23, scattered, no shared cause found across two prior passes (batch 1 §5,
+  batch 2 §4).
+- **`TS7024`** implicit-`any` recursive return — 9, needs a real return type worked out per
+  function; cheap to get wrong and invisible when wrong.
+- **`DispatchContext`** (3) and the rest of the long tail: per-site, no recipe.
+
+## 36. `triggers.test.ts` + the `TS2352` → `Record<string, unknown>` cluster, measured (346 → 340)
+
+Still on `chore/1514-tail-cluster-g`, 6 more commits, one file each per G4.
+
+`triggers.test.ts:75` (347 → 346): `makeConfig(triggers: Record<string, unknown>)` was looser
+than what `makeNaxConfig({interaction: {triggers}}` actually needs.
+`InteractionConfig["triggers"]` (imported from `@/config/runtime-types` — not re-exported
+through the `@/config` barrel) is the real type; every call site already passed values
+matching it.
+
+§35's finding generalises: **measure the `TS2352` → `Record<string, unknown>` cluster before
+assuming it matches §22.** It didn't, on both counts. §22 was `NaxConfigSchema.safeParse`'s
+input side (a cast on the source of a spread feeding something typed `unknown` — almost none
+of those casts did anything). This round's 7 sites, re-grepped fresh (6 files, not 7 — one
+file had 2), were read/write sites instead — a value with a real, narrower type being
+force-cast to `Record<string, unknown>` so a property read or reassignment would compile:
+
+| file | what the cast was hiding | fix | landed |
+|:--|:--|:--|--:|
+| `agents/acp/adapter.test.ts` | none — `client.createSession = mock(...)` already matched `MockAcpClient`'s declared signature | cast deleted outright (§22-shaped: did nothing) | −1 |
+| `cli/plan.test.ts` | `(s as Record<string, unknown>).complexity` read a property `UserStory` doesn't have (`routing.complexity` is the real path) — **but the field's presence in the fixture is load-bearing**, `validatePlanOutput` accepts a legacy top-level `complexity` too (`routing.complexity ?? complexity`, `src/prd/schema.ts:187`). Deleting it outright breaks 5 tests; the read was dead, the write wasn't | literal `complexity: "simple"` (line-neutral — file is grandfathered at 1202 lines) | −1 |
+| `execution/lifecycle/acceptance-fix.test.ts` | `capturedInput` declared `Record<string, unknown>` for no reason — the real type (`AcceptanceDiagnoseInput`, the actual param type of `_diagnosisDeps.callOp`) was one import away | typed directly, cast dropped | −1 |
+| `execution/lifecycle/mutation-summary-completion.test.ts` | `mock(() => {})` with no declared params makes every `.mock.calls[n]` element `undefined` — cast was compensating for an untyped mock, not a real narrowing | typed the mock against `Logger.warn(stage, message, data?)`; cleared a second latent error alongside the targeted one | −2 |
+| `operations/setup-generate.test.ts` | double-cast (`Record<string, unknown>` then a hand-rolled shape) around `result.config`, which is already `NaxConfig` (non-null) on `setupGenerateOp`'s Output type | direct `.quality.commands.test` access | −1 |
+| `bakeoff/coordinator.test.ts` (2 sites) | **genuinely load-bearing — left alone.** `withCoordinatorDeps` saves/restores `_coordinatorDeps` by dynamic key (`Object.keys(overrides) as Array<keyof BakeoffCoordinatorDeps>`, `saved[key] = _coordinatorDeps[key]`). Tried and reverted: this hits TypeScript's correlated-union-key problem — assigning `T[K]` to `Partial<T>[K]` for a `K` that's a *union* of several unrelated function-signature types doesn't type-check, because TS can't prove `saved[key]` and `_coordinatorDeps[key]` pick the same union member at the same iteration. The `Record<string, unknown>` cast is the least-bad way to do this generic save/restore pattern | reverted, unchanged | 0 |
+
+Every commit: syntax guard, per-file typecheck diff, `check:test-escape-hatches` /
+`check:test-as-unknown-as` flat or better (both `anyType` and `looseCast` dropped as a
+bonus — untyped `mock()` calls and single-`as` casts were removed alongside the targeted
+`TS2352`s, never added), matching test pass/fail counts before and after (`git stash` /
+`git stash pop` around each file), `check:all` 25/25 green, full suite green after the final
+commit (1137/37/0 unit+integration, 38/0 UI). `346 → 340`, 170 files.
+
+**The `TS2352` → `Record<string, unknown>` cluster is drained** except `bakeoff/coordinator.test.ts`'s
+2 sites, which are a correct, documented exception — not deferred debt.
+
+## Next
+
+Residue: **340 across 170 files.**
+
+- **`TS2769`** — 23, scattered, no shared cause found across three prior passes now (batch 1
+  §5, batch 2 §4, this round did not re-check it).
+- **`TS7024`** implicit-`any` recursive return — 9, needs a real return type worked out per
+  function; cheap to get wrong and invisible when wrong.
+- **`DispatchContext`** (3) and the rest of the long tail: per-site, no recipe.
+
+## 37. `TS2769` (23 → 0), `TS7024` (9 → 0), and the 3 "`DispatchContext`" sites — all three drained (340 → 303, 2026-08-24)
+
+Still `chore/1514-tail-cluster-g`, 12 more commits (one file each, per G4). All three prior
+"no shared cause" verdicts were half right — no single fix, but **two repeatable families**
+covered nearly everything.
+
+### `TS2769` (23 sites, 15 files → 0)
+
+Once actually read case by case (not just counted), two shapes covered ~19 of the 23:
+
+1. **`test.each` array-literal widening** — the classic culprit again, but for `toBe`/
+   `toEqual`/`toContain` overload resolution instead of `TS2352`. A `test.each` table's
+   "expected" column loses its literal type without `as const`; the received side (a real
+   function's return type, often a narrow union or literal) then rejects the widened
+   `string`/plain-object argument. Fix: `as const` on the whole table (`calculate.test.ts`,
+   `plan-inputs.test.ts`, `session-role-plan-critic.test.ts`, `cli-precheck-command.test.ts`'s
+   sibling array, `plan.test.ts` ×2). Where columns are non-uniform (a getter function AND
+   its expected value both vary per row — `debate/resolvers.test.ts`), `as const` alone hits
+   TypeScript's correlated-union problem; an explicit `Array<[string, T[], boolean,
+   "passed"|"failed"]>` annotation gave every column its real type directly, with no cast at
+   all and two pre-existing casts removed as a bonus. `findings/cycle.test.ts` needed
+   `satisfies ClassifyCase[]` instead of a separate typed `const` + `test.each(name)` — the
+   two-statement form grew the file 1 line past its grandfathered cap; `satisfies` uses the
+   target type as a literal-inference hint without a second statement.
+2. **`expect()`/`toContain()` narrowing a possibly-undefined or wrongly-typed value** —
+   `process.env.X` (`config/paths.test.ts`), an optional fixture field
+   (`features-resolve.test.ts`), a hand-typed `Record<string, unknown> | undefined` capture
+   var (already-covered ground from §36) all hit the same shape: `assertDefined()` narrows
+   the sanctioned way. `tui-controls.test.ts`'s `PanelFocus` enum comparison needed the
+   opposite move — swap which side of `.toBe()` is the raw literal, since a plain string
+   isn't assignable to a nominal enum type but an enum member widens to string covariantly.
+   `acceptance-diagnose.test.ts`'s `"weird" as FixTarget` is the one legitimate new cast in
+   this batch — the test exists specifically to prove an off-domain string passes through
+   unvalidated (`src/findings/adapters/acceptance-diagnose.ts:17` does the identical cast on
+   the LLM's raw output, by design), so casting the expected value states that intent instead
+   of failing the overload.
+
+Two were real bugs, not widening: `pipeline.test.ts` assigned a raw string to
+`ctx.constitution` where the type is `ConstitutionResult` — genuinely wrong, fixed with a
+real object and `.content` reads. `bakeoff/coordinator.test.ts` needed a plain
+`as ContestantResult[]` matching a cast three lines above it (`Mock.results[n].value` is
+`unknown`).
+
+**One near-miss, caught by running the suite, not by typecheck** — `plan.test.ts`'s
+`buildPlanComposition()` tests. The first fix attempt (add the missing required
+`sessionMode` field to the shared `baseConfig` fixture) typechecked clean but silently
+flipped a real assertion: one test specifically checks that `buildPlanComposition` *injects*
+a `sessionMode` default when the field is absent, and giving `baseConfig` a default meant it
+was never absent. `git stash`/`bun test`/`git stash pop` before every commit is what caught
+this — 46 pass dropped to 45 pass 1 fail, invisible to `bun x tsc`. Correct fix: the function's
+declared parameter type (`DebateStageConfig`, `sessionMode` required) is stricter than its
+actual runtime contract (partial input, fills defaults) — two sibling `test.each` blocks in
+the same file already knew this and cast their call site; cast the third the same way, as
+`DebateStageConfig` (a real, single cast) rather than `as any` (which would have added a new
+`asAny` occurrence past baseline — unlike the sibling blocks' pre-existing casts, this would
+have been new debt).
+
+### `TS7024` implicit-any-via-self-reference (9 sites, 2 files → 0)
+
+Both files: an inline `async (arg) => value` (or `() => value`) function inside a
+`test.each` table, with no declared return type. `test.each`'s generic inference is
+self-referential enough that TS gives up and falls back to `any` for the whole function
+instead of resolving it structurally — spelling out the return type
+(`Promise<string | null>`, `Promise<boolean>`, `(): string`) breaks the cycle.
+`plan-interactive.test.ts` (7, two tables) and `tdd-verdict.test.ts` (2). No cast, no
+counter movement — purely additive type annotations.
+
+### "`DispatchContext`" (3 sites, 2 files → 0)
+
+None were actually about `DispatchContext`. All three were `_routingDeps.X = mock(...)`
+assignments to properties `_routingDeps` (`src/pipeline/stages/routing.ts:178`) doesn't
+have — `computeStoryContentHash` and `routeBatch` (the latter's own inline comment said
+`/* routeBatch deleted ROUTE-001 */`), and `routeStory` (never existed on this deps object;
+`resolveRouting` is the real member). All three were provably inert at runtime — same
+before/after test counts on deletion. `routing-idempotence.test.ts` also dropped the
+now-unused `FRESH_ROUTING_RESULT` fixture the dead mock referenced.
+
+### Verification, every commit
+
+Syntax guard, per-file typecheck diff, `check:test-escape-hatches`/`check:test-as-unknown-as`
+flat or better throughout (net: `anyType` −2, `looseCast` −2 over this whole round — casts
+removed outnumbered the one added), matching `bun test` pass/fail counts before and after via
+`git stash`/`git stash pop`, `check:all` 25/25 green, full suite green after the final commit
+(1137/37/0 unit+integration, 38/0 UI). **340 → 303**, 157 files.
+
+## Next
+
+Residue: **303 across 157 files.** All three previously-flagged clusters (`TS2769`,
+`TS7024`, `DispatchContext`) are fully drained — this branch's remaining errors are the
+undifferentiated long tail: 87 `TS2322`, 35 `TS2353`, 30 `TS2352`, 28 `TS2339`, 22 `TS2739`,
+19 `TS2741`, 19 `TS2345`, 14 `TS2349`, 12 `TS2554`, 7 each of `TS2783`/`TS2740`/`TS2305`, and
+smaller tails below that — no cluster has been measured or read yet. Re-run the error-code
+histogram fresh before picking the next one; per this round's lesson, "no shared cause"
+verdicts from earlier passes did not hold up under actual per-site reading.

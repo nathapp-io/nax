@@ -66,10 +66,7 @@ describe("setupGenerateOp.parse — AC2: crossCheck absent command", () => {
     const output = fenced({ quality: { commands: { test: "bun run test", lint: "bun run lint" } } });
     const result = setupGenerateOp.parse(output, analysis, NO_BUILD_CTX);
     expect(result.gaps.length).toBeGreaterThan(0);
-    const testCmd = (result.config as Record<string, unknown> | null)?.quality as
-      | { commands?: Record<string, unknown> }
-      | undefined;
-    expect(testCmd?.commands?.test).toBeUndefined();
+    expect(result.config.quality.commands.test).toBeUndefined();
   });
 });
 

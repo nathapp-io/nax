@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { classifyOutcome, runFixCycle } from "@/findings";
-import type { FixCycle, FixCycleContext, FixStrategy, Iteration, ValidateResult } from "@/findings";
+import type { FixCycle, FixCycleContext, FixStrategy, Iteration, IterationOutcome, ValidateResult } from "@/findings";
 import type { Finding } from "@/findings";
 
 import type { Logger } from "@/logger";
@@ -17,9 +17,9 @@ import {
   typecheckC,
 } from "./_cycle-fixtures";
 
-beforeEach(() => {
-  // reset per-test state; individual tests inject _deps inline
-});
+beforeEach(() => {}); // reset per-test state; individual tests inject _deps inline
+
+type ClassifyCase = [Finding[], Finding[], IterationOutcome];
 
 // ─── classifyOutcome ──────────────────────────────────────────────────────────
 
@@ -34,7 +34,7 @@ describe("classifyOutcome", () => {
     [[lintA], [lintB], "regressed"],
     [[lintA], [typecheckC], "regressed-different-source"],
     [[lintA], [lintA, typecheckC], "regressed-different-source"],
-  ])("classifyOutcome($before, $after) → $expected", (before, after, expected) => {
+  ] satisfies ClassifyCase[])("classifyOutcome($before, $after) → $expected", (before, after, expected) => {
     expect(classifyOutcome(before, after)).toBe(expected);
   });
 

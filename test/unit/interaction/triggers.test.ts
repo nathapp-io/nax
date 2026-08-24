@@ -7,6 +7,7 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import type { InteractionConfig } from "@/config/runtime-types";
 import { InteractionChain } from "@/interaction/chain";
 import {
   checkCostExceeded,
@@ -67,7 +68,7 @@ function makeTimeoutChain(): InteractionChain {
   return chain;
 }
 
-function makeConfig(triggers: Record<string, unknown>) {
+function makeConfig(triggers: InteractionConfig["triggers"]) {
   return makeNaxConfig({
     interaction: {
       plugin: "cli",

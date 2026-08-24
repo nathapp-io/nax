@@ -88,10 +88,10 @@ describe("runCompletionPhase mutation survivor reporting", () => {
 
   test("US-004 AC14: logs the survivor count at run completion", async () => {
     const options = makeOptions("json");
-    const warning = mock(() => {});
+    const warning = mock((_stage: string, _message: string, _data?: Record<string, unknown>) => {});
     options.runtime.logger.warn = warning;
 
     await runCompletionPhase(options);
-    expect(warning.mock.calls.some((call) => (call[2] as Record<string, unknown>)?.survivorCount === 1)).toBe(true);
+    expect(warning.mock.calls.some((call) => call[2]?.survivorCount === 1)).toBe(true);
   });
 });

@@ -180,8 +180,16 @@ describe("planInteractiveOp.recover", () => {
   });
 
   test.each([
-    ["file does not exist", async (_path: string) => null, async (_path: string) => false],
-    ["file has invalid JSON", async (_path: string) => "not valid json {", async (_path: string) => true],
+    [
+      "file does not exist",
+      async (_path: string): Promise<string | null> => null,
+      async (_path: string): Promise<boolean> => false,
+    ],
+    [
+      "file has invalid JSON",
+      async (_path: string): Promise<string | null> => "not valid json {",
+      async (_path: string): Promise<boolean> => true,
+    ],
   ] as const)("recover returns null when %s", async (_label, readFile, fileExists) => {
     const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
@@ -298,9 +306,14 @@ describe("planInteractiveOp.verify", () => {
           contextFiles: [],
           tags: [],
           dependencies: [],
-          status: "pending",
+          status: "pending" as const,
           passes: false,
-          routing: { complexity: "simple", testStrategy: "no-test", noTestJustification: "test", reasoning: "test" },
+          routing: {
+            complexity: "simple" as const,
+            testStrategy: "no-test" as const,
+            noTestJustification: "test",
+            reasoning: "test",
+          },
           escalations: [],
           attempts: 0,
         },
@@ -421,11 +434,15 @@ describe("planInteractiveOp.recover — disk-recovery escape hatch (#993)", () =
   });
 
   test.each([
-    ["(b) outputPath is missing (readFile returns null)", async (_p: string) => null, async (_p: string) => false],
+    [
+      "(b) outputPath is missing (readFile returns null)",
+      async (_p: string): Promise<string | null> => null,
+      async (_p: string): Promise<boolean> => false,
+    ],
     [
       "(c) outputPath contains the envelope shape (not a valid PRD)",
-      async (_p: string) => envelopeJson,
-      async (_p: string) => true,
+      async (_p: string): Promise<string | null> => envelopeJson,
+      async (_p: string): Promise<boolean> => true,
     ],
   ] as const)("%s → recover returns null", async (_label, readFile, fileExists) => {
     const { planInteractiveOp } = await import("@/operations");

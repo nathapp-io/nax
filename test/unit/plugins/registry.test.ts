@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it, mock } from "bun:test";
+import type { PromptOptimizerResult } from "@/optimizer/types";
 import { PluginRegistry } from "@/plugins/registry";
 import type { NaxPlugin } from "@/plugins/types";
 
@@ -21,6 +22,15 @@ const createMockPlugin = (name: string, provides: string[], extensions: any = {}
   init: async () => {},
 });
 
+const optimizerResult: PromptOptimizerResult = {
+  prompt: "optimized",
+  originalTokens: 0,
+  optimizedTokens: 0,
+  savings: 0,
+  appliedRules: [],
+};
+const makeOptimizerStub = (name: string) => ({ name, optimize: async () => optimizerResult });
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PluginRegistry.getOptimizers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -29,8 +39,8 @@ describe("PluginRegistry.getOptimizers", () => {
   it("returns empty array when no optimizer plugins; returns all when present", () => {
     expect(new PluginRegistry([createMockPlugin("agent-plugin", ["agent"])]).getOptimizers().length).toBe(0);
 
-    const optimizer1 = { name: "optimizer1", optimize: async () => "optimized" };
-    const optimizer2 = { name: "optimizer2", optimize: async () => "optimized" };
+    const optimizer1 = makeOptimizerStub("optimizer1");
+    const optimizer2 = makeOptimizerStub("optimizer2");
     const optimizers = new PluginRegistry([
       createMockPlugin("opt-1", ["optimizer"], { optimizer: optimizer1 }),
       createMockPlugin("opt-2", ["optimizer"], { optimizer: optimizer2 }),
@@ -41,7 +51,7 @@ describe("PluginRegistry.getOptimizers", () => {
   });
 
   it("filters out plugins without optimizer extension", () => {
-    const optimizer1 = { name: "optimizer1", optimize: async () => "optimized" };
+    const optimizer1 = makeOptimizerStub("optimizer1");
 
     const registry = new PluginRegistry([
       createMockPlugin("opt-1", ["optimizer"], { optimizer: optimizer1 }),

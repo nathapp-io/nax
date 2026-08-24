@@ -8,10 +8,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { NaxConfig } from "@/config";
+import type { ExecutionConfig, NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd/types";
 import { runPrecheck } from "@/precheck";
-import { fullDescribe, makeConfigSlice, makeTempDir } from "@test/helpers";
+import { fullDescribe, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // Requires real claude binary — skipped by default, run with FULL=1.
 const describeWithClaude = fullDescribe;
@@ -29,45 +29,18 @@ async function setupValidGitEnv(testDir: string): Promise<void> {
   await Bun.spawn(["git", "commit", "-m", "Initial"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
 }
 
-const createMockConfig = (cwd: string, overrides: any = {}): NaxConfig => ({
-  execution: {
-    maxIterations: 10,
-    iterationDelayMs: 0,
-    testCommand: "echo 'test'",
-    lintCommand: "echo 'lint'",
-    typecheckCommand: "echo 'typecheck'",
-    contextProviderTokenBudget: 2000,
-    requireExplicitContextFiles: false,
-    preflightExpectedFilesEnabled: false,
-    cwd,
-    ...overrides,
-  },
-  autoMode: {
-    enabled: false,
-    defaultAgent: "test-agent",
-    fallbackOrder: [],
-    complexityRouting: {
-      simple: "fast",
-      medium: "balanced",
-      complex: "powerful",
-      expert: "ultra",
+const createMockConfig = (_cwd: string, overrides: Partial<ExecutionConfig> = {}): NaxConfig =>
+  makeNaxConfig({
+    execution: {
+      maxIterations: 10,
+      iterationDelayMs: 0,
+      testCommand: "echo 'test'",
+      lintCommand: "echo 'lint'",
+      typecheckCommand: "echo 'typecheck'",
+      contextProviderTokenBudget: 2000,
+      ...overrides,
     },
-    escalation: {
-      enabled: true,
-      tierOrder: [],
-    },
-  },
-  quality: makeConfigSlice("quality", {}),
-  tdd: makeConfigSlice("tdd", { strategy: "auto" }),
-  models: {},
-  rectification: {
-    enabled: true,
-    maxAttemptsTotal: 2,
-    fullSuiteTimeoutSeconds: 120,
-    maxFailureSummaryChars: 2000,
-    abortOnIncreasingFailures: true,
-  },
-});
+  });
 
 const createMockStory = (overrides: Partial<UserStory> = {}): UserStory => ({
   id: "US-001",

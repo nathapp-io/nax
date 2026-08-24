@@ -109,8 +109,6 @@ describe("MW-011: greenfield detection scopes to story package workdir", () => {
       resolution: "detected" as const,
     }));
     _routingDeps.savePRD = mock(async () => {});
-    _routingDeps.computeStoryContentHash = mock(() => "hash1");
-    _routingDeps.routeBatch = undefined /* routeBatch deleted ROUTE-001 */;
   });
 
   afterEach(async () => {

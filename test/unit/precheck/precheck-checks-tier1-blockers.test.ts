@@ -6,7 +6,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ExecutionConfig, NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd/types";
 import {
   checkCanonicalRulesLint,
@@ -19,51 +18,11 @@ import {
   checkWorkingTreeClean,
 } from "@/precheck/checks";
 import { _checkCanonicalRulesDeps } from "@/precheck/checks-system";
-import { makeConfigSlice, makeTempDir } from "@test/helpers";
+import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
 // ─────────────────────────────────────────────────────────────────────────────
-
-const createMockConfig = (overrides: Partial<ExecutionConfig> = {}): NaxConfig => ({
-  execution: {
-    maxIterations: 10,
-    iterationDelayMs: 1000,
-    testCommand: "bun test",
-    lintCommand: "bun run lint",
-    typecheckCommand: "bun run typecheck",
-    contextProviderTokenBudget: 2000,
-    requireExplicitContextFiles: false,
-    preflightExpectedFilesEnabled: false,
-    cwd: process.cwd(),
-    ...overrides,
-  },
-  autoMode: {
-    enabled: false,
-    defaultAgent: "test-agent",
-    fallbackOrder: [],
-    complexityRouting: {
-      simple: "fast",
-      medium: "balanced",
-      complex: "powerful",
-      expert: "ultra",
-    },
-    escalation: {
-      enabled: true,
-      tierOrder: [],
-    },
-  },
-  quality: makeConfigSlice("quality", {}),
-  tdd: makeConfigSlice("tdd", { strategy: "auto" }),
-  models: {},
-  rectification: {
-    enabled: true,
-    maxAttemptsTotal: 2,
-    fullSuiteTimeoutSeconds: 120,
-    maxFailureSummaryChars: 2000,
-    abortOnIncreasingFailures: true,
-  },
-});
 
 const createMockStory = (overrides: Partial<UserStory> = {}): UserStory => ({
   id: "US-001",
