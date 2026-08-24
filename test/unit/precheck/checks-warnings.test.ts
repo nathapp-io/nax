@@ -200,7 +200,7 @@ describe("checkBuildCommandInReviewChecks (BUG-092)", () => {
         review: {
           checks: ["typecheck", "lint"],
           commands: { build: "bun run build" },
-          semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000, excludePatterns: [] },
+          semantic: { rules: [], timeoutMs: 600000, excludePatterns: [] },
         },
       }),
     );
@@ -215,7 +215,7 @@ describe("checkBuildCommandInReviewChecks (BUG-092)", () => {
         review: {
           checks: ["typecheck", "lint", "build"],
           commands: {},
-          semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000, excludePatterns: [] },
+          semantic: { rules: [], timeoutMs: 600000, excludePatterns: [] },
         },
       }),
     );
