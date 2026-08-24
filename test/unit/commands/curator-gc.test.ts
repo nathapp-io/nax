@@ -106,7 +106,7 @@ beforeEach(() => {
     capturedOutput.push(args.map(String).join(" "));
   };
 
-  _deps.resolveProject = mock((_opts?) => makeResolvedProject(tmpDir));
+  _deps.resolveProject = mock(async (_opts?) => makeResolvedProject(tmpDir));
   _deps.loadConfig = mock(async (_dir?) => buildCuratorConfig());
   _deps.projectOutputDir = mock((_key: string, _override?: string) => outputDir);
   _deps.globalOutputDir = mock(() => globalDir);
@@ -315,11 +315,12 @@ describe("curatorGc", () => {
       const rows: Observation[] = [];
       const padding = "x".repeat(2000);
       for (let i = 0; i < 4000; i++) {
-        rows.push({
+        const row = {
           ...makeObservation("verdict", `run-${String(i % 8).padStart(3, "0")}`),
           ts: new Date(2026, 0, 1, 0, 0, i % 8).toISOString(),
           detail: padding,
-        } as Observation);
+        };
+        rows.push(row as Observation);
       }
       writeRollup(rollupPath, rows);
       expect(Bun.file(rollupPath).size).toBeGreaterThan(4 * 1024 * 1024);

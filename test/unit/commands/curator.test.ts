@@ -108,7 +108,7 @@ beforeEach(() => {
     capturedOutput.push(args.map(String).join(" "));
   };
 
-  _deps.resolveProject = mock((_opts?) => makeResolvedProject(tmpDir));
+  _deps.resolveProject = mock(async (_opts?) => makeResolvedProject(tmpDir));
   _deps.loadConfig = mock(async (_dir?) => buildCuratorConfig());
   _deps.projectOutputDir = mock((_key: string, _override?: string) => outputDir);
   _deps.globalOutputDir = mock(() => globalDir);
@@ -269,7 +269,7 @@ describe("curatorCommit", () => {
     test("applies only checked [x] lines, skips unchecked [ ] lines", async () => {
       const projectDir = join(tmpDir, "project");
       mkdirSync(join(projectDir, ".nax", "rules"), { recursive: true });
-      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+      _deps.resolveProject = mock(async (_opts?) => makeResolvedProject(projectDir));
 
       setupRun(
         [
@@ -316,7 +316,7 @@ describe("curatorCommit", () => {
     test("appends to .nax/rules/curator-suggestions.md for rules-target proposals", async () => {
       const projectDir = join(tmpDir, "project");
       mkdirSync(join(projectDir, ".nax", "rules"), { recursive: true });
-      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+      _deps.resolveProject = mock(async (_opts?) => makeResolvedProject(projectDir));
 
       setupRun(
         [
@@ -345,7 +345,7 @@ describe("curatorCommit", () => {
     test("appends to .nax/features/<id>/context.md for feature-target proposals", async () => {
       const projectDir = join(tmpDir, "project");
       mkdirSync(join(projectDir, ".nax", "features", "feat-1"), { recursive: true });
-      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+      _deps.resolveProject = mock(async (_opts?) => makeResolvedProject(projectDir));
 
       setupRun(
         [
@@ -376,7 +376,7 @@ describe("curatorCommit", () => {
     test("skips (does not write) a proposal whose ### heading escapes the allowed targets via path traversal", async () => {
       const projectDir = join(tmpDir, "project");
       mkdirSync(join(projectDir, ".nax", "rules"), { recursive: true });
-      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+      _deps.resolveProject = mock(async (_opts?) => makeResolvedProject(projectDir));
 
       setupRun(
         [
@@ -407,7 +407,7 @@ describe("curatorCommit", () => {
       // curator actually writes.
       const projectDir = join(tmpDir, "project");
       mkdirSync(join(projectDir, ".nax"), { recursive: true });
-      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+      _deps.resolveProject = mock(async (_opts?) => makeResolvedProject(projectDir));
 
       setupRun(
         [
@@ -431,7 +431,7 @@ describe("curatorCommit", () => {
     test("allows a proposal targeting .nax/features/<id>/context.md (not just .nax/rules/)", async () => {
       const projectDir = join(tmpDir, "project");
       mkdirSync(join(projectDir, ".nax", "features", "feat-1"), { recursive: true });
-      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+      _deps.resolveProject = mock(async (_opts?) => makeResolvedProject(projectDir));
 
       setupRun(
         [
@@ -458,7 +458,7 @@ describe("curatorCommit", () => {
     test("skips (does not append) a rules-store add proposal whose content fails the neutrality linter", async () => {
       const projectDir = join(tmpDir, "project");
       mkdirSync(join(projectDir, ".nax", "rules"), { recursive: true });
-      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+      _deps.resolveProject = mock(async (_opts?) => makeResolvedProject(projectDir));
 
       // The description text lands verbatim in the appended HTML comment
       // (buildAddContent) — an emoji here would otherwise break the
@@ -488,7 +488,7 @@ describe("curatorCommit", () => {
       const projectDir = join(tmpDir, "project");
       mkdirSync(join(projectDir, ".nax", "rules"), { recursive: true });
       mkdirSync(join(projectDir, ".nax", "features", "feat-1"), { recursive: true });
-      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+      _deps.resolveProject = mock(async (_opts?) => makeResolvedProject(projectDir));
 
       setupRun(
         [
@@ -520,7 +520,7 @@ describe("curatorCommit", () => {
       // path-containment scope.
       const projectDir = join(tmpDir, "project");
       mkdirSync(join(projectDir, ".nax", "features", "feat-1"), { recursive: true });
-      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+      _deps.resolveProject = mock(async (_opts?) => makeResolvedProject(projectDir));
 
       setupRun(
         [
@@ -547,7 +547,7 @@ describe("curatorCommit", () => {
     test("applies drop proposals before add proposals", async () => {
       const projectDir = join(tmpDir, "project");
       mkdirSync(join(projectDir, ".nax", "rules"), { recursive: true });
-      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+      _deps.resolveProject = mock(async (_opts?) => makeResolvedProject(projectDir));
 
       setupRun(
         [
@@ -589,7 +589,7 @@ describe("curatorCommit", () => {
     test("opens modified files in $EDITOR after applying", async () => {
       const projectDir = join(tmpDir, "project");
       mkdirSync(join(projectDir, ".nax", "rules"), { recursive: true });
-      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+      _deps.resolveProject = mock(async (_opts?) => makeResolvedProject(projectDir));
 
       setupRun(
         [
@@ -619,7 +619,7 @@ describe("curatorCommit", () => {
     test("does not create a git commit when applying proposals", async () => {
       const projectDir = join(tmpDir, "project");
       mkdirSync(join(projectDir, ".nax", "rules"), { recursive: true });
-      _deps.resolveProject = mock((_opts?) => makeResolvedProject(projectDir));
+      _deps.resolveProject = mock(async (_opts?) => makeResolvedProject(projectDir));
 
       setupRun(
         [
