@@ -931,19 +931,159 @@ per-file gate `worse: 0`. All six counters flat (`asAny=1388, tsSuppress=40,
 ratchetAllow=106, absentValue=17, anyType=1880, looseCast=1994`); `as unknown as` flat at
 102. 25/25 gates green; full suite green (1137 + 38 pass, 0 fail).
 
+---
+
+## 20. Debate stage-schema erasure — done (838 → 818, −20)
+
+On `chore/1514-builder-slot-overloads`, one commit (`fbb0be4af`). The second `src/` fix and
+the last named escalation. **No test file was touched.** `TS18046` went **10 → 0**;
+`debate-schema.test.ts` 11 → 0 and `schemas-debate.test.ts` 9 → 0, both cleared outright.
+
+### §16's diagnosis was wrong, and the wrong part was the mechanism
+
+§16 recorded: "`makeDebateStageSchema` wraps every stage in `z.preprocess(toObject, …)`
+where `toObject: (val: unknown) => unknown`. Under Zod 4 the result is a **union with
+`Record<string, unknown>`**." The *symptom* was right; the *cause* was not.
+
+Probed directly, `z.preprocess` is innocent — with an `(v: unknown) => unknown` transform it
+infers its inner schema exactly:
+
+```ts
+const P = z.preprocess((v: unknown): unknown => v ?? {}, z.object({ a: z.string() }));
+// z.infer<typeof P> === { a: string }   — no union, nothing erased
+```
+
+The erasure came from the **ternary**:
+
+```ts
+const extended = extensions ? base.extend(extensions.shape) : base.extend({ evidenceMode: z.undefined() });
+```
+
+`extensions` was typed `z.ZodObject<z.ZodRawShape>`. `z.ZodRawShape` is an index signature,
+so `extensions.shape` is `Record<string, ZodType>` and `base.extend()` of *that* widens the
+entire object to `Record<string, unknown>` — isolated to one branch and confirmed:
+
+```ts
+declare const anyExt: z.ZodObject<z.ZodRawShape>;
+base.extend(anyExt.shape)              // => Record<string, unknown>      ← the erasure
+base.extend({ evidenceMode: z.undefined() })  // => { …, evidenceMode: undefined }  ← precise
+```
+
+A ternary types as the union of both branches, so the erased branch unioned into **every**
+stage — which is why the plan-only extension broke `review`, `acceptance`, `rectification`
+and `escalation` too. §16 read that breadth as evidence for a `preprocess`-level cause. It
+was evidence for a union, and a union has more than one source.
+
+**The lesson:** "the inferred type is `X | Record<string, unknown>`" localises the defect to
+*a union*, not to any particular combinator. Two three-line probes separated the innocent
+combinator from the guilty one in about a minute; a whole phase was mis-scoped for want of
+them. Probe each combinator in isolation before naming one.
+
+### The fix
+
+Make `makeDebateStageSchema` generic over `E extends z.ZodRawShape`, and pass the non-plan
+`{ evidenceMode: z.undefined() }` as a real `NonPlanStageExtensions` object rather than an
+inline ternary branch. Same schema, same runtime, **no cast**. This is the fourth
+confirmation of **prefer fixing the type over containing a cast**.
+
+### The honest type immediately found two things
+
+- **`NaxConfigSchema`'s hand-written `debate` default literal was missing `evidenceMode` on
+  all five stages.** It only typechecked because the target had been
+  `Record<string, unknown>`. Supplied on each; consumers only test
+  `evidenceMode !== "asymmetric"`, so an explicit `undefined` is a no-op.
+- **`DebateStageConfig` already declares `evidenceMode?`** (`src/debate/types.ts:99`), so the
+  `DebateStageConfig & { evidenceMode?: … }` intersection in `debate.ts` and
+  `debate-composition.ts` was intersecting a type with itself, and its `as` cast existed only
+  to bridge the erased schema type. Both removed — **one src cast deleted**. The
+  schema-inferred stage now satisfies the hand-written interface directly, which is a real
+  agreement between schema and interface that the erasure had been hiding.
+
+That second point is the general shape of these fixes: **an erased type does not merely lose
+information, it suppresses the checks that would have caught the drift underneath it.** §19
+found the same thing (a fixture with `findingsBefore: 1` where `F[]` was wanted).
+
+### Recorded, not fixed
+
+`NaxConfigSchema`'s `debate` default is a ~60-line hand-maintained literal, which
+`.claude/rules/config-patterns.md` names as the anti-pattern ("defaults live in the Zod
+schema… never a hand-maintained literal"). Every field it sets already has a `.default()` on
+the inner schema, and `toObject` already maps `undefined → {}`, so
+`DebateConfigSchema.parse(undefined)` should reproduce it. It has already drifted once
+(`evidenceMode`), and it omits `debaters`, `selector`, `preDebatePhase` and
+`postDebateVerifier` entirely. Deleting it is a separate concern from this type fix and
+belongs in its own commit with its own before/after parse comparison.
+
+Verify: src tsc **0** including `tsconfig.contracts.json`. 838 → 818, files 258 → 256;
+per-file gate `worse: 0`. All six counters flat (`asAny=1388, tsSuppress=40,
+ratchetAllow=106, absentValue=17, anyType=1880, looseCast=1994`); `as unknown as` flat at
+102 in `test/`, one fewer in `src/`. 25/25 gates green; full suite green
+(14127 + 1137 + 38 pass, 0 fail).
+
+## 21. G5 re-ruled — `src/` is in scope for the owner, never for a delegate
+
+§18 filed two clusters as "out of scope by G5". §19 and §20 both crossed that line and both
+landed clean. G5 needs to say what it actually means rather than be inherited by default.
+
+### What G5 always was
+
+G5 lives in `HANDOFF-1514-delegable-clusters.md` — a **delegate brief**, not project policy.
+Its own text names the remedy: *"If a cluster seems to need a helper change, that is the
+signal to stop and escalate, not to make the change."* Escalation is a route to the owner,
+so a rule that forbids a delegate from editing `src/` says nothing about whether the owner
+may. §18 read the bar as absolute and parked 60 errors behind it; that was the misreading.
+
+**G5 stands unchanged for delegates.** It has earned its place twice — it caught the
+`FakeProcSpec` breach (§4a) and it correctly routed these two clusters to escalation instead
+of to casts. Nothing here loosens it.
+
+### The re-ruling
+
+> **G5 (amended).** A delegate may not edit `test/helpers/` or `src/` — escalate instead.
+> The owner may take an escalated `src/` fix when **all** of the following hold. Any one
+> failing sends it back to escalation.
+>
+> 1. **The root cause is verified by probe, not inferred from the error message.** Both
+>    §19 and §20 reported errors that named the wrong thing entirely (`'op' does not exist
+>    in type 'FullSuiteGateInput'`; a union blamed on `z.preprocess`). Write the minimal
+>    probe that isolates the combinator or signature, and keep it in the write-up.
+> 2. **The change makes the type stricter or more accurate — never wider to fit a fixture.**
+>    Already `PROPOSAL-1514-phase2-typecheck-drain.md` §7. §19 and §20 both narrowed what
+>    compiles.
+> 3. **Zero casts added, in `src/` or `test/`.** The G4 counters are unchanged by the fact
+>    that the edit is in `src/`.
+> 4. **The full suite runs, not just the gates.** A test-fixture edit cannot change runtime
+>    behaviour; a `src/` edit can. This is the clause that makes a `src/` fix cost more than
+>    a test fix, and it is the reason it cannot be delegated cheaply.
+> 5. **The write-up names what the fix unmasked.** Both of these fixes exposed latent defects
+>    the erased type had been suppressing. That is the point of the work, and it is lost if
+>    only the error delta is recorded.
+
+### Why this is not a licence to drift into `src/`
+
+The bar is deliberately expensive: a probe, a suite run, and a write-up per fix. It is
+payable when one signature is wrong and 50 test errors are downstream of it. It is not
+payable to shave a handful off the count, which is the failure mode the original G5 was
+guarding against. **The test for whether a `src/` fix belongs to this drain is that `test/`
+cannot express the correct code without a cast** — that was true of both, and it is why
+neither could have been "fixed" in `test/` except by adding the debt the drain exists to
+remove.
+
+---
+
 ## Next
 
-- **Zod stage-schema erasure (10 errors).** `src/config/schemas-debate.ts`, see §16. Now the
-  only remaining named escalation, and also a `src/` fix.
-- **Config suites — re-measured at 105, not the ~146 previously recorded.**
-  `config/schemas` 21, `integration/config/merger` 19, `config/merge` 17,
-  `plugins/config-resolution` 16, `config/debate-schema` 11, `debate/schemas-debate` 9.
-  Not yet enumerated by cause.
-- **Fixture completeness.** The two `story-orchestrator-logs` sites above, plus whatever
-  else the builder unmask revealed. Small, mechanical, and now unblocked.
-- **Both remaining escalations are `src/` changes.** §18 ruled them "out of scope by G5" when
-  this was a test-only drain; §19 has now crossed that line deliberately and it paid. G5
-  needs an explicit re-ruling rather than being inherited by default.
+- **Fixture completeness.** The two `story-orchestrator-logs.test.ts` sites §19 unmasked
+  (`semanticConfig` missing `diffMode`/`resetRefOnRerun`/`rules`), plus siblings. Small,
+  mechanical, delegable.
+- **Config suites — 105 as re-measured, and the two debate files are now out of it.**
+  Remaining: `config/schemas` 21, `integration/config/merger` 19, `config/merge` 17,
+  `plugins/config-resolution` 16. Not yet enumerated by cause; every cluster so far has
+  decomposed into 3–5 distinct causes, and no size estimate has survived contact.
+- **The `debate` default literal.** §20's "recorded, not fixed" — its own commit.
+- **No named escalation is outstanding.** Both §18 filed are now closed (§19, §20). The next
+  cluster has to be found by measuring, not by reading this document.
 
-Residue at this commit: **838 errors across 258 files.** Against the original #1514 start:
-typecheck **2009 → 838 (−58%)**, casts **815 → 102 (−87%)**.
+Residue at this commit: **818 errors across 256 files.** The branch has taken 886 → 818
+(−68) over two `src/` commits, touching **no test file at all**. Against the original #1514
+start: typecheck **2009 → 818 (−59%)**, casts **815 → 102 (−87%)**.
