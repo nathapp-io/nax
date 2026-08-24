@@ -37,7 +37,13 @@ beforeAll(() => {
   _isolationDeps.spawn = makeSpawn().spawn;
   _rollbackDeps.spawn = makeSpawn().spawn;
   _gitDeps.spawn = makeSpawn().spawn;
-  _fullSuiteGateDeps.runTests = mock(async () => ({ passed: true, failed: 0, output: "all pass" }));
+  _fullSuiteGateDeps.runTests = mock(async () => ({
+    passed: true,
+    failed: 0,
+    output: "all pass",
+    parsedSummary: { passed: 1, failed: 0, failures: [] },
+    timedOut: false,
+  }));
 });
 afterAll(() => {
   _isolationDeps.spawn = savedIsolation;
