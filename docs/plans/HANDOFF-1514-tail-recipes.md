@@ -269,7 +269,17 @@ The first draft of this list also named `runner-hybrid-coordinator`, `story-scop
 `grep -B20` that pulled in neighbouring files' errors. Counted exactly, the cluster is 9 + 5.
 Anchor a membership grep on the error line itself, never on context lines.
 
-## 4. Cluster A — `_planDeps.createRuntime` (10 errors, 4 files) — **NOT DELEGABLE, escalate**
+## 4. Cluster A — `_planDeps.createRuntime` (10 errors, 4 files) — ~~NOT DELEGABLE~~ **WRONG; done**
+
+> **Correction, 2026-08-24.** This verdict was wrong and the cluster was drained test-side
+> (393 → 383, no counter moved). The reasoning below reads only the `src/` side; the sibling
+> tests — `plan-decompose-ac-repair`, `ac13-14`, `regression`, `plan-debate` — already wrap
+> their manager in `makeMockRuntime({ agentManager })` and typecheck clean, so the four
+> erroring files were stale stragglers, not a seam problem. The duck-typed fallback the
+> section defends was then *proved dead at runtime* and removed (`cd5ee7b52`).
+> Full account: `STATUS-1514-drain.md` §33. **Kept unedited below as the record of a
+> failure mode: reading the `src/` side is necessary, not sufficient — read the siblings too.**
+
 
 `plan-decompose-debate` 5, `plan-decompose-guards` 2, `plan-decompose-writeback` 2,
 `plan-decompose-mapper` 1 — all under `test/unit/cli/`.

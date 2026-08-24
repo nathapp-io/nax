@@ -25,6 +25,7 @@ const baseCfg: OtelReporterConfig = {
   maxBatchSize: 64,
   flushIntervalMs: 50,
   maxQueueSize: 2_048,
+  logs: { enabled: false, level: "info" },
 };
 
 let origSpawn: typeof _gitDeps.spawn;

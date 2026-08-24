@@ -38,6 +38,7 @@ describe("applyPostRunInspection — isolation aggregation", () => {
       capturedCostUsd: 0,
       tddMode: { isLite: false, rollbackEnabled: false },
       initialRef: "abc",
+      untrackedBefore: null,
     });
 
     expect(ctx.tddIsolations).toBeDefined();
@@ -73,6 +74,7 @@ describe("applyPostRunInspection — isolation aggregation", () => {
       capturedCostUsd: 0,
       tddMode: null,
       initialRef: "abc",
+      untrackedBefore: null,
     });
 
     expect(ctx.tddIsolations).toBeUndefined();

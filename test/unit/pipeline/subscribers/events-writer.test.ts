@@ -125,7 +125,7 @@ describe("wireEventsWriter", () => {
       storyId: "US-042",
       story: stubStory,
       passed: true,
-      durationMs: 500,
+      runElapsedMs: 500,
     });
 
     const lines = await readLines();
@@ -176,7 +176,7 @@ describe("wireEventsWriter", () => {
       storyId: "US-001",
       story: stubStory,
       passed: true,
-      durationMs: 100,
+      runElapsedMs: 100,
     });
     await bus.emitAsync({
       type: "run:completed",

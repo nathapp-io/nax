@@ -346,6 +346,7 @@ describe("US-007 AC6: incremental span flush request carries nax.run_id resource
     maxBatchSize: 64,
     flushIntervalMs: 50,
     maxQueueSize: 2_048,
+    logs: { enabled: false, level: "info" },
   };
 
   function sleep(ms: number): Promise<void> {

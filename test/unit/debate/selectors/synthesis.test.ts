@@ -34,7 +34,6 @@ const DEFAULT_SELECTOR_CONFIG: SelectorContext["config"] = {
       escalation: { enabled: false, resolver: { type: "synthesis" }, sessionMode: "one-shot", rounds: 1 },
     },
   },
-  models: {},
   agent: { default: "claude" },
 };
 
