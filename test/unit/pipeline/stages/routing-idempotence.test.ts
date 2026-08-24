@@ -51,13 +51,6 @@ function makeCtx(story: UserStory, overrides?: Partial<PipelineContext>): Pipeli
   } as PipelineContext & { prdPath: string };
 }
 
-const FRESH_ROUTING_RESULT = {
-  complexity: "medium" as const,
-  modelTier: "balanced" as const,
-  testStrategy: "three-session-tdd" as const,
-  reasoning: "classified by routeStory",
-};
-
 // ---------------------------------------------------------------------------
 // AC-4: savePRD called once per story, not on every iteration
 // ---------------------------------------------------------------------------
@@ -80,7 +73,6 @@ describe("routingStage - savePRD called exactly once per story (not per iteratio
 
     let savePRDCallCount = 0;
 
-    _routingDeps.routeStory = mock(() => Promise.resolve({ ...FRESH_ROUTING_RESULT }));
     _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
     _routingDeps.savePRD = mock((_prd: PRD, _path: string) => {
       savePRDCallCount++;
