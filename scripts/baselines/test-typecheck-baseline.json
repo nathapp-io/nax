@@ -1,6 +1,6 @@
 {
-  "count": 511,
-  "updatedAt": "2026-08-24T06:21:12.711Z",
+  "count": 508,
+  "updatedAt": "2026-08-24T06:24:04.788Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -194,7 +194,6 @@
     "test/unit/review/adversarial-threshold.test.ts": 1,
     "test/unit/review/orchestrator-vs-reconciliation-parity.test.ts": 1,
     "test/unit/review/prepare-inputs.test.ts": 1,
-    "test/unit/review/recurrence-demotion.test.ts": 3,
     "test/unit/review/runner-language-fallback.test.ts": 2,
     "test/unit/review/semantic-agent-session.test.ts": 2,
     "test/unit/review/semantic-categories.test.ts": 3,
