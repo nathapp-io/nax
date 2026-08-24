@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _acpAdapterDeps } from "@/agents/acp/adapter";
 import { AgentManager } from "@/agents/manager";
+import type { AgentRegistry } from "@/agents/registry";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { NaxConfigSchema } from "@/config/schemas";
 import { type AgentMiddleware, MiddlewareChain, type MiddlewareContext } from "@/runtime/agent-middleware";
+import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 import { makeClient, makeSession } from "./acp/adapter.test";
 
 function makeManager(fallback: Record<string, unknown> = {}) {
@@ -165,9 +167,31 @@ describe("AgentManager.nextCandidate (Phase 4)", () => {
     expect(makeManager().nextCandidate("gemini", 0)).toBeNull();
   });
 
-  test("filters pruned candidates", () => {
-    const m = makeManager({ map: { claude: ["codex", "gemini"] } });
-    m._prunedFallback.add("codex");
+  test("filters pruned candidates", async () => {
+    // Drive the real pruning path (validateCredentials) instead of reaching into the
+    // private `_prunedFallback` set — "codex" reports no usable credentials, so it is
+    // pruned from the fallback candidates and nextCandidate() skips it.
+    const registry: AgentRegistry = {
+      protocol: "acp",
+      getAgent: (name) => makeAgentAdapter({ name, hasCredentials: async () => name !== "codex" }),
+      getInstalledAgents: async () => [],
+      checkAgentHealth: async () => [],
+    };
+    const m = new AgentManager(
+      makeNaxConfig({
+        agent: {
+          fallback: {
+            enabled: true,
+            map: { claude: ["codex", "gemini"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: false,
+            rebuildContext: true,
+          },
+        },
+      }),
+      registry,
+    );
+    await m.validateCredentials();
     expect(m.nextCandidate("claude", 0)).toBe("gemini");
   });
 
