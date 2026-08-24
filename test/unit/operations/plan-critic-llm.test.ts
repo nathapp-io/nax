@@ -232,6 +232,7 @@ describe("planCriticLlmOp.retry — AC12", () => {
     const decision = strategy.shouldRetry(failure, 2, mockCtx as any);
 
     expect(decision.retry).toBe(false);
+    if (decision.retry) throw new Error("expected retry:false");
     expect(decision.fallback).toBeDefined();
     expect(decision.fallback).toEqual({ findings: [] });
   });
