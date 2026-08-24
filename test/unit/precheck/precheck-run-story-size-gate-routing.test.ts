@@ -101,7 +101,6 @@ function makeConfig(action: "block" | "warn" | "skip") {
     },
     tdd: { maxRetries: 0, strategy: "off" },
     constitution: { enabled: false, path: "", maxTokens: 2000 },
-    analyze: { llmEnhanced: false, model: "fast", fallbackToKeywords: true, maxCodebaseSummaryTokens: 5000 },
     review: { enabled: false, checks: [], commands: {} },
     plan: { model: "balanced", outputPath: "" },
     acceptance: { enabled: false, maxRetries: 0, testPath: "" },
