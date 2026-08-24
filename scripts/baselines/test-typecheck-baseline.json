@@ -1,6 +1,6 @@
 {
-  "count": 404,
-  "updatedAt": "2026-08-24T08:45:28.203Z",
+  "count": 403,
+  "updatedAt": "2026-08-24T08:46:55.828Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -69,7 +69,6 @@
     "test/unit/context/rules/rule-sections.test.ts": 1,
     "test/unit/debate/resolvers.test.ts": 6,
     "test/unit/debate/runner-hybrid-coordinator.test.ts": 4,
-    "test/unit/debate/runner-hybrid-rebuttal.test.ts": 1,
     "test/unit/debate/runner-mode-routing.test.ts": 1,
     "test/unit/debate/runner-one-shot-roles.test.ts": 1,
     "test/unit/debate/runner-plan-signal.test.ts": 3,
