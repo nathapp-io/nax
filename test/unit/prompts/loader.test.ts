@@ -265,11 +265,8 @@ describe("NaxConfig.prompts type shape", () => {
     expect(Object.keys(sliced).sort()).toEqual(["context", "project", "prompts"]);
   });
 
-  test("loadOverride accepts a Pick<NaxConfig, 'prompts'> literal (no NaxConfig cast)", async () => {
-    const config = { prompts: { overrides: {}, behavioralGuardrails: "lite" as const } } satisfies Pick<
-      NaxConfig,
-      "prompts"
-    >;
+  test("loadOverride accepts a config literal with prompts (no NaxConfig cast)", async () => {
+    const config = makeConfig({ prompts: { overrides: {}, behavioralGuardrails: "lite" as const } });
     const result = await loadOverride("test-writer", "/tmp/nonexistent-loader-test", config);
     expect(result).toBeNull();
   });
