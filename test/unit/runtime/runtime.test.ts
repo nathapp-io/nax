@@ -196,6 +196,7 @@ describe("createRuntime", () => {
         return {
           totalCostUsd: 0,
           totalEstimatedCostUsd: 0,
+          totalExactCostUsd: 0,
           totalInputTokens: 0,
           totalOutputTokens: 0,
           callCount: 0,
@@ -210,6 +211,27 @@ describe("createRuntime", () => {
       },
       byStory() {
         return {};
+      },
+      byCall() {
+        return {};
+      },
+      byScope() {
+        return {};
+      },
+      openScope(scopeId?: string) {
+        return {
+          scopeId: scopeId ?? "test",
+          snapshot: () => ({
+            totalCostUsd: 0,
+            totalEstimatedCostUsd: 0,
+            totalExactCostUsd: 0,
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            callCount: 0,
+            errorCount: 0,
+          }),
+          close: () => {},
+        };
       },
       async drain() {
         throw new Error("drain failed");
@@ -239,6 +261,7 @@ describe("createRuntime", () => {
         return {
           totalCostUsd: 0,
           totalEstimatedCostUsd: 0,
+          totalExactCostUsd: 0,
           totalInputTokens: 0,
           totalOutputTokens: 0,
           callCount: 0,
@@ -253,6 +276,27 @@ describe("createRuntime", () => {
       },
       byStory() {
         return {};
+      },
+      byCall() {
+        return {};
+      },
+      byScope() {
+        return {};
+      },
+      openScope(scopeId?: string) {
+        return {
+          scopeId: scopeId ?? "test",
+          snapshot: () => ({
+            totalCostUsd: 0,
+            totalEstimatedCostUsd: 0,
+            totalExactCostUsd: 0,
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            callCount: 0,
+            errorCount: 0,
+          }),
+          close: () => {},
+        };
       },
       drain: drainFn,
     });
