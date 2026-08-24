@@ -8,7 +8,6 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { IAgentManager } from "../agents";
 import { scanSourceRoots } from "../analyze/scanner";
 import type { NaxConfig } from "../config";
 import { DEFAULT_CONFIG, resolveConfiguredModel } from "../config";
@@ -27,17 +26,8 @@ import { createCliInteractionBridge } from "./plan-helpers";
 
 export const DEFAULT_TIMEOUT_SECONDS = 600;
 
-function isRuntimeWithAgentManager(value: unknown): value is NaxRuntime {
-  return typeof value === "object" && value !== null && "agentManager" in value;
-}
-
 export function createPlanRuntime(config: NaxConfig, workdir: string, featureName: string): NaxRuntime {
-  const candidate = _planDeps.createRuntime(config, workdir, featureName) as unknown;
-  if (isRuntimeWithAgentManager(candidate)) return candidate;
-  return createRuntime(config, workdir, {
-    agentManager: candidate as IAgentManager,
-    featureName,
-  });
+  return _planDeps.createRuntime(config, workdir, featureName);
 }
 
 export function resolvePlanModelSelection(config: NaxConfig, preferredAgent: string) {
