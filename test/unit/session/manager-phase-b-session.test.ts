@@ -309,6 +309,7 @@ describe("closeSession()", () => {
     const MOCK_TURN = {
       output: "hello world",
       tokenUsage: { inputTokens: 10, outputTokens: 5 },
+      estimatedCostUsd: 0,
       internalRoundTrips: 1,
     };
     const adapter = makeAgentAdapter({
