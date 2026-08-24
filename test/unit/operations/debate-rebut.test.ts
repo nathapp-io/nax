@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_CONFIG } from "@/config";
+import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
 import type { Debater, Proposal } from "@/debate/types";
 import { debateRebutOp } from "@/operations/debate-rebut";
 
 function makeBuildCtx() {
   return {
     packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG.debate } as any,
-    config: DEFAULT_CONFIG.debate,
+    config: debateConfigSelector.select(DEFAULT_CONFIG),
   };
 }
 
@@ -40,7 +40,9 @@ describe("debateRebutOp", () => {
       proposals,
       debaters,
     };
-    expect(debateRebutOp.model?.(input, makeBuildCtx())).toEqual({
+    const resolveModel = debateRebutOp.model;
+    if (typeof resolveModel !== "function") throw new Error("debateRebutOp.model should be a resolver");
+    expect(resolveModel(input, makeBuildCtx())).toEqual({
       agent: "opencode",
       model: "fast",
     });
@@ -54,7 +56,9 @@ describe("debateRebutOp", () => {
       proposals,
       debaters,
     };
-    expect(debateRebutOp.model?.(input, makeBuildCtx())).toBe("fast");
+    const resolveModel = debateRebutOp.model;
+    if (typeof resolveModel !== "function") throw new Error("debateRebutOp.model should be a resolver");
+    expect(resolveModel(input, makeBuildCtx())).toBe("fast");
   });
 
   test("build returns ComposeInput with rebuttal prompt", () => {
