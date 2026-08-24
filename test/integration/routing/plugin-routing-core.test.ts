@@ -82,7 +82,7 @@ describe("Plugin routers chain order", () => {
 
     const story = createTestStory({ title: "Simple task" });
 
-    await resolveRouting(story, DEFAULT_CONFIG, registry);
+    await resolveRouting(story, DEFAULT_CONFIG, registry, makeDispatchContext());
 
     // Plugin router should be called first
     expect(executionOrder[0]).toBe("plugin");
@@ -114,7 +114,7 @@ describe("Plugin routers chain order", () => {
 
     const story = createTestStory();
 
-    await resolveRouting(story, DEFAULT_CONFIG, registry);
+    await resolveRouting(story, DEFAULT_CONFIG, registry, makeDispatchContext());
 
     // Verify order: plugin-1 → plugin-2 → plugin-3
     expect(executionOrder).toEqual(["plugin-1", "plugin-2", "plugin-3"]);
@@ -306,10 +306,10 @@ describe("Plugin router fallback to built-in strategy", () => {
 
 describe("Plugin router context", () => {
   test("plugin router receives story object", async () => {
-    let receivedStory: UserStory | null = null;
+    const receivedStory: { value: UserStory | null } = { value: null };
 
     const pluginRouter = createPluginRouter("plugin-router", (story) => {
-      receivedStory = story;
+      receivedStory.value = story;
       return null;
     });
 
@@ -327,18 +327,18 @@ describe("Plugin router context", () => {
     await routeStory(story, context, "/tmp", registry);
 
     // Verify plugin received the story
-    expect(receivedStory).not.toBeNull();
-    expect(receivedStory?.id).toBe("US-123");
-    expect(receivedStory?.title).toBe("Test story");
-    expect(receivedStory?.acceptanceCriteria).toEqual(["AC1", "AC2", "AC3"]);
-    expect(receivedStory?.tags).toEqual(["ui", "security"]);
+    expect(receivedStory.value).not.toBeNull();
+    expect(receivedStory.value?.id).toBe("US-123");
+    expect(receivedStory.value?.title).toBe("Test story");
+    expect(receivedStory.value?.acceptanceCriteria).toEqual(["AC1", "AC2", "AC3"]);
+    expect(receivedStory.value?.tags).toEqual(["ui", "security"]);
   });
 
   test("plugin router receives routing context with config", async () => {
-    let receivedContext: RoutingContext | null = null;
+    const receivedContext: { value: RoutingContext | null } = { value: null };
 
     const pluginRouter = createPluginRouter("plugin-router", (story, context) => {
-      receivedContext = context;
+      receivedContext.value = context;
       return null;
     });
 
@@ -350,9 +350,9 @@ describe("Plugin router context", () => {
     await routeStory(story, context, "/tmp", registry);
 
     // Verify plugin received context with config
-    expect(receivedContext).not.toBeNull();
-    expect(receivedContext?.config).toBeDefined();
-    expect(receivedContext?.config.autoMode).toBeDefined();
+    expect(receivedContext.value).not.toBeNull();
+    expect(receivedContext.value?.config).toBeDefined();
+    expect(receivedContext.value?.config.autoMode).toBeDefined();
   });
 
   test("multiple plugin routers receive same config in context", async () => {
