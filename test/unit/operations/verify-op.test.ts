@@ -239,6 +239,7 @@ describe("verifierOp.verify — isolation", () => {
         estimatedCostUsd: 0,
         durationMs: 0,
         output: "",
+        normalizedFindings: [],
       };
       const input = { story: { id: "US-001" } as any, beforeRef: "HEAD~1" };
       const ctx = {
@@ -270,6 +271,7 @@ describe("verifierOp.verify — isolation", () => {
       estimatedCostUsd: 0,
       durationMs: 0,
       output: "",
+      normalizedFindings: [],
     };
     const input = { story: { id: "US-001" } as any };
     const ctx = {
