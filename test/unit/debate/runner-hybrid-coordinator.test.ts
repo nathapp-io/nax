@@ -78,6 +78,9 @@ function makeHybridCtx(stageConfigOverrides: Partial<DebateStageConfig> = {}): H
         },
         packages: {
           resolve: () => testView,
+          all: () => [testView],
+          repo: () => testView,
+          hydrate: async () => {},
         },
         signal: undefined,
       },
