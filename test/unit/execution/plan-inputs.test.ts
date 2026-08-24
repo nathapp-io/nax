@@ -343,10 +343,10 @@ describe("PlanInputs — AC1: new optional slots (US-005)", () => {
   });
 
   test.each([
-    ["deferred", "deferred" as const, "deferred"],
-    ["per-story", "per-story" as const, "per-story"],
-    ["disabled (maps to deferred)", "disabled" as const, "deferred"],
-  ])(
+    ["deferred", "deferred", "deferred"],
+    ["per-story", "per-story", "per-story"],
+    ["disabled (maps to deferred)", "disabled", "deferred"],
+  ] as const)(
     "AC1: verifyScoped.regressionMode when regressionGate.mode=%s",
     async (_label, gateMode, expectedRegressionMode) => {
       const ctx = makeNonTddCtx({
