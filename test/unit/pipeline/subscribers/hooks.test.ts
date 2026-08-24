@@ -44,7 +44,9 @@ describe("wireHooks", () => {
   test("errors in hooks don't propagate to callers", async () => {
     const bus = new PipelineEventBus();
     const badHooks: LoadedHooksConfig = {
-      "on-story-complete": { command: "exit 1", timeout: 1 } as any,
+      hooks: {
+        "on-story-complete": { command: "exit 1", timeout: 1 },
+      },
     };
     wireHooks(bus, badHooks, "/tmp", "test-feature");
 
