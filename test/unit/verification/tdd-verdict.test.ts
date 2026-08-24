@@ -85,8 +85,8 @@ describe("readVerdict", () => {
   });
 
   test.each([
-    ["empty directory", () => tmpDir],
-    ["non-existent directory", () => "/tmp/this-dir-does-not-exist-xyz-nax"],
+    ["empty directory", (): string => tmpDir],
+    ["non-existent directory", (): string => "/tmp/this-dir-does-not-exist-xyz-nax"],
   ] as const)("returns null when verdict file does not exist (%s)", async (_label, getDir) => {
     const result = await readVerdict(getDir());
     expect(result).toBeNull();
