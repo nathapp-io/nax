@@ -191,7 +191,7 @@ describe("story.start logging — parallel batch dispatch", () => {
     const story2 = makePendingStory("US-002");
 
     const infoCalls: LogCall[] = [];
-    const logger = {
+    const logger: Partial<Logger> = {
       info: mock((stage: string, message: string, data?: Record<string, unknown>) => {
         infoCalls.push({ stage, message, data });
       }),
@@ -199,9 +199,7 @@ describe("story.start logging — parallel batch dispatch", () => {
       error: mock(() => {}),
       debug: mock(() => {}),
     };
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(
-      logger as ReturnType<typeof loggerModule.getSafeLogger>,
-    );
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as Logger);
 
     deps.selectIndependentBatch = mock(() => [story1, story2]);
     deps.runParallelBatch = mock(async () => ({
@@ -233,7 +231,7 @@ describe("story.start logging — parallel batch dispatch", () => {
     const story1 = makePendingStory("US-001");
 
     const infoCalls: LogCall[] = [];
-    const logger = {
+    const logger: Partial<Logger> = {
       info: mock((stage: string, message: string, data?: Record<string, unknown>) => {
         infoCalls.push({ stage, message, data });
       }),
@@ -241,9 +239,7 @@ describe("story.start logging — parallel batch dispatch", () => {
       error: mock(() => {}),
       debug: mock(() => {}),
     };
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(
-      logger as ReturnType<typeof loggerModule.getSafeLogger>,
-    );
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as Logger);
 
     deps.selectIndependentBatch = mock(() => [story1, makePendingStory("US-002")]);
     deps.runParallelBatch = mock(async () => ({
@@ -308,7 +304,7 @@ describe("story.start logging — sequential (single-story) dispatch", () => {
     const story1 = makePendingStory("US-001");
 
     const infoCalls: LogCall[] = [];
-    const logger = {
+    const logger: Partial<Logger> = {
       info: mock((stage: string, message: string, data?: Record<string, unknown>) => {
         infoCalls.push({ stage, message, data });
       }),
@@ -316,9 +312,7 @@ describe("story.start logging — sequential (single-story) dispatch", () => {
       error: mock(() => {}),
       debug: mock(() => {}),
     };
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(
-      logger as ReturnType<typeof loggerModule.getSafeLogger>,
-    );
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as Logger);
 
     deps.selectIndependentBatch = mock(() => [story1]);
     deps.runIteration = mock(async () => ({
@@ -343,7 +337,7 @@ describe("story.start logging — sequential (single-story) dispatch", () => {
     const story1 = makePendingStory("US-001");
 
     const infoCalls: LogCall[] = [];
-    const logger = {
+    const logger: Partial<Logger> = {
       info: mock((stage: string, message: string, data?: Record<string, unknown>) => {
         infoCalls.push({ stage, message, data });
       }),
@@ -351,9 +345,7 @@ describe("story.start logging — sequential (single-story) dispatch", () => {
       error: mock(() => {}),
       debug: mock(() => {}),
     };
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(
-      logger as ReturnType<typeof loggerModule.getSafeLogger>,
-    );
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as Logger);
 
     deps.selectIndependentBatch = mock(() => [story1]);
     deps.runIteration = mock(async () => ({
@@ -403,7 +395,7 @@ describe("story.start announcement — profile-assigned stories (#1575)", () => 
 
   function installLoggerSpy() {
     infoCalls = [];
-    const logger = {
+    const logger: Partial<Logger> = {
       info: mock((stage: string, message: string, data?: Record<string, unknown>) => {
         infoCalls.push({ stage, message, data });
       }),
@@ -411,9 +403,7 @@ describe("story.start announcement — profile-assigned stories (#1575)", () => 
       error: mock(() => {}),
       debug: mock(() => {}),
     };
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(
-      logger as ReturnType<typeof loggerModule.getSafeLogger>,
-    );
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as Logger);
   }
 
   beforeEach(async () => {

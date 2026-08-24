@@ -16,7 +16,7 @@ import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import type { CallContext } from "@/operations/types";
-import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
+import { type MockLogger, makeLogger, makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 // ─── Mock Helpers ──────────────────────────────────────────────────────────────
 
@@ -58,31 +58,19 @@ function makeCallCtx(storyId: string, agentManager: ReturnType<typeof makeMockAg
 
 // ─── Test Setup ──────────────────────────────────────────────────────────────────
 
-let loggedWarnings: Array<{ stage: string; message: string }> = [];
-let loggedInfos: Array<{ stage: string; message: string }> = [];
+let logger: MockLogger;
 let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
 beforeEach(() => {
-  loggedWarnings = [];
-  loggedInfos = [];
+  logger = makeLogger();
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
 
-  _debateSessionDeps.getSafeLogger = mock(() => ({
-    info: (stage: string, message: string) => {
-      loggedInfos.push({ stage, message });
-    },
-    debug: () => {},
-    warn: (stage: string, message: string) => {
-      loggedWarnings.push({ stage, message });
-    },
-    error: () => {},
-  }));
+  _debateSessionDeps.getSafeLogger = mock(() => logger);
 });
 
 afterEach(() => {
   _debateSessionDeps.getSafeLogger = origGetSafeLogger;
-  loggedWarnings = [];
-  loggedInfos = [];
+  logger.reset();
 });
 
 // ─── AC1: mode 'panel' + sessionMode 'one-shot' → runOneShot ──────────────────
@@ -232,7 +220,9 @@ describe("DebateRunner.run() mode routing — AC5: hybrid + one-shot with fallba
 
     expect(result.storyId).toBe("test-story");
     // Verify warning was logged
-    const hybridWarning = loggedWarnings.find((w) => w.message.includes("hybrid mode requires sessionMode: stateful"));
+    const hybridWarning = logger.calls.find(
+      (c) => c.level === "warn" && c.message.includes("hybrid mode requires sessionMode: stateful"),
+    );
     expect(hybridWarning).toBeDefined();
   });
 });
@@ -267,7 +257,9 @@ describe("DebateRunner.run() mode routing — AC6: hybrid + undefined sessionMod
 
     expect(result.storyId).toBe("test-story");
     // Verify warning was logged
-    const hybridWarning = loggedWarnings.find((w) => w.message.includes("hybrid mode requires sessionMode: stateful"));
+    const hybridWarning = logger.calls.find(
+      (c) => c.level === "warn" && c.message.includes("hybrid mode requires sessionMode: stateful"),
+    );
     expect(hybridWarning).toBeDefined();
   });
 });

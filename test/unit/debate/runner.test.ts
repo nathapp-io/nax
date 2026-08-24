@@ -7,7 +7,7 @@ import type { DebateStageConfig } from "@/debate/types";
 import * as callModule from "@/operations";
 import type { CallContext } from "@/operations/types";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
-import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
+import { makeLogger, makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 function makeCallCtx(overrides: Partial<CallContext> = {}): CallContext {
   const agentManager = makeMockAgentManager({
@@ -54,12 +54,7 @@ let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
 beforeEach(() => {
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
-  _debateSessionDeps.getSafeLogger = mock(() => ({
-    info: mock(() => {}),
-    debug: mock(() => {}),
-    warn: mock(() => {}),
-    error: mock(() => {}),
-  }));
+  _debateSessionDeps.getSafeLogger = mock(() => makeLogger());
 });
 
 afterEach(() => {

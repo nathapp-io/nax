@@ -142,7 +142,7 @@ describe("buildPlanModeContext", () => {
       debate: { ...DEFAULT_CONFIG.debate },
     });
     const deps = makeDeps();
-    // Must have agentManager so createPlanRuntime's isRuntimeWithAgentManager check passes
+    // createPlanRuntime returns the dep's runtime as-is, so this must be a full NaxRuntime
     const expectedRuntime = makeMockRuntime();
 
     const origCreateRuntime = _planDeps.createRuntime;

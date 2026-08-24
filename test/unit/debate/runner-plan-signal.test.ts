@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { _debateSessionDeps } from "@/debate";
 import { runPlan } from "@/debate/runner-plan";
 import * as callModule from "@/operations";
-import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeSessionManager } from "@test/helpers";
+import { makeLogger, makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeSessionManager } from "@test/helpers";
 
 interface PlanCallInput {
   readonly debater?: { readonly agent: string; readonly model?: string };
@@ -67,12 +67,7 @@ function makePlanContext() {
 }
 
 beforeEach(() => {
-  _debateSessionDeps.getSafeLogger = mock(() => ({
-    info: mock(() => {}),
-    debug: mock(() => {}),
-    warn: mock(() => {}),
-    error: mock(() => {}),
-  }));
+  _debateSessionDeps.getSafeLogger = mock(() => makeLogger());
   _debateSessionDeps.readFile = mock(async () => '{"passed":true}');
 });
 

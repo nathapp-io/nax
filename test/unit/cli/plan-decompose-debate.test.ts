@@ -20,7 +20,7 @@ import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import type { DebateResult } from "@/debate/types";
 import type { PRD, UserStory } from "@/prd";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
@@ -206,7 +206,9 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     _planDeps.readPackageJsonAt = mock(async () => null);
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
-    _planDeps.createRuntime = mock(() => makeMockDecomposeManager(async () => makeDecomposeAdapterResult()));
+    _planDeps.createRuntime = mock(() =>
+      makeMockRuntime({ agentManager: makeMockDecomposeManager(async () => makeDecomposeAdapterResult()) }),
+    );
   }
 
   beforeEach(async () => {
@@ -276,15 +278,17 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
 
     const completeCalls: number[] = [];
     _planDeps.createRuntime = mock(() =>
-      makeMockAgentManager({
-        completeAsFn: async () => {
-          completeCalls.push(1);
-          return {
-            output: JSON.stringify(makeDecomposeAdapterResult().stories),
-            tokenUsage: { inputTokens: 0, outputTokens: 0 },
-            estimatedCostUsd: 0,
-          };
-        },
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          completeAsFn: async () => {
+            completeCalls.push(1);
+            return {
+              output: JSON.stringify(makeDecomposeAdapterResult().stories),
+              tokenUsage: { inputTokens: 0, outputTokens: 0 },
+              estimatedCostUsd: 0,
+            };
+          },
+        }),
       }),
     );
 
@@ -330,15 +334,17 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
 
     const completeCalls: number[] = [];
     _planDeps.createRuntime = mock(() =>
-      makeMockAgentManager({
-        completeAsFn: async () => {
-          completeCalls.push(1);
-          return {
-            output: JSON.stringify(makeDecomposeAdapterResult().stories),
-            tokenUsage: { inputTokens: 0, outputTokens: 0 },
-            estimatedCostUsd: 0,
-          };
-        },
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          completeAsFn: async () => {
+            completeCalls.push(1);
+            return {
+              output: JSON.stringify(makeDecomposeAdapterResult().stories),
+              tokenUsage: { inputTokens: 0, outputTokens: 0 },
+              estimatedCostUsd: 0,
+            };
+          },
+        }),
       }),
     );
 
@@ -399,15 +405,17 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
 
     const completeCalls: number[] = [];
     _planDeps.createRuntime = mock(() =>
-      makeMockAgentManager({
-        completeAsFn: async () => {
-          completeCalls.push(1);
-          return {
-            output: JSON.stringify(makeDecomposeAdapterResult().stories),
-            tokenUsage: { inputTokens: 0, outputTokens: 0 },
-            estimatedCostUsd: 0,
-          };
-        },
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          completeAsFn: async () => {
+            completeCalls.push(1);
+            return {
+              output: JSON.stringify(makeDecomposeAdapterResult().stories),
+              tokenUsage: { inputTokens: 0, outputTokens: 0 },
+              estimatedCostUsd: 0,
+            };
+          },
+        }),
       }),
     );
 
@@ -429,15 +437,17 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
 
     const completeCalls: number[] = [];
     _planDeps.createRuntime = mock(() =>
-      makeMockAgentManager({
-        completeAsFn: async () => {
-          completeCalls.push(1);
-          return {
-            output: JSON.stringify(makeDecomposeAdapterResult().stories),
-            tokenUsage: { inputTokens: 0, outputTokens: 0 },
-            estimatedCostUsd: 0,
-          };
-        },
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          completeAsFn: async () => {
+            completeCalls.push(1);
+            return {
+              output: JSON.stringify(makeDecomposeAdapterResult().stories),
+              tokenUsage: { inputTokens: 0, outputTokens: 0 },
+              estimatedCostUsd: 0,
+            };
+          },
+        }),
       }),
     );
 

@@ -96,12 +96,7 @@ beforeEach(() => {
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
   origReadFile = _debateSessionDeps.readFile;
   origCallOp = callModule.callOp;
-  _debateSessionDeps.getSafeLogger = mock(() => ({
-    info: mock(() => {}),
-    debug: mock(() => {}),
-    warn: mock(() => {}),
-    error: mock(() => {}),
-  }));
+  _debateSessionDeps.getSafeLogger = mock(() => makeLogger());
   _debateSessionDeps.readFile = mock(async (_path: string) => '{"plan": "output"}');
   // Default callOp mock for plan debater ops — intercepts only "debate-plan" op calls.
   // All other ops (synthesis resolver, verifier, etc.) fall through to the real callOp.

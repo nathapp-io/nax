@@ -18,6 +18,7 @@ import { initLogger, resetLogger } from "@/logger";
 import { _routingDeps, routingStage } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
+import type { RoutingDecision } from "@/routing";
 import { makeNaxConfig, makePRD, makeTempDir, makeTestContext } from "@test/helpers";
 
 // ── Capture originals ─────────────────────────────────────────────────────────
@@ -88,12 +89,14 @@ describe("MW-011: greenfield detection scopes to story package workdir", () => {
     await writeFile(join(repoRoot, "apps", "cli", "src", "index.ts"), "export function run() {}");
 
     // Mock routing to always return three-session-tdd for simple stories
-    _routingDeps.resolveRouting = mock(async () => ({
-      complexity: "simple",
-      modelTier: "fast",
-      testStrategy: "three-session-tdd",
-      reasoning: "mock classification",
-    }));
+    _routingDeps.resolveRouting = mock(
+      async (): Promise<RoutingDecision> => ({
+        complexity: "simple",
+        modelTier: "fast",
+        testStrategy: "three-session-tdd",
+        reasoning: "mock classification",
+      }),
+    );
     _routingDeps.complexityToModelTier = mock(() => "fast" as const);
     // Stub the ADR-009 SSOT resolver to broad globs so this test exercises the
     // greenfield filesystem SCOPING (which package dir is scanned) via the real

@@ -10,7 +10,7 @@ import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import { NaxError } from "@/errors";
 import type { PRD, UserStory } from "@/prd";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { makeMockAgentManager, makeNaxConfig, makePRD } from "@test/helpers";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makePRD } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -141,15 +141,17 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
     _planDeps.createRuntime = mock(() =>
-      makeMockAgentManager({
-        completeAsFn: async (_name: string, prompt: string) => {
-          capturedCompleteArgs.push(prompt);
-          return {
-            output: JSON.stringify(stories.map(toDecomposedStory)),
-            tokenUsage: { inputTokens: 0, outputTokens: 0 },
-            estimatedCostUsd: 0,
-          };
-        },
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          completeAsFn: async (_name: string, prompt: string) => {
+            capturedCompleteArgs.push(prompt);
+            return {
+              output: JSON.stringify(stories.map(toDecomposedStory)),
+              tokenUsage: { inputTokens: 0, outputTokens: 0 },
+              estimatedCostUsd: 0,
+            };
+          },
+        }),
       }),
     );
   }
@@ -272,15 +274,17 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
     _planDeps.createRuntime = mock(() =>
-      makeMockAgentManager({
-        completeAsFn: async (_name: string, _prompt: string, opts?: any) => {
-          capturedDecomposeOpts.push(opts ?? {});
-          return {
-            output: JSON.stringify([makeSubStory("US-001-A"), makeSubStory("US-001-B")].map(toDecomposedStory)),
-            tokenUsage: { inputTokens: 0, outputTokens: 0 },
-            estimatedCostUsd: 0,
-          };
-        },
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          completeAsFn: async (_name: string, _prompt: string, opts?: any) => {
+            capturedDecomposeOpts.push(opts ?? {});
+            return {
+              output: JSON.stringify([makeSubStory("US-001-A"), makeSubStory("US-001-B")].map(toDecomposedStory)),
+              tokenUsage: { inputTokens: 0, outputTokens: 0 },
+              estimatedCostUsd: 0,
+            };
+          },
+        }),
       }),
     );
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });

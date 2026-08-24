@@ -1772,7 +1772,76 @@ absentValue=17, anyType=1877, looseCast=1925`.
 
 ### Still open after this
 
-- **The tail** — ~415 errors across 197 files, none above 8, no cluster larger than one file.
-  Batch-3 rules apply: grep, read, apply a recipe or move on.
+- **The tail** — ~415 errors across 197 files, none above 8. **"No cluster larger than one
+  file" is wrong** — grouping by error message rather than by file finds cross-file clusters
+  sharing one recipe. See §32.
 - **`test/unit/cli/plan.test.ts`** stays grandfathered in `file-sizes-baseline.json` at 1202
   lines; a fix there must be line-neutral or shrinking.
+
+## 32. Guard before delegation — the tail is recipe-shaped, and two hatches were open
+
+Branch `chore/1514-guard-before-delegation`, three commits, **no typecheck change** (415
+throughout). This is groundwork for handing the tail to a cheaper model, not drain work.
+
+### The tail is not file-shaped
+
+§31 closed with *"none above 8, no cluster larger than one file."* True by file; false by cause.
+Grouping the 415 by normalized error message finds cross-file clusters that share one recipe —
+`Mock<() => X>` into a typed dep slot is ~35 errors across ~30 files, and three of its
+sub-clusters have an existing helper or a proven annotation. **Group by message as well as by
+file before declaring a tail heterogeneous.**
+
+### Two escape hatches were uncounted, and they were the ones that mattered
+
+- **`as never` — 619 in test/, invisible.** `looseCast` is `/\bas\s+[A-Z]\w*/`; `never` is
+  lowercase. §13 noticed this in passing ("`as never` is matched by none of the six patterns")
+  and moved on. `never` is assignable to every type, so it silences any assignment error in one
+  word — including the entire `Mock<() => X>` family that is now the largest thing left.
+- **Postfix `!` — 827 in test/, invisible to the ratchets *and* to Biome.** §12 named it "the
+  uncounted hole" and deliberately did not delegate the `TS18046/47/48` cluster because of it.
+  What nobody checked: `biome.json:20` sets `noNonNullAssertion: "off"` for `test/**`, so the
+  lint pass did not catch it either. §16 then drained that cluster by hand and the hole stayed.
+
+Both now counted (`asNever`, `nonNullAssert`). Negative control before baselining: one `as never`
+and one `x!.y` added to a test file trip the gate at 619→620 and 827→828.
+
+The `!` pattern is anchored to postfix position and **undercounts on purpose** — `x! + 1` and an
+end-of-line `!` are missed. One false positive survives (prose punctuation mid-string, e.g.
+`"wow!, really"`; zero such strings exist in test/ today) and is pinned by a test so it stays a
+documented property. A ratchet that false-positives on an honest comment invites gaming, which
+is the same reasoning `anyType`'s docstring already records.
+
+### The baseline had 69 points of slack
+
+`check:test-escape-hatches` fails on growth *against the committed baseline*, and §30/§31 drained
+counters without ever running `--update-baseline`:
+
+```
+committed: asAny=1388  anyType=1880  looseCast=1994
+live:      asAny=1386  anyType=1877  looseCast=1925
+```
+
+69 unmarked `as T` casts could have been added with all 25 gates green. Re-baselined.
+**A drain commit that lowers a counter must also lower its baseline, or it hands the next
+worker free headroom.** (`as unknown as` was unaffected — it sits at its floor, 102/102.)
+
+### A cluster that looked mechanical and was not — fourth time
+
+`_planDeps.createRuntime` (10 errors, 5 files) reads as a stale fixture: `Mock<() => IAgentManager>`
+in a slot declared `(cfg, wd, featureName) => NaxRuntime`. It was written into the first draft of
+the handoff as the *safest* cluster. Reading `src/cli/plan-runtime.ts:34-41` removed it:
+`createPlanRuntime` casts the dep result to `unknown`, duck-types it with
+`isRuntimeWithAgentManager`, and wraps a bare `IAgentManager` when that is what it gets. The
+production seam **deliberately accepts both shapes**; only its declared type says otherwise. The
+tests exercise the documented second path, so every test-side fix is either a fabricated runtime
+or a cast. Escalated — the fix is widening the dep's type in `src/`.
+
+**The rule:** before delegating a cluster, read the `src/` side of the seam. An error message
+describes the type mismatch, never which side is wrong.
+
+### Handoff
+
+`docs/plans/HANDOFF-1514-tail-recipes.md` — clusters B (8) and C (14) with both recipes
+prototyped on the live tree and reverted, cluster A escalated with evidence, G1, and an explicit
+bail rule ("a reverted file is a good outcome; a silenced file is a failed batch"). Expected
+landing 415 → ~393.

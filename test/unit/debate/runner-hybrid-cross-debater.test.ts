@@ -15,6 +15,7 @@ import { _hybridDeps } from "@/debate/runner-hybrid";
 import type { DebateHybridInput } from "@/operations/debate-hybrid";
 import {
   makeDispatchContext,
+  makeLogger,
   makeMockAgentManager,
   makeNaxConfig,
   makeSessionManager,
@@ -82,12 +83,7 @@ let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
 beforeEach(() => {
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
-  _debateSessionDeps.getSafeLogger = mock(() => ({
-    info: mock(() => {}),
-    debug: mock(() => {}),
-    warn: mock(() => {}),
-    error: mock(() => {}),
-  }));
+  _debateSessionDeps.getSafeLogger = mock(() => makeLogger());
 });
 
 afterEach(() => {
