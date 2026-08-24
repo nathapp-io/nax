@@ -10,7 +10,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { NaxConfig } from "@/config";
+import type { PrecheckConfig } from "@/config/selectors";
 import type { PRD, UserStory } from "@/prd/types";
 import { _precheckDeps, runPrecheck } from "@/precheck";
 import { _checkCliDeps } from "@/precheck/checks-cli";
@@ -173,7 +173,7 @@ describe("runPrecheck — story-size-gate routing (US-001)", () => {
     const prd = makePRD([makeLargeStory("US-001")]);
 
     // Mock checkStorySizeGate to return a blocker result (new behavior for action === 'block')
-    _precheckDeps.checkStorySizeGate = async (_c: NaxConfig, _p: PRD): Promise<StorySizeGateResult> => ({
+    _precheckDeps.checkStorySizeGate = async (_c: PrecheckConfig, _p: PRD): Promise<StorySizeGateResult> => ({
       check: {
         name: "story-size-gate",
         tier: "blocker",
@@ -207,7 +207,7 @@ describe("runPrecheck — story-size-gate routing (US-001)", () => {
     const prd = makePRD([makeLargeStory("US-001")]);
 
     // Mock checkStorySizeGate to return a warning result (existing behavior for action === 'warn')
-    _precheckDeps.checkStorySizeGate = async (_c: NaxConfig, _p: PRD): Promise<StorySizeGateResult> => ({
+    _precheckDeps.checkStorySizeGate = async (_c: PrecheckConfig, _p: PRD): Promise<StorySizeGateResult> => ({
       check: {
         name: "story-size-gate",
         tier: "warning",
