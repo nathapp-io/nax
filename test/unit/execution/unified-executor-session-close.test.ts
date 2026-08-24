@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _unifiedExecutorDeps, executeUnified } from "@/execution/unified-executor";
 import type { ISessionManager } from "@/session";
+import { makeSessionManager as makeMockSessionManager } from "@test/helpers";
 
 function makePendingStory(id: string) {
   return {
@@ -28,7 +29,7 @@ function makePrd(stories: ReturnType<typeof makePendingStory>[]) {
 }
 
 function makeSessionManager(): ISessionManager {
-  return {
+  return makeMockSessionManager({
     create: mock(() => {
       throw new Error("unused");
     }),
@@ -47,7 +48,7 @@ function makeSessionManager(): ISessionManager {
     listActive: mock(() => []),
     getForStory: mock(() => []),
     sweepOrphans: mock(() => 0),
-  };
+  });
 }
 
 function makeCtx(sessionManager: ISessionManager) {
