@@ -1,13 +1,13 @@
 {
   "counts": {
-    "asAny": 1388,
+    "asAny": 1386,
     "tsSuppress": 40,
     "ratchetAllow": 106,
     "absentValue": 17,
-    "anyType": 1880,
-    "looseCast": 1994
+    "anyType": 1877,
+    "looseCast": 1925
   },
-  "updatedAt": "2026-08-23T14:30:59.645Z",
+  "updatedAt": "2026-08-24T08:14:22.187Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -15,11 +15,17 @@
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
     },
+    "test/helpers/fix-cycle-result.ts": {
+      "ratchetAllow": 1
+    },
     "test/helpers/agent-registry.ts": {
       "looseCast": 1
     },
     "test/helpers/execution-deps-stub.ts": {
       "looseCast": 4
+    },
+    "test/helpers/worktree-manager.ts": {
+      "ratchetAllow": 1
     },
     "test/helpers/spawn.ts": {
       "looseCast": 4
@@ -42,6 +48,9 @@
     },
     "test/helpers/mock-nax-config.ts": {
       "looseCast": 8
+    },
+    "test/helpers/call-op.ts": {
+      "ratchetAllow": 1
     },
     "test/helpers/deps.ts": {
       "looseCast": 1
@@ -108,11 +117,6 @@
     },
     "test/integration/execution/status-writer.test.ts": {
       "looseCast": 14
-    },
-    "test/integration/execution/runner-plugin-integration.test.ts": {
-      "asAny": 1,
-      "anyType": 2,
-      "looseCast": 1
     },
     "test/integration/execution/nbf-rectify-declaration.test.ts": {
       "asAny": 6,
@@ -245,8 +249,8 @@
       "anyType": 1
     },
     "test/integration/config/merger.test.ts": {
-      "asAny": 3,
-      "anyType": 3,
+      "asAny": 2,
+      "anyType": 2,
       "looseCast": 5
     },
     "test/integration/config/profile-loader.test.ts": {
@@ -611,7 +615,7 @@
       "looseCast": 1
     },
     "test/unit/execution/nbf-readonly-flake-triage.test.ts": {
-      "looseCast": 6
+      "looseCast": 5
     },
     "test/unit/execution/post-run-isolation.test.ts": {
       "asAny": 2,
@@ -677,7 +681,6 @@
       "looseCast": 1
     },
     "test/unit/execution/parallel-batch.test.ts": {
-      "ratchetAllow": 2,
       "looseCast": 10
     },
     "test/unit/execution/parallel-worker-isolation.test.ts": {
@@ -893,16 +896,13 @@
       "looseCast": 1
     },
     "test/unit/findings/cycle.test.ts": {
-      "ratchetAllow": 2
+      "ratchetAllow": 1
     },
     "test/unit/bakeoff/coordinator.test.ts": {
       "looseCast": 21
     },
     "test/unit/bakeoff/preflight.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/bakeoff/run-action.test.ts": {
-      "looseCast": 2
     },
     "test/unit/bakeoff/contestant.test.ts": {
       "looseCast": 3
@@ -1041,9 +1041,6 @@
     "test/unit/operations/adversarial-review-inspection-trail.test.ts": {
       "asAny": 2,
       "anyType": 2
-    },
-    "test/unit/operations/verify-op-normalized-findings.test.ts": {
-      "looseCast": 26
     },
     "test/unit/operations/debate-rebut.test.ts": {
       "asAny": 2,
@@ -1613,9 +1610,6 @@
     "test/unit/plan/debate-strategy.test.ts": {
       "looseCast": 1
     },
-    "test/unit/plan/pipeline-strategy.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/plan/strategies-factory.test.ts": {
       "looseCast": 1
     },
@@ -1623,13 +1617,13 @@
       "looseCast": 5
     },
     "test/unit/plan/refine-strategy.test.ts": {
-      "looseCast": 2
+      "looseCast": 1
     },
     "test/unit/plan/debate-composition.test.ts": {
       "looseCast": 3
     },
     "test/unit/plan/single-strategy.test.ts": {
-      "looseCast": 2
+      "looseCast": 1
     },
     "test/unit/plan/strategies/single.test.ts": {
       "looseCast": 5
@@ -1713,13 +1707,13 @@
       "looseCast": 5
     },
     "test/unit/config/schemas.test.ts": {
-      "looseCast": 78
+      "looseCast": 48
     },
     "test/unit/config/legacy-rectification-keys.test.ts": {
       "looseCast": 6
     },
     "test/unit/config/defaults-schema-derive.test.ts": {
-      "looseCast": 2
+      "looseCast": 1
     },
     "test/unit/config/regression-gate-schema.test.ts": {
       "asAny": 4,
@@ -1763,9 +1757,6 @@
     "test/unit/config/validate.test.ts": {
       "looseCast": 9
     },
-    "test/unit/config/generate-config-schema.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/config/acceptance-fix-config.test.ts": {
       "looseCast": 1
     },
@@ -1799,7 +1790,7 @@
       "anyType": 12
     },
     "test/unit/config/story-scoped-fix-budget.test.ts": {
-      "looseCast": 8
+      "looseCast": 4
     },
     "test/unit/config/test-strategy.test.ts": {
       "asAny": 4,
