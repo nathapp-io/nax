@@ -45,6 +45,16 @@ typecheck, per-file gate `worse: 0`, `check:all`, full suite, baseline update).
 `chore/1514-implicit-any-params` (head `b5fb516`): all 3 clusters, **91 errors**
 (1351 → 1260), fully gate-verified. Same six-step loop per commit. Details in §2b/§3b.
 
+## ✅ The tail-recipes batch-2 handoff is COMPLETE (A–F)
+
+`HANDOFF-1514-tail-recipes-batch2.md` finished on 2026-08-24 on
+`chore/1514-tail-recipes-batch2` (head `e72ff2835`): clusters A–F, **28 edits, 27 errors,
+17 files, 17 commits, 383 → 356 exactly** — the whole-batch measurement reproduced, not a
+single-site estimate. `verifier-pick.test.ts` landed flat as §2B predicted (its dead key was
+masked by a sibling TS2322) and was committed anyway; no second edit was hunted. Cluster G
+(precheck config fixtures) is **not** in that number — it was left to the owner per §5, still
+unmeasured. Details and the coverage gate in §34.
+
 ## 1. Where the work stands
 
 | Phase | State | PR |
@@ -1940,24 +1950,75 @@ type or grep tells you which shape actually arrives.
 Pre-existing `FULL=1` failures are **4** (one Logger, three precheck). Compare a full-mode run
 against those, not against zero.
 
+## 34. The tail-recipes batch-2 handoff, applied — A–F done, 383 → 356 (2026-08-24)
+
+`HANDOFF-1514-tail-recipes-batch2.md` measured each cluster on the live tree and reverted; this
+section is the application, on `chore/1514-tail-recipes-batch2` (head `e72ff2835`). The §3
+landing is reproduced exactly: **383 → 356**, 17 commits, one file each (G4). The §1 loop ran
+per commit, unmodified.
+
+| cluster | files | edits | measured | landed |
+|:--|:--|--:|--:|--:|
+| A `durationMs`→`runElapsedMs` (`story:completed`) | event-bus, events-writer, hooks, reporters | 7 | −7 | **−7** |
+| B dead `models: {}` (debate selectors) | judge, majority, synthesis, verifier-pick | 4 | −3 (one masked) | **−3** |
+| C otel `logs` fixture field | 4 otel files | 4 | −4 | **−4** |
+| D `untrackedBefore` on `InspectionOptions` | scratch-per-role, verdict-cleanup, post-run-isolation | 4 | −4 | **−4** |
+| E `failedTestFiles` on `DeferredRegressionResult` | lifecycle-completion | 5 | −5 | **−5** |
+| F `featureName` on `TriggerContext` | triggers | 4 | −4 | **−4** |
+
+Guards, all held across all 17 commits:
+
+- **G1** — the syntax guard printed exactly one line: the pre-existing `TS1355` in
+  `smart-runner.test.ts:516`, nothing else, every commit.
+- **G2** — all eight escape-hatch counters and `as unknown as` sat flat at baseline 1386 / 40 /
+  106 / 17 / 1877 / 1925 / 619 / 827 and 102 throughout; `src` tsc stayed 0.
+- **G4** — one file per commit, explicitly staged; the working tree is clean.
+- The §§2A/2C/2F traps were followed deliberately: the `durationMs` renames hit only the
+  `story:completed` literals (reporters kept its 9 legitimate uses, including the `:235`
+  assertion); the logs fixtures got the **disabled** default even in the logs-lifecycle file;
+  and each `substituteTemplate` template was verified to avoid `{{featureName}}` before
+  `featureName: "f"` was added.
+
+Two findings worth recording, both in hand:
+
+- **The mask bait was taken and not chased.** `verifier-pick.test.ts`'s `models` line yields 0
+  because a sibling excess-property error masks it; the edit is correct, the total is flat, and
+  the §2B instruction is to *not* go hunting for a second fix to make the arithmetic come out.
+  The loop's step-4 rail therefore reads "the total moved by the §3 amount **for this file**",
+  and for that one file the amount is 0.
+- **Cluster G is genuinely owner-shaped, confirmed not just asserted (§5 of the handoff).**
+  Applying it means rewriting each fixture to `makeNaxConfig(...)`, changing what the file
+  exercises, with an unknown number of masked keys behind the visible TS2353s, and the loop's
+  "total must drop by exactly N" rail inverts on the way there. The worked example on
+  `tier1-blockers` (whose visible baseline was 2 errors) needed the whole fixture converted to
+  `makeNaxConfig`, which unmasked **8** errors total — three partial attempts in between
+  (`resetMode`, then `defaultAgent`/`requireExplicitContextFiles`, then
+  `makeConfigSlice("execution"/"autoMode", …)`) each only revealed more, and only an owner can
+  sign off per file on what the fixture then exercises. **Remaining for the owner:** the five
+  precheck files plus, to reach the stretch, `triggers.test.ts:75`'s TS2322 (not part of
+  cluster F).
+
+Coverage gate (`bun run test:coverage`) is green on the landed tree: **lines 87.67% (64411/73471),
+functions 87.36% (6041/6915), floor 80%**, and the per-file ratchet holds — 102 files below
+floor against a baseline of 103, no new violation, no grandfathered drop.
+
 ## Next
 
-The residue is 383 across 186 files and, grouped by normalized error message rather than by
-file, is still recipe-shaped — §32's lesson holds a second time.
-`HANDOFF-1514-tail-recipes-batch2.md` specifies six delegable clusters — **28 edits worth 27
-errors across 17 files, 383 → 356** — each with its `src/` side and its sibling fixtures read
-before being called delegable, and a seventh (the precheck config fixtures) held back for the
-owner with its fix verified but its true size unknown.
+The residue is **356 across 177 files**. What remains is no longer recipe-shaped in the batch
+sense — the six regex-recipes of the last handoff are drained (or, in G's case, owner-signed).
 
-That landing is a whole-batch measurement. The draft sized each cluster from one
-representative site and published 355; the pre-delegation review applied all 28 edits at once
-and found 356, because one site in cluster B is masked by a sibling error in its own file.
-**A single-site measurement does not generalize to its cluster** — the TS2353 floor effect
-(§5 of that handoff) reaches inside clusters that are otherwise mechanical. The review also
-turned up the general form: `tsc` emits at most one excess-property error per object literal,
-so the 383 baseline is a floor wherever dead fixture keys are stacked, and the drain loop's
-"total must drop by exactly N" rail inverts on such a file.
+- **Cluster G — precheck config fixtures (§5), owner only.** Five files
+  (`test/unit/precheck/precheck-checks-tier1-blockers`, `precheck-checks-tier2-warnings`, and
+  the two `test/integration/cli/` files) with 5 visible TS2353s that are a floor, not a census.
+  The conversion is `createMockConfig` → `makeNaxConfig({...})`, verified on `tier1-blockers`,
+  plus three documented dead ends. Its true size is unmeasured until applied.
+- **`triggers.test.ts:75`** — one TS2322, left behind when cluster F landed (which is why the
+  file's drop is −4 in a cluster that touched it 4 times).
+- **Still deferred, from `HANDOFF-1514-tail-recipes.md` §5:** `TS2769` (23, scattered, no shared
+  cause found), `TS7024` (9, needs a real return type worked out per function — cheap to get
+  wrong, invisible when wrong), and `TS2352` → `Record<string, unknown>` (7 errors, 7 files,
+  unmeasured — do not treat the resemblance to §22 as a recipe).
 
-Deferred and still unmeasured, from `HANDOFF-1514-tail-recipes.md` §5: `TS2769` (23,
-scattered, no shared cause found) and `TS7024` (9, needs a real return type worked out per
-function — cheap to get wrong, invisible when wrong).
+As §30 cut it: every drain commit that lowers a counter must also lower its baseline. The 383
+baseline carries into this landing correctly because each of the 17 commits re-ran
+`check:test-typecheck:update` after its gates — no slack was handed onward.
