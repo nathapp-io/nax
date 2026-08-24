@@ -20,16 +20,10 @@ function makePlanContext(stageConfigOverrides: Record<string, unknown> = {}) {
     },
   });
   const agentManager = makeMockAgentManager();
-  const sessionManager = makeSessionManager({
-    runInSession: mock(async () => ({
-      success: true,
-      exitCode: 0,
-      output: "",
-      rateLimited: false,
-      durationMs: 0,
-      estimatedCostUsd: 0,
-    })),
-  });
+  // No runInSession override: this suite exercises the callOp-based path and
+  // asserts runInSession is never called, so the helper's default stub
+  // (already Mock-typed) is sufficient — see makeSessionManager's default.
+  const sessionManager = makeSessionManager();
   const runtime = makeMockRuntime({ agentManager, sessionManager, config });
 
   return {
