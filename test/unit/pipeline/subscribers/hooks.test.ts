@@ -4,7 +4,7 @@ import type { LoadedHooksConfig } from "@/hooks";
 import { PipelineEventBus } from "@/pipeline/event-bus";
 import { wireHooks } from "@/pipeline/subscribers/hooks";
 
-const EMPTY_HOOKS: LoadedHooksConfig = {};
+const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
 
 describe("wireHooks", () => {
   test("subscribes to all lifecycle events", () => {
