@@ -18,7 +18,7 @@ import { makeMockAgentManager } from "@test/helpers";
 // ─── AC7 & AC8: majorityResolver ─────────────────────────────────────────────
 
 describe("majorityResolver() — fail-closed", () => {
-  test.each([
+  const cases: Array<[string, string[], boolean, "passed" | "failed"]> = [
     [
       "2 of 3 pass",
       [
@@ -60,14 +60,15 @@ describe("majorityResolver() — fail-closed", () => {
       "passed",
     ],
     ["only 1 of 3 passes", ['{"passed": true}', '{"passed": false}', '{"passed": false}'], false, "failed"],
-  ])("%s", (_label, proposals, failOpen, expected) => {
-    const result = majorityResolver(proposals as string[], failOpen as boolean);
+  ];
+  test.each(cases)("%s", (_label, proposals, failOpen, expected) => {
+    const result = majorityResolver(proposals, failOpen);
     expect(result).toBe(expected);
   });
 });
 
 describe("majorityResolver(..., true) — fail-open", () => {
-  test.each([
+  const cases: Array<[string, string[], boolean, "passed" | "failed"]> = [
     [
       "fail-open on tie: 1p 1f 1u",
       [
@@ -86,8 +87,9 @@ describe("majorityResolver(..., true) — fail-open", () => {
       true,
       "passed",
     ],
-  ])("%s", (_label, proposals, failOpen, expected) => {
-    const result = majorityResolver(proposals as string[], failOpen as boolean);
+  ];
+  test.each(cases)("%s", (_label, proposals, failOpen, expected) => {
+    const result = majorityResolver(proposals, failOpen);
     expect(result).toBe(expected);
   });
 });
