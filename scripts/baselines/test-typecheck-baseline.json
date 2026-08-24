@@ -1,6 +1,6 @@
 {
-  "count": 343,
-  "updatedAt": "2026-08-24T12:34:54.067Z",
+  "count": 341,
+  "updatedAt": "2026-08-24T12:36:16.686Z",
   "byFile": {
     "test/helpers/fake-agent-manager.ts": 3,
     "test/helpers/mock-agent-manager.ts": 2,
@@ -76,7 +76,6 @@
     "test/unit/execution/lifecycle/acceptance-loop-skipped-packages.test.ts": 1,
     "test/unit/execution/lifecycle/acceptance-loop.test.ts": 2,
     "test/unit/execution/lifecycle/backfill-story-metrics.test.ts": 1,
-    "test/unit/execution/lifecycle/mutation-summary-completion.test.ts": 2,
     "test/unit/execution/lifecycle/run-completion-aggregator.test.ts": 2,
     "test/unit/execution/lifecycle/run-completion-session-close.test.ts": 1,
     "test/unit/execution/lifecycle/run-regression-attribution.test.ts": 6,
