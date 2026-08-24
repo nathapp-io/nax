@@ -35,7 +35,11 @@ const mockConfig: NaxConfig = makeNaxConfig({
     },
     escalation: {
       enabled: true,
-      maxAttempts: 2,
+      tierOrder: [
+        { tier: "fast", attempts: 2 },
+        { tier: "balanced", attempts: 2 },
+        { tier: "powerful", attempts: 2 },
+      ],
     },
   },
   execution: {
