@@ -7,14 +7,14 @@ were written and are not edited afterwards.** For the live state, read §0 and t
 
 ---
 
-## 0. Current state — measured 2026-08-24 on `chore/1514-tail-batch3-prep` @ `60cdf5ba2`
+## 0. Current state — measured 2026-08-24 on `chore/1514-tail-batch3-prep` @ `d5016b4e6`
 
 Every number re-measured on a clean tree, not carried forward from a section below.
 
 | | value | baseline |
 |:--|--:|--:|
 | `tsc --noEmit` (src) | **0** | — |
-| test typecheck | **299** | 299 |
+| test typecheck | **289** | 289 |
 | `as unknown as` casts | **102** | 102 |
 | `asAny` | 1386 | 1386 |
 | `tsSuppress` | 40 | 40 |
@@ -25,15 +25,16 @@ Every number re-measured on a clean tree, not carried forward from a section bel
 | `asNever` | 619 | 619 |
 | `nonNullAssert` | 827 | 827 |
 
-Against the original #1514 start: casts **815 → 102 (−87%)**, typecheck **2009 → 299 (−85%)**.
+Against the original #1514 start: casts **815 → 102 (−87%)**, typecheck **2009 → 289 (−86%)**.
 
 All 25 gates green, every counter sitting **at** its baseline — there is no headroom left in the
 ratchets for a delegate to spend. (§32's slack was reclaimed once in `b552fce6a` and it had
 re-opened by 4 points; `4723c7a7a` reclaimed it again. **Re-check this before every hand-off** —
 it re-opens every time a drain commit lowers a counter without re-baselining.)
 
-The residue is 299 errors across 157 files. Clusters B and C are handed off in
-`HANDOFF-1514-tail-recipes-batch3.md`; §38 has the current histogram and the owner-only list.
+The residue is 289 errors across 150 files. Clusters B and E are handed off in
+`HANDOFF-1514-tail-recipes-batch3.md`; §38 has the histogram and §39 has the review that
+re-scoped it.
 
 ## ✅ The dead-fixture-keys handoff is COMPLETE
 
@@ -2281,3 +2282,53 @@ recipes were prototyped on the live tree and reverted, per batch-1 practice:
 `pb-004-migration.test.ts`'s 2 × TS2307 — that test imports two deleted modules *in order to
 assert they are gone*, so the error is intrinsic and `@ts-expect-error` would breach
 `tsSuppress`. It is an accepted exception awaiting the §8 treatment, not debt.
+
+## 39. Reviewing the batch-3 handoff before delegating — verifying cluster C drained it (299 → 289)
+
+§25 recorded that reviewing a handoff before delegating "paid for itself". This round it paid
+differently: the review **consumed** the cluster it was reviewing.
+
+### What the review found
+
+The draft handed off cluster C — 10 errors, 8 files, "imports naming symbols the barrel does not
+re-export", described as 30-second lookups. Checking the table line by line instead of trusting
+it found:
+
+- **`mutation-check-diff-scope.test.ts:236` is not an import.** It is a namespace-qualified type
+  reference, `mutationModule.GenerateMutantsInput[]`, on an `import * as` used for `spyOn`. The
+  fix is a separate type import plus a bare name — a different edit from every other row.
+- **`status-file-integration.test.ts` was not importing from a barrel.** It imports from
+  `@/agents/types` directly; `PlanOptions`/`PlanResult` simply live in
+  `@/agents/shared/types-extended`. The row's conclusion held, its reasoning did not.
+- **Five of the eight needed a mixed import split** (`{ NaxRuntime, PipelineContext }` →
+  two lines). The draft said "import from the declaring module" and never mentioned it.
+- **The draft never addressed unmasking at all** — the risk that resolving a type turns a
+  silently-`any` file into a newly-typechecked one. It doesn't happen here (the total fell by
+  exactly 10), but that was luck, not analysis.
+
+### Why the cluster is now done rather than handed off
+
+There was no way to check those four things without doing the edits. Once done and verified —
+289, `check:all` 25/25, identical pass/fail/`expect()` across all 8 files — reverting proven,
+zero-risk work to preserve a delegation would have been waste. Committed as `d5016b4e6`.
+
+**The general rule this suggests:** *verifying* a mechanical cluster costs about as much as
+*executing* it. A cluster small enough to hand off cheaply is usually small enough that the
+owner's verification pass finishes it. **The delegable unit is not "a small cluster" — it is a
+recipe already proven on one site, with enough sites left that repetition dominates
+verification.** Cluster B (9 errors, 3 files, one proven recipe) barely clears that bar;
+cluster C never did.
+
+### What replaced it in the handoff
+
+**Cluster E — fixtures missing required properties, 29 errors, ~25 files.** Same family as
+`HANDOFF-1514-mechanical-fixture-fields.md`, which drained 91 errors successfully, and this repo
+has ~50 `makeX` factories in `test/helpers/` that exist precisely to answer it. The handoff
+carries three things the draft of C lacked: the priority order (use a factory → add inert fields
+→ escalate), the hard bar that **shared helpers are off-limits to edit** (§4a's 69-consumer
+`FakeProcSpec` incident), and an explicit warning that the three `Logger` sites are *not* a
+drop-in swap because they assert against local capture arrays and `makeLogger` exposes `.calls`.
+
+E's number is also marked **soft** in the handoff: 29 errors across 9 small groups plus a tail of
+singletons is not one recipe applied 29 times, and a handoff that quotes a hard number invites
+the executor to reach it.
