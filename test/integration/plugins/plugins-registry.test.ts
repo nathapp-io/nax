@@ -8,6 +8,7 @@
 import { describe, expect, test } from "bun:test";
 import { PluginRegistry } from "@/plugins/registry";
 import type { NaxPlugin } from "@/plugins/types";
+import { makeAgentAdapter } from "@test/helpers";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -21,10 +22,11 @@ function makeOptPlugin(id: number): NaxPlugin {
         name: `optimizer-${id}`,
         async optimize(input) {
           return {
-            optimizedPrompt: input.prompt,
-            estimatedTokens: input.estimatedTokens,
-            tokensSaved: 0,
-            appliedStrategies: [],
+            prompt: input.prompt,
+            originalTokens: 0,
+            optimizedTokens: 0,
+            savings: 0,
+            appliedRules: [],
           };
         },
       },
@@ -96,18 +98,13 @@ function makeAgentPlugin(agentName: string, displayName: string, binary: string)
     version: "1.0.0",
     provides: ["agent"],
     extensions: {
-      agent: {
+      agent: makeAgentAdapter({
         name: agentName,
         displayName,
         binary,
         capabilities: { supportedTiers: ["fast"], maxContextTokens: 100_000, features: new Set(["tdd"]) },
-        async isInstalled() {
-          return true;
-        },
-        buildCommand() {
-          return [binary];
-        },
-      },
+        buildCommand: () => [binary],
+      }),
     },
   };
 }
