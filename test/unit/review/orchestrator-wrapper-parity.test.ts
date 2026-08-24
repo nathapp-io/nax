@@ -121,6 +121,7 @@ describe("Semantic op verify() parity with wrapper consumer (AC10, AC11)", () =>
           },
         ],
         normalizedFindings: [],
+        acDropped: [],
       };
 
       const result = await semanticReviewOp.verify!(parsed, input, ctx);
@@ -171,6 +172,7 @@ describe("Semantic op verify() parity with wrapper consumer (AC10, AC11)", () =>
           },
         ],
         normalizedFindings: [],
+        acDropped: [],
       };
 
       const result = await semanticReviewOp.verify!(parsed, input, ctx);
@@ -216,6 +218,7 @@ describe("Semantic op verify() parity with wrapper consumer (AC10, AC11)", () =>
           },
         ],
         normalizedFindings: [],
+        acDropped: [],
       };
 
       const result = await semanticReviewOp.verify!(parsed, input, ctx);
@@ -484,7 +487,11 @@ describe("Recurrence-demotion parity: op verify() vs wrapper recomputation", () 
   function makeAgentManager(llmResponse: string): IAgentManager {
     return makeMockAgentManager({
       getDefaultAgent: "claude",
-      completeFn: async () => ({ output: llmResponse, costUsd: 0.001, source: "mock" as const }),
+      completeFn: async () => ({
+        output: llmResponse,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0.001,
+      }),
       runWithFallbackFn: async (req) => {
         const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
@@ -496,10 +503,18 @@ describe("Recurrence-demotion parity: op verify() vs wrapper recomputation", () 
         internalRoundTrips: 0,
       }),
       completeWithFallbackFn: async () => ({
-        result: { output: llmResponse, costUsd: 0.001, source: "mock" },
+        result: {
+          output: llmResponse,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0.001,
+        },
         fallbacks: [],
       }),
-      completeAsFn: async () => ({ output: llmResponse, costUsd: 0.001, source: "mock" }),
+      completeAsFn: async () => ({
+        output: llmResponse,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0.001,
+      }),
       getAgentFn: () => makeAgentAdapter(),
     });
   }

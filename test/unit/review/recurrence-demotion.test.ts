@@ -298,21 +298,23 @@ describe("classifyRecurrence", () => {
 });
 
 describe("tagCoverageGap", () => {
+  type TaggedFinding = { file: string; meta?: Record<string, unknown> };
+
   test("stamps meta.coverageGap: true on every finding", () => {
-    const findings = [{ file: "a.ts", meta: { issue: "x" } }, { file: "b.ts" }];
+    const findings: TaggedFinding[] = [{ file: "a.ts", meta: { issue: "x" } }, { file: "b.ts" }];
     const tagged = tagCoverageGap(findings);
     expect(tagged[0]?.meta).toEqual({ issue: "x", coverageGap: true });
     expect(tagged[1]?.meta).toEqual({ coverageGap: true });
   });
 
   test("leaves untouched findings alone — caller merges tagged + untagged", () => {
-    const untouched = [{ file: "c.ts", meta: { note: "plain advisory" } }];
+    const untouched: TaggedFinding[] = [{ file: "c.ts", meta: { note: "plain advisory" } }];
     expect(untouched[0]?.meta).toEqual({ note: "plain advisory" });
     expect(untouched[0]?.meta?.coverageGap).toBeUndefined();
   });
 
   test("is immutable — does not mutate the input array or its elements", () => {
-    const original = [{ file: "a.ts", meta: { issue: "x" } }];
+    const original: TaggedFinding[] = [{ file: "a.ts", meta: { issue: "x" } }];
     const originalMetaRef = original[0]?.meta;
     const tagged = tagCoverageGap(original);
     expect(original[0]?.meta).toBe(originalMetaRef);

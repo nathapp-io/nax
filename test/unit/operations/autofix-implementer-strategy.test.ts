@@ -221,6 +221,7 @@ describe("makeAutofixImplementerStrategy", () => {
     test("pushes mock_structure declarations to sink.mockHandoffs", () => {
       const sink = makeSink();
       const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), sink);
+      const input = strategy.buildInput([], [], {} as FixCycleContext);
       const output = makeOutput([
         {
           reason: "mock_structure",
@@ -229,7 +230,7 @@ describe("makeAutofixImplementerStrategy", () => {
           reasonDetail: "needs mock restructure",
         },
       ]);
-      strategy.extractApplied!(output, [], {} as FixCycleContext);
+      strategy.extractApplied!(output, input);
       expect(sink.mockHandoffs).toHaveLength(1);
       expect(sink.mockHandoffs[0]).toEqual({
         files: ["test/foo.test.ts", "test/bar.test.ts"],
@@ -241,10 +242,11 @@ describe("makeAutofixImplementerStrategy", () => {
     test("pushes non-mock_structure declarations to sink.testEdits", () => {
       const sink = makeSink();
       const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), sink);
+      const input = strategy.buildInput([], [], {} as FixCycleContext);
       const lintDecl = { reason: "lint_only" as const, file: "test/foo.test.ts", finding: "some lint" };
       const prdDecl = { reason: "prd_contract" as const, file: "test/bar.test.ts" };
       const output = makeOutput([lintDecl, prdDecl]);
-      strategy.extractApplied!(output, [], {} as FixCycleContext);
+      strategy.extractApplied!(output, input);
       expect(sink.testEdits).toHaveLength(2);
       expect(sink.mockHandoffs).toHaveLength(0);
     });
@@ -252,26 +254,29 @@ describe("makeAutofixImplementerStrategy", () => {
     test("with empty declarations: sink unchanged", () => {
       const sink = makeSink();
       const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), sink);
+      const input = strategy.buildInput([], [], {} as FixCycleContext);
       const output = makeOutput([]);
-      strategy.extractApplied!(output, [], {} as FixCycleContext);
+      strategy.extractApplied!(output, input);
       expect(sink.testEdits).toHaveLength(0);
       expect(sink.mockHandoffs).toHaveLength(0);
     });
 
-    test("returns summary from unresolvedReason", () => {
+    test("returns summary from unresolvedReason", async () => {
       const sink = makeSink();
       const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), sink);
+      const input = strategy.buildInput([], [], {} as FixCycleContext);
       const output = makeOutput([], "reviewer contradiction");
-      const result = strategy.extractApplied!(output, [], {} as FixCycleContext);
+      const result = await strategy.extractApplied!(output, input);
       expect(result.summary).toBe("reviewer contradiction");
       expect(result.unresolved).toBe("reviewer contradiction");
     });
 
-    test("returns empty summary when no unresolvedReason", () => {
+    test("returns empty summary when no unresolvedReason", async () => {
       const sink = makeSink();
       const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), sink);
+      const input = strategy.buildInput([], [], {} as FixCycleContext);
       const output = makeOutput([]);
-      const result = strategy.extractApplied!(output, [], {} as FixCycleContext);
+      const result = await strategy.extractApplied!(output, input);
       expect(result.summary).toBe("");
       expect(result.unresolved).toBeUndefined();
     });
@@ -279,6 +284,7 @@ describe("makeAutofixImplementerStrategy", () => {
     test("partitions mixed declarations correctly", () => {
       const sink = makeSink();
       const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), sink);
+      const input = strategy.buildInput([], [], {} as FixCycleContext);
       const output = makeOutput([
         { reason: "mock_structure", file: "test/a.test.ts", files: ["test/a.test.ts"], reasonDetail: "mock reason" },
         { reason: "lint_only", file: "test/b.test.ts", finding: "lint error" },
@@ -290,7 +296,7 @@ describe("makeAutofixImplementerStrategy", () => {
         },
         { reason: "prd_contract", file: "test/d.test.ts" },
       ]);
-      strategy.extractApplied!(output, [], {} as FixCycleContext);
+      strategy.extractApplied!(output, input);
       expect(sink.mockHandoffs).toHaveLength(2);
       expect(sink.testEdits).toHaveLength(2);
     });

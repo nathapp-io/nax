@@ -18,6 +18,7 @@ import {
   normalizeSemanticCategory,
   validateLLMShape,
 } from "@/review";
+import type { SemanticCategory } from "@/review";
 import { llmFindingToFinding, parseLLMResponse } from "@/review/semantic-helpers";
 
 /** A prior round in which the same semantic finding was already reported. */
@@ -27,7 +28,7 @@ function priorIterationWith(file: string, category: string, message: string): It
     findingsBefore: [],
     fixesApplied: [],
     findingsAfter: [{ source: "semantic-review", severity: "error", category, file, message }],
-    outcome: "fixes-applied",
+    outcome: "unchanged",
     startedAt: "2026-08-01T00:00:00.000Z",
     finishedAt: "2026-08-01T00:00:01.000Z",
   } as Iteration;
@@ -62,14 +63,14 @@ describe("normalizeSemanticCategory()", () => {
     }
   });
 
-  test.each([
+  test.each<[unknown, SemanticCategory | ""]>([
     ["  Contradiction  ", "contradiction"],
     ["DEAD-PATH", "dead-path"],
   ])("trims and lowercases %p -> %p", (raw, expected) => {
     expect(normalizeSemanticCategory(raw)).toBe(expected);
   });
 
-  test.each([
+  test.each<[unknown, SemanticCategory | ""]>([
     [undefined, ""],
     [null, ""],
     ["", ""],

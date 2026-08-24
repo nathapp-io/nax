@@ -7,6 +7,7 @@ import {
   runNonBlockingFix,
   runRectification,
 } from "@/execution";
+import type { TriageResult } from "@/execution/story-orchestrator";
 import type { Finding, FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings";
 import type { CallContext, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -80,7 +81,7 @@ let originalCallOp: typeof _storyOrchestratorDeps.callOp;
 let originalRunFixCycle: typeof _storyOrchestratorDeps.runFixCycle;
 let originalTriage: typeof _storyOrchestratorDeps.triage;
 
-function makeCtx(): CallContext {
+function makeCtx(): FixCycleContext {
   runtime = makeTestRuntime();
   return {
     runtime,
@@ -88,7 +89,7 @@ function makeCtx(): CallContext {
     packageDir: "/tmp",
     agentName: "claude",
     storyId: "US-1404",
-  } as CallContext;
+  };
 }
 
 async function captureValidate(
@@ -180,10 +181,12 @@ describe("runRectification read-only NBF triage", () => {
     const phaseOutputs: Record<string, unknown> = { [GATE_NAME]: { success: true, passed: true, findings: [] } };
     const validate = await captureValidate(ctx, phaseOutputs, transaction);
     _storyOrchestratorDeps.callOp = mock(async () => gateOutput) as typeof _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.triage = mock(async (findings: Finding[]) => [
-      findings.map((finding) => ({ ...finding, category: "flaky-test" })),
-      { quarantinedKeys: [FLAKE_KEY], flakeTriageRan: true },
-    ]) as typeof _storyOrchestratorDeps.triage;
+    _storyOrchestratorDeps.triage = mock(
+      async (findings: Finding[]): Promise<TriageResult> => [
+        findings.map((finding) => ({ ...finding, category: "flaky-test" })),
+        { quarantinedKeys: [FLAKE_KEY], flakeTriageRan: true },
+      ],
+    );
 
     const result = await validate(ctx, { mode: "full", strategiesRun: ["autofix-implementer"] });
 
@@ -211,10 +214,12 @@ describe("runRectification read-only NBF triage", () => {
       rawOutput: "1 fail",
       findings,
     })) as typeof _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.triage = mock(async () => [
-      [{ ...findings[0], category: "flaky-test" }, findings[1]],
-      { quarantinedKeys: [FLAKE_KEY], flakeTriageRan: true },
-    ]) as typeof _storyOrchestratorDeps.triage;
+    _storyOrchestratorDeps.triage = mock(
+      async (): Promise<TriageResult> => [
+        [{ ...findings[0], category: "flaky-test" }, findings[1]],
+        { quarantinedKeys: [FLAKE_KEY], flakeTriageRan: true },
+      ],
+    );
 
     const result = await validate(ctx, { mode: "full", strategiesRun: ["autofix-implementer"] });
 
@@ -269,7 +274,7 @@ describe("runNonBlockingFix quarantine transaction", () => {
     phaseCosts: {} as Record<string, number>,
   };
   const deps = {
-    captureSnapshotRef: async () => "snapshot",
+    captureSnapshotRef: async () => ({ sha: "snapshot", untrackedBefore: null }),
     rollbackToRef: async () => {},
     measureSourceDiff: async () => ({ fileCount: 0, sourceLineCount: 0 }),
   };

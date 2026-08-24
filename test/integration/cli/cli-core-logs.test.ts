@@ -110,7 +110,7 @@ describe("nax logs CLI integration", () => {
 
   afterAll(() => {
     cleanup(TEST_WORKSPACE);
-    if (origRunsDir === undefined) process.env.NAX_RUNS_DIR = undefined;
+    if (origRunsDir === undefined) delete process.env.NAX_RUNS_DIR;
     else process.env.NAX_RUNS_DIR = origRunsDir;
   });
 

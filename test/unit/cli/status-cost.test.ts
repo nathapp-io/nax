@@ -22,6 +22,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type CostReportEmitDeps, emitCostReportJson } from "@/cli";
 import type { CostReportV1 } from "@/metrics";
+import type { RunMetrics } from "@/metrics/types";
 import { projectOutputDir } from "@/runtime";
 
 const FIXED_REPORT: CostReportV1 = {
@@ -89,8 +90,8 @@ describe("emitCostReportJson — AC1: export shape", () => {
 
 describe("emitCostReportJson — AC2: stdout payload schemaVersion", () => {
   test("AC2: with non-empty runs and stdout spy, stdout is called once with a string whose JSON.parse has schemaVersion === '1.0'", async () => {
-    const stdout = mock(() => {});
-    const loadRuns = mock(async () => [{ runId: "r1", feature: "f1" }] as never);
+    const stdout = mock((_text: string) => {});
+    const loadRuns = mock(async (_outputDir: string) => [{ runId: "r1", feature: "f1" }] as never);
     const deps = makeDeps({
       loadRuns,
       stdout,
@@ -103,11 +104,11 @@ describe("emitCostReportJson — AC2: stdout payload schemaVersion", () => {
     // a regression that splits the project/outputDir resolution.
     expect(loadRuns.mock.calls).toHaveLength(1);
     const loadRunsArg = loadRuns.mock.calls[0]?.[0];
-    expect(loadRunsArg).toBe(projectOutputDir("workdir"));
+    expect(loadRunsArg).toBe(projectOutputDir("workdir", undefined));
     expect(stdout.mock.calls).toHaveLength(1);
     const out = stdout.mock.calls[0]?.[0];
     expect(typeof out).toBe("string");
-    const parsed = JSON.parse(out as string);
+    const parsed = JSON.parse(out);
     expect(parsed.schemaVersion).toBe("1.0");
   });
 });
@@ -122,7 +123,7 @@ describe("emitCostReportJson — AC3: toCostReport receives injected runs + seam
       { runId: "r1", feature: "f1" },
       { runId: "r2", feature: "f2" },
     ] as never;
-    const toCostReport = mock(() => FIXED_REPORT);
+    const toCostReport = mock((_runs: RunMetrics[], _deps: { now: () => string; project: string }) => FIXED_REPORT);
     const deps = makeDeps({
       loadRuns: mock(async () => injectedRuns),
       toCostReport,
@@ -133,7 +134,7 @@ describe("emitCostReportJson — AC3: toCostReport receives injected runs + seam
 
     expect(toCostReport.mock.calls).toHaveLength(1);
     expect(toCostReport.mock.calls[0]?.[0]).toBe(injectedRuns);
-    const reportDeps = toCostReport.mock.calls[0]?.[1] as { now: () => string; project: string };
+    const reportDeps = toCostReport.mock.calls[0]?.[1];
     expect(reportDeps.now()).toBe("2026-01-01T12:34:56.000Z");
     // project is derived from the workdir via the same resolveProject path
     // used to compute outputDir — no separate seam to override.
@@ -147,7 +148,7 @@ describe("emitCostReportJson — AC3: toCostReport receives injected runs + seam
 
 describe("emitCostReportJson — AC4: empty runs safety", () => {
   test("AC4: with loadRuns resolving to [], does not throw and stdout string parses to { aggregate: null, modelEfficiency: [] }", async () => {
-    const stdout = mock(() => {});
+    const stdout = mock((_text: string) => {});
     // Real toCostReport — the orchestrator must let the mapper handle empty
     // runs without swallowing them into a fake non-null aggregate.
     const { toCostReport: realToCostReport } = await import("@/metrics");
@@ -160,7 +161,7 @@ describe("emitCostReportJson — AC4: empty runs safety", () => {
     await expect(emitCostReportJson("/tmp/workdir", deps)).resolves.toBeUndefined();
 
     expect(stdout.mock.calls).toHaveLength(1);
-    const parsed = JSON.parse(stdout.mock.calls[0]?.[0] as string);
+    const parsed = JSON.parse(stdout.mock.calls[0]?.[0]);
     expect(parsed.aggregate).toBeNull();
     expect(parsed.modelEfficiency).toEqual([]);
   });
@@ -172,7 +173,7 @@ describe("emitCostReportJson — AC4: empty runs safety", () => {
 
 describe("emitCostReportJson — AC5: stdout deep-equals report", () => {
   test("AC5: JSON.parse(stdout) deep-equals the report returned by toCostReport and the string contains a newline", async () => {
-    const stdout = mock(() => {});
+    const stdout = mock((_text: string) => {});
     const deps = makeDeps({
       loadRuns: mock(async () => [{ runId: "r1" }] as never),
       toCostReport: mock(() => FIXED_REPORT),
@@ -182,7 +183,7 @@ describe("emitCostReportJson — AC5: stdout deep-equals report", () => {
     await emitCostReportJson("/tmp/workdir", deps);
 
     expect(stdout.mock.calls).toHaveLength(1);
-    const out = stdout.mock.calls[0]?.[0] as string;
+    const out = stdout.mock.calls[0]?.[0];
     expect(out.includes("\n")).toBe(true);
     expect(JSON.parse(out)).toEqual(FIXED_REPORT);
   });

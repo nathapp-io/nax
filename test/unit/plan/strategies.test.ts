@@ -5,9 +5,9 @@ import { _planDeps, detectProjectName } from "@/cli";
 import { DEFAULT_CONFIG, planConfigSelector } from "@/config";
 import type { NaxConfig } from "@/config";
 import { assertIsValidPrd, buildPlanModeContext, writeOrRecoverPrd } from "@/plan";
-import type { IPlanStrategy, PlanDeps, PlanModeContext } from "@/plan/strategies";
+import type { IPlanStrategy, PlanDeps, PlanModeContext, PlanResult } from "@/plan/strategies";
 import type { PRD } from "@/prd/types";
-import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import { makeLogger, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 const SAMPLE_PRD: PRD = {
   project: "sample-project",
@@ -43,8 +43,8 @@ const SAMPLE_FEATURE = "feature-x";
 
 const strategyContract: IPlanStrategy = {
   mode: "single",
-  async execute(ctx: PlanModeContext): Promise<string> {
-    return ctx.outputPath;
+  async execute(ctx: PlanModeContext): Promise<PlanResult> {
+    return { outputPath: ctx.outputPath };
   },
 };
 
@@ -100,6 +100,7 @@ function makeDeps(overrides: Partial<PlanDeps> = {}): PlanDeps {
       onQuestionDetected: async () => "",
     })),
     createDebateRunner: mock(() => ({}) as never),
+    getLogger: makeLogger,
     ...overrides,
   };
 

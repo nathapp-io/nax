@@ -43,7 +43,11 @@ const STAT_OUTPUT = "src/foo.ts | 5 +++++\n 1 file changed, 5 insertions(+)";
 function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
   return makeMockAgentManager({
     getDefaultAgent: "claude",
-    completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" as const }),
+    completeFn: async () => ({
+      output: llmResponse,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: cost,
+    }),
     runWithFallbackFn: async (req) => {
       const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
       return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
@@ -55,10 +59,18 @@ function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
       internalRoundTrips: 0,
     }),
     completeWithFallbackFn: async () => ({
-      result: { output: llmResponse, costUsd: cost, source: "mock" },
+      result: {
+        output: llmResponse,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: cost,
+      },
       fallbacks: [],
     }),
-    completeAsFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
+    completeAsFn: async () => ({
+      output: llmResponse,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: cost,
+    }),
     getAgentFn: () => makeAgentAdapter(),
   });
 }

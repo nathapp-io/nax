@@ -35,7 +35,14 @@ describe("CostAggregator", () => {
     expect(accumulated.totalInputTokens).toBe(300);
     expect(accumulated.totalOutputTokens).toBe(130);
 
-    agg.recordError({ ts: Date.now(), runId: "r-001", agentName: "claude", errorCode: "TIMEOUT", durationMs: 100 });
+    agg.recordError({
+      kind: "error",
+      ts: Date.now(),
+      runId: "r-001",
+      agentName: "claude",
+      errorCode: "TIMEOUT",
+      durationMs: 100,
+    });
     const withError = agg.snapshot();
     expect(withError.errorCount).toBe(1);
   });
@@ -44,6 +51,7 @@ describe("CostAggregator", () => {
     const agg = new CostAggregator("r-001", "/tmp/drain");
     agg.record(makeEvent({ callId: "call-1", costUsd: 0.01 }));
     agg.recordError({
+      kind: "error",
       ts: Date.now(),
       runId: "r-001",
       agentName: "claude",
@@ -57,6 +65,7 @@ describe("CostAggregator", () => {
 
     agg.record(makeEvent({ scopeId: "scope-1", costUsd: 0.01 }));
     agg.recordError({
+      kind: "error",
       ts: Date.now(),
       runId: "r-001",
       agentName: "claude",
@@ -143,7 +152,7 @@ describe("CostAggregator", () => {
     await withTempDir(async (dir) => {
       const drainDir = join(dir, "cost");
       const written: string[] = [];
-      let resolveWrite: () => void;
+      let resolveWrite: (value: number | PromiseLike<number>) => void;
       const writePromise = new Promise<number>((r) => {
         resolveWrite = r;
       });
@@ -157,7 +166,7 @@ describe("CostAggregator", () => {
 
       const drainTask = agg.drain();
       agg.record(makeEvent({ ts: 2000 }));
-      resolveWrite!();
+      resolveWrite!(0);
       await drainTask;
 
       expect(written).toHaveLength(2);
@@ -174,7 +183,7 @@ describe("CostAggregator", () => {
     await withTempDir(async (dir) => {
       const drainDir = join(dir, "cost");
       const written: string[] = [];
-      let resolveWrite: () => void;
+      let resolveWrite: (value: number | PromiseLike<number>) => void;
       const writePromise = new Promise<number>((r) => {
         resolveWrite = r;
       });
@@ -187,8 +196,15 @@ describe("CostAggregator", () => {
       agg.record(makeEvent({ ts: 1000 }));
 
       const drainTask = agg.drain();
-      agg.recordError({ ts: 2000, runId: "r-test", agentName: "claude", errorCode: "TIMEOUT", durationMs: 100 });
-      resolveWrite!();
+      agg.recordError({
+        kind: "error",
+        ts: 2000,
+        runId: "r-test",
+        agentName: "claude",
+        errorCode: "TIMEOUT",
+        durationMs: 100,
+      });
+      resolveWrite!(0);
       await drainTask;
 
       expect(written).toHaveLength(2);
@@ -203,7 +219,7 @@ describe("CostAggregator", () => {
   test("snapshot() includes in-flight events during drain", async () => {
     await withTempDir(async (dir) => {
       const drainDir = join(dir, "cost");
-      let resolveWrite: () => void;
+      let resolveWrite: (value: number | PromiseLike<number>) => void;
       const writePromise = new Promise<number>((r) => {
         resolveWrite = r;
       });
@@ -219,7 +235,7 @@ describe("CostAggregator", () => {
       expect(snap.callCount).toBe(1);
       expect(snap.totalCostUsd).toBeCloseTo(0.02);
 
-      resolveWrite!();
+      resolveWrite!(0);
       await drainTask;
       _costAggDeps.write = origWrite;
     });
@@ -328,6 +344,7 @@ describe("CostAggregator", () => {
     expect(snap.totalCostUsd).toBeCloseTo(0.03);
 
     agg.recordError({
+      kind: "error",
       ts: Date.now(),
       runId: "r-001",
       agentName: "claude",

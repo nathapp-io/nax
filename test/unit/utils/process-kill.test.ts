@@ -13,7 +13,7 @@ describe("killProcessGroup", () => {
   });
 
   test("kills process group (negative PID) successfully", () => {
-    const killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
+    const killCalls: Array<{ pid: number | string; signal?: string | number }> = [];
 
     process.kill = ((pid, signal) => {
       killCalls.push({ pid, signal });
@@ -26,7 +26,7 @@ describe("killProcessGroup", () => {
   });
 
   test("falls back to single process kill when group kill fails with ESRCH", () => {
-    const killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
+    const killCalls: Array<{ pid: number | string; signal?: string | number }> = [];
 
     process.kill = ((pid, signal) => {
       killCalls.push({ pid, signal });
@@ -103,7 +103,7 @@ describe("killProcessGroup", () => {
   });
 
   test("supports SIGKILL signal", () => {
-    const killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
+    const killCalls: Array<{ pid: number | string; signal?: string | number }> = [];
 
     process.kill = ((pid, signal) => {
       killCalls.push({ pid, signal });
@@ -116,7 +116,7 @@ describe("killProcessGroup", () => {
   });
 
   test("supports numeric signal codes", () => {
-    const killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
+    const killCalls: Array<{ pid: number | string; signal?: string | number }> = [];
 
     process.kill = ((pid, signal) => {
       killCalls.push({ pid, signal });
@@ -129,7 +129,7 @@ describe("killProcessGroup", () => {
   });
 
   test("handles zero PID gracefully", () => {
-    const killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
+    const killCalls: Array<{ pid: number | string; signal?: string | number }> = [];
 
     process.kill = ((pid, signal) => {
       killCalls.push({ pid, signal });
@@ -144,7 +144,7 @@ describe("killProcessGroup", () => {
   });
 
   test("handles negative PID (already negative process group ID)", () => {
-    const killCalls: Array<{ pid: number | string; signal?: NodeJS.Signals | number }> = [];
+    const killCalls: Array<{ pid: number | string; signal?: string | number }> = [];
 
     process.kill = ((pid, signal) => {
       killCalls.push({ pid, signal });

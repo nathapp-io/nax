@@ -7,6 +7,15 @@ import { makeSpawn } from "@test/helpers";
 
 // ─── Spawn mock for diff-utils used inside prepare-inputs ──────────────────────
 
+// Clears the hardcoded default excludePatterns so review inputs derive them from
+// testFilePatterns instead (ADR-009 §4.4). `excludePatterns: undefined` is the
+// documented "derive" state, but spreading the interface-typed DEFAULT_CONFIG
+// sub-object drops required-field requiredness, so strip the key instead.
+function withoutExcludePatterns<C extends { excludePatterns?: string[] }>(c: C): Omit<C, "excludePatterns"> {
+  const { excludePatterns: _exclude, ...rest } = c;
+  return rest;
+}
+
 function makeSpawnSequence(outputs: string[]) {
   let i = 0;
   return makeSpawn(() => {
@@ -101,7 +110,6 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     const ctx = makeCtx({
       execution: {
         ...DEFAULT_CONFIG.execution,
-        inlineReview: true,
         rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: true, maxAttemptsTotal: 2 },
       },
       review: {
@@ -182,8 +190,8 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
         enabled: true,
         checks: ["semantic", "adversarial"],
         // Clear hardcoded excludePatterns so both helpers derive from resolved patterns.
-        semantic: { ...DEFAULT_CONFIG.review.semantic, excludePatterns: undefined },
-        adversarial: { ...DEFAULT_CONFIG.review.adversarial, excludePatterns: undefined },
+        semantic: withoutExcludePatterns(DEFAULT_CONFIG.review.semantic!),
+        adversarial: withoutExcludePatterns(DEFAULT_CONFIG.review.adversarial!),
       },
     });
     ctx.storyGitRef = "abc123";

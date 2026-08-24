@@ -8,33 +8,12 @@ import type { PlanDeps, PlanModeContext } from "@/plan/strategies";
 import type { PRD } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
-import { assertDefined, makeMockAgentManager } from "@test/helpers";
-
-const MOCK_FULL_CONFIG = {} as never;
+import { assertDefined, firstCall, makeDebateRunner, makeLogger, makeMockRuntime } from "@test/helpers";
 
 function makeRuntime(closeImpl = mock(async () => {})): NaxRuntime {
-  return {
-    runId: "run-123",
-    configLoader: { current: () => MOCK_FULL_CONFIG },
-    workdir: "/tmp/workdir",
-    projectDir: "/tmp/workdir",
-    outputDir: "/tmp/workdir/.nax",
-    globalDir: "/tmp/global",
-    curatorRollupPath: "/tmp/global/curator/rollup.jsonl",
-    projectKey: "project-key",
-    agentManager: makeMockAgentManager({ getDefaultAgent: "claude" }),
-    sessionManager: { nameFor: () => "session" } as never,
-    costAggregator: {} as never,
-    promptAuditor: {} as never,
-    reviewAuditor: {} as never,
-    dispatchEvents: {} as never,
-    agentStreamEvents: {} as never,
-    packages: { resolve: () => ({ id: "package-view" }) } as never,
-    pidRegistry: {} as never,
-    logger: {} as never,
-    signal: new AbortController().signal,
-    close: closeImpl,
-  };
+  const runtime = makeMockRuntime();
+  runtime.close = closeImpl;
+  return runtime;
 }
 
 function makeDeps(overrides: Partial<PlanDeps> = {}): PlanDeps {
@@ -52,7 +31,8 @@ function makeDeps(overrides: Partial<PlanDeps> = {}): PlanDeps {
       detectQuestion: async () => false,
       onQuestionDetected: async () => "",
     })),
-    createDebateRunner: mock(() => ({ runPlan: mock(async () => ({ outcome: "failed" })) }) as never),
+    createDebateRunner: mock(() => makeDebateRunner()),
+    getLogger: makeLogger,
     ...overrides,
   };
 }
@@ -68,6 +48,7 @@ function makeContext(overrides: Partial<PlanModeContext> = {}): PlanModeContext 
   const deps = makeDeps();
 
   return {
+    profileName: "default",
     workdir: "/tmp/workdir",
     naxDir: "/tmp/workdir/.nax",
     outputDir: "/tmp/workdir/.nax/features/feat-debate",
@@ -157,7 +138,7 @@ describe("DebatePlanStrategy", () => {
 
   test("calls createDebateRunner with the plan stage config and runs the debate prompt through runPlan", async () => {
     const runPlanMock = mock(async () => ({ outcome: "passed", output: JSON.stringify(SAMPLE_PRD) }));
-    const createDebateRunnerMock = mock(() => ({ runPlan: runPlanMock }));
+    const createDebateRunnerMock = mock(() => makeDebateRunner({ runPlan: runPlanMock }));
     const ctx = makeContext({
       deps: makeDeps({ createDebateRunner: createDebateRunnerMock }),
     });
@@ -230,7 +211,7 @@ describe("DebatePlanStrategy", () => {
       outcome: "failed",
       output: "",
     }));
-    const createDebateRunnerMock = mock(() => ({ runPlan: runPlanMock }));
+    const createDebateRunnerMock = mock(() => makeDebateRunner({ runPlan: runPlanMock }));
     const callOpSpy = spyOn(operationsModule, "callOp").mockResolvedValue(fallbackPrd as never);
     const origWriteOrRecoverPrd = _debatePlanDeps.writeOrRecoverPrd;
     _debatePlanDeps.writeOrRecoverPrd = mock(async () => ({
@@ -245,12 +226,9 @@ describe("DebatePlanStrategy", () => {
 
       expect(result.outputPath).toBe(ctx.outputPath);
       expect(callOpSpy).toHaveBeenCalledTimes(1);
-      const [callCtx, op, input] = callOpSpy.mock.calls[0] as [
-        Record<string, unknown>,
-        unknown,
-        Record<string, unknown>,
-      ];
-      expect(op).toBe(planInteractiveOp);
+      const [callCtx, op, input] = firstCall(callOpSpy, "callOp");
+      const dispatchedOp: unknown = op;
+      expect(dispatchedOp).toBe(planInteractiveOp);
       expect(callCtx.runtime).toBe(ctx.runtime);
       expect(callCtx.packageDir).toBe(ctx.workdir);
       expect(callCtx.storyId).toBe(ctx.options.feature);

@@ -5,6 +5,7 @@ import { _parallelWorkerDeps, executeParallelBatch, executeStoryInWorktree } fro
 import { defaultPipeline } from "@/pipeline/stages";
 import type { PipelineContext, PipelineStage } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
+import type { RoutingDecision } from "@/routing/decision";
 import type { WorktreeDependencyContext } from "@/worktree/types";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
@@ -56,12 +57,19 @@ describe("executeParallelBatch", () => {
       },
     } as NaxConfig;
 
-    const routeTaskMock = mock(() => ({ complexity: "simple", modelTier: "fast", testStrategy: "test-after" }));
+    const routeTaskMock = mock(
+      (): RoutingDecision => ({
+        complexity: "simple",
+        modelTier: "fast",
+        testStrategy: "test-after",
+        reasoning: "test",
+      }),
+    );
     const executeStoryMock = mock(async () => ({
       success: true,
       cost: 0.25,
     }));
-    _parallelWorkerDeps.routeTask = routeTaskMock as typeof _parallelWorkerDeps.routeTask;
+    _parallelWorkerDeps.routeTask = routeTaskMock;
     _parallelWorkerDeps.executeStoryInWorktree = executeStoryMock as typeof _parallelWorkerDeps.executeStoryInWorktree;
 
     const result = await executeParallelBatch(
@@ -95,11 +103,14 @@ describe("executeParallelBatch", () => {
     const stories = ["US-001", "US-002", "US-003"].map(makeStory);
     const config = DEFAULT_CONFIG as NaxConfig;
 
-    _parallelWorkerDeps.routeTask = mock(() => ({
-      complexity: "simple",
-      modelTier: "fast",
-      testStrategy: "test-after",
-    })) as typeof _parallelWorkerDeps.routeTask;
+    _parallelWorkerDeps.routeTask = mock(
+      (): RoutingDecision => ({
+        complexity: "simple",
+        modelTier: "fast",
+        testStrategy: "test-after",
+        reasoning: "test",
+      }),
+    );
 
     _parallelWorkerDeps.executeStoryInWorktree = mock(async (story: UserStory) => {
       if (story.id === "US-001") throw new Error("worktree exploded");

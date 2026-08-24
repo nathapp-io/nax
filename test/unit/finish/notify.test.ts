@@ -73,14 +73,21 @@ describe("telegramCreds", () => {
   });
 
   test("telegramCreds ignores interaction.config when another plugin is selected", () => {
-    const prev = { ...process.env };
+    const prevToken = process.env.NAX_TELEGRAM_TOKEN;
+    const prevBotToken = process.env.TELEGRAM_BOT_TOKEN;
+    const prevChatId = process.env.NAX_TELEGRAM_CHAT_ID;
     try {
       delete process.env.NAX_TELEGRAM_TOKEN;
       delete process.env.TELEGRAM_BOT_TOKEN;
       delete process.env.NAX_TELEGRAM_CHAT_ID;
       expect(telegramCreds({ interaction: { plugin: "cli", config: { botToken: "t", chatId: "c" } } })).toBeNull();
     } finally {
-      process.env = prev;
+      if (prevToken === undefined) delete process.env.NAX_TELEGRAM_TOKEN;
+      else process.env.NAX_TELEGRAM_TOKEN = prevToken;
+      if (prevBotToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+      else process.env.TELEGRAM_BOT_TOKEN = prevBotToken;
+      if (prevChatId === undefined) delete process.env.NAX_TELEGRAM_CHAT_ID;
+      else process.env.NAX_TELEGRAM_CHAT_ID = prevChatId;
     }
   });
 
@@ -98,7 +105,9 @@ describe("isTelegramConfigured", () => {
   });
 
   test("returns false when creds are not available", () => {
-    const prev = { ...process.env };
+    const prevToken = process.env.NAX_TELEGRAM_TOKEN;
+    const prevBotToken = process.env.TELEGRAM_BOT_TOKEN;
+    const prevChatId = process.env.NAX_TELEGRAM_CHAT_ID;
     try {
       delete process.env.NAX_TELEGRAM_TOKEN;
       delete process.env.TELEGRAM_BOT_TOKEN;
@@ -106,7 +115,12 @@ describe("isTelegramConfigured", () => {
       const result = isTelegramConfigured({ interaction: { plugin: "cli", config: {} } });
       expect(result).toBe(false);
     } finally {
-      process.env = prev;
+      if (prevToken === undefined) delete process.env.NAX_TELEGRAM_TOKEN;
+      else process.env.NAX_TELEGRAM_TOKEN = prevToken;
+      if (prevBotToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+      else process.env.TELEGRAM_BOT_TOKEN = prevBotToken;
+      if (prevChatId === undefined) delete process.env.NAX_TELEGRAM_CHAT_ID;
+      else process.env.NAX_TELEGRAM_CHAT_ID = prevChatId;
     }
   });
 });

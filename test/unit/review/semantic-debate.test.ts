@@ -249,7 +249,11 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       estimatedCostUsd: cost,
       agentFallbacks: [],
     }),
-    completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "exact" as const }),
+    completeFn: async () => ({
+      output: llmResponse,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: cost,
+    }),
     runWithFallbackFn: async () => ({
       result: {
         success: true,
@@ -263,7 +267,11 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       fallbacks: [],
     }),
     completeWithFallbackFn: async () => ({
-      result: { output: llmResponse, costUsd: cost, source: "exact" as const },
+      result: {
+        output: llmResponse,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: cost,
+      },
       fallbacks: [],
     }),
     runAsFn: async (_agent, opts) => ({
@@ -275,7 +283,11 @@ function makeAgentManager(llmResponse: string, cost = 0) {
       estimatedCostUsd: cost,
       agentFallbacks: [],
     }),
-    completeAsFn: async (_agent, _prompt, _opts) => ({ output: llmResponse, costUsd: cost, source: "exact" as const }),
+    completeAsFn: async (_agent, _prompt, _opts) => ({
+      output: llmResponse,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: cost,
+    }),
   });
 }
 

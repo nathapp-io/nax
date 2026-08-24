@@ -9,11 +9,12 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { DecomposedStory } from "@/agents/shared/types-extended";
+import type { SourceRoot } from "@/analyze/types";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import type { NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { makeMockAgentManager, makeNaxConfig, makePRD } from "@test/helpers";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makePRD } from "@test/helpers";
 
 function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
@@ -89,7 +90,7 @@ function toDecomposedStory(story: UserStory): DecomposedStory {
     tags: story.tags,
     dependencies: story.dependencies,
     complexity: story.routing?.complexity ?? "simple",
-    contextFiles: story.contextFiles ?? [],
+    contextFiles: story.contextFiles?.map((f) => (typeof f === "string" ? f : f.path)) ?? [],
     reasoning: story.routing?.reasoning ?? "",
     estimatedLOC: 50,
     risks: [],
@@ -156,9 +157,11 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
     _planDeps.mkdirp = mock(async () => {});
 
     _planDeps.createRuntime = mock(() =>
-      makeMockDecomposeManager(async () => ({
-        stories: stories.map(toDecomposedStory),
-      })),
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async () => ({
+          stories: stories.map(toDecomposedStory),
+        })),
+      }),
     );
   }
 
@@ -211,9 +214,11 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
 
     const adapterDecomposeCalls: unknown[] = [];
     _planDeps.createRuntime = mock(() =>
-      makeMockDecomposeManager(async (_name: string, opts: unknown) => {
-        adapterDecomposeCalls.push(opts);
-        return { stories: stories.map(toDecomposedStory) };
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async (_name: string, opts: unknown) => {
+          adapterDecomposeCalls.push(opts);
+          return { stories: stories.map(toDecomposedStory) };
+        }),
       }),
     );
 
@@ -248,9 +253,11 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
 
     setupDeps(prd);
     _planDeps.createRuntime = mock(() =>
-      makeMockDecomposeManager(async (_name: string, opts: unknown) => {
-        adapterDecomposeCalls.push(opts);
-        return { stories: [makeSubStory("US-001-A"), makeSubStory("US-001-B")].map(toDecomposedStory) };
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async (_name: string, opts: unknown) => {
+          adapterDecomposeCalls.push(opts);
+          return { stories: [makeSubStory("US-001-A"), makeSubStory("US-001-B")].map(toDecomposedStory) };
+        }),
       }),
     );
 
@@ -335,14 +342,18 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
     let capturedPromptContext: string | undefined;
 
     const origScanSourceRoots = _planDeps.scanSourceRoots;
-    _planDeps.scanSourceRoots = mock(async (_workdir: string) => [
-      { path: "packages/lib", language: "typescript", framework: "", testRunner: "jest" },
-    ]);
+    _planDeps.scanSourceRoots = mock(
+      async (_workdir: string): Promise<SourceRoot[]> => [
+        { path: "packages/lib", language: "typescript", framework: "", testRunner: "jest" },
+      ],
+    );
 
     // Mock the runtime to capture the prompt context passed to decompose
     _planDeps.createRuntime = mock(() =>
-      makeMockDecomposeManager(async (_name: string, _opts: unknown) => {
-        return { stories: [makeSubStory("US-001-A")] };
+      makeMockRuntime({
+        agentManager: makeMockDecomposeManager(async (_name: string, _opts: unknown) => {
+          return { stories: [makeSubStory("US-001-A")].map(toDecomposedStory) };
+        }),
       }),
     );
 

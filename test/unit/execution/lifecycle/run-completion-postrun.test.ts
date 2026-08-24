@@ -22,7 +22,7 @@ import {
 import type { StoryMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
-import { makeDispatchContext, makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
+import { assertDefined, makeDispatchContext, makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -149,11 +149,12 @@ describe("handleRunCompletion - AC4: sets regression running before runDeferredR
   test("calls setPostRunPhase('regression', { status: 'running' }) before runDeferredRegression()", async () => {
     const callOrder: string[] = [];
 
-    const statusWriter = makeStatusWriter();
-    statusWriter.setPostRunPhase = mock((phase: string, update: { status: string }) => {
-      if (phase === "regression") {
-        callOrder.push(`setPostRunPhase-regression-${update.status}`);
-      }
+    const statusWriter = makeStatusWriter({
+      setPostRunPhase: mock((phase: string, update: { status: string }) => {
+        if (phase === "regression") {
+          callOrder.push(`setPostRunPhase-regression-${update.status}`);
+        }
+      }),
     });
 
     _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => {
@@ -233,13 +234,14 @@ describe("handleRunCompletion - AC4: sets regression running before runDeferredR
 
 describe("handleRunCompletion - AC5: sets regression passed on success", () => {
   test("calls setPostRunPhase('regression', { status: 'passed', lastRunAt }) when regression succeeds", async () => {
-    const regressionCalls: Array<Record<string, unknown>> = [];
+    const regressionCalls: Array<{ status: string; lastRunAt?: string }> = [];
 
-    const statusWriter = makeStatusWriter();
-    statusWriter.setPostRunPhase = mock((phase: string, update: Record<string, unknown>) => {
-      if (phase === "regression") {
-        regressionCalls.push(update);
-      }
+    const statusWriter = makeStatusWriter({
+      setPostRunPhase: mock((phase: string, update: { status: string; lastRunAt?: string }) => {
+        if (phase === "regression") {
+          regressionCalls.push(update);
+        }
+      }),
     });
 
     _runCompletionDeps.runDeferredRegression = mock(
@@ -259,10 +261,10 @@ describe("handleRunCompletion - AC5: sets regression passed on success", () => {
     await handleRunCompletion(makeOpts(config, prd, { statusWriter }));
 
     const passedCall = regressionCalls.find((u) => u.status === "passed");
-    expect(passedCall).toBeDefined();
-    expect(typeof passedCall?.lastRunAt).toBe("string");
+    assertDefined(passedCall, "regression passed call");
+    assertDefined(passedCall.lastRunAt, "regression lastRunAt");
     // Must be ISO 8601
-    expect(new Date(passedCall?.lastRunAt as string).toISOString()).toBe(passedCall?.lastRunAt);
+    expect(new Date(passedCall.lastRunAt).toISOString()).toBe(passedCall.lastRunAt);
   });
 
   test("passed call does not include skipped:true when regression actually ran", async () => {
@@ -291,13 +293,14 @@ describe("handleRunCompletion - AC5: sets regression passed on success", () => {
 
 describe("handleRunCompletion - AC6: sets regression failed on failure", () => {
   test("calls setPostRunPhase('regression', { status: 'failed', affectedStories, lastRunAt }) when regression fails", async () => {
-    const regressionCalls: Array<Record<string, unknown>> = [];
+    const regressionCalls: Array<{ status: string; lastRunAt?: string }> = [];
 
-    const statusWriter = makeStatusWriter();
-    statusWriter.setPostRunPhase = mock((phase: string, update: Record<string, unknown>) => {
-      if (phase === "regression") {
-        regressionCalls.push(update);
-      }
+    const statusWriter = makeStatusWriter({
+      setPostRunPhase: mock((phase: string, update: { status: string; lastRunAt?: string }) => {
+        if (phase === "regression") {
+          regressionCalls.push(update);
+        }
+      }),
     });
 
     _runCompletionDeps.runDeferredRegression = mock(
@@ -320,9 +323,9 @@ describe("handleRunCompletion - AC6: sets regression failed on failure", () => {
     await handleRunCompletion(makeOpts(config, prd, { statusWriter }));
 
     const failedCall = regressionCalls.find((u) => u.status === "failed");
-    expect(failedCall).toBeDefined();
-    expect(typeof failedCall?.lastRunAt).toBe("string");
-    expect(new Date(failedCall?.lastRunAt as string).toISOString()).toBe(failedCall?.lastRunAt);
+    assertDefined(failedCall, "regression failed call");
+    assertDefined(failedCall.lastRunAt, "regression lastRunAt");
+    expect(new Date(failedCall.lastRunAt).toISOString()).toBe(failedCall.lastRunAt);
   });
 
   test("failed call includes affectedStories from regressionResult", async () => {
@@ -391,11 +394,12 @@ describe("handleRunCompletion - AC6: sets regression failed on failure", () => {
   test("running is called before failed when regression fails", async () => {
     const callOrder: string[] = [];
 
-    const statusWriter = makeStatusWriter();
-    statusWriter.setPostRunPhase = mock((phase: string, update: { status: string }) => {
-      if (phase === "regression") {
-        callOrder.push(`setPostRunPhase-regression-${update.status}`);
-      }
+    const statusWriter = makeStatusWriter({
+      setPostRunPhase: mock((phase: string, update: { status: string }) => {
+        if (phase === "regression") {
+          callOrder.push(`setPostRunPhase-regression-${update.status}`);
+        }
+      }),
     });
 
     _runCompletionDeps.runDeferredRegression = mock(
@@ -542,11 +546,12 @@ describe("handleRunCompletion - AC7: deferred regression is not smart-skipped", 
   test("records running before passed instead of emitting a skipped status", async () => {
     const callOrder: string[] = [];
 
-    const statusWriter = makeStatusWriter();
-    statusWriter.setPostRunPhase = mock((phase: string, update: { status: string; skipped?: boolean }) => {
-      if (phase === "regression") {
-        callOrder.push(update.skipped ? `skipped-${update.status}` : update.status);
-      }
+    const statusWriter = makeStatusWriter({
+      setPostRunPhase: mock((phase: string, update: { status: string; skipped?: boolean }) => {
+        if (phase === "regression") {
+          callOrder.push(update.skipped ? `skipped-${update.status}` : update.status);
+        }
+      }),
     });
 
     const metrics = [makeStoryMetrics("US-001", true)];

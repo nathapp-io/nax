@@ -12,7 +12,7 @@ import * as path from "node:path";
 import { pluginsListCommand } from "@/cli/plugins";
 import type { NaxConfig } from "@/config/schema";
 import type { NaxPlugin } from "@/plugins/types";
-import { makeNaxConfig, makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makeOptimizerResult, makeTempDir } from "@test/helpers";
 
 // Test fixture helpers
 async function createTempDir(): Promise<string> {
@@ -37,10 +37,11 @@ async function writePluginFile(dir: string, filename: string, plugin: NaxPlugin)
       name: "${plugin.extensions.optimizer.name}",
       async optimize(input) {
         return {
-          optimizedPrompt: input.prompt,
-          estimatedTokens: input.estimatedTokens,
-          tokensSaved: 0,
-          appliedStrategies: []
+          prompt: input.prompt,
+          originalTokens: 0,
+          optimizedTokens: 0,
+          savings: 0,
+          appliedRules: []
         };
       }
     },`;
@@ -162,12 +163,7 @@ describe("pluginsListCommand", () => {
           optimizer: {
             name: "test",
             async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
+              return makeOptimizerResult({ prompt: input.prompt });
             },
           },
         },
@@ -298,12 +294,7 @@ describe("pluginsListCommand", () => {
           optimizer: {
             name: "test",
             async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
+              return makeOptimizerResult({ prompt: input.prompt });
             },
           },
         },
@@ -377,12 +368,7 @@ describe("pluginsListCommand", () => {
           optimizer: {
             name: "test",
             async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
+              return makeOptimizerResult({ prompt: input.prompt });
             },
           },
           reviewer: {
@@ -504,12 +490,7 @@ describe("pluginsListCommand", () => {
           optimizer: {
             name: "test",
             async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
+              return makeOptimizerResult({ prompt: input.prompt });
             },
           },
         },

@@ -1,10 +1,10 @@
 import { describe, expect, mock, test } from "bun:test";
 import { NaxError } from "@/errors";
 import { PipelinePlanStrategy, _pipelinePlanDeps } from "@/plan";
+import type { PlanCriticVerdict } from "@/plan/critic";
 import type { PlanModeContext } from "@/plan/strategies/types";
-import type { PackageSummary } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeMockRuntime } from "@test/helpers";
+import { makeLogger, makeMockAgentManager, makeMockRuntime, makePRD, makeStory } from "@test/helpers";
 
 function makeRuntime(closeImpl?: () => Promise<void>): NaxRuntime {
   const runtime = makeMockRuntime({
@@ -24,9 +24,19 @@ function makeCtx(overrides: Partial<PlanModeContext> = {}): PlanModeContext {
     codebaseContext: "context",
     normalizedRoots: [],
     relativePackages: ["packages/api"],
-    packageDetails: [{ path: "packages/api", packageName: "@acme/api", stackSummary: "TypeScript" } as PackageSummary],
+    packageDetails: [
+      {
+        path: "packages/api",
+        name: "@acme/api",
+        runtime: "node",
+        framework: "unknown",
+        testRunner: "bun",
+        keyDeps: [],
+      },
+    ],
     projectName: "acme",
     branchName: "feat/feat-x",
+    profileName: "default",
     timeoutSeconds: 30,
     config: { citationThreshold: 0.55, plan: { citationThreshold: 0.55 }, project: { language: "ts" } } as never,
     options: { from: "/tmp/spec.md", feature: "feat-x" },
@@ -45,6 +55,7 @@ function makeCtx(overrides: Partial<PlanModeContext> = {}): PlanModeContext {
       initInteractionChain: async () => null,
       createInteractionBridge: () => ({ detectQuestion: async () => false, onQuestionDetected: async () => "" }),
       createDebateRunner: () => ({}) as never,
+      getLogger: () => makeLogger(),
     },
     ...overrides,
   };
@@ -72,10 +83,10 @@ describe("PipelinePlanStrategy", () => {
       }
       throw new Error("unexpected op");
     }) as typeof _pipelinePlanDeps.callOp;
-    _pipelinePlanDeps.runPlanCritic = mock(async () => {
+    _pipelinePlanDeps.runPlanCritic = mock(async (): Promise<PlanCriticVerdict> => {
       sequence.push("critic");
-      return { outcome: "passed", prd: { userStories: [] }, findings: [] };
-    }) as typeof _pipelinePlanDeps.runPlanCritic;
+      return { outcome: "passed", prd: makePRD({ userStories: [] }), findings: [] };
+    });
 
     try {
       const { outputPath } = await strategy.execute(ctx);
@@ -97,9 +108,14 @@ describe("PipelinePlanStrategy", () => {
       if (op === _pipelinePlanDeps.groundOp) return { repoFacts: [], specClaims: [], gaps: [] };
       return { prd: { userStories: [] } };
     }) as typeof _pipelinePlanDeps.callOp;
-    _pipelinePlanDeps.runPlanCritic = mock(async () => {
-      return { outcome: "failed", prd: { userStories: [] }, findings: [], specDeltasPath: "/tmp/spec-deltas.md" };
-    }) as typeof _pipelinePlanDeps.runPlanCritic;
+    _pipelinePlanDeps.runPlanCritic = mock(async (): Promise<PlanCriticVerdict> => {
+      return {
+        outcome: "failed",
+        prd: makePRD(),
+        findings: [],
+        specDeltasPath: "/tmp/spec-deltas.md",
+      };
+    });
 
     try {
       await expect(strategy.execute(ctx)).rejects.toMatchObject({
@@ -147,6 +163,7 @@ describe("PipelinePlanStrategy", () => {
         initInteractionChain: async () => null,
         createInteractionBridge: () => ({ detectQuestion: async () => false, onQuestionDetected: async () => "" }),
         createDebateRunner: () => ({}) as never,
+        getLogger: () => makeLogger(),
       },
     });
 
@@ -177,30 +194,24 @@ describe("PipelinePlanStrategy", () => {
         },
       };
     }) as typeof _pipelinePlanDeps.callOp;
-    _pipelinePlanDeps.runPlanCritic = mock(async () => ({
-      outcome: "passed",
-      prd: {
-        userStories: [
-          {
-            id: "s1",
-            title: "story 1",
-            description: "",
-            acceptanceCriteria: [],
-            status: "pending",
-            passes: false,
-            escalations: [],
-            attempts: 0,
-            routing: {
-              complexity: "low",
-              testStrategy: "test-after",
-              reasoning: "",
-              agentProfileId: "senior",
-            },
-          },
-        ],
-      },
-      findings: [],
-    })) as typeof _pipelinePlanDeps.runPlanCritic;
+    _pipelinePlanDeps.runPlanCritic = mock(
+      async (): Promise<PlanCriticVerdict> => ({
+        outcome: "passed",
+        prd: makePRD({
+          userStories: [
+            makeStory({
+              routing: {
+                complexity: "simple",
+                testStrategy: "test-after",
+                reasoning: "",
+                agentProfileId: "senior",
+              },
+            }),
+          ],
+        }),
+        findings: [],
+      }),
+    );
 
     try {
       await strategy.execute(ctx);
@@ -239,9 +250,9 @@ describe("PipelinePlanStrategy", () => {
       }
       return { prd: { userStories: [] } };
     }) as typeof _pipelinePlanDeps.callOp;
-    _pipelinePlanDeps.runPlanCritic = mock(async () => {
-      return { outcome: "passed", prd: { userStories: [] }, findings: [] };
-    }) as typeof _pipelinePlanDeps.runPlanCritic;
+    _pipelinePlanDeps.runPlanCritic = mock(async (): Promise<PlanCriticVerdict> => {
+      return { outcome: "passed", prd: makePRD(), findings: [] };
+    });
 
     try {
       await strategy.execute(successCtx);
