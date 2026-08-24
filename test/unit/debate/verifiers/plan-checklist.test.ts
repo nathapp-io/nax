@@ -10,6 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { PathLike } from "node:fs";
 import { _planChecklistDeps, planChecklistVerifier, resolvePostDebateVerifier } from "@/debate";
 import type { PostDebateVerifierContext } from "@/debate";
 import type { FactsManifest } from "@/debate/facts-manifest";
@@ -89,7 +90,7 @@ beforeEach(() => {
   origWrite = _planChecklistDeps.write;
   origReadFile = _planChecklistDeps.readFile;
 
-  _planChecklistDeps.existsSync = (p: string) => existsSyncImpl(p);
+  _planChecklistDeps.existsSync = (p: PathLike) => existsSyncImpl(String(p));
   _planChecklistDeps.write = async (p: string, data: string) => {
     capturedWrites.push({ path: p, content: data });
     return 0;
