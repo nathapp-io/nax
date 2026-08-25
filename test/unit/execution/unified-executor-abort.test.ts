@@ -57,6 +57,9 @@ function makeCtxWithSignal(signal: AbortSignal, overrides: Record<string, unknow
     interactionChain: null,
     runtime: {
       outputDir: "/tmp/nax-test-results-output",
+      // nax#1709: parallel metrics read these run-scoped stores.
+      agentFallbacks: new Map(),
+      runtimeCrashRetries: new Map(),
       signal,
       costAggregator: {
         snapshot: () => ({

@@ -4,8 +4,10 @@
 // The helper is a pure function over StoryMetrics[] → RunFallbackAggregate | undefined.
 
 import { describe, expect, test } from "bun:test";
+import { synthesizeBackfillMetric } from "@/execution";
 import { deriveRunFallbackAggregates } from "@/metrics/aggregator";
 import type { AgentFallbackHop, RunFallbackAggregate, RunMetrics, StoryMetrics } from "@/metrics/types";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 
 function storyWithHops(storyId: string, hops: AgentFallbackHop[], extra: Partial<StoryMetrics> = {}): StoryMetrics {
   return {
@@ -134,18 +136,16 @@ describe("deriveRunFallbackAggregates", () => {
     expect(agg?.totalWastedCostUsd).toBeCloseTo(0.21, 5);
   });
 
-  test("treats missing costUsd as 0 (defensive — old saved metrics may lack field)", () => {
-    // Force a hop without costUsd to simulate deserialized-from-disk records.
-    const legacyHop = {
-      storyId: "US-001",
-      priorAgent: "codex",
-      newAgent: "claude",
-      outcome: "fail-auth",
-      category: "availability",
-      hop: 1,
-    } as unknown as AgentFallbackHop;
-    const s = storyWithHops("US-001", [legacyHop]);
+  // nax#1707: this previously built a hop with costUsd deleted, to "simulate
+  // deserialized-from-disk records". No such path exists — deriveRunFallbackAggregates
+  // is only ever called (run-completion.ts) with the in-memory allStoryMetrics of the
+  // run in flight, and collectStoryMetrics fills costUsd from AgentFallbackRecord,
+  // where it is required. The reachable zero-cost case is an adapter that reported no
+  // cost, which AgentManager records as costUsd: 0 — that is what is pinned here.
+  test("a hop whose adapter reported no cost contributes 0 to the wasted total", () => {
+    const s = storyWithHops("US-001", [hop("US-001", "codex", "claude", 0)]);
     const agg = deriveRunFallbackAggregates([s]);
+    expect(agg?.totalHops).toBe(1);
     expect(agg?.totalWastedCostUsd).toBe(0);
   });
 
@@ -179,5 +179,36 @@ describe("deriveRunFallbackAggregates", () => {
     );
     const agg = deriveRunFallbackAggregates([s]);
     expect(agg?.exhaustedStories).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// nax#1709: exhaustedStories requires `!story.success`, and before this fix only
+// SUCCESSFUL stories ever carried hops — collectStoryMetrics runs on the success
+// path only. The rule was therefore structurally unreachable. This pins that a
+// failed story synthesised by the back-fill now satisfies it.
+// ---------------------------------------------------------------------------
+
+describe("deriveRunFallbackAggregates — exhausted rule is reachable (#1709)", () => {
+  test("reports a failed story whose last hop was an availability failure", () => {
+    const failed = synthesizeBackfillMetric({
+      storyId: "US-001",
+      story: makeStory({ id: "US-001", status: "failed", attempts: 2 }),
+      totalCostUsd: 2,
+      config: makeNaxConfig(),
+      defaultAgent: "claude",
+      timestamp: "2026-08-25T00:00:00.000Z",
+      fallbackHops: [
+        hop("US-001", "claude", "codex", 0.4),
+        hop("US-001", "codex", "opencode", 0.6, { hop: 2, outcome: "fail-service-down" }),
+      ],
+    });
+
+    const agg = deriveRunFallbackAggregates([failed]);
+
+    expect(failed.success).toBe(false);
+    expect(agg?.totalHops).toBe(2);
+    expect(agg?.totalWastedCostUsd).toBeCloseTo(1.0, 5);
+    expect(agg?.exhaustedStories).toEqual(["US-001"]);
   });
 });

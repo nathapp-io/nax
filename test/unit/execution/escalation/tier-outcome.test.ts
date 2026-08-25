@@ -10,7 +10,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { handleMaxAttemptsReached, handleNoTierAvailable } from "@/execution/escalation";
 import type { EscalationHandlerContext } from "@/execution/escalation";
-import { cleanupTempDir, makePRD, makeStory, makeTempDir } from "@test/helpers";
+import { pipelineEventBus } from "@/pipeline/event-bus";
+import { cleanupTempDir, makeMockRuntime, makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 function makeCtx(overrides: Partial<EscalationHandlerContext>, prdPath: string): EscalationHandlerContext {
   const story = makeStory({ id: "US-001", status: "in-progress" });
@@ -104,5 +105,66 @@ describe("handleMaxAttemptsReached — pause-reason persistence (nax#1582)", () 
     expect(pausedStory?.priorErrors).toEqual([
       "PAUSED: Max attempts reached (runtime-crash requires human review): Rectification exhausted",
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// nax#1707 follow-up: these emitters read
+// `ctx.runtime?.costAggregator.byStory()[id]?.totalCostUsd ?? ctx.totalCost`. The only
+// caller of handleTierEscalation never passed `runtime`, so the fallback was taken
+// unconditionally and every paused story reported the RUN-WIDE total. Threading runtime
+// switches them to per-story cost; the sibling emitter in preIterationTierCheck is
+// already pinned both ways (tier-escalation-story-failed.test.ts), these four were not.
+// ---------------------------------------------------------------------------
+
+describe("handleNoTierAvailable — cost source on story:paused", () => {
+  let tempDir: string;
+  let unsubscribe: (() => void) | undefined;
+  const seen: { cost?: number }[] = [];
+
+  beforeEach(() => {
+    tempDir = makeTempDir("nax-tier-outcome-cost-");
+    seen.length = 0;
+    unsubscribe = pipelineEventBus.on("story:paused", (event) => {
+      seen.push({ cost: (event as { cost?: number }).cost });
+    });
+  });
+
+  afterEach(() => {
+    unsubscribe?.();
+    cleanupTempDir(tempDir);
+  });
+
+  test("reports the per-story total from the aggregator, not the run-wide totalCost", async () => {
+    const runtime = makeMockRuntime();
+    runtime.costAggregator.record({
+      ts: Date.now(),
+      runId: "test-run",
+      agentName: "claude",
+      model: "test-model",
+      storyId: "US-001",
+      tokens: { input: 10, output: 10 },
+      estimatedCostUsd: 0.75,
+      exactCostUsd: 0.75,
+      costUsd: 0.75,
+      confidence: "estimated",
+      durationMs: 100,
+    });
+    // Deliberately different from the per-story cost so a fallback read is visible.
+    const ctx = makeCtx({ runtime, totalCost: 9.99 }, join(tempDir, "prd.json"));
+
+    await handleNoTierAvailable(ctx, "verifier-rejected");
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0].cost).toBe(0.75);
+  });
+
+  test("falls back to the run-wide totalCost when no runtime is threaded", async () => {
+    const ctx = makeCtx({ totalCost: 9.99 }, join(tempDir, "prd.json"));
+
+    await handleNoTierAvailable(ctx, "verifier-rejected");
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0].cost).toBe(9.99);
   });
 });

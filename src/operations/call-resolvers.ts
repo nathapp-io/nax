@@ -12,13 +12,14 @@
  */
 
 import type { AgentRunOutcome } from "../agents";
+import type { AgentFallbackRecord } from "../agents/manager-types";
 import { resolveRetryPreset } from "../agents/retry";
 import type { RetryPreset, RetryStrategy } from "../agents/retry";
 import { pickSelector } from "../config";
 import type { ConfigSelector, ConfiguredModel, NaxConfig } from "../config";
 import { NaxError } from "../errors";
 import type { UserStory } from "../prd";
-import type { BuildContext, Operation } from "./types";
+import type { BuildContext, CallContext, Operation } from "./types";
 
 /** Hard ceiling for injected RetryStrategy instances that may not self-terminate. */
 export const MAX_COMPLETE_RETRY_ATTEMPTS = 20;
@@ -127,4 +128,22 @@ export function synthesizeStory(storyId: string | undefined): UserStory {
     escalations: [],
     attempts: 0,
   } satisfies UserStory;
+}
+
+/**
+ * Append the hops a runWithFallback call reported to the run-scoped per-story store.
+ *
+ * No-ops for ad-hoc calls that carry no storyId (plan, review outside a story, CLI):
+ * the store is keyed by story and `deriveRunFallbackAggregates` groups by it, so an
+ * unattributable hop has nowhere to go.
+ */
+export function recordAgentFallbacks(ctx: CallContext, fallbacks: readonly AgentFallbackRecord[]): void {
+  if (fallbacks.length === 0 || !ctx.storyId) return;
+  const store = ctx.runtime.agentFallbacks;
+  const existing = store.get(ctx.storyId);
+  if (existing) {
+    existing.push(...fallbacks);
+    return;
+  }
+  store.set(ctx.storyId, [...fallbacks]);
 }

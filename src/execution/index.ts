@@ -148,3 +148,4 @@ export {
 } from "./post-run";
 export { buildPreviewRouting } from "./executor-types";
 export { requiresInitialRefCapture } from "./build-plan-for-strategy";
+export { synthesizeParallelStoryMetric, type ParallelStoryMetricArgs } from "./parallel-story-metrics";

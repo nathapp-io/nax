@@ -14,6 +14,7 @@ export type {
 } from "./types";
 export {
   collectStoryMetrics,
+  toFallbackHops,
   collectBatchMetrics,
   saveRunMetrics,
   loadRunMetrics,

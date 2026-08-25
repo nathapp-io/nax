@@ -154,3 +154,87 @@ describe("synthesizeBackfillMetric (#1296)", () => {
     expect(m.attempts).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// nax#1709: a story that fails in the execution stage never reaches
+// collectStoryMetrics, so its agent-swap hops and crash retries were dropped —
+// which made deriveRunFallbackAggregates' exhausted rule
+// (`!success && lastHop.category === "availability"`) structurally unreachable,
+// since only successful stories ever carried hops.
+// ---------------------------------------------------------------------------
+
+const HOP = {
+  storyId: "US-001",
+  priorAgent: "claude",
+  newAgent: "codex",
+  hop: 1,
+  outcome: "fail-quota",
+  category: "availability",
+  costUsd: 0.4,
+} as const;
+
+describe("synthesizeBackfillMetric — swap hops and crash retries (#1709)", () => {
+  const failedStory = () => makeStory({ id: "US-001", status: "failed", attempts: 2, routing: routing({}) });
+
+  test("carries the story's agent-swap hops onto the execution-failed metric", () => {
+    const m = synthesizeBackfillMetric({
+      storyId: "US-001",
+      story: failedStory(),
+      totalCostUsd: 2.15,
+      config,
+      defaultAgent: "claude",
+      timestamp: TS,
+      fallbackHops: [HOP],
+    });
+
+    expect(m.source).toBe("execution-failed");
+    expect(m.success).toBe(false);
+    expect(m.fallback?.hops).toEqual([HOP]);
+  });
+
+  test("carries the crash-retry tally instead of a hardcoded zero", () => {
+    const m = synthesizeBackfillMetric({
+      storyId: "US-001",
+      story: failedStory(),
+      totalCostUsd: 1,
+      config,
+      defaultAgent: "claude",
+      timestamp: TS,
+      runtimeCrashes: 3,
+    });
+
+    expect(m.runtimeCrashes).toBe(3);
+  });
+
+  test("omits fallback entirely when the story had no swaps", () => {
+    const m = synthesizeBackfillMetric({
+      storyId: "US-001",
+      story: failedStory(),
+      totalCostUsd: 1,
+      config,
+      defaultAgent: "claude",
+      timestamp: TS,
+      fallbackHops: [],
+    });
+
+    expect(m.fallback).toBeUndefined();
+    expect(m.runtimeCrashes).toBe(0);
+  });
+
+  test("completion-phase-only spend carries neither — nothing executed", () => {
+    const m = synthesizeBackfillMetric({
+      storyId: "US-009",
+      story: makeStory({ id: "US-009", status: "passed", attempts: 0 }),
+      totalCostUsd: 0.5,
+      config,
+      defaultAgent: "claude",
+      timestamp: TS,
+      fallbackHops: [HOP],
+      runtimeCrashes: 2,
+    });
+
+    expect(m.source).toBe("completion-phase");
+    expect(m.fallback).toBeUndefined();
+    expect(m.runtimeCrashes).toBe(0);
+  });
+});

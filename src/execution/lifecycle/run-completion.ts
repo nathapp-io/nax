@@ -16,7 +16,7 @@ import { fireHook } from "@/hooks";
 import type { HooksConfig } from "@/hooks/types";
 import { getSafeLogger } from "@/logger";
 import type { StoryMetrics } from "@/metrics";
-import { deriveRunFallbackAggregates, saveRunMetrics } from "@/metrics";
+import { deriveRunFallbackAggregates, saveRunMetrics, toFallbackHops } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline";
 import type { PRD } from "@/prd";
 import { countStories, isComplete, isStalled } from "@/prd";
@@ -384,6 +384,11 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
             config,
             defaultAgent,
             timestamp: completionCompletedAt,
+            // nax#1709: the run-scoped stores outlive the per-attempt PipelineContext, so a
+            // story that failed in the execution stage still has its swap hops and crash
+            // retries here even though it never reached collectStoryMetrics.
+            fallbackHops: toFallbackHops(options.runtime.agentFallbacks.get(storyId), storyId),
+            runtimeCrashes: options.runtime.runtimeCrashRetries.get(storyId) ?? 0,
           }),
         );
       } else {

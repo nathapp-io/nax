@@ -58,6 +58,9 @@ function makeCtx(overrides: Record<string, unknown> = {}) {
     interactionChain: null,
     runtime: {
       outputDir: "/tmp/nax-test-results-output",
+      // nax#1709: parallel metrics read these run-scoped stores.
+      agentFallbacks: new Map(),
+      runtimeCrashRetries: new Map(),
       costAggregator: {
         snapshot: () => ({
           totalCostUsd: 0,
@@ -184,10 +187,38 @@ describe("results AC-1 / AC-4 / exec AC-29: completed stories produce correct me
     }));
 
     const mod = await import("@/execution/unified-executor");
-    const result = await mod.executeUnified(makeCtx() as never, makePrd([story1, story2]) as never);
+    // nax#1709: callOp records swap hops on the run-scoped stores for parallel stories
+    // exactly as it does sequentially, but the executor built its metrics from inline
+    // literals carrying neither field — so both stores were written and never read.
+    const ctx = makeCtx();
+    ctx.runtime.agentFallbacks.set(story1.id, [
+      {
+        storyId: story1.id,
+        priorAgent: "claude",
+        newAgent: "codex",
+        hop: 1,
+        outcome: "fail-quota",
+        category: "availability",
+        timestamp: "2026-08-25T00:00:00.000Z",
+        costUsd: 0.37,
+      },
+    ]);
+    ctx.runtime.runtimeCrashRetries.set(story2.id, 2);
+
+    const result = await mod.executeUnified(ctx as never, makePrd([story1, story2]) as never);
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);
     const m2 = result.allStoryMetrics.find((m) => m.storyId === story2.id);
+
+    // nax#1709: the recorded hop reaches the parallel metric, minus the producer-only
+    // timestamp; a story with no swaps carries no fallback but still reports crash retries.
+    expect(m1?.fallback?.hops).toHaveLength(1);
+    expect(m1?.fallback?.hops[0].newAgent).toBe("codex");
+    expect(m1?.fallback?.hops[0].costUsd).toBe(0.37);
+    expect(m1?.fallback?.hops[0]).not.toHaveProperty("timestamp");
+    expect(m1?.runtimeCrashes).toBe(0);
+    expect(m2?.fallback).toBeUndefined();
+    expect(m2?.runtimeCrashes).toBe(2);
 
     // AC-1: completed story metric shows success
     expect(m1?.success).toBe(true);

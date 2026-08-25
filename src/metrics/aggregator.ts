@@ -234,7 +234,7 @@ export function deriveRunFallbackAggregates(stories: StoryMetrics[]): RunFallbac
     for (const h of hops) {
       const key = `${h.priorAgent}->${h.newAgent}`;
       perPair[key] = (perPair[key] ?? 0) + 1;
-      totalWastedCostUsd += h.costUsd ?? 0;
+      totalWastedCostUsd += h.costUsd;
     }
 
     // Exhausted = failed story whose last hop was an availability failure.

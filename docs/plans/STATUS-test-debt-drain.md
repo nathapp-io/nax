@@ -9,16 +9,16 @@ log — each entry records what was true when written and is not edited afterwar
 
 ---
 
-## 0. Current state — measured 2026-08-25 on `chore/test-debt-cast-drain` @ `3785929b1`
+## 0. Current state — measured 2026-08-25 on `fix/1707-agent-fallback-metrics-wiring`
 
 | Counter | Value | Baseline | Drain target? |
 |:--|--:|--:|:--|
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
-| `as unknown as` | **47** | 47 | **yes — current target, ~17 is the floor** |
-| `asAny` | 1385 | 1385 | yes, then biome `noExplicitAny` retires it |
-| `anyType` | 1868 | 1868 | yes, retires with `asAny` |
-| `nonNullAssert` | 827 | 827 | yes, then biome `noNonNullAssertion` |
+| `as unknown as` | **46** | 46 | **yes — current target, ~17 is the floor** |
+| `asAny` | 1377 | 1377 | yes, then biome `noExplicitAny` retires it |
+| `anyType` | 1860 | 1860 | yes, retires with `asAny` |
+| `nonNullAssert` | 820 | 820 | yes, then biome `noNonNullAssertion` |
 | `asNever` | 608 | 608 | yes |
 | `ratchetAllow` | 106 | 106 | yes |
 | `tsSuppress` | 40 | 40 | yes |
@@ -30,11 +30,11 @@ fell 1888 → 1879 as a side effect of removing 36 single casts and adding none.
 counter is untouched, and no counter was traded in any commit. All gates green; `check:all` is
 24 checks since `check:test-typecheck` was retired.
 
-**What is left is not a queue.** Of the 47: **18 are the floor** (15 `test/helpers/` containment
+**What is left is not a queue.** Of the 46: **18 are the floor** (15 `test/helpers/` containment
 casts, §8.1, plus 3 comment matches on 2 lines — `spawn.ts:6` carries two on one line, which is
-why a per-line count reads 46), **2 are held escalations** (nax#1707 and the dead
-`selectNextStories` seam, §8.4), and the remaining **27 are property-poke sites and one-offs
-that each need a ruling rather than a recipe**. Delegation has
+why a per-line count reads 45), **1 is a held escalation** (the dead `selectNextStories`
+seam, §8.4 — nax#1707 is resolved, §8.5), and the remaining **27 are property-poke sites and
+one-offs that each need a ruling rather than a recipe**. Delegation has
 stopped paying here — §8.4's batch drained 10 sites and verifying it cost about as much, which
 is §6's "verifying a cluster costs as much as doing it" arriving in practice. **The next move is
 a ruling pass on the ~14 property-poke sites, not another delegated batch.**
@@ -71,16 +71,15 @@ From `archive/2026-08-22-1514-phase3c-test-debt-drain.md` §6, with steps 1–3 
 
 ---
 
-## 1. Current target — `as unknown as` 47 → ~18
+## 1. Current target — `as unknown as` 46 → ~18
 
-Re-measured on `3785929b1`. The ratchet counts 47 matches across 46 lines: `test/helpers/spawn.ts:6`
-carries two on one line.
+The ratchet counts 46 matches across 45 lines: `test/helpers/spawn.ts:6` carries two on one line.
 
 | Cluster | N | Drainable? |
 |:--|--:|:--|
 | containment — `test/helpers/*` + `_cycle-fixtures.ts` | 15 | **no** — §8.1. Do not edit |
 | property-poke — `(x as unknown as { k: T }).k` | 13 | needs a ruling each — **next up** |
-| one-off | 13 | needs a ruling each; includes both held escalations |
+| one-off | 12 | needs a ruling each; includes the one remaining held escalation |
 | spawn-mock | 3 | may need a typed helper built first |
 | doc comments (2 lines) | 3 | **no** — prose, not work |
 
@@ -125,7 +124,6 @@ review pass finishes the work anyway.
 
 | Site | Blocked on |
 |:--|:--|
-| `fallback-aggregates.test.ts:146` | **nax#1707** — the fixture pins an impossible state; the wiring fix comes first |
 | `unified-executor-abort.test.ts:91` | the dead `selectNextStories` seam (§8.4) — removing the mock likely drains the cast, but it changes the test's setup |
 
 ---
@@ -412,3 +410,267 @@ Fixed by the owner (one-line import swap, `check:deep-relatives` back to 0, 6 te
 Casts **57 → 47**. Remaining: 17 are the floor (15 containment + 2 comments), ~14 property-poke,
 ~13 one-offs and spawn-mock, 2 held escalations (`#1707`, the dead mock). **Realistic target is
 ~17, not 0**, and everything left needs a ruling rather than a recipe.
+
+### 8.5 nax#1707 fixed, and the issue's own fix was wrong — 47 → 46 (2026-08-25)
+
+The held cast is drained, but not the way §8.3 predicted. **Reading `agentResult.agentFallbacks`
+instead of `ctx.agentFallbacks` — the fix the issue proposed — would have left the metric just
+as inert.**
+
+`ctx.agentResult` is not the object AgentManager returned. `post-run.ts:140` *rebuilds* an
+`AgentResult` from `planResult.phaseOutputs[implementerOp.name]`, which carries `success`,
+`filesChanged`, `estimatedCostUsd` and `durationMs` and nothing else. Anything the manager
+attached upstream is gone before `collectStoryMetrics` runs. One level further up, `callOp`
+receives `outcome.fallbacks` from `runWithFallback` (`call.ts:413`) and **discards it** — it
+returns only the parsed op output. `onSwapAttempt` has zero subscribers in `src/`, so the event
+side was not a sink either. The hops died at `callOp`, two layers below where §8.3 was looking.
+
+The fix is a writer, not a redirected read: a run-scoped `agentFallbacks: Map<string,
+AgentFallbackRecord[]>` on `NaxRuntime`, appended by `callOp` and read by `collectStoryMetrics`.
+That is the shape three sibling fields already use (`adversarialIterations`,
+`semanticIterations`, `rectificationOscillations`), and because `makeMockRuntime` is built on
+`createRuntime` it cost no mock churn. It also counts more than the issue's version would:
+`callOp` runs for *every* op, so a swap during review or verification is attributed to the
+story, where a rebuilt `ctx.agentResult` could only ever have carried the implementer's.
+
+`ctx.agentFallbacks` is deleted rather than wired. A declared field with no writer and no reader
+is what let this sit undetected; leaving it would invite the same bug back.
+
+**`costUsd` stays required, and the `?? 0` is gone.** §8.3's re-analysis held up under the
+wiring fix: the mapper fills `costUsd` from `AgentFallbackRecord`, where it is required, and
+`deriveRunFallbackAggregates` still only ever sees in-memory metrics. So no ADR check was
+needed — the guard was removed rather than the type loosened, and the impossible-state fixture
+it justified was replaced by the *reachable* zero-cost case (an adapter that reported no cost,
+which the manager records as `costUsd: 0`). That is §6's "third option" again: the test now
+pins something true instead of being deleted or kept as fiction.
+
+`timestamp` is dropped in the mapping. Nothing reads it, the hop shape already omitted it, and
+`MAX_RETAINED_RUNS`'s own doc comment names `fallback.hops` as a size driver in metrics.json.
+
+**Carry forward: a wrong reader and a missing writer look identical from the read site.** §8.3
+grepped at repo scope and still landed on the wrong fix, because "the populated field is right
+there on the line above" is a very convincing shape. What distinguishes them is following the
+*value* forward from its producer, not the *name* backward from its consumer — the name matched
+in two places and the value reached neither.
+
+Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14135 / 1136 / 38, 0 fail),
+coverage 101 files below floor against baseline 103 — identical to `main`, no branch effect.
+Casts **47 → 46**; `nonNullAssert` 827 → 820 as a side effect of rewriting the retargeted
+assertions from `metrics.fallback!.hops` to `metrics.fallback?.hops`. No counter rose.
+
+### 8.6 The #1707 shape swept for, and three more found (2026-08-25)
+
+§8.5's carry-forward — *a wrong reader and a missing writer look identical from the read
+site* — is mechanisable. The signature is **a field that is declared, read, and assigned only
+by tests**: the test's own write is the only source, so the assertion round-trips its setup and
+the suite stays green while the metric is permanently wrong.
+
+Swept 127 fields across `PipelineContext`, `StoryMetrics`, `RunMetrics`, `CallContext` and
+`AgentResult`. Three live instances, all in metrics, all fixed here.
+
+**`ctx.rectifyAttempt` — the two halves had different names.** `post-run.ts` wrote the count to
+an *undeclared* `rectificationIterationCount` through `(ctx as unknown as Record<string,
+unknown>)`, which nothing read; the tracker read the *declared* `rectifyAttempt`, which nothing
+wrote. `firstPassSuccess` was therefore never disqualified by rectification — the entire point
+of BUG-067 / #679. **The cast in `src/` is what let the two names drift**: a declared-field
+assignment would not have compiled. Fixed by writing the declared field.
+
+**`ctx.storyRuntimeCrashes` — the counter existed, in the wrong shape.** `StoryMetrics.runtimeCrashes`
+was always 0. Crash retries *were* counted, in `_runtimeCrashRetryCounts`, but that is a
+*consecutive* counter which any ordinary outcome clears so the retry cap measures a streak — the
+wrong source for a per-story total. Fixed with a run-scoped cumulative `runtime.runtimeCrashRetries`,
+tallied in `pipeline-result-handler` where `outcome === "retry-same"` is observed (that outcome is
+returned only by the crash branch, and only when a retry actually happens — a capped crash pauses).
+
+**`autofixAttempt` — never existed at all.** Not on `PipelineContext`, not anywhere in `src/`. It
+entered through `makeCtx(story, overrides: Record<string, unknown>)` and was inert; the test
+comment claimed a second gate that was never built. Column dropped, and the overrides bag
+tightened to `Partial<PipelineContext>` so the next phantom fails to compile.
+
+**Threading `runtime` fixed a fourth thing nobody was looking for.** `EscalationHandlerContext.runtime`
+is optional and its only caller never passed it — so `tier-outcome.ts`'s four
+`ctx.runtime?.costAggregator.byStory()[…] ?? ctx.totalCost` reads had *always* taken the fallback,
+and escalation failure costs (which feed `accumulatedAttemptCost`) were the coarser number.
+
+**Carry forward: the sweep's own control failed, and that is the useful part.** Run against
+`main` it reports `agentFallbacks src-writers=1` — it would **not** have caught #1707, because
+`manager.ts:656` writes the same field name onto a different type. Name-matching finds
+zero-writer fields; it cannot find wrong-writer ones. Those needed a hand pass over every field
+in the 1–2-writer band, checking whether the writer targets *this* type. **A field-name grep is a
+lower bound on this class of bug, never a clean bill of health.**
+
+Still open at the time of writing: `ctx.autofixPriorIterations` (closed in §8.8), and
+`verifyPassed` / `semanticReviewResult`, written through the same
+`(ctx as unknown as Record<string, unknown>)` cast as `rectificationIterationCount` was
+(closed in §8.7).
+
+Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14138 / 1136 / 38, 0 fail),
+coverage 101 files below floor against baseline 103. `asAny` 1385 → 1383 and `anyType` 1868 →
+1866 from replacing `(ctx as any)` reads with typed ones; no counter rose.
+
+### 8.7 The other two AC9 fields were dead, not miswired (2026-08-25)
+
+§8.6 left `verifyPassed` and `semanticReviewResult` flagged. Checked, and they are a
+**different outcome from `rectifyAttempt` despite an identical appearance** — worth recording,
+because the shared appearance is what makes this class expensive to triage.
+
+All three were added in one commit (#1084) under an AC that reads, verbatim:
+*"AC9: applyPostRunInspection sets verifyPassed, semanticReviewResult,
+rectificationIterationCount"*. **The AC pinned a write and no AC pinned a reader**, so the
+tests pinned the write too and everything stayed green. That is the root cause of the whole
+§8.6 cluster, not an accident of naming.
+
+The three then diverged:
+
+| Field | Declared? | Reader | Outcome |
+|:--|:--|:--|:--|
+| `rectificationIterationCount` | no (cast key) | none — but the declared `rectifyAttempt` had a starving reader | **wire** (§8.6) |
+| `verifyPassed` | no (cast key) | none, anywhere, ever | **delete** |
+| `semanticReviewResult` | no (cast key) | none, anywhere, ever | **delete** |
+
+`rectifyAttempt` was a *miswiring*: a real consumer existed and was starved. These two are
+simply *dead*: no declared counterpart, no consumer, and no duplicated logic elsewhere that
+they were caching. Verify outcome already reaches routing through `tdd-failure-category.ts`
+and review outcome through the findings pipeline. Checked for dynamic key reads (`ctx[...]`)
+and for `{ ...ctx }` spreads into hooks or events before concluding — a name grep alone would
+not settle "no reader" for a cast-written key.
+
+Deleting them removed the last two `(ctx as unknown as Record<string, unknown>)` writes from
+`post-run.ts`, which is the construct that let `rectificationIterationCount` drift from
+`rectifyAttempt` in the first place: **a declared-field assignment would not have compiled.**
+
+**The coverage ratchet fired, and the number was misleading.** `post-run.ts` fell 57.07% →
+56.07%. Measured rather than assumed: `LF` 396 → 387, `LH` 226 → 217 — both down exactly 9,
+and **uncovered lines 170 → 170, unchanged**. Deleting covered dead code shrinks the
+denominator, so the percentage drops while nothing loses coverage. Baseline lowered for that
+one file only; `--update-baseline` also swept in four unrelated pre-existing improvements and
+dropped two files entirely, all reverted per §3's "every other counter FLAT".
+
+**Carry forward: "no reader" is a stronger claim than "no writer" and needs more evidence.**
+A missing writer shows up as a wrong value at a known read site. A missing reader shows up as
+nothing at all, so ruling a field dead means excluding dynamic access and context spreads too —
+and the fix is deletion, which the ratchets read as a regression until you check the absolute
+numbers.
+
+Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14133 / 1136 / 38, 0 fail),
+coverage OK, 101 files below floor against baseline 103. `asAny` 1383 → 1377 and `anyType`
+1866 → 1860 from the four deleted `(ctx as any)` assertions; no counter rose.
+
+### 8.8 `autofixPriorIterations` — superseded, a third diagnosis (2026-08-25)
+
+The last field flagged in §8.6, and it lands on **neither** of the previous two answers. Three
+fields with one appearance have now produced three different correct actions:
+
+| Field | Diagnosis | Action |
+|:--|:--|:--|
+| `rectifyAttempt` | miswired — real reader, starved | wire the writer (§8.6) |
+| `verifyPassed`, `semanticReviewResult` | dead — no reader ever existed | delete (§8.7) |
+| `autofixPriorIterations` | **superseded** — the feature shipped in another shape | delete |
+
+`docs/specs/2026-05-02-adr-022-implementation-plan.md:909,922` shows the planned wiring
+(`ctx.autofixPriorIterations = result.iterations` and `iterations: ctx.autofixPriorIterations ?? []`).
+Neither line was ever implemented. ADR-022's carry-forward shipped instead as the run-scoped
+`runtime.adversarialIterations` / `runtime.semanticIterations` maps, read and written at
+`story-orchestrator/run-phase.ts:173-222` — the same run-scoped-map shape §8.5 and §8.6 reached
+for independently, and for the same reason: `PipelineContext` is rebuilt every attempt.
+
+So this is not a missing feature. The field is the residue of a design that shipped differently,
+and its only `src/` mention besides the declaration was `ctx.autofixPriorIterations = undefined`
+in `releaseHeavyPipelineContext` — a memory-release of something never populated. Deleting it
+also retired a now-unused `Iteration` import in `pipeline/types.ts`.
+
+**Carry forward: check whether the feature shipped elsewhere before calling a field dead.**
+"No reader" and "no writer" are both satisfied by a superseded field, so neither test
+distinguishes it from genuine dead code — but the actions differ in what you should look for
+first. The plan doc named the intended wiring, and grepping the *shipped* mechanism from it
+(`adversarialIterations`) settled in one step what field-name greps could not.
+
+**The coverage ratchet fired again, the same way.** `iteration-runner.ts` 12.32% → 12.01%.
+Measured: `LF` 284 → 283, `LH` 35 → 34, both down 1, **uncovered 249 → 249, unchanged** — the
+one deleted line was covered. Baseline lowered for that file alone. This is now twice in three
+commits: **deleting covered dead code always trips a per-file percentage ratchet, and the
+absolute uncovered count is the number that decides whether it is real.**
+
+Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14133 / 1136 / 38, 0 fail),
+coverage OK, 101 files below floor against baseline 103. No escape-hatch counter moved.
+
+### 8.9 What code review caught that the sweep did not (2026-08-25)
+
+An independent review of the branch found three defects the field sweep could not, because
+none of them is a field-name problem.
+
+**`rectifyAttempt` undercounted.** `runRectification` re-enters within a single attempt
+(`execution-plan.ts:201,257,367`) and `phaseOutputs.rectification` is last-write-wins, so a
+later cycle exiting with 0 iterations erased an earlier cycle's 2 — restoring the #679
+disqualification in name only. Fixed by accumulating at the source; `iterationCount` had
+exactly one reader, so the semantics change was safe. The existing envelope test in
+`story-orchestrator.test.ts` asserted `1` and now asserts `2`, which is the honest number:
+the plan runs two cycles and the stub reports one iteration each.
+
+**Threading `runtime` would have switched on a billable LLM call.** `tryLlmBatchRoute` bails
+without a runtime (`router.ts:361`), and `handleTierEscalation`'s only caller never passed one,
+so the hybrid post-escalation re-route has never run. The threading added for cost attribution
+would have activated it — a real LLM dispatch per escalation whose result lands in
+`runtime.routingCache` and can change the tier the retry runs at. Deliberately **not**
+forwarded; filed as nax#1710.
+
+**The fix does not reach failed or parallel stories.** `collectStoryMetrics` runs only on the
+success path (`backfill-story-metrics.ts:6` says so outright), and parallel mode builds its
+`StoryMetrics` literals inline (`unified-executor.ts:413,436`) without ever calling it. So
+`deriveRunFallbackAggregates`'s exhausted rule — `!story.success && lastHop.category ===
+"availability"` — is structurally dead, and `parallelCount > 1` runs write both new maps and
+read neither. Filed as nax#1709; the code comments now say "sequential success path" rather
+than "every op".
+
+**Carry forward: a mechanical sweep finds a shape, not a defect class.** §8.6's sweep was built
+to find "declared, read, written only by tests" and it found exactly that — three times, all
+correctly. It could not find a field that *is* written correctly but by a last-write-wins path,
+nor one whose reach stops at a path boundary, nor a side effect on an unrelated inert feature.
+**Every one of the review's findings was about reach or timing, not naming.** Pair the sweep
+with a reviewer that follows the value to its consumer.
+
+One review finding was itself wrong and worth recording: it reported the changed `story:paused`
+/ `story:failed` cost source as unpinned by any test. The sibling emitter in
+`preIterationTierCheck` *is* pinned in both directions
+(`tier-escalation-story-failed.test.ts:161,203`) — it was `tier-outcome.ts`'s four sites that
+were uncovered, and those now have a test each way. **Verify the reviewer too.**
+
+### 8.10 Closing #1709 — the metric now reaches failed and parallel stories (2026-08-25)
+
+§8.9 filed the two reach gaps rather than fixing them. Fixed here, because "the metric is
+wired" and "the metric works" turned out to be different claims.
+
+**Failed stories.** `synthesizeBackfillMetric` is already the single source of truth for the
+`execution-failed` synthesis and already hardcoded `runtimeCrashes: 0`, so it was the right
+seam: it now takes `fallbackHops` and `runtimeCrashes` and emits them. The caller reads the
+run-scoped stores, which outlive the per-attempt `PipelineContext` — that property, chosen in
+§8.5 for a different reason, is what makes the failure path recoverable at all. Completion-phase
+spend still carries neither, correctly: nothing executed.
+
+This makes `deriveRunFallbackAggregates`'s exhausted rule reachable for the first time. It
+requires `!story.success`, and before this only successful stories ever carried hops, so the
+branch was dead the day it was written. Now pinned by a test that builds a failed story through
+the real back-fill.
+
+**Parallel stories.** The two inline `StoryMetrics` literals in `unified-executor.ts` are
+extracted to `synthesizeParallelStoryMetric` — the same pure-function shape as the back-fill.
+The extraction was not optional: `unified-executor.ts` is grandfathered at 768 lines, so the
+ratchet forbade adding two fields to two literals, and the rule's prescribed remedy is to split
+by concern. **The size gate pushed the change toward the better design**, which is the second
+time on this branch (§8.7's `post-run.ts` was the first, in the opposite direction).
+
+**Nine test files hand-built a partial `runtime` stub** and broke the moment the executor read
+a new field off it. That is the cost of inline mocks the repo already gates against
+(`check:test-mocks`) — a real helper would have picked the fields up for free.
+
+**The escape-hatch ratchet refused the obvious test.** A new executor-level integration test
+costs two `as never` casts, because `makeCtx` returns a partial stub that cannot satisfy
+`SequentialExecutionContext`. Typing the helper properly is the rule's prescribed fix and is not
+tractable here; adding a containment cast would trade one counter for another, which the closed
+system forbids. **So the assertions were folded into the existing test that already pins the
+parallel metric entry's shape** — same claim, same setup, zero new casts. Worth naming as a
+pattern: when the ratchet blocks a new test, look for the existing test making the same claim
+before reaching for a cast.
+
+Gates: typecheck 0 (all three), `check:all` 24/24 with **every counter flat**, suite green
+(14149 / 1136 / 38, 0 fail), coverage OK, 101 files below floor against baseline 103.

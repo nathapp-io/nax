@@ -46,7 +46,6 @@ export function releaseHeavyPipelineContext(ctx: PipelineContext): void {
   ctx.contextBundle = undefined;
   ctx.constitution = undefined;
   ctx.acceptanceFailures = undefined;
-  ctx.autofixPriorIterations = undefined;
   ctx.reviewFindings = undefined;
   ctx.selfVerification = undefined;
   ctx.tddIsolations = undefined;

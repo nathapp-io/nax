@@ -1,6 +1,6 @@
 {
-  "count": 47,
-  "updatedAt": "2026-08-25T04:30:04.770Z",
+  "count": 46,
+  "updatedAt": "2026-08-25T05:08:33.010Z",
   "byFile": {
     "test/helpers/status-writer.ts": 1,
     "test/helpers/context-orchestrator.ts": 1,
@@ -36,7 +36,6 @@
     "test/unit/config/project-profile.test.ts": 1,
     "test/unit/context/engine/stage-assembler.test.ts": 3,
     "test/unit/context/engine/providers/plugin-loader.test.ts": 1,
-    "test/unit/metrics/tracker-context-metrics.test.ts": 1,
-    "test/unit/metrics/fallback-aggregates.test.ts": 1
+    "test/unit/metrics/tracker-context-metrics.test.ts": 1
   }
 }

@@ -1,15 +1,15 @@
 {
   "counts": {
-    "asAny": 1385,
+    "asAny": 1377,
     "tsSuppress": 40,
     "ratchetAllow": 106,
     "absentValue": 17,
-    "anyType": 1868,
+    "anyType": 1860,
     "looseCast": 1879,
     "asNever": 608,
-    "nonNullAssert": 827
+    "nonNullAssert": 820
   },
-  "updatedAt": "2026-08-25T04:30:04.908Z",
+  "updatedAt": "2026-08-25T05:31:08.819Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -749,10 +749,6 @@
       "anyType": 1,
       "looseCast": 1,
       "nonNullAssert": 7
-    },
-    "test/unit/execution/post-run-inspection.test.ts": {
-      "asAny": 8,
-      "anyType": 8
     },
     "test/unit/execution/story-orchestrator-carveout-staleness.test.ts": {
       "looseCast": 2,
@@ -2545,8 +2541,7 @@
       "looseCast": 1
     },
     "test/unit/metrics/tracker.test.ts": {
-      "looseCast": 1,
-      "nonNullAssert": 7
+      "looseCast": 1
     }
   }
 }

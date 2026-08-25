@@ -98,8 +98,11 @@ export interface ContextProviderMetrics {
 }
 
 /**
- * A single agent-swap hop recorded by the execution stage (AC-41).
- * Collected into ctx.agentFallbacks and surfaced in StoryMetrics.fallback.hops.
+ * A single agent-swap hop, as persisted in StoryMetrics.fallback.hops (AC-41).
+ *
+ * Produced by AgentManager as an `AgentFallbackRecord` on `AgentResult.agentFallbacks`
+ * and mapped onto this shape by `collectStoryMetrics` (nax#1707). The two differ:
+ * `storyId` is required here, and the record's `timestamp` is not persisted.
  */
 export interface AgentFallbackHop {
   storyId: string;
@@ -109,7 +112,12 @@ export interface AgentFallbackHop {
   outcome: string;
   /** adapterFailure.category — "availability" | "quality" */
   category: string;
-  /** 1-indexed hop counter within this story's pipeline run */
+  /**
+   * 1-indexed hop counter within the single `runWithFallback` call that produced it —
+   * NOT across the story. The store concatenates every op and every attempt, so a
+   * persisted array legitimately reads [1, 1, 2, 1]. `totalHops` / `perPair` aggregate
+   * fine; do not read the array as one ordered chain (nax#1707).
+   */
   hop: number;
   /**
    * Cost incurred on the hop that FAILED (the attempt on `priorAgent` that triggered

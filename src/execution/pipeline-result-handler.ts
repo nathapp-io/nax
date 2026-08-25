@@ -447,8 +447,18 @@ export async function handlePipelineFailure(
         workdir: ctx.workdir,
         attemptCost: pipelineResult.context.agentResult?.estimatedCostUsd || 0,
         agentManager: ctx.agentManager,
+        runtime: ctx.runtime,
         ...(runtimeCrashResult ? { runtimeCrashResult } : {}),
       });
+      // #1707 follow-up: "retry-same" is returned only by the runtime-crash branch, and
+      // only when the retry actually happens (a capped crash pauses instead). Tallied
+      // run-scoped because PipelineContext is rebuilt every attempt, and separately from
+      // tier-escalation's _runtimeCrashRetryCounts, which any ordinary outcome clears so
+      // the cap measures a consecutive streak. Read as StoryMetrics.runtimeCrashes.
+      if (escalationResult.outcome === "retry-same") {
+        const tally = ctx.runtime.runtimeCrashRetries;
+        tally.set(ctx.story.id, (tally.get(ctx.story.id) ?? 0) + 1);
+      }
       prd = escalationResult.prd;
       prdDirty = escalationResult.prdDirty;
       break;

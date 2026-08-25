@@ -9,7 +9,6 @@ import type { NaxConfig } from "@/config/schema";
 import type { ConstitutionResult } from "@/constitution/types";
 import type { BuiltContext } from "@/context/types";
 import type { Finding } from "@/findings";
-import type { Iteration } from "@/findings";
 import type { HooksConfig } from "@/hooks/types";
 import type { InteractionChain } from "@/interaction/chain";
 import type { StoryMetrics } from "@/metrics/types";
@@ -239,10 +238,12 @@ export interface PipelineContext extends DispatchContext {
   };
   /** Story start timestamp (ISO string, set by runner before pipeline) */
   storyStartTime?: string;
-  /** Tracks how many times the rectify stage has run this pipeline (for event attempt numbers). */
+  /**
+   * Total rectification ITERATIONS run this attempt, accumulated across every
+   * runRectification re-entry — not a count of rectify stage invocations. Any non-zero
+   * value disqualifies firstPassSuccess in collectStoryMetrics (BUG-067 / #679).
+   */
   rectifyAttempt?: number;
-  /** ADR-022 Phase 7: prior fix-cycle iterations carried across pipeline retries. */
-  autofixPriorIterations?: Iteration[];
   /**
    * Prior semantic review iterations carried into this pipeline pass — populated by
    * escalation/rectification orchestrators on re-run so the reviewer LLM can see
@@ -288,8 +289,6 @@ export interface PipelineContext extends DispatchContext {
    * Absent when no gate ran or the gate passed cleanly.
    */
   fullSuiteGateFailingFiles?: string[];
-  /** Number of runtime crashes (RUNTIME_CRASH verify status) encountered for this story (BUG-070) */
-  storyRuntimeCrashes?: number;
   /**
    * Count of this story's semantic/adversarial review checks that returned
    * `success:true, failOpen:true` (LLM dispatch failed and the gate degraded
@@ -303,12 +302,6 @@ export interface PipelineContext extends DispatchContext {
   reviewFindings?: import("../findings").Finding[];
   /** Accumulated cost across all prior escalation attempts (BUG-067) */
   accumulatedAttemptCost?: number;
-  /**
-   * Ordered log of agent-swap hops for this story (AC-41).
-   * Each entry captures the agents involved, the failure that triggered the swap,
-   * and the 1-indexed hop number. Surfaced in StoryMetrics.fallback.hops.
-   */
-  agentFallbacks?: import("../metrics/types").AgentFallbackHop[];
   /**
    * Set of review check names that already passed in a previous review pass within this
    * pipeline run. When autofix retries from "review", checks in this set are skipped to

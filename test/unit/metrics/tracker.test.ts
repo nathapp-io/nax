@@ -8,6 +8,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import type { AgentFallbackRecord } from "@/agents/manager-types";
 import type { NaxConfig } from "@/config";
 import { collectStoryMetrics } from "@/metrics/tracker";
 import type { PipelineContext } from "@/pipeline/types";
@@ -349,57 +350,19 @@ describe("collectStoryMetrics - scopeTestFallback field (US-002)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC-41: collectStoryMetrics maps ctx.agentFallbacks to StoryMetrics.fallback
+// AC-41: collectStoryMetrics maps recorded agent-swap hops to StoryMetrics.fallback.
+//
+// Retargeted for nax#1707. These wrote ctx.agentFallbacks, a field nothing in
+// src/ ever assigned — so they exercised the test's own write and passed while
+// the metric was never emitted in production. The multi-hop case is kept here;
+// the single-hop, empty and absent cases live in the #1707 block below.
 // ---------------------------------------------------------------------------
 
 describe("collectStoryMetrics - AC-41 fallback.hops field", () => {
-  test("includes fallback.hops when ctx.agentFallbacks is non-empty", async () => {
+  test("fallback.hops preserves all hop fields across a multi-hop swap chain", async () => {
     const story = makeStory();
     const ctx = makeCtx(story);
-    ctx.agentFallbacks = [
-      {
-        storyId: "US-001",
-        priorAgent: "claude",
-        newAgent: "codex",
-        outcome: "fail-quota",
-        category: "availability",
-        hop: 1,
-        costUsd: 0,
-      },
-    ];
-
-    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
-
-    expect(metrics.fallback).toBeDefined();
-    expect(metrics.fallback!.hops).toHaveLength(1);
-    expect(metrics.fallback!.hops[0].priorAgent).toBe("claude");
-    expect(metrics.fallback!.hops[0].newAgent).toBe("codex");
-    expect(metrics.fallback!.hops[0].hop).toBe(1);
-  });
-
-  test("fallback is absent when ctx.agentFallbacks is empty", async () => {
-    const story = makeStory();
-    const ctx = makeCtx(story);
-    ctx.agentFallbacks = [];
-
-    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
-
-    expect(metrics.fallback).toBeUndefined();
-  });
-
-  test("fallback is absent when ctx.agentFallbacks is undefined", async () => {
-    const story = makeStory();
-    const ctx = makeCtx(story);
-
-    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
-
-    expect(metrics.fallback).toBeUndefined();
-  });
-
-  test("fallback.hops preserves all hop fields", async () => {
-    const story = makeStory();
-    const ctx = makeCtx(story);
-    ctx.agentFallbacks = [
+    ctx.runtime.agentFallbacks.set(story.id, [
       {
         storyId: "US-001",
         priorAgent: "claude",
@@ -407,6 +370,7 @@ describe("collectStoryMetrics - AC-41 fallback.hops field", () => {
         outcome: "fail-service-down",
         category: "availability",
         hop: 1,
+        timestamp: "2026-08-25T00:00:00.000Z",
         costUsd: 0,
       },
       {
@@ -416,14 +380,89 @@ describe("collectStoryMetrics - AC-41 fallback.hops field", () => {
         outcome: "fail-rate-limit",
         category: "availability",
         hop: 2,
-        costUsd: 0,
+        timestamp: "2026-08-25T00:00:01.000Z",
+        costUsd: 1.5,
       },
-    ];
+    ]);
 
     const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
 
-    expect(metrics.fallback!.hops).toHaveLength(2);
-    expect(metrics.fallback!.hops[1].hop).toBe(2);
-    expect(metrics.fallback!.hops[1].category).toBe("availability");
+    expect(metrics.fallback?.hops).toHaveLength(2);
+    expect(metrics.fallback?.hops[0].priorAgent).toBe("claude");
+    expect(metrics.fallback?.hops[0].newAgent).toBe("codex");
+    expect(metrics.fallback?.hops[1].hop).toBe(2);
+    expect(metrics.fallback?.hops[1].category).toBe("availability");
+    expect(metrics.fallback?.hops[1].costUsd).toBe(1.5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// nax#1707: the hops AgentManager records reach metrics via the run-scoped
+// runtime.agentFallbacks store that callOp writes — not via ctx.agentFallbacks
+// (which had no writer) nor via ctx.agentResult (which post-run.ts rebuilds
+// without them). These assert the store is what collectStoryMetrics reads.
+// ---------------------------------------------------------------------------
+
+describe("collectStoryMetrics - #1707 agent-swap hops come from the run-scoped store", () => {
+  function ctxWithRecordedHops(records: AgentFallbackRecord[]): PipelineContext {
+    const story = makeStory();
+    const ctx = makeCtx(story);
+    if (records.length > 0) ctx.runtime.agentFallbacks.set(story.id, records);
+    return ctx;
+  }
+
+  test("surfaces hops that callOp recorded on runtime.agentFallbacks", async () => {
+    const ctx = ctxWithRecordedHops([
+      {
+        storyId: "US-001",
+        priorAgent: "claude",
+        newAgent: "codex",
+        hop: 1,
+        outcome: "fail-quota",
+        category: "availability",
+        timestamp: "2026-08-25T00:00:00.000Z",
+        costUsd: 0.42,
+      },
+    ]);
+
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.fallback).toBeDefined();
+    expect(metrics.fallback?.hops).toHaveLength(1);
+    expect(metrics.fallback?.hops[0]).toEqual({
+      storyId: "US-001",
+      priorAgent: "claude",
+      newAgent: "codex",
+      hop: 1,
+      outcome: "fail-quota",
+      category: "availability",
+      costUsd: 0.42,
+    });
+  });
+
+  test("fills storyId from the story under execution when the record omits it", async () => {
+    const ctx = ctxWithRecordedHops([
+      {
+        priorAgent: "claude",
+        newAgent: "codex",
+        hop: 1,
+        outcome: "fail-rate-limit",
+        category: "availability",
+        timestamp: "2026-08-25T00:00:00.000Z",
+        costUsd: 0,
+      },
+    ]);
+
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.fallback?.hops[0].storyId).toBe(ctx.story.id);
+  });
+
+  test("omits fallback entirely when the agent ran with no swaps", async () => {
+    const ctx = ctxWithRecordedHops([]);
+
+    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.fallback).toBeUndefined();
   });
 });

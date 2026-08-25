@@ -91,6 +91,9 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
       interactionChain: null,
       runtime: {
         outputDir: "/tmp/nax-test-failure-output",
+        // nax#1709: parallel metrics read these run-scoped stores.
+        agentFallbacks: new Map(),
+        runtimeCrashRetries: new Map(),
         costAggregator: {
           snapshot: () => ({
             totalCostUsd: 0,

@@ -3,7 +3,7 @@
 import { pipelineEventBus } from "@/pipeline";
 import { checkCostExceeded, checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
-import type { StoryMetrics } from "../metrics";
+import { type StoryMetrics, toFallbackHops } from "../metrics";
 import { runPipeline } from "../pipeline/runner";
 import { postRunPipeline, preRunPipeline } from "../pipeline/stages";
 import { wireEventsWriter } from "../pipeline/subscribers/events-writer";
@@ -29,6 +29,7 @@ import { agentFor, buildPreviewRouting } from "./executor-types";
 import { getAllReadyStories } from "./helpers";
 import { runIteration } from "./iteration-runner";
 import type { RunParallelBatchOptions, RunParallelBatchResult } from "./parallel-batch";
+import { synthesizeParallelStoryMetric } from "./parallel-story-metrics";
 import { handlePipelineFailure } from "./pipeline-result-handler";
 import { drainQueueAtBatchBoundary } from "./queue-handler";
 import { closeStorySessions } from "./session-manager-runtime";
@@ -410,22 +411,21 @@ export async function executeUnified(
             // Falls back to elapsed time since storyStartMs was recorded (set just before the batch
             // call), which is a slightly wider window but only applies when storyDurations is absent.
             const storyDuration = batchResult.storyDurations?.get(story.id) ?? Date.now() - storyStartTime;
-            allStoryMetrics.push({
-              storyId: story.id,
-              complexity: story.routing?.complexity ?? "medium",
-              modelTier: story.routing?.modelTier ?? "balanced",
-              // #1575: the story's own agent — these metrics feed per-agent cost attribution.
-              modelUsed: agentFor(story, ctx),
-              attempts: 1,
-              finalTier: story.routing?.modelTier ?? "balanced",
-              success: true,
-              cost: storyCost,
-              durationMs: storyDuration,
-              firstPassSuccess: true,
-              startedAt: batchStartedAt,
-              completedAt: batchCompletedAt,
-              source: "parallel" as const,
-            });
+            allStoryMetrics.push(
+              synthesizeParallelStoryMetric({
+                story,
+                // #1575: the story's own agent — these metrics feed per-agent cost attribution.
+                modelUsed: agentFor(story, ctx),
+                cost: storyCost,
+                durationMs: storyDuration,
+                startedAt: batchStartedAt,
+                completedAt: batchCompletedAt,
+                source: "parallel",
+                firstPassSuccess: true,
+                fallbackHops: toFallbackHops(ctx.runtime.agentFallbacks.get(story.id), story.id),
+                runtimeCrashes: ctx.runtime.runtimeCrashRetries.get(story.id) ?? 0,
+              }),
+            );
           }
 
           // Build metrics for rectified merge-conflict stories (AC-3)
@@ -433,24 +433,24 @@ export async function executeUnified(
             if (conflict.rectified) {
               const storyStartTime = storyStartMs.get(conflict.story.id) ?? Date.now();
               const storyDuration = batchResult.storyDurations?.get(conflict.story.id) ?? Date.now() - storyStartTime;
-              allStoryMetrics.push({
-                storyId: conflict.story.id,
-                complexity: conflict.story.routing?.complexity ?? "medium",
-                modelTier: conflict.story.routing?.modelTier ?? "balanced",
-                modelUsed: agentFor(conflict.story, ctx),
-                attempts: 1,
-                finalTier: conflict.story.routing?.modelTier ?? "balanced",
-                success: true,
-                // cost = total per-story cost incl. rectification (BUG-37: storyCosts alone is
-                // only the pre-conflict first pass); rectificationCost = conflict.cost alone.
-                cost: (batchResult.storyCosts.get(conflict.story.id) ?? 0) + conflict.cost,
-                durationMs: storyDuration,
-                firstPassSuccess: false,
-                startedAt: batchStartedAt,
-                completedAt: batchCompletedAt,
-                source: "rectification" as const,
-                rectificationCost: conflict.cost,
-              });
+              const conflictId = conflict.story.id;
+              allStoryMetrics.push(
+                synthesizeParallelStoryMetric({
+                  story: conflict.story,
+                  modelUsed: agentFor(conflict.story, ctx),
+                  // cost = total per-story cost incl. rectification (BUG-37: storyCosts alone is
+                  // only the pre-conflict first pass); rectificationCost = conflict.cost alone.
+                  cost: (batchResult.storyCosts.get(conflictId) ?? 0) + conflict.cost,
+                  durationMs: storyDuration,
+                  startedAt: batchStartedAt,
+                  completedAt: batchCompletedAt,
+                  source: "rectification",
+                  firstPassSuccess: false,
+                  rectificationCost: conflict.cost,
+                  fallbackHops: toFallbackHops(ctx.runtime.agentFallbacks.get(conflictId), conflictId),
+                  runtimeCrashes: ctx.runtime.runtimeCrashRetries.get(conflictId) ?? 0,
+                }),
+              );
             }
           }
 

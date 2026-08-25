@@ -19,7 +19,7 @@
  */
 import { resolveModelForAgent } from "@/config";
 import type { NaxConfig } from "@/config";
-import type { StoryMetrics } from "@/metrics";
+import type { AgentFallbackHop, StoryMetrics } from "@/metrics";
 import type { UserStory } from "@/prd/types";
 
 export interface BackfillMetricArgs {
@@ -33,6 +33,16 @@ export interface BackfillMetricArgs {
   defaultAgent: string;
   /** Timestamp for startedAt/completedAt (execution timing is not persisted on the story). */
   timestamp: string;
+  /**
+   * Agent-swap hops recorded for this story during execution (nax#1709). A failed story
+   * never reaches collectStoryMetrics, so without these the run-level swap-cost aggregate
+   * omits exactly the spend it exists to measure, and `exhaustedStories` — which requires
+   * `!success` — can never be populated at all. Ignored for completion-phase-only spend,
+   * where no execution happened.
+   */
+  fallbackHops?: readonly AgentFallbackHop[];
+  /** Runtime-crash retries tallied for this story during execution (nax#1709). */
+  runtimeCrashes?: number;
 }
 
 /** True when the story ran and terminated as a failure in the execution stage. */
@@ -47,7 +57,7 @@ function isExecutionFailure(story: UserStory | undefined): boolean {
  * Pure over its inputs — exported for unit testing.
  */
 export function synthesizeBackfillMetric(args: BackfillMetricArgs): StoryMetrics {
-  const { storyId, story, totalCostUsd, config, defaultAgent, timestamp } = args;
+  const { storyId, story, totalCostUsd, config, defaultAgent, timestamp, fallbackHops, runtimeCrashes } = args;
 
   if (story != null && isExecutionFailure(story)) {
     const tier = story.routing?.modelTier ?? "balanced";
@@ -78,7 +88,8 @@ export function synthesizeBackfillMetric(args: BackfillMetricArgs): StoryMetrics
       startedAt: timestamp,
       completedAt: timestamp,
       source: "execution-failed",
-      runtimeCrashes: 0,
+      runtimeCrashes: runtimeCrashes ?? 0,
+      ...(fallbackHops && fallbackHops.length > 0 ? { fallback: { hops: [...fallbackHops] } } : {}),
     };
   }
 

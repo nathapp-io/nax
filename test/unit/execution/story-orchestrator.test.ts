@@ -1935,7 +1935,7 @@ describe("rectification phase envelope", () => {
       expect(rectOut).toBeDefined();
       expect(rectOut?.success).toBe(true);
       expect(rectOut?.exitReason).toBe("resolved");
-      expect(rectOut?.iterationCount).toBe(1);
+      expect(rectOut?.iterationCount).toBe(2); // nax#1707: cumulative — 2 re-entries x 1 stubbed iteration
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
