@@ -337,18 +337,20 @@ describe("verifierPickSelector", () => {
     });
   });
 
-  // AC 6 is not implemented, and neither is the patch step AC 5 describes.
-  // `verifierPickSelector` scores the proposals and returns the winner's output
-  // verbatim — it never calls `runPatchStep`, and `SuccessfulProposal` carries no
-  // session `handle` for a patch turn to continue from (the handle lives inside the
-  // stateful debater op and is never surfaced on a proposal).
+  // AC 6 as originally written no longer describes the code. The patch step IS
+  // implemented — `finalizePlanSelection` (`src/debate/runner-plan-helpers.ts`) reads
+  // `patch.enabled`, compares `acOverlap` to `overlapThreshold`, and calls
+  // `runPatchStep` with `maxDeltas` — but #1048 moved it OFF the selector and off
+  // session handles. The patch prompt is now resolved back into each debater's own
+  // in-flight turn through `PromiseWithResolvers`, so no `SuccessfulProposal.handle`
+  // is needed and none exists. `verifier-pick-signal.test.ts` pins that removal.
   //
-  // The four tests that stood here each ran the selector inside `try { … } catch {}`
-  // and asserted nothing, so they were green against absent behaviour. What follows
-  // pins the gap executably instead: the day someone wires the patch step, this test
-  // fails and the AC 6 assertions have to be written for real.
-  describe("AC 6: patch step continues session using existing handle", () => {
-    test("patch config is inert — the selector never opens a session", async () => {
+  // The four tests that stood here predate #1048 and each ran the selector inside
+  // `try { … } catch {}` asserting nothing, so they stayed green across the refactor
+  // that invalidated them. Replaced by one test pinning the post-#1048 split: the
+  // selector ranks and returns, and dispatches nothing itself.
+  describe("AC 6: patch dispatch lives in the plan runner, not the selector", () => {
+    test("selector ranks and returns — it never opens a session, even with patch enabled", async () => {
       let runAsSessionCalls = 0;
       const mockAgentManager = makeMockAgentManager({
         runAsSessionFn: async () => {

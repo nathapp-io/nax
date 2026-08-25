@@ -11,8 +11,8 @@ were written and are not edited afterwards.** For the live state, read §0 and t
 
 **Test typecheck is 0.** The nine survivors §44 ruled undrainable all drained — §47 has the
 per-row account. `as unknown as` 101, `looseCast` 1888 (−21), every other counter flat, all
-25 gates green, full suite green, coverage unchanged against `main`. The one thing left
-behind is a *feature* gap, not test debt: the verifier-pick patch step (§47 tail).
+25 gates green, full suite green, coverage unchanged against `main`. Nothing is left behind
+and there is no issue to file — see §47a, which retracts a wrong claim in §47.
 
 The table below is the state at `main` @ `042346102`, kept as written.
 
@@ -2855,10 +2855,10 @@ caller. 20 pass either way, `expect()` calls 47 → 52.
 §44 framed this as "deleting it guts the contract, adding the field to `src/` to satisfy a
 fixture is what this issue forbids". There was a third option.
 
-Measured first: `handle` appears nowhere in `src/debate/`. The field is a prerequisite of
-the verifier-pick **patch step**, and the patch step does not exist — `verifierPickSelector`
-scores proposals and returns the winner's output; it never calls `runPatchStep` (which itself
-only builds a prompt). Of the ten `makeProposal(…, handle)` call sites, nine passed
+Measured first: `handle` appears nowhere in `src/debate/`. `verifierPickSelector` scores
+proposals and returns the winner's output; it never calls `runPatchStep`. (**§47a corrects
+what I concluded from that** — the patch step is implemented elsewhere, and its absence from
+the selector is by design, not a gap.) Of the ten `makeProposal(…, handle)` call sites, nine passed
 `{} as SessionHandle`, a value with no fields. The tenth passed a real handle and never
 asserted on it: every test in the AC 6 block ran the selector inside `try { … } catch {}`
 with a comment reading "After implementation, should verify …". **Four tests, zero
@@ -2906,9 +2906,44 @@ Against the original #1514 start: casts **815 → 101 (−88%)**, typecheck **20
 
 Baselines updated after the gates, not before.
 
-### Left behind, deliberately
+## 47a. Retraction — the patch step is implemented, and there is nothing to file
 
-The verifier-pick patch step (AC 4–7 of `SPEC-enhanced-debate-phase-1.md`) is unimplemented
-and its config surface is live: `selector.patch` parses, and `runPatchStep` is exported from
-`src/debate/selectors/index.ts` with no caller. Worth an issue — it is a feature gap, not
-test debt, and nothing in this drain changed it.
+§47 closed by proposing an issue: "the verifier-pick patch step is unimplemented and its
+config surface is live … `runPatchStep` is exported with no caller." **That is wrong, and the
+error was mine.**
+
+`runPatchStep` has a caller: `finalizePlanSelection` in `src/debate/runner-plan-helpers.ts`
+reads `patch.enabled`, compares `acOverlap(winner, runnerUp)` against `overlapThreshold`,
+and calls `runPatchStep(selectorCtx, winner, runnerUp, patchConfig.maxDeltas ?? 5)`. AC 4,
+AC 5 and the `maxDeltas` plumbing are all real. `selector.patch` config is not inert.
+
+**How I got it wrong:** I grepped `handle` and `patch` inside
+`src/debate/selectors/verifier-pick.ts`, found neither, and generalised from one file to the
+feature. The caller is one directory up. A grep scoped to the file you are already reading
+cannot answer "does this have a caller" — that question needs the whole tree, and I had
+already run exactly that grep for `SuccessfulProposal` a minute earlier.
+
+**What the code actually says.** #1048 (`Debate callOp migration phase 2`) moved patch
+dispatch off the selector and off session handles. The patch prompt is now resolved back
+into each debater's own in-flight turn through `PromiseWithResolvers`, so no
+`SuccessfulProposal.handle` is needed and none exists.
+`test/unit/debate/selectors/verifier-pick-signal.test.ts` pins that removal by source-grep —
+`verifier-pick.ts` must not contain `agentManager.runAsSession`, `VERIFIER_PICK_NO_HANDLE`,
+or `await runPatchStep(`.
+
+**The drain itself is unaffected, and better justified.** The four AC-6 tests were not
+scaffolding for future work — they are **relics of the pre-#1048 design that survived the
+refactor that invalidated them**, precisely because `try { … } catch {}` made them incapable
+of failing. That is a sharper argument for deleting them than the one §47 gave. The
+replacement test and its comment now describe the post-#1048 split (selector ranks; plan
+runner dispatches) instead of claiming a feature gap.
+
+The same correction applies to §47's aside that "AC 4 and AC 5 have the same defect (their
+'skips patch' tests pass trivially because patch never runs)". Patch does run — in the plan
+path. Those tests are still weak (they swallow exceptions and assert only
+`outcome === "passed"`), but weak is not the same as vacuous, and they are out of scope here
+either way.
+
+**Carry forward:** *"no caller in this file" is not "no caller."* Scope the grep to the
+repo before concluding a feature is missing — the cost of the wider grep is seconds, and
+this one produced a wrong entry in a status doc and a wrong claim in a commit message.
