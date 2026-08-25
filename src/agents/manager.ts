@@ -215,11 +215,10 @@ export class AgentManager implements IAgentManager {
     return candidates[0] ?? null;
   }
 
-  // TODO(#1131): Agent-swap metric propagation is deferred. When swaps occur here,
-  // the hop count and AgentFallbackRecord[] should surface in story metrics
-  // (StoryMetrics.fallback). Per .claude/rules/adapter-wiring.md Rule 6, result-side
-  // data must not back-flow through CallContext — wiring requires a dedicated spec.
-  // See follow-up after issue #1131 is closed.
+  // Swap hops produced here reach StoryMetrics.fallback via the run-scoped
+  // ctx.runtime.agentFallbacks sink, written by recordAgentFallbacks at the
+  // callOp seam (#1707) — result-side data never back-flows through
+  // CallContext, per .claude/rules/adapter-wiring.md Rule 6.
   async runWithFallback(request: AgentRunRequest, primaryAgentOverride?: string): Promise<AgentRunOutcome> {
     const logger = getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
