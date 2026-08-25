@@ -1,0 +1,8 @@
+# Revisions to skip in `git blame`. Mechanical, whole-tree reformats only.
+#
+# Enable locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# style: enable Biome organizeImports assist (rollout step 3) — reordered
+# imports across 1127 files in src/ bin/ test/.
+4315da889e9ea94f30f414594f272b62ec50f866
