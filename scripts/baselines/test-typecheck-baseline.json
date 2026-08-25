@@ -1,19 +1,12 @@
 {
-  "count": 21,
-  "updatedAt": "2026-08-24T18:32:45.950Z",
+  "count": 11,
+  "updatedAt": "2026-08-25T02:24:02.160Z",
   "byFile": {
-    "test/helpers/mock-agent-manager.ts": 2,
-    "test/integration/agents/stale-retry-session-reuse.test.ts": 1,
-    "test/integration/agents/stale-then-swap.test.ts": 1,
-    "test/integration/agents/timeout-retry-fresh-session.test.ts": 1,
     "test/integration/context/context-provider-injection.test.ts": 2,
-    "test/integration/pipeline/gating-preservation.test.ts": 2,
     "test/integration/plugins/validator.test.ts": 1,
     "test/integration/tdd/_tdd-test-helpers.ts": 1,
     "test/unit/debate/runner-stateful.test.ts": 2,
     "test/unit/debate/selectors/verifier-pick.test.ts": 1,
-    "test/unit/execution/non-blocking-fix-wiring.test.ts": 4,
-    "test/unit/execution/story-scoped-fix-budget.test.ts": 1,
-    "test/unit/test-runners/resolver.test.ts": 2
+    "test/unit/execution/non-blocking-fix-wiring.test.ts": 4
   }
 }

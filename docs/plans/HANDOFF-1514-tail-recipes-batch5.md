@@ -208,6 +208,15 @@ end) — the slack this drain re-opens has now recurred six times on this issue.
 
 ## The 21 survivors — all accepted or deliberately held back
 
+> **Superseded 2026-08-25 — ten of these twenty-one were drainable.** The rulings below were
+> re-checked against the source one row at a time and three of the four buckets were wrong:
+> the "115 consumers" blast radius did not apply to the edits in question, two "src typing
+> gap" rows pinned a state the schema defaults make unreachable, and one "would change what
+> the test asserts" row was two dead ACP keys. Typecheck is now **11**. Read
+> `STATUS-1514-drain.md` §44 before acting on anything in this section — it carries the live
+> ruling for each remaining row, and the three ways the reasoning here went wrong. The
+> `callOp` tier-3 bucket is the only one that survived intact.
+
 **Do not "fix" these without reading the reason.** None is a missed row.
 
 ### Genuine `src/` typing gaps — file these, do not patch the test (5 rows)
