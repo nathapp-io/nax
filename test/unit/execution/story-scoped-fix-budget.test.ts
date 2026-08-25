@@ -157,9 +157,19 @@ async function rbRun(
     maxAttempts?: number;
     resolveAfterCalls?: number;
     overrides?: Record<string, unknown>;
+    /** Pre-seeded phaseOutputs, to simulate a runRectification re-entry within one attempt. */
+    seedPhaseOutputs?: Record<string, unknown>;
   },
 ): Promise<{ dispatchCount: number; phaseOutputs: Record<string, unknown>; result: unknown }> {
-  const { storyId, tier, agentName, maxAttempts = 3, resolveAfterCalls = Number.POSITIVE_INFINITY, overrides } = opts;
+  const {
+    storyId,
+    tier,
+    agentName,
+    maxAttempts = 3,
+    resolveAfterCalls = Number.POSITIVE_INFINITY,
+    overrides,
+    seedPhaseOutputs,
+  } = opts;
   let dispatchCount = 0;
   let gateCalls = 0;
   const origCallOp = _storyOrchestratorDeps.callOp;
@@ -180,7 +190,7 @@ async function rbRun(
 
   try {
     const ctx = rbCtx(runtime, storyId, tier, agentName);
-    const phaseOutputs = rbSeedPhaseOutputs();
+    const phaseOutputs = seedPhaseOutputs ?? rbSeedPhaseOutputs();
     const result = await runRectification(ctx, rbState(maxAttempts), {}, phaseOutputs, {
       skipGateTriage: true,
       ...overrides,
@@ -599,3 +609,48 @@ async function runPlanResumeScenario(
     _storyOrchestratorDeps.callOp = origCallOp;
   }
 }
+
+// ---------------------------------------------------------------------------
+// nax#1707 follow-up: phaseOutputs.rectification is last-write-wins, and
+// runRectification re-enters within a single attempt (execution-plan.ts). post-run.ts
+// reads iterationCount into ctx.rectifyAttempt, where any non-zero disqualifies
+// firstPassSuccess (BUG-067 / #679) — so a later cycle must not erase an earlier one.
+// ---------------------------------------------------------------------------
+
+describe("runRectification — iterationCount accumulates across re-entries", () => {
+  test("adds this cycle's iterations to the count a previous cycle left behind", async () => {
+    const runtime = makeBudgetRuntime(false);
+    const seeded = rbSeedPhaseOutputs();
+    seeded.rectification = { success: false, iterationCount: 2, exitReason: "max-attempts-per-strategy" };
+
+    const { phaseOutputs } = await rbRun(runtime, {
+      storyId: "US-rectify-accum",
+      maxAttempts: 1,
+      seedPhaseOutputs: seeded,
+    });
+
+    const rect = phaseOutputs.rectification as { iterationCount: number };
+    expect(rect.iterationCount).toBe(3);
+  });
+
+  test("a re-entry that runs no iterations preserves the earlier cycle's count", async () => {
+    const runtime = makeBudgetRuntime(false);
+    const seeded = rbSeedPhaseOutputs();
+    // Gate resolves immediately, so this cycle short-circuits with zero iterations.
+    seeded["full-suite-gate"] = { success: true, findings: [], normalizedFindings: [] };
+    seeded.rectification = { success: false, iterationCount: 2, exitReason: "max-attempts-per-strategy" };
+
+    const { phaseOutputs } = await rbRun(runtime, {
+      storyId: "US-rectify-preserve",
+      maxAttempts: 1,
+      resolveAfterCalls: 1,
+      seedPhaseOutputs: seeded,
+    });
+
+    const rect = phaseOutputs.rectification as { iterationCount: number } | undefined;
+    // Either the short-circuit leaves the earlier cycle's entry untouched, or it rewrites
+    // it with 0 new iterations added — both must preserve 2, never drop to 0.
+    expect(rect).toBeDefined();
+    expect(rect?.iterationCount).toBe(2);
+  });
+});

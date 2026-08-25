@@ -158,7 +158,10 @@ export interface NaxRuntime {
    * *consecutive* crashes and is deliberately cleared by any ordinary pipeline outcome
    * so the retry cap applies to a crash streak. This is the per-story total, and it is
    * run-scoped rather than on PipelineContext because that is rebuilt on every attempt.
-   * Read by collectStoryMetrics as StoryMetrics.runtimeCrashes.
+   * Counts retries PERFORMED, which is one fewer than crashes seen: a crash that exceeds
+   * RUNTIME_CRASH_RETRY_CAP pauses the story instead of retrying and is not tallied.
+   * Read by collectStoryMetrics as StoryMetrics.runtimeCrashes — sequential path only;
+   * the parallel executor builds its own StoryMetrics literals and does not read this.
    */
   readonly runtimeCrashRetries: Map<string, number>;
   /** Run-scoped per-(story, tier) fix-iteration + decline history (US-004). */

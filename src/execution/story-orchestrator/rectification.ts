@@ -497,9 +497,15 @@ export async function runRectification(
       ? "max-attempts-per-strategy"
       : cycleResult.exitReason;
 
+  // runRectification can re-enter within a single attempt (execution-plan.ts), and this
+  // key is last-write-wins. iterationCount must accumulate: post-run.ts reads it into
+  // ctx.rectifyAttempt, where any non-zero disqualifies firstPassSuccess (BUG-067 / #679),
+  // so a later cycle exiting with 0 iterations must not erase an earlier cycle's work.
+  const priorRectifyIterations =
+    (phaseOutputs.rectification as { iterationCount?: number } | undefined)?.iterationCount ?? 0;
   phaseOutputs.rectification = {
     success: cycleResult.exitReason === "resolved",
-    iterationCount: cycleResult.iterations.length,
+    iterationCount: priorRectifyIterations + cycleResult.iterations.length,
     exitReason: reportedExitReason,
     finalFindingsCount: cycleResult.finalFindings.length,
   };

@@ -417,7 +417,9 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   // attributable to a story. `outcome.result` is not that carrier — post-run.ts
   // rebuilds ctx.agentResult from the implementer's phase output, so anything left
   // on the AgentResult here is dropped before metrics run. Record on the run-scoped
-  // store instead, so hops from every op in the story reach StoryMetrics.fallback.
+  // store instead, so hops from every op in the story reach StoryMetrics.fallback on the
+  // sequential success path. Parallel and failed stories build metrics elsewhere and do
+  // not read this yet — see #1709.
   recordAgentFallbacks(ctx, outcome.fallbacks);
 
   // Abort check: if the signal was aborted during the hop (e.g. in sendWithParseRetry),

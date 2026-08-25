@@ -593,3 +593,44 @@ absolute uncovered count is the number that decides whether it is real.**
 
 Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14133 / 1136 / 38, 0 fail),
 coverage OK, 101 files below floor against baseline 103. No escape-hatch counter moved.
+
+### 8.9 What code review caught that the sweep did not (2026-08-25)
+
+An independent review of the branch found three defects the field sweep could not, because
+none of them is a field-name problem.
+
+**`rectifyAttempt` undercounted.** `runRectification` re-enters within a single attempt
+(`execution-plan.ts:201,257,367`) and `phaseOutputs.rectification` is last-write-wins, so a
+later cycle exiting with 0 iterations erased an earlier cycle's 2 — restoring the #679
+disqualification in name only. Fixed by accumulating at the source; `iterationCount` had
+exactly one reader, so the semantics change was safe. The existing envelope test in
+`story-orchestrator.test.ts` asserted `1` and now asserts `2`, which is the honest number:
+the plan runs two cycles and the stub reports one iteration each.
+
+**Threading `runtime` would have switched on a billable LLM call.** `tryLlmBatchRoute` bails
+without a runtime (`router.ts:361`), and `handleTierEscalation`'s only caller never passed one,
+so the hybrid post-escalation re-route has never run. The threading added for cost attribution
+would have activated it — a real LLM dispatch per escalation whose result lands in
+`runtime.routingCache` and can change the tier the retry runs at. Deliberately **not**
+forwarded; filed as nax#1710.
+
+**The fix does not reach failed or parallel stories.** `collectStoryMetrics` runs only on the
+success path (`backfill-story-metrics.ts:6` says so outright), and parallel mode builds its
+`StoryMetrics` literals inline (`unified-executor.ts:413,436`) without ever calling it. So
+`deriveRunFallbackAggregates`'s exhausted rule — `!story.success && lastHop.category ===
+"availability"` — is structurally dead, and `parallelCount > 1` runs write both new maps and
+read neither. Filed as nax#1709; the code comments now say "sequential success path" rather
+than "every op".
+
+**Carry forward: a mechanical sweep finds a shape, not a defect class.** §8.6's sweep was built
+to find "declared, read, written only by tests" and it found exactly that — three times, all
+correctly. It could not find a field that *is* written correctly but by a last-write-wins path,
+nor one whose reach stops at a path boundary, nor a side effect on an unrelated inert feature.
+**Every one of the review's findings was about reach or timing, not naming.** Pair the sweep
+with a reviewer that follows the value to its consumer.
+
+One review finding was itself wrong and worth recording: it reported the changed `story:paused`
+/ `story:failed` cost source as unpinned by any test. The sibling emitter in
+`preIterationTierCheck` *is* pinned in both directions
+(`tier-escalation-story-failed.test.ts:161,203`) — it was `tier-outcome.ts`'s four sites that
+were uncovered, and those now have a test each way. **Verify the reviewer too.**

@@ -584,7 +584,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   if (routingMode === "hybrid") {
     await tryLlmBatchRoute(ctx.config, storiesToEscalate, "hybrid-re-route-pipeline", {
       agentManager: ctx.agentManager,
-      runtime: ctx.runtime,
+      // runtime deliberately NOT forwarded — would activate a billable re-route. See #1710.
     });
   }
 

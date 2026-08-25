@@ -238,7 +238,11 @@ export interface PipelineContext extends DispatchContext {
   };
   /** Story start timestamp (ISO string, set by runner before pipeline) */
   storyStartTime?: string;
-  /** Tracks how many times the rectify stage has run this pipeline (for event attempt numbers). */
+  /**
+   * Total rectification ITERATIONS run this attempt, accumulated across every
+   * runRectification re-entry — not a count of rectify stage invocations. Any non-zero
+   * value disqualifies firstPassSuccess in collectStoryMetrics (BUG-067 / #679).
+   */
   rectifyAttempt?: number;
   /**
    * Prior semantic review iterations carried into this pipeline pass — populated by
