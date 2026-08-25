@@ -216,3 +216,40 @@ These cost real time to learn and apply unchanged here. Full accounts in
 ---
 
 ## 8. Log
+
+### 8.1 Recipes A and B, and the helper-containment ruling (101 → 91, 2026-08-25)
+
+Two shapes drained, both by **deleting** the cast rather than replacing it:
+
+- **A — `DEFAULT_CONFIG` spread (6 sites, 4 files).** `...(DEFAULT_CONFIG as unknown as
+  Record<string, unknown>)` → `...DEFAULT_CONFIG`. Spreading a typed object into an untyped
+  literal never needed the widening.
+- **B — `expect(x as unknown as Record<…>).toHaveProperty(…)` (4 sites, 1 file).**
+  `toHaveProperty` takes any object. `loader-legacy-shim.test.ts` already used the bare form
+  at two other lines, which is what proved the recipe before it was applied.
+
+**The first question at every site is "is this cast doing anything at all?"** Ten of the first
+ten answered no. Neither recipe needed a replacement construct, so neither could trade a
+counter — the reason both landed clean on the first gate run.
+
+### The seven `Mock*` helper casts are containment, not debt — do not drain them
+
+§1's first-listed cluster was wrong and is corrected here. Each `test/helpers/*.ts` factory
+ends with one `return x as unknown as MockY`, and each header says why: the real type is a
+class with private state (`MergeEngine`'s `private worktreeManager`, `StatusWriter`'s private
+state), so a stub cannot satisfy it structurally. The cast is the deliberate single
+containment point for what used to be 12–17 casts at call sites — `makeStatusWriter`'s header
+records "17 casts for one missing helper".
+
+Every route out trades a counter: `Object.create(P) as C` is `looseCast` +1,
+`new C(absentValue<W>())` is `absentValue` +1. Both are refused by the closed-system rule. A
+shared `makeClassStub<C>()` would legitimately take 7 → 1, but that is a design decision on a
+sub-ten-site cluster, which §6 says costs as much to verify as to do. Left alone, ruled
+out of scope, and written into the handoff's §1 so a delegate does not rediscover it.
+
+**Carry forward: a cast inside a shared helper is load-bearing in a way a cast at a call site
+is not.** Count it, but do not target it — the number going down would mean the containment
+was broken, not that the debt was paid.
+
+Gates: typecheck 0 (all three projects), `check:all` 24/24, suite green (unit / 1173
+integration / 38 ui, 0 fail). Casts **101 → 91**; every other counter flat.

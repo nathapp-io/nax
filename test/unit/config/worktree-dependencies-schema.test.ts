@@ -4,9 +4,9 @@ import { NaxConfigSchema } from "@/config/schemas";
 
 function withWorktreeDependencies(value: unknown): Record<string, unknown> {
   return {
-    ...(DEFAULT_CONFIG as unknown as Record<string, unknown>),
+    ...DEFAULT_CONFIG,
     execution: {
-      ...(DEFAULT_CONFIG.execution as unknown as Record<string, unknown>),
+      ...DEFAULT_CONFIG.execution,
       worktreeDependencies: value,
     },
   };
