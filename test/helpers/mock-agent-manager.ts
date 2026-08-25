@@ -159,7 +159,7 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
         return { ...outcome.result, agentFallbacks: outcome.fallbacks };
       })
     : opts.runFn
-      ? mock((req: AgentRunRequest) => opts.runFn!(req.runOptions.agent, req.runOptions))
+      ? mock((req: AgentRunRequest) => opts.runFn!(opts.getDefaultAgent ?? "claude", req.runOptions))
       : mock(() => Promise.resolve({ ...DEFAULT_RESULT, agentFallbacks: [] }));
 
   const completeFn = opts.completeFn
@@ -199,7 +199,7 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
           exitCode: 0,
           output: turn.output ?? "",
           rateLimited: false,
-          durationMs: turn.durationMs ?? 0,
+          durationMs: 0,
           estimatedCostUsd: turn.estimatedCostUsd ?? 0,
           agentFallbacks: [],
         };

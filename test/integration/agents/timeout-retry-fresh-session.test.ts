@@ -67,7 +67,7 @@ afterEach(() => {
 
 function makeHopCtx(
   sessionMgr: ReturnType<typeof makeSessionManager>,
-  runAsSessionFn: Parameters<typeof makeMockAgentManager>[0]["runAsSessionFn"],
+  runAsSessionFn: NonNullable<Parameters<typeof makeMockAgentManager>[0]>["runAsSessionFn"],
 ) {
   return {
     sessionManager: sessionMgr,
