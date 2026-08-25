@@ -14,36 +14,20 @@ import type { PipelineContext } from "@/pipeline/types";
 import { PluginRegistry } from "@/plugins/registry";
 import type { IContextProvider, NaxPlugin } from "@/plugins/types";
 import type { PRD, UserStory } from "@/prd/types";
-import { DEFAULT_TEST_ROUTING, makeDispatchContext } from "@test/helpers";
+import { DEFAULT_TEST_ROUTING, makeDispatchContext, makePRD, makeStory } from "@test/helpers";
 
 /**
  * Create a minimal test context for context stage testing
  */
 function createTestContext(overrides?: Partial<PipelineContext>): PipelineContext {
-  const story: UserStory = {
+  const story: UserStory = makeStory({
     id: "US-002",
     title: "Test Story",
     description: "Test story for context provider injection",
     acceptanceCriteria: ["AC1", "AC2"],
-    status: "pending",
-    dependencies: [],
-    reasoning: "test",
-    estimatedComplexity: "simple",
-    tags: [],
-    metadata: {},
-  };
+  });
 
-  const prd: PRD = {
-    version: 1,
-    feature: "test-feature",
-    description: "Test feature",
-    stories: [story],
-    acceptanceCriteria: [],
-    technicalNotes: "",
-    contextFiles: [],
-    dependencies: {},
-    codebaseSummary: "",
-  };
+  const prd: PRD = makePRD({ feature: "test-feature", userStories: [story] });
 
   // This test file covers the v1 plugin provider path (separate from the v2
   // orchestrator's built-in providers). Always disable v2, even when the caller
@@ -196,21 +180,24 @@ describe("US-002: Context Provider Injection", () => {
       expect(ctx.contextMarkdown).toContain("Confluence data");
     });
 
-    test("provider content is appended to existing context markdown", async () => {
+    // `runV1Path` assigns the PRD-derived markdown over whatever `ctx.contextMarkdown`
+    // held, then appends provider sections to it. A pre-set value is never carried
+    // through — `releaseHeavyPipelineContext` clears the field before every iteration,
+    // so the context stage is its sole writer. "Appended" therefore means appended to
+    // the context this stage just built, which is what this pins.
+    test("provider content is appended after the PRD-derived context", async () => {
       const provider = createMockProvider("jira", "New context", 100, "Jira Context");
       const registry = new PluginRegistry([createMockPlugin(provider)]);
 
-      const ctx = createTestContext({
-        plugins: registry,
-        contextMarkdown: "Existing context\n\n## Dependencies",
-      });
+      const ctx = createTestContext({ plugins: registry });
 
       await contextStage.execute(ctx);
 
-      expect(ctx.contextMarkdown).toContain("Existing context");
-      expect(ctx.contextMarkdown).toContain("## Dependencies");
-      expect(ctx.contextMarkdown).toContain("## Jira Context");
-      expect(ctx.contextMarkdown).toContain("New context");
+      const markdown = ctx.contextMarkdown ?? "";
+      expect(markdown).toContain("# Story Context");
+      expect(markdown).toContain("## Jira Context");
+      expect(markdown).toContain("New context");
+      expect(markdown.indexOf("# Story Context")).toBeLessThan(markdown.indexOf("## Jira Context"));
     });
   });
 
@@ -511,15 +498,14 @@ describe("US-002: Context Provider Injection", () => {
       const provider = createMockProvider("jira", "External context", 100, "External");
       const registry = new PluginRegistry([createMockPlugin(provider)]);
 
-      const ctx = createTestContext({
-        plugins: registry,
-        contextMarkdown: "# Story Context\n\nPRD-based context here",
-      });
+      const ctx = createTestContext({ plugins: registry });
 
       await contextStage.execute(ctx);
 
-      // Should preserve existing context and append plugin context
-      expect(ctx.contextMarkdown).toContain("PRD-based context");
+      // The PRD context is the one this stage builds from `ctx.prd`/`ctx.story`,
+      // not a string handed in by the caller — assert against the real output.
+      expect(ctx.contextMarkdown).toContain("# Story Context");
+      expect(ctx.contextMarkdown).toContain("## Progress");
       expect(ctx.contextMarkdown).toContain("External");
     });
   });
