@@ -32,8 +32,9 @@ counter sitting **at** its baseline — no headroom left in the ratchets. (The s
 re-opened and been reclaimed seven times on this issue. **Re-check it before every hand-off** —
 it re-opens every time a drain commit lowers a counter without re-baselining.)
 
-**The branch is unmerged and unpushed.** `main` is at `9908767a7` (batch 4, PR #1701); this
-branch carries batch 5 (§43) plus the survivor round (§44) — 135 commits, no PR yet.
+**Open as PR #1703**, off `main` @ `9908767a7` (batch 4, PR #1701): batch 5 (§43) plus the
+survivor round (§44), 136 commits. The two `src/` contradictions §44 found are filed as
+**#1702** and are deliberately not fixed in that PR.
 
 The residue is **11 errors across 6 files**, and they are not a queue. §44 has the per-row
 ruling: 4 are an accepted `callOp` tier-3 exception, 4 need a decision that changes what a test
@@ -85,8 +86,9 @@ unmeasured. Details and the coverage gate in §34.
 | cluster G, TS2769, TS7024, DispatchContext | ✅ merged — 356 → 303 | #1699 |
 | tail batch 3 + escalation fixes | ✅ merged — 289 → 245 | #1700 |
 | tail batch 4 — fixture-shape family | ✅ merged — 245 → 219 | #1701 |
-| **tail batch 5 — ten groups** | ✅ **done, unmerged — 219 → 21** (§43) | none yet |
-| **the 21 survivors, re-ruled** | ✅ **10 drained — 21 → 11** (§44) | none yet |
+| **tail batch 5 — ten groups** | ✅ **done — 219 → 21** (§43) | #1703 (open) |
+| **the 21 survivors, re-ruled** | ✅ **10 drained — 21 → 11** (§44) | #1703 (open) |
+| `AgentAdapter` drift (2 of the last 11) | 🔶 **filed, not fixed** — issue #1702 | — |
 
 **Branches:** merged through #1701 (batch 4). `chore/1514-tail-batch5-drain` is parked locally with batch 5 and the survivor round on it — unpushed, no PR.
 - `chore/1514-dead-fixture-keys` — merged as #1686 (`e915b47e1`); branch gone.
@@ -2604,11 +2606,16 @@ against `src/`; four are already ruled correct.
 | 4 | `non-blocking-fix-wiring.test.ts` | nothing — `PLAN-1514-callop-seam.md` §4 tier 3. `bun:test`'s `Mock<T>` collapses to one call signature and can never satisfy a generic-in-return position |
 | 2 | `context-provider-injection.test.ts` | a decision: real `makePRD`/`makeStory` factories make `buildStoryContextFullFromCtx` succeed instead of throwing-and-being-caught, flipping 2 tests from "preserves pre-set `contextMarkdown`" to "overwritten" |
 | 3 | `runner-stateful.test.ts`, `verifier-pick.test.ts` | a decision: `handle` on `SuccessfulProposal` exists nowhere in `src/debate/`, but the test is titled "carries optional handle field (compile-time check)" and cites a session-continuity AC. Reads as scaffolding for unimplemented work — deleting it guts the contract, adding the field to `src/` to satisfy a fixture is what this issue forbids |
-| 1 | `validator.test.ts` | **an issue.** `src/plugins/validator.ts:205-215` still hard-requires `run`/`plan`/`decompose` at runtime — a stale pre-ACP check. Fixing the fixture makes `validatePlugin()` reject its own "valid plugin" |
-| 1 | `_tdd-test-helpers.ts` | **an issue, same family.** `AgentAdapter` declares `closeSession`; `src/execution/session-manager-runtime.ts:27` reaches `closePhysicalSession` through a `LegacySessionCloser` cast. The interface and the shipped adapter disagree |
+| 1 | `validator.test.ts` | **filed as #1702.** `src/plugins/validator.ts:205-215` still hard-requires `run`/`plan`/`decompose` at runtime — a stale pre-ACP check. Fixing the fixture makes `validatePlugin()` reject its own "valid plugin" |
+| 1 | `_tdd-test-helpers.ts` | **filed as #1702, same family.** `AgentAdapter` declares `closeSession`; `src/execution/session-manager-runtime.ts:27` reaches `closePhysicalSession` through a `LegacySessionCloser` cast. The interface and the shipped adapter disagree |
 
 The two `src/` contradictions are the same defect seen twice: **`AgentAdapter` has drifted from
-what the code actually calls.** That is worth one issue covering both, not two fixture edits.
+what the code actually calls** — the interface was never re-derived when the CLI adapter was
+removed, and the ACP one then grew a second close path. Filed as **#1702**, one issue covering
+both, because the fix for each is "make `AgentAdapter` describe the shipped adapter" and neither
+is a fixture edit. Both are unreachable in the shipped default path today, which is why they
+went unnoticed: a conforming plugin agent would be rejected at load, and a faithful adapter
+would silently no-op at teardown.
 
 **Do not delegate the 11.** Every one of them is a judgement call or an issue to file; a
 mechanical brief over them would produce exactly the wrong edit.
