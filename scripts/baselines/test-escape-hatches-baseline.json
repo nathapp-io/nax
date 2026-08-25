@@ -4,12 +4,12 @@
     "tsSuppress": 40,
     "ratchetAllow": 106,
     "absentValue": 17,
-    "anyType": 1872,
-    "looseCast": 1910,
+    "anyType": 1868,
+    "looseCast": 1909,
     "asNever": 608,
     "nonNullAssert": 827
   },
-  "updatedAt": "2026-08-25T02:24:02.361Z",
+  "updatedAt": "2026-08-25T03:02:26.919Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -62,9 +62,6 @@
       "looseCast": 1
     },
     "test/helpers/context-bundle.ts": {
-      "looseCast": 1
-    },
-    "test/helpers/mock-agent-adapter.ts": {
       "looseCast": 1
     },
     "test/helpers/e2e/scripted-agent.ts": {
@@ -269,7 +266,7 @@
       "looseCast": 2
     },
     "test/integration/plugins/validator.test.ts": {
-      "anyType": 17
+      "anyType": 13
     },
     "test/integration/config/security-loader.test.ts": {
       "asAny": 1,
