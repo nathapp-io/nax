@@ -188,7 +188,7 @@ strategy values, descriptions, and classification rules are defined.
 
 *Added: 2026-03-16 (MR !52 — agents folder restructure). Updated 2026-04-27 for ADR-019 4-primitive surface.*
 
-### Adapter surface — 4 primitives (ADR-019)
+### Adapter surface — 4 primitives (ADR-019) + one optional teardown hook
 
 ```typescript
 interface AgentAdapter {
@@ -199,6 +199,9 @@ interface AgentAdapter {
 
   // Sessionless one-shot — called directly by AgentManager.completeAs
   complete(prompt: string, opts: CompleteOpts): Promise<CompleteResult>;
+
+  // Optional: close a session this process holds no live handle for (#1702)
+  closePhysicalSession?(handle: string, workdir: string, options?: { force?: boolean; signal?: AbortSignal }): Promise<void>;
 }
 ```
 
@@ -208,6 +211,13 @@ interface AgentAdapter {
 | `sendTurn` | `SessionManager.sendPrompt` (via the framework's `interactionHandler`) | Send one prompt; agent runs to completion (with internal interaction round-trips handled inside the adapter). |
 | `closeSession` | `SessionManager.closeSession` | Idempotent close. |
 | `complete` | `AgentManager.completeAs` | Sessionless single-shot. No state, no interactionHandler. |
+| `closePhysicalSession?` | run teardown (`src/execution/session-manager-runtime.ts`) | Close a session left behind, addressed by **id and workdir** rather than by `SessionHandle` — the process no longer holds one. Optional; callers invoke it best-effort and treat absence as "nothing to close". |
+
+**`closeSession` and `closePhysicalSession` are not alternatives.** The first closes an
+open in-process session; the second reconnects to the agent to close one this process
+has lost the handle for. Until #1702 the second was undeclared and teardown reached it
+through a `LegacySessionCloser` cast, so an adapter without it silently no-opped instead
+of failing to compile, and the two disagreed on the handle type unnoticed.
 
 **`AgentAdapter.run` is gone** (deleted in ADR-019 Phase D). Functionality lives
 in `SessionManager.runInSession`, which composes the three session primitives.
