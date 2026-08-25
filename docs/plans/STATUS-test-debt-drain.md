@@ -17,8 +17,8 @@ log — each entry records what was true when written and is not edited afterwar
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
 | `as unknown as` | **0** | 0 | **done — drained to zero, see below** |
 | `asAny` | 1377 | 1377 | yes, then biome `noExplicitAny` retires it |
-| `anyType` | 1860 | 1860 | yes, retires with `asAny` |
-| `nonNullAssert` | 820 | 820 | yes, then biome `noNonNullAssertion` |
+| `anyType` | 1860 | 1860 | yes, retires with `asAny` — biome says **1851** |
+| `nonNullAssert` | 819 | 819 | yes — biome says **1092**, see §0.1 |
 | `asNever` | 608 | 608 | yes |
 | `ratchetAllow` | 105 | 105 | yes |
 | `tsSuppress` | 40 | 40 | yes |
@@ -77,12 +77,75 @@ From `archive/2026-08-22-1514-phase3c-test-debt-drain.md` §6, with steps 1–3 
    `as unknown as` ratchet is baselined at **0**, so it no longer tracks a drain — it is a
    pure invariant, and any nonzero reading is a regression to reject, not a number to work
    down.
-4. **not done** — drop the `noExplicitAny: off` override for `test/**` in `biome.json`, which
-   requires `asAny`/`anyType` at 0 and retires both counters properly. Same shape for
-   `noNonNullAssertion` and `nonNullAssert`.
+4. **not done** — retire the `test/**` exemptions in `biome.json`. Two corrections since this
+   was written, both from the Biome v2 upgrade (`docs/findings/biome-migration-risk.md`):
+
+   - **Promote the override to `"error"`, do not delete it.** Under 1.9.4 both rules were
+     error-severity, so deleting the exemption turned a counting ratchet into a hard gate.
+     Under 2.5.10 they land at **warning**, and `biome check` exits 0 on warnings — deleting
+     the override would retire ~2900 drained sites into no enforcement at all. The override
+     block must end up saying `"error"`, explicitly.
+   - **Judge "at 0" with biome, not the regex counters** — see §0.1. `nonNullAssert` at 0 on
+     the ratchet still leaves ~273 live sites, which fails the promote-back.
+
+   `src/` and `bin/` are already done: both rules are `"error"` there as of the v2 rollout's
+   step 4, at zero cost, because neither had a single violation. Only `test/**` is left.
 5. ~~update `.nax/rules/test-ratchets.md`, close #1514~~ done
 
 ---
+
+### 0.1 Count `anyType` / `nonNullAssert` with biome, not the regex
+
+**The regex counters are not the drain's finish line. Biome is.** Measured 2026-08-25:
+
+| Counter | regex ratchet | biome | gap |
+|:--|--:|--:|--:|
+| `anyType` / `noExplicitAny` | 1860 | 1851 | ~equivalent |
+| `nonNullAssert` / `noNonNullAssertion` | **819** | **1092** | **273 uncounted** |
+
+`scripts/check-test-escape-hatches.ts` is raw text, and its own doc comment concedes the
+ceiling: the `nonNullAssert` pattern is anchored to postfix position and "undercounts rather
+than over-" — `x! + 1` and an end-of-line `!` are both missed. Doing better needs a parser.
+Biome has one.
+
+So 273 non-null assertions in `test/` are counted by **nothing**: the regex misses them and
+`noNonNullAssertion` is `off` for `test/**`. This matters for endgame item 4 specifically —
+draining `nonNullAssert` to 0 as the regex measures it leaves ~273 live sites, and the
+promote-back then fails on a red build. **Zero on the ratchet is not zero on the rule.**
+
+Take the authoritative count from biome's JSON reporter. The rules are `off` for `test/**` in
+the committed config, so point `--config-path` at a copy with that override dropped — the
+repo's own config and lockfile are never modified:
+
+```bash
+# build a probe config: same as biome.json, minus the test/** exemption
+mkdir -p /tmp/biome-probe
+python3 - <<'EOF'
+import json
+c = json.load(open("biome.json"))
+c["assist"] = {"actions": {"source": {"organizeImports": "off"}}}   # drop assist noise
+c["overrides"] = [o for o in c["overrides"] if "helpers" in o["includes"][0]]
+json.dump(c, open("/tmp/biome-probe/biome.json", "w"), indent=2)
+EOF
+
+bun x @biomejs/biome@2.5.10 check --config-path=/tmp/biome-probe test/ \
+  --reporter=json --max-diagnostics=20000 2>/dev/null \
+| python3 -c "
+import json, sys, collections
+c = collections.Counter(x['category'] for x in json.load(sys.stdin)['diagnostics'])
+for k in ('lint/suspicious/noExplicitAny', 'lint/style/noNonNullAssertion'):
+    print(f'{k}: {c[k]}')
+"
+```
+
+Two notes on the invocation. `--reporter=json` was **not** truncated in testing — it returned
+all 3182 diagnostics with and without `--max-diagnostics` — but pass the flag anyway: the
+human and summary reporters do stop early (they cap at 20 by default and print "Diagnostics
+not shown: N"), so anyone adapting this to a different reporter gets a silently short count.
+Keep `organizeImports` off in the probe, or every unsorted import inflates the list.
+
+Use the regex ratchet for what it is good at — failing a PR that *adds* debt, on every commit,
+in milliseconds. Use biome for "are we done yet".
 
 ## 1. Current target — none. `as unknown as` is 0 and this ratchet is closed
 
@@ -112,7 +175,8 @@ src change) and none re-opened it. The question that broke it was not clever —
 does this class's constructor actually require?", asked once.
 
 The endgame item that remains is item 4 (`noExplicitAny` / `noNonNullAssertion` for `test/**`),
-which needs `asAny`/`anyType` and `nonNullAssert` at 0. §6.3's "baselined at 0" is now
+which needs `asAny`/`anyType` and `nonNullAssert` at 0 **as biome counts them** (§0.1), and
+ends in a `"error"` override rather than a deleted one. §6.3's "baselined at 0" is now
 literally true for the cast ratchet and no longer needs the amendment §1 previously asked for.
 
 Regenerate any time:
