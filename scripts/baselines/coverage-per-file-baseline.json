@@ -28,7 +28,7 @@
     "src/cli/status-dispatch.ts": 0.6421,
     "src/commands/migrate.ts": 0.3224,
     "src/commands/precheck.ts": 0.1094,
-    "src/commands/replay.ts": 0.7048,
+    "src/commands/replay.ts": 0.7019,
     "src/commands/resume.ts": 0.5147,
     "src/config/merger.ts": 0.4231,
     "src/config/path-security.ts": 0.4507,
