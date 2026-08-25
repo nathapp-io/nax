@@ -1,15 +1,15 @@
 {
   "counts": {
-    "asAny": 1179,
+    "asAny": 948,
     "tsSuppress": 40,
     "ratchetAllow": 105,
     "absentValue": 17,
-    "anyType": 1538,
+    "anyType": 1250,
     "looseCast": 1875,
     "asNever": 608,
-    "nonNullAssert": 819
+    "nonNullAssert": 812
   },
-  "updatedAt": "2026-08-25T11:02:32.657Z",
+  "updatedAt": "2026-08-25T12:58:46.450Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -85,8 +85,6 @@
       "anyType": 9
     },
     "test/integration/tdd/tdd-cleanup.test.ts": {
-      "asAny": 17,
-      "anyType": 28,
       "looseCast": 2
     },
     "test/integration/tdd/story-orchestrator-verdict.test.ts": {
@@ -845,9 +843,7 @@
       "looseCast": 1
     },
     "test/unit/execution/story-orchestrator-logs.test.ts": {
-      "asAny": 22,
-      "anyType": 24,
-      "nonNullAssert": 20
+      "nonNullAssert": 13
     },
     "test/unit/execution/crash-heartbeat.test.ts": {
       "asAny": 7,
@@ -986,8 +982,6 @@
       "ratchetAllow": 1
     },
     "test/unit/execution/story-orchestrator/phase-details.test.ts": {
-      "asAny": 28,
-      "anyType": 28,
       "looseCast": 39
     },
     "test/unit/execution/lifecycle/acceptance-loop.test.ts": {
@@ -1179,8 +1173,6 @@
       "nonNullAssert": 11
     },
     "test/unit/operations/full-suite-gate.test.ts": {
-      "asAny": 22,
-      "anyType": 28,
       "looseCast": 1,
       "nonNullAssert": 1
     },
@@ -1310,8 +1302,6 @@
       "looseCast": 3
     },
     "test/unit/operations/write-test-op.test.ts": {
-      "asAny": 27,
-      "anyType": 27,
       "nonNullAssert": 9
     },
     "test/unit/operations/plan-draft.test.ts": {
@@ -1473,17 +1463,9 @@
     "test/unit/debate/race-against-abort.test.ts": {
       "looseCast": 2
     },
-    "test/unit/debate/runner-plug-point-dispatch.test.ts": {
-      "asAny": 14,
-      "anyType": 26
-    },
     "test/unit/debate/runner-rounds-and-cost.test.ts": {
       "asAny": 4,
       "anyType": 4
-    },
-    "test/unit/debate/runner-stateful.test.ts": {
-      "asAny": 25,
-      "anyType": 25
     },
     "test/unit/debate/session-helpers-resolver-model.test.ts": {
       "asAny": 5,
@@ -1504,10 +1486,6 @@
       "asAny": 8,
       "anyType": 8,
       "looseCast": 3
-    },
-    "test/unit/debate/runner.test.ts": {
-      "asAny": 23,
-      "anyType": 23
     },
     "test/unit/debate/runner-agent-resolution.test.ts": {
       "asAny": 5,
@@ -1953,8 +1931,6 @@
       "looseCast": 1
     },
     "test/unit/plugins/builtin/otel-resource-adoption.test.ts": {
-      "asAny": 6,
-      "anyType": 25,
       "nonNullAssert": 3
     },
     "test/unit/plugins/builtin/otel-reporter.test.ts": {
@@ -2139,8 +2115,6 @@
       "looseCast": 2
     },
     "test/unit/logger/redact.test.ts": {
-      "asAny": 28,
-      "anyType": 28,
       "looseCast": 1
     },
     "test/unit/context/context-build.test.ts": {
@@ -2501,9 +2475,7 @@
       "nonNullAssert": 5
     },
     "test/unit/pipeline/stages/acceptance.test.ts": {
-      "asAny": 19,
       "ratchetAllow": 7,
-      "anyType": 26,
       "looseCast": 1
     },
     "test/unit/pipeline/stages/queue-check.test.ts": {

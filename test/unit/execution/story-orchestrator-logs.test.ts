@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeTestRuntime } from "@test/helpers";
+import { makeCallOp, makeStory, makeTestRuntime } from "@test/helpers";
 import { _storyOrchestratorDeps } from "@/execution";
 import { getSafeLogger } from "@/logger";
 
@@ -46,8 +46,8 @@ describe("StoryOrchestrator runPhase — beforeRef threading", () => {
       // addTestWriter accepts an OrchestratorSlot — we supply a minimal TestWriterInput
       // We must also call addImplementer because build() requires it
       const { implementerOp } = await import("@/operations");
-      builder.addTestWriter({ op: testWriterOp, input: { story: { id: "US-001" } as any } });
-      builder.addImplementer({ op: implementerOp, input: { story: { id: "US-001" } as any } });
+      builder.addTestWriter({ op: testWriterOp, input: { story: makeStory({ id: "US-001" }) } });
+      builder.addImplementer({ op: implementerOp, input: { story: makeStory({ id: "US-001" }) } });
 
       const plan = builder.build(
         {
@@ -86,27 +86,29 @@ describe("StoryOrchestrator runPhase — log emission", () => {
     const { StoryOrchestratorBuilder } = await import("@/execution");
     const { testWriterOp, implementerOp } = await import("@/operations");
 
-    _storyOrchestratorDeps.callOp = (async () => ({
-      success: true,
-      filesChanged: ["test/foo.test.ts"],
-      estimatedCostUsd: 0,
-      durationMs: 0,
-      output: "",
-    })) as any;
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      fallback: {
+        success: true,
+        filesChanged: ["test/foo.test.ts"],
+        estimatedCostUsd: 0,
+        durationMs: 0,
+        output: "",
+      },
+    });
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const logs: Array<{ stage: string; msg: string }> = [];
-    const logger = getSafeLogger();
-    const origInfo = logger!.info;
+    const logger = getSafeLogger()!;
+    const origInfo = logger.info;
     logger!.info = ((stage: string, msg: string) => {
       logs.push({ stage, msg });
-    }) as any;
+    }) as typeof logger.info;
 
     const runtime = makeTestRuntime();
     try {
       const builder = new StoryOrchestratorBuilder();
-      builder.addTestWriter({ op: testWriterOp, input: { story: { id: "US-001" } as any } });
-      builder.addImplementer({ op: implementerOp, input: { story: { id: "US-001" } as any } });
+      builder.addTestWriter({ op: testWriterOp, input: { story: makeStory({ id: "US-001" }) } });
+      builder.addImplementer({ op: implementerOp, input: { story: makeStory({ id: "US-001" }) } });
       const plan = builder.build(
         {
           runtime,
@@ -119,7 +121,7 @@ describe("StoryOrchestrator runPhase — log emission", () => {
       );
       await plan.run();
     } finally {
-      logger!.info = origInfo;
+      logger.info = origInfo;
       await runtime.close();
     }
 
@@ -131,27 +133,29 @@ describe("StoryOrchestrator runPhase — log emission", () => {
     const { StoryOrchestratorBuilder } = await import("@/execution");
     const { testWriterOp, implementerOp } = await import("@/operations");
 
-    _storyOrchestratorDeps.callOp = (async () => ({
-      success: true,
-      filesChanged: ["test/a.test.ts", "test/b.test.ts"],
-      estimatedCostUsd: 0,
-      durationMs: 0,
-      output: "",
-    })) as any;
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      fallback: {
+        success: true,
+        filesChanged: ["test/a.test.ts", "test/b.test.ts"],
+        estimatedCostUsd: 0,
+        durationMs: 0,
+        output: "",
+      },
+    });
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
-    const logs: Array<{ stage: string; msg: string; data?: any }> = [];
-    const logger = getSafeLogger();
-    const origInfo = logger!.info;
-    logger!.info = ((stage: string, msg: string, data?: unknown) => {
+    const logs: Array<{ stage: string; msg: string; data?: Record<string, unknown> }> = [];
+    const logger = getSafeLogger()!;
+    const origInfo = logger.info;
+    logger!.info = ((stage: string, msg: string, data?: Record<string, unknown>) => {
       logs.push({ stage, msg, data });
-    }) as any;
+    }) as typeof logger.info;
 
     const runtime = makeTestRuntime();
     try {
       const builder = new StoryOrchestratorBuilder();
-      builder.addTestWriter({ op: testWriterOp, input: { story: { id: "US-001" } as any } });
-      builder.addImplementer({ op: implementerOp, input: { story: { id: "US-001" } as any } });
+      builder.addTestWriter({ op: testWriterOp, input: { story: makeStory({ id: "US-001" }) } });
+      builder.addImplementer({ op: implementerOp, input: { story: makeStory({ id: "US-001" }) } });
       const plan = builder.build(
         {
           runtime,
@@ -164,42 +168,44 @@ describe("StoryOrchestrator runPhase — log emission", () => {
       );
       await plan.run();
     } finally {
-      logger!.info = origInfo;
+      logger.info = origInfo;
       await runtime.close();
     }
 
     const createdLog = logs.find((l) => l.stage === "tdd" && l.msg === "Created test files");
     expect(createdLog).toBeDefined();
-    expect(createdLog!.data.testFilesCount).toBe(2);
-    expect(createdLog!.data.testFiles).toEqual(["test/a.test.ts", "test/b.test.ts"]);
+    expect(createdLog!.data?.testFilesCount).toBe(2);
+    expect(createdLog!.data?.testFiles).toEqual(["test/a.test.ts", "test/b.test.ts"]);
   });
 
   test("emits 'Isolation maintained' when phase output carries passing isolation", async () => {
     const { StoryOrchestratorBuilder } = await import("@/execution");
     const { testWriterOp, implementerOp } = await import("@/operations");
 
-    _storyOrchestratorDeps.callOp = (async () => ({
-      success: true,
-      filesChanged: ["test/a.test.ts"],
-      estimatedCostUsd: 0,
-      durationMs: 0,
-      output: "",
-      isolation: { passed: true, violations: [], description: "ok" },
-    })) as any;
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      fallback: {
+        success: true,
+        filesChanged: ["test/a.test.ts"],
+        estimatedCostUsd: 0,
+        durationMs: 0,
+        output: "",
+        isolation: { passed: true, violations: [], description: "ok" },
+      },
+    });
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const logs: Array<{ stage: string; msg: string }> = [];
-    const logger = getSafeLogger();
-    const origInfo = logger!.info;
+    const logger = getSafeLogger()!;
+    const origInfo = logger.info;
     logger!.info = ((stage: string, msg: string) => {
       logs.push({ stage, msg });
-    }) as any;
+    }) as typeof logger.info;
 
     const runtime = makeTestRuntime();
     try {
       const builder = new StoryOrchestratorBuilder();
-      builder.addTestWriter({ op: testWriterOp, input: { story: { id: "US-001" } as any } });
-      builder.addImplementer({ op: implementerOp, input: { story: { id: "US-001" } as any } });
+      builder.addTestWriter({ op: testWriterOp, input: { story: makeStory({ id: "US-001" }) } });
+      builder.addImplementer({ op: implementerOp, input: { story: makeStory({ id: "US-001" }) } });
       const plan = builder.build(
         {
           runtime,
@@ -212,7 +218,7 @@ describe("StoryOrchestrator runPhase — log emission", () => {
       );
       await plan.run();
     } finally {
-      logger!.info = origInfo;
+      logger.info = origInfo;
       await runtime.close();
     }
 
@@ -241,16 +247,16 @@ describe("StoryOrchestrator runPhase — log emission", () => {
     };
 
     const logs: Array<{ stage: string; msg: string }> = [];
-    const logger = getSafeLogger();
-    const origInfo = logger!.info;
+    const logger = getSafeLogger()!;
+    const origInfo = logger.info;
     logger!.info = ((stage: string, msg: string) => {
       logs.push({ stage, msg });
-    }) as any;
+    }) as typeof logger.info;
 
     const runtime = makeTestRuntime();
     try {
       const builder = new StoryOrchestratorBuilder();
-      builder.addImplementer({ op: implementerOp, input: { story: { id: "US-001" } as any } });
+      builder.addImplementer({ op: implementerOp, input: { story: makeStory({ id: "US-001" }) } });
       // build() defaults to isThreeSession=false — same as the single-session ("no-test") path
       const plan = builder.build({
         runtime,
@@ -261,7 +267,7 @@ describe("StoryOrchestrator runPhase — log emission", () => {
       });
       await plan.run();
     } finally {
-      logger!.info = origInfo;
+      logger.info = origInfo;
       await runtime.close();
     }
 
@@ -299,12 +305,12 @@ describe("StoryOrchestrator runPhase — log emission", () => {
 
     try {
       const builder = new StoryOrchestratorBuilder();
-      builder.addImplementer({ op: implementerOp, input: { story: { id: "US-001" } as any } });
+      builder.addImplementer({ op: implementerOp, input: { story: makeStory({ id: "US-001" }) } });
       builder.addSemanticReview({
         op: semanticReviewOp,
         input: {
           workdir: "/tmp/x",
-          story: { id: "US-001" } as any,
+          story: makeStory({ id: "US-001" }),
           semanticConfig: { model: "balanced", diffMode: "ref", resetRefOnRerun: false, rules: [], timeoutMs: 1_000 },
           mode: "ref",
         },
@@ -354,26 +360,26 @@ describe("StoryOrchestrator runPhase — log emission", () => {
     }) as typeof _storyOrchestratorDeps.callOp;
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
-    const logs: Array<{ stage: string; msg: string; data?: any }> = [];
-    const logger = getSafeLogger();
-    const origInfo = logger!.info;
-    const origWarn = logger!.warn;
-    logger!.info = ((stage: string, msg: string, data?: unknown) => {
+    const logs: Array<{ stage: string; msg: string; data?: Record<string, unknown> }> = [];
+    const logger = getSafeLogger()!;
+    const origInfo = logger.info;
+    const origWarn = logger.warn;
+    logger!.info = ((stage: string, msg: string, data?: Record<string, unknown>) => {
       logs.push({ stage, msg, data });
-    }) as any;
-    logger!.warn = ((stage: string, msg: string, data?: unknown) => {
+    }) as typeof logger.info;
+    logger!.warn = ((stage: string, msg: string, data?: Record<string, unknown>) => {
       logs.push({ stage, msg, data });
-    }) as any;
+    }) as typeof logger.warn;
 
     const runtime = makeTestRuntime();
     try {
       const builder = new StoryOrchestratorBuilder();
-      builder.addImplementer({ op: implementerOp, input: { story: { id: "US-001" } as any } });
+      builder.addImplementer({ op: implementerOp, input: { story: makeStory({ id: "US-001" }) } });
       builder.addSemanticReview({
         op: semanticReviewOp,
         input: {
           workdir: "/tmp/x",
-          story: { id: "US-001" } as any,
+          story: makeStory({ id: "US-001" }),
           semanticConfig: { model: "balanced", diffMode: "ref", resetRefOnRerun: false, rules: [], timeoutMs: 1_000 },
           mode: "ref",
         },
@@ -388,8 +394,8 @@ describe("StoryOrchestrator runPhase — log emission", () => {
 
       await plan.run();
     } finally {
-      logger!.info = origInfo;
-      logger!.warn = origWarn;
+      logger.info = origInfo;
+      logger.warn = origWarn;
       await runtime.close();
     }
 

@@ -16,18 +16,19 @@ log — each entry records what was true when written and is not edited afterwar
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
 | `as unknown as` | **0** | 0 | done — closed invariant (§8.13) |
-| `asAny` | 993 | 1377 | yes, then biome `noExplicitAny` retires it |
-| `anyType` | 1297 | 1860 | yes, retires with `asAny` — biome says **1288** |
-| `nonNullAssert` | 819 | 819 | yes — biome says **1092**, see §0.1 (not started) |
+| `asAny` | 948 | 1377 | yes, then biome `noExplicitAny` retires it |
+| `anyType` | 1250 | 1860 | yes, retires with `asAny` — biome says **1241** |
+| `nonNullAssert` | 812 | 819 | yes — biome says **1085**, see §0.1 (not started) |
 | `asNever` | 608 | 608 | yes |
 | `ratchetAllow` | 105 | 105 | yes |
 | `tsSuppress` | 40 | 40 | yes |
 | `absentValue` | 17 | 17 | yes |
 | `looseCast` | 1875 | 1875 | **no** — guard only, see below |
 
-The `noExplicitAny` drain is in progress on this branch (§8.14): nine files drained,
-`asAny` 1179 → 993 and `anyType` 1538 → 1297 against the branch-start ratchet, with every
-other counter flat. Biome's authoritative count fell **1529 → 1288**.
+The `noExplicitAny` drain is in progress on this branch (§8.14 + §8.15): eleven files drained,
+`asAny` 1179 → 948 and `anyType` 1538 → 1250 against the branch-start ratchet, with every
+other counter flat except `nonNullAssert` (819 → 812 as a benign side effect of removing
+`logger!.info = … as any` patterns). Biome's authoritative count fell **1529 → 1241**.
 
 `as unknown as` went **101 → 0** across nine commits (§8.1–§8.4, §8.11–§8.13); `looseCast`
 fell 1888 → 1875 and `ratchetAllow` 107 → 105 as side effects of removing real casts, and
@@ -1081,3 +1082,73 @@ assertion would have pinned a falsehood.
 `test-presence-gate` 21 — 225 files hold the remaining 1288. After the queue reaches zero as
 biome counts it, endgame item 4 promotes the `test/**` override to `"error"` (§0.1), and the
 regex `asAny`/`anyType` rows retire into the rule.
+
+### 8.15 Batch 2 of the `noExplicitAny` drain — top 2 files, biome 1288 → 1241 (2026-08-25)
+
+The two highest-count files by biome were drained in owner work, picking up the queue §8.14
+left at `story-orchestrator-logs` (24) and `debate/runner` (23). 47 sites total across the
+two files; `asAny` ↓45 (993 → 948) and `anyType` ↓47 (1297 → 1250) on the ratchet, every
+other counter flat except `nonNullAssert` which fell 819 → 812 as a benign side effect of
+removing `logger!.info = … as any` patterns in `story-orchestrator-logs` (the new pattern is
+`logger.info = … as typeof logger.info` after binding `const logger = getSafeLogger()!`
+once at the top of each test). Gates: typecheck 0 (all three), full suite green (unit /
+integration / ui, 0 fail), ratchet `[OK]`.
+
+**`story-orchestrator-logs.test.ts` (24 → 0).** Two recipe families.
+
+| Shape | Recipe |
+|:--|:--|
+| `{ story: { id: "US-001" } as any }` on `addTestWriter` / `addImplementer` / `addSemanticReview` (13 sites) | `makeStory({ id: "US-001" })` from `@test/helpers` — already exports a typed `UserStory` factory and `SemanticStory` is a structural subset |
+| `(async () => ({ success, filesChanged, … })) as any` for run-op callOp stubs (4 sites) | `makeCallOp({ fallback: { … } })` from `@test/helpers` — already generic `<I, O, C>`, zero casts at call site |
+| `logger!.info = ((stage, msg, data?) => { … }) as any` (4 sites) and `data?: any` array type (2 sites) | `const logger = getSafeLogger()!` once, then `logger.info = … as typeof logger.info` — the same recipe `test-coverage.test.ts:409` and `runs.test.ts:87` already use, retried here |
+| `logger!.warn = …` (1 site) | same pattern via `typeof logger.warn` |
+
+The `logger!.info` → `logger.info` swap also retired the four `!` non-null assertions that
+came with it — that is the source of the `nonNullAssert` ↓7 outside the target rows. **No
+counter traded for the drain**; the assertion swap is a strict improvement (one `!` per test
+instead of one per `logger!.X` line).
+
+**`debate/runner.test.ts` (23 → 0).** Three recipe families.
+
+| Shape | Recipe |
+|:--|:--|
+| hand-rolled `runtime: { agentManager, sessionManager, configLoader, packages, signal, costAggregator } as any` (18 sites across 6 tests) | `makeMockRuntime({ agentManager, sessionManager, costAggregator: createNoOpCostAggregator() })` — real `NaxRuntime`, zero casts |
+| hand-rolled `packageView: { config: DEFAULT_CONFIG, select: … } as any` (2 sites) | `runtime.packages.repo()` — the helper pattern every other debate test uses (`runner-plan.test.ts:24`, `runner-stateful.test.ts:52`, etc.) |
+| `spyOn(callModule, "callOp").mockImplementation(async (…) => { …; return '{"passed":true}' as any })` (2 sites) | `spyOn(callModule, "callOp").mockImplementation(makeCallOp({ fallback: '{"passed":true}', onDispatch: (op, ctx) => { if (op.name === "debate-propose") capturedIds.push(ctx.scopeId); } }))` |
+
+The `onDispatch` callback here is a small forward-only extension of the helper: its second
+argument is now the call context, so tests that need `ctx.scopeId` (or any other ctx field)
+can capture it without re-mocking `callOp`. The existing helper had only `(op)`; the new
+signature is `(op, ctx)`. Source change is additive — no caller was broken — and the helper
+file's own `as unknown as O` is the only `as` left in the helper (it carries the
+`test-ratchet-allow: as-unknown-as` marker).
+
+**`makeMockRuntime` gained a `costAggregator` option.** The four-file debate queue mix was
+caught by the second test ("AC3: debater callOp receives scopeId from debaterScope"), which
+needed to override `costAggregator.openScope` while keeping everything else from
+`makeMockRuntime`. Adding `costAggregator?: ICostAggregator` to `MockRuntimeOptions` and
+threading it into `createRuntime` retires the remaining `as any` cleanly. Cost tests across
+the suite that previously passed `createNoOpCostAggregator()` in hand-rolled runtimes
+(`runner.test.ts:makeCtxWithCostAgg`) now spread it onto `makeMockRuntime` directly; the
+pattern is `{ ...createNoOpCostAggregator(), openScope: costAgg.openScope }` — `openScope`
+overrides cleanly because the rest of the surface is filled from the no-op baseline, and the
+test asserts on `costAgg.openScope` and `costAgg.closed` (separate fields) which the spread
+preserves.
+
+**Carry forward: the second-rung `as O` escape.** The first attempt at the callOp mocks used
+`as O` inside a generic `<I, O, C>` arrow — TS-clean, but the escape-hatch script flags
+every `as [A-Z]` as `looseCast`, and §3 forbids any counter trade. Switching to
+`makeCallOp` moves the single `as unknown as O` into the helper (where the marker comment
+lives), so the test file pays zero `as`. The recipe is now: when a generic-return callOp
+mock would otherwise need an `as`, use `makeCallOp({ fallback, onDispatch })` and capture
+per-op state through `onDispatch`. The helper's marker is the only escape hatch any test
+needs to write itself.
+
+Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14149 / 1136 / 38, 0 fail),
+coverage OK (87.83% lines / 87.49% functions, 101 files below floor against baseline 103).
+Casts `asAny` ↓45 (993 → 948) and `anyType` ↓47 (1297 → 1250); `nonNullAssert` ↓7 as a
+side effect; every other counter flat.
+
+**New top of queue** (biome count per file): `pipeline/subscribers/interaction` 23,
+`verify-op` 22, `build-plan-triage-predicates` 21, `test-presence-gate` 21, `plugins/registry`
+19, `operations/greenfield-gate` 18 — 223 files hold the remaining 1241.

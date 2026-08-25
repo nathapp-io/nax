@@ -2,7 +2,7 @@ import { afterEach } from "bun:test";
 import type { AgentAdapter, IAgentManager } from "@/agents";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
-import type { IReviewAuditor } from "@/runtime";
+import type { ICostAggregator, IReviewAuditor } from "@/runtime";
 import { type CreateRuntimeOptions, createRuntime, type NaxRuntime } from "@/runtime";
 import type { ISessionManager } from "@/session/types";
 import { fakeAgentManager } from "./fake-agent-manager";
@@ -89,6 +89,12 @@ export interface MockRuntimeOptions {
   agentManagerFactory?: (runtime: NaxRuntime) => IAgentManager;
   sessionManager?: ISessionManager;
   reviewAuditor?: IReviewAuditor;
+  /**
+   * Inject a custom cost aggregator. Defaults to the real file-backed
+   * CostAggregator; tests that don't want disk I/O pass `createNoOpCostAggregator()`,
+   * and tests that assert on cost-scope behaviour pass a custom mock.
+   */
+  costAggregator?: ICostAggregator;
   config?: NaxConfig;
   workdir?: string;
 }
@@ -129,6 +135,7 @@ export function makeMockRuntime(opts: MockRuntimeOptions = {}): NaxRuntime {
       agentManager: placeholder,
       sessionManager: opts.sessionManager ?? makeSessionManager(),
       reviewAuditor: opts.reviewAuditor,
+      costAggregator: opts.costAggregator,
       featureName: "_test",
     }),
   );
