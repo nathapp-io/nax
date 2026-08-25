@@ -134,18 +134,16 @@ describe("deriveRunFallbackAggregates", () => {
     expect(agg?.totalWastedCostUsd).toBeCloseTo(0.21, 5);
   });
 
-  test("treats missing costUsd as 0 (defensive — old saved metrics may lack field)", () => {
-    // Force a hop without costUsd to simulate deserialized-from-disk records.
-    const legacyHop = {
-      storyId: "US-001",
-      priorAgent: "codex",
-      newAgent: "claude",
-      outcome: "fail-auth",
-      category: "availability",
-      hop: 1,
-    } as unknown as AgentFallbackHop;
-    const s = storyWithHops("US-001", [legacyHop]);
+  // nax#1707: this previously built a hop with costUsd deleted, to "simulate
+  // deserialized-from-disk records". No such path exists — deriveRunFallbackAggregates
+  // is only ever called (run-completion.ts) with the in-memory allStoryMetrics of the
+  // run in flight, and collectStoryMetrics fills costUsd from AgentFallbackRecord,
+  // where it is required. The reachable zero-cost case is an adapter that reported no
+  // cost, which AgentManager records as costUsd: 0 — that is what is pinned here.
+  test("a hop whose adapter reported no cost contributes 0 to the wasted total", () => {
+    const s = storyWithHops("US-001", [hop("US-001", "codex", "claude", 0)]);
     const agg = deriveRunFallbackAggregates([s]);
+    expect(agg?.totalHops).toBe(1);
     expect(agg?.totalWastedCostUsd).toBe(0);
   });
 

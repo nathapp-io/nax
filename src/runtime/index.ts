@@ -72,6 +72,7 @@ import type { IAgentManager } from "../agents";
 import type { CreateAgentManagerOpts } from "../agents/factory";
 import { createAgentManager } from "../agents/factory";
 import { AgentManager } from "../agents/manager";
+import type { AgentFallbackRecord } from "../agents/manager-types";
 import type { NaxConfig } from "../config";
 import { createConfigLoader, getProjectKey } from "../config";
 import type { ConfigLoader } from "../config";
@@ -139,6 +140,16 @@ export interface NaxRuntime {
   readonly semanticIterations: Map<string, Iteration[]>;
   /** Run-scoped per-story rectification oscillation totals. */
   readonly rectificationOscillations: Map<string, number>;
+  /**
+   * Run-scoped per-story agent-swap hops, keyed by storyId (ADR-012 PR-2, nax#1707).
+   *
+   * `AgentManager.runWithFallback` returns its hop records to `callOp`, which is the
+   * only caller positioned to attribute them to a story. callOp appends them here so
+   * `collectStoryMetrics` can surface the whole story's swaps — every op, not just the
+   * implementer — as `StoryMetrics.fallback.hops`. Ad-hoc calls with no storyId
+   * (plan, CLI) are not recorded.
+   */
+  readonly agentFallbacks: Map<string, AgentFallbackRecord[]>;
   /** Run-scoped per-(story, tier) fix-iteration + decline history (US-004). */
   readonly storyFixHistory: StoryFixHistory;
   /** Run-scoped per-story mutation-check results. */
@@ -291,6 +302,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const adversarialIterations = new Map<string, Iteration[]>();
   const semanticIterations = new Map<string, Iteration[]>();
   const rectificationOscillations = new Map<string, number>();
+  const agentFallbacks = new Map<string, AgentFallbackRecord[]>();
   const storyFixHistory = createStoryFixHistory();
   const mutationSummaries = new Map<string, MutationStorySummary>();
   const dirtyWorktrees = new Set<string>();
@@ -321,6 +333,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     adversarialIterations,
     semanticIterations,
     rectificationOscillations,
+    agentFallbacks,
     storyFixHistory,
     mutationSummaries,
     dirtyWorktrees,

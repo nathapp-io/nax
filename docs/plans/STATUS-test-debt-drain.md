@@ -9,16 +9,16 @@ log — each entry records what was true when written and is not edited afterwar
 
 ---
 
-## 0. Current state — measured 2026-08-25 on `chore/test-debt-cast-drain` @ `3785929b1`
+## 0. Current state — measured 2026-08-25 on `fix/1707-agent-fallback-metrics-wiring`
 
 | Counter | Value | Baseline | Drain target? |
 |:--|--:|--:|:--|
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
-| `as unknown as` | **47** | 47 | **yes — current target, ~17 is the floor** |
+| `as unknown as` | **46** | 46 | **yes — current target, ~17 is the floor** |
 | `asAny` | 1385 | 1385 | yes, then biome `noExplicitAny` retires it |
 | `anyType` | 1868 | 1868 | yes, retires with `asAny` |
-| `nonNullAssert` | 827 | 827 | yes, then biome `noNonNullAssertion` |
+| `nonNullAssert` | 820 | 820 | yes, then biome `noNonNullAssertion` |
 | `asNever` | 608 | 608 | yes |
 | `ratchetAllow` | 106 | 106 | yes |
 | `tsSuppress` | 40 | 40 | yes |
@@ -30,11 +30,11 @@ fell 1888 → 1879 as a side effect of removing 36 single casts and adding none.
 counter is untouched, and no counter was traded in any commit. All gates green; `check:all` is
 24 checks since `check:test-typecheck` was retired.
 
-**What is left is not a queue.** Of the 47: **18 are the floor** (15 `test/helpers/` containment
+**What is left is not a queue.** Of the 46: **18 are the floor** (15 `test/helpers/` containment
 casts, §8.1, plus 3 comment matches on 2 lines — `spawn.ts:6` carries two on one line, which is
-why a per-line count reads 46), **2 are held escalations** (nax#1707 and the dead
-`selectNextStories` seam, §8.4), and the remaining **27 are property-poke sites and one-offs
-that each need a ruling rather than a recipe**. Delegation has
+why a per-line count reads 45), **1 is a held escalation** (the dead `selectNextStories`
+seam, §8.4 — nax#1707 is resolved, §8.5), and the remaining **27 are property-poke sites and
+one-offs that each need a ruling rather than a recipe**. Delegation has
 stopped paying here — §8.4's batch drained 10 sites and verifying it cost about as much, which
 is §6's "verifying a cluster costs as much as doing it" arriving in practice. **The next move is
 a ruling pass on the ~14 property-poke sites, not another delegated batch.**
@@ -71,16 +71,15 @@ From `archive/2026-08-22-1514-phase3c-test-debt-drain.md` §6, with steps 1–3 
 
 ---
 
-## 1. Current target — `as unknown as` 47 → ~18
+## 1. Current target — `as unknown as` 46 → ~18
 
-Re-measured on `3785929b1`. The ratchet counts 47 matches across 46 lines: `test/helpers/spawn.ts:6`
-carries two on one line.
+The ratchet counts 46 matches across 45 lines: `test/helpers/spawn.ts:6` carries two on one line.
 
 | Cluster | N | Drainable? |
 |:--|--:|:--|
 | containment — `test/helpers/*` + `_cycle-fixtures.ts` | 15 | **no** — §8.1. Do not edit |
 | property-poke — `(x as unknown as { k: T }).k` | 13 | needs a ruling each — **next up** |
-| one-off | 13 | needs a ruling each; includes both held escalations |
+| one-off | 12 | needs a ruling each; includes the one remaining held escalation |
 | spawn-mock | 3 | may need a typed helper built first |
 | doc comments (2 lines) | 3 | **no** — prose, not work |
 
@@ -125,7 +124,6 @@ review pass finishes the work anyway.
 
 | Site | Blocked on |
 |:--|:--|
-| `fallback-aggregates.test.ts:146` | **nax#1707** — the fixture pins an impossible state; the wiring fix comes first |
 | `unified-executor-abort.test.ts:91` | the dead `selectNextStories` seam (§8.4) — removing the mock likely drains the cast, but it changes the test's setup |
 
 ---
@@ -412,3 +410,50 @@ Fixed by the owner (one-line import swap, `check:deep-relatives` back to 0, 6 te
 Casts **57 → 47**. Remaining: 17 are the floor (15 containment + 2 comments), ~14 property-poke,
 ~13 one-offs and spawn-mock, 2 held escalations (`#1707`, the dead mock). **Realistic target is
 ~17, not 0**, and everything left needs a ruling rather than a recipe.
+
+### 8.5 nax#1707 fixed, and the issue's own fix was wrong — 47 → 46 (2026-08-25)
+
+The held cast is drained, but not the way §8.3 predicted. **Reading `agentResult.agentFallbacks`
+instead of `ctx.agentFallbacks` — the fix the issue proposed — would have left the metric just
+as inert.**
+
+`ctx.agentResult` is not the object AgentManager returned. `post-run.ts:140` *rebuilds* an
+`AgentResult` from `planResult.phaseOutputs[implementerOp.name]`, which carries `success`,
+`filesChanged`, `estimatedCostUsd` and `durationMs` and nothing else. Anything the manager
+attached upstream is gone before `collectStoryMetrics` runs. One level further up, `callOp`
+receives `outcome.fallbacks` from `runWithFallback` (`call.ts:413`) and **discards it** — it
+returns only the parsed op output. `onSwapAttempt` has zero subscribers in `src/`, so the event
+side was not a sink either. The hops died at `callOp`, two layers below where §8.3 was looking.
+
+The fix is a writer, not a redirected read: a run-scoped `agentFallbacks: Map<string,
+AgentFallbackRecord[]>` on `NaxRuntime`, appended by `callOp` and read by `collectStoryMetrics`.
+That is the shape three sibling fields already use (`adversarialIterations`,
+`semanticIterations`, `rectificationOscillations`), and because `makeMockRuntime` is built on
+`createRuntime` it cost no mock churn. It also counts more than the issue's version would:
+`callOp` runs for *every* op, so a swap during review or verification is attributed to the
+story, where a rebuilt `ctx.agentResult` could only ever have carried the implementer's.
+
+`ctx.agentFallbacks` is deleted rather than wired. A declared field with no writer and no reader
+is what let this sit undetected; leaving it would invite the same bug back.
+
+**`costUsd` stays required, and the `?? 0` is gone.** §8.3's re-analysis held up under the
+wiring fix: the mapper fills `costUsd` from `AgentFallbackRecord`, where it is required, and
+`deriveRunFallbackAggregates` still only ever sees in-memory metrics. So no ADR check was
+needed — the guard was removed rather than the type loosened, and the impossible-state fixture
+it justified was replaced by the *reachable* zero-cost case (an adapter that reported no cost,
+which the manager records as `costUsd: 0`). That is §6's "third option" again: the test now
+pins something true instead of being deleted or kept as fiction.
+
+`timestamp` is dropped in the mapping. Nothing reads it, the hop shape already omitted it, and
+`MAX_RETAINED_RUNS`'s own doc comment names `fallback.hops` as a size driver in metrics.json.
+
+**Carry forward: a wrong reader and a missing writer look identical from the read site.** §8.3
+grepped at repo scope and still landed on the wrong fix, because "the populated field is right
+there on the line above" is a very convincing shape. What distinguishes them is following the
+*value* forward from its producer, not the *name* backward from its consumer — the name matched
+in two places and the value reached neither.
+
+Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14135 / 1136 / 38, 0 fail),
+coverage 101 files below floor against baseline 103 — identical to `main`, no branch effect.
+Casts **47 → 46**; `nonNullAssert` 827 → 820 as a side effect of rewriting the retargeted
+assertions from `metrics.fallback!.hops` to `metrics.fallback?.hops`. No counter rose.

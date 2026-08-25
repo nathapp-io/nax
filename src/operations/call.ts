@@ -18,6 +18,7 @@ import {
   newCorrelationId,
   normalizeRunOutcome,
   normalizeSelector,
+  recordAgentFallbacks,
   resolveOpModel,
   resolveOpRetry,
   resolveTimeoutMs,
@@ -411,6 +412,13 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     dispatchAgent,
   );
   const outcome = normalizeRunOutcome(rawOutcome);
+
+  // nax#1707: this is the only point where agent-swap hops are both available and
+  // attributable to a story. `outcome.result` is not that carrier — post-run.ts
+  // rebuilds ctx.agentResult from the implementer's phase output, so anything left
+  // on the AgentResult here is dropped before metrics run. Record on the run-scoped
+  // store instead, so hops from every op in the story reach StoryMetrics.fallback.
+  recordAgentFallbacks(ctx, outcome.fallbacks);
 
   // Abort check: if the signal was aborted during the hop (e.g. in sendWithParseRetry),
   // buildHopCallback's catch swallowed it. Surface it here before parse runs.

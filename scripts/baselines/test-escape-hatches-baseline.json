@@ -7,9 +7,9 @@
     "anyType": 1868,
     "looseCast": 1879,
     "asNever": 608,
-    "nonNullAssert": 827
+    "nonNullAssert": 820
   },
-  "updatedAt": "2026-08-25T04:30:04.908Z",
+  "updatedAt": "2026-08-25T05:08:33.149Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -2545,8 +2545,7 @@
       "looseCast": 1
     },
     "test/unit/metrics/tracker.test.ts": {
-      "looseCast": 1,
-      "nonNullAssert": 7
+      "looseCast": 1
     }
   }
 }

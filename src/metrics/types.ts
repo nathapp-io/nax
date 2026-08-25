@@ -98,8 +98,11 @@ export interface ContextProviderMetrics {
 }
 
 /**
- * A single agent-swap hop recorded by the execution stage (AC-41).
- * Collected into ctx.agentFallbacks and surfaced in StoryMetrics.fallback.hops.
+ * A single agent-swap hop, as persisted in StoryMetrics.fallback.hops (AC-41).
+ *
+ * Produced by AgentManager as an `AgentFallbackRecord` on `AgentResult.agentFallbacks`
+ * and mapped onto this shape by `collectStoryMetrics` (nax#1707). The two differ:
+ * `storyId` is required here, and the record's `timestamp` is not persisted.
  */
 export interface AgentFallbackHop {
   storyId: string;

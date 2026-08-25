@@ -7,6 +7,7 @@
 import { rename } from "node:fs/promises";
 import path from "node:path";
 import { resolveDefaultAgent } from "../agents";
+import type { AgentFallbackRecord } from "../agents/manager-types";
 import { resolveModelForAgent } from "../config/schema";
 import type { PullCallRecord } from "../context/engine";
 import { loadContextManifests } from "../context/engine/manifest-store";
@@ -16,7 +17,7 @@ import type { PipelineContext } from "../pipeline/types";
 import { errorMessage } from "../utils/errors";
 import { loadJsonFile, loadJsonFileStrict, saveJsonFile } from "../utils/json-file";
 import { withPathFileLock } from "../utils/path-file-lock";
-import type { ContextProviderMetrics, FloorOverageMetrics, RunMetrics, StoryMetrics } from "./types";
+import type { AgentFallbackHop, ContextProviderMetrics, FloorOverageMetrics, RunMetrics, StoryMetrics } from "./types";
 import { TokenUsage } from "./types";
 
 /**
@@ -209,6 +210,42 @@ function sanitizeProviderPressure(raw: unknown): NonNullable<ContextProviderMetr
   return sanitized ?? undefined;
 }
 
+/**
+ * Map the agent-swap records AgentManager emits onto the hop shape StoryMetrics
+ * persists (nax#1707).
+ *
+ * The two types are deliberately not the same object. `AgentFallbackRecord`
+ * (`src/agents/manager-types.ts`) is the producer's record: `storyId` is optional
+ * because `AgentManager.run()` is also called outside a story (plan, review), and
+ * it carries a `timestamp` for the `onSwapAttempt` emission and the agent-manager
+ * log line. `AgentFallbackHop` (`src/metrics/types.ts`) is the persisted shape:
+ * `storyId` is required because `deriveRunFallbackAggregates` groups by it, and
+ * `timestamp` is dropped because no consumer reads it and hops are the documented
+ * size driver behind the `MAX_RETAINED_RUNS` cap on metrics.json.
+ *
+ * Records are read from the run-scoped `runtime.agentFallbacks` store, which callOp
+ * populates (nax#1707) — not from `AgentResult.agentFallbacks`, which post-run.ts
+ * discards when it rebuilds `ctx.agentResult` from the implementer's phase output.
+ * The store accumulates hops from every op in the story, so a swap during review or
+ * verification is counted too.
+ *
+ * Here `storyId` is always resolvable — collectStoryMetrics runs per story — so
+ * the record's own value wins and `storyId` fills the gap when the producer left
+ * it unset.
+ */
+function toFallbackHops(records: AgentFallbackRecord[] | undefined, storyId: string): AgentFallbackHop[] {
+  if (!records || records.length === 0) return [];
+  return records.map((r) => ({
+    storyId: r.storyId ?? storyId,
+    priorAgent: r.priorAgent,
+    newAgent: r.newAgent,
+    hop: r.hop,
+    outcome: r.outcome,
+    category: r.category,
+    costUsd: r.costUsd,
+  }));
+}
+
 export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string): Promise<StoryMetrics> {
   const story = ctx.story;
   const routing = ctx.routing;
@@ -256,6 +293,8 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
     routing.testStrategy === "three-session-tdd" || routing.testStrategy === "three-session-tdd-lite";
   const fullSuiteGatePassed = isTddStrategy ? (ctx.fullSuiteGatePassed ?? false) : false;
 
+  const fallbackHops = toFallbackHops(ctx.runtime.agentFallbacks.get(story.id), story.id);
+
   const featureId = ctx.prd.feature;
   const contextMetrics =
     ctx.projectDir && featureId
@@ -292,7 +331,7 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
         })
       : undefined,
     ...(contextMetrics !== undefined && { context: contextMetrics }),
-    ...(ctx.agentFallbacks?.length && { fallback: { hops: ctx.agentFallbacks } }),
+    ...(fallbackHops.length > 0 && { fallback: { hops: fallbackHops } }),
   };
 }
 
