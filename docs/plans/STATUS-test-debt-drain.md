@@ -9,39 +9,41 @@ log — each entry records what was true when written and is not edited afterwar
 
 ---
 
-## 0. Current state — measured 2026-08-25 on `fix/1707-agent-fallback-metrics-wiring`
+## 0. Current state — measured 2026-08-25 on `fix/drain-as-unknown-as-final`
 
 | Counter | Value | Baseline | Drain target? |
 |:--|--:|--:|:--|
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
-| `as unknown as` | **46** | 46 | **yes — current target, ~17 is the floor** |
+| `as unknown as` | **18** | 18 | **yes — at the floor, see below** |
 | `asAny` | 1377 | 1377 | yes, then biome `noExplicitAny` retires it |
 | `anyType` | 1860 | 1860 | yes, retires with `asAny` |
 | `nonNullAssert` | 820 | 820 | yes, then biome `noNonNullAssertion` |
 | `asNever` | 608 | 608 | yes |
-| `ratchetAllow` | 106 | 106 | yes |
+| `ratchetAllow` | 105 | 105 | yes |
 | `tsSuppress` | 40 | 40 | yes |
 | `absentValue` | 17 | 17 | yes |
-| `looseCast` | 1879 | 1879 | **no** — guard only, see below |
+| `looseCast` | 1878 | 1878 | **no** — guard only, see below |
 
-`as unknown as` went **101 → 47** across four commits on this branch (§8.1–§8.4); `looseCast`
-fell 1888 → 1879 as a side effect of removing 36 single casts and adding none. Every other
-counter is untouched, and no counter was traded in any commit. All gates green; `check:all` is
-24 checks since `check:test-typecheck` was retired.
+`as unknown as` went **101 → 18** across six commits (§8.1–§8.4, §8.11); `looseCast`
+fell 1888 → 1878 and `ratchetAllow` 107 → 105 as side effects of removing real casts,
+and no counter rose in any commit. All gates green; `check:all` is 24 checks since
+`check:test-typecheck` was retired.
 
-**What is left is not a queue.** Of the 46: **18 are the floor** (15 `test/helpers/` containment
-casts, §8.1, plus 3 comment matches on 2 lines — `spawn.ts:6` carries two on one line, which is
-why a per-line count reads 45), **1 is a held escalation** (the dead `selectNextStories`
-seam, §8.4 — nax#1707 is resolved, §8.5), and the remaining **27 are property-poke sites and
-one-offs that each need a ruling rather than a recipe**. Delegation has
-stopped paying here — §8.4's batch drained 10 sites and verifying it cost about as much, which
-is §6's "verifying a cluster costs as much as doing it" arriving in practice. **The next move is
-a ruling pass on the ~14 property-poke sites, not another delegated batch.**
+**This is the floor.** Of the 18: **14 are containment** (`test/helpers/` factories with
+private-state classes, §8.1) and **3 are comment matches** (`spawn.ts:6` carries two,
+`mock-logger.ts:16` one) — 17 together, down from §0's old 18 because the §1
+re-check row (`pipeline-context.ts:55`) turned out to be a fixture literal, not
+containment, and drained. The 18th is **one held escalation** with a written ruling:
+`stage-assembler.test.ts:616` (§8.11) pins the `_unattached` fallback through a seam
+that cannot receive it, and deleting the test is forbidden by §4. The endgame's
+"~17 is the floor" prediction held; **17 is the honest floor** (14 containment + 3
+comments), and 18 is where the counter sits while the escalation is held.
 
-`looseCast` is not a target. It exists so the TS2352 population ("convert the expression to
-`unknown` first") cannot escape into unmarked single casts while the cast ratchet sits at its
-floor. Driving it down is not progress; keeping it flat while `as unknown as` falls is.
+`looseCast` is not a target. It exists so the TS2352 population ("convert the
+expression to `unknown` first") cannot escape into unmarked single casts while the
+cast ratchet sits at its floor. Driving it down is not progress; keeping it flat
+while `as unknown as` falls is.
 
 ### What is already done
 
@@ -53,7 +55,7 @@ bun x tsc --noEmit && bun x tsc --noEmit -p tsconfig.contracts.json && bun x tsc
 
 `check:test-typecheck`, its baseline and its parser are deleted — a counting ratchet at zero
 reports a number where `tsc` reports a file and a line. Issue #1514 is closed. Against the
-original start: test typecheck **2009 → 0 (−100%)**, casts **815 → 47 (−94%)**.
+original start: test typecheck **2009 → 0 (−100%)**, casts **815 → 18 (−98%)**.
 
 ### The endgame, unchanged
 
@@ -71,17 +73,25 @@ From `archive/2026-08-22-1514-phase3c-test-debt-drain.md` §6, with steps 1–3 
 
 ---
 
-## 1. Current target — `as unknown as` 46 → ~18
+## 1. Current target — `as unknown as` 18, and the work is done
 
-The ratchet counts 46 matches across 45 lines: `test/helpers/spawn.ts:6` carries two on one line.
+The ratchet counts 18 matches: 17 are the floor (14 containment + 3 comment
+matches), 1 is a held escalation. **There is no remaining queue of drainable
+sites** — §8.11 ran the property-poke ruling pass, the one-off pass, the
+spawn-mock pass, the held escalation, and the §0 re-check row, and the
+counter now sits on the floor it predicted.
 
 | Cluster | N | Drainable? |
 |:--|--:|:--|
-| containment — `test/helpers/*` + `_cycle-fixtures.ts` | 15 | **no** — §8.1. Do not edit |
-| property-poke — `(x as unknown as { k: T }).k` | 13 | needs a ruling each — **next up** |
-| one-off | 12 | needs a ruling each; includes the one remaining held escalation |
-| spawn-mock | 3 | may need a typed helper built first |
+| containment — `test/helpers/*` + `_cycle-fixtures.ts` | 14 | **no** — §8.1. Do not edit |
 | doc comments (2 lines) | 3 | **no** — prose, not work |
+| held escalation — `stage-assembler.test.ts:616` | 1 | **no** — §8.11 ruling: impossible-state fixture, test deletion forbidden by §4 |
+
+Whoever resumes this should either build the `makeClassStub<C>()` seam
+deliberately (§8.1's 7→1 option) or amend the endgame to say 17, not 0 — a
+0 that cannot be reached should not quietly sit in the plan. The same goes
+for §8.11's held row: it stays until either the `_unattached` claim moves
+out of `assembleForStage` or §4 is amended, whichever comes first.
 
 Regenerate any time:
 
@@ -92,39 +102,12 @@ bun run scripts/check-test-as-unknown-as.ts --list
 ### The floor, and why it is not 0
 
 `archive/2026-08-22-1514-phase3c-test-debt-drain.md` §6.3 says the ratchets end "baselined at
-0". That was written before the containment population was understood, and **~18 is the honest
-floor** unless a `makeClassStub<C>()` seam is built (§8.1 weighs it and declines: 7→1 on a
-sub-ten-site cluster, which §6 says costs as much to verify as to do). Whoever closes this out
-should either build that seam deliberately or amend the endgame to say 18, not quietly leave a
-0 that cannot be reached.
-
-One row to re-check rather than assume: **`test/helpers/pipeline-context.ts:55` is
-`} as unknown as PRD`** — a fixture literal that happens to live in a helper, not a containment
-cast against a class with private state. `makePRD` exists. It was swept into the out-of-scope
-list by directory, and directory is the wrong test. Verify before ruling it in or out.
-
-### Next — the property-poke ruling pass (13 sites, owner work)
-
-`(x as unknown as { k: T }).k = v` — reaching a property the declared type does not carry. Each
-needs the same question answered, and the answer differs per site: **should that property exist
-on the type?**
-
-- If yes, it is `src/` interface drift — file it, do not edit the fixture. Two rows
-  (`phase4-registry-cleanup.test.ts:50,53`, reaching `_registry`) are exactly the shape that
-  produced #1702, and the nax#1707 investigation shows how fast this pays off.
-- If no, the test is reaching through a seam it should not, and the fix is at the test.
-- If the property is real but private, that is a third case — a deliberate test-only reach, and
-  the honest outcome may be to leave it.
-
-**Do not delegate this.** §8.4 is the evidence: a delegated batch drained 10 sites and verifying
-it cost about as much. Below roughly ten sites, or where every site is a judgement call, the
-review pass finishes the work anyway.
-
-### Held, pending a ruling elsewhere
-
-| Site | Blocked on |
-|:--|:--|
-| `unified-executor-abort.test.ts:91` | the dead `selectNextStories` seam (§8.4) — removing the mock likely drains the cast, but it changes the test's setup |
+0". That was written before the containment population was understood, and **17 is the honest
+floor** (14 containment + 3 comment matches) unless a `makeClassStub<C>()` seam is built
+(§8.1 weighs it and declines: 7→1 on a sub-ten-site cluster, which §6 says costs as much to
+verify as to do). §0's earlier "18" included `test/helpers/pipeline-context.ts:55`, which the
+re-check row flagged and §8.11 drained — it was a fixture literal (`} as unknown as PRD`) that
+`makePRD`-shaped literals satisfy directly, not a containment cast against private state.
 
 ---
 
@@ -674,3 +657,108 @@ before reaching for a cast.
 
 Gates: typecheck 0 (all three), `check:all` 24/24 with **every counter flat**, suite green
 (14149 / 1136 / 38, 0 fail), coverage OK, 101 files below floor against baseline 103.
+
+### 8.11 The final ruling pass — 46 → 18, at the floor (2026-08-25)
+
+§0's "the next move is a ruling pass on the ~14 property-poke sites, not another delegated
+batch" was followed literally — owner work, two commits, every remaining non-floor site ruled
+and drained. **18 is the floor** (14 containment + 3 comments + 1 held); the earlier "~17"
+prediction was right, and the 18th site is a held escalation with a written ruling, not a
+queue item.
+
+**The property-poke cluster (13 sites): mostly dead casts, one private reach, one held.**
+
+- `stage-assembler.test.ts:406,418` — `config.context.v2.providerTimeoutMs` is real
+  (`runtime-types-context.ts:112`, read at `stage-assembler.ts:234`); direct assignment
+  typechecks. The cast was dead weight.
+- `manager.test.ts:227,237` — `runAs`/`completeAs` are public methods; direct assignment.
+- `phase4-registry-cleanup.test.ts:50,53` — the `_registry` reach is a deliberate private
+  reach, and the repo already has the containment seam for exactly this class of touch:
+  `agentManagerInternals` (`test/helpers/agent-manager-internals.ts`, "contained here once
+  instead of at every site"). The internals type gained `_registry`, the two call-site casts
+  went away, and the helper's own containment cast still counts once. **§1's "exactly the
+  shape that produced #1702" comparison did not hold here**: #1702 was an *undeclared method
+  that callers used*; `_registry` is a declared private field with no external caller, so the
+  route out was containment, not interface drift.
+- `manager-abort.test.ts:98` — `_testAbort` exists nowhere in `src/`; the test invented a
+  private hook. The mock closes over the `AbortController`, and the signal under test IS
+  `controller.signal` — `controller.abort()` is the real mechanism.
+- `curator-gc.test.ts:338`, `curator-seam.test.ts:315` — the `detail`/`pad` canaries are
+  fixture-invented fields (the `Observation` union deliberately has no `detail`). Reached via
+  `"in"` narrowing instead of a cast — same move as §8.4 cluster B: keep the probe
+  type-checked, no counter traded.
+- `telegram.test.ts:486` — `InteractionResponse.value?` is declared; dead cast.
+- `schemas.test.ts:349,365` — `DebateConfig.stages` is real; dead cast.
+- `crash-signals-idempotency.test.ts:36` — `process.exit` assignment needs only the trailing
+  `as typeof process.exit`; the `process`-wide cast was dead.
+- `stage-assembler.test.ts:616` — **held, with a ruling.** `PRD.feature` is required
+  (`prd/types.ts:403`) and `assembleForStage` maps it unconditionally into
+  `request.featureId` (`stage-assembler.ts:215`), so the `_unattached` fallback at `:272`
+  cannot fire through this function. The test pokes `prd.feature = undefined` to reach an
+  impossible state. The honest `_unattached` claim lives at the pipeline stage, where it IS
+  reachable (`context-us004.test.ts:350` drives it via real `featureDir: undefined`).
+  Deleting the test is forbidden by §4, weakening `PRD.feature` is forbidden by §4, so the
+  cast stays with this ruling attached. **The §8.6-family lesson in miniature: a fallback
+  that is dead in one function can be load-bearing in a sibling, and the fix is to pin it
+  where it is alive.**
+
+**The one-offs (13 sites): every one was a ruling, and every ruling paid.**
+
+- `telegram-timeout.test.ts:51` — the `editMessageText` branch read the request body off the
+  URL (`(url as unknown as Response).arrayBuffer()` — always throws, since the plugin passes
+  a string URL, and the throw was swallowed by the plugin's catch). The sibling test reads
+  `init.body`. Rewritten to match; the branch was inert-but-broken, §6's inert-tests family
+  with a new costume.
+- `adversarial-audit-shape.test.ts:388`, `pid-registry.test.ts:403` — hand-rolled spawn
+  mocks replaced with `makeSpawn` / `makeSpawnResult` from `@test/helpers` (the §8.1
+  "typed helper built first" route the spawn-mock cluster was waiting on).
+- `acceptance-fix.test.ts:35` — local partial-`NaxRuntime` stub swapped for the shared
+  `makeMockRuntime` (built on `createRuntime`, zero cast). §8.10's "nine files hand-built
+  partial runtime stubs" lesson applied one file later.
+- `build-hop-callback.test.ts:62` — dead cast; the literal satisfies `AgentRunOptions`.
+- `build-hop-callback.test.ts:584` — §8.2's recipe verbatim: mock typed at the real
+  signature, tuple infers, cast falls out.
+- `call.test.ts:948` — the `"output" in result` probe works on the real `O` type; the cast
+  only existed to satisfy a probe that does not need it.
+- `call-exhausted-fallback.test.ts:85` — generic-return-position cast (`output as unknown
+  as O` in a fixture `parse`). Every usage of `makeOpWithFallback` drives the empty-output
+  branch (the agents always return ""), so the parse never needs to succeed: it now throws
+  unconditionally, its return type is `never`, and `never` is assignable to `O`. The
+  non-empty-parse claim is covered by a separate inline-op test that actually exercises it.
+- `spawn-client-reasoning-effort.test.ts:77` — the file's "sole bridge" cast. The dep is
+  `typedSpawn` (single-signature `(cmd, opts) => SpawnResult`), not overloaded `Bun.spawn`,
+  so `makeSpawn` did NOT fit — but `mock()` typed at the dep's full signature
+  (`mock(impl)` with `impl: typeof _spawnClientDeps.spawn`) yields a `Mock<T>` assignable
+  to `T` directly. The bridge was the wrong seam, not a necessary one.
+- `profile.test.ts:299` — non-string array entry supplied via `JSON.parse`, as an untyped
+  config-file caller would; `parseProfileList`'s `typeof` guard stays pinned.
+- `project-profile.test.ts:35` — dead cast; a spread is already an object.
+- `plugin-loader.test.ts:186` — dead cast; `dynamicImport` returns `Promise<unknown>`.
+- `tracker-context-metrics.test.ts:594` — corrupt `budgetPressure` supplied via
+  `JSON.parse('"not-an-object"')`; the corruption literally arrives from JSON in the real
+  world, so the fixture mechanism now matches the threat model.
+- `pipeline-context.ts:55` — **§1's re-check row, and directory was indeed the wrong
+  test**: `} as unknown as PRD` in `makeTestPRD` is a fixture literal whose fields
+  (`project`/`feature`/`branchName`/`createdAt`/`updatedAt`/`userStories`) satisfy `PRD`
+  directly. Dead cast. The floor drops 15 → 14.
+
+**The held escalation drained: `unified-executor-abort.test.ts:94`.** The §8.4 dead
+`selectNextStories` mock (a key not on `_unifiedExecutorDeps`, intercepting nothing — the
+real function handles the fixtures) and the `Record<string, unknown>` deps bag existed only
+for it. Both removed; `runIteration` is mocked at its real signature, and the three tests
+still pass for the same reason they passed before — the real `selectNextStories` never had
+interception to lose. **The §8.4 "judgement call, so it stays" became easy once the ruling
+question was asked the §1 way: the property (`selectNextStories` on the deps bag) should NOT
+exist, and the fix was at the test.**
+
+**Carry forward: "the cast is dead" and "the cast is load-bearing" were both over-applied
+before this pass.** Nine of the twelve drained sites answered §1's question with "the
+property exists, the cast does nothing" — the largest single population was dead weight, not
+judgement. The remaining three were each a different shape (private reach → contain;
+invented hook → use the real mechanism; impossible state → hold with a ruling). The ruling
+pass was cheap because the doc's §1 question, asked at each site, sorted them in one pass.
+
+Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14156 / 1136 / 38, 0 fail),
+coverage OK, 101 files below floor against baseline 103. Casts **46 → 18** (two commits:
+33 after the property-poke cluster, 18 after the one-offs); `ratchetAllow` 106 → 105 and
+`looseCast` 1879 → 1878 as side effects of deleting real casts; no counter rose.
