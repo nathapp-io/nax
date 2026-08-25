@@ -16,19 +16,20 @@ log — each entry records what was true when written and is not edited afterwar
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
 | `as unknown as` | **0** | 0 | done — closed invariant (§8.13) |
-| `asAny` | 948 | 1377 | yes, then biome `noExplicitAny` retires it |
-| `anyType` | 1250 | 1860 | yes, retires with `asAny` — biome says **1241** |
+| `asAny` | 681 | 1377 | yes, then biome `noExplicitAny` retires it |
+| `anyType` | 906 | 1860 | yes, retires with `asAny` — biome says **897** |
 | `nonNullAssert` | 812 | 819 | yes — biome says **1085**, see §0.1 (not started) |
 | `asNever` | 608 | 608 | yes |
 | `ratchetAllow` | 105 | 105 | yes |
 | `tsSuppress` | 40 | 40 | yes |
 | `absentValue` | 17 | 17 | yes |
-| `looseCast` | 1875 | 1875 | **no** — guard only, see below |
+| `looseCast` | 1828 | 1875 | **no** — guard only, see below |
 
-The `noExplicitAny` drain is in progress on this branch (§8.14 + §8.15): eleven files drained,
-`asAny` 1179 → 948 and `anyType` 1538 → 1250 against the branch-start ratchet, with every
-other counter flat except `nonNullAssert` (819 → 812 as a benign side effect of removing
-`logger!.info = … as any` patterns). Biome's authoritative count fell **1529 → 1241**.
+The `noExplicitAny` drain is in progress on this branch (§8.14–§8.16): thirty-one files
+drained, `asAny` 1179 → 681 and `anyType` 1538 → 906 against the branch-start ratchet, with
+every other counter flat except `nonNullAssert` (819 → 812 as a benign side effect of removing
+`logger!.info = … as any` patterns) and `looseCast` (1875 → 1828 as a benign side effect of
+deleting real casts). Biome's authoritative count fell **1529 → 897**.
 
 `as unknown as` went **101 → 0** across nine commits (§8.1–§8.4, §8.11–§8.13); `looseCast`
 fell 1888 → 1875 and `ratchetAllow` 107 → 105 as side effects of removing real casts, and
@@ -1152,3 +1153,59 @@ side effect; every other counter flat.
 **New top of queue** (biome count per file): `pipeline/subscribers/interaction` 23,
 `verify-op` 22, `build-plan-triage-predicates` 21, `test-presence-gate` 21, `plugins/registry`
 19, `operations/greenfield-gate` 18 — 223 files hold the remaining 1241.
+
+### 8.16 Batch 3 of the `noExplicitAny` drain — the top 20 files, four parallel delegates, biome 1241 → 897 (2026-08-25)
+
+The entire §8.15 queue head drained: all twenty highest-count files (344 sites) taken to zero
+by four parallel agents on disjoint file sets, working from a shared brief that carried the
+§4 forbidden list, the per-file gate loop from §8.2's lesson (`tsc -p tsconfig.test.json`,
+biome on the touched files, the file's own tests, both ratchets, `check:file-sizes`,
+`check:deep-relatives` — everything cheap), and the standing recipe table. No delegate edited
+outside its set; no helper-barrel conflicts. `asAny` ↓267 (948 → 681) and `anyType` ↓344
+(1250 → 906) on the ratchet; `looseCast` ↓47 (1875 → 1828) as a benign side effect of deleting
+real casts; every other counter flat, none rose. Gates: typecheck 0 (all three), `check:all`
+green, full suite green (unit / integration / ui, 0 fail), coverage OK (101 below floor
+against baseline 103, identical to main).
+
+**Recipe families applied across the batch** (all proven in §8.14/§8.15 except the last):
+
+| Shape | Where | Recipe |
+|:--|:--|:--|
+| config literal `{...DEFAULT_CONFIG, section} as any` | interaction subscriber, acceptance-setup-gate, plan-critic-llm, curator-collector, file-injection | `makeNaxConfig(overrides)`; `makeSparseNaxConfig` + `makeConfigSlice` where an *omission* was under test |
+| ctx/runtime bag `as any` | test-presence-gate, greenfield-gate, execution-unified | `makeMockCallContext()` / `makeMockRuntime({...})` |
+| op slot / callOp stubs | verify-op, quality-gate-packageview | `makeCallOp({ fallback })`; typed `_deps` objects |
+| `{ story: { id } as any }` | verify-op ×9, execution-unified | `makeStory({ id })` |
+| `(op as any).execute(...)` probe | test-presence-gate, greenfield-gate | direct call — the const was already typed; build/parse absence via `"build" in op === false` or an intersection-typed local |
+| `<FixStrategy<Finding, any, any, any>>` restated generics ×21 | build-plan-triage-predicates | derive from the dep: `Parameters<typeof _storyOrchestratorDeps.runFixCycle>[0]["strategies"][number]` |
+| `: any` payload annotations ×17 | otel-span-tree | real `OtlpMetricsPayload` + local user-defined type predicates narrowing `OtlpMetric`'s vague `sum?/histogram?: object` members |
+| inline ctx literals failing to satisfy a type | adversarial-review-reground | `satisfies HopBodyContext<Input>` — contextual typing then let 14 inner single casts be deleted outright |
+| `(Bun as any).file/.Glob = …` | smart-runner-discovery | `Object.assign(Bun, { … })`, restore likewise (§8.14 recipe) |
+
+**One fixture-value correction worth recording:** the interaction-subscriber mock returned
+`{ action: "escalate" }`, which is not an `InteractionAction` — `applyFallback` maps escalate→
+approve and the subscriber only branches on `"abort"`, so replacing it with `"approve"`
+preserves every assertion while making the fixture hold a real member. Same family as
+quality-gate-packageview's bogus `"PASS"` status corrected to `"SUCCESS"`.
+
+**A prose false positive, and the fix.** After the batch, the ratchet still counted
+`anyType: 3` in build-plan-triage-predicates — a doc comment explaining the new
+`Parameters<>` derivation quoted the old generic text verbatim, and `[:<|&,(]\s*any\b`
+matches inside backticks. Reworded the comment; the counter is for code. This is §8.13-D's
+observation from the other side: **the raw-text ratchet counts history as readily as it
+counts debt — when a drain retires a shape, do not quote the shape in the surviving prose.**
+
+**Escalation-shaped finding left open (source, not test):** `OtlpMetric.sum/histogram` are
+typed bare `object` in `src/plugins/builtin/otel-reporter/otlp.ts`, so every consumer re-narrows.
+Same vaguer-than-value shape §8.14 fixed at the payload level; the two predicate helpers in
+otel-span-tree.test.ts are the local containment until a source follow-up exports precise point types.
+
+**Promotion candidates noted by the delegates, not actioned:** `makePackageView(overrides)`
+(two independent local copies this batch plus the §8.14 pattern), a complete-`RoutingResult`
+factory, and a sanctioned stub route for *generic* dep slots (bun's `mock()` cannot satisfy
+`<F extends Finding>(…) => …` without one retained `as typeof dep` assertion — same
+containment model as `makeCallOp` would retire that recurring trailing cast).
+
+**New top of queue** (biome count per file): `integration/plugins/validator` 13, `cli/plan` 13,
+`acceptance-loop-cycle` 13, `adversarial-review-retry-flip` 13, `plan-draft` 13,
+`acceptance-setup-criteria` 13, `retire-legacy-surfaces` 13, `tdd-verdict` 13 — 203 files hold
+the remaining 897. The queue head has flattened: no file exceeds 13.
