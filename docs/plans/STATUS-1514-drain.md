@@ -2749,3 +2749,28 @@ Running the full loop (§45's lesson) rather than just the suite:
 One trap on the way: the unit file imports `it`, not `test`, so the moved block threw
 `ReferenceError: test is not defined` **between** tests and reported `9 pass, 0 fail, 1 error`.
 A zero-fail line is not a green run — read the error count too.
+
+### What the self-review added
+
+Reviewing the finished diff found two things the fix had missed, plus one fact that
+strengthens the issue's framing.
+
+- **`docs/architecture/agent-adapters.md` §16 is the spec for `AgentAdapter`** (CLAUDE.md
+  points at it) and listed only the four ADR-019 primitives. Adding a method to the core
+  interface without updating it would have left the doc describing an interface that no
+  longer exists — #1702's own failure mode, one level up.
+- **The fix made the error message worse for the population it affects.** Tightening
+  `validateAgent` moves a pre-ACP plugin's failure earlier, which is right, but the report
+  became `agent.complete must be a function` — a typo, not a moved interface, and you fix one
+  field only to hit the next. Now warns once up front when `run`/`plan`/`decompose` are
+  present, naming the shape and pointing at §16.
+- **`src/plugins/types.ts:122` already declared `agent?: AgentAdapter`,** and §16 already said
+  "`AgentAdapter.run` is gone". So the static contract and the documentation were both correct
+  the whole time; only the runtime check and the mocks lagged. The defect was never "nobody
+  knew" — it was that **nothing executable connected the declared type to the runtime check**,
+  which is why the new tests pin `validateAgent` against `makeAgentAdapter()`.
+
+Two more gates fired on the review fixes themselves — `check:test-mocks` on a hand-rolled
+adapter literal, and the escape-hatch ratchet on `getSafeLogger()!` (`nonNullAssert` 827 → 828,
+replaced with an explicit precondition throw). That makes **five** gate catches across this
+issue and the batch-5 tail, every one on work that had skipped a step of the loop.
