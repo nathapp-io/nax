@@ -929,7 +929,17 @@ coverage OK (87.83% lines / 87.48% functions, 101 files below floor against base
 Casts **17 → 0**; `looseCast` 1878 → 1875 as a side effect; every other counter flat. The
 `as unknown as` ratchet is now a zero-baselined invariant that only regressions can move.
 
-**Pre-existing and unrelated:** `test/e2e/full-suite-rectify.e2e.test.ts` and
-`test/e2e/non-blocking-fix.e2e.test.ts` fail (3 tests) when run in the same process, and pass
-individually. Verified present on a clean tree at `d93c7237e` before any of this work. Not
-touched here; `bun run test` does not run `test/e2e/`.
+**Correction to this entry's first version, which reported a pre-existing e2e failure.
+There was none.** `bun run test:e2e` — the script CI runs — passes 30/30 locally and on the
+PR. The three "failures" were an artifact of how they were invoked: a bare
+`bun test test/e2e/` inherits `bunfig.toml`'s 5s per-test timeout, while every
+`package.json` test script passes `--timeout=60000`. `full-suite-rectify`'s slowest case
+takes ~8s, so under the bare invocation it aborted at 5s, and the aborted test left state
+that failed the NEXT file — surfacing as an "unrelated cross-file failure" in
+`non-blocking-fix`. Nothing was wrong with either file.
+
+**Carry forward: reproduce against the project's own script, not a hand-rolled invocation of
+the same test files.** `bun test <dir>` and `bun run test:e2e` are not the same command, and
+the difference was a flag that turns a passing suite into a cascade of misleading failures.
+The claim reached a commit message, a status doc and a PR body before the gate itself was
+ever run. Cheapest check available: run the gate, then read its exit code.
