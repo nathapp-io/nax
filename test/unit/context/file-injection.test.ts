@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { makeTempDir } from "@test/helpers";
+import { makeConfigSlice, makeSparseNaxConfig, makeTempDir } from "@test/helpers";
 // NOTE: _contextBuilderDeps is exported from builder.ts — mock-based tests below
 // use this injection pattern for testing
 import { _contextBuilderDeps, buildContext } from "@/context/builder";
@@ -91,13 +91,13 @@ describe("context.fileInjection config flag (CTX-001)", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
-          config: {
-            context: {
+          config: makeSparseNaxConfig({
+            context: makeConfigSlice("context", {
               fileInjection: "disabled",
               autoDetect: { enabled: true, maxFiles: 5, traceImports: false },
               testCoverage: { enabled: false },
-            },
-          } as any,
+            }),
+          }),
         };
 
         const built = await buildContext(storyContext, BUDGET);
@@ -130,13 +130,13 @@ describe("context.fileInjection config flag (CTX-001)", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
-          config: {
-            context: {
+          config: makeSparseNaxConfig({
+            context: makeConfigSlice("context", {
               fileInjection: "disabled",
               autoDetect: { enabled: true, maxFiles: 5, traceImports: false },
               testCoverage: { enabled: false },
-            },
-          } as any,
+            }),
+          }),
         };
 
         const built = await buildContext(storyContext, BUDGET);
@@ -172,13 +172,14 @@ describe("context.fileInjection config flag (CTX-001)", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
-          config: {
-            context: {
+          config: makeSparseNaxConfig({
+            context: makeConfigSlice("context", {
               // fileInjection intentionally omitted (undefined)
+              fileInjection: undefined,
               autoDetect: { enabled: true, maxFiles: 5, traceImports: false },
               testCoverage: { enabled: false },
-            },
-          } as any,
+            }),
+          }),
         };
 
         const built = await buildContext(storyContext, BUDGET);
@@ -211,13 +212,14 @@ describe("context.fileInjection config flag (CTX-001)", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
-          config: {
-            context: {
+          config: makeSparseNaxConfig({
+            context: makeConfigSlice("context", {
               // fileInjection intentionally omitted (undefined)
+              fileInjection: undefined,
               autoDetect: { enabled: true, maxFiles: 5, traceImports: false },
               testCoverage: { enabled: false },
-            },
-          } as any,
+            }),
+          }),
         };
 
         const built = await buildContext(storyContext, BUDGET);
@@ -254,13 +256,13 @@ describe("context.fileInjection config flag (CTX-001)", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
-          config: {
-            context: {
+          config: makeSparseNaxConfig({
+            context: makeConfigSlice("context", {
               fileInjection: "keyword",
               autoDetect: { enabled: true, maxFiles: 5, traceImports: false },
               testCoverage: { enabled: false },
-            },
-          } as any,
+            }),
+          }),
         };
 
         const built = await buildContext(storyContext, BUDGET);
@@ -296,13 +298,13 @@ describe("context.fileInjection config flag (CTX-001)", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
-          config: {
-            context: {
+          config: makeSparseNaxConfig({
+            context: makeConfigSlice("context", {
               fileInjection: "keyword",
               autoDetect: { enabled: true, maxFiles: 5, traceImports: false },
               testCoverage: { enabled: false },
-            },
-          } as any,
+            }),
+          }),
         };
 
         const built = await buildContext(storyContext, BUDGET);
@@ -337,13 +339,13 @@ describe("context.fileInjection config flag (CTX-001)", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
-          config: {
-            context: {
+          config: makeSparseNaxConfig({
+            context: makeConfigSlice("context", {
               fileInjection: "keyword",
               autoDetect: { enabled: false, maxFiles: 5, traceImports: false }, // auto-detect off
               testCoverage: { enabled: false },
-            },
-          } as any,
+            }),
+          }),
         };
 
         const built = await buildContext(storyContext, BUDGET);
@@ -398,13 +400,13 @@ describe("fileInjection modes — mock-based (CTX-003)", () => {
       prd,
       currentStoryId: "US-001",
       workdir: tempDir,
-      config: {
-        context: {
+      config: makeSparseNaxConfig({
+        context: makeConfigSlice("context", {
           fileInjection: "disabled",
           autoDetect: { enabled: true, maxFiles: 5, traceImports: false },
           testCoverage: { enabled: false },
-        },
-      } as any,
+        }),
+      }),
     };
 
     const built = await buildContext(storyContext, BUDGET);
@@ -432,13 +434,13 @@ describe("fileInjection modes — mock-based (CTX-003)", () => {
       prd,
       currentStoryId: "US-001",
       workdir: tempDir,
-      config: {
-        context: {
+      config: makeSparseNaxConfig({
+        context: makeConfigSlice("context", {
           fileInjection: "keyword",
           autoDetect: { enabled: true, maxFiles: 5, traceImports: false },
           testCoverage: { enabled: false },
-        },
-      } as any,
+        }),
+      }),
     };
 
     const built = await buildContext(storyContext, BUDGET);
@@ -468,13 +470,13 @@ describe("fileInjection modes — mock-based (CTX-003)", () => {
       prd,
       currentStoryId: "US-001",
       workdir: tempDir,
-      config: {
-        context: {
+      config: makeSparseNaxConfig({
+        context: makeConfigSlice("context", {
           fileInjection: "keyword",
           autoDetect: { enabled: false, maxFiles: 5, traceImports: false },
           testCoverage: { enabled: false },
-        },
-      } as any,
+        }),
+      }),
     };
 
     const built = await buildContext(storyContext, BUDGET);
@@ -504,12 +506,13 @@ describe("fileInjection modes — mock-based (CTX-003)", () => {
       prd,
       currentStoryId: "US-001",
       workdir: tempDir,
-      config: {
-        context: {
-          // fileInjection intentionally omitted
+      config: makeSparseNaxConfig({
+        context: makeConfigSlice("context", {
+          // fileInjection intentionally omitted — deepMerge writes an explicit undefined
+          fileInjection: undefined,
           testCoverage: { enabled: false },
-        },
-      } as any,
+        }),
+      }),
     };
 
     const built = await buildContext(storyContext, BUDGET);
@@ -538,12 +541,12 @@ describe("fileInjection modes — mock-based (CTX-003)", () => {
       prd,
       currentStoryId: "US-001",
       workdir: tempDir,
-      config: {
-        context: {
+      config: makeSparseNaxConfig({
+        context: makeConfigSlice("context", {
           fileInjection: "disabled",
           testCoverage: { enabled: false },
-        },
-      } as any,
+        }),
+      }),
     };
 
     const built = await buildContext(storyContext, BUDGET);
@@ -579,7 +582,12 @@ describe("contextFiles vs expectedFiles — created files (created-vs-read)", ()
         prd,
         currentStoryId: "US-001",
         workdir: tempDir,
-        config: { context: { fileInjection: "disabled", testCoverage: { enabled: false } } } as any,
+        config: makeSparseNaxConfig({
+          context: makeConfigSlice("context", {
+            fileInjection: "disabled",
+            testCoverage: { enabled: false },
+          }),
+        }),
       };
 
       const built = await buildContext(storyContext, BUDGET);
@@ -612,7 +620,12 @@ describe("contextFiles vs expectedFiles — created files (created-vs-read)", ()
         prd,
         currentStoryId: "US-001",
         workdir: tempDir,
-        config: { context: { fileInjection: "disabled", testCoverage: { enabled: false } } } as any,
+        config: makeSparseNaxConfig({
+          context: makeConfigSlice("context", {
+            fileInjection: "disabled",
+            testCoverage: { enabled: false },
+          }),
+        }),
       };
 
       const built = await buildContext(storyContext, BUDGET);
@@ -642,7 +655,12 @@ describe("contextFiles vs expectedFiles — created files (created-vs-read)", ()
         prd,
         currentStoryId: "US-001",
         workdir: tempDir,
-        config: { context: { fileInjection: "disabled", testCoverage: { enabled: false } } } as any,
+        config: makeSparseNaxConfig({
+          context: makeConfigSlice("context", {
+            fileInjection: "disabled",
+            testCoverage: { enabled: false },
+          }),
+        }),
       };
 
       const built = await buildContext(storyContext, BUDGET);
@@ -672,7 +690,12 @@ describe("contextFiles vs expectedFiles — created files (created-vs-read)", ()
         prd,
         currentStoryId: "US-001",
         workdir: tempDir,
-        config: { context: { fileInjection: "disabled", testCoverage: { enabled: false } } } as any,
+        config: makeSparseNaxConfig({
+          context: makeConfigSlice("context", {
+            fileInjection: "disabled",
+            testCoverage: { enabled: false },
+          }),
+        }),
       };
 
       const built = await buildContext(storyContext, BUDGET);

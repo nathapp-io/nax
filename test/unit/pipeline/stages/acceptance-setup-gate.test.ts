@@ -4,12 +4,13 @@ import { DEFAULT_CONFIG } from "@/config";
 import { _acceptanceSetupDeps, acceptanceSetupStage, computeACFingerprint } from "@/pipeline/stages/acceptance-setup";
 import { preRunPipeline } from "@/pipeline/stages/index";
 import type { PipelineContext } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeStory(id: string, acceptanceCriteria: string[]) {
+function makeStory(id: string, acceptanceCriteria: string[]): UserStory {
   return {
     id,
     title: `Story ${id}`,
@@ -17,14 +18,14 @@ function makeStory(id: string, acceptanceCriteria: string[]) {
     acceptanceCriteria,
     tags: [],
     dependencies: [],
-    status: "pending" as const,
+    status: "pending",
     passes: false,
     escalations: [],
     attempts: 0,
   };
 }
 
-function makePrd(stories: ReturnType<typeof makeStory>[]) {
+function makePrd(stories: UserStory[]): PRD {
   return {
     project: "test-project",
     feature: "test-feature",
@@ -50,7 +51,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
         redGate: true,
         model: "fast",
       },
-    } as any,
+    },
     prd: makePrd(stories),
     story: stories[0],
     stories,
@@ -59,15 +60,17 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     workdir: "/tmp/test-workdir",
     projectDir: "/tmp/test-workdir",
     featureDir: "/tmp/test-workdir/.nax/features/test-feature",
-    hooks: {} as any,
+    hooks: { hooks: {} },
     ...makeDispatchContext(),
     ...overrides,
   };
 }
 
 /** Standard callOp mock for tests that just need generation to work. */
-function makeDefaultCallOp(testCode = 'test("AC-1", () => { throw new Error("red") })') {
-  return async (_ctx: any, _packageDir: any, op: any, input: any) => {
+function makeDefaultCallOp(
+  testCode = 'test("AC-1", () => { throw new Error("red") })',
+): typeof _acceptanceSetupDeps.callOp {
+  return async (_ctx, _packageDir, op, input) => {
     if (op.name === "acceptance-refine") {
       const { criteria, storyId } = input as { criteria: string[]; storyId: string };
       return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
@@ -174,8 +177,8 @@ describe("acceptance-setup: RED gate — failing tests", () => {
     const ctx = makeCtx();
     await acceptanceSetupStage.execute(ctx);
 
-    expect((ctx as any).acceptanceSetup).toBeDefined();
-    expect((ctx as any).acceptanceSetup.redFailCount).toBeGreaterThan(0);
+    expect(ctx.acceptanceSetup).toBeDefined();
+    expect(ctx.acceptanceSetup?.redFailCount).toBeGreaterThan(0);
   });
 
   test("RED gate skipped when acceptance.redGate is false — stage continues without running tests", async () => {
@@ -194,7 +197,7 @@ describe("acceptance-setup: RED gate — failing tests", () => {
       config: {
         ...DEFAULT_CONFIG,
         acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: true, refinement: true, redGate: false },
-      } as any,
+      },
     });
     const result = await acceptanceSetupStage.execute(ctx);
 
@@ -333,8 +336,8 @@ describe("acceptance-setup: skips generation when test file exists and fingerpri
 
 describe("config defaults: acceptance.refinement, acceptance.redGate, acceptance.model", () => {
   test("DEFAULT_CONFIG.acceptance.refinement is true; redGate is true; model is 'fast'", () => {
-    expect((DEFAULT_CONFIG.acceptance as any).refinement).toBe(true);
-    expect((DEFAULT_CONFIG.acceptance as any).redGate).toBe(true);
+    expect(DEFAULT_CONFIG.acceptance.refinement).toBe(true);
+    expect(DEFAULT_CONFIG.acceptance.redGate).toBe(true);
     expect(DEFAULT_CONFIG.acceptance.model).toBe("fast");
   });
 });
@@ -349,7 +352,7 @@ describe("acceptanceSetupStage.enabled()", () => {
     expect(
       acceptanceSetupStage.enabled(
         makeCtx({
-          config: { ...DEFAULT_CONFIG, acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false } } as any,
+          config: { ...DEFAULT_CONFIG, acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false } },
         }),
       ),
     ).toBe(false);
@@ -366,21 +369,21 @@ describe("acceptance stage (GREEN gate): works with pre-generated test file", ()
     const { acceptanceStage } = await import("@/pipeline/stages/acceptance");
 
     const stories = [makeStory("US-001", ["AC-1: criterion"])];
-    stories[0].status = "passed" as any;
+    stories[0].status = "passed";
     expect(
       acceptanceStage.enabled(
-        makeCtx({ prd: makePrd(stories) as any, story: stories[0], featureDir: "/tmp/fake-feature-dir" }),
+        makeCtx({ prd: makePrd(stories), story: stories[0], featureDir: "/tmp/fake-feature-dir" }),
       ),
     ).toBe(true);
 
     const stories2 = [makeStory("US-001", ["AC-1"])];
-    stories2[0].status = "passed" as any;
+    stories2[0].status = "passed";
     // US-003: a fallback single-file group with stories derives storyCount > 0
     // and acceptanceEnabled defaults to true, so a missing target is a hard
     // fail. The fallback path itself is still reached; the action reports the
     // synthesized package dir in the failure reason.
     const result = await acceptanceStage.execute(
-      makeCtx({ prd: makePrd(stories2) as any, story: stories2[0], featureDir: "/tmp/non-existent-feature-dir" }),
+      makeCtx({ prd: makePrd(stories2), story: stories2[0], featureDir: "/tmp/non-existent-feature-dir" }),
     );
     expect(result.action).toBe("fail");
     if (result.action === "fail") {
@@ -431,7 +434,7 @@ describe("acceptanceSetup context: testableCount", () => {
     const ctx = makeCtx();
     await acceptanceSetupStage.execute(ctx);
 
-    expect((ctx as any).acceptanceSetup.totalCriteria).toBe(3);
-    expect((ctx as any).acceptanceSetup.testableCount).toBe(2);
+    expect(ctx.acceptanceSetup?.totalCriteria).toBe(3);
+    expect(ctx.acceptanceSetup?.testableCount).toBe(2);
   });
 });

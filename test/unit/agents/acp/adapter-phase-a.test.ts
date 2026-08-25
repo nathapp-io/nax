@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { SessionTurnError } from "@/agents";
 import { _acpAdapterDeps, AcpAgentAdapter, type AcpSessionHandleImpl } from "@/agents/acp/adapter";
+import type { AdapterInteraction } from "@/agents/interaction-handler";
 import { NO_OP_INTERACTION_HANDLER } from "@/agents/interaction-handler";
 import type { OpenSessionOpts } from "@/agents/types";
 import { makeClient, makeSession } from "./adapter.test";
@@ -39,7 +40,7 @@ describe("openSession()", () => {
   test("returns SessionHandle with correct id, agentName, and ACP-internal fields", async () => {
     const session = makeSession();
     const client = makeClient(session);
-    _acpAdapterDeps.createClient = mock(() => client as any);
+    _acpAdapterDeps.createClient = mock(() => client);
 
     const handle = await adapter.openSession("nax-aabbccdd-feat-story", makeOpenSessionOpts());
     const impl = handle as AcpSessionHandleImpl;
@@ -54,7 +55,7 @@ describe("openSession()", () => {
   test("fires onSessionEstablished callback before returning", async () => {
     const session = makeSession();
     const client = makeClient(session);
-    _acpAdapterDeps.createClient = mock(() => client as any);
+    _acpAdapterDeps.createClient = mock(() => client);
 
     const calls: Array<{ protocolIds: unknown; sessionName: string }> = [];
     const opts = makeOpenSessionOpts({
@@ -72,7 +73,7 @@ describe("openSession()", () => {
   test("tolerates onSessionEstablished throwing without failing openSession", async () => {
     const session = makeSession();
     const client = makeClient(session);
-    _acpAdapterDeps.createClient = mock(() => client as any);
+    _acpAdapterDeps.createClient = mock(() => client);
 
     const opts = makeOpenSessionOpts({
       onSessionEstablished: () => {
@@ -87,7 +88,7 @@ describe("openSession()", () => {
   test("marks handle resumed=false for a new session", async () => {
     const session = makeSession();
     const client = makeClient(session, { loadSessionFn: undefined });
-    _acpAdapterDeps.createClient = mock(() => client as any);
+    _acpAdapterDeps.createClient = mock(() => client);
 
     const handle = await adapter.openSession("nax-test", makeOpenSessionOpts());
     const impl = handle as AcpSessionHandleImpl;
@@ -99,7 +100,7 @@ describe("openSession()", () => {
     const client = makeClient(session, {
       loadSessionFn: async () => session,
     });
-    _acpAdapterDeps.createClient = mock(() => client as any);
+    _acpAdapterDeps.createClient = mock(() => client);
 
     const handle = await adapter.openSession("nax-existing", makeOpenSessionOpts());
     const impl = handle as AcpSessionHandleImpl;
@@ -112,7 +113,7 @@ describe("openSession()", () => {
     const client = makeClient(session);
     _acpAdapterDeps.createClient = mock(() => {
       createClientCalls += 1;
-      return client as any;
+      return client;
     });
 
     const controller = new AbortController();
@@ -148,10 +149,14 @@ describe("sendTurn()", () => {
     mock.restore();
   });
 
-  async function openHandle(session = makeSession(), clientOverrides = {}) {
+  async function openHandle(
+    session = makeSession(),
+    clientOverrides = {},
+    optsOverrides: Partial<OpenSessionOpts> = {},
+  ) {
     const client = makeClient(session, clientOverrides);
-    _acpAdapterDeps.createClient = mock(() => client as any);
-    return adapter.openSession("nax-sendturn-test", makeOpenSessionOpts());
+    _acpAdapterDeps.createClient = mock(() => client);
+    return adapter.openSession("nax-sendturn-test", makeOpenSessionOpts(optsOverrides));
   }
 
   test("single-turn success: returns output and token usage", async () => {
@@ -179,9 +184,9 @@ describe("sendTurn()", () => {
       promptFn: () => new Promise(() => {}),
       cancelFn: async () => {},
     });
-    const handle = await openHandle(session);
+    const handle = await openHandle(session, {}, { timeoutSeconds: 0.001 }); // 1ms
     const impl = handle as AcpSessionHandleImpl;
-    (impl as any)._timeoutSeconds = 0.001; // 1ms
+    expect(impl._timeoutSeconds).toBe(0.001);
 
     const result = await adapter.sendTurn(handle, "prompt", {
       interactionHandler: NO_OP_INTERACTION_HANDLER,
@@ -254,7 +259,7 @@ describe("sendTurn()", () => {
     });
     const handle = await openHandle(session);
 
-    const interactionCalls: unknown[] = [];
+    const interactionCalls: AdapterInteraction[] = [];
     const result = await adapter.sendTurn(handle, "prompt", {
       interactionHandler: {
         async onInteraction(req) {
@@ -268,8 +273,11 @@ describe("sendTurn()", () => {
     });
 
     expect(interactionCalls).toHaveLength(1);
-    expect((interactionCalls[0] as any).kind).toBe("context-tool");
-    expect((interactionCalls[0] as any).name).toBe("get_context");
+    expect(interactionCalls[0]?.kind).toBe("context-tool");
+    if (interactionCalls[0]?.kind !== "context-tool") {
+      throw new Error("expected context-tool interaction");
+    }
+    expect(interactionCalls[0].name).toBe("get_context");
     expect(result.output).toBe("Used context, done.");
     expect(result.internalRoundTrips).toBe(2);
   });
@@ -566,7 +574,6 @@ describe("sendTurn()", () => {
   });
 
   test("re-establishes session and retries once on NO_SESSION (exitCode 4)", async () => {
-    let sessionCreateCount = 0;
     let promptCallCount = 0;
 
     const deadPromptFn = async () => {
@@ -579,14 +586,12 @@ describe("sendTurn()", () => {
     };
 
     let isFirstSession = true;
-    const createSessionFn = async (_opts: any) => {
-      sessionCreateCount++;
+    const createSessionFn = async (_opts: { agentName: string; permissionMode: string; sessionName?: string }) => {
       const fn = isFirstSession ? deadPromptFn : livePromptFn;
       isFirstSession = false;
       return makeSession({ promptFn: fn });
     };
     const loadSessionFn = async (_name: string, _agent: string, _perm: string) => {
-      sessionCreateCount++;
       const fn = isFirstSession ? deadPromptFn : livePromptFn;
       isFirstSession = false;
       return makeSession({ promptFn: fn });
@@ -706,7 +711,7 @@ describe("closeSession(handle)", () => {
         closedClients.push("client");
       },
     };
-    _acpAdapterDeps.createClient = mock(() => client1 as any);
+    _acpAdapterDeps.createClient = mock(() => client1);
     const handle1 = await adapter.openSession("nax-close-test", makeOpenSessionOpts());
     await adapter.closeSession(handle1);
     expect(closedSessions).toEqual(["session"]);
@@ -720,7 +725,7 @@ describe("closeSession(handle)", () => {
         throw new Error("client close failed");
       },
     };
-    _acpAdapterDeps.createClient = mock(() => client2 as any);
+    _acpAdapterDeps.createClient = mock(() => client2);
     const handle2 = await adapter.openSession("nax-close-err", makeOpenSessionOpts());
     await expect(adapter.closeSession(handle2)).resolves.toBeUndefined();
 
@@ -737,7 +742,7 @@ describe("closeSession(handle)", () => {
         closedClients3.push("client");
       },
     };
-    _acpAdapterDeps.createClient = mock(() => client3 as any);
+    _acpAdapterDeps.createClient = mock(() => client3);
     const handle3 = await adapter.openSession("nax-close-session-err", makeOpenSessionOpts());
     await expect(adapter.closeSession(handle3)).resolves.toBeUndefined();
     expect(closedClients3).toEqual(["client"]);

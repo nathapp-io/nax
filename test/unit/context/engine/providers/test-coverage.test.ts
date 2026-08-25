@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { makeNaxConfig, makeStory } from "@test/helpers";
+import type { NaxConfig } from "@/config/types";
 import { _testCoverageProviderDeps, TestCoverageProvider } from "@/context/engine/providers/test-coverage";
 import type { ContextRequest } from "@/context/engine/types";
+import type { TestScanResult } from "@/context/test-scanner";
+import type { ResolvedTestPatterns } from "@/test-runners";
 
 const STORY = makeStory({ id: "story-001", title: "Test story" });
 const CONFIG = makeNaxConfig();
@@ -19,22 +22,19 @@ function makeRequest(overrides: Partial<ContextRequest> = {}): ContextRequest {
   };
 }
 
-type ScannerResult = {
-  summary: string;
-  tokens: number;
-  files: unknown[];
-  totalTests: number;
-};
+function makePatternsFixture(globs: readonly string[]): ResolvedTestPatterns {
+  return { globs, regex: [], pathspec: [], testDirs: [], resolution: "fallback" };
+}
 
 let origGenerateSummary: typeof _testCoverageProviderDeps.generateTestCoverageSummary;
 let origResolvePatterns: typeof _testCoverageProviderDeps.resolveTestFilePatterns;
 
-function mockScanner(result: ScannerResult) {
-  _testCoverageProviderDeps.generateTestCoverageSummary = async () => result as any;
+function mockScanner(result: TestScanResult) {
+  _testCoverageProviderDeps.generateTestCoverageSummary = async () => result;
 }
 
-function mockResolvePatterns(result: any) {
-  _testCoverageProviderDeps.resolveTestFilePatterns = async () => result;
+function mockResolvePatterns(globs: string[]) {
+  _testCoverageProviderDeps.resolveTestFilePatterns = async () => makePatternsFixture(globs);
 }
 
 beforeEach(() => {
@@ -85,9 +85,9 @@ describe("TestCoverageProvider", () => {
 
   describe("AC2: constructor retains story and config", () => {
     test("stores story and config for use in fetch", () => {
-      const provider = new TestCoverageProvider(STORY, CONFIG) as any;
-      expect(provider.story).toBe(STORY);
-      expect(provider.config).toBe(CONFIG);
+      const provider = new TestCoverageProvider(STORY, CONFIG);
+      expect(provider).toHaveProperty("story", STORY);
+      expect(provider).toHaveProperty("config", CONFIG);
     });
   });
 
@@ -103,7 +103,7 @@ describe("TestCoverageProvider", () => {
 
   describe("AC4: short-circuits when packageDir is empty", () => {
     test.each([
-      ["undefined packageDir", undefined as any],
+      ["undefined packageDir", undefined],
       ["empty string packageDir", ""],
     ])("returns empty chunks when %s", async (_label, packageDir) => {
       const cfg = makeConfigWithTestCoverage();
@@ -121,7 +121,7 @@ describe("TestCoverageProvider", () => {
 
       let receivedWorkdir: string | undefined;
       mockScanner({ summary: "", tokens: 0, files: [], totalTests: 0 });
-      _testCoverageProviderDeps.generateTestCoverageSummary = async (opts: any) => {
+      _testCoverageProviderDeps.generateTestCoverageSummary = async (opts) => {
         receivedWorkdir = opts.workdir;
         return { summary: "", tokens: 0, files: [], totalTests: 0 };
       };
@@ -171,7 +171,7 @@ describe("TestCoverageProvider", () => {
       mockResolvePatterns(["**/*.test.ts"]);
 
       let receivedTestDir: string | undefined;
-      _testCoverageProviderDeps.generateTestCoverageSummary = async (opts: any) => {
+      _testCoverageProviderDeps.generateTestCoverageSummary = async (opts) => {
         receivedTestDir = opts.testDir;
         return { summary: "", tokens: 0, files: [], totalTests: 0 };
       };
@@ -184,13 +184,13 @@ describe("TestCoverageProvider", () => {
 
     test.each([
       ["explicit maxTokens=1200", 1200, 1200],
-      ["default maxTokens=500 when not set", undefined as any, 500],
+      ["default maxTokens=500 when not set", undefined, 500],
     ])("forwards maxTokens: %s", async (_label, cfgMaxTokens, expected) => {
       const cfg = makeConfigWithTestCoverage({ maxTokens: cfgMaxTokens });
       mockResolvePatterns(["**/*.test.ts"]);
 
       let receivedMaxTokens: number | undefined;
-      _testCoverageProviderDeps.generateTestCoverageSummary = async (opts: any) => {
+      _testCoverageProviderDeps.generateTestCoverageSummary = async (opts) => {
         receivedMaxTokens = opts.maxTokens;
         return { summary: "", tokens: 0, files: [], totalTests: 0 };
       };
@@ -206,7 +206,7 @@ describe("TestCoverageProvider", () => {
       mockResolvePatterns(["**/*.test.ts"]);
 
       let receivedDetail: string | undefined;
-      _testCoverageProviderDeps.generateTestCoverageSummary = async (opts: any) => {
+      _testCoverageProviderDeps.generateTestCoverageSummary = async (opts) => {
         receivedDetail = opts.detail;
         return { summary: "", tokens: 0, files: [], totalTests: 0 };
       };
@@ -222,7 +222,7 @@ describe("TestCoverageProvider", () => {
       mockResolvePatterns(["**/*.test.ts"]);
 
       let receivedScopeToStory: boolean | undefined;
-      _testCoverageProviderDeps.generateTestCoverageSummary = async (opts: any) => {
+      _testCoverageProviderDeps.generateTestCoverageSummary = async (opts) => {
         receivedScopeToStory = opts.scopeToStory;
         return { summary: "", tokens: 0, files: [], totalTests: 0 };
       };
@@ -239,7 +239,7 @@ describe("TestCoverageProvider", () => {
       mockResolvePatterns(["**/*.test.ts"]);
 
       let receivedContextFiles: string[] | undefined;
-      _testCoverageProviderDeps.generateTestCoverageSummary = async (opts: any) => {
+      _testCoverageProviderDeps.generateTestCoverageSummary = async (opts) => {
         receivedContextFiles = opts.contextFiles;
         return { summary: "", tokens: 0, files: [], totalTests: 0 };
       };
@@ -256,15 +256,15 @@ describe("TestCoverageProvider", () => {
       const storyWithWorkdir = makeStory({ id: "story-001", workdir: "packages/api" });
       const cfg = makeConfigWithTestCoverage();
 
-      let receivedConfig: any;
+      let receivedConfig: NaxConfig | undefined;
       let receivedWorkdir: string | undefined;
       let receivedPackageDir: string | undefined;
 
-      _testCoverageProviderDeps.resolveTestFilePatterns = async (config: any, workdir: string, packageDir?: string) => {
+      _testCoverageProviderDeps.resolveTestFilePatterns = async (config, workdir, packageDir) => {
         receivedConfig = config;
         receivedWorkdir = workdir;
         receivedPackageDir = packageDir;
-        return { patterns: [], strategy: "none" } as any;
+        return makePatternsFixture([]);
       };
 
       const provider = new TestCoverageProvider(storyWithWorkdir, cfg);
@@ -280,11 +280,10 @@ describe("TestCoverageProvider", () => {
       const cfg = makeConfigWithTestCoverage();
       const resolvedPatterns = ["packages/api/**/*.test.ts", "packages/api/**/*.spec.ts"];
 
-      _testCoverageProviderDeps.resolveTestFilePatterns = async () =>
-        ({ patterns: resolvedPatterns, strategy: "per-package" }) as any;
+      _testCoverageProviderDeps.resolveTestFilePatterns = async () => makePatternsFixture(resolvedPatterns);
 
       let receivedGlobs: readonly string[] | undefined;
-      _testCoverageProviderDeps.generateTestCoverageSummary = async (opts: any) => {
+      _testCoverageProviderDeps.generateTestCoverageSummary = async (opts) => {
         receivedGlobs = opts.resolvedTestGlobs;
         return { summary: "", tokens: 0, files: [], totalTests: 0 };
       };
@@ -392,7 +391,7 @@ describe("TestCoverageProvider", () => {
     test("warning log includes storyId as first key and packageDir as second", async () => {
       const cfg = makeConfigWithTestCoverage();
 
-      _testCoverageProviderDeps.resolveTestFilePatterns = async () => ({ patterns: [], strategy: "none" }) as any;
+      _testCoverageProviderDeps.resolveTestFilePatterns = async () => makePatternsFixture([]);
 
       _testCoverageProviderDeps.generateTestCoverageSummary = async () => {
         throw new Error("simulated scan failure");

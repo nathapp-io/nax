@@ -17,8 +17,11 @@ import {
   makeDispatchContext,
   makeMockRuntime,
   makeNaxConfig,
+  makePluginRegistry,
   makePRD,
+  makeStatusWriter,
   makeStory,
+  makeTestContext,
 } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import type { SequentialExecutionContext } from "@/execution/unified-executor";
@@ -64,6 +67,8 @@ const baseStory: UserStory = makeStory({
 
 const basePrd: PRD = makePRD({ feature: "test-feature", userStories: [baseStory] });
 
+const naxConfig: NaxConfig = makeNaxConfig(baseConfig);
+
 /** Build a mock InteractionPlugin that records sent requests */
 function buildCapturingPlugin(): { plugin: InteractionPlugin; sentRequests: InteractionRequest[] } {
   const sentRequests: InteractionRequest[] = [];
@@ -101,8 +106,8 @@ describe("AC1: interactionChain accessible in PipelineContext", () => {
     const ctx: PipelineContext = {
       ...makeDispatchContext(),
       projectDir: "/tmp",
-      config: baseConfig as NaxConfig,
-      rootConfig: baseConfig as NaxConfig,
+      config: naxConfig,
+      rootConfig: naxConfig,
       prd: basePrd,
       story: baseStory,
       stories: [baseStory],
@@ -122,8 +127,8 @@ describe("AC1: interactionChain accessible in PipelineContext", () => {
     const ctx: PipelineContext = {
       ...makeDispatchContext(),
       projectDir: "/tmp",
-      config: baseConfig as NaxConfig,
-      rootConfig: baseConfig as NaxConfig,
+      config: naxConfig,
+      rootConfig: naxConfig,
       prd: basePrd,
       story: baseStory,
       stories: [baseStory],
@@ -146,8 +151,8 @@ describe("AC1: interactionChain accessible in PipelineContext", () => {
     const ctx: PipelineContext = {
       ...makeDispatchContext(),
       projectDir: "/tmp",
-      config: baseConfig as NaxConfig,
-      rootConfig: baseConfig as NaxConfig,
+      config: naxConfig,
+      rootConfig: naxConfig,
       prd: basePrd,
       story: baseStory,
       stories: [baseStory],
@@ -176,18 +181,13 @@ describe("SequentialExecutionContext accepts interactionChain", () => {
       ...makeDispatchContext(),
       prdPath: "/tmp/prd.json",
       workdir: "/tmp",
-      config: baseConfig as NaxConfig,
-      hooks: { hooks: {} } as any,
+      config: naxConfig,
+      hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
       useBatch: false,
-      pluginRegistry: { plugins: [], getReporters: () => [], teardownAll: async () => {} } as any,
-      statusWriter: {
-        setPrd: () => {},
-        setCurrentStory: () => {},
-        setRunStatus: () => {},
-        update: async () => {},
-      } as any,
+      pluginRegistry: makePluginRegistry(),
+      statusWriter: makeStatusWriter(),
       logFilePath: undefined,
       runId: "run-test-001",
       startTime: Date.now(),
@@ -207,18 +207,13 @@ describe("SequentialExecutionContext accepts interactionChain", () => {
       ...makeDispatchContext(),
       prdPath: "/tmp/prd.json",
       workdir: "/tmp",
-      config: baseConfig as NaxConfig,
-      hooks: { hooks: {} } as any,
+      config: naxConfig,
+      hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
       useBatch: false,
-      pluginRegistry: { plugins: [], getReporters: () => [], teardownAll: async () => {} } as any,
-      statusWriter: {
-        setPrd: () => {},
-        setCurrentStory: () => {},
-        setRunStatus: () => {},
-        update: async () => {},
-      } as any,
+      pluginRegistry: makePluginRegistry(),
+      statusWriter: makeStatusWriter(),
       logFilePath: undefined,
       runId: "run-test-002",
       startTime: Date.now(),
@@ -255,7 +250,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
 
     // Wire interaction subscriber on the singleton bus (Phase 3: replaces direct executeTrigger call)
     pipelineEventBus.clear();
-    wireInteraction(pipelineEventBus, chain, baseConfig as any);
+    wireInteraction(pipelineEventBus, chain, naxConfig);
 
     // Import and invoke the failure handler or sequential executor path
     // that should fire 'human-review' when a story has exceeded max retries
@@ -263,17 +258,17 @@ describe("AC2: max retries triggers human-review interaction", () => {
     const runtime1 = makeMockRuntime();
     await handlePipelineFailure(
       {
-        config: baseConfig as NaxConfig,
+        config: naxConfig,
         prd,
         prdPath: "/tmp/prd.json",
         workdir: "/tmp",
         featureDir: undefined,
-        hooks: { hooks: {} } as any,
+        hooks: { hooks: {} },
         feature: "test-feature",
         totalCost: 0,
         startTime: Date.now(),
         runId: "run-test-001",
-        pluginRegistry: { plugins: [], getReporters: () => [], teardownAll: async () => {} } as any,
+        pluginRegistry: makePluginRegistry(),
         story: exhaustedStory,
         storiesToExecute: [exhaustedStory],
         routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
@@ -290,16 +285,16 @@ describe("AC2: max retries triggers human-review interaction", () => {
         success: false,
         finalAction: "fail",
         reason: "Max retries exceeded",
-        context: {
-          config: baseConfig as NaxConfig,
+        context: makeTestContext({
+          config: naxConfig,
+          rootConfig: naxConfig,
           prd,
           story: exhaustedStory,
           stories: [exhaustedStory],
           routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
           workdir: "/tmp",
-          hooks: { hooks: {} } as any,
-        },
-      } as any,
+        }),
+      },
     );
 
     // FAILS: human-review trigger is not currently called in handlePipelineFailure
@@ -315,7 +310,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
 
     // Wire interaction subscriber on the singleton bus (Phase 3)
     pipelineEventBus.clear();
-    wireInteraction(pipelineEventBus, chain, baseConfig as any);
+    wireInteraction(pipelineEventBus, chain, naxConfig);
 
     const failingStory: UserStory = {
       ...baseStory,
@@ -328,7 +323,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
 
     // Verify the trigger is enabled
     const { isTriggerEnabled } = await import("@/interaction/triggers");
-    const enabled = isTriggerEnabled("human-review" as TriggerName, baseConfig as NaxConfig);
+    const enabled = isTriggerEnabled("human-review" as TriggerName, naxConfig);
     expect(enabled).toBe(true);
 
     // Call handlePipelineFailure to trigger the human-review request
@@ -336,17 +331,17 @@ describe("AC2: max retries triggers human-review interaction", () => {
     const runtime2 = makeMockRuntime();
     await handlePipelineFailure(
       {
-        config: baseConfig as NaxConfig,
+        config: naxConfig,
         prd,
         prdPath: "/tmp/prd.json",
         workdir: "/tmp",
         featureDir: undefined,
-        hooks: { hooks: {} } as any,
+        hooks: { hooks: {} },
         feature: "test-feature",
         totalCost: 0,
         startTime: Date.now(),
         runId: "run-test-003",
-        pluginRegistry: { plugins: [], getReporters: () => [], teardownAll: async () => {} } as any,
+        pluginRegistry: makePluginRegistry(),
         story: failingStory,
         storiesToExecute: [failingStory],
         routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
@@ -363,16 +358,16 @@ describe("AC2: max retries triggers human-review interaction", () => {
         success: false,
         finalAction: "fail",
         reason: "Max retries exceeded",
-        context: {
-          config: baseConfig as NaxConfig,
+        context: makeTestContext({
+          config: naxConfig,
+          rootConfig: naxConfig,
           prd,
           story: failingStory,
           stories: [failingStory],
           routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
           workdir: "/tmp",
-          hooks: { hooks: {} } as any,
-        },
-      } as any,
+        }),
+      },
     );
 
     // human-review request should have the correct storyId
@@ -414,7 +409,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
     const seqCtx = {
       prdPath: "/tmp/prd.json",
       workdir: "/tmp",
-      config: baseConfig as NaxConfig,
+      config: naxConfig,
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: false,
@@ -481,7 +476,7 @@ describe("AC3: CLI interaction plugin for non-headless human-review", () => {
         iteration: 5,
         reason: "Story has failed 5 times",
       },
-      baseConfig as NaxConfig,
+      naxConfig,
     );
 
     // Verify request is well-formed for CLI presentation

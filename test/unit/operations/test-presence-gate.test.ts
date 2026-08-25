@@ -1,8 +1,29 @@
 import { describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { testPresenceGateOp } from "@/operations";
+import { cleanupTempDir, makeMockCallContext, makeStory, makeTempDir } from "@test/helpers";
+import { type TestPresenceGateInput, testPresenceGateOp } from "@/operations";
+import type { UserStory } from "@/prd";
+
+/**
+ * Complete TestPresenceGateInput fixture. The op reads only `story`, `workdir`
+ * and `resolvedTestPatterns.globs`; the remaining pattern formats are filled
+ * with the values every call site here already passed, plus a `resolution`
+ * tier (required by ResolvedTestPatterns) matching the hand-declared patterns.
+ */
+function makeGateInput(story: UserStory, workdir: string, globs: string[]): TestPresenceGateInput {
+  return {
+    story,
+    workdir,
+    resolvedTestPatterns: {
+      globs,
+      regex: [/\.test\.ts$/],
+      pathspec: [],
+      testDirs: ["test"],
+      resolution: "root-config",
+    },
+  };
+}
 
 describe("testPresenceGateOp — post-implementer test presence check", () => {
   test("kind is deterministic (no LLM session)", () => {
@@ -14,29 +35,20 @@ describe("testPresenceGateOp — post-implementer test presence check", () => {
   });
 
   test("has execute() function, not build()/parse()", () => {
-    expect(typeof (testPresenceGateOp as any).execute).toBe("function");
-    expect((testPresenceGateOp as any).build).toBeUndefined();
-    expect((testPresenceGateOp as any).parse).toBeUndefined();
+    expect(typeof testPresenceGateOp.execute).toBe("function");
+    // Probe members DeterministicOperation deliberately lacks — the intersection
+    // keeps the read checked while admitting the absence assertion.
+    const op = testPresenceGateOp as typeof testPresenceGateOp & Record<string, unknown>;
+    expect(op.build).toBeUndefined();
+    expect(op.parse).toBeUndefined();
   });
 
   test("returns hasTests=true when a test file exists in workdir", async () => {
     const dir = makeTempDir();
     try {
       await writeFile(join(dir, "example.test.ts"), "");
-      const ctx = { runtime: {} } as any;
-      const out = await (testPresenceGateOp as any).execute(
-        {
-          story: { id: "s1" } as any,
-          workdir: dir,
-          resolvedTestPatterns: {
-            globs: ["**/*.test.ts"],
-            regex: [/\.test\.ts$/],
-            pathspec: [],
-            testDirs: ["test"],
-          },
-        },
-        ctx,
-      );
+      const ctx = makeMockCallContext();
+      const out = await testPresenceGateOp.execute(makeGateInput(makeStory({ id: "s1" }), dir, ["**/*.test.ts"]), ctx);
       expect(out.success).toBe(true);
       expect(out.hasTests).toBe(true);
       expect(out.pauseReason).toBeUndefined();
@@ -48,20 +60,8 @@ describe("testPresenceGateOp — post-implementer test presence check", () => {
   test("returns success=false, hasTests=false, pauseReason='no-tests-authored' when no test files exist", async () => {
     const dir = makeTempDir();
     try {
-      const ctx = { runtime: {} } as any;
-      const out = await (testPresenceGateOp as any).execute(
-        {
-          story: { id: "s2" } as any,
-          workdir: dir,
-          resolvedTestPatterns: {
-            globs: ["**/*.test.ts"],
-            regex: [/\.test\.ts$/],
-            pathspec: [],
-            testDirs: ["test"],
-          },
-        },
-        ctx,
-      );
+      const ctx = makeMockCallContext();
+      const out = await testPresenceGateOp.execute(makeGateInput(makeStory({ id: "s2" }), dir, ["**/*.test.ts"]), ctx);
       expect(out.success).toBe(false);
       expect(out.hasTests).toBe(false);
       expect(out.pauseReason).toBe("no-tests-authored");
@@ -75,20 +75,8 @@ describe("testPresenceGateOp — post-implementer test presence check", () => {
     try {
       await mkdir(join(dir, "src"), { recursive: true });
       await writeFile(join(dir, "src", "utils.test.ts"), "");
-      const ctx = { runtime: {} } as any;
-      const out = await (testPresenceGateOp as any).execute(
-        {
-          story: { id: "s3" } as any,
-          workdir: dir,
-          resolvedTestPatterns: {
-            globs: ["**/*.test.ts"],
-            regex: [/\.test\.ts$/],
-            pathspec: [],
-            testDirs: ["test"],
-          },
-        },
-        ctx,
-      );
+      const ctx = makeMockCallContext();
+      const out = await testPresenceGateOp.execute(makeGateInput(makeStory({ id: "s3" }), dir, ["**/*.test.ts"]), ctx);
       expect(out.success).toBe(true);
       expect(out.hasTests).toBe(true);
     } finally {
@@ -97,18 +85,9 @@ describe("testPresenceGateOp — post-implementer test presence check", () => {
   });
 
   test("returns success=true (safe fallback) when workdir does not exist (scan error absorbed)", async () => {
-    const ctx = { runtime: {} } as any;
-    const out = await (testPresenceGateOp as any).execute(
-      {
-        story: { id: "s4" } as any,
-        workdir: "/tmp/nax-test-nonexistent-dir-xyz-99999-presence",
-        resolvedTestPatterns: {
-          globs: ["**/*.test.ts"],
-          regex: [/\.test\.ts$/],
-          pathspec: [],
-          testDirs: ["test"],
-        },
-      },
+    const ctx = makeMockCallContext();
+    const out = await testPresenceGateOp.execute(
+      makeGateInput(makeStory({ id: "s4" }), "/tmp/nax-test-nonexistent-dir-xyz-99999-presence", ["**/*.test.ts"]),
       ctx,
     );
     // hasTestFilesOnDisk throws on a missing dir; the gate catches it and does NOT
@@ -129,18 +108,9 @@ describe("testPresenceGateOp — post-implementer test presence check", () => {
       // Implementer authors a test file — committed source, but the test is UNTRACKED.
       await mkdir(join(dir, "test"), { recursive: true });
       await writeFile(join(dir, "test", "index.test.ts"), "test('x', () => {});");
-      const out = await (testPresenceGateOp as any).execute(
-        {
-          story: { id: "s5" } as any,
-          workdir: dir,
-          resolvedTestPatterns: {
-            globs: ["test/**/*.test.ts"],
-            regex: [/\.test\.ts$/],
-            pathspec: [],
-            testDirs: ["test"],
-          },
-        },
-        { runtime: {} } as any,
+      const out = await testPresenceGateOp.execute(
+        makeGateInput(makeStory({ id: "s5" }), dir, ["test/**/*.test.ts"]),
+        makeMockCallContext(),
       );
       expect(out.success).toBe(true);
       expect(out.hasTests).toBe(true);
@@ -155,13 +125,9 @@ describe("testPresenceGateOp — post-implementer test presence check", () => {
       // Only a nax-generated harness exists under .nax/ — no real source tests.
       await mkdir(join(dir, ".nax", "features", "feat"), { recursive: true });
       await writeFile(join(dir, ".nax", "features", "feat", ".nax-acceptance.test.ts"), "test('ac', () => {});");
-      const out = await (testPresenceGateOp as any).execute(
-        {
-          story: { id: "s6" } as any,
-          workdir: dir,
-          resolvedTestPatterns: { globs: ["**/*.test.ts"], regex: [/\.test\.ts$/], pathspec: [], testDirs: ["test"] },
-        },
-        { runtime: {} } as any,
+      const out = await testPresenceGateOp.execute(
+        makeGateInput(makeStory({ id: "s6" }), dir, ["**/*.test.ts"]),
+        makeMockCallContext(),
       );
       expect(out.success).toBe(false);
       expect(out.hasTests).toBe(false);

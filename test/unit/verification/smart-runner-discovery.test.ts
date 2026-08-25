@@ -21,12 +21,14 @@ describe("Pass 1: mapSourceToTests (path convention)", () => {
   });
 
   afterEach(() => {
-    (Bun as any).file = originalFile;
+    Object.assign(Bun, { file: originalFile });
   });
 
   function mockFileExists(existingPaths: string[]) {
-    (Bun as any).file = (path: string) => ({
-      exists: () => Promise.resolve(existingPaths.includes(path)),
+    Object.assign(Bun, {
+      file: (path: string) => ({
+        exists: () => Promise.resolve(existingPaths.includes(path)),
+      }),
     });
   }
 
@@ -122,12 +124,12 @@ describe("Pass 2: importGrepFallback", () => {
   });
 
   afterEach(() => {
-    (Bun as any).file = originalFile;
-    (Bun as any).Glob = originalGlob;
+    Object.assign(Bun, { file: originalFile });
+    Object.assign(Bun, { Glob: originalGlob });
   });
 
   function mockGlob(files: string[]) {
-    (Bun as any).Glob = class {
+    const MockGlob = class {
       scan(_workdir: string): AsyncIterable<string> {
         return {
           [Symbol.asyncIterator]() {
@@ -142,12 +144,15 @@ describe("Pass 2: importGrepFallback", () => {
         };
       }
     };
+    Object.assign(Bun, { Glob: MockGlob });
   }
 
   function mockFileContent(contentMap: Record<string, string>) {
-    (Bun as any).file = (path: string) => ({
-      exists: () => Promise.resolve(path in contentMap),
-      text: () => Promise.resolve(contentMap[path] ?? ""),
+    Object.assign(Bun, {
+      file: (path: string) => ({
+        exists: () => Promise.resolve(path in contentMap),
+        text: () => Promise.resolve(contentMap[path] ?? ""),
+      }),
     });
   }
 
@@ -210,12 +215,14 @@ describe("Pass 2: importGrepFallback", () => {
 
   test("skips test files that cannot be read", async () => {
     mockGlob(["test/unit/broken.test.ts", "test/unit/ok.test.ts"]);
-    (Bun as any).file = (path: string) => ({
-      exists: () => Promise.resolve(true),
-      text: () => {
-        if (path.includes("broken")) throw new Error("read error");
-        return Promise.resolve(`import { fn } from "../../../src/utils/helper";`);
-      },
+    Object.assign(Bun, {
+      file: (path: string) => ({
+        exists: () => Promise.resolve(true),
+        text: () => {
+          if (path.includes("broken")) throw new Error("read error");
+          return Promise.resolve(`import { fn } from "../../../src/utils/helper";`);
+        },
+      }),
     });
 
     const result = await importGrepFallback(["src/utils/helper.ts"], "/repo", ["test/**/*.test.ts"]);
@@ -251,12 +258,12 @@ describe("Pass 3: full-suite fallback (empty return from both passes)", () => {
   });
 
   afterEach(() => {
-    (Bun as any).file = originalFile;
-    (Bun as any).Glob = originalGlob;
+    Object.assign(Bun, { file: originalFile });
+    Object.assign(Bun, { Glob: originalGlob });
   });
 
   test("importGrepFallback returns empty array when no test files match any pattern", async () => {
-    (Bun as any).Glob = class {
+    const MockGlob = class {
       scan(_workdir: string): AsyncIterable<string> {
         return {
           [Symbol.asyncIterator]() {
@@ -269,6 +276,7 @@ describe("Pass 3: full-suite fallback (empty return from both passes)", () => {
         };
       }
     };
+    Object.assign(Bun, { Glob: MockGlob });
 
     const result = await importGrepFallback(["src/foo/bar.ts"], "/repo", ["test/**/*.test.ts"]);
 
@@ -276,7 +284,7 @@ describe("Pass 3: full-suite fallback (empty return from both passes)", () => {
   });
 
   test("importGrepFallback returns empty array when no scanned test files import the module", async () => {
-    (Bun as any).Glob = class {
+    const MockGlob = class {
       scan(_workdir: string): AsyncIterable<string> {
         let done = false;
         return {
@@ -294,8 +302,11 @@ describe("Pass 3: full-suite fallback (empty return from both passes)", () => {
         };
       }
     };
-    (Bun as any).file = (_path: string) => ({
-      text: () => Promise.resolve(`import { x } from "../../../src/completely/different";`),
+    Object.assign(Bun, { Glob: MockGlob });
+    Object.assign(Bun, {
+      file: (_path: string) => ({
+        text: () => Promise.resolve(`import { x } from "../../../src/completely/different";`),
+      }),
     });
 
     const result = await importGrepFallback(["src/foo/bar.ts"], "/repo", ["test/**/*.test.ts"]);
@@ -316,12 +327,12 @@ describe("Custom testFilePatterns", () => {
   });
 
   afterEach(() => {
-    (Bun as any).Glob = originalGlob;
+    Object.assign(Bun, { Glob: originalGlob });
   });
 
   test("passes custom testFilePatterns to Bun.Glob", async () => {
     const capturedPatterns: string[] = [];
-    (Bun as any).Glob = class {
+    const MockGlob = class {
       constructor(pattern: string) {
         capturedPatterns.push(pattern);
       }
@@ -337,6 +348,7 @@ describe("Custom testFilePatterns", () => {
         };
       }
     };
+    Object.assign(Bun, { Glob: MockGlob });
 
     await importGrepFallback(["src/foo/bar.ts"], "/repo", ["test/unit/**/*.spec.ts", "test/integration/**/*.spec.ts"]);
 
@@ -346,7 +358,7 @@ describe("Custom testFilePatterns", () => {
 
   test("uses each pattern independently", async () => {
     let scanCount = 0;
-    (Bun as any).Glob = class {
+    const MockGlob = class {
       scan(_workdir: string): AsyncIterable<string> {
         scanCount++;
         return {
@@ -360,6 +372,7 @@ describe("Custom testFilePatterns", () => {
         };
       }
     };
+    Object.assign(Bun, { Glob: MockGlob });
 
     await importGrepFallback(["src/foo/bar.ts"], "/repo", [
       "test/unit/**/*.test.ts",

@@ -40,6 +40,7 @@ import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
 import type { AdversarialReviewInput } from "@/operations/adversarial-review";
 import { adversarialReviewOp } from "@/operations/adversarial-review";
+import type { HopBodyContext } from "@/operations/types";
 import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -47,17 +48,6 @@ afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
-
-const STORY = {
-  id: "STORY-REGRD",
-  title: "Adversarial reground test",
-  description: "reground dropped findings",
-  acceptanceCriteria: [
-    "AC1: auth login must not allow SQL injection attacks",
-    "AC2: handler must not throw unhandled exceptions",
-    "AC3: sessions expire after 24h",
-  ],
-};
 
 const ADVERSARIAL_CONFIG_DEFAULT = {
   model: "balanced" as const,
@@ -136,6 +126,7 @@ describe("adversarialReviewOp.hopBody — reground AC1: trigger issues exactly o
         return {
           output: callCount === 1 ? firstTurn : secondTurn,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       });
@@ -148,8 +139,8 @@ describe("adversarialReviewOp.hopBody — reground AC1: trigger issues exactly o
           story: STORY_WITH_AC,
           adversarialConfig: { ...ADVERSARIAL_CONFIG_DEFAULT },
           mode: "ref",
-        } as AdversarialReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<AdversarialReviewInput>);
 
       expect(callCount).toBe(2);
     });
@@ -171,6 +162,7 @@ describe("adversarialReviewOp.hopBody — reground AC1: trigger issues exactly o
         return {
           output: firstTurn,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       });
@@ -183,8 +175,8 @@ describe("adversarialReviewOp.hopBody — reground AC1: trigger issues exactly o
           story: STORY_WITH_AC,
           adversarialConfig: { ...ADVERSARIAL_CONFIG_DEFAULT, acRegroundOnDrop: false },
           mode: "ref",
-        } as AdversarialReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<AdversarialReviewInput>);
 
       expect(callCount).toBe(1);
       expect(result.output).toBe(firstTurn);
@@ -207,20 +199,13 @@ describe("adversarialReviewOp.hopBody — reground AC2: reprompt prompt content"
       const secondTurn = JSON.stringify({ passed: false, findings: [] });
 
       let capturedPrompt = "";
-      const mockSend = mock(async () => {
-        return {
-          output: capturedPrompt === "" ? firstTurn : secondTurn,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
-      });
-
       // Override send to capture the prompt on second call
       const sendImpl = mock(async (prompt: string) => {
         capturedPrompt = prompt;
         return {
           output: capturedPrompt === prompt && capturedPrompt !== "" ? secondTurn : firstTurn,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       });
@@ -230,6 +215,7 @@ describe("adversarialReviewOp.hopBody — reground AC2: reprompt prompt content"
         sendWithParseRetry: mock(async () => ({
           output: firstTurn,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         })),
         input: {
@@ -237,8 +223,8 @@ describe("adversarialReviewOp.hopBody — reground AC2: reprompt prompt content"
           story: STORY_WITH_AC,
           adversarialConfig: { ...ADVERSARIAL_CONFIG_DEFAULT },
           mode: "ref",
-        } as AdversarialReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<AdversarialReviewInput>);
 
       expect(capturedPrompt).toContain(droppedIssue);
     });
@@ -261,9 +247,19 @@ describe("adversarialReviewOp.hopBody — reground AC2: reprompt prompt content"
       const sendImpl = mock(async (prompt: string) => {
         if (capturedPrompt === "") {
           capturedPrompt = prompt;
-          return { output: firstTurn, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+          return {
+            output: firstTurn,
+            tokenUsage: { inputTokens: 0, outputTokens: 0 },
+            estimatedCostUsd: 0,
+            internalRoundTrips: 0,
+          };
         }
-        return { output: secondTurn, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+        return {
+          output: secondTurn,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+          internalRoundTrips: 0,
+        };
       });
 
       await adversarialReviewOp.hopBody!("initial prompt", {
@@ -271,6 +267,7 @@ describe("adversarialReviewOp.hopBody — reground AC2: reprompt prompt content"
         sendWithParseRetry: mock(async () => ({
           output: firstTurn,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         })),
         input: {
@@ -278,8 +275,8 @@ describe("adversarialReviewOp.hopBody — reground AC2: reprompt prompt content"
           story: STORY_WITH_AC,
           adversarialConfig: { ...ADVERSARIAL_CONFIG_DEFAULT },
           mode: "ref",
-        } as AdversarialReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<AdversarialReviewInput>);
 
       // DROP_CODE_MESSAGES_QUOTE.missing_ac_quote = "no `acQuote` field was provided — every blocking finding must cite an AC"
       expect(capturedPrompt).toContain("no `acQuote` field was provided");
@@ -321,6 +318,7 @@ describe("adversarialReviewOp.hopBody — reground AC3: second turn has survivin
         return {
           output: callCount === 1 ? firstTurn : secondTurn,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       });
@@ -333,8 +331,8 @@ describe("adversarialReviewOp.hopBody — reground AC3: second turn has survivin
           story: STORY_WITH_AC,
           adversarialConfig: { ...ADVERSARIAL_CONFIG_DEFAULT },
           mode: "ref",
-        } as AdversarialReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<AdversarialReviewInput>);
 
       const parsed = JSON.parse(result.output);
       expect(parsed.passed).toBe(false);
@@ -377,6 +375,7 @@ describe("adversarialReviewOp.hopBody — reground AC4: second turn passed:true 
         return {
           output: callCount === 1 ? firstTurn : secondTurn,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       });
@@ -389,8 +388,8 @@ describe("adversarialReviewOp.hopBody — reground AC4: second turn passed:true 
           story: STORY_WITH_AC,
           adversarialConfig: { ...ADVERSARIAL_CONFIG_DEFAULT },
           mode: "ref",
-        } as AdversarialReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<AdversarialReviewInput>);
 
       const parsed = JSON.parse(result.output);
       // passed:true from second turn
@@ -442,6 +441,7 @@ describe("adversarialReviewOp.hopBody — reground AC5: second turn fails or all
         return {
           output: callCount === 1 ? firstTurn : secondTurn,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       });
@@ -454,8 +454,8 @@ describe("adversarialReviewOp.hopBody — reground AC5: second turn fails or all
           story: STORY_WITH_AC,
           adversarialConfig: { ...ADVERSARIAL_CONFIG_DEFAULT },
           mode: "ref",
-        } as AdversarialReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<AdversarialReviewInput>);
 
       expectFirstTurnPreservedWithMarker(result.output, firstTurn, "parse-failed");
     });
@@ -487,6 +487,7 @@ describe("adversarialReviewOp.hopBody — reground AC5: second turn fails or all
         return {
           output: callCount === 1 ? firstTurn : secondTurn,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       });
@@ -499,8 +500,8 @@ describe("adversarialReviewOp.hopBody — reground AC5: second turn fails or all
           story: STORY_WITH_AC,
           adversarialConfig: { ...ADVERSARIAL_CONFIG_DEFAULT },
           mode: "ref",
-        } as AdversarialReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<AdversarialReviewInput>);
 
       expectFirstTurnPreservedWithMarker(result.output, firstTurn, "still-dropped");
     });
@@ -524,6 +525,7 @@ describe("adversarialReviewOp.hopBody — reground AC6: acRegroundOnDrop === fal
         return {
           output: firstTurn,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       });
@@ -536,8 +538,8 @@ describe("adversarialReviewOp.hopBody — reground AC6: acRegroundOnDrop === fal
           story: STORY_WITH_AC,
           adversarialConfig: { ...ADVERSARIAL_CONFIG_DEFAULT, acRegroundOnDrop: false },
           mode: "ref",
-        } as AdversarialReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<AdversarialReviewInput>);
 
       expect(callCount).toBe(1);
       expect(result.output).toBe(firstTurn);
@@ -561,6 +563,7 @@ describe("adversarialReviewOp.hopBody — reground AC7: no reprompt when trigger
         return {
           output: firstTurn,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       });
@@ -573,8 +576,8 @@ describe("adversarialReviewOp.hopBody — reground AC7: no reprompt when trigger
           story: STORY_WITH_AC,
           adversarialConfig: { ...ADVERSARIAL_CONFIG_DEFAULT },
           mode: "ref",
-        } as AdversarialReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<AdversarialReviewInput>);
 
       expect(callCount).toBe(1);
       expect(result.output).toBe(firstTurn);
@@ -598,6 +601,7 @@ describe("adversarialReviewOp.hopBody — reground AC7: no reprompt when trigger
         return {
           output: firstTurn,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       });
@@ -610,8 +614,8 @@ describe("adversarialReviewOp.hopBody — reground AC7: no reprompt when trigger
           story: STORY_WITH_AC,
           adversarialConfig: { ...ADVERSARIAL_CONFIG_DEFAULT },
           mode: "ref",
-        } as AdversarialReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<AdversarialReviewInput>);
 
       expect(callCount).toBe(1);
       expect(result.output).toBe(firstTurn);
@@ -635,6 +639,7 @@ describe("adversarialReviewOp.hopBody — reground AC7: no reprompt when trigger
         return {
           output: firstTurn,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       });
@@ -647,8 +652,8 @@ describe("adversarialReviewOp.hopBody — reground AC7: no reprompt when trigger
           story: STORY_WITH_AC,
           adversarialConfig: { ...ADVERSARIAL_CONFIG_DEFAULT },
           mode: "ref",
-        } as AdversarialReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<AdversarialReviewInput>);
 
       expect(callCount).toBe(1);
       expect(result.output).toBe(firstTurn);
@@ -677,12 +682,13 @@ describe("adversarialReviewOp.hopBody — reground AC8: no mutable hasReprompted
         return {
           output: callCount === 1 ? firstTurn : secondTurn,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       });
 
       // Call hopBody twice with the same mock — second call should also reprompt if trigger fires
-      const ctx1 = {
+      const ctx1: HopBodyContext<AdversarialReviewInput> = {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -690,15 +696,15 @@ describe("adversarialReviewOp.hopBody — reground AC8: no mutable hasReprompted
           story: STORY_WITH_AC,
           adversarialConfig: { ...ADVERSARIAL_CONFIG_DEFAULT },
           mode: "ref",
-        } as AdversarialReviewInput,
+        },
       };
 
-      await adversarialReviewOp.hopBody!("prompt1", ctx1 as any);
+      await adversarialReviewOp.hopBody!("prompt1", ctx1);
       expect(callCount).toBe(2);
 
       // Reset mock call count for second invocation
       callCount = 0;
-      const ctx2 = {
+      const ctx2: HopBodyContext<AdversarialReviewInput> = {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -706,10 +712,10 @@ describe("adversarialReviewOp.hopBody — reground AC8: no mutable hasReprompted
           story: STORY_WITH_AC,
           adversarialConfig: { ...ADVERSARIAL_CONFIG_DEFAULT },
           mode: "ref",
-        } as AdversarialReviewInput,
+        },
       };
 
-      await adversarialReviewOp.hopBody!("prompt2", ctx2 as any);
+      await adversarialReviewOp.hopBody!("prompt2", ctx2);
       // Second invocation also fires reprompt — no persistent hasReprompted flag
       expect(callCount).toBe(2);
     });

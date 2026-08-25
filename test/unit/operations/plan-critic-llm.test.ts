@@ -1,8 +1,18 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeTestRuntime, opSelector } from "@test/helpers";
-import type { RetryStrategy } from "@/agents";
-import { ParseValidationError } from "@/agents";
+import { makeNaxConfig, makePRD, makeTestRuntime, opSelector } from "@test/helpers";
+import { ParseValidationError, type RetryContext, type RetryStrategy } from "@/agents";
+import type { ConfiguredModel } from "@/config";
+import type { FactsManifest } from "@/debate/facts-manifest";
+import {
+  buildCriticRetryPrompt,
+  type CriticInspection,
+  inspectCriticOutput,
+  type PlanCriticLlmInput,
+  planCriticLlmOp,
+} from "@/operations/plan-critic-llm";
+import { CriticPromptBuilder } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
+import { KNOWN_SESSION_ROLES } from "@/runtime/session-role";
 
 /**
  * planCriticLlmOp + CriticPromptBuilder tests — US-003
@@ -15,51 +25,24 @@ import type { NaxRuntime } from "@/runtime";
  * - AC15: CriticPromptBuilder.build() output
  */
 
-// Import stubs that may not exist yet; tests will fail during runtime if implementations are missing
-let planCriticLlmOp: any;
-let CriticPromptBuilder: any;
-let inspectCriticOutput: any;
-let buildCriticRetryPrompt: any;
-let KNOWN_SESSION_ROLES: any;
-
-// Lazy-load with proper error handling for test discovery
-try {
-  const operationsModule = require("@/operations/plan-critic-llm");
-  planCriticLlmOp = operationsModule.planCriticLlmOp;
-  inspectCriticOutput = operationsModule.inspectCriticOutput;
-  buildCriticRetryPrompt = operationsModule.buildCriticRetryPrompt;
-} catch (e) {
-  // Module not yet created; tests will fail appropriately
-}
-
-try {
-  const promptsModule = require("@/prompts/builders/critic-builder");
-  CriticPromptBuilder = promptsModule.CriticPromptBuilder;
-} catch (e) {
-  // Module not yet created; tests will fail appropriately
-}
-
-try {
-  const sessionRoleModule = require("@/runtime/session-role");
-  KNOWN_SESSION_ROLES = sessionRoleModule.KNOWN_SESSION_ROLES;
-} catch (e) {
-  // Module not yet created; tests will fail appropriately
-}
-
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
 
-function makeBuildCtx(criticOverrides?: { criticModel?: unknown; timeoutSeconds?: number }) {
-  const base = criticOverrides ? ({ plan: criticOverrides } as any) : {};
+function makeBuildCtx(criticOverrides?: { criticModel?: ConfiguredModel; timeoutSeconds?: number }) {
+  const base = criticOverrides ? { plan: criticOverrides } : {};
   const config = makeNaxConfig(base);
   const runtime = makeTestRuntime({ config });
   createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
   return { packageView: view, config: view.select(opSelector(planCriticLlmOp.config)) };
 }
+
+/** Shared minimal input fixture — every field model()/parse() ignore stays inert. */
+const criticManifest: FactsManifest = { repoFacts: [], specClaims: [], gaps: [] };
+const criticInput: PlanCriticLlmInput = { prd: makePRD({ feature: "test-feature" }), manifest: criticManifest };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC1: KNOWN_SESSION_ROLES includes "plan-critic"
@@ -77,11 +60,11 @@ describe("KNOWN_SESSION_ROLES — AC1", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 describe("planCriticLlmOp — identity (AC2)", () => {
   test.each([
-    ["kind is 'run'", (op: any) => op.kind, "run"],
-    ["name is 'plan-critic-llm'", (op: any) => op.name, "plan-critic-llm"],
-    ["stage is 'plan'", (op: any) => op.stage, "plan"],
-    ["session.lifetime is 'fresh'", (op: any) => op.session.lifetime, "fresh"],
-    ["noFallback is true", (op: any) => op.noFallback, true],
+    ["kind is 'run'", (op: typeof planCriticLlmOp) => op.kind, "run"],
+    ["name is 'plan-critic-llm'", (op: typeof planCriticLlmOp) => op.name, "plan-critic-llm"],
+    ["stage is 'plan'", (op: typeof planCriticLlmOp) => op.stage, "plan"],
+    ["session.lifetime is 'fresh'", (op: typeof planCriticLlmOp) => op.session.lifetime, "fresh"],
+    ["noFallback is true", (op: typeof planCriticLlmOp) => op.noFallback, true],
   ])("%s", (_label, accessor, expected) => {
     expect(planCriticLlmOp).toBeDefined();
     expect(accessor(planCriticLlmOp)).toBe(expected);
@@ -100,10 +83,8 @@ describe("planCriticLlmOp — identity (AC2)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 describe("planCriticLlmOp.build() — AC3", () => {
   test("returns an object with non-empty role.content and task.content", () => {
-    const mockPrd = { feature: "test-feature", specContent: "some spec", stories: [], branch: "test-branch" };
-    const mockManifest = { repoFacts: [], specClaims: [], gaps: [] };
     const ctx = makeBuildCtx();
-    const result = planCriticLlmOp.build({ prd: mockPrd, manifest: mockManifest }, ctx);
+    const result = planCriticLlmOp.build({ prd: criticInput.prd, manifest: criticManifest }, ctx);
     expect(result).toBeDefined();
     expect(result.role).toBeDefined();
     expect(result.task).toBeDefined();
@@ -118,22 +99,25 @@ describe("planCriticLlmOp.build() — AC3", () => {
 // AC4-5: planCriticLlmOp.model() resolution
 // ─────────────────────────────────────────────────────────────────────────────
 describe("planCriticLlmOp.model() resolution — AC4-5", () => {
+  function resolveCriticModel(ctx: ReturnType<typeof makeBuildCtx>) {
+    const { model } = planCriticLlmOp;
+    if (typeof model !== "function") throw new Error("expected a model resolver");
+    return model(criticInput, ctx);
+  }
+
   test("returns 'fast' when config.plan is empty (default from schema) — AC4", () => {
     const ctx = makeBuildCtx();
-    const result = planCriticLlmOp.model?.({}, ctx);
-    expect(result).toBe("fast");
+    expect(resolveCriticModel(ctx)).toBe("fast");
   });
 
   test.each(["balanced", "powerful"] as const)("returns criticModel '%s' when provided — AC5", (model) => {
     const ctx = makeBuildCtx({ criticModel: model });
-    expect(planCriticLlmOp.model?.({}, ctx)).toBe(model);
+    expect(resolveCriticModel(ctx)).toBe(model);
   });
 
   test("resolves model from context config — not from input", () => {
-    const input = { some: "data" };
     const ctx = makeBuildCtx({ criticModel: "balanced" });
-    const result = planCriticLlmOp.model?.(input as any, ctx);
-    expect(result).toBe("balanced");
+    expect(resolveCriticModel(ctx)).toBe("balanced");
   });
 });
 
@@ -146,7 +130,7 @@ describe("inspectCriticOutput — AC6-8", () => {
     const result = inspectCriticOutput(input);
     expect(result.ok).toBe(true);
     expect(Array.isArray(result.findings)).toBe(true);
-    expect(result.findings.length).toBe(0);
+    expect(result.findings?.length).toBe(0);
   });
 
   test("returns { ok: false } with kind 'not-json' or 'schema-invalid' as appropriate — AC7-8", () => {
@@ -169,7 +153,7 @@ describe("inspectCriticOutput — AC6-8", () => {
     expect(result.findings).toBeDefined();
     expect(Array.isArray(result.findings)).toBe(true);
     // Filtered result should contain only valid findings
-    expect(result.findings.length).toBeLessThanOrEqual(2);
+    expect(result.findings?.length).toBeLessThanOrEqual(2);
   });
 });
 
@@ -178,16 +162,17 @@ describe("inspectCriticOutput — AC6-8", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 describe("planCriticLlmOp.parse() — AC9-11", () => {
   test("returns findings array on valid JSON; throws ParseValidationError on invalid or schema-mismatch — AC9-11", () => {
-    expect(planCriticLlmOp.parse?.('{"findings":[]}', {}, {})).toMatchObject({ findings: [] });
+    const ctx = makeBuildCtx();
+    expect(planCriticLlmOp.parse('{"findings":[]}', criticInput, ctx)).toMatchObject({ findings: [] });
     expect(
-      planCriticLlmOp.parse?.(
+      planCriticLlmOp.parse(
         JSON.stringify({ findings: [{ checklistItem: "ac-testable", severity: "blocker" }] }),
-        {},
-        {},
+        criticInput,
+        ctx,
       ).findings.length,
     ).toBeGreaterThan(0);
-    expect(() => planCriticLlmOp.parse?.("not json", {}, {})).toThrow(ParseValidationError);
-    expect(() => planCriticLlmOp.parse?.('{"other":"x"}', {}, {})).toThrow(ParseValidationError);
+    expect(() => planCriticLlmOp.parse("not json", criticInput, ctx)).toThrow(ParseValidationError);
+    expect(() => planCriticLlmOp.parse('{"other":"x"}', criticInput, ctx)).toThrow(ParseValidationError);
   });
 });
 
@@ -203,14 +188,16 @@ describe("planCriticLlmOp.retry — AC12", () => {
   test("retry.shouldRetry handles ParseValidationError and checks lastOutput", () => {
     const strategy = planCriticLlmOp.retry as RetryStrategy;
 
-    const mockCtx = {
-      lastOutput: "invalid json",
+    const mockCtx: RetryContext = {
+      site: "run",
+      agentName: "test-agent",
+      stage: "plan",
       storyId: "test-story",
-      signal: new AbortController().signal,
+      lastOutput: "invalid json",
     };
 
     const failure = new ParseValidationError("test error");
-    const decision = strategy.shouldRetry(failure, 0, mockCtx as any);
+    const decision = strategy.shouldRetry(failure, 0, mockCtx);
 
     expect(decision).toBeDefined();
     expect(typeof decision).toBe("object");
@@ -220,15 +207,17 @@ describe("planCriticLlmOp.retry — AC12", () => {
   test("retry exhaustion returns { retry: false, fallback: { findings: [] } }", () => {
     const strategy = planCriticLlmOp.retry as RetryStrategy;
 
-    const mockCtx = {
-      lastOutput: "invalid json",
+    const mockCtx: RetryContext = {
+      site: "run",
+      agentName: "test-agent",
+      stage: "plan",
       storyId: "test-story",
-      signal: new AbortController().signal,
+      lastOutput: "invalid json",
     };
 
     // Attempt at max (or beyond) should return retry: false
     const failure = new ParseValidationError("test error");
-    const decision = strategy.shouldRetry(failure, 2, mockCtx as any);
+    const decision = strategy.shouldRetry(failure, 2, mockCtx);
 
     expect(decision.retry).toBe(false);
     if (decision.retry) throw new Error("expected retry:false");
@@ -242,16 +231,16 @@ describe("planCriticLlmOp.retry — AC12", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 describe("buildCriticRetryPrompt — AC13-14", () => {
   test.each([
-    ["not-json", "Response was not valid JSON or could not be extracted."],
-    ["schema-invalid", "Response was valid JSON but did not have a `findings` array at the root."],
+    ["not-json", "Response was not valid JSON or could not be extracted."] as const,
+    ["schema-invalid", "Response was valid JSON but did not have a `findings` array at the root."] as const,
   ])("returns repair string for %s kind", (kind, message) => {
-    const result = buildCriticRetryPrompt({ ok: false, kind, message } as any, false);
+    const result = buildCriticRetryPrompt({ ok: false, kind, message }, false);
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
   });
 
   test("passes isTruncated flag to repair methods", () => {
-    const inspection = {
+    const inspection: CriticInspection = {
       ok: false,
       kind: "not-json",
       message: "Response was not valid JSON.",
@@ -277,9 +266,8 @@ describe("CriticPromptBuilder.build() — AC15", () => {
     ["failure-modes-considered", "test-feature"],
     ["my-special-feature", "my-special-feature"],
   ])("task.content contains '%s'", (expectedSubstring: string, feature: string) => {
-    const mockPrd = { feature, specContent: "some spec", stories: [], branch: "test-branch" };
-    const mockManifest = { repoFacts: [], specClaims: [], gaps: [] };
-    const result = new CriticPromptBuilder().build?.(mockPrd, mockManifest);
+    const mockManifest: FactsManifest = { repoFacts: [], specClaims: [], gaps: [] };
+    const result = new CriticPromptBuilder().build?.(makePRD({ feature }), mockManifest);
     expect(result.task.content).toContain(expectedSubstring);
   });
 
@@ -289,8 +277,8 @@ describe("CriticPromptBuilder.build() — AC15", () => {
     expect(typeof builder.build).toBe("function");
   });
 
-  test.each(["jsonRepair", "schemaRepair"])("CriticPromptBuilder has static %s method", (method) => {
-    expect(typeof (CriticPromptBuilder as any)[method]).toBe("function");
+  test.each(["jsonRepair", "schemaRepair"] as const)("CriticPromptBuilder has static %s method", (method) => {
+    expect(typeof CriticPromptBuilder[method]).toBe("function");
   });
 
   test.each<[string, () => string]>([
