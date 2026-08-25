@@ -3,9 +3,12 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
 import type { NonBlockingFixArgs, NonBlockingFixDeps } from "@/execution/non-blocking-fix";
 import { shouldRunNonBlockingFix } from "@/execution/non-blocking-fix";
+import type { Finding } from "@/findings";
 import type { NaxRuntime } from "@/runtime";
 import { _rollbackDeps } from "@/tdd";
 import {
+  makeFixCycleResult,
+  makeIteration,
   makeMockCallContext,
   makeMockPlanInputs,
   makeNaxConfig,
@@ -68,7 +71,7 @@ describe("non-blocking-fix runtime wiring", () => {
   let origCaptureGitRef: typeof _storyOrchestratorDeps.captureGitRef;
   let origRollbackSpawn: typeof _rollbackDeps.spawn;
   let origRollbackAutoCommit: typeof _rollbackDeps.autoCommitIfDirty;
-  let origRunNonBlockingFix: unknown;
+  let origRunNonBlockingFix: typeof _storyOrchestratorDeps.runNonBlockingFix;
   let runtime: NaxRuntime | undefined;
 
   beforeEach(() => {
@@ -77,7 +80,7 @@ describe("non-blocking-fix runtime wiring", () => {
     origCaptureGitRef = _storyOrchestratorDeps.captureGitRef;
     origRollbackSpawn = _rollbackDeps.spawn;
     origRollbackAutoCommit = _rollbackDeps.autoCommitIfDirty;
-    origRunNonBlockingFix = (_storyOrchestratorDeps as { runNonBlockingFix?: unknown }).runNonBlockingFix;
+    origRunNonBlockingFix = _storyOrchestratorDeps.runNonBlockingFix;
 
     _storyOrchestratorDeps.captureGitRef = mock(async () => "HEAD");
     _storyOrchestratorDeps.callOp = mock(async (_ctx, op) => {
@@ -92,12 +95,8 @@ describe("non-blocking-fix runtime wiring", () => {
       }
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.runFixCycle = mock(async () => ({
-      iterations: [],
-      finalFindings: [],
-      exitReason: "no-strategy" as const,
-      costUsd: 0,
-    })) as typeof _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
+      makeFixCycleResult<F>({ exitReason: "no-strategy" });
 
     _rollbackDeps.autoCommitIfDirty = mock(async () => {});
     _rollbackDeps.spawn = makeSpawn(() => "abc1234\n").spawn;
@@ -109,22 +108,18 @@ describe("non-blocking-fix runtime wiring", () => {
     _storyOrchestratorDeps.captureGitRef = origCaptureGitRef;
     _rollbackDeps.spawn = origRollbackSpawn;
     _rollbackDeps.autoCommitIfDirty = origRollbackAutoCommit;
-    if (origRunNonBlockingFix === undefined) {
-      delete (_storyOrchestratorDeps as { runNonBlockingFix?: unknown }).runNonBlockingFix;
-    } else {
-      (_storyOrchestratorDeps as { runNonBlockingFix?: unknown }).runNonBlockingFix = origRunNonBlockingFix;
-    }
+    _storyOrchestratorDeps.runNonBlockingFix = origRunNonBlockingFix;
     await runtime?.close();
     runtime = undefined;
   });
 
   test("story orchestrator routes non-blocking fix through injected runtime wiring with measureSourceDiff", async () => {
-    const runNonBlockingFix = mock(async (_args: NonBlockingFixArgs, _overrides: Partial<NonBlockingFixDeps>) => ({
+    const runNonBlockingFix = mock(async (_args: NonBlockingFixArgs, _overrides?: Partial<NonBlockingFixDeps>) => ({
       ran: true,
       kept: true,
       restored: false,
     }));
-    (_storyOrchestratorDeps as { runNonBlockingFix?: typeof runNonBlockingFix }).runNonBlockingFix = runNonBlockingFix;
+    _storyOrchestratorDeps.runNonBlockingFix = runNonBlockingFix;
 
     const config = makeNaxConfig({
       quality: { autofix: { enabled: true } },
@@ -178,7 +173,7 @@ describe("non-blocking-fix runtime wiring", () => {
     // NBF opened anyway, dispatched a paid implementer pass, broke a test, and rolled
     // back. With the actionability filter the gate never opens.
     const runNonBlockingFix = mock(async () => ({ ran: true, kept: true, restored: false }));
-    (_storyOrchestratorDeps as { runNonBlockingFix?: typeof runNonBlockingFix }).runNonBlockingFix = runNonBlockingFix;
+    _storyOrchestratorDeps.runNonBlockingFix = runNonBlockingFix;
 
     const callOp = _storyOrchestratorDeps.callOp;
     _storyOrchestratorDeps.callOp = mock(async (_ctx, op) => {
@@ -258,7 +253,7 @@ describe("non-blocking-fix runtime wiring", () => {
     // already-green (adversarial-passed) story; its restore-to-adversarial-passed floor is
     // meaningless when the entry state is red.
     const runNonBlockingFix = mock(async () => ({ ran: true, kept: true, restored: false }));
-    (_storyOrchestratorDeps as { runNonBlockingFix?: typeof runNonBlockingFix }).runNonBlockingFix = runNonBlockingFix;
+    _storyOrchestratorDeps.runNonBlockingFix = runNonBlockingFix;
 
     // Adversarial review FAILS (blocking findings) but still surfaces advisory findings —
     // so the main loop short-circuits here and the story is red, yet advisoryFindings > 0.
@@ -279,12 +274,12 @@ describe("non-blocking-fix runtime wiring", () => {
     }) as typeof _storyOrchestratorDeps.callOp;
 
     // Outer rectification exhausts with a non-mechanical unfixed finding → story is red.
-    _storyOrchestratorDeps.runFixCycle = mock(async () => ({
-      iterations: [{}],
-      finalFindings: [{ source: "semantic-review", severity: "error", category: "logic", message: "unfixable" }],
-      exitReason: "max-attempts-total" as const,
-      costUsd: 0,
-    })) as typeof _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
+      makeFixCycleResult<F>({
+        iterations: [makeIteration({ outcome: "unchanged" })],
+        finalFindings: [{ source: "semantic-review", severity: "error", category: "logic", message: "unfixable" }],
+        exitReason: "max-attempts-total",
+      });
 
     const config = makeNaxConfig({
       quality: { autofix: { enabled: true } },
