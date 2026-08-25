@@ -79,7 +79,7 @@ const STOPWORDS = new Set([
   "your",
 ]);
 const MIN_TOKEN_LEN = 4;
-const TOKEN_PATTERN = /[^\s_\-./:,;()\[\]{}'"!?]+/g;
+const TOKEN_PATTERN = /[^\s_\-./:,;()[\]{}'"!?]+/g;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tokenizer (local copy — avoids a circular dep between staleness ↔ effectiveness)

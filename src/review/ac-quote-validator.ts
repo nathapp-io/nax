@@ -107,7 +107,7 @@ function extractLocusKeywords(finding: AcQuotable): string[] {
   if (finding.issue) {
     const tokens = finding.issue
       .replace(/[`'"]/g, " ")
-      .split(/[\s,.()\[\]{}:;]+/)
+      .split(/[\s,.()[\]{}:;]+/)
       .filter((t) => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(t) && t.length >= 3);
     // Include only the first few tokens — later tokens tend to be generic verbs
     for (const t of tokens.slice(0, 3)) {

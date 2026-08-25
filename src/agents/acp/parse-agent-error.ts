@@ -326,7 +326,7 @@ function extractJsonCodeTokens(payload: Record<string, unknown>): string[] {
 
 function extractBracketedCodes(stderr: string): string[] {
   const tokens: string[] = [];
-  const matches = stderr.match(/\[([A-Z0-9_/\-]+)\]/g) ?? [];
+  const matches = stderr.match(/\[([A-Z0-9_/-]+)\]/g) ?? [];
   for (const entry of matches) {
     const inner = entry.slice(1, -1);
     for (const token of inner.split("/")) {

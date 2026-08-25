@@ -528,7 +528,7 @@ function sanitizeInvalidEscapes(text: string): string {
   // Match valid \\ pairs first (to preserve them), then strip lone \ before invalid char.
   // Without the pair-first branch, \\( would corrupt to \( (invalid), because the regex
   // would match the second \ + ( after skipping the first \ + \ (which IS in the exclusion).
-  result = result.replace(/(\\\\)|\\([^"\\\/bfnrtu])/g, (_, pair, bad) => pair ?? bad);
+  result = result.replace(/(\\\\)|\\([^"\\/bfnrtu])/g, (_, pair, bad) => pair ?? bad);
 
   return result;
 }

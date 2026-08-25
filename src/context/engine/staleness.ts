@@ -87,7 +87,7 @@ export function tokenize(text: string): string[] {
   if (!text) return [];
   const raw = text
     .toLowerCase()
-    .split(/[\s_\-./:,;()\[\]{}'"!?]+/)
+    .split(/[\s_\-./:,;()[\]{}'"!?]+/)
     .filter((t) => t.length >= MIN_TOKEN_LEN && !STOPWORDS.has(t));
   return [...new Set(raw)];
 }
