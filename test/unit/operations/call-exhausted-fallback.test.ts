@@ -62,7 +62,8 @@ function makeAlwaysExhaustStrategy(fallback: unknown): RetryStrategy {
 
 /**
  * Creates a RunOp where op.retry always exhausts with the given fallback value.
- * parse() throws on empty output to ensure the empty-output branch in callOp fires.
+ * parse() throws on any output — every test using this fixture drives the
+ * empty-output branch in callOp, so the parse never has to succeed.
  */
 function makeOpWithFallback<O>(
   name: string,
@@ -79,10 +80,10 @@ function makeOpWithFallback<O>(
       task: { id: "task", content: input, overridable: false },
     }),
     retry: () => makeAlwaysExhaustStrategy(fallback),
-    parse: (output) => {
-      // Throw on empty output so callOp's !rawOutput branch fires after sendWithParseRetry.
-      if (!output.trim()) throw new ParseValidationError(`[${name}] empty output`);
-      return output as unknown as O;
+    parse: () => {
+      // The agents in these tests always return empty output, so callOp's
+      // !rawOutput branch fires and this parse never runs.
+      throw new ParseValidationError(`[${name}] empty output`);
     },
   };
 }

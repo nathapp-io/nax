@@ -393,23 +393,13 @@ describe("PidRegistry — PERF-3: bounded ps/kill subprocesses", () => {
   });
 
   test("killAll() resolves when a per-pid `ps -p` never exits", async () => {
-    _pidRegistryDeps.spawn = mock((cmd: string[]) => {
+    _pidRegistryDeps.spawn = makeSpawn(({ cmd }) => {
       if (cmd[0] === "ps" && cmd[1] === "-eo") {
-        return {
-          pid: 2000,
-          stdout: makeStream("172446 1 Thu May 15 11:52:44 2026\n"),
-          stderr: makeStream(),
-          exited: Promise.resolve(0),
-        } as unknown as ReturnType<typeof Bun.spawn>;
+        return { stdout: "172446 1 Thu May 15 11:52:44 2026\n" };
       }
       // Per-pid identity lookup: wedged — never exits.
-      return {
-        pid: 2001,
-        stdout: new ReadableStream<Uint8Array>({ start() {} }),
-        stderr: new ReadableStream<Uint8Array>({ start() {} }),
-        exited: new Promise<number>(() => {}),
-      } as unknown as ReturnType<typeof Bun.spawn>;
-    }) as unknown as typeof Bun.spawn; // test-ratchet-allow: as-unknown-as (mock cast, mirrors lines 241/296)
+      return { hang: true };
+    }).spawn;
     _pidRegistryDeps.sleep = mock(async () => {}) as typeof Bun.sleep;
     _pidRegistryDeps.procExitTimeoutMs = 50;
 

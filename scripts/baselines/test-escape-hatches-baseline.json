@@ -2,14 +2,14 @@
   "counts": {
     "asAny": 1377,
     "tsSuppress": 40,
-    "ratchetAllow": 106,
+    "ratchetAllow": 105,
     "absentValue": 17,
     "anyType": 1860,
-    "looseCast": 1879,
+    "looseCast": 1878,
     "asNever": 608,
     "nonNullAssert": 820
   },
-  "updatedAt": "2026-08-25T07:06:31.310Z",
+  "updatedAt": "2026-08-25T07:28:07.269Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -887,7 +887,7 @@
       "asNever": 6
     },
     "test/unit/execution/pid-registry.test.ts": {
-      "ratchetAllow": 2
+      "ratchetAllow": 1
     },
     "test/unit/execution/session-manager-runtime.test.ts": {
       "looseCast": 2
@@ -1365,7 +1365,7 @@
       "looseCast": 5
     },
     "test/unit/operations/build-hop-callback.test.ts": {
-      "looseCast": 21,
+      "looseCast": 20,
       "asNever": 1
     },
     "test/unit/operations/call.test.ts": {

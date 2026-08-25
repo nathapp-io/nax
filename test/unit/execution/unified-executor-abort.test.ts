@@ -85,22 +85,14 @@ function makeCtxWithSignal(signal: AbortSignal, overrides: Record<string, unknow
 }
 
 describe("executeUnified — BUG-2: abort during iteration delay", () => {
-  let deps: Record<string, unknown>;
-  let origSelect: unknown;
-  let origIteration: unknown;
-  let origBatch: unknown;
+  let origIteration: typeof _unifiedExecutorDeps.runIteration;
 
   beforeEach(() => {
-    deps = _unifiedExecutorDeps as unknown as Record<string, unknown>;
-    origSelect = deps.selectNextStories;
-    origIteration = deps.runIteration;
-    origBatch = deps.selectIndependentBatch;
+    origIteration = _unifiedExecutorDeps.runIteration;
   });
 
   afterEach(() => {
-    deps.selectNextStories = origSelect;
-    deps.runIteration = origIteration;
-    deps.selectIndependentBatch = origBatch;
+    _unifiedExecutorDeps.runIteration = origIteration;
     mock.restore();
   });
 
@@ -115,8 +107,7 @@ describe("executeUnified — BUG-2: abort during iteration delay", () => {
     const story = makePendingStory("US-001");
     const prd = makePrd([story]);
 
-    deps.selectNextStories = mock(() => ({ selection: { story, routing: { modelTier: "balanced" } } }));
-    deps.runIteration = mock(async () => ({
+    _unifiedExecutorDeps.runIteration = mock<typeof _unifiedExecutorDeps.runIteration>(async () => ({
       prd,
       storiesCompletedDelta: 1,
       costDelta: 0.01,
@@ -138,8 +129,7 @@ describe("executeUnified — BUG-2: abort during iteration delay", () => {
     const story = makePendingStory("US-002");
     const prd = makePrd([story]);
 
-    deps.selectNextStories = mock(() => ({ selection: { story, routing: { modelTier: "balanced" } } }));
-    deps.runIteration = mock(async () => {
+    _unifiedExecutorDeps.runIteration = mock<typeof _unifiedExecutorDeps.runIteration>(async () => {
       // Trigger the abort synchronously with the iteration completing.
       // cancellableDelay(10, signal) will see the abort and reject
       // before the 10ms timer fires.
@@ -174,8 +164,7 @@ describe("executeUnified — BUG-2: abort during iteration delay", () => {
     const story = makePendingStory("US-003");
     const prd = makePrd([story]);
 
-    deps.selectNextStories = mock(() => ({ selection: { story, routing: { modelTier: "balanced" } } }));
-    deps.runIteration = mock(async () => ({
+    _unifiedExecutorDeps.runIteration = mock<typeof _unifiedExecutorDeps.runIteration>(async () => ({
       prd,
       storiesCompletedDelta: 1,
       costDelta: 0.01,

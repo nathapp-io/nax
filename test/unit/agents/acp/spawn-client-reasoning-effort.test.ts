@@ -69,12 +69,11 @@ function makeSpawnResult(exitCode = 0, stdout = ""): ReturnType<typeof _spawnCli
 let calls: string[][] = [];
 
 /**
- * Sole bridge from bun:test's `mock()` return type to the real
- * `_spawnClientDeps.spawn` type. Every install helper and ad-hoc test mock in
- * this file routes through here so the file needs exactly one such cast.
+ * Route a spawn impl through bun:test's mock(), typed at the dep's full
+ * signature so the Mock is assignable to `_spawnClientDeps.spawn` directly.
  */
-function setSpawn(impl: (cmd: string[]) => ReturnType<typeof _spawnClientDeps.spawn>): void {
-  _spawnClientDeps.spawn = mock(impl) as unknown as typeof _spawnClientDeps.spawn;
+function setSpawn(impl: typeof _spawnClientDeps.spawn): void {
+  _spawnClientDeps.spawn = mock(impl);
 }
 
 /** Install a spawn mock that records argv and returns `stdout`. */

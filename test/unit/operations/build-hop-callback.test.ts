@@ -59,7 +59,7 @@ function makeBaseOptions(prompt = "do the work", config = makeNaxConfig()): Agen
     modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" } as AgentRunOptions["modelDef"],
     timeoutSeconds: 60,
     config,
-  } as unknown as AgentRunOptions;
+  };
 }
 
 function makeCtx(overrides: Partial<BuildHopCallbackContext> = {}): BuildHopCallbackContext {
@@ -562,7 +562,8 @@ describe("buildHopCallback — timeoutRetry wiring (AC6/AC7)", () => {
     const origCaptureGitRef = _buildHopCallbackDeps.captureGitRef;
     const origCaptureWorkingTreeChanges = _buildHopCallbackDeps.captureWorkingTreeChanges;
     const captureGitRefMock = mock(async (_workdir: string) => "deadbeef");
-    const captureWorkingTreeChangesMock = mock(async (_workdir: string, _ref: string) => ["src/foo.ts", "src/bar.ts"]);
+    const captureWorkingTreeChangesMock: ReturnType<typeof mock<(workdir: string, ref: string) => Promise<string[]>>> =
+      mock(async (_workdir: string, _ref: string) => ["src/foo.ts", "src/bar.ts"]);
     _buildHopCallbackDeps.captureGitRef = captureGitRefMock as typeof _buildHopCallbackDeps.captureGitRef;
     _buildHopCallbackDeps.captureWorkingTreeChanges =
       captureWorkingTreeChangesMock as typeof _buildHopCallbackDeps.captureWorkingTreeChanges;
@@ -581,10 +582,7 @@ describe("buildHopCallback — timeoutRetry wiring (AC6/AC7)", () => {
       // Timeout-retry hop diffs the working tree against the captured ref.
       await cb("claude", makeBundle(), { kind: "timeout-retry", attempt: 1 } satisfies HopKind, baseOptions);
       expect(captureWorkingTreeChangesMock).toHaveBeenCalledTimes(1);
-      const diffArgs = (captureWorkingTreeChangesMock as ReturnType<typeof mock>).mock.calls[0] as unknown as [
-        string,
-        string,
-      ];
+      const diffArgs = captureWorkingTreeChangesMock.mock.calls[0];
       expect(diffArgs[1]).toBe("deadbeef");
 
       const callArgs = timeoutRetryMock.mock.calls[0];

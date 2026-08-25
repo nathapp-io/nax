@@ -941,11 +941,11 @@ describe("callOp — run-kind op.recover invocation on retry exhaustion (#993)",
     const agentManager = makeHopInvokingAgentManager();
     const sessionManager = makeSessionManager();
     runtime = makeTestRuntime({ agentManager, sessionManager });
-    const result = (await callOp(
+    const result = await callOp(
       { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
       op,
       { id: "f1" },
-    )) as unknown as { output: string };
+    );
     expect(typeof result).toBe("object");
     expect("output" in result).toBe(true);
   });

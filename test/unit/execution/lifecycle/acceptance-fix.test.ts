@@ -12,7 +12,7 @@ import type { NaxConfig } from "@/config/schema";
 import { _diagnosisDeps, resolveAcceptanceDiagnosis } from "@/execution/lifecycle/acceptance-fix";
 import type { AcceptanceLoopContext } from "@/execution/lifecycle/acceptance-loop";
 import type { AcceptanceDiagnoseInput } from "@/operations/acceptance-diagnose";
-import { makeDiagnoseOutput, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { makeDiagnoseOutput, makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 function makeConfig(): NaxConfig {
   return makeNaxConfig({
@@ -21,27 +21,13 @@ function makeConfig(): NaxConfig {
   });
 }
 
-function makeMockRuntime() {
-  return {
-    packages: {
-      resolve: () => ({ select: () => ({}) }),
-      all: () => [],
-      repo: () => ({ select: () => ({}) }),
-    },
-    agentManager: { getDefault: () => "claude" },
-    configLoader: { current: () => makeConfig() },
-    sessionManager: { nameFor: () => "session", runInSession: mock(async () => ({ output: "" })) },
-    signal: undefined,
-  } as unknown as AcceptanceLoopContext["runtime"];
-}
-
 function makeAcceptanceCtx(withRuntime = false): AcceptanceLoopContext {
   // `withRuntime` is retained for readability at call sites (fast-path tests
   // never dereference `ctx.runtime`), but DispatchContext requires `runtime`
   // (and its `agentManager`/`sessionManager` siblings) unconditionally, so
   // both branches must supply a valid mock — sourced from ONE runtime so
   // `ctx.agentManager === ctx.runtime.agentManager`, as in production.
-  const runtime = makeMockRuntime();
+  const runtime = makeMockRuntime({ config: makeConfig() });
   void withRuntime;
   return {
     config: makeConfig(),

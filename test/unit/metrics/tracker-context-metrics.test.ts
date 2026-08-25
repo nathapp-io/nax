@@ -591,7 +591,7 @@ describe("collectStoryMetrics — US-004 context.providers[].budgetPressure", ()
             chunkCount: 1,
             durationMs: 10,
             tokensProduced: 100,
-            budgetPressure: "not-an-object" as unknown as ProviderBudgetPressure,
+            budgetPressure: JSON.parse('"not-an-object"'),
           },
         ],
         includedChunks: ["static-rules:a:001"],
