@@ -15,7 +15,7 @@ log — each entry records what was true when written and is not edited afterwar
 |:--|--:|--:|:--|
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
-| `as unknown as` | **18** | 18 | **yes — at the floor, see below** |
+| `as unknown as` | **17** | 17 | **no — at the floor, see below** |
 | `asAny` | 1377 | 1377 | yes, then biome `noExplicitAny` retires it |
 | `anyType` | 1860 | 1860 | yes, retires with `asAny` |
 | `nonNullAssert` | 820 | 820 | yes, then biome `noNonNullAssertion` |
@@ -25,20 +25,21 @@ log — each entry records what was true when written and is not edited afterwar
 | `absentValue` | 17 | 17 | yes |
 | `looseCast` | 1878 | 1878 | **no** — guard only, see below |
 
-`as unknown as` went **101 → 18** across six commits (§8.1–§8.4, §8.11); `looseCast`
-fell 1888 → 1878 and `ratchetAllow` 107 → 105 as side effects of removing real casts,
-and no counter rose in any commit. All gates green; `check:all` is 24 checks since
-`check:test-typecheck` was retired.
+`as unknown as` went **101 → 17** across seven commits (§8.1–§8.4, §8.11–§8.12);
+`looseCast` fell 1888 → 1878 and `ratchetAllow` 107 → 105 as side effects of removing
+real casts, and no counter rose in any commit. All gates green; `check:all` is 24
+checks since `check:test-typecheck` was retired.
 
-**This is the floor.** Of the 18: **14 are containment** (`test/helpers/` factories with
-private-state classes, §8.1) and **3 are comment matches** (`spawn.ts:6` carries two,
-`mock-logger.ts:16` one) — 17 together, down from §0's old 18 because the §1
-re-check row (`pipeline-context.ts:55`) turned out to be a fixture literal, not
-containment, and drained. The 18th is **one held escalation** with a written ruling:
-`stage-assembler.test.ts:616` (§8.11) pins the `_unattached` fallback through a seam
-that cannot receive it, and deleting the test is forbidden by §4. The endgame's
-"~17 is the floor" prediction held; **17 is the honest floor** (14 containment + 3
-comments), and 18 is where the counter sits while the escalation is held.
+**This is the floor, and nothing is held.** All 17 are structural: **14 are
+containment** (`test/helpers/` factories with private-state classes, §8.1, plus
+`_cycle-fixtures.ts`'s one cast serving 71 call sites) and **3 are comment matches**
+(`spawn.ts:6` carries two, `mock-logger.ts:16` one). §8.11's held escalation —
+`stage-assembler.test.ts:616` — **drained in §8.12**: the cast was never necessary,
+because `PRD` is structurally assignable to a weak `{ feature?: string }` alias and
+the alias is the same object, so the impossible-state poke needs no cast at all.
+The endgame's "~17 is the floor" prediction held exactly; **17 is the honest floor**
+(14 containment + 3 comments), and the counter now sits on it with no outstanding
+ruling.
 
 `looseCast` is not a target. It exists so the TS2352 population ("convert the
 expression to `unknown` first") cannot escape into unmarked single casts while the
@@ -73,25 +74,27 @@ From `archive/2026-08-22-1514-phase3c-test-debt-drain.md` §6, with steps 1–3 
 
 ---
 
-## 1. Current target — `as unknown as` 18, and the work is done
+## 1. Current target — none. `as unknown as` is at 17 and the drain is closed
 
-The ratchet counts 18 matches: 17 are the floor (14 containment + 3 comment
-matches), 1 is a held escalation. **There is no remaining queue of drainable
-sites** — §8.11 ran the property-poke ruling pass, the one-off pass, the
-spawn-mock pass, the held escalation, and the §0 re-check row, and the
-counter now sits on the floor it predicted.
+The ratchet counts 17 matches and **all 17 are the floor** (14 containment + 3
+comment matches). **There is no remaining queue of drainable sites, and nothing
+is held** — §8.11 ran the property-poke, one-off, spawn-mock and re-check passes,
+and §8.12 drained the single escalation §8.11 held. The counter sits exactly on
+the floor the endgame predicted.
 
 | Cluster | N | Drainable? |
 |:--|--:|:--|
 | containment — `test/helpers/*` + `_cycle-fixtures.ts` | 14 | **no** — §8.1. Do not edit |
 | doc comments (2 lines) | 3 | **no** — prose, not work |
-| held escalation — `stage-assembler.test.ts:616` | 1 | **no** — §8.11 ruling: impossible-state fixture, test deletion forbidden by §4 |
 
-Whoever resumes this should either build the `makeClassStub<C>()` seam
-deliberately (§8.1's 7→1 option) or amend the endgame to say 17, not 0 — a
-0 that cannot be reached should not quietly sit in the plan. The same goes
-for §8.11's held row: it stays until either the `_unattached` claim moves
-out of `assembleForStage` or §4 is amended, whichever comes first.
+The remaining decision is the endgame's, not the drain's: **amend the endgame to
+say 17, not 0.** A 0 that cannot be reached should not quietly sit in the plan.
+The `makeClassStub<C>()` seam (§8.1's 7→1 option) is **declined a second time**,
+and now for a stronger reason than §6's cost rule: a single repo-wide generic
+that turns any object into any `C` is an unrestricted escape hatch importable
+from every test file, which is strictly worse than 7 casts each sealed inside a
+factory whose header states why it is there. It would lower the number without
+doing the work — §4's own definition. The 14 are counted, not targeted.
 
 Regenerate any time:
 
@@ -103,11 +106,11 @@ bun run scripts/check-test-as-unknown-as.ts --list
 
 `archive/2026-08-22-1514-phase3c-test-debt-drain.md` §6.3 says the ratchets end "baselined at
 0". That was written before the containment population was understood, and **17 is the honest
-floor** (14 containment + 3 comment matches) unless a `makeClassStub<C>()` seam is built
-(§8.1 weighs it and declines: 7→1 on a sub-ten-site cluster, which §6 says costs as much to
-verify as to do). §0's earlier "18" included `test/helpers/pipeline-context.ts:55`, which the
-re-check row flagged and §8.11 drained — it was a fixture literal (`} as unknown as PRD`) that
-`makePRD`-shaped literals satisfy directly, not a containment cast against private state.
+floor** (14 containment + 3 comment matches) — see §1 for why the `makeClassStub<C>()` route
+to 10 is declined rather than merely deferred. §0's earlier "18" included
+`test/helpers/pipeline-context.ts:55`, which the re-check row flagged and §8.11 drained (a
+fixture literal `} as unknown as PRD` that `makePRD`-shaped literals satisfy directly), and
+`stage-assembler.test.ts:616`, which §8.12 drained.
 
 ---
 
@@ -762,3 +765,60 @@ Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14156 / 1136 / 3
 coverage OK, 101 files below floor against baseline 103. Casts **46 → 18** (two commits:
 33 after the property-poke cluster, 18 after the one-offs); `ratchetAllow` 106 → 105 and
 `looseCast` 1879 → 1878 as side effects of deleting real casts; no counter rose.
+
+### 8.12 The held escalation drained — 18 → 17, the floor reached clean (2026-08-25)
+
+§1 said the held row "stays until either the `_unattached` claim moves out of
+`assembleForStage` or §4 is amended, whichever comes first." **Neither was needed. The
+ruling was sound but its premise was wrong: the cast itself was never necessary.**
+
+`stage-assembler.test.ts:616` poked `(ctx.prd as unknown as { feature?: string }).feature =
+undefined` to reach the `request.featureId ?? "_unattached"` fallback at
+`stage-assembler.ts:272`. §8.11 read that correctly — `PRD.feature` is required
+(`prd/types.ts:403`), `assembleForStage` maps it unconditionally into `request.featureId`
+(`:215`), so the poke drives an impossible state — and then reasoned about which of §4's two
+forbidden moves to take (delete the test, or weaken `PRD.feature`). It held because both are
+forbidden.
+
+**Both were the wrong question.** The cast was not load-bearing for the impossible state; it
+was load-bearing for *nothing*. `PRD` is structurally assignable to the weak type
+`{ feature?: string }` — the target's property is optional, `string` is assignable to
+`string | undefined`, and excess properties are permitted from a non-literal source — so a
+widened alias needs no assertion:
+
+```ts
+const widened: { feature?: string } = ctx.prd;
+widened.feature = undefined;
+```
+
+The alias is the same object, so the poke still lands; `tsc -p tsconfig.test.json` stays at 0;
+all 30 tests in the file pass and the `_unattached` assertion is unchanged. No test deleted,
+no `src/` type weakened, no counter traded.
+
+**Carry forward: "this cast pins an impossible state" and "this cast is required to pin an
+impossible state" are different claims, and §8.11 proved only the first.** The ruling pass
+asked §1's question ("does the property exist?") and, on getting "no — and it cannot", stopped
+at the forbidden-moves fork instead of asking the follow-up: *does reaching this state need an
+assertion at all?* Widening to a weak alias is the third option (§6's "there is usually a
+third option" in a new costume) and it costs nothing — it is not a cast, not a counter trade,
+and not an escape hatch, because the alias is still fully type-checked against everything it
+does have. **Where a poke narrows a type rather than fabricating one, assignability usually
+already permits it; check the direction before ruling a cast necessary.**
+
+**The `makeClassStub<C>()` seam is declined a second time, on stronger grounds.** §8.1 left it
+open as a design decision deferred on §6's cost rule; §1 now closes it. A repo-wide
+`makeClassStub<C>(obj): C` is an unrestricted object-to-anything escape hatch importable from
+every test file. It would take the counter 17 → 10 while making the system less safe than 7
+casts each sealed inside a factory whose header records why it exists — which is precisely
+§4's definition of lowering the number without doing the work. **Containment is counted, not
+targeted; a seam that generalises containment stops being containment.**
+
+The drain is closed. Against the original start: casts **815 → 17 (−98%)**, test typecheck
+**2009 → 0 (−100%)**. The only open item is the endgame's, not the drain's — item 4
+(`noExplicitAny` / `noNonNullAssertion` for `test/**`), plus amending §6.3's "baselined at 0"
+to say 17.
+
+Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14149 / 1136 / 38, 0 fail).
+Casts **18 → 17**; escape-hatch baseline diff is the timestamp alone — every other counter
+flat (`asAny` 1377, `anyType` 1860, `nonNullAssert` 820, `asNever` 608, `ratchetAllow` 105,
+`tsSuppress` 40, `absentValue` 17, `looseCast` 1878). No counter rose.

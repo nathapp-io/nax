@@ -1,6 +1,6 @@
 {
-  "count": 18,
-  "updatedAt": "2026-08-25T07:28:07.116Z",
+  "count": 17,
+  "updatedAt": "2026-08-25T07:36:15.735Z",
   "byFile": {
     "test/helpers/status-writer.ts": 1,
     "test/helpers/context-orchestrator.ts": 1,
@@ -13,7 +13,6 @@
     "test/helpers/debate-runner.ts": 1,
     "test/helpers/agent-manager-internals.ts": 1,
     "test/helpers/mock-logger.ts": 2,
-    "test/unit/findings/_cycle-fixtures.ts": 1,
-    "test/unit/context/engine/stage-assembler.test.ts": 1
+    "test/unit/findings/_cycle-fixtures.ts": 1
   }
 }

@@ -613,7 +613,11 @@ describe("assembleForStage — provider-weights threading (effectiveness-scoring
     _stageAssemblerDeps.deriveProviderWeights = (() => ({})) as typeof _stageAssemblerDeps.deriveProviderWeights;
 
     const ctx = makeCtx();
-    (ctx.prd as unknown as { feature?: string }).feature = undefined;
+    // `PRD.feature` is required, so reaching the `_unattached` fallback needs a
+    // widened alias rather than a cast: `PRD` is structurally assignable to a
+    // weak `{ feature?: string }`, and the alias is the same object.
+    const widened: { feature?: string } = ctx.prd;
+    widened.feature = undefined;
 
     await assembleForStage(ctx, "execution");
 
