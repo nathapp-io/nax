@@ -7,7 +7,16 @@ were written and are not edited afterwards.** For the live state, read §0 and t
 
 ---
 
-## 0. Current state — measured 2026-08-25 on `main` @ `042346102`
+## 0. Current state — measured 2026-08-25 on `chore/1514-final-nine` @ `6bc936f53`+
+
+**Test typecheck is 0.** The nine survivors §44 ruled undrainable all drained — §47 has the
+per-row account. `as unknown as` 101, `looseCast` 1888 (−21), every other counter flat, all
+25 gates green, full suite green, coverage unchanged against `main`. The one thing left
+behind is a *feature* gap, not test debt: the verifier-pick patch step (§47 tail).
+
+The table below is the state at `main` @ `042346102`, kept as written.
+
+## 0a. State at `main` @ `042346102` (historical)
 
 Every number re-measured on a clean tree, not carried forward from a section below.
 
@@ -2774,3 +2783,132 @@ Two more gates fired on the review fixes themselves — `check:test-mocks` on a 
 adapter literal, and the escape-hatch ratchet on `getSafeLogger()!` (`nonNullAssert` 827 → 828,
 replaced with an explicit precondition throw). That makes **five** gate catches across this
 issue and the batch-5 tail, every one on work that had skipped a step of the loop.
+
+## 47. The last nine — typecheck **9 → 0** (2026-08-25)
+
+`chore/1514-final-nine`, off `main` @ `6bc936f53`. §0 said "there is no mechanical work left
+on this issue" and that the nine "are not a queue". Both were true. All nine still drained,
+and none of the edits was mechanical: three were the decisions §44 named, and the fourth was
+a ruling that turned out to be right about the *seam* and wrong about the *fix*.
+
+| Rows | File | Ruling in §44 | What it actually was |
+|--:|:--|:--|:--|
+| 2 | `context-provider-injection.test.ts` | decision — flips 2 tests | taken; both tests are stronger now |
+| 3 | `runner-stateful.test.ts`, `verifier-pick.test.ts` | decision — `handle` scaffolding | deleted; the gap is now pinned executably |
+| 4 | `non-blocking-fix-wiring.test.ts` | accepted `callOp` tier-3 exception | **drainable — the exception was about `mock()`, not about the slot** |
+
+### The `callOp` tier-3 exception was narrower than it read
+
+`PLAN-1514-callop-seam.md` §4 ruled these four accepted because "`bun:test`'s `Mock<T>`
+collapses to one call signature and can never satisfy a generic-in-return position". That
+sentence is true and it does not make the site undrainable — it is an argument against
+`mock()`, not against the assignment. A plain generic arrow satisfies the slot exactly:
+
+```ts
+_storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
+  makeFixCycleResult<F>({ exitReason: "no-strategy" });
+```
+
+`test/helpers/fix-cycle-result.ts` has documented this recipe in its own header since the
+`dead-fixture-keys` phase — including the one-line example above. The ruling and the helper
+were written past each other. Neither of the two `runFixCycle` stubs in this file asserted
+on calls, so nothing was lost by dropping `mock()`.
+
+Three of the four errors were not the `callOp` cluster at all. They were
+`(_storyOrchestratorDeps as { runNonBlockingFix?: Mock<…> }).runNonBlockingFix = …` — a cast
+of the whole dep bag to an optional-and-`Mock`-typed view of one key. `runNonBlockingFix` is
+a **required** key on the bag, so the cast was both unnecessary and unsatisfiable; direct
+assignment typechecks. The generic `callOp` only appeared in the error text because it is
+printed as part of the source type. **Read which property the conversion error names, not
+which types the message prints.** The `afterEach` had grown a `delete`-if-`undefined` branch
+off the same false premise, and it went with the cast (`looseCast` −21 across the file).
+
+The one real incompatibility was `strictFunctionTypes` on a mock whose second parameter was
+required where the slot's is optional — `_overrides?: Partial<NonBlockingFixDeps>`, one
+character.
+
+`iterations: [{}]` was a batch-5 "impossible fixture value" that had survived to the tail,
+masked by the enclosing cast. Now `makeIteration({ outcome: "unchanged" })` — the truthful
+state for a cycle that exhausted with the finding unfixed.
+
+### `context-provider-injection.test.ts` — the decision, taken
+
+Real `makeStory`/`makePRD` were substituted for the hand-rolled literals (which carried
+`reasoning`/`version`/`stories`/`codebaseSummary` — a PRD shape that predates the current
+type). §44 predicted exactly what happened: `buildStoryContextFullFromCtx` now *succeeds*
+instead of throwing-and-being-caught, and two tests that asserted a pre-set
+`ctx.contextMarkdown` survives the stage went red.
+
+**The stage overwrites it, and that is correct.** `releaseHeavyPipelineContext`
+(`src/execution/iteration-runner.ts:43`) clears `ctx.contextMarkdown` before every iteration,
+so the context stage is its sole writer and a pre-set value is unreachable in production.
+Both tests were asserting a state that cannot occur, and were green only because a malformed
+fixture suppressed the assignment.
+
+Rewritten against the real output: one now pins that the provider section lands *after* the
+PRD-derived context (an ordering assertion, which is what "appended" means here); the other
+asserts against the context the stage actually builds rather than a string handed in by the
+caller. 20 pass either way, `expect()` calls 47 → 52.
+
+### `handle` on `SuccessfulProposal` — deleted, and the gap made executable
+
+§44 framed this as "deleting it guts the contract, adding the field to `src/` to satisfy a
+fixture is what this issue forbids". There was a third option.
+
+Measured first: `handle` appears nowhere in `src/debate/`. The field is a prerequisite of
+the verifier-pick **patch step**, and the patch step does not exist — `verifierPickSelector`
+scores proposals and returns the winner's output; it never calls `runPatchStep` (which itself
+only builds a prompt). Of the ten `makeProposal(…, handle)` call sites, nine passed
+`{} as SessionHandle`, a value with no fields. The tenth passed a real handle and never
+asserted on it: every test in the AC 6 block ran the selector inside `try { … } catch {}`
+with a comment reading "After implementation, should verify …". **Four tests, zero
+assertions, permanently green against absent behaviour.**
+
+- `runner-stateful.test.ts`'s "compile-time check" asserted that `SuccessfulProposal` carries
+  `handle`. It does not. The test stated something false about `src/` and could only be kept
+  by adding a field no producer sets and no consumer reads.
+- The AC 6 block is replaced by **one real test** — with `patch.enabled: true` and overlap
+  below threshold, the selector returns the unpatched winner and never opens a session. It
+  passes today and *fails the day someone wires the patch step*, which forces the AC 6
+  assertions to be written for real. The contract is now pinned by something executable
+  instead of by four inert bodies.
+
+This is the same move as §44's `mechanicalLintFixOp` row: **the third option is usually to
+assert what is true now, rather than to choose between deleting the contract and widening
+`src/` to fit it.**
+
+AC 4 and AC 5 have the same defect (their "skips patch" tests pass trivially because patch
+never runs) and are left alone — out of scope for a typecheck drain, and now documented at
+the site.
+
+### Gate results
+
+`src` tsc **0**. `check:all` **25/25 green**. Full suite green — unit 14137 / integration
+1136 / ui 38, 0 fail. Unit count is −4 exactly: the false compile-time check, plus four
+inert AC 6 tests, less the one real test replacing them; `expect()` calls +2 over the three
+touched files.
+
+Per §45, `bun run test:coverage` was run and not merely the suite, because these edits change
+values a classifier reads (`Iteration.outcome`, `exitReason`, the story/PRD shape):
+**101 files below floor against a baseline of 103** — identical to `main`, no branch effect.
+That slack is the pre-existing one §45 left alone.
+
+Counters: `looseCast` **1909 → 1888** (−21), every other escape hatch flat, `as unknown as`
+flat at 101. No counter was traded (proposal §6).
+
+| | before | after |
+|:--|--:|--:|
+| test typecheck | 9 | **0** |
+| `as unknown as` | 101 | 101 |
+| `looseCast` | 1909 | **1888** |
+
+Against the original #1514 start: casts **815 → 101 (−88%)**, typecheck **2009 → 0 (−100%)**.
+
+Baselines updated after the gates, not before.
+
+### Left behind, deliberately
+
+The verifier-pick patch step (AC 4–7 of `SPEC-enhanced-debate-phase-1.md`) is unimplemented
+and its config surface is live: `selector.patch` parses, and `runPatchStep` is exported from
+`src/debate/selectors/index.ts` with no caller. Worth an issue — it is a feature gap, not
+test debt, and nothing in this drain changed it.
