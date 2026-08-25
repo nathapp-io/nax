@@ -1,14 +1,6 @@
 import type { AgentGetFn } from "../pipeline/types";
 import type { ISessionManager, SessionDescriptor, SessionState } from "../session/types";
 
-interface LegacySessionCloser {
-  closePhysicalSession?: (
-    handle: string,
-    workdir: string,
-    options?: { force?: boolean; signal?: AbortSignal },
-  ) => Promise<void>;
-}
-
 async function closePhysicalSession(
   descriptor: SessionDescriptor,
   agentGetFn?: AgentGetFn,
@@ -24,7 +16,7 @@ async function closePhysicalSession(
     // AC-83: pass force=true for errored sessions so the adapter can hard-terminate
     const options: { force?: boolean; signal?: AbortSignal } | undefined =
       force || signal ? { ...(force && { force: true }), ...(signal && { signal }) } : undefined;
-    await (adapter as LegacySessionCloser).closePhysicalSession?.(descriptor.handle, descriptor.workdir, options);
+    await adapter.closePhysicalSession?.(descriptor.handle, descriptor.workdir, options);
   } catch {
     // Best-effort cleanup: session close errors must not block run teardown.
   }
