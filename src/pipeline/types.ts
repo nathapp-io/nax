@@ -9,7 +9,6 @@ import type { NaxConfig } from "@/config/schema";
 import type { ConstitutionResult } from "@/constitution/types";
 import type { BuiltContext } from "@/context/types";
 import type { Finding } from "@/findings";
-import type { Iteration } from "@/findings";
 import type { HooksConfig } from "@/hooks/types";
 import type { InteractionChain } from "@/interaction/chain";
 import type { StoryMetrics } from "@/metrics/types";
@@ -241,8 +240,6 @@ export interface PipelineContext extends DispatchContext {
   storyStartTime?: string;
   /** Tracks how many times the rectify stage has run this pipeline (for event attempt numbers). */
   rectifyAttempt?: number;
-  /** ADR-022 Phase 7: prior fix-cycle iterations carried across pipeline retries. */
-  autofixPriorIterations?: Iteration[];
   /**
    * Prior semantic review iterations carried into this pipeline pass — populated by
    * escalation/rectification orchestrators on re-run so the reviewer LLM can see

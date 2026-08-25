@@ -50,7 +50,7 @@
     "src/execution/crash-signals.ts": 0.5639,
     "src/execution/dry-run.ts": 0.06,
     "src/execution/escalation/tier-outcome.ts": 0.5327,
-    "src/execution/iteration-runner.ts": 0.1232,
+    "src/execution/iteration-runner.ts": 0.1201,
     "src/execution/lifecycle/headless-formatter.ts": 0.7193,
     "src/execution/lifecycle/run-initialization.ts": 0.7481,
     "src/execution/lifecycle/run-setup.ts": 0.4852,

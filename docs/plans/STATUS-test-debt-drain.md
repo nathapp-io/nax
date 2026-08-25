@@ -499,11 +499,10 @@ zero-writer fields; it cannot find wrong-writer ones. Those needed a hand pass o
 in the 1–2-writer band, checking whether the writer targets *this* type. **A field-name grep is a
 lower bound on this class of bug, never a clean bill of health.**
 
-Still open, deliberately: `ctx.autofixPriorIterations` is declared, never assigned a real value
-(only `= undefined` in `releaseHeavyPipelineContext`), and never read — dead rather than wrong,
-so it is left for a cleanup pass. `verifyPassed` and `semanticReviewResult` are written through
-the same `(ctx as unknown as Record<string, unknown>)` cast as `rectificationIterationCount` was
-and are worth the same check.
+Still open at the time of writing: `ctx.autofixPriorIterations` (closed in §8.8), and
+`verifyPassed` / `semanticReviewResult`, written through the same
+`(ctx as unknown as Record<string, unknown>)` cast as `rectificationIterationCount` was
+(closed in §8.7).
 
 Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14138 / 1136 / 38, 0 fail),
 coverage 101 files below floor against baseline 103. `asAny` 1385 → 1383 and `anyType` 1868 →
@@ -556,3 +555,41 @@ numbers.
 Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14133 / 1136 / 38, 0 fail),
 coverage OK, 101 files below floor against baseline 103. `asAny` 1383 → 1377 and `anyType`
 1866 → 1860 from the four deleted `(ctx as any)` assertions; no counter rose.
+
+### 8.8 `autofixPriorIterations` — superseded, a third diagnosis (2026-08-25)
+
+The last field flagged in §8.6, and it lands on **neither** of the previous two answers. Three
+fields with one appearance have now produced three different correct actions:
+
+| Field | Diagnosis | Action |
+|:--|:--|:--|
+| `rectifyAttempt` | miswired — real reader, starved | wire the writer (§8.6) |
+| `verifyPassed`, `semanticReviewResult` | dead — no reader ever existed | delete (§8.7) |
+| `autofixPriorIterations` | **superseded** — the feature shipped in another shape | delete |
+
+`docs/specs/2026-05-02-adr-022-implementation-plan.md:909,922` shows the planned wiring
+(`ctx.autofixPriorIterations = result.iterations` and `iterations: ctx.autofixPriorIterations ?? []`).
+Neither line was ever implemented. ADR-022's carry-forward shipped instead as the run-scoped
+`runtime.adversarialIterations` / `runtime.semanticIterations` maps, read and written at
+`story-orchestrator/run-phase.ts:173-222` — the same run-scoped-map shape §8.5 and §8.6 reached
+for independently, and for the same reason: `PipelineContext` is rebuilt every attempt.
+
+So this is not a missing feature. The field is the residue of a design that shipped differently,
+and its only `src/` mention besides the declaration was `ctx.autofixPriorIterations = undefined`
+in `releaseHeavyPipelineContext` — a memory-release of something never populated. Deleting it
+also retired a now-unused `Iteration` import in `pipeline/types.ts`.
+
+**Carry forward: check whether the feature shipped elsewhere before calling a field dead.**
+"No reader" and "no writer" are both satisfied by a superseded field, so neither test
+distinguishes it from genuine dead code — but the actions differ in what you should look for
+first. The plan doc named the intended wiring, and grepping the *shipped* mechanism from it
+(`adversarialIterations`) settled in one step what field-name greps could not.
+
+**The coverage ratchet fired again, the same way.** `iteration-runner.ts` 12.32% → 12.01%.
+Measured: `LF` 284 → 283, `LH` 35 → 34, both down 1, **uncovered 249 → 249, unchanged** — the
+one deleted line was covered. Baseline lowered for that file alone. This is now twice in three
+commits: **deleting covered dead code always trips a per-file percentage ratchet, and the
+absolute uncovered count is the number that decides whether it is real.**
+
+Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14133 / 1136 / 38, 0 fail),
+coverage OK, 101 files below floor against baseline 103. No escape-hatch counter moved.

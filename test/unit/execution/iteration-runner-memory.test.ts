@@ -1,14 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { releaseHeavyPipelineContext } from "@/execution";
-import {
-  makeAgentResult,
-  makeContextBundle,
-  makeFinding,
-  makeIteration,
-  makePRD,
-  makeStory,
-  makeTestContext,
-} from "@test/helpers";
+import { makeAgentResult, makeContextBundle, makeFinding, makePRD, makeStory, makeTestContext } from "@test/helpers";
 
 describe("releaseHeavyPipelineContext", () => {
   test("drops per-story payloads without clearing durable execution state", () => {
@@ -25,7 +17,6 @@ describe("releaseHeavyPipelineContext", () => {
       contextBundle: makeContextBundle({ pushMarkdown: largeText }),
       constitution: { content: largeText, tokens: 0, truncated: false },
       acceptanceFailures: { failedACs: [], findings: [], testOutput: largeText },
-      autofixPriorIterations: [makeIteration({ findingsBefore: [makeFinding({ message: largeText })] })],
       reviewFindings: [makeFinding({ message: largeText })],
       selfVerification: { lint: "pass", typecheck: "pass", preExistingFailures: [], rawMarker: largeText },
       tddIsolations: { implementer: { passed: true, violations: [] } },
@@ -43,7 +34,6 @@ describe("releaseHeavyPipelineContext", () => {
     expect(ctx.contextBundle).toBeUndefined();
     expect(ctx.constitution).toBeUndefined();
     expect(ctx.acceptanceFailures).toBeUndefined();
-    expect(ctx.autofixPriorIterations).toBeUndefined();
     expect(ctx.reviewFindings).toBeUndefined();
     expect(ctx.selfVerification).toBeUndefined();
     expect(ctx.tddIsolations).toBeUndefined();
