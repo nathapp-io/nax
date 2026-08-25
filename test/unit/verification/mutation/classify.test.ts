@@ -118,8 +118,11 @@ describe("classifyMutant — unhandled status", () => {
     // reaching it was a mutation-check fixture carrying `status: "FAILURE"`,
     // a value that was never a member of the union. Fixing that fixture left
     // this branch uncovered, which is how the gap surfaced.
-    const rogue = makeResult("SUCCESS");
-    (rogue as { status: string }).status = "FAILURE";
+    //
+    // Object.assign rather than a cast: the widened `status` comes from the
+    // source literal's inferred type, so the out-of-union value is expressible
+    // without an `as` (see .nax/rules/test-ratchets.md).
+    const rogue = Object.assign(makeResult("SUCCESS"), { status: "FAILURE" });
 
     expect(() => classifyMutant(rogue)).toThrow(NaxError);
 
@@ -128,8 +131,11 @@ describe("classifyMutant — unhandled status", () => {
       throw new Error("expected classifyMutant to throw");
     } catch (err) {
       expect(err).toBeInstanceOf(NaxError);
-      expect((err as NaxError).code).toBe("MUTATION_UNHANDLED_STATUS");
-      expect((err as NaxError).message).toContain("FAILURE");
+      if (err instanceof NaxError) {
+        expect(err.code).toBe("MUTATION_UNHANDLED_STATUS");
+        expect(err.message).toContain("FAILURE");
+        expect(err.context?.stage).toBe("mutation-classify");
+      }
     }
   });
 });
