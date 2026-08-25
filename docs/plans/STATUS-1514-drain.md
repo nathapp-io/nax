@@ -14,18 +14,18 @@ Every number re-measured on a clean tree, not carried forward from a section bel
 | | value | baseline |
 |:--|--:|--:|
 | `tsc --noEmit` (src) | **0** | — |
-| test typecheck | **11** | 11 |
+| test typecheck | **9** | 9 |
 | `as unknown as` casts | **101** | 101 |
 | `asAny` | 1385 | 1385 |
 | `tsSuppress` | 40 | 40 |
 | `ratchetAllow` | 106 | 106 |
 | `absentValue` | 17 | 17 |
-| `anyType` | 1872 | 1872 |
-| `looseCast` | 1910 | 1910 |
+| `anyType` | 1868 | 1868 |
+| `looseCast` | 1909 | 1909 |
 | `asNever` | 608 | 608 |
 | `nonNullAssert` | 827 | 827 |
 
-Against the original #1514 start: casts **815 → 101 (−88%)**, typecheck **2009 → 11 (−99.5%)**.
+Against the original #1514 start: casts **815 → 101 (−88%)**, typecheck **2009 → 9 (−99.6%)**.
 
 All 25 gates green, full suite green (14139 unit / 1174 integration / 38 ui, 0 fail), every
 counter sitting **at** its baseline — no headroom left in the ratchets. (The slack has now
@@ -41,9 +41,10 @@ fixed there: the fix for each is "make `AgentAdapter` describe the shipped adapt
 **Nothing is parked locally and no #1514 branch is open.** The next move on this issue is #1702
 or one of the four decisions in §44 — not another drain round.
 
-The residue is **11 errors across 6 files**, and they are not a queue. §44 has the per-row
-ruling: 4 are an accepted `callOp` tier-3 exception, 4 need a decision that changes what a test
-asserts, and 3 are src contradictions that want issues, not fixture edits.
+The residue is **9 errors across 4 files**, and they are not a queue. §44 has the per-row
+ruling; §46 records the two rows #1702 drained. What is left: 4 are an accepted `callOp` tier-3
+exception and 4+1 need a decision that changes what a test asserts. **There is no mechanical
+work left on this issue.**
 
 
 ## ✅ The dead-fixture-keys handoff is COMPLETE
@@ -93,7 +94,7 @@ unmeasured. Details and the coverage gate in §34.
 | tail batch 4 — fixture-shape family | ✅ merged — 245 → 219 | #1701 |
 | **tail batch 5 — ten groups** | ✅ merged — 219 → 21 (§43) | #1703 |
 | **the 21 survivors, re-ruled** | ✅ merged — 10 drained, 21 → 11 (§44) | #1703 |
-| `AgentAdapter` drift (2 of the last 11) | 🔶 **filed, open** — issue #1702 | — |
+| `AgentAdapter` drift (2 of the last 11) | ✅ **fixed — 11 → 9** (§46) | #1702 |
 
 **Branches:** all merged through #1703; nothing is parked locally.
 - `chore/1514-dead-fixture-keys` — merged as #1686 (`e915b47e1`); branch gone.
@@ -2693,3 +2694,58 @@ Both casts were avoidable outright:
   for free.
 
 `looseCast` back to 1910, every counter at baseline, CI green, PR merged as `042346102`.
+
+## 46. #1702 — the `AgentAdapter` drift, fixed (11 → 9, 2026-08-25)
+
+The two rows §44 filed rather than patched. Both were the same defect — `AgentAdapter` was
+never re-derived when the CLI adapter was removed — and neither was a fixture edit.
+
+- **`validateAgent` required `run`/`plan`/`decompose`.** The interface declares none of them,
+  so the check was unsatisfiable: a plugin agent implementing `AgentAdapter` exactly was
+  rejected at load with `agent.run must be a function`. Now requires what the manager actually
+  calls (`complete`, `openSession`, `sendTurn`, `closeSession`).
+- **`closePhysicalSession` was undeclared** and reached through a `LegacySessionCloser` cast at
+  run teardown. Both close methods are real and distinct — `closeSession` closes an open
+  in-process session, `closePhysicalSession` reconnects to close one this process no longer
+  holds a handle for — so the fix declares the second (optional) rather than replacing the
+  first, and deletes the cast.
+
+### A third instance was hiding the other two
+
+`makeAgentAdapter()` — the canonical adapter mock, ~30 consumers — carried all three dead keys
+and compiled **only** because of a trailing `as AgentAdapter`. With the interface fixed the
+keys go and the cast goes with them (`looseCast` −1, `anyType` −4).
+
+That is the shape worth remembering: **a cast on a shared test helper can mask the same src
+defect for every consumer at once.** The typecheck ratchet counted 11 errors and none of them
+was this file, because the cast made it compile. Two of the 11 were downstream symptoms of a
+defect the ratchet could not see at all.
+
+### The test had drifted in the same direction as the code
+
+The old `accepts plugin with agent adapter` test passed throughout, because its fixture was
+CLI-shaped exactly like the check it exercised. A test and its subject drifting together is
+invisible to every gate. The replacement is pinned against `makeAgentAdapter()` and typed
+`AgentAdapter`, so the two cannot drift apart again without failing.
+
+### Three gates fired, and each was right
+
+Running the full loop (§45's lesson) rather than just the suite:
+
+- **`check:file-sizes`** — `types.ts` sat at 598 against a 600 hard limit, so the one-method
+  declaration could not land. Forced a split of the session-protocol types into
+  `src/agents/session-types.ts`, re-exported so all 22 import sites are untouched and the
+  dependency runs one way (no new cycle). Trimming the doc comment to fit would have been the
+  wrong answer; the file was over-full.
+- **`check:alias-internals`** — flagged `@/agents/types` appearing *inside a doc comment* in
+  the new file. The checker does not parse, it matches; reworded.
+- **`check-coverage`** — `src/plugins/validator.ts` dropped 26.60% → 26.42%. The cause is
+  structural and worth knowing: **the coverage gate measures the unit phase only.** All the
+  validator tests lived in `test/integration/`, so no test I added there could move the number,
+  and every line added to the src file lowered it. Moving them to
+  `test/unit/plugins/validator.test.ts` — where the placement rules already put them — fixed
+  the gate for the right reason: the code is now tested in the phase that measures it.
+
+One trap on the way: the unit file imports `it`, not `test`, so the moved block threw
+`ReferenceError: test is not defined` **between** tests and reported `9 pass, 0 fail, 1 error`.
+A zero-fail line is not a green run — read the error count too.
