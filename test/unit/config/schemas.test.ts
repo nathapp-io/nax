@@ -346,7 +346,7 @@ describe("DebateStageConfigSchema — mode field (US-001-B)", () => {
 
   function getStages(): DebateStages {
     const parsed = NaxConfigSchema.parse({});
-    return (parsed as unknown as { debate: { stages: DebateStages } }).debate.stages;
+    return parsed.debate.stages;
   }
 
   test.each(["plan", "review", "acceptance", "rectification", "escalation"] as const)(
@@ -362,7 +362,7 @@ describe("DebateStageConfigSchema — mode field (US-001-B)", () => {
     });
     expect(result.success).toBe(true);
     if (!result.success) return;
-    const stages = (result.data as unknown as { debate: { stages: DebateStages } }).debate.stages;
+    const stages = result.data.debate.stages;
     expect(stages.plan.mode).toBe("hybrid");
   });
 

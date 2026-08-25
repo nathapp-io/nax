@@ -296,7 +296,9 @@ describe("config/profile", () => {
     });
 
     test("ignores non-string array entries", () => {
-      expect(parseProfileList(["a", 42 as unknown as string, "b"])).toEqual(["a", "b"]);
+      // Round-tripped through JSON, as an untyped caller (config file) would
+      // supply it — parseProfileList guards on typeof despite the string[] type.
+      expect(parseProfileList(JSON.parse('["a", 42, "b"]'))).toEqual(["a", "b"]);
     });
   });
 

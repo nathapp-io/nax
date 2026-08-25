@@ -21,6 +21,14 @@
           "performance": { "noDelete": "off" }
         }
       }
+    },
+    {
+      "include": ["test/helpers/*-internals.ts"],
+      "linter": {
+        "rules": {
+          "complexity": { "useLiteralKeys": "off" }
+        }
+      }
     }
   ]
 }

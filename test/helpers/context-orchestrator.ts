@@ -10,7 +10,7 @@
  * intersect, and keep the one cast here.
  */
 import { mock } from "bun:test";
-import type { ContextOrchestrator } from "@/context/engine/orchestrator";
+import { ContextOrchestrator } from "@/context/engine/orchestrator";
 import { makeContextBundle } from "./context-bundle";
 
 export type MockContextOrchestrator = ContextOrchestrator & {
@@ -38,10 +38,12 @@ export type MockContextOrchestrator = ContextOrchestrator & {
 export function makeContextOrchestrator(
   overrides: Partial<Record<keyof ContextOrchestrator, unknown>> = {},
 ): MockContextOrchestrator {
-  const orchestrator = {
-    assemble: mock(async () => makeContextBundle()),
-    rebuildForAgent: mock(() => makeContextBundle()),
-    ...overrides,
-  };
-  return orchestrator as unknown as MockContextOrchestrator;
+  return Object.assign(
+    new ContextOrchestrator([]),
+    {
+      assemble: mock(async () => makeContextBundle()),
+      rebuildForAgent: mock(() => makeContextBundle()),
+    },
+    overrides,
+  );
 }

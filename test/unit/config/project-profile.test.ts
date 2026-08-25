@@ -31,8 +31,8 @@ const SUPPORTED_LANGUAGES: ProjectProfile["language"][] = [
 
 /** Base config without project field — must be schema-valid */
 function baseConfig(): object {
-  // Use DEFAULT_CONFIG cast to plain object so we can add unknown fields
-  return { ...DEFAULT_CONFIG } as unknown as object;
+  // Spread of DEFAULT_CONFIG; spread keeps it a plain object the schema accepts
+  return { ...DEFAULT_CONFIG };
 }
 
 // ── AC-1: ProjectProfile shape ────────────────────────────────────────────────

@@ -13,6 +13,7 @@ import {
   agentManagerWithFixedLLMResponse,
   captureAuditDecisions,
   makeMockRuntime,
+  makeSpawn,
   mockDiffUtilsDeps,
   withTempDir,
 } from "@test/helpers";
@@ -371,22 +372,10 @@ describe("adversarial structural counterfactual telemetry (#986)", () => {
     const origSpawn = _diffUtilsDeps.spawn;
     const origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
     _diffUtilsDeps.isGitRefValid = (async () => true) as typeof _diffUtilsDeps.isGitRefValid;
-    _diffUtilsDeps.spawn = ((opts: { cmd: string[] }) => {
-      const isFileList = (opts.cmd ?? []).includes("--name-only");
-      const stdout = isFileList ? "" : "1 file changed";
-      const exitCode = isFileList ? 128 : 0;
-      return {
-        exited: Promise.resolve(exitCode),
-        stdout: new ReadableStream({
-          start: (c) => {
-            c.enqueue(new TextEncoder().encode(stdout));
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({ start: (c) => c.close() }),
-        kill: () => {},
-      } as unknown as ReturnType<typeof _diffUtilsDeps.spawn>;
-    }) as typeof _diffUtilsDeps.spawn;
+    _diffUtilsDeps.spawn = makeSpawn(({ cmd }) => {
+      const isFileList = cmd.includes("--name-only");
+      return { stdout: isFileList ? "" : "1 file changed", exitCode: isFileList ? 128 : 0 };
+    }).spawn;
     teardown = () => {
       _diffUtilsDeps.spawn = origSpawn;
       _diffUtilsDeps.isGitRefValid = origIsGitRefValid;

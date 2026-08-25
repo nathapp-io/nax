@@ -183,7 +183,7 @@ describe("loadPluginProviders — export shape variants", () => {
     expect((await loadPluginProviders([makeConfig("pkg")], "/repo"))[0].id).toBe("named");
 
     // CommonJS-style (module-as-provider)
-    _pluginLoaderDeps.dynamicImport = async () => makeProvider("cjs-export") as unknown as Record<string, unknown>;
+    _pluginLoaderDeps.dynamicImport = async () => makeProvider("cjs-export");
     expect((await loadPluginProviders([makeConfig("pkg")], "/repo"))[0].id).toBe("cjs-export");
   });
 });

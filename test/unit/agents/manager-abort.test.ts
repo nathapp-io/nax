@@ -91,15 +91,15 @@ describe("AgentManager.runWithFallback — abort signal (#585)", () => {
   });
 
   test("abort during backoff returns without further retries", async () => {
+    const controller = new AbortController();
     // Simulate a sleep that "wakes up" to find the signal aborted.
     _agentManagerDeps.sleep = async (_ms, signal) => {
       if (signal && !signal.aborted) {
-        // pretend the signal aborted while we were sleeping
-        (signal as unknown as { _testAbort?: () => void })._testAbort?.();
+        // abort the signal while the backoff sleep is in flight
+        controller.abort();
       }
     };
 
-    const controller = new AbortController();
     // Abort after a microtask so the first hop runs, then the signal is aborted
     // before the backoff loop checks again.
     queueMicrotask(() => controller.abort());

@@ -403,7 +403,7 @@ describe("assembleForStage — ADR-009 / .naxignore threading", () => {
       mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
 
     const ctx = makeCtx();
-    (ctx.config as unknown as { context: { v2: Record<string, unknown> } }).context.v2.providerTimeoutMs = 9000;
+    ctx.config.context.v2.providerTimeoutMs = 9000;
     await assembleForStage(ctx, "execution");
 
     expect(mock.ref.captured?.providerTimeoutMs).toBe(9000);
@@ -415,7 +415,7 @@ describe("assembleForStage — ADR-009 / .naxignore threading", () => {
       mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
 
     const ctx = makeCtx({ stages: { execution: { providerTimeoutMs: 2000 } } });
-    (ctx.config as unknown as { context: { v2: Record<string, unknown> } }).context.v2.providerTimeoutMs = 9000;
+    ctx.config.context.v2.providerTimeoutMs = 9000;
     await assembleForStage(ctx, "execution");
 
     expect(mock.ref.captured?.providerTimeoutMs).toBe(2000);
@@ -613,7 +613,11 @@ describe("assembleForStage — provider-weights threading (effectiveness-scoring
     _stageAssemblerDeps.deriveProviderWeights = (() => ({})) as typeof _stageAssemblerDeps.deriveProviderWeights;
 
     const ctx = makeCtx();
-    (ctx.prd as unknown as { feature?: string }).feature = undefined;
+    // `PRD.feature` is required, so reaching the `_unattached` fallback needs a
+    // widened alias rather than a cast: `PRD` is structurally assignable to a
+    // weak `{ feature?: string }`, and the alias is the same object.
+    const widened: { feature?: string } = ctx.prd;
+    widened.feature = undefined;
 
     await assembleForStage(ctx, "execution");
 

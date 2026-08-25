@@ -9,39 +9,49 @@ log — each entry records what was true when written and is not edited afterwar
 
 ---
 
-## 0. Current state — measured 2026-08-25 on `fix/1707-agent-fallback-metrics-wiring`
+## 0. Current state — measured 2026-08-25 on `fix/drain-as-unknown-as-final`
 
 | Counter | Value | Baseline | Drain target? |
 |:--|--:|--:|:--|
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
-| `as unknown as` | **46** | 46 | **yes — current target, ~17 is the floor** |
+| `as unknown as` | **0** | 0 | **done — drained to zero, see below** |
 | `asAny` | 1377 | 1377 | yes, then biome `noExplicitAny` retires it |
 | `anyType` | 1860 | 1860 | yes, retires with `asAny` |
 | `nonNullAssert` | 820 | 820 | yes, then biome `noNonNullAssertion` |
 | `asNever` | 608 | 608 | yes |
-| `ratchetAllow` | 106 | 106 | yes |
+| `ratchetAllow` | 105 | 105 | yes |
 | `tsSuppress` | 40 | 40 | yes |
 | `absentValue` | 17 | 17 | yes |
-| `looseCast` | 1879 | 1879 | **no** — guard only, see below |
+| `looseCast` | 1875 | 1875 | **no** — guard only, see below |
 
-`as unknown as` went **101 → 47** across four commits on this branch (§8.1–§8.4); `looseCast`
-fell 1888 → 1879 as a side effect of removing 36 single casts and adding none. Every other
-counter is untouched, and no counter was traded in any commit. All gates green; `check:all` is
-24 checks since `check:test-typecheck` was retired.
+`as unknown as` went **101 → 0** across nine commits (§8.1–§8.4, §8.11–§8.13); `looseCast`
+fell 1888 → 1875 and `ratchetAllow` 107 → 105 as side effects of removing real casts, and
+no counter rose in any commit. All gates green; `check:all` is 24 checks since
+`check:test-typecheck` was retired.
 
-**What is left is not a queue.** Of the 46: **18 are the floor** (15 `test/helpers/` containment
-casts, §8.1, plus 3 comment matches on 2 lines — `spawn.ts:6` carries two on one line, which is
-why a per-line count reads 45), **1 is a held escalation** (the dead `selectNextStories`
-seam, §8.4 — nax#1707 is resolved, §8.5), and the remaining **27 are property-poke sites and
-one-offs that each need a ruling rather than a recipe**. Delegation has
-stopped paying here — §8.4's batch drained 10 sites and verifying it cost about as much, which
-is §6's "verifying a cluster costs as much as doing it" arriving in practice. **The next move is
-a ruling pass on the ~14 property-poke sites, not another delegated batch.**
+**The ratchet is at zero and the drain is closed.** §8.1's "the seven `Mock*` helper casts
+are containment, not debt" and §0's "17 is the honest floor" were both **wrong**, and §8.13
+records why: they assumed the only alternatives to a cast were a structural stub or a src
+change. Three mechanisms the earlier passes never tried removed all 17 —
 
-`looseCast` is not a target. It exists so the TS2352 population ("convert the expression to
-`unknown` first") cannot escape into unmarked single casts while the cast ratchet sits at its
-floor. Driving it down is not progress; keeping it flat while `as unknown as` falls is.
+| Mechanism | Retired | Why it was missed |
+|:--|--:|:--|
+| `Object.assign(new RealClass(…), mocks)` | 7 | `Object.assign` returns `T & U`, which is exactly what `MockX = RealClass & {…}` already declared |
+| element access after `instanceof` | 3 | TS's `private` is compile-time only; `p["_x"]` is the language's sanctioned way through it |
+| overload + loose implementation signature | 4 | callers keep the strict signature; only the unexported implementation works in `unknown` |
+| comment rewrite (2 lines, 3 matches) | 3 | the prose described a design that no longer exists |
+
+None traded a counter, and two were **strict safety improvements**: the real constructors
+now type-check their own arguments (which immediately caught an invalid `defaultFallback`
+value a cast had been hiding), and the `instanceof` guard makes a wrong argument fail loudly
+instead of reading `undefined` off a stub.
+
+`looseCast` is not a target. It exists so the TS2352 population ("convert the
+expression to `unknown` first") cannot escape into unmarked single casts. That job
+matters **more** now, not less: with `as unknown as` baselined at 0, a single `as X`
+is the cheapest way to reintroduce the debt under a name the closed ratchet does not
+see. Driving it down is not progress; keeping it from rising is.
 
 ### What is already done
 
@@ -53,7 +63,7 @@ bun x tsc --noEmit && bun x tsc --noEmit -p tsconfig.contracts.json && bun x tsc
 
 `check:test-typecheck`, its baseline and its parser are deleted — a counting ratchet at zero
 reports a number where `tsc` reports a file and a line. Issue #1514 is closed. Against the
-original start: test typecheck **2009 → 0 (−100%)**, casts **815 → 47 (−94%)**.
+original start: test typecheck **2009 → 0 (−100%)**, casts **815 → 0 (−100%)**.
 
 ### The endgame, unchanged
 
@@ -63,7 +73,10 @@ From `archive/2026-08-22-1514-phase3c-test-debt-drain.md` §6, with steps 1–3 
 2. ~~delete `check:test-typecheck` and its baseline~~ done
 3. ~~keep the two cast ratchets as the permanent invariant~~ done — **and they are now more
    load-bearing, not less: with typecheck a hard gate at zero, a cast is the only remaining
-   way to buy a green build.** They are what stops that trade.
+   way to buy a green build.** They are what stops that trade. Since §8.13 the
+   `as unknown as` ratchet is baselined at **0**, so it no longer tracks a drain — it is a
+   pure invariant, and any nonzero reading is a regression to reject, not a number to work
+   down.
 4. **not done** — drop the `noExplicitAny: off` override for `test/**` in `biome.json`, which
    requires `asAny`/`anyType` at 0 and retires both counters properly. Same shape for
    `noNonNullAssertion` and `nonNullAssert`.
@@ -71,62 +84,42 @@ From `archive/2026-08-22-1514-phase3c-test-debt-drain.md` §6, with steps 1–3 
 
 ---
 
-## 1. Current target — `as unknown as` 46 → ~18
+## 1. Current target — none. `as unknown as` is 0 and this ratchet is closed
 
-The ratchet counts 46 matches across 45 lines: `test/helpers/spawn.ts:6` carries two on one line.
+The ratchet counts **0**. There is no queue, no floor, and nothing held. §8.13 drained the
+last 17 — the population §8.1 ruled "containment, not debt" and §1 twice declined to touch.
 
-| Cluster | N | Drainable? |
-|:--|--:|:--|
-| containment — `test/helpers/*` + `_cycle-fixtures.ts` | 15 | **no** — §8.1. Do not edit |
-| property-poke — `(x as unknown as { k: T }).k` | 13 | needs a ruling each — **next up** |
-| one-off | 12 | needs a ruling each; includes the one remaining held escalation |
-| spawn-mock | 3 | may need a typed helper built first |
-| doc comments (2 lines) | 3 | **no** — prose, not work |
+**The ruling that was wrong, and why it survived three passes.** §8.1 wrote: "Every route out
+trades a counter: `Object.create(P) as C` is `looseCast` +1, `new C(absentValue<W>())` is
+`absentValue` +1. Both are refused by the closed-system rule." Both premises were true. The
+conclusion did not follow, because the enumeration was incomplete — it never asked whether
+the real class could simply be **constructed**. Five of the six could be built with no
+arguments at all or from a literal (`new ContextOrchestrator([])`, `new PluginRegistry([])`),
+and the sixth had a ready-made helper (`makeMockCallContext`). The cast was not protecting
+anything; it was standing in for a constructor call nobody tried.
+
+The same held for the other two shapes. Reaching a `private` member does not need a cast —
+TypeScript's `private` is compile-time only and element access (`p["_x"]`) is its documented
+route through, which is *more* checked than a cast, not less. And a factory whose public type
+no concrete value can satisfy (`typeof Bun.spawn`, generic `CallOpFn`) does not need one
+either — an overload pair keeps the strict signature for callers while the implementation
+signature works in `unknown`.
+
+**Carry forward: "every route out trades a counter" is a claim about the routes you
+enumerated.** It reads like a proof and is only a survey. §8.1's survey, §1's two hand-offs
+and §8.11's ruling pass all inherited the same three-option frame (structural stub / cast /
+src change) and none re-opened it. The question that broke it was not clever — it was "what
+does this class's constructor actually require?", asked once.
+
+The endgame item that remains is item 4 (`noExplicitAny` / `noNonNullAssertion` for `test/**`),
+which needs `asAny`/`anyType` and `nonNullAssert` at 0. §6.3's "baselined at 0" is now
+literally true for the cast ratchet and no longer needs the amendment §1 previously asked for.
 
 Regenerate any time:
 
 ```bash
 bun run scripts/check-test-as-unknown-as.ts --list
 ```
-
-### The floor, and why it is not 0
-
-`archive/2026-08-22-1514-phase3c-test-debt-drain.md` §6.3 says the ratchets end "baselined at
-0". That was written before the containment population was understood, and **~18 is the honest
-floor** unless a `makeClassStub<C>()` seam is built (§8.1 weighs it and declines: 7→1 on a
-sub-ten-site cluster, which §6 says costs as much to verify as to do). Whoever closes this out
-should either build that seam deliberately or amend the endgame to say 18, not quietly leave a
-0 that cannot be reached.
-
-One row to re-check rather than assume: **`test/helpers/pipeline-context.ts:55` is
-`} as unknown as PRD`** — a fixture literal that happens to live in a helper, not a containment
-cast against a class with private state. `makePRD` exists. It was swept into the out-of-scope
-list by directory, and directory is the wrong test. Verify before ruling it in or out.
-
-### Next — the property-poke ruling pass (13 sites, owner work)
-
-`(x as unknown as { k: T }).k = v` — reaching a property the declared type does not carry. Each
-needs the same question answered, and the answer differs per site: **should that property exist
-on the type?**
-
-- If yes, it is `src/` interface drift — file it, do not edit the fixture. Two rows
-  (`phase4-registry-cleanup.test.ts:50,53`, reaching `_registry`) are exactly the shape that
-  produced #1702, and the nax#1707 investigation shows how fast this pays off.
-- If no, the test is reaching through a seam it should not, and the fix is at the test.
-- If the property is real but private, that is a third case — a deliberate test-only reach, and
-  the honest outcome may be to leave it.
-
-**Do not delegate this.** §8.4 is the evidence: a delegated batch drained 10 sites and verifying
-it cost about as much. Below roughly ten sites, or where every site is a judgement call, the
-review pass finishes the work anyway.
-
-### Held, pending a ruling elsewhere
-
-| Site | Blocked on |
-|:--|:--|
-| `unified-executor-abort.test.ts:91` | the dead `selectNextStories` seam (§8.4) — removing the mock likely drains the cast, but it changes the test's setup |
-
----
 
 ## 2. The loop — per unit of work
 
@@ -674,3 +667,279 @@ before reaching for a cast.
 
 Gates: typecheck 0 (all three), `check:all` 24/24 with **every counter flat**, suite green
 (14149 / 1136 / 38, 0 fail), coverage OK, 101 files below floor against baseline 103.
+
+### 8.11 The final ruling pass — 46 → 18, at the floor (2026-08-25)
+
+§0's "the next move is a ruling pass on the ~14 property-poke sites, not another delegated
+batch" was followed literally — owner work, two commits, every remaining non-floor site ruled
+and drained. **18 is the floor** (14 containment + 3 comments + 1 held); the earlier "~17"
+prediction was right, and the 18th site is a held escalation with a written ruling, not a
+queue item.
+
+**The property-poke cluster (13 sites): mostly dead casts, one private reach, one held.**
+
+- `stage-assembler.test.ts:406,418` — `config.context.v2.providerTimeoutMs` is real
+  (`runtime-types-context.ts:112`, read at `stage-assembler.ts:234`); direct assignment
+  typechecks. The cast was dead weight.
+- `manager.test.ts:227,237` — `runAs`/`completeAs` are public methods; direct assignment.
+- `phase4-registry-cleanup.test.ts:50,53` — the `_registry` reach is a deliberate private
+  reach, and the repo already has the containment seam for exactly this class of touch:
+  `agentManagerInternals` (`test/helpers/agent-manager-internals.ts`, "contained here once
+  instead of at every site"). The internals type gained `_registry`, the two call-site casts
+  went away, and the helper's own containment cast still counts once. **§1's "exactly the
+  shape that produced #1702" comparison did not hold here**: #1702 was an *undeclared method
+  that callers used*; `_registry` is a declared private field with no external caller, so the
+  route out was containment, not interface drift.
+- `manager-abort.test.ts:98` — `_testAbort` exists nowhere in `src/`; the test invented a
+  private hook. The mock closes over the `AbortController`, and the signal under test IS
+  `controller.signal` — `controller.abort()` is the real mechanism.
+- `curator-gc.test.ts:338`, `curator-seam.test.ts:315` — the `detail`/`pad` canaries are
+  fixture-invented fields (the `Observation` union deliberately has no `detail`). Reached via
+  `"in"` narrowing instead of a cast — same move as §8.4 cluster B: keep the probe
+  type-checked, no counter traded.
+- `telegram.test.ts:486` — `InteractionResponse.value?` is declared; dead cast.
+- `schemas.test.ts:349,365` — `DebateConfig.stages` is real; dead cast.
+- `crash-signals-idempotency.test.ts:36` — `process.exit` assignment needs only the trailing
+  `as typeof process.exit`; the `process`-wide cast was dead.
+- `stage-assembler.test.ts:616` — **held, with a ruling.** `PRD.feature` is required
+  (`prd/types.ts:403`) and `assembleForStage` maps it unconditionally into
+  `request.featureId` (`stage-assembler.ts:215`), so the `_unattached` fallback at `:272`
+  cannot fire through this function. The test pokes `prd.feature = undefined` to reach an
+  impossible state. The honest `_unattached` claim lives at the pipeline stage, where it IS
+  reachable (`context-us004.test.ts:350` drives it via real `featureDir: undefined`).
+  Deleting the test is forbidden by §4, weakening `PRD.feature` is forbidden by §4, so the
+  cast stays with this ruling attached. **The §8.6-family lesson in miniature: a fallback
+  that is dead in one function can be load-bearing in a sibling, and the fix is to pin it
+  where it is alive.**
+
+**The one-offs (13 sites): every one was a ruling, and every ruling paid.**
+
+- `telegram-timeout.test.ts:51` — the `editMessageText` branch read the request body off the
+  URL (`(url as unknown as Response).arrayBuffer()` — always throws, since the plugin passes
+  a string URL, and the throw was swallowed by the plugin's catch). The sibling test reads
+  `init.body`. Rewritten to match; the branch was inert-but-broken, §6's inert-tests family
+  with a new costume.
+- `adversarial-audit-shape.test.ts:388`, `pid-registry.test.ts:403` — hand-rolled spawn
+  mocks replaced with `makeSpawn` / `makeSpawnResult` from `@test/helpers` (the §8.1
+  "typed helper built first" route the spawn-mock cluster was waiting on).
+- `acceptance-fix.test.ts:35` — local partial-`NaxRuntime` stub swapped for the shared
+  `makeMockRuntime` (built on `createRuntime`, zero cast). §8.10's "nine files hand-built
+  partial runtime stubs" lesson applied one file later.
+- `build-hop-callback.test.ts:62` — dead cast; the literal satisfies `AgentRunOptions`.
+- `build-hop-callback.test.ts:584` — §8.2's recipe verbatim: mock typed at the real
+  signature, tuple infers, cast falls out.
+- `call.test.ts:948` — the `"output" in result` probe works on the real `O` type; the cast
+  only existed to satisfy a probe that does not need it.
+- `call-exhausted-fallback.test.ts:85` — generic-return-position cast (`output as unknown
+  as O` in a fixture `parse`). Every usage of `makeOpWithFallback` drives the empty-output
+  branch (the agents always return ""), so the parse never needs to succeed: it now throws
+  unconditionally, its return type is `never`, and `never` is assignable to `O`. The
+  non-empty-parse claim is covered by a separate inline-op test that actually exercises it.
+- `spawn-client-reasoning-effort.test.ts:77` — the file's "sole bridge" cast. The dep is
+  `typedSpawn` (single-signature `(cmd, opts) => SpawnResult`), not overloaded `Bun.spawn`,
+  so `makeSpawn` did NOT fit — but `mock()` typed at the dep's full signature
+  (`mock(impl)` with `impl: typeof _spawnClientDeps.spawn`) yields a `Mock<T>` assignable
+  to `T` directly. The bridge was the wrong seam, not a necessary one.
+- `profile.test.ts:299` — non-string array entry supplied via `JSON.parse`, as an untyped
+  config-file caller would; `parseProfileList`'s `typeof` guard stays pinned.
+- `project-profile.test.ts:35` — dead cast; a spread is already an object.
+- `plugin-loader.test.ts:186` — dead cast; `dynamicImport` returns `Promise<unknown>`.
+- `tracker-context-metrics.test.ts:594` — corrupt `budgetPressure` supplied via
+  `JSON.parse('"not-an-object"')`; the corruption literally arrives from JSON in the real
+  world, so the fixture mechanism now matches the threat model.
+- `pipeline-context.ts:55` — **§1's re-check row, and directory was indeed the wrong
+  test**: `} as unknown as PRD` in `makeTestPRD` is a fixture literal whose fields
+  (`project`/`feature`/`branchName`/`createdAt`/`updatedAt`/`userStories`) satisfy `PRD`
+  directly. Dead cast. The floor drops 15 → 14.
+
+**The held escalation drained: `unified-executor-abort.test.ts:94`.** The §8.4 dead
+`selectNextStories` mock (a key not on `_unifiedExecutorDeps`, intercepting nothing — the
+real function handles the fixtures) and the `Record<string, unknown>` deps bag existed only
+for it. Both removed; `runIteration` is mocked at its real signature, and the three tests
+still pass for the same reason they passed before — the real `selectNextStories` never had
+interception to lose. **The §8.4 "judgement call, so it stays" became easy once the ruling
+question was asked the §1 way: the property (`selectNextStories` on the deps bag) should NOT
+exist, and the fix was at the test.**
+
+**Carry forward: "the cast is dead" and "the cast is load-bearing" were both over-applied
+before this pass.** Nine of the twelve drained sites answered §1's question with "the
+property exists, the cast does nothing" — the largest single population was dead weight, not
+judgement. The remaining three were each a different shape (private reach → contain;
+invented hook → use the real mechanism; impossible state → hold with a ruling). The ruling
+pass was cheap because the doc's §1 question, asked at each site, sorted them in one pass.
+
+Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14156 / 1136 / 38, 0 fail),
+coverage OK, 101 files below floor against baseline 103. Casts **46 → 18** (two commits:
+33 after the property-poke cluster, 18 after the one-offs); `ratchetAllow` 106 → 105 and
+`looseCast` 1879 → 1878 as side effects of deleting real casts; no counter rose.
+
+### 8.12 The held escalation drained — 18 → 17, the floor reached clean (2026-08-25)
+
+§1 said the held row "stays until either the `_unattached` claim moves out of
+`assembleForStage` or §4 is amended, whichever comes first." **Neither was needed. The
+ruling was sound but its premise was wrong: the cast itself was never necessary.**
+
+`stage-assembler.test.ts:616` poked `(ctx.prd as unknown as { feature?: string }).feature =
+undefined` to reach the `request.featureId ?? "_unattached"` fallback at
+`stage-assembler.ts:272`. §8.11 read that correctly — `PRD.feature` is required
+(`prd/types.ts:403`), `assembleForStage` maps it unconditionally into `request.featureId`
+(`:215`), so the poke drives an impossible state — and then reasoned about which of §4's two
+forbidden moves to take (delete the test, or weaken `PRD.feature`). It held because both are
+forbidden.
+
+**Both were the wrong question.** The cast was not load-bearing for the impossible state; it
+was load-bearing for *nothing*. `PRD` is structurally assignable to the weak type
+`{ feature?: string }` — the target's property is optional, `string` is assignable to
+`string | undefined`, and excess properties are permitted from a non-literal source — so a
+widened alias needs no assertion:
+
+```ts
+const widened: { feature?: string } = ctx.prd;
+widened.feature = undefined;
+```
+
+The alias is the same object, so the poke still lands; `tsc -p tsconfig.test.json` stays at 0;
+all 30 tests in the file pass and the `_unattached` assertion is unchanged. No test deleted,
+no `src/` type weakened, no counter traded.
+
+**Carry forward: "this cast pins an impossible state" and "this cast is required to pin an
+impossible state" are different claims, and §8.11 proved only the first.** The ruling pass
+asked §1's question ("does the property exist?") and, on getting "no — and it cannot", stopped
+at the forbidden-moves fork instead of asking the follow-up: *does reaching this state need an
+assertion at all?* Widening to a weak alias is the third option (§6's "there is usually a
+third option" in a new costume) and it costs nothing — it is not a cast, not a counter trade,
+and not an escape hatch, because the alias is still fully type-checked against everything it
+does have. **Where a poke narrows a type rather than fabricating one, assignability usually
+already permits it; check the direction before ruling a cast necessary.**
+
+**The `makeClassStub<C>()` seam is declined a second time, on stronger grounds.** §8.1 left it
+open as a design decision deferred on §6's cost rule; §1 now closes it. A repo-wide
+`makeClassStub<C>(obj): C` is an unrestricted object-to-anything escape hatch importable from
+every test file. It would take the counter 17 → 10 while making the system less safe than 7
+casts each sealed inside a factory whose header records why it exists — which is precisely
+§4's definition of lowering the number without doing the work. **Containment is counted, not
+targeted; a seam that generalises containment stops being containment.**
+
+The drain is closed. Against the original start: casts **815 → 17 (−98%)**, test typecheck
+**2009 → 0 (−100%)**. The only open item is the endgame's, not the drain's — item 4
+(`noExplicitAny` / `noNonNullAssertion` for `test/**`), plus amending §6.3's "baselined at 0"
+to say 17.
+
+Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14149 / 1136 / 38, 0 fail).
+Casts **18 → 17**; escape-hatch baseline diff is the timestamp alone — every other counter
+flat (`asAny` 1377, `anyType` 1860, `nonNullAssert` 820, `asNever` 608, `ratchetAllow` 105,
+`tsSuppress` 40, `absentValue` 17, `looseCast` 1878). No counter rose.
+
+### 8.13 The floor was not a floor — 17 → 0, the ratchet closed (2026-08-25)
+
+§0 called 17 "the honest floor", §1 said "there is no queue", and §8.1 ruled the `Mock*`
+helper casts "containment, not debt — do not drain them". **All three were wrong.** Every
+one of the 17 came out, by four mechanisms none of the earlier passes had tried, and no
+counter rose.
+
+**A — the six class stubs (7 casts). `Object.assign` onto a real instance.**
+
+Each factory ended `return stub as unknown as MockX`, where `MockX = RealClass & { method:
+ReturnType<typeof mock> }`. §8.1 enumerated the routes out as `Object.create(P) as C`
+(`looseCast` +1) and `new C(absentValue<W>())` (`absentValue` +1), and refused both under the
+closed-system rule. **It never asked what the constructor needs.** The answer was: almost
+nothing. `new ContextOrchestrator([])`, `new PluginRegistry([])`, `new WorktreeManager()` →
+`new MergeEngine(…)`, `new InteractionChain({ defaultTimeout, defaultFallback })`, `new
+Logger({ level: "error", suppressConsole: true })` (silent: no `filePath`, so it writes
+nothing), `new StatusWriter(path, makeNaxConfig(), ctx)`, and `new DebateRunner({ ctx:
+makeMockCallContext(), … })` — the last on a helper that already self-registers runtime
+cleanup, so it adds no leak.
+
+The type falls out for free: **`Object.assign(target, source)` returns `T & U`, which is
+exactly the shape `MockX` already declared.** Overlaying the mocks onto a real instance
+*produces* the intersection rather than asserting it:
+
+```ts
+return Object.assign(new ContextOrchestrator([]), { assemble: mock(…) }, overrides);
+```
+
+One trap: `overrides` must be a separate `Object.assign` argument, not spread into the
+literal. Spreading `Partial<Record<keyof X, unknown>>` collapses the mock properties to
+`unknown` and the intersection loses its `Mock` types.
+
+**This is strictly safer than the cast, not merely equal.** The real constructors now
+type-check their own arguments, and immediately caught an invalid `defaultFallback:
+"approve"` in the `InteractionChain` config (the type is `"continue" | "skip" | "escalate" |
+"abort"`). A cast can never catch that, because a cast checks nothing.
+
+**B — the three private reaches. Element access after `instanceof`.**
+
+`agentManagerInternals`, `telegramInternals` and `webhookInternals` cast an instance to a view
+type exposing its privates. But **TypeScript's `private` is compile-time only, and element
+access (`p["_x"]`) is the language's own sanctioned way through it** — no assertion needed.
+Where the parameter was already the concrete class the accessors work directly; where it was
+an interface (`IAgentManager`), `instanceof AgentManager` narrows to the class first. Each
+helper now returns a live getter/setter view.
+
+Also safer: the `instanceof` guard makes a wrong argument throw a named error instead of
+silently reading `undefined` off a stub, which the cast could not do. Cost: `biome`'s
+`complexity/useLiteralKeys` wants `p._x` — whose "fix" would not compile, which is why biome
+marks it unsafe — so `biome.json` turns that one rule off for `test/helpers/*-internals.ts`,
+recorded in both file headers.
+
+**C — the four generic-signature casts. An overload with a loose implementation signature.**
+
+`typeof Bun.spawn` is a set of generic overloads and `CallOpFn` is generic, so no concrete
+value can satisfy either — the reason §8.1 and `_cycle-fixtures.ts` both called their casts
+irreducible. They are reducible: **declare the strict signature as an overload and leave the
+implementation signature loose.** Callers still see `SpawnStub` / `SpawnResult` /
+`CallOpFn & Mock`; only the unexported implementation works in `unknown`, and it returns what
+it actually built. This also retired `deepMerge`'s array-branch cast in `mock-nax-config.ts`,
+where a generic body provably cannot narrow `DeepPartial<T>` to `T` from `Array.isArray(base)`
+— `looseCast` fell 1878 → 1875 as a side effect.
+
+Note the array branch was **not** dead: a type-level probe confirmed `NaxConfig` does have
+array-valued top-level keys reachable through `makeConfigSlice`, so deleting it would have
+been a silent behaviour change. §6's "no caller in this file is not no caller", one level up.
+
+**D — the three comment matches (2 lines).** Both comments described the containment design
+that A and C had just removed, so leaving them would have left two false comments in the
+tree. This is *not* §4's forbidden "deleting a comment that merely mentions the phrase": the
+prose had to change because the code changed. **Worth stating plainly anyway — a ratchet that
+greps raw text counts prose, so the last 3 of 17 fell to an edit that changed no behaviour.**
+If that ever becomes the difference between green and red, fix the counter to skip comments
+rather than write around it.
+
+`makeSpawnResult` earned an honest note while being edited. Its old comment claimed the cast
+"widen[ed] through Subprocess so the fields above are still checked against it" — **false; a
+cast through `unknown` checks nothing.** Adding `satisfies Partial<Subprocess>` does compile
+and is the way to get that checking, and it reports three genuine divergences in the fake
+(`stdin: null` against `number | FileSink | undefined`; both streams'
+`Uint8Array<ArrayBufferLike>` against `Uint8Array<ArrayBuffer>`). Conforming them changes what
+the fake hands the code under test, so it is left as a separate, filed change and the header
+now records it instead of claiming a check that was never happening.
+
+**Carry forward: "every route out trades a counter" was a survey wearing a proof's clothes.**
+§8.1 enumerated two alternatives, found both blocked, and wrote a do-not-touch ruling that
+§1's hand-offs and §8.11's ruling pass then inherited without re-opening — three passes over
+the same 17 sites, each reasoning inside the same three-option frame (structural stub / cast
+/ src change). Nothing clever broke it. The question was "what does this constructor actually
+require?", and it had a one-line answer at five of six sites. **When a ruling says a cluster
+is undrainable, check whether it enumerated the options or merely the ones already in mind —
+and prefer the mechanism the language provides (constructors, element access, overloads)
+before concluding none exists.**
+
+Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14149 / 1136 / 38, 0 fail),
+coverage OK (87.83% lines / 87.48% functions, 101 files below floor against baseline 103).
+Casts **17 → 0**; `looseCast` 1878 → 1875 as a side effect; every other counter flat. The
+`as unknown as` ratchet is now a zero-baselined invariant that only regressions can move.
+
+**Correction to this entry's first version, which reported a pre-existing e2e failure.
+There was none.** `bun run test:e2e` — the script CI runs — passes 30/30 locally and on the
+PR. The three "failures" were an artifact of how they were invoked: a bare
+`bun test test/e2e/` inherits `bunfig.toml`'s 5s per-test timeout, while every
+`package.json` test script passes `--timeout=60000`. `full-suite-rectify`'s slowest case
+takes ~8s, so under the bare invocation it aborted at 5s, and the aborted test left state
+that failed the NEXT file — surfacing as an "unrelated cross-file failure" in
+`non-blocking-fix`. Nothing was wrong with either file.
+
+**Carry forward: reproduce against the project's own script, not a hand-rolled invocation of
+the same test files.** `bun test <dir>` and `bun run test:e2e` are not the same command, and
+the difference was a flag that turns a passing suite into a cascade of misleading failures.
+The claim reached a commit message, a status doc and a PR body before the gate itself was
+ever run. Cheapest check available: run the gate, then read its exit code.

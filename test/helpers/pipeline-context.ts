@@ -52,7 +52,7 @@ export function makeTestPRD(stories?: UserStory[]): PRD {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     userStories: stories ?? [defaultStory],
-  } as unknown as PRD;
+  };
 }
 
 /**
