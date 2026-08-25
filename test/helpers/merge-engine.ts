@@ -10,7 +10,8 @@
  * intersect, and keep the one cast here.
  */
 import { mock } from "bun:test";
-import type { MergeEngine } from "@/worktree/merge";
+import { WorktreeManager } from "@/worktree/manager";
+import { MergeEngine } from "@/worktree/merge";
 
 export type MockMergeEngine = MergeEngine & {
   merge: ReturnType<typeof mock>;
@@ -30,10 +31,12 @@ export type MockMergeEngine = MergeEngine & {
  * class, so the result needs no cast at the call site.
  */
 export function makeMergeEngine(overrides: Partial<Record<keyof MergeEngine, unknown>> = {}): MockMergeEngine {
-  const engine = {
-    merge: mock(async () => ({ success: true })),
-    mergeAll: mock(async () => []),
-    ...overrides,
-  };
-  return engine as unknown as MockMergeEngine;
+  return Object.assign(
+    new MergeEngine(new WorktreeManager()),
+    {
+      merge: mock(async () => ({ success: true })),
+      mergeAll: mock(async () => []),
+    },
+    overrides,
+  );
 }

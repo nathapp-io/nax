@@ -10,7 +10,10 @@
  * intersect, and keep the one cast here.
  */
 import { mock } from "bun:test";
-import type { InteractionChain } from "@/interaction/chain";
+import { InteractionChain } from "@/interaction/chain";
+
+/** Any finite timeout; the stubbed methods never consult it. */
+const DEFAULT_STUB_TIMEOUT_MS = 30_000;
 
 export type MockInteractionChain = InteractionChain & {
   prompt: ReturnType<typeof mock>;
@@ -33,10 +36,12 @@ export type MockInteractionChain = InteractionChain & {
 export function makeInteractionChain(
   overrides: Partial<Record<keyof InteractionChain, unknown>> = {},
 ): MockInteractionChain {
-  const chain = {
-    prompt: mock(async () => ({ id: "ix-1", action: "approve", createdAt: Date.now() })),
-    applyFallback: mock((_response: unknown, _fallback: string) => "approve"),
-    ...overrides,
-  };
-  return chain as unknown as MockInteractionChain;
+  return Object.assign(
+    new InteractionChain({ defaultTimeout: DEFAULT_STUB_TIMEOUT_MS, defaultFallback: "continue" }),
+    {
+      prompt: mock(async () => ({ id: "ix-1", action: "approve", createdAt: Date.now() })),
+      applyFallback: mock((_response: unknown, _fallback: string) => "approve"),
+    },
+    overrides,
+  );
 }

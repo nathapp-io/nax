@@ -11,7 +11,7 @@
  * no-op. Override the getters a test actually exercises.
  */
 import { mock } from "bun:test";
-import type { PluginRegistry } from "@/plugins/registry";
+import { PluginRegistry } from "@/plugins/registry";
 
 export type MockPluginRegistry = PluginRegistry & {
   getReporters: ReturnType<typeof mock>;
@@ -27,18 +27,20 @@ export type MockPluginRegistry = PluginRegistry & {
 };
 
 export function makePluginRegistry(overrides: Partial<Record<keyof PluginRegistry, unknown>> = {}): MockPluginRegistry {
-  const registry = {
-    getReporters: mock(() => []),
-    getContextProviders: mock(() => []),
-    getReviewers: mock(() => []),
-    getRouters: mock(() => []),
-    getOptimizers: mock(() => []),
-    getPostRunActions: mock(() => []),
-    getPostRunActionRegistrations: mock(() => []),
-    getAgent: mock(() => undefined),
-    getSource: mock(() => undefined),
-    teardownAll: mock(async () => {}),
-    ...overrides,
-  };
-  return registry as unknown as MockPluginRegistry;
+  return Object.assign(
+    new PluginRegistry([]),
+    {
+      getReporters: mock(() => []),
+      getContextProviders: mock(() => []),
+      getReviewers: mock(() => []),
+      getRouters: mock(() => []),
+      getOptimizers: mock(() => []),
+      getPostRunActions: mock(() => []),
+      getPostRunActionRegistrations: mock(() => []),
+      getAgent: mock(() => undefined),
+      getSource: mock(() => undefined),
+      teardownAll: mock(async () => {}),
+    },
+    overrides,
+  );
 }

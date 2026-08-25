@@ -1,5 +1,5 @@
 import { mock } from "bun:test";
-import type { Logger } from "@/logger";
+import { Logger } from "@/logger";
 
 export type LogCall = {
   level: "error" | "warn" | "info" | "debug";
@@ -13,14 +13,12 @@ export type LogCall = {
  *
  * `Logger` is a class, not an interface, so a four-method object can never
  * satisfy it structurally — it is missing ~16 members including private ones.
- * Consumers therefore wrote `makeLogger() as unknown as Logger` (12 sites), or
- * passed the mock straight in and ate the TS2740 (15 more). Intersecting here
- * puts that one cast in the factory and makes the mock assignable everywhere a
- * Logger is wanted, while `calls` and `reset()` stay reachable.
- *
- * The alternative is extracting an `ILogger` interface in src/ and depending on
- * that; a real improvement, but a source change, so out of scope for the test
- * debt drain (#1514 phase 1b).
+ * Rather than assert past that, this builds a **real** `Logger` (silent: no
+ * `filePath`, so nothing is written; `suppressConsole`, so nothing is printed)
+ * and overlays the four level methods with mocks. `Object.assign` returns
+ * `Logger & { … }`, which is exactly `MockLogger`, so the factory needs no
+ * type assertion and the result is assignable everywhere a `Logger` is wanted
+ * while `calls` and `reset()` stay reachable.
  */
 export type MockLogger = Logger & {
   error: ReturnType<typeof mock>;
@@ -43,7 +41,7 @@ export function makeLogger(): MockLogger {
       calls.push({ level, stage, message, data });
     });
 
-  const logger = {
+  return Object.assign(new Logger({ level: "error", suppressConsole: true }), {
     error: make("error"),
     warn: make("warn"),
     info: make("info"),
@@ -52,6 +50,5 @@ export function makeLogger(): MockLogger {
     reset: () => {
       calls.length = 0;
     },
-  };
-  return logger as unknown as MockLogger;
+  });
 }

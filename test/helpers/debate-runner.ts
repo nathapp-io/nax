@@ -11,8 +11,21 @@
  * the one cast here.
  */
 import { mock } from "bun:test";
-import type { DebateRunner } from "@/debate";
+import { DebateRunner } from "@/debate";
+import type { DebateStageConfig } from "@/debate/types";
 import type { DebateResult } from "@/debate/types";
+import { makeMockCallContext } from "./call-context";
+
+/**
+ * Construction-only stage config. Both public methods are replaced by mocks, so
+ * nothing here is ever consulted — it exists to satisfy the real constructor.
+ */
+const STUB_STAGE_CONFIG: DebateStageConfig = {
+  enabled: true,
+  resolver: { type: "majority-fail-closed" },
+  sessionMode: "one-shot",
+  rounds: 1,
+};
 
 export type MockDebateRunner = DebateRunner & {
   run: ReturnType<typeof mock>;
@@ -48,10 +61,12 @@ export const DEFAULT_DEBATE_RESULT: DebateResult = {
  * cast at the call site and keeps `createDebateRunner` itself assertable.
  */
 export function makeDebateRunner(overrides: Partial<Record<keyof DebateRunner, unknown>> = {}): MockDebateRunner {
-  const runner = {
-    run: mock(async () => DEFAULT_DEBATE_RESULT),
-    runPlan: mock(async () => DEFAULT_DEBATE_RESULT),
-    ...overrides,
-  };
-  return runner as unknown as MockDebateRunner;
+  return Object.assign(
+    new DebateRunner({ ctx: makeMockCallContext(), stage: "review", stageConfig: STUB_STAGE_CONFIG }),
+    {
+      run: mock(async () => DEFAULT_DEBATE_RESULT),
+      runPlan: mock(async () => DEFAULT_DEBATE_RESULT),
+    },
+    overrides,
+  );
 }
