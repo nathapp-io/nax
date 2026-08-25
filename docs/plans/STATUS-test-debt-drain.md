@@ -9,27 +9,27 @@ log — each entry records what was true when written and is not edited afterwar
 
 ---
 
-## 0. Current state — measured 2026-08-25 on `fix/drain-no-explicit-any-story-orchestrator`
+## 0. Current state — measured 2026-08-26 on `fix/drain-no-explicit-any-story-orchestrator`
 
 | Counter | Value | Baseline | Drain target? |
 |:--|--:|--:|:--|
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
 | `as unknown as` | **0** | 0 | done — closed invariant (§8.13) |
-| `asAny` | 681 | 1377 | yes, then biome `noExplicitAny` retires it |
-| `anyType` | 906 | 1860 | yes, retires with `asAny` — biome says **897** |
+| `asAny` | 509 | 1377 | yes, then biome `noExplicitAny` retires it |
+| `anyType` | 659 | 1860 | yes, retires with `asAny` — biome says **650** |
 | `nonNullAssert` | 812 | 819 | yes — biome says **1085**, see §0.1 (not started) |
-| `asNever` | 608 | 608 | yes |
+| `asNever` | 607 | 608 | yes |
 | `ratchetAllow` | 105 | 105 | yes |
 | `tsSuppress` | 40 | 40 | yes |
 | `absentValue` | 17 | 17 | yes |
-| `looseCast` | 1828 | 1875 | **no** — guard only, see below |
+| `looseCast` | 1816 | 1875 | **no** — guard only, see below |
 
-The `noExplicitAny` drain is in progress on this branch (§8.14–§8.16): thirty-one files
-drained, `asAny` 1179 → 681 and `anyType` 1538 → 906 against the branch-start ratchet, with
+The `noExplicitAny` drain is in progress on this branch (§8.14–§8.17): fifty-two files
+drained, `asAny` 1179 → 509 and `anyType` 1538 → 659 against the branch-start ratchet, with
 every other counter flat except `nonNullAssert` (819 → 812 as a benign side effect of removing
-`logger!.info = … as any` patterns) and `looseCast` (1875 → 1828 as a benign side effect of
-deleting real casts). Biome's authoritative count fell **1529 → 897**.
+`logger!.info = … as any` patterns), `looseCast` (1875 → 1816) and `asNever` (608 → 607) as
+benign side effects of deleting real casts. Biome's authoritative count fell **1529 → 650**.
 
 `as unknown as` went **101 → 0** across nine commits (§8.1–§8.4, §8.11–§8.13); `looseCast`
 fell 1888 → 1875 and `ratchetAllow` 107 → 105 as side effects of removing real casts, and
@@ -1209,3 +1209,45 @@ containment model as `makeCallOp` would retire that recurring trailing cast).
 `acceptance-loop-cycle` 13, `adversarial-review-retry-flip` 13, `plan-draft` 13,
 `acceptance-setup-criteria` 13, `retire-legacy-surfaces` 13, `tdd-verdict` 13 — 203 files hold
 the remaining 897. The queue head has flattened: no file exceeds 13.
+
+### 8.17 Batch 4 of the `noExplicitAny` drain — the next top 20 (+1 tie), four parallel delegates, biome 897 → 650 (2026-08-26)
+
+The §8.16 queue head drained: the twenty highest-count files (237 sites) plus
+`operations/plan-interactive`, which tied at 10 and rode along as a 21st file, taken to zero by
+four parallel agents on disjoint file sets under the same brief model as §8.16 (§4 forbidden
+list, the cheap per-file gate loop, the standing recipe table). No delegate edited outside its
+set; no escalations; no src/ or helper changes required. `asAny` ↓172 (681 → 509) and `anyType`
+↓247 (906 → 659) on the ratchet; `looseCast` ↓12 (1828 → 1816) and `asNever` ↓1 (608 → 607) as
+benign side effects of deleting real casts (pb-004's loop-site `as never` among them); every
+other counter flat, none rose. Gates: typecheck 0 (all three), `check:all` green, full suite
+green (14149 / 1136 / 38, 0 fail), coverage OK (101 below floor against baseline 103, identical
+to main).
+
+**Recipe families applied** (all proven in §8.14–§8.16 except where noted):
+
+| Shape | Where | Recipe |
+|:--|:--|:--|
+| plugin-interface impls with untyped params (`async optimize(input: any)`) | validator | annotate at the real interface types (`PromptOptimizerInput`, `UserStory` + `RoutingContext`, `RunStartEvent`/`StoryCompleteEvent`/`RunEndEvent`); `satisfies NaxPlugin` contextual typing drops annotations where the object is checked |
+| post-migration pokes on `Record<string, unknown>` returns (`result.execution as any?.field`) | migrations | local `hasKey` user-defined predicate + probe walker; missing keys still yield `undefined` and fail the same assertions |
+| namespace probes (`(tddIndex as any).removedThing`) | retire-legacy-surfaces | absent symbols index a module-scope `Record<string, unknown>` spread of the barrel; present symbols switch to static typed access |
+| op.config / op.retry unions | adversarial-review-retry-flip | `typeof === "function"` + `"prop" in` guards narrowing to the real member types |
+| stage-module stubbing for dynamic-import seams | acceptance-loop-cycle ×2 files | `Object.assign({}, pipelineStages, { acceptanceStage: { …spread, execute } })` — assignable to the real `typeof import("@/pipeline/stages")` |
+| required run-options fields fabricated loosely (`STUB_RUN_OPTIONS as any`) | stale-then-swap | `makeStubRunOptions(config)` constructing the required `modelTier`/`modelDef`; note `runOptions.config ?? this._config` made config-absence load-bearing — each caller now passes its own manager config |
+| already-typed builder discovered mid-drain | pb-004-migration | every `(PromptBuilder.for(…) as any)` deleted outright once `withLoader` was found fully typed on the class |
+
+**Fixture-value corrections, all assertion-preserving and reported per §4's rule-3 carve-out:**
+the diagnosis callOp stub returned an `{ output: {…}, costUsd }` wrapper the dep never produces
+(consumer reads `.verdict` off the resolved value directly) → corrected to a direct
+`AcceptanceDiagnosisOutput`; stage-fail results gained the required `reason` string;
+`SEMANTIC_CONFIG_DEFAULT` gained `resetRefOnRerun: false` (the documented default the old inner
+cast silently omitted); AC-2's debate spread gained required `sessionMode: "one-shot"` — with
+the companion lesson that adding it to the *shared* base broke "injects sessionMode stateful",
+whose omission is intentional under test (**what the fixture omits can be the thing under
+test; complete fixtures only at the call site that needs them**, §8.4's deepMerge trap from the
+other side). Because these are values classifiers read, §3's coverage rule fired:
+`bun run test:coverage` confirmed per-file floors unaffected.
+
+**New top of queue** (biome count per file): `execution-phase-telemetry` 10,
+`otel-reporter-lifecycle` 10, `adversarial-metadata-audit` 10, then six files at 9 — 182 files
+hold the remaining 650. The head has flattened again: no file exceeds 10, so the next batch is
+necessarily wider and shallower.
