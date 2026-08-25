@@ -112,6 +112,7 @@ export type { DeclarationSink } from "./declaration-sink";
 export { findingsToFailedChecks } from "./_finding-to-check";
 export {
   makeMechanicalLintFixStrategy,
+  mechanicalLintFixOp,
   _mechanicalLintFixDeps,
 } from "./mechanical-lintfix-strategy";
 export type {
@@ -121,6 +122,7 @@ export type {
 } from "./mechanical-lintfix-strategy";
 export {
   makeMechanicalFormatFixStrategy,
+  mechanicalFormatFixOp,
   _mechanicalFormatFixDeps,
 } from "./mechanical-formatfix-strategy";
 export type {

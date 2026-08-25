@@ -40,7 +40,7 @@ function buildCommand(
   return null;
 }
 
-const mechanicalLintFixOp: DeterministicOperation<
+export const mechanicalLintFixOp: DeterministicOperation<
   MechanicalLintFixInput,
   MechanicalLintFixOutput,
   QualityConfig,
