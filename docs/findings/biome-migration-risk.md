@@ -302,7 +302,9 @@ Sequenced so each step has an independently checkable outcome:
 2. **Error-severity fixes: 25 lint + 12 format.** The 22 `noUnsafeOptionalChaining` are the
    substance here and are real defects, not style. Expect this to be the longest step.
 3. **Re-enable organizeImports + formatter.** One mechanical commit, ~1137 files, nothing
-   else in it, added to `.git-blame-ignore-revs`.
+   else in it, added to `.git-blame-ignore-revs`. **Done** — 1127 files. Apply it with
+   `biome check --write --linter-enabled=false` so the assist and formatter run but the
+   step-4 lint fixes do not. Not fully mechanical in practice; see below.
 4. **Severity policy decision — the step that matters most.** Covers both the 546 new
    warnings and the `test/` rules. If endgame item 4 is still wanted, promote
    `noExplicitAny` and `noNonNullAssertion` to `"error"` here; if not, record that item 4 is
@@ -314,6 +316,27 @@ Steps 1-4 are roughly a day on a quiet tree — more than 2026-08-22's "half-day
 2 grew from 1 error to 37 when `test/` entered lint scope. There is no forcing function —
 Biome is a dev-only dependency with no runtime or security exposure — so the schedule
 pressure is entirely about step 3's conflict surface and the drain sequencing above.
+
+### Step 3 Outcome: The Reorder Is Not Purely Mechanical
+
+Landing step 3 needed three source edits the "one mechanical commit" framing did not predict.
+Budget for them; they are found by running the gates, not by reading the diff.
+
+- **A latent import cycle became a crash.** Sorting `./types` to the end of the
+  `src/agents/retry` barrel left `ParseValidationError` uninitialized for
+  `src/operations/setup-generate.ts`, which extends it at module-evaluation time:
+  `ReferenceError: Cannot access 'ParseValidationError' before initialization`. Fixed by
+  importing from the `../agents/retry/types` leaf. **This is the real risk of step 3** — a
+  barrel re-export order that a cycle silently depended on. `check:import-cycles` reports
+  135 cycled modules at baseline, so more of these are possible; any `class X extends Y`
+  or other module-evaluation-time use of a barrel import is a candidate. It surfaces as a
+  runtime throw in a gate or test, never as a lint or type error.
+- **Interleaved statements in an import block get blank lines inserted.** A re-export sitting
+  between two imports (`src/prd/schema.ts`) is moved below the block and padded. The padding
+  is not optional — removing it re-triggers `organizeImports`.
+- **Two grandfathered files grew past their `check:file-sizes` baseline** where merged
+  specifiers wrapped past `lineWidth: 120`. Bump those entries individually; do not run
+  `--update-baseline`, which would ratchet every grown file at once.
 
 ## Revision Notes (2026-08-25)
 
