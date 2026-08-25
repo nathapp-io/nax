@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
-import { AgentStreamEventBus } from "@/runtime/agent-stream-events";
 import type { AgentStreamEvent } from "@/runtime/agent-stream-events";
+import { AgentStreamEventBus } from "@/runtime/agent-stream-events";
 import { attachAgentStreamLogging } from "@/runtime/middleware/agent-stream-logging";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function makeCallStartedEvent(overrides: Partial<AgentStreamEvent> = {}): AgentStreamEvent {
   return {

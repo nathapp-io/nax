@@ -6,14 +6,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { loadPRD, savePRD } from "@/prd";
-import type { PRD, PersistedRepoScopedFix } from "@/prd/types";
+import type { PersistedRepoScopedFix, PRD } from "@/prd/types";
 import { routeTask } from "@/routing";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // BUG-004
 describe("PRD Auto-Default — missing fields are defaulted on load", () => {

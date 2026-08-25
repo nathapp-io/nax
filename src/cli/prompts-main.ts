@@ -8,8 +8,8 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { getLogger } from "../logger";
-import { runPipeline } from "../pipeline";
 import type { PipelineContext } from "../pipeline";
+import { runPipeline } from "../pipeline";
 import { constitutionStage, contextStage, promptStage, routingStage } from "../pipeline/stages";
 import { loadPRD } from "../prd";
 import { createRuntime } from "../runtime";
@@ -17,6 +17,7 @@ import { createRuntime } from "../runtime";
 // Import for local use + re-export to preserve the public API via prompts.ts.
 import { buildFrontmatter } from "./prompts-shared";
 import { handleThreeSessionTddPrompts } from "./prompts-tdd";
+
 export { buildFrontmatter };
 
 /** Injectable deps for testability — avoids mock.module() contamination. */

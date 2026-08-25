@@ -12,8 +12,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { buildManifest } from "@/context/engine";
 import type { ManifestInputs } from "@/context/engine";
+import { buildManifest } from "@/context/engine";
 import type { PackedChunk } from "@/context/engine/packing";
 import type { ContextRequest } from "@/context/engine/types";
 

@@ -4,6 +4,25 @@
  * Per-story and per-run cost tracking for data-driven routing optimization.
  */
 
+export { calculateAggregateMetrics, deriveRunFallbackAggregates, getLastRun } from "./aggregator";
+export {
+  type CostAggregate,
+  type CostModelStat,
+  type CostReportDeps,
+  type CostReportV1,
+  type CostRunSummary,
+  type CostStory,
+  toCostReport,
+} from "./report";
+export {
+  collectBatchMetrics,
+  collectStoryMetrics,
+  loadRunMetrics,
+  MAX_RETAINED_RUNS,
+  metricsPathFor,
+  saveRunMetrics,
+  toFallbackHops,
+} from "./tracker";
 export type {
   AgentFallbackHop,
   AggregateMetrics,
@@ -12,22 +31,3 @@ export type {
   StoryMetrics,
   TokenUsage,
 } from "./types";
-export {
-  collectStoryMetrics,
-  toFallbackHops,
-  collectBatchMetrics,
-  saveRunMetrics,
-  loadRunMetrics,
-  metricsPathFor,
-  MAX_RETAINED_RUNS,
-} from "./tracker";
-export { calculateAggregateMetrics, deriveRunFallbackAggregates, getLastRun } from "./aggregator";
-export {
-  toCostReport,
-  type CostAggregate,
-  type CostModelStat,
-  type CostReportDeps,
-  type CostReportV1,
-  type CostRunSummary,
-  type CostStory,
-} from "./report";

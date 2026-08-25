@@ -20,8 +20,8 @@ import type {
   Complexity,
   ConfiguredModel,
   LlmRoutingMode,
-  ModelTier,
   ModelsConfig,
+  ModelTier,
   RoutingStrategyName,
   TddStrategy,
 } from "./schema-types";
@@ -374,14 +374,14 @@ export interface InteractionConfig {
 }
 
 export type {
-  TestCoverageConfig,
   ContextAutoDetectConfig,
-  FeatureContextEngineConfig,
-  ContextV2PullConfig,
-  ContextV2RulesConfig,
+  ContextConfig,
   ContextPluginProviderConfig,
   ContextV2Config,
-  ContextConfig,
+  ContextV2PullConfig,
+  ContextV2RulesConfig,
+  FeatureContextEngineConfig,
+  TestCoverageConfig,
 } from "./runtime-types-context";
 
 /** Story size gate thresholds (v0.16.0) */
@@ -468,20 +468,18 @@ export interface TestingConfig {
   mockGuidance?: string;
 }
 
-export type { ProjectProfile } from "./runtime-types-project";
-
 // Re-exported from debate/types.ts to maintain single source of truth
 export type {
   DebateConfig,
+  DebateResult,
+  Debater,
   DebateStageConfig,
   ResolverConfig,
-  Debater,
-  DebateResult,
   ResolverType,
   SessionMode,
 } from "../debate/types";
-
 export type { FinishConfig, FinishTimeoutsConfig } from "./runtime-types-finish";
+export type { ProjectProfile } from "./runtime-types-project";
 
 /** Full nax configuration */
 export interface NaxConfig {
@@ -570,11 +568,11 @@ export interface CuratorConfig {
   thresholds?: CuratorThresholds;
 }
 export type {
-  GenerateConfig,
-  PromptAuditConfig,
-  AgentFallbackConfig,
   AgentAcpConfig,
   AgentConfig,
+  AgentFallbackConfig,
   AgentTimeoutRetryConfig,
+  GenerateConfig,
   IdleWatchdogConfig,
+  PromptAuditConfig,
 } from "./runtime-types-agent";

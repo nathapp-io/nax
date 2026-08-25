@@ -17,18 +17,18 @@ import { DEFAULT_CONFIG, reviewConfigSelector } from "../config";
 import type { NaxConfig } from "../config/schema";
 import type { ReviewConfig } from "../config/selectors";
 import type { AdversarialReviewConfig, SemanticReviewConfig } from "../review/types";
-import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import type { ResolvedTestPatterns } from "../test-runners";
+import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
+import type { TestInventory } from "./diff-utils";
 import {
-  DIFF_CAP_BYTES,
   collectDiff,
   collectDiffStat,
   computeTestInventory,
+  DIFF_CAP_BYTES,
   resolveEffectiveRef,
   truncateDiff,
 } from "./diff-utils";
-import type { TestInventory } from "./diff-utils";
 
 export interface PrepareReviewInputArgs {
   workdir: string;

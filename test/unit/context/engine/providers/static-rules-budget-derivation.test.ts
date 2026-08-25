@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { type CanonicalRule, type ContextRequest, StaticRulesProvider, _staticRulesDeps } from "@/context/engine";
+import { _staticRulesDeps, type CanonicalRule, type ContextRequest, StaticRulesProvider } from "@/context/engine";
 
 let origReadFile: typeof _staticRulesDeps.readFile;
 let origFileExists: typeof _staticRulesDeps.fileExists;

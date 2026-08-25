@@ -9,9 +9,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { makePRD, makeStory, withTempDir } from "@test/helpers";
 import { loadPRD, savePRD } from "@/prd";
-import { makePRD, makeStory } from "@test/helpers";
-import { withTempDir } from "@test/helpers";
 
 const OUT_OF_SCOPE = ["An interactive Ink TUI", "Per-story checkpoints"];
 

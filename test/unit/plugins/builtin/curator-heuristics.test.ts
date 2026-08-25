@@ -6,8 +6,8 @@
 
 import { describe, expect, test } from "bun:test";
 import type { Observation } from "@/plugins/builtin/curator";
+import type { CuratorThresholds } from "@/plugins/builtin/curator/heuristics";
 import { runHeuristics } from "@/plugins/builtin/curator/heuristics";
-import type { CuratorThresholds, Proposal } from "@/plugins/builtin/curator/heuristics";
 
 describe("runHeuristics", () => {
   const defaultThresholds: CuratorThresholds = {

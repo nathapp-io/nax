@@ -11,14 +11,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 import type { NaxConfig } from "@/config";
-import { _regressionDeps, runDeferredRegression } from "@/execution";
 import type { DeferredRegressionOptions } from "@/execution";
+import { _regressionDeps, runDeferredRegression } from "@/execution";
 import type { Finding, FixCycleResult } from "@/findings";
 import type { PRD } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
 import type { FlakeTriageInput, FlakeTriageResult, VerificationResult } from "@/verification";
-import { makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

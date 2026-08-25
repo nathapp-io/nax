@@ -8,10 +8,10 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import { makeInteractionChain } from "@test/helpers";
 import { promptForPausedStories } from "@/execution/lifecycle/paused-story-prompts";
 import type { InteractionChain } from "@/interaction/chain";
 import type { PRD, UserStory } from "@/prd/types";
-import { makeInteractionChain } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

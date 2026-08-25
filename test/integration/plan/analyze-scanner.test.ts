@@ -5,7 +5,6 @@
 
 import { beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { scanCodebase } from "@/analyze/scanner";
 import type { CodebaseScan } from "@/analyze/types";

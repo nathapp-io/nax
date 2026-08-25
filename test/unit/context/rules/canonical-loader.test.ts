@@ -6,17 +6,17 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeLogger } from "@test/helpers";
 import { translateLegacyFrontmatter, withReviewNotice } from "@/cli";
 import {
-  CANONICAL_RULES_DIR,
-  NeutralityLintError,
   _canonicalLoaderDeps,
   applyCanonicalRulesBudget,
+  CANONICAL_RULES_DIR,
   lintForNeutrality,
   loadCanonicalRules,
+  NeutralityLintError,
 } from "@/context/rules/canonical-loader";
 import { NaxError } from "@/errors";
-import { makeLogger } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers

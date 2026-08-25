@@ -6,14 +6,6 @@
  */
 
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
-import type { AgentResult } from "@/agents/types";
-import { buildPlanForStrategy } from "@/execution/build-plan-for-strategy";
-import type { PlanInputs } from "@/execution/plan-inputs";
-import { _fullSuiteGateDeps } from "@/operations/full-suite-gate";
-import type { UserStory } from "@/prd";
-import { _isolationDeps } from "@/tdd/isolation";
-import { _rollbackDeps } from "@/tdd/rollback";
-import { _gitDeps } from "@/utils/git";
 import {
   fakeAgentManager,
   makeMockCallContext,
@@ -22,6 +14,14 @@ import {
   makeSpawn,
   makeStory as makeStoryBase,
 } from "@test/helpers";
+import type { AgentResult } from "@/agents/types";
+import { buildPlanForStrategy } from "@/execution/build-plan-for-strategy";
+import type { PlanInputs } from "@/execution/plan-inputs";
+import { _fullSuiteGateDeps } from "@/operations/full-suite-gate";
+import type { UserStory } from "@/prd";
+import { _isolationDeps } from "@/tdd/isolation";
+import { _rollbackDeps } from "@/tdd/rollback";
+import { _gitDeps } from "@/utils/git";
 
 // Mock spawn-based deps so the post-dispatch isolation/getChangedFiles/autoCommit
 // helpers don't try to invoke real `git`. This test asserts on cost/duration aggregation.

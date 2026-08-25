@@ -1,7 +1,7 @@
 // test/unit/tdd/capture-snapshot-ref.test.ts
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _rollbackDeps, captureSnapshotRef } from "@/tdd/rollback";
 import { makeSpawn } from "@test/helpers";
+import { _rollbackDeps, captureSnapshotRef } from "@/tdd/rollback";
 
 describe("captureSnapshotRef", () => {
   let origAutoCommit: typeof _rollbackDeps.autoCommitIfDirty;

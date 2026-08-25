@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { writeContextManifest } from "@/context/engine";
 import type { ContextManifest as ContextManifestFromTypes } from "@/context/engine/types";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 let projectDir = "";
 

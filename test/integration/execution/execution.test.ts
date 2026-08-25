@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { DEFAULT_CONFIG } from "@/config";
-import { run } from "@/execution/runner";
 import type { RunOptions } from "@/execution/runner";
+import { run } from "@/execution/runner";
 import { initLogger, resetLogger } from "@/logger";
 import type { PRD, UserStory } from "@/prd";
 

@@ -12,10 +12,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeFinding, makeStory } from "@test/helpers";
 import type { Finding } from "@/findings";
 import { RectifierPromptBuilder } from "@/prompts";
 import type { ReviewCheckResult } from "@/review";
-import { makeFinding, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

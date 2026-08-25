@@ -10,18 +10,17 @@ import type { UserStory } from "@/prd";
 import { OneShotPromptBuilder, type RoutingCandidate, type SchemaDescriptor } from "@/prompts";
 import { typedSpawn } from "@/utils/bun-deps";
 
-// Re-export parse/validate utilities for callers that import from this module
-export { validateRoutingDecision, stripCodeFences, parseRoutingResponse } from "./llm-parsing";
-
 // Re-export cache utilities (now live in llm-cache.ts) — backward compat
 export {
-  MAX_CACHE_SIZE,
   clearCache,
-  getCacheSize,
   clearCacheForStory,
-  injectCacheEntry,
   evictOldest,
+  getCacheSize,
+  injectCacheEntry,
+  MAX_CACHE_SIZE,
 } from "./llm-cache";
+// Re-export parse/validate utilities for callers that import from this module
+export { parseRoutingResponse, stripCodeFences, validateRoutingDecision } from "./llm-parsing";
 
 // ─── Routing prompt constants ─────────────────────────────────────────────────
 

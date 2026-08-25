@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildFixPrompt,
+  buildReviewPrompt,
   FINDING_BLOCK_SHAPE,
   QUALITY_REVIEW_DIMENSIONS,
   SPEC_REVIEW_DIMENSIONS,
   WORKER_PROTOCOL,
   WORKER_PROTOCOL_MECHANICS,
-  buildFixPrompt,
-  buildReviewPrompt,
 } from "@/finish";
 
 describe("review prompts", () => {

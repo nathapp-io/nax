@@ -7,8 +7,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
-import * as os from "node:os";
 import * as path from "node:path";
+import { makeOptimizerResult, makeTempDir } from "@test/helpers";
 import {
   _loadAndValidatePlugin,
   _resetPluginErrorSink,
@@ -16,7 +16,6 @@ import {
   loadPlugins as loadPluginsWithBuiltins,
 } from "@/plugins/loader";
 import type { NaxPlugin, PluginConfigEntry } from "@/plugins/types";
-import { makeOptimizerResult, makeTempDir } from "@test/helpers";
 
 const DISABLE_BUILTIN_PLUGINS = ["nax-curator", "nax-auto-pr"];
 

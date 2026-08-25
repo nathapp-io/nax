@@ -11,11 +11,11 @@ import type { NaxConfig } from "../config";
 import { featureDir } from "../config";
 import { assertPrdCommitted } from "../prd";
 import { WorktreeManager } from "../worktree/manager";
-import { runContestant } from "./contestant";
 import type { ContestantOptions } from "./contestant";
+import { runContestant } from "./contestant";
 import { pipeline } from "./pipeline-adapter";
-import { buildContestantConfig, parseCompareList, reclaimStaleBakeoffBranches, validateContestants } from "./preflight";
 import type { ContestantValidationResult } from "./preflight";
+import { buildContestantConfig, parseCompareList, reclaimStaleBakeoffBranches, validateContestants } from "./preflight";
 import { rankContestants } from "./ranking";
 import type { BakeoffResult, ContestantResult } from "./types";
 

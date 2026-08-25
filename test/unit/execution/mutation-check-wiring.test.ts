@@ -11,21 +11,21 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { makeMockCallContext, makeMockPlanInputs, makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import type { MutationCheckConfig } from "@/config/selectors";
 import {
+  _storyOrchestratorDeps,
+  buildPlanForStrategy,
   CANONICAL_ORDER,
   type InternalBuildState,
   PHASE_KIND_TO_STATE_KEY,
   STRICT_VERDICT_PHASE_NAMES,
   StoryOrchestratorBuilder,
-  _storyOrchestratorDeps,
-  buildPlanForStrategy,
 } from "@/execution";
 import type { CallContext, DeterministicOperation, MutationCheckInput, MutationCheckOutput } from "@/operations";
 import { mutationCheckOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockCallContext, makeMockPlanInputs, makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC1: CANONICAL_ORDER positions mutation-check immediately after full-suite-gate

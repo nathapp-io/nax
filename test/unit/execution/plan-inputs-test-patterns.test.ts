@@ -12,9 +12,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 import { NaxError } from "@/errors";
 import { assemblePlanInputs } from "@/execution";
-import { makeNaxConfig, makeStory } from "@test/helpers";
 
 describe("assemblePlanInputs — test patterns validation (AC3)", () => {
   test("succeeds when resolvedTestPatterns is undefined (not needed)", () => {

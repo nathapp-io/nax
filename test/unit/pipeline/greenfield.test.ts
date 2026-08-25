@@ -6,12 +6,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
+import { makeTempDir } from "@test/helpers";
 import { isGreenfieldStory } from "@/context/greenfield";
 import type { UserStory } from "@/prd/types";
-import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Helpers

@@ -1,10 +1,10 @@
 import { describe, expect, mock, test } from "bun:test";
+import { makeLogger, makeMockAgentManager, makeMockRuntime, makePRD, makeStory } from "@test/helpers";
 import { NaxError } from "@/errors";
-import { PipelinePlanStrategy, _pipelinePlanDeps } from "@/plan";
+import { _pipelinePlanDeps, PipelinePlanStrategy } from "@/plan";
 import type { PlanCriticVerdict } from "@/plan/critic";
 import type { PlanModeContext } from "@/plan/strategies/types";
 import type { NaxRuntime } from "@/runtime";
-import { makeLogger, makeMockAgentManager, makeMockRuntime, makePRD, makeStory } from "@test/helpers";
 
 function makeRuntime(closeImpl?: () => Promise<void>): NaxRuntime {
   const runtime = makeMockRuntime({

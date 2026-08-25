@@ -10,9 +10,11 @@
  * internals.
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import { withTempDir } from "@test/helpers";
 import type { AcceptanceGroupResult } from "@/cli";
-import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
+import type { AuditTarget, Finding, FinishContext, FinishMachineDeps, FinishOps, FinishState } from "@/finish";
 import {
   _acceptanceGateDeps,
   _finishGitDeps,
@@ -21,9 +23,7 @@ import {
   runFinishMachine,
   serializeFinishState,
 } from "@/finish";
-import type { AuditTarget, Finding, FinishContext, FinishMachineDeps, FinishOps, FinishState } from "@/finish";
 import type { QualityCommandOptions, QualityCommandResult } from "@/quality";
-import { withTempDir } from "@test/helpers";
 
 const originalGit = _finishGitDeps.git;
 const originalAcceptanceRun = _acceptanceGateDeps.run;

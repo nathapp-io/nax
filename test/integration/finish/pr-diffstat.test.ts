@@ -16,8 +16,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createFinishState, loadFinishPrContext } from "@/finish";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { createFinishState, loadFinishPrContext } from "@/finish";
 
 const ROOT_ARTIFACT = ".nax/features/f/spec.md";
 const PACKAGE_ARTIFACT = "packages/api/.nax/features/f/_nax_acceptance_test.py";

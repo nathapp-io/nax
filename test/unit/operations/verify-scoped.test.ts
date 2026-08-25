@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { Finding } from "@/findings";
-import { _verifyScopedDeps, verifyScopedOp } from "@/operations";
 import type { VerifyScopedDeps } from "@/operations";
+import { _verifyScopedDeps, verifyScopedOp } from "@/operations";
 import type { SelectScopedTestsInput } from "@/test-runners";
 
 function ctxWithQuality(quality?: Record<string, unknown>, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {

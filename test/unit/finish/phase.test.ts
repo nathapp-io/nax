@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { _finishPhaseDeps, finishSkipReason, runFinishPhase, shouldRunFinish } from "@/finish";
-import type { FinishPhaseContext } from "@/finish";
-import type { FinishContext } from "@/finish";
-import { pipelineEventBus } from "@/pipeline";
 import { makeTestRuntime, withInfoSpy } from "@test/helpers";
+import type { FinishContext, FinishPhaseContext } from "@/finish";
+import { _finishPhaseDeps, finishSkipReason, runFinishPhase, shouldRunFinish } from "@/finish";
+import { pipelineEventBus } from "@/pipeline";
 
 describe("shouldRunFinish", () => {
   const base = { enabled: true, branch: "feat/x", storySummary: { completed: 2, failed: 0, paused: 0 } };

@@ -6,15 +6,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import {
-  LintConfigProvider,
   _codeNeighborDeps,
   _gitHistoryDeps,
   _lintConfigProviderDeps,
   createDefaultOrchestrator,
+  LintConfigProvider,
 } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
-import { makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

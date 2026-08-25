@@ -10,13 +10,12 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { makeNaxConfig } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
-import type { NaxConfig } from "@/config";
 import { initLogger, resetLogger } from "@/logger";
 import { _routingDeps, routingStage } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
 import type { UserStory } from "@/prd/types";
-import { makeNaxConfig } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-test-partial-routing-${randomUUID()}`;
 

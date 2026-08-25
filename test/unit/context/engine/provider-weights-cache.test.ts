@@ -8,8 +8,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { ProviderWeightsCache, _providerWeightsCacheDeps } from "@/context/engine";
 import type { StoredContextManifest } from "@/context/engine";
+import { _providerWeightsCacheDeps, ProviderWeightsCache } from "@/context/engine";
 
 let origLoadFeatureManifests: typeof _providerWeightsCacheDeps.loadFeatureManifests;
 let origDeriveProviderWeights: typeof _providerWeightsCacheDeps.deriveProviderWeights;

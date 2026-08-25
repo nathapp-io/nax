@@ -16,11 +16,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeInProgressStory, makeNaxConfig, makePRD } from "@test/helpers";
 import type { TierConfig } from "@/config";
 import { TierConfigSchema } from "@/config";
 import { _tierEscalationDeps, preIterationTierCheck } from "@/execution/escalation";
 import type { StoryRouting, UserStory } from "@/prd";
-import { makeInProgressStory, makeNaxConfig, makePRD } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Scaffolding

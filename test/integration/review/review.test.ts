@@ -4,12 +4,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { makeConfigSlice, makeTempDir } from "@test/helpers";
 import type { ReviewConfig } from "@/review";
 import { runReview } from "@/review/runner";
-import { makeConfigSlice, makeTempDir } from "@test/helpers";
 
 describe("Review Phase", () => {
   test("runReview - all checks pass", async () => {

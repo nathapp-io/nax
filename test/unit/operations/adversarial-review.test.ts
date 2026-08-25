@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { callOp } from "@/operations";
-import { adversarialReviewOp } from "@/operations/adversarial-review";
-import type { AdversarialReviewInput } from "@/operations/adversarial-review";
-import type { NaxRuntime } from "@/runtime";
 import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime, opSelector } from "@test/helpers";
+import { callOp } from "@/operations";
+import type { AdversarialReviewInput } from "@/operations/adversarial-review";
+import { adversarialReviewOp } from "@/operations/adversarial-review";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

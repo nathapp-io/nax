@@ -14,7 +14,7 @@ import { join, relative } from "node:path";
 import { getSafeLogger } from "../logger";
 import { DEFAULT_SEPARATED_TEST_DIRS, DEFAULT_TEST_FILE_PATTERNS, extractTestDirs } from "../test-runners/conventions";
 import { getGitRoot, gitWithTimeout } from "../utils/git";
-import { type NaxIgnoreIndex, filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../utils/path-filters";
+import { filterNaxInternalPaths, type NaxIgnoreIndex, resolveNaxIgnorePatterns } from "../utils/path-filters";
 
 /**
  * Bun API wrappers — defined before functions to avoid circular type inference.

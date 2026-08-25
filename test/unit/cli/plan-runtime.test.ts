@@ -5,8 +5,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { _planDeps } from "@/cli";
 import { withTempDir } from "@test/helpers";
+import { _planDeps } from "@/cli";
 
 describe("_planDeps", () => {
   // ──────────────────────────────────────────────────────────────────────────

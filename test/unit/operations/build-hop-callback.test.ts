@@ -1,12 +1,4 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { HopKind } from "@/agents";
-import type { IAgentManager, RunAsSessionOpts } from "@/agents";
-import { SessionFailureError } from "@/agents";
-import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents";
-import type { AdapterFailure, ContextBundle } from "@/context/engine";
-import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
-import type { BuildHopCallbackContext } from "@/operations";
-import type { TimeoutRetryInput } from "@/prompts";
 import {
   makeContextBundle,
   makeContextManifest,
@@ -15,6 +7,12 @@ import {
   makeSessionManager,
   makeStory,
 } from "@test/helpers";
+import type { AgentRunOptions, HopKind, IAgentManager, RunAsSessionOpts, SessionHandle, TurnResult } from "@/agents";
+import { SessionFailureError } from "@/agents";
+import type { AdapterFailure, ContextBundle } from "@/context/engine";
+import type { BuildHopCallbackContext } from "@/operations";
+import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
+import type { TimeoutRetryInput } from "@/prompts";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 

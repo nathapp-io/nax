@@ -12,13 +12,13 @@
  */
 
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { makeLogger, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { AgentRunRequest } from "@/agents";
 import { ParseValidationError } from "@/agents";
 import * as loggerModule from "@/logger";
-import { type CallContext, _callOpDeps, adversarialReviewOp, callOp } from "@/operations";
+import { _callOpDeps, adversarialReviewOp, type CallContext, callOp } from "@/operations";
 import type { AdversarialReviewInput } from "@/operations/adversarial-review";
 import type { NaxRuntime } from "@/runtime";
-import { makeLogger, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

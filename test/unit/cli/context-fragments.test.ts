@@ -12,18 +12,18 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makePRD, makeStory, withDepsRestore } from "@test/helpers";
 import {
-  type LoadPRDResult,
   _contextFragmentsDeps,
   formatFragmentsInspect,
   formatFragmentsPrune,
   fragmentsInspectCommand,
   fragmentsPruneCommand,
+  type LoadPRDResult,
   listDependentStoryIds,
 } from "@/cli";
 import { _fragmentStoreDeps, listFragmentStoryIds, readFragment } from "@/context";
 import type { PRD, UserStory } from "@/prd";
-import { makePRD, makeStory, withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

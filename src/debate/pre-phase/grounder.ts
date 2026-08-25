@@ -7,8 +7,7 @@
 
 import { join } from "node:path";
 import { type SourceRoot, scanSourceRoots } from "@/analyze";
-import { callOp } from "@/operations";
-import { groundOp } from "@/operations";
+import { callOp, groundOp } from "@/operations";
 import { buildSourceRootsSection } from "@/prompts";
 import type { FactsManifest } from "../facts-manifest";
 import { renderManifestSection } from "../facts-manifest";

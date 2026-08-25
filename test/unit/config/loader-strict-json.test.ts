@@ -13,9 +13,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { loadConfig } from "@/config/loader";
 import { NaxError } from "@/errors";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("loadConfig — corrupt config.json fails fast (SEC-5)", () => {
   let tempDir: string;

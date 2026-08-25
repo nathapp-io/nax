@@ -11,7 +11,7 @@
 
 import { debateConfigSelector } from "../config";
 import type { DebateConfig } from "../config/selectors";
-import type { DebateStageConfig, Debater } from "../debate/types";
+import type { Debater, DebateStageConfig } from "../debate/types";
 import { DebatePromptBuilder } from "../prompts";
 import type { CompleteOperation } from "./types";
 

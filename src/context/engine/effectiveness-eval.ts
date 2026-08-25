@@ -11,9 +11,9 @@
  * size-correlation coefficient, and the scored/excluded counts.
  */
 
+import { z } from "zod";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
-import { z } from "zod";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types — public contract

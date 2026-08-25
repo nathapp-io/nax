@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeDispatchContext, makeSessionManager, makeStatusWriter } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _runCompletionDeps, handleRunCompletion } from "@/execution/lifecycle/run-completion";
-import { makeDispatchContext, makeSessionManager, makeStatusWriter } from "@test/helpers";
 
 const makePrd = () => ({
   project: "test-project",

@@ -9,8 +9,7 @@
  * event. All I/O (emitting, timing) stays with the manager.
  */
 
-import type { ResolvedPermissions } from "../config/permissions";
-import type { PipelineStage } from "../config/permissions";
+import type { PipelineStage, ResolvedPermissions } from "../config/permissions";
 import type { ModelDef, ModelTier } from "../config/schema";
 import { NaxError } from "../errors";
 import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "../runtime/dispatch-events";

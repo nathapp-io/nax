@@ -5,15 +5,15 @@
  * Covers: isTestFile, isSourceFile, matchesAllowedPath (via verify functions)
  */
 
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { makeSpawn } from "@test/helpers";
 import {
-  LITE_STUB_ADDED_LINES_CEILING,
   _isolationDeps,
   isSourceFile,
+  LITE_STUB_ADDED_LINES_CEILING,
   verifyTestWriterIsolation,
 } from "@/tdd/isolation";
 import { isTestFile } from "@/test-runners";
-import { makeSpawn } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // isTestFile

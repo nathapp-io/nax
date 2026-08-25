@@ -11,30 +11,26 @@
  * ADR-022 Phase 2: runFixCycle and classifyOutcome behaviour.
  */
 
-export type {
-  Finding,
-  FindingSeverity,
-  FindingSource,
-  FixTarget,
-} from "./types";
-
-export { SEVERITY_ORDER, compareSeverity, findingKey, findingRecurrenceKey } from "./types";
-
+export type { ReviewCheckResult } from "../review/types";
 export {
   acceptanceDiagnoseRawArrayToFindings,
   acceptanceDiagnoseRawToFinding,
   acFailureToFinding,
   acSentinelToFinding,
   executionFailureToFinding,
+  genericTypecheckDiagnosticToFinding,
   lintDiagnosticToFinding,
   pluginToFinding,
   reviewFindingToFinding,
   testFailureToFinding,
   testSummaryToFindings,
-  genericTypecheckDiagnosticToFinding,
 } from "./adapters";
-export { rebaseToWorkdir } from "./path-utils";
-
+export { isNaxBailWrapper, markNaxBailWrapper } from "./bail-marker";
+export { _cycleDeps, classifyOutcome, runFixCycle } from "./cycle";
+export type { RecordIterationContext, RecordIterationInput } from "./cycle-iteration-log";
+export { recordIteration } from "./cycle-iteration-log";
+export type { DeclineLedger } from "./cycle-retirement";
+export { createDeclineLedger } from "./cycle-retirement";
 export type {
   FixApplied,
   FixCycle,
@@ -47,17 +43,7 @@ export type {
   IterationOutcome,
   ValidateResult,
 } from "./cycle-types";
-
-export type { ReviewCheckResult } from "../review/types";
-
-export { classifyOutcome, runFixCycle, _cycleDeps } from "./cycle";
-export { recordIteration } from "./cycle-iteration-log";
-export type { RecordIterationContext, RecordIterationInput } from "./cycle-iteration-log";
-export { createDeclineLedger } from "./cycle-retirement";
-export type { DeclineLedger } from "./cycle-retirement";
-
-export { isNaxBailWrapper, markNaxBailWrapper } from "./bail-marker";
-
+export { rebaseToWorkdir } from "./path-utils";
 export type { StoryFixHistory, StoryFixState } from "./story-fix-history";
 export {
   appendStoryFixIterations,
@@ -66,3 +52,10 @@ export {
   mergeStoryFixDeclines,
   storyFixKey,
 } from "./story-fix-history";
+export type {
+  Finding,
+  FindingSeverity,
+  FindingSource,
+  FixTarget,
+} from "./types";
+export { compareSeverity, findingKey, findingRecurrenceKey, SEVERITY_ORDER } from "./types";

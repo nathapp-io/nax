@@ -2,12 +2,10 @@
  * Unit tests for src/analyze/scanner.ts — scanSourceRoots()
  */
 
-import { describe, expect, test } from "bun:test";
-import { mock } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { _scannerDeps, scanSourceRoots } from "@/analyze";
-import type { Logger } from "@/logger";
 import { makeLogger, withDepsRestore, withTempDir } from "@test/helpers";
+import { _scannerDeps, scanSourceRoots } from "@/analyze";
 
 // ── ACs 1 & 2: TypeScript single package ─────────────────────────────────────
 

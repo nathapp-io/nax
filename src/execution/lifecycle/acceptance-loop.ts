@@ -16,10 +16,9 @@ import {
   loadSemanticVerdicts,
 } from "@/acceptance";
 import type { NaxConfig } from "@/config";
-import type { Finding } from "@/findings";
+import type { Finding, FixCycle, FixCycleContext, FixCycleResult } from "@/findings";
 import { acFailureToFinding, acSentinelToFinding, runFixCycle } from "@/findings";
-import type { FixCycle, FixCycleContext, FixCycleResult } from "@/findings";
-import { type LoadedHooksConfig, fireHook } from "@/hooks";
+import { fireHook, type LoadedHooksConfig } from "@/hooks";
 import { getSafeLogger } from "@/logger";
 import type { StoryMetrics } from "@/metrics";
 import { acceptanceFixSourceOp, acceptanceFixTestOp } from "@/operations";
@@ -41,13 +40,13 @@ import {
 } from "./acceptance-helpers";
 
 export {
+  _regenerateDeps,
   buildResult,
   isStubTestFile,
   isTestLevelFailure,
   loadAcceptanceTestContent,
   loadSpecContent,
   regenerateAcceptanceTest,
-  _regenerateDeps,
 } from "./acceptance-helpers";
 
 export interface AcceptanceLoopContext extends DispatchContext {

@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeContextBundle, makeNaxConfig, makePRD, makeStory, makeTestContext } from "@test/helpers";
 import { ContextV2ConfigSchema } from "@/config/schemas";
 import { _stageAssemblerDeps, assembleForStage } from "@/context/engine/stage-assembler";
 import type { ContextBundle, ContextRequest } from "@/context/engine/types";
 import type { PipelineContext } from "@/pipeline/types";
-import { makeContextBundle, makeNaxConfig, makePRD, makeStory, makeTestContext } from "@test/helpers";
 
 function makeCtx(extraProviderIds?: string[]): PipelineContext {
   const config = makeNaxConfig({

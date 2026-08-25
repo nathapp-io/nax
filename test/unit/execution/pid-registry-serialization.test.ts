@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { PidRegistry } from "@/execution/pid-registry";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { PidRegistry } from "@/execution/pid-registry";
 
 describe("PidRegistry concurrent writes", () => {
   test("interleaved register/unregister leave the file consistent with the live set", async () => {

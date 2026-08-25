@@ -6,8 +6,8 @@
  * outcome reflects the aborted state rather than continuing to retry.
  */
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
-import { AgentManager, _agentManagerDeps } from "@/agents/manager";
+import { afterEach, describe, expect, test } from "bun:test";
+import { _agentManagerDeps, AgentManager } from "@/agents/manager";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 
 const rateLimitFailure = {

@@ -9,10 +9,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _debateSessionDeps, runHybrid } from "@/debate";
-import type { DebateStageConfig, HybridCtx } from "@/debate";
-import { _hybridDeps } from "@/debate/runner-hybrid";
-import type { DebateHybridInput } from "@/operations/debate-hybrid";
 import {
   makeDispatchContext,
   makeLogger,
@@ -21,6 +17,10 @@ import {
   makeSessionManager,
   withDepsRestore,
 } from "@test/helpers";
+import type { DebateStageConfig, HybridCtx } from "@/debate";
+import { _debateSessionDeps, runHybrid } from "@/debate";
+import { _hybridDeps } from "@/debate/runner-hybrid";
+import type { DebateHybridInput } from "@/operations/debate-hybrid";
 
 function installCallOp(impl: typeof _hybridDeps.callOp) {
   const spy = mock(impl);

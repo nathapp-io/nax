@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeLogger, makeMockAgentManager, makeSessionManager, withDepsRestore } from "@test/helpers";
 import { computeAcpHandle } from "@/agents/acp/adapter";
 import { DEFAULT_CONFIG } from "@/config";
 import { DebateRunner } from "@/debate/runner";
@@ -8,7 +9,6 @@ import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import type { CallContext } from "@/operations/types";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
-import { makeLogger, makeMockAgentManager, makeSessionManager, withDepsRestore } from "@test/helpers";
 
 function installCallOp(impl: typeof _statefulDeps.callOp) {
   const spy = mock(impl);

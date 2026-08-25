@@ -1,11 +1,4 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { runHybrid } from "@/debate/runner-hybrid";
-import { _hybridDeps } from "@/debate/runner-hybrid";
-import type { HybridCtx } from "@/debate/runner-hybrid";
-import type { DebateStageConfig } from "@/debate/types";
-import { NaxError } from "@/errors";
-import { DebatePromptBuilder } from "@/prompts";
-import type { PackageView } from "@/runtime";
 import {
   makeMockAgentManager,
   makeNaxConfig,
@@ -13,6 +6,12 @@ import {
   makeTestRuntime,
   withDepsRestore,
 } from "@test/helpers";
+import type { HybridCtx } from "@/debate/runner-hybrid";
+import { _hybridDeps, runHybrid } from "@/debate/runner-hybrid";
+import type { DebateStageConfig } from "@/debate/types";
+import { NaxError } from "@/errors";
+import { DebatePromptBuilder } from "@/prompts";
+import type { PackageView } from "@/runtime";
 
 function installCallOp(impl: typeof _hybridDeps.callOp) {
   const spy = mock(impl);

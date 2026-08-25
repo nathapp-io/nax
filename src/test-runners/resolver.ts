@@ -19,7 +19,6 @@
 
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { TestPatternConfig } from "../config/selectors";
-import type { NaxConfig } from "../config/types";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { DEFAULT_TEST_FILE_PATTERNS, extractTestDirs, globsToPathspec, globsToTestRegex } from "./conventions";

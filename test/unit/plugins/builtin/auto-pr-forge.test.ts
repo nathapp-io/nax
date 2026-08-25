@@ -12,7 +12,6 @@ import { type ForgeDeps as AutoPrDeps, hasOpenPr, openPr as openDraft } from "@/
 // injection seam on the plugin module itself. Import it the way the sibling
 // suite already does (`test/unit/plugins/builtin/auto-pr-acceptance.test.ts:27`).
 import { _autoPrDeps } from "@/plugins/builtin/auto-pr";
-import type { PostRunActionResult } from "@/plugins/extensions";
 
 interface CapturedRun {
   cmd: string[];

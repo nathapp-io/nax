@@ -10,8 +10,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { addTokenUsage, estimateCostFromTokenUsage, resolvePricingSource } from "@/agents/cost";
 import type { TokenUsage } from "@/agents/cost";
+import { addTokenUsage, estimateCostFromTokenUsage, resolvePricingSource } from "@/agents/cost";
 
 describe("addTokenUsage", () => {
   test("adds input and output tokens", () => {

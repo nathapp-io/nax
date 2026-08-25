@@ -9,7 +9,7 @@ import { spawn } from "bun";
 import type { PluginRegistry } from "../plugins";
 import type { ReviewConfig } from "../review/types";
 import { GIT_TIMEOUT_MS } from "../utils/git";
-import { type NaxIgnoreIndex, filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../utils/path-filters";
+import { filterNaxInternalPaths, type NaxIgnoreIndex, resolveNaxIgnorePatterns } from "../utils/path-filters";
 
 /** Injectable deps for testing */
 export const _deferredReviewDeps = { spawn };

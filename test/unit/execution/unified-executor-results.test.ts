@@ -14,8 +14,7 @@
  *   exec AC-31   rectification entry has source='rectification' and rectificationCost set
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────

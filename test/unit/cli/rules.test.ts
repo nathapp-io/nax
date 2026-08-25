@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { makeLogger, withTempDir } from "@test/helpers";
 import {
   _rulesCLIDeps,
   neutralizeContent,
@@ -20,7 +21,6 @@ import {
 } from "@/cli/rules";
 import { lintForNeutrality } from "@/context/rules/canonical-loader";
 import { NaxError } from "@/errors";
-import { makeLogger, withTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers

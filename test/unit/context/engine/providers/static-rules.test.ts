@@ -8,10 +8,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { StaticRulesProvider, _staticRulesDeps } from "@/context/engine/providers/static-rules";
+import { _staticRulesDeps, StaticRulesProvider } from "@/context/engine/providers/static-rules";
 import type { ContextRequest } from "@/context/engine/types";
-import { NeutralityLintError } from "@/context/rules/canonical-loader";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
+import { NeutralityLintError } from "@/context/rules/canonical-loader";
 import type { NaxError } from "@/errors";
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,9 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
+import { makeAgentAdapter, makeAgentRegistry, makeNaxConfig } from "@test/helpers";
 import { AgentManager } from "@/agents/manager";
-import type { AgentRegistry } from "@/agents/registry";
 import type { CompleteOptions } from "@/agents/types";
 import { PidRegistry } from "@/execution/pid-registry";
-import { makeAgentAdapter, makeAgentRegistry, makeNaxConfig } from "@test/helpers";
 
 const availFailure = {
   category: "availability" as const,

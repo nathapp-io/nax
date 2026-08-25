@@ -4,21 +4,28 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
+import {
+  cleanupTempDir,
+  makeAgentResult,
+  makeDispatchContext,
+  makeMergeEngine,
+  makeSpawn,
+  makeTempDir,
+  makeTestContext,
+} from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _tierEscalationDeps } from "@/execution/escalation/tier-escalation";
 import {
-  type PipelineHandlerContext,
   _resultHandlerDeps,
   handlePipelineFailure,
   handlePipelineSuccess,
+  type PipelineHandlerContext,
 } from "@/execution/pipeline-result-handler";
 import type { PipelineRunResult } from "@/pipeline/runner";
 import { PluginRegistry } from "@/plugins/registry";
 import { loadPRD, savePRD } from "@/prd";
 import type { PRD, UserStory } from "@/prd/types";
 import { _gitDeps } from "@/utils/git";
-import { makeAgentResult, makeMergeEngine, makeSpawn, makeTestContext } from "@test/helpers";
-import { cleanupTempDir, makeDispatchContext, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -317,8 +324,8 @@ describe("handlePipelineSuccess — worktree mode (EXEC-002)", () => {
 // story:skipped event emission
 // ---------------------------------------------------------------------------
 
-import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { StorySkippedEvent } from "@/pipeline/event-bus";
+import { pipelineEventBus } from "@/pipeline/event-bus";
 
 describe("handlePipelineFailure — story:skipped event", () => {
   let capturedSkipped: StorySkippedEvent[];

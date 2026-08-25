@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { type PostJsonDeps, interpolateHeaders, postJson } from "@/plugins";
 import { mockFetch } from "@test/helpers";
+import { interpolateHeaders, type PostJsonDeps, postJson } from "@/plugins";
 
 describe("interpolateHeaders", () => {
   test("resolves a single env placeholder", () => {

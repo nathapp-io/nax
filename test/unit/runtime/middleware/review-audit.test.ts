@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ReviewAuditDecision, ReviewAuditDispatch } from "@/review/review-audit";
-import { DispatchEventBus } from "@/runtime/dispatch-events";
 import type { ReviewDecisionEvent, SessionTurnDispatchEvent } from "@/runtime/dispatch-events";
+import { DispatchEventBus } from "@/runtime/dispatch-events";
 import { attachReviewAuditSubscriber } from "@/runtime/middleware/review-audit";
 
 const PERMS = { mode: "approve-reads" as const };

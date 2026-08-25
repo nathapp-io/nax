@@ -12,8 +12,7 @@
  */
 import { mock } from "bun:test";
 import { DebateRunner } from "@/debate";
-import type { DebateStageConfig } from "@/debate/types";
-import type { DebateResult } from "@/debate/types";
+import type { DebateResult, DebateStageConfig } from "@/debate/types";
 import { makeMockCallContext } from "./call-context";
 
 /**

@@ -15,7 +15,7 @@
 // a 12-hop pipeline -> execution loop. `story-context` is its own nested
 // barrel, so this reaches it without loading `src/execution/index.ts`.
 import { hookCtx } from "@/execution/story-context";
-import { type LoadedHooksConfig, fireHook } from "@/hooks";
+import { fireHook, type LoadedHooksConfig } from "@/hooks";
 import { getSafeLogger } from "@/logger";
 import type { PipelineEventBus } from "../event-bus";
 

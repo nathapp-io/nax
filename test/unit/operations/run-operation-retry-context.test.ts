@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { AgentRunRequest } from "@/agents";
 import type { RetryContext } from "@/agents/retry/types";
-import { pickSelector } from "@/config";
 import type { DEFAULT_CONFIG } from "@/config";
+import { pickSelector } from "@/config";
 import { callOp } from "@/operations";
 import type { RunOperation } from "@/operations/types";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 let runtime: NaxRuntime | undefined;
 afterEach(async () => {

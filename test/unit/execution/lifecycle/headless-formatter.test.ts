@@ -3,8 +3,8 @@
  * sub-threshold review findings.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { Mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { outputAdvisoryFindingsSummary } from "@/execution";
 import type { AdvisoryFindingSummaryEntry } from "@/runtime";
 

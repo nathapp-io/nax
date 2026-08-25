@@ -1,7 +1,21 @@
 import type { NonBlockingFixConfig } from "@/config/selectors";
 import { NaxError } from "@/errors";
 import type { Finding, FixCycleContext, FixStrategy } from "@/findings";
-import type { CallContext } from "@/operations";
+import type {
+  AdversarialReviewInput,
+  CallContext,
+  FullSuiteGateInput,
+  GreenfieldGateInput,
+  ImplementerInput,
+  LintCheckInput,
+  MutationCheckInput,
+  SemanticReviewInput,
+  TestPresenceGateInput,
+  TestWriterInput,
+  TypecheckCheckInput,
+  VerifierInput,
+  VerifyScopedInput,
+} from "@/operations";
 import {
   adversarialReviewOp,
   fullSuiteGateOp,
@@ -15,20 +29,6 @@ import {
   typecheckCheckOp,
   verifierOp,
   verifyScopedOp,
-} from "@/operations";
-import type {
-  AdversarialReviewInput,
-  FullSuiteGateInput,
-  GreenfieldGateInput,
-  ImplementerInput,
-  LintCheckInput,
-  MutationCheckInput,
-  SemanticReviewInput,
-  TestPresenceGateInput,
-  TestWriterInput,
-  TypecheckCheckInput,
-  VerifierInput,
-  VerifyScopedInput,
 } from "@/operations";
 import { ExecutionPlan } from "./execution-plan";
 import { isSlot, setPhase } from "./phase-state";

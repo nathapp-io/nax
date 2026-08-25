@@ -11,8 +11,8 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { verifierOp } from "@/operations";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { verifierOp } from "@/operations";
 
 const VALID_VERDICT = {
   version: 1,

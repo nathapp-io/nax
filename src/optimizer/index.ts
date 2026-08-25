@@ -4,13 +4,13 @@
  * Exports optimizer types, implementations, and factory function.
  */
 
+export { NoopOptimizer } from "./noop.optimizer.js";
 export type {
   IPromptOptimizer,
   PromptOptimizerInput,
   PromptOptimizerResult,
 } from "./types.js";
 export { estimateTokens } from "./types.js";
-export { NoopOptimizer } from "./noop.optimizer.js";
 
 import type { NaxConfig } from "../config/schema.js";
 import type { PluginRegistry } from "../plugins/registry.js";

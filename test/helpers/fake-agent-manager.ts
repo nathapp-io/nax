@@ -2,8 +2,8 @@ import { buildContextToolPreamble, buildRunInteractionHandler } from "@/agents/a
 import { NO_OP_INTERACTION_HANDLER } from "@/agents/interaction-handler";
 import type { IAgentManager } from "@/agents/manager-types";
 import type { AgentAdapter, AgentResult, CompleteOptions, ResolvedCompleteOptions } from "@/agents/types";
-import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
 import { resolvePermissions } from "@/config/permissions";
 import { getLogger } from "@/logger";
 import type { IDispatchEventBus } from "@/runtime/dispatch-events";

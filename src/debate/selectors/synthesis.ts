@@ -10,8 +10,7 @@
  * from resolvers.
  */
 
-import { callOp as _callOp } from "@/operations";
-import { synthesisOp } from "@/operations";
+import { callOp as _callOp, synthesisOp } from "@/operations";
 import type { DebateSynthesisInput } from "@/operations/debate-synthesis";
 import type { CallContext } from "@/operations/types";
 import type { Selector, SelectorContext, SelectorResult } from "./types";

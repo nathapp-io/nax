@@ -8,9 +8,11 @@ import { tryParseLLMJson } from "../utils/llm-json";
 import { extractAcks } from "./acks";
 import { resolveFixTarget } from "./category-fix-target";
 import { normalizeSemanticCategory } from "./semantic-categories";
-import { isBlockingSeverity, normalizeSeverity } from "./severity";
 import type { Severity } from "./severity";
+import { isBlockingSeverity, normalizeSeverity } from "./severity";
+
 export { isBlockingSeverity, normalizeSeverity };
+
 import type { ReviewAck, SemanticReviewConfig } from "./types";
 
 export interface LLMFinding {

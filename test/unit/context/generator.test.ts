@@ -3,13 +3,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
-import type { NaxConfig } from "@/config";
+import { makeNaxConfig, makeTempDir } from "@test/helpers";
 import { _generatorDeps, discoverPackages, generateForPackage } from "@/context/generator";
-import { makeNaxConfig } from "@test/helpers";
-import { makeTempDir } from "@test/helpers";
 
 describe("discoverPackages (MW-004)", () => {
   let tmpDir: string;

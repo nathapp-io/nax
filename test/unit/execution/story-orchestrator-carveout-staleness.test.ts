@@ -15,12 +15,17 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { type DEFAULT_CONFIG, pickSelector } from "@/config";
-import { StoryOrchestratorBuilder, _storyOrchestratorDeps, describeGateRegression, gateFailureKeys } from "@/execution";
-import { deriveTddFailureCategory } from "@/execution";
+import { makeMockCallContext, makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { pickSelector } from "@/config";
+import {
+  _storyOrchestratorDeps,
+  deriveTddFailureCategory,
+  describeGateRegression,
+  gateFailureKeys,
+  StoryOrchestratorBuilder,
+} from "@/execution";
 import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockCallContext, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 const testSel = pickSelector("carveout-staleness-selector", "execution");
 

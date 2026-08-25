@@ -15,7 +15,6 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { _mutationCheckDeps, mutationCheckOp } from "@/operations";
 import {
   cleanupTempDir,
   makeMutationCheckCtx as ctxWithConfig,
@@ -23,6 +22,7 @@ import {
   makeResolvedTestPatterns,
   makeTempDir,
 } from "@test/helpers";
+import { _mutationCheckDeps, mutationCheckOp } from "@/operations";
 
 const FAKE_STORY = { id: "US-004", title: "mutation-check op" } as any;
 

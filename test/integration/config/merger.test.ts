@@ -10,10 +10,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { DeepPartial } from "@test/helpers";
+import { assertDefined } from "@test/helpers";
 import { deepMergeConfig } from "@/config/merger";
 import type { NaxConfig } from "@/config/schema";
-import { assertDefined } from "@test/helpers";
-import type { DeepPartial } from "@test/helpers";
 
 /**
  * `deepMergeConfig<T>` defaults `T` to `NaxConfig`, but the merger runs on RAW

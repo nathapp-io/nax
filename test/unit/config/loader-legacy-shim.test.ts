@@ -13,6 +13,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   _applyLegacyReviewExecutionShim,
   _applyRemovedRoutingKeysShim,
@@ -20,7 +21,6 @@ import {
 } from "@/config/compat-shims";
 import { _clearRootConfigCache, loadConfig, loadConfigForWorkdir } from "@/config/loader";
 import { addSink, initLogger, resetLogger } from "@/logger";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("_applyRemovedRoutingKeysShim — routing keys removed with ROUTE-001", () => {
   test("warns and strips routing.customStrategyPath", () => {

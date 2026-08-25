@@ -6,9 +6,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { recordRepoScopedFixes } from "@/execution";
-import type { RepoScopedFixRecord } from "@/execution";
 import { makeStory } from "@test/helpers";
+import type { RepoScopedFixRecord } from "@/execution";
+import { recordRepoScopedFixes } from "@/execution";
 
 function makeRecord(overrides: Partial<RepoScopedFixRecord> = {}): RepoScopedFixRecord {
   return {

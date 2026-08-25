@@ -7,10 +7,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { makeTempDir } from "@test/helpers";
 import { _statusFeaturesDeps, displayFeatureStatus } from "@/cli/status-features";
 import type { NaxStatusFile } from "@/execution/status-file";
 import type { PRD } from "@/prd";
-import { makeTempDir } from "@test/helpers";
 
 describe("displayFeatureStatus - Project-level status (nax/status.json)", () => {
   let testDir: string;

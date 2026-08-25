@@ -11,7 +11,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { NaxError } from "@/errors";
-import { type VerificationResult, classifyMutant } from "@/verification";
+import { classifyMutant, type VerificationResult } from "@/verification";
 
 function makeResult(status: VerificationResult["status"]): VerificationResult {
   return {

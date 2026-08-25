@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { makeInteractionChain } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import {
-  type TriggerContext,
   checkCostExceeded,
   checkCostWarning,
   checkMaxRetries,
@@ -13,9 +13,9 @@ import {
   executeTrigger,
   getTriggerConfig,
   isTriggerEnabled,
+  type TriggerContext,
 } from "@/interaction/triggers";
 import type { TriggerName } from "@/interaction/types";
-import { makeInteractionChain } from "@test/helpers";
 
 const makeSlicedConfig = (
   triggers: Partial<Record<TriggerName, unknown>>,

@@ -5,9 +5,9 @@
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { PidRegistry } from "@/execution/pid-registry";
-import { SessionManager, _sessionManagerDeps } from "@/session/manager";
 import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
+import { PidRegistry } from "@/execution/pid-registry";
+import { _sessionManagerDeps, SessionManager } from "@/session/manager";
 
 function makeRegistry(workdir = "/tmp/test-pid-session"): PidRegistry {
   return new PidRegistry(workdir);

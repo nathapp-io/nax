@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { ParseValidationError } from "@/agents";
-import type { RetryStrategy } from "@/agents";
-import { NaxError } from "@/errors";
-import type { NaxRuntime } from "@/runtime";
 import { makeNaxConfig, makeTestRuntime, opSelector } from "@test/helpers";
+import type { RetryStrategy } from "@/agents";
+import { ParseValidationError } from "@/agents";
+import type { NaxRuntime } from "@/runtime";
 
 /**
  * planCriticLlmOp + CriticPromptBuilder tests — US-003

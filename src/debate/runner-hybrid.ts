@@ -16,10 +16,10 @@ import { allSettledBounded } from "./concurrency";
 import { resolvePersonas } from "./personas";
 import { createDebaterCallContext, resolveStatefulSignal } from "./runner-stateful-helpers";
 import {
-  type ResolveOutcome,
-  type ResolvedDebater,
   _debateSessionDeps,
   buildFailedResult,
+  type ResolvedDebater,
+  type ResolveOutcome,
   resolveOutcome,
 } from "./session-helpers";
 import type { DebateResult, DebateStageConfig, Proposal, Rebuttal } from "./types";

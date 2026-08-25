@@ -3,33 +3,33 @@
  */
 
 export {
-  runAcceptanceLoop,
   _runAcceptanceTestsOnceDeps,
   type AcceptanceLoopContext,
   type AcceptanceLoopResult,
+  runAcceptanceLoop,
 } from "./acceptance-loop";
+export { type BackfillMetricArgs, synthesizeBackfillMetric } from "./backfill-story-metrics";
 export {
-  outputRunHeader,
-  outputRunFooter,
   outputAdvisoryFindingsSummary,
   outputMutationSummary,
-  type RunHeaderOptions,
+  outputRunFooter,
+  outputRunHeader,
   type RunFooterOptions,
+  type RunHeaderOptions,
 } from "./headless-formatter";
+export { _runCleanupDeps, cleanupRun, type RunCleanupOptions } from "./run-cleanup";
 export {
-  handleRunCompletion,
   _runCompletionDeps,
+  handleRunCompletion,
   type RunCompletionOptions,
   type RunCompletionResult,
 } from "./run-completion";
-export { synthesizeBackfillMetric, type BackfillMetricArgs } from "./backfill-story-metrics";
-export { cleanupRun, _runCleanupDeps, type RunCleanupOptions } from "./run-cleanup";
-export { setupRun, type RunSetupOptions, type RunSetupResult } from "./run-setup";
 export {
-  runDeferredRegression,
-  findResponsibleStoryByTransition,
   _regressionDeps,
   type DeferredRegressionOptions,
   type DeferredRegressionResult,
+  findResponsibleStoryByTransition,
+  runDeferredRegression,
   type StorySnapshot,
 } from "./run-regression";
+export { type RunSetupOptions, type RunSetupResult, setupRun } from "./run-setup";

@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { STAGE_CONTEXT_MAP, getStageContextConfig } from "@/context/engine/stage-config";
+import { getStageContextConfig, STAGE_CONTEXT_MAP } from "@/context/engine/stage-config";
 
 describe("stage-config — tool-diagnostics provider registration (US-002)", () => {
   describe("US-002 AC12: rectify stage lists 'tool-diagnostics'", () => {

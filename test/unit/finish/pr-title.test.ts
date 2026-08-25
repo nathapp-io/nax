@@ -7,7 +7,7 @@
  * live where a test can reach them.
  */
 import { describe, expect, test } from "bun:test";
-import { TITLE_MAX_CHARS, parseTitle, resolveTitle, sanitizeTitle } from "@/finish";
+import { parseTitle, resolveTitle, sanitizeTitle, TITLE_MAX_CHARS } from "@/finish";
 
 describe("sanitizeTitle", () => {
   test("keeps a well-formed conventional-commit subject unchanged", () => {

@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { makeNaxConfig, makeTestRuntime, opModelResolver, opSelector } from "@test/helpers";
 import type { AcceptanceFixSourceInput, AcceptanceFixTestInput } from "@/operations/acceptance-fix";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime, opModelResolver, opSelector } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
+
 import { acceptanceFixSourceOp, acceptanceFixTestOp } from "@/operations/acceptance-fix";
 
 const SOURCE_INPUT: AcceptanceFixSourceInput = {

@@ -13,8 +13,8 @@ import { _fullSuiteGateDeps, _lintCheckDeps, _typecheckCheckDeps } from "@/opera
 import type { UserStory } from "@/prd/types";
 import type { QualityCommandResult } from "@/quality/runner";
 import {
-  type DeepPartial,
   cleanupTempDir,
+  type DeepPartial,
   makeMockCallContext,
   makeMockPlanInputs,
   makeNaxConfig,
@@ -22,7 +22,7 @@ import {
   makeStory,
   makeTempDir,
 } from "../index";
-import { type ScriptedAgentSpec, makeScriptedAgent } from "./scripted-agent";
+import { makeScriptedAgent, type ScriptedAgentSpec } from "./scripted-agent";
 
 type GateFn<T> = (attempt: number) => T;
 

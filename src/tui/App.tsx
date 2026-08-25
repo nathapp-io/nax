@@ -18,8 +18,8 @@ import { type KeyboardAction, useKeyboard } from "./hooks/useKeyboard";
 import { COMPACT_MAX_VISIBLE_STORIES, MAX_VISIBLE_STORIES, MIN_TERMINAL_WIDTH, useLayout } from "./hooks/useLayout";
 import { usePipelineBusEvents } from "./hooks/usePipelineBusEvents";
 import { usePipelineEvents } from "./hooks/usePipelineEvents";
-import { PanelFocus } from "./types";
 import type { TuiProps } from "./types";
+import { PanelFocus } from "./types";
 
 // Memoized panels — only re-render when their own props change, not on every timer tick
 const MemoStoriesPanel = memo(StoriesPanel);

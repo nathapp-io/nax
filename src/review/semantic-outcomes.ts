@@ -14,7 +14,7 @@ import type { Logger } from "../logger";
 import type { SemanticReviewOutput } from "../operations/semantic-review";
 import type { NaxRuntime } from "../runtime";
 import { llmFindingsToReviewFindings } from "./finding-projection";
-import { type LLMFinding, formatFindings, isBlockingSeverity, toReviewFindings } from "./semantic-helpers";
+import { formatFindings, isBlockingSeverity, type LLMFinding, toReviewFindings } from "./semantic-helpers";
 import type { ReviewAck, ReviewCheckResult } from "./types";
 
 /** Fields every audit-recording outcome helper needs — a slice of RunSemanticReviewOptions plus derived run state. */

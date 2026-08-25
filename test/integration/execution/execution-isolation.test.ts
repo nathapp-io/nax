@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { verifyTestWriterIsolation } from "@/tdd";
 import { makeTempDir } from "@test/helpers";
+import { verifyTestWriterIsolation } from "@/tdd";
 
 describe("verifyTestWriterIsolation", () => {
   let testDir: string;

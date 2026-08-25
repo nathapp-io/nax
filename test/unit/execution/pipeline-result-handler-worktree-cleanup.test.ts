@@ -11,16 +11,16 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeAgentResult, makeMockRuntime, makePRD, makeStory, makeTestContext } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import {
-  type PipelineHandlerContext,
   _resultHandlerDeps,
   handlePipelineFailure,
+  type PipelineHandlerContext,
 } from "@/execution/pipeline-result-handler";
 import type { PipelineRunResult } from "@/pipeline/runner";
 import { PluginRegistry } from "@/plugins/registry";
 import type { UserStory } from "@/prd/types";
-import { makeAgentResult, makeMockRuntime, makePRD, makeStory, makeTestContext } from "@test/helpers";
 
 function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = {}): PipelineHandlerContext {
   const prd = makePRD({ userStories: [story] });

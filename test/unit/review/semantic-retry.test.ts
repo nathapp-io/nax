@@ -9,13 +9,6 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentRunRequest } from "@/agents";
-import * as loggerModule from "@/logger";
-import { callOp, semanticReviewOp } from "@/operations";
-import { _diffUtilsDeps } from "@/review/diff-utils";
-import { _semanticDeps, runSemanticReview } from "@/review/semantic";
-import type { SemanticStory } from "@/review/semantic";
-import type { SemanticReviewConfig } from "@/review/types";
 import {
   makeMockAgentManager,
   makeMockRuntime,
@@ -25,6 +18,13 @@ import {
   makeTestRuntime,
   withTempDir,
 } from "@test/helpers";
+import type { AgentRunRequest } from "@/agents";
+import * as loggerModule from "@/logger";
+import { callOp, semanticReviewOp } from "@/operations";
+import { _diffUtilsDeps } from "@/review/diff-utils";
+import type { SemanticStory } from "@/review/semantic";
+import { _semanticDeps, runSemanticReview } from "@/review/semantic";
+import type { SemanticReviewConfig } from "@/review/types";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 

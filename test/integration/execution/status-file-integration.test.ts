@@ -13,16 +13,15 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
 import * as nodeFs from "node:fs";
 import * as fs from "node:fs/promises";
-import * as os from "node:os";
 import * as path from "node:path";
+import { makeAgentAdapter, makeTempDir } from "@test/helpers";
 import { _registryTestAdapters } from "@/agents/registry";
-import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
-import { run } from "@/execution/runner";
+import { DEFAULT_CONFIG } from "@/config";
 import type { RunOptions } from "@/execution/runner";
+import { run } from "@/execution/runner";
 import type { NaxStatusFile } from "@/execution/status-file";
 import type { PRD } from "@/prd/types";
-import { makeAgentAdapter, makeTempDir } from "@test/helpers";
 
 // ============================================================================
 // Mock agent (satisfies agent installation check in runner)

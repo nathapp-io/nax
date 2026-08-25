@@ -1,13 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
-import type { AgentRunRequest } from "@/agents/manager-types";
-import type { PlanConfig } from "@/config/selectors";
-import { _planRefineDeps, callOp, normalizeCreatedContextFiles, planRefineOp } from "@/operations";
-import { planInteractiveOp } from "@/operations";
-import type { PlanRefineInput, VerifyContext } from "@/operations";
-import type { HopBodyContext } from "@/operations/types";
-import { PlanPromptBuilder } from "@/prompts";
-import type { NaxRuntime } from "@/runtime";
 import {
   assertDefined,
   makeMockAgentManager,
@@ -17,6 +9,13 @@ import {
   withTempDir,
   withWarnSpy,
 } from "@test/helpers";
+import type { AgentRunRequest } from "@/agents/manager-types";
+import type { PlanConfig } from "@/config/selectors";
+import type { PlanRefineInput, VerifyContext } from "@/operations";
+import { _planRefineDeps, callOp, normalizeCreatedContextFiles, planInteractiveOp, planRefineOp } from "@/operations";
+import type { HopBodyContext } from "@/operations/types";
+import { PlanPromptBuilder } from "@/prompts";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 

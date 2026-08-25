@@ -8,10 +8,10 @@
  * capture packageDir via closure in buildInput)
  */
 
-import { getSafeLogger } from "@/logger";
 import type { Logger } from "@/logger";
-import { callOp as _callOp } from "@/operations";
+import { getSafeLogger } from "@/logger";
 import type { Operation } from "@/operations";
+import { callOp as _callOp } from "@/operations";
 import { errorMessage } from "@/utils/errors";
 import { recordIteration } from "./cycle-iteration-log";
 import { createDeclineLedger } from "./cycle-retirement";
@@ -27,7 +27,6 @@ import type {
   FixCycle,
   FixCycleContext,
   FixCycleResult,
-  FixStrategy,
   Iteration,
   IterationOutcome,
   ValidateResult,

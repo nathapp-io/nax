@@ -25,31 +25,31 @@
 
 import { mkdir } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
-import { CANONICAL_RULES_DIR, loadCanonicalRules } from "../context/rules/canonical-loader";
 import type { CanonicalRule } from "../context/rules/canonical-loader";
+import { CANONICAL_RULES_DIR, loadCanonicalRules } from "../context/rules/canonical-loader";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 
 export {
+  _rulesLintDeps,
+  CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS,
   collectCanonicalRuleRoots,
+  DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS,
+  MAX_CANONICAL_RULE_GLOB_FILES,
   MAX_DEAD_GLOB_SCAN_FILES,
   MAX_DEAD_GLOB_SCAN_TOTAL_ENTRIES,
-  MAX_CANONICAL_RULE_GLOB_FILES,
-  CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS,
-  DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS,
-  _rulesLintDeps,
   type RulesLintOptions,
 } from "./rules-lint";
 
 import { rulesLintCommand as _rulesLintCommandImpl, _rulesLintDeps } from "./rules-lint";
 
 export {
-  rulesMigrateCommand,
+  type MigrationOutcome,
   neutralizeContent,
+  type RulesMigrateOptions,
+  rulesMigrateCommand,
   translateLegacyFrontmatter,
   withReviewNotice,
-  type RulesMigrateOptions,
-  type MigrationOutcome,
 } from "./rules-migrate";
 
 // ─────────────────────────────────────────────────────────────────────────────

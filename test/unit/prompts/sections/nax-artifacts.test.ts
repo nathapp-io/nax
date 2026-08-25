@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { buildNaxArtifactsSection } from "@/prompts/sections";
 import type { GuardrailRole } from "@/prompts/sections";
+import { buildNaxArtifactsSection } from "@/prompts/sections";
 
 // AC-1: buildNaxArtifactsSection for test-writer mentions .nax/ immutability
 // AC-2: returns non-null for test-writer

@@ -18,8 +18,8 @@
  */
 import type { Finding } from "@/findings";
 import type { UserStory } from "@/prd";
-import { validatePrdQuote } from "./test-edit-declaration";
 import type { TestEditDeclaration } from "./test-edit-declaration";
+import { validatePrdQuote } from "./test-edit-declaration";
 
 /** Why a declaration was rejected. */
 export type DeclarationDiagnosticReason = "prd_quote_mismatch" | "mock_structure_invalid_files";

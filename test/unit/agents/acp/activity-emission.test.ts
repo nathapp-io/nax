@@ -12,9 +12,9 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { type AcpLineActivity, SpawnAcpClient, _spawnClientDeps, createParseState, parseAcpxJsonLine } from "@/agents";
-import type { AgentStreamEvent } from "@/runtime";
 import { withDepsRestore } from "@test/helpers";
+import { _spawnClientDeps, type AcpLineActivity, createParseState, parseAcpxJsonLine, SpawnAcpClient } from "@/agents";
+import type { AgentStreamEvent } from "@/runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // parseAcpxJsonLine activity metadata tests

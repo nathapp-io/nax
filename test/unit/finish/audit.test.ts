@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { chmod, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { withTempDir } from "@test/helpers";
+import type { FinishResult, FinishRound } from "@/finish";
 import {
   appendRound,
   createFinishState,
@@ -13,8 +15,6 @@ import {
   roundsPath,
   writeResult,
 } from "@/finish";
-import type { FinishResult, FinishRound } from "@/finish";
-import { withTempDir } from "@test/helpers";
 
 function baseRound(overrides: Partial<FinishRound> = {}): FinishRound {
   return {

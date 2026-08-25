@@ -2,33 +2,33 @@
  * Session Manager — public barrel
  */
 
-export { SessionManager, _sessionManagerDeps } from "./manager";
-export { SessionKeeper } from "./session-keeper";
-export type { SessionKeeperOptions, SessionKeeperSendOptions } from "./session-keeper";
-export { formatSessionName } from "./naming";
 export type { ProtocolIds } from "../runtime/protocol-types";
+export { _sessionManagerDeps, SessionManager } from "./manager";
+export { formatSessionName } from "./naming";
+export { purgeStaleScratch } from "./scratch-purge";
 export type {
-  SessionDescriptor,
-  SessionState,
-  SessionRole,
-  CreateSessionOptions,
-  TransitionOptions,
-  ISessionManager,
-  OpenSessionRequest,
-  SendPromptOpts,
-  RunInSessionOpts,
-  NameForRequest,
-} from "./types";
-export { SESSION_TRANSITIONS } from "./types";
+  RectifyScratchEntry,
+  ScratchEntry,
+  SelfVerificationScratchEntry,
+  TddSessionScratchEntry,
+  ToolDiagnosticsScratchEntry,
+  VerifyScratchEntry,
+} from "./scratch-writer";
 // Re-export scratch-writer so callers can use `@/session/scratchFilePath` /
 // `@/session/ScratchEntry` instead of reaching into the internal path.
-export { scratchFilePath, appendScratchEntry, readDigestFile, writeDigestFile, digestFilePath } from "./scratch-writer";
+export { appendScratchEntry, digestFilePath, readDigestFile, scratchFilePath, writeDigestFile } from "./scratch-writer";
+export type { SessionKeeperOptions, SessionKeeperSendOptions } from "./session-keeper";
+export { SessionKeeper } from "./session-keeper";
 export type {
-  ScratchEntry,
-  VerifyScratchEntry,
-  RectifyScratchEntry,
-  TddSessionScratchEntry,
-  SelfVerificationScratchEntry,
-  ToolDiagnosticsScratchEntry,
-} from "./scratch-writer";
-export { purgeStaleScratch } from "./scratch-purge";
+  CreateSessionOptions,
+  ISessionManager,
+  NameForRequest,
+  OpenSessionRequest,
+  RunInSessionOpts,
+  SendPromptOpts,
+  SessionDescriptor,
+  SessionRole,
+  SessionState,
+  TransitionOptions,
+} from "./types";
+export { SESSION_TRANSITIONS } from "./types";

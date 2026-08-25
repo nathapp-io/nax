@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type ForgeDeps, detectForge, forgeFromRemoteUrl, remoteHost } from "@/forge";
+import { detectForge, type ForgeDeps, forgeFromRemoteUrl, remoteHost } from "@/forge";
 
 function deps(handler: (cmd: string[]) => { exitCode: number; stdout: string; stderr: string }): ForgeDeps {
   return {

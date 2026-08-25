@@ -95,6 +95,36 @@ Mitigation:
 - Consider asserting a non-zero enabled-rule count in a gate if the linter is ever
   reconfigured again.
 
+### v2 Moves The Test-Hygiene Rules Into A Domain, Silently Disabling Them
+
+**Found 2026-08-25 during step 4; missed by both earlier revisions.** Same failure class as
+the `migrate --write` trap above — something that gated under 1.9.4 stops gating under
+2.5.10 and the build stays green either way.
+
+Biome v2 moved `noFocusedTests`, `noSkippedTests`, `noExportsInTest` and
+`noDuplicateTestHooks` out of the `recommended` set and into the **`test` domain**, which is
+off unless `linter.domains` names it. `recommended: true` alone does not enable them.
+
+Concretely: after steps 1-2 landed, a committed `test.only(...)` **passed `bun run lint`**.
+Under 1.9.4 `noFocusedTests` was recommended and error-severity, so it failed the build. A
+stray `.only` silently reduces a whole test file to one test while CI reports green — this is
+strictly worse than any of the 546 new warnings.
+
+The tell was eight `suppressions/unused` warnings (see "Eight Dead Suppressions"): all eight
+suppress test-domain or non-recommended-style rules, and they read as dead precisely because
+the rules beneath them had been switched off. A dead suppression is evidence a rule stopped
+running, not just comment rot.
+
+Mitigation (applied): `"domains": { "test": "recommended" }` in `biome.json`. Measured cost:
+**zero new diagnostics** — the tree is already free of focused and skipped tests — and it
+retires seven of the eight dead suppressions by making them load-bearing again. Enabling
+`style/noParameterAssign` as `"error"` retires the eighth, also at zero cost.
+
+Generalisation worth carrying into any future Biome upgrade: **`recommended: true` is not a
+stable contract across major versions.** Diff the enabled-rule set, not just the diagnostic
+count. Rules can leave `recommended` by being demoted to warning (the finding below), by
+moving into a domain (this one), or by being dropped from the preset entirely.
+
 ### v2 Demotes The `test/` Rules To Warnings, Voiding The Drain's Endgame
 
 Measured on the full scope, dropping the `test/**` override:
@@ -205,13 +235,19 @@ Mitigation: make one explicit severity call covering this family and the `test/`
 and record it in `biome.json` with a comment. Accepting v2 defaults silently is the failure
 mode.
 
-### Eight Dead Suppressions
+### Eight Dead Suppressions — A Symptom, Not The Problem
 
 The tree carries **58** `biome-ignore` comments (2026-08-22's "208" did not survive
 re-counting). Under v2 with `recommended: true`, eight no longer suppress anything and emit
 `suppressions/unused`: `src/execution/runner-execution.ts`,
 `test/integration/review/adversarial-reprompt-telemetry.test.ts`, and six in
 `test/unit/agents/acp/adapter.test.ts`.
+
+**2026-08-25: these were not comment rot.** All eight name rules v2 had switched off —
+seven test-domain (`noExportsInTest`, `noDuplicateTestHooks`), one non-recommended style
+(`noParameterAssign`). Deleting the comments, the obvious cleanup, would have destroyed the
+only evidence that `noFocusedTests` had stopped gating. Re-enabling the rules retired all
+eight instead. See the new high risk above.
 
 (Under the mis-migrated `preset: "none"` config this reads as 42 unused suppressions — a
 useful secondary tell that the linter has been switched off.)
@@ -302,11 +338,12 @@ Sequenced so each step has an independently checkable outcome:
 2. **Error-severity fixes: 25 lint + 12 format.** The 22 `noUnsafeOptionalChaining` are the
    substance here and are real defects, not style. Expect this to be the longest step.
 3. **Re-enable organizeImports + formatter.** One mechanical commit, ~1137 files, nothing
-   else in it, added to `.git-blame-ignore-revs`.
+   else in it, added to `.git-blame-ignore-revs`. **Done** — 1127 files. Apply it with
+   `biome check --write --linter-enabled=false` so the assist and formatter run but the
+   step-4 lint fixes do not. Not fully mechanical in practice; see below.
 4. **Severity policy decision — the step that matters most.** Covers both the 546 new
-   warnings and the `test/` rules. If endgame item 4 is still wanted, promote
-   `noExplicitAny` and `noNonNullAssertion` to `"error"` here; if not, record that item 4 is
-   abandoned. Do not leave this implicit.
+   warnings and the `test/` rules. **Done except `--error-on-warnings`**, which is blocked on
+   a 204-site unused-variable triage rather than on a decision. See "Step 4 Decision".
 5. **GritQL pilot** for `process.cwd()`, with `check:process-cwd` retained as a wrapper.
 6. Leave `check:test-mocks` alone.
 
@@ -314,6 +351,104 @@ Steps 1-4 are roughly a day on a quiet tree — more than 2026-08-22's "half-day
 2 grew from 1 error to 37 when `test/` entered lint scope. There is no forcing function —
 Biome is a dev-only dependency with no runtime or security exposure — so the schedule
 pressure is entirely about step 3's conflict surface and the drain sequencing above.
+
+### Step 3 Outcome: The Reorder Is Not Purely Mechanical
+
+Landing step 3 needed three source edits the "one mechanical commit" framing did not predict.
+Budget for them; they are found by running the gates, not by reading the diff.
+
+- **A latent import cycle became a crash.** Sorting `./types` to the end of the
+  `src/agents/retry` barrel left `ParseValidationError` uninitialized for
+  `src/operations/setup-generate.ts`, which extends it at module-evaluation time:
+  `ReferenceError: Cannot access 'ParseValidationError' before initialization`. Fixed by
+  importing from the `../agents/retry/types` leaf. **This is the real risk of step 3** — a
+  barrel re-export order that a cycle silently depended on. `check:import-cycles` reports
+  135 cycled modules at baseline, so more of these are possible; any `class X extends Y`
+  or other module-evaluation-time use of a barrel import is a candidate. It surfaces as a
+  runtime throw in a gate or test, never as a lint or type error.
+- **Interleaved statements in an import block get blank lines inserted.** A re-export sitting
+  between two imports (`src/prd/schema.ts`) is moved below the block and padded. The padding
+  is not optional — removing it re-triggers `organizeImports`.
+- **Two grandfathered files grew past their `check:file-sizes` baseline** where merged
+  specifiers wrapped past `lineWidth: 120`. Bump those entries individually; do not run
+  `--update-baseline`, which would ratchet every grown file at once.
+
+### Step 4 Decision: Promote `src/`, Defer `test/`, Promote It Back After The Drain
+
+Endgame item 4 is **kept, not abandoned**. The decision splits by scope, because the two
+halves have very different costs — a distinction the "High Risks" framing above blurs.
+
+Measured 2026-08-25 with both rules forced to `"error"`:
+
+| Scope | `noExplicitAny` | `noNonNullAssertion` | cost of promoting |
+|:--|--:|--:|:--|
+| `src/` + `bin/` | 0 | 0 | **none** |
+| `test/` (override dropped) | 1851 | 1092 | 2943 errors |
+
+- **`src/` + `bin/` are now `"error"`** (top-level `linter.rules` in `biome.json`). This was
+  free, and it closed a regression that steps 1-2 introduced without anyone noticing: under
+  1.9.4 a new `any` in `src/` **failed** `bun run lint`; under 2.5.10 at v2 defaults it
+  emitted a warning and `lint` exited 0. Verified with a deliberate violation before and
+  after — same probe, 2 warnings then, 2 errors now.
+- **`test/**` stays `"off"`.** Promoting it does not retire a single `any`; it only turns the
+  build red until 2943 edits are done. A gate can follow a drain, it cannot precede one.
+- **When the drain reaches zero, the override is PROMOTED BACK to `"error"`, not deleted.**
+  Deleting it lands the rules at v2's default warning severity and `biome check` exits 0 on
+  warnings — the exact trap in "v2 Demotes The `test/` Rules To Warnings". Recorded in the
+  header of `scripts/check-test-escape-hatches.ts`, where the next drainer will read it.
+  (`biome.json` cannot hold a comment — it is strict JSON, not JSONC.)
+
+Also landed in step 4: `linter.domains.test` and `style/noParameterAssign` (see the
+test-domain high risk above), and a mechanical warning cleanup taking **542 warnings to
+256**, applied with `--only=correctness/noUnusedImports --only=complexity/useOptionalChain`.
+
+**`--error-on-warnings` is deferred, deliberately.** The flag exists in 2.5.10 and would end
+warning accumulation in one line, but a blanket `--write --unsafe` pass is the wrong way to
+clear the runway, and this is the trap worth recording:
+
+`--write --unsafe` reaches 54 warnings, but **192 of those "fixes" are underscore renames** —
+190 of them in `test/`. `noUnusedVariables` and `noUnusedFunctionParameters` are "fixed" by
+prefixing the identifier with `_`, which does not remove dead code; it launders it past the
+rule permanently. Sampling what it wanted to rename:
+
+- `const proposalBuilder = new DebatePromptBuilder(...)` — a builder constructed and never
+  used. Dead code, not a naming problem.
+- `let skippedManifests = 0; skippedManifests += 1;` — a counter incremented and never read.
+  A dropped log or metric.
+- `const skipInCI = fullTest;` — a CI skip guard that is never applied.
+- `let exitCode: number | undefined;` in a test — a value captured for an assertion nobody
+  wrote.
+
+In `test/` an unused variable is very often a **missing assertion**, which is exactly the
+defect class the drain exists to find. Underscoring 190 of them would erase 190 findings and
+report it as progress.
+
+So the sequencing is: the 204 `noUnusedVariables` / `noUnusedFunctionParameters` sites need
+triage — delete, or finish the assertion — as their own piece of work. `--error-on-warnings`
+goes on after that, together with a decision on the remaining 52 (27
+`noTemplateCurlyInString`, 15 `noTsIgnore`, 9 `noPrototypeBuiltins`, 1
+`useAdjacentOverloadSignatures`). Turning the flag on before then would force exactly the
+laundering it is meant to prevent.
+
+### The `nonNullAssert` Ratchet Undercounts By 273
+
+Found while deciding the above, and it outlives this document's scope. The claim that the
+`test/` debt is "already tracked by the escape-hatch ratchet" is only three-quarters true:
+
+| Counter | ratchet | Biome | gap |
+|:--|--:|--:|--:|
+| `anyType` / `noExplicitAny` | 1860 | 1851 | ~equivalent |
+| `nonNullAssert` / `noNonNullAssertion` | 819 | 1092 | **273 uncounted** |
+
+`scripts/check-test-escape-hatches.ts` is a raw-text regex whose own doc comment concedes it
+"undercounts rather than over-" and that "doing better needs a parser". Biome has the parser.
+So 273 non-null assertions in `test/` are counted by nothing: the regex misses them and the
+rule is off.
+
+The fix does not need the drain finished or the severity flipped: run Biome with the rule
+enabled, parse `--reporter=json`, and ratchet on **that** count instead of the regex. The
+blind spot closes immediately, and when the drain lands, ratchet and rule are already
+measuring the same thing, so the promote-back becomes a one-line severity change.
 
 ## Revision Notes (2026-08-25)
 

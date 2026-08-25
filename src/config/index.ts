@@ -1,141 +1,141 @@
 export type {
   DebateConfig,
+  DebateResult,
+  Debater,
   DebateStageConfig,
   ResolverConfig,
-  Debater,
-  DebateResult,
   ResolverType,
   SessionMode,
 } from "../debate/types";
+export { findProjectDir, globalConfigPath, loadConfig, loadConfigForWorkdir, loadPackageOverride } from "./loader";
+export type { ConfigLoader } from "./loader-runtime";
+export { createConfigLoader } from "./loader-runtime";
+export { mergePackageConfig } from "./merge";
+export { deepMergeConfig } from "./merger";
+export { isWithinDirectory, MAX_DIRECTORY_DEPTH, validateDirectory, validateFilePath } from "./path-security";
+export {
+  featureDir,
+  featuresDir,
+  globalConfigDir,
+  PROJECT_FEATURES_DIR,
+  PROJECT_NAX_DIR,
+  projectConfigDir,
+} from "./paths";
+export type { PipelineStage } from "./permissions";
+export {
+  listProfiles,
+  loadProfile,
+  loadProfileEnv,
+  parseProfileList,
+  profileOverrideFromConfig,
+  resolveProfileName,
+  resolveProfileNames,
+  sensitiveFilteredProcessEnv,
+} from "./profile";
+export { getProjectKey } from "./project-key";
 export type {
-  NaxConfig,
+  AutoModeConfig,
+  AutoRouteConfig,
+  AutoRouteDowngradeConfig,
+  AutoRouteUpgradeConfig,
   Complexity,
-  TestStrategy,
-  TddStrategy,
-  ModelTier,
+  ConfiguredModel,
+  ConfiguredModelObject,
+  ExecutionConfig,
   ModelDef,
   ModelEntry,
   ModelMap,
-  ConfiguredModel,
-  ConfiguredModelObject,
-  ResolvedConfiguredModel,
-  AutoModeConfig,
-  AutoRouteConfig,
-  AutoRouteUpgradeConfig,
-  AutoRouteDowngradeConfig,
-  ExecutionConfig,
-  QualityConfig,
-  TddConfig,
-  TierConfig,
-  RectificationConfig,
+  ModelTier,
+  NaxConfig,
   ProjectProfile,
+  QualityConfig,
+  RectificationConfig,
+  ResolvedConfiguredModel,
+  TddConfig,
+  TddStrategy,
+  TestStrategy,
+  TierConfig,
 } from "./schema";
-export type {
-  TestPatternConfig,
-  ContextToolRuntimeConfig,
-  PromptLoaderConfig,
-  LlmRoutingConfig,
-  MutationCheckConfig,
-  ExecutionGatesConfig,
-  AgentManagerConfig,
-} from "./selectors";
 export {
+  AcceptanceConfigSchema,
+  ContextConfigSchema,
+  ContextV2ConfigSchema,
   DEFAULT_CONFIG,
+  NaxConfigSchema,
+  PlanConfigSchema,
   resolveConfiguredModel,
   resolveModel,
   resolveModelForAgent,
-  NaxConfigSchema,
-  AcceptanceConfigSchema,
-  PlanConfigSchema,
-  ContextConfigSchema,
-  ContextV2ConfigSchema,
 } from "./schema";
-export { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
-export type { AgentRoutingProfile, AgentRoutingConfig } from "./schemas-infra";
-export {
-  AgentRoutingProfileSchema,
-  AgentRoutingConfigSchema,
-  RoutingConfigSchema,
-  DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
-} from "./schemas-infra";
 export { DebateConfigSchema } from "./schemas-debate";
 export {
-  TddConfigSchema,
   AutoRouteConfigSchema,
+  DEFAULT_VERIFICATION_TIMEOUT_SECONDS,
   ExecutionConfigSchema,
   RectificationConfigSchema,
   RegressionGateConfigSchema,
-  DEFAULT_VERIFICATION_TIMEOUT_SECONDS,
+  TddConfigSchema,
 } from "./schemas-execution";
+export type { AgentRoutingConfig, AgentRoutingProfile } from "./schemas-infra";
+export {
+  AgentRoutingConfigSchema,
+  AgentRoutingProfileSchema,
+  DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
+  RoutingConfigSchema,
+} from "./schemas-infra";
+export { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
 export { AdversarialReviewConfigSchema, ReviewConfigSchema } from "./schemas-review";
-export { loadConfig, loadConfigForWorkdir, loadPackageOverride, findProjectDir, globalConfigPath } from "./loader";
-export { mergePackageConfig } from "./merge";
-export { validateConfig, type ValidationResult } from "./validate"; // @deprecated: Use NaxConfigSchema.safeParse() instead
-export { validateDirectory, validateFilePath, isWithinDirectory, MAX_DIRECTORY_DEPTH } from "./path-security";
-export {
-  globalConfigDir,
-  projectConfigDir,
-  featuresDir,
-  featureDir,
-  PROJECT_NAX_DIR,
-  PROJECT_FEATURES_DIR,
-} from "./paths";
-export { deepMergeConfig } from "./merger";
-export type { PipelineStage } from "./permissions";
-export {
-  resolveProfileName,
-  resolveProfileNames,
-  parseProfileList,
-  profileOverrideFromConfig,
-  loadProfile,
-  loadProfileEnv,
-  listProfiles,
-  sensitiveFilteredProcessEnv,
-} from "./profile";
-export { pickSelector, reshapeSelector } from "./selector";
-export { getProjectKey } from "./project-key";
 export type { ConfigSelector } from "./selector";
+export { pickSelector, reshapeSelector } from "./selector";
+export type {
+  AgentManagerConfig,
+  ContextToolRuntimeConfig,
+  ExecutionGatesConfig,
+  LlmRoutingConfig,
+  MutationCheckConfig,
+  PromptLoaderConfig,
+  TestPatternConfig,
+} from "./selectors";
 export {
-  reviewConfigSelector,
-  planConfigSelector,
-  decomposeConfigSelector,
-  rectifyConfigSelector,
   acceptanceConfigSelector,
-  acceptanceGenConfigSelector,
   acceptanceFixConfigSelector,
-  tddConfigSelector,
-  debateConfigSelector,
-  routingConfigSelector,
-  verifyConfigSelector,
-  rectificationGateConfigSelector,
+  acceptanceGenConfigSelector,
   agentManagerConfigSelector,
-  interactionConfigSelector,
-  precheckConfigSelector,
-  qualityConfigSelector,
   autofixConfigSelector,
-  testPatternConfigSelector,
   contextToolRuntimeConfigSelector,
-  promptLoaderConfigSelector,
-  llmRoutingConfigSelector,
-  mutationCheckConfigSelector,
+  debateConfigSelector,
+  decomposeConfigSelector,
   executionGatesConfigSelector,
   finishConfigSelector,
+  interactionConfigSelector,
+  llmRoutingConfigSelector,
+  mutationCheckConfigSelector,
+  planConfigSelector,
+  precheckConfigSelector,
+  promptLoaderConfigSelector,
+  qualityConfigSelector,
+  rectificationGateConfigSelector,
+  rectifyConfigSelector,
+  reviewConfigSelector,
+  routingConfigSelector,
+  tddConfigSelector,
+  testPatternConfigSelector,
+  verifyConfigSelector,
 } from "./selectors";
-export { trackedSpawnDeadlines } from "./tracked-spawn-deadlines";
-export { createConfigLoader } from "./loader-runtime";
-export type { ConfigLoader } from "./loader-runtime";
 export {
-  COMPLEXITY_GUIDE,
-  TEST_STRATEGY_GUIDE,
   AC_QUALITY_RULES,
-  SPEC_ANCHOR_RULES,
+  COMPLEXITY_GUIDE,
   DESCRIPTION_QUALITY_RULES,
   GROUPING_RULES,
   getAcQualityRules,
-  resolveTestStrategy,
-  VALID_TEST_STRATEGIES,
-  THREE_SESSION_STRATEGIES,
-  SINGLE_SESSION_TEST_OWNING_STRATEGIES,
-  isThreeSessionStrategy,
   isSingleSessionTestOwningStrategy,
+  isThreeSessionStrategy,
+  resolveTestStrategy,
+  SINGLE_SESSION_TEST_OWNING_STRATEGIES,
+  SPEC_ANCHOR_RULES,
+  TEST_STRATEGY_GUIDE,
+  THREE_SESSION_STRATEGIES,
+  VALID_TEST_STRATEGIES,
 } from "./test-strategy";
+export { trackedSpawnDeadlines } from "./tracked-spawn-deadlines";
+export { type ValidationResult, validateConfig } from "./validate"; // @deprecated: Use NaxConfigSchema.safeParse() instead

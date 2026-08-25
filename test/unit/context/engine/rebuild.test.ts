@@ -35,7 +35,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { type MockLogger, makeLogger } from "@test/helpers";
 import {
+  _orchestratorDeps,
   type AdapterFailure,
   type ContextBundle,
   type ContextChunk,
@@ -46,10 +48,8 @@ import {
   FLOOR_KINDS,
   type IContextProvider,
   type RebuildOptions,
-  _orchestratorDeps,
   rebuild,
 } from "@/context/engine";
-import { type MockLogger, makeLogger } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

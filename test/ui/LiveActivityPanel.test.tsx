@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { render } from "ink-testing-library";
+import React from "react";
 import type { RunCompletedEvent } from "@/pipeline/event-bus";
 import { LiveActivityPanel } from "@/tui/components/LiveActivityPanel";
 import type { ActiveCallState } from "@/tui/hooks/useAgentStreamEvents";
 import type { EscalationEntry } from "@/tui/hooks/usePipelineBusEvents";
-import { render } from "ink-testing-library";
-import React from "react";
 
 function makeCall(overrides: Partial<ActiveCallState> = {}): ActiveCallState {
   return {

@@ -17,7 +17,7 @@
  * suite once per such package.
  */
 import { join } from "node:path";
-import { type NaxConfig, PROJECT_NAX_DIR, loadConfig, loadPackageOverride } from "@/config";
+import { loadConfig, loadPackageOverride, type NaxConfig, PROJECT_NAX_DIR } from "@/config";
 import { runQualityCommand } from "@/quality";
 import type { QualityGateResult } from "../types";
 

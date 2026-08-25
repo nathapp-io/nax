@@ -7,8 +7,8 @@
  * - Max attempts outcome resolution (pause vs fail)
  */
 
-import { isThreeSessionStrategy } from "@/config";
 import type { NaxConfig, TestStrategy } from "@/config";
+import { isThreeSessionStrategy } from "@/config";
 import type { Finding } from "@/findings";
 import type { LoadedHooksConfig } from "@/hooks";
 import { getSafeLogger } from "@/logger";

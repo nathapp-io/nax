@@ -7,11 +7,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { promptLoaderConfigSelector } from "@/config";
+import { type DeepPartial, fullTest, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { NaxConfig } from "@/config";
+import { promptLoaderConfigSelector } from "@/config";
 import type { PromptRole } from "@/prompts/core/types";
 import { loadOverride } from "@/prompts/loader";
-import { type DeepPartial, fullTest, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

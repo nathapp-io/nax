@@ -9,8 +9,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _executorDeps, appendForceExitFlag, executeWithTimeout, normalizeEnvironment } from "@/verification";
 import { makeSpawn, makeSpawnResult, withTimerSpy } from "@test/helpers";
+import { _executorDeps, appendForceExitFlag, executeWithTimeout, normalizeEnvironment } from "@/verification";
 
 describe("appendForceExitFlag (VER-1)", () => {
   test("inserts before a pipe, not inside the redirect tail", () => {

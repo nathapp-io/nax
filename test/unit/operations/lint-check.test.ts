@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Finding } from "@/findings";
-import { lintCheckOp } from "@/operations";
 import type { LintCheckDeps } from "@/operations";
+import { lintCheckOp } from "@/operations";
 
 function ctxWithQuality(quality?: Record<string, unknown>, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
   const config = { quality, execution: {} } as any;

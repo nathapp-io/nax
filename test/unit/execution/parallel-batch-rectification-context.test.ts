@@ -13,18 +13,16 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { cleanupTempDir, makePRD, makeStory as makeSharedStory, makeTempDir, makeTestContext } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
 import type { RectifyConflictedStoryOptions } from "@/execution/merge-conflict-rectify";
-import { type ParallelBatchCtx, _parallelBatchDeps, runParallelBatch } from "@/execution/parallel-batch";
+import { _parallelBatchDeps, type ParallelBatchCtx, runParallelBatch } from "@/execution/parallel-batch";
 import type { ParallelBatchResult } from "@/execution/parallel-worker";
 import type { LoadedHooksConfig } from "@/hooks";
-import type { PipelineContext } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD, UserStory } from "@/prd/types";
 import { MergeEngine, WorktreeManager } from "@/worktree";
-import { makePRD, makeStory as makeSharedStory, makeTestContext } from "@test/helpers";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function makeFakeWorktreeManager(): WorktreeManager {
   const wm = new WorktreeManager();

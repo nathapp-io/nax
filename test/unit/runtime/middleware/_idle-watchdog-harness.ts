@@ -19,9 +19,9 @@
  * underscore marks a local, non-collected helper module.
  */
 
+import { type FakeClock, makeFakeClock } from "@test/helpers";
 import type { AgentCallEndedEvent, AgentProcessUpdateEvent, AgentStreamEvent } from "@/runtime";
 import { _idleWatchdogDeps } from "@/runtime";
-import { type FakeClock, makeFakeClock } from "@test/helpers";
 
 /** Watchdog thresholds. Virtual time is free, so these are round and readable. */
 export const IDLE_TIMEOUT_SECONDS = 1;

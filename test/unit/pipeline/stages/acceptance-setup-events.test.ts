@@ -8,11 +8,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { DEFAULT_CONFIG } from "@/config";
-import { _acceptanceSetupDeps, acceptanceSetupStage, pipelineEventBus } from "@/pipeline";
-import type { PipelineContext } from "@/pipeline";
-import type { PostRunPhaseCompletedEvent, PostRunPhaseStartedEvent } from "@/pipeline";
 import { makeDispatchContext, makeStory } from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
+import type { PipelineContext, PostRunPhaseCompletedEvent, PostRunPhaseStartedEvent } from "@/pipeline";
+import { _acceptanceSetupDeps, acceptanceSetupStage, pipelineEventBus } from "@/pipeline";
 
 // ---------------------------------------------------------------------------
 // Helpers

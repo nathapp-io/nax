@@ -7,8 +7,8 @@
 
 import { describe, expect, test } from "bun:test";
 import type { Observation } from "@/plugins/builtin/curator";
-import { runHeuristics } from "@/plugins/builtin/curator/heuristics";
 import type { CuratorThresholds } from "@/plugins/builtin/curator/heuristics";
+import { runHeuristics } from "@/plugins/builtin/curator/heuristics";
 
 function makeReviewFindingObs942(
   storyId: string,

@@ -8,11 +8,12 @@ import type { Complexity, TestStrategy } from "../config";
 import { resolveTestStrategy } from "../config/test-strategy";
 import { NaxError } from "../errors";
 import { extractJsonFromMarkdown, extractJsonObject, stripTrailingCommas } from "../utils/llm-json";
-export { extractJsonFromMarkdown };
 import { assertNoDependencyCycle } from "./dependency-cycle";
 import { normalizeOutOfScopeList } from "./out-of-scope";
 import type { ContextFileEntry, ModifiedFileEntry, PRD, UserStory } from "./types";
 import { validateStoryId } from "./validate";
+
+export { extractJsonFromMarkdown };
 
 // ---------------------------------------------------------------------------
 // Constants

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { initLogger, resetLogger } from "@/logger";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { initLogger, resetLogger } from "@/logger";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Lifecycle

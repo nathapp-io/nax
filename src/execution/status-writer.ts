@@ -12,11 +12,11 @@ import { getSafeLogger } from "../logger";
 import type { PRD } from "../prd";
 import {
   type AcceptancePhaseStatus,
+  buildStatusSnapshot,
   type FinishPhaseStatus,
   type PostRunStatus,
   type RegressionPhaseStatus,
   type RunStateSnapshot,
-  buildStatusSnapshot,
   writeStatusFile,
 } from "./status-file";
 

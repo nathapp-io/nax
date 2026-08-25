@@ -15,9 +15,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { CostReportDeps, CostReportV1, RunMetrics, StoryMetrics } from "@/metrics";
 import { calculateAggregateMetrics, getLastRun, toCostReport } from "@/metrics";
-import type { CostReportDeps, CostReportV1 } from "@/metrics";
-import type { RunMetrics, StoryMetrics } from "@/metrics";
 import { TokenUsage } from "@/metrics/types";
 
 // ---------------------------------------------------------------------------

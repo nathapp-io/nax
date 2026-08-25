@@ -10,12 +10,12 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { makeAgentAdapter, makeNaxConfig, makePRD, makeStory, makeTempDir } from "@test/helpers";
 import { _registryTestAdapters } from "@/agents/registry";
 import type { NaxConfig } from "@/config";
 import { run } from "@/execution/runner";
 import { loadHooksConfig } from "@/hooks";
 import { savePRD } from "@/prd";
-import { makeAgentAdapter, makeNaxConfig, makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 // ============================================================================
 // Mock agent

@@ -8,12 +8,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { mergePackageConfig } from "@/config/merge";
 import type { NaxConfig } from "@/config/schema";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
-import { makeStory } from "@test/helpers";
 
 function makePrd(story?: UserStory): PRD {
   const s = story ?? makeStory();

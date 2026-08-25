@@ -9,9 +9,9 @@
  * in the Progress panel; other stages update currentStage for Live Activity.
  */
 
+import { useEffect, useState } from "react";
 import type { PipelineEventEmitter } from "@/pipeline/events";
 import type { StageResult } from "@/pipeline/types";
-import { useEffect, useState } from "react";
 
 /** Status of a pre-run pipeline stage. */
 export interface PreRunPhaseState {

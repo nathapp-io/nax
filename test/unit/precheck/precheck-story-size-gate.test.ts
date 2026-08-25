@@ -7,10 +7,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig, makeStorySizeGateConfig } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd/types";
 import { checkStorySizeGate } from "@/precheck/story-size-gate";
-import { makeNaxConfig, makeStorySizeGateConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

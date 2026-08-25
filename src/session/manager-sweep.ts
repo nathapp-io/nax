@@ -8,7 +8,7 @@
 
 import { getLogger } from "../logger";
 import { _sessionManagerDeps } from "./manager-deps";
-import type { SessionDescriptor, SessionState } from "./types";
+import type { SessionDescriptor } from "./types";
 
 /** Default TTL for orphan sweep: 4 hours */
 export const DEFAULT_ORPHAN_TTL_MS = 4 * 60 * 60 * 1000;

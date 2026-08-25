@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { buildFixCommitMessage } from "@/finish";
 import type { CommitMessageCtx, Finding, FindingDisposition } from "@/finish";
+import { buildFixCommitMessage } from "@/finish";
 
 const finding = (over: Partial<Finding> = {}): Finding => ({
   severity: "HIGH",

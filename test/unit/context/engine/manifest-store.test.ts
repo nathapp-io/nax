@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { withDepsRestore, withTempDir } from "@test/helpers";
 import {
   _manifestStoreDeps,
   contextManifestPath,
@@ -8,7 +9,6 @@ import {
   writeContextManifest,
   writeRebuildManifest,
 } from "@/context/engine/manifest-store";
-import { withDepsRestore, withTempDir } from "@test/helpers";
 
 withDepsRestore(_manifestStoreDeps);
 

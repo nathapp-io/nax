@@ -10,12 +10,12 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 import type { AgentFallbackRecord } from "@/agents/manager-types";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
-import { callOp } from "@/operations";
 import type { RunOperation } from "@/operations";
+import { callOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 
 const testSel = pickSelector("fallback-recording-test", "routing");
 const createdRuntimes: NaxRuntime[] = [];

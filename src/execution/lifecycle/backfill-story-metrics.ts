@@ -17,8 +17,9 @@
  *  - `completion-phase` — cost incurred only after execution (acceptance / hardening /
  *    diagnosis); the placeholder shape, unchanged.
  */
-import { resolveModelForAgent } from "@/config";
+
 import type { NaxConfig } from "@/config";
+import { resolveModelForAgent } from "@/config";
 import type { AgentFallbackHop, StoryMetrics } from "@/metrics";
 import type { UserStory } from "@/prd/types";
 

@@ -1,5 +1,5 @@
-import { ParseValidationError, makeTieredParseRetryStrategy } from "@/agents";
 import type { TieredInspection } from "@/agents";
+import { makeTieredParseRetryStrategy, ParseValidationError } from "@/agents";
 import { planConfigSelector } from "@/config";
 import type { FactsManifest } from "@/debate/facts-manifest";
 import type { VerifierFinding } from "@/plan/spec-deltas";

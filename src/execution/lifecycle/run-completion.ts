@@ -8,7 +8,6 @@
  * - Update final status
  */
 
-import type { IAgentManager } from "@/agents";
 import { resolveDefaultAgent } from "@/agents";
 import type { NaxConfig } from "@/config";
 import { _resetCanonicalRulesCache, purgeStaleManifests } from "@/context/engine";
@@ -22,7 +21,6 @@ import type { PRD } from "@/prd";
 import { countStories, isComplete, isStalled } from "@/prd";
 import { clearLanguageCache } from "@/project";
 import type { DispatchContext } from "@/runtime/dispatch-context";
-import type { ISessionManager } from "@/session";
 import { purgeStaleScratch } from "@/session";
 import { clearWorkspaceCache } from "@/test-runners/detect";
 import { clearGitRootCache } from "@/verification";

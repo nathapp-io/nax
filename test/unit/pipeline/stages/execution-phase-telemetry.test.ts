@@ -11,10 +11,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeAgentAdapter, makeMockAgentManager, makeNaxConfig, makeStory } from "@test/helpers";
 import type { CallContext } from "@/operations/types";
 import { _executionDeps, executionStage } from "@/pipeline";
 import type { PipelineContext } from "@/pipeline/types";
-import { makeAgentAdapter, makeMockAgentManager, makeNaxConfig, makeStory } from "@test/helpers";
 
 function makePipelineContext(overrides: Partial<PipelineContext> = {}): PipelineContext {
   const config = makeNaxConfig();

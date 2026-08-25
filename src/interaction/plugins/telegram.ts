@@ -8,12 +8,12 @@
 import { getSafeLogger } from "@/logger";
 import { errorMessage } from "@/utils/errors";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
-import { TelegramConfigSchema, type TelegramMessage, type TelegramUpdate, normalizeChatId } from "./telegram-config";
+import { normalizeChatId, TelegramConfigSchema, type TelegramMessage, type TelegramUpdate } from "./telegram-config";
 import {
-  MAX_MESSAGE_CHARS,
   buildBody,
   buildHeader,
   buildKeyboard,
+  MAX_MESSAGE_CHARS,
   splitText,
   truncateIdForCallbackData,
 } from "./telegram-format";
@@ -493,7 +493,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     // buildKeyboard()), so a plain-text message can never legitimately be their answer.
     if (update.message?.text) {
       const pending = this.pendingMessages.get(requestId);
-      if (!pending || pending.type !== "input") return null;
+      if (pending?.type !== "input") return null;
 
       const replyToId = update.message.reply_to_message?.message_id;
       // Accept if user replied directly to one of our messages, OR if it's the first text response

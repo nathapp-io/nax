@@ -9,10 +9,10 @@
 
 import { describe, expect, test } from "bun:test";
 import { dirname, join } from "node:path";
+import { withTempDir } from "@test/helpers";
 import { fragmentPath } from "@/context";
 import { NAX_GITIGNORE_ENTRIES, NAX_NAXIGNORE_ENTRIES, patchIgnoreFile } from "@/utils/gitignore";
 import { journalDir } from "@/verification";
-import { withTempDir } from "@test/helpers";
 
 describe("NAX_GITIGNORE_ENTRIES", () => {
   test("covers the mutation journal directory", () => {

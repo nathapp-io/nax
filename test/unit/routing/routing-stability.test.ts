@@ -7,13 +7,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeStory } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { initLogger, resetLogger } from "@/logger";
 import { classifyRouteBatchOp, classifyRouteOp } from "@/operations";
 import type { UserStory } from "@/prd/types";
 import { classifyComplexity, complexityToModelTier, determineTestStrategy } from "@/routing";
-import { makeStory } from "@test/helpers";
 
 /** Minimal keyword-route helper replacing the deleted keywordStrategy object. */
 function keywordRoute(story: UserStory, config: NaxConfig) {

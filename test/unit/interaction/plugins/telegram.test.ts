@@ -5,9 +5,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { InteractionRequest } from "@/interaction";
-import { TelegramInteractionPlugin, _telegramPluginDeps, truncateIdForCallbackData } from "@/interaction";
 import { mockFetch } from "@test/helpers";
+import type { InteractionRequest } from "@/interaction";
+import { _telegramPluginDeps, TelegramInteractionPlugin, truncateIdForCallbackData } from "@/interaction";
 
 describe("TelegramInteractionPlugin", () => {
   let savedToken: string | undefined;

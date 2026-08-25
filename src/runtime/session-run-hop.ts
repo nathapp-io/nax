@@ -1,7 +1,7 @@
 import { buildContextToolPreamble, buildRunInteractionHandler } from "../agents/acp/adapter";
 import type { IAgentManager } from "../agents/manager-types";
-import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { AgentResult, AgentRunOptions } from "../agents/types";
+import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { ISessionManager } from "../session";
 
 export interface SessionRunHopResult {

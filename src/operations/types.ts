@@ -1,7 +1,6 @@
 import type { RetryPreset, RetryStrategy } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
-import type { ConfigSelector, ConfiguredModel } from "../config";
-import type { NaxConfig, TestStrategy } from "../config";
+import type { ConfigSelector, ConfiguredModel, NaxConfig, TestStrategy } from "../config";
 import type { PipelineStage } from "../config/permissions";
 import type { ComposeInput } from "../prompts/compose";
 import type { NaxRuntime, PackageView } from "../runtime";

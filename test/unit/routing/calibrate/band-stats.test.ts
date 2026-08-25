@@ -11,7 +11,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Complexity, ModelTier } from "@/config/schema-types";
 import type { RunMetrics, StoryMetrics } from "@/metrics/types";
-import { computeBandStats } from "@/routing";
 import type {
   BandStat,
   CalibrationProposal,
@@ -20,6 +19,7 @@ import type {
   SkippedBand,
   TierAdjustment,
 } from "@/routing";
+import { computeBandStats } from "@/routing";
 
 // ---------------------------------------------------------------------------
 // Helpers

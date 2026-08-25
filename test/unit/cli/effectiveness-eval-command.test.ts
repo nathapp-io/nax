@@ -16,9 +16,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { withTempDir } from "@test/helpers";
 import { _effectivenessEvalDeps, effectivenessEvalCommand, formatEffectivenessReport } from "@/cli";
 import { type LabelCase, loadLabelSet } from "@/context/engine/effectiveness-eval";
-import { withTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

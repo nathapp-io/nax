@@ -9,10 +9,10 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
+import { makeContextBundle, makeNaxConfig } from "@test/helpers";
 import { AgentManager } from "@/agents/manager";
 import type { AgentResult } from "@/agents/types";
-import type { AdapterFailure, ContextBundle } from "@/context/engine/types";
-import { makeContextBundle, makeNaxConfig } from "@test/helpers";
+import type { AdapterFailure } from "@/context/engine/types";
 
 // adapterFailure that triggers a swap (category: "availability" → shouldSwap() returns true).
 const AUTH_FAILURE: AdapterFailure = {

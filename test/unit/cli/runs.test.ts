@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { runsListCommand, runsShowCommand } from "@/cli";
 import { getLogger, initLogger, resetLogger } from "@/logger";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 /**
  * Regression suite for the two defects that made `nax runs list` / `nax runs show`

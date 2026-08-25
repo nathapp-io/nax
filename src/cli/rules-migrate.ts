@@ -17,8 +17,8 @@ import { CANONICAL_RULES_DIR, NEUTRALITY_RULES } from "../context/rules/canonica
 import { NaxError } from "../errors";
 import { errorMessage } from "../utils/errors";
 import { _rulesCLIDeps } from "./rules";
-import { planMigration } from "./rules-migrate-plan";
 import type { MigrationPlanEntry } from "./rules-migrate-plan";
+import { planMigration } from "./rules-migrate-plan";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Neutralization helpers

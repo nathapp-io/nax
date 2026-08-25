@@ -13,19 +13,19 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { DEFAULT_MAX_CALLS_PER_SESSION } from "@/context/engine";
+import { cleanupTempDir, makeLogger, makeStory, makeTempDir } from "@test/helpers";
 import {
+  _pullToolsDeps,
+  createRunCallCounter,
+  DEFAULT_MAX_CALLS_PER_SESSION,
+  handleQueryScratch,
   PULL_TOOL_REGISTRY,
   PullToolBudget,
   QUERY_SCRATCH_DESCRIPTOR,
-  _pullToolsDeps,
-  createRunCallCounter,
-  handleQueryScratch,
 } from "@/context/engine";
 import { NaxError } from "@/errors";
-import { appendScratchEntry, scratchFilePath } from "@/session";
 import type { ScratchEntry } from "@/session";
-import { cleanupTempDir, makeLogger, makeStory, makeTempDir } from "@test/helpers";
+import { appendScratchEntry, scratchFilePath } from "@/session";
 
 let origGetLogger: typeof _pullToolsDeps.getLogger;
 

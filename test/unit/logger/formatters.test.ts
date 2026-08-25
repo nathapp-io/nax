@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { formatConsole, formatJsonl } from "@/logger";
 import type { LogEntry } from "@/logger";
+import { formatConsole, formatJsonl } from "@/logger";
 
 function makeEntry(overrides: Partial<LogEntry> = {}): LogEntry {
   return {

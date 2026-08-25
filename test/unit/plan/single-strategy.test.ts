@@ -1,10 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { InteractionBridge } from "@/interaction/bridge-builder";
-import { SinglePlanStrategy, _singlePlanDeps } from "@/plan";
-import type { PlanDeps, PlanModeContext } from "@/plan/strategies/types";
-import type { PackageSummary } from "@/prompts";
-import type { NaxRuntime } from "@/runtime";
 import { firstCall, makeLogger, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
+import type { InteractionBridge } from "@/interaction/bridge-builder";
+import { _singlePlanDeps, SinglePlanStrategy } from "@/plan";
+import type { PlanDeps, PlanModeContext } from "@/plan/strategies/types";
+import type { NaxRuntime } from "@/runtime";
 
 function makeRuntime(closeImpl?: () => Promise<void>): NaxRuntime {
   const runtime = makeMockRuntime({

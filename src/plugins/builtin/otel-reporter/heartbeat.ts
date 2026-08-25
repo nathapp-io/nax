@@ -1,5 +1,5 @@
 import { getSafeLogger } from "@/logger";
-import { type KeyValue, attr, buildResourceAttributes } from "./otlp";
+import { attr, buildResourceAttributes, type KeyValue } from "./otlp";
 
 const STAGE = "otel-reporter-heartbeat";
 

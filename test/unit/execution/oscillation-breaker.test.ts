@@ -8,10 +8,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeTestContext, makeTestRuntime } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { inspectOscillationBreaker, recordOscillations } from "@/execution";
 import type { PipelineContext } from "@/pipeline/types";
-import { makeTestContext, makeTestRuntime } from "@test/helpers";
 
 function makeCtx(
   overrides: {

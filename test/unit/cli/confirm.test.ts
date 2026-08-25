@@ -7,7 +7,7 @@
 //     keystroke that universally means "cancel" was confirming the run.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { type ConfirmStdin, _confirmDeps, promptForConfirmation } from "@/cli";
+import { _confirmDeps, type ConfirmStdin, promptForConfirmation } from "@/cli";
 
 const ETX = "\u0003";
 const EOT = "\u0004";

@@ -1,5 +1,5 @@
 // RE-ARCH: keep
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { LoadedHooksConfig } from "@/hooks";
 import { PipelineEventBus } from "@/pipeline/event-bus";
 import { wireHooks } from "@/pipeline/subscribers/hooks";

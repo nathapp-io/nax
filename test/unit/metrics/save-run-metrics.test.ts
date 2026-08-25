@@ -12,13 +12,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { addSink, initLogger, resetLogger } from "@/logger";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import type { LogEntry } from "@/logger";
+import { addSink, initLogger, resetLogger } from "@/logger";
 import {
-  MAX_RETAINED_RUNS,
   _resetRunTruncationWarningForTests,
   loadRunMetrics,
+  MAX_RETAINED_RUNS,
   saveRunMetrics,
 } from "@/metrics/tracker";
 import type { RunMetrics, StoryMetrics } from "@/metrics/types";

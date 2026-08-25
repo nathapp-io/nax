@@ -14,7 +14,7 @@
 import { getLogger } from "@/logger";
 import { DEFAULT_TEST_FILE_PATTERNS, globsToTestRegex } from "@/test-runners";
 import type { NaxIgnoreIndex } from "@/utils/path-filters";
-import { MAX_GREP_TEST_FILES, _smartRunnerDeps } from "../verification/smart-runner";
+import { _smartRunnerDeps, MAX_GREP_TEST_FILES } from "../verification/smart-runner";
 import type { ResolvedTestPatterns } from "./resolver";
 
 const DEFAULT_SMART_RUNNER_CONFIG = {

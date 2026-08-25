@@ -6,15 +6,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { withTempDir } from "@test/helpers";
 import { setupCommand as barrelSetupCommand } from "@/cli";
 import { _setupDeps, setupCommand } from "@/cli/setup";
 import type { RepoAnalysis } from "@/cli/setup-types";
-import { DEFAULT_CONFIG, NaxConfigSchema } from "@/config";
 import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG, NaxConfigSchema } from "@/config";
 import { NaxError } from "@/errors";
-import type { SetupPlan } from "@/operations/setup-generate";
-import type { MonoPackageConfig } from "@/operations/setup-generate";
-import { withTempDir } from "@test/helpers";
+import type { MonoPackageConfig, SetupPlan } from "@/operations/setup-generate";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 

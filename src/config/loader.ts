@@ -23,11 +23,11 @@ import {
   rejectUnimplementedScopedProfile,
   stripRemovedNoOpKeys,
 } from "./config-guards";
-import { UnresolvedEnvVarError, resolveEnvVars } from "./dotenv";
+import { resolveEnvVars, UnresolvedEnvVarError } from "./dotenv";
 import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
 import { MAX_DIRECTORY_DEPTH } from "./path-security";
-import { PROJECT_NAX_DIR, globalConfigDir } from "./paths";
+import { globalConfigDir, PROJECT_NAX_DIR } from "./paths";
 import {
   loadProfile,
   loadProfileEnv,

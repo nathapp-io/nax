@@ -1,2 +1,2 @@
 export { interpolateHeaders } from "./interpolate";
-export { postJson, _postJsonDeps, type PostJsonDeps } from "./post-json";
+export { _postJsonDeps, type PostJsonDeps, postJson } from "./post-json";

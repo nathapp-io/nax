@@ -11,11 +11,11 @@
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
+import { makeSpawn, makeTempDir } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { _reconcileDeps, initializeRun } from "@/execution/lifecycle/run-initialization";
 import type { PRD } from "@/prd/types";
 import type { ReviewResult } from "@/review/types";
-import { makeSpawn, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

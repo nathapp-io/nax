@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { CodeNeighborProvider, _codeNeighborDeps } from "@/context/engine/providers/code-neighbor";
+import { _codeNeighborDeps, CodeNeighborProvider } from "@/context/engine/providers/code-neighbor";
 import type { ContextRequest } from "@/context/engine/types";
 import { extractTestDirs, globsToPathspec, globsToTestRegex } from "@/test-runners/conventions";
 import type { ResolvedTestPatterns } from "@/test-runners/resolver";

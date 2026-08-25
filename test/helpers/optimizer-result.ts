@@ -10,7 +10,7 @@
  * Unlike `makeDebateRunner`, this needs no cast: `PromptOptimizerResult` is a
  * plain interface, so the factory satisfies it structurally.
  */
-import { type PromptOptimizerResult, estimateTokens } from "@/optimizer/types";
+import { estimateTokens, type PromptOptimizerResult } from "@/optimizer/types";
 
 /**
  * Defaults describe a no-op optimizer: the prompt is returned unchanged, so

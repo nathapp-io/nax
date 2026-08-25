@@ -1,9 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync, symlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { isRelativeAndSafe, validateModulePath } from "@/utils/path-security";
 import { makeTempDir } from "@test/helpers";
+import { isRelativeAndSafe, validateModulePath } from "@/utils/path-security";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Temp directory for symlink tests

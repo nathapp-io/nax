@@ -10,7 +10,6 @@ import type { SessionRole } from "../session/types";
 import { allSettledBounded } from "./concurrency";
 import { resolvePersonas } from "./personas";
 import {
-  _runPlanDeps,
   buildPlanProposalPrompt,
   buildPlanRebuttalPrompt,
   finalizePlanRun,
@@ -18,10 +17,10 @@ import {
   scoreAndDispatchVerifierPick,
 } from "./runner-plan-helpers";
 import {
-  type ResolvedDebater,
-  type SuccessfulProposal,
   _debateSessionDeps,
   buildFailedResult,
+  type ResolvedDebater,
+  type SuccessfulProposal,
 } from "./session-helpers";
 import type { DebateResult, DebateStageConfig, Rebuttal } from "./types";
 

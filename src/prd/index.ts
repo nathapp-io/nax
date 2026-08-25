@@ -9,26 +9,14 @@ import { saveJsonFile } from "../utils/json-file";
 import { propagateOutOfScopeToStories, stripPropagatedOutOfScope } from "./out-of-scope";
 import type { PRD, UserStory } from "./types";
 
-export type {
-  PRD,
-  UserStory,
-  StoryRouting,
-  StoryStatus,
-  EscalationAttempt,
-  StructuredFailure,
-  TestFailureContext,
-  VerificationStage,
-  PersistedRepoScopedFix,
-} from "./types";
-export { isStalled, markStoryAsBlocked, generateHumanHaltSummary, getContextFiles, getExpectedFiles } from "./types";
-export { findSpecDriftViolations } from "./spec-drift";
-export type { SpecDriftViolation } from "./spec-drift";
-export type { StoryScopedExclusion } from "./out-of-scope-extract";
-export {
-  MAX_OUT_OF_SCOPE_ITEMS,
-  extractSpecOutOfScope,
-  extractStoryScopedOutOfScope,
-} from "./out-of-scope-extract";
+export type { FailureCategory } from "../tdd/types";
+export type { SpecContextFile } from "./context-files-extract";
+export { extractSpecContextFiles, MAX_SPEC_CONTEXT_FILES } from "./context-files-extract";
+export { deriveNextStoryId, validateInjectedStory } from "./inject";
+export type { ApplyModifiedFilesResult } from "./modifies";
+export { applyModifiedFiles, isSafeRelativePath } from "./modifies";
+export type { SpecModifiedFile } from "./modifies-extract";
+export { extractSpecModifiedFiles, MAX_MODIFIED_FILES } from "./modifies-extract";
 export {
   applyOutOfScopeFallback,
   demoteStoryScopedOutOfScope,
@@ -37,14 +25,26 @@ export {
   propagateOutOfScopeToStories,
   stripPropagatedOutOfScope,
 } from "./out-of-scope";
-export type { SpecModifiedFile } from "./modifies-extract";
-export { MAX_MODIFIED_FILES, extractSpecModifiedFiles } from "./modifies-extract";
-export type { ApplyModifiedFilesResult } from "./modifies";
-export { applyModifiedFiles, isSafeRelativePath } from "./modifies";
-export type { SpecContextFile } from "./context-files-extract";
-export { MAX_SPEC_CONTEXT_FILES, extractSpecContextFiles } from "./context-files-extract";
-export type { FailureCategory } from "../tdd/types";
-export { validateInjectedStory, deriveNextStoryId } from "./inject";
+export type { StoryScopedExclusion } from "./out-of-scope-extract";
+export {
+  extractSpecOutOfScope,
+  extractStoryScopedOutOfScope,
+  MAX_OUT_OF_SCOPE_ITEMS,
+} from "./out-of-scope-extract";
+export type { SpecDriftViolation } from "./spec-drift";
+export { findSpecDriftViolations } from "./spec-drift";
+export type {
+  EscalationAttempt,
+  PersistedRepoScopedFix,
+  PRD,
+  StoryRouting,
+  StoryStatus,
+  StructuredFailure,
+  TestFailureContext,
+  UserStory,
+  VerificationStage,
+} from "./types";
+export { generateHumanHaltSummary, getContextFiles, getExpectedFiles, isStalled, markStoryAsBlocked } from "./types";
 export { assertPrdCommitted, validateStoryId } from "./validate";
 
 /** Maximum PRD file size (5MB) - reject larger PRDs to prevent memory issues */

@@ -7,9 +7,9 @@
 
 import { describe, expect, test } from "bun:test";
 import * as path from "node:path";
+import { withTempDir } from "@test/helpers";
 import { type Observation, streamJsonlLines } from "@/plugins/builtin/curator";
 import { appendToRollup } from "@/plugins/builtin/curator/rollup";
-import { withTempDir } from "@test/helpers";
 
 describe("appendToRollup", () => {
   const baseObservation: Observation = {

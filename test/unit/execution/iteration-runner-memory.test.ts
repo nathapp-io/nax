@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { releaseHeavyPipelineContext } from "@/execution";
 import { makeAgentResult, makeContextBundle, makeFinding, makePRD, makeStory, makeTestContext } from "@test/helpers";
+import { releaseHeavyPipelineContext } from "@/execution";
 
 describe("releaseHeavyPipelineContext", () => {
   test("drops per-story payloads without clearing durable execution state", () => {

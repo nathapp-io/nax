@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { HOOK_EVENTS, type HooksConfig, fireHook } from "@/hooks";
 import { withTempDir } from "@test/helpers";
+import { fireHook, HOOK_EVENTS, type HooksConfig } from "@/hooks";
 
 describe("on-post-run-action hook", () => {
   test("is a supported hook event", () => {

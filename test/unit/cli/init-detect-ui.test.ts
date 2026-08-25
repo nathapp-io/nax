@@ -13,10 +13,10 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { initProject } from "@/cli/init";
-import { buildInitConfig, detectStack } from "@/cli/init-detect";
-import type { StackInfo } from "@/cli/init-detect";
 import { withTempDir } from "@test/helpers";
+import { initProject } from "@/cli/init";
+import type { StackInfo } from "@/cli/init-detect";
+import { buildInitConfig, detectStack } from "@/cli/init-detect";
 
 // ---------------------------------------------------------------------------
 // Helpers

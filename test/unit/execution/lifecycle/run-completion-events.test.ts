@@ -8,14 +8,6 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { NaxConfig } from "@/config";
-import { _runCompletionDeps, handleRunCompletion } from "@/execution";
-import type { RunCompletionOptions } from "@/execution";
-import type { DeferredReviewResult } from "@/execution/deferred-review";
-import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
-import { pipelineEventBus } from "@/pipeline";
-import type { PostRunPhaseCompletedEvent, PostRunPhaseStartedEvent } from "@/pipeline";
-import type { PRD, UserStory } from "@/prd";
 import {
   makeMockAgentManager,
   makeMockRuntime,
@@ -24,6 +16,14 @@ import {
   makeStatusWriter,
   makeStory,
 } from "@test/helpers";
+import type { NaxConfig } from "@/config";
+import type { RunCompletionOptions } from "@/execution";
+import { _runCompletionDeps, handleRunCompletion } from "@/execution";
+import type { DeferredReviewResult } from "@/execution/deferred-review";
+import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
+import type { PostRunPhaseCompletedEvent, PostRunPhaseStartedEvent } from "@/pipeline";
+import { pipelineEventBus } from "@/pipeline";
+import type { PRD, UserStory } from "@/prd";
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -8,14 +8,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { makeTempDir } from "@test/helpers";
 import type { NaxConfig } from "@/config/types";
 import type { UserStory } from "@/prd";
 import { PromptBuilder } from "@/prompts";
-import { makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures

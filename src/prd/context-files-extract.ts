@@ -14,7 +14,7 @@
  * see `extractGroupedPathSection` in `./markdown-scan`.
  */
 
-import { type GroupedPathEntry, extractGroupedPathSection } from "./markdown-scan";
+import { extractGroupedPathSection, type GroupedPathEntry } from "./markdown-scan";
 
 /** One `### Context Files` bullet, with the story its group lead-in attributed it to. */
 export type SpecContextFile = GroupedPathEntry;

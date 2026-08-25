@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { MAX_SPEC_CONTEXT_FILES, extractSpecContextFiles } from "@/prd";
+import { extractSpecContextFiles, MAX_SPEC_CONTEXT_FILES } from "@/prd";
 
 /** The canonical shape spec-kit's spec-writing guide produces. */
 const CANONICAL_SPEC = [

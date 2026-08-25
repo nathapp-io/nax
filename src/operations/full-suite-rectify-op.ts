@@ -3,7 +3,7 @@ import type { AutofixConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder, repoScopedRectification } from "../prompts";
-import { type TestEditDeclaration, parseTestEditDeclarations } from "./test-edit-declaration";
+import { parseTestEditDeclarations, type TestEditDeclaration } from "./test-edit-declaration";
 import type { RunOperation } from "./types";
 
 export interface FullSuiteRectifyInput {

@@ -18,17 +18,6 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { NaxConfig } from "@/config";
-import { type RunnerCompletionOptions, _runnerCompletionDeps, runCompletionPhase } from "@/execution";
-import { StatusWriter } from "@/execution";
-import { type AcceptanceLoopContext, _runAcceptanceTestsOnceDeps, runAcceptanceLoop } from "@/execution/lifecycle";
-import type { AcceptanceLoopResult } from "@/execution/lifecycle";
-import { _runCompletionDeps } from "@/execution/lifecycle";
-import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
-import type { PostRunStatus } from "@/execution/status-file";
-import type { LoadedHooksConfig } from "@/hooks";
-import { pipelineEventBus } from "@/pipeline";
-import type { PRD, UserStory } from "@/prd";
 import {
   cleanupTempDir,
   makeDispatchContext,
@@ -40,6 +29,19 @@ import {
   makeStory,
   makeTempDir,
 } from "@test/helpers";
+import type { NaxConfig } from "@/config";
+import { _runnerCompletionDeps, type RunnerCompletionOptions, runCompletionPhase, StatusWriter } from "@/execution";
+import type { AcceptanceLoopResult } from "@/execution/lifecycle";
+import {
+  _runAcceptanceTestsOnceDeps,
+  _runCompletionDeps,
+  type AcceptanceLoopContext,
+  runAcceptanceLoop,
+} from "@/execution/lifecycle";
+import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
+import type { PostRunStatus } from "@/execution/status-file";
+import { pipelineEventBus } from "@/pipeline";
+import type { PRD, UserStory } from "@/prd";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 

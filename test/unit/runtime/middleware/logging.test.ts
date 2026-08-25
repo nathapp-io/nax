@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
-import { DispatchEventBus } from "@/runtime/dispatch-events";
 import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "@/runtime/dispatch-events";
+import { DispatchEventBus } from "@/runtime/dispatch-events";
 import { attachLoggingSubscriber } from "@/runtime/middleware/logging";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const PERMS = { mode: "approve-reads" as const };
 

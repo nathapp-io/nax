@@ -4,8 +4,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { getContextFiles, getExpectedFiles } from "@/prd";
 import type { UserStory } from "@/prd";
+import { getContextFiles, getExpectedFiles } from "@/prd";
 
 const createStory = (partial: Partial<UserStory>): UserStory => ({
   id: "US-001",

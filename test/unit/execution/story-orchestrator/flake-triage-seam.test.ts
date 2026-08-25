@@ -10,13 +10,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
+import { cleanupTempDir, makeNaxConfig, makeTempDir, makeTestRuntime } from "@test/helpers";
 import { _storyOrchestratorDeps } from "@/execution";
 import { productionTriageSeam } from "@/execution/story-orchestrator/flake-triage-seam";
 import type { Finding } from "@/findings";
-import { type LogEntry, addSink, initLogger, resetLogger } from "@/logger";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { FLAKE_TRIAGE_SKIP_EVENT } from "@/verification";
 import { _flakeTriageDeps } from "@/verification/flake-triage";
-import { cleanupTempDir, makeNaxConfig, makeTempDir, makeTestRuntime } from "@test/helpers";
 
 function git(cwd: string, ...args: string[]): void {
   const result = spawnSync("git", args, { cwd });

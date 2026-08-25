@@ -10,15 +10,15 @@ import type { ContextToolRuntimeConfig } from "@/config/selectors";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import type { UserStory } from "@/prd";
-import { resolveTestFilePatterns } from "@/test-runners";
 import type { ResolvedTestPatterns } from "@/test-runners";
+import { resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
 // STYLE-6 fix: import handleQueryScratch directly from its handler module
 // to avoid the circular `pull-tools.ts` ↔ `handlers/query-scratch.ts`
 // reference that the previous re-export created.
 import { handleQueryScratch } from "./handlers/query-scratch";
-import { PullToolBudget, createRunCallCounter, handleQueryFeatureContext, handleQueryNeighbor } from "./pull-tools";
 import type { RunCallCounter } from "./pull-tools";
+import { createRunCallCounter, handleQueryFeatureContext, handleQueryNeighbor, PullToolBudget } from "./pull-tools";
 import type { ContextBundle, ToolDescriptor } from "./types";
 
 export interface ContextToolRuntime {

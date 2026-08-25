@@ -21,13 +21,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ToolDiagnosticsProvider, _toolDiagnosticsDeps } from "@/context/engine";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { _toolDiagnosticsDeps, ToolDiagnosticsProvider } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
 import { scratchFilePath } from "@/session";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

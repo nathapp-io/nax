@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { MAX_MODIFIED_FILES, applyModifiedFiles, extractSpecModifiedFiles } from "@/prd";
 import { makePRD, makeStory } from "@test/helpers";
+import { applyModifiedFiles, extractSpecModifiedFiles, MAX_MODIFIED_FILES } from "@/prd";
 
 /** The canonical shape spec-kit's spec-writing guide produces. */
 const CANONICAL_SPEC = [

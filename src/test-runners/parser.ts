@@ -594,4 +594,4 @@ export function analyzeTestExitCode(output: string, exitCode: number): TestOutpu
 }
 
 // Re-export types for consumers that import from this module
-export type { TestFailure, TestSummary, TestOutputAnalysis } from "./types";
+export type { TestFailure, TestOutputAnalysis, TestSummary } from "./types";

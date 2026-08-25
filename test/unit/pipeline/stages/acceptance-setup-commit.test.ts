@@ -8,10 +8,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeDispatchContext } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { _acceptanceSetupDeps, acceptanceSetupStage } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
-import { makeDispatchContext } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

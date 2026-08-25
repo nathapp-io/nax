@@ -30,7 +30,6 @@
  *   ).spawn;
  */
 import { mock } from "bun:test";
-import type { Subprocess } from "bun";
 
 /** What `Bun.spawn` returns, as the source code consumes it. */
 export type SpawnResult = ReturnType<typeof Bun.spawn>;

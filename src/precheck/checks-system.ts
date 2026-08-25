@@ -4,7 +4,7 @@
 
 import { existsSync, statSync } from "node:fs";
 import type { PrecheckConfig } from "../config/selectors";
-import { NeutralityLintError, loadCanonicalRules } from "../context/rules/canonical-loader";
+import { loadCanonicalRules, NeutralityLintError } from "../context/rules/canonical-loader";
 import { errorMessage } from "../utils/errors";
 import type { Check } from "./types";
 

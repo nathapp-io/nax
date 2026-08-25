@@ -10,12 +10,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeMockAgentManager } from "@test/helpers";
 import type { IAgentManager } from "@/agents";
 import type { AgentRunRequest } from "@/agents/manager-types";
 import type { AgentResult, AgentRunOptions } from "@/agents/types";
 import type { NaxConfig } from "@/config";
 import { SessionManager } from "@/session/manager";
-import { makeMockAgentManager } from "@test/helpers";
 
 function makeOptions(): AgentRunOptions {
   return {

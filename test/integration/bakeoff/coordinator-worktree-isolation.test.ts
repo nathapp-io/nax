@@ -11,12 +11,10 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { runBakeoff, runContestant } from "@/bakeoff";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { BakeoffCoordinatorDeps, ContestantOptions, ContestantRunnerDeps } from "@/bakeoff";
-import type { NaxConfig } from "@/config";
+import { runBakeoff, runContestant } from "@/bakeoff";
 import { WorktreeManager } from "@/worktree";
-import { makeNaxConfig } from "@test/helpers";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 async function git(args: string[], cwd: string): Promise<void> {
   const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });

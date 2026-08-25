@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { withTempDir } from "@test/helpers";
 import type { ResolveResult } from "@/cli";
 import { _finishContextDeps, loadFinishContext } from "@/finish";
 import type { ForgeDeps, ForgeRunResult } from "@/forge";
-import { withTempDir } from "@test/helpers";
 
 type GitResult = { stdout: string; stderr: string; exitCode: number };
 

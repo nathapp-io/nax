@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { phasesToRevalidate } from "@/execution";
 import type { PhaseKind } from "@/execution";
+import { phasesToRevalidate } from "@/execution";
 import { STRATEGY_TO_REVALIDATION_PHASES } from "@/execution/story-orchestrator";
 
 const ALL_PHASE_KINDS: PhaseKind[] = [

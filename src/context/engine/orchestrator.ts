@@ -20,11 +20,10 @@ import { NeutralityLintError } from "../rules/canonical-loader";
 import { getAgentProfile } from "./agent-profiles";
 import { renderForAgent } from "./agent-renderer";
 import { dedupeChunks } from "./dedupe";
-import { DIGEST_RESERVE_TOKENS, buildDigest, digestTokens } from "./digest";
+import { buildDigest, DIGEST_RESERVE_TOKENS, digestTokens } from "./digest";
 import { buildManifest } from "./manifest-builder";
 import { toContextChunk } from "./orchestrator-rebuild-helpers";
 import { FLOOR_KINDS, packChunks } from "./packing";
-import type { PackedChunk } from "./packing";
 import { DEFAULT_MAX_CALLS_PER_SESSION, PULL_TOOL_REGISTRY } from "./pull-tools";
 import { type RebuildDeps, rebuild } from "./rebuild";
 import { FIXED_RENDER_OVERHEAD_TOKENS, renderChunks, separatorOverheadTokens } from "./render";
@@ -32,7 +31,6 @@ import { MIN_SCORE, scoreChunks } from "./scoring";
 import { getStageContextConfig } from "./stage-config";
 import type {
   ContextBundle,
-  ContextChunk,
   ContextManifest,
   ContextProviderResult,
   ContextRequest,

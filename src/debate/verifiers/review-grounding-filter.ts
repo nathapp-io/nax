@@ -5,8 +5,8 @@
  * Filters findings by AC grounding and determines outcome based on blocking severity.
  */
 
-import { filterByAcGroundingMinimal, isBlockingSeverity } from "@/review";
 import type { AcQuotable } from "@/review";
+import { filterByAcGroundingMinimal, isBlockingSeverity } from "@/review";
 import type { PostDebateVerifier, PostDebateVerifierContext, PostDebateVerifierResult } from "./types";
 
 export const reviewGroundingFilterVerifier: PostDebateVerifier = async (

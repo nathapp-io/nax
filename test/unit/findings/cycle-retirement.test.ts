@@ -13,9 +13,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { runFixCycle } from "@/findings";
 import type { Finding } from "@/findings";
-import type { CallOpFn } from "@/findings/cycle";
+import { runFixCycle } from "@/findings";
 import {
   lintA,
   lintB,

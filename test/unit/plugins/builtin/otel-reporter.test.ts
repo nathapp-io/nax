@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { OtelReporterConfig } from "@/config/schemas-reporters";
-import { type PostJsonDeps, createOtelReporterPlugin } from "@/plugins";
 import { mockFetch } from "@test/helpers";
+import type { OtelReporterConfig } from "@/config/schemas-reporters";
+import { createOtelReporterPlugin, type PostJsonDeps } from "@/plugins";
 
 const cfg: OtelReporterConfig = {
   enabled: true,

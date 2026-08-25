@@ -6,8 +6,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { PidRegistry, _pidRegistryDeps } from "@/execution";
 import { makeSpawn, withDepsRestore } from "@test/helpers";
+import { _pidRegistryDeps, PidRegistry } from "@/execution";
 
 const TEST_WORKDIR = `/tmp/nax-pid-registry-test-${randomUUID()}`;
 const PID_FILE = `${TEST_WORKDIR}/.nax-pids`;

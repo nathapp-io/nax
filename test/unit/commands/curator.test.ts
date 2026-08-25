@@ -10,14 +10,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { type DeepPartial, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { ResolvedProject } from "@/commands/common";
-import { _curatorCmdDeps as _deps, curatorCommit, curatorDryrun, curatorGc, curatorStatus } from "@/commands/curator";
+import { _curatorCmdDeps as _deps, curatorCommit, curatorDryrun, curatorStatus } from "@/commands/curator";
 import type { NaxConfig } from "@/config";
 import type { Observation } from "@/plugins/builtin/curator/types";
-import { type DeepPartial, makeNaxConfig } from "@test/helpers";
-import { makeTempDir } from "@test/helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

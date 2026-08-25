@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { SessionTurnError } from "@/agents";
-import { AcpAgentAdapter, type AcpSessionHandleImpl, _acpAdapterDeps } from "@/agents/acp/adapter";
+import { _acpAdapterDeps, AcpAgentAdapter, type AcpSessionHandleImpl } from "@/agents/acp/adapter";
 import { NO_OP_INTERACTION_HANDLER } from "@/agents/interaction-handler";
 import type { OpenSessionOpts } from "@/agents/types";
 import { makeClient, makeSession } from "./adapter.test";

@@ -1,8 +1,6 @@
-import { type Mock, afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import type { NaxConfig } from "@/config";
+import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
 import type { Logger } from "@/logger";
 import { verifierOp } from "@/operations";
-import type { RunOperation } from "@/operations";
 
 /**
  * Tests for verifierOp — the full RunOperation shape for the verifier role.

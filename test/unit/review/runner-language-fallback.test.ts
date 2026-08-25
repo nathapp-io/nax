@@ -7,9 +7,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeConfigSlice } from "@test/helpers";
 import { _reviewGitDeps, _reviewRunnerDeps, resolveCommand, resolveLanguageCommand } from "@/review/runner";
 import type { ReviewConfig } from "@/review/types";
-import { makeConfigSlice } from "@test/helpers";
 
 /** Minimal ReviewConfig with no explicit commands — lets fallback logic run */
 const emptyConfig: ReviewConfig = makeConfigSlice("review", {

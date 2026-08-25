@@ -6,10 +6,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { _gitDeps } from "@/utils/git";
-import { MergeEngine } from "@/worktree";
-import type { StoryDependencies } from "@/worktree";
 import { makeSpawn } from "@test/helpers";
+import { _gitDeps } from "@/utils/git";
+import type { StoryDependencies } from "@/worktree";
+import { MergeEngine } from "@/worktree";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

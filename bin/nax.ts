@@ -84,12 +84,12 @@ import { unlockCommand } from "../src/commands/unlock";
 import { DEFAULT_CONFIG, findProjectDir, loadConfig, validateDirectory } from "../src/config";
 import { run } from "../src/execution";
 import { loadHooksConfig } from "../src/hooks";
-import { type LogLevel, initLogger, resetLogger } from "../src/logger";
+import { initLogger, type LogLevel, resetLogger } from "../src/logger";
 import type { PlanResult } from "../src/plan/strategies";
 import { countStories, loadPRD } from "../src/prd";
 import { AgentStreamEventBus, projectOutputDir } from "../src/runtime";
 import { resolveScheduleGate, waitForSchedule } from "../src/schedule";
-import { PipelineEventEmitter, type StoryDisplayState, renderTui } from "../src/tui";
+import { PipelineEventEmitter, renderTui, type StoryDisplayState } from "../src/tui";
 import { validateFeatureName } from "../src/utils/feature-name";
 import { NAX_BUILD_INFO, NAX_VERSION } from "../src/version";
 

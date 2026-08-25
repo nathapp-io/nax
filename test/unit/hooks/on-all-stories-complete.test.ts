@@ -9,13 +9,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
-import { fireHook } from "@/hooks/runner";
-import { HOOK_EVENTS } from "@/hooks/types";
-import type { HooksConfig } from "@/hooks/types";
 import { makeTempDir } from "@test/helpers";
+import { fireHook } from "@/hooks/runner";
+import type { HooksConfig } from "@/hooks/types";
+import { HOOK_EVENTS } from "@/hooks/types";
 
 describe("HookEvent: on-all-stories-complete type registration", () => {
   test("on-all-stories-complete is in the HOOK_EVENTS registry", () => {

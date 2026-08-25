@@ -17,9 +17,18 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
+import {
+  makeNaxConfig,
+  makePluginRegistry,
+  makePRD,
+  makeSpawn,
+  makeStatusWriter,
+  makeStory,
+  makeTempDir,
+  makeTestRuntime,
+} from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { _deferredReviewDeps } from "@/execution/deferred-review";
 import type { SequentialExecutionContext } from "@/execution/executor-types";
@@ -27,16 +36,6 @@ import { executeUnified } from "@/execution/unified-executor";
 import type { PluginRegistry } from "@/plugins";
 import type { IReviewPlugin } from "@/plugins/extensions";
 import type { PRD } from "@/prd/types";
-import {
-  makeNaxConfig,
-  makePRD,
-  makePluginRegistry,
-  makeSpawn,
-  makeStatusWriter,
-  makeStory,
-  makeTempDir,
-  makeTestRuntime,
-} from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

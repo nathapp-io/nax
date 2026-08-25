@@ -8,6 +8,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeLogger, withDepsRestore } from "@test/helpers";
+import * as EngineBarrel from "@/context/engine";
 import {
   _effectivenessDeps,
   annotateManifestEffectiveness,
@@ -15,11 +17,9 @@ import {
   // Barrel import — this is the production public API (used in AC1 tests)
   classifyWithTerms,
 } from "@/context/engine";
-import * as EngineBarrel from "@/context/engine";
 // AC2: must import directly from effectiveness.ts to verify direct-vs-barrel equivalence
 import { classifyWithTerms as classifyWithTermsDirect } from "@/context/engine/effectiveness";
 import { _manifestStoreDeps } from "@/context/engine/manifest-store";
-import { makeLogger, withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // US-004: classifyWithTerms + buildEvidenceTerms (production helpers)

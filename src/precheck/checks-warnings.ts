@@ -279,7 +279,7 @@ type ToolConfig =
  */
 export async function checkLanguageTools(profile: ProjectProfile | undefined, _workdir: string): Promise<Check> {
   // Skip check if no profile or language not set
-  if (!profile || !profile.language) {
+  if (!profile?.language) {
     return {
       name: "language-tools-available",
       tier: "warning",

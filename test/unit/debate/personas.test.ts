@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { PERSONA_FRAGMENTS, buildDebaterLabel, buildPersonaBlock, resolvePersonas } from "@/debate/personas";
+import { buildDebaterLabel, buildPersonaBlock, PERSONA_FRAGMENTS, resolvePersonas } from "@/debate/personas";
 import type { Debater, DebaterPersona } from "@/debate/types";
 
 // ─── PERSONA_FRAGMENTS ───────────────────────────────────────────────────────

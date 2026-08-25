@@ -9,9 +9,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig, makeSparseNaxConfig, makeStory } from "@test/helpers";
 import { NaxError } from "@/errors";
 import { assemblePlanInputs } from "@/execution";
-import { makeNaxConfig, makeSparseNaxConfig, makeStory } from "@test/helpers";
 
 describe("assemblePlanInputs — model tier mapping validation", () => {
   test("passes when default agent has tier mappings in config.models", () => {

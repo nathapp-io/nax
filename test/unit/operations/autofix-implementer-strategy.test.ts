@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 import type { Finding } from "@/findings";
 import type { FixCycleContext } from "@/findings/cycle-types";
 import { makeAutofixImplementerStrategy, makeDeclarationSink } from "@/operations";
 import type { AutofixImplementerOutput } from "@/operations/autofix-implementer";
-import { makeNaxConfig, makeStory } from "@test/helpers";
 
 const mockCtx = {} as any;
 

@@ -8,12 +8,12 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import type { _routingDeps as RoutingDeps } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
 import type { EscalationAttempt, StoryRouting } from "@/prd/types";
-import { makeNaxConfig, makeStory } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-routing-initial-model-tier-test-${randomUUID()}`;
 

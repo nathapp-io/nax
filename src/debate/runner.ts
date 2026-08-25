@@ -1,5 +1,4 @@
-import { DEFAULT_CONFIG } from "../config";
-import { debateConfigSelector } from "../config";
+import { DEFAULT_CONFIG, debateConfigSelector } from "../config";
 import type { DebateConfig } from "../config/selectors";
 import { callOp } from "../operations/call";
 import { debateProposeOp } from "../operations/debate-propose";
@@ -9,22 +8,22 @@ import { createNoOpCostAggregator } from "../runtime";
 import type { ISessionManager } from "../session/types";
 import { allSettledBounded } from "./concurrency";
 import { resolvePersonas } from "./personas";
-import { resolvePreDebatePhase } from "./pre-phase";
 import type { PreDebatePhaseContext } from "./pre-phase";
+import { resolvePreDebatePhase } from "./pre-phase";
 import { runHybrid } from "./runner-hybrid";
 import { runPlan } from "./runner-plan";
 import { runStateful } from "./runner-stateful";
 import {
-  type ResolveOutcome,
-  type ResolvedDebater,
-  type SuccessfulProposal,
   _debateSessionDeps,
   buildFailedResult,
+  type ResolvedDebater,
+  type ResolveOutcome,
   resolveOutcome,
+  type SuccessfulProposal,
 } from "./session-helpers";
 import type { DebateResult, DebateStageConfig, Proposal } from "./types";
-import { resolvePostDebateVerifier } from "./verifiers";
 import type { PostDebateVerifierContext } from "./verifiers";
+import { resolvePostDebateVerifier } from "./verifiers";
 
 const DEFAULT_TIMEOUT_SECONDS = 600;
 

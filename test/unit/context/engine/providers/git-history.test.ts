@@ -6,8 +6,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { GitHistoryProvider, _gitHistoryDeps } from "@/context/engine/providers/git-history";
 import type { GitHistoryProviderOptions } from "@/context/engine/providers/git-history";
+import { _gitHistoryDeps, GitHistoryProvider } from "@/context/engine/providers/git-history";
 import type { ContextRequest } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────

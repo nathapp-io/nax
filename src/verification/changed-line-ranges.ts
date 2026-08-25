@@ -13,7 +13,7 @@
  */
 
 import { resolve as resolvePath } from "node:path";
-import { type LineRange, extractDiffLineRanges } from "../utils/diff-files";
+import { extractDiffLineRanges, type LineRange } from "../utils/diff-files";
 import { getGitRoot, gitWithTimeout } from "../utils/git";
 
 /**

@@ -8,9 +8,10 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
+import { cleanupTempDir, makeDispatchContext, makeNaxConfig, makeTempDir } from "@test/helpers";
 import {
-  type AcceptanceLoopContext,
   _regenerateDeps,
+  type AcceptanceLoopContext,
   isStubTestFile,
   isTestLevelFailure,
   loadAcceptanceTestContent,
@@ -19,8 +20,6 @@ import {
 } from "@/execution/lifecycle/acceptance-loop";
 import type { AgentGetFn, PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd";
-import { makeNaxConfig } from "@test/helpers";
-import { cleanupTempDir, makeDispatchContext, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

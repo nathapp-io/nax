@@ -12,13 +12,13 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { makeDispatchContext, makeNaxConfig, makePRD, makeTempDir } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { initLogger, resetLogger } from "@/logger";
 import { acceptanceStage } from "@/pipeline/stages/acceptance";
 import { _acceptanceSetupDeps, acceptanceSetupStage, computeACFingerprint } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
-import { makeDispatchContext, makeNaxConfig, makePRD, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

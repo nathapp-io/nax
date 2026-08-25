@@ -1,7 +1,7 @@
 import { getSafeLogger } from "@/logger";
 import { looksLikeTruncatedJson } from "@/review";
-import { ParseValidationError } from "./types";
 import type { RetryStrategy } from "./types";
+import { ParseValidationError } from "./types";
 
 export interface TieredInspection<TKind extends string, TPartial = unknown> {
   readonly ok: boolean;

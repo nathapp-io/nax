@@ -1,12 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _registryTestAdapters } from "@/agents/registry";
-import { createAgentRegistry } from "@/agents/registry";
+import { type DeepPartial, makeAgentAdapter, makeNaxConfig } from "@test/helpers";
+import { _registryTestAdapters, createAgentRegistry } from "@/agents/registry";
 import type { AgentAdapter } from "@/agents/types";
 import { resolveDefaultAgent } from "@/agents/utils";
 import { agentManagerConfigSelector } from "@/config";
 import type { NaxConfig } from "@/config/schema";
 import type { AgentManagerConfig } from "@/config/selectors";
-import { type DeepPartial, makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 
 const makeSlicedConfig = (
   agent: DeepPartial<NaxConfig["agent"]> = {},

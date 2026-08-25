@@ -9,11 +9,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { Finding } from "@/findings/types";
-import { RectifierPromptBuilder, repoScopedRectification } from "@/prompts";
-import type { FailureRecord } from "@/prompts";
-import type { ReviewCheckResult } from "@/review/types";
 import { makeFinding, makeStory } from "@test/helpers";
+import type { Finding } from "@/findings/types";
+import type { FailureRecord } from "@/prompts";
+import { RectifierPromptBuilder, repoScopedRectification } from "@/prompts";
+import type { ReviewCheckResult } from "@/review/types";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 

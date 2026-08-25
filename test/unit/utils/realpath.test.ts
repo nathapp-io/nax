@@ -10,8 +10,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, symlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { isInside, realOrRaw } from "@/utils/realpath";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { isInside, realOrRaw } from "@/utils/realpath";
 
 const created: string[] = [];
 

@@ -14,9 +14,6 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { _mutationCheckDeps, mutationCheckOp } from "@/operations";
-import type { MutationCheckDeps } from "@/operations";
-import type { NaxRuntime } from "@/runtime";
 import {
   cleanupTempDir,
   makeMutationCheckDeps as fakeDeps,
@@ -25,6 +22,9 @@ import {
   makeTempDir,
   withInfoSpy,
 } from "@test/helpers";
+import type { MutationCheckDeps } from "@/operations";
+import { _mutationCheckDeps, mutationCheckOp } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
 
 const FAKE_STORY = { id: "US-004", title: "mutation-check telemetry" } as any;
 const ENABLED = { enabled: true, maxMutants: 3, timeoutSeconds: 60 };

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import { pickSelector, reshapeSelector } from "@/config/selector";
 import type { NaxConfig } from "@/config/types";
-import { makeNaxConfig } from "@test/helpers";
 
 describe("ConfigSelector", () => {
   describe("pickSelector", () => {

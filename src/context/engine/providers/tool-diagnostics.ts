@@ -18,8 +18,8 @@
  */
 
 import { createHash } from "node:crypto";
-import { scratchFilePath } from "@/session";
 import type { ToolDiagnosticsScratchEntry } from "@/session";
+import { scratchFilePath } from "@/session";
 import { readJsonlTail } from "@/utils/jsonl-tail";
 import { formatDiagnostic } from "../diagnostic-formatter";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";

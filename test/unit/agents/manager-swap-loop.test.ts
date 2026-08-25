@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { AgentManager, _agentManagerDeps } from "@/agents";
-import type { HopKind } from "@/agents";
-import type { ContextBundle } from "@/context/engine";
 import { makeNaxConfig } from "@test/helpers";
+import type { HopKind } from "@/agents";
+import { _agentManagerDeps, AgentManager } from "@/agents";
+import type { ContextBundle } from "@/context/engine";
 
 const availFailure = {
   category: "availability" as const,

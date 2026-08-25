@@ -6,11 +6,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { exportPromptCommand } from "@/cli/prompts";
 import { makeTempDir } from "@test/helpers";
+import { exportPromptCommand } from "@/cli/prompts";
 
 const VALID_ROLES = ["test-writer", "implementer", "verifier", "single-session", "tdd-simple"] as const;
 

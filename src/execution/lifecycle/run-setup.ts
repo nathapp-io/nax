@@ -13,7 +13,7 @@
  */
 
 import path from "node:path";
-import { type NaxConfig, globalConfigDir } from "@/config";
+import { globalConfigDir, type NaxConfig } from "@/config";
 import { LockAcquisitionError, NaxError } from "@/errors";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { InteractionChain } from "@/interaction";
@@ -26,7 +26,7 @@ import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD } from "@/prd";
 import { countStories, loadPRD, savePRD } from "@/prd";
 import { detectProjectProfile } from "@/project";
-import { type NaxRuntime, createRuntime } from "@/runtime";
+import { createRuntime, type NaxRuntime } from "@/runtime";
 import { SessionManager } from "@/session";
 import { discoverWorkspacePackages, resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";

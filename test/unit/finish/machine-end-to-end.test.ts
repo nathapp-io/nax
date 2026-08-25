@@ -14,8 +14,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { DEFAULT_CONFIG } from "@/config";
+import { withTempDir } from "@test/helpers";
 import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
+import type { FinishContext, FinishMachineDeps, FinishState } from "@/finish";
 import {
   _acceptanceGateDeps,
   _finishGitDeps,
@@ -27,10 +29,8 @@ import {
   resultPath,
   runFinishMachine,
 } from "@/finish";
-import type { FinishContext, FinishMachineDeps, FinishState } from "@/finish";
 import type { ForgeDeps } from "@/forge";
 import type { CallContext } from "@/operations";
-import { withTempDir } from "@test/helpers";
 
 const PR_URL = "https://forge.example/pr/1";
 const RUN_ID = "run-1";

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
-  DEFAULT_CONFIG,
   agentManagerConfigSelector,
   contextToolRuntimeConfigSelector,
+  DEFAULT_CONFIG,
   debateConfigSelector,
   interactionConfigSelector,
   planConfigSelector,

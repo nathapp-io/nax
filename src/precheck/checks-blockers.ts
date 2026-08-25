@@ -4,21 +4,20 @@
  * Re-exports check implementations from specialized modules.
  */
 
+export { _checkCliDeps as _deps, checkAgentCLI, checkClaudeCLI } from "./checks-cli";
+
+export { checkPRDValid, checkStaleLock } from "./checks-config";
 // Re-export for backward compatibility
 export {
   checkGitRepoExists,
-  checkWorkingTreeClean,
   checkGitUserConfigured,
+  checkWorkingTreeClean,
 } from "./checks-git";
 
-export { checkStaleLock, checkPRDValid } from "./checks-config";
-
-export { checkClaudeCLI, checkAgentCLI, _checkCliDeps as _deps } from "./checks-cli";
-
 export {
-  checkDependenciesInstalled,
-  checkTestCommand,
-  checkLintCommand,
-  checkTypecheckCommand,
   checkCanonicalRulesLint,
+  checkDependenciesInstalled,
+  checkLintCommand,
+  checkTestCommand,
+  checkTypecheckCommand,
 } from "./checks-system";

@@ -1,17 +1,18 @@
-import { ParseValidationError, UNPARSED_PREVIEW_BYTES, makeParseRetryStrategy } from "../agents/retry";
+import { makeParseRetryStrategy, ParseValidationError, UNPARSED_PREVIEW_BYTES } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import type { Finding, Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
-import { AdversarialReviewPromptBuilder, ReviewPromptBuilder } from "../prompts";
 import type { TestInventory } from "../prompts";
+import { AdversarialReviewPromptBuilder, ReviewPromptBuilder } from "../prompts";
+import type { AdversarialLLMFinding } from "../review/adversarial-helpers";
 import {
   isBlockingSeverity,
   toAdversarialReviewFindings,
   validateAdversarialShape,
 } from "../review/adversarial-helpers";
-import type { AdversarialLLMFinding } from "../review/adversarial-helpers";
+import type { AcDroppedEntry, AcQuoteRejectionCode } from "../review/finding-filters";
 import {
   checkFindingEvidence,
   downgradeUnsubstantiatedFinding,
@@ -20,15 +21,13 @@ import {
   hasInspectionTrail,
   substantiateAdversarialFindings,
 } from "../review/finding-filters";
-import type { AcDroppedEntry, AcQuoteRejectionCode } from "../review/finding-filters";
 import { classifyRecurrence, tagCoverageGap } from "../review/recurrence-demotion";
 import { parseRequoteResponse } from "../review/requote-response";
-import type { ReviewAck } from "../review/types";
-import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
+import type { AdversarialReviewConfig, ReviewAck, SemanticStory } from "../review/types";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { reviewExhaustedFallback } from "./_review-fallback";
-import { type RepromptInfo, extractRepromptInfo, withRepromptMarker } from "./adversarial-reprompt-marker";
+import { extractRepromptInfo, withRepromptMarker } from "./adversarial-reprompt-marker";
 import type { HopBodyContext, RunOperation } from "./types";
 
 export type { AdversarialReviewConfig, SemanticStory, TestInventory };

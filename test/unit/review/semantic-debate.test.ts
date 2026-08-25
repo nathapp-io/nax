@@ -8,19 +8,21 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { AgentResult } from "@/agents/types";
-import type { AgentAdapter } from "@/agents/types";
+import {
+  makeDebateRunner,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeNaxConfig,
+  makeSemanticOutput,
+  makeSpawn,
+} from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { pickBaseSelectorKind } from "@/debate";
 import type { DebateResult } from "@/debate/types";
 import { _diffUtilsDeps } from "@/review/diff-utils";
-import { _semanticDeps, runSemanticReview } from "@/review/semantic";
 import type { SemanticStory } from "@/review/semantic";
+import { _semanticDeps, runSemanticReview } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
-import { makeDebateRunner, makeMockAgentManager, makeSpawn } from "@test/helpers";
-import { makeMockRuntime } from "@test/helpers";
-import { makeNaxConfig } from "@test/helpers";
-import { makeSemanticOutput } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

@@ -2,9 +2,10 @@
  * Tests for src/acceptance/import-resolution.ts — polyglot import resolution.
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import { withTempDir } from "@test/helpers";
 import {
-  MAX_FILE_LINES,
   languageFromExtension,
+  MAX_FILE_LINES,
   parseGoImports,
   parsePythonImports,
   parseRustUses,
@@ -14,7 +15,6 @@ import {
   resolveSourceFiles,
 } from "@/acceptance/import-resolution";
 import { clearLanguageCache } from "@/project";
-import { withTempDir } from "@test/helpers";
 
 afterEach(() => clearLanguageCache());
 

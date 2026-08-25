@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { Finding, Iteration } from "@/findings";
 import {
-  MAX_ITERATIONS_PER_STORY,
   countPriorAppearances,
   fingerprintFor,
   getReviewIterations,
+  MAX_ITERATIONS_PER_STORY,
   recordReviewIteration,
 } from "@/review";
 

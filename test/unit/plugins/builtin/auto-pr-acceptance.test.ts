@@ -21,12 +21,12 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
+import { makeStory } from "@test/helpers";
 import { loadPlugins } from "@/plugins";
 import { _autoPrDeps, autoPrPlugin } from "@/plugins/builtin/auto-pr";
 import { buildBody, buildTitle } from "@/plugins/builtin/auto-pr/pr-body";
 import type { AutoPrDeps } from "@/plugins/builtin/auto-pr/types";
 import type { PostRunContext } from "@/plugins/extensions";
-import { makeStory } from "@test/helpers";
 
 const PLUGIN_NAME = "nax-auto-pr";
 

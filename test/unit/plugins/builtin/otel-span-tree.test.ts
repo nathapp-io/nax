@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { attr } from "@/plugins/builtin/otel-reporter/otlp";
 import {
-  PHASE_COST_BOUNDS,
-  PHASE_DURATION_BOUNDS,
   createPhaseMetricsAggregator,
   createSpanTree,
+  PHASE_COST_BOUNDS,
+  PHASE_DURATION_BOUNDS,
 } from "@/plugins/builtin/otel-reporter/span-tree";
 import type { PhaseCompleteEvent } from "@/plugins/types";
 

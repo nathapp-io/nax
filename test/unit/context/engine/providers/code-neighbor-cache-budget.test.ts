@@ -19,8 +19,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { CodeNeighborProvider, _codeNeighborDeps } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine";
+import { _codeNeighborDeps, CodeNeighborProvider } from "@/context/engine";
 
 let origGlob: typeof _codeNeighborDeps.glob;
 let origReadFile: typeof _codeNeighborDeps.readFile;

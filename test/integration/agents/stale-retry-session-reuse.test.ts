@@ -13,11 +13,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeContextBundle, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
 import { AgentManager, SessionFailureError } from "@/agents";
 import type { SessionHandle, TurnResult } from "@/agents/types";
-import type { AdapterFailure, ContextBundle } from "@/context/engine";
+import type { AdapterFailure } from "@/context/engine";
 import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
-import { makeContextBundle, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
 
 // ─── Stubs ───────────────────────────────────────────────────────────────────
 

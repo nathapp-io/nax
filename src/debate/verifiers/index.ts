@@ -1,12 +1,12 @@
-export type { PostDebateVerifier, PostDebateVerifierContext, PostDebateVerifierResult } from "./types";
-export { resolvePostDebateVerifier, registerPostDebateVerifier } from "./registry";
-export { reviewGroundingFilterVerifier } from "./review-grounding-filter";
-export { planChecklistVerifier, _planChecklistDeps } from "./plan-checklist";
+export type { CheckDeps } from "./checks";
 export {
-  checkFilesExist,
   checkAcAnchored,
   checkClaimsCited,
+  checkFilesExist,
   checkNoContradictions,
   checkSpecCoverage,
 } from "./checks";
-export type { CheckDeps } from "./checks";
+export { _planChecklistDeps, planChecklistVerifier } from "./plan-checklist";
+export { registerPostDebateVerifier, resolvePostDebateVerifier } from "./registry";
+export { reviewGroundingFilterVerifier } from "./review-grounding-filter";
+export type { PostDebateVerifier, PostDebateVerifierContext, PostDebateVerifierResult } from "./types";

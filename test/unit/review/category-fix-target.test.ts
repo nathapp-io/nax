@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { BLOCKING_CATEGORIES } from "@/review";
-import { categoryToFixTarget, resolveFixTarget } from "@/review";
+import { BLOCKING_CATEGORIES, categoryToFixTarget, resolveFixTarget } from "@/review";
 
 describe("categoryToFixTarget", () => {
   describe("BLOCKING_CATEGORIES members return source", () => {

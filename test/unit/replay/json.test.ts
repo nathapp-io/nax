@@ -7,8 +7,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { toReplayJson } from "@/replay";
 import type { RunTimeline, StoryTimeline } from "@/replay";
+import { toReplayJson } from "@/replay";
 
 function buildStory(overrides: Partial<StoryTimeline> & { storyId: string }): StoryTimeline {
   const { storyId, ...rest } = overrides;

@@ -3,14 +3,14 @@ import {
   AC_QUALITY_RULES,
   COMPLEXITY_GUIDE,
   GROUPING_RULES,
-  SINGLE_SESSION_TEST_OWNING_STRATEGIES,
-  TEST_STRATEGY_GUIDE,
-  THREE_SESSION_STRATEGIES,
-  VALID_TEST_STRATEGIES,
   getAcQualityRules,
   isSingleSessionTestOwningStrategy,
   isThreeSessionStrategy,
   resolveTestStrategy,
+  SINGLE_SESSION_TEST_OWNING_STRATEGIES,
+  TEST_STRATEGY_GUIDE,
+  THREE_SESSION_STRATEGIES,
+  VALID_TEST_STRATEGIES,
 } from "@/config/test-strategy";
 
 describe("resolveTestStrategy", () => {

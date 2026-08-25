@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { ContextOrchestrator, _orchestratorDeps } from "@/context/engine";
-import type { ContextProviderResult, ContextRequest, IContextProvider } from "@/context/engine";
 import { type MockLogger, makeLogger } from "@test/helpers";
+import type { ContextProviderResult, ContextRequest, IContextProvider } from "@/context/engine";
+import { _orchestratorDeps, ContextOrchestrator } from "@/context/engine";
 
 const BASE_REQUEST: ContextRequest = {
   storyId: "US-002",

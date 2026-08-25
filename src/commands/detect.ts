@@ -18,8 +18,8 @@
  */
 
 import { join } from "node:path";
-import { discoverWorkspacePackages } from "@/test-runners/detect";
 import chalk from "chalk";
+import { discoverWorkspacePackages } from "@/test-runners/detect";
 import { loadConfig } from "../config";
 import { initLogger } from "../logger";
 import type { DetectionResult } from "../test-runners/detect";

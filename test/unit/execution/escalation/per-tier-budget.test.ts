@@ -27,10 +27,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import type { TierConfig } from "@/config";
 import { DEFAULT_CONFIG, NaxConfigSchema } from "@/config";
 import { _tierEscalationDeps, calculateMaxIterations, preIterationTierCheck } from "@/execution/escalation";
-import { makeNaxConfig } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Shared scaffolding

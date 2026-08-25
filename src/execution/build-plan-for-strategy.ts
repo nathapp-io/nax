@@ -20,10 +20,10 @@ import { join, normalize, resolve, sep } from "node:path";
 import type { NaxConfig } from "../config";
 import { isThreeSessionStrategy, qualityConfigSelector } from "../config";
 import type { TestStrategy } from "../config/schema-types";
-import type { FixCycleContext } from "../findings/cycle-types";
-import type { FixStrategy } from "../findings/cycle-types";
+import type { FixCycleContext, FixStrategy } from "../findings/cycle-types";
 import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
+import type { DeclarationDiagnostic, TestEditDeclaration } from "../operations";
 import {
   applyTestEditDeclarations,
   makeAutofixImplementerStrategy,
@@ -33,7 +33,6 @@ import {
   makeMechanicalLintFixStrategy,
   validateMockStructureFiles,
 } from "../operations";
-import type { DeclarationDiagnostic, TestEditDeclaration } from "../operations";
 import { shouldRunRectification } from "../operations/execution-gates";
 import { makeFullSuiteRectifyStrategy, makeRepoScopedTestFixStrategy } from "../operations/full-suite-rectify";
 import type { CallContext } from "../operations/types";

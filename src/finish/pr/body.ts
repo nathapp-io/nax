@@ -11,8 +11,9 @@
  * Ported from `flows/nax-finish/steps/pr-body.ts`; the rendering is settled
  * behaviour (nax#1477, nax#1504, nax#1507) and must not drift.
  */
-import { mergeTemplate } from "@/forge";
+
 import type { BodySection } from "@/forge";
+import { mergeTemplate } from "@/forge";
 import type { Finding, FindingDisposition, FinishRound } from "../types";
 import type { FinishPrContext, FinishPrStory } from "./context";
 

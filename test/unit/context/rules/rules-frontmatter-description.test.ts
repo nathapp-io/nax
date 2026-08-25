@@ -7,9 +7,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _canonicalLoaderDeps, loadCanonicalRules } from "@/context/rules/canonical-loader";
-import { KNOWN_FRONTMATTER_KEYS, RulesFrontmatterError, parseFrontmatter } from "@/context/rules/rules-frontmatter";
 import { makeLogger } from "@test/helpers";
+import { _canonicalLoaderDeps, loadCanonicalRules } from "@/context/rules/canonical-loader";
+import { KNOWN_FRONTMATTER_KEYS, parseFrontmatter, RulesFrontmatterError } from "@/context/rules/rules-frontmatter";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // US-001: Canonical rules accept and carry an optional single-line description.

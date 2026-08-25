@@ -14,8 +14,8 @@
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { ProtocolIds } from "@/runtime/protocol-types";
-import { addTokenUsage, estimateCostFromTokenUsage } from "../cost";
 import type { ITokenUsageMapper, TokenUsage } from "../cost";
+import { addTokenUsage, estimateCostFromTokenUsage } from "../cost";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -29,13 +29,10 @@ import type {
 } from "../types";
 import { CompleteError, SessionTurnError } from "../types";
 import { closePhysicalSession as closePhysicalSessionImpl } from "./adapter-close-physical";
-import { defaultAcpTokenUsageMapper } from "./token-mapper";
-import type { SessionTokenUsage } from "./wire-types";
-
 import {
-  AcpSessionHandleImpl,
   _acpAdapterDeps,
   _fallbackDeps,
+  AcpSessionHandleImpl,
   closeAcpSession,
   computeAcpHandle,
   ensureAcpSession,
@@ -46,29 +43,32 @@ import {
 import { buildTurnResult, extractContextToolCall, extractOutput, extractQuestion } from "./adapter-output";
 import { resolveRegistryEntry } from "./agent-entries";
 import { classifyCompleteError } from "./parse-agent-error";
+import { defaultAcpTokenUsageMapper } from "./token-mapper";
+import type { SessionTokenUsage } from "./wire-types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Backward-compat re-exports (consumers import from this file via barrel)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type { AcpClient, AcpSession, AcpSessionResponse } from "./adapter-session-types";
 export {
-  AcpSessionHandleImpl,
   _acpAdapterDeps,
   _fallbackDeps,
+  AcpSessionHandleImpl,
   closeAcpSession,
   computeAcpHandle,
   ensureAcpSession,
   runSessionPrompt,
 } from "./adapter-lifecycle";
-export { buildContextToolPreamble, buildRunInteractionHandler, buildTurnResult } from "./adapter-output";
 export type { BuildTurnResultInput } from "./adapter-output";
+export { buildContextToolPreamble, buildRunInteractionHandler, buildTurnResult } from "./adapter-output";
+export type { AcpClient, AcpSession, AcpSessionResponse } from "./adapter-session-types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants / agent registry
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INTERACTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 min for human to respond
+
 export { ACP_ADAPTER_NAMES } from "./agent-entries";
 
 // ─────────────────────────────────────────────────────────────────────────────

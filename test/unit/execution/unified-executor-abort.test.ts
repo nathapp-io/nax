@@ -14,8 +14,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _unifiedExecutorDeps, executeUnified } from "@/execution";
 import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { _unifiedExecutorDeps, executeUnified } from "@/execution";
 
 function makePendingStory(id: string) {
   return makeStory({ id, title: `Story ${id}`, description: `Description for ${id}` });

@@ -12,11 +12,10 @@
  * existing reports in `otel-reporter-lifecycle.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { mockFetch, withWarnSpy } from "@test/helpers";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { initLogger, resetLogger } from "@/logger";
-import { type PostJsonDeps, buildLogsPayload, createOtelReporterPlugin } from "@/plugins";
-import { mockFetch } from "@test/helpers";
-import { withWarnSpy } from "@test/helpers";
+import { buildLogsPayload, createOtelReporterPlugin, type PostJsonDeps } from "@/plugins";
 
 interface CapturedPost {
   url: string;

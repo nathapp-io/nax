@@ -6,7 +6,7 @@ import type { IAgentManager } from "@/agents";
 import type { DebateConfig as DebateSelectorConfig } from "@/config/selectors";
 import type { CallContext } from "@/operations/types";
 import type { SuccessfulProposal } from "../session-helpers";
-import type { DebateStageConfig, Debater } from "../types";
+import type { Debater, DebateStageConfig } from "../types";
 
 export interface SelectorContext {
   readonly storyId: string;

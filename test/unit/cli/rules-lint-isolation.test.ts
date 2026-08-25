@@ -10,10 +10,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { LogCall } from "@test/helpers";
+import { makeLogger } from "@test/helpers";
 import { _rulesCLIDeps, _rulesLintDeps, rulesLintCommandDirect as rulesLintCommandFromLint } from "@/cli";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
-import { makeLogger } from "@test/helpers";
-import type { LogCall } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers

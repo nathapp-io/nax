@@ -8,10 +8,10 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { handleMaxAttemptsReached, handleNoTierAvailable } from "@/execution/escalation";
-import type { EscalationHandlerContext } from "@/execution/escalation";
-import { pipelineEventBus } from "@/pipeline/event-bus";
 import { cleanupTempDir, makeMockRuntime, makePRD, makeStory, makeTempDir } from "@test/helpers";
+import type { EscalationHandlerContext } from "@/execution/escalation";
+import { handleMaxAttemptsReached, handleNoTierAvailable } from "@/execution/escalation";
+import { pipelineEventBus } from "@/pipeline/event-bus";
 
 function makeCtx(overrides: Partial<EscalationHandlerContext>, prdPath: string): EscalationHandlerContext {
   const story = makeStory({ id: "US-001", status: "in-progress" });

@@ -1,15 +1,15 @@
 import { describe, expect, test } from "bun:test";
+import { makePRD, makeStory } from "@test/helpers";
 import {
-  MAX_OUT_OF_SCOPE_ITEMS,
   applyOutOfScopeFallback,
   demoteStoryScopedOutOfScope,
   extractSpecOutOfScope,
   extractStoryScopedOutOfScope,
   findMissingOutOfScope,
+  MAX_OUT_OF_SCOPE_ITEMS,
   propagateOutOfScopeToStories,
   stripPropagatedOutOfScope,
 } from "@/prd";
-import { makePRD, makeStory } from "@test/helpers";
 
 describe("extractSpecOutOfScope", () => {
   test("extracts bullets from an `## Out of Scope` heading section", () => {

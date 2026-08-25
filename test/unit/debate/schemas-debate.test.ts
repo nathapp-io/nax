@@ -4,8 +4,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { DebateConfigSchema } from "@/config";
 import { z } from "zod";
+import { DebateConfigSchema } from "@/config";
 
 // ─── AC 1: DebateStageConfigSchema defaults ───────────────────────────────────
 

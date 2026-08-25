@@ -20,16 +20,16 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import {
+  _acpAdapterDeps,
   AcpAgentAdapter,
   type AcpClient,
   type AcpClientOptions,
   type AcpSession,
   type AcpSessionResponse,
-  _acpAdapterDeps,
 } from "@/agents";
 import { type AgentStreamEvent, AgentStreamEventBus, attachAgentIdleWatchdog } from "@/runtime";
-import { makeNaxConfig } from "@test/helpers";
 
 // setTimeout is permitted here for controlled test delays (not Bun.sleep — see testing-rules.md)
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));

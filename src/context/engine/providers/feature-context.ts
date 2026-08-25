@@ -18,7 +18,6 @@
 
 import { createHash } from "node:crypto";
 import type { ContextToolRuntimeConfig } from "@/config/selectors";
-import type { NaxConfig } from "@/config/types";
 import { FeatureContextProvider as FeatureContextProviderV1 } from "@/context";
 import {
   listFragmentStoryIds as listFragmentStoryIdsImpl,

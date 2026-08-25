@@ -7,8 +7,8 @@
 import { basename } from "node:path";
 import { loadConfig } from "../config";
 import { getLogger } from "../logger";
-import { calculateAggregateMetrics, getLastRun, loadRunMetrics, toCostReport } from "../metrics";
 import type { CostReportV1 } from "../metrics";
+import { calculateAggregateMetrics, getLastRun, loadRunMetrics, toCostReport } from "../metrics";
 import type { RunMetrics } from "../metrics/types";
 import { projectOutputDir } from "../runtime";
 

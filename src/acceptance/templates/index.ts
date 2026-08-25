@@ -5,17 +5,13 @@
  * builder based on the testStrategy option.
  */
 
-export { buildUnitTemplate } from "./unit";
-export type { UnitTemplateOptions } from "./unit";
-
-export { buildComponentTemplate } from "./component";
-export type { ComponentTemplateOptions } from "./component";
-
-export { buildCliTemplate } from "./cli";
 export type { CliTemplateOptions } from "./cli";
-
-export { buildE2eTemplate } from "./e2e";
+export { buildCliTemplate } from "./cli";
+export type { ComponentTemplateOptions } from "./component";
+export { buildComponentTemplate } from "./component";
 export type { E2eTemplateOptions } from "./e2e";
-
-export { buildSnapshotTemplate } from "./snapshot";
+export { buildE2eTemplate } from "./e2e";
 export type { SnapshotTemplateOptions } from "./snapshot";
+export { buildSnapshotTemplate } from "./snapshot";
+export type { UnitTemplateOptions } from "./unit";
+export { buildUnitTemplate } from "./unit";

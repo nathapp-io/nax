@@ -5,11 +5,11 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { ParseValidationError } from "@/agents";
-import { inspectDraftOutput, planDraftOp } from "@/operations";
-import type { PlanDraftInput } from "@/operations";
-import type { NaxRuntime } from "@/runtime";
 import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { ParseValidationError } from "@/agents";
+import type { PlanDraftInput } from "@/operations";
+import { inspectDraftOutput, planDraftOp } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

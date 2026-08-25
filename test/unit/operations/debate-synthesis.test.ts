@@ -1,12 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_CONFIG } from "@/config";
-import { debateConfigSelector } from "@/config";
+import { opModelResolver } from "@test/helpers";
+import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
 import type { Debater } from "@/debate/types";
 import { synthesisOp } from "@/operations";
 import type { DebateSynthesisInput } from "@/operations/debate-synthesis";
-import { DebatePromptBuilder } from "@/prompts";
-import { composeSections, join } from "@/prompts";
-import { opModelResolver } from "@test/helpers";
+import { composeSections, DebatePromptBuilder, join } from "@/prompts";
 
 function makeBuildCtx() {
   return {

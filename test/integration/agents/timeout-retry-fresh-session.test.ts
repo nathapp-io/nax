@@ -14,11 +14,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { AgentManager, SessionFailureError } from "@/agents";
-import type { SessionHandle, TurnResult } from "@/agents";
-import type { AdapterFailure, ContextBundle } from "@/context/engine";
-import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
 import { makeContextBundle, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
+import type { SessionHandle, TurnResult } from "@/agents";
+import { AgentManager, SessionFailureError } from "@/agents";
+import type { AdapterFailure } from "@/context/engine";
+import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
 
 const CLAUDE_HANDLE: SessionHandle = { id: "ses_timeout_retry_1", agentName: "claude" };
 

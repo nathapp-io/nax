@@ -8,12 +8,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { makeMockAgentManager, makeMockRuntime, makePRD, makeStory, makeTempDir } from "@test/helpers";
 import { _planDeps, buildPlanComposition, planCommand, runPlanPipeline } from "@/cli";
 import { DEFAULT_CONFIG, type DebateStageConfig } from "@/config";
 import { NaxError } from "@/errors";
 import type { PRD } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
-import { makeMockAgentManager, makeMockRuntime, makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

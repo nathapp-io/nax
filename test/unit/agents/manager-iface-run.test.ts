@@ -8,11 +8,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { AgentManager, _agentManagerDeps } from "@/agents/manager";
+import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
+import { _agentManagerDeps, AgentManager } from "@/agents/manager";
 import type { AgentRunRequest } from "@/agents/manager-types";
 import type { AgentAdapter, CompleteResult } from "@/agents/types";
-import { SessionFailureError } from "@/agents/types";
-import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 
 describe("IAgentManager.run()", () => {
   test("delegates to runWithFallback and returns AgentResult", async () => {

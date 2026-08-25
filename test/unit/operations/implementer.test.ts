@@ -1,10 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { resolveConfiguredModel } from "@/config";
-import type { NaxConfig } from "@/config";
-import { implementerOp, testWriterOp } from "@/operations";
-import type { RunOperation } from "@/operations";
-import type { UserStory } from "@/prd";
 import { makeStory } from "@test/helpers";
+import { resolveConfiguredModel } from "@/config";
+import { implementerOp, testWriterOp } from "@/operations";
+import type { UserStory } from "@/prd";
 
 /**
  * Tests for implementerOp — the full RunOperation shape for the implementer role.

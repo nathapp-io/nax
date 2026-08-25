@@ -1,8 +1,7 @@
+export { runPlanCritic } from "./critic";
+export { validateDraftCitations } from "./draft-citations";
+export { formatSpecDeltas } from "./spec-deltas";
 export {
-  DebatePlanStrategy,
-  PipelinePlanStrategy,
-  RefinePlanStrategy,
-  SinglePlanStrategy,
   _debatePlanDeps,
   _pipelinePlanDeps,
   _refinePlanDeps,
@@ -11,9 +10,10 @@ export {
   buildPlanComposition,
   buildPlanModeContext,
   createPlanStrategy,
+  DebatePlanStrategy,
   finalizePrdRouting,
+  PipelinePlanStrategy,
+  RefinePlanStrategy,
+  SinglePlanStrategy,
   writeOrRecoverPrd,
 } from "./strategies";
-export { runPlanCritic } from "./critic";
-export { formatSpecDeltas } from "./spec-deltas";
-export { validateDraftCitations } from "./draft-citations";

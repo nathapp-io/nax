@@ -15,12 +15,11 @@
  *   - Track created runtimes for mandatory afterEach cleanup
  */
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { agentManagerInternals, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
-import { callOp } from "@/operations";
 import type { CompleteOperation } from "@/operations";
+import { callOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
-import { agentManagerInternals } from "@test/helpers";
 
 const sel = pickSelector("complete-empty-output-retry-test", "routing");
 

@@ -1,7 +1,7 @@
-export type { Selector, SelectorContext, SelectorResult } from "./types";
-export { resolveSelector, registerSelector } from "./registry";
-export { majorityFailClosedSelector, majorityFailOpenSelector, computeMajority } from "./majority";
-export { synthesisSelector } from "./synthesis";
 export { judgeSelector } from "./judge";
-export { verifierPickSelector, runPatchStep } from "./verifier-pick";
+export { computeMajority, majorityFailClosedSelector, majorityFailOpenSelector } from "./majority";
 export { pickBaseSelectorKind, pickSelectorKind } from "./pick";
+export { registerSelector, resolveSelector } from "./registry";
+export { synthesisSelector } from "./synthesis";
+export type { Selector, SelectorContext, SelectorResult } from "./types";
+export { runPatchStep, verifierPickSelector } from "./verifier-pick";

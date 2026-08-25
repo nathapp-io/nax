@@ -8,11 +8,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { checkWorkingTreeClean } from "@/precheck/checks-git";
 import { makeTempDir } from "@test/helpers";
+import { checkWorkingTreeClean } from "@/precheck/checks-git";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

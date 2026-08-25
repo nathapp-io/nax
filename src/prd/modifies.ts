@@ -15,7 +15,7 @@
  * Pure and deterministic — no I/O, no LLM.
  */
 
-import { type SpecModifiedFile, extractSpecModifiedFiles } from "./modifies-extract";
+import { extractSpecModifiedFiles, type SpecModifiedFile } from "./modifies-extract";
 import type { ModifiedFileEntry, PRD, UserStory } from "./types";
 
 /** Outcome of {@link applyModifiedFiles}: the updated PRD plus what it could not place. */

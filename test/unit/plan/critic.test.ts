@@ -12,10 +12,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { FactsManifest } from "@/debate";
-import type { CallContext } from "@/operations";
-import type { VerifierFinding } from "@/plan/spec-deltas";
-import type { NaxRuntime } from "@/runtime";
 import {
   cleanupTempDir,
   makeMockAgentManager,
@@ -25,6 +21,10 @@ import {
   makeTempDir,
   makeTestRuntime,
 } from "@test/helpers";
+import type { FactsManifest } from "@/debate";
+import type { CallContext } from "@/operations";
+import type { VerifierFinding } from "@/plan/spec-deltas";
+import type { NaxRuntime } from "@/runtime";
 
 let tempDir: string;
 let runtime: NaxRuntime | undefined;

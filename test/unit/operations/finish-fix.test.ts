@@ -7,13 +7,11 @@ import { afterEach, describe, expect, test } from "bun:test";
  */
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ConfigSelector } from "@/config";
-import type { FinishConfig } from "@/config/selectors";
+import { makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
 import type { Finding } from "@/finish";
 import type { FinishFixInput } from "@/operations";
 import { finishFixOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

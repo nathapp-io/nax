@@ -32,10 +32,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { adversarialReviewOp, semanticReviewOp } from "@/operations";
-import type { AdversarialReviewInput, SemanticReviewInput } from "@/operations";
-import type { NaxRuntime } from "@/runtime";
 import { makeTestRuntime, withTempDir } from "@test/helpers";
+import type { AdversarialReviewInput, SemanticReviewInput } from "@/operations";
+import { adversarialReviewOp, semanticReviewOp } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

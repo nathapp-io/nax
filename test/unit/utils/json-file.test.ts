@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { loadJsonFile, saveJsonFile } from "@/utils/json-file";
 import { withTempDir } from "@test/helpers";
+import { loadJsonFile, saveJsonFile } from "@/utils/json-file";
 
 const WRITER_FIXTURE = join(import.meta.dir, "..", "..", "fixtures", "json-file-writer.ts");
 

@@ -7,8 +7,8 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { installSignalHandlers, performTeardown } from "@/execution/crash-signals";
 import type { SignalHandlerContext } from "@/execution/crash-signals";
+import { installSignalHandlers, performTeardown } from "@/execution/crash-signals";
 import type { StatusWriter } from "@/execution/status-writer";
 
 const minimalCtx: SignalHandlerContext = {

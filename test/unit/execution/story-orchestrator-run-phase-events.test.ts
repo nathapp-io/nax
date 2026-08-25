@@ -11,12 +11,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeTestRuntime } from "@test/helpers";
 import { _storyOrchestratorDeps, runPhase } from "@/execution";
 import type { AnySlot } from "@/execution/story-orchestrator";
 import type { CallContext } from "@/operations";
-import { type StoryPhaseCompletedEvent, pipelineEventBus } from "@/pipeline";
+import { pipelineEventBus, type StoryPhaseCompletedEvent } from "@/pipeline";
 import type { CostScopeHandle } from "@/runtime";
-import { makeTestRuntime } from "@test/helpers";
 
 /**
  * The op slot `runPhase` accepts, NOT `callOp`'s parameter. `callOp` takes the

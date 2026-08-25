@@ -3,10 +3,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeMockAgentManager, makeMockCallContext } from "@test/helpers";
 import { majorityFailClosedSelector, majorityFailOpenSelector } from "@/debate";
 import type { SelectorContext } from "@/debate/selectors/types";
 import type { SuccessfulProposal } from "@/debate/session-helpers";
-import { makeMockAgentManager, makeMockCallContext } from "@test/helpers";
 
 function makeProposals(outputs: string[]): SuccessfulProposal[] {
   return outputs.map((output) => ({

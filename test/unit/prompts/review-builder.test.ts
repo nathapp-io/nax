@@ -10,11 +10,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeSemanticReviewConfig } from "@test/helpers";
 import type { Iteration } from "@/findings";
 import { ReviewPromptBuilder } from "@/prompts";
 import { SEMANTIC_CATEGORIES, SEMANTIC_CATEGORY_ENUM_LINE } from "@/review/semantic-categories";
 import type { SemanticReviewConfig, SemanticStory } from "@/review/types";
-import { makeSemanticReviewConfig } from "@test/helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 

@@ -8,11 +8,11 @@
  */
 
 import { describe, expect, it, mock } from "bun:test";
-import { _pipelineAdapterDeps, pipeline } from "@/bakeoff";
+import { makeNaxConfig, withDepsRestore } from "@test/helpers";
 import type { ContestantRunContext } from "@/bakeoff";
+import { _pipelineAdapterDeps, pipeline } from "@/bakeoff";
 import type { RunOptions, RunResult } from "@/execution";
 import type { RunMetrics } from "@/metrics";
-import { makeNaxConfig, withDepsRestore } from "@test/helpers";
 
 withDepsRestore(_pipelineAdapterDeps, ["run", "loadRunMetrics"]);
 

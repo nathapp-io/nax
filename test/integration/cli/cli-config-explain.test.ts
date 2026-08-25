@@ -7,9 +7,9 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
+import { makeTempDir } from "@test/helpers";
 import { configCommand } from "@/cli/config";
 import { loadConfig } from "@/config/loader";
-import { makeTempDir } from "@test/helpers";
 
 describe("config --explain: prompts section", () => {
   let tempDir: string;

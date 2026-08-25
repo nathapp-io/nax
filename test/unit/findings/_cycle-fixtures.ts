@@ -9,10 +9,9 @@
  */
 
 import { mock } from "bun:test";
-import type { FixCycle, FixCycleContext, FixStrategy } from "@/findings";
-import type { Finding } from "@/findings";
-import type { CallOpFn } from "@/findings/cycle";
 import { makeMockCallContext } from "@test/helpers";
+import type { Finding, FixCycle, FixCycleContext, FixStrategy } from "@/findings";
+import type { CallOpFn } from "@/findings/cycle";
 
 export function makeFinding(overrides: Partial<Finding> & Pick<Finding, "source" | "message">): Finding {
   return { severity: "error", category: "test", ...overrides };

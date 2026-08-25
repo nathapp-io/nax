@@ -3,12 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import {
-  _quoteIntegrityDeps,
-  extractQuoteTriples,
-  verifyEscalationQuotes,
-  verifyQuoteTriple,
-} from "@/execution/escalation/quote-integrity";
+import { extractQuoteTriples, verifyEscalationQuotes, verifyQuoteTriple } from "@/execution/escalation/quote-integrity";
 
 // ─── extractQuoteTriples ──────────────────────────────────────────────────────
 

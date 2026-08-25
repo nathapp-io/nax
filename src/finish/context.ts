@@ -14,10 +14,11 @@
  * would run acceptance resolution twice and lose the "resolve once" property
  * `load_ctx`'s header comment exists to state.
  */
-import { resolveFeatureSpec } from "@/cli";
+
 import type { AcceptanceGroupResult, AcceptanceResolutionStatus } from "@/cli";
-import { viewArgv } from "@/forge";
+import { resolveFeatureSpec } from "@/cli";
 import type { ForgeDeps, ForgeKind } from "@/forge";
+import { viewArgv } from "@/forge";
 import { errorMessage } from "@/utils/errors";
 import { gitWithTimeout } from "@/utils/git";
 import { readLedger } from "./audit";

@@ -11,9 +11,9 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { AcpAgentAdapter, _acpAdapterDeps } from "@/agents/acp/adapter";
-import { CompleteError } from "@/agents/types";
+import { _acpAdapterDeps, AcpAgentAdapter } from "@/agents/acp/adapter";
 import type { AgentRunOptions } from "@/agents/types";
+import { CompleteError } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config";
 
 // ─────────────────────────────────────────────────────────────────────────────

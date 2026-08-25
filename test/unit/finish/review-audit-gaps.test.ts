@@ -6,9 +6,9 @@ import { describe, expect, test } from "bun:test";
  * disk check exists and why `../`-confinement matters here.
  */
 import { join } from "node:path";
+import { withTempDir } from "@test/helpers";
 import type { FindingDisposition, ReviewReport } from "@/finish";
 import { auditGaps, validateDispositions } from "@/finish";
-import { withTempDir } from "@test/helpers";
 
 function makeReport(overrides: Partial<ReviewReport> = {}): ReviewReport {
   return {

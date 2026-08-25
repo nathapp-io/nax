@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { type NeighborSection, assembleCodeNeighborChunk } from "@/context/engine";
+import { assembleCodeNeighborChunk, type NeighborSection } from "@/context/engine";
 import type { RawChunk } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────

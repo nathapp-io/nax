@@ -17,23 +17,23 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeTestContext, makeTestRuntime } from "@test/helpers";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import {
-  StoryOrchestratorBuilder,
   _postRunDeps,
   _storyOrchestratorDeps,
   applyPostRunInspection,
   countOscillationOutcomes,
   decideStageAction,
   getOscillations,
+  StoryOrchestratorBuilder,
 } from "@/execution";
 import type { FixCycle, FixCycleContext, FixCycleExitReason, Iteration } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
 import type { CallContext, RunOperation } from "@/operations";
 import type { PipelineContext } from "@/pipeline/types";
 import type { NaxRuntime } from "@/runtime";
-import { makeTestContext, makeTestRuntime } from "@test/helpers";
-import { LINT_FINDING, TEST_RUNNER_FINDING, makeInspectionOpts, makePlanResult } from "./_post-run-fixtures";
+import { LINT_FINDING, makeInspectionOpts, makePlanResult, TEST_RUNNER_FINDING } from "./_post-run-fixtures";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. Pure source-reappearance counter (AC1, AC2)

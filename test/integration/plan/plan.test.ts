@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
+import { makeNaxConfig } from "@test/helpers";
 import { planCommand } from "@/cli/plan";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/schema";
-import { makeNaxConfig } from "@test/helpers";
 
 describe("planCommand", () => {
   let tmpDir: string;

@@ -6,9 +6,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig, makeSparseNaxConfig } from "@test/helpers";
 import { resolveBalancedModelDef } from "@/agents/shared/model-resolution";
 import type { ModelDef } from "@/config/schema";
-import { makeNaxConfig, makeSparseNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // resolveBalancedModelDef — fallback chain utility

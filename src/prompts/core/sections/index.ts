@@ -5,16 +5,13 @@
  * Builders import from here — consumers import from src/prompts (public barrel).
  */
 
-export { priorFailuresSection } from "./prior-failures";
-export type { FailureRecord } from "./prior-failures";
-
-export { findingsSection } from "./findings";
 export type { ReviewFinding } from "./findings";
-
-export { jsonSchemaSection } from "./json-schema";
+export { findingsSection } from "./findings";
+export { instructionsSection } from "./instructions";
 export type { SchemaDescriptor } from "./json-schema";
 
-export { instructionsSection } from "./instructions";
-
-export { routingCandidatesSection } from "./routing-candidates";
+export { jsonSchemaSection } from "./json-schema";
+export type { FailureRecord } from "./prior-failures";
+export { priorFailuresSection } from "./prior-failures";
 export type { RoutingCandidate } from "./routing-candidates";
+export { routingCandidatesSection } from "./routing-candidates";

@@ -12,14 +12,14 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { makeDispatchContext, makeNaxConfig, makeStatusWriter, makeTestRuntime } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import type { RunCompletionResult } from "@/execution/lifecycle/run-completion";
-import { type RunnerCompletionOptions, _runnerCompletionDeps, runCompletionPhase } from "@/execution/runner-completion";
+import { _runnerCompletionDeps, type RunnerCompletionOptions, runCompletionPhase } from "@/execution/runner-completion";
 import type { LoadedHooksConfig } from "@/hooks";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import { PluginRegistry } from "@/plugins";
 import type { PRD, UserStory } from "@/prd";
-import { makeDispatchContext, makeNaxConfig, makeStatusWriter, makeTestRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

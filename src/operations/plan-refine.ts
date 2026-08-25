@@ -9,14 +9,13 @@ import { getSafeLogger } from "../logger";
 import { findMissingOutOfScope, findSpecDriftViolations, getExpectedFiles } from "../prd";
 import { validatePlanOutput } from "../prd/schema";
 import type { SpecDriftViolation } from "../prd/spec-drift";
-import type { ContextFileEntry, PRD } from "../prd/types";
-import type { UserStory } from "../prd/types";
-import { PlanPromptBuilder } from "../prompts";
+import type { ContextFileEntry, PRD, UserStory } from "../prd/types";
 import type { PackageSummary } from "../prompts";
+import { PlanPromptBuilder } from "../prompts";
 import type { SessionRole } from "../session/types";
 import { errorMessage } from "../utils/errors";
 import { applyPlanFidelity, warnOnSpecDrift } from "./plan-fidelity";
-import { type SelfHealStep, makeSelfHealStep, runSelfHealChain } from "./self-heal";
+import { makeSelfHealStep, runSelfHealChain, type SelfHealStep } from "./self-heal";
 import type { RunOperation } from "./types";
 
 /** Injectable I/O for the hopBody self-heal step (testable without disk). */

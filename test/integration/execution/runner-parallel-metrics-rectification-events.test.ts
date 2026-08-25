@@ -13,7 +13,6 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { initLogger, resetLogger } from "@/logger";
 import type { StoryMetrics } from "@/metrics";
 import type { PipelineEvent } from "@/pipeline/event-bus";
-import type { UserStory } from "@/prd/types";
 import { makeCtx, makePendingStory, makePrd } from "./_parallel-metrics-helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────

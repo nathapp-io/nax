@@ -17,13 +17,13 @@ import { pipelineEventBus } from "@/pipeline";
 import type { PRD, UserStory } from "@/prd";
 import { countStories } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
-import { parseTestOutput } from "@/test-runners";
 import type { TestSummary } from "@/test-runners";
+import { parseTestOutput } from "@/test-runners";
 import {
   type FlakeQuarantineReport,
+  fullSuite,
   NULL_QUARANTINE_MEMO,
   type QuarantineMemo,
-  fullSuite,
   resolveFlakeBaselineDiff,
   triageFlakyFindings,
 } from "@/verification";

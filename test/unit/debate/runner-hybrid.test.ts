@@ -1,13 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_CONFIG } from "@/config";
-import { debateConfigSelector } from "@/config";
-import { DebateRunner, _debateSessionDeps } from "@/debate";
+import { makeLogger, makeMockAgentManager, makeSessionManager, withDepsRestore } from "@test/helpers";
+import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
 import type { DebateRunnerOptions, DebateStageConfig } from "@/debate";
-import { _hybridDeps } from "@/debate/runner-hybrid";
+import { _debateSessionDeps, DebateRunner } from "@/debate";
 import type { HybridCtx } from "@/debate/runner-hybrid";
+import { _hybridDeps } from "@/debate/runner-hybrid";
 import type { CallContext } from "@/operations";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
-import { makeLogger, makeMockAgentManager, makeSessionManager, withDepsRestore } from "@test/helpers";
 
 function installCallOp(impl: typeof _hybridDeps.callOp) {
   const spy = mock(impl);

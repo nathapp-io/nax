@@ -8,8 +8,8 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { rmSync } from "node:fs";
-import { _runSetupDeps, warnFallbackMisconfiguration, warnProfileMismatch } from "@/execution/lifecycle/run-setup";
 import { makeLogger, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { _runSetupDeps, warnFallbackMisconfiguration, warnProfileMismatch } from "@/execution/lifecycle/run-setup";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -24,6 +24,7 @@ afterEach(() => {
 
 import { afterAll } from "bun:test";
 import { makeTempDir } from "@test/helpers";
+
 afterAll(() => {
   rmSync(tmpDir, { recursive: true, force: true });
 });

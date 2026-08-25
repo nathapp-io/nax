@@ -16,10 +16,10 @@
  */
 
 import { createHash } from "node:crypto";
-import { scratchFilePath } from "@/session";
 import type { ScratchEntry } from "@/session";
+import { scratchFilePath } from "@/session";
 import { readJsonlTail } from "@/utils/jsonl-tail";
-import { type NaxIgnoreMatcher, filterNaxInternalPaths, resolveNaxIgnorePatterns } from "@/utils/path-filters";
+import { filterNaxInternalPaths, type NaxIgnoreMatcher, resolveNaxIgnorePatterns } from "@/utils/path-filters";
 import { neutralizeForAgent } from "../scratch-neutralizer";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 

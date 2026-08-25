@@ -8,11 +8,11 @@
 
 // Cost metrics
 export {
+  type CostReportEmitDeps,
   displayCostMetrics,
   displayLastRunMetrics,
   displayModelEfficiency,
   emitCostReportJson,
-  type CostReportEmitDeps,
 } from "./status-cost";
 
 // Feature display

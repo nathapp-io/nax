@@ -11,9 +11,10 @@
  * compiles `tsconfig.test.json` outright and a hard gate replaced the count.
  *
  *   asAny        `as any` — invisible to both ratchets. Biome's noExplicitAny
- *                would catch it, but that rule is deferred for test/** until
- *                the drain lands (see biome.json), so it is counted here
- *                instead. When the rule turns on, this counter retires.
+ *                is `error` everywhere EXCEPT test/**, where the override
+ *                still turns it off until the drain lands (see biome.json and
+ *                the note below). Counted here instead; retires when the
+ *                override is promoted back to `error`.
  *   tsSuppress   `@ts-expect-error` / `@ts-ignore` / `@ts-nocheck` — removes a
  *                typecheck error without fixing anything.
  *   ratchetAllow `test-ratchet-allow: as-unknown-as` — the cast ratchet's own
@@ -39,8 +40,26 @@
  *                postfix `!`. Narrows away null/undefined with no runtime
  *                check and no counter — and biome's `noNonNullAssertion` is
  *                off for test/** (biome.json), so nothing else sees it either.
+ *                NOTE: this counter is known to undercount. Measured
+ *                2026-08-25, biome's own noNonNullAssertion finds 1092 in
+ *                test/ against this regex's 819 — 273 sites that NOTHING
+ *                counts. See the regex's own doc comment for why (raw text,
+ *                no parser). Do not read the baseline as the true total.
  *
  * Every counter fails on growth only; all eight shrink as the drain proceeds.
+ *
+ * SEVERITY POLICY (decided 2026-08-25, Biome v2 rollout step 4):
+ * `noExplicitAny` and `noNonNullAssertion` are `error` for src/ and bin/,
+ * where both are already at zero, so the gate costs nothing and new
+ * violations fail `bun run lint`. They stay `off` for test/** ONLY because
+ * 2943 existing sites would fail the build; the exemption is a consequence of
+ * the debt, not a judgement that test/ deserves looser rules.
+ *
+ * When asAny/anyType and nonNullAssert reach zero, the test/** override must
+ * be PROMOTED BACK to `error` — not deleted. Deleting it lands the rules at
+ * v2's default warning severity, `biome check` exits 0 on warnings, and the
+ * whole drain would retire into no enforcement at all. See
+ * docs/findings/biome-migration-risk.md.
  *
  * Usage:
  *   bun scripts/check-test-escape-hatches.ts                   # check (CI mode)

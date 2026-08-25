@@ -15,7 +15,7 @@ import type { NaxIgnoreMatcher } from "@/utils/path-filters";
 import { isRelativeAndSafe } from "@/utils/path-security";
 import type { ContextProviderResult, ContextRequest, IContextProvider } from "../types";
 import { type ContentCacheState, createContentCacheState, readCached } from "./code-neighbor-cache";
-import { type NeighborSection, assembleCodeNeighborChunk } from "./code-neighbor-chunk";
+import { assembleCodeNeighborChunk, type NeighborSection } from "./code-neighbor-chunk";
 
 export type { ContentCacheState } from "./code-neighbor-cache";
 export { createContentCacheState } from "./code-neighbor-cache";

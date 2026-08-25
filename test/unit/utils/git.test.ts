@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { cleanupTempDir, makeLogger, makeSpawn, makeSpawnResult, makeTempDir } from "@test/helpers";
 import {
   _gitDeps,
   autoCommitIfDirty,
@@ -19,7 +20,6 @@ import {
   parsePorcelainForNaxPaths,
   parsePorcelainUntrackedPaths,
 } from "@/utils/git";
-import { cleanupTempDir, makeLogger, makeSpawn, makeSpawnResult, makeTempDir } from "@test/helpers";
 
 describe("detectMergeConflict", () => {
   // True positives — real git conflict signals

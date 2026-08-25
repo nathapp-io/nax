@@ -4,8 +4,8 @@
 
 import { describe, expect, test } from "bun:test";
 import type { Debater } from "@/debate/types";
-import { DebatePromptBuilder } from "@/prompts";
 import type { PromptBuilderOptions, StageContext } from "@/prompts";
+import { DebatePromptBuilder } from "@/prompts";
 
 const debaters: Debater[] = [
   { agent: "claude", model: "fast" },

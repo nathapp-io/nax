@@ -17,8 +17,8 @@
 import type { IAgentManager } from "../agents";
 import type { ReviewConfig } from "../config/selectors";
 import type { ContextBundle } from "../context/engine";
-import { DebateRunner } from "../debate";
 import type { DebateRunnerOptions } from "../debate";
+import { DebateRunner } from "../debate";
 import { NaxError } from "../errors";
 import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";

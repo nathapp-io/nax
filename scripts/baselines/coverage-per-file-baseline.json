@@ -40,7 +40,7 @@
     "src/context/generators/windsurf.ts": 0.3889,
     "src/context/injector.ts": 0.2664,
     "src/context/test-scanner.ts": 0.7511,
-    "src/debate/pre-phase/grounder.ts": 0.7727,
+    "src/debate/pre-phase/grounder.ts": 0.7674,
     "src/debate/runner-stateful-helpers.ts": 0.3162,
     "src/debate/utils.ts": 0.4583,
     "src/errors.ts": 0.6,

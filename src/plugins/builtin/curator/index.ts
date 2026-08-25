@@ -7,8 +7,7 @@
 
 import { mkdir } from "node:fs/promises";
 import * as path from "node:path";
-import type { IPostRunAction, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
-import type { NaxPlugin } from "@/plugins/types";
+import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
 import { collectObservations } from "./collect";
 import type { CuratorThresholds } from "./heuristics";
 import { runHeuristics } from "./heuristics";
@@ -171,27 +170,27 @@ export const curatorPlugin: NaxPlugin = {
   },
 };
 
-// Re-export types for use in tests and other modules
-export type {
-  CuratorPostRunContext,
-  Observation,
-  ChunkIncludedObservation,
-  ChunkExcludedObservation,
-  ProviderEmptyObservation,
-  ReviewFindingObservation,
-  RectifyCycleObservation,
-  EscalationObservation,
-  AcceptanceVerdictObservation,
-  PullCallObservation,
-  CoChangeObservation,
-  VerdictObservation,
-  FixCycleIterationObservation,
-  FixCycleExitObservation,
-  FixCycleValidatorRetryObservation,
-} from "./types";
-export { collectObservations, resolveCuratorOutputs };
-export { readHeuristicWindow } from "./rollup";
-export type { HeuristicWindow, HeuristicWindowOptions } from "./rollup";
 // Both rollup readers depend on this reassembling rows across chunk boundaries;
 // exported so it is reachable through the barrel rather than only its callers.
 export { streamJsonlLines } from "./jsonl-stream";
+export type { HeuristicWindow, HeuristicWindowOptions } from "./rollup";
+export { readHeuristicWindow } from "./rollup";
+// Re-export types for use in tests and other modules
+export type {
+  AcceptanceVerdictObservation,
+  ChunkExcludedObservation,
+  ChunkIncludedObservation,
+  CoChangeObservation,
+  CuratorPostRunContext,
+  EscalationObservation,
+  FixCycleExitObservation,
+  FixCycleIterationObservation,
+  FixCycleValidatorRetryObservation,
+  Observation,
+  ProviderEmptyObservation,
+  PullCallObservation,
+  RectifyCycleObservation,
+  ReviewFindingObservation,
+  VerdictObservation,
+} from "./types";
+export { collectObservations, resolveCuratorOutputs };

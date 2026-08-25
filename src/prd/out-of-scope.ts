@@ -21,14 +21,14 @@
  * Spec parsing itself lives in `./out-of-scope-extract`.
  */
 
+import type { StoryScopedExclusion } from "./out-of-scope-extract";
 import {
-  INLINE_MARKER,
   canonical,
   dedupeAndCap,
   extractSpecOutOfScope,
   extractStoryScopedOutOfScope,
+  INLINE_MARKER,
 } from "./out-of-scope-extract";
-import type { StoryScopedExclusion } from "./out-of-scope-extract";
 import type { PRD, UserStory } from "./types";
 
 /**

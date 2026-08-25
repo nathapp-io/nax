@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { ParseValidationError, makeTieredParseRetryStrategy } from "@/agents";
 import type { RetryContext, RetryStrategy } from "@/agents";
+import { makeTieredParseRetryStrategy, ParseValidationError } from "@/agents";
 
 // AC-1 & AC-2: Non-ParseValidationError and missing lastOutput should return { retry: false }
 describe("makeTieredParseRetryStrategy — AC-1 & AC-2: non-validation and missing output", () => {

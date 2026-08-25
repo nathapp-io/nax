@@ -11,8 +11,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { PathLike } from "node:fs";
-import { _planChecklistDeps, planChecklistVerifier, resolvePostDebateVerifier } from "@/debate";
 import type { PostDebateVerifierContext } from "@/debate";
+import { _planChecklistDeps, planChecklistVerifier, resolvePostDebateVerifier } from "@/debate";
 import type { FactsManifest } from "@/debate/facts-manifest";
 import type { SelectorResult } from "@/debate/selectors/types";
 import type { DebateStageConfig } from "@/debate/types";

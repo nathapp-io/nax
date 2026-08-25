@@ -16,9 +16,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { SpawnAcpClient, _spawnClientDeps } from "@/agents";
-import type { AgentStreamEvent } from "@/runtime";
 import { withDepsRestore } from "@test/helpers";
+import { _spawnClientDeps, SpawnAcpClient } from "@/agents";
+import type { AgentStreamEvent } from "@/runtime";
 
 const ENSURE_JSON = JSON.stringify({
   action: "session_ensured",

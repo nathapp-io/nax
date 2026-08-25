@@ -6,7 +6,8 @@
  * the original "CLI compare options and contestant pre-flight" story.
  */
 
-import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { makeNaxConfig, makeSpawn } from "@test/helpers";
 import {
   assertCompareAgentExclusive,
   buildContestantConfig,
@@ -18,7 +19,6 @@ import {
 import { NaxError } from "@/errors";
 import { getSafeLogger, initLogger, resetLogger } from "@/logger";
 import { _gitDeps } from "@/utils/git";
-import { makeNaxConfig, makeSpawn } from "@test/helpers";
 
 describe("parseCompareList", () => {
   // AC-1: comma-separated list with surrounding whitespace

@@ -1,9 +1,9 @@
 // RE-ARCH: keep
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_CONFIG } from "@/config";
-import { MAX_STAGE_RETRIES, runPipeline } from "@/pipeline";
-import type { PipelineContext, PipelineStage } from "@/pipeline";
 import { makeDispatchContext } from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
+import type { PipelineContext, PipelineStage } from "@/pipeline";
+import { MAX_STAGE_RETRIES, runPipeline } from "@/pipeline";
 
 function makeCtx(): PipelineContext {
   return {

@@ -20,6 +20,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeLogger, withDepsRestore } from "@test/helpers";
 import {
   _effectivenessDeps,
   annotateManifestEffectiveness,
@@ -29,7 +30,6 @@ import {
 } from "@/context/engine/effectiveness";
 import { _manifestStoreDeps } from "@/context/engine/manifest-store";
 import type { ChunkEffectiveness } from "@/context/engine/types";
-import { makeLogger, withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC1 — splitDiffByFile: each post-image path maps to its own section

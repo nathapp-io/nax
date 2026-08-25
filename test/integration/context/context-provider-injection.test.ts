@@ -7,14 +7,14 @@
  * token budget management and error handling.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { DEFAULT_TEST_ROUTING, makeDispatchContext, makePRD, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/schema";
 import { contextStage } from "@/pipeline/stages/context";
 import type { PipelineContext } from "@/pipeline/types";
 import { PluginRegistry } from "@/plugins/registry";
 import type { IContextProvider, NaxPlugin } from "@/plugins/types";
 import type { PRD, UserStory } from "@/prd/types";
-import { DEFAULT_TEST_ROUTING, makeDispatchContext, makePRD, makeStory } from "@test/helpers";
 
 /**
  * Create a minimal test context for context stage testing

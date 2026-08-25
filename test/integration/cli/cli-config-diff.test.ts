@@ -8,9 +8,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { makeTempDir } from "@test/helpers";
 import { configCommand } from "@/cli/config";
 import { loadConfig } from "@/config/loader";
-import { makeTempDir } from "@test/helpers";
 
 /**
  * Config Command --diff Flag Integration Tests

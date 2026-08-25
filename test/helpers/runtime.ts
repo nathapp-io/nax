@@ -1,9 +1,9 @@
 import { afterEach } from "bun:test";
 import type { AgentAdapter, IAgentManager } from "@/agents";
-import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
-import { type CreateRuntimeOptions, type NaxRuntime, createRuntime } from "@/runtime";
+import { DEFAULT_CONFIG } from "@/config";
 import type { IReviewAuditor } from "@/runtime";
+import { type CreateRuntimeOptions, createRuntime, type NaxRuntime } from "@/runtime";
 import type { ISessionManager } from "@/session/types";
 import { fakeAgentManager } from "./fake-agent-manager";
 import { makeMockAgentManager } from "./mock-agent-manager";

@@ -9,7 +9,8 @@
  * discarded and then failed on by the staleness guard).
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { type RectificationOverrides, _storyOrchestratorDeps, runRectification } from "@/execution";
+import { makeTestRuntime } from "@test/helpers";
+import { _storyOrchestratorDeps, type RectificationOverrides, runRectification } from "@/execution";
 import type {
   FixCycle,
   FixCycleContext,
@@ -20,20 +21,16 @@ import type {
 import type { Finding } from "@/findings/types";
 import type { CallContext } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeTestRuntime } from "@test/helpers";
 import {
   ADVISORY,
   GATE_FAILURE,
   GATE_FAILURE_KEY,
   LINT_FINDING,
-  mockAdversarialReviewOp,
   mockFullSuiteGateOp,
   mockImplementerOp,
   mockLintCheckOp,
-  mockSemanticReviewOp,
   mockTypecheckCheckOp,
   mockVerifierOp,
-  mockVerifyScopedOp,
 } from "./_revalidation-fixtures";
 
 let origCallOp: typeof _storyOrchestratorDeps.callOp;

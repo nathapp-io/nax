@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { MAX_MANIFEST_SCAN, _manifestPurgeDeps, purgeStaleManifests } from "@/context/engine";
+import { _manifestPurgeDeps, MAX_MANIFEST_SCAN, purgeStaleManifests } from "@/context/engine";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals

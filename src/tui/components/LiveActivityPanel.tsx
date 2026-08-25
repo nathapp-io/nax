@@ -7,8 +7,8 @@
  * Shows recent escalation log entries.
  */
 
-import { stripControlChars } from "@/utils/strip-control-chars";
 import { Box, Text } from "ink";
+import { stripControlChars } from "@/utils/strip-control-chars";
 import type { ActiveCallState } from "../hooks/useAgentStreamEvents";
 import type { EscalationEntry, RunSummary } from "../hooks/usePipelineBusEvents";
 

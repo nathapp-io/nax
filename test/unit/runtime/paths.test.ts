@@ -5,11 +5,11 @@ import path from "node:path";
 import { globalConfigDir } from "@/config/paths";
 import { NaxError } from "@/errors";
 import {
-  type ProjectIdentity,
   claimProjectIdentity,
   curatorRollupPath,
   globalOutputDir,
   identityPath,
+  type ProjectIdentity,
   projectInputDir,
   projectOutputDir,
   readProjectIdentity,

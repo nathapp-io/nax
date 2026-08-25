@@ -2,61 +2,57 @@
  * Interaction System — Barrel Exports (v0.15.0)
  */
 
-// Types
-export type {
-  InteractionType,
-  InteractionStage,
-  InteractionFallback,
-  InteractionRequest,
-  InteractionAction,
-  InteractionResponse,
-  InteractionPlugin,
-  TriggerName,
-  TriggerConfig,
-  TriggerSafety,
-  TriggerMetadata,
-} from "./types";
-export { TRIGGER_METADATA } from "./types";
-
+export type { BridgeContext, InteractionBridge } from "./bridge-builder";
+export { buildInteractionBridge } from "./bridge-builder";
+export type { ChainConfig } from "./chain";
 // Chain
 export { InteractionChain } from "./chain";
-export type { ChainConfig } from "./chain";
-
+// Initialization
+export { initInteractionChain } from "./init";
 // Plugins
 export { CLIInteractionPlugin } from "./plugins/cli";
-export { TelegramInteractionPlugin, _telegramPluginDeps } from "./plugins/telegram";
+export { _telegramPluginDeps, TelegramInteractionPlugin } from "./plugins/telegram";
 export { normalizeChatId } from "./plugins/telegram-config";
 export {
-  MAX_MESSAGE_CHARS,
-  TELEGRAM_CALLBACK_DATA_MAX_BYTES,
   buildBody,
   buildHeader,
   buildKeyboard,
   getStageEmoji,
+  type InlineKeyboard,
+  MAX_MESSAGE_CHARS,
   sanitizeMarkdown,
   splitText,
+  TELEGRAM_CALLBACK_DATA_MAX_BYTES,
   truncateIdForCallbackData,
   truncateUtf8Bytes,
-  type InlineKeyboard,
 } from "./plugins/telegram-format";
 export { WebhookInteractionPlugin } from "./plugins/webhook";
-
+export type { TriggerContext } from "./triggers";
 // Triggers
 export {
-  isTriggerEnabled,
-  createTriggerRequest,
-  executeTrigger,
-  checkSecurityReview,
   checkCostExceeded,
-  checkMergeConflict,
   checkCostWarning,
   checkMaxRetries,
+  checkMergeConflict,
   checkPreMerge,
   checkReviewGate,
+  checkSecurityReview,
+  createTriggerRequest,
+  executeTrigger,
+  isTriggerEnabled,
 } from "./triggers";
-export type { TriggerContext } from "./triggers";
-
-// Initialization
-export { initInteractionChain } from "./init";
-export { buildInteractionBridge } from "./bridge-builder";
-export type { InteractionBridge, BridgeContext } from "./bridge-builder";
+// Types
+export type {
+  InteractionAction,
+  InteractionFallback,
+  InteractionPlugin,
+  InteractionRequest,
+  InteractionResponse,
+  InteractionStage,
+  InteractionType,
+  TriggerConfig,
+  TriggerMetadata,
+  TriggerName,
+  TriggerSafety,
+} from "./types";
+export { TRIGGER_METADATA } from "./types";

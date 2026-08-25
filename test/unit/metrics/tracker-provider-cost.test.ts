@@ -9,10 +9,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _manifestStoreDeps } from "@/context/engine/manifest-store";
-import type { ContextManifest } from "@/context/engine/types";
-import { collectStoryMetrics } from "@/metrics/tracker";
-import type { PipelineContext } from "@/pipeline/types";
 import {
   DEFAULT_TEST_ROUTING,
   makeMockRuntime,
@@ -21,6 +17,10 @@ import {
   makeStory,
   makeTestContext,
 } from "@test/helpers";
+import { _manifestStoreDeps } from "@/context/engine/manifest-store";
+import type { ContextManifest } from "@/context/engine/types";
+import { collectStoryMetrics } from "@/metrics/tracker";
+import type { PipelineContext } from "@/pipeline/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals

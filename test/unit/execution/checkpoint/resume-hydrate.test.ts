@@ -31,20 +31,19 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
+import { makeSpawn, makeSpawnResult, type SpawnStub } from "@test/helpers";
 import {
-  type CaptureTreeStateDeps,
-  type ResumePlan,
-  type StoryCheckpoint,
-  type TreeState,
   buildCheckpointLogData,
   buildResumePlan,
+  type CaptureTreeStateDeps,
   captureTreeState,
   extractPhaseFindings,
   hydrateFromResumePlan,
   phasePassed,
+  type ResumePlan,
+  type StoryCheckpoint,
+  type TreeState,
 } from "@/execution";
-import { type SpawnStub, makeSpawn, makeSpawnResult } from "@test/helpers";
 
 // ===========================================================================
 // Test fixtures

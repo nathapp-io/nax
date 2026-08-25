@@ -14,11 +14,10 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { acceptanceGenerateOp, callOp } from "@/operations";
+import { makeMockAgentManager, makeTestRuntime, withTempDir } from "@test/helpers";
 import type { AcceptanceGenerateInput, CallContext } from "@/operations";
+import { acceptanceGenerateOp, callOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeTestRuntime } from "@test/helpers";
-import { withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

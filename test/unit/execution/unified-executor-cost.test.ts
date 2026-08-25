@@ -7,8 +7,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { InteractionChain } from "@/interaction";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "@/interaction";
+import { InteractionChain } from "@/interaction";
 import { pipelineEventBus } from "@/pipeline";
 
 // ─────────────────────────────────────────────────────────────────────────────

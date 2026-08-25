@@ -10,8 +10,8 @@
  * as `ForgeDeps` rather than a module-level `_prDeps` seam.
  */
 import { NaxError } from "@/errors";
-import { extractUrl, hasOpenPr, openPr, viewArgv } from "@/forge";
 import type { ForgeDeps, ForgeKind } from "@/forge";
+import { extractUrl, hasOpenPr, openPr, viewArgv } from "@/forge";
 
 /** `ForgeDeps` carries no `warn` — this is `updatePrBody`'s own injectable seam, so its
  * non-fatal-failure tests can assert a warning fired instead of only "did not throw". */

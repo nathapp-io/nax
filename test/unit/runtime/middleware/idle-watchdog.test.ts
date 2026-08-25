@@ -1,19 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import type { FakeClock } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 import { AgentStreamEventBus, type IAgentStreamEventBus } from "@/runtime/agent-stream-events";
 import { attachAgentIdleWatchdog } from "@/runtime/middleware/idle-watchdog";
-import type { FakeClock } from "@test/helpers";
-import { makeNaxConfig } from "@test/helpers";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   GRACE_MS,
   GRACE_SECONDS,
   IDLE_TIMEOUT_MS,
   IDLE_TIMEOUT_SECONDS,
-  NEVER_FIRES_SECONDS,
-  TICK_MS,
   installFakeWatchdogClock,
   makeCallEndedEvent,
   makeCallStartedEvent,
@@ -22,7 +19,9 @@ import {
   makeProcessUpdateEvent,
   makeThinkingUpdateEvent,
   makeUsageUpdateEvent,
+  NEVER_FIRES_SECONDS,
   restoreWatchdogClock,
+  TICK_MS,
 } from "./_idle-watchdog-harness";
 
 type CancelCallback = () => Promise<void>;

@@ -10,9 +10,9 @@
  * separate useState so the 1s timer doesn't cause story/activity panels to re-render.
  */
 
-import { pipelineEventBus } from "@/pipeline";
-import type { RunCompletedEvent } from "@/pipeline";
 import { useEffect, useState } from "react";
+import type { RunCompletedEvent } from "@/pipeline";
+import { pipelineEventBus } from "@/pipeline";
 import type { StoryDisplayState } from "../types";
 
 /** Entry in the escalation log. */

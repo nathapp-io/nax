@@ -12,12 +12,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
-import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
-import type { Finding } from "@/findings/types";
-import type { FullSuiteRectifyInput, FullSuiteRectifyOutput } from "@/operations/full-suite-rectify-op";
-import type { NaxRuntime } from "@/runtime";
-import { _rollbackDeps } from "@/tdd";
 import {
   type makeMockCallContext,
   makeMockPlanInputs,
@@ -27,6 +21,12 @@ import {
   makeTestRuntime,
   withTempDir,
 } from "@test/helpers";
+import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
+import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
+import type { Finding } from "@/findings/types";
+import type { FullSuiteRectifyInput, FullSuiteRectifyOutput } from "@/operations/full-suite-rectify-op";
+import type { NaxRuntime } from "@/runtime";
+import { _rollbackDeps } from "@/tdd";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared setup/teardown

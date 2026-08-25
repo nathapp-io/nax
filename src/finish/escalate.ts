@@ -10,8 +10,8 @@
  * differ.
  */
 import { NaxError } from "@/errors";
-import { extractUrl, viewArgv } from "@/forge";
 import type { ForgeDeps, ForgeKind } from "@/forge";
+import { extractUrl, viewArgv } from "@/forge";
 import type { Finding } from "./types";
 
 export function buildEscalationComment(feature: string, escalationReason: string, findings: Finding[]): string {

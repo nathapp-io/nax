@@ -1,17 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
+import { makeTempDir } from "@test/helpers";
 import {
-  type TestFileInfo,
   deriveTestPatterns,
   extractTestStructure,
   formatTestSummary,
   generateTestCoverageSummary,
   scanTestFiles,
+  type TestFileInfo,
   truncateToTokenBudget,
 } from "@/context/test-scanner";
-import { makeTempDir } from "@test/helpers";
 
 describe("extractTestStructure", () => {
   test("extracts describe and test blocks", () => {

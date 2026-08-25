@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { QualityCommandResult } from "@/quality/runner";
 import { runOrchestratorE2E } from "@test/helpers";
+import type { QualityCommandResult } from "@/quality/runner";
 
 const PASS_REVIEW = () => ({ output: JSON.stringify({ passed: true, findings: [] }) });
 const impl = () => ({ output: JSON.stringify({ filesChanged: ["src/a.ts"] }) });

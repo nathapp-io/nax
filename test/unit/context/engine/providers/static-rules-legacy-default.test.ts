@@ -9,7 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { NaxConfigSchema } from "@/config/schemas";
-import { StaticRulesProvider, _staticRulesDeps } from "@/context/engine/providers/static-rules";
+import { _staticRulesDeps, StaticRulesProvider } from "@/context/engine/providers/static-rules";
 import type { ContextRequest } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────

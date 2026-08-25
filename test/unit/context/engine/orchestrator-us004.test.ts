@@ -24,7 +24,7 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import { ContextOrchestrator, _orchestratorDeps } from "@/context/engine";
+import { _orchestratorDeps, ContextOrchestrator } from "@/context/engine";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -6,9 +6,9 @@
  * Covers: claude, codex, opencode, gemini, aider, missing-binary, default behavior.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
-import { _deps, checkAgentCLI } from "@/precheck/checks-blockers";
+import { describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeSpawn, withDepsRestore } from "@test/helpers";
+import { _deps, checkAgentCLI } from "@/precheck/checks-blockers";
 
 // --- helpers ---
 

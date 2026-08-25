@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import type { NaxConfig } from "@/config";
+import { makeNaxConfig, makeSpawn } from "@test/helpers";
 import {
-  WorktreeDependencyPreparationError,
   _worktreeDependencyDeps,
   prepareWorktreeDependencies,
+  WorktreeDependencyPreparationError,
 } from "@/worktree/dependencies";
-import { makeNaxConfig, makeSpawn } from "@test/helpers";
 
 function textStream(text = ""): ReadableStream<Uint8Array> {
   return new Response(text).body as ReadableStream<Uint8Array>;

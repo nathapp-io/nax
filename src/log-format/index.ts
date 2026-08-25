@@ -7,22 +7,21 @@
  * the `LogEntry` records consumed here.
  */
 
-export { formatMutationSummary } from "./mutation-summary.js";
-
 export {
+  type FormattedEntry,
+  formatAdvisorySummary,
+  formatCost,
+  formatDuration,
   formatLogEntry,
   formatRunSummary,
-  formatAdvisorySummary,
   formatTimestamp,
-  formatDuration,
-  formatCost,
-  type FormattedEntry,
 } from "./formatter.js";
+export { formatMutationSummary } from "./mutation-summary.js";
 export {
   EMOJI,
-  type VerbosityMode,
   type FormatterOptions,
   type RunSummary,
-  type StoryStartData,
   type StageResultData,
+  type StoryStartData,
+  type VerbosityMode,
 } from "./types.js";

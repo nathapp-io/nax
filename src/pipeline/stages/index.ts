@@ -91,14 +91,14 @@ export const postRunPipeline: PipelineStage[] = [acceptanceStage];
  */
 export const preRunPipeline: PipelineStage[] = [acceptanceSetupStage];
 
+export { acceptanceStage } from "./acceptance";
+export { _acceptanceSetupDeps, acceptanceSetupStage } from "./acceptance-setup";
+export { _completionDeps, completionStage } from "./completion";
+export { constitutionStage } from "./constitution";
+export { _contextStageDeps, contextStage } from "./context";
+export { _executionDeps, executionStage } from "./execution";
+export { optimizerStage } from "./optimizer";
+export { promptStage } from "./prompt";
 // Re-export individual stages for custom pipeline construction
 export { queueCheckStage } from "./queue-check";
 export { routingStage } from "./routing";
-export { constitutionStage } from "./constitution";
-export { contextStage, _contextStageDeps } from "./context";
-export { promptStage } from "./prompt";
-export { optimizerStage } from "./optimizer";
-export { executionStage, _executionDeps } from "./execution";
-export { completionStage, _completionDeps } from "./completion";
-export { acceptanceStage } from "./acceptance";
-export { acceptanceSetupStage, _acceptanceSetupDeps } from "./acceptance-setup";

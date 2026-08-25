@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { implementerRectifyOp } from "@/operations";
 import { makeStory } from "@test/helpers";
+import { implementerRectifyOp } from "@/operations";
 
 describe("implementerRectifyOp.parse", () => {
   const input = { failedChecks: [], story: makeStory() };

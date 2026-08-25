@@ -1,15 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeMockCallContext, makeRuntimeWithFakeAgent } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { buildPlanForStrategy } from "@/execution/build-plan-for-strategy";
 import type { PlanInputs } from "@/execution/plan-inputs";
 import type { UserStory } from "@/prd";
-import { makeMockCallContext } from "@test/helpers";
-import { makeRuntimeWithFakeAgent } from "@test/helpers";
 import {
-  type SavedDeps,
   createMockAgent,
   mockGitSpawn,
   restoreDeps,
+  type SavedDeps,
   saveDeps,
   stubFullSuiteGateContext,
 } from "./_tdd-test-helpers";

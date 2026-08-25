@@ -12,9 +12,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { _acpAdapterDeps, ensureAcpSession, runSessionPrompt } from "@/agents/acp/adapter";
-import type { AcpClient, AcpSession, AcpSessionResponse } from "@/agents/acp/adapter";
 import { withDepsRestore } from "@test/helpers";
+import type { AcpClient, AcpSession, AcpSessionResponse } from "@/agents/acp/adapter";
+import { _acpAdapterDeps, ensureAcpSession, runSessionPrompt } from "@/agents/acp/adapter";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ensureAcpSession — cwd existence guard

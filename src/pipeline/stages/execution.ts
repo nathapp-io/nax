@@ -14,7 +14,6 @@ import type { AgentAdapter } from "@/agents/types";
 import { isThreeSessionStrategy } from "@/config";
 import { NaxError } from "@/errors";
 import {
-  _postRunDeps,
   applyPostRunInspection,
   assemblePlanInputsFromCtx,
   buildPlanForStrategy,
@@ -32,6 +31,7 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 // Re-export helpers so existing importers continue to work.
 export { resolveStoryWorkdir, routeTddFailure } from "./execution-helpers";
+
 import { resolveExecutionAgent } from "./execution-helpers";
 
 /**

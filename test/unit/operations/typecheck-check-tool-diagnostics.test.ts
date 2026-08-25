@@ -14,9 +14,9 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { typecheckCheckOp } from "@/operations";
-import type { TypecheckCheckDeps } from "@/operations";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import type { TypecheckCheckDeps } from "@/operations";
+import { typecheckCheckOp } from "@/operations";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import type { ReviewAuditEntry } from "@/review/review-audit";
 import {
-  ReviewAuditor,
   _reviewAuditDeps,
   createNoOpReviewAuditor,
+  ReviewAuditor,
   toPersistedEntry,
   writeReviewAudit,
 } from "@/review/review-audit";
-import type { ReviewAuditEntry } from "@/review/review-audit";
 import { NAX_COMMIT, NAX_VERSION } from "@/version";
 
 // ─────────────────────────────────────────────────────────────────────────────

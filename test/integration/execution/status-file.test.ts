@@ -13,19 +13,18 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-
+import { makeTempDir } from "@test/helpers";
 import {
   type AcceptancePhaseStatus,
+  buildStatusSnapshot,
+  countProgress,
   type NaxStatusFile,
   type PostRunStatus,
   type RegressionPhaseStatus,
   type RunStateSnapshot,
-  buildStatusSnapshot,
-  countProgress,
   writeStatusFile,
 } from "@/execution/status-file";
 import type { PRD, UserStory } from "@/prd";
-import { makeTempDir } from "@test/helpers";
 
 // ============================================================================
 // Helpers

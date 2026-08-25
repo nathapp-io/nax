@@ -7,13 +7,13 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 import type { RetryDecision, RetryStrategy } from "@/agents/retry";
 import type { SessionHandle, TurnResult } from "@/agents/types";
 import { SessionTurnError } from "@/agents/types";
 import type { ModelDef } from "@/config/schema";
-import { SessionKeeper } from "@/session/session-keeper";
 import type { SessionKeeperOptions } from "@/session/session-keeper";
-import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
+import { SessionKeeper } from "@/session/session-keeper";
 
 function makeOpts(overrides: Partial<SessionKeeperOptions> = {}): SessionKeeperOptions {
   return {

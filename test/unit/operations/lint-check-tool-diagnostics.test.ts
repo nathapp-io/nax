@@ -14,9 +14,9 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { lintCheckOp } from "@/operations";
-import type { LintCheckDeps } from "@/operations";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import type { LintCheckDeps } from "@/operations";
+import { lintCheckOp } from "@/operations";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

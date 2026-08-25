@@ -14,8 +14,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { followLogs } from "@/commands";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { followLogs } from "@/commands";
 
 interface Deps {
   emit: (line: string) => void;

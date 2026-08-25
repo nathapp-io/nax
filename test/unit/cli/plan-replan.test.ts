@@ -7,12 +7,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { _planDeps, runReplanLoop } from "@/cli/plan";
 import type { PRD } from "@/prd/types";
 import type { PrecheckResultWithCode } from "@/precheck";
 import type { FlaggedStory } from "@/precheck/story-size-gate";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

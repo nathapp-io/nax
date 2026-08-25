@@ -14,10 +14,10 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import path from "node:path";
+import { makeFinding } from "@test/helpers";
 import { _semanticVerdictDeps, loadSemanticVerdicts, persistSemanticVerdict } from "@/acceptance/semantic-verdict";
 import type { SemanticVerdict } from "@/acceptance/types";
 import type { ReviewFinding } from "@/plugins/types";
-import { makeFinding } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Save and restore _deps around each test

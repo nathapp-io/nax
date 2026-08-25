@@ -10,12 +10,12 @@
  */
 
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { _planRefineDeps, planRefineOp } from "@/operations";
+import { makePRD, makeStory, makeTestRuntime, opSelector, withWarnSpy } from "@test/helpers";
 import type { PlanRefineInput } from "@/operations";
+import { _planRefineDeps, planRefineOp } from "@/operations";
 import type { HopBodyContext } from "@/operations/types";
 import { PlanPromptBuilder } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
-import { makePRD, makeStory, makeTestRuntime, opSelector, withWarnSpy } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 const origReadFile = _planRefineDeps.readFile;

@@ -10,10 +10,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { AgentManager } from "@/agents";
-import type { AgentResult, HopKind } from "@/agents";
-import type { AdapterFailure, ContextBundle } from "@/context/engine";
 import { makeContextBundle, makeNaxConfig } from "@test/helpers";
+import type { AgentResult, HopKind } from "@/agents";
+import { AgentManager } from "@/agents";
+import type { AdapterFailure } from "@/context/engine";
 
 const STALE_FAILURE: AdapterFailure = {
   category: "availability",

@@ -4,21 +4,19 @@
  * Re-exports config display and loading utilities.
  */
 
+// Diff exports
+export { type ConfigDiff, deepDiffConfigs, deepEqual } from "./config-diff";
 // Display exports
-export { configCommand, FIELD_DESCRIPTIONS, type ConfigCommandOptions } from "./config-display";
-
+export { type ConfigCommandOptions, configCommand, FIELD_DESCRIPTIONS } from "./config-display";
 // Loading exports
 export { loadConfigFile, loadGlobalConfig, loadProjectConfig } from "./config-get";
 
-// Diff exports
-export { deepDiffConfigs, deepEqual, type ConfigDiff } from "./config-diff";
-
 // Profile command exports
 export {
+  type ProfileShowOptions,
+  profileCreateCommand,
+  profileCurrentCommand,
   profileListCommand,
   profileShowCommand,
   profileUseCommand,
-  profileCurrentCommand,
-  profileCreateCommand,
-  type ProfileShowOptions,
 } from "./config-profile";

@@ -13,10 +13,10 @@
 
 import type { AgentRunOutcome } from "../agents";
 import type { AgentFallbackRecord } from "../agents/manager-types";
-import { resolveRetryPreset } from "../agents/retry";
 import type { RetryPreset, RetryStrategy } from "../agents/retry";
-import { pickSelector } from "../config";
+import { resolveRetryPreset } from "../agents/retry";
 import type { ConfigSelector, ConfiguredModel, NaxConfig } from "../config";
+import { pickSelector } from "../config";
 import { NaxError } from "../errors";
 import type { UserStory } from "../prd";
 import type { BuildContext, CallContext, Operation } from "./types";

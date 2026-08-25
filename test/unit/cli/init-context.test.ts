@@ -8,8 +8,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { generateContextTemplate, initContext, scanProject } from "@/cli/init-context";
 import { withTempDir } from "@test/helpers";
+import { generateContextTemplate, initContext, scanProject } from "@/cli/init-context";
 
 // ---------------------------------------------------------------------------
 // scanProject — file tree

@@ -6,34 +6,32 @@
  * Tier 2 warnings: ./checks-warnings
  */
 
-// Tier 1 Blockers
-export {
-  checkGitRepoExists,
-  checkWorkingTreeClean,
-  checkStaleLock,
-  checkPRDValid,
-  checkClaudeCLI,
-  checkAgentCLI,
-  checkDependenciesInstalled,
-  checkTestCommand,
-  checkLintCommand,
-  checkTypecheckCommand,
-  checkCanonicalRulesLint,
-  checkGitUserConfigured,
-} from "./checks-blockers";
-
-// Tier 2 Warnings
-export {
-  checkClaudeMdExists,
-  checkDiskSpace,
-  checkPendingStories,
-  checkOptionalCommands,
-  checkGitignoreCoversNax,
-  checkHomeEnvValid,
-  checkPromptOverrideFiles,
-  checkLanguageTools,
-  checkBuildCommandInReviewChecks,
-} from "./checks-warnings";
-
 // Agent checks
 export { checkMultiAgentHealth } from "./checks-agents";
+// Tier 1 Blockers
+export {
+  checkAgentCLI,
+  checkCanonicalRulesLint,
+  checkClaudeCLI,
+  checkDependenciesInstalled,
+  checkGitRepoExists,
+  checkGitUserConfigured,
+  checkLintCommand,
+  checkPRDValid,
+  checkStaleLock,
+  checkTestCommand,
+  checkTypecheckCommand,
+  checkWorkingTreeClean,
+} from "./checks-blockers";
+// Tier 2 Warnings
+export {
+  checkBuildCommandInReviewChecks,
+  checkClaudeMdExists,
+  checkDiskSpace,
+  checkGitignoreCoversNax,
+  checkHomeEnvValid,
+  checkLanguageTools,
+  checkOptionalCommands,
+  checkPendingStories,
+  checkPromptOverrideFiles,
+} from "./checks-warnings";

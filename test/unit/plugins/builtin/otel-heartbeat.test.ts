@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { type FakeClock, makeFakeClock, withTimerSpy } from "@test/helpers";
 import {
-  type Heartbeat,
-  type HeartbeatSnapshot,
   _heartbeatDeps,
   buildHeartbeatMetricsPayload,
+  type Heartbeat,
+  type HeartbeatSnapshot,
   startHeartbeat,
 } from "@/plugins/builtin/otel-reporter/heartbeat";
 import { attr } from "@/plugins/builtin/otel-reporter/otlp";
-import { type FakeClock, makeFakeClock, withTimerSpy } from "@test/helpers";
 
 function snapshot(overrides: Partial<HeartbeatSnapshot> = {}): HeartbeatSnapshot {
   return {

@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 import type { NaxConfig } from "@/config/types";
-import { FeatureContextProviderV2, _featureContextV2Deps } from "@/context/engine/providers/feature-context";
+import { _featureContextV2Deps, FeatureContextProviderV2 } from "@/context/engine/providers/feature-context";
 import type { ContextRequest } from "@/context/engine/types";
 import type { UserStory } from "@/prd";
-import { makeNaxConfig, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

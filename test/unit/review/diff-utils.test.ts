@@ -10,17 +10,17 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeSpawn } from "@test/helpers";
 import {
-  DIFF_CAP_BYTES,
   _diffUtilsDeps,
   collectDiff,
   collectDiffFileList,
   collectDiffStat,
   computeTestInventory,
+  DIFF_CAP_BYTES,
   resolveEffectiveRef,
   truncateDiff,
 } from "@/review";
-import { makeSpawn } from "@test/helpers";
 
 // ─── Mock helpers ──────────────────────────────────────────────────────────────
 

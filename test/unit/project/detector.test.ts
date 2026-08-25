@@ -7,8 +7,8 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { clearLanguageCache, detectProjectProfile } from "@/project";
 import { withTempDir } from "@test/helpers";
+import { clearLanguageCache, detectProjectProfile } from "@/project";
 
 // ---------------------------------------------------------------------------
 // Language detection — Go

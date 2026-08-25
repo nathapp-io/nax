@@ -40,7 +40,7 @@
  * never sees a `PRD`. Pure and deterministic — no I/O, no LLM.
  */
 
-import { type GroupedPathEntry, extractGroupedPathSection } from "./markdown-scan";
+import { extractGroupedPathSection, type GroupedPathEntry } from "./markdown-scan";
 
 /** One `### Modifies` bullet, with the story its group lead-in attributed it to. */
 export type SpecModifiedFile = GroupedPathEntry;

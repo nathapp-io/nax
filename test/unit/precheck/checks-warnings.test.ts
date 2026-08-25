@@ -6,12 +6,11 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { type DeepPartial, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { NaxConfig } from "@/config/types";
 import { checkGitignoreCoversNax, checkPromptOverrideFiles } from "@/precheck";
-import { type DeepPartial, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 function makeTmpDir(): string {
   return makeTempDir("nax-test-");

@@ -24,6 +24,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import type {
   ContextBundle,
   ContextManifest,
@@ -34,7 +35,6 @@ import type {
 import { ContextOrchestrator } from "@/context/engine";
 import { _contextStageDeps, contextStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals (restored per test)

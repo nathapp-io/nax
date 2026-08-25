@@ -1,8 +1,8 @@
 import { renderManifestSection } from "@/debate";
 import type { FactsManifest } from "@/debate/facts-manifest";
 import { NaxError } from "@/errors";
-import { callOp, groundOp, planDraftOp } from "@/operations";
 import type { CallContext, PlanDraftInput } from "@/operations";
+import { callOp, groundOp, planDraftOp } from "@/operations";
 import { runPlanCritic } from "../critic";
 import { persistPrd } from "./persist-prd";
 import type { IPlanStrategy, PlanModeContext, PlanResult } from "./types";

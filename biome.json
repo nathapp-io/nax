@@ -1,9 +1,14 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
-  "assist": { "actions": { "source": { "organizeImports": "off" } } },
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "linter": {
     "enabled": true,
-    "rules": { "recommended": true }
+    "domains": { "test": "recommended" },
+    "rules": {
+      "recommended": true,
+      "suspicious": { "noExplicitAny": "error" },
+      "style": { "noNonNullAssertion": "error", "noParameterAssign": "error" }
+    }
   },
   "formatter": {
     "enabled": true,

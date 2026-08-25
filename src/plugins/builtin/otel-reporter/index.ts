@@ -1,28 +1,28 @@
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
-import { addSink, getSafeLogger } from "@/logger";
 import type { LogEntry, LogSink } from "@/logger";
+import { addSink, getSafeLogger } from "@/logger";
 import type { EscalationEvent, IReporter, NaxPlugin, RunEndEvent } from "@/plugins/types";
 import { gitWithTimeout } from "@/utils/git";
-import { type PostJsonDeps, interpolateHeaders, postJson } from "../reporter-shared";
+import { interpolateHeaders, type PostJsonDeps, postJson } from "../reporter-shared";
 import { type BatchQueue, createBatchQueue } from "./batch-queue";
-import { type Heartbeat, type HeartbeatSnapshot, buildHeartbeatMetricsPayload, startHeartbeat } from "./heartbeat";
+import { buildHeartbeatMetricsPayload, type Heartbeat, type HeartbeatSnapshot, startHeartbeat } from "./heartbeat";
 import { newSpanId, newTraceId } from "./ids";
 import { buildLogsPayload } from "./logs";
 import {
-  type KeyValue,
-  type SpanEvent,
   attr,
   buildMetricsPayload,
   buildResourceAttributes,
   buildTracesPayload,
+  type KeyValue,
   msToUnixNano,
+  type SpanEvent,
 } from "./otlp";
 import {
+  createPhaseMetricsAggregator,
+  createSpanTree,
   type PhaseMetricsAggregator,
   type Span,
   type SpanTree,
-  createPhaseMetricsAggregator,
-  createSpanTree,
 } from "./span-tree";
 import { parseTraceparent } from "./traceparent";
 

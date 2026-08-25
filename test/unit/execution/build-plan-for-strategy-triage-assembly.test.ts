@@ -1,9 +1,4 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
-import type { PlanInputs } from "@/execution";
-import type { UserStory } from "@/prd/types";
-import type { NaxRuntime } from "@/runtime";
-import { _rollbackDeps } from "@/tdd";
 import {
   makeMockCallContext,
   makeMockPlanInputs,
@@ -12,6 +7,11 @@ import {
   makeStory,
   makeTestRuntime,
 } from "@test/helpers";
+import type { PlanInputs } from "@/execution";
+import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
+import type { UserStory } from "@/prd/types";
+import type { NaxRuntime } from "@/runtime";
+import { _rollbackDeps } from "@/tdd";
 
 function makeImplementerInput(story: UserStory): import("@/operations").ImplementerInput {
   return { story };

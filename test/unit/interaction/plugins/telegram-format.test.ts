@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import type { InteractionRequest } from "@/interaction";
 import {
-  MAX_MESSAGE_CHARS,
-  TELEGRAM_CALLBACK_DATA_MAX_BYTES,
   buildBody,
   buildHeader,
   buildKeyboard,
   getStageEmoji,
+  MAX_MESSAGE_CHARS,
   sanitizeMarkdown,
   splitText,
+  TELEGRAM_CALLBACK_DATA_MAX_BYTES,
   truncateIdForCallbackData,
   truncateUtf8Bytes,
 } from "@/interaction";

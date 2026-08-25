@@ -24,8 +24,8 @@
 import { ContextV2ConfigSchema } from "@/config";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
-import { scratchFilePath } from "@/session";
 import type { ScratchEntry } from "@/session";
+import { scratchFilePath } from "@/session";
 import type { ToolDescriptor } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -300,11 +300,7 @@ export class PullToolBudget {
 // independently without bloating the descriptor / budget module.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Re-export scratch-file path helpers and the ScratchEntry type so handler
-// implementations can use them without re-importing from session/scratch-writer.
-export { scratchFilePath };
-export type { ScratchEntry };
-
+export { handleQueryFeatureContext } from "./handlers/query-feature-context";
 // STYLE-6 fix: do NOT re-export handler implementations from this module.
 // pull-tools.ts defines descriptors and shared infrastructure; the handlers
 // live in ./handlers/<family>.ts. Re-exporting `handleQueryScratch` here
@@ -316,5 +312,8 @@ export type { ScratchEntry };
 // removes the latent TDZ risk. Callers previously using the re-export
 // (`./pull-tools`) now import from `./handlers/query-scratch`.
 export { handleQueryNeighbor } from "./handlers/query-neighbor";
-export { handleQueryFeatureContext } from "./handlers/query-feature-context";
 export type { QueryScratchOptions } from "./handlers/query-scratch";
+export type { ScratchEntry };
+// Re-export scratch-file path helpers and the ScratchEntry type so handler
+// implementations can use them without re-importing from session/scratch-writer.
+export { scratchFilePath };

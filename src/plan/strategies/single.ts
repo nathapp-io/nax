@@ -1,6 +1,6 @@
 import { getSafeLogger } from "@/logger";
-import { callOp, planInteractiveOp } from "@/operations";
 import type { PlanInteractiveInput } from "@/operations";
+import { callOp, planInteractiveOp } from "@/operations";
 import { validatePlanOutput } from "@/prd";
 import { assertIsValidPrd } from "./assert";
 import { persistPrd } from "./persist-prd";

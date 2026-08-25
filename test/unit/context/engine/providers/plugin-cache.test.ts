@@ -16,11 +16,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { withTimerSpy } from "@test/helpers";
 import type { ContextPluginProviderConfig } from "@/config/runtime-types";
 import type { ContextProviderResult, IContextProvider } from "@/context/engine";
-import { PluginProviderCache, _pluginCacheDeps } from "@/context/engine/providers/plugin-cache";
+import { _pluginCacheDeps, PluginProviderCache } from "@/context/engine/providers/plugin-cache";
 import type { InitialisableProvider } from "@/context/engine/providers/plugin-loader";
-import { withTimerSpy } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

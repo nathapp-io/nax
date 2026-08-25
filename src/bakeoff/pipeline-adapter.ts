@@ -7,11 +7,11 @@
 
 import { join } from "node:path";
 import { featureDir, globalConfigDir } from "../config";
-import { run } from "../execution";
 import type { RunOptions, RunResult } from "../execution";
+import { run } from "../execution";
 import { loadHooksConfig } from "../hooks";
-import { loadRunMetrics } from "../metrics";
 import type { RunMetrics } from "../metrics";
+import { loadRunMetrics } from "../metrics";
 import { validateFeatureName } from "../utils/feature-name";
 import type {
   ContestantPipelineResult,

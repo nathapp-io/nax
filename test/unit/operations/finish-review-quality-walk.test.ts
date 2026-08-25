@@ -7,13 +7,11 @@
  * command line contains the review range verbatim.
  */
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import type { ConfigSelector } from "@/config";
-import type { FinishConfig } from "@/config/selectors";
+import { makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
 import type { FinishReviewInput } from "@/operations";
 import { finishReviewOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 import { _gitDeps } from "@/utils/git";
-import { makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

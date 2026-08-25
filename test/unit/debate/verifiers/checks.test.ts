@@ -14,10 +14,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makePRD } from "@test/helpers";
 import { checkAcAnchored, checkClaimsCited, checkFilesExist, checkNoContradictions, checkSpecCoverage } from "@/debate";
 import type { FactsManifest } from "@/debate/facts-manifest";
 import type { PRD } from "@/prd/types";
-import { makePRD } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers

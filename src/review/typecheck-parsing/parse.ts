@@ -5,8 +5,8 @@ import type {
   TypecheckDiagnostic,
   TypecheckOutputFormat,
   TypecheckParseResult,
-  TypecheckParseStrategy,
   TypecheckParserFormat,
+  TypecheckParseStrategy,
 } from "./types";
 
 function strategiesFor(format: TypecheckOutputFormat): ReadonlyArray<TypecheckParseStrategy> {

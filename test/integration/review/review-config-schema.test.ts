@@ -6,8 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { type NaxConfig, NaxConfigSchema } from "@/config/schema";
-import { DEFAULT_CONFIG } from "@/config/schema";
+import { DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema } from "@/config/schema";
 
 describe("Config Schema: lintCommand and typecheckCommand (US-005)", () => {
   test("accepts lintCommand as string", () => {

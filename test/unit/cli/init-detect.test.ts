@@ -7,9 +7,9 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { withTempDir } from "@test/helpers";
 import { initProject } from "@/cli/init";
 import { buildInitConfig, buildQualityCommands, detectProjectStack } from "@/cli/init-detect";
-import { withTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // detectProjectStack — runtime detection

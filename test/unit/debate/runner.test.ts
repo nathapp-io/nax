@@ -1,13 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { DEFAULT_CONFIG } from "@/config";
-import { debateConfigSelector } from "@/config";
+import { makeLogger, makeMockAgentManager, makeSessionManager } from "@test/helpers";
+import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
 import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import * as callModule from "@/operations";
 import type { CallContext } from "@/operations/types";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
-import { makeLogger, makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 function makeCallCtx(overrides: Partial<CallContext> = {}): CallContext {
   const agentManager = makeMockAgentManager({

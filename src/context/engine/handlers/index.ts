@@ -7,7 +7,7 @@
  * 600-line file-size hard limit.
  */
 
-export { handleQueryNeighbor } from "./query-neighbor";
 export { handleQueryFeatureContext } from "./query-feature-context";
-export { handleQueryScratch } from "./query-scratch";
+export { handleQueryNeighbor } from "./query-neighbor";
 export type { QueryScratchOptions } from "./query-scratch";
+export { handleQueryScratch } from "./query-scratch";

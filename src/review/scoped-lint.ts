@@ -1,14 +1,14 @@
 import { join, relative } from "node:path";
 import type { QualityConfig } from "../config/schema";
 import { getSafeLogger } from "../logger";
-import { type UserStory, getContextFiles } from "../prd";
+import { getContextFiles, type UserStory } from "../prd";
 import { type QualityCommandResult, runQualityCommand } from "../quality";
 import { findPackageDir } from "../test-runners/resolver";
 import { gitWithTimeout } from "../utils/git";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { shellQuoteArg } from "../verification/shell-quote";
-import { formatDiagnosticsOutput, parseLintOutput } from "./lint-parsing";
 import type { LintOutputFormat } from "./lint-parsing";
+import { formatDiagnosticsOutput, parseLintOutput } from "./lint-parsing";
 import type { ReviewCheckResult, ReviewConfig } from "./types";
 
 export interface AutofixLintScope {

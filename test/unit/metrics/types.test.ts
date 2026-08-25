@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { TokenUsage } from "@/metrics/types";
 import type { RunMetrics, StoryMetrics } from "@/metrics/types";
+import { TokenUsage } from "@/metrics/types";
 
 // ---------------------------------------------------------------------------
 // AC-1: TokenUsage class structure

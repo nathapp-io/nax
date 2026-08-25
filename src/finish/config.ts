@@ -9,8 +9,9 @@
  * Reads through `finishConfigSelector` rather than indexing `config.finish`
  * directly, so the dependency stays declared in `src/config/selectors.ts`.
  */
-import { finishConfigSelector } from "@/config";
+
 import type { ConfiguredModel, NaxConfig } from "@/config";
+import { finishConfigSelector } from "@/config";
 import type { FinishPrBodySettings } from "./types";
 
 export interface FinishSettings {

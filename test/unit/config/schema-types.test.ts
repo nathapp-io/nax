@@ -10,9 +10,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { ModelTier, ModelsConfig } from "@/config/schema-types";
+import type { ModelsConfig, TierConfig } from "@/config/schema-types";
 import { resolveConfiguredModel, resolveModelForAgent } from "@/config/schema-types";
-import type { TierConfig } from "@/config/schema-types";
 import { NaxError } from "@/errors";
 import type { StoryRouting } from "@/prd/types";
 

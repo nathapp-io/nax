@@ -1,8 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
+import { makeSessionManager } from "@test/helpers";
 import { SessionTurnError } from "@/agents";
 import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents/types";
 import { createSessionRunHop } from "@/runtime/session-run-hop";
-import { makeSessionManager } from "@test/helpers";
 
 function makeRunOptions(): AgentRunOptions {
   return {

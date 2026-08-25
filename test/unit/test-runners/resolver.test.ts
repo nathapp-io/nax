@@ -8,11 +8,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import { testPatternConfigSelector } from "@/config";
 import type { TestPatternConfig } from "@/config/selectors";
 import type { DetectionResult } from "@/test-runners/detect";
 import { _resolverDeps, resolveReviewExcludePatterns, resolveTestFilePatterns } from "@/test-runners/resolver";
-import { makeNaxConfig } from "@test/helpers";
 
 const WORKDIR = "/fake/workdir";
 

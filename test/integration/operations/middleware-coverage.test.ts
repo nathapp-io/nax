@@ -15,6 +15,7 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { makeNaxConfig, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import { AgentManager } from "@/agents/manager";
 import type { SessionHandle, TurnResult } from "@/agents/types";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
@@ -22,7 +23,6 @@ import { callOp } from "@/operations/call";
 import type { RunOperation } from "@/operations/types";
 import type { NaxRuntime } from "@/runtime";
 import type { SessionTurnDispatchEvent } from "@/runtime/dispatch-events";
-import { makeNaxConfig, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

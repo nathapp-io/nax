@@ -1,11 +1,5 @@
 // test/unit/execution/non-blocking-fix-wiring.test.ts
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
-import type { NonBlockingFixArgs, NonBlockingFixDeps } from "@/execution/non-blocking-fix";
-import { shouldRunNonBlockingFix } from "@/execution/non-blocking-fix";
-import type { Finding } from "@/findings";
-import type { NaxRuntime } from "@/runtime";
-import { _rollbackDeps } from "@/tdd";
 import {
   makeFixCycleResult,
   makeIteration,
@@ -16,6 +10,12 @@ import {
   makeStory,
   makeTestRuntime,
 } from "@test/helpers";
+import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
+import type { NonBlockingFixArgs, NonBlockingFixDeps } from "@/execution/non-blocking-fix";
+import { shouldRunNonBlockingFix } from "@/execution/non-blocking-fix";
+import type { Finding } from "@/findings";
+import type { NaxRuntime } from "@/runtime";
+import { _rollbackDeps } from "@/tdd";
 
 describe("non-blocking-fix wiring gate", () => {
   test("gate is off without config", () => {
