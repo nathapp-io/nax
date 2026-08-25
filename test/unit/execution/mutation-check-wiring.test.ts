@@ -11,8 +11,18 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMockCallContext, makeMockPlanInputs, makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
-import { DEFAULT_CONFIG } from "@/config";
+import {
+  DEFAULT_TEST_ROUTING,
+  makeCallOp,
+  makeMockCallContext,
+  makeMockPlanInputs,
+  makeNaxConfig,
+  makeStory,
+  makeTestContext,
+  makeTestPRD,
+  makeTestRuntime,
+} from "@test/helpers";
+import { DEFAULT_CONFIG, mutationCheckConfigSelector } from "@/config";
 import type { MutationCheckConfig } from "@/config/selectors";
 import {
   _storyOrchestratorDeps,
@@ -54,7 +64,7 @@ describe("AC2: PHASE_KIND_TO_STATE_KEY + InternalBuildState accept mutation-chec
 
   test("InternalBuildState accepts a mutationCheck phase entry", () => {
     const state: InternalBuildState = {
-      mutationCheck: { kind: "mutation-check", slot: { op: {} as any, input: {} } },
+      mutationCheck: { kind: "mutation-check", slot: { op: mutationCheckOp, input: {} } },
     };
     expect(state.mutationCheck).toBeDefined();
     expect(state.mutationCheck?.kind).toBe("mutation-check");
@@ -91,7 +101,7 @@ function makeMutationCheckOp(result: {
     kind: "deterministic",
     name: "mutation-check",
     stage: "verify",
-    config: (() => DEFAULT_CONFIG) as any,
+    config: mutationCheckConfigSelector,
     execute: async () => ({
       success: true,
       survivors,
@@ -110,7 +120,7 @@ function makeDeterministicOp(
     kind: "deterministic",
     name,
     stage: "verify",
-    config: (() => DEFAULT_CONFIG) as any,
+    config: mutationCheckConfigSelector,
     execute: async () => ({ ...result, estimatedCostUsd: 0 }),
   };
 }
@@ -128,11 +138,11 @@ describe("AC4: builder.addMutationCheck + plan run", () => {
 
     const calls: { name: string; op: unknown }[] = [];
     const origCallOp = _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      calls.push({ name: op.name, op });
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: (op) => {
+        calls.push({ name: op.name, op });
+      },
+    });
 
     try {
       const ctx: CallContext = {
@@ -141,7 +151,7 @@ describe("AC4: builder.addMutationCheck + plan run", () => {
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-005",
-      } as any;
+      };
       const mutationCheckInput: MutationCheckInput = {
         story: makeStory({ id: "US-005" }),
         workdir: "/tmp",
@@ -162,7 +172,7 @@ describe("AC4: builder.addMutationCheck + plan run", () => {
             kind: "run",
             name: "mock-implementer",
             stage: "run",
-            config: (() => DEFAULT_CONFIG) as any,
+            config: mutationCheckConfigSelector,
             session: { role: "implementer", lifetime: "warm" },
             build: () => ({
               role: { id: "r", content: "", overridable: false },
@@ -172,7 +182,7 @@ describe("AC4: builder.addMutationCheck + plan run", () => {
           },
           input: { code: "" },
         })
-        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-005" }) as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-005" }), workdir: "/tmp" } })
         .addMutationCheck(mutationCheckInput)
         .build(ctx);
 
@@ -196,11 +206,11 @@ describe("AC4: builder.addMutationCheck + plan run", () => {
 
     const calls: string[] = [];
     const origCallOp = _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      calls.push(op.name);
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: (op) => {
+        calls.push(op.name);
+      },
+    });
 
     try {
       const ctx: CallContext = {
@@ -209,7 +219,7 @@ describe("AC4: builder.addMutationCheck + plan run", () => {
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-005",
-      } as any;
+      };
       const gateOp = makeDeterministicOp("full-suite-gate", { success: true });
       const spiedMutationOp = makeMutationCheckOp({ success: true, survivors: [] });
       const mutationCheckInput: MutationCheckInput = {
@@ -231,7 +241,7 @@ describe("AC4: builder.addMutationCheck + plan run", () => {
             kind: "run",
             name: "mock-implementer",
             stage: "run",
-            config: (() => DEFAULT_CONFIG) as any,
+            config: mutationCheckConfigSelector,
             session: { role: "implementer", lifetime: "warm" },
             build: () => ({
               role: { id: "r", content: "", overridable: false },
@@ -241,7 +251,7 @@ describe("AC4: builder.addMutationCheck + plan run", () => {
           },
           input: { code: "" },
         })
-        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-005" }) as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-005" }), workdir: "/tmp" } })
         .addMutationCheck({ op: spiedMutationOp, input: mutationCheckInput })
         .build(ctx);
 
@@ -270,8 +280,8 @@ describe("AC5: buildPlanForStrategy wires mutation-check from PlanInputs", () =>
     const inputs = makeMockPlanInputs({
       story,
       implementer: { story },
-      fullSuiteGate: { story, workdir: "/tmp" } as any,
-      verifier: { story } as any,
+      fullSuiteGate: { story, workdir: "/tmp" },
+      verifier: { story },
       mutationCheck: {
         story,
         workdir: "/tmp",
@@ -296,8 +306,8 @@ describe("AC5: buildPlanForStrategy wires mutation-check from PlanInputs", () =>
     const inputs = makeMockPlanInputs({
       story,
       implementer: { story },
-      fullSuiteGate: { story, workdir: "/tmp" } as any,
-      verifier: { story } as any,
+      fullSuiteGate: { story, workdir: "/tmp" },
+      verifier: { story },
     });
     const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     expect(plan.phaseNames()).not.toContain("mutation-check");
@@ -309,7 +319,7 @@ describe("AC5: buildPlanForStrategy wires mutation-check from PlanInputs", () =>
     const ctx = makeMockCallContext();
     const inputs = makeMockPlanInputs({
       story,
-      testWriter: { story } as any,
+      testWriter: { story },
       greenfieldGate: {
         story,
         workdir: "/tmp",
@@ -320,10 +330,10 @@ describe("AC5: buildPlanForStrategy wires mutation-check from PlanInputs", () =>
           testDirs: ["test/unit", "test/integration"],
           resolution: "detected",
         },
-      } as any,
+      },
       implementer: { story },
-      fullSuiteGate: { story, workdir: "/tmp" } as any,
-      verifier: { story } as any,
+      fullSuiteGate: { story, workdir: "/tmp" },
+      verifier: { story },
       mutationCheck: {
         story,
         workdir: "/tmp",
@@ -361,11 +371,11 @@ describe("AC6: mutation-check survivor with success:true does not halt verifier"
 
     const calls: string[] = [];
     const origCallOp = _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      calls.push(op.name);
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: (op) => {
+        calls.push(op.name);
+      },
+    });
 
     try {
       const ctx: CallContext = {
@@ -374,7 +384,7 @@ describe("AC6: mutation-check survivor with success:true does not halt verifier"
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-005",
-      } as any;
+      };
       const gateOp = makeDeterministicOp("full-suite-gate", { success: true });
       const verOp = makeDeterministicOp("verifier", { success: true });
       const mutationOp = makeMutationCheckOp({ success: true, survivors: [{ file: "x.ts" }] });
@@ -397,7 +407,7 @@ describe("AC6: mutation-check survivor with success:true does not halt verifier"
             kind: "run",
             name: "mock-implementer",
             stage: "run",
-            config: (() => DEFAULT_CONFIG) as any,
+            config: mutationCheckConfigSelector,
             session: { role: "implementer", lifetime: "warm" },
             build: () => ({
               role: { id: "r", content: "", overridable: false },
@@ -407,7 +417,7 @@ describe("AC6: mutation-check survivor with success:true does not halt verifier"
           },
           input: { code: "" },
         })
-        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-005" }) as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-005" }), workdir: "/tmp" } })
         .addMutationCheck({ op: mutationOp, input: mutationCheckInput })
         .addVerifier({ op: verOp, input: { code: "" } })
         .build(ctx);
@@ -434,23 +444,17 @@ describe("AC6: mutation-check survivor with success:true does not halt verifier"
 describe("regression: assemblePlanInputsFromCtx populates mutationCheck", () => {
   test("enabled: mutationCheck input is populated from pipeline context", async () => {
     const { assemblePlanInputsFromCtx } = await import("@/execution");
-    const ctx = {
+    const ctx = makeTestContext({
       story: makeStory({ id: "US-005", title: "Test" }),
       config: makeNaxConfig({
-        execution: {
-          ...makeNaxConfig().execution,
-          mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 },
-        },
+        execution: { mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } },
       }),
       workdir: "/tmp/repo",
-      routing: { testStrategy: "three-session-tdd", agent: "claude" },
-      prompt: "",
-      featureContextMarkdown: "feat",
-      constitution: { content: "" },
-      prd: { feature: "f" },
+      routing: { ...DEFAULT_TEST_ROUTING, testStrategy: "three-session-tdd" },
+      prd: makeTestPRD(),
       projectDir: "/tmp/proj",
       storyGitRef: "abc123",
-    } as any;
+    });
     const inputs = await assemblePlanInputsFromCtx(ctx);
     expect(inputs.mutationCheck).toBeDefined();
     expect(inputs.mutationCheck?.storyId).toBe("US-005");
@@ -460,17 +464,14 @@ describe("regression: assemblePlanInputsFromCtx populates mutationCheck", () => 
 
   test("disabled: mutationCheck input remains undefined", async () => {
     const { assemblePlanInputsFromCtx } = await import("@/execution");
-    const ctx = {
+    const ctx = makeTestContext({
       story: makeStory({ id: "US-005", title: "Test" }),
       config: makeNaxConfig(),
       workdir: "/tmp/repo",
-      routing: { testStrategy: "three-session-tdd", agent: "claude" },
-      prompt: "",
-      featureContextMarkdown: "feat",
-      constitution: { content: "" },
-      prd: { feature: "f" },
+      routing: { ...DEFAULT_TEST_ROUTING, testStrategy: "three-session-tdd" },
+      prd: makeTestPRD(),
       projectDir: "/tmp/proj",
-    } as any;
+    });
     const inputs = await assemblePlanInputsFromCtx(ctx);
     expect(inputs.mutationCheck).toBeUndefined();
   });

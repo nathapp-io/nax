@@ -1,15 +1,15 @@
 {
   "counts": {
-    "asAny": 1232,
+    "asAny": 1210,
     "tsSuppress": 40,
     "ratchetAllow": 105,
     "absentValue": 17,
-    "anyType": 1600,
+    "anyType": 1569,
     "looseCast": 1875,
     "asNever": 608,
     "nonNullAssert": 819
   },
-  "updatedAt": "2026-08-25T10:50:24.809Z",
+  "updatedAt": "2026-08-25T10:54:07.867Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -737,10 +737,6 @@
     "test/unit/execution/unified-executor-logging.test.ts": {
       "looseCast": 18,
       "asNever": 24
-    },
-    "test/unit/execution/mutation-check-wiring.test.ts": {
-      "asAny": 22,
-      "anyType": 31
     },
     "test/unit/execution/story-orchestrator-resume-integration.test.ts": {
       "asAny": 1,
