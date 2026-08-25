@@ -16,8 +16,8 @@ log — each entry records what was true when written and is not edited afterwar
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
 | `as unknown as` | **46** | 46 | **yes — current target, ~17 is the floor** |
-| `asAny` | 1383 | 1383 | yes, then biome `noExplicitAny` retires it |
-| `anyType` | 1866 | 1866 | yes, retires with `asAny` |
+| `asAny` | 1377 | 1377 | yes, then biome `noExplicitAny` retires it |
+| `anyType` | 1860 | 1860 | yes, retires with `asAny` |
 | `nonNullAssert` | 820 | 820 | yes, then biome `noNonNullAssertion` |
 | `asNever` | 608 | 608 | yes |
 | `ratchetAllow` | 106 | 106 | yes |
@@ -508,3 +508,51 @@ and are worth the same check.
 Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14138 / 1136 / 38, 0 fail),
 coverage 101 files below floor against baseline 103. `asAny` 1385 → 1383 and `anyType` 1868 →
 1866 from replacing `(ctx as any)` reads with typed ones; no counter rose.
+
+### 8.7 The other two AC9 fields were dead, not miswired (2026-08-25)
+
+§8.6 left `verifyPassed` and `semanticReviewResult` flagged. Checked, and they are a
+**different outcome from `rectifyAttempt` despite an identical appearance** — worth recording,
+because the shared appearance is what makes this class expensive to triage.
+
+All three were added in one commit (#1084) under an AC that reads, verbatim:
+*"AC9: applyPostRunInspection sets verifyPassed, semanticReviewResult,
+rectificationIterationCount"*. **The AC pinned a write and no AC pinned a reader**, so the
+tests pinned the write too and everything stayed green. That is the root cause of the whole
+§8.6 cluster, not an accident of naming.
+
+The three then diverged:
+
+| Field | Declared? | Reader | Outcome |
+|:--|:--|:--|:--|
+| `rectificationIterationCount` | no (cast key) | none — but the declared `rectifyAttempt` had a starving reader | **wire** (§8.6) |
+| `verifyPassed` | no (cast key) | none, anywhere, ever | **delete** |
+| `semanticReviewResult` | no (cast key) | none, anywhere, ever | **delete** |
+
+`rectifyAttempt` was a *miswiring*: a real consumer existed and was starved. These two are
+simply *dead*: no declared counterpart, no consumer, and no duplicated logic elsewhere that
+they were caching. Verify outcome already reaches routing through `tdd-failure-category.ts`
+and review outcome through the findings pipeline. Checked for dynamic key reads (`ctx[...]`)
+and for `{ ...ctx }` spreads into hooks or events before concluding — a name grep alone would
+not settle "no reader" for a cast-written key.
+
+Deleting them removed the last two `(ctx as unknown as Record<string, unknown>)` writes from
+`post-run.ts`, which is the construct that let `rectificationIterationCount` drift from
+`rectifyAttempt` in the first place: **a declared-field assignment would not have compiled.**
+
+**The coverage ratchet fired, and the number was misleading.** `post-run.ts` fell 57.07% →
+56.07%. Measured rather than assumed: `LF` 396 → 387, `LH` 226 → 217 — both down exactly 9,
+and **uncovered lines 170 → 170, unchanged**. Deleting covered dead code shrinks the
+denominator, so the percentage drops while nothing loses coverage. Baseline lowered for that
+one file only; `--update-baseline` also swept in four unrelated pre-existing improvements and
+dropped two files entirely, all reverted per §3's "every other counter FLAT".
+
+**Carry forward: "no reader" is a stronger claim than "no writer" and needs more evidence.**
+A missing writer shows up as a wrong value at a known read site. A missing reader shows up as
+nothing at all, so ruling a field dead means excluding dynamic access and context spreads too —
+and the fix is deletion, which the ratchets read as a regression until you check the absolute
+numbers.
+
+Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14133 / 1136 / 38, 0 fail),
+coverage OK, 101 files below floor against baseline 103. `asAny` 1383 → 1377 and `anyType`
+1866 → 1860 from the four deleted `(ctx as any)` assertions; no counter rose.

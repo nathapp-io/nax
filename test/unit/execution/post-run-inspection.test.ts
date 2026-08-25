@@ -302,67 +302,11 @@ describe("deriveTddFailureCategory", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC9: applyPostRunInspection ctx field derivations", () => {
-  test("AC9: sets ctx.verifyPassed=true when 'verifier' phase output has passed=true", async () => {
-    const ctx = makeTestContext();
-    const planResult = makePlanResult({
-      phaseOutputs: {
-        [implementerOp.name]: { success: true },
-        [verifierOp.name]: { success: true, passed: true, findings: [] },
-      },
-    });
-    await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
-    expect((ctx as any).verifyPassed).toBe(true);
-  });
-
-  test("AC9: sets ctx.verifyPassed=false when 'verifier' phase output has passed=false", async () => {
-    const ctx = makeTestContext();
-    const planResult = makePlanResult({
-      success: false,
-      phaseOutputs: {
-        [implementerOp.name]: { success: true },
-        [verifierOp.name]: { success: false, passed: false, findings: [TEST_RUNNER_FINDING] },
-      },
-    });
-    await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
-    expect((ctx as any).verifyPassed).toBe(false);
-  });
-
-  test("AC9: derives ctx.verifyPassed from 'verify-scoped' when no 'verifier' phase present", async () => {
-    const ctx = makeTestContext();
-    const planResult = makePlanResult({
-      phaseOutputs: {
-        [implementerOp.name]: { success: true },
-        [verifyScopedOp.name]: { success: true, passed: true, findings: [] },
-      },
-    });
-    await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
-    expect((ctx as any).verifyPassed).toBe(true);
-  });
-
-  test("AC9: sets ctx.semanticReviewResult from 'semantic-review' phase output when present", async () => {
-    const ctx = makeTestContext();
-    const planResult = makePlanResult({
-      phaseOutputs: {
-        [implementerOp.name]: { success: true },
-        "semantic-review": { passed: true, findings: [] },
-      },
-    });
-    await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
-    expect((ctx as any).semanticReviewResult).toBeDefined();
-    expect((ctx as any).semanticReviewResult.passed).toBe(true);
-  });
-
-  test("AC9: ctx.semanticReviewResult is undefined when 'semantic-review' not in phaseOutputs", async () => {
-    const ctx = makeTestContext();
-    const planResult = makePlanResult({
-      phaseOutputs: {
-        [implementerOp.name]: { success: true },
-      },
-    });
-    await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
-    expect((ctx as any).semanticReviewResult).toBeUndefined();
-  });
-
+  // #1084 AC9 also pinned ctx.verifyPassed and ctx.semanticReviewResult here. Both were
+  // written through a cast onto undeclared keys and never read by anything, so the tests
+  // asserted a write that went nowhere; the writes are removed and these with them
+  // (nax#1707 follow-up). The rectification derivation below is the one AC9 field with a
+  // real consumer.
   // #1707 follow-up: the count was written to an undeclared `rectificationIterationCount`
   // through a cast, while collectStoryMetrics reads the declared `ctx.rectifyAttempt`.
   // Nothing read the former and nothing wrote the latter, so firstPassSuccess was never

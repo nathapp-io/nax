@@ -308,24 +308,14 @@ export async function applyPostRunInspection(
     await cleanupVerdict(ctx.workdir).catch(() => undefined);
   }
 
-  // D3: derive ctx fields from phase outputs for downstream routing and diagnostics.
-  const verifierPhaseOut = planResult.phaseOutputs[verifierOp.name] as
-    | { success?: boolean; passed?: boolean }
-    | undefined;
-  const verifyScopedPhaseOut = planResult.phaseOutputs[verifyScopedOp.name] as
-    | { success?: boolean; passed?: boolean }
-    | undefined;
-  const verifySource = verifierPhaseOut ?? verifyScopedPhaseOut;
-  (ctx as unknown as Record<string, unknown>).verifyPassed =
-    verifySource !== undefined ? verifySource.passed === true || verifySource.success === true : undefined;
-
-  const semReviewOut = planResult.phaseOutputs["semantic-review"] as
-    | { passed?: boolean; findings?: unknown[] }
-    | undefined;
-  (ctx as unknown as Record<string, unknown>).semanticReviewResult = semReviewOut
-    ? { passed: semReviewOut.passed, findings: semReviewOut.findings ?? [] }
-    : undefined;
-
+  // #1084 AC9 also set `verifyPassed` and `semanticReviewResult` here, both through a
+  // cast onto undeclared keys. Neither was ever read — the AC pinned the write and no AC
+  // pinned a reader, so they were removed rather than declared (nax#1707 follow-up).
+  // Verify outcome reaches routing via tdd-failure-category.ts and review outcome via the
+  // findings pipeline; nothing needed the cached copies.
+  // BUG-067 / #679: rectifyAttempt > 0 disqualifies firstPassSuccess in collectStoryMetrics.
+  // This wrote an undeclared `rectificationIterationCount` nothing read, leaving the declared
+  // field with no writer and the disqualification dead (nax#1707 follow-up).
   const rectOut = planResult.phaseOutputs.rectification as { iterationCount?: number } | undefined;
   ctx.rectifyAttempt = rectOut?.iterationCount ?? 0;
 

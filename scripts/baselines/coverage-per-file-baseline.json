@@ -55,7 +55,7 @@
     "src/execution/lifecycle/run-initialization.ts": 0.7481,
     "src/execution/lifecycle/run-setup.ts": 0.4852,
     "src/execution/parallel-worker.ts": 0.7763,
-    "src/execution/post-run.ts": 0.5707,
+    "src/execution/post-run.ts": 0.5607,
     "src/execution/progress.ts": 0.6667,
     "src/execution/runner-execution.ts": 0.0455,
     "src/execution/runner.ts": 0.4224,
