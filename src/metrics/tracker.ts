@@ -233,7 +233,7 @@ function sanitizeProviderPressure(raw: unknown): NonNullable<ContextProviderMetr
  * the record's own value wins and `storyId` fills the gap when the producer left
  * it unset.
  */
-function toFallbackHops(records: AgentFallbackRecord[] | undefined, storyId: string): AgentFallbackHop[] {
+export function toFallbackHops(records: AgentFallbackRecord[] | undefined, storyId: string): AgentFallbackHop[] {
   if (!records || records.length === 0) return [];
   return records.map((r) => ({
     storyId: r.storyId ?? storyId,

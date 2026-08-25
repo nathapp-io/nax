@@ -88,6 +88,9 @@ function makeCtx(sessionManager: ISessionManager) {
     sessionManager,
     runtime: {
       outputDir: "/tmp/nax-test-session-close-output",
+      // nax#1709: parallel metrics read these run-scoped stores.
+      agentFallbacks: new Map(),
+      runtimeCrashRetries: new Map(),
       costAggregator: {
         snapshot: () => ({
           totalCostUsd: 0,

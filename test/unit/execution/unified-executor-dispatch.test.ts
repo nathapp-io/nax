@@ -79,6 +79,9 @@ function makeCtx(overrides: { parallelCount?: number } = {}) {
     interactionChain: null,
     runtime: {
       outputDir: "/tmp/nax-test-dispatch-output",
+      // nax#1709: parallel metrics read these run-scoped stores.
+      agentFallbacks: new Map(),
+      runtimeCrashRetries: new Map(),
       costAggregator: {
         snapshot: () => ({
           totalCostUsd: 0,

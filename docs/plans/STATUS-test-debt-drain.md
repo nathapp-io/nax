@@ -634,3 +634,43 @@ One review finding was itself wrong and worth recording: it reported the changed
 `preIterationTierCheck` *is* pinned in both directions
 (`tier-escalation-story-failed.test.ts:161,203`) — it was `tier-outcome.ts`'s four sites that
 were uncovered, and those now have a test each way. **Verify the reviewer too.**
+
+### 8.10 Closing #1709 — the metric now reaches failed and parallel stories (2026-08-25)
+
+§8.9 filed the two reach gaps rather than fixing them. Fixed here, because "the metric is
+wired" and "the metric works" turned out to be different claims.
+
+**Failed stories.** `synthesizeBackfillMetric` is already the single source of truth for the
+`execution-failed` synthesis and already hardcoded `runtimeCrashes: 0`, so it was the right
+seam: it now takes `fallbackHops` and `runtimeCrashes` and emits them. The caller reads the
+run-scoped stores, which outlive the per-attempt `PipelineContext` — that property, chosen in
+§8.5 for a different reason, is what makes the failure path recoverable at all. Completion-phase
+spend still carries neither, correctly: nothing executed.
+
+This makes `deriveRunFallbackAggregates`'s exhausted rule reachable for the first time. It
+requires `!story.success`, and before this only successful stories ever carried hops, so the
+branch was dead the day it was written. Now pinned by a test that builds a failed story through
+the real back-fill.
+
+**Parallel stories.** The two inline `StoryMetrics` literals in `unified-executor.ts` are
+extracted to `synthesizeParallelStoryMetric` — the same pure-function shape as the back-fill.
+The extraction was not optional: `unified-executor.ts` is grandfathered at 768 lines, so the
+ratchet forbade adding two fields to two literals, and the rule's prescribed remedy is to split
+by concern. **The size gate pushed the change toward the better design**, which is the second
+time on this branch (§8.7's `post-run.ts` was the first, in the opposite direction).
+
+**Nine test files hand-built a partial `runtime` stub** and broke the moment the executor read
+a new field off it. That is the cost of inline mocks the repo already gates against
+(`check:test-mocks`) — a real helper would have picked the fields up for free.
+
+**The escape-hatch ratchet refused the obvious test.** A new executor-level integration test
+costs two `as never` casts, because `makeCtx` returns a partial stub that cannot satisfy
+`SequentialExecutionContext`. Typing the helper properly is the rule's prescribed fix and is not
+tractable here; adding a containment cast would trade one counter for another, which the closed
+system forbids. **So the assertions were folded into the existing test that already pins the
+parallel metric entry's shape** — same claim, same setup, zero new casts. Worth naming as a
+pattern: when the ratchet blocks a new test, look for the existing test making the same claim
+before reaching for a cast.
+
+Gates: typecheck 0 (all three), `check:all` 24/24 with **every counter flat**, suite green
+(14149 / 1136 / 38, 0 fail), coverage OK, 101 files below floor against baseline 103.
