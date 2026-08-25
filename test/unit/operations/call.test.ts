@@ -7,7 +7,7 @@ import { DEFAULT_CONFIG } from "@/config";
 import { callOp, shouldKeepSessionOpen } from "@/operations";
 import type { CompleteOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import { firstCall, makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 let runtime: NaxRuntime | undefined;
 afterEach(async () => {
@@ -287,10 +287,8 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
       warmImplementerOp,
       { text: "hello" },
     );
-    expect(
-      ((am1.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as { runOptions: { keepOpen?: boolean } })
-        .runOptions.keepOpen,
-    ).toBeUndefined();
+    const [am1Req] = firstCall(am1.runWithFallback as ReturnType<typeof mock>, "am1.runWithFallback");
+    expect((am1Req as { runOptions: { keepOpen?: boolean } }).runOptions.keepOpen).toBeUndefined();
     await runtime.close();
     runtime = undefined;
 
@@ -301,10 +299,8 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
       warmImplementerOp,
       { text: "hello" },
     );
-    expect(
-      ((am2.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as { runOptions: { keepOpen?: boolean } })
-        .runOptions.keepOpen,
-    ).toBe(true);
+    const [am2Req] = firstCall(am2.runWithFallback as ReturnType<typeof mock>, "am2.runWithFallback");
+    expect((am2Req as { runOptions: { keepOpen?: boolean } }).runOptions.keepOpen).toBe(true);
     await runtime.close();
     runtime = undefined;
 
@@ -315,10 +311,8 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
       warmAutofixOp,
       { text: "hello" },
     );
-    expect(
-      ((am3.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as { runOptions: { keepOpen?: boolean } })
-        .runOptions.keepOpen,
-    ).toBe(true);
+    const [am3Req] = firstCall(am3.runWithFallback as ReturnType<typeof mock>, "am3.runWithFallback");
+    expect((am3Req as { runOptions: { keepOpen?: boolean } }).runOptions.keepOpen).toBe(true);
   });
 
   test("throws CALL_OP_NO_OUTPUT when run returns no output", async () => {
@@ -767,10 +761,8 @@ describe("callOp — kind:run — interactionBridge threading (AC3/AC4/AC8)", ()
       runEchoOp,
       { text: "hello" },
     );
-    expect(
-      ((am1.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as AgentRunRequest).runOptions
-        .interactionBridge,
-    ).toBe(bridge);
+    const [am1RunReq] = firstCall(am1.runWithFallback as ReturnType<typeof mock>, "am1.runWithFallback");
+    expect((am1RunReq as AgentRunRequest).runOptions.interactionBridge).toBe(bridge);
     await runtime.close();
     runtime = undefined;
 
@@ -788,10 +780,8 @@ describe("callOp — kind:run — interactionBridge threading (AC3/AC4/AC8)", ()
       runEchoOp,
       { text: "hello" },
     );
-    expect(
-      ((am2.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as AgentRunRequest).runOptions
-        .maxInteractionTurns,
-    ).toBe(7);
+    const [am2RunReq] = firstCall(am2.runWithFallback as ReturnType<typeof mock>, "am2.runWithFallback");
+    expect((am2RunReq as AgentRunRequest).runOptions.maxInteractionTurns).toBe(7);
     await runtime.close();
     runtime = undefined;
 
@@ -802,10 +792,8 @@ describe("callOp — kind:run — interactionBridge threading (AC3/AC4/AC8)", ()
       runEchoOp,
       { text: "hello" },
     );
-    expect(
-      "interactionBridge" in
-        ((am3.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as AgentRunRequest).runOptions,
-    ).toBe(false);
+    const [am3RunReq] = firstCall(am3.runWithFallback as ReturnType<typeof mock>, "am3.runWithFallback");
+    expect("interactionBridge" in (am3RunReq as AgentRunRequest).runOptions).toBe(false);
   });
 });
 

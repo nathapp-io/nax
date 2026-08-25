@@ -147,7 +147,7 @@ export function sanitizeMarkdown(text: string): string {
   // We escape the LEADING delimiter of Markdown pairs: Telegram will display \_, \`, \* literally.
   // Safe pairs: the escape is redundant but harmless; unbalanced: the escape prevents parse error.
   return text
-    .replace(/\\(?=[_*`\[])/g, "\\\\") // escape existing backslashes before these chars
+    .replace(/\\(?=[_*`[])/g, "\\\\") // escape existing backslashes before these chars
     .replace(/_/g, "\\_") // escape underscores (used for italic in Telegram Markdown)
     .replace(/`/g, "\\`") // escape backticks (code fences / inline code)
     .replace(/\*/g, "\\*") // escape asterisks (bold)

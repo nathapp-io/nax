@@ -742,7 +742,9 @@ function printHumanReadable(result: import("../src/cli/features-resolve").Resolv
   }
   if (status === "ambiguous") {
     console.log("Multiple features found — pass one explicitly:");
-    (candidates ?? []).forEach((c, i) => console.log(`  ${i + 1}. ${c}`));
+    (candidates ?? []).forEach((c, i) => {
+      console.log(`  ${i + 1}. ${c}`);
+    });
     return;
   }
   if (status === "missing") {

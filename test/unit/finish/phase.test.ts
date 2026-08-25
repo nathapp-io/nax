@@ -366,7 +366,7 @@ describe("runFinishPhase — gate skip observability (#1671)", () => {
       const r = await runFinishPhase(ctx);
       const call = infoSpy.mock.calls.find((c: unknown[]) => c[0] === "finish");
       expect(call).toBeDefined();
-      expect((call?.[2] as { reason: string }).reason).toBe("failed");
+      expect((call?.[2] as { reason: string } | undefined)?.reason).toBe("failed");
       return r;
     });
     expect(result).toBeNull();
@@ -389,7 +389,7 @@ describe("runFinishPhase — gate skip observability (#1671)", () => {
       const r = await runFinishPhase(ctx);
       const call = infoSpy.mock.calls.find((c: unknown[]) => c[0] === "finish");
       expect(call).toBeDefined();
-      expect((call?.[2] as { reason: string }).reason).toBe("enabled");
+      expect((call?.[2] as { reason: string } | undefined)?.reason).toBe("enabled");
       return r;
     });
     expect(result).toBeNull();

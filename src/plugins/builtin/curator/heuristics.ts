@@ -221,8 +221,8 @@ function h2PullToolEmptyResult(observations: Observation[], threshold: number): 
       id: "H2",
       severity: "MED",
       target: { canonicalFile: `${PROJECT_FEATURES_DIR}/${data.featureId}/context.md`, action: "add" },
-      description: `Pull-tool keyword returned empty: \"${keyword}\" returned zero results ${count}x`,
-      evidence: `Keyword \"${keyword}\" returned zero results ${count}× in stories: ${unique.join(", ")}`,
+      description: `Pull-tool keyword returned empty: "${keyword}" returned zero results ${count}x`,
+      evidence: `Keyword "${keyword}" returned zero results ${count}× in stories: ${unique.join(", ")}`,
       sourceKinds: ["pull-call"],
       storyIds: unique,
     });

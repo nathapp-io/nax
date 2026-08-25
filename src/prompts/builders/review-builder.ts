@@ -194,10 +194,7 @@ ${diffSection}`;
    *   above it must be reported in full.
    * - `advisoryCap` bounds findings strictly below the threshold (default 3).
    */
-  static jsonRetryCondensed(opts?: {
-    blockingThreshold?: "error" | "warning" | "info";
-    advisoryCap?: number;
-  }): string {
+  static jsonRetryCondensed(opts?: { blockingThreshold?: "error" | "warning" | "info"; advisoryCap?: number }): string {
     const threshold = opts?.blockingThreshold ?? "error";
     const advisoryCap = opts?.advisoryCap ?? 3;
     const blockingList =

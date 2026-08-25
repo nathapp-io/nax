@@ -128,6 +128,8 @@ describe("TelegramInteractionPlugin - Regression BUG-116", () => {
     // so that expired checkpoints can't be re-tapped by accident
     expect(captured.editBody).not.toBeNull();
     expect(captured.editBody?.reply_markup).toBeDefined();
-    expect((captured.editBody?.reply_markup as { inline_keyboard: unknown[] }).inline_keyboard).toEqual([]);
+    expect((captured.editBody?.reply_markup as { inline_keyboard: unknown[] } | undefined)?.inline_keyboard).toEqual(
+      [],
+    );
   });
 });

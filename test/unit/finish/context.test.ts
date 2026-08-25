@@ -10,11 +10,7 @@ type GitResult = { stdout: string; stderr: string; exitCode: number };
 const okGit = (stdout: string, exitCode = 0, stderr = ""): GitResult => ({ stdout, stderr, exitCode });
 
 /** Every test drives its own git responder; default routes remote-show to a clean origin/main. */
-function makeGit(opts: {
-  remoteShow?: GitResult;
-  verifyMain?: GitResult;
-  revList?: GitResult;
-}) {
+function makeGit(opts: { remoteShow?: GitResult; verifyMain?: GitResult; revList?: GitResult }) {
   const remoteShow = opts.remoteShow ?? okGit("  HEAD branch: main\n");
   const verifyMain = opts.verifyMain ?? okGit("abc123\n");
   const revList = opts.revList ?? okGit("0\n");

@@ -1,6 +1,6 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
-  "organizeImports": { "enabled": true },
+  "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
+  "assist": { "actions": { "source": { "organizeImports": "off" } } },
   "linter": {
     "enabled": true,
     "rules": { "recommended": true }
@@ -13,7 +13,7 @@
   },
   "overrides": [
     {
-      "include": ["test/**"],
+      "includes": ["**/test/**"],
       "linter": {
         "rules": {
           "suspicious": { "noExplicitAny": "off" },
@@ -23,7 +23,7 @@
       }
     },
     {
-      "include": ["test/helpers/*-internals.ts"],
+      "includes": ["**/test/helpers/**/*-internals.ts"],
       "linter": {
         "rules": {
           "complexity": { "useLiteralKeys": "off" }

@@ -136,7 +136,7 @@ describe("planRefineOp.verify — out-of-scope backfill", () => {
       expect(result?.outOfScope).toEqual(["An interactive Ink TUI", "Per-story checkpoints"]);
       const warn = warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("out-of-scope"));
       expect(warn).toBeDefined();
-      expect((warn?.[2] as Record<string, unknown>).missingCount).toBe(2);
+      expect((warn?.[2] as Record<string, unknown> | undefined)?.missingCount).toBe(2);
     });
   });
 
@@ -206,7 +206,7 @@ describe("planRefineOp.verify — story-local hoist demotion (#1446)", () => {
       ]);
       const warn = warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("hoisted"));
       expect(warn).toBeDefined();
-      expect((warn?.[2] as Record<string, unknown>).hoistedCount).toBe(1);
+      expect((warn?.[2] as Record<string, unknown> | undefined)?.hoistedCount).toBe(1);
     });
   });
 

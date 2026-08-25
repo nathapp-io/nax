@@ -437,7 +437,7 @@ describe("adversarialReviewOp.verify() — scope grounding", () => {
     const result = await adversarialReviewOp.verify!(parsed, inputWithScope, ctx);
 
     expect(result?.findings).toHaveLength(1);
-    expect((result?.findings[0] as AdversarialLLMFinding).scopeQuote).toBe("An interactive Ink TUI");
+    expect((result?.findings[0] as AdversarialLLMFinding | undefined)?.scopeQuote).toBe("An interactive Ink TUI");
   });
 
   test("drops a scope finding citing a boundary the story never declared", async () => {
@@ -500,8 +500,8 @@ describe("adversarialReviewOp.verify() — scope grounding", () => {
     const result = await adversarialReviewOp.verify!(parsed, inputWithScope, ctx);
 
     expect(result?.findings).toHaveLength(1);
-    expect((result?.findings[0] as AdversarialLLMFinding).scopeQuote).toBeUndefined();
-    expect((result?.findings[0] as AdversarialLLMFinding).issue).toBe("Story added an Ink TUI");
+    expect((result?.findings[0] as AdversarialLLMFinding | undefined)?.scopeQuote).toBeUndefined();
+    expect((result?.findings[0] as AdversarialLLMFinding | undefined)?.issue).toBe("Story added an Ink TUI");
   });
 });
 

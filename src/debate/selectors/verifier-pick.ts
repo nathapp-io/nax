@@ -31,7 +31,7 @@ const NEGATIVE_PATH_PATTERNS = [
 ];
 
 /** Regex to extract file paths mentioned in proposal output. */
-const FILE_PATH_RE = /(?:^|\s)((?:\/|\.\/|\.\.\/)[\w./\-]+\.\w+)/gm;
+const FILE_PATH_RE = /(?:^|\s)((?:\/|\.\/|\.\.\/)[\w./-]+\.\w+)/gm;
 
 /** Regex to extract AC identifiers (e.g. AC1, AC 2) from proposal output. */
 const AC_ID_RE = /\bAC\s*(\d+)\b/gi;

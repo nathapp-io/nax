@@ -37,10 +37,11 @@ import type { CompleteOptions, SessionHandle, TurnResult } from "./types";
  * the suffix when the spec had one, and is omitted (not `undefined`) when it
  * did not, for the same reason `modelTier` is omitted rather than nulled.
  */
-function modelAttribution(src: {
-  modelDef?: ModelDef;
-  modelTier?: ModelTier;
-}): { model?: string; effort?: string; modelTier?: string } {
+function modelAttribution(src: { modelDef?: ModelDef; modelTier?: ModelTier }): {
+  model?: string;
+  effort?: string;
+  modelTier?: string;
+} {
   const spec = src.modelDef?.model !== undefined ? parseModelSpec(src.modelDef.model) : undefined;
   return {
     ...(spec !== undefined ? { model: spec.model } : {}),

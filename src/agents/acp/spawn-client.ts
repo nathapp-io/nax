@@ -136,11 +136,7 @@ export class SpawnAcpClient implements AcpClient {
     );
   }
 
-  async createSession(opts: {
-    agentName: string;
-    permissionMode: string;
-    sessionName?: string;
-  }): Promise<AcpSession> {
+  async createSession(opts: { agentName: string; permissionMode: string; sessionName?: string }): Promise<AcpSession> {
     const sessionName = opts.sessionName || `nax-${Date.now()}`;
 
     // Ensure session exists via CLI — --format json surfaces the session UUID in stdout

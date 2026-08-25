@@ -131,7 +131,7 @@ describe("buildPhaseOutcomeLogData — finding identities (#1392)", () => {
     // An all-red suite must not produce a JSONL line that dwarfs every other record.
     const findings = Array.from({ length: 25 }, (_, i) => testFinding(`test/unit/f${i}.test.ts`, `t${i}`));
     const built = buildPhaseOutcomeLogData("US-001", "full-suite-gate", { success: false, findings }, 10);
-    expect((built?.data.findingIdentities as string[]).length).toBe(10);
+    expect((built?.data.findingIdentities as string[] | undefined)?.length).toBe(10);
     expect(built?.data.findingsCount).toBe(25);
   });
 

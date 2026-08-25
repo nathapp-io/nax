@@ -104,7 +104,9 @@ Regular users cannot access /admin routes.
 
   test("assigns sequential index", () => {
     const entries = parseFeatureContextEntries(CONTEXT_MD);
-    entries.forEach((e, i) => expect(e.index).toBe(i));
+    entries.forEach((e, i) => {
+      expect(e.index).toBe(i);
+    });
   });
 
   test("returns empty array for empty markdown", () => {
