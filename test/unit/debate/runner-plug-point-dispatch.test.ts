@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
+import { makeLogger, makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
 import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
 import {
   _debateSessionDeps,
@@ -39,15 +39,10 @@ function makeCallCtx(overrides: Partial<CallContext> = {}): CallContext {
       estimatedCostUsd: 0,
     }),
   });
+  const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager(), config: DEFAULT_CONFIG });
   return {
-    runtime: {
-      agentManager,
-      sessionManager: makeSessionManager(),
-      configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
-      packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
-      signal: undefined,
-    } as any,
-    packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
+    runtime,
+    packageView: runtime.packages.repo(),
     packageDir: "/tmp/work",
     agentName: "claude",
     storyId: "US-004",
@@ -71,6 +66,18 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
   };
 }
 
+function withCustomSelector(stageConfig: DebateStageConfig, kind: string): DebateStageConfig {
+  return Object.assign(stageConfig, { selector: { kind } });
+}
+
+function withCustomPrePhase(stageConfig: DebateStageConfig, kind: string): DebateStageConfig {
+  return Object.assign(stageConfig, { preDebatePhase: { kind } });
+}
+
+function withCustomVerifier(stageConfig: DebateStageConfig, kind: string): DebateStageConfig {
+  return Object.assign(stageConfig, { postDebateVerifier: { kind } });
+}
+
 // ─── AC1: resolveOutcome() delegates to resolveSelector(pickSelectorKind(...)) ─
 
 describe("resolveOutcome() — selector dispatch wiring (US-004 AC1)", () => {
@@ -83,15 +90,7 @@ describe("resolveOutcome() — selector dispatch wiring (US-004 AC1)", () => {
 
   beforeEach(() => {
     origGetSafeLogger = _debateSessionDeps.getSafeLogger;
-    _debateSessionDeps.getSafeLogger = mock(
-      () =>
-        ({
-          info: mock(() => {}),
-          debug: mock(() => {}),
-          warn: mock(() => {}),
-          error: mock(() => {}),
-        }) as any,
-    );
+    _debateSessionDeps.getSafeLogger = () => makeLogger();
     selectorCallCount = 0;
     registerSelector("test-synthesis", mockSelector);
   });
@@ -102,9 +101,7 @@ describe("resolveOutcome() — selector dispatch wiring (US-004 AC1)", () => {
   });
 
   test("when stageConfig.selector = { kind: 'test-synthesis' }, resolveSelector('test-synthesis') is invoked exactly once", async () => {
-    const stageConfig = makeStageConfig({
-      selector: { kind: "test-synthesis" } as any,
-    });
+    const stageConfig = withCustomSelector(makeStageConfig({ resolver: { type: "synthesis" } }), "test-synthesis");
 
     const result = await resolveOutcome(
       ["proposal-a"],
@@ -164,24 +161,13 @@ describe("resolveOutcome() — selector dispatch wiring (US-004 AC1)", () => {
 
 describe("runPanelOneShot() — pre-debate phase dispatch (US-004 AC4)", () => {
   let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
-  let prePhaseCallCount = 0;
   const mockPrePhase: PreDebatePhase = async (_ctx: PreDebatePhaseContext): Promise<PreDebatePhaseResult> => {
-    prePhaseCallCount++;
     return { manifestSection: "## Pre-phase results\nTest pre-phase output", costUsd: 0.005 };
   };
 
   beforeEach(() => {
     origGetSafeLogger = _debateSessionDeps.getSafeLogger;
-    _debateSessionDeps.getSafeLogger = mock(
-      () =>
-        ({
-          info: mock(() => {}),
-          debug: mock(() => {}),
-          warn: mock(() => {}),
-          error: mock(() => {}),
-        }) as any,
-    );
-    prePhaseCallCount = 0;
+    _debateSessionDeps.getSafeLogger = () => makeLogger();
     registerPreDebatePhase("test-grounder", mockPrePhase);
   });
 
@@ -192,9 +178,7 @@ describe("runPanelOneShot() — pre-debate phase dispatch (US-004 AC4)", () => {
 
   test("when stageConfig.preDebatePhase is set, resolvePreDebatePhase is invoked before parallel proposer fan-out", async () => {
     const ctx = makeCallCtx();
-    const stageConfig = makeStageConfig({
-      preDebatePhase: { kind: "test-grounder" } as any,
-    });
+    const stageConfig = withCustomPrePhase(makeStageConfig(), "test-grounder");
 
     const runner = new DebateRunner({
       ctx,
@@ -236,26 +220,15 @@ describe("runPanelOneShot() — pre-debate phase dispatch (US-004 AC4)", () => {
 
 describe("runPanelOneShot() — post-debate verifier dispatch (US-004 AC5)", () => {
   let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
-  let verifierCallCount = 0;
   const mockVerifier: PostDebateVerifier = async (
     _ctx: PostDebateVerifierContext,
   ): Promise<PostDebateVerifierResult> => {
-    verifierCallCount++;
     return { outcome: "passed", costUsd: 0.01 };
   };
 
   beforeEach(() => {
     origGetSafeLogger = _debateSessionDeps.getSafeLogger;
-    _debateSessionDeps.getSafeLogger = mock(
-      () =>
-        ({
-          info: mock((): any => {}),
-          debug: mock((): any => {}),
-          warn: mock((): any => {}),
-          error: mock((): any => {}),
-        }) as any,
-    );
-    verifierCallCount = 0;
+    _debateSessionDeps.getSafeLogger = () => makeLogger();
     registerPostDebateVerifier("test-verifier", mockVerifier);
   });
 
@@ -266,9 +239,7 @@ describe("runPanelOneShot() — post-debate verifier dispatch (US-004 AC5)", () 
 
   test("when stageConfig.postDebateVerifier is set, resolvePostDebateVerifier is invoked after selector emits result", async () => {
     const ctx = makeCallCtx();
-    const stageConfig = makeStageConfig({
-      postDebateVerifier: { kind: "test-verifier" } as any,
-    });
+    const stageConfig = withCustomVerifier(makeStageConfig(), "test-verifier");
 
     const runner = new DebateRunner({
       ctx,
@@ -291,10 +262,10 @@ describe("runPanelOneShot() — post-debate verifier dispatch (US-004 AC5)", () 
       findings: [],
     }));
     const ctx = makeCallCtx();
-    const stageConfig = makeStageConfig({
-      selector: { kind: "test-failed-empty-selector" } as any,
-      postDebateVerifier: { kind: "review-grounding-filter" },
-    });
+    const stageConfig = withCustomSelector(
+      makeStageConfig({ postDebateVerifier: { kind: "review-grounding-filter" } }),
+      "test-failed-empty-selector",
+    );
 
     const runner = new DebateRunner({
       ctx,
@@ -337,15 +308,7 @@ describe("runPanelOneShot() — behavior preservation (US-004 AC3)", () => {
 
   beforeEach(() => {
     origGetSafeLogger = _debateSessionDeps.getSafeLogger;
-    _debateSessionDeps.getSafeLogger = mock(
-      () =>
-        ({
-          info: mock((): any => {}),
-          debug: mock((): any => {}),
-          warn: mock((): any => {}),
-          error: mock((): any => {}),
-        }) as any,
-    );
+    _debateSessionDeps.getSafeLogger = () => makeLogger();
   });
 
   afterEach(() => {
@@ -404,15 +367,7 @@ describe("All debate runners — resolveOutcome() integration (US-004 AC6)", () 
 
   beforeEach(() => {
     origGetSafeLogger = _debateSessionDeps.getSafeLogger;
-    _debateSessionDeps.getSafeLogger = mock(
-      () =>
-        ({
-          info: mock((): any => {}),
-          debug: mock((): any => {}),
-          warn: mock((): any => {}),
-          error: mock((): any => {}),
-        }) as any,
-    );
+    _debateSessionDeps.getSafeLogger = () => makeLogger();
   });
 
   afterEach(() => {
@@ -441,10 +396,7 @@ describe("All debate runners — resolveOutcome() integration (US-004 AC6)", () 
 
   test("DebateRunner.runPlan() eventually calls resolveOutcome for verdict resolution", async () => {
     const ctx = makeCallCtx({
-      runtime: {
-        ...makeCallCtx().runtime,
-        sessionManager: makeSessionManager(),
-      } as any,
+      runtime: makeMockRuntime({ sessionManager: makeSessionManager(), config: DEFAULT_CONFIG }),
     });
     const stageConfig = makeStageConfig();
 

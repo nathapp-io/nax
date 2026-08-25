@@ -305,7 +305,7 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: Reporte
       storySummary: e.storySummary,
       totalCost: e.totalCost,
       totalDurationMs: e.totalDurationMs,
-    }) as { resourceMetrics: [{ scopeMetrics: [{ metrics: object[] }] }] };
+    });
     // US-007: merge the run's accumulated phase histograms + counters into the
     // same metrics POST (SEAM-5) rather than issuing a third export request.
     const aggMetrics = st.metrics.buildMetricsPayload({
@@ -316,9 +316,7 @@ export function createOtelReporterPlugin(cfg: OtelReporterConfig, deps?: Reporte
       project: st.project,
       gitBranch: st.gitBranch,
       gitSha: st.gitSha,
-    }) as {
-      resourceMetrics: [{ scopeMetrics: [{ metrics: object[] }] }];
-    };
+    });
     metrics.resourceMetrics[0].scopeMetrics[0].metrics.push(...aggMetrics.resourceMetrics[0].scopeMetrics[0].metrics);
     const opts = { headers: resolved, timeoutMs: cfg.timeoutMs, stage: STAGE, deps };
     await postJson(`${base}/v1/traces`, traces, opts);

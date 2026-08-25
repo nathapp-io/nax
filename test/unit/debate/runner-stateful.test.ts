@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeLogger, makeMockAgentManager, makeSessionManager, withDepsRestore } from "@test/helpers";
+import { makeLogger, makeMockAgentManager, makeMockRuntime, makeSessionManager, withDepsRestore } from "@test/helpers";
 import { computeAcpHandle } from "@/agents/acp/adapter";
 import { DEFAULT_CONFIG } from "@/config";
 import { DebateRunner } from "@/debate/runner";
@@ -8,7 +8,6 @@ import { _synthesisDeps } from "@/debate/selectors/synthesis";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import type { CallContext } from "@/operations/types";
-import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 
 function installCallOp(impl: typeof _statefulDeps.callOp) {
   const spy = mock(impl);
@@ -25,6 +24,13 @@ function installCallOp(impl: typeof _statefulDeps.callOp) {
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
+function makeRuntime(
+  agentManager: ReturnType<typeof makeMockAgentManager>,
+  sessionManager: ReturnType<typeof makeSessionManager>,
+) {
+  return makeMockRuntime({ agentManager, sessionManager, config: DEFAULT_CONFIG });
+}
+
 function makeCallCtx(overrides: Partial<CallContext> = {}): CallContext {
   const agentManager = makeMockAgentManager({
     runAsSessionFn: async (_name, _handle, _prompt) => ({
@@ -34,19 +40,16 @@ function makeCallCtx(overrides: Partial<CallContext> = {}): CallContext {
       internalRoundTrips: 1,
     }),
   });
+  const runtime = makeRuntime(
+    agentManager,
+    makeSessionManager({
+      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
+      closeSession: mock(async () => {}),
+    }),
+  );
   return {
-    runtime: {
-      agentManager,
-      sessionManager: makeSessionManager({
-        openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
-        closeSession: mock(async () => {}),
-      }),
-      configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
-      packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
-      signal: undefined,
-      costAggregator: createNoOpCostAggregator(),
-    } as any,
-    packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
+    runtime,
+    packageView: runtime.packages.repo(),
     packageDir: "/tmp/work",
     agentName: "claude",
     storyId: "US-010",
@@ -61,16 +64,10 @@ function makeCallCtxWithIds(
   sessionManager: ReturnType<typeof makeSessionManager>,
   workdir = "/tmp/work",
 ): CallContext {
+  const runtime = makeRuntime(agentManager, sessionManager);
   return {
-    runtime: {
-      agentManager,
-      sessionManager,
-      configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
-      packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
-      signal: undefined,
-      costAggregator: createNoOpCostAggregator(),
-    } as any,
-    packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
+    runtime,
+    packageView: runtime.packages.repo(),
     packageDir: workdir,
     agentName: "claude",
     storyId,
@@ -128,14 +125,7 @@ describe("DebateRunner.run() — stateful mode", () => {
     });
 
     const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-        costAggregator: createNoOpCostAggregator(),
-      } as any,
+      runtime: makeRuntime(agentManager, sm),
     });
 
     const runner = new DebateRunner({
@@ -178,14 +168,7 @@ describe("DebateRunner.run() — stateful mode", () => {
     });
 
     const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-        costAggregator: createNoOpCostAggregator(),
-      } as any,
+      runtime: makeRuntime(agentManager, sm),
     });
 
     const runner = new DebateRunner({
@@ -219,14 +202,7 @@ describe("DebateRunner.run() — stateful mode", () => {
     });
 
     const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-        costAggregator: createNoOpCostAggregator(),
-      } as any,
+      runtime: makeRuntime(agentManager, sm),
     });
 
     const runner = new DebateRunner({
@@ -266,14 +242,7 @@ describe("DebateRunner.run() — stateful mode", () => {
     });
 
     const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-        costAggregator: createNoOpCostAggregator(),
-      } as any,
+      runtime: makeRuntime(agentManager, sm),
     });
 
     const runner = new DebateRunner({
@@ -563,16 +532,12 @@ describe("runStateful() — two-scope cost tracking (US-005)", () => {
       openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
       closeSession: mock(async () => {}),
     });
+    const runtime = Object.assign(makeMockRuntime({ agentManager, sessionManager: sm, config: DEFAULT_CONFIG }), {
+      costAggregator: costAgg,
+    });
     return {
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-        costAggregator: costAgg,
-      } as any,
-      packageView: { config: DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG } as any,
+      runtime,
+      packageView: runtime.packages.repo(),
       packageDir: "/tmp/work",
       agentName: "claude",
       storyId: "US-cost",
@@ -587,7 +552,7 @@ describe("runStateful() — two-scope cost tracking (US-005)", () => {
       stageConfig: makeStatefulStageConfig(),
       config: DEFAULT_CONFIG,
       workdir: "/tmp/work",
-      sessionManager: (ctx.runtime as any).sessionManager,
+      sessionManager: ctx.runtime.sessionManager,
     });
   }
 

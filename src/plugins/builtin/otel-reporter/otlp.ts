@@ -14,6 +14,38 @@ export interface SpanEvent {
   attributes: KeyValue[];
 }
 
+/** OTLP/JSON gauge/metric data point (subset actually emitted). */
+export interface OtlpMetricDataPoint {
+  asDouble?: number;
+  asInt?: string;
+  timeUnixNano: string;
+  attributes?: KeyValue[];
+}
+
+/** OTLP/JSON metric element (subset actually emitted). */
+export interface OtlpMetric {
+  name: string;
+  sum?: object;
+  gauge?: { dataPoints: OtlpMetricDataPoint[] };
+  histogram?: object;
+}
+
+/** OTLP/JSON ResourceSpans payload — one root `nax.run` span. */
+export interface OtlpTracesPayload {
+  resourceSpans: Array<{
+    resource: { attributes: KeyValue[] };
+    scopeSpans: Array<{ scope: { name: string }; spans: object[] }>;
+  }>;
+}
+
+/** OTLP/JSON ResourceMetrics payload. */
+export interface OtlpMetricsPayload {
+  resourceMetrics: Array<{
+    resource: { attributes: KeyValue[] };
+    scopeMetrics: Array<{ scope: { name: string }; metrics: OtlpMetric[] }>;
+  }>;
+}
+
 export type StorySummary = {
   completed: number;
   failed: number;
@@ -117,7 +149,7 @@ export interface TracesInput {
 }
 
 /** Build an OTLP/HTTP-JSON ResourceSpans payload with one root `nax.run` span. */
-export function buildTracesPayload(p: TracesInput): object {
+export function buildTracesPayload(p: TracesInput): OtlpTracesPayload {
   const span = {
     traceId: p.traceId,
     spanId: p.spanId,
@@ -173,7 +205,7 @@ export interface MetricsInput {
 }
 
 /** Build an OTLP/HTTP-JSON ResourceMetrics payload (stories counter + gauges). */
-export function buildMetricsPayload(p: MetricsInput): object {
+export function buildMetricsPayload(p: MetricsInput): OtlpMetricsPayload {
   const statusEntries = Object.entries(p.storySummary).filter(([, n]) => n > 0);
   const storiesSum = {
     name: "nax.stories.total",

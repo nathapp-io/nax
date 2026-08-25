@@ -1,28 +1,45 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeSpawn } from "@test/helpers";
+import type { DeepPartial } from "@test/helpers";
+import { makeNaxConfig, makeSpawn, makeStory, makeTestRuntime } from "@test/helpers";
+import type { ConfigSelector, NaxConfig } from "@/config";
 import { _newPackageSetupDeps, markNewPackageDirs } from "@/execution";
+import type { CallContext, FullSuiteGateDeps, FullSuiteGateInput } from "@/operations";
 import { _fullSuiteGateDeps, fullSuiteGateOp } from "@/operations";
+import type { FullSuiteGateContext } from "@/operations/full-suite-gate";
+import type { UserStory } from "@/prd";
 import { _commandDefaultsDeps, clearCommandDefaultsCache } from "@/quality";
 
-function ctxWithConfig(config: any = {}, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
+function ctxWithConfig(
+  config: DeepPartial<NaxConfig> = {},
+  opts: { hasOverride?: boolean; repoRoot?: string; packageDir?: string } = {},
+): CallContext {
   return {
-    runtime: {},
+    runtime: makeTestRuntime({ config: makeNaxConfig(config) }),
     storyId: "US-001",
+    packageDir: opts.packageDir ?? "",
+    agentName: "claude",
     packageView: {
-      packageDir: "",
+      packageDir: opts.packageDir ?? "",
+      relativeFromRoot: opts.packageDir ?? "",
       repoRoot: opts.repoRoot ?? "/repo",
       hasOverride: opts.hasOverride ?? false,
-      config,
-      select: (s: any) => s.select(config),
+      config: makeNaxConfig(config),
+      select<C>(selector: ConfigSelector<C>): C {
+        return selector.select(makeNaxConfig(config));
+      },
     },
-  } as any;
+  };
 }
 const mockCtx = ctxWithConfig({});
 
-function makeDeps(overrides = {}) {
+function makeInput(story: Partial<UserStory> = {}, workdir = "/tmp"): FullSuiteGateInput {
+  return { story: makeStory({ id: "US-001", ...story }), workdir };
+}
+
+function makeDeps(overrides: Partial<FullSuiteGateDeps> = {}): FullSuiteGateDeps {
   return {
     resolveGateContext: async () => ({
-      config: {} as any,
+      config: makeNaxConfig(),
       testCmd: "bun test",
       fullSuiteTimeout: 60,
       cmdWorkdir: "/repo",
@@ -50,14 +67,14 @@ describe("fullSuiteGateOp — DeterministicOperation shape", () => {
 
   test("has execute() function, not build()/parse()", () => {
     expect(typeof fullSuiteGateOp.execute).toBe("function");
-    expect((fullSuiteGateOp as any).build).toBeUndefined();
-    expect((fullSuiteGateOp as any).parse).toBeUndefined();
+    expect("build" in fullSuiteGateOp).toBe(false);
+    expect("parse" in fullSuiteGateOp).toBe(false);
   });
 });
 
 describe("fullSuiteGateOp — test execution logic (US-006)", () => {
   test("returns success=true, status=passed, findings=[] when tests pass", async () => {
-    const out = await fullSuiteGateOp.execute({ story: { id: "US-001" } as any, workdir: "/tmp" }, mockCtx, makeDeps());
+    const out = await fullSuiteGateOp.execute(makeInput(), mockCtx, makeDeps());
     expect(out.success).toBe(true);
     expect(out.status).toBe("passed");
     expect(out.passed).toBe(true);
@@ -67,7 +84,7 @@ describe("fullSuiteGateOp — test execution logic (US-006)", () => {
 
   test("returns success=false, status=failed, findings populated when tests fail with structured failures", async () => {
     const out = await fullSuiteGateOp.execute(
-      { story: { id: "US-001" } as any, workdir: "/tmp" },
+      makeInput(),
       mockCtx,
       makeDeps({
         runTests: async () => ({
@@ -100,7 +117,7 @@ describe("fullSuiteGateOp — test execution logic (US-006)", () => {
 
   test("returns status=execution-failed with a synth finding when parser returns 0 structured failures despite non-zero exit", async () => {
     const out = await fullSuiteGateOp.execute(
-      { story: { id: "US-001", workdir: "packages/api" } as any, workdir: "/tmp" },
+      makeInput({ workdir: "packages/api" }),
       mockCtx,
       makeDeps({
         runTests: async () => ({
@@ -133,18 +150,19 @@ describe("fullSuiteGateOp — test execution logic (US-006)", () => {
   });
 
   test("no runRectificationLoop dep exists on _fullSuiteGateDeps (AC-3)", () => {
-    expect((_fullSuiteGateDeps as any).runRectificationLoop).toBeUndefined();
+    expect("runRectificationLoop" in _fullSuiteGateDeps).toBe(false);
   });
 
   test("rectificationEnabled field is not read (removed from FullSuiteGateInput)", async () => {
     // Passing rectificationEnabled should be a type error at compile time,
     // and at runtime the field is simply ignored. This test ensures the op
     // produces the same output regardless of any legacy field value.
-    const out = await fullSuiteGateOp.execute(
-      { story: { id: "US-001" } as any, workdir: "/tmp", rectificationEnabled: true } as any,
-      mockCtx,
-      makeDeps(),
-    );
+    const input: FullSuiteGateInput & { rectificationEnabled: boolean } = {
+      story: makeStory({ id: "US-001" }),
+      workdir: "/tmp",
+      rectificationEnabled: true,
+    };
+    const out = await fullSuiteGateOp.execute(input, mockCtx, makeDeps());
     expect(out.success).toBe(true);
     expect(out.status).toBe("passed");
   });
@@ -156,7 +174,7 @@ describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)",
       execution: { regressionGate: { enabled: false } },
       quality: { commands: { test: "bun test" } },
     });
-    const result = await fullSuiteGateOp.execute({ story: { id: "S-1" } as any, workdir: "/r" }, ctx, makeDeps());
+    const result = await fullSuiteGateOp.execute(makeInput({}, "/r"), ctx, makeDeps());
     expect(result.status).toBe("skipped");
     expect(result.success).toBe(true);
     expect(result.passed).toBe(true);
@@ -169,7 +187,7 @@ describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)",
       quality: { commands: { test: "bun test" } },
     });
     const result = await fullSuiteGateOp.execute(
-      { story: { id: "S-1" } as any, workdir: "/r" },
+      makeInput({}, "/r"),
       ctx,
       makeDeps({
         runTests: async () => ({
@@ -192,7 +210,7 @@ describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)",
       quality: { commands: { test: "bun test" } },
     });
     const result = await fullSuiteGateOp.execute(
-      { story: { id: "S-1" } as any, workdir: "/r" },
+      makeInput({}, "/r"),
       ctx,
       makeDeps({
         runTests: async () => ({
@@ -213,7 +231,7 @@ describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)",
     // Default is acceptOnTimeout=true when not configured
     const ctx = ctxWithConfig({ execution: {}, quality: { commands: { test: "bun test" } } });
     const result = await fullSuiteGateOp.execute(
-      { story: { id: "S-1" } as any, workdir: "/r" },
+      makeInput({}, "/r"),
       ctx,
       makeDeps({
         runTests: async () => ({
@@ -236,13 +254,13 @@ describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)",
     // Here we verify that no type error surfaces and the op respects the output.
     let capturedTimeout = 0;
     const deps = makeDeps({
-      resolveGateContext: async () => ({
-        config: {} as any,
+      resolveGateContext: async (): Promise<FullSuiteGateContext> => ({
+        config: makeNaxConfig(),
         testCmd: "bun test",
         fullSuiteTimeout: 999,
         cmdWorkdir: "/repo",
       }),
-      runTests: async (_input: any, gateCtx: any) => {
+      runTests: async (_input, gateCtx) => {
         capturedTimeout = gateCtx.fullSuiteTimeout;
         return {
           passed: true,
@@ -253,20 +271,20 @@ describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)",
         };
       },
     });
-    await fullSuiteGateOp.execute({ story: { id: "S-1" } as any, workdir: "/r" }, mockCtx, deps);
+    await fullSuiteGateOp.execute(makeInput({}, "/r"), mockCtx, deps);
     expect(capturedTimeout).toBe(999);
   });
 
   test("cmdWorkdir from gateCtx is threaded into runTests (root-config fallback uses repoRoot)", async () => {
     let seenWorkdir = "";
     const deps = makeDeps({
-      resolveGateContext: async () => ({
-        config: {} as any,
+      resolveGateContext: async (): Promise<FullSuiteGateContext> => ({
+        config: makeNaxConfig(),
         testCmd: "bun run test",
         fullSuiteTimeout: 60,
         cmdWorkdir: "/repo",
       }),
-      runTests: async (_input: any, gateCtx: any) => {
+      runTests: async (_input, gateCtx) => {
         seenWorkdir = gateCtx.cmdWorkdir;
         return {
           passed: true,
@@ -277,7 +295,7 @@ describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)",
         };
       },
     });
-    await fullSuiteGateOp.execute({ story: { id: "S-1" } as any, workdir: "/repo/packages/app" }, mockCtx, deps);
+    await fullSuiteGateOp.execute(makeInput({}, "/repo/packages/app"), mockCtx, deps);
     expect(seenWorkdir).toBe("/repo");
   });
 });
@@ -299,11 +317,10 @@ describe("fullSuiteGateOp — resolveGateContext detection fallback", () => {
       probedDir = dir;
       return "go";
     };
-    const ctx = ctxWithConfig({ quality: { commands: {} } });
-    ctx.packageView.packageDir = "packages/new"; // relative key, as in production
+    const ctx = ctxWithConfig({ quality: { commands: {} } }, { packageDir: "packages/new" });
 
     const gateCtx = await _fullSuiteGateDeps.resolveGateContext(
-      { story: { id: "US-001", workdir: "packages/new" } as any, workdir: "/repo/packages/new" },
+      makeInput({ workdir: "packages/new" }, "/repo/packages/new"),
       ctx,
     );
 
@@ -315,14 +332,10 @@ describe("fullSuiteGateOp — resolveGateContext detection fallback", () => {
   test("throws TEST_COMMAND_MISSING when neither config nor detection yields a command", async () => {
     clearCommandDefaultsCache();
     _commandDefaultsDeps.detectLanguage = async () => undefined;
-    const ctx = ctxWithConfig({ quality: { commands: {} } });
-    ctx.packageView.packageDir = "packages/empty"; // relative key, as in production
+    const ctx = ctxWithConfig({ quality: { commands: {} } }, { packageDir: "packages/empty" });
 
     await expect(
-      _fullSuiteGateDeps.resolveGateContext(
-        { story: { id: "US-001", workdir: "packages/empty" } as any, workdir: "/repo/packages/empty" },
-        ctx,
-      ),
+      _fullSuiteGateDeps.resolveGateContext(makeInput({ workdir: "packages/empty" }, "/repo/packages/empty"), ctx),
     ).rejects.toThrow(/No test command configured or detected/);
   });
 });
@@ -347,26 +360,21 @@ describe("fullSuiteGateOp — new-package setup wiring (C1 regression)", () => {
     // while ctx.packageView.packageDir is the relative key. The gate must pass
     // input.workdir (absolute) so the registry match succeeds and setup runs once.
     const capture = { cwd: undefined as string | undefined, count: 0 };
-    _newPackageSetupDeps.spawn = spawnCapture(capture) as typeof _newPackageSetupDeps.spawn;
+    _newPackageSetupDeps.spawn = spawnCapture(capture);
 
-    const ctx = ctxWithConfig({ quality: { commands: { setup: "uv sync" } } });
-    ctx.packageView.packageDir = "packages/portfolio"; // RELATIVE key (production shape)
+    const ctx = ctxWithConfig({ quality: { commands: { setup: "uv sync" } } }, { packageDir: "packages/portfolio" });
     markNewPackageDirs(ctx.runtime, ["/repo/packages/portfolio"]); // ABSOLUTE registration
 
     const deps = makeDeps({
-      resolveGateContext: async () => ({
-        config: { quality: { commands: { setup: "uv sync" } } } as any,
+      resolveGateContext: async (): Promise<FullSuiteGateContext> => ({
+        config: makeNaxConfig({ quality: { commands: { setup: "uv sync" } } }),
         testCmd: "bun test",
         fullSuiteTimeout: 60,
         cmdWorkdir: "/repo/packages/portfolio",
       }),
     });
 
-    await fullSuiteGateOp.execute(
-      { story: { id: "US-001", workdir: "packages/portfolio" } as any, workdir: "/repo/packages/portfolio" },
-      ctx,
-      deps,
-    );
+    await fullSuiteGateOp.execute(makeInput({ workdir: "packages/portfolio" }, "/repo/packages/portfolio"), ctx, deps);
 
     expect(capture.count).toBe(1);
     expect(capture.cwd).toBe("/repo/packages/portfolio");
