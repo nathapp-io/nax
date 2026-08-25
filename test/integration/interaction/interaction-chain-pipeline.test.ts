@@ -12,6 +12,14 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import {
+  type DeepPartial,
+  makeDispatchContext,
+  makeMockRuntime,
+  makeNaxConfig,
+  makePRD,
+  makeStory,
+} from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import type { SequentialExecutionContext } from "@/execution/unified-executor";
 import { InteractionChain } from "@/interaction/chain";
@@ -22,8 +30,6 @@ import { pipelineEventBus } from "@/pipeline/event-bus";
 import { wireInteraction } from "@/pipeline/subscribers/interaction";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
-import { type DeepPartial, makeMockRuntime, makeNaxConfig } from "@test/helpers";
-import { makeDispatchContext, makePRD, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

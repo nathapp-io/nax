@@ -6,10 +6,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makePRD, makeStory } from "@test/helpers";
 import { ensureStoryPackageDirs } from "@/execution";
 import type { _ensurePackageDirsDeps } from "@/execution/ensure-package-dirs";
 import type { UserStory } from "@/prd";
-import { makePRD, makeStory } from "@test/helpers";
 
 const ROOT = "/repo";
 

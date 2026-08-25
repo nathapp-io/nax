@@ -14,8 +14,8 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { _coordinatorDeps, renderBakeoffReport } from "@/bakeoff";
 import type { BakeoffCoordinatorDeps, BakeoffResult, ContestantResult } from "@/bakeoff";
+import { _coordinatorDeps, renderBakeoffReport } from "@/bakeoff";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

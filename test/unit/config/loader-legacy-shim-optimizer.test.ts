@@ -13,9 +13,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { loadConfig } from "@/config";
 import { addSink, initLogger, resetLogger } from "@/logger";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("loadConfig — optimizer keys removed with the rule-based optimizer", () => {
   let tempDir: string;

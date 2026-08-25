@@ -5,9 +5,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { InteractionRequest } from "@/interaction";
-import { TelegramInteractionPlugin, _telegramPluginDeps, normalizeChatId } from "@/interaction";
 import { mockFetch } from "@test/helpers";
+import type { InteractionRequest } from "@/interaction";
+import { _telegramPluginDeps, normalizeChatId, TelegramInteractionPlugin } from "@/interaction";
 
 // The poll loop sleeps `basePollBackoffMs` between getUpdates calls, so with the
 // production 1s base every multi-poll test costs seconds of wall-clock. The

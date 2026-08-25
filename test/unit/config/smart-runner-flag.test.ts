@@ -9,10 +9,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { makeTempDir } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { loadConfig } from "@/config/loader";
 import { NaxConfigSchema } from "@/config/schemas";
-import { makeTempDir } from "@test/helpers";
 
 describe("execution.smartTestRunner config flag", () => {
   let tempDir: string;

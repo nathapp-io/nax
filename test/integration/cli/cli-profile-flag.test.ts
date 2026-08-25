@@ -8,9 +8,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig } from "@/config/loader";
 import { makeTempDir } from "@test/helpers";
 import { Command } from "commander";
+import { loadConfig } from "@/config/loader";
 
 describe("CLI --profile flag", () => {
   let tempDir: string;

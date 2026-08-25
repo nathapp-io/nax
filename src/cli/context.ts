@@ -12,8 +12,8 @@ import {
   INVALID_JSON_ERROR_CODE,
   type LabelCase,
   type LabelSet,
-  SCHEMA_INVALID_ERROR_CODE,
   loadLabelSet,
+  SCHEMA_INVALID_ERROR_CODE,
   scoreEffectiveness,
 } from "../context/engine/effectiveness-eval";
 import type { StoredContextManifest } from "../context/engine/manifest-store";

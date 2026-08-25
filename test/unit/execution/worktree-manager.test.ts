@@ -7,9 +7,9 @@
 
 import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { NAX_GITIGNORE_ENTRIES } from "@/utils/gitignore";
 import { WorktreeManager } from "@/worktree/manager";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

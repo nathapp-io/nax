@@ -10,14 +10,14 @@
  */
 
 import type { AgentRoutingProfile } from "@/config";
+import type { RoutingCandidate, SchemaDescriptor } from "../core";
 import {
-  SectionAccumulator,
   instructionsSection,
   jsonSchemaSection,
   routingCandidatesSection,
+  SectionAccumulator,
   universalConstitutionSection,
 } from "../core";
-import type { RoutingCandidate, SchemaDescriptor } from "../core";
 
 export type OneShotRole = "router" | "decomposer";
 

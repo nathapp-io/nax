@@ -13,6 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { makeDispatchContext } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import * as loggerModule from "@/logger";
 import { PluginRegistry } from "@/plugins/registry";
@@ -20,7 +21,6 @@ import type { NaxPlugin } from "@/plugins/types";
 import type { UserStory } from "@/prd/types";
 import type { RoutingContext, RoutingDecision, RoutingStrategy } from "@/routing";
 import { resolveRouting, routeStory } from "@/routing/router";
-import { makeDispatchContext } from "@test/helpers";
 
 // ============================================================================
 // Test Helpers

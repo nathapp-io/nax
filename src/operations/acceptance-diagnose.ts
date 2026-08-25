@@ -1,8 +1,8 @@
 import type { SemanticVerdict } from "../acceptance/types";
 import { acceptanceConfigSelector } from "../config";
 import type { AcceptanceConfig } from "../config/selectors";
-import { acceptanceDiagnoseRawArrayToFindings } from "../findings";
 import type { Finding } from "../findings";
+import { acceptanceDiagnoseRawArrayToFindings } from "../findings";
 import { AcceptancePromptBuilder } from "../prompts";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { RunOperation } from "./types";

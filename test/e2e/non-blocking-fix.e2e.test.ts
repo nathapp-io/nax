@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { NaxConfig } from "@/config";
 import { type DeepPartial, runOrchestratorE2E } from "@test/helpers";
+import type { NaxConfig } from "@/config";
 
 const PASS_SEMANTIC = () => ({ output: JSON.stringify({ passed: true, findings: [] }) });
 

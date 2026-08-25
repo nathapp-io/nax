@@ -7,9 +7,9 @@ import { getSafeLogger } from "../logger";
 import type { CallContext } from "../operations/types";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { SessionRole } from "../session/types";
-import { pickSelectorKind, resolveSelector } from "./selectors";
 import type { SelectorContext } from "./selectors";
-import type { DebateResult, DebateStageConfig, Debater } from "./types";
+import { pickSelectorKind, resolveSelector } from "./selectors";
+import type { DebateResult, Debater, DebateStageConfig } from "./types";
 
 /** Fallback agent name used when resolver.agent is not specified for synthesis/judge */
 export const RESOLVER_FALLBACK_AGENT = "synthesis";

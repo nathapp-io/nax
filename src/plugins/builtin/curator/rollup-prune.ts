@@ -14,8 +14,7 @@
  * original rollup intact rather than truncating it.
  */
 
-import { rename, unlink, writeFile } from "node:fs/promises";
-import { appendFile } from "node:fs/promises";
+import { appendFile, rename, unlink, writeFile } from "node:fs/promises";
 import { withPathFileLock } from "@/utils/path-file-lock";
 import { streamJsonlLines } from "./jsonl-stream";
 import type { Observation } from "./types";

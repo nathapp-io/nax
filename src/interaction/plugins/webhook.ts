@@ -7,10 +7,10 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Server } from "node:http";
+import { z } from "zod";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { sleep } from "@/utils/bun-deps";
-import { z } from "zod";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 import { PayloadTooLargeError, readBodyWithLimit } from "./webhook-body-limit";
 import { installServePortZeroCompat } from "./webhook-serve-compat";

@@ -17,11 +17,6 @@
  *   - makeTestRuntime for tests that use the real AgentManager
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import type { TurnResult } from "@/agents/types";
-import { type DEFAULT_CONFIG, pickSelector } from "@/config";
-import { callOp } from "@/operations";
-import type { CompleteOperation, RunOperation } from "@/operations";
-import type { NaxRuntime } from "@/runtime";
 import {
   agentManagerInternals,
   makeMockAgentManager,
@@ -30,6 +25,11 @@ import {
   makeSessionManager,
   makeTestRuntime,
 } from "@test/helpers";
+import type { TurnResult } from "@/agents/types";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import type { CompleteOperation, RunOperation } from "@/operations";
+import { callOp } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
 
 const sel = pickSelector("call-exhaustion-test", "routing");
 

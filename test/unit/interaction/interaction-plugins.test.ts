@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { createHmac } from "node:crypto";
 import type { InteractionRequest } from "@/interaction";
-import { WebhookInteractionPlugin, _webhookPluginDeps } from "@/interaction/plugins/webhook";
+import { _webhookPluginDeps, WebhookInteractionPlugin } from "@/interaction/plugins/webhook";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 

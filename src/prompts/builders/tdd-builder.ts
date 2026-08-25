@@ -26,10 +26,9 @@ import type { NaxConfig } from "@/config/types";
 import { filterContextByRole, truncateToContextBudget } from "@/context";
 import type { UserStory } from "@/prd";
 import type { SelfVerificationPromptInput } from "@/quality/self-verification";
-import { SectionAccumulator } from "../core";
 import type { PromptOptions, PromptRole, PromptSection } from "../core";
-import { universalConstitutionSection, universalContextSection } from "../core";
-import type { AcceptanceEntry } from "../sections";
+import { SectionAccumulator, universalConstitutionSection, universalContextSection } from "../core";
+import type { AcceptanceEntry, GuardrailRole } from "../sections";
 import {
   buildAcceptanceSection,
   buildBatchStorySection,
@@ -46,7 +45,6 @@ import {
   buildTestQualitySection,
   buildVerdictSection,
 } from "../sections";
-import type { GuardrailRole } from "../sections";
 
 export class TddPromptBuilder {
   private readonly role: PromptRole;

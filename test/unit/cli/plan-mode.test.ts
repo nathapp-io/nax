@@ -7,11 +7,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { _planDeps, planCommand, resolvePlanMode } from "@/cli";
-import { DEFAULT_CONFIG } from "@/config";
-import type { NaxConfig } from "@/config";
-import { NaxError } from "@/errors";
 import { assertDefined, makeLogger, makeMockAgentManager, makeMockRuntime, makeTempDir } from "@test/helpers";
+import { _planDeps, planCommand, resolvePlanMode } from "@/cli";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
+import { NaxError } from "@/errors";
 
 // DEFAULT_CONFIG.debate is typed optional (Zod `.optional().default(...)`) but
 // always populated at runtime — narrow once so the spreads below stay fully typed.

@@ -7,10 +7,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeLogger, makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 import { resolveMaxAttemptsOutcome } from "@/execution";
 import type { EscalationHandlerContext } from "@/execution/escalation/tier-escalation";
 import { pipelineEventBus } from "@/pipeline";
-import { makeLogger, makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // shouldRetrySameTier — pure predicate (BUG-070)

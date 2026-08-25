@@ -4,20 +4,18 @@
  * Shared utilities for running quality commands (lint, typecheck, build, lintFix, etc.)
  */
 
-export { runQualityCommand } from "./runner";
-export type { QualityCommandOptions, QualityCommandResult } from "./runner";
-export { resolveQualityTestCommands, _commandResolverDeps } from "./command-resolver";
-export type { ResolvedTestCommands } from "./command-resolver";
-export {
-  resolveDefaultQualityCommands,
-  clearCommandDefaultsCache,
-  _commandDefaultsDeps,
-} from "./command-defaults";
 export type { DefaultQualityCommands } from "./command-defaults";
 export {
-  parseSelfVerificationMarker,
-  resolveSelfVerificationPromptInput,
-} from "./self-verification";
+  _commandDefaultsDeps,
+  clearCommandDefaultsCache,
+  resolveDefaultQualityCommands,
+} from "./command-defaults";
+export type { ResolvedTestCommands } from "./command-resolver";
+export { _commandResolverDeps, resolveQualityTestCommands } from "./command-resolver";
+export type { Diagnostic } from "./diagnostics";
+export { detectTool, MAX_RAW_TAIL_CHARS, parseDiagnostics } from "./diagnostics";
+export type { QualityCommandOptions, QualityCommandResult } from "./runner";
+export { runQualityCommand } from "./runner";
 export type {
   PreExistingFailure,
   SelfVerificationPromptInput,
@@ -25,5 +23,7 @@ export type {
   SelfVerificationStatus,
   SelfVerificationTool,
 } from "./self-verification";
-export { parseDiagnostics, detectTool, MAX_RAW_TAIL_CHARS } from "./diagnostics";
-export type { Diagnostic } from "./diagnostics";
+export {
+  parseSelfVerificationMarker,
+  resolveSelfVerificationPromptInput,
+} from "./self-verification";

@@ -11,12 +11,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { type MockLogger, makeLogger, makeMockAgentManager, makeSessionManager } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import type { CallContext } from "@/operations/types";
-import { type MockLogger, makeLogger, makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 // ─── Mock Helpers ──────────────────────────────────────────────────────────────
 

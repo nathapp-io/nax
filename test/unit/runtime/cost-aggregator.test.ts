@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { CostAggregator, type CostEvent, _costAggDeps, createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 import { withTempDir } from "@test/helpers";
+import { _costAggDeps, CostAggregator, type CostEvent, createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 
 function makeEvent(overrides: Partial<CostEvent> = {}): CostEvent {
   return {

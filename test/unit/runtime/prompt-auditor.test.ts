@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { type PromptAuditEntry, PromptAuditor, _promptAuditorDeps } from "@/runtime/prompt-auditor";
 import { withTempDir } from "@test/helpers";
+import { _promptAuditorDeps, type PromptAuditEntry, PromptAuditor } from "@/runtime/prompt-auditor";
 
 const FEATURE = "my-feature";
 

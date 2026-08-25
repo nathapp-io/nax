@@ -1,5 +1,5 @@
-import { findingRecurrenceKey, isNaxBailWrapper, markNaxBailWrapper } from "@/findings";
 import type { Finding, FixStrategy, Iteration } from "@/findings";
+import { findingRecurrenceKey, isNaxBailWrapper, markNaxBailWrapper } from "@/findings";
 
 // Uses the coarse recurrence key (not findingKey) so an LLM reviewer rewording
 // the same finding at the same file:line:rule still reads as "no progress"

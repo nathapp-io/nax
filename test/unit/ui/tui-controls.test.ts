@@ -9,15 +9,15 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { unlink } from "node:fs/promises";
+import { render } from "ink-testing-library";
+import { createElement } from "react";
 import type { UserStory } from "@/prd/types";
 import { CostOverlay } from "@/tui/components/CostOverlay";
 import { HelpOverlay } from "@/tui/components/HelpOverlay";
 import type { KeyboardAction } from "@/tui/hooks/useKeyboard";
-import { PanelFocus } from "@/tui/types";
 import type { StoryDisplayState } from "@/tui/types";
+import { PanelFocus } from "@/tui/types";
 import { writeQueueCommand } from "@/utils/queue-writer";
-import { render } from "ink-testing-library";
-import { createElement } from "react";
 
 // Helper to create mock stories
 function createMockStory(id: string, status: StoryDisplayState["status"], cost = 0.01): StoryDisplayState {

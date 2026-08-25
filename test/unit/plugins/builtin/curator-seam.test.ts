@@ -17,10 +17,10 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { collectObservations, curatorPlugin, readHeuristicWindow } from "@/plugins/builtin/curator";
 import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
-import { runHeuristics } from "@/plugins/builtin/curator/heuristics";
+import { collectObservations, curatorPlugin, readHeuristicWindow } from "@/plugins/builtin/curator";
 import type { CuratorThresholds } from "@/plugins/builtin/curator/heuristics";
+import { runHeuristics } from "@/plugins/builtin/curator/heuristics";
 import { appendToRollup } from "@/plugins/builtin/curator/rollup";
 
 const THRESHOLDS: CuratorThresholds = {

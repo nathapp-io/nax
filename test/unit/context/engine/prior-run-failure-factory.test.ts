@@ -6,17 +6,17 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import {
-  PriorRunFailureProvider,
   _codeNeighborDeps,
   _gitHistoryDeps,
   _priorRunFailureDeps,
   createDefaultOrchestrator,
+  PriorRunFailureProvider,
 } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
 import type { UserStory } from "@/prd";
-import { makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

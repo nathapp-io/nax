@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { makeTempDir } from "@test/helpers";
 import type { PRD, UserStory } from "@/prd/types";
 import {
   checkCanonicalRulesLint,
@@ -18,7 +19,6 @@ import {
   checkWorkingTreeClean,
 } from "@/precheck/checks";
 import { _checkCanonicalRulesDeps } from "@/precheck/checks-system";
-import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

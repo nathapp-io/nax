@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { resolvePlanMode } from "@/cli";
-import { DEFAULT_CONFIG, NaxConfigSchema } from "@/config";
 import type { NaxConfig } from "@/config";
-import { RefinePlanStrategy, createPlanStrategy } from "@/plan";
+import { DEFAULT_CONFIG, NaxConfigSchema } from "@/config";
+import { createPlanStrategy, RefinePlanStrategy } from "@/plan";
 
 describe("NaxConfigSchema plan.mode refine", () => {
   test("accepts refine and rejects unknown modes", () => {

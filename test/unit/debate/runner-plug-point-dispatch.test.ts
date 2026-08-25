@@ -10,10 +10,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
 import {
-  DebateRunner,
   _debateSessionDeps,
+  DebateRunner,
   pickSelectorKind,
   registerPostDebateVerifier,
   registerPreDebatePhase,
@@ -25,7 +26,6 @@ import type { Selector, SelectorContext, SelectorResult } from "@/debate/selecto
 import type { DebateStageConfig } from "@/debate/types";
 import type { PostDebateVerifier, PostDebateVerifierContext, PostDebateVerifierResult } from "@/debate/verifiers/types";
 import type { CallContext } from "@/operations/types";
-import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 const DEFAULT_DEBATE_CONFIG = debateConfigSelector.select(DEFAULT_CONFIG);
 

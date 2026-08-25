@@ -8,8 +8,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { SpawnAcpClient, _spawnClientDeps } from "@/agents/acp";
 import { withDepsRestore } from "@test/helpers";
+import { _spawnClientDeps, SpawnAcpClient } from "@/agents/acp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SAFETY: file-scope process.kill stub (mirrors spawn-client.test.ts)

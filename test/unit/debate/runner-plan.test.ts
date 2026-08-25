@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { makeLogger, makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG, reshapeSelector } from "@/config";
 import { _runPlanDeps } from "@/debate";
@@ -8,7 +9,6 @@ import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import * as callModule from "@/operations";
 import type { CallContext } from "@/operations/types";
-import { makeLogger, makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 

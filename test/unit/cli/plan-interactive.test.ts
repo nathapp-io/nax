@@ -8,11 +8,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { makeMockAgentManager, makeMockRuntime, makeTempDir } from "@test/helpers";
 import { _planDeps as _deps, planCommand } from "@/cli";
 import { DEFAULT_CONFIG } from "@/config";
 import type { PRD } from "@/prd/types";
-import { makeMockAgentManager, makeMockRuntime } from "@test/helpers";
-import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

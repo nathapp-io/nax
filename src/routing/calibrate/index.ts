@@ -1,5 +1,5 @@
-export { buildProposalArtifact, proposeAdjustments } from "./propose";
 export type { ComplexityMapping } from "./propose";
+export { buildProposalArtifact, proposeAdjustments } from "./propose";
 export type {
   BandStat,
   CalibrationProposal,

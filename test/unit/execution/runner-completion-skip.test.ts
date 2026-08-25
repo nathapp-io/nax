@@ -12,15 +12,6 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { NaxConfig } from "@/config";
-import type { AcceptanceLoopResult } from "@/execution/lifecycle/acceptance-loop";
-import { _runCompletionDeps } from "@/execution/lifecycle/run-completion";
-import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
-import { type RunnerCompletionOptions, _runnerCompletionDeps, runCompletionPhase } from "@/execution/runner-completion";
-import type { PostRunStatus } from "@/execution/status-file";
-import type { LoadedHooksConfig } from "@/hooks";
-import { pipelineEventBus } from "@/pipeline/event-bus";
-import type { PRD, UserStory } from "@/prd";
 import {
   type MockStatusWriter,
   makeMockRuntime,
@@ -28,6 +19,15 @@ import {
   makePluginRegistry,
   makeStatusWriter,
 } from "@test/helpers";
+import type { NaxConfig } from "@/config";
+import type { AcceptanceLoopResult } from "@/execution/lifecycle/acceptance-loop";
+import { _runCompletionDeps } from "@/execution/lifecycle/run-completion";
+import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
+import { _runnerCompletionDeps, type RunnerCompletionOptions, runCompletionPhase } from "@/execution/runner-completion";
+import type { PostRunStatus } from "@/execution/status-file";
+import type { LoadedHooksConfig } from "@/hooks";
+import { pipelineEventBus } from "@/pipeline/event-bus";
+import type { PRD, UserStory } from "@/prd";
 
 // ---------------------------------------------------------------------------
 // Helpers

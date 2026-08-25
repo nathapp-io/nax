@@ -19,8 +19,8 @@
  */
 import type { ConfiguredModel } from "@/config";
 import type { ForgeDeps, ForgeKind } from "@/forge";
-import { callOp, finishFixOp, finishNarrativeOp, finishReviewOp } from "@/operations";
 import type { CallContext, FinishFixInput, FinishNarrativeInput, FinishReviewInput } from "@/operations";
+import { callOp, finishFixOp, finishNarrativeOp, finishReviewOp } from "@/operations";
 import { errorMessage } from "../utils/errors";
 import type { AuditTarget } from "./audit";
 import { commitAndPush } from "./commit";
@@ -35,8 +35,7 @@ import {
   updatePrBody,
 } from "./pr";
 import type { FinishState } from "./state";
-import type { FinishPrBodySettings } from "./types";
-import type { Finding, FinishPhase } from "./types";
+import type { Finding, FinishPhase, FinishPrBodySettings } from "./types";
 
 export interface FinishOpsDeps {
   /** The call context every LLM op runs under. Its `sessionOverride` is replaced per phase. */

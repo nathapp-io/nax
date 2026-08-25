@@ -4,8 +4,7 @@
  * Story US-003: Profile CLI commands (list, show, use, current, create)
  */
 
-import { mkdirSync } from "node:fs";
-import { readdirSync } from "node:fs";
+import { mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { resolveEnvVars } from "../config/dotenv";
 import { globalConfigDir, projectConfigDir } from "../config/paths";

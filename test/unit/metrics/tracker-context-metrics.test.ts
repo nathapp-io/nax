@@ -7,6 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeMockRuntime, makeStory, makeTestContext } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { ProviderBudgetPressure, PullCallRecord } from "@/context/engine";
 import { _manifestStoreDeps } from "@/context/engine/manifest-store";
@@ -14,7 +15,6 @@ import type { ContextManifest } from "@/context/engine/types";
 import { collectStoryMetrics } from "@/metrics/tracker";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
-import { makeMockRuntime, makeStory, makeTestContext } from "@test/helpers";
 
 const PROJECT_DIR = "/repo";
 const FEATURE = "test-feature";

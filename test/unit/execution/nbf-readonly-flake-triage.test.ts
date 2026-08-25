@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeTestRuntime, withInfoSpy } from "@test/helpers";
 import type { DEFAULT_CONFIG } from "@/config";
 import { pickSelector } from "@/config";
 import {
@@ -12,7 +13,6 @@ import type { Finding, FixCycle, FixCycleContext, FixCycleExitReason } from "@/f
 import type { CallContext, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 import type { QuarantineMemo } from "@/verification";
-import { makeTestRuntime, withInfoSpy } from "@test/helpers";
 
 const GATE_NAME = "full-suite-gate";
 const FLAKE_KEY = "test/unit/flaky.test.ts::sometimes";

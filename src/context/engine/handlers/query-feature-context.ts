@@ -15,8 +15,8 @@
 import type { ContextToolRuntimeConfig } from "@/config/selectors";
 import type { UserStory } from "@/prd";
 import { FeatureContextProviderV2 } from "../providers/feature-context";
-import { DEFAULT_MAX_TOKENS_PER_CALL, _pullToolsDeps } from "../pull-tools";
 import type { PullToolBudget } from "../pull-tools";
+import { _pullToolsDeps, DEFAULT_MAX_TOKENS_PER_CALL } from "../pull-tools";
 import type { ContextRequest } from "../types";
 
 /**

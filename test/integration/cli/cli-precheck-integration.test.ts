@@ -8,10 +8,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fullDescribe, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { ExecutionConfig, NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd/types";
 import { runPrecheck } from "@/precheck";
-import { fullDescribe, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // Requires real claude binary — skipped by default, run with FULL=1.
 const describeWithClaude = fullDescribe;

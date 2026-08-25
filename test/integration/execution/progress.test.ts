@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { appendProgress } from "@/execution";
 import { getLogger, initLogger, resetLogger } from "@/logger";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("appendProgress", () => {
   test("creates progress.txt and appends entry", async () => {

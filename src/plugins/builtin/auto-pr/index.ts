@@ -21,7 +21,7 @@ import {
   openPr as _openDraft,
 } from "@/forge";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
-import { type PrBodyContext, buildBody, buildTitle } from "./pr-body";
+import { buildBody, buildTitle, type PrBodyContext } from "./pr-body";
 import type { AutoPrConfig, AutoPrDeps } from "./types";
 
 const PLUGIN_NAME = "nax-auto-pr";

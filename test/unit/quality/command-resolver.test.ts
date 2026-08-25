@@ -5,9 +5,9 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _commandResolverDeps, resolveQualityTestCommands } from "@/quality/command-resolver";
-import { makeNaxConfig } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

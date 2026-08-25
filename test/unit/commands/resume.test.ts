@@ -14,14 +14,14 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { Command } from "commander";
 import {
-  type ResumeCommandDeps,
   _resumeCmdDeps,
+  type ResumeCommandDeps,
   registerResumeCommand as registerResumeCommandFromCmd,
   runResume,
 } from "@/commands";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { Command } from "commander";
 
 function writeCheckpoint(featureDir: string, records: Array<{ storyId: string; phase: string }>): void {
   const cpPath = join(featureDir, "checkpoint.jsonl");

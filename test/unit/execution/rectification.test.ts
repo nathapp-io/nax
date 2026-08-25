@@ -4,12 +4,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeConfigSlice } from "@test/helpers";
 import type { RectificationConfig } from "@/config";
 import type { UserStory } from "@/prd";
 import { RectifierPromptBuilder } from "@/prompts";
 import type { TestFailure } from "@/test-runners";
 import { type RectificationState, shouldRetryRectification } from "@/verification/rectification";
-import { makeConfigSlice } from "@test/helpers";
 
 describe("shouldRetryRectification", () => {
   const baseConfig: RectificationConfig = makeConfigSlice("execution", {

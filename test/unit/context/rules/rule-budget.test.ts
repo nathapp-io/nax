@@ -7,8 +7,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { applySectionBudget } from "@/context";
 import type { RuleSection } from "@/context";
+import { applySectionBudget } from "@/context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

@@ -7,8 +7,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { autoDetectContextFiles, extractKeywords } from "@/context/auto-detect";
 import { makeTempDir } from "@test/helpers";
+import { autoDetectContextFiles, extractKeywords } from "@/context/auto-detect";
 
 describe("Context Auto-Detection", () => {
   describe("extractKeywords", () => {

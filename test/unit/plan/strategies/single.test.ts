@@ -1,9 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
+import { makeLogger, makeMockRuntime, makeNaxConfig, makePRD } from "@test/helpers";
 import { planConfigSelector } from "@/config";
-import { SinglePlanStrategy, _singlePlanDeps } from "@/plan";
+import { _singlePlanDeps, SinglePlanStrategy } from "@/plan";
 import type { PlanModeContext } from "@/plan/strategies";
 import type { PRD } from "@/prd/types";
-import { makeLogger, makeMockRuntime, makeNaxConfig, makePRD } from "@test/helpers";
 
 // Minimal PRD returned by the stubbed callOp
 function makePrd(agentProfileId?: string): PRD {

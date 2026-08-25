@@ -5,10 +5,10 @@
  */
 
 import { describe, expect, it, spyOn, test } from "bun:test";
+import { makeAgentAdapter } from "@test/helpers";
 import type { AgentAdapter } from "@/agents/types";
 import * as loggerModule from "@/logger";
 import { validatePlugin } from "@/plugins/validator";
-import { makeAgentAdapter } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // validatePlugin with post-run-action

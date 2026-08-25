@@ -6,11 +6,11 @@
 
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
+  _orchestratorDeps,
   ContextOrchestrator,
   PULL_TOOL_REGISTRY,
   QUERY_FEATURE_CONTEXT_DESCRIPTOR,
   QUERY_NEIGHBOR_DESCRIPTOR,
-  _orchestratorDeps,
 } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
 

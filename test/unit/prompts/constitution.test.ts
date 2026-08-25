@@ -7,9 +7,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { estimateTokens, loadConstitution, truncateToTokens } from "@/constitution";
-import type { ConstitutionConfig } from "@/constitution";
 import { makeTempDir } from "@test/helpers";
+import type { ConstitutionConfig } from "@/constitution";
+import { estimateTokens, loadConstitution, truncateToTokens } from "@/constitution";
 
 let TEST_DIR: string;
 

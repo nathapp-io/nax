@@ -346,5 +346,5 @@ export async function generateForPackage(
   return results;
 }
 
-export { generateFor, generateAll };
 export type { AgentType };
+export { generateAll, generateFor };

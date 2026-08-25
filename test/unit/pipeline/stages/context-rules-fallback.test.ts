@@ -11,10 +11,6 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { NeutralityLintError } from "@/context";
-import type { PipelineContext } from "@/pipeline";
-// _contextStageDeps is test-only and not re-exported from the pipeline/stages barrel.
-import { _contextStageDeps, contextStage } from "@/pipeline/stages/context";
 import {
   cleanupTempDir,
   makeContextOrchestrator,
@@ -24,6 +20,10 @@ import {
   makeTempDir,
   makeTestContext,
 } from "@test/helpers";
+import { NeutralityLintError } from "@/context";
+import type { PipelineContext } from "@/pipeline";
+// _contextStageDeps is test-only and not re-exported from the pipeline/stages barrel.
+import { _contextStageDeps, contextStage } from "@/pipeline/stages/context";
 
 let origCreateOrchestrator: typeof _contextStageDeps.createOrchestrator;
 let origReadDigest: typeof _contextStageDeps.readDigest;

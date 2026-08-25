@@ -14,14 +14,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { withTempDir } from "@test/helpers";
 import {
-  type MigrationOutcome,
   _rulesCLIDeps,
+  type MigrationOutcome,
   rulesMigrateCommand,
   translateLegacyFrontmatter,
   withReviewNotice,
 } from "@/cli";
-import { withTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers

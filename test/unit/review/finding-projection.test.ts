@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { llmFindingToReviewFinding, llmFindingsToReviewFindings, toAdversarialReviewFindings } from "@/review";
+import { llmFindingsToReviewFindings, llmFindingToReviewFinding, toAdversarialReviewFindings } from "@/review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 // LLMFinding / AdversarialLLMFinding are import-type only (erased at compile
 // time) so leaf-path imports here do not cause singleton fragmentation.

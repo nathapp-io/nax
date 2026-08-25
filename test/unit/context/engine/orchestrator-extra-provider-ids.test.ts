@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { ContextOrchestrator, _orchestratorDeps } from "@/context/engine/orchestrator";
+import { _orchestratorDeps, ContextOrchestrator } from "@/context/engine/orchestrator";
 import type { ContextProviderResult, ContextRequest, IContextProvider } from "@/context/engine/types";
 
 const BASE_REQUEST: ContextRequest = {

@@ -15,7 +15,7 @@ import { describe, expect, test } from "bun:test";
 import type { NaxStatusFile } from "@/execution/status-file";
 import type { LogEntry } from "@/logger/types";
 import type { RunMetrics, StoryMetrics } from "@/metrics/types";
-import { type RunTimeline, type StoryTimeline, reconstructTimeline } from "@/replay";
+import { type RunTimeline, reconstructTimeline, type StoryTimeline } from "@/replay";
 
 function entry(partial: Partial<LogEntry>): LogEntry {
   return {

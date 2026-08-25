@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { loadPlugins } from "@/plugins";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { loadPlugins } from "@/plugins";
 
 describe("loadPlugins — built-in reporters", () => {
   let dir = "";

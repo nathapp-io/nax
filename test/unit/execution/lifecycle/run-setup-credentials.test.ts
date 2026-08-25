@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { IAgentManager } from "@/agents";
 import { makeMockAgentManager } from "@test/helpers";
+import type { IAgentManager } from "@/agents";
 
 describe("runSetupPhase → validateCredentials (#518)", () => {
   test("calls agentManager.validateCredentials() when provided", async () => {

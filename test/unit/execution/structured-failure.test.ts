@@ -6,8 +6,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { loadPRD } from "@/prd";
 import type { StructuredFailure, TestFailureContext, UserStory } from "@/prd";
+import { loadPRD } from "@/prd";
 
 describe("StructuredFailure Type", () => {
   test("should have all required fields", () => {

@@ -7,7 +7,7 @@
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { PROJECT_FEATURES_DIR, featuresDir, globalConfigDir, projectConfigDir } from "../config/paths";
+import { featuresDir, globalConfigDir, PROJECT_FEATURES_DIR, projectConfigDir } from "../config/paths";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { readProjectIdentity } from "../runtime";
@@ -19,8 +19,8 @@ import {
   patchIgnoreFile,
 } from "../utils/gitignore";
 import { initContext, initPackage } from "./init-context";
-import { buildInitConfig, detectStack } from "./init-detect";
 import type { ProjectStack } from "./init-detect";
+import { buildInitConfig, detectStack } from "./init-detect";
 
 export const _initDeps = {
   log: console.log.bind(console) as (...args: unknown[]) => void,

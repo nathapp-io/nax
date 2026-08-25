@@ -10,8 +10,8 @@ import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { initLogger, resetLogger } from "@/logger";
 import type { UserStory } from "@/prd/types";
-import { classifyComplexity, complexityToModelTier, determineTestStrategy } from "@/routing";
 import type { RoutingDecision } from "@/routing";
+import { classifyComplexity, complexityToModelTier, determineTestStrategy } from "@/routing";
 
 // ---------------------------------------------------------------------------
 // Helper: replaces the deleted keywordStrategy.route(story, ctx)

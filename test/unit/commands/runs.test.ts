@@ -14,10 +14,10 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { makeTempDir } from "@test/helpers";
 import { _runsCmdDeps as _deps, runsCommand } from "@/commands/runs";
 import type { NaxStatusFile } from "@/execution/status-file";
 import type { MetaJson } from "@/pipeline/subscribers/registry";
-import { makeTempDir } from "@test/helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

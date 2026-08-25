@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { makeStory, makeTestRuntime, opSelector } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
-import { makeTestRuntime, opSelector } from "@test/helpers";
-import { makeStory } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
+
 import type { RectifyInput } from "@/operations/rectify";
 import { rectifyOp } from "@/operations/rectify";
 

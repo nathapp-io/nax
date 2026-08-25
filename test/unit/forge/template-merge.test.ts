@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { type BodySection, DEFAULT_SECTION_ALIASES, mergeTemplate } from "@/forge";
 import { TEMPLATE_BY_NAME, TEMPLATE_FIXTURES, UNPARSEABLE_FIXTURE_NAMES } from "@test/fixtures/pr-templates";
+import { type BodySection, DEFAULT_SECTION_ALIASES, mergeTemplate } from "@/forge";
 
 /**
  * The nax-authored sections, in the canonical order `buildFinishBody` emits

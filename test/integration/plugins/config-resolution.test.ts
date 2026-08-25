@@ -14,10 +14,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { _resetPluginErrorSink, _setPluginErrorSink, loadPlugins as loadPluginsWithBuiltins } from "@/plugins/loader";
-import type { PluginConfigEntry } from "@/plugins/types";
-import type { NaxPlugin } from "@/plugins/types";
 import { makeTempDir } from "@test/helpers";
+import { _resetPluginErrorSink, _setPluginErrorSink, loadPlugins as loadPluginsWithBuiltins } from "@/plugins/loader";
+import type { NaxPlugin, PluginConfigEntry } from "@/plugins/types";
 
 const DISABLE_BUILTIN_PLUGINS = ["nax-curator", "nax-auto-pr"];
 

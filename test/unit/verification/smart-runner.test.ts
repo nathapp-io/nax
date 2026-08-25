@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeSpawn, withDepsRestore } from "@test/helpers";
 import { _gitDeps } from "@/utils/git";
 import {
   _gitUtilDeps,
@@ -8,7 +9,6 @@ import {
   importGrepFallback,
   mapSourceToTests,
 } from "@/verification/smart-runner";
-import { makeSpawn, withDepsRestore } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // buildSmartTestCommand

@@ -12,12 +12,12 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import { makeNaxConfig, makeSpawn, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { NaxError } from "@/errors";
-import { type PlanInputs, assemblePlanInputs, assemblePlanInputsFromCtx } from "@/execution";
+import { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "@/execution";
 import { _diffUtilsDeps } from "@/review";
 import type { ResolvedTestPatterns } from "@/test-runners";
-import { makeNaxConfig, makeSpawn, makeStory } from "@test/helpers";
 
 // Helper: stub git-diff spawn so review-input prep can resolve stat. The orchestrator
 // path calls collectDiffStat before constructing review inputs; tests that assert

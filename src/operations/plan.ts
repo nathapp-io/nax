@@ -4,8 +4,8 @@ import type { ProjectProfile } from "../config/runtime-types";
 import type { PlanConfig } from "../config/selectors";
 import { validatePlanOutput } from "../prd/schema";
 import type { PRD } from "../prd/types";
-import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
+import { PlanPromptBuilder } from "../prompts";
 import { applyPlanFidelity } from "./plan-fidelity";
 import type { RunOperation } from "./types";
 

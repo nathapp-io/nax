@@ -1,6 +1,5 @@
 import type { NaxConfig } from "../config/schema";
-import type { AutofixConfig } from "../config/selectors";
-import type { TddConfig } from "../config/selectors";
+import type { AutofixConfig, TddConfig } from "../config/selectors";
 import type { FixStrategy } from "../findings";
 import type { Finding } from "../findings/types";
 import type { UserStory } from "../prd";

@@ -13,17 +13,6 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { NaxConfig } from "@/config";
-import {
-  type RunCompletionOptions,
-  _runCompletionDeps,
-  handleRunCompletion,
-} from "@/execution/lifecycle/run-completion";
-import type { StoryMetrics } from "@/metrics";
-import { pipelineEventBus } from "@/pipeline/event-bus";
-import type { RunCompletedEvent } from "@/pipeline/event-bus";
-import type { PRD } from "@/prd";
-import type { CostSnapshot, ICostAggregator } from "@/runtime/cost-aggregator";
 import {
   makeDispatchContext,
   makeMockRuntime,
@@ -32,6 +21,17 @@ import {
   makeStatusWriter,
   makeStory,
 } from "@test/helpers";
+import type { NaxConfig } from "@/config";
+import {
+  _runCompletionDeps,
+  handleRunCompletion,
+  type RunCompletionOptions,
+} from "@/execution/lifecycle/run-completion";
+import type { StoryMetrics } from "@/metrics";
+import type { RunCompletedEvent } from "@/pipeline/event-bus";
+import { pipelineEventBus } from "@/pipeline/event-bus";
+import type { PRD } from "@/prd";
+import type { CostSnapshot, ICostAggregator } from "@/runtime/cost-aggregator";
 
 // ---------------------------------------------------------------------------
 // Helpers

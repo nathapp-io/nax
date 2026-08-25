@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { finalizePlanSelection } from "@/debate/runner-plan-helpers";
-import * as verifierPick from "@/debate/selectors/verifier-pick";
 import type { ScoredProposal } from "@/debate/selectors/verifier-pick";
+import * as verifierPick from "@/debate/selectors/verifier-pick";
 import type { SuccessfulProposal } from "@/debate/session-helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────

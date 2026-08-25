@@ -7,12 +7,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { AgentRunRequest } from "@/agents";
 import * as loggerModule from "@/logger";
 import { callOp, semanticReviewOp } from "@/operations";
 import type { SemanticStory } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 

@@ -7,16 +7,13 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { makeAgentAdapter, makeNaxConfig, makeTestContext, makeTestStory, withExecutionDeps } from "@test/helpers";
 import { NaxError } from "@/errors";
 import type { RepoScopedFixRecord } from "@/execution";
 import type { PostRunInspectionResult } from "@/execution/post-run";
 import type { StoryOrchestratorResult } from "@/execution/story-orchestrator";
 import { _executionDeps, executionStage } from "@/pipeline/stages/execution";
-import type { PipelineContext } from "@/pipeline/types";
-import type { StageResult } from "@/pipeline/types";
-import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
-import { makeTestContext, makeTestStory } from "@test/helpers";
-import { withExecutionDeps } from "@test/helpers";
+import type { PipelineContext, StageResult } from "@/pipeline/types";
 
 interface PlanResultOptions {
   readonly success?: boolean;

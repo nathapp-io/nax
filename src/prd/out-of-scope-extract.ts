@@ -22,7 +22,7 @@
  * backticks stripped, lowercased) and by substring, never by equality.
  */
 
-import { ANY_HEADING, FENCE, LIST_ITEM_START, fencedLineIndices, stripBullet, stripEmphasis } from "./markdown-scan";
+import { ANY_HEADING, FENCE, fencedLineIndices, LIST_ITEM_START, stripBullet, stripEmphasis } from "./markdown-scan";
 
 /** An extracted item plus the line its declaration started on. */
 interface PlacedItem {

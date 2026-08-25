@@ -1,9 +1,9 @@
 import { join } from "node:path";
 import {
-  DEFAULT_TIMEOUT_SECONDS,
   buildPackageSummary,
   buildSourceRootsSection,
   createPlanRuntime,
+  DEFAULT_TIMEOUT_SECONDS,
   detectProjectName,
 } from "@/cli";
 import type { NaxConfig } from "@/config";

@@ -10,6 +10,7 @@ import path from "node:path";
 import { reviewFindingToFinding } from "../findings";
 import { getLogger } from "../logger";
 import type { SemanticVerdict } from "./types";
+
 export type { SemanticVerdict } from "./types";
 
 /**

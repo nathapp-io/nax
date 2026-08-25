@@ -15,9 +15,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { NaxError } from "@/errors";
 import { discoverRun } from "@/replay";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 function writeRunDir(
   runsDir: string,

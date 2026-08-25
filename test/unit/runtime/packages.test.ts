@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeLogger, makeNaxConfig } from "@test/helpers";
 import { createConfigLoader, pickSelector } from "@/config";
 import { _packagesDeps, createPackageRegistry } from "@/runtime/packages";
-import { makeLogger, makeNaxConfig } from "@test/helpers";
 
 const minConfig = makeNaxConfig({ routing: { strategy: "keyword" } });
 const routingSel = pickSelector("routing-pkg-test", "routing");

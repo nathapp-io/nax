@@ -1,12 +1,12 @@
 import type { PhaseCompleteEvent } from "@/plugins/types";
 import { newSpanId } from "./ids";
 import {
-  type KeyValue,
-  type SpanEvent,
   attr,
   buildCounterPoint,
   buildHistogramPoint,
   buildResourceAttributes,
+  type KeyValue,
+  type SpanEvent,
 } from "./otlp";
 
 /** Fixed bucket boundaries for the `nax.phase.duration` histogram, in milliseconds. */

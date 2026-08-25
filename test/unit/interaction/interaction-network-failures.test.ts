@@ -6,10 +6,10 @@
  */
 
 import { afterAll, describe, expect, test } from "bun:test";
-import type { InteractionRequest } from "@/interaction";
-import { TelegramInteractionPlugin, _telegramPluginDeps } from "@/interaction/plugins/telegram";
-import { WebhookInteractionPlugin, _webhookPluginDeps } from "@/interaction/plugins/webhook";
 import { mockFetch, telegramInternals, webhookInternals } from "@test/helpers";
+import type { InteractionRequest } from "@/interaction";
+import { _telegramPluginDeps, TelegramInteractionPlugin } from "@/interaction/plugins/telegram";
+import { _webhookPluginDeps, WebhookInteractionPlugin } from "@/interaction/plugins/webhook";
 
 function timeoutResult<T>(value: T, delayMs = 0): Promise<T> {
   return new Promise((resolve) => {

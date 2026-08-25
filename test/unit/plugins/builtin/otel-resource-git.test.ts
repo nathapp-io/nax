@@ -8,11 +8,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeSpawn, mockFetch } from "@test/helpers";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { createOtelReporterPlugin } from "@/plugins";
 import type { PostJsonDeps } from "@/plugins/builtin/reporter-shared";
 import { _gitDeps } from "@/utils/git";
-import { makeSpawn, mockFetch } from "@test/helpers";
 
 const baseCfg: OtelReporterConfig = {
   enabled: true,

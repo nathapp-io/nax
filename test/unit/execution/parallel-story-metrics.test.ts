@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { synthesizeParallelStoryMetric } from "@/execution";
 import { makeStory } from "@test/helpers";
+import { synthesizeParallelStoryMetric } from "@/execution";
 
 const STARTED = "2026-08-25T00:00:00.000Z";
 const COMPLETED = "2026-08-25T00:05:00.000Z";

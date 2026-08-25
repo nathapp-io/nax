@@ -15,14 +15,21 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import {
+  cleanupTempDir,
+  firstCall,
+  makeDebateRunner,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeNaxConfig,
+  makeTempDir,
+} from "@test/helpers";
 import type { CompleteOptions, CompleteResult } from "@/agents/types";
 import { _planDeps, planCommand } from "@/cli";
 import type { NaxConfig } from "@/config";
 import type { DebateRunner, DebateRunnerOptions } from "@/debate";
 import type { DebateResult } from "@/debate/types";
 import type { PRD } from "@/prd/types";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { firstCall, makeDebateRunner, makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

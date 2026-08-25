@@ -13,12 +13,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { FlakeDetectionConfig } from "@/config/runtime-types";
 import type { Finding } from "@/findings/types";
-import { type LogEntry, addSink, initLogger, resetLogger } from "@/logger";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import {
+  _flakeTriageDeps,
   FLAKE_TRIAGE_RAN_EVENT,
   FLAKE_TRIAGE_SKIP_EVENT,
   type FlakeTriageInput,
-  _flakeTriageDeps,
   triageFlakyFindings,
 } from "@/verification";
 import type { FlakeProbeVerdict } from "@/verification/flake-probe";

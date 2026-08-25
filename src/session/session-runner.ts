@@ -5,8 +5,7 @@
  * execution strategies. This file only keeps the shared types.
  */
 
-import type { AgentAdapter } from "../agents";
-import type { IAgentManager } from "../agents";
+import type { AgentAdapter, IAgentManager } from "../agents";
 import type { AgentFallbackRecord } from "../agents/manager-types";
 import type { AgentResult } from "../agents/types";
 import type { ContextBundle } from "../context/engine";

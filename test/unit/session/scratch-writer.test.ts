@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import type { ScratchEntry } from "@/session/scratch-writer";
 import {
   _scratchWriterDeps,
   appendScratchEntry,
@@ -8,8 +10,6 @@ import {
   scratchFilePath,
   writeDigestFile,
 } from "@/session/scratch-writer";
-import type { ScratchEntry } from "@/session/scratch-writer";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

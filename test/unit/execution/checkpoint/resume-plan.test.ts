@@ -17,8 +17,8 @@
 
 import { describe, expect, test } from "bun:test";
 import type { StoryCheckpoint, TreeState } from "@/execution";
-import { type ResumePlan, buildResumePlan } from "@/execution";
 import * as checkpointBarrel from "@/execution";
+import { buildResumePlan, type ResumePlan } from "@/execution";
 
 const TREE: TreeState = { headSha: "abc123", dirtyDigest: "deadbeef" };
 

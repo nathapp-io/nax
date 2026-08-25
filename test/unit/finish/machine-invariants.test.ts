@@ -7,19 +7,10 @@
  * trail recorded by the stubs themselves.
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import { withTempDir } from "@test/helpers";
 import type { AcceptanceGroupResult } from "@/cli";
-import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
-import {
-  MAX_FIX_ATTEMPTS,
-  _acceptanceGateDeps,
-  _finishGitDeps,
-  _qualityGateDeps,
-  createFinishState,
-  gateCommitRoute,
-  readRounds,
-  runFinishMachine,
-} from "@/finish";
+import { DEFAULT_CONFIG } from "@/config";
 import type {
   AuditTarget,
   Finding,
@@ -29,8 +20,17 @@ import type {
   FinishState,
   ReviewOutcome,
 } from "@/finish";
+import {
+  _acceptanceGateDeps,
+  _finishGitDeps,
+  _qualityGateDeps,
+  createFinishState,
+  gateCommitRoute,
+  MAX_FIX_ATTEMPTS,
+  readRounds,
+  runFinishMachine,
+} from "@/finish";
 import type { QualityCommandOptions, QualityCommandResult } from "@/quality";
-import { withTempDir } from "@test/helpers";
 
 const originalGit = _finishGitDeps.git;
 const originalAcceptanceRun = _acceptanceGateDeps.run;

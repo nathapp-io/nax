@@ -5,14 +5,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeLogger } from "@test/helpers";
 import { _canonicalLoaderDeps, loadCanonicalRules } from "@/context/rules/canonical-loader";
 import {
   FRONTMATTER_PRIORITY_DEFAULT,
   KNOWN_FRONTMATTER_KEYS,
-  RulesFrontmatterError,
   parseFrontmatter,
+  RulesFrontmatterError,
 } from "@/context/rules/rules-frontmatter";
-import { makeLogger } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC1: parseFrontmatter() returns priority 100 when content has no frontmatter block

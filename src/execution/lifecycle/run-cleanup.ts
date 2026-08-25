@@ -11,7 +11,7 @@
  */
 
 import { disposeFeatureResolver } from "@/context";
-import { type HookContext, type LoadedHooksConfig, fireHook } from "@/hooks";
+import { fireHook, type HookContext, type LoadedHooksConfig } from "@/hooks";
 import type { InteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
 import type {
@@ -22,7 +22,7 @@ import type {
   PostRunActionResult,
   PostRunContext,
 } from "@/plugins";
-import { type PRD, countStories } from "@/prd";
+import { countStories, type PRD } from "@/prd";
 import { errorMessage } from "@/utils/errors";
 import { resetRuntimeCrashRetryCounts } from "../escalation";
 import { releaseLock } from "../helpers";

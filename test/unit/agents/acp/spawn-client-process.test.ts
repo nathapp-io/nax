@@ -13,8 +13,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { killProcessTree, runTrackedSpawn } from "@/agents/acp/spawn-client-process";
 import { waitForCondition } from "@test/helpers";
+import { killProcessTree, runTrackedSpawn } from "@/agents/acp/spawn-client-process";
 
 const FAKE_PID = 99999999;
 

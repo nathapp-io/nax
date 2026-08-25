@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { testPresenceGateOp } from "@/operations";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { testPresenceGateOp } from "@/operations";
 
 describe("testPresenceGateOp — post-implementer test presence check", () => {
   test("kind is deterministic (no LLM session)", () => {

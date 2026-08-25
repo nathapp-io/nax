@@ -15,8 +15,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { unlockCommand } from "@/commands/unlock";
 import { makeTempDir } from "@test/helpers";
+import { unlockCommand } from "@/commands/unlock";
 
 // ---------------------------------------------------------------------------
 // Custom error to intercept process.exit without terminating the test runner

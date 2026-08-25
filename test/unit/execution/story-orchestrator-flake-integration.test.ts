@@ -21,15 +21,20 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { makeMockCallContext, makeTestRuntime } from "@test/helpers";
 import type { DEFAULT_CONFIG } from "@/config";
 import { pickSelector } from "@/config";
-import { StoryOrchestratorBuilder, _storyOrchestratorDeps, runRectification } from "@/execution";
-import { describeGateRegression, gateFailureKeys } from "@/execution";
+import {
+  _storyOrchestratorDeps,
+  describeGateRegression,
+  gateFailureKeys,
+  runRectification,
+  StoryOrchestratorBuilder,
+} from "@/execution";
 import type { Finding, FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { CallContext, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockCallContext, makeTestRuntime } from "@test/helpers";
 
 const testSel = pickSelector("flake-triage-integration", "execution");
 

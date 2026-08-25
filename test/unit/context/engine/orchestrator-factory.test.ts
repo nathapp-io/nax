@@ -8,16 +8,16 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { type DeepPartial, makeNaxConfig } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import type { ContextV2Config } from "@/config/runtime-types";
 import { createDefaultOrchestrator } from "@/context/engine/orchestrator-factory";
 import { _codeNeighborDeps } from "@/context/engine/providers/code-neighbor";
 import { _gitHistoryDeps } from "@/context/engine/providers/git-history";
-import { TestCoverageProvider, _testCoverageProviderDeps } from "@/context/engine/providers/test-coverage";
-import { ToolDiagnosticsProvider, _toolDiagnosticsDeps } from "@/context/engine/providers/tool-diagnostics";
+import { _testCoverageProviderDeps, TestCoverageProvider } from "@/context/engine/providers/test-coverage";
+import { _toolDiagnosticsDeps, ToolDiagnosticsProvider } from "@/context/engine/providers/tool-diagnostics";
 import type { ContextRequest } from "@/context/engine/types";
 import type { UserStory } from "@/prd";
-import { type DeepPartial, makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

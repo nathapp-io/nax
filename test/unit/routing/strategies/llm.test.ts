@@ -10,8 +10,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { initLogger, resetLogger } from "@/logger";
 import { makeNaxConfig } from "@test/helpers";
+import { initLogger, resetLogger } from "@/logger";
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -10,8 +10,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { _gitDeps, autoCommitIfDirty } from "@/utils/git";
 import { cleanupTempDir, makeSpawn, makeTempDir } from "@test/helpers";
+import { _gitDeps, autoCommitIfDirty } from "@/utils/git";
 
 /**
  * Spawn stub that answers each git invocation by subcommand, so the guard under

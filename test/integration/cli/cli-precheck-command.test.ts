@@ -13,9 +13,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { assertDefined } from "@test/helpers";
 import { precheckCommand } from "@/commands/precheck";
 import { EXIT_CODES } from "@/precheck";
-import { assertDefined } from "@test/helpers";
 
 const TEMP_DIR = join(import.meta.dir, "tmp-precheck-cli");
 

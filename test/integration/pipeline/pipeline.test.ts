@@ -440,9 +440,9 @@ describe("Pipeline Runner", () => {
 // routeTddFailure — TDD failure routing by failureCategory
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { makeDispatchContext } from "@test/helpers";
 import { routeTddFailure } from "@/pipeline/stages/execution";
 import type { FailureCategory } from "@/tdd/types";
-import { makeDispatchContext } from "@test/helpers";
 
 describe("routeTddFailure", () => {
   /** Minimal context stub — only retryAsLite is used */

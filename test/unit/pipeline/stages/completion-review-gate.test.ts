@@ -9,16 +9,13 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { makeMockRuntime, makeNaxConfig, makeTestContext, withTempDir } from "@test/helpers";
 import type { InteractionConfig } from "@/config/selectors";
 import { InteractionChain } from "@/interaction/chain";
 import type { InteractionPlugin, InteractionResponse } from "@/interaction/types";
 import { _completionDeps } from "@/pipeline/stages/completion";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
-import { withTempDir } from "@test/helpers";
-import { makeNaxConfig } from "@test/helpers";
-import { makeMockRuntime } from "@test/helpers";
-import { makeTestContext } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration

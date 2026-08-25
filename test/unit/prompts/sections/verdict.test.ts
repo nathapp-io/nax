@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { makeStory } from "@test/helpers";
 import type { UserStory } from "@/prd/types";
 import { buildVerdictSection } from "@/prompts/sections/verdict";
-import { makeStory } from "@test/helpers";
 
 describe("buildVerdictSection", () => {
   const mockStory: UserStory = makeStory({

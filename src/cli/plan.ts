@@ -1,11 +1,11 @@
 export {
-  DEFAULT_TIMEOUT_SECONDS,
   _planDeps,
   assertIsValidPrd,
   buildPlanComposition,
+  DEFAULT_TIMEOUT_SECONDS,
+  type PlanCommandOptions,
   planCommand,
   planDecomposeCommand,
-  type PlanCommandOptions,
   resolvePlanMode,
   resolvePlanModelSelection,
   runPlanPipeline,

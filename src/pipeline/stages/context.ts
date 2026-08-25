@@ -21,15 +21,15 @@ import { featureDir } from "@/config";
 import { FeatureContextProvider } from "@/context";
 import {
   type ContextRequest,
-  type IContextProvider,
-  NeutralityLintError,
   createDefaultOrchestrator,
   createRunCallCounter,
   deriveProviderWeights,
   estimateAvailableBudgetTokens,
   getStageContextConfig,
+  type IContextProvider,
   loadFeatureManifests,
   loadPluginProviders,
+  NeutralityLintError,
   writeContextManifest,
 } from "@/context/engine";
 import type { ContextElement } from "@/context/types";

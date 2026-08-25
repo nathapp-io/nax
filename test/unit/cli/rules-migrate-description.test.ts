@@ -5,8 +5,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _rulesCLIDeps, rulesMigrateCommand } from "@/cli/rules";
 import { makeLogger } from "@test/helpers";
+import { _rulesCLIDeps, rulesMigrateCommand } from "@/cli/rules";
 
 let origReadFile: typeof _rulesCLIDeps.readFile;
 let origWriteFile: typeof _rulesCLIDeps.writeFile;

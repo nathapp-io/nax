@@ -1,5 +1,5 @@
 import { isAbsolute, join } from "node:path";
-import { ParseValidationError, makeParseRetryStrategy } from "../agents/retry";
+import { makeParseRetryStrategy, ParseValidationError } from "../agents/retry";
 import { tddConfigSelector } from "../config";
 import type { TddConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
@@ -8,8 +8,8 @@ import type { UserStory } from "../prd";
 import { TddPromptBuilder } from "../prompts/builders/tdd-builder";
 import { _isolationDeps, verifyImplementerIsolation } from "../tdd/isolation";
 import type { FailureCategory, IsolationCheck } from "../tdd/types";
-import { categorizeVerdict, cleanupVerdict, coerceVerdict, isValidVerdict, readVerdict } from "../tdd/verdict";
 import type { VerdictCategorization, VerifierVerdict } from "../tdd/verdict";
+import { categorizeVerdict, cleanupVerdict, coerceVerdict, isValidVerdict, readVerdict } from "../tdd/verdict";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { BuildContext, RunOperation, VerifyContext } from "./types";
 

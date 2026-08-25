@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeStory } from "@test/helpers";
 import { RectifierPromptBuilder } from "@/prompts";
 import {
   buildEscapeHatch,
@@ -16,7 +17,6 @@ import {
   testEditHeadline,
 } from "@/prompts/builders/rectifier-builder-helpers";
 import type { ReviewCheckResult } from "@/review/types";
-import { makeStory } from "@test/helpers";
 
 const TDD_STORY = makeStory({
   id: "US-TDD",

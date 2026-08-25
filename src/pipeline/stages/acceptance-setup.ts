@@ -21,8 +21,8 @@
  */
 
 import path from "node:path";
-import { buildAcceptanceRunCommand, generateSkeletonTests, groupStoriesByPackage } from "@/acceptance";
 import type { AcceptanceCriterion, RefinedCriterion } from "@/acceptance";
+import { buildAcceptanceRunCommand, generateSkeletonTests, groupStoriesByPackage } from "@/acceptance";
 import type { AgentAdapter } from "@/agents/types";
 import type { NaxConfig } from "@/config";
 import { loadConfigForWorkdir } from "@/config";

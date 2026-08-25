@@ -40,11 +40,10 @@ import { ConfiguredModelSchema, ModelMapSchema } from "./schemas-model";
 import { ReportersConfigSchema } from "./schemas-reporters";
 import { AdversarialReviewConfigSchema, ReviewConfigSchema } from "./schemas-review";
 
-// Re-export named schemas consumed by other modules (via config/schema.ts barrel)
-export { AcceptanceConfigSchema, PlanConfigSchema } from "./schemas-infra";
-export { AdversarialReviewConfigSchema } from "./schemas-review";
 export { ContextConfigSchema, ContextV2ConfigSchema } from "./schemas-context";
-export { PromptsConfigSchema } from "./schemas-infra";
+// Re-export named schemas consumed by other modules (via config/schema.ts barrel)
+export { AcceptanceConfigSchema, PlanConfigSchema, PromptsConfigSchema } from "./schemas-infra";
+export { AdversarialReviewConfigSchema } from "./schemas-review";
 
 export const NaxConfigSchema = z
   .object({

@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
+import { makeLogger, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 import type { SourceRoot } from "@/analyze";
 import { _planDeps, detectProjectName } from "@/cli";
-import { DEFAULT_CONFIG, planConfigSelector } from "@/config";
 import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG, planConfigSelector } from "@/config";
 import { assertIsValidPrd, buildPlanModeContext, writeOrRecoverPrd } from "@/plan";
 import type { IPlanStrategy, PlanDeps, PlanModeContext, PlanResult } from "@/plan/strategies";
 import type { PRD } from "@/prd/types";
-import { makeLogger, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 const SAMPLE_PRD: PRD = {
   project: "sample-project",

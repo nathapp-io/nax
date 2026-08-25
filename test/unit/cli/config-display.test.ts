@@ -9,8 +9,8 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { configCommand } from "@/cli";
-import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
 
 describe("configCommand — SEC-05: default view masks secrets", () => {
   let consoleOutput: string[];

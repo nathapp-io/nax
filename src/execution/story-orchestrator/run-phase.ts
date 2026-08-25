@@ -17,8 +17,8 @@ import {
 import { errorMessage } from "@/utils/errors";
 import { _gitDeps, captureGitRef } from "@/utils/git";
 import { captureTreeState as realCaptureTreeState } from "../checkpoint/resume-hydrate";
-import { buildResumePlan as realBuildResumePlan } from "../checkpoint/resume-plan";
 import type { ResumePlan } from "../checkpoint/resume-plan";
+import { buildResumePlan as realBuildResumePlan } from "../checkpoint/resume-plan";
 import type { StoryCheckpoint, TreeState } from "../checkpoint/types";
 import { runNonBlockingFix } from "../non-blocking-fix";
 import { buildPhaseOutcomeLogData, logDeterministicPhaseOutcome } from "../story-orchestrator-logging";

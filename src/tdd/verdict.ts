@@ -11,7 +11,7 @@
 import type { FailureCategory } from "./types";
 
 // Re-export for backward compatibility
-export { VERDICT_FILE, isValidVerdict, readVerdict, cleanupVerdict, coerceVerdict } from "./verdict-reader";
+export { cleanupVerdict, coerceVerdict, isValidVerdict, readVerdict, VERDICT_FILE } from "./verdict-reader";
 
 export interface TestFailureDiagnosis {
   /** The verifier's judgment about why story-scoped tests remain red. */

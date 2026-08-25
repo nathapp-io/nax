@@ -10,21 +10,20 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 import type { DiagnosisResult } from "@/acceptance";
 import { _diagnosisDeps } from "@/execution/lifecycle/acceptance-fix";
 import {
-  type AcceptanceLoopContext,
   _acceptanceFixCycleDeps,
   _acceptanceLoopDeps,
   _runAcceptanceTestsOnceDeps,
+  type AcceptanceLoopContext,
   runAcceptanceFixCycle,
   runAcceptanceLoop,
 } from "@/execution/lifecycle/acceptance-loop";
-import type { Finding } from "@/findings";
+import type { Finding, FixCycle, FixCycleContext, FixCycleResult } from "@/findings";
 import { acFailureToFinding, acSentinelToFinding } from "@/findings";
-import type { FixCycle, FixCycleContext, FixCycleResult } from "@/findings";
 import type { PRD } from "@/prd";
-import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 

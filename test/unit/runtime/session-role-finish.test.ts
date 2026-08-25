@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { KNOWN_SESSION_ROLES, isSessionRole } from "@/runtime";
+import { isSessionRole, KNOWN_SESSION_ROLES } from "@/runtime";
 
 /**
  * Session role registration tests for the finish review/fix/narrative roles

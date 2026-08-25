@@ -7,8 +7,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { groupStoriesIntoBatches, precomputeBatchPlan } from "@/execution/batching";
 import type { StoryBatch } from "@/execution/batching";
+import { groupStoriesIntoBatches, precomputeBatchPlan } from "@/execution/batching";
 import { escalateTier } from "@/execution/escalation";
 import { resolveMaxAttemptsOutcome } from "@/execution/runner";
 import type { UserStory } from "@/prd";

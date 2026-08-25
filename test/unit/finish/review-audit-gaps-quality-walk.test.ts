@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
+import { withTempDir } from "@test/helpers";
 /**
  * Coverage gate for the quality WALK — US-002.
  *
@@ -11,7 +12,6 @@ import { join } from "node:path";
 import type { FindingDisposition, ReviewReport } from "@/finish";
 import { auditGaps, validateDispositions } from "@/finish";
 import { _gitDeps } from "@/utils/git";
-import { withTempDir } from "@test/helpers";
 
 function makeReport(overrides: Partial<ReviewReport> = {}): ReviewReport {
   return {

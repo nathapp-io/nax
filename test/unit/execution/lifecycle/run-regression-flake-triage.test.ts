@@ -8,16 +8,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _regressionDeps, runDeferredRegression } from "@/execution";
+import { makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 import type { DeferredRegressionOptions } from "@/execution";
+import { _regressionDeps, runDeferredRegression } from "@/execution";
 import type { Finding } from "@/findings/types";
-import { type LogEntry, addSink, initLogger, resetLogger } from "@/logger";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { PRD } from "@/prd";
 import type { VerificationResult } from "@/verification";
 import { FLAKE_TRIAGE_SKIP_EVENT } from "@/verification";
-import type { FlakeTriageInput, FlakeTriageResult } from "@/verification/flake-triage";
-import type { QuarantineMemo } from "@/verification/flake-triage";
-import { makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import type { FlakeTriageInput, FlakeTriageResult, QuarantineMemo } from "@/verification/flake-triage";
 
 function makeVerifyResult(overrides: Partial<VerificationResult> = {}): VerificationResult {
   return {

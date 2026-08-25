@@ -12,11 +12,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeConfigSlice, makePluginRegistry, makePRD, makeSpawn, withDepsRestore } from "@test/helpers";
 import { _deferredReviewDeps, captureRunStartRef, runDeferredReview } from "@/execution/deferred-review";
 import type { PluginRegistry } from "@/plugins";
 import type { IReviewPlugin } from "@/plugins/extensions";
 import type { ReviewConfig } from "@/review/types";
-import { makeConfigSlice, makePRD, makePluginRegistry, makeSpawn, withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

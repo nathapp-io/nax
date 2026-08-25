@@ -9,21 +9,6 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import type { NaxConfig } from "@/config";
-import { DEFAULT_CONFIG } from "@/config";
-import type { RectificationResult } from "@/execution/merge-conflict-rectify";
-import {
-  type ParallelBatchCtx,
-  type RunParallelBatchResult,
-  _parallelBatchDeps,
-  runParallelBatch,
-} from "@/execution/parallel-batch";
-import type { ParallelBatchResult } from "@/execution/parallel-worker";
-import type { LoadedHooksConfig } from "@/hooks";
-import type { PipelineRunResult } from "@/pipeline";
-import type { PipelineContext } from "@/pipeline/types";
-import type { PluginRegistry } from "@/plugins/registry";
-import type { PRD, UserStory } from "@/prd/types";
 import {
   cleanupTempDir,
   makeMergeEngine,
@@ -33,6 +18,21 @@ import {
   makeTestContext,
   makeWorktreeManager,
 } from "@test/helpers";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
+import type { RectificationResult } from "@/execution/merge-conflict-rectify";
+import {
+  _parallelBatchDeps,
+  type ParallelBatchCtx,
+  type RunParallelBatchResult,
+  runParallelBatch,
+} from "@/execution/parallel-batch";
+import type { ParallelBatchResult } from "@/execution/parallel-worker";
+import type { LoadedHooksConfig } from "@/hooks";
+import type { PipelineRunResult } from "@/pipeline";
+import type { PipelineContext } from "@/pipeline/types";
+import type { PluginRegistry } from "@/plugins/registry";
+import type { PRD, UserStory } from "@/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

@@ -10,14 +10,14 @@
  * causing autofix-implementer (not full-suite-rectify) to be selected.
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
-import { StoryOrchestratorBuilder, _storyOrchestratorDeps } from "@/execution";
+import { _storyOrchestratorDeps, StoryOrchestratorBuilder } from "@/execution";
 import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
-import { makeAutofixImplementerStrategy, makeDeclarationSink, makeFullSuiteRectifyStrategy } from "@/operations";
 import type { CallContext, RunOperation } from "@/operations";
+import { makeAutofixImplementerStrategy, makeDeclarationSink, makeFullSuiteRectifyStrategy } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

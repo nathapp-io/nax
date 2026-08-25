@@ -9,10 +9,10 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { makeNaxConfig, makeTestContext } from "@test/helpers";
 import { promptStage } from "@/pipeline/stages/prompt";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
-import { makeNaxConfig, makeTestContext } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-test-prompt-batch-${randomUUID()}`;
 

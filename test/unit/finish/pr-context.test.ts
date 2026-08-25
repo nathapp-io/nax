@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { _finishPrDeps, createFinishState, loadFinishPrContext } from "@/finish";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { _finishPrDeps, createFinishState, loadFinishPrContext } from "@/finish";
 
 const originalDeps = { ..._finishPrDeps };
 let dir: string;

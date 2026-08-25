@@ -9,9 +9,10 @@ import type { Finding } from "../findings";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { extractAcks } from "./acks";
 import { categoryToFixTarget, resolveFixTarget } from "./category-fix-target";
-import { isBlockingSeverity, normalizeSeverity } from "./severity";
 import type { Severity } from "./severity";
+import { isBlockingSeverity, normalizeSeverity } from "./severity";
 import type { ReviewAck } from "./types";
+
 export { isBlockingSeverity, normalizeSeverity };
 
 export interface AdversarialLLMFinding {

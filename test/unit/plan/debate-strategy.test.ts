@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { assertDefined, firstCall, makeDebateRunner, makeLogger, makeMockRuntime } from "@test/helpers";
 import type { DebateRunner, DebateRunnerOptions } from "@/debate";
 import type { DebateStageConfig } from "@/debate/types";
 import type { InteractionBridge } from "@/interaction/bridge-builder";
-import { planInteractiveOp } from "@/operations";
 import * as operationsModule from "@/operations";
-import { DebatePlanStrategy, _debatePlanDeps } from "@/plan";
+import { planInteractiveOp } from "@/operations";
+import { _debatePlanDeps, DebatePlanStrategy } from "@/plan";
 import type { PlanDeps, PlanModeContext } from "@/plan/strategies";
 import type { PRD } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
-import { assertDefined, firstCall, makeDebateRunner, makeLogger, makeMockRuntime } from "@test/helpers";
 
 function makeRuntime(closeImpl = mock(async () => {})): NaxRuntime {
   const runtime = makeMockRuntime();

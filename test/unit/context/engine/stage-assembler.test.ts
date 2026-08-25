@@ -9,6 +9,14 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
+  DEFAULT_TEST_ROUTING,
+  makeContextBundle,
+  makeNaxConfig,
+  makePRD,
+  makeStory,
+  makeTestContext,
+} from "@test/helpers";
+import {
   _stageAssemblerDeps,
   assembleForStage,
   discoverSessionScratchDirsOnDisk,
@@ -17,14 +25,6 @@ import type { ContextBundle, ContextRequest } from "@/context/engine/types";
 import type { PipelineContext, RoutingResult } from "@/pipeline/types";
 import type { ResolvedTestPatterns } from "@/test-runners/resolver";
 import type { NaxIgnoreIndex } from "@/utils/path-filters";
-import {
-  DEFAULT_TEST_ROUTING,
-  makeContextBundle,
-  makeNaxConfig,
-  makePRD,
-  makeStory,
-  makeTestContext,
-} from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

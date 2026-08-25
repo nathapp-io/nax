@@ -5,11 +5,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config/types";
-import { FeatureContextProvider, _featureContextDeps } from "@/context/providers/feature-context";
+import { _featureContextDeps, FeatureContextProvider } from "@/context/providers/feature-context";
 import type { UserStory } from "@/prd";
-import { makeNaxConfig } from "@test/helpers";
 
 function makeStory(id: string): UserStory {
   return {

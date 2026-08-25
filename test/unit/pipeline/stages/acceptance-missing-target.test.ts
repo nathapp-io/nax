@@ -7,12 +7,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeDispatchContext, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import { acceptanceStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
 import { _executorDeps } from "@/verification";
-import { makeDispatchContext, makeStory } from "@test/helpers";
 
 afterEach(() => {
   mock.restore();

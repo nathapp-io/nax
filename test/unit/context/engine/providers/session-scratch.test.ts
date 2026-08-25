@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { SessionScratchProvider, _sessionScratchDeps } from "@/context/engine/providers/session-scratch";
+import { _sessionScratchDeps, SessionScratchProvider } from "@/context/engine/providers/session-scratch";
 import type { ContextRequest } from "@/context/engine/types";
 import { _pathFilterDeps } from "@/utils/path-filters";
 

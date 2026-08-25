@@ -20,7 +20,7 @@ import { AGENT_PROFILES, getAgentProfile } from "./agent-profiles";
 import { renderForAgent } from "./agent-renderer";
 import { buildDigest, digestTokens } from "./digest";
 import { CHUNK_SUMMARY_CHARS } from "./manifest-builder";
-import { DEFAULT_REBUILD_AGENT_ID, buildFailureNoteChunk, toContextChunk } from "./orchestrator-rebuild-helpers";
+import { buildFailureNoteChunk, DEFAULT_REBUILD_AGENT_ID, toContextChunk } from "./orchestrator-rebuild-helpers";
 import { type PackedChunk, packChunks } from "./packing";
 import { renderChunks } from "./render";
 import { neutralizeForAgent } from "./scratch-neutralizer";

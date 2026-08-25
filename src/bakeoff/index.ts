@@ -1,4 +1,3 @@
-export { runContestant } from "./contestant";
 export type {
   ContestantOptions,
   ContestantPipelineResult,
@@ -7,6 +6,13 @@ export type {
   ContestantStoryMetric,
   ContestantStoryResult,
 } from "./contestant";
+export { runContestant } from "./contestant";
+export type {
+  BakeoffCliDeps,
+  BakeoffCoordinatorDeps,
+  BakeoffOptions,
+  HandleRunActionOptions,
+} from "./coordinator";
 export {
   _bakeoffCliDeps,
   _coordinatorDeps,
@@ -14,12 +20,13 @@ export {
   persistBakeoffResult,
   runBakeoff,
 } from "./coordinator";
+export { _pipelineAdapterDeps, pipeline } from "./pipeline-adapter";
 export type {
-  BakeoffCliDeps,
-  BakeoffCoordinatorDeps,
-  BakeoffOptions,
-  HandleRunActionOptions,
-} from "./coordinator";
+  ContestantValidationError,
+  ContestantValidationReason,
+  ContestantValidationResult,
+  PreflightDeps,
+} from "./preflight";
 export {
   _preflightDeps,
   assertCompareAgentExclusive,
@@ -29,13 +36,6 @@ export {
   reclaimStaleBakeoffBranches,
   validateContestants,
 } from "./preflight";
-export type {
-  ContestantValidationError,
-  ContestantValidationReason,
-  ContestantValidationResult,
-  PreflightDeps,
-} from "./preflight";
-export { _pipelineAdapterDeps, pipeline } from "./pipeline-adapter";
 export { rankContestants } from "./ranking";
 export { renderBakeoffReport } from "./report";
 export type { BakeoffResult, ContestantResult, ContestantStatus } from "./types";

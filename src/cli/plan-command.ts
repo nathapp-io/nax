@@ -12,17 +12,18 @@ import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { renderManifestSection } from "../debate";
 import { NaxError } from "../errors";
-import { callOp, groundOp, planDraftOp } from "../operations";
 import type { PlanDraftInput } from "../operations";
-import { buildPlanModeContext, createPlanStrategy, finalizeAndWritePrd } from "../plan/strategies";
+import { callOp, groundOp, planDraftOp } from "../operations";
 import type { PlanResult } from "../plan/strategies";
+import { buildPlanModeContext, createPlanStrategy, finalizeAndWritePrd } from "../plan/strategies";
 
 export { assertIsValidPrd, buildPlanComposition } from "../plan/strategies";
+
 import { buildPackageSummary, buildSourceRootsSection } from "./plan-helpers";
 import { _planDeps, createPlanRuntime } from "./plan-runtime";
 
 // Re-exported for backward compatibility — callers that import from "./plan" still work.
-export { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime, resolvePlanModelSelection } from "./plan-runtime";
+export { _planDeps, createPlanRuntime, DEFAULT_TIMEOUT_SECONDS, resolvePlanModelSelection } from "./plan-runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mode resolution

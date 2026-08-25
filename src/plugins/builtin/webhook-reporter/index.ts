@@ -1,7 +1,7 @@
 import type { ReporterEvent, WebhookReporterConfig } from "@/config/schemas-reporters";
 import { getSafeLogger } from "@/logger";
 import type { IReporter, NaxPlugin } from "@/plugins/types";
-import { type PostJsonDeps, interpolateHeaders, postJson } from "../reporter-shared";
+import { interpolateHeaders, type PostJsonDeps, postJson } from "../reporter-shared";
 
 const STAGE = "webhook-reporter";
 

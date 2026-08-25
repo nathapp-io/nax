@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { hostname } from "node:os";
 import { newSpanId, newTraceId } from "@/plugins/builtin/otel-reporter/ids";
 import {
-  type SpanEvent,
   attr,
   buildCounterPoint,
   buildHistogramPoint,
@@ -10,6 +9,7 @@ import {
   buildResourceAttributes,
   buildTracesPayload,
   msToUnixNano,
+  type SpanEvent,
 } from "@/plugins/builtin/otel-reporter/otlp";
 import { PHASE_DURATION_BOUNDS } from "@/plugins/builtin/otel-reporter/span-tree";
 import { NAX_VERSION } from "@/version";

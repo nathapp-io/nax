@@ -5,17 +5,17 @@
  * built from `makeTestRuntime()`.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { ParseValidationError } from "@/agents/retry";
+import { makeTestRuntime, opSelector, withDepsRestore, withTempDir } from "@test/helpers";
 import type { RetryStrategy } from "@/agents/retry";
+import { ParseValidationError } from "@/agents/retry";
 import type { ConfigSelector } from "@/config";
 import type { FinishConfig } from "@/config/selectors";
-import { MAX_INCOMPLETE_ATTEMPTS, routeReview } from "@/finish";
 import type { Finding } from "@/finish";
+import { MAX_INCOMPLETE_ATTEMPTS, routeReview } from "@/finish";
 import type { FinishReviewInput } from "@/operations";
 import { finishReviewOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 import { _gitDeps } from "@/utils/git";
-import { makeTestRuntime, opSelector, withDepsRestore, withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

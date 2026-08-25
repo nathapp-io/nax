@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { resolveRetryPreset } from "@/agents/retry";
 import type { RetryPreset } from "@/agents/retry";
+import { resolveRetryPreset } from "@/agents/retry";
 
 const ctx = { site: "complete" as const, agentName: "claude", stage: "run" as const };
 const preset: RetryPreset = { preset: "transient-network", maxAttempts: 2, baseDelayMs: 1000 };

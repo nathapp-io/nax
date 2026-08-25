@@ -25,21 +25,6 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-
-import { pickSelector } from "@/config";
-import type { DEFAULT_CONFIG } from "@/config";
-import {
-  type ResumePlan,
-  type StoryCheckpoint,
-  StoryOrchestratorBuilder,
-  type TreeState,
-  _storyOrchestratorDeps,
-  buildResumePlan,
-} from "@/execution";
-import type { Finding } from "@/findings";
-import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
-import type { NaxRuntime } from "@/runtime";
-import type { SessionRole } from "@/runtime/session-role";
 import {
   DEFAULT_AGENT_ENVELOPE,
   makeCallOp,
@@ -49,6 +34,20 @@ import {
   makeNaxConfig,
   makeTestRuntime,
 } from "@test/helpers";
+import type { DEFAULT_CONFIG } from "@/config";
+import { pickSelector } from "@/config";
+import {
+  _storyOrchestratorDeps,
+  buildResumePlan,
+  type ResumePlan,
+  type StoryCheckpoint,
+  StoryOrchestratorBuilder,
+  type TreeState,
+} from "@/execution";
+import type { Finding } from "@/findings";
+import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
+import type { SessionRole } from "@/runtime/session-role";
 
 // ===========================================================================
 // Shared ops

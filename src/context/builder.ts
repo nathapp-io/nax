@@ -47,13 +47,13 @@ function createIntentMessage(relativeFilePath: string): string {
 
 // Re-export for backward compatibility
 export {
-  createStoryContext,
   createDependencyContext,
   createErrorContext,
-  createProgressContext,
   createFileContext,
-  createTestCoverageContext,
   createPriorFailuresContext,
+  createProgressContext,
+  createStoryContext,
+  createTestCoverageContext,
 } from "./elements";
 export { formatContextAsMarkdown } from "./formatter";
 

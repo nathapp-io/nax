@@ -12,7 +12,7 @@
  */
 
 import { getSafeLogger } from "@/logger";
-import { type SpawnOptions, type SpawnResult, cancellableDelay } from "@/utils/bun-deps";
+import { cancellableDelay, type SpawnOptions, type SpawnResult } from "@/utils/bun-deps";
 import { isProcessAlive } from "@/utils/process-alive";
 import { killProcessGroup } from "@/utils/process-kill";
 

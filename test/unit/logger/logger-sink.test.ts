@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { addSink, getLogger, initLogger, resetLogger } from "@/logger";
-import type { LogEntry } from "@/logger";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import type { LogEntry } from "@/logger";
+import { addSink, getLogger, initLogger, resetLogger } from "@/logger";
 
 describe("logger sink registration", () => {
   let consoleSpy: ReturnType<typeof spyOn>;

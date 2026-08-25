@@ -15,15 +15,15 @@
 import type { NonBlockingFixConfig, TestPatternConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
-import { captureSnapshotRef, rollbackToRef } from "../tdd/rollback";
 import type { SnapshotRef } from "../tdd/rollback";
+import { captureSnapshotRef, rollbackToRef } from "../tdd/rollback";
 import { createTestFileClassifier, resolveTestFilePatterns } from "../test-runners";
 import { typedSpawn } from "../utils/bun-deps";
 import { packageDirRelative } from "../utils/paths";
 import { isInside } from "../utils/realpath";
 import type { QuarantineMemo } from "../verification";
 import type { GateRegressionDetail, PhaseKind } from "./story-orchestrator";
-import { type NbfFlakeTriageTransaction, createNbfFlakeTriageTransaction } from "./story-orchestrator/nbf-flake-triage";
+import { createNbfFlakeTriageTransaction, type NbfFlakeTriageTransaction } from "./story-orchestrator/nbf-flake-triage";
 
 /** Phase kinds to strip from revalidation — always the LLM reviews. */
 const REVIEW_PHASE_KINDS = ["semantic-review", "adversarial-review"] as const satisfies readonly PhaseKind[];

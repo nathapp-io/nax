@@ -16,9 +16,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_CONFIG } from "@/config";
-import { NaxConfigSchema, loadConfig } from "@/config";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { DEFAULT_CONFIG, loadConfig, NaxConfigSchema } from "@/config";
 
 function rectificationConfig(overrides: Record<string, unknown> | undefined) {
   if (overrides === undefined) return { ...DEFAULT_CONFIG };

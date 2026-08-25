@@ -14,6 +14,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { withDepsRestore } from "@test/helpers";
 import {
   _fragmentStoreDeps,
   deleteFragment,
@@ -22,7 +23,6 @@ import {
   readFragment,
   writeFragment,
 } from "@/context/fragments";
-import { withDepsRestore } from "@test/helpers";
 
 withDepsRestore(_fragmentStoreDeps);
 

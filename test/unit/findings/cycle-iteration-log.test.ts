@@ -5,9 +5,9 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import { findingKey, recordIteration } from "@/findings";
-import type { Finding, FixCycle } from "@/findings";
 import { makeLogger } from "@test/helpers";
+import type { Finding, FixCycle } from "@/findings";
+import { findingKey, recordIteration } from "@/findings";
 
 let cycle: FixCycle<Finding>;
 

@@ -9,8 +9,8 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { _initDeps, initCommand, initProject } from "@/cli/init";
 import { withTempDir } from "@test/helpers";
+import { _initDeps, initCommand, initProject } from "@/cli/init";
 
 describe("initProject — creates the project config scaffold", () => {
   test("creates config.json, constitution.md, hooks/ and features/; config.json has no prompts.overrides", async () => {

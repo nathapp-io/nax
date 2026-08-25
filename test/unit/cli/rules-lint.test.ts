@@ -7,23 +7,23 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import type { MockLogger } from "@test/helpers";
+import { cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
 import {
+  _rulesCLIDeps,
+  _rulesLintDeps,
   CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS,
+  collectCanonicalRuleRoots,
   DEAD_GLOB_SCAN_EXCLUDE_SEGMENTS,
   MAX_CANONICAL_RULE_GLOB_FILES,
   MAX_DEAD_GLOB_SCAN_FILES,
   MAX_DEAD_GLOB_SCAN_TOTAL_ENTRIES,
   type RulesLintOptions,
-  _rulesCLIDeps,
-  _rulesLintDeps,
-  collectCanonicalRuleRoots,
   rulesLintCommandDirect as rulesLintCommandFromLint,
   rulesLintCommand as rulesLintCommandFromRules,
 } from "@/cli";
 import { loadCanonicalRules as loadCanonicalRulesImpl } from "@/context/engine";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
-import { cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
-import type { MockLogger } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers

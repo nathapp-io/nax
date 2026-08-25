@@ -4,9 +4,9 @@
  * Supports scrolling for >15 stories and compact mode for single-column layout.
  */
 
-import { stripControlChars } from "@/utils/strip-control-chars";
 import { Box, Text } from "ink";
 import { useEffect, useState } from "react";
+import { stripControlChars } from "@/utils/strip-control-chars";
 import { COMPACT_MAX_VISIBLE_STORIES, MAX_VISIBLE_STORIES } from "../hooks/useLayout";
 import type { PostRunPhaseState } from "../hooks/usePipelineBusEvents";
 import type { PreRunPhaseState } from "../hooks/usePipelineEvents";

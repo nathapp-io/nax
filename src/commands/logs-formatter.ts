@@ -7,7 +7,9 @@ import { join } from "node:path";
 import chalk from "chalk";
 import { formatDuration, formatLogEntry, formatRunSummary } from "../log-format/formatter";
 import type { LogEntry, LogLevel } from "../logger/types";
+
 export { formatDuration };
+
 import type { VerbosityMode } from "../log-format/types";
 import { cancellableDelay } from "../utils/bun-deps";
 import { extractRunSummary } from "./logs-reader";

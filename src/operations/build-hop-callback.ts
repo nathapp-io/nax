@@ -7,22 +7,22 @@
 
 import { buildRunInteractionHandler } from "../agents/acp/adapter-output";
 import type { AgentRunRequest, IAgentManager } from "../agents/manager-types";
-import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { AgentResult, AgentRunOptions, TurnResult } from "../agents/types";
-import { DEFAULT_CONFIG, resolveModelForAgent } from "../config";
+import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { NaxConfig } from "../config";
+import { DEFAULT_CONFIG, resolveModelForAgent } from "../config";
+import type { AdapterFailure, ContextBundle, RunCallCounter } from "../context/engine";
 import {
   ContextOrchestrator,
   createContextToolRuntime,
   createRunCallCounter,
   createSessionToolBudgets,
 } from "../context/engine";
-import type { AdapterFailure, ContextBundle, RunCallCounter } from "../context/engine";
 import { writeRebuildManifest } from "../context/engine/manifest-store";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
-import { RectifierPromptBuilder, timeoutRetry as defaultTimeoutRetry } from "../prompts";
 import type { TimeoutRetryInput } from "../prompts";
+import { timeoutRetry as defaultTimeoutRetry, RectifierPromptBuilder } from "../prompts";
 import type { ISessionManager } from "../session";
 import { captureGitRef, captureWorkingTreeChanges } from "../utils/git";
 

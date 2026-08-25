@@ -8,9 +8,6 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { pipelineEventBus } from "@/pipeline";
-import { _completionDeps, completionStage } from "@/pipeline/stages/completion";
-import type { PipelineContext } from "@/pipeline/types";
 import {
   makeMockRuntime,
   makeNaxConfig,
@@ -20,6 +17,9 @@ import {
   makeStory,
   makeTestContext,
 } from "@test/helpers";
+import { pipelineEventBus } from "@/pipeline";
+import { _completionDeps, completionStage } from "@/pipeline/stages/completion";
+import type { PipelineContext } from "@/pipeline/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration

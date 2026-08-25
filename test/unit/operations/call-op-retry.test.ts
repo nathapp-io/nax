@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { RetryPreset, RetryStrategy } from "@/agents/retry";
 import type { CompleteResult } from "@/agents/types";
 import type { DEFAULT_CONFIG } from "@/config";
 import { pickSelector } from "@/config";
-import { _callOpDeps, callOp } from "@/operations";
 import type { CompleteOperation, RunOperation } from "@/operations";
+import { _callOpDeps, callOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 const testSel = pickSelector("retry-op-test", "routing");
 

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { makeSpawn } from "@test/helpers";
 import { _newPackageSetupDeps, markNewPackageDirs } from "@/execution";
 import { _fullSuiteGateDeps, fullSuiteGateOp } from "@/operations";
 import { _commandDefaultsDeps, clearCommandDefaultsCache } from "@/quality";
-import { makeSpawn } from "@test/helpers";
 
 function ctxWithConfig(config: any = {}, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
   return {

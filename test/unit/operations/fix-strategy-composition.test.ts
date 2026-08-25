@@ -7,8 +7,8 @@
  * contract is locked before wiring occurs.
  */
 import { describe, expect, test } from "bun:test";
-import type { FixStrategy } from "@/findings";
-import type { Finding } from "@/findings";
+import { makeNaxConfig } from "@test/helpers";
+import type { Finding, FixStrategy } from "@/findings";
 import {
   makeAutofixImplementerStrategy,
   makeAutofixTestWriterStrategy,
@@ -16,7 +16,6 @@ import {
   makeMechanicalFormatFixStrategy,
   makeMechanicalLintFixStrategy,
 } from "@/operations";
-import { makeNaxConfig } from "@test/helpers";
 
 const mockCtx = {} as any;
 

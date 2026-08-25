@@ -1,4 +1,8 @@
-import { ParseValidationError, makeParseRetryStrategy } from "../agents/retry";
+import { makeParseRetryStrategy } from "../agents/retry";
+// Leaf import: `SetupPlanError` extends this at module-evaluation time, and the
+// `../agents/retry` barrel can be partially initialized when this module is
+// reached through an import cycle.
+import { ParseValidationError } from "../agents/retry/types";
 import type { RepoAnalysis } from "../cli/setup-types";
 import type { NaxConfig } from "../config";
 import { NaxConfigSchema } from "../config/schemas";

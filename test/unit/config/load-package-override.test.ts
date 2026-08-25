@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { loadPackageOverride } from "@/config";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { loadPackageOverride } from "@/config";
 
 // NOTE: makeTempDir/cleanupTempDir are SYNCHRONOUS — do NOT await them.
 let tmp: string | undefined;

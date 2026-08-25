@@ -16,10 +16,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeStory, makeTestContext } from "@test/helpers";
 import type { PipelineContext } from "@/pipeline";
 import { _scopeFilesDeps, resolveScopeFiles } from "@/pipeline";
 import type { UserStory } from "@/prd/types";
-import { makeStory, makeTestContext } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals (restored per test)

@@ -13,11 +13,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync } from "node:fs";
-import { rmSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig } from "@/config/loader";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { loadConfig } from "@/config/loader";
 
 const PROJECT_CONFIG = JSON.stringify({ quality: { commands: { test: "jest --watch=false" } } });
 

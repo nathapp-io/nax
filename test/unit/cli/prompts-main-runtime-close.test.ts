@@ -13,9 +13,9 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { makeMockRuntime, makeTempDir } from "@test/helpers";
 import { _promptsMainDeps, promptsCommand } from "@/cli";
 import { DEFAULT_CONFIG } from "@/config";
-import { makeMockRuntime, makeTempDir } from "@test/helpers";
 
 describe("promptsCommand — runtime lifecycle (BUG-24)", () => {
   let tempDir: string;

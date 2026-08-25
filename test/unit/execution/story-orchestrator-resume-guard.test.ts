@@ -13,13 +13,6 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { pickSelector } from "@/config";
-import type { DEFAULT_CONFIG } from "@/config";
-import { EXHAUSTED_EXIT_REASONS, StoryOrchestratorBuilder, _storyOrchestratorDeps } from "@/execution";
-import type { Finding } from "@/findings";
-import type { CallContext, DeterministicOperation } from "@/operations";
-import type { RunOperation } from "@/operations";
-import type { NaxRuntime } from "@/runtime";
 import {
   makeFixCycleResult,
   makeMockAgentManager,
@@ -27,6 +20,12 @@ import {
   makeTestRuntime,
   makeTurnResult,
 } from "@test/helpers";
+import type { DEFAULT_CONFIG } from "@/config";
+import { pickSelector } from "@/config";
+import { _storyOrchestratorDeps, EXHAUSTED_EXIT_REASONS, StoryOrchestratorBuilder } from "@/execution";
+import type { Finding } from "@/findings";
+import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
 
 // ============================================================================
 // Shared helpers

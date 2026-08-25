@@ -9,9 +9,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 import { buildPreviewRouting } from "@/execution";
 import type { UserStory } from "@/prd";
-import { makeNaxConfig, makeStory } from "@test/helpers";
 
 const config = makeNaxConfig({
   autoMode: {

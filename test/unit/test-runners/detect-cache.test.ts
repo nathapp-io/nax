@@ -5,6 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeSpawn } from "@test/helpers";
 import type { DetectionResult } from "@/test-runners/detect";
 import { _cacheDeps } from "@/test-runners/detect/cache";
 import { _directoryScanDeps } from "@/test-runners/detect/directory-scan";
@@ -12,7 +13,6 @@ import { _fileScanDeps } from "@/test-runners/detect/file-scan";
 import { _frameworkConfigDeps } from "@/test-runners/detect/framework-configs";
 import { _frameworkDefaultsDeps } from "@/test-runners/detect/framework-defaults";
 import { detectTestFilePatterns } from "@/test-runners/detect/index";
-import { makeSpawn } from "@test/helpers";
 
 type Orig = {
   readText: typeof _frameworkConfigDeps.readText;

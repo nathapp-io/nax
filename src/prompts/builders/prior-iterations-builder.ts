@@ -13,8 +13,7 @@
  * replaces the count-only table that caused goalpost-moving across review rounds.
  */
 
-import type { Iteration } from "@/findings";
-import type { Finding } from "@/findings";
+import type { Finding, Iteration } from "@/findings";
 
 /**
  * Token guard: cap total rendered block at this character count. When exceeded,

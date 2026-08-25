@@ -5,8 +5,8 @@
  * `nax-<hash>-<feat>-<story>-<role>`).
  */
 import type { AgentAdapter, SessionHandle, TurnResult } from "@/agents/types";
-import { KNOWN_SESSION_ROLES, isSessionRole } from "@/runtime";
 import type { SessionRole } from "@/runtime";
+import { isSessionRole, KNOWN_SESSION_ROLES } from "@/runtime";
 import { makeAgentAdapter } from "../mock-agent-adapter";
 
 export interface ScriptedTurn {

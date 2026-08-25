@@ -5,8 +5,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { getNextStory, injectStory, resetStoryToPending, setStoryPriority } from "@/prd";
 import { makePRD, makeStory } from "@test/helpers";
+import { getNextStory, injectStory, resetStoryToPending, setStoryPriority } from "@/prd";
 
 // ── resetStoryToPending() ───────────────────────────────────────────────────────
 

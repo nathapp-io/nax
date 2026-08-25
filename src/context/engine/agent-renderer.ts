@@ -21,7 +21,7 @@
 
 import { getAgentProfile } from "./agent-profiles";
 import type { PackedChunk } from "./packing";
-import { SCOPE_ORDER, groupByScope, sortedBodies } from "./render-utils";
+import { groupByScope, SCOPE_ORDER, sortedBodies } from "./render-utils";
 import type { ChunkScope } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────

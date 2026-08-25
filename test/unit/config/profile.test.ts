@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   _profileDeps,
   listProfiles,
@@ -18,7 +19,6 @@ import {
   resolveProfileName,
   resolveProfileNames,
 } from "@/config/profile";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("config/profile", () => {
   let globalDir: string;

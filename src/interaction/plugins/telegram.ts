@@ -8,12 +8,12 @@
 import { getSafeLogger } from "@/logger";
 import { errorMessage } from "@/utils/errors";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
-import { TelegramConfigSchema, type TelegramMessage, type TelegramUpdate, normalizeChatId } from "./telegram-config";
+import { normalizeChatId, TelegramConfigSchema, type TelegramMessage, type TelegramUpdate } from "./telegram-config";
 import {
-  MAX_MESSAGE_CHARS,
   buildBody,
   buildHeader,
   buildKeyboard,
+  MAX_MESSAGE_CHARS,
   splitText,
   truncateIdForCallbackData,
 } from "./telegram-format";

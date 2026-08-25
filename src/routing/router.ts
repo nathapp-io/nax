@@ -7,23 +7,25 @@
  */
 
 import type { LlmRoutingConfig, RoutingConfig } from "@/config/selectors";
-import { resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
+import { resolveDefaultAgent } from "../agents";
 import type { Complexity, ModelTier, NaxConfig, TddStrategy } from "../config";
 import { getSafeLogger } from "../logger";
-import { callOp } from "../operations";
-import { classifyRouteBatchOp, classifyRouteOp } from "../operations";
 import type { CallContext } from "../operations";
+import { callOp, classifyRouteBatchOp, classifyRouteOp } from "../operations";
 import type { PluginRegistry } from "../plugins/registry";
 import type { UserStory } from "../prd/types";
 import type { NaxRuntime } from "../runtime";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { RoutingDecision } from "./decision";
+
 export type { RoutingDecision } from "./decision";
-import { MAX_CACHE_SIZE, evictOldest } from "./strategies/llm-cache";
+
+import { evictOldest, MAX_CACHE_SIZE } from "./strategies/llm-cache";
 
 // Pure classification logic lives in classify.ts (no agent-registry dep) — re-exported here for back-compat.
 export { classifyComplexity, determineTestStrategy, isSecurityCriticalStory } from "./classify";
+
 import { classifyComplexity, determineTestStrategy } from "./classify";
 
 // ---------------------------------------------------------------------------

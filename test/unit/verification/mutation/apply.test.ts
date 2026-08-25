@@ -9,8 +9,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { type Mutant, applyMutant, revertMutant } from "@/verification";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { applyMutant, type Mutant, revertMutant } from "@/verification";
 
 describe("applyMutant", () => {
   let tempDir: string;

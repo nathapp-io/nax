@@ -19,6 +19,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { type MockLogger, makeLogger, withTempDir } from "@test/helpers";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import {
   _evidenceDeps,
@@ -27,8 +28,6 @@ import {
   substantiateSemanticEvidence,
 } from "@/review/semantic-evidence";
 import type { LLMFinding } from "@/review/semantic-helpers";
-import { type MockLogger, makeLogger } from "@test/helpers";
-import { withTempDir } from "@test/helpers";
 
 const STORY_ID = "US-001";
 

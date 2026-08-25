@@ -10,22 +10,22 @@
  *     buildCheckpointLogData (US-003 resume-integration helpers)
  */
 
-export { CheckpointWriter, createCheckpointWriter } from "./writer";
-export type { CheckpointWriterOptions } from "./writer";
 export { loadCheckpoints } from "./reader";
-export { buildResumePlan } from "./resume-plan";
-export type { ResumePlan } from "./resume-plan";
 export { applyRecordGreenDeps, applyResumeModeDeps, type ResumeMode } from "./resume-cli";
+export type { CaptureTreeStateDeps, CaptureTreeStateOptions } from "./resume-hydrate";
 export {
   buildCheckpointLogData,
   captureTreeState,
   hydrateFromResumePlan,
 } from "./resume-hydrate";
-export type { CaptureTreeStateDeps, CaptureTreeStateOptions } from "./resume-hydrate";
+export type { ResumePlan } from "./resume-plan";
+export { buildResumePlan } from "./resume-plan";
 export type {
-  CheckpointRecord,
   CheckpointReaderDeps,
+  CheckpointRecord,
   CheckpointWriterDeps,
   StoryCheckpoint,
   TreeState,
 } from "./types";
+export type { CheckpointWriterOptions } from "./writer";
+export { CheckpointWriter, createCheckpointWriter } from "./writer";

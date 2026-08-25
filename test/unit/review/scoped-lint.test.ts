@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeConfigSlice } from "@test/helpers";
 import { _scopedLintDeps, runAutofixLint, runScopedLintCheck } from "@/review/scoped-lint";
 import type { ReviewConfig } from "@/review/types";
-import { makeConfigSlice } from "@test/helpers";
 
 const baseReviewConfig: ReviewConfig = makeConfigSlice("review", {
   enabled: true,

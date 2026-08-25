@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 import { _acpAdapterDeps } from "@/agents/acp/adapter";
 import { AgentManager } from "@/agents/manager";
 import type { AgentRegistry } from "@/agents/registry";
@@ -7,7 +8,6 @@ import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { ResolvedPermissions } from "@/config/permissions";
 import { NaxConfigSchema } from "@/config/schemas";
 import { type AgentMiddleware, MiddlewareChain, type MiddlewareContext } from "@/runtime/agent-middleware";
-import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 import { makeClient, makeSession } from "./acp/adapter.test";
 
 function makeManager(fallback: Record<string, unknown> = {}) {

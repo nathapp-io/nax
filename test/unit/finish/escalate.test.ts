@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { buildEscalationComment, postEscalation } from "@/finish";
 import type { Finding } from "@/finish";
+import { buildEscalationComment, postEscalation } from "@/finish";
 import type { ForgeDeps } from "@/forge";
 
 const finding: Finding = {

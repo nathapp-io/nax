@@ -11,22 +11,21 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-
+import { makeLogger, makeMockAgentManager } from "@test/helpers";
 import { computeAcpHandle } from "@/agents/acp/adapter";
 import type { CompleteOptions } from "@/agents/types";
 import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
 import type { SelectorContext } from "@/debate/selectors";
-import { _debateSessionDeps, resolveOutcome } from "@/debate/session-helpers";
 import type { DebateSessionOptions } from "@/debate/session-helpers";
+import { _debateSessionDeps, resolveOutcome } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import type { CallContext } from "@/operations/types";
-import { makeLogger, makeMockAgentManager } from "@test/helpers";
 
 const DEFAULT_DEBATE_CONFIG = debateConfigSelector.select(DEFAULT_CONFIG);
 
+import type { DebateSessionOptions as BarrelDebateSessionOptions } from "@/debate";
 // Barrel re-export checks
 import { _debateSessionDeps as barrelDeps } from "@/debate";
-import type { DebateSessionOptions as BarrelDebateSessionOptions } from "@/debate";
 
 // ─── AC1: File size constraint ────────────────────────────────────────────────
 

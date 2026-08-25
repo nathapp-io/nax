@@ -7,7 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
-import { PROJECT_FEATURES_DIR, featureDir } from "@/config";
+import { featureDir, PROJECT_FEATURES_DIR } from "@/config";
 import type { SessionDescriptor } from "./types";
 
 export function resolveProjectDirFromScratchDir(scratchDir: string): string | undefined {

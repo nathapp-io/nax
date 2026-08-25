@@ -9,16 +9,16 @@
  */
 
 import { describe, expect, it, mock } from "bun:test";
-import { deriveBakeoffWorktreeId, runContestant } from "@/bakeoff";
+import { makeNaxConfig } from "@test/helpers";
 import type {
   ContestantOptions,
   ContestantPipelineResult,
   ContestantRunContext,
   ContestantRunnerDeps,
 } from "@/bakeoff";
+import { deriveBakeoffWorktreeId, runContestant } from "@/bakeoff";
 import type { ContestantResult } from "@/bakeoff/types";
 import type { NaxConfig } from "@/config";
-import { makeNaxConfig } from "@test/helpers";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 

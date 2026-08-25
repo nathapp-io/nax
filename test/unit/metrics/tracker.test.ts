@@ -8,13 +8,14 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { makeMockRuntime, makeNaxConfig, makeTestContext } from "@test/helpers";
 import type { AgentFallbackRecord } from "@/agents/manager-types";
 import type { NaxConfig } from "@/config";
 import { collectStoryMetrics } from "@/metrics/tracker";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
 import type { StoryRouting } from "@/prd/types";
-import { makeMockRuntime, makeNaxConfig, makeTestContext } from "@test/helpers";
+
 // VerifyResult inlined after orchestrator-types.ts deletion (issue #1116).
 interface VerifyResult {
   success: boolean;

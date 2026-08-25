@@ -8,18 +8,18 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { mockFetch } from "@test/helpers";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { createOtelReporterPlugin } from "@/plugins";
 import {
+  buildHeartbeatMetricsPayload,
   type Heartbeat,
   type HeartbeatSnapshot,
-  buildHeartbeatMetricsPayload,
   startHeartbeat,
 } from "@/plugins/builtin/otel-reporter/heartbeat";
 import { buildMetricsPayload, buildResourceAttributes, buildTracesPayload } from "@/plugins/builtin/otel-reporter/otlp";
 import { createPhaseMetricsAggregator, createSpanTree } from "@/plugins/builtin/otel-reporter/span-tree";
 import type { PostJsonDeps } from "@/plugins/builtin/reporter-shared";
-import { mockFetch } from "@test/helpers";
 
 const liveHeartbeats: Heartbeat[] = [];
 function track(hb: Heartbeat): Heartbeat {

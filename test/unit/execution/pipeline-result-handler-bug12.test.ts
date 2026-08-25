@@ -7,13 +7,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { makeAgentResult, makeLogger, makeMockRuntime, makePRD, makeStory, makeTestContext } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
-import { type PipelineHandlerContext, _resultHandlerDeps, handlePipelineFailure } from "@/execution";
+import { _resultHandlerDeps, handlePipelineFailure, type PipelineHandlerContext } from "@/execution";
 import * as loggerModule from "@/logger";
 import type { PipelineRunResult } from "@/pipeline";
 import { PluginRegistry } from "@/plugins";
 import type { UserStory } from "@/prd";
-import { makeAgentResult, makeLogger, makeMockRuntime, makePRD, makeStory, makeTestContext } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -7,8 +7,7 @@
  * See: docs/specs/SPEC-context-engine-v2.md
  */
 
-import type { AdapterFailure } from "./types";
-import type { ChunkKind, ChunkRole, ChunkScope } from "./types";
+import type { AdapterFailure, ChunkKind, ChunkRole, ChunkScope } from "./types";
 
 /** Effectiveness signal annotated on a chunk post-story (Amendment A AC-45). */
 export interface ChunkEffectiveness {

@@ -13,27 +13,27 @@ import {
   downgradeUnsubstantiatedFinding,
 } from "./semantic-evidence";
 
+export type {
+  AcDroppedEntry,
+  AcGroundingMinimalRejection,
+  AcQuoteRejectionCode,
+  ScopeQuoteRejectionCode,
+} from "./ac-quote-validator";
+export { filterByAcGroundingMinimal, filterByAcQuote, filterByScopeQuote } from "./ac-quote-validator";
+export {
+  checkFindingEvidence,
+  downgradeUnsubstantiatedFinding,
+  substantiateSemanticEvidence,
+} from "./semantic-evidence";
+export type { LLMFinding, LLMResponse } from "./semantic-helpers";
 // Semantic filter primitives and shape helpers — re-exported so ops import only from this barrel.
 // This keeps the dependency direction: operations/ → review/finding-filters.ts → review/*
 export {
-  sanitizeRefModeFindings,
   isBlockingSeverity,
+  sanitizeRefModeFindings,
   toReviewFindings,
   validateLLMShape,
 } from "./semantic-helpers";
-export type { LLMFinding, LLMResponse } from "./semantic-helpers";
-export {
-  substantiateSemanticEvidence,
-  checkFindingEvidence,
-  downgradeUnsubstantiatedFinding,
-} from "./semantic-evidence";
-export { filterByAcGroundingMinimal, filterByAcQuote, filterByScopeQuote } from "./ac-quote-validator";
-export type {
-  AcQuoteRejectionCode,
-  AcDroppedEntry,
-  AcGroundingMinimalRejection,
-  ScopeQuoteRejectionCode,
-} from "./ac-quote-validator";
 
 /**
  * True when the reviewer's raw response declares a non-empty `inspectedFiles`

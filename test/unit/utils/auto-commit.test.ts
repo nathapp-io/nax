@@ -5,8 +5,8 @@
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { _gitDeps, autoCommitIfDirty } from "@/utils/git";
 import { makeLogger, makeSpawn, withDepsRestore } from "@test/helpers";
+import { _gitDeps, autoCommitIfDirty } from "@/utils/git";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

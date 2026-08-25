@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { findSpecDriftViolations } from "@/prd";
 import { makePRD, makeStory } from "@test/helpers";
+import { findSpecDriftViolations } from "@/prd";
 
 function prdWithAcs(...acs: string[]) {
   return makePRD({ userStories: [makeStory({ acceptanceCriteria: acs })] });

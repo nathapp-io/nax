@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { MAX_BUFFERED_LINE_BYTES, createParseState, readAndParseLines, readStreamTail } from "@/agents";
+import { createParseState, MAX_BUFFERED_LINE_BYTES, readAndParseLines, readStreamTail } from "@/agents";
 
 function makeStream(chunks: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();

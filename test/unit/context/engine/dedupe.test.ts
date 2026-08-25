@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { SIMILARITY_THRESHOLD, dedupeChunks } from "@/context/engine/dedupe";
+import { dedupeChunks, SIMILARITY_THRESHOLD } from "@/context/engine/dedupe";
 import type { ScoredChunk } from "@/context/engine/scoring";
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -257,8 +257,9 @@ export function detectMergeConflict(output: string): boolean {
  * without going through the module re-export indirection.
  */
 import { parsePorcelainForNaxPaths, parsePorcelainUntrackedPaths } from "./porcelain";
-export { parsePorcelainForNaxPaths, parsePorcelainUntrackedPaths };
+
 export type { NaxProtectedPath } from "./porcelain";
+export { parsePorcelainForNaxPaths, parsePorcelainUntrackedPaths };
 
 /**
  * Snapshot the untracked paths currently in the working tree (BUG-07).

@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MAX_DIRECTORY_DEPTH, isWithinDirectory, validateDirectory, validateFilePath } from "@/config";
-import { findProjectDir } from "@/config/loader";
 import { makeTempDir } from "@test/helpers";
+import { isWithinDirectory, MAX_DIRECTORY_DEPTH, validateDirectory, validateFilePath } from "@/config";
+import { findProjectDir } from "@/config/loader";
 
 // Create a temporary test directory
 const testRoot = makeTempDir("nax-path-test-");

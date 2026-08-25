@@ -10,9 +10,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { NaxConfigSchema } from "@/config/schemas";
-import { assertDefined } from "@test/helpers";
 
 describe("DEFAULT_CONFIG review.checks", () => {
   test("default review.checks is ['typecheck', 'lint'] without 'test'", () => {

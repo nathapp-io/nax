@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _isolationDeps, getChangedFiles } from "@/tdd";
 import { getAddedLinesPerFile } from "@/tdd/isolation";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 async function git(cwd: string, args: string[]): Promise<void> {
   const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });

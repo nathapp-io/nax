@@ -7,8 +7,8 @@
  * shared by both phases.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import type { NaxRuntime } from "@/runtime";
 import { makeTestRuntime } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

@@ -11,11 +11,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { SourceRoot } from "@/analyze/types";
 import { _planDeps, planCommand } from "@/cli";
 import type { PRD } from "@/prd/types";
-import { makeTempDir } from "@test/helpers";
-import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

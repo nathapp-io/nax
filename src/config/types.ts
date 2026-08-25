@@ -5,6 +5,56 @@
  * for the nax configuration system.
  */
 
+// Debate types
+export type {
+  DebateConfig,
+  DebateResult,
+  Debater,
+  DebateStageConfig,
+  ResolverConfig,
+  ResolverType,
+  SessionMode,
+} from "../debate/types";
+// Runtime types
+export type {
+  AcceptanceConfig,
+  AcceptanceFixConfig,
+  AcceptanceTestStrategy,
+  AdversarialReviewConfig,
+  AgentConfig,
+  AutoModeConfig,
+  ConstitutionConfig,
+  ContextAutoDetectConfig,
+  ContextConfig,
+  ContextV2Config,
+  CuratorConfig,
+  EscalationEntry,
+  ExecutionConfig,
+  FeatureContextEngineConfig,
+  FinishTimeoutsConfig,
+  IdleWatchdogConfig,
+  InteractionConfig,
+  LlmRoutingConfig,
+  NaxConfig,
+  OptimizerConfig,
+  PlanConfig,
+  PluginConfigEntry,
+  PrecheckConfig,
+  ProjectProfile,
+  PromptsConfig,
+  QualityConfig,
+  RawHooksConfig,
+  RectificationConfig,
+  RegressionGateConfig,
+  ReviewConfig,
+  RoutingConfig,
+  SmartTestRunnerConfig,
+  StorySizeGateConfig,
+  TddConfig,
+  TestCoverageConfig,
+  TestingConfig,
+} from "./runtime-types";
+export type { AutoRouteConfig, AutoRouteDowngradeConfig, AutoRouteUpgradeConfig } from "./runtime-types-auto-route";
 // Schema types
 export type {
   Complexity,
@@ -24,61 +74,9 @@ export type {
   TokenPricing,
 } from "./schema-types";
 export {
-  MODEL_SHORTHAND_TIERS,
   isBuiltinModelTier,
+  MODEL_SHORTHAND_TIERS,
   resolveConfiguredModel,
   resolveModel,
   resolveModelForAgent,
 } from "./schema-types";
-
-// Debate types
-export type {
-  DebateConfig,
-  DebateStageConfig,
-  ResolverConfig,
-  Debater,
-  DebateResult,
-  ResolverType,
-  SessionMode,
-} from "../debate/types";
-
-// Runtime types
-export type {
-  AcceptanceConfig,
-  AcceptanceFixConfig,
-  AcceptanceTestStrategy,
-  AutoModeConfig,
-  ConstitutionConfig,
-  ContextAutoDetectConfig,
-  ContextConfig,
-  ContextV2Config,
-  EscalationEntry,
-  ExecutionConfig,
-  FeatureContextEngineConfig,
-  FinishTimeoutsConfig,
-  RawHooksConfig,
-  InteractionConfig,
-  LlmRoutingConfig,
-  NaxConfig,
-  OptimizerConfig,
-  PlanConfig,
-  PluginConfigEntry,
-  PrecheckConfig,
-  PromptsConfig,
-  QualityConfig,
-  RectificationConfig,
-  RegressionGateConfig,
-  AdversarialReviewConfig,
-  ReviewConfig,
-  RoutingConfig,
-  SmartTestRunnerConfig,
-  StorySizeGateConfig,
-  TddConfig,
-  TestCoverageConfig,
-  TestingConfig,
-  AgentConfig,
-  IdleWatchdogConfig,
-  ProjectProfile,
-  CuratorConfig,
-} from "./runtime-types";
-export type { AutoRouteConfig, AutoRouteDowngradeConfig, AutoRouteUpgradeConfig } from "./runtime-types-auto-route";

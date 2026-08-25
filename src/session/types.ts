@@ -8,7 +8,8 @@
  */
 import type { ProtocolIds } from "../runtime/protocol-types";
 import type { SessionRole } from "../runtime/session-role";
-export type { SessionRole, CanonicalSessionRole } from "../runtime/session-role";
+
+export type { CanonicalSessionRole, SessionRole } from "../runtime/session-role";
 export { isSessionRole, KNOWN_SESSION_ROLES } from "../runtime/session-role";
 
 // ─────────────────────────────────────────────────────────────────────────────

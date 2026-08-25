@@ -4,5 +4,5 @@
  * Codebase scanning utilities used by planning.
  */
 
+export { _scannerDeps, scanCodebase, scanSourceRoots } from "./scanner";
 export type { CodebaseScan, SourceRoot } from "./types";
-export { scanCodebase, _scannerDeps, scanSourceRoots } from "./scanner";

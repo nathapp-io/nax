@@ -10,10 +10,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeMockAgentManager } from "@test/helpers";
 import type { CompleteOptions } from "@/agents/types";
 import { judgeResolver, majorityResolver, synthesisResolver } from "@/debate/resolvers";
 import type { Debater, ResolverConfig } from "@/debate/types";
-import { makeMockAgentManager } from "@test/helpers";
 
 // ─── AC7 & AC8: majorityResolver ─────────────────────────────────────────────
 

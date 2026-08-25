@@ -10,9 +10,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { reclaimStaleBakeoffBranches } from "@/bakeoff";
 import { WorktreeManager } from "@/worktree";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 async function git(args: string[], cwd: string): Promise<{ stdout: string; exitCode: number }> {
   const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });

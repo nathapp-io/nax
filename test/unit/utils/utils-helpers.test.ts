@@ -9,16 +9,16 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { makePRD, makeStory, makeTempDir } from "@test/helpers";
 import {
-  type StoryCounts,
   acquireLock,
   formatProgress,
   getAllReadyStories,
   hookCtx,
   releaseLock,
+  type StoryCounts,
 } from "@/execution/helpers";
 import type { PRD, UserStory } from "@/prd";
-import { makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

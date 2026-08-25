@@ -7,8 +7,8 @@
  * When agent panel IS focused, only Ctrl+] escapes back to TUI controls.
  */
 
-import type { UserStory } from "@/prd/types";
 import { useInput } from "ink";
+import type { UserStory } from "@/prd/types";
 import { PanelFocus } from "../types";
 
 /**

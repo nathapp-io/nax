@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { addSink, initLogger, resetLogger } from "@/logger";
-import type { LogEntry } from "@/logger";
-import { applyPlanFidelity, backfillModifiedFiles, backfillOutOfScope, warnOnDroppedContextFiles } from "@/operations";
 import { makePRD, makeStory } from "@test/helpers";
+import type { LogEntry } from "@/logger";
+import { addSink, initLogger, resetLogger } from "@/logger";
+import { applyPlanFidelity, backfillModifiedFiles, backfillOutOfScope, warnOnDroppedContextFiles } from "@/operations";
 
 const SPEC = [
   "# Feature",

@@ -16,12 +16,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeMockCallContext, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import { _storyOrchestratorDeps, runPhase } from "@/execution";
 import type { AnySlot } from "@/execution/story-orchestrator";
 import type { FindingSeverity } from "@/findings";
 import { pipelineEventBus } from "@/pipeline";
 import type { StoryPhaseCompletedEvent } from "@/pipeline/event-bus";
-import { makeMockCallContext, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 // ─── fixtures ────────────────────────────────────────────────────────────────
 

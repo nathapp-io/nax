@@ -8,10 +8,6 @@
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { join } from "node:path";
-import * as loggerModule from "@/logger";
-import { mutationCheckOp } from "@/operations";
-import * as mutationModule from "@/verification/mutation";
-import type { GenerateMutantsInput } from "@/verification/mutation/mutator";
 import {
   cleanupTempDir,
   makeMutationCheckDeps as fakeDeps,
@@ -19,6 +15,10 @@ import {
   makeResolvedTestPatterns,
   makeTempDir,
 } from "@test/helpers";
+import * as loggerModule from "@/logger";
+import { mutationCheckOp } from "@/operations";
+import * as mutationModule from "@/verification/mutation";
+import type { GenerateMutantsInput } from "@/verification/mutation/mutator";
 
 const FAKE_STORY = { id: "US-003", title: "scope mutation candidates" } as any;
 

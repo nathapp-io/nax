@@ -7,10 +7,10 @@
 
 import { beforeEach, describe, expect, test } from "bun:test";
 import { _adversarialDeps, llmFindingsToReviewFindings } from "@/review";
-import { toAdversarialReviewFindings } from "@/review/adversarial-helpers";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
-import { ReviewAuditor, _reviewAuditDeps } from "@/runtime";
+import { toAdversarialReviewFindings } from "@/review/adversarial-helpers";
 import type { ReviewAuditEntry } from "@/runtime";
+import { _reviewAuditDeps, ReviewAuditor } from "@/runtime";
 
 const { writeReviewAudit } = _adversarialDeps;
 

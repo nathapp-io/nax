@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { readFile, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { waitForFile } from "@test/helpers";
 import { globalConfigDir } from "@/config/paths";
 import { PipelineEventBus } from "@/pipeline/event-bus";
 import { type MetaJson, wireRegistry } from "@/pipeline/subscribers/registry";
-import { waitForFile } from "@test/helpers";
 
 describe("wireRegistry", () => {
   let workdir: string;

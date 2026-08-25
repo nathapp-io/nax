@@ -11,10 +11,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeMockCallContext } from "@test/helpers";
 import { _storyOrchestratorDeps, runPhase } from "@/execution";
 import type { AnySlot } from "@/execution/story-orchestrator";
 import type { Finding, Iteration } from "@/findings";
-import { makeMockCallContext } from "@test/helpers";
 
 function makeSlot(opName: string): AnySlot {
   return {

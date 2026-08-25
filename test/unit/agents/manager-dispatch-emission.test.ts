@@ -26,8 +26,8 @@ import type {
   SessionTurnDispatchEvent,
 } from "@/runtime/dispatch-events";
 import { DispatchEventBus } from "@/runtime/dispatch-events";
-import { runTrackedSession } from "@/session/manager-run";
 import type { SessionManagerState } from "@/session/manager-run";
+import { runTrackedSession } from "@/session/manager-run";
 import type { SessionDescriptor } from "@/session/types";
 import { makeClient, makeSession } from "./acp/adapter.test";
 

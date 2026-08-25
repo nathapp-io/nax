@@ -4,14 +4,13 @@
  * Re-exports prompts-related commands for assembling, initializing, and exporting prompts.
  */
 
-// Main prompts command exports
-export { promptsCommand, buildFrontmatter, _promptsMainDeps, type PromptsCommandOptions } from "./prompts-main";
+// Export command exports
+export { type ExportPromptCommandOptions, exportPromptCommand } from "./prompts-export";
 
 // Init command exports
-export { _promptsInitDeps, promptsInitCommand, type PromptsInitCommandOptions } from "./prompts-init";
-
-// Export command exports
-export { exportPromptCommand, type ExportPromptCommandOptions } from "./prompts-export";
+export { _promptsInitDeps, type PromptsInitCommandOptions, promptsInitCommand } from "./prompts-init";
+// Main prompts command exports
+export { _promptsMainDeps, buildFrontmatter, type PromptsCommandOptions, promptsCommand } from "./prompts-main";
 
 // TDD handling exports
 export { handleThreeSessionTddPrompts } from "./prompts-tdd";

@@ -12,9 +12,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
-import type { AcceptanceConfig } from "@/config/runtime-types";
 // AC1: AcceptanceTestStrategy must be importable from src/config/runtime-types
-import type { AcceptanceTestStrategy } from "@/config/runtime-types";
+import type { AcceptanceConfig, AcceptanceTestStrategy } from "@/config/runtime-types";
 import { NaxConfigSchema } from "@/config/schemas";
 
 const BASE_ACCEPTANCE = DEFAULT_CONFIG.acceptance;

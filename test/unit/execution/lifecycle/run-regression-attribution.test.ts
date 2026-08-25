@@ -9,12 +9,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _regressionDeps, findResponsibleStoryByTransition, runDeferredRegression } from "@/execution";
+import { makeMockRuntime, makeNaxConfig, makePRD, makeSpawn, makeStory } from "@test/helpers";
 import type { DeferredRegressionOptions, StorySnapshot } from "@/execution";
+import { _regressionDeps, findResponsibleStoryByTransition, runDeferredRegression } from "@/execution";
 import type { PRD } from "@/prd";
 import { _gitDeps } from "@/utils/git";
 import type { FlakeTriageInput, FlakeTriageResult, VerificationResult } from "@/verification";
-import { makeMockRuntime, makeNaxConfig, makePRD, makeSpawn, makeStory } from "@test/helpers";
 
 function snap(storyId: string, completedAt: string, failingTestFiles?: string[]): StorySnapshot {
   return { storyId, completedAt, failingTestFiles };

@@ -3,10 +3,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { mergePackageConfig } from "@/config/merge";
 import type { NaxConfig } from "@/config/schema";
-import { makeNaxConfig } from "@test/helpers";
 
 function makeRoot(): NaxConfig {
   return {

@@ -1,12 +1,12 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { NaxError } from "../errors.js";
-import { type FormatterOptions, type VerbosityMode, formatLogEntry } from "../log-format/index.js";
+import { type FormatterOptions, formatLogEntry, type VerbosityMode } from "../log-format/index.js";
 import { stripControlChars } from "../utils/strip-control-chars.js";
 import { formatConsole, formatJsonl } from "./formatters.js";
 import { redactEntry } from "./redact.js";
 import { SinkRegistry } from "./sink-registry.js";
-import type { LogEntry, LogLevel, LogSink, LoggerOptions, StoryLogger } from "./types.js";
+import type { LogEntry, LoggerOptions, LogLevel, LogSink, StoryLogger } from "./types.js";
 
 /**
  * Severity ordering for log levels (lower number = more severe)

@@ -10,8 +10,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { withIncreasingFailuresBail } from "@/execution";
-import type { FixStrategy, Iteration } from "@/findings";
-import type { Finding } from "@/findings";
+import type { Finding, FixStrategy, Iteration } from "@/findings";
 
 function finding(message: string): Finding {
   return { severity: "error", category: "test", source: "tdd-verifier", message };

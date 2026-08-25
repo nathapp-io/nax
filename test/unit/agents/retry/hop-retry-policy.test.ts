@@ -15,16 +15,16 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import type { AgentRunOptions } from "@/agents";
 import {
-  type TimeoutRetryConfig,
   extractTimeoutRetryConfig,
   resolveTimeoutRetryOptions,
+  type TimeoutRetryConfig,
   timeoutRetryShouldRetry,
 } from "@/agents";
 import { DEFAULT_CONFIG } from "@/config";
 import { agentManagerConfigSelector } from "@/config/selectors";
-import { makeNaxConfig } from "@test/helpers";
 
 const TIMEOUT_RETRY_DEFAULTS: TimeoutRetryConfig = {
   maxAttempts: 1,

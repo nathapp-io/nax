@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { validateMockStructureFiles } from "@/operations";
 import type { TestEditDeclaration } from "@/operations";
+import { validateMockStructureFiles } from "@/operations";
 import type { ResolvedTestPatterns } from "@/test-runners";
 
 // Mock test patterns that match *.test.ts files

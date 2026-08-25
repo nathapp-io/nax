@@ -18,13 +18,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { _planDeps, planCommand } from "@/cli";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
 import { InteractionChain } from "@/interaction/chain";
 import type { PRD } from "@/prd/types";
-import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
-import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

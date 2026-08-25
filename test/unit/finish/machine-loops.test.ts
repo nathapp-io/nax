@@ -5,20 +5,20 @@
  * returned `FinishResult` — never on machine internals.
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import { withTempDir } from "@test/helpers";
 import type { AcceptanceGroupResult } from "@/cli";
-import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
+import type { AuditTarget, Finding, FinishContext, FinishMachineDeps, FinishOps, FinishState } from "@/finish";
 import {
-  MAX_INCOMPLETE_ATTEMPTS,
   _acceptanceGateDeps,
   _finishGitDeps,
   _qualityGateDeps,
   createFinishState,
+  MAX_INCOMPLETE_ATTEMPTS,
   runFinishMachine,
 } from "@/finish";
-import type { AuditTarget, Finding, FinishContext, FinishMachineDeps, FinishOps, FinishState } from "@/finish";
 import type { QualityCommandOptions, QualityCommandResult } from "@/quality";
-import { withTempDir } from "@test/helpers";
 
 const originalGit = _finishGitDeps.git;
 const originalAcceptanceRun = _acceptanceGateDeps.run;

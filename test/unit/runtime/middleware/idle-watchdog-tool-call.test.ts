@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import type { FakeClock } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 import { AgentStreamEventBus, attachAgentIdleWatchdog } from "@/runtime";
-import type { FakeClock } from "@test/helpers";
-import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import {
   installFakeWatchdogClock,
   makeCallStartedEvent,

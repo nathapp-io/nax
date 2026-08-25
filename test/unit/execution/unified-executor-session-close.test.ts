@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeSessionManager as makeMockSessionManager } from "@test/helpers";
 import { _unifiedExecutorDeps, executeUnified } from "@/execution/unified-executor";
 import type { PRD, UserStory } from "@/prd/types";
 import type { ISessionManager } from "@/session";
-import { makeSessionManager as makeMockSessionManager } from "@test/helpers";
 
 function makePendingStory(id: string): UserStory {
   return {

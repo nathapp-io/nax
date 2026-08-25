@@ -5,13 +5,19 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import {
+  cleanupTempDir,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeNaxConfig,
+  makePRD,
+  makeTempDir,
+} from "@test/helpers";
 import type { DecomposedStory } from "@/agents/shared/types-extended";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import { NaxError } from "@/errors";
 import type { PRD, UserStory } from "@/prd";
 import { getContextFiles } from "@/prd";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makePRD } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

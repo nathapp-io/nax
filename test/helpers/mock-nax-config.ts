@@ -1,5 +1,5 @@
-import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
 import type { StorySizeGateConfig } from "@/config/runtime-types";
 import type { AdversarialReviewConfig, SemanticReviewConfig } from "@/review/types";
 

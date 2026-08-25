@@ -1,6 +1,4 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { runStateful } from "@/debate/runner-stateful";
-import { _statefulDeps } from "@/debate/runner-stateful-helpers";
 import {
   makeDispatchContext,
   makeMockAgentManager,
@@ -9,6 +7,8 @@ import {
   makeSessionManager,
   withDepsRestore,
 } from "@test/helpers";
+import { runStateful } from "@/debate/runner-stateful";
+import { _statefulDeps } from "@/debate/runner-stateful-helpers";
 
 function installCallOp(impl: typeof _statefulDeps.callOp) {
   const spy = mock(impl);

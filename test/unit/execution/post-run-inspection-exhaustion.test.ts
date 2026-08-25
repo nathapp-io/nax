@@ -8,17 +8,17 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeTestContext } from "@test/helpers";
 import { _postRunDeps, applyPostRunInspection, decideStageAction } from "@/execution";
 import { fullSuiteGateOp, implementerOp, testWriterOp, verifierOp } from "@/operations";
-import { makeTestContext } from "@test/helpers";
 import {
   ADVISORY_LEFTOVER_FINDING,
   LINT_FINDING,
+  makeInspectionOpts,
+  makePlanResult,
   SEMANTIC_REVIEW_FINDING,
   TEST_RUNNER_FINDING,
   TYPECHECK_FINDING,
-  makeInspectionOpts,
-  makePlanResult,
 } from "./_post-run-fixtures";
 
 describe("AC7: mechanicalFailedOnly — all lint/typecheck unfixed → continue action", () => {

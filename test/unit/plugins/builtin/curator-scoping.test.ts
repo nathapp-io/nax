@@ -9,8 +9,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { collectObservations } from "@/plugins/builtin/curator";
 import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
+import { collectObservations } from "@/plugins/builtin/curator";
 
 /** Minimal context pointing the collector at a temp workdir. */
 function makeContext(root: string, workdir: string): CuratorPostRunContext {

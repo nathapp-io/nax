@@ -13,10 +13,10 @@ import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
 import type { PidRegistry } from "../execution/pid-registry";
 import { getSafeLogger } from "../logger";
+import type { MiddlewareContext } from "../runtime/agent-middleware";
 // Leaf import to avoid barrel cycle:
 // src/runtime/index.ts → internal/agent-manager-factory → agents/factory → agents/manager → runtime/index.ts
 import { MiddlewareChain } from "../runtime/agent-middleware";
-import type { MiddlewareContext } from "../runtime/agent-middleware";
 import type { IDispatchEventBus } from "../runtime/dispatch-events";
 import { DispatchEventBus } from "../runtime/dispatch-events";
 import { formatSessionName } from "../runtime/session-name";
@@ -34,10 +34,10 @@ import type {
   RunAsSessionOpts,
   SessionRunHopFn,
 } from "./manager-types";
-import { createAgentRegistry } from "./registry";
 import type { AgentRegistry } from "./registry";
+import { createAgentRegistry } from "./registry";
 import { defaultRetryStrategy } from "./retry/default-strategy";
-import { type SameAgentRetryState, describeRetryLogEvent, trySameAgentRetry } from "./retry/hop-retry-policy";
+import { describeRetryLogEvent, type SameAgentRetryState, trySameAgentRetry } from "./retry/hop-retry-policy";
 import type { RetryContext, RetryStrategy } from "./retry/types";
 import type { AgentResult, AgentRunOptions, CompleteOptions, CompleteResult, ResolvedCompleteOptions } from "./types";
 

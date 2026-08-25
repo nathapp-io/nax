@@ -1,18 +1,3 @@
-export { createNoOpCostAggregator, CostAggregator, _costAggDeps } from "./cost-aggregator";
-export type {
-  ICostAggregator,
-  CostEvent,
-  CostErrorEvent,
-  CostSnapshot,
-  CostScopeHandle,
-} from "./cost-aggregator";
-export { createNoOpPromptAuditor, PromptAuditor, _promptAuditorDeps } from "./prompt-auditor";
-export type {
-  IPromptAuditor,
-  PromptAuditEntry,
-  PromptAuditErrorEntry,
-} from "./prompt-auditor";
-export { createNoOpReviewAuditor, ReviewAuditor, _reviewAuditDeps } from "../review/review-audit";
 export type {
   AdvisoryFindingSummaryEntry,
   IReviewAuditor,
@@ -20,52 +5,67 @@ export type {
   ReviewAuditDispatch,
   ReviewAuditEntry,
 } from "../review/review-audit";
-export type { PackageView, PackageRegistry } from "./packages";
-export {
-  projectInputDir,
-  projectOutputDir,
-  globalOutputDir,
-  identityPath,
-  readProjectIdentity,
-  writeProjectIdentity,
-  claimProjectIdentity,
-  curatorRollupPath,
-} from "./paths";
-export type { ProjectIdentity } from "./paths";
-export { createPackageRegistry } from "./packages";
-export type { DispatchContext } from "./dispatch-context";
-export type { MutationOutcomeSummary, MutationStorySummary } from "./mutation-summary";
+export { _reviewAuditDeps, createNoOpReviewAuditor, ReviewAuditor } from "../review/review-audit";
 export type { AgentMiddleware, MiddlewareContext } from "./agent-middleware";
 export { MiddlewareChain } from "./agent-middleware";
 export type {
-  IDispatchEventBus,
-  DispatchEvent,
-  SessionTurnDispatchEvent,
-  CompleteDispatchEvent,
-  DispatchErrorEvent,
-  OperationCompletedEvent,
-  ReviewDecisionEvent,
-} from "./dispatch-events";
-export { DispatchEventBus } from "./dispatch-events";
-export type {
-  IAgentStreamEventBus,
-  AgentStreamEvent,
-  AgentStreamEventBase,
+  AgentCallEndedEvent,
   AgentCallStartedEvent,
   AgentMessageUpdateEvent,
+  AgentProcessUpdateEvent,
+  AgentStreamEvent,
+  AgentStreamEventBase,
+  AgentStreamListener,
   AgentThinkingUpdateEvent,
   AgentToolCallUpdateEvent,
   AgentUsageUpdateEvent,
-  AgentProcessUpdateEvent,
-  AgentCallEndedEvent,
-  AgentStreamListener,
+  IAgentStreamEventBus,
 } from "./agent-stream-events";
 export { AgentStreamEventBus } from "./agent-stream-events";
-export { attachAgentIdleWatchdog, attachAgentStreamLogging, _idleWatchdogDeps } from "./middleware";
+export type {
+  CostErrorEvent,
+  CostEvent,
+  CostScopeHandle,
+  CostSnapshot,
+  ICostAggregator,
+} from "./cost-aggregator";
+export { _costAggDeps, CostAggregator, createNoOpCostAggregator } from "./cost-aggregator";
+export type { DispatchContext } from "./dispatch-context";
+export type {
+  CompleteDispatchEvent,
+  DispatchErrorEvent,
+  DispatchEvent,
+  IDispatchEventBus,
+  OperationCompletedEvent,
+  ReviewDecisionEvent,
+  SessionTurnDispatchEvent,
+} from "./dispatch-events";
+export { DispatchEventBus } from "./dispatch-events";
 export type { WatchdogState } from "./middleware";
+export { _idleWatchdogDeps, attachAgentIdleWatchdog, attachAgentStreamLogging } from "./middleware";
+export type { MutationOutcomeSummary, MutationStorySummary } from "./mutation-summary";
+export type { PackageRegistry, PackageView } from "./packages";
+export { createPackageRegistry } from "./packages";
+export type { ProjectIdentity } from "./paths";
+export {
+  claimProjectIdentity,
+  curatorRollupPath,
+  globalOutputDir,
+  identityPath,
+  projectInputDir,
+  projectOutputDir,
+  readProjectIdentity,
+  writeProjectIdentity,
+} from "./paths";
+export type {
+  IPromptAuditor,
+  PromptAuditEntry,
+  PromptAuditErrorEntry,
+} from "./prompt-auditor";
+export { _promptAuditorDeps, createNoOpPromptAuditor, PromptAuditor } from "./prompt-auditor";
 export { formatSessionName } from "./session-name";
-export { KNOWN_SESSION_ROLES, isSessionRole } from "./session-role";
-export type { SessionRole, CanonicalSessionRole } from "./session-role";
+export type { CanonicalSessionRole, SessionRole } from "./session-role";
+export { isSessionRole, KNOWN_SESSION_ROLES } from "./session-role";
 
 import { basename, join } from "node:path";
 import type { IAgentManager } from "../agents";
@@ -73,28 +73,27 @@ import type { CreateAgentManagerOpts } from "../agents/factory";
 import { createAgentManager } from "../agents/factory";
 import { AgentManager } from "../agents/manager";
 import type { AgentFallbackRecord } from "../agents/manager-types";
-import type { NaxConfig } from "../config";
+import type { ConfigLoader, NaxConfig } from "../config";
 import { createConfigLoader, getProjectKey } from "../config";
-import type { ConfigLoader } from "../config";
 import { NaxError } from "../errors";
 import { PidRegistry } from "../execution/pid-registry";
-import { createStoryFixHistory } from "../findings";
 import type { Iteration, StoryFixHistory } from "../findings";
-import { getLogger } from "../logger";
+import { createStoryFixHistory } from "../findings";
 import type { Logger } from "../logger";
-import { ReviewAuditor, createNoOpReviewAuditor } from "../review/review-audit";
+import { getLogger } from "../logger";
 import type { IReviewAuditor } from "../review/review-audit";
+import { createNoOpReviewAuditor, ReviewAuditor } from "../review/review-audit";
 import type { RoutingDecision } from "../routing/decision";
 import type { ISessionManager } from "../session";
 import { SessionManager } from "../session";
-import { type QuarantineMemo, createQuarantineMemo } from "../verification/flake-triage";
+import { createQuarantineMemo, type QuarantineMemo } from "../verification/flake-triage";
 import { MiddlewareChain } from "./agent-middleware";
-import { AgentStreamEventBus } from "./agent-stream-events";
 import type { IAgentStreamEventBus } from "./agent-stream-events";
-import { CostAggregator, createNoOpCostAggregator } from "./cost-aggregator";
+import { AgentStreamEventBus } from "./agent-stream-events";
 import type { ICostAggregator } from "./cost-aggregator";
-import { DispatchEventBus } from "./dispatch-events";
+import { CostAggregator, createNoOpCostAggregator } from "./cost-aggregator";
 import type { IDispatchEventBus } from "./dispatch-events";
+import { DispatchEventBus } from "./dispatch-events";
 import {
   attachAgentIdleWatchdog,
   attachAgentStreamLogging,
@@ -105,11 +104,11 @@ import {
   cancellationMiddleware,
 } from "./middleware";
 import type { MutationStorySummary } from "./mutation-summary";
-import { createPackageRegistry } from "./packages";
 import type { PackageRegistry } from "./packages";
+import { createPackageRegistry } from "./packages";
 import { curatorRollupPath, globalOutputDir, projectOutputDir } from "./paths";
-import { PromptAuditor, createNoOpPromptAuditor } from "./prompt-auditor";
 import type { IPromptAuditor } from "./prompt-auditor";
+import { createNoOpPromptAuditor, PromptAuditor } from "./prompt-auditor";
 import { createSessionRunHop } from "./session-run-hop";
 
 export interface NaxRuntime {

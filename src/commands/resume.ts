@@ -16,7 +16,7 @@ import { basename, join } from "node:path";
 import type { Command } from "commander";
 import { globalConfigDir } from "../config/paths";
 import { NaxError } from "../errors";
-import { type StoryCheckpoint, buildResumePlan, loadCheckpoints } from "../execution/checkpoint";
+import { buildResumePlan, loadCheckpoints, type StoryCheckpoint } from "../execution/checkpoint";
 import { projectOutputDir } from "../runtime";
 import { validateFeatureName } from "../utils/feature-name";
 

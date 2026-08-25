@@ -8,9 +8,9 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import * as path from "node:path";
+import { makeSpawn, withDepsRestore } from "@test/helpers";
 import { _gitDeps } from "@/utils/git";
 import { _changedLineRangesDeps, getChangedLineRanges } from "@/verification/changed-line-ranges";
-import { makeSpawn, withDepsRestore } from "@test/helpers";
 
 describe("getChangedLineRanges", () => {
   withDepsRestore(_gitDeps, ["spawn"]);

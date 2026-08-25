@@ -15,14 +15,14 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import { Command } from "commander";
 import {
-  type StatusCommandActionDeps,
-  type StatusViewDeps,
   dispatchStatusView,
   registerStatusCommand,
   runStatusAction,
+  type StatusCommandActionDeps,
+  type StatusViewDeps,
 } from "@/cli";
-import { Command } from "commander";
 
 function makeDeps(): StatusViewDeps {
   return {

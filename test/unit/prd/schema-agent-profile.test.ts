@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { validatePlanOutput } from "@/prd";
 import { assertDefined } from "@test/helpers";
+import { validatePlanOutput } from "@/prd";
 
 describe("PRD sanitizer preserves agentProfileId", () => {
   test("keeps routing.agentProfileId emitted by the planner", () => {

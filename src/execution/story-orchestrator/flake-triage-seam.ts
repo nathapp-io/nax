@@ -14,8 +14,8 @@ import { detectFramework } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
 import {
   type FlakeTriageScope,
-  type QuarantineMemo,
   logFlakeTriageSkip,
+  type QuarantineMemo,
   resolveFlakeBaselineDiff,
   triageFlakyFindings,
 } from "@/verification";

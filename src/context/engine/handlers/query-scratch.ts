@@ -22,14 +22,14 @@
 import type { UserStory } from "@/prd";
 import { type ScratchEntry, scratchFilePath } from "@/session";
 import { formatDiagnostic } from "../diagnostic-formatter";
+import type { PullToolBudget } from "../pull-tools";
 // STYLE-6 fix: pull-tools.ts no longer re-exports handleQueryScratch, but
 // the dep-injection seam (`_pullToolsDeps`) and the token-budget constant
 // (`DEFAULT_MAX_TOKENS_PER_CALL`) still live there — those references are
 // one-way (`handlers → pull-tools`), not cyclical. `scratchFilePath` is
 // imported from its true home (`@/session`) for symmetry with
 // `tool-diagnostics.ts` (which already imports it that way).
-import { DEFAULT_MAX_TOKENS_PER_CALL, _pullToolsDeps } from "../pull-tools";
-import type { PullToolBudget } from "../pull-tools";
+import { _pullToolsDeps, DEFAULT_MAX_TOKENS_PER_CALL } from "../pull-tools";
 import { neutralizeForAgent } from "../scratch-neutralizer";
 
 /**

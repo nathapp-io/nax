@@ -8,11 +8,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { NoopOptimizer, resolveOptimizer } from "@/optimizer";
-import type { IPromptOptimizer } from "@/optimizer";
-import { PluginRegistry } from "@/plugins";
-import type { NaxPlugin } from "@/plugins";
 import { makeNaxConfig } from "@test/helpers";
+import type { IPromptOptimizer } from "@/optimizer";
+import { NoopOptimizer, resolveOptimizer } from "@/optimizer";
+import type { NaxPlugin } from "@/plugins";
+import { PluginRegistry } from "@/plugins";
 
 const passthroughOptimizer: IPromptOptimizer = {
   name: "plugin-opt",

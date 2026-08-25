@@ -13,10 +13,10 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { makeConfigSlice, makeTempDir } from "@test/helpers";
 import type { ExecutionConfig } from "@/config/schema";
 import type { ReviewConfig } from "@/review";
 import { runReview } from "@/review/runner";
-import { makeConfigSlice, makeTempDir } from "@test/helpers";
 
 describe("Review Config-Driven Commands (US-005)", () => {
   test("uses explicit executionConfig.lintCommand when provided", async () => {

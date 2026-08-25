@@ -18,7 +18,7 @@ import type { PruneResult, PruneRollupInput } from "../plugins/builtin/curator/r
 import { pruneRollup, scanProjectRunIds } from "../plugins/builtin/curator/rollup-prune";
 import type { Observation } from "../plugins/builtin/curator/types";
 import { curatorRollupPath, globalOutputDir, projectOutputDir } from "../runtime/paths";
-import type { ResolveProjectOptions, ResolvedProject } from "./common";
+import type { ResolvedProject, ResolveProjectOptions } from "./common";
 import { resolveProjectAsync } from "./common";
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────

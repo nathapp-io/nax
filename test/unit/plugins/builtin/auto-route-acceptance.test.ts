@@ -25,7 +25,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RunMetrics, StoryMetrics } from "@/metrics";
-import { type AutoRouteDeps, _autoRouteDeps, autoRoutePlugin, loadPlugins } from "@/plugins";
+import { _autoRouteDeps, type AutoRouteDeps, autoRoutePlugin, loadPlugins } from "@/plugins";
 import type { PostRunContext } from "@/plugins/extensions";
 import type { TierAdjustment } from "@/routing";
 

@@ -13,11 +13,11 @@ import type { NaxConfig } from "@/config";
 import type { FactsManifest } from "@/debate";
 import { checkAcAnchored, checkClaimsCited, checkFilesExist, checkNoContradictions, checkSpecCoverage } from "@/debate";
 import { getLogger } from "@/logger";
-import { callOp, planCriticLlmOp, planDraftOp } from "@/operations";
 import type { CallContext, PlanDraftInput } from "@/operations";
+import { callOp, planCriticLlmOp, planDraftOp } from "@/operations";
 import type { PRD } from "@/prd";
-import { formatSpecDeltas } from "./spec-deltas";
 import type { VerifierFinding } from "./spec-deltas";
+import { formatSpecDeltas } from "./spec-deltas";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

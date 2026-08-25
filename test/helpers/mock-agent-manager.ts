@@ -1,8 +1,14 @@
 import { mock } from "bun:test";
 import type { AgentAdapter, IAgentManager } from "@/agents";
 import type { AgentRunRequest, RunAsSessionOpts } from "@/agents/manager-types";
-import type { SessionHandle, TurnResult } from "@/agents/types";
-import type { AgentResult, AgentRunOptions, CompleteOptions, CompleteResult } from "@/agents/types";
+import type {
+  AgentResult,
+  AgentRunOptions,
+  CompleteOptions,
+  CompleteResult,
+  SessionHandle,
+  TurnResult,
+} from "@/agents/types";
 import { makeAgentAdapter } from "./mock-agent-adapter";
 
 const DEFAULT_RESULT = {

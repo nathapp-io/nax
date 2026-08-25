@@ -19,7 +19,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { StaticRulesProvider, _staticRulesDeps } from "@/context/engine";
+import { _staticRulesDeps, StaticRulesProvider } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
 import { loadCanonicalRules } from "@/context/rules/canonical-loader";
 

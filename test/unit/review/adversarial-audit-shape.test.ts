@@ -6,9 +6,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { _diffUtilsDeps, runAdversarialReview } from "@/review";
-import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
-import type { ReviewAuditDecision } from "@/runtime";
 import {
   agentManagerWithFixedLLMResponse,
   captureAuditDecisions,
@@ -17,6 +14,9 @@ import {
   mockDiffUtilsDeps,
   withTempDir,
 } from "@test/helpers";
+import { _diffUtilsDeps, runAdversarialReview } from "@/review";
+import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
+import type { ReviewAuditDecision } from "@/runtime";
 
 const STORY: SemanticStory = {
   id: "US-001",

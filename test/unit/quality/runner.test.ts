@@ -9,8 +9,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _qualityRunnerDeps, runQualityCommand } from "@/quality/runner";
 import { makeSpawn, makeSpawnResult } from "@test/helpers";
+import { _qualityRunnerDeps, runQualityCommand } from "@/quality/runner";
 
 // ---------------------------------------------------------------------------
 // Mock helpers

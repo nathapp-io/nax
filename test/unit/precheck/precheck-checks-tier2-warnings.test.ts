@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { ExecutionConfig, NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd/types";
 import {
@@ -18,7 +19,6 @@ import {
   checkTestCommand,
   checkTypecheckCommand,
 } from "@/precheck";
-import { makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

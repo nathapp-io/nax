@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { type LogEntry, addSink, initLogger, resetLogger } from "@/logger";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { FLAKE_TRIAGE_RAN_EVENT, FLAKE_TRIAGE_SKIP_EVENT, logFlakeTriageRan, logFlakeTriageSkip } from "@/verification";
 
 describe("logFlakeTriageSkip", () => {

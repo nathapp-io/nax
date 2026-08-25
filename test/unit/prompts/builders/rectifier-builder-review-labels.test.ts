@@ -10,9 +10,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeFinding } from "@test/helpers";
 import { RectifierPromptBuilder } from "@/prompts/builders/rectifier-builder";
 import type { ReviewCheckResult } from "@/review/types";
-import { makeFinding } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

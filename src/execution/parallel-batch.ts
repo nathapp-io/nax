@@ -11,8 +11,8 @@
  */
 
 import path from "node:path";
-import { profileOverrideFromConfig } from "../config";
 import type { NaxConfig } from "../config";
+import { profileOverrideFromConfig } from "../config";
 import { loadConfigForWorkdir } from "../config/loader";
 import type { LoadedHooksConfig } from "../hooks";
 import { getSafeLogger } from "../logger";

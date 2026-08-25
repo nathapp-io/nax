@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { NeutralityLintError } from "@/context";
-import { ContextOrchestrator, _orchestratorDeps } from "@/context/engine/orchestrator";
+import { _orchestratorDeps, ContextOrchestrator } from "@/context/engine/orchestrator";
 import type {
   ChunkKind,
   ChunkScope,

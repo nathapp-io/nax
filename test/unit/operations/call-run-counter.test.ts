@@ -8,11 +8,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { type DEFAULT_CONFIG, pickSelector } from "@/config";
-import { _callOpDeps, callOp } from "@/operations";
-import type { BuildHopCallbackContext, RunOperation } from "@/operations";
-import type { NaxRuntime } from "@/runtime";
 import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import type { BuildHopCallbackContext, RunOperation } from "@/operations";
+import { _callOpDeps, callOp } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
 
 const testSel = pickSelector("test", "routing");
 

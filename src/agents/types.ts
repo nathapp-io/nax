@@ -21,13 +21,6 @@ import type {
   TurnResult,
 } from "./session-types";
 
-// Re-export extended types for backward compatibility
-export type {
-  DecomposeOptions,
-  DecomposeResult,
-  DecomposedStory,
-} from "./shared/types-extended";
-
 // Session-protocol types live in ./session-types (file-size ratchet, #1702).
 // Re-exported here so every existing "@/agents/types" import keeps working.
 export type {
@@ -39,6 +32,12 @@ export type {
   TurnResult,
 } from "./session-types";
 export { SessionTurnError } from "./session-types";
+// Re-export extended types for backward compatibility
+export type {
+  DecomposedStory,
+  DecomposeOptions,
+  DecomposeResult,
+} from "./shared/types-extended";
 
 /**
  * Agent execution result returned after running a coding agent.

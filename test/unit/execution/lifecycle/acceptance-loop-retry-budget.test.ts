@@ -8,20 +8,20 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { cleanupTempDir, makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { DiagnosisResult } from "@/acceptance";
 import { _diagnosisDeps } from "@/execution/lifecycle/acceptance-fix";
 import {
-  type AcceptanceLoopContext,
   _acceptanceFixCycleDeps,
   _acceptanceLoopDeps,
   _regenerateDeps,
   _runAcceptanceTestsOnceDeps,
+  type AcceptanceLoopContext,
   runAcceptanceLoop,
 } from "@/execution/lifecycle/acceptance-loop";
 import type { Finding } from "@/findings";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { PRD } from "@/prd";
-import { cleanupTempDir, makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 

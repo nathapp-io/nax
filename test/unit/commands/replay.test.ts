@@ -21,9 +21,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { Command } from "commander";
 import {
-  type ReplayCommandDeps,
   _replayCmdDeps,
+  type ReplayCommandDeps,
   registerReplayCommand as registerReplayCommandFromCmd,
   runReplay,
 } from "@/commands";
@@ -32,10 +34,8 @@ import type { NaxStatusFile } from "@/execution/status-file";
 import type { LogEntry } from "@/logger/types";
 import type { RunMetrics } from "@/metrics";
 import type { MetaJson } from "@/pipeline/subscribers/registry";
-import { registerReplayCommand } from "@/replay";
 import type { RunTimeline } from "@/replay";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { Command } from "commander";
+import { registerReplayCommand } from "@/replay";
 
 function writeRunDir(
   runsDir: string,

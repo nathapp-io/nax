@@ -8,10 +8,10 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { getLogger, initLogger, resetLogger } from "@/logger";
-import { queueCheckStage } from "@/pipeline";
-import type { PipelineContext } from "@/pipeline";
 import { cleanupTempDir, makePRD, makeStory, makeTempDir, makeTestContext } from "@test/helpers";
+import { getLogger, initLogger, resetLogger } from "@/logger";
+import type { PipelineContext } from "@/pipeline";
+import { queueCheckStage } from "@/pipeline";
 
 function makeCtx(workdir: string, overrides: Partial<PipelineContext> = {}): PipelineContext {
   const story = makeStory({ id: "US-001", status: "pending" });

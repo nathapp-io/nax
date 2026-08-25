@@ -1,15 +1,14 @@
 import { mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
-import { DEFAULT_CONFIG, loadConfig as _loadConfig, deepMergeConfig } from "../config";
 import type { NaxConfig } from "../config";
+import { loadConfig as _loadConfig, DEFAULT_CONFIG, deepMergeConfig } from "../config";
 import { NaxError } from "../errors";
-import { loadRunMetrics as _loadRunMetrics } from "../metrics";
 import type { RunMetrics } from "../metrics";
-import { projectInputDir, projectOutputDir } from "../runtime";
-import { saveJsonFile } from "../utils/json-file";
-
+import { loadRunMetrics as _loadRunMetrics } from "../metrics";
 import { buildProposalArtifact, computeBandStats, proposeAdjustments } from "../routing";
 import type { CalibrationProposal, TierAdjustment } from "../routing/calibrate";
+import { projectInputDir, projectOutputDir } from "../runtime";
+import { saveJsonFile } from "../utils/json-file";
 
 export interface RoutingCalibrateOptions {
   apply?: boolean;

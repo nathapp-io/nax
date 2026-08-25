@@ -11,8 +11,8 @@
 //   - an unbalanced `(` threw out of the isolation check entirely
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { verifyTestWriterIsolation } from "@/tdd";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { verifyTestWriterIsolation } from "@/tdd";
 
 async function git(cwd: string, args: string[]): Promise<void> {
   const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });

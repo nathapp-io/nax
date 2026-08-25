@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { resolveFeatureSpec } from "@/cli/features-resolve";
 import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
+import { resolveFeatureSpec } from "@/cli/features-resolve";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers

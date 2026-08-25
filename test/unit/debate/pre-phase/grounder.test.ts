@@ -5,9 +5,9 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { grounderStrategy, resolvePreDebatePhase } from "@/debate";
-import type { PreDebatePhaseContext } from "@/debate";
 import { makeTestRuntime } from "@test/helpers";
+import type { PreDebatePhaseContext } from "@/debate";
+import { grounderStrategy, resolvePreDebatePhase } from "@/debate";
 
 describe("grounderStrategy", () => {
   let runtime: Awaited<ReturnType<typeof makeTestRuntime>> | null = null;

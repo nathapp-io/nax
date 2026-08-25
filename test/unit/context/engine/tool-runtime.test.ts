@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { cleanupTempDir, makeContextBundle, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { contextToolRuntimeConfigSelector } from "@/config";
 import type { ContextToolRuntimeConfig } from "@/config/selectors";
-import { createContextToolRuntime, createSessionToolBudgets } from "@/context/engine";
 import type { ContextBundle } from "@/context/engine";
-import { appendScratchEntry, scratchFilePath } from "@/session";
+import { createContextToolRuntime, createSessionToolBudgets } from "@/context/engine";
 import type { ScratchEntry } from "@/session";
-import { cleanupTempDir, makeContextBundle, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { appendScratchEntry, scratchFilePath } from "@/session";
 
 describe("createContextToolRuntime — slice acceptance", () => {
   test("contextToolRuntimeConfigSelector picks context, execution, project, quality", () => {

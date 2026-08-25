@@ -7,20 +7,20 @@
  * separate function rather than folded into `parse`.
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import { makeTestRuntime, opSelector } from "@test/helpers";
 import type { ConfigSelector } from "@/config";
 import type { FinishConfig } from "@/config/selectors";
 import type { FinishNarrativeInput } from "@/operations";
-import { finishNarrativeOp } from "@/operations";
 import {
-  NARRATIVE_MAX_CHARS,
   buildNarrativePrompt,
+  finishNarrativeOp,
+  NARRATIVE_MAX_CHARS,
   parseNarrative,
   parseNarrativeNode,
   readSpecSummary,
   resolveNarrative,
 } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeTestRuntime, opSelector } from "@test/helpers";
 
 describe("resolveNarrative", () => {
   test("prefers the agent's text over the spec summary", () => {

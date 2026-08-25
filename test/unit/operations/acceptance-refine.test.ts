@@ -1,16 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { makeNaxConfig, makeTestRuntime, opSelector } from "@test/helpers";
 import { acceptanceConfigSelector } from "@/config";
 import type { AcceptanceConfig } from "@/config/selectors";
 import type { AcceptanceRefineInput } from "@/operations/acceptance-refine";
 import type { BuildContext } from "@/operations/types";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime, opSelector } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
+
 import { parseRefinementResponse, refinementWouldFallback } from "@/acceptance";
 import { acceptanceRefineOp } from "@/operations";
 

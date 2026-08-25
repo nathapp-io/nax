@@ -6,9 +6,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeAgentAdapter } from "@test/helpers";
 import { PluginRegistry } from "@/plugins/registry";
 import type { NaxPlugin } from "@/plugins/types";
-import { makeAgentAdapter } from "@test/helpers";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

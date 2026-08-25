@@ -3,15 +3,15 @@ import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
-  VERDICT_FILE,
-  type VerifierVerdict,
   categorizeVerdict,
   cleanupVerdict,
   coerceVerdict,
   readVerdict,
+  VERDICT_FILE,
+  type VerifierVerdict,
 } from "@/tdd/verdict";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

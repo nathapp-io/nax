@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { KNOWN_SESSION_ROLES, isSessionRole } from "@/runtime/session-role";
 import type { SessionRole } from "@/runtime/session-role";
+import { isSessionRole, KNOWN_SESSION_ROLES } from "@/runtime/session-role";
 
 describe("SessionRole", () => {
   describe("KNOWN_SESSION_ROLES", () => {

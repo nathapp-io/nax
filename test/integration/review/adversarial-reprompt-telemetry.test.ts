@@ -7,14 +7,12 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { adversarialReviewOp } from "@/operations/adversarial-review";
-import type { AdversarialReviewOutput } from "@/operations/adversarial-review";
+import { makeMockRuntime, makeSpawn, withTempDir } from "@test/helpers";
+import type { AdversarialReviewOutput, adversarialReviewOp } from "@/operations/adversarial-review";
 import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { NaxRuntime } from "@/runtime";
 import type { ReviewRepromptEvent } from "@/runtime/dispatch-events";
-import { makeMockRuntime, makeSpawn } from "@test/helpers";
-import { withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

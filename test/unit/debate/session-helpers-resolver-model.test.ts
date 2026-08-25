@@ -7,12 +7,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { absentValue, makeMockAgentManager } from "@test/helpers";
 import type { CompleteOptions, IAgentManager } from "@/agents";
 import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
-import { _debateSessionDeps, resolveOutcome } from "@/debate";
 import type { DebateStageConfig } from "@/debate";
+import { _debateSessionDeps, resolveOutcome } from "@/debate";
 import type { CallContext } from "@/operations";
-import { absentValue, makeMockAgentManager } from "@test/helpers";
 
 function makeCallCtx(): CallContext {
   return {

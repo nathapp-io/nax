@@ -4,40 +4,32 @@
 export { StoryOrchestratorBuilder } from "./builder";
 export { ExecutionPlan } from "./execution-plan";
 export {
+  type CreateNbfFlakeTriageTransactionInput,
+  createNbfFlakeTriageTransaction,
+  type NbfFlakeTriageTransaction,
+} from "./nbf-flake-triage";
+export { withNoProgressBail } from "./no-progress-bail";
+export {
   describeGateRegression,
   extractPhaseFindings,
+  type GateRegressionDetail,
+  type GateRegressionInput,
   gateFailureKeys,
   orderGateLast,
   phasePassed,
   phasesToRevalidate,
   selectRegressedGateFindings,
-  type GateRegressionDetail,
-  type GateRegressionInput,
 } from "./phase-eval";
-export { runRectification, triageGateFindings, gatherRectificationFindings, type TriageResult } from "./rectification";
-export {
-  createNbfFlakeTriageTransaction,
-  type CreateNbfFlakeTriageTransactionInput,
-  type NbfFlakeTriageTransaction,
-} from "./nbf-flake-triage";
-export { withNoProgressBail } from "./no-progress-bail";
+export { gatherRectificationFindings, runRectification, type TriageResult, triageGateFindings } from "./rectification";
+export type { RepoScopedFixRecord } from "./repo-scoped-fix-record";
+export { deriveRepoScopedFixes, REPO_SCOPED_STRATEGY_NAME, recordRepoScopedFixes } from "./repo-scoped-fix-record";
+export { toReviewDecisionPayload } from "./review-decision";
 export {
   _storyOrchestratorDeps,
   refreshReviewInputForDispatch,
   runPhase,
   withIncreasingFailuresBail,
 } from "./run-phase";
-export { toReviewDecisionPayload } from "./review-decision";
-export { REPO_SCOPED_STRATEGY_NAME, deriveRepoScopedFixes, recordRepoScopedFixes } from "./repo-scoped-fix-record";
-export type { RepoScopedFixRecord } from "./repo-scoped-fix-record";
-export {
-  EXHAUSTED_EXIT_REASONS,
-  CANONICAL_ORDER,
-  PHASE_KIND_TO_STATE_KEY,
-  STRATEGY_TO_REVALIDATION_PHASES,
-  TDD_OP_NAMES,
-  STRICT_VERDICT_PHASE_NAMES,
-} from "./types";
 export type {
   AnySlot,
   DroppedFindingSummary,
@@ -50,4 +42,12 @@ export type {
   RectificationResult,
   ReviewDecisionPayload,
   StoryOrchestratorResult,
+} from "./types";
+export {
+  CANONICAL_ORDER,
+  EXHAUSTED_EXIT_REASONS,
+  PHASE_KIND_TO_STATE_KEY,
+  STRATEGY_TO_REVALIDATION_PHASES,
+  STRICT_VERDICT_PHASE_NAMES,
+  TDD_OP_NAMES,
 } from "./types";

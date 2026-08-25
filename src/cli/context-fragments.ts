@@ -21,6 +21,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import chalk from "chalk";
 import { featureDir } from "@/config";
 import {
   _fragmentStoreDeps,
@@ -30,7 +31,6 @@ import {
 } from "@/context/fragments";
 import { getLogger } from "@/logger";
 import type { PRD } from "@/prd";
-import chalk from "chalk";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps

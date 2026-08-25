@@ -6,13 +6,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { cleanupTempDir, makeConfigSlice, makeDispatchContext, makeTempDir } from "@test/helpers";
 import type { NaxConfig } from "@/config/schema";
 import { DEFAULT_CONFIG } from "@/config/schema";
 import { initLogger, resetLogger } from "@/logger";
 import { acceptanceStage } from "@/pipeline/stages/acceptance";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
-import { cleanupTempDir, makeConfigSlice, makeDispatchContext, makeTempDir } from "@test/helpers";
 
 let testDir: string;
 let featureDir: string;

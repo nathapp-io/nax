@@ -9,11 +9,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { IAgentManager } from "@/agents";
-import { substantiateAdversarialFindings } from "@/review";
-import { _adversarialDeps, _diffUtilsDeps, _evidenceDeps, runAdversarialReview } from "@/review";
-import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
-import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
 import {
   makeAgentAdapter,
   makeLogger,
@@ -22,6 +17,16 @@ import {
   makeSpawn,
   withTempDir,
 } from "@test/helpers";
+import type { IAgentManager } from "@/agents";
+import {
+  _adversarialDeps,
+  _diffUtilsDeps,
+  _evidenceDeps,
+  runAdversarialReview,
+  substantiateAdversarialFindings,
+} from "@/review";
+import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
+import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
 
 // ---------------------------------------------------------------------------
 // Fixtures

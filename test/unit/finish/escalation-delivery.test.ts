@@ -22,8 +22,10 @@
 import { afterEach, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { withTempDir } from "@test/helpers";
 import type { AcceptanceGroupResult, ResolveResult } from "@/cli";
 import { DEFAULT_CONFIG } from "@/config";
+import type { AuditTarget, FinishContext, FinishMachineDeps, FinishOps, FinishState } from "@/finish";
 import {
   _acceptanceGateDeps,
   _finishContextDeps,
@@ -34,8 +36,6 @@ import {
   readLedger,
   runFinishMachine,
 } from "@/finish";
-import type { AuditTarget, FinishContext, FinishMachineDeps, FinishOps, FinishState } from "@/finish";
-import { withTempDir } from "@test/helpers";
 
 const originalGit = _finishGitDeps.git;
 const originalContextGit = _finishContextDeps.git;

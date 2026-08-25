@@ -8,83 +8,83 @@
  * See .claude/rules/test-helpers.md for usage guidelines.
  */
 
+export { absentValue, nullValue } from "./absent";
+export { type AgentManagerInternals, agentManagerInternals } from "./agent-manager-internals";
+export { makeAgentRegistry } from "./agent-registry";
+export { makeAgentResult } from "./agent-result";
+export { assertDefined, firstCall } from "./assert-defined";
+export { makeMockCallContext } from "./call-context";
+export { type CallOpStubOptions, DEFAULT_AGENT_ENVELOPE, makeCallOp } from "./call-op";
+export { opSelector } from "./config-selector";
+export { makeContextBundle, makeContextManifest } from "./context-bundle";
+export { type MockContextOrchestrator, makeContextOrchestrator } from "./context-orchestrator";
+export { DEFAULT_DEBATE_RESULT, type MockDebateRunner, makeDebateRunner } from "./debate-runner";
+export { withDepsRestore } from "./deps";
+export { type DispatchContextOptions, makeDispatchContext } from "./dispatch-context";
+export type { E2EGates, E2EOptions, E2EResult, ScriptedAgentSpec, ScriptedTurn } from "./e2e";
+export { makeScriptedAgent, runOrchestratorE2E } from "./e2e";
+export { fullDescribe, fullTest } from "./env";
+export { makeEscalationContext } from "./escalation-context";
+export { type ExecutionDepsOverrides, withExecutionDeps } from "./execution-deps-stub";
+export type { FakeAgentManagerOptions } from "./fake-agent-manager";
+export { fakeAgentManager } from "./fake-agent-manager";
+export type { FakeClock } from "./fake-clock";
+export { makeFakeClock } from "./fake-clock";
+export { makeFinding } from "./finding";
+export { makeFixCycleResult, makeIteration } from "./fix-cycle-result";
+export { waitForFile } from "./fs";
+export { type MockInteractionChain, makeInteractionChain } from "./interaction-chain";
+export {
+  type TelegramInternals,
+  telegramInternals,
+  type WebhookInternals,
+  webhookInternals,
+} from "./interaction-internals";
+export { makeLinkWithCosts } from "./link-with-costs";
+export { type MockMergeEngine, makeMergeEngine } from "./merge-engine";
 export { makeAgentAdapter } from "./mock-agent-adapter";
 export { createMockAgentManager, makeMockAgentManager } from "./mock-agent-manager";
-export { makeLogger, type LogCall, type MockLogger } from "./mock-logger";
+export { mockFetch } from "./mock-fetch";
+export { type LogCall, type MockLogger, makeLogger } from "./mock-logger";
 export {
+  type DeepPartial,
   makeAdversarialReviewConfig,
   makeConfigSlice,
   makeNaxConfig,
   makeSemanticReviewConfig,
   makeSparseNaxConfig,
   makeStorySizeGateConfig,
-  type DeepPartial,
 } from "./mock-nax-config";
 export { makeSessionManager } from "./mock-session-manager";
-export {
-  makeMockRuntime,
-  makeRuntimeWithFakeAgent,
-  makeTestRuntime,
-  type MockRuntimeOptions,
-  type TestRuntimeOptions,
-} from "./runtime";
-export { makeInProgressStory, makePRD, makePendingStory, makeStory } from "./mock-story";
-export { cleanupTempDir, makeTempDir, withTempDir } from "./temp";
+export { makeInProgressStory, makePendingStory, makePRD, makeStory } from "./mock-story";
+export type { MutationCheckCtxOptions } from "./mutation-check";
+export { makeMutationCheckCtx, makeMutationCheckDeps } from "./mutation-check";
+export { opModelResolver } from "./op-model";
+export { makeOptimizerResult } from "./optimizer-result";
+export { DEFAULT_TEST_ROUTING, makeTestContext, makeTestPRD, makeTestStory } from "./pipeline-context";
+export { makeMockPlanInputs, makeResolvedTestPatterns } from "./plan-inputs";
+export { type MockPluginRegistry, makePluginRegistry } from "./plugin-registry";
 export {
   agentManagerWithFixedLLMResponse,
   captureAuditDecisions,
   makeSpawnMock,
   mockDiffUtilsDeps,
 } from "./review-audit";
-export { makeAgentRegistry } from "./agent-registry";
-export { makeAgentResult } from "./agent-result";
-export { makeTurnResult } from "./turn-result";
-export { opSelector } from "./config-selector";
-export { opModelResolver } from "./op-model";
-export { makeFinding } from "./finding";
-export { makeContextBundle, makeContextManifest } from "./context-bundle";
-export { makeContextOrchestrator, type MockContextOrchestrator } from "./context-orchestrator";
-export { makeInteractionChain, type MockInteractionChain } from "./interaction-chain";
-export { makeEscalationContext } from "./escalation-context";
-export { makePluginRegistry, type MockPluginRegistry } from "./plugin-registry";
-export { makeSpawn, makeSpawnResult } from "./spawn";
-export { makeDebateRunner, DEFAULT_DEBATE_RESULT, type MockDebateRunner } from "./debate-runner";
-export { makeMergeEngine, type MockMergeEngine } from "./merge-engine";
-export { makeStatusWriter, type MockStatusWriter } from "./status-writer";
-export type { FakeProcSpec, SpawnCall, SpawnResult, SpawnStub } from "./spawn";
-export { withDepsRestore } from "./deps";
-export { withExecutionDeps, type ExecutionDepsOverrides } from "./execution-deps-stub";
-export { waitForCondition, withTimeout } from "./timeout";
-export { makeLinkWithCosts } from "./link-with-costs";
-export { makeMockCallContext } from "./call-context";
-export { makeDispatchContext, type DispatchContextOptions } from "./dispatch-context";
-export { makeMockPlanInputs, makeResolvedTestPatterns } from "./plan-inputs";
-export { withWarnSpy, withInfoSpy } from "./warn-spy";
-export { withTimerSpy } from "./timer-spy";
-export type { TimerSpyResult } from "./timer-spy";
-export { makeFakeClock } from "./fake-clock";
-export type { FakeClock } from "./fake-clock";
-export { agentManagerInternals, type AgentManagerInternals } from "./agent-manager-internals";
-export {
-  telegramInternals,
-  webhookInternals,
-  type TelegramInternals,
-  type WebhookInternals,
-} from "./interaction-internals";
-export { mockFetch } from "./mock-fetch";
-export { makeScriptedAgent, runOrchestratorE2E } from "./e2e";
-export type { ScriptedAgentSpec, ScriptedTurn, E2EOptions, E2EResult, E2EGates } from "./e2e";
-export { DEFAULT_TEST_ROUTING, makeTestContext, makeTestPRD, makeTestStory } from "./pipeline-context";
-export { makeMutationCheckCtx, makeMutationCheckDeps } from "./mutation-check";
-export type { MutationCheckCtxOptions } from "./mutation-check";
-export { fullTest, fullDescribe } from "./env";
-export { waitForFile } from "./fs";
-export { fakeAgentManager } from "./fake-agent-manager";
-export type { FakeAgentManagerOptions } from "./fake-agent-manager";
-export { absentValue, nullValue } from "./absent";
 export { makeAdversarialOutput, makeDiagnoseOutput, makeSemanticOutput } from "./review-outputs";
-export { makeOptimizerResult } from "./optimizer-result";
-export { assertDefined, firstCall } from "./assert-defined";
-export { makeWorktreeManager, type MockWorktreeManager } from "./worktree-manager";
-export { makeFixCycleResult, makeIteration } from "./fix-cycle-result";
-export { makeCallOp, DEFAULT_AGENT_ENVELOPE, type CallOpStubOptions } from "./call-op";
+export {
+  type MockRuntimeOptions,
+  makeMockRuntime,
+  makeRuntimeWithFakeAgent,
+  makeTestRuntime,
+  type TestRuntimeOptions,
+} from "./runtime";
+export type { FakeProcSpec, SpawnCall, SpawnResult, SpawnStub } from "./spawn";
+export { makeSpawn, makeSpawnResult } from "./spawn";
+export { type MockStatusWriter, makeStatusWriter } from "./status-writer";
+export { cleanupTempDir, makeTempDir, withTempDir } from "./temp";
+export { waitForCondition, withTimeout } from "./timeout";
+export type { TimerSpyResult } from "./timer-spy";
+export { withTimerSpy } from "./timer-spy";
+export { makeTurnResult } from "./turn-result";
+export { withInfoSpy, withWarnSpy } from "./warn-spy";
+export { type MockWorktreeManager, makeWorktreeManager } from "./worktree-manager";

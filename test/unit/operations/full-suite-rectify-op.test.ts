@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { makeStory } from "@test/helpers";
 import type { Finding } from "@/findings/types";
 import { fullSuiteRectifyOp } from "@/operations";
 import { RectifierPromptBuilder, repoScopedRectification } from "@/prompts";
-import { makeStory } from "@test/helpers";
 
 const finding: Finding = {
   source: "test-runner",

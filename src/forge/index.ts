@@ -4,11 +4,12 @@
  * `scripts/check-alias-internals.ts` forbids alias imports that reach past this
  * barrel, so consumers import from `@/forge` and never `@/forge/detect`.
  */
-export type { ForgeDeps, ForgeKind, ForgeRunResult } from "./types";
+
+export { defaultForgeDeps } from "./deps";
 export { detectForge, forgeFromRemoteUrl, remoteHost } from "./detect";
 export type { OpenPrInput, OpenPrResult } from "./pr";
 export { extractUrl, hasOpenPr, openPr, viewArgv } from "./pr";
 export { findPrTemplate } from "./template";
-export { defaultForgeDeps } from "./deps";
 export type { BodySection, MergeOptions, TemplateMode } from "./template-merge";
 export { DEFAULT_SECTION_ALIASES, mergeTemplate } from "./template-merge";
+export type { ForgeDeps, ForgeKind, ForgeRunResult } from "./types";

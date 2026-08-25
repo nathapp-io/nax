@@ -13,11 +13,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { getLogger } from "@/logger";
-import { _completionDeps, completionStage } from "@/pipeline/stages";
-import type { PipelineContext } from "@/pipeline/types";
-import type { PRD, UserStory } from "@/prd/types";
-import { errorMessage } from "@/utils/errors";
 import {
   makeMockRuntime,
   makeNaxConfig,
@@ -28,6 +23,11 @@ import {
   makeTestContext,
   withTempDir,
 } from "@test/helpers";
+import { getLogger } from "@/logger";
+import { _completionDeps, completionStage } from "@/pipeline/stages";
+import type { PipelineContext } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd/types";
+import { errorMessage } from "@/utils/errors";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration

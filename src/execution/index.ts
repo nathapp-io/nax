@@ -1,151 +1,150 @@
-export type { RunOptions, RunResult } from "./runner";
-export { recordOscillations, getOscillations, countOscillationOutcomes } from "./oscillation-store";
-export { inspectOscillationBreaker, type BreakerDecision } from "./oscillation-breaker";
-export { run, _runnerDeps, _runnerReentrancyGuard } from "./runner";
 export type { FailureCategory } from "../tdd/types";
-export { appendProgress } from "./progress";
-export { releaseHeavyPipelineContext } from "./iteration-runner";
 export { groupStoriesIntoBatches, type StoryBatch } from "./batching";
-export { escalateTier, getTierConfig, calculateMaxIterations, resolveMaxAttemptsOutcome } from "./escalation";
-export { readQueueFile, clearQueueFile, processQueueFile, drainQueueAtBatchBoundary } from "./queue-handler";
-export type { BatchQueueDrainResult } from "./queue-handler";
-export { StatusWriter, type StatusWriterContext } from "./status-writer";
-export { ensureStoryPackageDirs } from "./ensure-package-dirs";
-export { _newPackageSetupDeps, markNewPackageDirs, maybeRunNewPackageSetup } from "./new-package-setup";
+export { buildPlanForStrategy, requiresInitialRefCapture, resolveStoryPathAnchors } from "./build-plan-for-strategy";
 export {
-  hookCtx,
-  maybeGetContext,
-  buildStoryContext,
-  getAllReadyStories,
-  acquireLock,
-  releaseLock,
-  _lockDeps,
-  formatProgress,
-  type ExecutionResult,
-  type StoryCounts,
-} from "./helpers";
+  applyResumeModeDeps,
+  buildCheckpointLogData,
+  buildResumePlan,
+  type CaptureTreeStateDeps,
+  type CaptureTreeStateOptions,
+  type CheckpointReaderDeps,
+  type CheckpointRecord,
+  CheckpointWriter,
+  type CheckpointWriterDeps,
+  type CheckpointWriterOptions,
+  captureTreeState,
+  createCheckpointWriter,
+  hydrateFromResumePlan,
+  loadCheckpoints,
+  type ResumeMode,
+  type ResumePlan,
+  type StoryCheckpoint,
+  type TreeState,
+} from "./checkpoint";
 export {
+  type CrashRecoveryContext,
   installCrashHandlers,
+  resetCrashHandlers,
   startHeartbeat,
   stopHeartbeat,
   writeExitSummary,
-  resetCrashHandlers,
-  type CrashRecoveryContext,
 } from "./crash-recovery";
-export { PidRegistry, _pidRegistryDeps } from "./pid-registry";
+export { ensureStoryPackageDirs } from "./ensure-package-dirs";
+export { calculateMaxIterations, escalateTier, getTierConfig, resolveMaxAttemptsOutcome } from "./escalation";
+export { buildPreviewRouting } from "./executor-types";
 export {
-  runDeferredRegression,
-  findResponsibleStoryByTransition,
+  _lockDeps,
+  acquireLock,
+  buildStoryContext,
+  type ExecutionResult,
+  formatProgress,
+  getAllReadyStories,
+  hookCtx,
+  maybeGetContext,
+  releaseLock,
+  type StoryCounts,
+} from "./helpers";
+export { releaseHeavyPipelineContext } from "./iteration-runner";
+export {
   _regressionDeps,
-  handleRunCompletion,
+  _runCleanupDeps,
   _runCompletionDeps,
-  outputAdvisoryFindingsSummary,
-  outputMutationSummary,
-  synthesizeBackfillMetric,
   type BackfillMetricArgs,
+  cleanupRun,
   type DeferredRegressionOptions,
   type DeferredRegressionResult,
-  type StorySnapshot,
+  findResponsibleStoryByTransition,
+  handleRunCompletion,
+  outputAdvisoryFindingsSummary,
+  outputMutationSummary,
+  type RunCleanupOptions,
   type RunCompletionOptions,
   type RunCompletionResult,
-  cleanupRun,
-  _runCleanupDeps,
-  type RunCleanupOptions,
+  runDeferredRegression,
+  type StorySnapshot,
+  synthesizeBackfillMetric,
 } from "./lifecycle";
+export { _newPackageSetupDeps, markNewPackageDirs, maybeRunNewPackageSetup } from "./new-package-setup";
+export { runNonBlockingFix } from "./non-blocking-fix";
+export { type BreakerDecision, inspectOscillationBreaker } from "./oscillation-breaker";
+export { countOscillationOutcomes, getOscillations, recordOscillations } from "./oscillation-store";
+export { type ParallelStoryMetricArgs, synthesizeParallelStoryMetric } from "./parallel-story-metrics";
+export { _pidRegistryDeps, PidRegistry } from "./pid-registry";
 export {
-  StoryOrchestratorBuilder,
-  ExecutionPlan,
+  _resultHandlerDeps,
+  handlePipelineFailure,
+  handlePipelineSuccess,
+  type PipelineFailureResult,
+  type PipelineHandlerContext,
+  type PipelineSuccessResult,
+} from "./pipeline-result-handler";
+export { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "./plan-inputs";
+export {
+  _postRunDeps,
+  applyPostRunInspection,
+  decideStageAction,
+  deriveTddFailureCategory,
+  extractPauseReason,
+  type InspectionOptions,
+  type PostRunInspectionResult,
+} from "./post-run";
+export { appendProgress } from "./progress";
+export type { BatchQueueDrainResult } from "./queue-handler";
+export { clearQueueFile, drainQueueAtBatchBoundary, processQueueFile, readQueueFile } from "./queue-handler";
+export type { RunOptions, RunResult } from "./runner";
+export { _runnerDeps, _runnerReentrancyGuard, run } from "./runner";
+export {
+  _runnerCompletionDeps,
+  type RunnerCompletionOptions,
+  type RunnerCompletionResult,
+  runCompletionPhase,
+} from "./runner-completion";
+export { StatusWriter, type StatusWriterContext } from "./status-writer";
+export {
   _storyOrchestratorDeps,
-  runPhase,
-  runRectification,
   CANONICAL_ORDER,
-  EXHAUSTED_EXIT_REASONS,
-  PHASE_KIND_TO_STATE_KEY,
-  STRICT_VERDICT_PHASE_NAMES,
-  phasesToRevalidate,
-  orderGateLast,
-  gateFailureKeys,
-  describeGateRegression,
-  selectRegressedGateFindings,
   createNbfFlakeTriageTransaction,
-  refreshReviewInputForDispatch,
-  withNoProgressBail,
-  withIncreasingFailuresBail,
-  extractPhaseFindings,
-  phasePassed,
-  toReviewDecisionPayload,
   deriveRepoScopedFixes,
-  recordRepoScopedFixes,
-  REPO_SCOPED_STRATEGY_NAME,
-  type RepoScopedFixRecord,
+  describeGateRegression,
+  EXHAUSTED_EXIT_REASONS,
+  ExecutionPlan,
+  extractPhaseFindings,
   type GateRegressionDetail,
   type GateRegressionInput,
+  gateFailureKeys,
   type InternalBuildState,
   type NbfFlakeTriageTransaction,
   type OrchestratorSlot,
+  orderGateLast,
+  PHASE_KIND_TO_STATE_KEY,
   type PhaseKind,
+  phasePassed,
+  phasesToRevalidate,
+  REPO_SCOPED_STRATEGY_NAME,
   type RectificationOverrides,
   type RectificationPhaseOptions,
+  type RepoScopedFixRecord,
+  recordRepoScopedFixes,
+  refreshReviewInputForDispatch,
+  runPhase,
+  runRectification,
+  STRICT_VERDICT_PHASE_NAMES,
+  StoryOrchestratorBuilder,
   type StoryOrchestratorResult,
+  selectRegressedGateFindings,
+  toReviewDecisionPayload,
+  withIncreasingFailuresBail,
+  withNoProgressBail,
 } from "./story-orchestrator";
 export {
   buildPhaseOutcomeLogData,
   formatPhaseResultMessage,
   logDeterministicPhaseOutcome,
 } from "./story-orchestrator-logging";
-export { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "./plan-inputs";
-export {
-  handlePipelineFailure,
-  handlePipelineSuccess,
-  _resultHandlerDeps,
-  type PipelineHandlerContext,
-  type PipelineSuccessResult,
-  type PipelineFailureResult,
-} from "./pipeline-result-handler";
-export { runNonBlockingFix } from "./non-blocking-fix";
-export { buildPlanForStrategy, resolveStoryPathAnchors } from "./build-plan-for-strategy";
-export {
-  CheckpointWriter,
-  createCheckpointWriter,
-  loadCheckpoints,
-  buildResumePlan,
-  buildCheckpointLogData,
-  captureTreeState,
-  hydrateFromResumePlan,
-  applyResumeModeDeps,
-  type ResumePlan,
-  type ResumeMode,
-  type CaptureTreeStateDeps,
-  type CaptureTreeStateOptions,
-  type CheckpointRecord,
-  type CheckpointReaderDeps,
-  type CheckpointWriterDeps,
-  type CheckpointWriterOptions,
-  type StoryCheckpoint,
-  type TreeState,
-} from "./checkpoint";
 export type { StoryRunResult } from "./types";
 // BUG-2 testability seam: re-export `executeUnified` + its `_deps`
 // shim so test files can mutate `_unifiedExecutorDeps` via the barrel
 // (alias-internals lint requires alias imports to target barrels, not
 // internal files). `executeUnified` itself is also a legitimate part of
 // the public surface — it's the main executor entry point.
-export { executeUnified, _unifiedExecutorDeps } from "./unified-executor";
-export {
-  runCompletionPhase,
-  _runnerCompletionDeps,
-  type RunnerCompletionOptions,
-  type RunnerCompletionResult,
-} from "./runner-completion";
-export {
-  applyPostRunInspection,
-  decideStageAction,
-  extractPauseReason,
-  deriveTddFailureCategory,
-  _postRunDeps,
-  type PostRunInspectionResult,
-  type InspectionOptions,
-} from "./post-run";
-export { buildPreviewRouting } from "./executor-types";
-export { requiresInitialRefCapture } from "./build-plan-for-strategy";
-export { synthesizeParallelStoryMetric, type ParallelStoryMetricArgs } from "./parallel-story-metrics";
+export { _unifiedExecutorDeps, executeUnified } from "./unified-executor";

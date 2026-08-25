@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
+import { makeNaxConfig, makeTestRuntime, withTempDir } from "@test/helpers";
 import type { TurnResult } from "@/agents/types";
 import { acceptanceGenConfigSelector } from "@/config";
 import type { AcceptanceGenConfig } from "@/config/selectors";
@@ -7,8 +8,6 @@ import { _acceptanceGenerateDeps, acceptanceGenerateOp } from "@/operations";
 import type { AcceptanceGenerateInput } from "@/operations/acceptance-generate";
 import type { BuildContext, HopBodyContext, VerifyContext } from "@/operations/types";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
-import { withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

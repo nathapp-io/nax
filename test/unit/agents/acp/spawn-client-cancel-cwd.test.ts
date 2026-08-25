@@ -11,8 +11,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { SpawnAcpClient, _spawnClientDeps } from "@/agents/acp";
 import { withDepsRestore } from "@test/helpers";
+import { _spawnClientDeps, SpawnAcpClient } from "@/agents/acp";
 import { makeSpawnResult, stubProcessKill } from "./_spawn-client-test-helpers";
 
 stubProcessKill();

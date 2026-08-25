@@ -8,8 +8,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { CRASH_PATTERNS, detectRuntimeCrash } from "@/verification/crash-detector";
 import { absentValue, nullValue } from "@test/helpers";
+import { CRASH_PATTERNS, detectRuntimeCrash } from "@/verification/crash-detector";
 
 // ---------------------------------------------------------------------------
 // CRASH_PATTERNS constant

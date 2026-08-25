@@ -10,8 +10,7 @@
  */
 
 import { getSafeLogger } from "@/logger";
-import { callOp } from "@/operations";
-import { judgeOp } from "@/operations";
+import { callOp, judgeOp } from "@/operations";
 import type { Selector, SelectorContext, SelectorResult } from "./types";
 
 const RESOLVER_FALLBACK_AGENT = "synthesis";

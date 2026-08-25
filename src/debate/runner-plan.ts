@@ -18,10 +18,10 @@ import {
   scoreAndDispatchVerifierPick,
 } from "./runner-plan-helpers";
 import {
-  type ResolvedDebater,
-  type SuccessfulProposal,
   _debateSessionDeps,
   buildFailedResult,
+  type ResolvedDebater,
+  type SuccessfulProposal,
 } from "./session-helpers";
 import type { DebateResult, DebateStageConfig, Rebuttal } from "./types";
 

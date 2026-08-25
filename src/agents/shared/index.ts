@@ -1,1 +1,1 @@
-export { resolveAgentAssignment, type ResolvedAgentAssignment } from "./agent-profile-resolver";
+export { type ResolvedAgentAssignment, resolveAgentAssignment } from "./agent-profile-resolver";

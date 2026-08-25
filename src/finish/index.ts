@@ -10,6 +10,8 @@
  * `_acceptanceSetupDeps`) — tests reach them through this barrel rather than
  * a deep relative import.
  */
+
+export type { AuditTarget, FinishLedgerEntry, WriteResultOptions } from "./audit";
 export {
   appendRound,
   ledgerPath,
@@ -20,9 +22,6 @@ export {
   roundsPath,
   writeResult,
 } from "./audit";
-export type { AuditTarget, FinishLedgerEntry, WriteResultOptions } from "./audit";
-export { readFinishConfig } from "./config";
-export type { FinishSettings } from "./config";
 export {
   _finishGitDeps,
   buildCommitRound,
@@ -33,33 +32,18 @@ export {
   headSha,
   PUSH_TIMEOUT_MS,
 } from "./commit";
-export { buildFixCommitMessage } from "./commit-message";
 export type { CommitMessageCtx } from "./commit-message";
-export { _finishContextDeps, loadFinishContext } from "./context";
+export { buildFixCommitMessage } from "./commit-message";
+export type { FinishSettings } from "./config";
+export { readFinishConfig } from "./config";
 export type { FinishContext, LoadFinishContextOptions } from "./context";
+export { _finishContextDeps, loadFinishContext } from "./context";
+export type { EscalationOutcome } from "./escalate";
+export { buildEscalationComment, postEscalation } from "./escalate";
 export { _acceptanceGateDeps, runAcceptanceGate } from "./gates/acceptance";
 export { _qualityGateDeps, resolveGateCommands, runQualityGates } from "./gates/quality";
-export { runFinishMachine } from "./machine";
 export type { FinishMachineDeps } from "./machine";
-export { _finishPhaseDeps, finishSkipReason, runFinishPhase, shouldRunFinish } from "./phase";
-export type { FinishPhaseContext, FinishSkipReason } from "./phase";
-export type { FinishOps, FixOutcome, FixRequest, ReviewRequest } from "./ops";
-export { _finishOpsDeps, createFinishOps } from "./ops-impl";
-export type { FinishOpsDeps } from "./ops-impl";
-export {
-  parseTitle,
-  resolveTitle,
-  sanitizeTitle,
-  TITLE_CLOSE_TAG,
-  TITLE_MAX_CHARS,
-  TITLE_OPEN_TAG,
-} from "./pr-title";
-export { _finishPrDeps, loadFinishPrContext } from "./pr";
-export type { FinishPrContext, FinishPrStory, LoadPrContextArgs } from "./pr";
-export { buildFinishBody, buildFinishTitle } from "./pr";
-export { openDraftFinishPr, openOrPromotePr, parseView, updatePrBody } from "./pr";
-export { buildEscalationComment, postEscalation } from "./escalate";
-export type { EscalationOutcome } from "./escalate";
+export { runFinishMachine } from "./machine";
 export {
   _notifyDeps,
   buildEscalationMessage,
@@ -69,16 +53,30 @@ export {
   TELEGRAM_MAX_MESSAGE_CHARS,
   telegramCreds,
 } from "./notify";
+export type { FinishOps, FixOutcome, FixRequest, ReviewRequest } from "./ops";
+export type { FinishOpsDeps } from "./ops-impl";
+export { _finishOpsDeps, createFinishOps } from "./ops-impl";
+export type { FinishPhaseContext, FinishSkipReason } from "./phase";
+export { _finishPhaseDeps, finishSkipReason, runFinishPhase, shouldRunFinish } from "./phase";
+export type { FinishPrContext, FinishPrStory, LoadPrContextArgs } from "./pr";
 export {
-  gateCommitRoute,
-  MAX_FIX_ATTEMPTS,
-  MAX_INCOMPLETE_ATTEMPTS,
-  partitionTestFiles,
-  routeAcceptance,
-  routeQualityGates,
-  routeReview,
-} from "./route";
-export type { ReviewOutcome, RoutedReview } from "./route";
+  _finishPrDeps,
+  buildFinishBody,
+  buildFinishTitle,
+  loadFinishPrContext,
+  openDraftFinishPr,
+  openOrPromotePr,
+  parseView,
+  updatePrBody,
+} from "./pr";
+export {
+  parseTitle,
+  resolveTitle,
+  sanitizeTitle,
+  TITLE_CLOSE_TAG,
+  TITLE_MAX_CHARS,
+  TITLE_OPEN_TAG,
+} from "./pr-title";
 export {
   auditGaps,
   buildFixPrompt,
@@ -92,8 +90,18 @@ export {
   WORKER_PROTOCOL,
   WORKER_PROTOCOL_MECHANICS,
 } from "./review";
-export { createFinishState, deserializeFinishState, serializeFinishState } from "./state";
+export type { ReviewOutcome, RoutedReview } from "./route";
+export {
+  gateCommitRoute,
+  MAX_FIX_ATTEMPTS,
+  MAX_INCOMPLETE_ATTEMPTS,
+  partitionTestFiles,
+  routeAcceptance,
+  routeQualityGates,
+  routeReview,
+} from "./route";
 export type { FinishPhaseState, FinishState, FinishStateInit, FinishStatus } from "./state";
+export { createFinishState, deserializeFinishState, serializeFinishState } from "./state";
 export type {
   AcceptanceGateResult,
   Finding,

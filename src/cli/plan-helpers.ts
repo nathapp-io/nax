@@ -6,7 +6,7 @@
 
 import { createInterface } from "node:readline";
 import { inferFrameworkAndTestRunner } from "../project";
-import { type PackageSummary, buildSourceRootsSection } from "../prompts";
+import { buildSourceRootsSection, type PackageSummary } from "../prompts";
 
 /**
  * Create a CLI interaction bridge for stdin-based human interaction.

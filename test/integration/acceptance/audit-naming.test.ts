@@ -13,11 +13,11 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { withTempDir } from "@test/helpers";
 import type { CompleteDispatchEvent } from "@/runtime/dispatch-events";
 import { DispatchEventBus } from "@/runtime/dispatch-events";
 import { attachAuditSubscriber } from "@/runtime/middleware/audit";
 import { PromptAuditor } from "@/runtime/prompt-auditor";
-import { withTempDir } from "@test/helpers";
 
 const PERMS = { mode: "approve-reads" as const };
 

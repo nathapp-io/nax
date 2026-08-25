@@ -1,9 +1,9 @@
 // test/unit/commands/migrate.test.ts
 import { describe, expect, it } from "bun:test";
 import path from "node:path";
-import { type MigrateCandidate, detectGeneratedContent, migrateCommand } from "@/commands/migrate";
-import { NaxError } from "@/errors";
 import { withTempDir } from "@test/helpers";
+import { detectGeneratedContent, type MigrateCandidate, migrateCommand } from "@/commands/migrate";
+import { NaxError } from "@/errors";
 
 describe("detectGeneratedContent", () => {
   it("detects runs/ directory", async () => {

@@ -10,10 +10,10 @@ import path from "node:path";
 import { validateFilePath } from "../config";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
-import { injectStory, markStorySkipped, resetStoryToPending, setStoryPriority, validateInjectedStory } from "../prd";
 import type { PRD } from "../prd";
-import { parseQueueFile } from "../queue";
+import { injectStory, markStorySkipped, resetStoryToPending, setStoryPriority, validateInjectedStory } from "../prd";
 import type { QueueCommand } from "../queue";
+import { parseQueueFile } from "../queue";
 import { errorMessage } from "../utils/errors";
 import { withQueueFileLock } from "../utils/queue-file-lock";
 

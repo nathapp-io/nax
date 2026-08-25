@@ -1,5 +1,4 @@
-import type { LogEntry } from "./types.js";
-import type { LogSink } from "./types.js";
+import type { LogEntry, LogSink } from "./types.js";
 
 /**
  * Fan-out dispatch for redacted log entries to a list of registered sinks.

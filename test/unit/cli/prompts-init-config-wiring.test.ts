@@ -12,8 +12,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { _promptsInitDeps, promptsInitCommand } from "@/cli/prompts";
 import { makeTempDir } from "@test/helpers";
+import { _promptsInitDeps, promptsInitCommand } from "@/cli/prompts";
 
 const EXPECTED_OVERRIDES = {
   "test-writer": ".nax/templates/test-writer.md",

@@ -2,8 +2,8 @@ import type { AdapterFailure } from "@/context/engine";
 import { getSafeLogger } from "@/logger";
 import { looksLikeTruncatedJson } from "@/review";
 import { tryParseLLMJson } from "@/utils/llm-json";
-import { ParseValidationError } from "./types";
 import type { RetryContext, RetryDecision, RetryStrategy } from "./types";
+import { ParseValidationError } from "./types";
 
 export interface ParseRetryOpts {
   readonly validate: (parsed: unknown) => boolean;

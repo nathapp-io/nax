@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import type { Finding } from "@/findings";
-import { applyTestEditDeclarations, makeAutofixImplementerStrategy, makeDeclarationSink } from "@/operations";
-import type { TestEditDeclaration } from "@/operations";
 import { makeNaxConfig, makeStory } from "@test/helpers";
+import type { Finding } from "@/findings";
+import type { TestEditDeclaration } from "@/operations";
+import { applyTestEditDeclarations, makeAutofixImplementerStrategy, makeDeclarationSink } from "@/operations";
 
 // Helper to create a basic source-targeted finding
 function makeFinding(overrides: Partial<Finding> = {}): Finding {

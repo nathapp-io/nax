@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { pipelineEventBus } from "@/pipeline/event-bus";
-import { usePipelineBusEvents } from "@/tui/hooks/usePipelineBusEvents";
-import type { StoryDisplayState } from "@/tui/types";
 import { Text } from "ink";
 import { render } from "ink-testing-library";
 import { act } from "react";
+import { pipelineEventBus } from "@/pipeline/event-bus";
+import { usePipelineBusEvents } from "@/tui/hooks/usePipelineBusEvents";
+import type { StoryDisplayState } from "@/tui/types";
 
 function makeInitialStory(id: string): StoryDisplayState {
   return {

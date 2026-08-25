@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { NaxConfig } from "@/config";
-import { testWriterOp } from "@/operations";
 import type { RunOperation } from "@/operations";
+import { testWriterOp } from "@/operations";
 
 /**
  * Tests for testWriterOp — the full RunOperation shape for the test-writer role.

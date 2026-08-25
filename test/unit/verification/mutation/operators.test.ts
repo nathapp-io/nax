@@ -10,8 +10,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { getOperatorsForLanguage } from "@/verification";
 import type { MutationOperator } from "@/verification";
+import { getOperatorsForLanguage } from "@/verification";
 
 /** Normalise the `string | string[]` operator return into an array. */
 function applied(op: MutationOperator, snippet: string): string[] {

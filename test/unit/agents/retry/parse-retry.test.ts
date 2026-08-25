@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeParseRetryStrategy } from "@/agents/retry/parse-retry";
-import { ParseValidationError } from "@/agents/retry/types";
-import type { RetryContext } from "@/agents/retry/types";
 import { absentValue } from "@test/helpers";
+import { makeParseRetryStrategy } from "@/agents/retry/parse-retry";
+import type { RetryContext } from "@/agents/retry/types";
+import { ParseValidationError } from "@/agents/retry/types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

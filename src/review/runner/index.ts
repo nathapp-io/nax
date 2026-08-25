@@ -4,6 +4,7 @@
  * Runs configurable quality checks after story implementation
  */
 
+import type { BunFile } from "bun";
 import type { IAgentManager } from "@/agents";
 import type { ExecutionConfig, QualityConfig } from "@/config/schema";
 import type { ReviewConfig as ReviewNaxConfig } from "@/config/selectors";
@@ -13,12 +14,11 @@ import type { UserStory } from "@/prd";
 import { runQualityCommand } from "@/quality";
 import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
 import type { NaxIgnoreIndex } from "@/utils/path-filters";
-import type { BunFile } from "bun";
 import { runAdversarialReview as _runAdversarialReviewImpl } from "../adversarial";
 import { resolveLanguageCommand } from "../language-commands";
 import { runScopedLintCheck } from "../scoped-lint";
-import { runSemanticReview as _runSemanticReviewImpl } from "../semantic";
 import type { SemanticStory } from "../semantic";
+import { runSemanticReview as _runSemanticReviewImpl } from "../semantic";
 import { parseTypecheckOutput } from "../typecheck-parsing";
 import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "../types";
 

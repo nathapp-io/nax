@@ -7,7 +7,7 @@
 
 import path from "node:path";
 import { groupStoriesByPackage } from "@/acceptance";
-import { type NaxConfig, loadConfigForWorkdir } from "@/config";
+import { loadConfigForWorkdir, type NaxConfig } from "@/config";
 import type { FinishPhaseContext, FinishResult } from "@/finish";
 import type { LoadedHooksConfig } from "@/hooks";
 import { fireHook } from "@/hooks";
@@ -17,8 +17,8 @@ import { pipelineEventBus } from "@/pipeline";
 import type { PipelineEventEmitter } from "@/pipeline/events";
 import type { AgentGetFn } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
-import { countStories, isComplete } from "@/prd";
 import type { PRD } from "@/prd";
+import { countStories, isComplete } from "@/prd";
 import type { DispatchContext } from "@/runtime/dispatch-context";
 import type { ISessionManager } from "@/session";
 import { errorMessage } from "@/utils/errors";

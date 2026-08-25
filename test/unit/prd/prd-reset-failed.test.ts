@@ -7,7 +7,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { resetFailedStoriesToPending } from "@/prd";
-import type { PRD, PersistedRepoScopedFix, UserStory } from "@/prd/types";
+import type { PersistedRepoScopedFix, PRD, UserStory } from "@/prd/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

@@ -5,7 +5,7 @@ import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 import type { ReviewCheckResult } from "../review/types";
-import { type TestEditDeclaration, parseTestEditDeclarations } from "./test-edit-declaration";
+import { parseTestEditDeclarations, type TestEditDeclaration } from "./test-edit-declaration";
 import type { RunOperation } from "./types";
 
 export interface AutofixImplementerInput {

@@ -11,11 +11,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 import { runBatchPreChecks } from "@/execution/escalation";
 import type { PreIterationCheckResult } from "@/execution/escalation/tier-escalation";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { PRD, UserStory } from "@/prd";
-import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 const HOOKS: LoadedHooksConfig = { hooks: {} };
 

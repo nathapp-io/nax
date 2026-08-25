@@ -10,6 +10,8 @@
  * - resolveTestFilePatterns() + createTestFileClassifier(): ADR-009 SSOT
  */
 
+export { parseTestFailures, parseTestFailuresDetailed } from "./ac-parser";
+export { createTestFileClassifier } from "./classifier";
 export {
   DEFAULT_SCAN_TEST_DIRS,
   DEFAULT_SEPARATED_TEST_DIRS,
@@ -20,29 +22,31 @@ export {
   globsToTestRegex,
   isTestFileByPatterns,
 } from "./conventions";
-export { createTestFileClassifier } from "./classifier";
 export type { DetectionResult, DetectionSource } from "./detect";
-export { detectManifestFrameworksFromPackageJson, detectTestFilePatterns } from "./detect";
-export { buildTestFrameworkHint, detectFramework, isTestFile } from "./detector";
+export {
+  clearWorkspaceCache,
+  detectManifestFrameworksFromPackageJson,
+  detectTestFilePatterns,
+  discoverWorkspacePackages,
+} from "./detect";
 export type { Framework } from "./detector";
+export { buildTestFrameworkHint, detectFramework, isTestFile } from "./detector";
+export { parseMochaOutput } from "./parse-mocha";
+export { parseRustTestOutput } from "./parse-rust";
+export { analyzeTestExitCode, formatFailureSummary, parseBunTestOutput, parseTestOutput } from "./parser";
+export type { ResolvedTestPatterns } from "./resolver";
 export {
   _resolverDeps,
   findPackageDir,
   resolveReviewExcludePatterns,
   resolveTestFilePatterns,
 } from "./resolver";
-export type { ResolvedTestPatterns } from "./resolver";
-export { analyzeTestExitCode, formatFailureSummary, parseBunTestOutput, parseTestOutput } from "./parser";
-export { parseMochaOutput } from "./parse-mocha";
-export { parseRustTestOutput } from "./parse-rust";
-export { clearWorkspaceCache, discoverWorkspacePackages } from "./detect";
-export { parseTestFailures, parseTestFailuresDetailed } from "./ac-parser";
-export type { TestFailure, TestOutputAnalysis, TestSummary } from "./types";
+export type { SelectScopedTestsInput, SelectScopedTestsResult } from "./scoped-selection";
 export {
-  selectScopedTests,
+  _scopedSelectionDeps,
   buildScopedCommand,
   coerceSmartRunner,
   isMonorepoOrchestratorCommand,
-  _scopedSelectionDeps,
+  selectScopedTests,
 } from "./scoped-selection";
-export type { SelectScopedTestsInput, SelectScopedTestsResult } from "./scoped-selection";
+export type { TestFailure, TestOutputAnalysis, TestSummary } from "./types";

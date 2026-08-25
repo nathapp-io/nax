@@ -7,12 +7,6 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { DEFAULT_CONFIG } from "@/config";
-import { type PipelineHandlerContext, _resultHandlerDeps, handlePipelineFailure } from "@/execution";
-import type { PipelineRunResult } from "@/pipeline";
-import { PluginRegistry } from "@/plugins";
-import { loadPRD } from "@/prd";
-import type { UserStory } from "@/prd/types";
 import {
   cleanupTempDir,
   makeAgentResult,
@@ -22,6 +16,12 @@ import {
   makeTempDir,
   makeTestContext,
 } from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
+import { _resultHandlerDeps, handlePipelineFailure, type PipelineHandlerContext } from "@/execution";
+import type { PipelineRunResult } from "@/pipeline";
+import { PluginRegistry } from "@/plugins";
+import { loadPRD } from "@/prd";
+import type { UserStory } from "@/prd/types";
 
 function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = {}): PipelineHandlerContext {
   const prd = makePRD({ userStories: [story] });

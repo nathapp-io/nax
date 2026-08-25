@@ -7,8 +7,8 @@
 
 import { unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { isProcessAlive } from "@/utils/process-alive";
 import chalk from "chalk";
+import { isProcessAlive } from "@/utils/process-alive";
 
 /**
  * Options for unlock command

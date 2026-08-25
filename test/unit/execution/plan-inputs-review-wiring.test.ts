@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeSpawn } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { NaxConfig } from "@/config/schema";
 import { assemblePlanInputsFromCtx } from "@/execution/plan-inputs";
 import { _diffUtilsDeps } from "@/review";
-import { makeSpawn } from "@test/helpers";
 
 // ─── Spawn mock for diff-utils used inside prepare-inputs ──────────────────────
 

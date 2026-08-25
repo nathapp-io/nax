@@ -10,15 +10,15 @@
 
 import { describe, expect, test } from "bun:test";
 import type { Iteration } from "@/findings";
+import type { SemanticCategory } from "@/review";
 import {
-  SEMANTIC_CATEGORIES,
-  SEMANTIC_CATEGORY_ENUM_LINE,
   classifyRecurrence,
   llmFindingsToReviewFindings,
   normalizeSemanticCategory,
+  SEMANTIC_CATEGORIES,
+  SEMANTIC_CATEGORY_ENUM_LINE,
   validateLLMShape,
 } from "@/review";
-import type { SemanticCategory } from "@/review";
 import { llmFindingToFinding, parseLLMResponse } from "@/review/semantic-helpers";
 
 /** A prior round in which the same semantic finding was already reported. */

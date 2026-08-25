@@ -16,18 +16,17 @@ import { installSignalHandlers } from "./crash-signals";
 import type { PidRegistry } from "./pid-registry";
 import type { StatusWriter } from "./status-writer";
 
+export { _isHeartbeatActive, startHeartbeat, stopHeartbeat } from "./crash-heartbeat";
+
+export { installSignalHandlers, type SignalHandlerContext } from "./crash-signals";
 // Re-export for backward compatibility
 export {
   type RunCompleteContext,
   updateStatusToCrashed,
+  writeExitSummary,
   writeFatalLog,
   writeRunComplete,
-  writeExitSummary,
 } from "./crash-writer";
-
-export { type SignalHandlerContext, installSignalHandlers } from "./crash-signals";
-
-export { startHeartbeat, stopHeartbeat, _isHeartbeatActive } from "./crash-heartbeat";
 
 /**
  * Crash recovery context — dependencies injected at setup

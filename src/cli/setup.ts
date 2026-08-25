@@ -8,8 +8,8 @@ import { fillScripts } from "./setup-fill";
 import { generateSetupPlan as _generateSetupPlan } from "./setup-llm";
 import type { RepoAnalysis } from "./setup-types";
 import { runSetupGate } from "./setup-verify";
-import { writeSetupConfig as _writeSetupConfig } from "./setup-write";
 import type { WriteSetupConfigResult } from "./setup-write";
+import { writeSetupConfig as _writeSetupConfig } from "./setup-write";
 
 export interface SetupOptions {
   dir?: string;

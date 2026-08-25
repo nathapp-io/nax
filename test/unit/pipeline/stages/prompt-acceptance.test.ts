@@ -7,10 +7,10 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { makeConfigSlice, makeSparseNaxConfig, makeStory, makeTestContext } from "@test/helpers";
 import { _promptStageDeps, promptStage } from "@/pipeline/stages/prompt";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
-import { makeConfigSlice, makeSparseNaxConfig, makeStory, makeTestContext } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-prompt-acceptance-${randomUUID()}`;
 

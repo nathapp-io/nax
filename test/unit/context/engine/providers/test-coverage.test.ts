@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { TestCoverageProvider, _testCoverageProviderDeps } from "@/context/engine/providers/test-coverage";
-import type { ContextRequest } from "@/context/engine/types";
 import { makeNaxConfig, makeStory } from "@test/helpers";
+import { _testCoverageProviderDeps, TestCoverageProvider } from "@/context/engine/providers/test-coverage";
+import type { ContextRequest } from "@/context/engine/types";
 
 const STORY = makeStory({ id: "story-001", title: "Test story" });
 const CONFIG = makeNaxConfig();

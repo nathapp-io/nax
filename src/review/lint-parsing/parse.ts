@@ -3,7 +3,7 @@ import { biomeJsonStrategy } from "./strategies/biome-json";
 import { eslintJsonStrategy } from "./strategies/eslint-json";
 import { ruffAnnotatedStrategy } from "./strategies/ruff-annotated";
 import { textBlockStrategy } from "./strategies/text-block";
-import type { LintDiagnostic, LintOutputFormat, LintParseResult, LintParseStrategy, LintParserFormat } from "./types";
+import type { LintDiagnostic, LintOutputFormat, LintParseResult, LintParserFormat, LintParseStrategy } from "./types";
 
 function strategiesFor(format: LintOutputFormat): ReadonlyArray<LintParseStrategy> {
   if (format === "eslint-json") return [eslintJsonStrategy];

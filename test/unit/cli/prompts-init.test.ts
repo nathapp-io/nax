@@ -8,9 +8,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { makeTempDir } from "@test/helpers";
 import { _promptsInitDeps, promptsInitCommand } from "@/cli/prompts";
 import { buildRoleTaskSection } from "@/prompts/sections/role-task";
-import { makeTempDir } from "@test/helpers";
 
 const TEMPLATE_FILES = [
   "test-writer.md",

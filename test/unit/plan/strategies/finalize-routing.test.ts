@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { makePRD } from "@test/helpers";
 import type { AgentRoutingConfig } from "@/config";
 import { finalizePrdRouting } from "@/plan";
 import type { PRD } from "@/prd/types";
-import { makePRD } from "@test/helpers";
 
 const agentRouting: AgentRoutingConfig = {
   enabled: true,

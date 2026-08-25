@@ -7,8 +7,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { PlanPromptBuilder } from "@/prompts";
 import type { PackageSummary } from "@/prompts";
+import { PlanPromptBuilder } from "@/prompts";
 
 const SPEC = "Refactor auth module to use @nathapp/nestjs-auth";
 const CTX = "## Codebase Structure\nsrc/auth/auth.module.ts";

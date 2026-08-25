@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { makeStory } from "@test/helpers";
 import type { UserStory } from "@/prd/types";
 import { buildBatchStorySection, buildStoryReminderSection, buildStorySection } from "@/prompts/sections/story";
-import { makeStory } from "@test/helpers";
 
 describe("buildStorySection", () => {
   const mockStory = makeStory({

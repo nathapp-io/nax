@@ -7,12 +7,12 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { pickSelector } from "@/config";
+import { makeTestRuntime } from "@test/helpers";
 import type { DEFAULT_CONFIG } from "@/config";
+import { pickSelector } from "@/config";
 import { StoryOrchestratorBuilder } from "@/execution";
 import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeTestRuntime } from "@test/helpers";
 
 const testSel = pickSelector("test-orchestrator-sel", "execution");
 

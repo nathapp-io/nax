@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { makeNaxConfig, makeTestRuntime, opModelResolver, opSelector } from "@test/helpers";
 import type { AcceptanceDiagnoseInput } from "@/operations/acceptance-diagnose";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime, opModelResolver, opSelector } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
+
 import { acceptanceDiagnoseOp } from "@/operations/acceptance-diagnose";
 
 const SAMPLE_INPUT: AcceptanceDiagnoseInput = {

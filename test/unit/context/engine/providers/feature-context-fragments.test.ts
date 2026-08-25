@@ -18,11 +18,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 import type { NaxConfig } from "@/config/types";
-import { FeatureContextProviderV2, _featureContextV2Deps } from "@/context/engine";
+import { _featureContextV2Deps, FeatureContextProviderV2 } from "@/context/engine";
 import type { ContextRequest, RawChunk } from "@/context/engine/types";
 import type { PRD, UserStory } from "@/prd";
-import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixture builders

@@ -7,6 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeConfigSlice, makeSpawn, makeSpawnResult } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _qualityRunnerDeps as _runnerDeps } from "@/quality/runner";
 import {
@@ -17,7 +18,6 @@ import {
 } from "@/review/runner";
 import type { ReviewConfig } from "@/review/types";
 import { _gitDeps } from "@/utils/git";
-import { makeConfigSlice, makeSpawn, makeSpawnResult } from "@test/helpers";
 
 /** Minimal ReviewConfig with typecheck enabled but command set to disable via executionConfig */
 const typecheckConfig: ReviewConfig = makeConfigSlice("review", {

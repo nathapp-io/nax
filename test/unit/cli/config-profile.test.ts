@@ -10,6 +10,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   profileCreateCommand,
   profileCurrentCommand,
@@ -17,7 +18,6 @@ import {
   profileShowCommand,
   profileUseCommand,
 } from "@/cli/config-profile";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

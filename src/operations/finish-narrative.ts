@@ -11,7 +11,7 @@
 import type { ConfiguredModel } from "@/config";
 import { finishConfigSelector } from "@/config";
 import type { FinishConfig } from "@/config/selectors";
-import { TITLE_CLOSE_TAG, TITLE_MAX_CHARS, TITLE_OPEN_TAG, parseTitle } from "../finish/pr-title";
+import { parseTitle, TITLE_CLOSE_TAG, TITLE_MAX_CHARS, TITLE_OPEN_TAG } from "../finish/pr-title";
 import type { RunOperation } from "./types";
 
 /** Longest narrative rendered into a PR body, in characters, including the ellipsis. */

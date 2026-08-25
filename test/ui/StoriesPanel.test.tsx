@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import type { StoryDisplayState } from "@/tui";
-import { StoriesPanel } from "@/tui/components/StoriesPanel";
 import { render } from "ink-testing-library";
 import React from "react";
+import type { StoryDisplayState } from "@/tui";
+import { StoriesPanel } from "@/tui/components/StoriesPanel";
 
 function makeStory(overrides: Partial<StoryDisplayState> = {}): StoryDisplayState {
   return {

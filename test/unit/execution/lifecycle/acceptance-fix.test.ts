@@ -7,12 +7,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeDiagnoseOutput, makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 import type { SemanticVerdict } from "@/acceptance/types";
 import type { NaxConfig } from "@/config/schema";
 import { _diagnosisDeps, resolveAcceptanceDiagnosis } from "@/execution/lifecycle/acceptance-fix";
 import type { AcceptanceLoopContext } from "@/execution/lifecycle/acceptance-loop";
 import type { AcceptanceDiagnoseInput } from "@/operations/acceptance-diagnose";
-import { makeDiagnoseOutput, makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 function makeConfig(): NaxConfig {
   return makeNaxConfig({

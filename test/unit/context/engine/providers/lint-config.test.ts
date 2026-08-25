@@ -26,10 +26,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ProjectProfile } from "@/config";
-import { LintConfigProvider, _lintConfigProviderDeps } from "@/context/engine";
-import type { ContextRequest } from "@/context/engine/types";
 import { cleanupTempDir, makeTempDir, withTempDir } from "@test/helpers";
+import type { ProjectProfile } from "@/config";
+import { _lintConfigProviderDeps, LintConfigProvider } from "@/context/engine";
+import type { ContextRequest } from "@/context/engine/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

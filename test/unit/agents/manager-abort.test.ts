@@ -7,7 +7,7 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { AgentManager, _agentManagerDeps } from "@/agents/manager";
+import { _agentManagerDeps, AgentManager } from "@/agents/manager";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 
 const rateLimitFailure = {

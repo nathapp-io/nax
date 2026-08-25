@@ -11,13 +11,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { AgentResult } from "@/agents/types";
-import type { AgentAdapter } from "@/agents/types";
-import { _diffUtilsDeps } from "@/review/diff-utils";
-import { _semanticDeps, runSemanticReview } from "@/review/semantic";
-import type { SemanticStory } from "@/review/semantic";
-import type { SemanticReviewConfig } from "@/review/types";
 import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
+import type { AgentAdapter, AgentResult } from "@/agents/types";
+import { _diffUtilsDeps } from "@/review/diff-utils";
+import type { SemanticStory } from "@/review/semantic";
+import { _semanticDeps, runSemanticReview } from "@/review/semantic";
+import type { SemanticReviewConfig } from "@/review/types";
 
 // ---------------------------------------------------------------------------
 // Helpers

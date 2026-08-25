@@ -15,22 +15,22 @@
 import type { RectificationConfig } from "@/config";
 import type { Finding } from "@/findings/types";
 import type { UserStory } from "@/prd";
-import { isBlockingSeverity } from "@/review";
 import type { ReviewCheckName, ReviewCheckResult } from "@/review";
+import { isBlockingSeverity } from "@/review";
 import { formatFailureSummary } from "@/test-runners";
 import type { TestFailure } from "@/verification";
-import { priorFailuresSection, universalConstitutionSection, universalContextSection } from "../core";
 import type { FailureRecord, ReviewFinding } from "../core";
+import { priorFailuresSection, universalConstitutionSection, universalContextSection } from "../core";
+import type { GuardrailLevel } from "../sections";
 import {
   buildBehavioralGuardrailsSection,
   buildConventionsSection,
   buildIsolationSection,
   buildStorySection,
 } from "../sections";
-import type { GuardrailLevel } from "../sections";
 import {
-  CONTRADICTION_ESCAPE_HATCH,
   adversarialRectification,
+  CONTRADICTION_ESCAPE_HATCH,
   combinedLlmRectification,
   escapeHatchFor,
   exceptionCountWord,

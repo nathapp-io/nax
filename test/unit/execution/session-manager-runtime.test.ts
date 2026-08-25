@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
+import { makeAgentAdapter, makeSessionManager } from "@test/helpers";
 import { closeAllRunSessions, closeStorySessions, failAndClose } from "@/execution/session-manager-runtime";
 import type { SessionDescriptor, SessionState } from "@/session/types";
-import { makeAgentAdapter, makeSessionManager } from "@test/helpers";
 
 const makeSessionDescriptor = (overrides: Partial<SessionDescriptor> = {}): SessionDescriptor =>
   ({

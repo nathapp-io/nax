@@ -19,20 +19,6 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { CompleteResult, TurnResult } from "@/agents/types";
-import { pickSelector } from "@/config";
-import type { DEFAULT_CONFIG } from "@/config";
-import { NaxError } from "@/errors";
-import {
-  StoryOrchestratorBuilder,
-  _storyOrchestratorDeps,
-  formatPhaseResultMessage,
-  phasesToRevalidate,
-  refreshReviewInputForDispatch,
-} from "@/execution";
-import type { Finding, FixCycle, FixCycleContext, ReviewCheckResult } from "@/findings";
-import type { CallContext, CompleteOperation, DeterministicOperation, RunOperation } from "@/operations";
-import type { NaxRuntime } from "@/runtime";
 import {
   makeCallOp,
   makeFixCycleResult,
@@ -42,6 +28,20 @@ import {
   makeNaxConfig,
   makeTestRuntime,
 } from "@test/helpers";
+import type { CompleteResult, TurnResult } from "@/agents/types";
+import type { DEFAULT_CONFIG } from "@/config";
+import { pickSelector } from "@/config";
+import { NaxError } from "@/errors";
+import {
+  _storyOrchestratorDeps,
+  formatPhaseResultMessage,
+  phasesToRevalidate,
+  refreshReviewInputForDispatch,
+  StoryOrchestratorBuilder,
+} from "@/execution";
+import type { Finding, FixCycle, FixCycleContext, ReviewCheckResult } from "@/findings";
+import type { CallContext, CompleteOperation, DeterministicOperation, RunOperation } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
 
 // ============================================================================
 // Test Helper: Mock Operations

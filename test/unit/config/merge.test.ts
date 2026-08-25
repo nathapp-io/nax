@@ -3,10 +3,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { absentValue, makeNaxConfig } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { mergePackageConfig } from "@/config/merge";
 import type { NaxConfig } from "@/config/schema";
-import { absentValue, makeNaxConfig } from "@test/helpers";
 
 type SemanticConfig = NonNullable<NaxConfig["review"]["semantic"]>;
 

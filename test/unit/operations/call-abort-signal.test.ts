@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { type DEFAULT_CONFIG, pickSelector } from "@/config";
-import { callOp } from "@/operations";
-import type { CallContext, RunOperation } from "@/operations";
-import type { NaxRuntime } from "@/runtime";
 import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import type { CallContext, RunOperation } from "@/operations";
+import { callOp } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
 
 // Split out of call.test.ts (Task 4) once that file approached the 800-line
 // test-file limit — see .claude/rules/test-architecture.md "split by describe

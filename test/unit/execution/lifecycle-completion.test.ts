@@ -7,16 +7,16 @@
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { type DeepPartial, makeDispatchContext, makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { purgeStaleManifests } from "@/context/engine";
-import { type RunCompletionOptions, _runCompletionDeps, handleRunCompletion } from "@/execution/lifecycle";
+import { _runCompletionDeps, handleRunCompletion, type RunCompletionOptions } from "@/execution/lifecycle";
 import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
 import * as loggerModule from "@/logger";
 import type { StoryMetrics } from "@/metrics";
 import type { RunCompletedEvent } from "@/pipeline";
 import { pipelineEventBus } from "@/pipeline";
 import type { PRD, UserStory } from "@/prd";
-import { type DeepPartial, makeDispatchContext, makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Test helpers

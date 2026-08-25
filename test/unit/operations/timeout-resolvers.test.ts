@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { makeNaxConfig, makeTestRuntime, opModelResolver, opSelector } from "@test/helpers";
 import { adversarialReviewOp, decomposeOp, planInteractiveOp, semanticReviewOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime, opModelResolver, opSelector } from "@test/helpers";
 
 let runtime: NaxRuntime | undefined;
 afterEach(async () => {

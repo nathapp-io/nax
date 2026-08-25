@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _qualityRunnerDeps, runQualityCommand } from "@/quality/runner";
 import { makeSpawn } from "@test/helpers";
+import { _qualityRunnerDeps, runQualityCommand } from "@/quality/runner";
 
 describe("runQualityCommand env stripping", () => {
   let originalSpawn: typeof _qualityRunnerDeps.spawn;

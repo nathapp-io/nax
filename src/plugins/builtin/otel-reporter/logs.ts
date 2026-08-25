@@ -1,5 +1,5 @@
 import type { LogEntry, LogLevel } from "@/logger/types";
-import { type KeyValue, attr, buildResourceAttributes, msToUnixNano } from "./otlp";
+import { attr, buildResourceAttributes, type KeyValue, msToUnixNano } from "./otlp";
 
 /** OTLP/JSON LogRecord — body/stringValue subset used by this reporter. */
 export interface LogRecord {

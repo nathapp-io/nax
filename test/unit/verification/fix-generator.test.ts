@@ -29,8 +29,9 @@ function buildFixPrompt(
     testFilePath,
   });
 }
-import type { PRD, UserStory } from "@/prd/types";
+
 import { absentValue } from "@test/helpers";
+import type { PRD, UserStory } from "@/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

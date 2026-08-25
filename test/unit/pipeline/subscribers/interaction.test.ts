@@ -1,10 +1,10 @@
 // RE-ARCH: keep
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { PipelineEventBus, type StoryFailedEvent } from "@/pipeline/event-bus";
 import { wireInteraction } from "@/pipeline/subscribers/interaction";
 import type { UserStory } from "@/prd";
-import { makeStory } from "@test/helpers";
 
 describe("wireInteraction", () => {
   test("no subscriptions when interactionChain is null", () => {

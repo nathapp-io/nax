@@ -9,11 +9,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { adversarialReviewOp } from "@/operations/adversarial-review";
+import { assertDefined, makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
 import type { AdversarialReviewInput, AdversarialReviewOutput } from "@/operations/adversarial-review";
+import { adversarialReviewOp } from "@/operations/adversarial-review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { NaxRuntime } from "@/runtime";
-import { assertDefined, makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

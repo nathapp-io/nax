@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { STAGE_CONTEXT_MAP, getStageContextConfig } from "@/context/engine";
+import { getStageContextConfig, STAGE_CONTEXT_MAP } from "@/context/engine";
 
 describe("stage-config — lint-config provider registration (US-004 AC15, AC16)", () => {
   test("AC15: rectify stage includes 'lint-config' in providerIds", () => {

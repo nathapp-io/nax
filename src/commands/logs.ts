@@ -14,11 +14,10 @@ import { resolveProject, resolveSingleFeature } from "./common";
 import { displayLogs, displayRunsList, followLogs } from "./logs-formatter";
 import { resolveRunFileFromRegistry, selectRunFile } from "./logs-reader";
 
-// Re-exports for backward compatibility
-export { _logsReaderDeps as _deps } from "./logs-reader";
-export { extractRunSummary, resolveRunFileFromRegistry, selectRunFile } from "./logs-reader";
-export { displayLogs, displayRunsList, followLogs, formatDuration } from "./logs-formatter";
 export type { FollowLogsDeps } from "./logs-formatter";
+export { displayLogs, displayRunsList, followLogs, formatDuration } from "./logs-formatter";
+// Re-exports for backward compatibility
+export { _logsReaderDeps as _deps, extractRunSummary, resolveRunFileFromRegistry, selectRunFile } from "./logs-reader";
 
 /**
  * Options for logs command

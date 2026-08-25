@@ -3,7 +3,7 @@ import { hasLikelyTestContent, isStubTestContent } from "../acceptance/heuristic
 import { acceptanceGenConfigSelector } from "../config";
 import type { AcceptanceGenConfig } from "../config/selectors";
 import { AcceptancePromptBuilder } from "../prompts";
-import { type SelfHealStep, makeSelfHealStep, runSelfHealChain } from "./self-heal";
+import { makeSelfHealStep, runSelfHealChain, type SelfHealStep } from "./self-heal";
 import type { RunOperation } from "./types";
 
 export interface AcceptanceGenerateInput {

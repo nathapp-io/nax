@@ -10,16 +10,16 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
-  type Mutant,
   applyMutant,
   clearInFlight,
   journalPathFor,
+  type Mutant,
   mayHaveJournal,
   recordInFlight,
   restoreInFlight,
 } from "@/verification";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("mutation journal", () => {
   let repoRoot: string;

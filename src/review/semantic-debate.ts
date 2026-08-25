@@ -8,23 +8,22 @@
 
 import type { IAgentManager } from "../agents";
 import type { ReviewConfig } from "../config/selectors";
-import { pickBaseSelectorKind } from "../debate";
 import type { DebateRunner, DebateRunnerOptions, DebateStageConfig } from "../debate";
+import { pickBaseSelectorKind } from "../debate";
 import { getSafeLogger } from "../logger";
 import { filterByAcGroundingMinimal } from "./ac-quote-validator";
 import { MAX_ACKS } from "./acks";
 import { llmFindingsToReviewFindings } from "./finding-projection";
 import { normalizeIssueText } from "./recurrence-demotion";
 import {
-  type LLMFinding,
   formatFindings,
   isBlockingSeverity,
+  type LLMFinding,
   parseLLMResponse,
   sanitizeRefModeFindings,
   toReviewFindings,
 } from "./semantic-helpers";
-import type { SemanticReviewConfig } from "./types";
-import type { ReviewAck, ReviewCheckResult, SemanticStory } from "./types";
+import type { ReviewAck, ReviewCheckResult, SemanticReviewConfig, SemanticStory } from "./types";
 
 function recordSemanticDebateAudit(opts: {
   runtime: import("../runtime").NaxRuntime;

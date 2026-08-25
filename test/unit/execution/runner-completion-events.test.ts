@@ -7,16 +7,16 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { makeMockRuntime, makeNaxConfig, makePluginRegistry, makeStatusWriter, makeStory } from "@test/helpers";
 import type { NaxConfig } from "@/config";
-import { _runnerCompletionDeps, runCompletionPhase } from "@/execution";
 import type { RunnerCompletionOptions } from "@/execution";
+import { _runnerCompletionDeps, runCompletionPhase } from "@/execution";
 import type { AcceptanceLoopResult } from "@/execution/lifecycle/acceptance-loop";
 import type { RunCompletionResult } from "@/execution/lifecycle/run-completion";
 import type { LoadedHooksConfig } from "@/hooks";
-import { pipelineEventBus } from "@/pipeline";
 import type { PostRunPhaseCompletedEvent } from "@/pipeline";
+import { pipelineEventBus } from "@/pipeline";
 import type { PRD, UserStory } from "@/prd";
-import { makeMockRuntime, makeNaxConfig, makePluginRegistry, makeStatusWriter, makeStory } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

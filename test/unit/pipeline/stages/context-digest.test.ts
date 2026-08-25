@@ -7,11 +7,11 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
+import { cleanupTempDir, makeContextOrchestrator, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { ContextBundle, ContextRequest } from "@/context/engine";
 import { NaxError } from "@/errors";
 import { _contextStageDeps, contextStage } from "@/pipeline/stages/context";
 import type { PipelineContext } from "@/pipeline/types";
-import { cleanupTempDir, makeContextOrchestrator, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals (restored per test)

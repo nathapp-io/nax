@@ -7,13 +7,12 @@
  */
 
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { makeTestRuntime } from "@test/helpers";
 import { ParseValidationError } from "@/agents/retry/types";
 import * as loggerModule from "@/logger";
 import { adversarialReviewOp } from "@/operations/adversarial-review";
-import type { AdversarialReviewConfig } from "@/review/types";
-import type { SemanticStory } from "@/review/types";
+import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
 import type { NaxRuntime } from "@/runtime";
-import { makeTestRuntime } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

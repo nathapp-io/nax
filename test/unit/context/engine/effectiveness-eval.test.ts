@@ -12,20 +12,20 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { makeLogger, withDepsRestore } from "@test/helpers";
 import { buildEvidenceTerms, classifyWithTerms } from "@/context/engine/effectiveness";
 import {
+  _effectivenessEvalDeps,
   type Classifier,
   type EvalReport,
   INVALID_JSON_ERROR_CODE,
   type LabelCase,
   type LabelSet,
+  loadLabelSet,
   type PerSignalScore,
   SCHEMA_INVALID_ERROR_CODE,
-  _effectivenessEvalDeps,
-  loadLabelSet,
   scoreEffectiveness,
 } from "@/context/engine/effectiveness-eval";
-import { makeLogger, withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared fixtures

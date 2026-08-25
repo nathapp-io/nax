@@ -19,7 +19,7 @@ import { callOp, decomposeOp } from "../operations";
 import { mapDecomposedStoriesToUserStories } from "../prd/decompose-mapper";
 import type { PRD, StoryStatus, UserStory } from "../prd/types";
 import { buildSourceRootsSection } from "./plan-helpers";
-import { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime, resolvePlanModelSelection } from "./plan-runtime";
+import { _planDeps, createPlanRuntime, DEFAULT_TIMEOUT_SECONDS, resolvePlanModelSelection } from "./plan-runtime";
 
 /**
  * Decompose an existing story into sub-stories.

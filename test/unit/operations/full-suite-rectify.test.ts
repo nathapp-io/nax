@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import type { Finding } from "@/findings";
+import type { FullSuiteRectifyInput, FullSuiteRectifyOutput, TestEditDeclaration } from "@/operations";
 import {
   _repoScopedFixDeps,
   fullSuiteRectifyOp,
@@ -7,10 +9,7 @@ import {
   makeFullSuiteRectifyStrategy,
   makeRepoScopedTestFixStrategy,
 } from "@/operations";
-import type { FullSuiteRectifyInput, FullSuiteRectifyOutput } from "@/operations";
-import type { TestEditDeclaration } from "@/operations";
 import type { UserStory } from "@/prd";
-import { makeNaxConfig } from "@test/helpers";
 
 function makeTestFinding(overrides: Partial<Finding> = {}): Finding {
   return {

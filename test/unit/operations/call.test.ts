@@ -1,13 +1,12 @@
 import { afterEach, describe, expect, type mock, test } from "bun:test";
+import { firstCall, makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { AgentRunRequest } from "@/agents/manager-types";
 import type { RetryPreset } from "@/agents/retry";
 import type { CompleteResult, TurnResult } from "@/agents/types";
-import { pickSelector } from "@/config";
-import { DEFAULT_CONFIG } from "@/config";
-import { callOp, shouldKeepSessionOpen } from "@/operations";
+import { DEFAULT_CONFIG, pickSelector } from "@/config";
 import type { CompleteOperation, RunOperation } from "@/operations";
+import { callOp, shouldKeepSessionOpen } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { firstCall, makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 
 let runtime: NaxRuntime | undefined;
 afterEach(async () => {

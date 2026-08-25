@@ -8,13 +8,13 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CodeNeighborProvider, _codeNeighborDeps } from "@/context/engine/providers/code-neighbor";
+import { cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
 import type { CodeNeighborProviderOptions } from "@/context/engine/providers/code-neighbor";
+import { _codeNeighborDeps, CodeNeighborProvider } from "@/context/engine/providers/code-neighbor";
 import type { ContextRequest } from "@/context/engine/types";
 import { extractTestDirs, globsToPathspec, globsToTestRegex } from "@/test-runners/conventions";
 import type { ResolvedTestPatterns } from "@/test-runners/resolver";
 import type { NaxIgnoreIndex, NaxIgnoreMatcher } from "@/utils/path-filters";
-import { cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
 
 /**
  * Build a ResolvedTestPatterns value from test-file globs.

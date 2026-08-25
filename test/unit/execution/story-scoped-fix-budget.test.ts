@@ -38,15 +38,15 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import { makeMockAgentManager, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import type { NaxConfig } from "@/config";
-import { StoryOrchestratorBuilder, _storyOrchestratorDeps, runRectification } from "@/execution";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import type { InternalBuildState } from "@/execution";
-import { getStoryFixState, storyFixKey } from "@/findings";
+import { _storyOrchestratorDeps, runRectification, StoryOrchestratorBuilder } from "@/execution";
 import type { Finding, FixStrategy } from "@/findings";
+import { getStoryFixState, storyFixKey } from "@/findings";
 import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared fixtures

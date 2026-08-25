@@ -6,15 +6,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeDispatchContext } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import {
-  type AcceptanceMeta,
   _acceptanceSetupDeps,
+  type AcceptanceMeta,
   acceptanceSetupStage,
   computeACFingerprint,
 } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
-import { makeDispatchContext } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

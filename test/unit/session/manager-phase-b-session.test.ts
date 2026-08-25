@@ -1,9 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
+import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 import type { OpenSessionOpts, SessionHandle } from "@/agents/types";
 import { SessionManager } from "@/session/manager";
 import type { NameForRequest, OpenSessionRequest } from "@/session/types";
-import { makeAgentAdapter } from "@test/helpers";
-import { makeNaxConfig } from "@test/helpers";
 
 const WORKDIR = "/tmp/nax-phase-b-test";
 

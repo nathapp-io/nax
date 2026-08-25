@@ -13,10 +13,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { ContextBundle, ContextRequest } from "@/context/engine";
-import { _stageAssemblerDeps, assembleForStage } from "@/context/engine";
-import type { PipelineContext } from "@/pipeline/types";
-import type { UserStory } from "@/prd/types";
 import {
   DEFAULT_TEST_ROUTING,
   makeStory as makeBaseStory,
@@ -25,6 +21,10 @@ import {
   makePRD,
   makeTestContext,
 } from "@test/helpers";
+import type { ContextBundle, ContextRequest } from "@/context/engine";
+import { _stageAssemblerDeps, assembleForStage } from "@/context/engine";
+import type { PipelineContext } from "@/pipeline/types";
+import type { UserStory } from "@/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals

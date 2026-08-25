@@ -13,14 +13,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { IAgentManager } from "@/agents";
-import { adversarialReviewOp } from "@/operations/adversarial-review";
-import type { AdversarialReviewInput } from "@/operations/adversarial-review";
-import { semanticReviewOp } from "@/operations/semantic-review";
-import type { SemanticReviewInput } from "@/operations/semantic-review";
-import { _adversarialDeps, _diffUtilsDeps, runAdversarialReview } from "@/review";
-import type { AdversarialReviewConfig, SemanticStory } from "@/review";
-import type { NaxRuntime } from "@/runtime";
 import {
   assertDefined,
   makeAgentAdapter,
@@ -30,6 +22,14 @@ import {
   opSelector,
   withTempDir,
 } from "@test/helpers";
+import type { IAgentManager } from "@/agents";
+import type { AdversarialReviewInput } from "@/operations/adversarial-review";
+import { adversarialReviewOp } from "@/operations/adversarial-review";
+import type { SemanticReviewInput } from "@/operations/semantic-review";
+import { semanticReviewOp } from "@/operations/semantic-review";
+import type { AdversarialReviewConfig, SemanticStory } from "@/review";
+import { _adversarialDeps, _diffUtilsDeps, runAdversarialReview } from "@/review";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

@@ -20,13 +20,13 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { makeMockRuntime, makeNaxConfig, makeTestContext } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { _tierEscalationDeps, handleTierEscalation } from "@/execution/escalation/tier-escalation";
 import { collectStoryMetrics } from "@/metrics/tracker";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
 import type { StoryRouting } from "@/prd/types";
-import { makeMockRuntime, makeNaxConfig, makeTestContext } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-escalation-test-${randomUUID()}`;
 const PRD_PATH = `/tmp/prd-${randomUUID()}.json`;

@@ -7,6 +7,7 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import type { InteractionConfig } from "@/config/runtime-types";
 import { InteractionChain } from "@/interaction/chain";
 import {
@@ -20,7 +21,6 @@ import {
   substituteTemplate,
 } from "@/interaction/triggers";
 import type { InteractionPlugin, InteractionResponse } from "@/interaction/types";
-import { makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { makeTestRuntime, withTempDir } from "@test/helpers";
 import { _runPostParseForTest } from "@/operations/call";
 import type { BuildContext, VerifyContext } from "@/operations/types";
-import { makeTestRuntime, withTempDir } from "@test/helpers";
 
 // Minimal build context — verify/recover hooks under test don't read `config`
 // (typed `unknown` here), but `packageView` is a real interface, so it comes

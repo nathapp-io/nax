@@ -17,10 +17,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { _tierEscalationDeps, handleTierEscalation, preIterationTierCheck } from "@/execution/escalation";
-import { collectObservations } from "@/plugins/builtin/curator";
-import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
 import { makeInProgressStory, makeLogger } from "@test/helpers";
+import { _tierEscalationDeps, handleTierEscalation, preIterationTierCheck } from "@/execution/escalation";
+import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
+import { collectObservations } from "@/plugins/builtin/curator";
 
 type TierEscalationDeps = typeof _tierEscalationDeps;
 

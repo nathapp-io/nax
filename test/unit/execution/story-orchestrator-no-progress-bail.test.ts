@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _storyOrchestratorDeps, runRectification, withIncreasingFailuresBail, withNoProgressBail } from "@/execution";
-import { runFixCycle } from "@/findings";
-import type { Finding, FixCycle, FixCycleContext, FixStrategy, Iteration } from "@/findings";
-import type { CallContext } from "@/operations";
 import { makeTestRuntime } from "@test/helpers";
+import { _storyOrchestratorDeps, runRectification, withIncreasingFailuresBail, withNoProgressBail } from "@/execution";
+import type { Finding, FixCycle, FixCycleContext, FixStrategy, Iteration } from "@/findings";
+import { runFixCycle } from "@/findings";
+import type { CallContext } from "@/operations";
 import { makeCallOpSpy } from "../findings/_cycle-fixtures";
 import { GATE_FAILURE, mockFullSuiteGateOp, mockImplementerOp } from "./_revalidation-fixtures";
 

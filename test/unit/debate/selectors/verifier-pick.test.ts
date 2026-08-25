@@ -8,10 +8,9 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { resolveSelector, verifierPickSelector } from "@/debate";
-import type { SelectorContext } from "@/debate";
-import type { SuccessfulProposal } from "@/debate";
 import { makeMockAgentManager, makeMockCallContext, type makeTestRuntime } from "@test/helpers";
+import type { SelectorContext, SuccessfulProposal } from "@/debate";
+import { resolveSelector, verifierPickSelector } from "@/debate";
 
 function makeProposal(output: string, agentName = "claude"): SuccessfulProposal {
   return {

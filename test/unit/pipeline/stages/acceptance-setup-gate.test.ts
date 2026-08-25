@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeDispatchContext } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { _acceptanceSetupDeps, acceptanceSetupStage, computeACFingerprint } from "@/pipeline/stages/acceptance-setup";
 import { preRunPipeline } from "@/pipeline/stages/index";
 import type { PipelineContext } from "@/pipeline/types";
-import { makeDispatchContext } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

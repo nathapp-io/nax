@@ -5,8 +5,8 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { makeSpawn, type SpawnStub } from "@test/helpers";
 import { _newPackageSetupDeps, markNewPackageDirs, maybeRunNewPackageSetup } from "@/execution";
-import { type SpawnStub, makeSpawn } from "@test/helpers";
 
 function spawnOk(exitCode = 0, capture?: { argv?: string[]; cwd?: string }): SpawnStub {
   return makeSpawn(({ cmd, opts }) => {

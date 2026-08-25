@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Finding } from "@/findings";
-import { _mechanicalLintFixDeps, makeMechanicalLintFixStrategy } from "@/operations";
 import type { MechanicalLintFixDeps } from "@/operations";
+import { _mechanicalLintFixDeps, makeMechanicalLintFixStrategy } from "@/operations";
 import type { QualityCommandOptions } from "@/quality";
 
 function ctxWithQuality(quality?: Record<string, unknown>) {

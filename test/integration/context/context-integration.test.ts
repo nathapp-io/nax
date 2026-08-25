@@ -15,8 +15,9 @@ const TEST_CONFIG = {
   ...DEFAULT_CONFIG,
   execution: { ...DEFAULT_CONFIG.execution, iterationDelayMs: 0 },
 };
-import { run } from "@/execution/runner";
+
 import type { RunOptions } from "@/execution/runner";
+import { run } from "@/execution/runner";
 import type { PRD, UserStory } from "@/prd";
 
 // Sample PRD for testing

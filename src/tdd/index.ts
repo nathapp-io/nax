@@ -9,9 +9,10 @@ export type {
   TddSessionResult,
   TddSessionRole,
 } from "../execution/types";
-export type { VerdictCategorization, VerifierVerdict } from "./verdict";
+export { implementerOp, implementTddOp, testWriterOp, verifierOp, verifyTddOp, writeTddTestOp } from "../operations";
 
 export { isTestFile } from "../test-runners";
+export { cleanupProcessTree, getPgid } from "./cleanup";
 export {
   _isolationDeps,
   getChangedFiles,
@@ -19,7 +20,6 @@ export {
   verifyImplementerIsolation,
   verifyTestWriterIsolation,
 } from "./isolation";
-export { cleanupProcessTree, getPgid } from "./cleanup";
-export { VERDICT_FILE, categorizeVerdict, cleanupVerdict, readVerdict } from "./verdict";
 export { _rollbackDeps, rollbackToRef } from "./rollback";
-export { implementTddOp, implementerOp, testWriterOp, verifyTddOp, verifierOp, writeTddTestOp } from "../operations";
+export type { VerdictCategorization, VerifierVerdict } from "./verdict";
+export { categorizeVerdict, cleanupVerdict, readVerdict, VERDICT_FILE } from "./verdict";

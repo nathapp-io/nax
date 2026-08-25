@@ -12,18 +12,18 @@ import type { DebatePromptBuilder } from "../prompts";
 import type { PreDebatePhaseContext } from "./pre-phase";
 import { resolvePreDebatePhase } from "./pre-phase";
 import {
-  type ScoredProposal,
   acOverlap,
   computeScore,
   extractManifestFromContext,
   runPatchStep,
+  type ScoredProposal,
 } from "./selectors/verifier-pick";
 import {
-  type ResolveOutcome,
-  type ResolvedDebater,
-  type SuccessfulProposal,
   _debateSessionDeps,
+  type ResolvedDebater,
+  type ResolveOutcome,
   resolveOutcome,
+  type SuccessfulProposal,
 } from "./session-helpers";
 import type { DebateResult, DebateStageConfig, Proposal, Rebuttal } from "./types";
 import type { PostDebateVerifierContext } from "./verifiers";

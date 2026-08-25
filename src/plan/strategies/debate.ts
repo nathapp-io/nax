@@ -1,6 +1,6 @@
 import { NaxError } from "@/errors";
-import { callOp, planInteractiveOp } from "@/operations";
 import type { CallContext, PlanInteractiveInput } from "@/operations";
+import { callOp, planInteractiveOp } from "@/operations";
 import { validatePlanOutput } from "@/prd";
 import { PlanPromptBuilder } from "@/prompts";
 import { assertIsValidPrd } from "./assert";

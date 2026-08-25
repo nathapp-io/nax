@@ -11,13 +11,12 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { ParseValidationError } from "@/agents";
+import { makePRD, makeStory, makeTestRuntime, opSelector, withWarnSpy } from "@test/helpers";
 import type { RetryStrategy } from "@/agents";
+import { ParseValidationError } from "@/agents";
 import { planInteractiveOp } from "@/operations";
 import { validatePlanOutput } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
-import { makePRD, makeStory, opSelector } from "@test/helpers";
-import { makeTestRuntime, withWarnSpy } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

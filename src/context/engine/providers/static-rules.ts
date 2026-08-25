@@ -15,10 +15,13 @@
 
 import { createHash } from "node:crypto";
 import { join, relative } from "node:path";
-import { applySectionBudget } from "@/context";
-import { splitRuleIntoSections } from "@/context";
 import type { RuleSection } from "@/context";
-import { type CanonicalRule, DEFAULT_CANONICAL_RULES_BUDGET_TOKENS } from "@/context";
+import {
+  applySectionBudget,
+  type CanonicalRule,
+  DEFAULT_CANONICAL_RULES_BUDGET_TOKENS,
+  splitRuleIntoSections,
+} from "@/context";
 import { getLogger } from "@/logger";
 // Same estimator the section budget uses (via `rule-sections`). A second local
 // `length / 4` here would let a chunk's reported token count disagree with the

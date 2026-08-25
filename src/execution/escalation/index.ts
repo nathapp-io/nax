@@ -2,19 +2,19 @@
  * Escalation module exports
  */
 
-export { escalateTier, getTierConfig, calculateMaxIterations } from "./escalation";
-export { runBatchPreChecks, type BatchPreCheckOptions, type BatchPreCheckResult } from "./batch-pre-check";
+export { type BatchPreCheckOptions, type BatchPreCheckResult, runBatchPreChecks } from "./batch-pre-check";
+export { calculateMaxIterations, escalateTier, getTierConfig } from "./escalation";
 export { verifyEscalationQuotes } from "./quote-integrity";
 export {
-  resolveMaxAttemptsOutcome,
-  preIterationTierCheck,
-  handleTierEscalation,
-  _tierEscalationDeps,
   _runtimeCrashRetryCounts,
-  resetRuntimeCrashRetryCounts,
-  RUNTIME_CRASH_RETRY_CAP,
-  type PreIterationCheckResult,
+  _tierEscalationDeps,
   type EscalationHandlerContext,
   type EscalationHandlerResult,
+  handleTierEscalation,
+  type PreIterationCheckResult,
+  preIterationTierCheck,
+  RUNTIME_CRASH_RETRY_CAP,
+  resetRuntimeCrashRetryCounts,
+  resolveMaxAttemptsOutcome,
 } from "./tier-escalation";
-export { handleNoTierAvailable, handleMaxAttemptsReached } from "./tier-outcome";
+export { handleMaxAttemptsReached, handleNoTierAvailable } from "./tier-outcome";

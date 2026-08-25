@@ -11,8 +11,8 @@
  *   and fail-adapter-error retry decisions into a single function.
  */
 
-import { DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG, DEFAULT_CONFIG } from "@/config";
 import type { AgentManagerConfig } from "@/config";
+import { DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG, DEFAULT_CONFIG } from "@/config";
 import type { AdapterFailure } from "@/context";
 import type { AgentResult, AgentRunOptions } from "../types";
 

@@ -16,9 +16,9 @@ import {
   COMPLEXITY_GUIDE,
   DESCRIPTION_QUALITY_RULES,
   GROUPING_RULES,
+  getAcQualityRules,
   SPEC_ANCHOR_RULES,
   TEST_STRATEGY_GUIDE,
-  getAcQualityRules,
 } from "@/config";
 import type { ComposeInput } from "../compose";
 import { OneShotPromptBuilder } from "./one-shot-builder";

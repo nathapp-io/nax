@@ -7,8 +7,8 @@
  * auto-PR-opened PRs read the same.
  */
 import { describe, expect, test } from "bun:test";
-import { buildFinishBody, buildFinishTitle, resolveTitle } from "@/finish";
 import type { Finding, FinishPrContext, FinishPrStory, FinishRound } from "@/finish";
+import { buildFinishBody, buildFinishTitle, resolveTitle } from "@/finish";
 
 const story = (over: Partial<FinishPrStory> = {}): FinishPrStory => ({
   id: "US-001",

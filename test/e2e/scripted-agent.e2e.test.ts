@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { SendTurnOpts, SessionHandle } from "@/agents/types";
 import { makeScriptedAgent } from "@test/helpers";
+import type { SendTurnOpts, SessionHandle } from "@/agents/types";
 
 function fakeHandle(role: string): SessionHandle {
   return { id: `nax-abcd1234-feat-US-001-${role}`, agentName: "claude", role: role as never };

@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { buildModifiedFilesLines } from "@/prompts/sections";
-import { buildBatchStorySection, buildStoryReminderSection, buildStorySection } from "@/prompts/sections";
 import { makeStory } from "@test/helpers";
+import {
+  buildBatchStorySection,
+  buildModifiedFilesLines,
+  buildStoryReminderSection,
+  buildStorySection,
+} from "@/prompts/sections";
 
 const ENTRY = {
   path: "test/unit/engine/orchestrator.test.ts",

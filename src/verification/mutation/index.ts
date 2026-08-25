@@ -2,11 +2,10 @@
  * Mutation generation core — public surface.
  */
 
-export * from "./types";
-export { generateMutants } from "./mutator";
-export { getOperatorsForLanguage } from "./operators";
-export { applyMutant, revertMutant } from "./apply";
 export type { RevertResult } from "./apply";
+export { applyMutant, revertMutant } from "./apply";
+export { classifyMutant } from "./classify";
+export type { JournalRestoreResult, MutationJournalEntry } from "./journal";
 export {
   clearInFlight,
   journalDir,
@@ -15,6 +14,7 @@ export {
   recordInFlight,
   restoreInFlight,
 } from "./journal";
-export type { JournalRestoreResult, MutationJournalEntry } from "./journal";
-export { classifyMutant } from "./classify";
+export { generateMutants } from "./mutator";
+export { getOperatorsForLanguage } from "./operators";
 export { selectEvenlySpaced } from "./select";
+export * from "./types";

@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { _coordinatorDeps, rankContestants, runBakeoff, runContestant } from "@/bakeoff";
+import { makeNaxConfig } from "@test/helpers";
 import type {
   BakeoffCoordinatorDeps,
   BakeoffOptions,
@@ -22,8 +22,8 @@ import type {
   ContestantRunContext,
   ContestantRunnerDeps,
 } from "@/bakeoff";
+import { _coordinatorDeps, rankContestants, runBakeoff, runContestant } from "@/bakeoff";
 import type { NaxConfig } from "@/config";
-import { makeNaxConfig } from "@test/helpers";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

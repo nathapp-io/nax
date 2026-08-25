@@ -10,9 +10,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeTestRuntime } from "@test/helpers";
 import { _storyOrchestratorDeps } from "@/execution";
 import { getSafeLogger } from "@/logger";
-import { makeTestRuntime } from "@test/helpers";
 
 describe("StoryOrchestrator runPhase — beforeRef threading", () => {
   let origCallOp: typeof _storyOrchestratorDeps.callOp;

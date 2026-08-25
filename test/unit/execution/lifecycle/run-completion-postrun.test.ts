@@ -12,18 +12,18 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { assertDefined, makeDispatchContext, makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import {
+  _runCompletionDeps,
   type DeferredRegressionOptions,
   type DeferredRegressionResult,
-  type RunCompletionOptions,
-  _runCompletionDeps,
   handleRunCompletion,
+  type RunCompletionOptions,
 } from "@/execution";
 import type { StoryMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
-import { assertDefined, makeDispatchContext, makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers

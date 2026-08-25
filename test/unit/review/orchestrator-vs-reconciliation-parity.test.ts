@@ -12,11 +12,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_CONFIG } from "@/config";
-import { _diffUtilsDeps } from "@/review";
-import { prepareAdversarialReviewInput, prepareSemanticReviewInput } from "@/review";
-import type { AdversarialReviewConfig, SemanticReviewConfig } from "@/review/types";
 import { makeSpawn } from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
+import { _diffUtilsDeps, prepareAdversarialReviewInput, prepareSemanticReviewInput } from "@/review";
+import type { AdversarialReviewConfig, SemanticReviewConfig } from "@/review/types";
 
 function makeSpawnSequence(outputs: string[]) {
   let i = 0;

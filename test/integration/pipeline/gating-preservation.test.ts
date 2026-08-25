@@ -9,6 +9,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  makeMockCallContext,
+  makeMockPlanInputs,
+  makeNaxConfig,
+  makePRD,
+  makeStory,
+  makeTestContext,
+  makeTestRuntime,
+} from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { AdversarialReviewConfigSchema } from "@/config/schemas-review";
 import { _storyOrchestratorDeps, assemblePlanInputsFromCtx, buildPlanForStrategy } from "@/execution";
@@ -21,15 +30,6 @@ import {
 } from "@/operations";
 import type { PipelineContext } from "@/pipeline/types";
 import type { NaxRuntime } from "@/runtime";
-import {
-  makeMockCallContext,
-  makeMockPlanInputs,
-  makeNaxConfig,
-  makePRD,
-  makeStory,
-  makeTestContext,
-  makeTestRuntime,
-} from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

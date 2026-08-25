@@ -7,9 +7,9 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { makeLogger, makeTestContext } from "@test/helpers";
 import { _optimizerDeps, optimizerStage } from "@/pipeline/stages/optimizer";
 import type { PipelineContext } from "@/pipeline/types";
-import { makeLogger, makeTestContext } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

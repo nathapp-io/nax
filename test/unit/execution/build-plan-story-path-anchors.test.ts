@@ -13,10 +13,10 @@
  */
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { resolveStoryPathAnchors } from "@/execution";
 import { validateMockStructureFiles } from "@/operations";
 import { resolveTestFilePatterns } from "@/test-runners";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("resolveStoryPathAnchors (#1451)", () => {
   test("package-dir shape: derives the repo root by stripping story.workdir", () => {

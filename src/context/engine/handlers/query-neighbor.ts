@@ -12,8 +12,8 @@
  */
 
 import { CodeNeighborProvider } from "../providers/code-neighbor";
-import { DEFAULT_MAX_TOKENS_PER_CALL, _pullToolsDeps } from "../pull-tools";
 import type { PullToolBudget } from "../pull-tools";
+import { _pullToolsDeps, DEFAULT_MAX_TOKENS_PER_CALL } from "../pull-tools";
 import type { ContextRequest } from "../types";
 
 /**

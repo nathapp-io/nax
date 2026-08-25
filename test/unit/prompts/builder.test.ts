@@ -8,10 +8,10 @@
 import { describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { UserStory } from "@/prd";
-import { PromptBuilder } from "@/prompts";
-import type { PromptRole } from "@/prompts";
 import { makeTempDir } from "@test/helpers";
+import type { UserStory } from "@/prd";
+import type { PromptRole } from "@/prompts";
+import { PromptBuilder } from "@/prompts";
 
 // ---------------------------------------------------------------------------
 // Fixtures

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type ForgeDeps, extractUrl, hasOpenPr, openPr, viewArgv } from "@/forge";
+import { extractUrl, type ForgeDeps, hasOpenPr, openPr, viewArgv } from "@/forge";
 
 function deps(
   handler: (cmd: string[]) => { exitCode: number; stdout: string; stderr: string },

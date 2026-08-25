@@ -8,14 +8,20 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import {
+  makeMockAgentManager,
+  makeNaxConfig,
+  makePRD,
+  makeSessionManager,
+  makeStory,
+  makeTestContext,
+} from "@test/helpers";
 import type { RectifyConflictedStoryOptions } from "@/execution/merge-conflict-rectify";
 import {
   buildRectificationPipelineContext,
   rectifyConflictedStory,
   rectifyMergeFailure,
 } from "@/execution/merge-conflict-rectify";
-import { makeMockAgentManager, makeNaxConfig, makePRD, makeSessionManager, makeStory } from "@test/helpers";
-import { makeTestContext } from "@test/helpers";
 
 const FAKE_RUNTIME = {
   outputDir: "/tmp/nax-rect-test-output",

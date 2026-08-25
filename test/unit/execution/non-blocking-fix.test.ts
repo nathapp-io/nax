@@ -1,5 +1,6 @@
 // test/unit/execution/non-blocking-fix.test.ts
 import { describe, expect, test } from "bun:test";
+import { withInfoSpy } from "@test/helpers";
 import {
   actionableAdvisoryFindings,
   nonBlockingExtraPhases,
@@ -7,7 +8,6 @@ import {
   shouldRunNonBlockingFix,
 } from "@/execution/non-blocking-fix";
 import type { Finding } from "@/findings";
-import { withInfoSpy } from "@test/helpers";
 
 describe("non-blocking-fix gating", () => {
   test("disabled config → does not run", () => {

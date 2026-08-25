@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
+import { makeSpawn } from "@test/helpers";
 import { _gitDeps } from "@/utils/git";
 import { _gitUtilDeps, clearGitRootCache, getChangedTestFiles } from "@/verification/smart-runner";
-import { makeSpawn } from "@test/helpers";
 
 describe("git-root memoization", () => {
   test("getGitRoot is computed once per workdir across multiple classifier calls", async () => {
