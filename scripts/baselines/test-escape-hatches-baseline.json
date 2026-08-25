@@ -1,15 +1,15 @@
 {
   "counts": {
-    "asAny": 1377,
+    "asAny": 1327,
     "tsSuppress": 40,
     "ratchetAllow": 105,
     "absentValue": 17,
-    "anyType": 1860,
+    "anyType": 1737,
     "looseCast": 1875,
     "asNever": 608,
-    "nonNullAssert": 820
+    "nonNullAssert": 819
   },
-  "updatedAt": "2026-08-25T07:58:27.097Z",
+  "updatedAt": "2026-08-25T10:19:35.642Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -680,8 +680,6 @@
       "nonNullAssert": 2
     },
     "test/unit/execution/story-orchestrator.test.ts": {
-      "asAny": 50,
-      "anyType": 123,
       "looseCast": 3,
       "nonNullAssert": 3
     },
@@ -2304,7 +2302,7 @@
     },
     "test/unit/context/engine/providers/code-neighbor.test.ts": {
       "looseCast": 6,
-      "nonNullAssert": 7
+      "nonNullAssert": 6
     },
     "test/unit/context/engine/providers/static-rules.test.ts": {
       "looseCast": 6
