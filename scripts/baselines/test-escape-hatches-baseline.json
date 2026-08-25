@@ -1,15 +1,15 @@
 {
   "counts": {
-    "asAny": 1244,
+    "asAny": 1232,
     "tsSuppress": 40,
     "ratchetAllow": 105,
     "absentValue": 17,
-    "anyType": 1632,
+    "anyType": 1600,
     "looseCast": 1875,
     "asNever": 608,
     "nonNullAssert": 819
   },
-  "updatedAt": "2026-08-25T10:44:05.487Z",
+  "updatedAt": "2026-08-25T10:50:24.809Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -801,8 +801,6 @@
       "looseCast": 1
     },
     "test/unit/execution/story-orchestrator-resume-guard.test.ts": {
-      "asAny": 12,
-      "anyType": 32,
       "nonNullAssert": 12
     },
     "test/unit/execution/merge-conflict-rectify.test.ts": {
