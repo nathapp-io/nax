@@ -12,7 +12,7 @@
 
 import type { NaxStatusFile } from "../execution/status-file";
 import type { LogEntry } from "../logger/types";
-import type { RunMetrics, StoryMetrics } from "../metrics/types";
+import type { RunMetrics } from "../metrics/types";
 
 /** A single inferred phase step reconstructed from a "Phase passed/failed" log line. */
 export interface PhaseStep {

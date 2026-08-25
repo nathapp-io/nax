@@ -6,7 +6,7 @@
  * story and is a known no-op condition, not an actionable warning.
  */
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { makeLogger, makeTestContext } from "@test/helpers";
 import { _optimizerDeps, optimizerStage } from "@/pipeline/stages/optimizer";
 import type { PipelineContext } from "@/pipeline/types";

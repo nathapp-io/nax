@@ -25,7 +25,6 @@ import { _runCompletionDeps } from "@/execution/lifecycle/run-completion";
 import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
 import { _runnerCompletionDeps, type RunnerCompletionOptions, runCompletionPhase } from "@/execution/runner-completion";
 import type { PostRunStatus } from "@/execution/status-file";
-import type { LoadedHooksConfig } from "@/hooks";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
 

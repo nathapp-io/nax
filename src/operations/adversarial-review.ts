@@ -27,7 +27,7 @@ import type { AdversarialReviewConfig, ReviewAck, SemanticStory } from "../revie
 import type { ResolvedTestPatterns } from "../test-runners";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { reviewExhaustedFallback } from "./_review-fallback";
-import { extractRepromptInfo, type RepromptInfo, withRepromptMarker } from "./adversarial-reprompt-marker";
+import { extractRepromptInfo, withRepromptMarker } from "./adversarial-reprompt-marker";
 import type { HopBodyContext, RunOperation } from "./types";
 
 export type { AdversarialReviewConfig, SemanticStory, TestInventory };

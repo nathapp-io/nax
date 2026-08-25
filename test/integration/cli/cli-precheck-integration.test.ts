@@ -5,7 +5,7 @@
  * Tests the complete precheck workflow including all Tier 1 blockers and Tier 2 warnings.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fullDescribe, makeNaxConfig, makeTempDir } from "@test/helpers";

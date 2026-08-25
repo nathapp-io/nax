@@ -16,7 +16,7 @@
  * full setup pipeline (lock acquisition, crash handlers, etc.).
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { _runnerDeps, _runnerReentrancyGuard, _storyOrchestratorDeps, type RunOptions, run } from "@/execution";

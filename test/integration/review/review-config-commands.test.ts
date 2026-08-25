@@ -10,8 +10,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { makeConfigSlice, makeTempDir } from "@test/helpers";
 import type { ExecutionConfig } from "@/config/schema";

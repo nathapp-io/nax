@@ -23,7 +23,7 @@ import { makeContextBundle, makeNaxConfig } from "@test/helpers";
 import type { AgentResult, HopKind } from "@/agents";
 import { AgentManager } from "@/agents";
 import { DEFAULT_CONFIG } from "@/config";
-import type { AdapterFailure, ContextBundle } from "@/context/engine";
+import type { AdapterFailure } from "@/context/engine";
 
 // Retriable wall-clock timeout — US-001 marked these as retriable=true so a
 // fresh-session retry can extend the effective budget. Category is quality,

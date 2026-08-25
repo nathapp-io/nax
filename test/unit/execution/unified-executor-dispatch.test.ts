@@ -11,7 +11,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { join } from "node:path";
 import { precomputeBatchPlan } from "@/execution/batching";
 import type { PipelineEvent } from "@/pipeline/event-bus";
 import type { UserStory } from "@/prd/types";

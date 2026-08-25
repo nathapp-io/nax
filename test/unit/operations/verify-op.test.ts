@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
-import type { NaxConfig } from "@/config";
 import type { Logger } from "@/logger";
-import type { RunOperation } from "@/operations";
 import { verifierOp } from "@/operations";
 
 /**

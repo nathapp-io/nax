@@ -23,7 +23,6 @@ import type {
   ContestantRunnerDeps,
 } from "@/bakeoff";
 import { _coordinatorDeps, rankContestants, runBakeoff, runContestant } from "@/bakeoff";
-import type { NaxConfig } from "@/config";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

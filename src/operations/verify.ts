@@ -110,7 +110,7 @@ function buildVerifierFindings(verdict: VerifierVerdict, categorization: Verdict
  * strategy converts this into an in-session re-prompt.
  */
 function parseVerdictFromStdout(output: string, input: VerifierInput, _ctx: BuildContext<TddConfig>): VerifierOutput {
-  if (!output || !output.trim()) {
+  if (!output?.trim()) {
     throw new ParseValidationError("verifier produced no stdout");
   }
   const raw = tryParseLLMJson<Record<string, unknown>>(output);

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { makeSpawn } from "@test/helpers";
 import { _newPackageSetupDeps, markNewPackageDirs } from "@/execution";
 import { _fullSuiteGateDeps, fullSuiteGateOp } from "@/operations";

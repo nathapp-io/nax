@@ -6,7 +6,7 @@
  * makeParseRetryStrategy (parse-retry.ts), not in the hopBody directly.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { AgentRunRequest } from "@/agents";
 import * as loggerModule from "@/logger";

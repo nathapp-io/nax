@@ -26,14 +26,11 @@ import {
   GATE_FAILURE,
   GATE_FAILURE_KEY,
   LINT_FINDING,
-  mockAdversarialReviewOp,
   mockFullSuiteGateOp,
   mockImplementerOp,
   mockLintCheckOp,
-  mockSemanticReviewOp,
   mockTypecheckCheckOp,
   mockVerifierOp,
-  mockVerifyScopedOp,
 } from "./_revalidation-fixtures";
 
 let origCallOp: typeof _storyOrchestratorDeps.callOp;

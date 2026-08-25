@@ -8,8 +8,6 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { makeTestRuntime, opSelector } from "@test/helpers";
-import type { ConfigSelector } from "@/config";
-import type { FinishConfig } from "@/config/selectors";
 import type { FinishNarrativeInput } from "@/operations";
 import {
   buildNarrativePrompt,

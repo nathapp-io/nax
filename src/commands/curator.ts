@@ -7,7 +7,7 @@
 
 import { readdirSync } from "node:fs";
 import { unlink } from "node:fs/promises";
-import { basename, join, resolve, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 import type { NaxConfig } from "../config";
 import { getProjectKey, loadConfig } from "../config";
 import { CANONICAL_RULES_DIR, lintForNeutrality } from "../context/rules/canonical-loader";

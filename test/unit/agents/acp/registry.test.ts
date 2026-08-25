@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
 import { _acpAdapterDeps, AcpAgentAdapter } from "@/agents/acp/adapter";
 import { _registryTestAdapters, checkAgentHealth, createAgentRegistry, getInstalledAgents } from "@/agents/registry";
-import type { AgentConfig, NaxConfig } from "@/config/schema";
+import type { NaxConfig } from "@/config/schema";
 import { DEFAULT_CONFIG } from "@/config/schema";
 import { logActiveProtocol } from "@/execution/lifecycle/run-initialization";
 

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { makeMockCallContext, makeRuntimeWithFakeAgent } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
@@ -8,7 +8,6 @@ import type { UserStory } from "@/prd";
 import type { ResolvedTestPatterns } from "@/test-runners";
 import {
   createMockAgent,
-  mockAllSpawn,
   mockGitSpawn,
   restoreDeps,
   type SavedDeps,

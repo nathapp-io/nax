@@ -1,7 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { makeAgentAdapter, makeAgentRegistry, makeNaxConfig } from "@test/helpers";
 import { AgentManager } from "@/agents/manager";
-import type { AgentRegistry } from "@/agents/registry";
 
 const baseOptions = {
   modelDef: { provider: "anthropic" as const, model: "claude-sonnet-4-6", env: {} as Record<string, string> },

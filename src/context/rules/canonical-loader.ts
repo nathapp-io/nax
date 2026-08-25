@@ -35,7 +35,6 @@ export {
 import {
   type CanonicalRule,
   FRONTMATTER_PRIORITY_DEFAULT,
-  KNOWN_FRONTMATTER_KEYS,
   parseFrontmatter,
   RulesFrontmatterError,
 } from "./rules-frontmatter";

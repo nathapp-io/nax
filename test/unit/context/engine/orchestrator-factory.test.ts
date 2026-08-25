@@ -14,7 +14,7 @@ import type { ContextV2Config } from "@/config/runtime-types";
 import { createDefaultOrchestrator } from "@/context/engine/orchestrator-factory";
 import { _codeNeighborDeps } from "@/context/engine/providers/code-neighbor";
 import { _gitHistoryDeps } from "@/context/engine/providers/git-history";
-import { _testCoverageProviderDeps, TestCoverageProvider } from "@/context/engine/providers/test-coverage";
+import { _testCoverageProviderDeps } from "@/context/engine/providers/test-coverage";
 import { _toolDiagnosticsDeps, ToolDiagnosticsProvider } from "@/context/engine/providers/tool-diagnostics";
 import type { ContextRequest } from "@/context/engine/types";
 import type { UserStory } from "@/prd";

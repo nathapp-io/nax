@@ -15,7 +15,6 @@ import {
   buildHeartbeatMetricsPayload,
   type Heartbeat,
   type HeartbeatSnapshot,
-  startHeartbeat,
 } from "@/plugins/builtin/otel-reporter/heartbeat";
 import { buildMetricsPayload, buildResourceAttributes, buildTracesPayload } from "@/plugins/builtin/otel-reporter/otlp";
 import { createPhaseMetricsAggregator, createSpanTree } from "@/plugins/builtin/otel-reporter/span-tree";

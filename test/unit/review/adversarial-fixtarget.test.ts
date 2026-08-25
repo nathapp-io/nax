@@ -10,7 +10,7 @@ import { _adversarialDeps, llmFindingsToReviewFindings } from "@/review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import { toAdversarialReviewFindings } from "@/review/adversarial-helpers";
 import type { ReviewAuditEntry } from "@/runtime";
-import { _reviewAuditDeps, ReviewAuditor } from "@/runtime";
+import { _reviewAuditDeps } from "@/runtime";
 
 const { writeReviewAudit } = _adversarialDeps;
 

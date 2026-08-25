@@ -1,14 +1,11 @@
-import type { AgentRunOutcome } from "../agents";
 import { computeAcpHandle } from "../agents";
-import type { RetryPreset, RetryStrategy } from "../agents/retry";
-import { ParseValidationError, resolveRetryPreset } from "../agents/retry";
+import { ParseValidationError } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
-import type { ConfigSelector, ConfiguredModel, NaxConfig } from "../config";
-import { DEFAULT_CONFIG, pickSelector, resolveConfiguredModel } from "../config";
+import type { ConfiguredModel } from "../config";
+import { DEFAULT_CONFIG, resolveConfiguredModel } from "../config";
 import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
-import type { UserStory } from "../prd";
 import { composeSections, join } from "../prompts/compose";
 import { cancellableDelay } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";

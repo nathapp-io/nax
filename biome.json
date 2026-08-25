@@ -3,10 +3,11 @@
   "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "linter": {
     "enabled": true,
+    "domains": { "test": "recommended" },
     "rules": {
       "recommended": true,
       "suspicious": { "noExplicitAny": "error" },
-      "style": { "noNonNullAssertion": "error" }
+      "style": { "noNonNullAssertion": "error", "noParameterAssign": "error" }
     }
   },
   "formatter": {

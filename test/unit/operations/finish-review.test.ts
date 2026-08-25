@@ -8,8 +8,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { makeTestRuntime, opSelector, withDepsRestore, withTempDir } from "@test/helpers";
 import type { RetryStrategy } from "@/agents/retry";
 import { ParseValidationError } from "@/agents/retry";
-import type { ConfigSelector } from "@/config";
-import type { FinishConfig } from "@/config/selectors";
 import type { Finding } from "@/finish";
 import { MAX_INCOMPLETE_ATTEMPTS, routeReview } from "@/finish";
 import type { FinishReviewInput } from "@/operations";

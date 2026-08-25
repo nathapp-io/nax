@@ -14,12 +14,10 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
-import * as os from "node:os";
 import * as path from "node:path";
 import { makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { NaxConfig } from "@/config/schema";
 import { run } from "@/execution/runner";
-import type { LoadedHooksConfig } from "@/hooks";
 import type { NaxPlugin } from "@/plugins/types";
 
 // Test fixture helpers

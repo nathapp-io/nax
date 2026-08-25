@@ -13,7 +13,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
 import * as nodeFs from "node:fs";
 import * as fs from "node:fs/promises";
-import * as os from "node:os";
 import * as path from "node:path";
 import { makeAgentAdapter, makeTempDir } from "@test/helpers";
 import { _registryTestAdapters } from "@/agents/registry";

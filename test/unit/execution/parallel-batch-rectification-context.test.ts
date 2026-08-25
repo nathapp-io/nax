@@ -20,7 +20,6 @@ import type { RectifyConflictedStoryOptions } from "@/execution/merge-conflict-r
 import { _parallelBatchDeps, type ParallelBatchCtx, runParallelBatch } from "@/execution/parallel-batch";
 import type { ParallelBatchResult } from "@/execution/parallel-worker";
 import type { LoadedHooksConfig } from "@/hooks";
-import type { PipelineContext } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD, UserStory } from "@/prd/types";
 import { MergeEngine, WorktreeManager } from "@/worktree";

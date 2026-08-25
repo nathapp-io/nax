@@ -13,7 +13,6 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeTempDir } from "@test/helpers";
 import { unlockCommand } from "@/commands/unlock";

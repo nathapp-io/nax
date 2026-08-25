@@ -10,7 +10,6 @@ import type { SessionRole } from "../session/types";
 import { allSettledBounded } from "./concurrency";
 import { resolvePersonas } from "./personas";
 import {
-  _runPlanDeps,
   buildPlanProposalPrompt,
   buildPlanRebuttalPrompt,
   finalizePlanRun,

@@ -20,7 +20,6 @@ import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD } from "@/prd";
 import { countStories, isComplete } from "@/prd";
 import type { DispatchContext } from "@/runtime/dispatch-context";
-import type { ISessionManager } from "@/session";
 import { errorMessage } from "@/utils/errors";
 import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";

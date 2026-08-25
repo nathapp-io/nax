@@ -10,7 +10,6 @@ import { randomUUID } from "node:crypto";
 import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { _regressionDeps, runDeferredRegression } from "@/execution/lifecycle/run-regression";
-import type { StoryMetrics } from "@/metrics";
 import type { PRD, UserStory } from "@/prd";
 import type { VerificationResult } from "@/verification";
 

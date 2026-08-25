@@ -13,7 +13,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeContextBundle, makeContextOrchestrator, makeNaxConfig, makeStory, makeTestContext } from "@test/helpers";
-import type { ContextBundle, ContextRequest } from "@/context/engine";
+import type { ContextRequest } from "@/context/engine";
 import { _stageAssemblerDeps } from "@/context/engine";
 import { _scopeFilesDeps, resolveScopeFiles } from "@/pipeline";
 import { promptStage } from "@/pipeline/stages";

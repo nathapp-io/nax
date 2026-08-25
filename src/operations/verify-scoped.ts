@@ -6,7 +6,7 @@ import { executionFailureToFinding, testSummaryToFindings } from "../findings";
 import type { Finding } from "../findings/types";
 import { getLogger } from "../logger";
 import type { ResolvedTestPatterns, SelectScopedTestsResult, TestSummary } from "../test-runners";
-import { _scopedSelectionDeps, parseTestOutput, selectScopedTests } from "../test-runners";
+import { parseTestOutput, selectScopedTests } from "../test-runners";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { regression } from "../verification/runners";
 import type { VerificationGateOptions, VerificationResult } from "../verification/types";

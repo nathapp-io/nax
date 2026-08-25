@@ -10,7 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeMockRuntime, makeNaxConfig, makePRD, makeSpawn, makeStory } from "@test/helpers";
-import type { DeferredRegressionOptions, StorySnapshot } from "@/execution";
+import type { StorySnapshot } from "@/execution";
 import { _regressionDeps, findResponsibleStoryByTransition, runDeferredRegression } from "@/execution";
 import type { PRD } from "@/prd";
 import { _gitDeps } from "@/utils/git";

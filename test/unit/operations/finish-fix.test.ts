@@ -8,8 +8,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
-import type { ConfigSelector } from "@/config";
-import type { FinishConfig } from "@/config/selectors";
 import type { Finding } from "@/finish";
 import type { FinishFixInput } from "@/operations";
 import { finishFixOp } from "@/operations";

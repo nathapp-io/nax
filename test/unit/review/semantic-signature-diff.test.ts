@@ -8,7 +8,7 @@ import { makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers"
 import type { AgentResult } from "@/agents/types";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { RunSemanticReviewOptions, SemanticStory } from "@/review/semantic";
-import { _semanticDeps, runSemanticReview } from "@/review/semantic";
+import { runSemanticReview } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
 
 // ---------------------------------------------------------------------------

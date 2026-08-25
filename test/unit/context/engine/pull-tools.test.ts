@@ -12,7 +12,6 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { makeLogger, makeNaxConfig, makeStory } from "@test/helpers";
-import type { NaxConfig } from "@/config/types";
 import { _codeNeighborDeps } from "@/context/engine/providers/code-neighbor";
 import { _featureContextV2Deps } from "@/context/engine/providers/feature-context";
 import {

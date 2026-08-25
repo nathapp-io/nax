@@ -12,7 +12,6 @@ import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 import { _agentManagerDeps, AgentManager } from "@/agents/manager";
 import type { AgentRunRequest } from "@/agents/manager-types";
 import type { AgentAdapter, CompleteResult } from "@/agents/types";
-import { SessionFailureError } from "@/agents/types";
 
 describe("IAgentManager.run()", () => {
   test("delegates to runWithFallback and returns AgentResult", async () => {

@@ -8,8 +8,6 @@
  */
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
-import type { ConfigSelector } from "@/config";
-import type { FinishConfig } from "@/config/selectors";
 import type { FinishReviewInput } from "@/operations";
 import { finishReviewOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";

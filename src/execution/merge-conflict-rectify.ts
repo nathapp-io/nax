@@ -227,7 +227,7 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
     const mergeResults = await mergeEngine.mergeAll(workdir, [storyId], { [storyId]: [] });
     const mergeResult = mergeResults[0];
 
-    if (!mergeResult || !mergeResult.success) {
+    if (!mergeResult?.success) {
       logger?.info("parallel", "Rectification failed - preserving worktree", {
         storyId,
         failureKind: mergeResult?.failureKind,

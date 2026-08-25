@@ -27,7 +27,6 @@ import type {
   FixCycle,
   FixCycleContext,
   FixCycleResult,
-  FixStrategy,
   Iteration,
   IterationOutcome,
   ValidateResult,

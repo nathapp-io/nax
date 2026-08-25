@@ -6,7 +6,7 @@
  * the original "CLI compare options and contestant pre-flight" story.
  */
 
-import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { makeNaxConfig, makeSpawn } from "@test/helpers";
 import {
   assertCompareAgentExclusive,

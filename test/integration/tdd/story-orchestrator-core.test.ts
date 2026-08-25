@@ -1,15 +1,13 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { makeMockCallContext, makeRuntimeWithFakeAgent } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { buildPlanForStrategy } from "@/execution/build-plan-for-strategy";
 import type { PlanInputs } from "@/execution/plan-inputs";
 import type { UserStory } from "@/prd";
-import { implementerOp, testWriterOp, verifierOp } from "@/tdd";
 import type { ResolvedTestPatterns } from "@/test-runners";
 import {
   createMockAgent,
-  mockAllSpawn,
   mockGitSpawn,
   restoreDeps,
   type SavedDeps,

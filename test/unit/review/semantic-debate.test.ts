@@ -16,7 +16,6 @@ import {
   makeSemanticOutput,
   makeSpawn,
 } from "@test/helpers";
-import type { AgentAdapter, AgentResult } from "@/agents/types";
 import type { NaxConfig } from "@/config";
 import { pickBaseSelectorKind } from "@/debate";
 import type { DebateResult } from "@/debate/types";

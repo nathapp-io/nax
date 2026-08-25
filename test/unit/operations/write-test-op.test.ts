@@ -1,6 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import type { NaxConfig } from "@/config";
-import type { RunOperation } from "@/operations";
 import { testWriterOp } from "@/operations";
 
 /**

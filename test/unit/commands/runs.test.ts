@@ -10,9 +10,8 @@
  * - Empty registry shows 'No runs found'
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { makeTempDir } from "@test/helpers";
 import { _runsCmdDeps as _deps, runsCommand } from "@/commands/runs";

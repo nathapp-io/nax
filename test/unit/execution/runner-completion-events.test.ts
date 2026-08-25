@@ -13,7 +13,6 @@ import type { RunnerCompletionOptions } from "@/execution";
 import { _runnerCompletionDeps, runCompletionPhase } from "@/execution";
 import type { AcceptanceLoopResult } from "@/execution/lifecycle/acceptance-loop";
 import type { RunCompletionResult } from "@/execution/lifecycle/run-completion";
-import type { LoadedHooksConfig } from "@/hooks";
 import type { PostRunPhaseCompletedEvent } from "@/pipeline";
 import { pipelineEventBus } from "@/pipeline";
 import type { PRD, UserStory } from "@/prd";

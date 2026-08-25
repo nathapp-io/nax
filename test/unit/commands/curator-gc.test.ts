@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type DeepPartial, makeNaxConfig, makeTempDir } from "@test/helpers";
-import { _curatorCmdDeps as _deps, curatorCommit, curatorDryrun, curatorGc, curatorStatus } from "@/commands";
+import { _curatorCmdDeps as _deps, curatorGc } from "@/commands";
 import type { ResolvedProject } from "@/commands/common";
 import type { NaxConfig } from "@/config";
 import type { Observation } from "@/plugins/builtin/curator/types";

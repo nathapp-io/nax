@@ -12,7 +12,7 @@ import { NaxError } from "@/errors";
 import type { RepoScopedFixRecord } from "@/execution";
 import type { PostRunInspectionResult } from "@/execution/post-run";
 import type { StoryOrchestratorResult } from "@/execution/story-orchestrator";
-import { _executionDeps, executionStage } from "@/pipeline/stages/execution";
+import { executionStage } from "@/pipeline/stages/execution";
 import type { PipelineContext, StageResult } from "@/pipeline/types";
 
 interface PlanResultOptions {

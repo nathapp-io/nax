@@ -4,7 +4,7 @@
  * AC-4: Tests for idempotent persistence and dependency exposure.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { makeNaxConfig, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";

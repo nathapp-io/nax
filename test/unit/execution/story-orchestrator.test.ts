@@ -23,13 +23,10 @@ import {
   makeCallOp,
   makeFixCycleResult,
   makeIteration,
-  makeLinkWithCosts,
   makeMockAgentManager,
   makeNaxConfig,
   makeTestRuntime,
 } from "@test/helpers";
-import type { CompleteResult, TurnResult } from "@/agents/types";
-import type { DEFAULT_CONFIG } from "@/config";
 import { pickSelector } from "@/config";
 import { NaxError } from "@/errors";
 import {
@@ -40,7 +37,7 @@ import {
   StoryOrchestratorBuilder,
 } from "@/execution";
 import type { Finding, FixCycle, FixCycleContext, ReviewCheckResult } from "@/findings";
-import type { CallContext, CompleteOperation, DeterministicOperation, RunOperation } from "@/operations";
+import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 
 // ============================================================================

@@ -37,7 +37,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { makeTestRuntime, withTempDir } from "@test/helpers";
+import { withTempDir } from "@test/helpers";
 import type { AdversarialReviewInput } from "@/operations/adversarial-review";
 import { adversarialReviewOp } from "@/operations/adversarial-review";
 import type { NaxRuntime } from "@/runtime";

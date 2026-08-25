@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeTempDir } from "@test/helpers";
 import { isWithinDirectory, MAX_DIRECTORY_DEPTH, validateDirectory, validateFilePath } from "@/config";

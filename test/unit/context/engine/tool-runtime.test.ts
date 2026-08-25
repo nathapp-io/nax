@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { cleanupTempDir, makeContextBundle, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeContextBundle, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { contextToolRuntimeConfigSelector } from "@/config";
 import type { ContextToolRuntimeConfig } from "@/config/selectors";
 import type { ContextBundle } from "@/context/engine";

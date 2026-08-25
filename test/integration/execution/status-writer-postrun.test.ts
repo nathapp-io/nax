@@ -10,7 +10,6 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { NaxConfig } from "@/config";

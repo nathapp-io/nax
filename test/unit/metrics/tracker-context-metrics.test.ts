@@ -14,7 +14,7 @@ import { _manifestStoreDeps } from "@/context/engine/manifest-store";
 import type { ContextManifest } from "@/context/engine/types";
 import { collectStoryMetrics } from "@/metrics/tracker";
 import type { PipelineContext } from "@/pipeline/types";
-import type { PRD, UserStory } from "@/prd";
+import type { PRD } from "@/prd";
 
 const PROJECT_DIR = "/repo";
 const FEATURE = "test-feature";

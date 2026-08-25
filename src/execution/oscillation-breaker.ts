@@ -34,7 +34,7 @@ const DEFAULT_MAX_OSCILLATIONS = 2;
 export function inspectOscillationBreaker(ctx: PipelineContext): BreakerDecision {
   const conflictDetection = ctx.config?.review?.conflictDetection;
   const oscillationStore = ctx.runtime?.rectificationOscillations;
-  if (!conflictDetection || conflictDetection.enabled !== true || !oscillationStore) {
+  if (conflictDetection?.enabled !== true || !oscillationStore) {
     return {
       trip: false,
       count: 0,

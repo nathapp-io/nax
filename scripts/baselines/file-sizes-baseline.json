@@ -1,7 +1,7 @@
 {
-  "updatedAt": "2026-08-22T15:06:24.719Z",
+  "updatedAt": "2026-08-25T09:28:32.979Z",
   "byFile": {
-    "src/agents/manager.ts": 789,
+    "src/agents/manager.ts": 788,
     "src/execution/escalation/tier-escalation.ts": 603,
     "src/execution/unified-executor.ts": 768,
     "src/interaction/plugins/telegram.ts": 613,
@@ -9,14 +9,13 @@
     "src/prompts/builders/rectifier-builder.ts": 902,
     "src/session/manager.ts": 731,
     "test/unit/agents/acp/spawn-client.test.ts": 818,
-    "test/unit/cli/plan.test.ts": 1202,
-    "test/unit/debate/runner-plan.test.ts": 1117,
-    "test/unit/execution/escalation/tier-escalation.test.ts": 1102,
-    "test/unit/execution/lifecycle/acceptance-loop-cycle.test.ts": 836,
-    "test/unit/execution/story-orchestrator.test.ts": 2006,
-    "test/unit/findings/cycle.test.ts": 939,
-    "test/unit/interaction/plugins/telegram.test.ts": 871,
-    "test/unit/operations/call.test.ts": 972,
-    "test/unit/utils/git.test.ts": 810
+    "test/unit/cli/plan.test.ts": 1197,
+    "test/unit/debate/runner-plan.test.ts": 1109,
+    "test/unit/execution/escalation/tier-escalation.test.ts": 1025,
+    "test/unit/execution/lifecycle/acceptance-loop-cycle.test.ts": 835,
+    "test/unit/execution/story-orchestrator.test.ts": 2000,
+    "test/unit/findings/cycle.test.ts": 930,
+    "test/unit/interaction/plugins/telegram.test.ts": 870,
+    "test/unit/operations/call.test.ts": 959
   }
 }

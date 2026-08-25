@@ -19,7 +19,7 @@ import type { RefinedCriterion } from "./types";
  * @returns Array of refined criteria
  */
 export function parseRefinementResponse(response: string, criteria: string[]): RefinedCriterion[] {
-  if (!response || !response.trim()) {
+  if (!response?.trim()) {
     return fallbackCriteria(criteria);
   }
 
@@ -56,7 +56,7 @@ export function parseRefinementResponse(response: string, criteria: string[]): R
  * ParseValidationError to trigger a retry rather than falling back immediately.
  */
 export function refinementWouldFallback(response: string): boolean {
-  if (!response || !response.trim()) return true;
+  if (!response?.trim()) return true;
   try {
     const fromFence = extractJsonFromMarkdown(response);
     const cleaned = stripTrailingCommas(fromFence !== response ? fromFence : response);

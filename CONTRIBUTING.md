@@ -40,6 +40,25 @@ bun run typecheck
 bun run lint
 ```
 
+#### Biome v2 — editor setup
+
+Linting and formatting run on **Biome 2.5.10**, pinned exactly in `package.json`.
+The v2 config format is not readable by a v1 editor extension, so update your
+Biome LSP / editor plugin to a 2.x release. On an older extension you will see
+import-ordering and formatting diagnostics that disagree with `bun run lint` —
+CI is the source of truth, not your editor.
+
+Two things worth knowing before your first PR:
+
+- `bun run lint` reformats imports. `assist.actions.source.organizeImports` is
+  on, so `bun run lint:fix` will reorder imports across any file it touches.
+- `git blame` skips the tree-wide import reorder via `.git-blame-ignore-revs`.
+  Enable it once per clone:
+
+  ```bash
+  git config blame.ignoreRevsFile .git-blame-ignore-revs
+  ```
+
 ### Project Structure
 
 ```

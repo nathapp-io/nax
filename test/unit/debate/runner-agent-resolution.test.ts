@@ -9,7 +9,7 @@
  * - AC4: fallback to single-agent mode when fewer than 2 debaters succeed
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { makeLogger, makeMockAgentManager, makeSessionManager, waitForCondition } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { DebateRunner } from "@/debate/runner";

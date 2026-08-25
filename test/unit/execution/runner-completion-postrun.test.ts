@@ -16,7 +16,6 @@ import type { NaxConfig } from "@/config";
 import type { AcceptanceLoopResult } from "@/execution/lifecycle/acceptance-loop";
 import type { RunCompletionResult } from "@/execution/lifecycle/run-completion";
 import { _runnerCompletionDeps, type RunnerCompletionOptions, runCompletionPhase } from "@/execution/runner-completion";
-import type { LoadedHooksConfig } from "@/hooks";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
 

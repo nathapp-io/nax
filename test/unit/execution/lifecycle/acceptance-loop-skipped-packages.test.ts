@@ -40,7 +40,6 @@ import {
 } from "@/execution/lifecycle";
 import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
 import type { PostRunStatus } from "@/execution/status-file";
-import type { LoadedHooksConfig } from "@/hooks";
 import { pipelineEventBus } from "@/pipeline";
 import type { PRD, UserStory } from "@/prd";
 

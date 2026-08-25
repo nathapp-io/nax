@@ -11,7 +11,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { makeNaxConfig } from "@test/helpers";
-import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
 import { initLogger, resetLogger } from "@/logger";
 import { _routingDeps, routingStage } from "@/pipeline/stages/routing";

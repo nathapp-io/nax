@@ -14,7 +14,6 @@ import { DEFAULT_CONFIG, resolveConfiguredModel } from "../config";
 import { discoverWorkspacePackages } from "../context/generator";
 import type { DebateRunnerOptions } from "../debate";
 import { DebateRunner } from "../debate";
-import { NaxError } from "../errors";
 import { initInteractionChain } from "../interaction/init";
 import { getLogger } from "../logger";
 import type { PRD } from "../prd/types";

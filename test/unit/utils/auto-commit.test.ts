@@ -4,7 +4,7 @@
  * Covers monorepo subdir guard: workdir = git root, workdir = subdir (monorepo), and unrelated dir.
  */
 
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import { makeLogger, makeSpawn, withDepsRestore } from "@test/helpers";
 import { _gitDeps, autoCommitIfDirty } from "@/utils/git";
 

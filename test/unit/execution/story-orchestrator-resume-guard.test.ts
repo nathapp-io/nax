@@ -20,7 +20,6 @@ import {
   makeTestRuntime,
   makeTurnResult,
 } from "@test/helpers";
-import type { DEFAULT_CONFIG } from "@/config";
 import { pickSelector } from "@/config";
 import { _storyOrchestratorDeps, EXHAUSTED_EXIT_REASONS, StoryOrchestratorBuilder } from "@/execution";
 import type { Finding } from "@/findings";

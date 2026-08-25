@@ -21,12 +21,7 @@ import {
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
 import type { RectificationResult } from "@/execution/merge-conflict-rectify";
-import {
-  _parallelBatchDeps,
-  type ParallelBatchCtx,
-  type RunParallelBatchResult,
-  runParallelBatch,
-} from "@/execution/parallel-batch";
+import { _parallelBatchDeps, type ParallelBatchCtx, runParallelBatch } from "@/execution/parallel-batch";
 import type { ParallelBatchResult } from "@/execution/parallel-worker";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineRunResult } from "@/pipeline";

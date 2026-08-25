@@ -23,18 +23,16 @@
  *         `phaseOutputs` is seeded with `{success:true}` per `skipPhases`.
  */
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import {
   DEFAULT_AGENT_ENVELOPE,
   makeCallOp,
   makeFixCycleResult,
-  makeMockAgentManager,
   makeMockCallContext,
   makeNaxConfig,
   makeTestRuntime,
 } from "@test/helpers";
-import type { DEFAULT_CONFIG } from "@/config";
 import { pickSelector } from "@/config";
 import {
   _storyOrchestratorDeps,

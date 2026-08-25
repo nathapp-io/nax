@@ -14,7 +14,6 @@ import type { DiagnosisResult } from "@/acceptance/types";
 import type { AgentAdapter } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { AcceptanceFixConfig, NaxConfig } from "@/config/schema";
-import type { PipelineEventEmitter } from "@/pipeline/events";
 import type { AgentGetFn } from "@/pipeline/types";
 import type { PRD } from "@/prd";
 

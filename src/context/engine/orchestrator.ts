@@ -23,7 +23,6 @@ import { dedupeChunks } from "./dedupe";
 import { buildDigest, DIGEST_RESERVE_TOKENS, digestTokens } from "./digest";
 import { buildManifest } from "./manifest-builder";
 import { toContextChunk } from "./orchestrator-rebuild-helpers";
-import type { PackedChunk } from "./packing";
 import { FLOOR_KINDS, packChunks } from "./packing";
 import { DEFAULT_MAX_CALLS_PER_SESSION, PULL_TOOL_REGISTRY } from "./pull-tools";
 import { type RebuildDeps, rebuild } from "./rebuild";
@@ -32,7 +31,6 @@ import { MIN_SCORE, scoreChunks } from "./scoring";
 import { getStageContextConfig } from "./stage-config";
 import type {
   ContextBundle,
-  ContextChunk,
   ContextManifest,
   ContextProviderResult,
   ContextRequest,

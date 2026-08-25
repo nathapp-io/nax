@@ -7,7 +7,7 @@
  * token budget management and error handling.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { DEFAULT_TEST_ROUTING, makeDispatchContext, makePRD, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/schema";
 import { contextStage } from "@/pipeline/stages/context";

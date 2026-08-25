@@ -16,7 +16,7 @@ import {
 } from "@test/helpers";
 import type { ConfigSelector } from "@/config";
 import { NaxError } from "@/errors";
-import { _executionDeps, executionStage, routeTddFailure } from "@/pipeline/stages/execution";
+import { executionStage, routeTddFailure } from "@/pipeline/stages/execution";
 import type { PipelineContext } from "@/pipeline/types";
 import type { FailureCategory } from "@/tdd";
 

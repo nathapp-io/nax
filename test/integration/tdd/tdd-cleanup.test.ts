@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { withDepsRestore } from "@test/helpers";
 import { _cleanupDeps, cleanupProcessTree, getPgid } from "@/tdd/cleanup";
 

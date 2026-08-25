@@ -15,7 +15,7 @@ import { makeMockAgentManager, makeMockRuntime, makeSpawn, withTempDir } from "@
 import type { AgentResult } from "@/agents/types";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { SemanticStory } from "@/review/semantic";
-import { _semanticDeps, runSemanticReview } from "@/review/semantic";
+import { runSemanticReview } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
 
 // ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { render } from "ink-testing-library";
-import React, { act } from "react";
+import { act } from "react";
 import { PipelineEventEmitter, pipelineEventBus } from "@/pipeline";
 import { parseQueueFile } from "@/queue";
 import type { StoryDisplayState } from "@/tui";

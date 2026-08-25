@@ -1,16 +1,7 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import { makeLogger } from "@test/helpers";
-import type {
-  Finding,
-  FixCycle,
-  FixCycleContext,
-  FixStrategy,
-  Iteration,
-  IterationOutcome,
-  ValidateResult,
-} from "@/findings";
+import type { Finding, FixCycleContext, Iteration, IterationOutcome, ValidateResult } from "@/findings";
 import { classifyOutcome, runFixCycle } from "@/findings";
-import type { Logger } from "@/logger";
 import {
   lintA,
   lintB,

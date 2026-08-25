@@ -6,8 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { makeNaxConfig, makeTempDir, makeTestContext } from "@test/helpers";
 import type { NaxConfig } from "@/config/schema";

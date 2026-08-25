@@ -7,12 +7,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { StoryBatch } from "@/execution/batching";
-import { groupStoriesIntoBatches, precomputeBatchPlan } from "@/execution/batching";
-import { escalateTier } from "@/execution/escalation";
-import { resolveMaxAttemptsOutcome } from "@/execution/runner";
 import type { UserStory } from "@/prd";
-import type { FailureCategory } from "@/tdd/types";
 
 describe("Queue Commands Before Batch Execution", () => {
   test("SKIP command should filter story from batch before execution", () => {

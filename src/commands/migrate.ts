@@ -9,7 +9,6 @@
 
 import { existsSync } from "node:fs";
 import { mkdir, readdir, rename } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { validateProjectName } from "../cli/init";
 import { globalConfigDir } from "../config/paths";

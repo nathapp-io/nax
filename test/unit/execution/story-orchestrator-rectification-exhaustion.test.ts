@@ -13,8 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeStory, makeTestRuntime } from "@test/helpers";
-import type { DEFAULT_CONFIG } from "@/config";
+import { makeTestRuntime } from "@test/helpers";
 import { pickSelector } from "@/config";
 import type { StoryOrchestratorResult } from "@/execution";
 import { _storyOrchestratorDeps, StoryOrchestratorBuilder } from "@/execution";

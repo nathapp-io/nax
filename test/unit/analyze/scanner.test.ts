@@ -6,7 +6,6 @@ import { describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import { makeLogger, withDepsRestore, withTempDir } from "@test/helpers";
 import { _scannerDeps, scanSourceRoots } from "@/analyze";
-import type { Logger } from "@/logger";
 
 // ── ACs 1 & 2: TypeScript single package ─────────────────────────────────────
 

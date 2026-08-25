@@ -14,7 +14,6 @@ import { join } from "node:path";
 import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { BakeoffCoordinatorDeps, ContestantOptions, ContestantRunnerDeps } from "@/bakeoff";
 import { runBakeoff, runContestant } from "@/bakeoff";
-import type { NaxConfig } from "@/config";
 import { WorktreeManager } from "@/worktree";
 
 async function git(args: string[], cwd: string): Promise<void> {

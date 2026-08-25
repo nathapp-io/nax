@@ -15,7 +15,7 @@ import type { AgentResult } from "../agents/types";
 import type { Finding } from "../findings/types";
 import { checkMergeConflict, isTriggerEnabled } from "../interaction/triggers";
 import { getLogger } from "../logger";
-import { fullSuiteGateOp, implementerOp, testWriterOp, verifierOp, verifyScopedOp } from "../operations";
+import { fullSuiteGateOp, implementerOp, testWriterOp, verifierOp } from "../operations";
 import { routeTddFailure } from "../pipeline/stages/execution-helpers";
 import type { PipelineContext, StageResult } from "../pipeline/types";
 import { parseSelfVerificationMarker } from "../quality";

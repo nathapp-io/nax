@@ -15,11 +15,10 @@
  * surfaces.
  */
 
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { makeLogger } from "@test/helpers";
 import type { Finding, FixStrategy, Iteration } from "@/findings";
 import { createDeclineLedger, runFixCycle } from "@/findings";
-import type { CallOpFn } from "@/findings/cycle";
 import { lintA, lintB, makeCallOpMock, makeCtx, makeCycle, makeStrategy, typecheckC } from "./_cycle-fixtures";
 
 /**

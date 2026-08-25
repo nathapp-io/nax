@@ -16,7 +16,6 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _staticRulesDeps, StaticRulesProvider } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
-import type { SectionBudgetResult } from "@/context/rules/rule-budget";
 import type { RuleSection } from "@/context/rules/rule-sections";
 
 // ─────────────────────────────────────────────────────────────────────────────

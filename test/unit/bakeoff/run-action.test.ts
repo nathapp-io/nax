@@ -21,7 +21,6 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
 import type { BakeoffCliDeps, BakeoffResult, ContestantRunnerDeps, HandleRunActionOptions } from "@/bakeoff";
 import { _bakeoffCliDeps, handleRunAction, pipeline, runBakeoff, runContestant } from "@/bakeoff";
-import type { NaxConfig } from "@/config";
 
 function baseOptions(overrides: Partial<HandleRunActionOptions> = {}): HandleRunActionOptions {
   return {

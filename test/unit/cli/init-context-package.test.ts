@@ -3,8 +3,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { makeTempDir } from "@test/helpers";
 import { generatePackageContextTemplate, initPackage } from "@/cli/init-context";

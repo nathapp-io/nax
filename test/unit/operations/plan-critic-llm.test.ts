@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeTestRuntime, opSelector } from "@test/helpers";
 import type { RetryStrategy } from "@/agents";
 import { ParseValidationError } from "@/agents";
-import { NaxError } from "@/errors";
 import type { NaxRuntime } from "@/runtime";
 
 /**

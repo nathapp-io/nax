@@ -7,7 +7,6 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeTestContext } from "@test/helpers";
-import type { InspectionOptions } from "@/execution/post-run";
 import {
   _postRunDeps,
   applyPostRunInspection,
@@ -15,7 +14,6 @@ import {
   deriveTddFailureCategory,
   extractPauseReason,
 } from "@/execution/post-run";
-import type { StoryOrchestratorResult } from "@/execution/story-orchestrator";
 import { EXHAUSTED_EXIT_REASONS } from "@/execution/story-orchestrator";
 import type { Finding } from "@/findings/types";
 import {
@@ -25,9 +23,8 @@ import {
   testPresenceGateOp,
   testWriterOp,
   verifierOp,
-  verifyScopedOp,
 } from "@/operations";
-import { makeInspectionOpts, makePlanResult, SEMANTIC_REVIEW_FINDING, TEST_RUNNER_FINDING } from "./_post-run-fixtures";
+import { makeInspectionOpts, makePlanResult } from "./_post-run-fixtures";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // extractPauseReason

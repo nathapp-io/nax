@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeTestRuntime, withInfoSpy } from "@test/helpers";
-import type { DEFAULT_CONFIG } from "@/config";
 import { pickSelector } from "@/config";
 import {
   _storyOrchestratorDeps,

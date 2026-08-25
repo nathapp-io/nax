@@ -22,7 +22,6 @@
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeMockCallContext, makeTestRuntime } from "@test/helpers";
-import type { DEFAULT_CONFIG } from "@/config";
 import { pickSelector } from "@/config";
 import {
   _storyOrchestratorDeps,
@@ -31,7 +30,7 @@ import {
   runRectification,
   StoryOrchestratorBuilder,
 } from "@/execution";
-import type { Finding, FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings";
+import type { Finding, FixCycle, FixCycleExitReason } from "@/findings";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { CallContext, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";

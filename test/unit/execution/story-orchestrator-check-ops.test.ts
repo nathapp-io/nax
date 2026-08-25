@@ -8,7 +8,6 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { makeTestRuntime } from "@test/helpers";
-import type { DEFAULT_CONFIG } from "@/config";
 import { pickSelector } from "@/config";
 import { StoryOrchestratorBuilder } from "@/execution";
 import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";

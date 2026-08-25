@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import React, { act } from "react";
+import { act } from "react";
 import { PipelineEventEmitter, pipelineEventBus } from "@/pipeline";
 import type { StoryDisplayState } from "@/tui";
 import { App } from "@/tui/App";

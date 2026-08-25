@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { makeNaxConfig, makeSpawn } from "@test/helpers";
-import type { NaxConfig } from "@/config";
 import {
   _worktreeDependencyDeps,
   prepareWorktreeDependencies,

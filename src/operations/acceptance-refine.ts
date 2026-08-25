@@ -46,7 +46,7 @@ export const acceptanceRefineOp: CompleteOperation<AcceptanceRefineInput, Accept
     };
   },
   parse(output, input, _ctx) {
-    if (!output || !output.trim()) {
+    if (!output?.trim()) {
       throw new ParseValidationError("acceptance-refine: empty output");
     }
     if (refinementWouldFallback(output)) {

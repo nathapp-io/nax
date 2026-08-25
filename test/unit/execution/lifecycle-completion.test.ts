@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { type DeepPartial, makeDispatchContext, makeMockRuntime, makeNaxConfig, makeStatusWriter } from "@test/helpers";
+import { type DeepPartial, makeDispatchContext, makeNaxConfig, makeStatusWriter } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { purgeStaleManifests } from "@/context/engine";
 import { _runCompletionDeps, handleRunCompletion, type RunCompletionOptions } from "@/execution/lifecycle";

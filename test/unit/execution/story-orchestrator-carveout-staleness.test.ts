@@ -16,7 +16,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { makeMockCallContext, makeNaxConfig, makeTestRuntime } from "@test/helpers";
-import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import { pickSelector } from "@/config";
 import {
   _storyOrchestratorDeps,
   deriveTddFailureCategory,

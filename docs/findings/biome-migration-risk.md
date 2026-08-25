@@ -95,6 +95,36 @@ Mitigation:
 - Consider asserting a non-zero enabled-rule count in a gate if the linter is ever
   reconfigured again.
 
+### v2 Moves The Test-Hygiene Rules Into A Domain, Silently Disabling Them
+
+**Found 2026-08-25 during step 4; missed by both earlier revisions.** Same failure class as
+the `migrate --write` trap above — something that gated under 1.9.4 stops gating under
+2.5.10 and the build stays green either way.
+
+Biome v2 moved `noFocusedTests`, `noSkippedTests`, `noExportsInTest` and
+`noDuplicateTestHooks` out of the `recommended` set and into the **`test` domain**, which is
+off unless `linter.domains` names it. `recommended: true` alone does not enable them.
+
+Concretely: after steps 1-2 landed, a committed `test.only(...)` **passed `bun run lint`**.
+Under 1.9.4 `noFocusedTests` was recommended and error-severity, so it failed the build. A
+stray `.only` silently reduces a whole test file to one test while CI reports green — this is
+strictly worse than any of the 546 new warnings.
+
+The tell was eight `suppressions/unused` warnings (see "Eight Dead Suppressions"): all eight
+suppress test-domain or non-recommended-style rules, and they read as dead precisely because
+the rules beneath them had been switched off. A dead suppression is evidence a rule stopped
+running, not just comment rot.
+
+Mitigation (applied): `"domains": { "test": "recommended" }` in `biome.json`. Measured cost:
+**zero new diagnostics** — the tree is already free of focused and skipped tests — and it
+retires seven of the eight dead suppressions by making them load-bearing again. Enabling
+`style/noParameterAssign` as `"error"` retires the eighth, also at zero cost.
+
+Generalisation worth carrying into any future Biome upgrade: **`recommended: true` is not a
+stable contract across major versions.** Diff the enabled-rule set, not just the diagnostic
+count. Rules can leave `recommended` by being demoted to warning (the finding below), by
+moving into a domain (this one), or by being dropped from the preset entirely.
+
 ### v2 Demotes The `test/` Rules To Warnings, Voiding The Drain's Endgame
 
 Measured on the full scope, dropping the `test/**` override:
@@ -205,13 +235,19 @@ Mitigation: make one explicit severity call covering this family and the `test/`
 and record it in `biome.json` with a comment. Accepting v2 defaults silently is the failure
 mode.
 
-### Eight Dead Suppressions
+### Eight Dead Suppressions — A Symptom, Not The Problem
 
 The tree carries **58** `biome-ignore` comments (2026-08-22's "208" did not survive
 re-counting). Under v2 with `recommended: true`, eight no longer suppress anything and emit
 `suppressions/unused`: `src/execution/runner-execution.ts`,
 `test/integration/review/adversarial-reprompt-telemetry.test.ts`, and six in
 `test/unit/agents/acp/adapter.test.ts`.
+
+**2026-08-25: these were not comment rot.** All eight name rules v2 had switched off —
+seven test-domain (`noExportsInTest`, `noDuplicateTestHooks`), one non-recommended style
+(`noParameterAssign`). Deleting the comments, the obvious cleanup, would have destroyed the
+only evidence that `noFocusedTests` had stopped gating. Re-enabling the rules retired all
+eight instead. See the new high risk above.
 
 (Under the mis-migrated `preset: "none"` config this reads as 42 unused suppressions — a
 useful secondary tell that the linter has been switched off.)
@@ -306,8 +342,8 @@ Sequenced so each step has an independently checkable outcome:
    `biome check --write --linter-enabled=false` so the assist and formatter run but the
    step-4 lint fixes do not. Not fully mechanical in practice; see below.
 4. **Severity policy decision — the step that matters most.** Covers both the 546 new
-   warnings and the `test/` rules. **Partly done** — the `test/` half is decided and the
-   `src/` half has landed; the 546 warnings are still unenforced. See "Step 4 Decision".
+   warnings and the `test/` rules. **Done except `--error-on-warnings`**, which is blocked on
+   a 204-site unused-variable triage rather than on a decision. See "Step 4 Decision".
 5. **GritQL pilot** for `process.cwd()`, with `check:process-cwd` retained as a wrapper.
 6. Leave `check:test-mocks` alone.
 
@@ -362,11 +398,37 @@ Measured 2026-08-25 with both rules forced to `"error"`:
   header of `scripts/check-test-escape-hatches.ts`, where the next drainer will read it.
   (`biome.json` cannot hold a comment — it is strict JSON, not JSONC.)
 
-Still open in step 4: the 546 unenforced warnings. `biome check --error-on-warnings` exists
-in 2.5.10 and would end the accumulation in one flag. Cost to get there, measured: a
-`--write --unsafe` pass takes **542 warnings to 54** across 275 files, leaving 27
-`noTemplateCurlyInString`, 17 `noUnusedVariables`, 8 dead suppressions and 2 others to fix by
-hand.
+Also landed in step 4: `linter.domains.test` and `style/noParameterAssign` (see the
+test-domain high risk above), and a mechanical warning cleanup taking **542 warnings to
+256**, applied with `--only=correctness/noUnusedImports --only=complexity/useOptionalChain`.
+
+**`--error-on-warnings` is deferred, deliberately.** The flag exists in 2.5.10 and would end
+warning accumulation in one line, but a blanket `--write --unsafe` pass is the wrong way to
+clear the runway, and this is the trap worth recording:
+
+`--write --unsafe` reaches 54 warnings, but **192 of those "fixes" are underscore renames** —
+190 of them in `test/`. `noUnusedVariables` and `noUnusedFunctionParameters` are "fixed" by
+prefixing the identifier with `_`, which does not remove dead code; it launders it past the
+rule permanently. Sampling what it wanted to rename:
+
+- `const proposalBuilder = new DebatePromptBuilder(...)` — a builder constructed and never
+  used. Dead code, not a naming problem.
+- `let skippedManifests = 0; skippedManifests += 1;` — a counter incremented and never read.
+  A dropped log or metric.
+- `const skipInCI = fullTest;` — a CI skip guard that is never applied.
+- `let exitCode: number | undefined;` in a test — a value captured for an assertion nobody
+  wrote.
+
+In `test/` an unused variable is very often a **missing assertion**, which is exactly the
+defect class the drain exists to find. Underscoring 190 of them would erase 190 findings and
+report it as progress.
+
+So the sequencing is: the 204 `noUnusedVariables` / `noUnusedFunctionParameters` sites need
+triage — delete, or finish the assertion — as their own piece of work. `--error-on-warnings`
+goes on after that, together with a decision on the remaining 52 (27
+`noTemplateCurlyInString`, 15 `noTsIgnore`, 9 `noPrototypeBuiltins`, 1
+`useAdjacentOverloadSignatures`). Turning the flag on before then would force exactly the
+laundering it is meant to prevent.
 
 ### The `nonNullAssert` Ratchet Undercounts By 273
 

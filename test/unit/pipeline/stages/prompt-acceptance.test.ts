@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { makeConfigSlice, makeSparseNaxConfig, makeStory, makeTestContext } from "@test/helpers";
 import { _promptStageDeps, promptStage } from "@/pipeline/stages/prompt";
 import type { PipelineContext } from "@/pipeline/types";
-import type { PRD, UserStory } from "@/prd";
+import type { PRD } from "@/prd";
 
 const WORKDIR = `/tmp/nax-prompt-acceptance-${randomUUID()}`;
 

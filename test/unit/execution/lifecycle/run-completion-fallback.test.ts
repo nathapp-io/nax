@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { makeDispatchContext, makeMockRuntime, makeStatusWriter } from "@test/helpers";
+import { makeDispatchContext, makeStatusWriter } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import {
