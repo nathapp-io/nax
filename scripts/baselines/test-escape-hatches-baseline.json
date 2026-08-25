@@ -1,15 +1,15 @@
 {
   "counts": {
-    "asAny": 1327,
+    "asAny": 1285,
     "tsSuppress": 40,
     "ratchetAllow": 105,
     "absentValue": 17,
-    "anyType": 1737,
+    "anyType": 1673,
     "looseCast": 1875,
     "asNever": 608,
     "nonNullAssert": 819
   },
-  "updatedAt": "2026-08-25T10:19:35.642Z",
+  "updatedAt": "2026-08-25T10:39:10.003Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -1458,8 +1458,6 @@
       "looseCast": 4
     },
     "test/unit/debate/runner-plan.test.ts": {
-      "asAny": 42,
-      "anyType": 64,
       "asNever": 17
     },
     "test/unit/debate/resolvers.test.ts": {
