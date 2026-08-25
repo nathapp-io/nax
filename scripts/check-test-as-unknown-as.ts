@@ -44,7 +44,6 @@ const ALLOW_MARKER = "test-ratchet-allow: as-unknown-as";
  * grade its own scaffolding.
  */
 const EXEMPT_FILES = new Set<string>([
-  "test/unit/scripts/check-test-typecheck.test.ts",
   "test/unit/scripts/check-test-as-unknown-as.test.ts",
 ]);
 

@@ -16,18 +16,12 @@ function installCallOp(impl: typeof _statefulDeps.callOp) {
   return spy;
 }
 
-// ─── Compile-time check ───────────────────────────────────────────────────────
-
-test("SuccessfulProposal type carries optional handle field (compile-time check)", () => {
-  const proposal: import("@/debate/session-helpers").SuccessfulProposal = {
-    debater: { agent: "claude", model: "fast" },
-    agentName: "claude",
-    output: "test",
-    cost: 0,
-    handle: { id: "sess-001", agentName: "claude" },
-  };
-  expect(proposal.handle?.id).toBe("sess-001");
-});
+// `SuccessfulProposal` deliberately carries no session `handle`. A compile-time
+// check for one used to live here, asserting a field `src/debate/session-helpers.ts`
+// has never declared and no producer sets — the session handle is held inside the
+// stateful debater op and never surfaced on a proposal. It is a prerequisite of the
+// unimplemented verifier-pick patch step (see the AC 6 todos in
+// `test/unit/debate/selectors/verifier-pick.test.ts`), not of anything shipped.
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 

@@ -8,19 +8,17 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import type { RunAsSessionOpts, SessionHandle } from "@/agents";
 import { resolveSelector, verifierPickSelector } from "@/debate";
 import type { SelectorContext } from "@/debate";
 import type { SuccessfulProposal } from "@/debate";
 import { makeMockAgentManager, makeMockCallContext, type makeTestRuntime } from "@test/helpers";
 
-function makeProposal(output: string, agentName = "claude", handle?: SessionHandle): SuccessfulProposal {
+function makeProposal(output: string, agentName = "claude"): SuccessfulProposal {
   return {
     debater: { agent: agentName },
     agentName,
     output,
     cost: 0.05,
-    handle,
   };
 }
 
@@ -240,10 +238,7 @@ describe("verifierPickSelector", () => {
         },
       });
 
-      const proposals = [
-        makeProposal("Proposal 1: AC1, AC2, AC3", "claude", {} as SessionHandle),
-        makeProposal("Proposal 2: AC4, AC5", "claude", {} as SessionHandle),
-      ];
+      const proposals = [makeProposal("Proposal 1: AC1, AC2, AC3"), makeProposal("Proposal 2: AC4, AC5")];
 
       const ctx = makeSelectorContext({
         proposals,
@@ -279,10 +274,7 @@ describe("verifierPickSelector", () => {
         }),
       });
 
-      const proposals = [
-        makeProposal("Proposal 1: AC1, AC2", "claude", {} as SessionHandle),
-        makeProposal("Proposal 2: AC3, AC4", "claude", {} as SessionHandle),
-      ];
+      const proposals = [makeProposal("Proposal 1: AC1, AC2"), makeProposal("Proposal 2: AC3, AC4")];
 
       const ctx = makeSelectorContext({
         proposals,
@@ -319,10 +311,7 @@ describe("verifierPickSelector", () => {
         }),
       });
 
-      const proposals = [
-        makeProposal("Proposal 1: AC1, AC2", "claude", {} as SessionHandle),
-        makeProposal("Proposal 2: AC3, AC4", "claude", {} as SessionHandle),
-      ];
+      const proposals = [makeProposal("Proposal 1: AC1, AC2"), makeProposal("Proposal 2: AC3, AC4")];
 
       const ctx = makeSelectorContext({
         proposals,
@@ -348,12 +337,24 @@ describe("verifierPickSelector", () => {
     });
   });
 
-  describe("AC 6: patch step continues session using existing handle", () => {
-    test("calls runAsSession with winner.proposal.agentName", async () => {
-      let capturedAgentName: string | undefined;
+  // AC 6 as originally written no longer describes the code. The patch step IS
+  // implemented — `finalizePlanSelection` (`src/debate/runner-plan-helpers.ts`) reads
+  // `patch.enabled`, compares `acOverlap` to `overlapThreshold`, and calls
+  // `runPatchStep` with `maxDeltas` — but #1048 moved it OFF the selector and off
+  // session handles. The patch prompt is now resolved back into each debater's own
+  // in-flight turn through `PromiseWithResolvers`, so no `SuccessfulProposal.handle`
+  // is needed and none exists. `verifier-pick-signal.test.ts` pins that removal.
+  //
+  // The four tests that stood here predate #1048 and each ran the selector inside
+  // `try { … } catch {}` asserting nothing, so they stayed green across the refactor
+  // that invalidated them. Replaced by one test pinning the post-#1048 split: the
+  // selector ranks and returns, and dispatches nothing itself.
+  describe("AC 6: patch dispatch lives in the plan runner, not the selector", () => {
+    test("selector ranks and returns — it never opens a session, even with patch enabled", async () => {
+      let runAsSessionCalls = 0;
       const mockAgentManager = makeMockAgentManager({
-        runAsSessionFn: async (agentName) => {
-          capturedAgentName = agentName;
+        runAsSessionFn: async () => {
+          runAsSessionCalls++;
           return {
             output: "Patched output",
             tokenUsage: { inputTokens: 0, outputTokens: 0 },
@@ -363,99 +364,10 @@ describe("verifierPickSelector", () => {
         },
       });
 
-      const proposals = [
-        makeProposal("Proposal 1: AC1", "opencode", {} as SessionHandle),
-        makeProposal("Proposal 2: AC2", "claude", {} as SessionHandle),
-      ];
-
-      const ctx = makeSelectorContext({
-        proposals,
-        agentManager: mockAgentManager,
-        stageConfig: {
-          enabled: true,
-          resolver: { type: "synthesis" },
-          sessionMode: "one-shot",
-          rounds: 1,
-          selector: {
-            kind: "verifier-pick",
-            patch: { enabled: true, overlapThreshold: 0.3 },
-          },
-        },
-      });
-
-      try {
-        await verifierPickSelector(ctx);
-        // After implementation, should verify capturedAgentName === "opencode"
-      } catch {
-        // Expected to fail
-      }
-    });
-
-    test("calls runAsSession with winner.proposal.handle to continue session", async () => {
-      let capturedHandle: SessionHandle | undefined;
-      const testHandle: SessionHandle = { id: "nax-12345-test", agentName: "claude" };
-      const mockAgentManager = makeMockAgentManager({
-        runAsSessionFn: async (agentName, handle) => {
-          capturedHandle = handle;
-          return {
-            output: "Patched output",
-            tokenUsage: { inputTokens: 0, outputTokens: 0 },
-            internalRoundTrips: 1,
-            estimatedCostUsd: 0.1,
-          };
-        },
-      });
-
-      const proposals = [
-        makeProposal("Proposal 1: AC1", "claude", testHandle),
-        makeProposal("Proposal 2: AC2", "claude", {} as SessionHandle),
-      ];
-
-      const ctx = makeSelectorContext({
-        proposals,
-        agentManager: mockAgentManager,
-        stageConfig: {
-          enabled: true,
-          resolver: { type: "synthesis" },
-          sessionMode: "one-shot",
-          rounds: 1,
-          selector: {
-            kind: "verifier-pick",
-            patch: { enabled: true, overlapThreshold: 0.3 },
-          },
-        },
-      });
-
-      try {
-        await verifierPickSelector(ctx);
-        // After implementation, should verify capturedHandle === testHandle
-      } catch {
-        // Expected to fail
-      }
-    });
-
-    test("calls runAsSession with correct pipelineStage and storyId", async () => {
-      let capturedOptions: RunAsSessionOpts | undefined;
-      const mockAgentManager = makeMockAgentManager({
-        runAsSessionFn: async (agentName, handle, prompt, options) => {
-          capturedOptions = options;
-          return {
-            output: "Patched output",
-            tokenUsage: { inputTokens: 0, outputTokens: 0 },
-            internalRoundTrips: 1,
-            estimatedCostUsd: 0.1,
-          };
-        },
-      });
-
-      const proposals = [
-        makeProposal("Proposal 1: AC1", "claude", {} as SessionHandle),
-        makeProposal("Proposal 2: AC2", "claude", {} as SessionHandle),
-      ];
-
+      const winnerOutput = "Proposal 1: AC1, cited F-001 in claim: fact1";
       const ctx = makeSelectorContext({
         storyId: "US-003",
-        proposals,
+        proposals: [makeProposal(winnerOutput), makeProposal("Proposal 2: AC2")],
         agentManager: mockAgentManager,
         stageConfig: {
           enabled: true,
@@ -469,54 +381,11 @@ describe("verifierPickSelector", () => {
         },
       });
 
-      try {
-        await verifierPickSelector(ctx);
-        // After implementation, should verify:
-        // capturedOptions.storyId === "US-003"
-        // capturedOptions.pipelineStage === "plan"
-      } catch {
-        // Expected to fail
-      }
-    });
+      const result = await verifierPickSelector(ctx);
 
-    test("returns patch result output and estimatedCostUsd", async () => {
-      const mockAgentManager = makeMockAgentManager({
-        runAsSessionFn: async () => ({
-          output: "Final patched proposal",
-          tokenUsage: { inputTokens: 100, outputTokens: 200 },
-          internalRoundTrips: 1,
-          estimatedCostUsd: 0.25,
-        }),
-      });
-
-      const proposals = [
-        makeProposal("Proposal 1: AC1", "claude", {} as SessionHandle),
-        makeProposal("Proposal 2: AC2", "claude", {} as SessionHandle),
-      ];
-
-      const ctx = makeSelectorContext({
-        proposals,
-        agentManager: mockAgentManager,
-        stageConfig: {
-          enabled: true,
-          resolver: { type: "synthesis" },
-          sessionMode: "one-shot",
-          rounds: 1,
-          selector: {
-            kind: "verifier-pick",
-            patch: { enabled: true, overlapThreshold: 0.3 },
-          },
-        },
-      });
-
-      try {
-        const result = await verifierPickSelector(ctx);
-        // After implementation, should verify:
-        // result.output === "Final patched proposal"
-        // result.output contains the patched content
-      } catch {
-        // Expected to fail
-      }
+      expect(result.outcome).toBe("passed");
+      expect(result.output).toBe(winnerOutput);
+      expect(runAsSessionCalls).toBe(0);
     });
   });
 
@@ -529,10 +398,7 @@ describe("verifierPickSelector", () => {
         },
       });
 
-      const proposals = [
-        makeProposal(unPatchedOutput, "claude", {} as SessionHandle),
-        makeProposal("Proposal 2: AC2", "claude", {} as SessionHandle),
-      ];
+      const proposals = [makeProposal(unPatchedOutput), makeProposal("Proposal 2: AC2")];
 
       const ctx = makeSelectorContext({
         proposals,
@@ -566,10 +432,7 @@ describe("verifierPickSelector", () => {
         },
       });
 
-      const proposals = [
-        makeProposal("Original proposal", "claude", {} as SessionHandle),
-        makeProposal("Proposal 2: AC2", "claude", {} as SessionHandle),
-      ];
+      const proposals = [makeProposal("Original proposal"), makeProposal("Proposal 2: AC2")];
 
       const ctx = makeSelectorContext({
         proposals,
@@ -602,10 +465,7 @@ describe("verifierPickSelector", () => {
         },
       });
 
-      const proposals = [
-        makeProposal("Proposal 1: AC1", "claude", {} as SessionHandle),
-        makeProposal("Proposal 2: AC2", "claude", {} as SessionHandle),
-      ];
+      const proposals = [makeProposal("Proposal 1: AC1"), makeProposal("Proposal 2: AC2")];
 
       const ctx = makeSelectorContext({
         proposals,
@@ -639,10 +499,7 @@ describe("verifierPickSelector", () => {
         },
       });
 
-      const proposals = [
-        makeProposal("Proposal 1: AC1", "claude", {} as SessionHandle),
-        makeProposal("Proposal 2: AC2", "claude", {} as SessionHandle),
-      ];
+      const proposals = [makeProposal("Proposal 1: AC1"), makeProposal("Proposal 2: AC2")];
 
       const ctx = makeSelectorContext({
         proposals,

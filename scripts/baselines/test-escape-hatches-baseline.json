@@ -5,11 +5,11 @@
     "ratchetAllow": 106,
     "absentValue": 17,
     "anyType": 1868,
-    "looseCast": 1909,
+    "looseCast": 1888,
     "asNever": 608,
     "nonNullAssert": 827
   },
-  "updatedAt": "2026-08-25T03:02:26.919Z",
+  "updatedAt": "2026-08-25T03:26:21.818Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -1547,9 +1547,6 @@
     },
     "test/unit/debate/selectors/pick.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/debate/selectors/verifier-pick.test.ts": {
-      "looseCast": 21
     },
     "test/unit/debate/selectors/verifier-pick-signal.test.ts": {
       "looseCast": 3

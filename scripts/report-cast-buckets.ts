@@ -11,7 +11,6 @@
  */
 import { Glob } from "bun";
 const EXEMPT = new Set([
-  "test/unit/scripts/check-test-typecheck.test.ts",
   "test/unit/scripts/check-test-as-unknown-as.test.ts",
 ]);
 const P = /as unknown as\s+(typeof\s+[\w$.]+|[A-Za-z_$][\w$]*(?:<[^;=)\n]*?>)?(?:\[[^\]\n]*\])?)/g;
