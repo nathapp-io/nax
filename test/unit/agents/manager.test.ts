@@ -4,6 +4,7 @@ import { AgentManager } from "@/agents/manager";
 import type { AgentRegistry } from "@/agents/registry";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
+import type { ResolvedPermissions } from "@/config/permissions";
 import { NaxConfigSchema } from "@/config/schemas";
 import { type AgentMiddleware, MiddlewareChain, type MiddlewareContext } from "@/runtime/agent-middleware";
 import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
@@ -259,11 +260,11 @@ describe("AgentManager — middleware envelope", () => {
   });
 
   test("runAs() injects resolvedPermissions into request.runOptions", async () => {
-    let capturedPerms: Record<string, unknown> | undefined;
+    let capturedPerms: ResolvedPermissions | undefined;
     const mw: AgentMiddleware = {
       name: "spy",
       before: async (ctx: MiddlewareContext) => {
-        capturedPerms = ctx.resolvedPermissions as unknown as Record<string, unknown>;
+        capturedPerms = ctx.resolvedPermissions;
       },
     };
     const manager = makeMiddlewareManager(mw);

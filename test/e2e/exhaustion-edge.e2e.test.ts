@@ -98,7 +98,7 @@ describe("E2E: exhaustion + edge", () => {
       config: {
         quality: { autofix: { enabled: false } },
         review: { blockingThreshold: "warning" },
-      } as unknown as Parameters<typeof runOrchestratorE2E>[0]["config"],
+      },
       agent: { implementer: impl, "reviewer-semantic": PASS_REVIEW, "reviewer-adversarial": failingAdversarial },
     });
 

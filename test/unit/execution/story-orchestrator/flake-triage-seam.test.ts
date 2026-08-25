@@ -68,7 +68,7 @@ describe("productionTriageSeam", () => {
         packageDir: workdir,
         agentName: "claude",
         storyId: "US-003",
-      } as unknown as Parameters<typeof productionTriageSeam>[1]["ctx"],
+      },
     };
   }
 

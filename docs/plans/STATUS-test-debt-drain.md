@@ -295,14 +295,103 @@ the full suite are worth withholding.** Fixed in the next brief.
 deserialized from disk from before the field existed. `src/metrics/types.ts:120` declares
 `costUsd: number` **required**; `src/metrics/aggregator.ts:237` reads `h.costUsd ?? 0`.
 
-This is the mirror image of §6's "a defensive `?.` is not evidence of a tolerated absence" —
-there the schema's `.default()` made the absence unreachable. Here the hops come off persisted
-metrics and are **never zod-parsed**, so the absence is genuinely reachable and the interface
-has drifted from what the code handles. Same family as #1702. `src/` decision, not a fixture
-edit: the cast stays until it is ruled on, and per §6 loosening a field wants an ADR check
-first.
+**That framing was wrong, and filing it properly overturned it — see 8.3.** The "records
+deserialized from disk" premise the test comment states matches no code path that exists.
+The cast stays, but for a different reason than the one written here.
 
 Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14130 / 1136 / 38, 0 fail),
 coverage 101 files below floor against baseline 103 — identical to `main`, no branch effect.
 Casts **91 → 57**; `looseCast` **1888 → 1879** (fell, 36 single casts removed and none added);
 every other counter flat. No counter traded.
+
+
+### 8.3 Filing the escalation overturned it — nax#1707
+
+Writing 8.2's escalation up as an issue meant grepping at repo scope instead of reading the two
+files the error named, and the finding changed shape entirely.
+
+**`ctx.agentFallbacks` has no writer.** `src/metrics/tracker.ts:295` reads it inside
+`collectStoryMetrics(ctx: PipelineContext, …)`; `src/pipeline/types.ts:311` declares it; and
+nothing in `src/` ever assigns it. The populated field is `AgentResult.agentFallbacks`, written
+at `src/agents/manager.ts:656` — a different object, and `agentResult` is already a local nine
+lines above the read. So ADR-012 PR-2's run-level swap-cost visibility is inert: `StoryMetrics.fallback`
+is never emitted and `RunMetrics.fallback.totalWastedCostUsd` is never computed.
+
+It survived because the field is conditionally spread — `...(ctx.agentFallbacks?.length && …)` —
+so a never-populated field silently omits the metric instead of failing.
+
+**The `costUsd` story was backwards.** 8.2 said the absence was reachable because the hops come
+off persisted metrics. They do not: `deriveRunFallbackAggregates` is called at
+`run-completion.ts:437` with the in-memory `allStoryMetrics` built during the same run, and no
+`JSON.parse` of `StoryMetrics` exists anywhere in `src/metrics/`. `costUsd` is required on both
+the producer and consumer types. So `aggregator.ts:237`'s `?? 0` guards an absence that is
+currently unreachable, and the fixture pins an impossible state — **the same §6 ruling as the
+`TestPatternConfig` case, not its mirror image.**
+
+The cast still stays: removing it needs `absentValue<T>()` or a single `as X`, both trades. But
+it stays as an impossible-state fixture awaiting the wiring fix, not as evidence of interface
+drift.
+
+**Carry forward: "escalate it" and "write it up" are different amounts of rigour.** The
+escalation was produced by a delegate reading two files and was accepted at face value; the
+issue needed a repo-scope grep, and that grep found a real inert feature underneath. Related to
+§6's "no caller in this file is not no caller" — this is the same lesson arriving from the
+other direction: **a field with no writer reads exactly like a field with a tolerated absence.**
+
+Filed as **nax#1707** with the ordering trap written down: reconcile `AgentFallbackRecord` and
+`AgentFallbackHop` (`storyId` optional vs required, `timestamp` present vs dropped) before
+touching `costUsd`, and do not loosen `costUsd` to optional as a standalone change — with the
+wiring broken there is no evidence either way.
+
+### 8.4 Batch 2 delegated — `Parameters<…>` and capture-widening, 57 → 47 (2026-08-25)
+
+Ten sites drained, one escalated, one gate breach caught at integration again.
+
+**Cluster A — `Parameters<typeof f>[n]` (6/6).** The four `model-resolution.test.ts` sites took
+`makeNaxConfig()`, which satisfies the real `Pick<NaxConfig,…> | Partial<NaxConfig>` parameter.
+**Neither of the other two hit the defaulted-parameter trap §1 warned about** — both
+`runOrchestratorE2E`'s `config` and `productionTriageSeam`'s `ctx` are non-defaulted, and both
+fixture literals were already structurally complete instances of the real type. The casts were
+dead weight. The trap is real but it was not this cluster's cause; that ruling is now spent.
+
+**`makeNaxConfig` deep-merges, and that is a trap of its own.** The fourth site needs
+`models.claude` to carry `fast` *only*, to prove the function throws. `deepMerge` fully replaces
+a key only when the override is an **empty** object, so a non-empty override merged into
+`DEFAULT_CONFIG.models.claude.balanced: "sonnet"` and the test would have silently stopped
+exercising the throw path — green, and no longer testing anything. `makeSparseNaxConfig` (total
+replace, no defaults merged) is the right helper for an intentional sparse override. **A factory
+migration can quietly delete a test's reason to exist; check what the fixture was *omitting*,
+not just what it sets.**
+
+**Cluster B — capture-into-`Record<string, unknown>` (4/5).** Fix at the declaration, not the
+assignment: `ResolvedPermissions`, `HookContext`, `SelectScopedTestsInput`. One needed
+`DeferredRegressionOptions & Record<string, unknown>` because the assertion deliberately probes
+a key the interface does not declare, to prove a legacy field is never passed — the intersection
+keeps that probe type-checked instead of casting it away.
+
+### Escalation — a dead mock in `unified-executor-abort.test.ts:91`
+
+`deps.selectNextStories = mock(…)` assigns to a key that is not on the real
+`_unifiedExecutorDeps`. `selectIndependentBatch` *is* injected (`unified-executor.ts:258`), but
+`selectNextStories` is imported directly at `:36` and called at `:583`, so **the mock intercepts
+nothing** and the three tests pass because the real function handles the fixture PRD correctly.
+
+Verified independently before accepting it. This is the "inert tests" family from §6 seen in a
+new place — not a test that cannot fail, but a *seam* that was never wired. Removing the dead
+assignment would likely drain the cast too, but that changes the test's setup and is a judgement
+call, so it stays for now.
+
+### The third gate breach, and the pattern behind it
+
+Batch 1 breached `check:file-sizes`; batch 2 breached `check:deep-relatives`
+(`import … from "../../helpers/mock-nax-config"` instead of `@test/helpers`) — even though the
+brief had added `lint` and `check:file-sizes` to the delegate loop after batch 1. **Each batch
+breached a *different* gate that was not in its loop.** Adding gates one incident at a time is
+the wrong shape of fix; `check:all` minus the six-minute lint chain is what belongs in the loop,
+and the next brief says that instead of naming individual scripts.
+
+Fixed by the owner (one-line import swap, `check:deep-relatives` back to 0, 6 tests pass).
+
+Casts **57 → 47**. Remaining: 17 are the floor (15 containment + 2 comments), ~14 property-poke,
+~13 one-offs and spawn-mock, 2 held escalations (`#1707`, the dead mock). **Realistic target is
+~17, not 0**, and everything left needs a ruling rather than a recipe.
