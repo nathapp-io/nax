@@ -6,6 +6,7 @@ import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents";
 import type { AdapterFailure, ContextBundle } from "@/context/engine";
 import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
 import type { BuildHopCallbackContext } from "@/operations";
+import type { TimeoutRetryInput } from "@/prompts";
 import {
   makeContextBundle,
   makeContextManifest,
@@ -497,12 +498,12 @@ describe("buildHopCallback — interactionBridge threading (AC6/AC7)", () => {
 
 describe("buildHopCallback — timeoutRetry wiring (AC6/AC7)", () => {
   let origTimeoutRetry: typeof _buildHopCallbackDeps.timeoutRetry;
-  let timeoutRetryMock: ReturnType<typeof mock>;
+  let timeoutRetryMock: ReturnType<typeof mock<(input: TimeoutRetryInput) => string>>;
 
   beforeEach(() => {
     origTimeoutRetry = _buildHopCallbackDeps.timeoutRetry;
-    timeoutRetryMock = mock(() => "RETRY-PROMPT-MOCK");
-    _buildHopCallbackDeps.timeoutRetry = timeoutRetryMock as typeof _buildHopCallbackDeps.timeoutRetry;
+    timeoutRetryMock = mock((_input: TimeoutRetryInput) => "RETRY-PROMPT-MOCK");
+    _buildHopCallbackDeps.timeoutRetry = timeoutRetryMock;
   });
 
   afterEach(() => {
@@ -519,9 +520,7 @@ describe("buildHopCallback — timeoutRetry wiring (AC6/AC7)", () => {
     await cb("claude", makeBundle(), { kind: "timeout-retry", attempt: 1 } satisfies HopKind, baseOptions);
 
     expect(timeoutRetryMock).toHaveBeenCalledTimes(1);
-    const callArgs = (timeoutRetryMock as ReturnType<typeof mock>).mock.calls[0] as unknown as [
-      { prompt: string; changedFiles: string[]; elapsedMs: number },
-    ];
+    const callArgs = timeoutRetryMock.mock.calls[0];
     expect(callArgs[0].prompt).toBe("original prompt");
     expect(Array.isArray(callArgs[0].changedFiles)).toBe(true);
     expect(typeof callArgs[0].elapsedMs).toBe("number");
@@ -588,9 +587,7 @@ describe("buildHopCallback — timeoutRetry wiring (AC6/AC7)", () => {
       ];
       expect(diffArgs[1]).toBe("deadbeef");
 
-      const callArgs = (timeoutRetryMock as ReturnType<typeof mock>).mock.calls[0] as unknown as [
-        { prompt: string; changedFiles: string[]; elapsedMs: number },
-      ];
+      const callArgs = timeoutRetryMock.mock.calls[0];
       expect(callArgs[0].changedFiles).toEqual(["src/foo.ts", "src/bar.ts"]);
     } finally {
       _buildHopCallbackDeps.captureGitRef = origCaptureGitRef;
@@ -632,9 +629,7 @@ describe("buildHopCallback — timeoutRetry wiring (AC6/AC7)", () => {
 
       // timeoutRetry must still be called exactly once with changedFiles: [].
       expect(timeoutRetryMock).toHaveBeenCalledTimes(1);
-      const callArgs = (timeoutRetryMock as ReturnType<typeof mock>).mock.calls[0] as unknown as [
-        { prompt: string; changedFiles: string[]; elapsedMs: number },
-      ];
+      const callArgs = timeoutRetryMock.mock.calls[0];
       expect(callArgs[0].prompt).toBe("original prompt");
       expect(callArgs[0].changedFiles).toEqual([]);
 

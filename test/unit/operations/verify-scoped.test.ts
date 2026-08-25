@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { Finding } from "@/findings";
 import { _verifyScopedDeps, verifyScopedOp } from "@/operations";
 import type { VerifyScopedDeps } from "@/operations";
+import type { SelectScopedTestsInput } from "@/test-runners";
 
 function ctxWithQuality(quality?: Record<string, unknown>, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
   const config = { quality, execution: {} } as any;
@@ -297,7 +298,7 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
   });
 
   test("forwards repoRoot/packagePrefix/resolvedTestPatterns to selectScopedTests (Pass 0 anchors)", async () => {
-    let seen: Record<string, unknown> | undefined;
+    let seen: SelectScopedTestsInput | undefined;
     const resolvedTestPatterns = {
       globs: ["tests/**/*.py"],
       pathspec: [],
@@ -306,7 +307,7 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
     } as any;
     const deps = fakeDeps({
       selectScopedTests: async (input) => {
-        seen = input as unknown as Record<string, unknown>;
+        seen = input;
         return {
           effectiveCommand: "uv run pytest",
           isFullSuite: true,

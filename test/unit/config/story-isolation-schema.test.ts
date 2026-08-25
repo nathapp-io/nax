@@ -14,9 +14,9 @@ import { NaxConfigSchema } from "@/config/schemas";
 /** Build a full config with a specific storyIsolation value (all required fields present). */
 function withIsolation(storyIsolation: string): unknown {
   return {
-    ...(DEFAULT_CONFIG as unknown as Record<string, unknown>),
+    ...DEFAULT_CONFIG,
     execution: {
-      ...(DEFAULT_CONFIG.execution as unknown as Record<string, unknown>),
+      ...DEFAULT_CONFIG.execution,
       storyIsolation,
     },
   };

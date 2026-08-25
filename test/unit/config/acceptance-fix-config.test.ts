@@ -108,7 +108,7 @@ describe("DiagnosisResult interface (US-001)", () => {
 describe("AcceptanceConfigSchema fix strategy validation (US-001)", () => {
   function baseAcceptanceFixConfig(fix: Record<string, unknown>): Record<string, unknown> {
     return {
-      ...(DEFAULT_CONFIG as unknown as Record<string, unknown>),
+      ...DEFAULT_CONFIG,
       acceptance: {
         ...DEFAULT_CONFIG.acceptance,
         fix,

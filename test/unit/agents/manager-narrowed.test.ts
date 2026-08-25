@@ -3,17 +3,15 @@ import { _registryTestAdapters } from "@/agents/registry";
 import { createAgentRegistry } from "@/agents/registry";
 import type { AgentAdapter } from "@/agents/types";
 import { resolveDefaultAgent } from "@/agents/utils";
+import { agentManagerConfigSelector } from "@/config";
+import type { NaxConfig } from "@/config/schema";
 import type { AgentManagerConfig } from "@/config/selectors";
-import { makeAgentAdapter } from "@test/helpers";
+import { type DeepPartial, makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 
 const makeSlicedConfig = (
-  agent: Record<string, unknown> = {},
-  execution: Record<string, unknown> = {},
-): AgentManagerConfig => ({
-  agent: agent as AgentManagerConfig["agent"],
-  execution: execution as unknown as AgentManagerConfig["execution"],
-  profile: "default",
-});
+  agent: DeepPartial<NaxConfig["agent"]> = {},
+  execution: DeepPartial<NaxConfig["execution"]> = {},
+): AgentManagerConfig => agentManagerConfigSelector.select(makeNaxConfig({ agent, execution }));
 
 describe("AgentManager — narrowed config (Pick<NaxConfig, 'agent' | 'execution'>)", () => {
   describe("resolveDefaultAgent", () => {

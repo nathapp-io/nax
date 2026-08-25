@@ -8,6 +8,7 @@
 import { describe, expect, test } from "bun:test";
 import { resolveBalancedModelDef } from "@/agents/shared/model-resolution";
 import type { ModelDef } from "@/config/schema";
+import { makeNaxConfig, makeSparseNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // resolveBalancedModelDef — fallback chain utility
@@ -15,32 +16,32 @@ import type { ModelDef } from "@/config/schema";
 
 describe("resolveBalancedModelDef()", () => {
   test("returns ModelDef from config.models.balanced when present as object", () => {
-    const config = {
+    const config = makeNaxConfig({
       agent: { default: "claude" },
       models: {
         claude: {
           balanced: { provider: "anthropic", model: "claude-opus-4-5", env: {} },
         },
       },
-    };
+    });
 
-    const result = resolveBalancedModelDef(config as unknown as Parameters<typeof resolveBalancedModelDef>[0]);
+    const result = resolveBalancedModelDef(config);
 
     expect(result.model).toBe("claude-opus-4-5");
     expect(result.provider).toBe("anthropic");
   });
 
   test("resolves string shorthand in config.models.balanced via resolveModel", () => {
-    const config = {
+    const config = makeNaxConfig({
       agent: { default: "claude" },
       models: {
         claude: {
           balanced: "claude-opus-4-5",
         },
       },
-    };
+    });
 
-    const result = resolveBalancedModelDef(config as unknown as Parameters<typeof resolveBalancedModelDef>[0]);
+    const result = resolveBalancedModelDef(config);
 
     expect(result.model).toBe("claude-opus-4-5");
     expect(result.provider).toBe("anthropic");
@@ -50,9 +51,7 @@ describe("resolveBalancedModelDef()", () => {
     const adapterDefault: ModelDef = { provider: "anthropic", model: "fallback-model", env: {} };
 
     const result = resolveBalancedModelDef(
-      { agent: { default: "claude" }, models: { claude: {} } } as unknown as Parameters<
-        typeof resolveBalancedModelDef
-      >[0],
+      makeNaxConfig({ agent: { default: "claude" }, models: { claude: {} } }),
       adapterDefault,
     );
 
@@ -74,13 +73,13 @@ describe("resolveBalancedModelDef()", () => {
   });
 
   test("throws when config has no balanced tier and adapterDefault is undefined", () => {
-    const config = {
+    // makeSparseNaxConfig (not makeNaxConfig): this must NOT merge over DEFAULT_CONFIG's
+    // models.claude.balanced ("sonnet") — the test needs models.claude to carry only "fast".
+    const config = makeSparseNaxConfig({
       agent: { default: "claude" },
       models: { claude: { fast: { provider: "anthropic", model: "haiku" } } },
-    };
+    });
 
-    expect(() =>
-      resolveBalancedModelDef(config as unknown as Parameters<typeof resolveBalancedModelDef>[0], undefined),
-    ).toThrow();
+    expect(() => resolveBalancedModelDef(config, undefined)).toThrow();
   });
 });

@@ -17,7 +17,7 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG, NaxConfigSchema } from "@/config";
 
 function fragmentsConfig(fragments: Record<string, unknown> | undefined) {
-  const base: Record<string, unknown> = { ...(DEFAULT_CONFIG as unknown as Record<string, unknown>) };
+  const base: Record<string, unknown> = { ...DEFAULT_CONFIG };
   if (fragments !== undefined) {
     const context = base.context as Record<string, unknown>;
     const v2 = { ...(context.v2 as Record<string, unknown>), fragments };

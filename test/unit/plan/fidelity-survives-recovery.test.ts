@@ -9,10 +9,10 @@
  * `### Modifies` authority still reaches disk.
  */
 import { describe, expect, test } from "bun:test";
+import { planConfigSelector } from "@/config";
 import { DebatePlanStrategy, RefinePlanStrategy, SinglePlanStrategy, _refinePlanDeps, _singlePlanDeps } from "@/plan";
 import type { PlanDeps, PlanModeContext } from "@/plan/strategies";
-import type { PackageSummary } from "@/prompts";
-import { makeMockAgentManager, makeMockRuntime } from "@test/helpers";
+import { makeDebateRunner, makeLogger, makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 
 const SPEC = `# SPEC-x
 
@@ -53,7 +53,7 @@ const DISK_PRD = JSON.stringify({
 });
 
 function makeCtx(written: { value: string | null }): PlanModeContext {
-  const deps = {
+  const deps: PlanDeps = {
     readFile: async () => DISK_PRD,
     writeFile: async (_path: string, content: string) => {
       written.value = content;
@@ -66,13 +66,14 @@ function makeCtx(written: { value: string | null }): PlanModeContext {
     spawnSync: () => ({ stdout: Buffer.from(""), exitCode: 0 }),
     initInteractionChain: async () => null,
     createInteractionBridge: () => ({ detectQuestion: async () => false, onQuestionDetected: async () => "" }),
-    createDebateRunner: () => ({
-      runPlan: async () => {
-        throw new Error("debate stage failed");
-      },
-    }),
-    getLogger: () => null,
-  } as unknown as PlanDeps;
+    createDebateRunner: () =>
+      makeDebateRunner({
+        runPlan: async () => {
+          throw new Error("debate stage failed");
+        },
+      }),
+    getLogger: () => makeLogger(),
+  };
 
   return {
     workdir: "/tmp/workdir",
@@ -86,10 +87,12 @@ function makeCtx(written: { value: string | null }): PlanModeContext {
     packageDetails: [
       {
         path: "packages/api",
-        packageName: "@acme/api",
-        stackSummary: "TypeScript",
+        name: "@acme/api",
+        runtime: "node",
+        framework: "none",
+        testRunner: "bun",
         keyDeps: [],
-      } as unknown as PackageSummary,
+      },
     ],
     projectName: "acme",
     branchName: "feat/feat-x",
@@ -158,10 +161,12 @@ describe("#1494 — fidelity repairs survive the disk-recovery path", () => {
     const ctx = makeCtx(written);
     // The debate runner throws inside execute's try — the same recovery branch
     // refine takes, reached through writeOrRecoverPrd.
-    const ctxWithStage = {
+    const ctxWithStage: PlanModeContext = {
       ...ctx,
-      config: { ...ctx.config, plan: { specGuard: false }, debate: { stages: { plan: { enabled: true } } } },
-    } as unknown as PlanModeContext;
+      config: planConfigSelector.select(
+        makeNaxConfig({ plan: { specGuard: false }, debate: { stages: { plan: { enabled: true } } } }),
+      ),
+    };
 
     const result = await new DebatePlanStrategy().execute(ctxWithStage);
     expect(result.outputPath).toBe(ctx.outputPath);

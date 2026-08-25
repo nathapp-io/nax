@@ -13,6 +13,7 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { _runCleanupDeps, cleanupRun } from "@/execution";
 import type { RunCleanupOptions } from "@/execution/lifecycle/run-cleanup";
+import type { HookContext } from "@/hooks";
 import * as loggerModule from "@/logger";
 import type { IPostRunAction, PostRunActionResult, PostRunContext } from "@/plugins/extensions";
 import type { PRD, StoryStatus } from "@/prd/types";
@@ -269,9 +270,9 @@ describe("cleanupRun — on-post-run-action hook", () => {
     ["failed", { success: false, message: "connection refused" }],
     ["skipped", { success: true, message: "nothing", skipped: true, reason: "no changes" }],
   ] as const)("fires once with plugin metadata for a %s result", async (status, result) => {
-    const calls: Array<{ event: string; ctx: Record<string, unknown> }> = [];
+    const calls: Array<{ event: string; ctx: HookContext }> = [];
     _runCleanupDeps.fireHook = mock(async (_hooks, event, ctx) => {
-      calls.push({ event, ctx: ctx as unknown as Record<string, unknown> });
+      calls.push({ event, ctx });
     });
     const action: IPostRunAction = {
       name: "publisher",

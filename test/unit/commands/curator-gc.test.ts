@@ -44,7 +44,12 @@ function makeResolvedProject(projectDir: string): ResolvedProject {
   };
 }
 
-function makeObservation(kind: Observation["kind"], runId = "run-001", projectKey = "test-proj"): Observation {
+/**
+ * `Observation` is a discriminated union keyed on `kind`, and each variant's
+ * `payload` shape differs — these tests only ever exercise `"verdict"`, so the
+ * helper is typed to that one variant rather than the whole union.
+ */
+function makeObservation(kind: "verdict", runId = "run-001", projectKey = "test-proj"): Observation {
   return {
     schemaVersion: 3,
     projectKey,
@@ -54,8 +59,8 @@ function makeObservation(kind: Observation["kind"], runId = "run-001", projectKe
     stage: "review",
     ts: "2026-01-01T00:00:00.000Z",
     kind,
-    payload: {},
-  } as unknown as Observation;
+    payload: { status: "completed", cost: 0, tokens: 0 },
+  };
 }
 
 function writeObservations(runDir: string, observations: Observation[]): void {

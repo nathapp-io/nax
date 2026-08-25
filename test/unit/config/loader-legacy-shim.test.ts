@@ -248,11 +248,11 @@ describe("loadConfig — legacy key deprecation shim", () => {
 
     const config = await loadConfig(tempDir);
 
-    expect(config.execution as unknown as Record<string, unknown>).not.toHaveProperty("inlineReview");
+    expect(config.execution).not.toHaveProperty("inlineReview");
     // pluginMode "per-story" is stripped; the field reappears with the default "observational"
     // because pluginMode is now a valid field with default (#1146).
-    expect(config.review as unknown as Record<string, unknown>).toHaveProperty("pluginMode", "observational");
-    expect(config.review as unknown as Record<string, unknown>).not.toHaveProperty("dialogue");
+    expect(config.review).toHaveProperty("pluginMode", "observational");
+    expect(config.review).not.toHaveProperty("dialogue");
   });
 
   test("loadConfig warns about removed routing keys end-to-end (proves the shim is wired)", async () => {
@@ -279,7 +279,7 @@ describe("loadConfig — legacy key deprecation shim", () => {
 
     const config = await loadConfig(tempDir);
 
-    expect(config.review as unknown as Record<string, unknown>).toHaveProperty("pluginMode", "gating");
+    expect(config.review).toHaveProperty("pluginMode", "gating");
   });
 
   // BUG-51: profile/CLI config layers must run through the same compat-shim chain as

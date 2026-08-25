@@ -107,7 +107,7 @@ moves trailing comments, so all three positions count. The cast ratchet skips it
   writes whatever it measures, so a merge that lost fixes is recorded as the new floor
   with every gate still green. Resolve to the elementwise minimum of both sides (a file
   absent from a side's `byFile` means **zero**, not unknown), then prove the tree meets
-  it. See `docs/plans/HANDOFF-1514-phase2-delegable.md` § *Baseline conflicts*.
+  it. See `docs/plans/archive/HANDOFF-1514-phase2-delegable.md` § *Baseline conflicts*.
 - Don't `--update-baseline` on a count that grew. That's a regression; revert instead.
   The one exception is a deliberate, reviewed *recount* of the same tree (as when the
   cast ratchet moved from per-line to per-match counting) — say so in the commit.

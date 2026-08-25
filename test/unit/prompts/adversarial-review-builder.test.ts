@@ -13,8 +13,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { AdversarialReviewPromptBuilder } from "@/prompts/builders/adversarial-review-builder";
-import type { AdversarialReviewConfig } from "@/review/types";
-import type { SemanticStory } from "@/review/types";
+import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
+import { makeAdversarialReviewConfig } from "@test/helpers";
 
 // ─── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -435,7 +435,7 @@ function makeScopeStory(outOfScope?: string[]): SemanticStory {
 function adversarialPrompt(story: SemanticStory): string {
   return new AdversarialReviewPromptBuilder().buildAdversarialReviewPrompt(
     story,
-    { model: "balanced", diffMode: "ref", rules: [] } as unknown as AdversarialReviewConfig,
+    makeAdversarialReviewConfig({ model: "balanced", diffMode: "ref", rules: [] }),
     { mode: "ref", storyGitRef: "abc123", stat: " src/a.ts | 2 +-" },
   );
 }

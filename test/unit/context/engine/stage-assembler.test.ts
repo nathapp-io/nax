@@ -14,8 +14,17 @@ import {
   discoverSessionScratchDirsOnDisk,
 } from "@/context/engine/stage-assembler";
 import type { ContextBundle, ContextRequest } from "@/context/engine/types";
-import type { PipelineContext } from "@/pipeline/types";
-import { makeContextBundle } from "@test/helpers";
+import type { PipelineContext, RoutingResult } from "@/pipeline/types";
+import type { ResolvedTestPatterns } from "@/test-runners/resolver";
+import type { NaxIgnoreIndex } from "@/utils/path-filters";
+import {
+  DEFAULT_TEST_ROUTING,
+  makeContextBundle,
+  makeNaxConfig,
+  makePRD,
+  makeStory,
+  makeTestContext,
+} from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -222,7 +231,7 @@ describe("discoverSessionScratchDirsOnDisk — Finding 2", () => {
 function makeCtx(
   overrides: {
     deterministic?: boolean;
-    testStrategy?: string;
+    testStrategy?: RoutingResult["testStrategy"];
     /** Override the agent-spawn workdir (ctx.workdir). Defaults to "/repo". */
     workdir?: string;
     /** Override the repo root (ctx.projectDir). Defaults to undefined to suppress manifest writes. */
@@ -230,36 +239,40 @@ function makeCtx(
     /** Override story.workdir (relative sub-package path). */
     storyWorkdir?: string;
     /** ADR-009 resolved test-file patterns carried on the pipeline context. */
-    resolvedTestPatterns?: unknown;
+    resolvedTestPatterns?: ResolvedTestPatterns;
     /** Pre-built .naxignore index carried on the pipeline context. */
-    naxIgnoreIndex?: unknown;
+    naxIgnoreIndex?: NaxIgnoreIndex;
     /** Per-stage v2 overrides (config.context.v2.stages). */
     stages?: Record<string, { budgetTokens?: number; extraProviderIds?: string[]; providerTimeoutMs?: number }>;
   } = {},
 ): PipelineContext {
-  return {
-    config: {
-      context: {
-        v2: {
-          enabled: true,
-          pluginProviders: [],
-          deterministic: overrides.deterministic,
-          ...(overrides.stages && { stages: overrides.stages }),
-        },
+  const config = makeNaxConfig({
+    context: {
+      v2: {
+        enabled: true,
+        pluginProviders: [],
+        deterministic: overrides.deterministic,
+        ...(overrides.stages && { stages: overrides.stages }),
       },
-      autoMode: { defaultAgent: "claude" },
     },
+  });
+  const story = makeStory({
+    id: "US-001",
+    ...(overrides.storyWorkdir && { workdir: overrides.storyWorkdir }),
+  });
+  return makeTestContext({
+    config,
     ...(overrides.resolvedTestPatterns !== undefined && { resolvedTestPatterns: overrides.resolvedTestPatterns }),
     ...(overrides.naxIgnoreIndex !== undefined && { naxIgnoreIndex: overrides.naxIgnoreIndex }),
-    rootConfig: { autoMode: { defaultAgent: "claude" } },
-    prd: { feature: "test-feature", userStories: [] },
-    story: { id: "US-001", ...(overrides.storyWorkdir && { workdir: overrides.storyWorkdir }) },
+    rootConfig: config,
+    prd: makePRD({ feature: "test-feature", userStories: [] }),
+    story,
     stories: [],
-    routing: { agent: undefined, testStrategy: overrides.testStrategy },
+    routing: { ...DEFAULT_TEST_ROUTING, agent: undefined, testStrategy: overrides.testStrategy ?? "test-after" },
     projectDir: overrides.projectDir, // undefined by default — prevents manifest writing in tests
     workdir: overrides.workdir ?? "/repo",
-    hooks: {},
-  } as unknown as PipelineContext;
+    hooks: { hooks: {} },
+  });
 }
 
 /** Mock orchestrator that captures the last assemble() request via a mutable ref. */

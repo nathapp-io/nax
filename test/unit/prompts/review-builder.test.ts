@@ -14,6 +14,7 @@ import type { Iteration } from "@/findings";
 import { ReviewPromptBuilder } from "@/prompts";
 import { SEMANTIC_CATEGORIES, SEMANTIC_CATEGORY_ENUM_LINE } from "@/review/semantic-categories";
 import type { SemanticReviewConfig, SemanticStory } from "@/review/types";
+import { makeSemanticReviewConfig } from "@test/helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -287,7 +288,7 @@ function makeScopeStory(outOfScope?: string[]): SemanticStory {
 function semanticPrompt(story: SemanticStory): string {
   return new ReviewPromptBuilder().buildSemanticReviewPrompt(
     story,
-    { model: "balanced", diffMode: "ref", rules: [] } as unknown as SemanticReviewConfig,
+    makeSemanticReviewConfig({ model: "balanced", diffMode: "ref", rules: [] }),
     { mode: "ref", storyGitRef: "abc123", stat: " src/a.ts | 2 +-" },
   );
 }

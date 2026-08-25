@@ -16,7 +16,7 @@ import { _deferredReviewDeps, captureRunStartRef, runDeferredReview } from "@/ex
 import type { PluginRegistry } from "@/plugins";
 import type { IReviewPlugin } from "@/plugins/extensions";
 import type { ReviewConfig } from "@/review/types";
-import { makePluginRegistry, makeSpawn, withDepsRestore } from "@test/helpers";
+import { makeConfigSlice, makePRD, makePluginRegistry, makeSpawn, withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -48,13 +48,12 @@ function makeRegistry(reviewers: IReviewPlugin[]): PluginRegistry {
   return makePluginRegistry({ getReviewers: mock(() => reviewers) });
 }
 
-function makeReviewConfig(pluginMode?: "per-story" | "deferred"): ReviewConfig {
-  return {
-    enabled: true,
-    checks: [],
-    commands: {},
-    pluginMode,
-  } as unknown as ReviewConfig;
+// Note: pluginMode is a separate axis (observational|gating, ADR-023) that
+// runDeferredReview does not read — it always runs when reviewers are
+// registered. The "deferred"/"per-story" labels this helper used to accept
+// described a mode that no longer exists.
+function makeReviewConfig(): ReviewConfig {
+  return makeConfigSlice("review", { enabled: true, checks: [], commands: {} });
 }
 
 withDepsRestore(_deferredReviewDeps, ["spawn"]);
@@ -116,7 +115,7 @@ describe("runDeferredReview — skips when conditions are not met", () => {
   test("returns undefined when no plugin reviewers are registered", async () => {
     const registry = makeRegistry([]);
 
-    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig("deferred"), registry, FAKE_REF);
+    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF);
 
     expect(result).toBeUndefined();
   });
@@ -126,7 +125,7 @@ describe("runDeferredReview — skips when conditions are not met", () => {
     const spawnMock = makeSpawnForDiff([]);
     _deferredReviewDeps.spawn = spawnMock;
 
-    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig("deferred"), registry, FAKE_REF);
+    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF);
 
     expect(result).toBeUndefined();
   });
@@ -146,7 +145,7 @@ describe("runDeferredReview — runs reviewers with full diff when deferred", ()
     const reviewer2 = makeReviewer("license-check");
     const registry = makeRegistry([reviewer1, reviewer2]);
 
-    await runDeferredReview("/tmp/workdir", makeReviewConfig("deferred"), registry, FAKE_REF);
+    await runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF);
 
     expect(reviewer1.check).toHaveBeenCalledTimes(1);
     expect(reviewer2.check).toHaveBeenCalledTimes(1);
@@ -156,7 +155,7 @@ describe("runDeferredReview — runs reviewers with full diff when deferred", ()
     const reviewer = makeReviewer("semgrep");
     const registry = makeRegistry([reviewer]);
 
-    await runDeferredReview("/tmp/workdir", makeReviewConfig("deferred"), registry, FAKE_REF);
+    await runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF);
 
     expect(reviewer.check).toHaveBeenCalledWith("/tmp/workdir", expect.arrayContaining(["src/foo.ts", "src/bar.ts"]));
   });
@@ -168,7 +167,7 @@ describe("runDeferredReview — runs reviewers with full diff when deferred", ()
     const reviewer = makeReviewer("semgrep");
     const registry = makeRegistry([reviewer]);
 
-    await runDeferredReview("/tmp/workdir", makeReviewConfig("deferred"), registry, FAKE_REF);
+    await runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF);
 
     // Verify spawn was called with a diff command using the run-start ref
     const calls = (spawnMock as ReturnType<typeof mock>).mock.calls;
@@ -183,7 +182,7 @@ describe("runDeferredReview — runs reviewers with full diff when deferred", ()
     const reviewer = makeReviewer("semgrep", true);
     const registry = makeRegistry([reviewer]);
 
-    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig("deferred"), registry, FAKE_REF);
+    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF);
 
     expect(result).toBeDefined();
     expect(result!.anyFailed).toBe(false);
@@ -196,7 +195,7 @@ describe("runDeferredReview — runs reviewers with full diff when deferred", ()
     const reviewer = makeReviewer("semgrep", false);
     const registry = makeRegistry([reviewer]);
 
-    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig("deferred"), registry, FAKE_REF);
+    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF);
 
     expect(result).toBeDefined();
     expect(result!.anyFailed).toBe(true);
@@ -207,7 +206,7 @@ describe("runDeferredReview — runs reviewers with full diff when deferred", ()
     const reviewer = makeReviewer("semgrep");
     const registry = makeRegistry([reviewer]);
 
-    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig("deferred"), registry, FAKE_REF);
+    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF);
 
     expect(result!.runStartRef).toBe(FAKE_REF);
   });
@@ -217,7 +216,7 @@ describe("runDeferredReview — runs reviewers with full diff when deferred", ()
     const reviewer2 = makeReviewer("license-check", true);
     const registry = makeRegistry([reviewer1, reviewer2]);
 
-    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig("deferred"), registry, FAKE_REF);
+    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF);
 
     // Both reviewers should run even though first one failed
     expect(reviewer1.check).toHaveBeenCalledTimes(1);
@@ -246,9 +245,7 @@ describe("runDeferredReview — plugin failures do NOT fail the run", () => {
     const registry = makeRegistry([failingReviewer]);
 
     // Must not throw
-    await expect(
-      runDeferredReview("/tmp/workdir", makeReviewConfig("deferred"), registry, FAKE_REF),
-    ).resolves.toBeDefined();
+    await expect(runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF)).resolves.toBeDefined();
   });
 
   test("records error in reviewer result when reviewer throws", async () => {
@@ -261,7 +258,7 @@ describe("runDeferredReview — plugin failures do NOT fail the run", () => {
     };
     const registry = makeRegistry([failingReviewer]);
 
-    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig("deferred"), registry, FAKE_REF);
+    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF);
 
     expect(result!.anyFailed).toBe(true);
     expect(result!.reviewerResults[0].passed).toBe(false);
@@ -279,7 +276,7 @@ describe("runDeferredReview — plugin failures do NOT fail the run", () => {
     const passingReviewer = makeReviewer("passing", true);
     const registry = makeRegistry([failingReviewer, passingReviewer]);
 
-    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig("deferred"), registry, FAKE_REF);
+    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF);
 
     expect(passingReviewer.check).toHaveBeenCalledTimes(1);
     expect(result!.reviewerResults).toHaveLength(2);
@@ -294,7 +291,7 @@ describe("SequentialExecutionResult — includes optional deferredReview field",
   test("SequentialExecutionResult type accepts deferredReview field", () => {
     // Type-level check: if this compiles, the type has the field
     const result: import("@/execution/executor-types").SequentialExecutionResult = {
-      prd: { feature: "test", userStories: [] } as unknown as import("@/prd/types").PRD,
+      prd: makePRD({ feature: "test", userStories: [] }),
       iterations: 1,
       storiesCompleted: 1,
       totalCost: 0,
@@ -314,7 +311,7 @@ describe("SequentialExecutionResult — includes optional deferredReview field",
 
   test("SequentialExecutionResult allows deferredReview to be undefined", () => {
     const result: import("@/execution/executor-types").SequentialExecutionResult = {
-      prd: { feature: "test", userStories: [] } as unknown as import("@/prd/types").PRD,
+      prd: makePRD({ feature: "test", userStories: [] }),
       iterations: 1,
       storiesCompleted: 1,
       totalCost: 0,

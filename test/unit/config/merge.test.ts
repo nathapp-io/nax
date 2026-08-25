@@ -483,21 +483,32 @@ describe("mergePackageConfig — project field (US-001)", () => {
 // AC-59: per-package context.v2.stages budget overrides
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * `mergePackageConfig`'s `packageOverride` param is a shallow `Partial<NaxConfig>` —
+ * a present `context` key must be a COMPLETE `ContextConfig`, not a deep partial.
+ * These tests only care about `context.v2.stages`, so build a full `ContextConfig`
+ * by spreading it (and `v2`) off a real `NaxConfig` rather than writing the whole
+ * shape out or asserting past the gap.
+ */
+function makeContextOverride(base: NaxConfig, stages: NaxConfig["context"]["v2"]["stages"]): NaxConfig["context"] {
+  return { ...base.context, v2: { ...base.context.v2, stages } };
+}
+
 describe("mergePackageConfig — AC-59 context.v2.stages budget overrides", () => {
   test("root context.v2.stages preserved when no override; package override sets a stage budget; does not mutate", () => {
     const root = makeRoot();
     expect(
-      mergePackageConfig(root, { quality: { scopeTestThreshold: 99 } } as Partial<NaxConfig>).context.v2.stages,
+      mergePackageConfig(root, { quality: { ...root.quality, scopeTestThreshold: 99 } }).context.v2.stages,
     ).toEqual({});
     const result = mergePackageConfig(root, {
-      context: { v2: { stages: { execution: { budgetTokens: 15_000 } } } } as unknown as Partial<NaxConfig["context"]>,
-    } as Partial<NaxConfig>);
+      context: makeContextOverride(root, { execution: { budgetTokens: 15_000 } }),
+    });
     expect(result.context.v2.stages.execution?.budgetTokens).toBe(15_000);
 
     const origStages = root.context.v2.stages;
     mergePackageConfig(root, {
-      context: { v2: { stages: { execution: { budgetTokens: 15_000 } } } } as unknown as Partial<NaxConfig["context"]>,
-    } as Partial<NaxConfig>);
+      context: makeContextOverride(root, { execution: { budgetTokens: 15_000 } }),
+    });
     expect(root.context.v2.stages).toBe(origStages);
   });
 
@@ -507,8 +518,8 @@ describe("mergePackageConfig — AC-59 context.v2.stages budget overrides", () =
       context: { ...makeRoot().context, v2: { ...makeRoot().context.v2, stages: { verify: { budgetTokens: 4_000 } } } },
     };
     const noClobber = mergePackageConfig(rootBase, {
-      context: { v2: { stages: { execution: { budgetTokens: 15_000 } } } } as unknown as Partial<NaxConfig["context"]>,
-    } as Partial<NaxConfig>);
+      context: makeContextOverride(rootBase, { execution: { budgetTokens: 15_000 } }),
+    });
     expect(noClobber.context.v2.stages.execution?.budgetTokens).toBe(15_000);
     expect(noClobber.context.v2.stages.verify?.budgetTokens).toBe(4_000);
 
@@ -520,8 +531,8 @@ describe("mergePackageConfig — AC-59 context.v2.stages budget overrides", () =
       },
     };
     const overrideWins = mergePackageConfig(rootWithExec, {
-      context: { v2: { stages: { execution: { budgetTokens: 20_000 } } } } as unknown as Partial<NaxConfig["context"]>,
-    } as Partial<NaxConfig>);
+      context: makeContextOverride(rootWithExec, { execution: { budgetTokens: 20_000 } }),
+    });
     expect(overrideWins.context.v2.stages.execution?.budgetTokens).toBe(20_000);
   });
 });

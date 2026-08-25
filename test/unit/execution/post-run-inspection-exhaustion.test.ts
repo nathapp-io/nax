@@ -9,7 +9,6 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _postRunDeps, applyPostRunInspection, decideStageAction } from "@/execution";
-import type { Finding } from "@/findings/types";
 import { fullSuiteGateOp, implementerOp, testWriterOp, verifierOp } from "@/operations";
 import { makeTestContext } from "@test/helpers";
 import {
@@ -362,12 +361,17 @@ describe("advisory-only rectification exhaustion → continue", () => {
     const ctx = makeTestContext();
     // No `severity` field: must default to "error" (blocking) so a real defect is
     // never silently swallowed by the advisory-only escape.
+    // Deliberately missing `severity` — makePlanResult's `overrides` bag is
+    // untyped (Record<string, unknown>), so this doesn't need a cast to reach
+    // decideStageAction; the point of the test is that the real read site
+    // (post-run.ts) treats an absent severity as "error", not what TS's
+    // static `Finding` type says is possible.
     const noSeverityFinding = {
       source: "plugin",
       message: "unknown-severity finding",
       category: "unknown",
       fixTarget: "source",
-    } as unknown as Finding;
+    };
     const planResult = makePlanResult({
       success: false,
       rectificationExhausted: true,

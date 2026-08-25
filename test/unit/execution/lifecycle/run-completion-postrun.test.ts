@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "@/config";
 import {
+  type DeferredRegressionOptions,
   type DeferredRegressionResult,
   type RunCompletionOptions,
   _runCompletionDeps,
@@ -494,9 +495,12 @@ describe("handleRunCompletion - AC7: deferred regression is not smart-skipped", 
   // ─────────────────────────────────────────────────────────────────────────────
 
   test("AC7: passes runtime to runDeferredRegression and does not pass agentManager", async () => {
-    let capturedArgs: Record<string, unknown> | undefined;
+    // Intersected with Record<string, unknown>: AC7 also probes for an
+    // `agentManager` key that DeferredRegressionOptions does not declare, to
+    // assert the (legacy) field is never passed.
+    let capturedArgs: (DeferredRegressionOptions & Record<string, unknown>) | undefined;
     _runCompletionDeps.runDeferredRegression = mock(async (opts) => {
-      capturedArgs = opts as unknown as Record<string, unknown>;
+      capturedArgs = opts;
       return {
         success: true,
         failedTests: 0,

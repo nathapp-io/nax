@@ -46,18 +46,27 @@ function makeResolvedProject(projectDir: string): ResolvedProject {
   };
 }
 
-function makeObservation(kind: Observation["kind"], runId = "run-001", projectKey = "test-proj"): Observation {
-  return {
-    schemaVersion: 3,
+/** `Observation` is a union keyed on `kind` with a per-variant `payload`; these tests use only these three. */
+type TestKind = "verdict" | "review-finding" | "escalation";
+
+function makeObservation(kind: TestKind, runId = "run-001", projectKey = "test-proj"): Observation {
+  const base = {
+    schemaVersion: 3 as const,
     projectKey,
     runId,
     featureId: "feat-1",
     storyId: "US-001",
     stage: "review",
     ts: "2026-01-01T00:00:00.000Z",
-    kind,
-    payload: {},
-  } as unknown as Observation;
+  };
+  switch (kind) {
+    case "verdict":
+      return { ...base, kind, payload: { status: "completed", cost: 0, tokens: 0 } };
+    case "review-finding":
+      return { ...base, kind, payload: { ruleId: "rule-1", severity: "warning", file: "a.ts", line: 1, message: "m" } };
+    case "escalation":
+      return { ...base, kind, payload: { from: "fast", to: "balanced" } };
+  }
 }
 
 function writeObservations(runDir: string, observations: Observation[]): void {

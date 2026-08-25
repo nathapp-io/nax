@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Reports the `as unknown as` casts in test/ grouped by the buckets in
- * docs/plans/HANDOFF-1514-cast-sweep.md, so the handoff's work queue can be
+ * docs/plans/archive/HANDOFF-1514-cast-sweep.md, so the handoff's work queue can be
  * regenerated instead of going stale (#1514 phase 1a).
  *
  * Mirrors check-test-as-unknown-as.ts's scan exactly — per match, allow-marked

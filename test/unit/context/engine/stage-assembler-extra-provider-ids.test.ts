@@ -3,32 +3,31 @@ import { ContextV2ConfigSchema } from "@/config/schemas";
 import { _stageAssemblerDeps, assembleForStage } from "@/context/engine/stage-assembler";
 import type { ContextBundle, ContextRequest } from "@/context/engine/types";
 import type { PipelineContext } from "@/pipeline/types";
-import { makeContextBundle } from "@test/helpers";
+import { makeContextBundle, makeNaxConfig, makePRD, makeStory, makeTestContext } from "@test/helpers";
 
 function makeCtx(extraProviderIds?: string[]): PipelineContext {
-  return {
-    config: {
-      context: {
-        v2: {
-          enabled: true,
-          minScore: 0.1,
-          deterministic: false,
-          pluginProviders: [],
-          pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5 },
-          stages: extraProviderIds ? { review: { extraProviderIds } } : {},
-        },
+  const config = makeNaxConfig({
+    context: {
+      v2: {
+        enabled: true,
+        minScore: 0.1,
+        deterministic: false,
+        pluginProviders: [],
+        pull: { enabled: false, allowedTools: [], maxCallsPerSession: 5 },
+        stages: extraProviderIds ? { review: { extraProviderIds } } : {},
       },
-      autoMode: { defaultAgent: "claude" },
     },
-    rootConfig: { autoMode: { defaultAgent: "claude" } },
-    prd: { feature: "test-feature", userStories: [] },
-    story: { id: "US-001" },
+  });
+  const story = makeStory({ id: "US-001" });
+  return makeTestContext({
+    config,
+    rootConfig: config,
+    prd: makePRD({ feature: "test-feature", userStories: [] }),
+    story,
     stories: [],
-    routing: {},
     projectDir: undefined,
     workdir: "/repo",
-    hooks: {},
-  } as unknown as PipelineContext;
+  });
 }
 
 function makeMockOrchestrator() {

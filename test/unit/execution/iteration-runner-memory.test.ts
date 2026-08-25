@@ -1,26 +1,35 @@
 import { describe, expect, test } from "bun:test";
 import { releaseHeavyPipelineContext } from "@/execution";
-import type { PipelineContext } from "@/pipeline/types";
+import {
+  makeAgentResult,
+  makeContextBundle,
+  makeFinding,
+  makeIteration,
+  makePRD,
+  makeStory,
+  makeTestContext,
+} from "@test/helpers";
 
 describe("releaseHeavyPipelineContext", () => {
   test("drops per-story payloads without clearing durable execution state", () => {
     const largeText = "payload".repeat(1_000);
-    const ctx = {
-      prd: { feature: "memory-fix" },
-      story: { id: "US-001" },
-      agentResult: { output: largeText },
+    const initialStory = makeStory({ id: "US-001" });
+    const ctx = makeTestContext({
+      prd: makePRD({ feature: "memory-fix", userStories: [initialStory] }),
+      story: initialStory,
+      agentResult: makeAgentResult({ output: largeText }),
       prompt: largeText,
       contextMarkdown: largeText,
       featureContextMarkdown: largeText,
-      builtContext: { markdown: largeText },
-      contextBundle: { pushMarkdown: largeText },
-      constitution: { content: largeText },
+      builtContext: { elements: [], totalTokens: 0, truncated: false, summary: largeText },
+      contextBundle: makeContextBundle({ pushMarkdown: largeText }),
+      constitution: { content: largeText, tokens: 0, truncated: false },
       acceptanceFailures: { failedACs: [], findings: [], testOutput: largeText },
-      autofixPriorIterations: [{ feedback: largeText }],
-      reviewFindings: [{ message: largeText }],
-      selfVerification: { evidence: largeText },
-      tddIsolations: { implementer: { output: largeText } },
-    } as unknown as PipelineContext;
+      autofixPriorIterations: [makeIteration({ findingsBefore: [makeFinding({ message: largeText })] })],
+      reviewFindings: [makeFinding({ message: largeText })],
+      selfVerification: { lint: "pass", typecheck: "pass", preExistingFailures: [], rawMarker: largeText },
+      tddIsolations: { implementer: { passed: true, violations: [] } },
+    });
     const prd = ctx.prd;
     const story = ctx.story;
 

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { Mock } from "bun:test";
 import { type RunnerCompletionOptions, runCompletionPhase } from "@/execution";
 import type { MutationStorySummary } from "@/runtime";
-import { makeDispatchContext, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import { makeDispatchContext, makeMockRuntime, makeNaxConfig, makePRD, makePluginRegistry } from "@test/helpers";
 
 const survivor = {
   file: "src/survivor.ts",
@@ -51,7 +51,7 @@ describe("runCompletionPhase mutation survivor reporting", () => {
       startTime: Date.now(),
       formatterMode,
       headless: true,
-      prd: { userStories: [] },
+      prd: makePRD({ userStories: [] }),
       allStoryMetrics: [],
       totalCost: 0,
       storiesCompleted: 0,
@@ -65,12 +65,12 @@ describe("runCompletionPhase mutation survivor reporting", () => {
         getPostRunStatus: () => undefined,
         writeFeatureStatus: async () => {},
       },
-      pluginRegistry: { getAll: () => [], get: () => undefined },
+      pluginRegistry: makePluginRegistry(),
       prdPath: "/tmp/test/prd.json",
       // ADR-020 §D3: run completion closes the run's sessions unconditionally,
       // so the dispatch fields must be present and must come from this runtime.
       ...makeDispatchContext({ runtime }),
-    } as unknown as RunnerCompletionOptions;
+    };
   }
 
   test("US-004 AC11: prints survivors in headless normal mode", async () => {
