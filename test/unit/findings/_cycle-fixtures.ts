@@ -96,7 +96,11 @@ export type CallOpHandler = (call: CallOpCall) => unknown;
 // and the handler's `{ opName }` would infer as `any`.
 export function makeCallOpMock(handler: CallOpHandler): CallOpFn & ReturnType<typeof mock>;
 export function makeCallOpMock(returnValue?: unknown): CallOpFn & ReturnType<typeof mock>;
-export function makeCallOpMock(result: unknown = {}): CallOpFn & ReturnType<typeof mock> {
+// The implementation signature is deliberately unannotated. `CallOpFn` is
+// generic, so no concrete function value can satisfy it and an annotated
+// implementation had to assert its way to the return type. The overloads above
+// are the public contract; the body returns the bun mock it actually built.
+export function makeCallOpMock(result: unknown = {}) {
   const fn =
     typeof result === "function"
       ? mock(async (ctx: FixCycleContext, op: { name: string }, input: unknown) =>
@@ -107,7 +111,7 @@ export function makeCallOpMock(result: unknown = {}): CallOpFn & ReturnType<type
           }),
         )
       : mock(async () => result);
-  return fn as unknown as CallOpFn & ReturnType<typeof mock>;
+  return fn;
 }
 
 /**

@@ -3,8 +3,14 @@ import type { WebhookInteractionPlugin } from "@/interaction/plugins/webhook";
 
 /**
  * Private surface of `TelegramInteractionPlugin` that
- * `interaction-network-failures.test.ts` drives directly. The cast is contained
- * here once instead of at every site — see #1514 §11 Group A.
+ * `interaction-network-failures.test.ts` drives directly. TypeScript's `private`
+ * is compile-time only and element access (`p["_x"]`) is its sanctioned way
+ * through it, so this live view reaches the real fields with no assertion —
+ * see #1514 §11 Group A for why the reach is contained here once. *
+ * `biome.json` turns off `complexity/useLiteralKeys` for `test/helpers/*-internals.ts`:
+ * the rule wants `p.field`, but element access is precisely what makes a
+ * `private` member reachable, so its "fix" would not compile. Biome marks that
+ * fix unsafe for the same reason.
  */
 export type TelegramInternals = {
   getUpdates: () => Promise<unknown[]>;
@@ -12,13 +18,23 @@ export type TelegramInternals = {
 };
 
 export function telegramInternals(p: TelegramInteractionPlugin): TelegramInternals {
-  return p as unknown as TelegramInternals;
+  return {
+    get getUpdates() {
+      return p["getUpdates"];
+    },
+    get backoffMs() {
+      return p["backoffMs"];
+    },
+    set backoffMs(ms) {
+      p["backoffMs"] = ms;
+    },
+  };
 }
 
 /**
  * Private surface of `WebhookInteractionPlugin` that
- * `interaction-network-failures.test.ts` drives directly. The cast is contained
- * here once instead of at every site — see #1514 §11 Group A.
+ * `interaction-network-failures.test.ts` drives directly. Same live-view shape
+ * as {@link telegramInternals} — element access, no assertion.
  */
 export type WebhookInternals = {
   handleRequest: (req: Request) => Promise<Response>;
@@ -32,5 +48,33 @@ export type WebhookInternals = {
 };
 
 export function webhookInternals(p: WebhookInteractionPlugin): WebhookInternals {
-  return p as unknown as WebhookInternals;
+  return {
+    get handleRequest() {
+      return p["handleRequest"];
+    },
+    get startServer() {
+      return p["startServer"];
+    },
+    get server() {
+      return p["server"];
+    },
+    get serverStartPromise() {
+      return p["serverStartPromise"];
+    },
+    set serverStartPromise(promise) {
+      p["serverStartPromise"] = promise;
+    },
+    get pendingResponses() {
+      return p["pendingResponses"];
+    },
+    get receiveCallbacks() {
+      return p["receiveCallbacks"];
+    },
+    get receiveTimers() {
+      return p["receiveTimers"];
+    },
+    get registeredRequestIds() {
+      return p["registeredRequestIds"];
+    },
+  };
 }

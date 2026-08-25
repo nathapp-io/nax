@@ -5,11 +5,11 @@
     "ratchetAllow": 105,
     "absentValue": 17,
     "anyType": 1860,
-    "looseCast": 1878,
+    "looseCast": 1875,
     "asNever": 608,
     "nonNullAssert": 820
   },
-  "updatedAt": "2026-08-25T07:50:12.183Z",
+  "updatedAt": "2026-08-25T07:58:27.097Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -33,7 +33,7 @@
       "ratchetAllow": 1
     },
     "test/helpers/spawn.ts": {
-      "looseCast": 4
+      "looseCast": 3
     },
     "test/helpers/mock-agent-manager.ts": {
       "looseCast": 1,
@@ -53,7 +53,7 @@
       "looseCast": 1
     },
     "test/helpers/mock-nax-config.ts": {
-      "looseCast": 8
+      "looseCast": 6
     },
     "test/helpers/call-op.ts": {
       "ratchetAllow": 1

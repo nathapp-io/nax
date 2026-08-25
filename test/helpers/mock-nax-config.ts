@@ -18,10 +18,21 @@ function isEmptyObject(val: unknown): boolean {
   return typeof val === "object" && val !== null && !Array.isArray(val) && Object.keys(val).length === 0;
 }
 
-function deepMerge<T>(base: T, override: DeepPartial<T>): T {
+/**
+ * The public signature is the fully typed one; the implementation signature
+ * below it is deliberately `unknown`-based. A generic body cannot narrow
+ * `DeepPartial<T>` to `T` from `Array.isArray(base)` — TS does not relate a
+ * generic's parameters that way — so every branch that returns the override
+ * used to need an assertion. Overloading moves that boundary to the language's
+ * own mechanism: callers still see `<T>(base: T, override: DeepPartial<T>): T`,
+ * while the body works in `unknown` and needs no cast to return.
+ */
+function deepMerge<T>(base: T, override: DeepPartial<T>): T;
+function deepMerge(base: unknown, override: unknown): unknown {
   if (override === undefined || override === null) return base;
-  if (typeof base !== "object" || base === null) return override as T;
-  if (Array.isArray(base)) return (override as unknown as T) ?? base;
+  if (typeof base !== "object" || base === null) return override;
+  // An array override replaces the base wholesale rather than merging elementwise.
+  if (Array.isArray(base)) return override;
   const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
   for (const [k, v] of Object.entries(override as Record<string, unknown>)) {
     const baseVal = (base as Record<string, unknown>)[k];
@@ -35,7 +46,7 @@ function deepMerge<T>(base: T, override: DeepPartial<T>): T {
         ? deepMerge(baseVal, v as DeepPartial<typeof baseVal>)
         : v;
   }
-  return out as T;
+  return out;
 }
 
 export function makeNaxConfig(overrides: DeepPartial<NaxConfig> = {}): NaxConfig {

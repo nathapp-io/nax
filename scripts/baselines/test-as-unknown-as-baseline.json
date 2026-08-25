@@ -1,11 +1,5 @@
 {
-  "count": 9,
-  "updatedAt": "2026-08-25T07:50:12.046Z",
-  "byFile": {
-    "test/helpers/interaction-internals.ts": 2,
-    "test/helpers/spawn.ts": 4,
-    "test/helpers/mock-nax-config.ts": 1,
-    "test/helpers/agent-manager-internals.ts": 1,
-    "test/unit/findings/_cycle-fixtures.ts": 1
-  }
+  "count": 0,
+  "updatedAt": "2026-08-25T07:58:26.960Z",
+  "byFile": {}
 }
