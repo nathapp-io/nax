@@ -1,15 +1,15 @@
 {
   "counts": {
-    "asAny": 1210,
+    "asAny": 1179,
     "tsSuppress": 40,
     "ratchetAllow": 105,
     "absentValue": 17,
-    "anyType": 1569,
+    "anyType": 1538,
     "looseCast": 1875,
     "asNever": 608,
     "nonNullAssert": 819
   },
-  "updatedAt": "2026-08-25T10:54:07.867Z",
+  "updatedAt": "2026-08-25T11:02:32.657Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -1298,8 +1298,6 @@
       "nonNullAssert": 1
     },
     "test/unit/operations/implementer.test.ts": {
-      "asAny": 31,
-      "anyType": 31,
       "nonNullAssert": 9
     },
     "test/unit/operations/adversarial-review-requote.test.ts": {
