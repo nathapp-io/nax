@@ -7,7 +7,7 @@ were written and are not edited afterwards.** For the live state, read §0 and t
 
 ---
 
-## 0. Current state — measured 2026-08-25 on `chore/1514-tail-batch5-drain` @ `50a2e6817`
+## 0. Current state — measured 2026-08-25 on `main` @ `042346102`
 
 Every number re-measured on a clean tree, not carried forward from a section below.
 
@@ -27,14 +27,19 @@ Every number re-measured on a clean tree, not carried forward from a section bel
 
 Against the original #1514 start: casts **815 → 101 (−88%)**, typecheck **2009 → 11 (−99.5%)**.
 
-All 25 gates green, full suite green (14138 unit / 1174 integration / 38 ui, 0 fail), every
+All 25 gates green, full suite green (14139 unit / 1174 integration / 38 ui, 0 fail), every
 counter sitting **at** its baseline — no headroom left in the ratchets. (The slack has now
 re-opened and been reclaimed seven times on this issue. **Re-check it before every hand-off** —
 it re-opens every time a drain commit lowers a counter without re-baselining.)
 
-**Open as PR #1703**, off `main` @ `9908767a7` (batch 4, PR #1701): batch 5 (§43) plus the
-survivor round (§44), 136 commits. The two `src/` contradictions §44 found are filed as
-**#1702** and are deliberately not fixed in that PR.
+**Merged.** PR #1703 landed on `main` as `042346102` — batch 5 (§43) plus the survivor round
+(§44). Every number above was re-measured on the merged tree, not carried over from the branch.
+The two `src/` contradictions §44 found are filed as **#1702**, still open and deliberately not
+fixed there: the fix for each is "make `AgentAdapter` describe the shipped adapter", which is
+`src/` work, not a fixture edit.
+
+**Nothing is parked locally and no #1514 branch is open.** The next move on this issue is #1702
+or one of the four decisions in §44 — not another drain round.
 
 The residue is **11 errors across 6 files**, and they are not a queue. §44 has the per-row
 ruling: 4 are an accepted `callOp` tier-3 exception, 4 need a decision that changes what a test
@@ -86,11 +91,11 @@ unmeasured. Details and the coverage gate in §34.
 | cluster G, TS2769, TS7024, DispatchContext | ✅ merged — 356 → 303 | #1699 |
 | tail batch 3 + escalation fixes | ✅ merged — 289 → 245 | #1700 |
 | tail batch 4 — fixture-shape family | ✅ merged — 245 → 219 | #1701 |
-| **tail batch 5 — ten groups** | ✅ **done — 219 → 21** (§43) | #1703 (open) |
-| **the 21 survivors, re-ruled** | ✅ **10 drained — 21 → 11** (§44) | #1703 (open) |
-| `AgentAdapter` drift (2 of the last 11) | 🔶 **filed, not fixed** — issue #1702 | — |
+| **tail batch 5 — ten groups** | ✅ merged — 219 → 21 (§43) | #1703 |
+| **the 21 survivors, re-ruled** | ✅ merged — 10 drained, 21 → 11 (§44) | #1703 |
+| `AgentAdapter` drift (2 of the last 11) | 🔶 **filed, open** — issue #1702 | — |
 
-**Branches:** merged through #1701 (batch 4). `chore/1514-tail-batch5-drain` is parked locally with batch 5 and the survivor round on it — unpushed, no PR.
+**Branches:** all merged through #1703; nothing is parked locally.
 - `chore/1514-dead-fixture-keys` — merged as #1686 (`e915b47e1`); branch gone.
 - `chore/1514-implicit-any-params` — merged as #1687; branch gone.
 - `chore/1514-guard-before-delegation` / `chore/1514-tail-recipes` — merged as #1697
@@ -2663,5 +2668,28 @@ reads — not merely a shape a type reads — run `bun run test:coverage`, not j
 this is the first row in 2000 that needed it.
 
 One point of coverage-ratchet slack (101 below floor against a baseline of 103) was left
-alone: `main` measures 102, so the slack pre-dates this branch, and lowering a coverage
-baseline does not belong in a typecheck drain.
+alone: `main` measured 102 at the time, so the slack pre-dates this branch, and lowering a
+coverage baseline does not belong in a typecheck drain.
+
+### The second failure — the ratchet fired on the fix for the first
+
+The coverage fix broke CI again, on `check:test-escape-hatches`: `looseCast` 1910 → 1912, both
+from the new guard test — `(rogue as { status: string })` to set an out-of-union status, and
+`(err as NaxError)` to read `.code`. A coverage gain paid for in casts is exactly the trade
+proposal §6 forbids, and the ratchet caught it in CI rather than in review.
+
+It reached CI because the loop was run partially: `test:coverage` after adding the test, but
+not `check:all`. **The six steps are not a menu.** Two CI failures on this branch, and each was
+a gate that exists precisely for that failure doing its job on work that had skipped it.
+
+Both casts were avoidable outright:
+
+- `Object.assign(makeResult("SUCCESS"), { status: "FAILURE" })` — the widened `status` comes
+  from the source literal's inferred type, so an out-of-union value is expressible with no `as`
+  at all. Worth knowing generally: this is how to construct an impossible fixture state for an
+  error-path test without spending a counter.
+- `err instanceof NaxError` narrows in place of the second cast, and the narrowed branch could
+  then pin the error's `context.stage` as well — a stronger assertion than the cast version,
+  for free.
+
+`looseCast` back to 1910, every counter at baseline, CI green, PR merged as `042346102`.
