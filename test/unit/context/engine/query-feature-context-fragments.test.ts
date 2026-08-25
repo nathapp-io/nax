@@ -20,12 +20,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { contextToolRuntimeConfigSelector } from "@/config";
 import type { ContextToolRuntimeConfig } from "@/config/selectors";
 import { PullToolBudget, createRunCallCounter, handleQueryFeatureContext } from "@/context/engine";
 import { _featureContextV2Deps } from "@/context/engine";
 import { renderFragmentBody, writeFragment } from "@/context/fragments";
 import type { UserStory } from "@/prd";
-import { cleanupTempDir, makePRD, makeStory, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 const FEATURE_ID = "feat-pull";
 const FRAGMENT_MAX_TOKENS = 400;
@@ -50,13 +51,15 @@ afterEach(() => {
 });
 
 function fragmentsConfig(): ContextToolRuntimeConfig {
-  return {
-    context: {
-      v2: {
-        fragments: { enabled: true, decay: 0.6, maxTokens: FRAGMENT_MAX_TOKENS, extractor: "deterministic" },
+  return contextToolRuntimeConfigSelector.select(
+    makeNaxConfig({
+      context: {
+        v2: {
+          fragments: { enabled: true, decay: 0.6, maxTokens: FRAGMENT_MAX_TOKENS, extractor: "deterministic" },
+        },
       },
-    },
-  } as unknown as ContextToolRuntimeConfig;
+    }),
+  );
 }
 
 function storyWith(id: string, dependencies: readonly string[] = []): UserStory {

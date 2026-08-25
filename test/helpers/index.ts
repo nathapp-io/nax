@@ -12,8 +12,10 @@ export { makeAgentAdapter } from "./mock-agent-adapter";
 export { createMockAgentManager, makeMockAgentManager } from "./mock-agent-manager";
 export { makeLogger, type LogCall, type MockLogger } from "./mock-logger";
 export {
+  makeAdversarialReviewConfig,
   makeConfigSlice,
   makeNaxConfig,
+  makeSemanticReviewConfig,
   makeSparseNaxConfig,
   makeStorySizeGateConfig,
   type DeepPartial,

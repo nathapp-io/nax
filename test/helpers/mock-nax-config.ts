@@ -1,6 +1,7 @@
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
 import type { StorySizeGateConfig } from "@/config/runtime-types";
+import type { AdversarialReviewConfig, SemanticReviewConfig } from "@/review/types";
 
 /**
  * `NonNullable` before the `extends object` test: for an OPTIONAL nested config
@@ -81,5 +82,27 @@ export function makeConfigSlice<K extends keyof NaxConfig>(
 export function makeStorySizeGateConfig(overrides: DeepPartial<StorySizeGateConfig> = {}): StorySizeGateConfig {
   const slice = makeNaxConfig({ precheck: { storySizeGate: overrides } }).precheck?.storySizeGate;
   if (slice === undefined) throw new Error("DEFAULT_CONFIG.precheck.storySizeGate is missing");
+  return slice;
+}
+
+/**
+ * `review.adversarial` and `review.semantic` are optional on `ReviewConfig`
+ * (both are populated unconditionally by `DEFAULT_CONFIG`, but the schema
+ * leaves the field optional so a caller that disables the check entirely can
+ * omit it), so the generic slice helper cannot reach through them without
+ * asserting. The throw states that invariant instead of hiding it behind a
+ * non-null assertion.
+ */
+export function makeAdversarialReviewConfig(
+  overrides: DeepPartial<AdversarialReviewConfig> = {},
+): AdversarialReviewConfig {
+  const slice = makeNaxConfig({ review: { adversarial: overrides } }).review.adversarial;
+  if (slice === undefined) throw new Error("DEFAULT_CONFIG.review.adversarial is missing");
+  return slice;
+}
+
+export function makeSemanticReviewConfig(overrides: DeepPartial<SemanticReviewConfig> = {}): SemanticReviewConfig {
+  const slice = makeNaxConfig({ review: { semantic: overrides } }).review.semantic;
+  if (slice === undefined) throw new Error("DEFAULT_CONFIG.review.semantic is missing");
   return slice;
 }

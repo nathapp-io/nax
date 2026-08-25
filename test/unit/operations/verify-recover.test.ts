@@ -2,13 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { _runPostParseForTest } from "@/operations/call";
 import type { BuildContext, VerifyContext } from "@/operations/types";
-import { withTempDir } from "@test/helpers";
+import { makeTestRuntime, withTempDir } from "@test/helpers";
 
-// Minimal build context — verify/recover hooks under test don't use packageView/config.
-const FAKE_CTX = {
-  packageView: null,
+// Minimal build context — verify/recover hooks under test don't read `config`
+// (typed `unknown` here), but `packageView` is a real interface, so it comes
+// from a real (lightweight) runtime rather than a null stand-in.
+const FAKE_CTX: BuildContext<unknown> = {
+  packageView: makeTestRuntime().packages.repo(),
   config: null,
-} as unknown as BuildContext<unknown>;
+};
 
 describe("runPostParse — no hooks", () => {
   test("op without verify or recover returns parse output unchanged", async () => {

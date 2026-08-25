@@ -253,3 +253,56 @@ was broken, not that the debt was paid.
 
 Gates: typecheck 0 (all three projects), `check:all` 24/24, suite green (unit / 1173
 integration / 38 ui, 0 fail). Casts **101 → 91**; every other counter flat.
+
+### 8.2 Batch 1 delegated — two clusters, 91 → 57 (2026-08-25)
+
+Two agents on disjoint file sets, working from `HANDOFF-cast-drain-batch1.md`, neither
+committing or updating baselines. 40 sites drained across 23 files.
+
+**Cluster 1 — typed-mock tuples (6 sites, 2 files).** `timeoutRetryMock` and `runPlanMock`
+were untyped `mock(() => …)`, so every `.mock.calls[0]` read needed a hand-written tuple cast.
+Typing the mocks at the real signatures (`TimeoutRetryInput`, `Parameters<DebateRunner["runPlan"]>`)
+made the tuples infer and the casts fall out. **The fix was at the mock, not at the read** —
+the brief said so and it held.
+
+**Cluster 2 — incomplete fixture literals (29 sites, 21 files).** Mostly shape (a): a correct
+factory existed and the call site routed around it (`makeTestContext`, `makePRD`, `makeStory`,
+`makeNaxConfig`, the config selectors). Two new factories were added to
+`test/helpers/mock-nax-config.ts` — `makeAdversarialReviewConfig`, `makeSemanticReviewConfig` —
+built once because three files needed the same literal, per the brief's "propose a factory
+rather than completing it five times".
+
+Three sites are worth naming because the cast was load-bearing on nothing:
+`post-run-inspection-exhaustion.test.ts:370` flowed through an untyped overrides bag;
+`machine-invariants.test.ts:289` only needed the literal hoisted to a variable (TS
+excess-property-checks fresh literals, not variables); `merge.test.ts` ×4 needed a *complete*
+`context` because the signature is a shallow `Partial<NaxConfig>`, not a deep one.
+
+### The gate the delegates were told not to run is the one that caught the breach
+
+Both agents ran typecheck and their own tests, and both were green. `check:all` was not — a
+cluster-2 edit pushed `curator.test.ts` to **809 lines against the 800 hard limit**, and four
+files needed formatting. Compacted to 799 (typecheck 0, 23 tests pass) and `lint:fix` run.
+
+Holding `check:all` and the full suite back bought parallel agents on one worktree, and the
+cost was finding the breach at integration instead of at the edit. **`lint` and
+`check:file-sizes` take seconds and belong in the delegate loop; only the six-minute chain and
+the full suite are worth withholding.** Fixed in the next brief.
+
+### Escalation — `AgentFallbackHop.costUsd` is required but read defensively
+
+`test/unit/metrics/fallback-aggregates.test.ts:146` omits `costUsd` to simulate a record
+deserialized from disk from before the field existed. `src/metrics/types.ts:120` declares
+`costUsd: number` **required**; `src/metrics/aggregator.ts:237` reads `h.costUsd ?? 0`.
+
+This is the mirror image of §6's "a defensive `?.` is not evidence of a tolerated absence" —
+there the schema's `.default()` made the absence unreachable. Here the hops come off persisted
+metrics and are **never zod-parsed**, so the absence is genuinely reachable and the interface
+has drifted from what the code handles. Same family as #1702. `src/` decision, not a fixture
+edit: the cast stays until it is ruled on, and per §6 loosening a field wants an ADR check
+first.
+
+Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14130 / 1136 / 38, 0 fail),
+coverage 101 files below floor against baseline 103 — identical to `main`, no branch effect.
+Casts **91 → 57**; `looseCast` **1888 → 1879** (fell, 36 single casts removed and none added);
+every other counter flat. No counter traded.

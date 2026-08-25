@@ -4,7 +4,7 @@ import type { ClassifyRouteInput } from "@/operations/classify-route";
 import { classifyRouteBatchOp, classifyRouteOp } from "@/operations/classify-route";
 import type { UserStory } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime, opModelResolver } from "@test/helpers";
+import { makeNaxConfig, makeStory, makeTestRuntime, opModelResolver } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -70,16 +70,16 @@ describe("classifyRouteOp shape", () => {
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(routingConfigSelector) };
-    const stories = [
-      {
+    const stories: UserStory[] = [
+      makeStory({
         id: "US-001",
         title: "Add button",
         description: "Add a red button",
         acceptanceCriteria: ["Button exists"],
         tags: [],
-      },
+      }),
     ];
-    expect(opModelResolver(classifyRouteBatchOp)(stories as unknown as UserStory[], ctx)).toBe("powerful");
+    expect(opModelResolver(classifyRouteBatchOp)(stories, ctx)).toBe("powerful");
   });
 });
 

@@ -5,11 +5,11 @@
     "ratchetAllow": 106,
     "absentValue": 17,
     "anyType": 1868,
-    "looseCast": 1888,
+    "looseCast": 1879,
     "asNever": 608,
     "nonNullAssert": 827
   },
-  "updatedAt": "2026-08-25T03:57:47.470Z",
+  "updatedAt": "2026-08-25T04:20:56.298Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -1369,7 +1369,7 @@
       "looseCast": 5
     },
     "test/unit/operations/build-hop-callback.test.ts": {
-      "looseCast": 24,
+      "looseCast": 21,
       "asNever": 1
     },
     "test/unit/operations/call.test.ts": {
@@ -1742,9 +1742,6 @@
     "test/unit/agents/agent-stderr-capture.test.ts": {
       "looseCast": 1
     },
-    "test/unit/agents/manager-narrowed.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/agents/agent-manager-reset.test.ts": {
       "asNever": 2
     },
@@ -2083,7 +2080,7 @@
     },
     "test/unit/config/merge.test.ts": {
       "absentValue": 1,
-      "looseCast": 52
+      "looseCast": 47
     },
     "test/unit/config/dotenv.test.ts": {
       "looseCast": 1

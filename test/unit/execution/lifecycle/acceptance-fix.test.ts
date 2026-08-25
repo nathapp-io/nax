@@ -12,7 +12,7 @@ import type { NaxConfig } from "@/config/schema";
 import { _diagnosisDeps, resolveAcceptanceDiagnosis } from "@/execution/lifecycle/acceptance-fix";
 import type { AcceptanceLoopContext } from "@/execution/lifecycle/acceptance-loop";
 import type { AcceptanceDiagnoseInput } from "@/operations/acceptance-diagnose";
-import { makeDiagnoseOutput, makeNaxConfig } from "@test/helpers";
+import { makeDiagnoseOutput, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 function makeConfig(): NaxConfig {
   return makeNaxConfig({
@@ -45,7 +45,7 @@ function makeAcceptanceCtx(withRuntime = false): AcceptanceLoopContext {
   void withRuntime;
   return {
     config: makeConfig(),
-    prd: { userStories: [{ id: "US-001", acceptanceCriteria: [] }] } as unknown as AcceptanceLoopContext["prd"],
+    prd: makePRD({ userStories: [makeStory({ id: "US-001", acceptanceCriteria: [] })] }),
     prdPath: "/tmp/prd.json",
     workdir: "/tmp/workdir",
     featureDir: "/tmp/features/test",

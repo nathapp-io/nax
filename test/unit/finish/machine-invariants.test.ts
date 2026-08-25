@@ -286,7 +286,15 @@ describe("I3 — the fix-attempt cap comes from the loop, never from the model",
             if (phase !== "quality") return { findings: [], gaps: [] };
             // A misbehaving op stashing an extra field claiming "clean" —
             // routeReview must derive the route only from findings/gaps.
-            return { findings: [FINDING], gaps: [], route: "clean" } as unknown as ReviewOutcome;
+            // Assigned to a variable (not returned as a fresh literal) so the
+            // excess `route` property is accepted without widening the
+            // declared ReviewOutcome return type.
+            const outcomeWithExtraRoute: ReviewOutcome & { route: string } = {
+              findings: [FINDING],
+              gaps: [],
+              route: "clean",
+            };
+            return outcomeWithExtraRoute;
           },
         },
       });

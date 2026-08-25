@@ -2,8 +2,9 @@
 import { describe, expect, test } from "bun:test";
 import { adversarialReviewOp } from "@/operations/adversarial-review";
 import type { AdversarialReviewInput } from "@/operations/adversarial-review";
+import { makeAdversarialReviewConfig, makeStory } from "@test/helpers";
 
-const story = { id: "us-001", title: "t", acceptanceCriteria: [] } as unknown as AdversarialReviewInput["story"];
+const story = makeStory({ id: "us-001", title: "t", acceptanceCriteria: [] });
 
 describe("adversarial verify() advisoryFindings", () => {
   test("non-blocking findings are surfaced as advisoryFindings, not normalizedFindings", async () => {
@@ -16,12 +17,13 @@ describe("adversarial verify() advisoryFindings", () => {
       normalizedFindings: [],
       acDropped: [],
     };
-    const input = {
+    const input: AdversarialReviewInput = {
       workdir: process.cwd(),
       story,
       blockingThreshold: "error",
-      adversarialConfig: { recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 } },
-    } as unknown as AdversarialReviewInput;
+      adversarialConfig: makeAdversarialReviewConfig({ recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 } }),
+      mode: "ref",
+    };
     const out = await (adversarialReviewOp as any).verify(parsed, input, {});
     expect(out.normalizedFindings).toHaveLength(0); // none are blocking at threshold "error"
     expect(out.advisoryFindings).toHaveLength(2);

@@ -11,7 +11,13 @@ import { runSemanticDebate } from "@/review/semantic-debate";
 import type { SemanticReviewConfig } from "@/review/types";
 import type { SemanticStory } from "@/review/types";
 import type { NaxRuntime, ReviewAuditDecision } from "@/runtime";
-import { captureAuditDecisions, makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import {
+  captureAuditDecisions,
+  makeDebateRunner,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeNaxConfig,
+} from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -69,9 +75,7 @@ function makeDebateResult(proposalOutput: string): DebateResult {
 }
 
 function makeMockDebateRunner(result: DebateResult): DebateRunner {
-  return {
-    run: async () => result,
-  } as unknown as DebateRunner;
+  return makeDebateRunner({ run: async () => result });
 }
 
 describe("semantic-debate reviewer audit shape (#942 AC-1 / AC-2)", () => {

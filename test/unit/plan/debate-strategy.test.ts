@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import type { DebateRunner, DebateRunnerOptions } from "@/debate";
 import type { DebateStageConfig } from "@/debate/types";
 import type { InteractionBridge } from "@/interaction/bridge-builder";
 import { planInteractiveOp } from "@/operations";
@@ -137,8 +138,14 @@ describe("DebatePlanStrategy", () => {
   });
 
   test("calls createDebateRunner with the plan stage config and runs the debate prompt through runPlan", async () => {
-    const runPlanMock = mock(async () => ({ outcome: "passed", output: JSON.stringify(SAMPLE_PRD) }));
-    const createDebateRunnerMock = mock(() => makeDebateRunner({ runPlan: runPlanMock }));
+    const runPlanMock = mock(
+      async (
+        _taskContext: Parameters<DebateRunner["runPlan"]>[0],
+        _outputFormat: Parameters<DebateRunner["runPlan"]>[1],
+        _opts: Parameters<DebateRunner["runPlan"]>[2],
+      ) => ({ outcome: "passed", output: JSON.stringify(SAMPLE_PRD) }),
+    );
+    const createDebateRunnerMock = mock((_opts: DebateRunnerOptions) => makeDebateRunner({ runPlan: runPlanMock }));
     const ctx = makeContext({
       deps: makeDeps({ createDebateRunner: createDebateRunnerMock }),
     });
@@ -160,17 +167,7 @@ describe("DebatePlanStrategy", () => {
     expect(_debatePlanDeps.buildPlanComposition).toHaveBeenCalledWith(ctx.config.debate.stages.plan);
     expect(createDebateRunnerMock).toHaveBeenCalledTimes(1);
 
-    const [runnerOptions] = createDebateRunnerMock.mock.calls[0] as unknown as [
-      {
-        stage: string;
-        stageConfig: DebateStageConfig;
-        config: unknown;
-        workdir: string;
-        featureName: string;
-        timeoutSeconds: number;
-        sessionManager: unknown;
-      },
-    ];
+    const [runnerOptions] = createDebateRunnerMock.mock.calls[0];
     expect(runnerOptions.stage).toBe("plan");
     expect(runnerOptions.stageConfig).toEqual({
       enabled: true,
@@ -185,11 +182,7 @@ describe("DebatePlanStrategy", () => {
     expect(runnerOptions.sessionManager).toBe(ctx.runtime.sessionManager);
 
     expect(runPlanMock).toHaveBeenCalledTimes(1);
-    const [taskContext, outputFormat, runOpts] = runPlanMock.mock.calls[0] as unknown as [
-      string,
-      string,
-      Record<string, unknown>,
-    ];
+    const [taskContext, outputFormat, runOpts] = runPlanMock.mock.calls[0];
     expect(taskContext).toBe("TASK_CONTEXT");
     expect(outputFormat).toBe("OUTPUT_FORMAT");
     expect(runOpts).toEqual({

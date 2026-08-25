@@ -27,6 +27,7 @@ import {
   makeNaxConfig,
   makePRD,
   makeStory,
+  makeTestContext,
   makeTestRuntime,
 } from "@test/helpers";
 
@@ -50,7 +51,7 @@ const MINIMAL_PATTERNS = {
  */
 function makeNonTddCtx(config: NaxConfig): PipelineContext {
   const story = makeStory();
-  return {
+  return makeTestContext({
     config,
     rootConfig: config,
     story,
@@ -64,9 +65,8 @@ function makeNonTddCtx(config: NaxConfig): PipelineContext {
     },
     workdir: "/tmp/test",
     projectDir: "/tmp/test",
-    hooks: { hooks: {} },
     prompt: "Implement the feature.",
-  } as unknown as PipelineContext;
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
