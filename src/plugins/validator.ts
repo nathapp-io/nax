@@ -202,16 +202,18 @@ function validateAgent(pluginName: string, agent: unknown): boolean {
 
   const agt = agent as Record<string, unknown>;
 
+  // Mirrors AgentAdapter's required members — keep in step with it (#1702).
   const requiredFields = [
     { name: "name", type: "string" },
     { name: "displayName", type: "string" },
     { name: "binary", type: "string" },
     { name: "capabilities", type: "object" },
     { name: "isInstalled", type: "function" },
-    { name: "run", type: "function" },
     { name: "buildCommand", type: "function" },
-    { name: "plan", type: "function" },
-    { name: "decompose", type: "function" },
+    { name: "complete", type: "function" },
+    { name: "openSession", type: "function" },
+    { name: "sendTurn", type: "function" },
+    { name: "closeSession", type: "function" },
   ];
 
   for (const field of requiredFields) {
