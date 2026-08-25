@@ -342,7 +342,7 @@ describe("US-004 AC-2: completion phase reports status=failed and skippedPackage
     const acceptanceCalls = statusWriter.setPostRunPhase.mock.calls.filter((c: unknown[]) => c[0] === "acceptance");
     const failedCall = acceptanceCalls.find((c: unknown[]) => (c[1] as { status?: string })?.status === "failed");
     expect(failedCall).toBeDefined();
-    expect((failedCall?.[1] as { skippedPackages?: string[] }).skippedPackages).toEqual(["pkg-a"]);
+    expect((failedCall?.[1] as { skippedPackages?: string[] } | undefined)?.skippedPackages).toEqual(["pkg-a"]);
   });
 });
 

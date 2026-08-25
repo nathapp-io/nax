@@ -356,7 +356,7 @@ describe("runNonBlockingFix keep vs restore", () => {
       return call?.[2] as Record<string, unknown>;
     });
 
-    expect((data?.regressedKeys as string[]).length).toBe(10);
+    expect((data?.regressedKeys as string[] | undefined)?.length).toBe(10);
     expect(data?.regressedKeyCount).toBe(25);
   });
 

@@ -127,7 +127,7 @@ describe("mutationCheckOp — outcome telemetry is durable (G12)", () => {
     expect(out.survivors.length).toBe(0);
     expect(out.outcomes.killed).toBeGreaterThan(0);
     expect(calls.length).toBe(1);
-    expect((calls[0]?.[2] as { killed: number }).killed).toBe(out.outcomes.killed);
+    expect((calls[0]?.[2] as { killed: number } | undefined)?.killed).toBe(out.outcomes.killed);
   });
 
   test("storyId is the first key in the record's data object", async () => {

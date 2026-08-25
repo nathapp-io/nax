@@ -55,10 +55,7 @@ const TEST_CONFIG = makeNaxConfig({
   },
 });
 
-function makeOptions(opts: {
-  storyIds: string[];
-  quarantineMemo?: QuarantineMemo;
-}): DeferredRegressionOptions {
+function makeOptions(opts: { storyIds: string[]; quarantineMemo?: QuarantineMemo }): DeferredRegressionOptions {
   return {
     config: TEST_CONFIG,
     prd: makePrd(opts.storyIds),

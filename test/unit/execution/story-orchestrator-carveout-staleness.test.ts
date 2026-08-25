@@ -624,9 +624,7 @@ describe("ExecutionPlan.run — completeness guard (configured review must run)"
     // Lite revalidation under mechanical-lintfix scope: revalidates lint-check only, so
     // adversarial-review is excluded (full-suite-rectify now includes it — audit #2 — so a
     // mechanical strategy is the realistic way a configured review is skipped). Exit "resolved".
-    _storyOrchestratorDeps.runFixCycle = (async (cycle: {
-      validate: (c: unknown, o: unknown) => Promise<unknown>;
-    }) => {
+    _storyOrchestratorDeps.runFixCycle = (async (cycle: { validate: (c: unknown, o: unknown) => Promise<unknown> }) => {
       await cycle.validate({}, { mode: "lite", strategiesRun: ["mechanical-lintfix"] });
       return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
     }) as typeof _storyOrchestratorDeps.runFixCycle;

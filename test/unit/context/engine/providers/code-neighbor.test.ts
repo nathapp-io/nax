@@ -79,10 +79,7 @@ function makeRequest(overrides: Partial<ContextRequest> = {}): ContextRequest {
   };
 }
 
-function setupDeps(options: {
-  files?: Record<string, string>;
-  globFiles?: string[];
-}) {
+function setupDeps(options: { files?: Record<string, string>; globFiles?: string[] }) {
   const { files = {}, globFiles = [] } = options;
   _codeNeighborDeps.fileExists = async (path: string) => {
     const rel = path.replace("/repo/", "");
@@ -652,8 +649,9 @@ describe("CodeNeighborProvider — US-002 scope attribution", () => {
     const result = await provider.fetch(makeRequest({ touchedFiles: ["src/foo.ts"] }));
     expect(result.chunks).toHaveLength(1);
     expect(result.chunks[0]?.id).toMatch(/^code-neighbor:[0-9a-f]{8}$/);
-    expect(result.chunks[0]?.scopePaths).toBeDefined();
-    expect(result.chunks[0]?.scopePaths!.length).toBeGreaterThan(0);
+    const scopePaths = result.chunks[0]?.scopePaths;
+    expect(scopePaths).toBeDefined();
+    expect(scopePaths?.length).toBeGreaterThan(0);
   });
 });
 

@@ -147,7 +147,7 @@ describe("adversarial reviewer audit shape (#942 AC-1 / AC-2)", () => {
 
     const decision = decisions[0]!;
     // The one real defect is a finding; the two acks are not.
-    expect((decision.result?.findings as unknown[]).length).toBe(1);
+    expect((decision.result?.findings as unknown[] | undefined)?.length).toBe(1);
     expect(decision.acks).toHaveLength(2);
     expect(decision.acks?.[0]).toEqual({
       priorFinding: "src/foo.ts:10",

@@ -137,48 +137,51 @@ function makeDeps(context: Partial<FinishContext>, ops: FinishOps, auditDir: str
 }
 
 describe("review window and gap notice", () => {
-  test("a commit made by the acceptance loop during a spec-fix round sets phases.spec.reviewSince to " +
-    "that commit's shaBefore, a second commit in the same round does not overwrite it, and the next " +
-    "spec review observes it then loses it on the following call", async () => {
-    await withTempDir(async (dir) => {
-      // 1 spec fix commit that lands empty (no window) + 2 acceptance-loop
-      // fix commits that both land (the first must win).
-      installGitStub([false, true, true]);
-      // step-2 gate passes; the spec-fix I8 reverify fails twice then
-      // passes; gate-zero (inside the quality-gate loop) passes.
-      installAcceptanceGateStub([0, 1, 1, 0, 0]);
-      installQualityGateStub();
+  test(
+    "a commit made by the acceptance loop during a spec-fix round sets phases.spec.reviewSince to " +
+      "that commit's shaBefore, a second commit in the same round does not overwrite it, and the next " +
+      "spec review observes it then loses it on the following call",
+    async () => {
+      await withTempDir(async (dir) => {
+        // 1 spec fix commit that lands empty (no window) + 2 acceptance-loop
+        // fix commits that both land (the first must win).
+        installGitStub([false, true, true]);
+        // step-2 gate passes; the spec-fix I8 reverify fails twice then
+        // passes; gate-zero (inside the quality-gate loop) passes.
+        installAcceptanceGateStub([0, 1, 1, 0, 0]);
+        installQualityGateStub();
 
-      const specObservations: Array<{ reviewSince?: string; reviewGaps?: string[] }> = [];
-      let specReviewCalls = 0;
-      const ops: FinishOps = {
-        review: async (phase, req) => {
-          if (phase !== "spec") return { findings: [], gaps: [] };
-          specReviewCalls += 1;
-          specObservations.push({
-            reviewSince: req.state.phases.spec.reviewSince,
-            reviewGaps: req.state.phases.spec.reviewGaps,
-          });
-          return specReviewCalls === 1 ? { findings: [FINDING], gaps: [] } : { findings: [], gaps: [] };
-        },
-        fix: async () => ({}),
-        openDraftPr: async () => ({ url: "https://forge.example/pr/1" }),
-        promotePr: async () => ({ status: "opened" as const }),
-        escalate: async () => ({}),
-      };
+        const specObservations: Array<{ reviewSince?: string; reviewGaps?: string[] }> = [];
+        let specReviewCalls = 0;
+        const ops: FinishOps = {
+          review: async (phase, req) => {
+            if (phase !== "spec") return { findings: [], gaps: [] };
+            specReviewCalls += 1;
+            specObservations.push({
+              reviewSince: req.state.phases.spec.reviewSince,
+              reviewGaps: req.state.phases.spec.reviewGaps,
+            });
+            return specReviewCalls === 1 ? { findings: [FINDING], gaps: [] } : { findings: [], gaps: [] };
+          },
+          fix: async () => ({}),
+          openDraftPr: async () => ({ url: "https://forge.example/pr/1" }),
+          promotePr: async () => ({ status: "opened" as const }),
+          escalate: async () => ({}),
+        };
 
-      const deps = makeDeps({}, ops, dir);
-      const result = await runFinishMachine(baseState(), deps);
+        const deps = makeDeps({}, ops, dir);
+        const result = await runFinishMachine(baseState(), deps);
 
-      expect(result.status).not.toBe("escalated");
-      expect(specObservations).toHaveLength(2);
-      // First spec review call: nothing has landed since its last verdict yet.
-      expect(specObservations[0]).toEqual({ reviewSince: undefined, reviewGaps: undefined });
-      // Second call: sees the *first* acceptance-loop commit's shaBefore,
-      // not the second one that landed after it in the same round.
-      expect(specObservations[1]).toEqual({ reviewSince: "sha2", reviewGaps: undefined });
-    });
-  });
+        expect(result.status).not.toBe("escalated");
+        expect(specObservations).toHaveLength(2);
+        // First spec review call: nothing has landed since its last verdict yet.
+        expect(specObservations[0]).toEqual({ reviewSince: undefined, reviewGaps: undefined });
+        // Second call: sees the *first* acceptance-loop commit's shaBefore,
+        // not the second one that landed after it in the same round.
+        expect(specObservations[1]).toEqual({ reviewSince: "sha2", reviewGaps: undefined });
+      });
+    },
+  );
 
   test("an incomplete verdict puts its gaps on state, the next review call sees them, and they clear after", async () => {
     await withTempDir(async (dir) => {

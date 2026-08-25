@@ -21,6 +21,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { executeUnified } from "@/execution/unified-executor";
+import { firstCall } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixture helpers
@@ -390,9 +391,8 @@ describe("US-003: batch executor excludes shouldSkipIteration stories from dispa
     await executeUnified(ctx as never, prd as never).catch(() => {});
 
     expect(runParallelBatchMock).toHaveBeenCalledTimes(1);
-    const dispatchedIds = (runParallelBatchMock.mock.calls[0]?.[0] as { stories: Array<{ id: string }> }).stories.map(
-      (s) => s.id,
-    );
+    const [batchArg] = firstCall(runParallelBatchMock, "runParallelBatchMock");
+    const dispatchedIds = (batchArg as { stories: Array<{ id: string }> }).stories.map((s) => s.id);
     expect(dispatchedIds).toContain("US-101");
     expect(dispatchedIds).toContain("US-103");
     expect(dispatchedIds).not.toContain("US-102");

@@ -943,12 +943,7 @@ describe("runPlanPipeline (US-005)", () => {
 
   // Create an agentManager that sequences groundOp (call 0) and planDraftOp (call 1+).
   function makePipelineAgentManager(
-    opts: {
-      draftPrd?: PRD;
-      llmFindings?: unknown[];
-      capturedPrompts?: string[];
-      groundManifestOverride?: object;
-    } = {},
+    opts: { draftPrd?: PRD; llmFindings?: unknown[]; capturedPrompts?: string[]; groundManifestOverride?: object } = {},
   ) {
     const draftPrd = opts.draftPrd ?? makePRD({ feature: "test-feature" });
     const llmFindings = opts.llmFindings ?? [];

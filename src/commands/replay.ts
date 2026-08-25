@@ -77,10 +77,7 @@ async function readJsonOrUndefined<T>(path: string): Promise<T | undefined> {
   }
 }
 
-async function readMetricsFromProject(meta: {
-  runId: string;
-  eventsDir: string;
-}): Promise<RunMetrics | undefined> {
+async function readMetricsFromProject(meta: { runId: string; eventsDir: string }): Promise<RunMetrics | undefined> {
   const { loadRunMetrics } = await import("../metrics/tracker");
   // eventsDir = join(outputDir, "features", feature, "runs") — strip the
   // known suffix instead of recomputing outputDir, since projectOutputDir()

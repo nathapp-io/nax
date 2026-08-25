@@ -421,7 +421,7 @@ describe("planRefineOp.verify — specGuard warnOnSpecDrift", () => {
       expect(result).toBeTruthy();
       const call = warnSpy.mock.calls.find((c) => typeof c[1] === "string" && c[1].includes("spec-drift"));
       expect(call).toBeDefined();
-      expect((call?.[2] as Record<string, unknown>).violationCount).toBe(1);
+      expect((call?.[2] as Record<string, unknown> | undefined)?.violationCount).toBe(1);
     });
   });
 

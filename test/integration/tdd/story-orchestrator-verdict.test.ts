@@ -66,10 +66,7 @@ function makePlanInputsNoGreenfield(storyArg: UserStory = story): PlanInputs {
 /**
  * Mock git + optional test command for a full 3-session run.
  */
-function mockGitAndTest(opts: {
-  diffFiles?: string[][];
-  onTestCmd?: () => { exitCode: number; stdout: string };
-}) {
+function mockGitAndTest(opts: { diffFiles?: string[][]; onTestCmd?: () => { exitCode: number; stdout: string } }) {
   const files = opts.diffFiles ?? [
     ["test/user.test.ts"],
     ["test/user.test.ts"],

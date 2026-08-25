@@ -486,7 +486,7 @@ describe("planInteractiveOp.verify — out-of-scope backfill (single mode)", () 
       expect(result?.outOfScope).toEqual(["An interactive Ink TUI", "Per-story checkpoints"]);
       const warn = warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("out-of-scope"));
       expect(warn).toBeDefined();
-      expect((warn?.[2] as Record<string, unknown>).missingCount).toBe(2);
+      expect((warn?.[2] as Record<string, unknown> | undefined)?.missingCount).toBe(2);
     });
   });
 

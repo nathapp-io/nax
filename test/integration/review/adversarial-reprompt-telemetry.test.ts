@@ -117,10 +117,7 @@ function restoreDeps(saved: { adversarial: SavedAdversarialDeps; diffUtils: Save
  * controlled send responses, then runs parse + verify. Tracks how many LLM
  * sends the hopBody triggered.
  */
-function makeMockedCallOpWithSendTracking(opts: {
-  secondTurnOutput: string;
-  onSendCount: (count: number) => void;
-}) {
+function makeMockedCallOpWithSendTracking(opts: { secondTurnOutput: string; onSendCount: (count: number) => void }) {
   return async (
     _ctx: unknown,
     op: typeof adversarialReviewOp,
