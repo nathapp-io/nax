@@ -9,8 +9,9 @@ were written and are not edited afterwards.** For the live state, read §0 and t
 
 ## 0. Current state — measured 2026-08-25 on `chore/1514-final-nine` @ `6bc936f53`+
 
-**Test typecheck is 0.** The nine survivors §44 ruled undrainable all drained — §47 has the
-per-row account. `as unknown as` 101, `looseCast` 1888 (−21), every other counter flat, all
+**Test typecheck is 0, and it is now a hard gate rather than a ratchet** — `bun run typecheck`
+compiles `tsconfig.test.json`, and `check:test-typecheck` is deleted (§47b). The nine
+survivors §44 ruled undrainable all drained — §47 has the per-row account. `as unknown as` 101, `looseCast` 1888 (−21), every other counter flat, all
 25 gates green, full suite green, coverage unchanged against `main`. Nothing is left behind
 and there is no issue to file — see §47a, which retracts a wrong claim in §47.
 
@@ -2947,3 +2948,48 @@ either way.
 **Carry forward:** *"no caller in this file" is not "no caller."* Scope the grep to the
 repo before concluding a feature is missing — the cost of the wider grep is seconds, and
 this one produced a wrong entry in a status doc and a wrong claim in a commit message.
+
+
+## 47b. The ratchet retired — `tsconfig.test.json` is in `bun run typecheck` (2026-08-25)
+
+With the count at 0 the instrument was wrong. A counting ratchet at zero can only be breached
+upward, it reports a number where `tsc` reports a file and a line, and it sat in `check:all`
+— *after* the six-minute lint chain — when CI's very first step already runs `bun run
+typecheck`.
+
+`typecheck` now compiles all three projects:
+
+```
+bun x tsc --noEmit && bun x tsc --noEmit -p tsconfig.contracts.json && bun x tsc --noEmit -p tsconfig.test.json
+```
+
+Deleted: `check:test-typecheck`, `check:test-typecheck:update`, its entry in `check:all`,
+`scripts/check-test-typecheck.ts`, `scripts/baselines/test-typecheck-baseline.json`, and
+`test/unit/scripts/check-test-typecheck.test.ts` (−7 unit tests, all covering the deleted
+parser). The deleted test file also came out of three exemption lists
+(`check-test-as-unknown-as`, `check-test-escape-hatches`, `report-cast-buckets`); the
+counters did not move, which is the evidence those exemptions were doing exactly their job.
+
+`check:gate-reachability` needed no edit — it discovers `scripts/check-*` from disk and went
+25 → 24 on its own. That is the meta-gate working as designed.
+
+### The two surviving ratchets are now *more* load-bearing
+
+This is the part worth not getting backwards. `.nax/rules/test-ratchets.md` used to justify
+the cast ratchets as protection *during* a drain — "a strict gate dropped onto 2140+ errors
+invites the path of least resistance". With the gate strict and the budget at zero, **a cast
+is the only remaining way to buy a green typecheck.** `check:test-as-unknown-as` and
+`check:test-escape-hatches` are what stops that, and the closed-system rule (no counter may be
+traded for another) now has exactly one trade left to police. The rule doc says so
+explicitly rather than leaving the old drain-era framing in place.
+
+### Verified, not assumed
+
+A ratchet-to-gate swap is worth proving rather than asserting: a planted
+`const x: string = 123` in `test/unit/` makes `bun run typecheck` exit 1 naming the line, and
+it passes again once removed. `check:all` 24/24, suite green (14130 / 1136 / 38, 0 fail),
+coverage 101 files below floor against baseline 103 — unchanged, so deleting a test file cost
+no `src/` coverage.
+
+Historical references to `check:test-typecheck` in `docs/specs/` and `docs/superpowers/` are
+left as written — they are dated design docs and runbooks recording what was true then.
