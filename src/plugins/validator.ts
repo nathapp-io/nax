@@ -202,6 +202,16 @@ function validateAgent(pluginName: string, agent: unknown): boolean {
 
   const agt = agent as Record<string, unknown>;
 
+  // A pre-ACP adapter fails the checks below one field at a time, which reads as a
+  // typo rather than an outdated interface. Name the actual problem once (#1702).
+  const legacy = ["run", "plan", "decompose"].filter((m) => typeof agt[m] === "function");
+  if (legacy.length > 0) {
+    getSafeLogger()?.warn(
+      "plugins",
+      `Plugin '${pluginName}' agent implements the pre-ACP adapter shape (${legacy.join(", ")}). Implement AgentAdapter's session primitives instead — see docs/architecture/agent-adapters.md §16.`,
+    );
+  }
+
   // Mirrors AgentAdapter's required members — keep in step with it (#1702).
   const requiredFields = [
     { name: "name", type: "string" },

@@ -4,8 +4,9 @@
  * Covers: plugin validation including post-run-action validation
  */
 
-import { describe, expect, it, test } from "bun:test";
+import { describe, expect, it, spyOn, test } from "bun:test";
 import type { AgentAdapter } from "@/agents/types";
+import * as loggerModule from "@/logger";
 import { validatePlugin } from "@/plugins/validator";
 import { makeAgentAdapter } from "@test/helpers";
 
@@ -215,6 +216,39 @@ describe("validateAgent — the AgentAdapter contract (#1702)", () => {
     ["null", null],
   ])("rejects when the agent extension is %s", (_label, agent) => {
     expect(validatePlugin(pluginWith(agent))).toBeNull();
+  });
+
+  test("names the pre-ACP shape once instead of failing field-by-field", () => {
+    // Without this, an outdated adapter reports "agent.complete must be a function",
+    // which reads as a typo rather than an interface that moved (#1702).
+    const logger = loggerModule.getSafeLogger();
+    if (!logger) throw new Error("expected getSafeLogger() to return a logger");
+    const warn = spyOn(logger, "warn").mockImplementation(() => {});
+    try {
+      // A pre-ACP adapter: the canonical mock with the session primitives stripped
+      // and the removed CLI-era methods put back.
+      const {
+        complete: _complete,
+        openSession: _openSession,
+        sendTurn: _sendTurn,
+        closeSession: _closeSession,
+        ...base
+      } = makeAgentAdapter();
+      const legacyAgent = {
+        ...base,
+        run: async () => ({}),
+        plan: async () => ({}),
+        decompose: async () => ({}),
+      };
+
+      expect(validatePlugin(pluginWith(legacyAgent))).toBeNull();
+
+      const messages = warn.mock.calls.map((c) => String(c[1]));
+      expect(messages.some((m) => m.includes("pre-ACP adapter shape (run, plan, decompose)"))).toBe(true);
+      expect(messages.some((m) => m.includes("docs/architecture/agent-adapters.md"))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test.each([
