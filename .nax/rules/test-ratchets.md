@@ -8,19 +8,28 @@ stages:
   - "tdd-implementer"
   - "rectify"
   - "review"
-description: "Test debt ratchets (typecheck errors, as-unknown-as casts, escape hatches) and when to move their baselines"
+description: "Test debt ratchets (as-unknown-as casts, escape hatches), the hard tsconfig.test.json gate that replaced the typecheck ratchet, and when to move the baselines"
 ---
 
 # Test Debt Ratchets
 
-Issue #1514 ships three ratchets in CI to lock in the test/ typecheck invariant:
+**`test/` must typecheck clean.** `bun run typecheck` compiles `tsconfig.test.json`
+alongside `tsconfig.json` and `tsconfig.contracts.json`; any error fails CI. There is no
+allowance and no baseline to raise — fix the fixture.
 
-- `check:test-typecheck` — counts TypeScript errors in `tsconfig.test.json`; fails if grown.
+This is a hard gate, not a ratchet, since #1514 §47 drained the last 9 errors (2009 → 0).
+The `check:test-typecheck` ratchet that counted them is **gone**, along with
+`check:test-typecheck:update` and `scripts/baselines/test-typecheck-baseline.json`. A
+counting ratchet at zero can only be breached upward; `tsc` says the same thing sooner and
+names the line.
+
+Two ratchets remain, guarding the side doors a clean typecheck can be bought with:
+
 - `check:test-as-unknown-as` — counts `as unknown as` casts in `test/`; fails if grown.
-- `check:test-escape-hatches` — counts the **eight** ways to silence a type error that
-  neither of the other two can see; fails if any of them grows.
+- `check:test-escape-hatches` — counts the **eight** other ways to silence a type error;
+  fails if any of them grows.
 
-All three behave like the existing `check:nax-error` / `check:import-cycles` ratchets: they have a `--update-baseline` to lower the threshold when intentional improvements land, and `--list` to surface offenders.
+Both behave like the existing `check:nax-error` / `check:import-cycles` ratchets: they have a `--update-baseline` to lower the threshold when intentional improvements land, and `--list` to surface offenders.
 
 `test/` is also linted by Biome (`bun run lint`), with three rules deferred for
 `test/**` in `biome.json`. Those overrides are not a licence to use what they
@@ -28,9 +37,9 @@ disable — `noExplicitAny` in particular is deferred *because* the escape-hatch
 ratchet is counting it instead (as `anyType`), and turns back on when the drain
 retires it.
 
-## Why all three exist
+## Why the ratchets still exist
 
-A strict `tsconfig.test.json` gate dropped onto 2140+ errors invites the path of least resistance: more casts. The cast ratchet prevents that. But a cast is not the only side door, and the others are wider:
+A strict `tsconfig.test.json` gate dropped onto 2140+ errors would have invited the path of least resistance: more casts. The cast ratchet prevented that during the drain, and it is exactly why the gate can be strict now. **The hard gate makes them more necessary, not less** — with no error budget left, a cast is the only way to buy a green typecheck, so the counters below are what stops that:
 
 | Escape hatch | Counted by | Notes |
 |:--|:--|:--|
@@ -40,21 +49,21 @@ A strict `tsconfig.test.json` gate dropped onto 2140+ errors invites the path of
 | `test-ratchet-allow: as-unknown-as` | `check:test-escape-hatches` (`ratchetAllow`) | the cast ratchet's own hatch, so it is ratcheted too |
 | `absentValue<T>()` / `nullValue<T>()` | `check:test-escape-hatches` (`absentValue`) | the sanctioned idiom for "this argument is deliberately missing" (`test/helpers/absent.ts`). Ratcheted, not free — see *Deliberately-absent values* below |
 | `any` in type position — `: any`, `<any>`, `Record<string, any>` | `check:test-escape-hatches` (`anyType`) | a **superset** of `asAny`. Added in phase 2: `: any` was counted by nothing, and annotating a parameter is the cheapest way to clear a `TS7006` without fixing it |
-| single `as T` casts | `check:test-escape-hatches` (`looseCast`) | **not a drain target.** 189 `TS2352` errors say *"convert the expression to `unknown` first"*, so draining typecheck pushes debt toward casts; this counter makes that visible. The `as unknown as` tail is stripped before counting so the cast ratchet does not double-count it |
+| single `as T` casts | `check:test-escape-hatches` (`looseCast`) | **not a drain target.** `TS2352` says *"convert the expression to `unknown` first"*, so a typecheck gate pushes debt toward casts; this counter makes that visible. The `as unknown as` tail is stripped before counting so the cast ratchet does not double-count it |
 | `as never` | `check:test-escape-hatches` (`asNever`) | the bottom type is assignable to **everything**, so one word silences any assignment error. `looseCast` anchors on `as [A-Z]` and missed it for two phases; 619 had accumulated when the counter landed |
 | postfix `!` (non-null assertion) | `check:test-escape-hatches` (`nonNullAssert`) | clears `TS18047`/`TS18048` with no runtime check. Biome's `noNonNullAssertion` is **off** for `test/**`, so before this counter nothing in the repo saw it at all; 827 had accumulated. Use `assertDefined()` from `test/helpers/assert-defined.ts` instead — it narrows *and* throws |
 
 Together they enforce "tests are valid instances of the types they claim to be", and that improvement is monotonic.
 
-**The counters are a closed system: no change may trade one against another.** A typecheck
-drop paired with an `anyType` rise is a failed change, not partial progress.
+**The counters are a closed system: no change may trade one against another.** Clearing a
+typecheck error by raising `anyType` is a failed change, not partial progress — and now that
+typecheck is a hard gate, it is the only trade still available, so it is the one to watch.
 
 ## When to lower the baseline
 
 Only when a commit reduces the count deliberately. Do NOT lower to hide regression — the ratchet will then do nothing.
 
 ```bash
-bun run check:test-typecheck:update        # after fixing N typecheck errors
 bun run check:test-as-unknown-as:update    # after replacing M casts with factories
 bun run check:test-escape-hatches:update   # after removing `as any` / `: any` / suppressions
 ```

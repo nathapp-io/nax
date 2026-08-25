@@ -1,10 +1,14 @@
 #!/usr/bin/env bun
 /**
- * Ratchet check: the ways test/ can silence a type error that neither
- * `check-test-typecheck` nor `check-test-as-unknown-as` counts.
+ * Ratchet check: the ways test/ can silence a type error that
+ * `check-test-as-unknown-as` does not count.
  *
- * Issue #1514 phase 3c. Draining those two baselines is only real progress if
- * the debt cannot walk out through a side door, and there are eight:
+ * Issue #1514 phase 3c. Draining that baseline is only real progress if the
+ * debt cannot walk out through a side door, and there are eight:
+ *
+ * The companion `check-test-typecheck` ratchet this once named alongside it is
+ * gone: `test/` reached 0 errors (#1514 §47), so `bun run typecheck` now
+ * compiles `tsconfig.test.json` outright and a hard gate replaced the count.
  *
  *   asAny        `as any` — invisible to both ratchets. Biome's noExplicitAny
  *                would catch it, but that rule is deferred for test/** until
@@ -122,7 +126,6 @@ const ALL_KINDS: ReadonlySet<HatchKind> = new Set(HATCH_KINDS);
 
 const EXEMPT_BY_KIND: ReadonlyMap<string, ReadonlySet<HatchKind>> = new Map([
   // Scanner scaffolding: fixture strings legitimately contain every pattern.
-  ["test/unit/scripts/check-test-typecheck.test.ts", ALL_KINDS],
   ["test/unit/scripts/check-test-as-unknown-as.test.ts", ALL_KINDS],
   ["test/unit/scripts/check-test-escape-hatches.test.ts", ALL_KINDS],
   // The idiom's own definition. Its declarations match the CALL-SITE pattern;
