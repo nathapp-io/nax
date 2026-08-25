@@ -4,8 +4,10 @@
  * Covers: plugin validation including post-run-action validation
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, test } from "bun:test";
+import type { AgentAdapter } from "@/agents/types";
 import { validatePlugin } from "@/plugins/validator";
+import { makeAgentAdapter } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // validatePlugin with post-run-action
@@ -181,5 +183,48 @@ describe("validatePlugin with post-run-action", () => {
 
     const result = validatePlugin(validPlugin);
     expect(result).not.toBeNull();
+  });
+});
+
+describe("validateAgent — the AgentAdapter contract (#1702)", () => {
+  // makeAgentAdapter() is the canonical AgentAdapter mock. Driving validateAgent with
+  // it is the point of these tests: validateAgent used to require run/plan/decompose,
+  // which the CLI adapter had and AgentAdapter has not since ACP became the only
+  // protocol, so an agent implementing the shipped interface was rejected at load.
+  // Pinning against the helper means the check and the interface cannot drift apart
+  // again without this failing.
+  const pluginWith = (agent: unknown) => ({
+    name: "agent-plugin",
+    version: "1.0.0",
+    provides: ["agent"],
+    extensions: { agent },
+  });
+
+  test("accepts an agent implementing the real AgentAdapter surface", () => {
+    const agent: AgentAdapter = makeAgentAdapter();
+    expect(validatePlugin(pluginWith(agent))).not.toBeNull();
+  });
+
+  test("rejects an agent missing a method the manager actually calls", () => {
+    const { sendTurn: _dropped, ...withoutSendTurn } = makeAgentAdapter();
+    expect(validatePlugin(pluginWith(withoutSendTurn))).toBeNull();
+  });
+
+  test.each([
+    ["not an object", "not-an-object"],
+    ["null", null],
+  ])("rejects when the agent extension is %s", (_label, agent) => {
+    expect(validatePlugin(pluginWith(agent))).toBeNull();
+  });
+
+  test.each([
+    ["capabilities", "not-an-object"],
+    ["capabilities", null],
+    ["name", 123],
+    ["isInstalled", "not-a-function"],
+  ])("rejects when agent.%s has the wrong type", (field, value) => {
+    const agent: Record<string, unknown> = { ...makeAgentAdapter() };
+    agent[field] = value;
+    expect(validatePlugin(pluginWith(agent))).toBeNull();
   });
 });

@@ -144,51 +144,6 @@ describe("validatePlugin", () => {
       const result = validatePlugin(plugin);
       expect(result).not.toBeNull();
     });
-
-    test("accepts plugin with agent adapter", () => {
-      const plugin = {
-        name: "custom-agent",
-        version: "1.0.0",
-        provides: ["agent"],
-        extensions: {
-          agent: {
-            name: "myagent",
-            displayName: "My Agent",
-            binary: "myagent",
-            capabilities: {
-              supportedTiers: ["fast", "balanced"],
-              maxContextTokens: 100_000,
-              features: new Set(["tdd", "review"]),
-            },
-            async isInstalled() {
-              return true;
-            },
-            async run(options: any) {
-              return {
-                success: true,
-                exitCode: 0,
-                output: "done",
-                rateLimited: false,
-                durationMs: 1000,
-                estimatedCostUsd: 0.01,
-              };
-            },
-            buildCommand(options: any) {
-              return ["myagent"];
-            },
-            async plan(options: any) {
-              return { specContent: "# Spec" };
-            },
-            async decompose(options: any) {
-              return { stories: [] };
-            },
-          },
-        },
-      } satisfies NaxPlugin;
-
-      const result = validatePlugin(plugin);
-      expect(result).not.toBeNull();
-    });
   });
 
   describe("invalid plugins", () => {
