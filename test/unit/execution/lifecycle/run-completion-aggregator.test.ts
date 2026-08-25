@@ -69,6 +69,13 @@ function makeMockAggregator(overrides: Partial<ICostAggregator> = {}): ICostAggr
     byAgent: () => ({}),
     byStage: () => ({}),
     byStory: () => ({}),
+    byCall: () => ({}),
+    byScope: () => ({}),
+    openScope: (scopeId = "test-scope") => ({
+      scopeId,
+      snapshot: () => makeEmptySnapshot(),
+      close: () => {},
+    }),
     drain: async () => {},
     ...overrides,
   };

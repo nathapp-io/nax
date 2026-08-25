@@ -22,8 +22,22 @@ import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD, UserStory } from "@/prd/types";
+import { MergeEngine, WorktreeManager } from "@/worktree";
 import { makePRD, makeStory as makeSharedStory, makeTestContext } from "@test/helpers";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+
+function makeFakeWorktreeManager(): WorktreeManager {
+  const wm = new WorktreeManager();
+  wm.create = mock(async () => {});
+  wm.remove = mock(async () => {});
+  return wm;
+}
+
+function makeFakeMergeEngine(worktreeManager: WorktreeManager, mergeAllImpl: MergeEngine["mergeAll"]): MergeEngine {
+  const engine = new MergeEngine(worktreeManager);
+  engine.mergeAll = mergeAllImpl;
+  return engine;
+}
 
 function makeConflictStory(id: string, opts: Partial<UserStory> = {}): UserStory {
   return makeSharedStory({
@@ -107,13 +121,13 @@ describe("BUG-36: rectification reuses the worker's worktree-pipeline base", () 
     });
 
     _parallelBatchDeps.executeParallelBatch = mock(async () => workerResult);
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => [{ success: false, storyId: "US-001", conflictFiles: ["src/x.ts"] }]),
-    })) as typeof _parallelBatchDeps.createMergeEngine;
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeFakeWorktreeManager());
+    _parallelBatchDeps.createMergeEngine = mock(async (worktreeManager: WorktreeManager) =>
+      makeFakeMergeEngine(
+        worktreeManager,
+        mock(async () => [{ success: false, storyId: "US-001", conflictFiles: ["src/x.ts"] }]),
+      ),
+    );
     const rectifyMock = mock((_opts: RectifyConflictedStoryOptions) =>
       Promise.resolve({ success: true as const, storyId: "US-001", cost: 0.2 }),
     );
@@ -144,13 +158,13 @@ describe("BUG-37: batch totalCost folds in rectification spend", () => {
     });
 
     _parallelBatchDeps.executeParallelBatch = mock(async () => workerResult);
-    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
-      create: mock(async () => {}),
-      remove: mock(async () => {}),
-    })) as typeof _parallelBatchDeps.createWorktreeManager;
-    _parallelBatchDeps.createMergeEngine = mock(async () => ({
-      mergeAll: mock(async () => [{ success: false, storyId: "US-001", conflictFiles: ["src/x.ts"] }]),
-    })) as typeof _parallelBatchDeps.createMergeEngine;
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeFakeWorktreeManager());
+    _parallelBatchDeps.createMergeEngine = mock(async (worktreeManager: WorktreeManager) =>
+      makeFakeMergeEngine(
+        worktreeManager,
+        mock(async () => [{ success: false, storyId: "US-001", conflictFiles: ["src/x.ts"] }]),
+      ),
+    );
     _parallelBatchDeps.rectifyConflictedStory = mock((_opts: RectifyConflictedStoryOptions) =>
       Promise.resolve({
         success: true as const,

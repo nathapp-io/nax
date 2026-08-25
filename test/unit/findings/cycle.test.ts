@@ -814,7 +814,7 @@ describe("runFixCycle — iteration-completed log emission", () => {
 
   test("AC8: agent-gave-up exit emits one iteration-completed record with iterationNum=1", async () => {
     const mockLogger = makeLogger();
-    const strategy = makeStrategy({ extractApplied: () => ({ summary: "", unresolved: "Cannot resolve" }) });
+    const strategy = makeStrategy({ name: "lint-fix", extractApplied: () => ({ summary: "", unresolved: "no-fix" }) });
     const cycle = makeCycle([lintA], [strategy], async () => []);
 
     const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {
@@ -917,7 +917,7 @@ describe("runFixCycle — iteration-completed log emission", () => {
 
   test("AC14: agent-gave-up exit → emitted iteration record has outcome === 'unchanged'", async () => {
     const mockLogger = makeLogger();
-    const strategy = makeStrategy({ extractApplied: () => ({ summary: "", unresolved: "Cannot resolve" }) });
+    const strategy = makeStrategy({ name: "lint-fix", extractApplied: () => ({ summary: "", unresolved: "no-fix" }) });
     const cycle = makeCycle([lintA], [strategy], async () => []);
 
     const result = await runFixCycle(cycle, makeCtx(), "my-cycle", {

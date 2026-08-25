@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { adversarialReviewOp, decomposeOp, planInteractiveOp, semanticReviewOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime, opSelector } from "@test/helpers";
+import { makeNaxConfig, makeTestRuntime, opModelResolver, opSelector } from "@test/helpers";
 
 let runtime: NaxRuntime | undefined;
 afterEach(async () => {
@@ -36,7 +36,7 @@ describe("operation timeout resolvers", () => {
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(opSelector(planInteractiveOp.config)) };
 
-    const model = planInteractiveOp.model?.(
+    const model = opModelResolver(planInteractiveOp)(
       {
         specContent: "spec",
         codebaseContext: "",
@@ -74,7 +74,7 @@ describe("operation timeout resolvers", () => {
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(opSelector(decomposeOp.config)) };
 
-    const model = decomposeOp.model?.(
+    const model = opModelResolver(decomposeOp)(
       {
         specContent: "spec",
         codebaseContext: "",

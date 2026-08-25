@@ -14,7 +14,7 @@ import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import { StoryOrchestratorBuilder, _storyOrchestratorDeps } from "@/execution";
 import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
-import { makeAutofixImplementerStrategy, makeFullSuiteRectifyStrategy } from "@/operations";
+import { makeAutofixImplementerStrategy, makeDeclarationSink, makeFullSuiteRectifyStrategy } from "@/operations";
 import type { CallContext, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 import { makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
@@ -204,7 +204,7 @@ describe("AC2.5: rectification routing — gate failure halts loop, gate finding
       .addRectification({
         maxAttempts: 3,
         strategies: [
-          makeAutofixImplementerStrategy(story, makeNaxConfig()),
+          makeAutofixImplementerStrategy(story, makeNaxConfig(), makeDeclarationSink()),
           makeFullSuiteRectifyStrategy(story, makeNaxConfig()),
         ],
         abortOnIncreasingFailures: false,
@@ -281,7 +281,7 @@ describe("AC3.8: verifier op dispatched during initial run and re-dispatched dur
       .addSemanticReview({ op: mockSemanticReviewOp, input: { story: "US-routing-ac38" } })
       .addRectification({
         maxAttempts: 3,
-        strategies: [makeAutofixImplementerStrategy(story, makeNaxConfig())],
+        strategies: [makeAutofixImplementerStrategy(story, makeNaxConfig(), makeDeclarationSink())],
         abortOnIncreasingFailures: false,
       })
       .build(ctx, { isThreeSession: true });
@@ -356,7 +356,7 @@ describe("AC3.9: after autofix-implementer iteration, full-suite-gate and semant
       .addSemanticReview({ op: mockSemanticReviewOp, input: { story: "US-routing-ac39" } })
       .addRectification({
         maxAttempts: 3,
-        strategies: [makeAutofixImplementerStrategy(story, makeNaxConfig())],
+        strategies: [makeAutofixImplementerStrategy(story, makeNaxConfig(), makeDeclarationSink())],
         abortOnIncreasingFailures: false,
       })
       .build(ctx, { isThreeSession: true });

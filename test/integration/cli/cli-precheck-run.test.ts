@@ -11,7 +11,7 @@ import { DEFAULT_CONFIG } from "@/config";
 import { run } from "@/execution";
 import type { PRD } from "@/prd/types";
 import { EXIT_CODES, runPrecheck } from "@/precheck";
-import { fullTest, makePRD, makeStory, makeTempDir } from "@test/helpers";
+import { fullTest, makeNaxConfig, makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 // Requires real claude binary — skipped by default, run with FULL=1.
 const skipInCI = fullTest;
@@ -28,37 +28,25 @@ async function setupGitRepo(dir: string): Promise<void> {
 }
 
 const createConfig = (workdir: string): NaxConfig =>
-  ({
+  makeNaxConfig({
     execution: {
       maxIterations: 10,
       iterationDelayMs: 0,
-      maxCostUSD: 10,
+      costLimit: 10,
       testCommand: "echo test",
       lintCommand: "echo lint",
       typecheckCommand: "echo typecheck",
       contextProviderTokenBudget: 2000,
-      requireExplicitContextFiles: false,
-      preflightExpectedFilesEnabled: false,
-      cwd: workdir,
+      rectification: {
+        enabled: true,
+        maxAttemptsTotal: 2,
+        fullSuiteTimeoutSeconds: 120,
+        maxFailureSummaryChars: 2000,
+        abortOnIncreasingFailures: true,
+      },
     },
-    autoMode: {
-      enabled: false,
-      defaultAgent: "test",
-      fallbackOrder: [],
-      complexityRouting: {},
-      escalation: { enabled: false, tierOrder: [] },
-    },
-    quality: { minTestCoverage: 80 },
-    tdd: { strategy: "auto", skipGeneratedVerificationTests: false },
-    models: {},
-    rectification: {
-      enabled: true,
-      maxAttemptsTotal: 2,
-      fullSuiteTimeoutSeconds: 120,
-      maxFailureSummaryChars: 2000,
-      abortOnIncreasingFailures: true,
-    },
-  }) as NaxConfig;
+    tdd: { strategy: "auto" },
+  });
 
 const createPRD = (): PRD => ({
   project: "test",

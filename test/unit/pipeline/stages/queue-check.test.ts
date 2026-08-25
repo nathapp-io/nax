@@ -85,7 +85,7 @@ describe("queueCheckStage — RETRY / PRIORITY", () => {
   });
 
   test("SKIP for a story outside the current batch still marks it skipped (out-of-batch SKIP is not discarded)", async () => {
-    const s1 = makeStory({ id: "US-001", status: "running" });
+    const s1 = makeStory({ id: "US-001", status: "in-progress" });
     const s2 = makeStory({ id: "US-007", status: "pending" });
     const prd = makePRD({ userStories: [s1, s2] });
     // Sequential mode: ctx.stories only contains the story currently running (US-001).

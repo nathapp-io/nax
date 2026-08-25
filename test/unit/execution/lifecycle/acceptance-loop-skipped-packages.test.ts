@@ -255,7 +255,15 @@ describe("US-004 AC-1: runAcceptanceLoop propagates skippedPackages on missing-t
     _runAcceptanceTestsOnceDeps.importAcceptanceStage = async () =>
       ({
         acceptanceStage: {
-          execute: (ctx: { acceptanceFailures?: { missingTargets?: string[] } }) => {
+          execute: (ctx: {
+            acceptanceFailures?: {
+              failedACs: string[];
+              findings: unknown[];
+              testOutput: string;
+              failedPackages?: unknown[];
+              missingTargets?: string[];
+            };
+          }) => {
             ctx.acceptanceFailures = {
               failedACs: [],
               findings: [],

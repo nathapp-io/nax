@@ -4,6 +4,7 @@ import { runFixCycle } from "@/findings";
 import type { Finding, FixCycle, FixCycleContext, FixStrategy, Iteration } from "@/findings";
 import type { CallContext } from "@/operations";
 import { makeTestRuntime } from "@test/helpers";
+import { makeCallOpSpy } from "../findings/_cycle-fixtures";
 import { GATE_FAILURE, mockFullSuiteGateOp, mockImplementerOp } from "./_revalidation-fixtures";
 
 function finding(message: string): Finding {
@@ -175,7 +176,7 @@ describe("withNoProgressBail — US-002", () => {
       storyId: "US-002",
     } as FixCycleContext;
     const persisted = [finding("one"), finding("two")];
-    let dispatches = 0;
+    const callOpSpy = makeCallOpSpy();
     const wrapped = withNoProgressBail(withIncreasingFailuresBail([strategy()], true, 3), true, 3);
     const cycle: FixCycle<Finding> = {
       findings: persisted,
@@ -184,15 +185,10 @@ describe("withNoProgressBail — US-002", () => {
       config: { maxAttemptsTotal: 12, validatorRetries: 1 },
       validate: async () => ({ findings: persisted }),
     };
-    const result = await runFixCycle(cycle, ctx, "US-002", {
-      callOp: async () => {
-        dispatches += 1;
-        return {};
-      },
-    });
+    const result = await runFixCycle(cycle, ctx, "US-002", { callOp: callOpSpy.fn });
     await runtime.close();
     expect(result.exitReason).toBe("bail-when");
-    expect(dispatches).toBe(3);
+    expect(callOpSpy.calls.length).toBe(3);
   });
 
   test("US-002 AC14: disabled no-progress bail dispatches more than three fixes", async () => {
@@ -205,7 +201,7 @@ describe("withNoProgressBail — US-002", () => {
       storyId: "US-002",
     } as FixCycleContext;
     const persisted = [finding("one"), finding("two")];
-    let dispatches = 0;
+    const callOpSpy = makeCallOpSpy();
     const wrapped = withNoProgressBail(withIncreasingFailuresBail([strategy()], false, 3), false, 3);
     const cycle: FixCycle<Finding> = {
       findings: persisted,
@@ -214,14 +210,9 @@ describe("withNoProgressBail — US-002", () => {
       config: { maxAttemptsTotal: 12, validatorRetries: 1 },
       validate: async () => ({ findings: persisted }),
     };
-    await runFixCycle(cycle, ctx, "US-002", {
-      callOp: async () => {
-        dispatches += 1;
-        return {};
-      },
-    });
+    await runFixCycle(cycle, ctx, "US-002", { callOp: callOpSpy.fn });
     await runtime.close();
-    expect(dispatches).toBeGreaterThan(3);
+    expect(callOpSpy.calls.length).toBeGreaterThan(3);
   });
 });
 

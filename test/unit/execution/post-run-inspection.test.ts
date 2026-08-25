@@ -532,7 +532,7 @@ describe("_postRunDeps.rollbackToRef injection", () => {
     _postRunDeps.rollbackToRef = mock(async () => {
       called = true;
     });
-    _postRunDeps.rollbackToRef("/tmp", "HEAD");
+    _postRunDeps.rollbackToRef("/tmp", "HEAD", null);
     expect(called).toBe(true);
   });
 });

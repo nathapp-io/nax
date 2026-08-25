@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { ConfigSelector } from "@/config";
 import { runHybrid } from "@/debate/runner-hybrid";
 import { _hybridDeps } from "@/debate/runner-hybrid";
 import type { HybridCtx } from "@/debate/runner-hybrid";
@@ -7,7 +6,13 @@ import type { DebateStageConfig } from "@/debate/types";
 import { NaxError } from "@/errors";
 import { DebatePromptBuilder } from "@/prompts";
 import type { PackageView } from "@/runtime";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager, withDepsRestore } from "@test/helpers";
+import {
+  makeMockAgentManager,
+  makeNaxConfig,
+  makeSessionManager,
+  makeTestRuntime,
+  withDepsRestore,
+} from "@test/helpers";
 
 function installCallOp(impl: typeof _hybridDeps.callOp) {
   const spy = mock(impl);
@@ -32,7 +37,10 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
   };
 }
 
-function makeHybridCtx(stageConfigOverrides: Partial<DebateStageConfig> = {}): HybridCtx {
+function makeHybridCtx(
+  stageConfigOverrides: Partial<DebateStageConfig> = {},
+  abortSignal: AbortSignal = new AbortController().signal,
+): HybridCtx {
   const fullConfig = makeNaxConfig({
     debate: {
       maxConcurrentDebaters: 3,
@@ -60,6 +68,14 @@ function makeHybridCtx(stageConfigOverrides: Partial<DebateStageConfig> = {}): H
     nameFor: mock((req) => req.role ?? ""),
   });
 
+  const runtime = makeTestRuntime({
+    agentManager,
+    sessionManager,
+    config: fullConfig,
+    workdir: "/tmp/work",
+    parentSignal: abortSignal,
+  });
+
   return {
     storyId: "US-hybrid",
     stage: "run",
@@ -69,30 +85,17 @@ function makeHybridCtx(stageConfigOverrides: Partial<DebateStageConfig> = {}): H
     featureName: "feat-hybrid",
     timeoutSeconds: 60,
     callContext: {
-      runtime: {
-        agentManager,
-        sessionManager,
-        configLoader: {
-          current: () => fullConfig,
-          select: <C>(sel: ConfigSelector<C>) => sel.select(fullConfig),
-        },
-        packages: {
-          resolve: () => testView,
-          all: () => [testView],
-          repo: () => testView,
-          hydrate: async () => {},
-        },
-        signal: undefined,
-      },
+      runtime,
       packageView: testView,
       packageDir: "/tmp/work",
       agentName: "claude",
       storyId: "US-hybrid",
       featureName: "feat-hybrid",
     },
+    runtime,
     agentManager,
     sessionManager,
-    abortSignal: new AbortController().signal,
+    abortSignal,
   };
 }
 
@@ -159,9 +162,7 @@ describe("runHybrid coordinator", () => {
 
   test("propagates CALL_OP_ABORTED instead of degrading an abort into a normal debate result", async () => {
     const controller = new AbortController();
-    const ctx = makeHybridCtx();
-    ctx.abortSignal = controller.signal;
-    ctx.callContext.runtime.signal = controller.signal;
+    const ctx = makeHybridCtx({}, controller.signal);
 
     installCallOp(async (_callCtx, _op, input) => {
       if (input.index === 0) {

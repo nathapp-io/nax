@@ -7,34 +7,39 @@ were written and are not edited afterwards.** For the live state, read §0 and t
 
 ---
 
-## 0. Current state — measured 2026-08-24 on `chore/1514-tail-batch3-prep` @ `d5016b4e6`
+## 0. Current state — measured 2026-08-25 on `chore/1514-tail-batch5-drain` @ `50a2e6817`
 
 Every number re-measured on a clean tree, not carried forward from a section below.
 
 | | value | baseline |
 |:--|--:|--:|
 | `tsc --noEmit` (src) | **0** | — |
-| test typecheck | **289** | 289 |
-| `as unknown as` casts | **102** | 102 |
-| `asAny` | 1386 | 1386 |
+| test typecheck | **11** | 11 |
+| `as unknown as` casts | **101** | 101 |
+| `asAny` | 1385 | 1385 |
 | `tsSuppress` | 40 | 40 |
 | `ratchetAllow` | 106 | 106 |
 | `absentValue` | 17 | 17 |
-| `anyType` | 1875 | 1875 |
-| `looseCast` | 1923 | 1923 |
-| `asNever` | 619 | 619 |
+| `anyType` | 1872 | 1872 |
+| `looseCast` | 1910 | 1910 |
+| `asNever` | 608 | 608 |
 | `nonNullAssert` | 827 | 827 |
 
-Against the original #1514 start: casts **815 → 102 (−87%)**, typecheck **2009 → 289 (−86%)**.
+Against the original #1514 start: casts **815 → 101 (−88%)**, typecheck **2009 → 11 (−99.5%)**.
 
-All 25 gates green, every counter sitting **at** its baseline — there is no headroom left in the
-ratchets for a delegate to spend. (§32's slack was reclaimed once in `b552fce6a` and it had
-re-opened by 4 points; `4723c7a7a` reclaimed it again. **Re-check this before every hand-off** —
+All 25 gates green, full suite green (14138 unit / 1174 integration / 38 ui, 0 fail), every
+counter sitting **at** its baseline — no headroom left in the ratchets. (The slack has now
+re-opened and been reclaimed seven times on this issue. **Re-check it before every hand-off** —
 it re-opens every time a drain commit lowers a counter without re-baselining.)
 
-The residue is 289 errors across 150 files. Clusters B and E are handed off in
-`HANDOFF-1514-tail-recipes-batch3.md`; §38 has the histogram and §39 has the review that
-re-scoped it.
+**Open as PR #1703**, off `main` @ `9908767a7` (batch 4, PR #1701): batch 5 (§43) plus the
+survivor round (§44), 136 commits. The two `src/` contradictions §44 found are filed as
+**#1702** and are deliberately not fixed in that PR.
+
+The residue is **11 errors across 6 files**, and they are not a queue. §44 has the per-row
+ruling: 4 are an accepted `callOp` tier-3 exception, 4 need a decision that changes what a test
+asserts, and 3 are src contradictions that want issues, not fixture edits.
+
 
 ## ✅ The dead-fixture-keys handoff is COMPLETE
 
@@ -77,9 +82,15 @@ unmeasured. Details and the coverage gate in §34.
 | **tail cluster A (`_planDeps.createRuntime`)** | ✅ **done — 393 → 383; §4 of the handoff was wrong, see §33** | #1697 |
 | `DispatchContext` fixtures | ~~18~~ → **3 left**, drained incidentally by Lane A | — |
 | ~~`makeObservation` (~90)~~ — ~~**really 9**~~ | ✅ **0 left** — drained incidentally; do not reopen | — |
-| **tail recipes batch 2 (~40 errors, 8 clusters)** | handoff written, not started | — |
+| tail recipes batch 2 (A–F) | ✅ merged — 383 → 356 | #1698 |
+| cluster G, TS2769, TS7024, DispatchContext | ✅ merged — 356 → 303 | #1699 |
+| tail batch 3 + escalation fixes | ✅ merged — 289 → 245 | #1700 |
+| tail batch 4 — fixture-shape family | ✅ merged — 245 → 219 | #1701 |
+| **tail batch 5 — ten groups** | ✅ **done — 219 → 21** (§43) | #1703 (open) |
+| **the 21 survivors, re-ruled** | ✅ **10 drained — 21 → 11** (§44) | #1703 (open) |
+| `AgentAdapter` drift (2 of the last 11) | 🔶 **filed, not fixed** — issue #1702 | — |
 
-**Branches:** all merged as of 2026-08-24; nothing is parked locally.
+**Branches:** merged through #1701 (batch 4). `chore/1514-tail-batch5-drain` is parked locally with batch 5 and the survivor round on it — unpushed, no PR.
 - `chore/1514-dead-fixture-keys` — merged as #1686 (`e915b47e1`); branch gone.
 - `chore/1514-implicit-any-params` — merged as #1687; branch gone.
 - `chore/1514-guard-before-delegation` / `chore/1514-tail-recipes` — merged as #1697
@@ -2508,3 +2519,149 @@ green, no file's count rose, no new file with errors.
 Verify: `bun run check:all` 25/25 green, full suite green across all three phases
 (1174 tests / 116 files), per-file typecheck diff against the 245 baseline showed zero risen
 files.
+
+## 43. Batch 5 landed — ten groups, 219 → 21 (2026-08-24)
+
+Recorded here after the fact: the outcome was written into
+`HANDOFF-1514-tail-recipes-batch5.md` at the time and never mirrored into this log, so §0
+sat two batches stale for a day. **Write the section here as well as in the handoff** — the
+handoff is the brief, this file is the log, and a reader who starts at §0 will not find the
+handoff.
+
+Ten groups, one delegated agent at a time, 59 commits on `chore/1514-tail-batch5-drain`.
+Verified at each step rather than taken from the agents' reports: src tsc **0**,
+`check:all` **green**, full suite **green** after every group.
+
+| Group | Family | Δ |
+|:--|:--|--:|
+| 1 | `TS2353` dead fixture keys | 219 → 191 |
+| 2 | `TS2349` `op.model?.()` union + `TS2783` duplicate keys | 191 → 170 |
+| 3 | callback-assignment `never` narrowing + `TS2554` arity | 170 → 149 |
+| 4 | `TS2345` argument mismatches | 149 → 134 |
+| 5 | fake-agent-manager contract + `TS2540`/`TS2532` + singletons | 134 → 120 |
+| 6 | `ChunkKind` literals + `TS2339` tail | 120 → 101 |
+| 7 | `TS2352` — fixture fixed, cast deleted | 101 → 78 |
+| 8 | `TS2322` function-slot family | 78 → 55 |
+| 9 | `TS2322` wrong-literal / partial-object | 55 → 31 |
+| 10 | final singletons | 31 → 21 |
+
+No counter was traded: `as unknown as` 102 → **101**, `looseCast` 1923 → **1910**, `asNever`
+615 → **608**, `anyType` 1875 → **1872**, `asAny` 1386 → **1385**, the rest flat. `src/` was
+never edited. Full detail, including the four lessons, stays in the handoff.
+
+## 44. The 21 survivors, re-ruled — 10 were drainable after all (21 → 11, 2026-08-25)
+
+The batch-5 handoff closed with "**Do not 'fix' these without reading the reason.** None is a
+missed row." Read one at a time against the source, **ten of the twenty-one were drainable**,
+and the reasons given for them were wrong in three distinct ways. All ten landed on
+`chore/1514-tail-batch5-drain` in five commits, `check:all` 25/25 green, full suite green,
+unit phase byte-identical before and after (14138 tests, 28514 expect() calls), every escape
+hatch flat.
+
+| Bucket in the handoff | Rows | Drained | Why the ruling was wrong |
+|:--|--:|--:|:--|
+| held back — blast radius (115 consumers) | 5 | **5** | none of them changes `MockAgentManagerOptions` |
+| genuine `src/` typing gap | 5 | **4** | 2 pinned an unreachable state; 2 did not need the seam they were reaching through |
+| escalated — changes what the test asserts | 7 | **1** | one was two dead ACP keys, not an assertion |
+| accepted by prior ruling (`callOp` tier 3) | 4 | 0 | ruling holds |
+
+### The three ways the ruling was wrong
+
+- **"115 consumers" was the helper's *type*, not these edits.** `mock-agent-manager.ts`'s two
+  rows are dead reads inside the helper's body — `req.runOptions.agent` (no such field; the
+  override was always called with `undefined`, and only two callbacks in the suite bind that
+  parameter, neither reading it) and `turn.durationMs ?? 0` (no such field on `TurnResult`, and
+  the branch is unreachable when `runWithFallbackFn` is set, which is where every real
+  `durationMs` comes from). Neither touches the exported options type, so the 115 consumers were
+  never at risk. The three dependent rows were not the same root cause at all: they are an
+  indexing bug, `Parameters<typeof f>[0]` on a defaulted parameter yielding `… | undefined`.
+  **Lesson: size a blast radius from what the edit changes, not from what the file is.**
+- **A defensive `?.` is not evidence of a tolerated absence.** The handoff read
+  `config.execution?.smartTestRunner` in `resolver.ts` as proof that `TestPatternConfig` should
+  allow `execution: undefined`. Both `ExecutionConfigSchema` and `QualityConfigSchema` carry
+  `.default()`, so the key is always present after parse, and all seven call sites pass a fully
+  parsed `NaxConfig`. The absence is unreachable; the fixture was pinning an impossible state —
+  batch 5's own §"fixtures asserting against impossible values" family, missed because the
+  optional chaining read as intent.
+- **You do not have to reach a value through the seam that broke.** `FixStrategy.fixOp` really
+  is `Operation<I,O,C>` with `D` pinned to `never`, exactly as filed — but the test only needed
+  to *execute the op*, and the op was one `export` keyword away. Exporting
+  `mechanicalLintFixOp`/`mechanicalFormatFixOp` is additive, loosens nothing, keeps src tsc at
+  0, and the strategy wiring the test was named for is now asserted outright
+  (`expect(strategy.fixOp).toBe(op)`) instead of implied. Same shape as §41's discovery step:
+  the error names the seam, not the fix.
+
+`story-scoped-fix-budget.test.ts` was the third sighting of `RunOperation`'s contravariance in
+`I` and needed no src change either — annotating the strategy at the op's own type parameters
+dissolves it, the same "prefer fixing the type over containing a cast whenever the code is
+monomorphic" ruling that dissolved the callop-seam cluster.
+
+### The 11 that remain — and what each actually needs
+
+**Nothing here is a fixture edit.** Four need a product decision; three want issues filed
+against `src/`; four are already ruled correct.
+
+| Rows | File(s) | Needs |
+|--:|:--|:--|
+| 4 | `non-blocking-fix-wiring.test.ts` | nothing — `PLAN-1514-callop-seam.md` §4 tier 3. `bun:test`'s `Mock<T>` collapses to one call signature and can never satisfy a generic-in-return position |
+| 2 | `context-provider-injection.test.ts` | a decision: real `makePRD`/`makeStory` factories make `buildStoryContextFullFromCtx` succeed instead of throwing-and-being-caught, flipping 2 tests from "preserves pre-set `contextMarkdown`" to "overwritten" |
+| 3 | `runner-stateful.test.ts`, `verifier-pick.test.ts` | a decision: `handle` on `SuccessfulProposal` exists nowhere in `src/debate/`, but the test is titled "carries optional handle field (compile-time check)" and cites a session-continuity AC. Reads as scaffolding for unimplemented work — deleting it guts the contract, adding the field to `src/` to satisfy a fixture is what this issue forbids |
+| 1 | `validator.test.ts` | **filed as #1702.** `src/plugins/validator.ts:205-215` still hard-requires `run`/`plan`/`decompose` at runtime — a stale pre-ACP check. Fixing the fixture makes `validatePlugin()` reject its own "valid plugin" |
+| 1 | `_tdd-test-helpers.ts` | **filed as #1702, same family.** `AgentAdapter` declares `closeSession`; `src/execution/session-manager-runtime.ts:27` reaches `closePhysicalSession` through a `LegacySessionCloser` cast. The interface and the shipped adapter disagree |
+
+The two `src/` contradictions are the same defect seen twice: **`AgentAdapter` has drifted from
+what the code actually calls** — the interface was never re-derived when the CLI adapter was
+removed, and the ACP one then grew a second close path. Filed as **#1702**, one issue covering
+both, because the fix for each is "make `AgentAdapter` describe the shipped adapter" and neither
+is a fixture edit. Both are unreachable in the shipped default path today, which is why they
+went unnoticed: a conforming plugin agent would be rejected at load, and a faithful adapter
+would silently no-op at teardown.
+
+**Do not delegate the 11.** Every one of them is a judgement call or an issue to file; a
+mechanical brief over them would produce exactly the wrong edit.
+
+## 45. The coverage gate caught what the typecheck ratchet cannot (2026-08-25)
+
+PR #1703's first CI run failed — not on typecheck, lint or the suite, all of which were
+green locally and in CI, but on the **per-file coverage ratchet**:
+`src/verification/mutation/classify.ts` at 68.18% against an 80% floor, on a branch that
+never touches that file.
+
+The cause was two batch-5 group-9 edits. `mutation-check-revert.test.ts` and
+`mutation-check-telemetry.test.ts` each carried `status: "FAILURE"` in a fake regression
+result, and `"FAILURE"` was never a member of `VerificationStatus` — one of the "fixtures
+asserting against impossible values" batch 5 was proud of finding. Both were corrected to
+`"TEST_FAILURE"`.
+
+**The correction was right and it still broke something.** Both fixtures simulate a
+regression run reporting test failures, and neither asserts on classification, so
+`"TEST_FAILURE"` is the truthful value. But `classifyMutant` switches on that status, and
+`"FAILURE"` had been the only thing in the entire suite reaching its `default:`
+exhaustiveness throw. `classify.test.ts` already pinned all five real statuses; nothing
+pinned the backstop. Fixing the fixture moved a live branch to dead.
+
+Fixed by pinning the guard directly — one test asserting `NaxError` /
+`MUTATION_UNHANDLED_STATUS` / the offending status in the message.
+
+### The lesson, which is batch 5's own, one level up
+
+Batch 5 wrote: "One tsc message, two different bugs. Swapping the value on the second, or
+annotating the first, silences tsc and leaves the defect." That was about *choosing* the
+right edit. This is the case where the right edit still costs something: **an invalid
+literal can be load-bearing for coverage**, because invalid values are exactly what reach
+`default:` branches and error paths.
+
+**The typecheck ratchet is structurally blind to this class.** It counts errors; it cannot
+see that removing one moved a branch from covered to dead. Neither can the suite — every
+test still passed, locally and in CI. Only the coverage gate noticed, and only because
+`classify.ts` sits outside the per-file baseline so any drop reads as a new file below the
+floor.
+
+**Carry forward:** when a drain edit changes a value that a `switch` or an error path
+reads — not merely a shape a type reads — run `bun run test:coverage`, not just
+`bun run test`. The six-step loop this issue has used throughout does not include it, and
+this is the first row in 2000 that needed it.
+
+One point of coverage-ratchet slack (101 below floor against a baseline of 103) was left
+alone: `main` measures 102, so the slack pre-dates this branch, and lowering a coverage
+baseline does not belong in a typecheck drain.

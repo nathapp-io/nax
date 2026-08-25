@@ -6,6 +6,7 @@ import { synthesisOp } from "@/operations";
 import type { DebateSynthesisInput } from "@/operations/debate-synthesis";
 import { DebatePromptBuilder } from "@/prompts";
 import { composeSections, join } from "@/prompts";
+import { opModelResolver } from "@test/helpers";
 
 function makeBuildCtx() {
   return {
@@ -38,7 +39,7 @@ describe("synthesisOp", () => {
       resolverAgent: "synth-agent",
       resolverModel: "fast",
     };
-    expect(synthesisOp.model?.(input, makeBuildCtx())).toEqual({
+    expect(opModelResolver(synthesisOp)(input, makeBuildCtx())).toEqual({
       agent: "synth-agent",
       model: "fast",
     });
@@ -51,7 +52,7 @@ describe("synthesisOp", () => {
       resolverAgent: "custom-synth",
       resolverModel: "opus",
     };
-    expect(synthesisOp.model?.(input, makeBuildCtx())).toEqual({
+    expect(opModelResolver(synthesisOp)(input, makeBuildCtx())).toEqual({
       agent: "custom-synth",
       model: "opus",
     });

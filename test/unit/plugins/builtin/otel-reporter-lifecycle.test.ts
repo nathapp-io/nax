@@ -223,6 +223,7 @@ describe("otel-reporter detail-gated review payloads", () => {
       details: {
         kind: "review",
         reviewer: "adversarial",
+        iteration: 1,
         bySeverity: { critical: 0, error: 1, warning: 0, info: 0, low: 0, unverifiable: 0 },
         blockingCount: 1,
         advisoryCount: 0,
@@ -264,7 +265,15 @@ describe("otel-reporter detail-gated review payloads", () => {
       outcome: "passed",
       durationMs: 20,
       costUsd: 0.02,
-      details: { kind: "review", reviewer: "adversarial", items: [{ message: "missing-null-check" }] },
+      details: {
+        kind: "review",
+        reviewer: "adversarial",
+        iteration: 1,
+        bySeverity: { critical: 0, error: 1, warning: 0, info: 0, low: 0, unverifiable: 0 },
+        blockingCount: 1,
+        advisoryCount: 0,
+        items: [{ message: "missing-null-check", severity: "error" }],
+      },
     });
     await r.onRunEnd?.({
       runId: "r10",
@@ -301,7 +310,15 @@ describe("otel-reporter detail-gated review payloads", () => {
       outcome: "passed",
       durationMs: 20,
       costUsd: 0.02,
-      details: { kind: "review", reviewer: "adversarial", items: [{ message: "leaked var", file: "src/foo.ts" }] },
+      details: {
+        kind: "review",
+        reviewer: "adversarial",
+        iteration: 1,
+        bySeverity: { critical: 0, error: 1, warning: 0, info: 0, low: 0, unverifiable: 0 },
+        blockingCount: 1,
+        advisoryCount: 0,
+        items: [{ message: "leaked var", file: "src/foo.ts", severity: "error" }],
+      },
     });
     await r.onRunEnd?.({
       runId: "r11",

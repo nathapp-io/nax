@@ -57,6 +57,7 @@ function makeOutput(overrides: Partial<SemanticReviewOutput> = {}): SemanticRevi
     passed: true,
     findings: [],
     normalizedFindings: [],
+    acDropped: [],
     ...overrides,
   };
 }

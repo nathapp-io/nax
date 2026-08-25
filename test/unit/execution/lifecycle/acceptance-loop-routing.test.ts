@@ -68,7 +68,6 @@ function makeMinimalConfig(
     quality: { ...DEFAULT_CONFIG.quality },
     tdd: { ...DEFAULT_CONFIG.tdd },
     constitution: { ...DEFAULT_CONFIG.constitution },
-    analyze: { ...DEFAULT_CONFIG.analyze },
     review: { ...DEFAULT_CONFIG.review },
     plan: { ...DEFAULT_CONFIG.plan },
     acceptance: {

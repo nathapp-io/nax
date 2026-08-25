@@ -75,7 +75,7 @@ describe("mergePackageConfig integration", () => {
   test("package override with review.enabled=false → merged config has review disabled", () => {
     const root: NaxConfig = {
       ...makeBaseConfig(),
-      review: { enabled: true, checks: ["lint"], commands: {}, pluginMode: "per-story" },
+      review: { ...DEFAULT_CONFIG.review, enabled: true, checks: ["lint"], commands: {}, pluginMode: "gating" },
     };
     const result = mergePackageConfig(root, {
       review: { enabled: false } as Partial<NaxConfig["review"]>,

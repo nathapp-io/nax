@@ -27,7 +27,7 @@ describe("CriticPromptBuilder", () => {
       expect(typeof builder.build).toBe("function");
 
       const featureName = "my-unique-feature-xyz";
-      const prd: Partial<PRD> = { feature: featureName, stories: [], branch: "main" };
+      const prd: Partial<PRD> = { feature: featureName, userStories: [], branchName: "main" };
       const manifest: FactsManifest = { repoFacts: [], specClaims: [], gaps: [] };
       const result = builder.build(prd as PRD, manifest);
 
@@ -44,15 +44,8 @@ describe("CriticPromptBuilder", () => {
       const featureName = "complex-feature-name";
       const prd: Partial<PRD> = {
         feature: featureName,
-        specContent: "Some spec content here",
-        stories: [
-          {
-            id: "story-1",
-            title: "Story 1",
-            acceptanceCriteria: [{ id: "ac-1", assertion: "should do something" }],
-          },
-        ],
-        branch: "feature/complex",
+        userStories: [],
+        branchName: "feature/complex",
       };
       const manifest: FactsManifest = {
         repoFacts: [{ id: "F-001", kind: "file", evidence: "path/to/file.ts", summary: "Found file" }],
@@ -195,7 +188,7 @@ describe("CriticPromptBuilder", () => {
 
   describe("prompt quality", () => {
     test("build(), jsonRepair(), and schemaRepair() all produce substantial prompts", () => {
-      const prd: Partial<PRD> = { feature: "test-feature", stories: [], branch: "main" };
+      const prd: Partial<PRD> = { feature: "test-feature", userStories: [], branchName: "main" };
       const manifest: FactsManifest = { repoFacts: [], specClaims: [], gaps: [] };
 
       const buildResult = new CriticPromptBuilder().build(prd as PRD, manifest);

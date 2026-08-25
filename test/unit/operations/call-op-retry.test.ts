@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { RetryPreset } from "@/agents/retry";
+import type { RetryPreset, RetryStrategy } from "@/agents/retry";
 import type { CompleteResult } from "@/agents/types";
 import type { DEFAULT_CONFIG } from "@/config";
 import { pickSelector } from "@/config";
@@ -282,7 +282,7 @@ describe("callOp retry loop (kind:run) — op.recover on parse exhaustion (#993)
     };
 
     let runCount = 0;
-    const shouldRetry = (failure: Error, attempt: number, ctx: { lastOutput?: string }) => {
+    const shouldRetry: RetryStrategy["shouldRetry"] = (failure, attempt, ctx) => {
       expect(failure).toBeInstanceOf(Error);
       expect(attempt).toBe(0);
       expect(ctx.lastOutput).toBe(fileOutput);
@@ -347,7 +347,7 @@ describe("callOp retry loop (kind:run) — op.recover on parse exhaustion (#993)
     };
 
     let runCount = 0;
-    const shouldRetry = (failure: Error, attempt: number, ctx: { lastOutput?: string }) => {
+    const shouldRetry: RetryStrategy["shouldRetry"] = (failure, attempt, ctx) => {
       expect(failure).toBeInstanceOf(Error);
       if (attempt === 0) {
         expect(ctx.lastOutput).toBe(firstOutput);

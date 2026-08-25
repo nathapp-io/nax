@@ -20,10 +20,6 @@ function makeContestant(
   return {
     name: "test-contestant",
     agent: "claude",
-    status: overrides.status,
-    storiesPassed: overrides.storiesPassed,
-    costUsd: overrides.costUsd,
-    wallTimeMs: overrides.wallTimeMs,
     error: overrides.error,
     ...overrides,
   };

@@ -1,6 +1,7 @@
 // test/unit/execution/non-blocking-fix-wiring.test.ts
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
+import type { NonBlockingFixArgs, NonBlockingFixDeps } from "@/execution/non-blocking-fix";
 import { shouldRunNonBlockingFix } from "@/execution/non-blocking-fix";
 import type { NaxRuntime } from "@/runtime";
 import { _rollbackDeps } from "@/tdd";
@@ -118,7 +119,11 @@ describe("non-blocking-fix runtime wiring", () => {
   });
 
   test("story orchestrator routes non-blocking fix through injected runtime wiring with measureSourceDiff", async () => {
-    const runNonBlockingFix = mock(async () => ({ ran: true, kept: true, restored: false }));
+    const runNonBlockingFix = mock(async (_args: NonBlockingFixArgs, _overrides: Partial<NonBlockingFixDeps>) => ({
+      ran: true,
+      kept: true,
+      restored: false,
+    }));
     (_storyOrchestratorDeps as { runNonBlockingFix?: typeof runNonBlockingFix }).runNonBlockingFix = runNonBlockingFix;
 
     const config = makeNaxConfig({

@@ -14,7 +14,7 @@ function withRectification(enabled: boolean) {
   return makeNaxConfig({
     execution: {
       rectification: enabled
-        ? { enabled: true, maxRetries: 2, fullSuiteTimeoutSeconds: 60, maxFailureSummaryChars: 1000 }
+        ? { enabled: true, maxAttemptsPerStrategy: 2, fullSuiteTimeoutSeconds: 60, maxFailureSummaryChars: 1000 }
         : { enabled: false },
     },
   });

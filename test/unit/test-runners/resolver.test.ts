@@ -223,11 +223,7 @@ describe("resolveTestFilePatterns — field consistency", () => {
   });
 
   test("resolveTestFilePatterns accepts a TestPatternConfig slice (no NaxConfig cast)", async () => {
-    const slice: TestPatternConfig = {
-      execution: undefined,
-      project: undefined,
-      quality: undefined,
-    };
+    const slice: TestPatternConfig = testPatternConfigSelector.select(makeNaxConfig());
     const result = await resolveTestFilePatterns(slice, "/tmp/nonexistent-resolver-test-dir");
     expect(result.resolution).toBe("fallback");
     expect(result.regex.length).toBeGreaterThan(0);

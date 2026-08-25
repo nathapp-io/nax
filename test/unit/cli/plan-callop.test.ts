@@ -21,6 +21,7 @@ import { join } from "node:path";
 import { _planDeps, planCommand } from "@/cli";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
+import { InteractionChain } from "@/interaction/chain";
 import type { PRD } from "@/prd/types";
 import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 import { makeTempDir } from "@test/helpers";
@@ -210,11 +211,9 @@ describe("planCommand — callOp + planInteractiveOp migration", () => {
   });
 
   test("AC-5b: uses interactionBridge from chain when available", async () => {
-    const mockChain = {
-      destroy: mock(async () => {}),
-    };
+    const mockChain = new InteractionChain({ defaultTimeout: 5000, defaultFallback: "abort" });
 
-    _planDeps.initInteractionChain = mock(async () => mockChain);
+    _planDeps.initInteractionChain = mock<typeof _planDeps.initInteractionChain>(async () => mockChain);
 
     const specPath = join(tmpDir, "spec.md");
     _planDeps.readFile = mock(async (path: string) => {
@@ -280,7 +279,7 @@ describe("planCommand — callOp + planInteractiveOp migration", () => {
         enabled: true,
         stages: {
           plan: {
-            debaters: [{ agent: "claude", tier: "balanced" }],
+            debaters: [{ agent: "claude", model: "balanced" }],
             rounds: 1,
           },
         },

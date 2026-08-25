@@ -1,7 +1,7 @@
 import { buildContextToolPreamble, buildRunInteractionHandler } from "@/agents/acp/adapter";
 import { NO_OP_INTERACTION_HANDLER } from "@/agents/interaction-handler";
 import type { IAgentManager } from "@/agents/manager-types";
-import type { AgentAdapter, AgentResult } from "@/agents/types";
+import type { AgentAdapter, AgentResult, CompleteOptions, ResolvedCompleteOptions } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
 import { resolvePermissions } from "@/config/permissions";
@@ -38,6 +38,15 @@ export function fakeAgentManager(
       : (defaultAgentNameOrOpts ?? {});
   const defaultAgentName = opts.defaultAgentName;
   const dispatchEvents = opts.dispatchEvents;
+  const resolvePermissionsFor: typeof resolvePermissions = (config, stage) =>
+    resolvePermissions((config as NaxConfig | undefined) ?? DEFAULT_CONFIG, stage);
+  // Mirrors AgentManager.completeAs: fills in resolvedPermissions before handing
+  // options to the adapter, producing the ResolvedCompleteOptions the adapter boundary
+  // requires (src/agents/types.ts:314, manager.ts:493-501).
+  const resolveCompleteOpts = (o: CompleteOptions): ResolvedCompleteOptions => ({
+    ...o,
+    resolvedPermissions: o.resolvedPermissions ?? resolvePermissionsFor(o.config, o.pipelineStage ?? "run"),
+  });
   const warnMismatch = (method: string, requested: string): void => {
     if (requested !== adapter.name) {
       getLogger().warn("agents", "fakeAgentManager: agentName mismatch — test manager wraps a single adapter", {
@@ -60,8 +69,7 @@ export function fakeAgentManager(
       const opts = req.runOptions;
       const startTime = Date.now();
       const resolvedPermissions =
-        opts.resolvedPermissions ??
-        resolvePermissions((opts.config as NaxConfig | undefined) ?? DEFAULT_CONFIG, opts.pipelineStage ?? "run");
+        opts.resolvedPermissions ?? resolvePermissionsFor(opts.config, opts.pipelineStage ?? "run");
       const sessionName =
         opts.sessionHandle ??
         formatSessionName({
@@ -79,7 +87,6 @@ export function fakeAgentManager(
           resolvedPermissions,
           modelDef: opts.modelDef,
           timeoutSeconds: opts.timeoutSeconds,
-          onPidSpawned: opts.onPidSpawned,
           onSessionEstablished: opts.onSessionEstablished,
           signal: opts.abortSignal,
         });
@@ -160,7 +167,7 @@ export function fakeAgentManager(
       const outcome = await mgr.runWithFallback(req);
       return { ...outcome.result, agentFallbacks: outcome.fallbacks };
     },
-    complete: async (prompt, opts) => adapter.complete(prompt, opts),
+    complete: async (prompt, opts) => adapter.complete(prompt, resolveCompleteOpts(opts)),
     getAgent: () => adapter,
     events: { on: () => {} },
     runAs: async (agentName, req) => {
@@ -170,7 +177,7 @@ export function fakeAgentManager(
     },
     completeAs: async (agentName, prompt, opts) => {
       warnMismatch("completeAs", agentName);
-      return adapter.complete(prompt, opts);
+      return adapter.complete(prompt, resolveCompleteOpts(opts));
     },
     runAsSession: async (_agentName, handle, prompt, _opts) => {
       return adapter.sendTurn(handle, prompt, { interactionHandler: NO_OP_INTERACTION_HANDLER });

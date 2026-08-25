@@ -15,6 +15,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import type { CompleteOptions, CompleteResult } from "@/agents/types";
 import { _planDeps, planCommand } from "@/cli";
 import type { NaxConfig } from "@/config";
 import type { DebateRunner, DebateRunnerOptions } from "@/debate";
@@ -27,9 +28,13 @@ import { firstCall, makeDebateRunner, makeMockAgentManager, makeMockRuntime, mak
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeMockPlanManager(runFn?: (runOptions: any) => Promise<any>) {
+function makeMockPlanManager(
+  runFn?: (runOptions: any) => Promise<any>,
+  completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>,
+) {
   return makeMockRuntime({
     agentManager: makeMockAgentManager({
+      completeFn,
       runWithFallbackFn: runFn
         ? async (req) => {
             await runFn(req.runOptions);

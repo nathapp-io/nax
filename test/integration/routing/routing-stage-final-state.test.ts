@@ -18,7 +18,7 @@ import { routingStage } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
 import { PluginRegistry } from "@/plugins/registry";
 import type { PRD, UserStory } from "@/prd/types";
-import { makeDispatchContext, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makeTempDir, makeTestContext } from "@test/helpers";
 
 function createTestContext(workdir: string, overrides?: Partial<PipelineContext>): PipelineContext {
   const story: UserStory = {
@@ -122,12 +122,6 @@ function createTestContext(workdir: string, overrides?: Partial<PipelineContext>
       rollbackOnFailure: true,
     },
     constitution: { enabled: false, path: "constitution.md", maxTokens: 2000 },
-    analyze: {
-      llmEnhanced: false,
-      model: "balanced",
-      fallbackToKeywords: true,
-      maxCodebaseSummaryTokens: 4000,
-    },
     review: { enabled: true, checks: ["test"], commands: {} },
     plan: { model: "balanced", outputPath: "features" },
     acceptance: { enabled: true, maxRetries: 2, testPath: "acceptance.test.ts" },
@@ -142,16 +136,16 @@ function createTestContext(workdir: string, overrides?: Partial<PipelineContext>
     },
   });
 
-  return {
+  return makeTestContext({
     workdir,
     story,
     stories: [story],
     prd,
     config,
+    rootConfig: config,
     plugins: new PluginRegistry([]),
-    ...makeDispatchContext(),
     ...overrides,
-  };
+  });
 }
 
 describe("Routing Stage - Task classified log shows final routing state after all overrides", () => {

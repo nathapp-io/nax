@@ -51,8 +51,8 @@ function makeAgentManager(result: AgentResult | (() => Promise<AgentResult>)): I
   const runFn = typeof result === "function" ? result : async () => result;
   return makeMockAgentManager({
     getDefaultAgent: "claude",
-    runFn: async (_agent, _opts) => await runFn(),
-    runWithFallbackFn: async (_req) => ({ result: await runFn(), fallbacks: [] }),
+    runFn: async (_agent, _opts) => ({ ...(await runFn()), agentFallbacks: [] }),
+    runWithFallbackFn: async (_req) => ({ result: { ...(await runFn()), agentFallbacks: [] }, fallbacks: [] }),
   });
 }
 
@@ -197,7 +197,7 @@ describe("SessionManager.runInSession — ADR-013 Phase 1", () => {
       getDefaultAgent: "claude",
       runFn: async (agent, opts) => {
         opts.onSessionEstablished?.({ recordId: "r1", sessionId: "s1" }, "nax-test");
-        return makeResult();
+        return { ...makeResult(), agentFallbacks: [] };
       },
     });
 

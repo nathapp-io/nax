@@ -29,7 +29,9 @@ describe("Loader Security (SEC-1, SEC-2)", () => {
     await fs.mkdir(projectPluginsDir, { recursive: true });
     await fs.mkdir(globalPluginsDir, { recursive: true });
     capturedErrors = [];
-    _setPluginErrorSink((msg: string) => capturedErrors.push(msg));
+    _setPluginErrorSink((...args: unknown[]) => {
+      capturedErrors.push(String(args[0]));
+    });
   });
 
   afterEach(async () => {

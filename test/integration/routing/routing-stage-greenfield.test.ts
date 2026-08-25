@@ -15,7 +15,7 @@ import { routingStage } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
 import { PluginRegistry } from "@/plugins/registry";
 import type { PRD, UserStory } from "@/prd/types";
-import { makeDispatchContext, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makeTempDir, makeTestContext } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Helpers
@@ -139,12 +139,6 @@ function createTestContext(
       path: "constitution.md",
       maxTokens: 2000,
     },
-    analyze: {
-      llmEnhanced: false,
-      model: "balanced",
-      fallbackToKeywords: true,
-      maxCodebaseSummaryTokens: 4000,
-    },
     review: {
       enabled: true,
       checks: ["test"],
@@ -170,16 +164,16 @@ function createTestContext(
     },
   });
 
-  return {
+  return makeTestContext({
     workdir,
     story,
     stories: [story],
     prd,
     config,
+    rootConfig: config,
     plugins: new PluginRegistry([]),
-    ...makeDispatchContext(),
     ...overrides,
-  };
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

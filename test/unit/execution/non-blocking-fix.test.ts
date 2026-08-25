@@ -104,7 +104,7 @@ describe("runNonBlockingFix keep vs restore", () => {
         ...fakeDeps,
         captureSnapshotRef: async () => {
           snapshots += 1;
-          return "snap-sha";
+          return { sha: "snap-sha", untrackedBefore: [] };
         },
       },
     );

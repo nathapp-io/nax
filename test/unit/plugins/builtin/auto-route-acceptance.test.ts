@@ -293,7 +293,7 @@ describe("autoRoutePlugin.execute", () => {
   });
 
   test("AC6 — returns { success: true }, logs via ctx.logger, does not throw when _deps.writeFile rejects", async () => {
-    let warned: { message: string; data?: Record<string, unknown> } | null = null;
+    const warned: { value: { message: string; data?: Record<string, unknown> } | null } = { value: null };
     _autoRouteDeps.loadRunMetrics = (async () => makeAdjustmentHistory()) as typeof _autoRouteDeps.loadRunMetrics;
     _autoRouteDeps.writeFile = (async () => {
       throw new Error("disk full");
@@ -304,7 +304,7 @@ describe("autoRoutePlugin.execute", () => {
         debug: () => {},
         info: () => {},
         warn: (message, data) => {
-          warned = { message, ...(data !== undefined ? { data } : {}) };
+          warned.value = { message, ...(data !== undefined ? { data } : {}) };
         },
         error: () => {},
       },
@@ -322,8 +322,8 @@ describe("autoRoutePlugin.execute", () => {
 
     expect(threw).toBe(false);
     expect(result?.success).toBe(true);
-    expect(warned).not.toBeNull();
-    expect(warned?.message.toLowerCase()).toContain("auto-route");
+    expect(warned.value).not.toBeNull();
+    expect(warned.value?.message.toLowerCase()).toContain("auto-route");
   });
 });
 

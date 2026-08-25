@@ -513,7 +513,7 @@ describe("getChangedTestFiles", () => {
       () => {
         (_gitDeps as any).spawn = makeSpawn(() => ({ exitCode: 128, stdout: "" })).spawn;
       },
-      undefined as const,
+      undefined,
       TS_TEST_REGEX,
     ],
   ])("returns empty when %s", async (_label, setup, prefix, regex) => {

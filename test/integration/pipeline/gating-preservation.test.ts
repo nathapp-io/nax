@@ -13,7 +13,12 @@ import type { NaxConfig } from "@/config";
 import { AdversarialReviewConfigSchema } from "@/config/schemas-review";
 import { _storyOrchestratorDeps, assemblePlanInputsFromCtx, buildPlanForStrategy } from "@/execution";
 import type { Finding } from "@/findings";
-import { makeMechanicalFormatFixStrategy, makeMechanicalLintFixStrategy } from "@/operations";
+import {
+  makeMechanicalFormatFixStrategy,
+  makeMechanicalLintFixStrategy,
+  mechanicalFormatFixOp,
+  mechanicalLintFixOp,
+} from "@/operations";
 import type { PipelineContext } from "@/pipeline/types";
 import type { NaxRuntime } from "@/runtime";
 import {
@@ -461,11 +466,20 @@ describe("AC6: mechanical fix fixOp.execute returns early when both commands und
     const mockDeps = {
       runQualityCommand: async () => {
         called = true;
-        return { exitCode: 0, output: "" };
+        return {
+          commandName: "lintFix",
+          command: "",
+          success: true,
+          exitCode: 0,
+          output: "",
+          durationMs: 0,
+          timedOut: false,
+        };
       },
     };
     const strategy = makeMechanicalLintFixStrategy();
-    const result = await strategy.fixOp.execute({ workdir: "/tmp/test", storyId: "US-001" }, mockCtx, mockDeps);
+    expect(strategy.fixOp).toBe(mechanicalLintFixOp);
+    const result = await mechanicalLintFixOp.execute({ workdir: "/tmp/test", storyId: "US-001" }, mockCtx, mockDeps);
     expect(result).toEqual({ applied: true, exitCode: 0 });
     expect(called).toBe(false);
   });
@@ -477,11 +491,20 @@ describe("AC6: mechanical fix fixOp.execute returns early when both commands und
     const mockDeps = {
       runQualityCommand: async () => {
         called = true;
-        return { exitCode: 0, output: "" };
+        return {
+          commandName: "lintFix",
+          command: "",
+          success: true,
+          exitCode: 0,
+          output: "",
+          durationMs: 0,
+          timedOut: false,
+        };
       },
     };
     const strategy = makeMechanicalFormatFixStrategy();
-    const result = await strategy.fixOp.execute({ workdir: "/tmp/test", storyId: "US-001" }, mockCtx, mockDeps);
+    expect(strategy.fixOp).toBe(mechanicalFormatFixOp);
+    const result = await mechanicalFormatFixOp.execute({ workdir: "/tmp/test", storyId: "US-001" }, mockCtx, mockDeps);
     expect(result).toEqual({ applied: true, exitCode: 0 });
     expect(called).toBe(false);
   });

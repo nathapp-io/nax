@@ -10,7 +10,7 @@ import type { ProjectProfile } from "@/config/runtime-types";
 import { _languageToolsDeps, checkLanguageTools } from "@/precheck/checks-warnings";
 
 describe("checkLanguageTools", () => {
-  let originalWhich: typeof Bun.which;
+  let originalWhich: typeof _languageToolsDeps.which;
 
   beforeEach(() => {
     originalWhich = _languageToolsDeps.which;

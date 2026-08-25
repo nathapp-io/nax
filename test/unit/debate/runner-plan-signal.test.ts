@@ -10,7 +10,7 @@ interface PlanCallInput {
   readonly rebuttalBarrier?: { readonly resolve: (value: string) => void };
 }
 
-function makePlanContext() {
+function makePlanContext(stageConfigOverrides: Record<string, unknown> = {}) {
   const config = makeNaxConfig({
     debate: {
       maxConcurrentDebaters: 2,
@@ -20,16 +20,10 @@ function makePlanContext() {
     },
   });
   const agentManager = makeMockAgentManager();
-  const sessionManager = makeSessionManager({
-    runInSession: mock(async () => ({
-      success: true,
-      exitCode: 0,
-      output: "",
-      rateLimited: false,
-      durationMs: 0,
-      estimatedCostUsd: 0,
-    })),
-  });
+  // No runInSession override: this suite exercises the callOp-based path and
+  // asserts runInSession is never called, so the helper's default stub
+  // (already Mock-typed) is sufficient — see makeSessionManager's default.
+  const sessionManager = makeSessionManager();
   const runtime = makeMockRuntime({ agentManager, sessionManager, config });
 
   return {
@@ -52,6 +46,7 @@ function makePlanContext() {
         { agent: "claude", model: "fast" },
         { agent: "opencode", model: "balanced" },
       ],
+      ...stageConfigOverrides,
     },
     config,
     callContext: {
@@ -155,15 +150,12 @@ describe("runPlan coordinator", () => {
     // After migration to callOp/planDebaterOp, hybrid rebuttals are collected from
     // the rebuttalBarrier propagated by the coordinator's .then() handler.
     // planDebaterOp has a single rebuttalBarrier (one rebuttal round per callOp).
-    const ctx = makePlanContext();
-
-    ctx.stageConfig = {
-      ...ctx.stageConfig,
+    const ctx = makePlanContext({
       sessionMode: "stateful",
       mode: "hybrid",
       rounds: 2,
       selector: undefined,
-    };
+    });
 
     spyOn(callModule, "callOp").mockImplementation(
       async (_callCtx, _op, input: any) => ({ success: true, rebut: `rebut-1-${input.index}` }) as never,

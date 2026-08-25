@@ -25,8 +25,6 @@ const mockConfig: NaxConfig = makeNaxConfig({
   },
   autoMode: {
     enabled: true,
-    defaultAgent: "claude",
-    fallbackOrder: ["claude"],
     complexityRouting: {
       simple: "fast",
       medium: "balanced",
@@ -35,7 +33,11 @@ const mockConfig: NaxConfig = makeNaxConfig({
     },
     escalation: {
       enabled: true,
-      maxAttempts: 2,
+      tierOrder: [
+        { tier: "fast", attempts: 2 },
+        { tier: "balanced", attempts: 2 },
+        { tier: "powerful", attempts: 2 },
+      ],
     },
   },
   execution: {
@@ -58,12 +60,6 @@ const mockConfig: NaxConfig = makeNaxConfig({
     enabled: true,
     path: "constitution.md",
     maxTokens: 4000,
-  },
-  analyze: {
-    llmEnhanced: true,
-    model: "balanced",
-    fallbackToKeywords: true,
-    maxCodebaseSummaryTokens: 2000,
   },
   review: {
     enabled: false,

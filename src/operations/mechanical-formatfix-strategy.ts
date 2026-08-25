@@ -40,7 +40,7 @@ function buildCommand(
   return null;
 }
 
-const mechanicalFormatFixOp: DeterministicOperation<
+export const mechanicalFormatFixOp: DeterministicOperation<
   MechanicalFormatFixInput,
   MechanicalFormatFixOutput,
   QualityConfig,

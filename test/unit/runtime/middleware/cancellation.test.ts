@@ -11,7 +11,6 @@ function makeCtx(aborted = false): MiddlewareContext {
     agentName: "claude",
     kind: "run",
     request: null,
-    prompt: null,
     config: DEFAULT_CONFIG,
     signal: ctrl.signal,
     resolvedPermissions: { mode: "approve-reads" },
@@ -36,7 +35,6 @@ describe("cancellationMiddleware", () => {
       agentName: "claude",
       kind: "run",
       request: null,
-      prompt: null,
       config: DEFAULT_CONFIG,
       resolvedPermissions: { mode: "approve-reads" },
     };
@@ -52,7 +50,6 @@ describe("cancellationMiddleware", () => {
       agentName: "claude",
       kind: "complete",
       request: null,
-      prompt: "test",
       config: DEFAULT_CONFIG,
       signal: ctrl.signal,
       resolvedPermissions: { mode: "approve-reads" },

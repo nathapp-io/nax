@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { AcceptanceDiagnoseInput } from "@/operations/acceptance-diagnose";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime, opSelector } from "@test/helpers";
+import { makeNaxConfig, makeTestRuntime, opModelResolver, opSelector } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -48,7 +48,7 @@ describe("acceptanceDiagnoseOp shape", () => {
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(opSelector(acceptanceDiagnoseOp.config)) };
 
-    expect(acceptanceDiagnoseOp.model?.(SAMPLE_INPUT, ctx)).toEqual({
+    expect(opModelResolver(acceptanceDiagnoseOp)(SAMPLE_INPUT, ctx)).toEqual({
       agent: "opencode",
       model: "opencode-go/deepseek-v4-pro",
     });

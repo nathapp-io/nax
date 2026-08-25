@@ -520,10 +520,10 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
     (_regenerateDeps as { readFile: unknown }).readFile = readMock;
 
     // Capture what implementationContext is passed to acceptanceSetupExecute
-    let capturedCtx: PipelineContext | null = null;
+    const capturedCtxs: Array<PipelineContext & { implementationContext?: Array<{ content: string }> }> = [];
     (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = mock(
-      async (ctx: PipelineContext) => {
-        capturedCtx = ctx;
+      async (ctx: PipelineContext & { implementationContext?: Array<{ content: string }> }) => {
+        capturedCtxs.push(ctx);
       },
     );
 
@@ -535,9 +535,9 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
     await regenerateAcceptanceTest(testPath, ctx);
 
     // The acceptanceSetupExecute mock must have been called with the context
-    expect(capturedCtx).not.toBeNull();
+    expect(capturedCtxs).toHaveLength(1);
     // Total content passed as implementationContext must not exceed 50KB
-    const passed = capturedCtx as PipelineContext & { implementationContext?: Array<{ content: string }> };
+    const passed = capturedCtxs[0];
     expect(passed.implementationContext).toBeDefined();
     const totalBytes = (passed.implementationContext ?? []).reduce((sum, f) => sum + f.content.length, 0);
     expect(totalBytes).toBeLessThanOrEqual(50 * 1024);
@@ -550,10 +550,11 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
     (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = mock(async () => "src/add.ts");
     (_regenerateDeps as { readFile: unknown }).readFile = mock(async () => "export function add() {}");
 
-    let capturedCtx: PipelineContext | null = null;
+    const capturedCtxs: Array<PipelineContext & { implementationContext?: Array<{ path: string; content: string }> }> =
+      [];
     (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = mock(
-      async (ctx: PipelineContext) => {
-        capturedCtx = ctx;
+      async (ctx: PipelineContext & { implementationContext?: Array<{ path: string; content: string }> }) => {
+        capturedCtxs.push(ctx);
       },
     );
 
@@ -564,11 +565,9 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
 
     await regenerateAcceptanceTest(testPath, ctx);
 
-    expect(capturedCtx).not.toBeNull();
+    expect(capturedCtxs).toHaveLength(1);
     // The context passed to acceptanceSetupExecute must carry implementationContext
-    const passed = capturedCtx as PipelineContext & {
-      implementationContext?: Array<{ path: string; content: string }>;
-    };
+    const passed = capturedCtxs[0];
     expect(passed.implementationContext).toBeDefined();
     expect(passed.implementationContext).toHaveLength(1);
     expect(passed.implementationContext?.[0].path).toBe("src/add.ts");

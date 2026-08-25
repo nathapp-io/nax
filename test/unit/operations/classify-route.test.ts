@@ -2,8 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { routingConfigSelector } from "@/config";
 import type { ClassifyRouteInput } from "@/operations/classify-route";
 import { classifyRouteBatchOp, classifyRouteOp } from "@/operations/classify-route";
+import type { UserStory } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { makeNaxConfig, makeTestRuntime, opModelResolver } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -50,7 +51,7 @@ describe("classifyRouteOp shape", () => {
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(routingConfigSelector) };
 
-    expect(classifyRouteOp.model?.(SAMPLE_INPUT, ctx)).toEqual({
+    expect(opModelResolver(classifyRouteOp)(SAMPLE_INPUT, ctx)).toEqual({
       agent: "opencode",
       model: "opencode-go/kimi-k2.6",
     });
@@ -78,9 +79,7 @@ describe("classifyRouteOp shape", () => {
         tags: [],
       },
     ];
-    expect(
-      classifyRouteBatchOp.model?.(stories as unknown as Parameters<typeof classifyRouteBatchOp.model>[0], ctx),
-    ).toBe("powerful");
+    expect(opModelResolver(classifyRouteBatchOp)(stories as unknown as UserStory[], ctx)).toBe("powerful");
   });
 });
 

@@ -124,7 +124,7 @@ describe("routingStage - initialModelTier set on first classification", () => {
 // ---------------------------------------------------------------------------
 
 describe("routingStage - initialModelTier never overwritten after first classify", () => {
-  let origRoutingDeps: RoutingDeps;
+  let origRoutingDeps: typeof RoutingDeps;
 
   afterEach(() => {
     mock.restore();

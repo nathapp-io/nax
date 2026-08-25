@@ -119,7 +119,15 @@ describe("wireReporters", () => {
     const reporter = makeReporter();
     wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
 
-    bus.emit({ type: "run:completed", totalStories: 5, passedStories: 4, failedStories: 1, durationMs: 60000 });
+    bus.emit({
+      type: "run:completed",
+      totalStories: 5,
+      passedStories: 4,
+      failedStories: 1,
+      skippedStories: 0,
+      pausedStories: 0,
+      durationMs: 60000,
+    });
 
     await Promise.resolve();
     expect(reporter.calls).toContain("onRunEnd");

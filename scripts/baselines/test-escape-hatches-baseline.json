@@ -1,15 +1,15 @@
 {
   "counts": {
-    "asAny": 1386,
+    "asAny": 1385,
     "tsSuppress": 40,
     "ratchetAllow": 106,
     "absentValue": 17,
-    "anyType": 1875,
-    "looseCast": 1923,
-    "asNever": 615,
+    "anyType": 1872,
+    "looseCast": 1910,
+    "asNever": 608,
     "nonNullAssert": 827
   },
-  "updatedAt": "2026-08-24T14:30:39.098Z",
+  "updatedAt": "2026-08-25T02:24:02.361Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -113,12 +113,12 @@
     },
     "test/integration/execution/runner-parallel-metrics-rectification-events.test.ts": {
       "looseCast": 4,
-      "asNever": 12,
+      "asNever": 10,
       "nonNullAssert": 3
     },
     "test/integration/execution/runner-parallel-metrics.test.ts": {
       "looseCast": 2,
-      "asNever": 40,
+      "asNever": 38,
       "nonNullAssert": 14
     },
     "test/integration/execution/feature-status-write.test.ts": {
@@ -213,7 +213,7 @@
     },
     "test/integration/cli/cli-precheck-run.test.ts": {
       "anyType": 2,
-      "looseCast": 3
+      "looseCast": 2
     },
     "test/integration/cli/cli-core-generate.test.ts": {
       "asNever": 1
@@ -304,14 +304,11 @@
       "looseCast": 1,
       "nonNullAssert": 1
     },
-    "test/integration/pipeline/reporter-lifecycle-basic.test.ts": {
-      "looseCast": 1
-    },
     "test/integration/pipeline/hooks.test.ts": {
       "looseCast": 2
     },
     "test/integration/pipeline/reporter-lifecycle-resilience.test.ts": {
-      "looseCast": 4
+      "looseCast": 3
     },
     "test/unit/session/manager.test.ts": {
       "looseCast": 1
@@ -433,9 +430,6 @@
     "test/unit/precheck/precheck-checks-tier1-blockers.test.ts": {
       "asAny": 3,
       "anyType": 3
-    },
-    "test/unit/precheck/precheck-story-size-gate.test.ts": {
-      "looseCast": 1
     },
     "test/unit/precheck/precheck-canonical-lint-orchestrator.test.ts": {
       "looseCast": 2
@@ -590,9 +584,6 @@
     "test/unit/review/semantic-evidence.test.ts": {
       "anyType": 1
     },
-    "test/unit/review/orchestrator-vs-reconciliation-parity.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/review/review-iteration-store.test.ts": {
       "looseCast": 1
     },
@@ -612,9 +603,6 @@
       "asAny": 1,
       "anyType": 1,
       "nonNullAssert": 8
-    },
-    "test/unit/review/prepare-inputs.test.ts": {
-      "looseCast": 1
     },
     "test/unit/review/ac-quote-validator.test.ts": {
       "looseCast": 2
@@ -696,7 +684,7 @@
     },
     "test/unit/execution/story-orchestrator.test.ts": {
       "asAny": 50,
-      "anyType": 125,
+      "anyType": 123,
       "looseCast": 3,
       "nonNullAssert": 3
     },
@@ -1018,7 +1006,6 @@
       "looseCast": 39
     },
     "test/unit/execution/lifecycle/acceptance-loop.test.ts": {
-      "looseCast": 2,
       "asNever": 7
     },
     "test/unit/execution/lifecycle/acceptance-loop-skipped-packages.test.ts": {
@@ -1097,7 +1084,7 @@
       "looseCast": 1
     },
     "test/unit/bakeoff/coordinator.test.ts": {
-      "looseCast": 22,
+      "looseCast": 21,
       "nonNullAssert": 1
     },
     "test/unit/bakeoff/preflight.test.ts": {
@@ -1231,8 +1218,8 @@
       "anyType": 2
     },
     "test/unit/operations/plan-refine.test.ts": {
-      "looseCast": 2,
-      "asNever": 24,
+      "looseCast": 1,
+      "asNever": 23,
       "nonNullAssert": 4
     },
     "test/unit/operations/adversarial-review-retry-flip.test.ts": {
@@ -1485,7 +1472,7 @@
       "asNever": 17
     },
     "test/unit/debate/resolvers.test.ts": {
-      "looseCast": 22
+      "looseCast": 20
     },
     "test/unit/debate/runner-hybrid-cross-debater.test.ts": {
       "asNever": 2
@@ -1786,7 +1773,7 @@
       "asNever": 1
     },
     "test/unit/agents/manager-iface-run.test.ts": {
-      "looseCast": 2,
+      "looseCast": 1,
       "asNever": 4
     },
     "test/unit/agents/model-resolution.test.ts": {
@@ -1810,8 +1797,7 @@
       "asNever": 4
     },
     "test/unit/agents/manager-credentials.test.ts": {
-      "looseCast": 1,
-      "asNever": 2
+      "looseCast": 1
     },
     "test/unit/agents/manager-swap-loop.test.ts": {
       "looseCast": 1,
@@ -2403,8 +2389,8 @@
       "anyType": 23
     },
     "test/unit/pipeline/subscribers/hooks.test.ts": {
-      "asAny": 4,
-      "anyType": 4
+      "asAny": 3,
+      "anyType": 3
     },
     "test/unit/pipeline/subscribers/registry.test.ts": {
       "looseCast": 5

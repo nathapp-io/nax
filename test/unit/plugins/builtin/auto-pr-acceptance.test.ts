@@ -140,22 +140,22 @@ describe("autoPrPlugin.shouldRun", () => {
   });
 
   test("AC6 — returns false when hasOpenPr reports an existing PR and logs skip reason", async () => {
-    let warned: { message: string; data?: Record<string, unknown> } | null = null;
+    const warned: { value: { message: string; data?: Record<string, unknown> } | null } = { value: null };
     _autoPrDeps.hasOpenPr = (async () => true) as typeof _autoPrDeps.hasOpenPr;
     const ctx = makeContext({
       logger: {
         debug: () => {},
         info: () => {},
         warn: (message, data) => {
-          warned = { message, ...(data !== undefined ? { data } : {}) };
+          warned.value = { message, ...(data !== undefined ? { data } : {}) };
         },
         error: () => {},
       },
     });
 
     expect(await autoPrPlugin.extensions.postRunAction!.shouldRun(ctx)).toBe(false);
-    expect(warned).not.toBeNull();
-    expect(warned?.message.toLowerCase()).toContain("open pr");
+    expect(warned.value).not.toBeNull();
+    expect(warned.value?.message.toLowerCase()).toContain("open pr");
   });
 
   test("AC7 — returns true on the happy path", async () => {

@@ -12,6 +12,7 @@ import type { Finding } from "@/findings";
 import {
   makeAutofixImplementerStrategy,
   makeAutofixTestWriterStrategy,
+  makeDeclarationSink,
   makeMechanicalFormatFixStrategy,
   makeMechanicalLintFixStrategy,
 } from "@/operations";
@@ -32,8 +33,9 @@ function assembleStrategies(opts: {
   if (opts.lintFix) strategies.push(makeMechanicalLintFixStrategy());
   if (opts.formatFix) strategies.push(makeMechanicalFormatFixStrategy());
   if (opts.autofixEnabled) {
-    strategies.push(makeAutofixImplementerStrategy(mockCtx, makeNaxConfig()));
-    strategies.push(makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig()));
+    const sink = makeDeclarationSink();
+    strategies.push(makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), sink));
+    strategies.push(makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), sink));
   }
   return strategies;
 }

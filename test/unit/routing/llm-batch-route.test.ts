@@ -29,7 +29,6 @@ describe("tryLlmBatchRoute", () => {
     const config = makeNaxConfig({
       routing: {
         strategy: "llm",
-        adaptive: { minSamples: 10, costThreshold: 0.8, fallbackStrategy: "keyword" },
         llm: { model: "fast", fallbackToKeywords: true, cacheDecisions: false, mode: "hybrid", timeoutMs: 5000 },
       },
     });
@@ -50,7 +49,6 @@ describe("tryLlmBatchRoute", () => {
     const config = makeNaxConfig({
       routing: {
         strategy: "llm",
-        adaptive: { minSamples: 10, costThreshold: 0.8, fallbackStrategy: "keyword" },
         llm: { model: "fast", fallbackToKeywords: true, cacheDecisions: false, mode: "hybrid", timeoutMs: 5000 },
       },
     });
@@ -69,7 +67,6 @@ describe("tryLlmBatchRoute", () => {
     const config = makeNaxConfig({
       routing: {
         strategy: "llm",
-        adaptive: { minSamples: 10, costThreshold: 0.8, fallbackStrategy: "keyword" },
         llm: { model: "fast", fallbackToKeywords: true, cacheDecisions: false, mode: "hybrid", timeoutMs: 5000 },
       },
     });

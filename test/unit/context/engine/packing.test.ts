@@ -410,9 +410,9 @@ describe("packChunks — documented approximation bound", () => {
     // If someone later implements exact 0/1 DP, this test SHOULD fail — update
     // it together with the spec assumption and the packing.ts header, so the
     // documented bound and the code never drift apart again.
-    const a = makeScored({ id: "A", kind: "code-neighbor", tokens: 51, score: 52, rawScore: 52 });
-    const b = makeScored({ id: "B", kind: "code-neighbor", tokens: 50, score: 50, rawScore: 50 });
-    const c = makeScored({ id: "C", kind: "code-neighbor", tokens: 50, score: 50, rawScore: 50 });
+    const a = makeScored({ id: "A", kind: "neighbor", tokens: 51, score: 52, rawScore: 52 });
+    const b = makeScored({ id: "B", kind: "neighbor", tokens: 50, score: 50, rawScore: 50 });
+    const c = makeScored({ id: "C", kind: "neighbor", tokens: 50, score: 50, rawScore: 50 });
 
     const result = packChunks([a, b, c], 100);
     const packedScore = result.packed.reduce((sum, chunk) => sum + chunk.score, 0);

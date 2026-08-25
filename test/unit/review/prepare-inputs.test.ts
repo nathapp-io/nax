@@ -38,8 +38,13 @@ const baseSemanticConfig: SemanticReviewConfig = {
 };
 
 const baseAdversarialConfig: AdversarialReviewConfig = {
-  ...baseSemanticConfig,
-} as AdversarialReviewConfig;
+  model: baseSemanticConfig.model,
+  diffMode: baseSemanticConfig.diffMode,
+  rules: baseSemanticConfig.rules,
+  timeoutMs: baseSemanticConfig.timeoutMs,
+  parallel: false,
+  maxConcurrentSessions: 2,
+};
 
 let origSpawn: typeof _diffUtilsDeps.spawn;
 let origIsValid: typeof _diffUtilsDeps.isGitRefValid;

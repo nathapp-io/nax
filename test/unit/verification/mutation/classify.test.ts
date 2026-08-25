@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { NaxError } from "@/errors";
 import { type VerificationResult, classifyMutant } from "@/verification";
 
 function makeResult(status: VerificationResult["status"]): VerificationResult {
@@ -106,5 +107,35 @@ describe("classifyMutant — input passthrough", () => {
   test("AC2: TEST_FAILURE with only status populated classifies as errored (no evidence of executed tests)", () => {
     const result = classifyMutant({ status: "TEST_FAILURE", success: false, countsTowardEscalation: false });
     expect(result).toBe("errored");
+  });
+});
+
+describe("classifyMutant — unhandled status", () => {
+  test("throws a tagged NaxError rather than silently classifying", () => {
+    // A status outside VerificationStatus can still arrive at runtime — from a
+    // plugin-supplied runner, or a fixture written against an older union. The
+    // exhaustiveness guard is the backstop, and until #1514 the only thing
+    // reaching it was a mutation-check fixture carrying `status: "FAILURE"`,
+    // a value that was never a member of the union. Fixing that fixture left
+    // this branch uncovered, which is how the gap surfaced.
+    //
+    // Object.assign rather than a cast: the widened `status` comes from the
+    // source literal's inferred type, so the out-of-union value is expressible
+    // without an `as` (see .nax/rules/test-ratchets.md).
+    const rogue = Object.assign(makeResult("SUCCESS"), { status: "FAILURE" });
+
+    expect(() => classifyMutant(rogue)).toThrow(NaxError);
+
+    try {
+      classifyMutant(rogue);
+      throw new Error("expected classifyMutant to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(NaxError);
+      if (err instanceof NaxError) {
+        expect(err.code).toBe("MUTATION_UNHANDLED_STATUS");
+        expect(err.message).toContain("FAILURE");
+        expect(err.context?.stage).toBe("mutation-classify");
+      }
+    }
   });
 });

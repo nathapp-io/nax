@@ -229,11 +229,12 @@ describe("synthesisResolver()", () => {
       },
     });
 
-    const completeOptions = {
-      model: "claude-sonnet-4-5",
+    const completeOptions: CompleteOptions = {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+      workdir: "/tmp/test",
       storyId: "US-001",
       sessionRole: "synthesis",
-    } as CompleteOptions;
+    };
 
     await synthesisResolver(["p1", "p2"], ["c1"], {
       agentManager,
@@ -241,7 +242,7 @@ describe("synthesisResolver()", () => {
       completeOptions,
     });
 
-    expect(capturedOptions?.model).toBe("claude-sonnet-4-5");
+    expect(capturedOptions?.modelDef.model).toBe("claude-sonnet-4-5");
     expect(capturedOptions?.storyId).toBe("US-001");
     expect(capturedOptions?.sessionRole).toBe("synthesis");
   });
@@ -455,11 +456,12 @@ describe("judgeResolver()", () => {
       },
     });
 
-    const completeOptions = {
-      model: "claude-haiku-4-5",
+    const completeOptions: CompleteOptions = {
+      modelDef: { provider: "anthropic", model: "claude-haiku-4-5" },
+      workdir: "/tmp/test",
       storyId: "US-002",
       sessionRole: "judge",
-    } as CompleteOptions;
+    };
 
     await judgeResolver(
       ["p1"],
@@ -471,7 +473,7 @@ describe("judgeResolver()", () => {
       },
     );
 
-    expect(capturedOptions?.model).toBe("claude-haiku-4-5");
+    expect(capturedOptions?.modelDef.model).toBe("claude-haiku-4-5");
     expect(capturedOptions?.storyId).toBe("US-002");
     expect(capturedOptions?.sessionRole).toBe("judge");
   });

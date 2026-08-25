@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_CONFIG,
-  NaxConfigSchema,
   agentManagerConfigSelector,
   contextToolRuntimeConfigSelector,
   debateConfigSelector,
@@ -206,8 +205,7 @@ describe("ConfigSelector — Phase 1 selectors", () => {
 
 describe("planConfigSelector — ADR-025 routing slice", () => {
   test("includes routing so plan-time agent selection can read routing.agents", () => {
-    const full = NaxConfigSchema.parse({});
-    const slice = planConfigSelector.select(full);
+    const slice = planConfigSelector.select(DEFAULT_CONFIG);
     expect(slice.routing).toBeDefined();
     expect(slice.routing?.agents).toBeDefined();
   });

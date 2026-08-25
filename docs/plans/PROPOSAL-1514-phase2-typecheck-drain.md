@@ -6,18 +6,20 @@ at `f91e94fb2`. Every number below was measured on that tree, not recalled.
 **State at hand-off:** casts **102** (from 681), typecheck errors **1946** (from 1969),
 `asAny=1398`, `tsSuppress=54`, `ratchetAllow=107`, `absentValue=17`.
 
-## Status — superseded 2026-08-24
+## Status — superseded 2026-08-25
 
-**The tables in this section are frozen at 2026-08-23 and are no longer the live state.**
-Typecheck is **383**, not 1645; casts are 102; every counter sits at its baseline. Read
-`STATUS-1514-drain.md` §0 for current numbers and §33 for the most recent round. The rulings
-in §4, §6 and §7 below still hold — it is only the counts and the phase table that are stale.
+**Everything below this section is frozen and is no longer the live state — the counts, the
+phase table and the "actuals" table alike.** Typecheck is **11**, not 1645; casts are 101, not
+102. Read `STATUS-1514-drain.md` §0 for current numbers, §43 for batch 5, and §44 for the
+survivor round. The rulings in §4, §6 and §7 below still hold; only the numbers are stale.
 
 Phases 4–6 as named below are all done or dissolved: phase 5's `TS7006` is 0, phase 6's
-`makeObservation` cluster turned out to be 9 errors and was drained incidentally by Lane A,
-and `DispatchContext` went 18 → 3 the same way. What is left is the long tail this proposal
-predicted in the line below the actuals table — and it proved to be recipe-shaped rather than
-per-file, which is the one forecast here that was wrong. See `STATUS-1514-drain.md` §32.
+`makeObservation` cluster turned out to be 9 errors and was drained incidentally by Lane A, and
+`DispatchContext` went 18 → 3 the same way. The residue this proposal predicted — "F7's harder
+half plus the long tail … documented as exceptions the way §8 documented the 102 casts, not
+forced" — is **exactly what the last 11 rows are**, and STATUS §44 documents them that way. The
+one forecast here that was wrong is that the tail would be per-file; it was recipe-shaped
+(STATUS §32), and batches 2–5 were built around recipes rather than files as a result.
 
 ## Status — 2026-08-23 (historical)
 

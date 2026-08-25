@@ -10,7 +10,7 @@ import { describe, expect, test } from "bun:test";
 import type { NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd/types";
 import { checkStorySizeGate } from "@/precheck/story-size-gate";
-import { makeStorySizeGateConfig } from "@test/helpers";
+import { makeNaxConfig, makeStorySizeGateConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -26,69 +26,7 @@ const DEFAULT_GATE_CONFIG = {
 };
 
 const createMockConfig = (storySizeGateConfig?: NaxConfig["precheck"]): NaxConfig =>
-  ({
-    precheck: storySizeGateConfig,
-    version: 1,
-    models: {
-      fast: "haiku",
-      balanced: "sonnet",
-      powerful: "opus",
-    },
-    autoMode: {
-      enabled: false,
-      defaultAgent: "test",
-      fallbackOrder: [],
-      complexityRouting: { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" },
-      escalation: { enabled: false, tierOrder: [] },
-    },
-    routing: { strategy: "keyword" },
-    execution: {
-      maxIterations: 10,
-      iterationDelayMs: 1000,
-      costLimit: 10,
-      sessionTimeoutSeconds: 600,
-      verificationTimeoutSeconds: 300,
-      maxStoriesPerFeature: 100,
-      rectification: {
-        enabled: false,
-        maxAttemptsTotal: 0,
-        fullSuiteTimeoutSeconds: 120,
-        maxFailureSummaryChars: 2000,
-        abortOnIncreasingFailures: true,
-      },
-      regressionGate: { enabled: false, timeoutSeconds: 120 },
-      contextProviderTokenBudget: 2000,
-    },
-    quality: {
-      commands: {},
-      forceExit: false,
-      detectOpenHandles: false,
-      detectOpenHandlesRetries: 1,
-      gracePeriodMs: 5000,
-      drainTimeoutMs: 2000,
-      shell: "/bin/sh",
-      stripEnvVars: [],
-    },
-    tdd: {
-      maxRetries: 0,
-      strategy: "off",
-    },
-    constitution: { enabled: false, path: "", maxTokens: 2000 },
-    analyze: { llmEnhanced: false, model: "fast", fallbackToKeywords: true, maxCodebaseSummaryTokens: 5000 },
-    review: { enabled: false, checks: [], commands: {} },
-    plan: { model: "balanced", outputPath: "" },
-    acceptance: { enabled: false, maxRetries: 0, testPath: "" },
-    context: {
-      testCoverage: {
-        enabled: false,
-        detail: "names-only",
-        maxTokens: 500,
-        testPattern: "**/*.test.ts",
-        scopeToStory: false,
-      },
-      autoDetect: { enabled: false, maxFiles: 5, traceImports: false },
-    },
-  }) as NaxConfig;
+  makeNaxConfig({ precheck: storySizeGateConfig });
 
 const createMockStory = (overrides: Partial<UserStory> = {}): UserStory => ({
   id: "US-001",
