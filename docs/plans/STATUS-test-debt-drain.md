@@ -9,13 +9,13 @@ log — each entry records what was true when written and is not edited afterwar
 
 ---
 
-## 0. Current state — measured 2026-08-25 on `main` @ `44bb7bfdb`
+## 0. Current state — measured 2026-08-25 on `chore/test-debt-cast-drain` @ `3785929b1`
 
 | Counter | Value | Baseline | Drain target? |
 |:--|--:|--:|:--|
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
-| `as unknown as` | **101** | 101 | **yes — current target** |
+| `as unknown as` | **47** | 47 | **yes — current target, ~17 is the floor** |
 | `asAny` | 1385 | 1385 | yes, then biome `noExplicitAny` retires it |
 | `anyType` | 1868 | 1868 | yes, retires with `asAny` |
 | `nonNullAssert` | 827 | 827 | yes, then biome `noNonNullAssertion` |
@@ -23,10 +23,21 @@ log — each entry records what was true when written and is not edited afterwar
 | `ratchetAllow` | 106 | 106 | yes |
 | `tsSuppress` | 40 | 40 | yes |
 | `absentValue` | 17 | 17 | yes |
-| `looseCast` | 1888 | 1888 | **no** — guard only, see below |
+| `looseCast` | 1879 | 1879 | **no** — guard only, see below |
 
-Working tree clean, no drain branch open, nothing parked. All gates green; `check:all` is
+`as unknown as` went **101 → 47** across four commits on this branch (§8.1–§8.4); `looseCast`
+fell 1888 → 1879 as a side effect of removing 36 single casts and adding none. Every other
+counter is untouched, and no counter was traded in any commit. All gates green; `check:all` is
 24 checks since `check:test-typecheck` was retired.
+
+**What is left is not a queue.** Of the 47: **18 are the floor** (15 `test/helpers/` containment
+casts, §8.1, plus 3 comment matches on 2 lines — `spawn.ts:6` carries two on one line, which is
+why a per-line count reads 46), **2 are held escalations** (nax#1707 and the dead
+`selectNextStories` seam, §8.4), and the remaining **27 are property-poke sites and one-offs
+that each need a ruling rather than a recipe**. Delegation has
+stopped paying here — §8.4's batch drained 10 sites and verifying it cost about as much, which
+is §6's "verifying a cluster costs as much as doing it" arriving in practice. **The next move is
+a ruling pass on the ~14 property-poke sites, not another delegated batch.**
 
 `looseCast` is not a target. It exists so the TS2352 population ("convert the expression to
 `unknown` first") cannot escape into unmarked single casts while the cast ratchet sits at its
@@ -42,7 +53,7 @@ bun x tsc --noEmit && bun x tsc --noEmit -p tsconfig.contracts.json && bun x tsc
 
 `check:test-typecheck`, its baseline and its parser are deleted — a counting ratchet at zero
 reports a number where `tsc` reports a file and a line. Issue #1514 is closed. Against the
-original start: test typecheck **2009 → 0 (−100%)**, casts **815 → 101 (−88%)**.
+original start: test typecheck **2009 → 0 (−100%)**, casts **815 → 47 (−94%)**.
 
 ### The endgame, unchanged
 
@@ -60,56 +71,62 @@ From `archive/2026-08-22-1514-phase3c-test-debt-drain.md` §6, with steps 1–3 
 
 ---
 
-## 1. Current target — `as unknown as` 101 → 0
+## 1. Current target — `as unknown as` 47 → ~18
 
-**98 of the 101 are real casts. 3 are the phrase appearing in doc comments**
-(`test/helpers/spawn.ts:6` ×2, `test/helpers/mock-logger.ts:16`) — the ratchet is a line
-scan and counts prose. **Do not delete those comments to lower the number.** They document
-why the helper exists; removing them is the counter going down with no work done, and both
-comments are the kind that stop the cast being re-added. Leave them and land at 3, or replace
-the phrase only if the surrounding sentence stays true.
+Re-measured on `3785929b1`. The ratchet counts 47 matches across 46 lines: `test/helpers/spawn.ts:6`
+carries two on one line.
 
-Concentration is low: 66 files, the largest carrying 5. This does not cluster by file. It
-clusters by **cast target**, which is where the leverage is.
+| Cluster | N | Drainable? |
+|:--|--:|:--|
+| containment — `test/helpers/*` + `_cycle-fixtures.ts` | 15 | **no** — §8.1. Do not edit |
+| property-poke — `(x as unknown as { k: T }).k` | 13 | needs a ruling each — **next up** |
+| one-off | 13 | needs a ruling each; includes both held escalations |
+| spawn-mock | 3 | may need a typed helper built first |
+| doc comments (2 lines) | 3 | **no** — prose, not work |
 
-| Cluster | N | Files | Shape |
-|:--|--:|--:|:--|
-| other / one-off | 49 | 33 | no shared cause — read each |
-| `Record<string, …>` | 18 | 12 | reaching a private/index shape through a widened map |
-| config shapes | 9 | 6 | `NaxConfig` and its slices — `makeNaxConfig` already exists |
-| `Mock*` helper-internals | 7 | 7 | one per `test/helpers/*.ts`, casting the helper's own return |
-| `Parameters<typeof f>[n]` | 6 | 3 | usually a defaulted param yielding `… \| undefined` |
-| spawn-mock | 5 | 4 | `typeof Bun.spawn` / `ReturnType<typeof Bun.spawn>` |
-| `PipelineContext` | 4 | 4 | `test/helpers/pipeline-context.ts` has a real `makeTestContext()` |
-
-Regenerate this table any time:
+Regenerate any time:
 
 ```bash
 bun run scripts/check-test-as-unknown-as.ts --list
 ```
 
-### Order of work
+### The floor, and why it is not 0
 
-1. **`Mock*` helper-internals (7)** — one cast per helper, in the helper itself. A cast on a
-   shared helper's return hides an interface defect from every consumer *and* from the
-   ratchets; fixing the interface makes the cast fall out. Highest signal per site, and it
-   unblocks call sites elsewhere.
-2. **`PipelineContext` (4) and config shapes (9)** — the "a correct factory already exists and
-   the call site routes around it" shape. Migrate the call site; do not touch the helper.
-3. **`Record<string, …>` (18)** — the largest single cluster and the most likely to be
-   uniform. Prototype one before delegating the rest.
-4. **`Parameters<typeof f>[n]` (6) and spawn-mock (5)** — these two may legitimately need a
-   typed helper built first. `Parameters<…>[0]` on a defaulted parameter yields
-   `… | undefined`; that is an indexing bug at the test site, not a src gap.
-5. **other (49)** — the grind, last, once the recipes above are proven.
+`archive/2026-08-22-1514-phase3c-test-debt-drain.md` §6.3 says the ratchets end "baselined at
+0". That was written before the containment population was understood, and **~18 is the honest
+floor** unless a `makeClassStub<C>()` seam is built (§8.1 weighs it and declines: 7→1 on a
+sub-ten-site cluster, which §6 says costs as much to verify as to do). Whoever closes this out
+should either build that seam deliberately or amend the endgame to say 18, not quietly leave a
+0 that cannot be reached.
 
-### Two things this population has already taught
+One row to re-check rather than assume: **`test/helpers/pipeline-context.ts:55` is
+`} as unknown as PRD`** — a fixture literal that happens to live in a helper, not a containment
+cast against a class with private state. `makePRD` exists. It was swept into the out-of-scope
+list by directory, and directory is the wrong test. Verify before ruling it in or out.
 
-- **The blast radius is what the edit changes, not what the file is.** A cast inside a shared
-  helper's body is not a change to the helper's exported type.
-- **Read which property the conversion error names, not which types the message prints.** A
-  cast of a whole dep bag to `{ oneKey?: Mock<…> }` fails on that one key; the generic printed
-  in the error text is a red herring.
+### Next — the property-poke ruling pass (13 sites, owner work)
+
+`(x as unknown as { k: T }).k = v` — reaching a property the declared type does not carry. Each
+needs the same question answered, and the answer differs per site: **should that property exist
+on the type?**
+
+- If yes, it is `src/` interface drift — file it, do not edit the fixture. Two rows
+  (`phase4-registry-cleanup.test.ts:50,53`, reaching `_registry`) are exactly the shape that
+  produced #1702, and the nax#1707 investigation shows how fast this pays off.
+- If no, the test is reaching through a seam it should not, and the fix is at the test.
+- If the property is real but private, that is a third case — a deliberate test-only reach, and
+  the honest outcome may be to leave it.
+
+**Do not delegate this.** §8.4 is the evidence: a delegated batch drained 10 sites and verifying
+it cost about as much. Below roughly ten sites, or where every site is a judgement call, the
+review pass finishes the work anyway.
+
+### Held, pending a ruling elsewhere
+
+| Site | Blocked on |
+|:--|:--|
+| `fallback-aggregates.test.ts:146` | **nax#1707** — the fixture pins an impossible state; the wiring fix comes first |
+| `unified-executor-abort.test.ts:91` | the dead `selectNextStories` seam (§8.4) — removing the mock likely drains the cast, but it changes the test's setup |
 
 ---
 
