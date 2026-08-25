@@ -5,10 +5,11 @@
  * a Bun runtime crash (RUNTIME_CRASH verify status), separately from
  * intentional escalations caused by test failures.
  *
- * Tests are RED until:
- * - StoryMetrics gains a runtimeCrashes?: number field in types.ts
- * - PipelineContext gains a storyRuntimeCrashes?: number field in pipeline/types.ts
- * - collectStoryMetrics() reads ctx.storyRuntimeCrashes and writes it to metrics
+ * nax#1707 follow-up: these read ctx.storyRuntimeCrashes, a PipelineContext field
+ * nothing in src/ ever assigned — every test set it itself, so the metric was always 0
+ * in production while the suite stayed green. The tally now lives on the run-scoped
+ * runtime.runtimeCrashRetries map, written by handleTierEscalation, which survives the
+ * per-attempt PipelineContext rebuild.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -88,9 +89,10 @@ describe("collectStoryMetrics - runtimeCrashes field", () => {
     expect(metrics.runtimeCrashes).toBe(0);
   });
 
-  test("runtimeCrashes reflects count from ctx.storyRuntimeCrashes", async () => {
+  test("runtimeCrashes reflects the run-scoped crash tally", async () => {
     const story = makeStory({ status: "passed", passes: true });
-    const ctx = makeContext(story, { storyRuntimeCrashes: 2 });
+    const ctx = makeContext(story);
+    ctx.runtime.runtimeCrashRetries.set(story.id, 2);
 
     const metrics = await collectStoryMetrics(ctx, STORY_START_TIME);
 
@@ -99,7 +101,8 @@ describe("collectStoryMetrics - runtimeCrashes field", () => {
 
   test("runtimeCrashes is 1 for a single crash retry", async () => {
     const story = makeStory({ status: "passed", passes: true });
-    const ctx = makeContext(story, { storyRuntimeCrashes: 1 });
+    const ctx = makeContext(story);
+    ctx.runtime.runtimeCrashRetries.set(story.id, 1);
 
     const metrics = await collectStoryMetrics(ctx, STORY_START_TIME);
 
@@ -116,7 +119,8 @@ describe("collectStoryMetrics - runtimeCrashes field", () => {
         { fromTier: "balanced", toTier: "thorough", reason: "tests-failing", timestamp: new Date().toISOString() },
       ],
     });
-    const ctx = makeContext(story, { storyRuntimeCrashes: 3 });
+    const ctx = makeContext(story);
+    ctx.runtime.runtimeCrashRetries.set(story.id, 3);
 
     const metrics = await collectStoryMetrics(ctx, STORY_START_TIME);
 
@@ -124,7 +128,7 @@ describe("collectStoryMetrics - runtimeCrashes field", () => {
     expect(metrics.attempts).toBeGreaterThan(0); // escalations still recorded
   });
 
-  test("runtimeCrashes defaults to 0 when ctx.storyRuntimeCrashes is undefined", async () => {
+  test("runtimeCrashes defaults to 0 when the story never crashed", async () => {
     const story = makeStory();
     const ctx = makeContext(story);
 

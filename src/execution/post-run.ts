@@ -327,7 +327,7 @@ export async function applyPostRunInspection(
     : undefined;
 
   const rectOut = planResult.phaseOutputs.rectification as { iterationCount?: number } | undefined;
-  (ctx as unknown as Record<string, unknown>).rectificationIterationCount = rectOut?.iterationCount ?? 0;
+  ctx.rectifyAttempt = rectOut?.iterationCount ?? 0;
 
   return { agentResult, selfVerificationFailed, pauseReason, failureCategory, needsHumanReview, combinedOutput };
 }

@@ -320,7 +320,7 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
     ...(ctx.fullSuiteGateFailingFiles && ctx.fullSuiteGateFailingFiles.length > 0
       ? { failingTestFiles: ctx.fullSuiteGateFailingFiles }
       : {}),
-    runtimeCrashes: ctx.storyRuntimeCrashes ?? 0,
+    runtimeCrashes: ctx.runtime.runtimeCrashRetries.get(story.id) ?? 0,
     reviewsFailedOpen: ctx.reviewsFailedOpen ?? 0,
     tokens: agentResult?.tokenUsage
       ? new TokenUsage({

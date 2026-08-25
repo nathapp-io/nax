@@ -288,8 +288,6 @@ export interface PipelineContext extends DispatchContext {
    * Absent when no gate ran or the gate passed cleanly.
    */
   fullSuiteGateFailingFiles?: string[];
-  /** Number of runtime crashes (RUNTIME_CRASH verify status) encountered for this story (BUG-070) */
-  storyRuntimeCrashes?: number;
   /**
    * Count of this story's semantic/adversarial review checks that returned
    * `success:true, failOpen:true` (LLM dispatch failed and the gate degraded

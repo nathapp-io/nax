@@ -363,7 +363,11 @@ describe("AC9: applyPostRunInspection ctx field derivations", () => {
     expect((ctx as any).semanticReviewResult).toBeUndefined();
   });
 
-  test("AC9: sets ctx.rectificationIterationCount=0 when no rectification phase ran", async () => {
+  // #1707 follow-up: the count was written to an undeclared `rectificationIterationCount`
+  // through a cast, while collectStoryMetrics reads the declared `ctx.rectifyAttempt`.
+  // Nothing read the former and nothing wrote the latter, so firstPassSuccess was never
+  // disqualified by rectification (BUG-067 / issue #679).
+  test("AC9: sets ctx.rectifyAttempt=0 when no rectification phase ran", async () => {
     const ctx = makeTestContext();
     const planResult = makePlanResult({
       phaseOutputs: {
@@ -371,10 +375,10 @@ describe("AC9: applyPostRunInspection ctx field derivations", () => {
       },
     });
     await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
-    expect((ctx as any).rectificationIterationCount).toBe(0);
+    expect(ctx.rectifyAttempt).toBe(0);
   });
 
-  test("AC9: sets ctx.rectificationIterationCount from rectification phase iteration count", async () => {
+  test("AC9: sets ctx.rectifyAttempt from rectification phase iteration count", async () => {
     const ctx = makeTestContext();
     const planResult = makePlanResult({
       phaseOutputs: {
@@ -383,7 +387,7 @@ describe("AC9: applyPostRunInspection ctx field derivations", () => {
       },
     });
     await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
-    expect((ctx as any).rectificationIterationCount).toBe(3);
+    expect(ctx.rectifyAttempt).toBe(3);
   });
 
   // ENH-20: a review that fail-opened (LLM dispatch failed, gate degraded to

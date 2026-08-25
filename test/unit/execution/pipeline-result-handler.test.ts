@@ -547,6 +547,75 @@ describe("handlePipelineFailure — runtime-crash derives retry-same (US-002)", 
     expect(result.prdDirty).toBe(false);
   });
 
+  // #1707 follow-up: handleTierEscalation tallies the crash on ctx.runtime, but only
+  // if handlePipelineFailure actually threads runtime through. Without this the tally
+  // is inert in production for exactly the reason StoryMetrics.runtimeCrashes was.
+  test("does not tally a story whose escalation was not a runtime crash", async () => {
+    const story = makeStory("US-002-no-crash", {
+      status: "in-progress",
+      passes: false,
+      attempts: 2,
+      routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "" },
+    });
+    const ctx = makeCtx(story, {
+      routing: { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    });
+
+    await handlePipelineFailure(ctx, {
+      success: false,
+      finalAction: "escalate",
+      reason: "tests failing",
+      context: makeTestContext({ agentResult: makeAgentResult() }),
+    });
+
+    expect(ctx.runtime.runtimeCrashRetries.has("US-002-no-crash")).toBe(false);
+  });
+
+  test("accumulates the tally across repeated runtime crashes for the same story", async () => {
+    const story = makeStory("US-002-repeat-crash", {
+      status: "in-progress",
+      passes: false,
+      attempts: 2,
+      routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "" },
+    });
+    const ctx = makeCtx(story, {
+      routing: { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    });
+    const crash = () =>
+      handlePipelineFailure(ctx, {
+        success: false,
+        finalAction: "escalate" as const,
+        reason: "Bun runtime crash",
+        context: makeTestContext({ agentResult: makeAgentResult(), tddFailureCategory: "runtime-crash" }),
+      });
+
+    await crash();
+    await crash();
+
+    expect(ctx.runtime.runtimeCrashRetries.get("US-002-repeat-crash")).toBe(2);
+  });
+
+  test("threads runtime through so the crash is tallied for StoryMetrics.runtimeCrashes", async () => {
+    const story = makeStory("US-002-handler-tally", {
+      status: "in-progress",
+      passes: false,
+      attempts: 2,
+      routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "" },
+    });
+    const ctx = makeCtx(story, {
+      routing: { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    });
+
+    await handlePipelineFailure(ctx, {
+      success: false,
+      finalAction: "escalate",
+      reason: "Bun runtime crash",
+      context: makeTestContext({ agentResult: makeAgentResult(), tddFailureCategory: "runtime-crash" }),
+    });
+
+    expect(ctx.runtime.runtimeCrashRetries.get("US-002-handler-tally")).toBe(1);
+  });
+
   test("does not change story routing.modelTier for a runtime-crash escalation (AC-8)", async () => {
     const story = makeStory("US-002-handler-8", {
       status: "in-progress",

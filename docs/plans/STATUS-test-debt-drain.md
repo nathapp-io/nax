@@ -16,8 +16,8 @@ log — each entry records what was true when written and is not edited afterwar
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
 | `as unknown as` | **46** | 46 | **yes — current target, ~17 is the floor** |
-| `asAny` | 1385 | 1385 | yes, then biome `noExplicitAny` retires it |
-| `anyType` | 1868 | 1868 | yes, retires with `asAny` |
+| `asAny` | 1383 | 1383 | yes, then biome `noExplicitAny` retires it |
+| `anyType` | 1866 | 1866 | yes, retires with `asAny` |
 | `nonNullAssert` | 820 | 820 | yes, then biome `noNonNullAssertion` |
 | `asNever` | 608 | 608 | yes |
 | `ratchetAllow` | 106 | 106 | yes |
@@ -457,3 +457,54 @@ Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14135 / 1136 / 3
 coverage 101 files below floor against baseline 103 — identical to `main`, no branch effect.
 Casts **47 → 46**; `nonNullAssert` 827 → 820 as a side effect of rewriting the retargeted
 assertions from `metrics.fallback!.hops` to `metrics.fallback?.hops`. No counter rose.
+
+### 8.6 The #1707 shape swept for, and three more found (2026-08-25)
+
+§8.5's carry-forward — *a wrong reader and a missing writer look identical from the read
+site* — is mechanisable. The signature is **a field that is declared, read, and assigned only
+by tests**: the test's own write is the only source, so the assertion round-trips its setup and
+the suite stays green while the metric is permanently wrong.
+
+Swept 127 fields across `PipelineContext`, `StoryMetrics`, `RunMetrics`, `CallContext` and
+`AgentResult`. Three live instances, all in metrics, all fixed here.
+
+**`ctx.rectifyAttempt` — the two halves had different names.** `post-run.ts` wrote the count to
+an *undeclared* `rectificationIterationCount` through `(ctx as unknown as Record<string,
+unknown>)`, which nothing read; the tracker read the *declared* `rectifyAttempt`, which nothing
+wrote. `firstPassSuccess` was therefore never disqualified by rectification — the entire point
+of BUG-067 / #679. **The cast in `src/` is what let the two names drift**: a declared-field
+assignment would not have compiled. Fixed by writing the declared field.
+
+**`ctx.storyRuntimeCrashes` — the counter existed, in the wrong shape.** `StoryMetrics.runtimeCrashes`
+was always 0. Crash retries *were* counted, in `_runtimeCrashRetryCounts`, but that is a
+*consecutive* counter which any ordinary outcome clears so the retry cap measures a streak — the
+wrong source for a per-story total. Fixed with a run-scoped cumulative `runtime.runtimeCrashRetries`,
+tallied in `pipeline-result-handler` where `outcome === "retry-same"` is observed (that outcome is
+returned only by the crash branch, and only when a retry actually happens — a capped crash pauses).
+
+**`autofixAttempt` — never existed at all.** Not on `PipelineContext`, not anywhere in `src/`. It
+entered through `makeCtx(story, overrides: Record<string, unknown>)` and was inert; the test
+comment claimed a second gate that was never built. Column dropped, and the overrides bag
+tightened to `Partial<PipelineContext>` so the next phantom fails to compile.
+
+**Threading `runtime` fixed a fourth thing nobody was looking for.** `EscalationHandlerContext.runtime`
+is optional and its only caller never passed it — so `tier-outcome.ts`'s four
+`ctx.runtime?.costAggregator.byStory()[…] ?? ctx.totalCost` reads had *always* taken the fallback,
+and escalation failure costs (which feed `accumulatedAttemptCost`) were the coarser number.
+
+**Carry forward: the sweep's own control failed, and that is the useful part.** Run against
+`main` it reports `agentFallbacks src-writers=1` — it would **not** have caught #1707, because
+`manager.ts:656` writes the same field name onto a different type. Name-matching finds
+zero-writer fields; it cannot find wrong-writer ones. Those needed a hand pass over every field
+in the 1–2-writer band, checking whether the writer targets *this* type. **A field-name grep is a
+lower bound on this class of bug, never a clean bill of health.**
+
+Still open, deliberately: `ctx.autofixPriorIterations` is declared, never assigned a real value
+(only `= undefined` in `releaseHeavyPipelineContext`), and never read — dead rather than wrong,
+so it is left for a cleanup pass. `verifyPassed` and `semanticReviewResult` are written through
+the same `(ctx as unknown as Record<string, unknown>)` cast as `rectificationIterationCount` was
+and are worth the same check.
+
+Gates: typecheck 0 (all three), `check:all` 24/24, suite green (14138 / 1136 / 38, 0 fail),
+coverage 101 files below floor against baseline 103. `asAny` 1385 → 1383 and `anyType` 1868 →
+1866 from replacing `(ctx as any)` reads with typed ones; no counter rose.

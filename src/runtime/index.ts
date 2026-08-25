@@ -150,6 +150,17 @@ export interface NaxRuntime {
    * (plan, CLI) are not recorded.
    */
   readonly agentFallbacks: Map<string, AgentFallbackRecord[]>;
+  /**
+   * Run-scoped cumulative count of runtime-crash retries per story (BUG-070, nax#1707
+   * follow-up).
+   *
+   * Distinct from `_runtimeCrashRetryCounts` in tier-escalation.ts, which counts
+   * *consecutive* crashes and is deliberately cleared by any ordinary pipeline outcome
+   * so the retry cap applies to a crash streak. This is the per-story total, and it is
+   * run-scoped rather than on PipelineContext because that is rebuilt on every attempt.
+   * Read by collectStoryMetrics as StoryMetrics.runtimeCrashes.
+   */
+  readonly runtimeCrashRetries: Map<string, number>;
   /** Run-scoped per-(story, tier) fix-iteration + decline history (US-004). */
   readonly storyFixHistory: StoryFixHistory;
   /** Run-scoped per-story mutation-check results. */
@@ -303,6 +314,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const semanticIterations = new Map<string, Iteration[]>();
   const rectificationOscillations = new Map<string, number>();
   const agentFallbacks = new Map<string, AgentFallbackRecord[]>();
+  const runtimeCrashRetries = new Map<string, number>();
   const storyFixHistory = createStoryFixHistory();
   const mutationSummaries = new Map<string, MutationStorySummary>();
   const dirtyWorktrees = new Set<string>();
@@ -334,6 +346,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     semanticIterations,
     rectificationOscillations,
     agentFallbacks,
+    runtimeCrashRetries,
     storyFixHistory,
     mutationSummaries,
     dirtyWorktrees,

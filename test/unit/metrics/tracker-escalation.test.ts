@@ -65,7 +65,7 @@ function makePRD(stories: UserStory[]): PRD {
 }
 
 /** Build a minimal PipelineContext. Cast lets overrides include future fix fields. */
-function makeCtx(story: UserStory, overrides: Record<string, unknown> = {}): PipelineContext {
+function makeCtx(story: UserStory, overrides: Partial<PipelineContext> = {}): PipelineContext {
   return Object.assign(
     makeTestContext({
       config: makeNaxConfig({
@@ -488,37 +488,38 @@ describe("handleTierEscalation — priorFailures records attempt data for cross-
 // A story that went through 3 autofix attempts + fail-open still had
 // attempts:1, escalationCount:0, priorFailureCount:0 → firstPassSuccess:true.
 //
-// Fix: also gate on ctx.autofixAttempt > 0 and ctx.rectifyAttempt > 0.
+// Fix: also gate on ctx.rectifyAttempt > 0.
+//
+// #1707 follow-up: these rows also carried an `autofixAttempt` column. No such field
+// exists on PipelineContext or anywhere in src/ — it entered through makeCtx's untyped
+// overrides bag and was inert. Rectification is the mechanism that actually runs, so the
+// column is dropped rather than left implying a second gate that was never built.
 // ---------------------------------------------------------------------------
 
 describe("collectStoryMetrics — firstPassSuccess is false when autofix or rectify ran (issue #679)", () => {
   test.each([
     {
-      name: "firstPassSuccess is false when rectifyAttempt > 0 (rectify stage ran)",
-      autofixAttempt: 0,
+      name: "firstPassSuccess is false when rectifyAttempt is 1 (one rectify iteration ran)",
       rectifyAttempt: 1,
       expectedFirstPassSuccess: false,
     },
     {
-      name: "firstPassSuccess is false when both autofixAttempt and rectifyAttempt > 0",
-      autofixAttempt: 2,
+      name: "firstPassSuccess is false when rectifyAttempt is 2 (repeated rectify iterations)",
       rectifyAttempt: 2,
       expectedFirstPassSuccess: false,
     },
     {
       name: "firstPassSuccess is true when no cycles ran and no escalation (clean first pass)",
-      autofixAttempt: 0,
       rectifyAttempt: 0,
       expectedFirstPassSuccess: true,
     },
-  ])("$name", async ({ autofixAttempt, rectifyAttempt, expectedFirstPassSuccess }) => {
+  ])("$name", async ({ rectifyAttempt, expectedFirstPassSuccess }) => {
     const story = makeStory({
       attempts: 1,
       escalations: [],
       priorFailures: [],
     });
     const ctx = makeCtx(story, {
-      autofixAttempt,
       rectifyAttempt,
       agentResult: {
         success: true,
