@@ -35,9 +35,9 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { withTempDir } from "@test/helpers";
-import type { SemanticReviewInput } from "@/operations/semantic-review";
-import { semanticReviewOp } from "@/operations/semantic-review";
+import { makeTurnResult, withTempDir } from "@test/helpers";
+import { type SemanticReviewInput, semanticReviewOp } from "@/operations/semantic-review";
+import type { HopBodyContext } from "@/operations/types";
 import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -62,6 +62,8 @@ const SEMANTIC_CONFIG_DEFAULT = {
   diffMode: "ref" as const,
   rules: [] as string[],
   timeoutMs: 600_000,
+  // Documented default (src/review/types.ts) — required on SemanticReviewConfig.
+  resetRefOnRerun: false,
   substantiation: { requote: false, maxRequotes: 0 },
   acRegroundOnDrop: true,
 };
@@ -112,11 +114,7 @@ describe("semanticReviewOp.hopBody — reground AC1: trigger issues exactly one 
       let callCount = 0;
       const mockSend = mock(async () => {
         callCount += 1;
-        return {
-          output: callCount === 1 ? firstTurn : secondTurn,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
+        return makeTurnResult({ output: callCount === 1 ? firstTurn : secondTurn });
       });
 
       await semanticReviewOp.hopBody!("initial prompt", {
@@ -127,8 +125,8 @@ describe("semanticReviewOp.hopBody — reground AC1: trigger issues exactly one 
           story: STORY_WITH_AC,
           semanticConfig: { ...SEMANTIC_CONFIG_DEFAULT },
           mode: "ref",
-        } as SemanticReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<SemanticReviewInput>);
 
       expect(callCount).toBe(2);
     });
@@ -147,11 +145,7 @@ describe("semanticReviewOp.hopBody — reground AC1: trigger issues exactly one 
       let callCount = 0;
       const mockSend = mock(async () => {
         callCount += 1;
-        return {
-          output: firstTurn,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
+        return makeTurnResult({ output: firstTurn });
       });
 
       const result = await semanticReviewOp.hopBody!("initial prompt", {
@@ -162,8 +156,8 @@ describe("semanticReviewOp.hopBody — reground AC1: trigger issues exactly one 
           story: STORY_WITH_AC,
           semanticConfig: { ...SEMANTIC_CONFIG_DEFAULT, acRegroundOnDrop: false },
           mode: "ref",
-        } as SemanticReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<SemanticReviewInput>);
 
       expect(callCount).toBe(1);
       expect(result.output).toBe(firstTurn);
@@ -189,25 +183,21 @@ describe("semanticReviewOp.hopBody — reground AC2: reprompt prompt content", (
       const sendImpl = mock(async (prompt: string) => {
         if (capturedPrompt === "") {
           capturedPrompt = prompt;
-          return { output: firstTurn, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+          return makeTurnResult({ output: firstTurn });
         }
-        return { output: secondTurn, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+        return makeTurnResult({ output: secondTurn });
       });
 
       await semanticReviewOp.hopBody!("initial prompt", {
         send: sendImpl,
-        sendWithParseRetry: mock(async () => ({
-          output: firstTurn,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        })),
+        sendWithParseRetry: mock(async () => makeTurnResult({ output: firstTurn })),
         input: {
           workdir,
           story: STORY_WITH_AC,
           semanticConfig: { ...SEMANTIC_CONFIG_DEFAULT },
           mode: "ref",
-        } as SemanticReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<SemanticReviewInput>);
 
       expect(capturedPrompt).toContain(droppedIssue);
     });
@@ -229,25 +219,21 @@ describe("semanticReviewOp.hopBody — reground AC2: reprompt prompt content", (
       const sendImpl = mock(async (prompt: string) => {
         if (capturedPrompt === "") {
           capturedPrompt = prompt;
-          return { output: firstTurn, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+          return makeTurnResult({ output: firstTurn });
         }
-        return { output: secondTurn, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+        return makeTurnResult({ output: secondTurn });
       });
 
       await semanticReviewOp.hopBody!("initial prompt", {
         send: sendImpl,
-        sendWithParseRetry: mock(async () => ({
-          output: firstTurn,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        })),
+        sendWithParseRetry: mock(async () => makeTurnResult({ output: firstTurn })),
         input: {
           workdir,
           story: STORY_WITH_AC,
           semanticConfig: { ...SEMANTIC_CONFIG_DEFAULT },
           mode: "ref",
-        } as SemanticReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<SemanticReviewInput>);
 
       expect(capturedPrompt).toContain("no `acIndex` field was provided");
     });
@@ -283,11 +269,7 @@ describe("semanticReviewOp.hopBody — reground AC3: second turn has surviving b
       let callCount = 0;
       const mockSend = mock(async () => {
         callCount += 1;
-        return {
-          output: callCount === 1 ? firstTurn : secondTurn,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
+        return makeTurnResult({ output: callCount === 1 ? firstTurn : secondTurn });
       });
 
       const result = await semanticReviewOp.hopBody!("initial prompt", {
@@ -298,8 +280,8 @@ describe("semanticReviewOp.hopBody — reground AC3: second turn has surviving b
           story: STORY_WITH_AC,
           semanticConfig: { ...SEMANTIC_CONFIG_DEFAULT },
           mode: "ref",
-        } as SemanticReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<SemanticReviewInput>);
 
       const parsed = JSON.parse(result.output);
       expect(parsed.passed).toBe(false);
@@ -337,11 +319,7 @@ describe("semanticReviewOp.hopBody — reground AC4: second turn passed:true wit
       let callCount = 0;
       const mockSend = mock(async () => {
         callCount += 1;
-        return {
-          output: callCount === 1 ? firstTurn : secondTurn,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
+        return makeTurnResult({ output: callCount === 1 ? firstTurn : secondTurn });
       });
 
       const result = await semanticReviewOp.hopBody!("initial prompt", {
@@ -352,8 +330,8 @@ describe("semanticReviewOp.hopBody — reground AC4: second turn passed:true wit
           story: STORY_WITH_AC,
           semanticConfig: { ...SEMANTIC_CONFIG_DEFAULT },
           mode: "ref",
-        } as SemanticReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<SemanticReviewInput>);
 
       const parsed = JSON.parse(result.output);
       expect(parsed.passed).toBe(true);
@@ -393,11 +371,7 @@ describe("semanticReviewOp.hopBody — reground AC5: second turn fails or all bl
       let callCount = 0;
       const mockSend = mock(async () => {
         callCount += 1;
-        return {
-          output: callCount === 1 ? firstTurn : secondTurn,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
+        return makeTurnResult({ output: callCount === 1 ? firstTurn : secondTurn });
       });
 
       const result = await semanticReviewOp.hopBody!("initial prompt", {
@@ -408,8 +382,8 @@ describe("semanticReviewOp.hopBody — reground AC5: second turn fails or all bl
           story: STORY_WITH_AC,
           semanticConfig: { ...SEMANTIC_CONFIG_DEFAULT },
           mode: "ref",
-        } as SemanticReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<SemanticReviewInput>);
 
       expectFirstTurnPreservedWithMarker(result.output, firstTurn, "parse-failed");
     });
@@ -436,11 +410,7 @@ describe("semanticReviewOp.hopBody — reground AC5: second turn fails or all bl
       let callCount = 0;
       const mockSend = mock(async () => {
         callCount += 1;
-        return {
-          output: callCount === 1 ? firstTurn : secondTurn,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
+        return makeTurnResult({ output: callCount === 1 ? firstTurn : secondTurn });
       });
 
       const result = await semanticReviewOp.hopBody!("initial prompt", {
@@ -451,8 +421,8 @@ describe("semanticReviewOp.hopBody — reground AC5: second turn fails or all bl
           story: STORY_WITH_AC,
           semanticConfig: { ...SEMANTIC_CONFIG_DEFAULT },
           mode: "ref",
-        } as SemanticReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<SemanticReviewInput>);
 
       expectFirstTurnPreservedWithMarker(result.output, firstTurn, "still-dropped");
     });
@@ -473,11 +443,7 @@ describe("semanticReviewOp.hopBody — reground AC6: acRegroundOnDrop === false 
       let callCount = 0;
       const mockSend = mock(async () => {
         callCount += 1;
-        return {
-          output: firstTurn,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
+        return makeTurnResult({ output: firstTurn });
       });
 
       const result = await semanticReviewOp.hopBody!("initial prompt", {
@@ -488,8 +454,8 @@ describe("semanticReviewOp.hopBody — reground AC6: acRegroundOnDrop === false 
           story: STORY_WITH_AC,
           semanticConfig: { ...SEMANTIC_CONFIG_DEFAULT, acRegroundOnDrop: false },
           mode: "ref",
-        } as SemanticReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<SemanticReviewInput>);
 
       expect(callCount).toBe(1);
       expect(result.output).toBe(firstTurn);
@@ -514,11 +480,7 @@ describe("semanticReviewOp.hopBody — reground preconditions not met (AC7)", ()
       let callCount = 0;
       const mockSend = mock(async () => {
         callCount += 1;
-        return {
-          output: firstTurn,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
+        return makeTurnResult({ output: firstTurn });
       });
 
       await semanticReviewOp.hopBody!("initial prompt", {
@@ -529,8 +491,8 @@ describe("semanticReviewOp.hopBody — reground preconditions not met (AC7)", ()
           story: STORY_WITH_AC,
           semanticConfig: { ...SEMANTIC_CONFIG_DEFAULT },
           mode: "ref",
-        } as SemanticReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<SemanticReviewInput>);
 
       expect(callCount).toBe(1);
     });
@@ -549,11 +511,7 @@ describe("semanticReviewOp.hopBody — reground preconditions not met (AC7)", ()
       let callCount = 0;
       const mockSend = mock(async () => {
         callCount += 1;
-        return {
-          output: firstTurn,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
+        return makeTurnResult({ output: firstTurn });
       });
 
       await semanticReviewOp.hopBody!("initial prompt", {
@@ -564,8 +522,8 @@ describe("semanticReviewOp.hopBody — reground preconditions not met (AC7)", ()
           story: STORY_WITH_AC,
           semanticConfig: { ...SEMANTIC_CONFIG_DEFAULT },
           mode: "ref",
-        } as SemanticReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<SemanticReviewInput>);
 
       expect(callCount).toBe(1);
     });
@@ -584,11 +542,7 @@ describe("semanticReviewOp.hopBody — reground preconditions not met (AC7)", ()
       let callCount = 0;
       const mockSend = mock(async () => {
         callCount += 1;
-        return {
-          output: firstTurn,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
+        return makeTurnResult({ output: firstTurn });
       });
 
       await semanticReviewOp.hopBody!("initial prompt", {
@@ -599,8 +553,8 @@ describe("semanticReviewOp.hopBody — reground preconditions not met (AC7)", ()
           story: STORY_WITH_AC,
           semanticConfig: { ...SEMANTIC_CONFIG_DEFAULT },
           mode: "ref",
-        } as SemanticReviewInput,
-      } as any);
+        },
+      } satisfies HopBodyContext<SemanticReviewInput>);
 
       expect(callCount).toBe(1);
     });

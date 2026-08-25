@@ -5,10 +5,10 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { type DeepPartial, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import { ParseValidationError } from "@/agents";
-import type { PlanDraftInput } from "@/operations";
-import { inspectDraftOutput, planDraftOp } from "@/operations";
+import type { NaxConfig } from "@/config";
+import { inspectDraftOutput, type PlanDraftInput, planDraftOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -16,6 +16,26 @@ afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/**
+ * Exhausted-fallback accessor: callOp's retry path hands back an optional payload
+ * typed only as unknown at the strategy boundary — pull named fields off it through
+ * a record predicate rather than casting.
+ */
+function requireFallbackField<K extends string>(
+  decision: { retry: boolean; fallback?: unknown },
+  key: K,
+): Record<K, unknown> {
+  const fallback = decision.retry ? undefined : decision.fallback;
+  if (!isRecord(fallback) || !(key in fallback)) {
+    throw new Error(`expected exhausted fallback carrying ${key}`);
+  }
+  return fallback;
+}
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -50,7 +70,7 @@ const VALID_PRD_NO_CITATION = JSON.stringify({
 function makeDraftInput(overrides?: Partial<PlanDraftInput>): PlanDraftInput {
   return {
     manifestSection: "## Manifest\nF-001: user table exists",
-    manifest: { repoFacts: [], specClaims: [], gaps: [] } as any,
+    manifest: { repoFacts: [], specClaims: [], gaps: [] },
     specContent: "Build a login feature",
     codebaseContext: "Express.js backend",
     feature: "UserAuth",
@@ -60,12 +80,13 @@ function makeDraftInput(overrides?: Partial<PlanDraftInput>): PlanDraftInput {
   };
 }
 
-function makeBuildCtx(planOverrides?: { model?: string; timeoutSeconds?: number }) {
+function makeBuildCtx(planOverrides?: DeepPartial<NaxConfig["plan"]>) {
   const base = planOverrides ? { plan: planOverrides } : {};
-  const config = makeNaxConfig(base as any);
+  const config = makeNaxConfig(base);
   const runtime = makeTestRuntime({ config });
   createdRuntimes.push(runtime);
-  return { config, stage: "plan" as const, agentName: "claude", storyId: "US-001" };
+  const packageView = runtime.packages.repo();
+  return { packageView, config, stage: "plan" as const, agentName: "claude", storyId: "US-001" };
 }
 
 // ─── AC-5: planDraftOp identity ────────────────────────────────────────────
@@ -90,7 +111,7 @@ describe("planDraftOp.build — AC-6 & AC-7: draft prompt construction", () => {
     const ctx = makeBuildCtx();
     const result = planDraftOp.build(
       makeDraftInput({ manifestSection: "UNIQUE_MANIFEST_MARKER", revisionFindings: undefined }),
-      ctx as any,
+      ctx,
     );
     expect(result).toBeDefined();
     expect(typeof result).toBe("object");
@@ -106,7 +127,7 @@ describe("planDraftOp.build — AC-6 & AC-7: draft prompt construction", () => {
     const ctx = makeBuildCtx();
     const msg = "User stories must reference the manifest";
     const findings = [{ checklistItem: "citation", severity: "blocker" as const, message: msg }];
-    const result = planDraftOp.build(makeDraftInput({ revisionFindings: findings }), ctx as any);
+    const result = planDraftOp.build(makeDraftInput({ revisionFindings: findings }), ctx);
     const content = JSON.stringify(result);
     expect(content).toContain("Previous draft rejected");
     expect(content).toContain(msg);
@@ -120,7 +141,7 @@ describe("planDraftOp.model — AC-8 & AC-9: model tier resolution", () => {
     ["AC-8: not set → 'fast'", {}, "fast"],
     ["AC-9: 'balanced' → 'balanced'", { model: "balanced" }, "balanced"],
   ] as const)("%s", (_label, planOverrides, expected) => {
-    const ctx = makeBuildCtx(planOverrides as any);
+    const ctx = makeBuildCtx(planOverrides);
     expect((planDraftOp.model as (input: unknown, ctx: unknown) => string)({}, ctx)).toBe(expected);
   });
 });
@@ -129,11 +150,15 @@ describe("planDraftOp.model — AC-8 & AC-9: model tier resolution", () => {
 
 describe("planDraftOp.parse — AC-10: success path", () => {
   test("AC-10: returns { prd, citationRate, advisory: false } for valid output at or above threshold", () => {
-    const result1 = planDraftOp.parse(VALID_PRD_WITH_CITATION, makeDraftInput({ citationThreshold: 0.5 }), {} as any);
+    const result1 = planDraftOp.parse(
+      VALID_PRD_WITH_CITATION,
+      makeDraftInput({ citationThreshold: 0.5 }),
+      makeBuildCtx(),
+    );
     expect(result1.advisory).toBe(false);
     expect(typeof result1.citationRate).toBe("number");
     expect(result1.prd.feature).toContain("UserAuth");
-    const result2 = planDraftOp.parse(VALID_PRD_NO_CITATION, makeDraftInput({ citationThreshold: 0 }), {} as any);
+    const result2 = planDraftOp.parse(VALID_PRD_NO_CITATION, makeDraftInput({ citationThreshold: 0 }), makeBuildCtx());
     expect(result2.advisory).toBe(false);
   });
 });
@@ -185,13 +210,13 @@ describe("planDraftOp.parse — AC-14, AC-15, AC-16: failure paths", () => {
     ["AC-14: non-JSON output", "not valid json"],
     ["AC-15: valid JSON failing PRD schema", '{"foo":"bar"}'],
   ])("%s throws ParseValidationError", (_label, output) => {
-    expect(() => planDraftOp.parse(output, makeDraftInput(), {} as any)).toThrow(ParseValidationError);
+    expect(() => planDraftOp.parse(output, makeDraftInput(), makeBuildCtx())).toThrow(ParseValidationError);
   });
 
   test("AC-16: throws ParseValidationError with 'citation rate' in message when rate < configured threshold", () => {
     let caught: unknown;
     try {
-      planDraftOp.parse(VALID_PRD_NO_CITATION, makeDraftInput({ citationThreshold: 0.5 }), {} as any);
+      planDraftOp.parse(VALID_PRD_NO_CITATION, makeDraftInput({ citationThreshold: 0.5 }), makeBuildCtx());
     } catch (err) {
       caught = err;
     }
@@ -202,7 +227,7 @@ describe("planDraftOp.parse — AC-14, AC-15, AC-16: failure paths", () => {
   test("AC-16: uses the configured citationThreshold, not the default 0.5", () => {
     // VALID_PRD_WITH_CITATION has rate = 1.0, so threshold 0.5 succeeds but threshold 1.5 is impossible
     // Use threshold 0 to confirm parse succeeds on a no-citation output
-    const result = planDraftOp.parse(VALID_PRD_NO_CITATION, makeDraftInput({ citationThreshold: 0 }), {} as any);
+    const result = planDraftOp.parse(VALID_PRD_NO_CITATION, makeDraftInput({ citationThreshold: 0 }), makeBuildCtx());
     expect(result.advisory).toBe(false);
   });
 });
@@ -247,7 +272,7 @@ describe("planDraftOp.retry — AC-17: retry strategy wiring", () => {
     );
     expect(decision.retry).toBe(false);
     expect(decision.fallback).toBeDefined();
-    expect((decision.fallback as any).advisory).toBe(true);
+    expect(requireFallbackField(decision, "advisory").advisory).toBe(true);
   });
 
   test("exhaustedFallback returns FAIL_OPEN_DRAFT when partial is absent (not-json output)", () => {
@@ -256,7 +281,7 @@ describe("planDraftOp.retry — AC-17: retry strategy wiring", () => {
       storyId: "s1",
     });
     expect(decision.retry).toBe(false);
-    expect((decision.fallback as any).advisory).toBe(true);
-    expect((decision.fallback as any).citationRate).toBe(0);
+    expect(requireFallbackField(decision, "advisory").advisory).toBe(true);
+    expect(requireFallbackField(decision, "citationRate").citationRate).toBe(0);
   });
 });

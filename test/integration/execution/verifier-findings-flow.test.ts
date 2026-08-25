@@ -14,25 +14,32 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
-import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import { type NaxConfig, pickSelector } from "@/config";
 import { _storyOrchestratorDeps, StoryOrchestratorBuilder } from "@/execution";
 import type { FixStrategy } from "@/findings";
 import type { Finding } from "@/findings/types";
-import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
-import { makeAutofixImplementerStrategy, makeDeclarationSink } from "@/operations";
+import type { AutofixImplementerInput, CallContext, DeterministicOperation, RunOperation } from "@/operations";
+import { implementerRectifyOp, makeAutofixImplementerStrategy, makeDeclarationSink } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
+type TestSlice = Pick<NaxConfig, "execution">;
+
 const testSel = pickSelector("test-verifier-flow-sel", "execution");
 
-const mockImplementerOp: RunOperation<{ code: string }, { success: boolean }, typeof DEFAULT_CONFIG> = {
+/** User-defined predicate: the dispatched fix input is the strategy's real buildInput shape. */
+function isAutofixImplementerInput(v: unknown): v is AutofixImplementerInput {
+  return typeof v === "object" && v !== null && "story" in v && "failedChecks" in v;
+}
+
+const mockImplementerOp: RunOperation<{ code: string }, { success: boolean }, TestSlice> = {
   kind: "run",
   name: "implementer",
   stage: "run",
-  config: testSel as any,
+  config: testSel,
   session: { role: "implementer", lifetime: "warm" },
   build: () => ({
     role: { id: "r", content: "Implement", overridable: false },
@@ -44,12 +51,12 @@ const mockImplementerOp: RunOperation<{ code: string }, { success: boolean }, ty
 function makeDeterministicOp(
   name: string,
   result: { success: boolean; findings?: Finding[]; normalizedFindings?: Finding[] },
-): DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> {
+): DeterministicOperation<unknown, unknown, TestSlice> {
   return {
     kind: "deterministic",
     name,
     stage: "verify",
-    config: testSel as any,
+    config: testSel,
     execute: async () => ({ ...result, estimatedCostUsd: 0 }),
   };
 }
@@ -119,8 +126,8 @@ describe("AC7: verifier findings route to autofix-implementer via verifierContex
 
     // Verifier fails on first dispatch (main loop); passes on resume re-dispatch.
     // Full-suite-gate always passes so gate findings don't dominate rectification.
-    _storyOrchestratorDeps.callOp = mock(async (_ctx: any, op: any, input: any) => {
-      const name = op.name as string;
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }, input: unknown) => {
+      const name = op.name;
       opCounts[name] = (opCounts[name] ?? 0) + 1;
 
       if (name === "implementer") {
@@ -152,13 +159,15 @@ describe("AC7: verifier findings route to autofix-implementer via verifierContex
         };
       }
       if (name === "autofix-implementer") {
-        // Capture the prompt by calling op.build directly.
-        // After implementation, build() should use verifierContext for tdd-verifier findings.
+        // Capture the prompt by calling the strategy's real fixOp (implementerRectifyOp)
+        // directly. After implementation, build() should use verifierContext for
+        // tdd-verifier findings.
         try {
-          const built = (op as { build: (i: unknown, c: unknown) => { task?: { content?: string } } }).build(
-            input,
-            {} as any,
-          );
+          if (!isAutofixImplementerInput(input)) throw new Error("unexpected autofix input shape");
+          const built = implementerRectifyOp.build(input, {
+            packageView: runtime.packages.repo(),
+            config: makeNaxConfig(),
+          });
           capturedPrompt = built.task?.content ?? "";
         } catch {
           capturedPrompt = "";
@@ -178,7 +187,7 @@ describe("AC7: verifier findings route to autofix-implementer via verifierContex
     await new StoryOrchestratorBuilder()
       .addImplementer({ op: mockImplementerOp, input: { code: "" } })
       .addFullSuiteGate({ op: gateOp, input: { story, workdir: "/tmp" } })
-      .addVerifier({ op: verifierOp, input: { story, workdir: "/tmp" } as any })
+      .addVerifier({ op: verifierOp, input: { story, workdir: "/tmp" } })
       .addRectification({
         maxAttempts: 3,
         strategies: [makeAutofixImplementerStrategy(story, makeNaxConfig(), sink)],
@@ -212,8 +221,8 @@ describe("AC8: validate-short-circuit + empty findings → liteScopeIncomplete a
     // Verifier fails during lite validate with empty normalizedFindings, which
     // should produce validate-short-circuit (not resolved) in the cycle.
     // Resume then re-dispatches gate/verifier; both pass on those later calls.
-    _storyOrchestratorDeps.callOp = mock(async (_ctx: any, op: any, _input: any) => {
-      const name = op.name as string;
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }, _input: unknown) => {
+      const name = op.name;
       opCounts[name] = (opCounts[name] ?? 0) + 1;
 
       if (name === "implementer") {
@@ -254,11 +263,11 @@ describe("AC8: validate-short-circuit + empty findings → liteScopeIncomplete a
 
     const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [GATE_FINDING] });
     const verifierOp = makeDeterministicOp("verifier", { success: true });
-    const noopRectifyOp: RunOperation<{ story: { id: string } }, { success: boolean }, typeof DEFAULT_CONFIG> = {
+    const noopRectifyOp: RunOperation<{ story: { id: string } }, { success: boolean }, TestSlice> = {
       kind: "run",
       name: "full-suite-rectify-op",
       stage: "rectification",
-      config: testSel as any,
+      config: testSel,
       session: { role: "implementer", lifetime: "warm" },
       build: () => ({
         role: { id: "r-rect", content: "Rectify", overridable: false },
@@ -280,7 +289,7 @@ describe("AC8: validate-short-circuit + empty findings → liteScopeIncomplete a
     const result = await new StoryOrchestratorBuilder()
       .addImplementer({ op: mockImplementerOp, input: { code: "" } })
       .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-ac8" }), workdir: "/tmp" } })
-      .addVerifier({ op: verifierOp, input: { story: makeStory({ id: "US-ac8" }), workdir: "/tmp" } as any })
+      .addVerifier({ op: verifierOp, input: { story: makeStory({ id: "US-ac8" }), workdir: "/tmp" } })
       .addRectification({ maxAttempts: 3, strategies: [fullSuiteStrategy], abortOnIncreasingFailures: false })
       .build(ctx)
       .run();

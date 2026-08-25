@@ -1,15 +1,15 @@
 {
   "counts": {
-    "asAny": 681,
+    "asAny": 509,
     "tsSuppress": 40,
     "ratchetAllow": 105,
     "absentValue": 17,
-    "anyType": 906,
-    "looseCast": 1828,
-    "asNever": 608,
+    "anyType": 659,
+    "looseCast": 1816,
+    "asNever": 607,
     "nonNullAssert": 812
   },
-  "updatedAt": "2026-08-25T13:43:57.910Z",
+  "updatedAt": "2026-08-25T19:07:17.670Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -93,10 +93,7 @@
       "anyType": 2
     },
     "test/integration/prompts/pb-004-migration.test.ts": {
-      "asAny": 11,
-      "anyType": 11,
-      "looseCast": 1,
-      "asNever": 1
+      "looseCast": 1
     },
     "test/integration/review/review-config-commands.test.ts": {
       "looseCast": 7
@@ -145,8 +142,6 @@
       "nonNullAssert": 5
     },
     "test/integration/execution/verifier-findings-flow.test.ts": {
-      "asAny": 6,
-      "anyType": 12,
       "looseCast": 1
     },
     "test/integration/execution/parallel-batch-rectification.test.ts": {
@@ -234,8 +229,6 @@
       "looseCast": 1
     },
     "test/integration/agents/stale-then-swap.test.ts": {
-      "asAny": 10,
-      "anyType": 10,
       "looseCast": 4
     },
     "test/integration/agents/manager-lifetime.test.ts": {
@@ -258,9 +251,6 @@
     },
     "test/integration/plan/logger.test.ts": {
       "looseCast": 2
-    },
-    "test/integration/plugins/validator.test.ts": {
-      "anyType": 13
     },
     "test/integration/config/security-loader.test.ts": {
       "asAny": 1,
@@ -374,10 +364,6 @@
     "test/unit/interaction/plugins/telegram-authorization.test.ts": {
       "anyType": 1,
       "looseCast": 6
-    },
-    "test/unit/tdd/retire-legacy-surfaces.test.ts": {
-      "asAny": 13,
-      "anyType": 13
     },
     "test/unit/tdd/isolation.test.ts": {
       "ratchetAllow": 2
@@ -508,10 +494,6 @@
     },
     "test/unit/prd/prd-get-next-story.test.ts": {
       "nonNullAssert": 6
-    },
-    "test/unit/prd/prd-auto-default.test.ts": {
-      "asAny": 11,
-      "anyType": 11
     },
     "test/unit/prd/dependency-cycle.test.ts": {
       "looseCast": 1
@@ -1013,8 +995,6 @@
       "looseCast": 4
     },
     "test/unit/execution/lifecycle/acceptance-loop-cycle.test.ts": {
-      "asAny": 10,
-      "anyType": 13,
       "looseCast": 8,
       "asNever": 5,
       "nonNullAssert": 9
@@ -1033,8 +1013,6 @@
       "looseCast": 3
     },
     "test/unit/execution/lifecycle/acceptance-loop-retry-budget.test.ts": {
-      "asAny": 7,
-      "anyType": 10,
       "looseCast": 5
     },
     "test/unit/execution/checkpoint/writer.test.ts": {
@@ -1081,17 +1059,13 @@
       "asNever": 1
     },
     "test/unit/acceptance/hardening.test.ts": {
-      "asAny": 5,
       "ratchetAllow": 1,
-      "anyType": 11,
       "looseCast": 6
     },
     "test/unit/test-runners/detect.test.ts": {
       "looseCast": 1
     },
     "test/unit/verification/smart-runner.test.ts": {
-      "asAny": 12,
-      "anyType": 12,
       "looseCast": 1
     },
     "test/unit/verification/import-grep-fallback.test.ts": {
@@ -1105,8 +1079,6 @@
       "absentValue": 1
     },
     "test/unit/verification/tdd-verdict.test.ts": {
-      "asAny": 3,
-      "anyType": 13,
       "nonNullAssert": 1
     },
     "test/unit/verification/map-source-to-tests-parallel.test.ts": {
@@ -1190,10 +1162,6 @@
       "asNever": 23,
       "nonNullAssert": 4
     },
-    "test/unit/operations/adversarial-review-retry-flip.test.ts": {
-      "asAny": 13,
-      "anyType": 13
-    },
     "test/unit/operations/call-exhaustion.test.ts": {
       "looseCast": 6
     },
@@ -1220,8 +1188,6 @@
       "anyType": 2
     },
     "test/unit/operations/plan-interactive.test.ts": {
-      "asAny": 10,
-      "anyType": 10,
       "looseCast": 3,
       "asNever": 6,
       "nonNullAssert": 4
@@ -1242,9 +1208,7 @@
       "anyType": 1
     },
     "test/unit/operations/semantic-review-reground.test.ts": {
-      "asAny": 12,
-      "anyType": 12,
-      "looseCast": 14
+      "looseCast": 2
     },
     "test/unit/operations/stateful-debater-op.test.ts": {
       "looseCast": 7
@@ -1290,8 +1254,6 @@
       "nonNullAssert": 9
     },
     "test/unit/operations/plan-draft.test.ts": {
-      "asAny": 13,
-      "anyType": 13,
       "looseCast": 1,
       "nonNullAssert": 2
     },
@@ -1571,7 +1533,6 @@
       "asNever": 3
     },
     "test/unit/cli/plan-interactive.test.ts": {
-      "anyType": 10,
       "looseCast": 3,
       "asNever": 13
     },
@@ -1603,8 +1564,6 @@
       "asNever": 1
     },
     "test/unit/cli/plan.test.ts": {
-      "asAny": 2,
-      "anyType": 13,
       "looseCast": 17,
       "asNever": 28
     },
@@ -1939,8 +1898,6 @@
       "anyType": 7
     },
     "test/unit/plugins/builtin/otel-reporter-logs-lifecycle.test.ts": {
-      "asAny": 2,
-      "anyType": 11,
       "nonNullAssert": 1
     },
     "test/unit/plugins/builtin/curator-seam.test.ts": {
@@ -2051,10 +2008,6 @@
       "ratchetAllow": 3,
       "looseCast": 12
     },
-    "test/unit/config/migrations.test.ts": {
-      "asAny": 12,
-      "anyType": 12
-    },
     "test/unit/config/story-scoped-fix-budget.test.ts": {
       "looseCast": 4
     },
@@ -2082,10 +2035,6 @@
     },
     "test/unit/context/feature-context.test.ts": {
       "nonNullAssert": 6
-    },
-    "test/unit/context/context-isolation.test.ts": {
-      "asAny": 11,
-      "anyType": 11
     },
     "test/unit/context/provider-timeout-abort.test.ts": {
       "asAny": 2,
@@ -2396,8 +2345,6 @@
       "anyType": 4
     },
     "test/unit/pipeline/stages/acceptance-setup-criteria.test.ts": {
-      "asAny": 9,
-      "anyType": 13,
       "nonNullAssert": 8
     },
     "test/unit/pipeline/stages/acceptance-setup-strategy.test.ts": {

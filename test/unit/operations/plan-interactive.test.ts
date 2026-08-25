@@ -203,7 +203,7 @@ describe("planInteractiveOp.recover", () => {
       branchName: "feat/test",
       outputPath: "/nonexistent/prd.json",
     };
-    const result = await planInteractiveOp.recover!(input, ctx as any);
+    const result = await planInteractiveOp.recover!(input, ctx);
     expect(result).toBeNull();
   });
 
@@ -252,7 +252,7 @@ describe("planInteractiveOp.recover", () => {
       branchName: "feat/test",
       outputPath: "/tmp/prd.json",
     };
-    const result = await planInteractiveOp.recover!(input, ctx as any);
+    const result = await planInteractiveOp.recover!(input, ctx);
     expect(result).not.toBeNull();
     expect(result).toHaveProperty("userStories");
     expect(Array.isArray(result!.userStories)).toBe(true);
@@ -291,7 +291,7 @@ describe("planInteractiveOp.verify", () => {
       outputPath: "/tmp/prd.json",
     };
 
-    const nullResult = await planInteractiveOp.verify!(emptyPRD as any, input as any, ctx as any);
+    const nullResult = await planInteractiveOp.verify!(emptyPRD, input, ctx);
     expect(nullResult).toBeNull();
 
     const validPRD = {
@@ -318,7 +318,7 @@ describe("planInteractiveOp.verify", () => {
         },
       ],
     };
-    const prdResult = await planInteractiveOp.verify!(validPRD as any, input as any, ctx as any);
+    const prdResult = await planInteractiveOp.verify!(validPRD, input, ctx);
     expect(prdResult).not.toBeNull();
     expect(prdResult).toEqual(validPRD);
   });
@@ -425,7 +425,7 @@ describe("planInteractiveOp.recover — disk-recovery escape hatch (#993)", () =
       readFile: async (_path: string) => validPrdJson,
       fileExists: async (_path: string) => true,
     };
-    const result = await planInteractiveOp.recover!(baseInput, ctx as any);
+    const result = await planInteractiveOp.recover!(baseInput, ctx);
     expect(result).not.toBeNull();
     expect(Array.isArray(result!.userStories)).toBe(true);
     expect(result!.userStories.length).toBe(1);
@@ -449,7 +449,7 @@ describe("planInteractiveOp.recover — disk-recovery escape hatch (#993)", () =
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(opSelector(planInteractiveOp.config)), readFile, fileExists };
-    const result = await planInteractiveOp.recover!(baseInput, ctx as any);
+    const result = await planInteractiveOp.recover!(baseInput, ctx);
     expect(result).toBeNull();
   });
 });

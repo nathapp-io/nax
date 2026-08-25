@@ -2,6 +2,12 @@ import { describe, expect, test } from "bun:test";
 import * as tddIndex from "@/tdd/index";
 
 /**
+ * Dynamic view of the barrel's runtime exports. Absent-symbol probes index by
+ * computed name here, while present symbols are read straight off the module.
+ */
+const barrel: Record<string, unknown> = { ...tddIndex };
+
+/**
  * Story: Retire legacy TDD surfaces and migrate tests in mergeable increments
  *
  * Acceptance Criteria (AC):
@@ -22,22 +28,22 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
    */
   describe("Slice C: Remove legacy function exports (runThreeSessionTdd, legacy full-suite gate)", () => {
     test("runThreeSessionTdd and legacy full-suite gate are not exported from src/tdd/index.ts", () => {
-      expect((tddIndex as any).runThreeSessionTdd).toBeUndefined();
-      expect((tddIndex as any)[["runFull", "SuiteGate"].join("")]).toBeUndefined();
+      expect(barrel.runThreeSessionTdd).toBeUndefined();
+      expect(barrel[["runFull", "SuiteGate"].join("")]).toBeUndefined();
     });
 
     test("consolidated TDD operations are exported: testWriterOp, implementerOp, verifierOp", () => {
       // These operations should be the new public entrypoints
-      expect((tddIndex as any).testWriterOp).toBeDefined();
-      expect((tddIndex as any).implementerOp).toBeDefined();
-      expect((tddIndex as any).verifierOp).toBeDefined();
+      expect(tddIndex.testWriterOp).toBeDefined();
+      expect(tddIndex.implementerOp).toBeDefined();
+      expect(tddIndex.verifierOp).toBeDefined();
     });
 
     test("wrapped operation handlers are exported: writeTddTestOp, implementTddOp, verifyTddOp", () => {
       // Wrapped handlers for easier consumption
-      expect((tddIndex as any).writeTddTestOp).toBeDefined();
-      expect((tddIndex as any).implementTddOp).toBeDefined();
-      expect((tddIndex as any).verifyTddOp).toBeDefined();
+      expect(tddIndex.writeTddTestOp).toBeDefined();
+      expect(tddIndex.implementTddOp).toBeDefined();
+      expect(tddIndex.verifyTddOp).toBeDefined();
     });
   });
 
@@ -52,8 +58,8 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
    */
   describe("Slice D: Type export (StoryRunResult in tdd barrel)", () => {
     test("old type names do not leak as runtime values", () => {
-      expect((tddIndex as any)[["Three", "SessionTdd", "Result"].join("")]).toBeUndefined();
-      expect((tddIndex as any).StoryRunResult).toBeUndefined();
+      expect(barrel[["Three", "SessionTdd", "Result"].join("")]).toBeUndefined();
+      expect(barrel.StoryRunResult).toBeUndefined();
     });
   });
 
@@ -63,8 +69,7 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
    */
   describe("Slice A: Consolidated entrypoints preserve behavior semantics", () => {
     test("testWriterOp, implementerOp, verifierOp are exported with kind 'run'", () => {
-      for (const opName of ["testWriterOp", "implementerOp", "verifierOp"]) {
-        const op = (tddIndex as any)[opName];
+      for (const op of [tddIndex.testWriterOp, tddIndex.implementerOp, tddIndex.verifierOp]) {
         expect(op).toHaveProperty("name");
         expect(op).toHaveProperty("kind");
         expect(op.kind).toBe("run");
@@ -128,7 +133,7 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
         "StoryRunResult",
       ];
       for (const name of absent) {
-        expect((tddIndex as any)[name]).toBeUndefined();
+        expect(barrel[name]).toBeUndefined();
       }
     });
   });
@@ -176,7 +181,7 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
         "ThreeSessionTddOptions",
       ];
       for (const name of retiredSymbols) {
-        expect((tddIndex as any)[name]).toBeUndefined();
+        expect(barrel[name]).toBeUndefined();
       }
     });
   });

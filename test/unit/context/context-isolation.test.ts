@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makeTempDir } from "@test/helpers";
 import { buildContext, formatContextAsMarkdown } from "@/context";
 import type { ContextBudget, StoryContext } from "@/context/types";
 import type { PRD, UserStory } from "@/prd";
@@ -73,14 +73,14 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
-          config: {
+          config: makeNaxConfig({
             context: {
               testCoverage: {
                 enabled: true,
                 scopeToStory: true,
               },
             },
-          } as any,
+          }),
         };
 
         const budget: ContextBudget = {
@@ -128,14 +128,14 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
-          config: {
+          config: makeNaxConfig({
             context: {
               testCoverage: {
                 enabled: true,
                 scopeToStory: false, // Disabled - should scan all
               },
             },
-          } as any,
+          }),
         };
 
         const budget: ContextBudget = {
@@ -183,14 +183,14 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
-          config: {
+          config: makeNaxConfig({
             context: {
               testCoverage: {
                 enabled: true,
                 scopeToStory: true, // true but no contextFiles
               },
             },
-          } as any,
+          }),
         };
 
         const budget: ContextBudget = {
@@ -219,7 +219,7 @@ describe("Context Builder", () => {
           description: "Create base interfaces for the module",
           acceptanceCriteria: ["Interface exported", "Types documented"],
           dependencies: [],
-          status: "passed" as any,
+          status: "passed",
           passes: true,
         },
         {
@@ -228,7 +228,7 @@ describe("Context Builder", () => {
           description: "Service that aggregates indicators",
           acceptanceCriteria: ["Service injectable", "Aggregates results"],
           dependencies: [],
-          status: "passed" as any,
+          status: "passed",
           passes: true,
         },
         {
@@ -291,7 +291,7 @@ describe("Context Builder", () => {
           description: "Should not appear in progress",
           acceptanceCriteria: ["AC1"],
           dependencies: [],
-          status: "passed" as any,
+          status: "passed",
           passes: true,
         },
         {
@@ -300,7 +300,7 @@ describe("Context Builder", () => {
           description: "Also should not appear",
           acceptanceCriteria: ["AC1"],
           dependencies: [],
-          status: "failed" as any,
+          status: "failed",
           passes: false,
         },
         {
@@ -442,7 +442,7 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
-          config: {
+          config: makeNaxConfig({
             context: {
               fileInjection: "keyword",
               autoDetect: {
@@ -454,7 +454,7 @@ describe("Context Builder", () => {
                 enabled: false,
               },
             },
-          } as any,
+          }),
         };
 
         const budget: ContextBudget = {
@@ -504,7 +504,7 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
-          config: {
+          config: makeNaxConfig({
             context: {
               fileInjection: "keyword",
               autoDetect: {
@@ -516,7 +516,7 @@ describe("Context Builder", () => {
                 enabled: false,
               },
             },
-          } as any,
+          }),
         };
 
         const budget: ContextBudget = {
@@ -562,7 +562,7 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
-          config: {
+          config: makeNaxConfig({
             context: {
               autoDetect: {
                 enabled: false, // Disabled
@@ -573,7 +573,7 @@ describe("Context Builder", () => {
                 enabled: false,
               },
             },
-          } as any,
+          }),
         };
 
         const budget: ContextBudget = {
@@ -611,7 +611,7 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
-          config: {
+          config: makeNaxConfig({
             context: {
               autoDetect: {
                 enabled: true,
@@ -622,7 +622,7 @@ describe("Context Builder", () => {
                 enabled: false,
               },
             },
-          } as any,
+          }),
         };
 
         const budget: ContextBudget = {

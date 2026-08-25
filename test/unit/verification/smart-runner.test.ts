@@ -170,12 +170,14 @@ describe("mapSourceToTests", () => {
   });
 
   afterEach(() => {
-    (Bun as any).file = originalFile;
+    Object.assign(Bun, { file: originalFile });
   });
 
   function mockFileExists(existingPaths: string[]) {
-    (Bun as any).file = (path: string) => ({
-      exists: () => Promise.resolve(existingPaths.includes(path)),
+    Object.assign(Bun, {
+      file: (path: string) => ({
+        exists: () => Promise.resolve(existingPaths.includes(path)),
+      }),
     });
   }
 
@@ -234,20 +236,24 @@ describe("importGrepFallback", () => {
   });
 
   afterEach(() => {
-    (Bun as any).Glob = originalGlob;
-    (Bun as any).file = originalFile;
+    Object.assign(Bun, { Glob: originalGlob });
+    Object.assign(Bun, { file: originalFile });
   });
 
   test("matches nested monorepo src imports after stripping prefix before src/", async () => {
-    (Bun as any).Glob = class {
-      async *scan(_workdir: string) {
-        yield "test/unit/auth/service.test.ts";
-      }
-    };
+    Object.assign(Bun, {
+      Glob: class {
+        async *scan(_workdir: string) {
+          yield "test/unit/auth/service.test.ts";
+        }
+      },
+    });
 
-    (Bun as any).file = (path: string) => ({
-      text: async () =>
-        path === "/repo/test/unit/auth/service.test.ts" ? "import { service } from '../../src/auth/service';" : "",
+    Object.assign(Bun, {
+      file: (path: string) => ({
+        text: async () =>
+          path === "/repo/test/unit/auth/service.test.ts" ? "import { service } from '../../src/auth/service';" : "",
+      }),
     });
 
     const result = await importGrepFallback(["packages/api/src/auth/service.ts"], "/repo", ["test/**/*.test.ts"]);
@@ -300,13 +306,13 @@ describe("getChangedNonTestFiles", () => {
     [
       "exits with non-zero code",
       () => {
-        (_gitDeps as any).spawn = makeSpawn(() => ({ exitCode: 128, stdout: "" })).spawn;
+        _gitDeps.spawn = makeSpawn(() => ({ exitCode: 128, stdout: "" })).spawn;
       },
     ],
     [
       "throws (not a repo)",
       () => {
-        (_gitDeps as any).spawn = makeSpawn(() => {
+        _gitDeps.spawn = makeSpawn(() => {
           throw new Error("git not found");
         }).spawn;
       },
@@ -328,7 +334,7 @@ describe("getChangedNonTestFiles", () => {
   });
 
   test("returns empty array when no files changed", async () => {
-    (_gitDeps as any).spawn = makeSpawn(() => "").spawn;
+    _gitDeps.spawn = makeSpawn(() => "").spawn;
 
     const result = await getChangedNonTestFiles("/fake/repo");
 
@@ -495,7 +501,7 @@ describe("getChangedTestFiles", () => {
     [
       "no test files changed",
       () => {
-        (_gitDeps as any).spawn = makeSpawn(() => "packages/lib/src/util.ts").spawn;
+        _gitDeps.spawn = makeSpawn(() => "packages/lib/src/util.ts").spawn;
       },
       "packages/lib" as const,
       TS_TEST_REGEX,
@@ -503,7 +509,7 @@ describe("getChangedTestFiles", () => {
     [
       "testFileRegex is empty",
       () => {
-        (_gitDeps as any).spawn = makeSpawn(() => "packages/lib/src/util.test.ts").spawn;
+        _gitDeps.spawn = makeSpawn(() => "packages/lib/src/util.test.ts").spawn;
       },
       "packages/lib" as const,
       [] as RegExp[],
@@ -511,7 +517,7 @@ describe("getChangedTestFiles", () => {
     [
       "git exits with non-zero code",
       () => {
-        (_gitDeps as any).spawn = makeSpawn(() => ({ exitCode: 128, stdout: "" })).spawn;
+        _gitDeps.spawn = makeSpawn(() => ({ exitCode: 128, stdout: "" })).spawn;
       },
       undefined,
       TS_TEST_REGEX,

@@ -10,7 +10,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { makeMockAgentManager, makeMockRuntime, makePRD, makeStory, makeTempDir } from "@test/helpers";
 import { _planDeps, buildPlanComposition, planCommand, runPlanPipeline } from "@/cli";
-import { DEFAULT_CONFIG, type DebateStageConfig } from "@/config";
+import { DEFAULT_CONFIG, type DebateStageConfig, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import type { PRD } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
@@ -117,7 +117,7 @@ describe("planCommand", () => {
 
     _planDeps.mkdirp = mock(async (_path: string) => {});
 
-    _planDeps.createRuntime = mock((_cfg: any) => {
+    _planDeps.createRuntime = mock((_cfg: NaxConfig) => {
       capturedPlanArgs = [];
       return makeMockRuntime({
         agentManager: makeMockAgentManager({
@@ -206,7 +206,7 @@ describe("planCommand", () => {
   test("uses explicit plan model selector to choose adapter", async () => {
     let receivedAgentName: string | undefined;
 
-    _planDeps.createRuntime = mock((cfg: any) =>
+    _planDeps.createRuntime = mock((cfg: NaxConfig) =>
       makeMockRuntime({
         config: cfg,
         agentManager: makeMockAgentManager({
@@ -259,12 +259,12 @@ describe("planCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-3: interactive mode is now supported when --auto not set", async () => {
-    const planSpy = mock(async (_req: any) => {});
-    _planDeps.createRuntime = mock((_cfg: any) =>
+    const planSpy = mock(async () => {});
+    _planDeps.createRuntime = mock((_cfg: NaxConfig) =>
       makeMockRuntime({
         agentManager: makeMockAgentManager({
-          runWithFallbackFn: async (req) => {
-            await planSpy(req);
+          runWithFallbackFn: async () => {
+            await planSpy();
             return {
               result: {
                 success: true,
@@ -296,7 +296,7 @@ describe("planCommand", () => {
 
   test("AC-4: throws on invalid JSON or missing userStories; auto-fills missing project field", async () => {
     // Scenario 1: invalid JSON → throws parse error
-    _planDeps.createRuntime = mock((_cfg: any) =>
+    _planDeps.createRuntime = mock((_cfg: NaxConfig) =>
       makeMockRuntime({
         agentManager: makeMockAgentManager({
           runWithFallbackFn: async () => ({
@@ -322,7 +322,7 @@ describe("planCommand", () => {
     // Scenario 2: missing userStories → throws "userStories"
     const badPrd = { ...SAMPLE_PRD } as Partial<PRD>;
     badPrd.userStories = undefined;
-    _planDeps.createRuntime = mock((_cfg: any) =>
+    _planDeps.createRuntime = mock((_cfg: NaxConfig) =>
       makeMockRuntime({
         agentManager: makeMockAgentManager({
           runWithFallbackFn: async () => ({
@@ -351,7 +351,7 @@ describe("planCommand", () => {
     const prdWithoutProject = { ...SAMPLE_PRD } as Partial<PRD>;
     prdWithoutProject.project = undefined;
 
-    _planDeps.createRuntime = mock((_cfg: any) =>
+    _planDeps.createRuntime = mock((_cfg: NaxConfig) =>
       makeMockRuntime({
         agentManager: makeMockAgentManager({
           runWithFallbackFn: async () => ({
@@ -415,7 +415,7 @@ describe("planCommand", () => {
       ],
     };
 
-    _planDeps.createRuntime = mock((_cfg: any) =>
+    _planDeps.createRuntime = mock((_cfg: NaxConfig) =>
       makeMockRuntime({
         agentManager: makeMockAgentManager({
           runWithFallbackFn: async () => ({
@@ -553,7 +553,7 @@ describe("planCommand", () => {
 
     // Scenario 2: verify content rendered in codebaseContext
     let capturedCodebaseContext: string | undefined;
-    _planDeps.createRuntime = mock((_cfg: any) =>
+    _planDeps.createRuntime = mock((_cfg: NaxConfig) =>
       makeMockRuntime({
         agentManager: makeMockAgentManager({
           runWithFallbackFn: async (req) => {
@@ -708,7 +708,7 @@ describe("assertIsValidPrd guard (#993)", () => {
           estimatedCostUsd: 0,
           internalRoundTrips: 0,
         }),
-        runWithFallbackFn: async (req: any) => {
+        runWithFallbackFn: async (req) => {
           const result = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
           return {
             result: {
@@ -765,7 +765,7 @@ describe("assertIsValidPrd guard (#993)", () => {
 
   test("success path: valid PRD from agent preserves all userStories (field-equality regression guard)", async () => {
     // Regression guard: on the normal success path, userStories must be preserved exactly.
-    _planDeps.createRuntime = mock((_cfg: any) =>
+    _planDeps.createRuntime = mock((_cfg: NaxConfig) =>
       makeMockRuntime({
         agentManager: makeMockAgentManager({
           runWithFallbackFn: async () => ({
@@ -813,15 +813,15 @@ describe("buildPlanComposition()", () => {
     rounds: 1,
     debaters: [{ agent: "claude" }, { agent: "opencode" }],
   };
+  const asymmetricBase = { ...baseConfig, sessionMode: "one-shot" } satisfies DebateStageConfig;
 
   test.each([
-    ["'current'", { ...baseConfig, sessionMode: "one-shot" as const, evidenceMode: "current" as const }],
-    ["absent", { ...baseConfig, sessionMode: "one-shot" as const }],
+    ["'current'", { ...asymmetricBase, evidenceMode: "current" }],
+    ["absent", asymmetricBase],
   ] as const)("AC-1: returns config unchanged when evidenceMode is %s", (_label, input) => {
-    const result = buildPlanComposition(input as any);
+    const result = buildPlanComposition(input);
     expect(result).toBe(input);
   });
-
   test.each([
     ["preDebatePhase grounder", (r: ReturnType<typeof buildPlanComposition>) => r.preDebatePhase, { kind: "grounder" }],
     [
@@ -871,7 +871,7 @@ describe("buildPlanComposition()", () => {
       { citationsRequired: false },
     ],
   ] as const)("AC-2: user-specified %s overrides asymmetric default", (_label, override, getField, expected) => {
-    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const, ...override } as any);
+    const result = buildPlanComposition({ ...asymmetricBase, evidenceMode: "asymmetric", ...override });
     expect(getField(result)).toEqual(expected);
   });
 });
