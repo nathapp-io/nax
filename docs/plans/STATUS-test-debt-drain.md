@@ -9,21 +9,25 @@ log — each entry records what was true when written and is not edited afterwar
 
 ---
 
-## 0. Current state — measured 2026-08-25 on `fix/drain-as-unknown-as-final`
+## 0. Current state — measured 2026-08-25 on `fix/drain-no-explicit-any-story-orchestrator`
 
 | Counter | Value | Baseline | Drain target? |
 |:--|--:|--:|:--|
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
-| `as unknown as` | **0** | 0 | **done — drained to zero, see below** |
-| `asAny` | 1377 | 1377 | yes, then biome `noExplicitAny` retires it |
-| `anyType` | 1860 | 1860 | yes, retires with `asAny` — biome says **1851** |
-| `nonNullAssert` | 819 | 819 | yes — biome says **1092**, see §0.1 |
+| `as unknown as` | **0** | 0 | done — closed invariant (§8.13) |
+| `asAny` | 993 | 1377 | yes, then biome `noExplicitAny` retires it |
+| `anyType` | 1297 | 1860 | yes, retires with `asAny` — biome says **1288** |
+| `nonNullAssert` | 819 | 819 | yes — biome says **1092**, see §0.1 (not started) |
 | `asNever` | 608 | 608 | yes |
 | `ratchetAllow` | 105 | 105 | yes |
 | `tsSuppress` | 40 | 40 | yes |
 | `absentValue` | 17 | 17 | yes |
 | `looseCast` | 1875 | 1875 | **no** — guard only, see below |
+
+The `noExplicitAny` drain is in progress on this branch (§8.14): nine files drained,
+`asAny` 1179 → 993 and `anyType` 1538 → 1297 against the branch-start ratchet, with every
+other counter flat. Biome's authoritative count fell **1529 → 1288**.
 
 `as unknown as` went **101 → 0** across nine commits (§8.1–§8.4, §8.11–§8.13); `looseCast`
 fell 1888 → 1875 and `ratchetAllow` 107 → 105 as side effects of removing real casts, and
@@ -96,11 +100,12 @@ From `archive/2026-08-22-1514-phase3c-test-debt-drain.md` §6, with steps 1–3 
 
 ### 0.1 Count `anyType` / `nonNullAssert` with biome, not the regex
 
-**The regex counters are not the drain's finish line. Biome is.** Measured 2026-08-25:
+**The regex counters are not the drain's finish line. Biome is.** Measured 2026-08-25 on
+`fix/drain-no-explicit-any-story-orchestrator` after the §8.14 batch:
 
 | Counter | regex ratchet | biome | gap |
 |:--|--:|--:|--:|
-| `anyType` / `noExplicitAny` | 1860 | 1851 | ~equivalent |
+| `anyType` / `noExplicitAny` | 1297 | 1288 | ~equivalent |
 | `nonNullAssert` / `noNonNullAssertion` | **819** | **1092** | **273 uncounted** |
 
 `scripts/check-test-escape-hatches.ts` is raw text, and its own doc comment concedes the
@@ -128,21 +133,28 @@ c["overrides"] = [o for o in c["overrides"] if "helpers" in o["includes"][0]]
 json.dump(c, open("/tmp/biome-probe/biome.json", "w"), indent=2)
 EOF
 
-bun x @biomejs/biome@2.5.10 check --config-path=/tmp/biome-probe test/ \
-  --reporter=json --max-diagnostics=20000 2>/dev/null \
+bun x @biomejs/biome@2.5.10 check --config-path=/tmp/biome-probe . \
+  --reporter=json --max-diagnostics=50000 2>/dev/null \
 | python3 -c "
 import json, sys, collections
-c = collections.Counter(x['category'] for x in json.load(sys.stdin)['diagnostics'])
+d = [x for x in json.load(sys.stdin)['diagnostics']
+     if x['location'].get('path', '').startswith('test/')]
+c = collections.Counter(x['category'] for x in d)
 for k in ('lint/suspicious/noExplicitAny', 'lint/style/noNonNullAssertion'):
     print(f'{k}: {c[k]}')
 "
 ```
 
-Two notes on the invocation. `--reporter=json` was **not** truncated in testing — it returned
-all 3182 diagnostics with and without `--max-diagnostics` — but pass the flag anyway: the
-human and summary reporters do stop early (they cap at 20 by default and print "Diagnostics
-not shown: N"), so anyone adapting this to a different reporter gets a silently short count.
-Keep `organizeImports` off in the probe, or every unsorted import inflates the list.
+Two notes on the invocation. **Scope with `.` plus the python path filter, not a bare `test/`
+argument**: biome resolves a path argument against the directory holding `--config-path` unless
+it is absolute, so `test/` from the repo root can silently check an empty directory and report
+zero. The JSON reporter also returns diagnostics for `src/` / `bin/` and the `.nax` acceptance
+tests, so filter to `test/` in python — otherwise the count includes scope biome already gates.
+`--reporter=json` was **not** truncated in testing — it returned all ~2900 diagnostics with and
+without `--max-diagnostics` — but pass the flag anyway: the human and summary reporters do stop
+early (they cap at 20 by default and print "Diagnostics not shown: N"), so anyone adapting this
+to a different reporter gets a silently short count. Keep `organizeImports` off in the probe, or
+every unsorted import inflates the list.
 
 Use the regex ratchet for what it is good at — failing a PR that *adds* debt, on every commit,
 in milliseconds. Use biome for "are we done yet".
@@ -1007,3 +1019,65 @@ the same test files.** `bun test <dir>` and `bun run test:e2e` are not the same 
 the difference was a flag that turns a passing suite into a cascade of misleading failures.
 The claim reached a commit message, a status doc and a PR body before the gate itself was
 ever run. Cheapest check available: run the gate, then read its exit code.
+
+### 8.14 Batch 1 of the `noExplicitAny` drain — nine files, biome 1529 → 1288 (2026-08-25)
+
+The top ten files by biome count were drained in owner work (nine of the ten before the
+batch paused; `story-orchestrator-logs.test.ts`, 24 sites, is untouched and still heads the
+queue). ~241 sites across nine files; `asAny` ↓186 and `anyType` ↓241 on the ratchet,
+**every other counter flat** — including `looseCast`, which two early edits briefly traded
+and was reclaimed (see below). Gates: typecheck 0 (all three), full suite green
+(unit / integration / e2e / ui, 0 fail), ratchet `[OK]`.
+
+**The recurring shape, and the recipe that retired most sites.** Most files hand-built an
+`as any` context/runtime bag (`configLoader: {…} as any, packages: {…} as any } as any`) or
+assigned `(async () => X) as any` to a dep slot. The recipes:
+
+| Shape | Recipe |
+|:--|:--|
+| fake runtime bag | `makeMockRuntime({ agentManager, sessionManager, config })` — real `NaxRuntime`, zero casts |
+| generic dep slot (`callOp`) | shared `makeCallOp({ fallback })` from `@test/helpers` — already generic over `<I, O, C>` |
+| fabricated op literal for `AnySlot` | complete the fixture: `kind/name/stage/config/session/build/parse` with a real two-section `ComposeInput` return, checked via `satisfies RunOperation<…>` |
+| `redactSecrets(x) as any` at every read | **source fix**: `redactSecrets<T>(input: T): T` — shape-preserving generic like its sibling `redactEntry`; retires all 22 call-site casts at once |
+| OTLP payload builders returning `object` | **source fix**: precise `OtlpTracesPayload` / `OtlpMetricsPayload` return types; also retires the two structural `as { resourceMetrics: … }` casts in `otel-reporter/index.ts` |
+| partial-config ctx | `makeNaxConfig(overrides)` + a literal `PackageView` with `select: <C>(sel) => sel.select(config)` |
+| registry-keyed kind not in a closed union (`{ kind: "test-synthesis" }`) | `Object.assign(stageConfig, { selector: { kind } })` — returns `T & U`, whose `.selector` type is the intersection, assignable back to the union field |
+
+Two source changes carried the heaviest files. Both follow the `redactSecrets` precedent:
+the source return type was vaguer than the value it produces, so every consumer paid a cast.
+Precision there is not weakening anything — it is what let the fixtures hold a `T` without
+asserting.
+
+**The two counter trades the first draft made, and how they were caught.** The escape-hatch
+ratchet failed the verification run: acceptance.test.ts `looseCast` 1 → 3. One was a genuine
+trade — `hooks: {} as any` had become `hooks: {} as HooksConfig`, moving debt from one
+counter to another instead of paying it. The honest fixture is `{ hooks: {} }`, which
+typechecks against `HooksConfig` directly with no assertion. The other was a **ratchet false
+positive worth knowing**: the line
+
+```
+})) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
+Object.assign(Bun, { file: fileStub });
+```
+
+matches `\bas\s+[A-Z]\w*` because `\s+` spans the newline — the comment's trailing `-as`
+plus the next line's capitalised `Object.assign` reads as a single cast. Reordering so the
+`Object.assign` precedes the cast line clears it without touching the counters. **A
+comment's last word can pair with the next line's first word inside a raw-text regex;
+when a looseCast appears that you did not write, read the seam between lines before
+hunting for a cast you forgot.**
+
+**Other notes.** `(Bun as any).file = stub` became `Object.assign(Bun, { file: stub })` —
+same mechanism-A route as §8.13's class stubs, no assertion, restore by assigning the saved
+original back through `Object.assign`. Two dead helpers (`capturingDeps`,
+`resourceAttributes`) and a never-called heartbeat tracker were already unused at HEAD and
+were removed while editing. Inert write-only counters (`prePhaseCallCount`,
+`verifierCallCount` in runner-plug-point-dispatch) were dropped rather than asserted: a
+probe confirmed the verifier dispatch does not fire in that test's config path, so an
+assertion would have pinned a falsehood.
+
+**Remaining queue** (biome count per file): `story-orchestrator-logs` 24, `debate/runner`
+23, `pipeline/subscribers/interaction` 23, `verify-op` 22, `build-plan-triage-predicates` 21,
+`test-presence-gate` 21 — 225 files hold the remaining 1288. After the queue reaches zero as
+biome counts it, endgame item 4 promotes the `test/**` override to `"error"` (§0.1), and the
+regex `asAny`/`anyType` rows retire into the rule.
