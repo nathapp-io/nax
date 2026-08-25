@@ -26,13 +26,21 @@ names the line.
 Two ratchets remain, guarding the side doors a clean typecheck can be bought with:
 
 - `check:test-as-unknown-as` — counts `as unknown as` casts in `test/`; fails if grown.
+  **Baselined at 0 since the drain closed.** It no longer tracks a backlog: any nonzero
+  reading is a regression to fix at the site, never a number to work down or re-baseline.
+  The routes that replaced the last casts are constructing the real class and
+  `Object.assign`-ing mocks over it (`Object.assign` returns `T & U`), element access
+  (`p["_x"]`) for a `private` reach, and an overload whose implementation signature is
+  loose where the public one cannot be satisfied by any concrete value.
 - `check:test-escape-hatches` — counts the **eight** other ways to silence a type error;
   fails if any of them grows.
 
 Both behave like the existing `check:nax-error` / `check:import-cycles` ratchets: they have a `--update-baseline` to lower the threshold when intentional improvements land, and `--list` to surface offenders.
 
 `test/` is also linted by Biome (`bun run lint`), with three rules deferred for
-`test/**` in `biome.json`. Those overrides are not a licence to use what they
+`test/**` in `biome.json` (plus one narrower override: `complexity/useLiteralKeys` is off
+for `test/helpers/*-internals.ts`, where element access is what makes a `private` member
+reachable and the rule's "fix" would not compile). Those overrides are not a licence to use what they
 disable — `noExplicitAny` in particular is deferred *because* the escape-hatch
 ratchet is counting it instead (as `anyType`), and turns back on when the drain
 retires it.

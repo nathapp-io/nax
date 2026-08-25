@@ -48,9 +48,10 @@ value a cast had been hiding), and the `instanceof` guard makes a wrong argument
 instead of reading `undefined` off a stub.
 
 `looseCast` is not a target. It exists so the TS2352 population ("convert the
-expression to `unknown` first") cannot escape into unmarked single casts while the
-cast ratchet sits at its floor. Driving it down is not progress; keeping it flat
-while `as unknown as` falls is.
+expression to `unknown` first") cannot escape into unmarked single casts. That job
+matters **more** now, not less: with `as unknown as` baselined at 0, a single `as X`
+is the cheapest way to reintroduce the debt under a name the closed ratchet does not
+see. Driving it down is not progress; keeping it from rising is.
 
 ### What is already done
 
@@ -62,7 +63,7 @@ bun x tsc --noEmit && bun x tsc --noEmit -p tsconfig.contracts.json && bun x tsc
 
 `check:test-typecheck`, its baseline and its parser are deleted — a counting ratchet at zero
 reports a number where `tsc` reports a file and a line. Issue #1514 is closed. Against the
-original start: test typecheck **2009 → 0 (−100%)**, casts **815 → 18 (−98%)**.
+original start: test typecheck **2009 → 0 (−100%)**, casts **815 → 0 (−100%)**.
 
 ### The endgame, unchanged
 
@@ -72,7 +73,10 @@ From `archive/2026-08-22-1514-phase3c-test-debt-drain.md` §6, with steps 1–3 
 2. ~~delete `check:test-typecheck` and its baseline~~ done
 3. ~~keep the two cast ratchets as the permanent invariant~~ done — **and they are now more
    load-bearing, not less: with typecheck a hard gate at zero, a cast is the only remaining
-   way to buy a green build.** They are what stops that trade.
+   way to buy a green build.** They are what stops that trade. Since §8.13 the
+   `as unknown as` ratchet is baselined at **0**, so it no longer tracks a drain — it is a
+   pure invariant, and any nonzero reading is a regression to reject, not a number to work
+   down.
 4. **not done** — drop the `noExplicitAny: off` override for `test/**` in `biome.json`, which
    requires `asAny`/`anyType` at 0 and retires both counters properly. Same shape for
    `noNonNullAssertion` and `nonNullAssert`.
