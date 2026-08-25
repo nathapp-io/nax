@@ -483,7 +483,7 @@ describe("TelegramInteractionPlugin - send() and poll()", () => {
     const response = await plugin.receive("tg-bogus", 200);
     expect(response.action).toBe("skip");
     expect(response.respondedBy).toBe("timeout");
-    expect((response as unknown as { value?: string }).value).toBeUndefined();
+    expect(response.value).toBeUndefined();
   });
 
   test("receive() acknowledges callback queries even when requestId does not match", async () => {

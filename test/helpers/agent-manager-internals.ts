@@ -1,4 +1,5 @@
 import type { IAgentManager } from "@/agents";
+import type { AgentRegistry } from "@/agents/registry";
 
 /**
  * Private surface of `AgentManager` that the call-op retry tests drive
@@ -8,6 +9,8 @@ import type { IAgentManager } from "@/agents";
  */
 export type AgentManagerInternals = {
   _resolveRegistry: () => { getAgent: (name: string) => unknown };
+  /** Lazily created on first getAgent() call — undefined until then. */
+  _registry: AgentRegistry | undefined;
 };
 
 export function agentManagerInternals(m: IAgentManager): AgentManagerInternals {

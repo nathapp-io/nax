@@ -403,7 +403,7 @@ describe("assembleForStage — ADR-009 / .naxignore threading", () => {
       mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
 
     const ctx = makeCtx();
-    (ctx.config as unknown as { context: { v2: Record<string, unknown> } }).context.v2.providerTimeoutMs = 9000;
+    ctx.config.context.v2.providerTimeoutMs = 9000;
     await assembleForStage(ctx, "execution");
 
     expect(mock.ref.captured?.providerTimeoutMs).toBe(9000);
@@ -415,7 +415,7 @@ describe("assembleForStage — ADR-009 / .naxignore threading", () => {
       mock.orchestrator as ReturnType<typeof _stageAssemblerDeps.createOrchestrator>;
 
     const ctx = makeCtx({ stages: { execution: { providerTimeoutMs: 2000 } } });
-    (ctx.config as unknown as { context: { v2: Record<string, unknown> } }).context.v2.providerTimeoutMs = 9000;
+    ctx.config.context.v2.providerTimeoutMs = 9000;
     await assembleForStage(ctx, "execution");
 
     expect(mock.ref.captured?.providerTimeoutMs).toBe(2000);

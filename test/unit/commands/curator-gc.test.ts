@@ -335,7 +335,7 @@ describe("curatorGc", () => {
       const kept = await readRollupRows(rollupPath);
       expect(new Set(kept.map((r) => r.runId)).size).toBe(3);
       // Every surviving row is intact JSON — a mid-chunk split would corrupt one.
-      expect(kept.every((r) => (r as unknown as { detail: string }).detail === padding)).toBe(true);
+      expect(kept.every((r) => ("detail" in r ? r.detail === padding : false))).toBe(true);
     });
 
     test("leaves the original intact when the rewrite throws", async () => {

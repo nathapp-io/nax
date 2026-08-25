@@ -224,7 +224,7 @@ describe("AgentManager — middleware envelope", () => {
     const manager = makeMiddlewareManager();
 
     let calledRunAs = false;
-    (manager as unknown as { runAs: typeof manager.runAs }).runAs = async (_name, _req) => {
+    manager.runAs = async (_name, _req) => {
       calledRunAs = true;
       return { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 };
     };
@@ -234,7 +234,7 @@ describe("AgentManager — middleware envelope", () => {
     expect(calledRunAs).toBe(true);
 
     let calledCompleteAs = false;
-    (manager as unknown as { completeAs: typeof manager.completeAs }).completeAs = async (_name, _prompt, _opts) => {
+    manager.completeAs = async (_name, _prompt, _opts) => {
       calledCompleteAs = true;
       return { output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     };

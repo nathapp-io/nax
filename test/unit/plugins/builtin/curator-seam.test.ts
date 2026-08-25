@@ -312,7 +312,7 @@ describe("the window's byte ceiling must not masquerade as its run policy (#1429
     expect(observations).toHaveLength(6);
     // Every payload is intact — a mid-chunk split would truncate one.
     for (const obs of observations) {
-      expect((obs.payload as unknown as { pad: string }).pad).toHaveLength(300_000);
+      expect("pad" in obs.payload ? obs.payload.pad : "").toHaveLength(300_000);
     }
   });
 

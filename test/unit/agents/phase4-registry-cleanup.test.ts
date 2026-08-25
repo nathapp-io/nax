@@ -13,6 +13,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { AgentManager } from "@/agents/manager";
 import { DEFAULT_CONFIG } from "@/config/defaults";
+import { agentManagerInternals } from "@test/helpers";
 
 const ROOT = join(import.meta.dir, "../../../");
 
@@ -46,11 +47,11 @@ describe("AgentManager — lazy registry creation (Phase 4)", () => {
 
   test("_registry is undefined before first getAgent() call and defined after", () => {
     const manager = new AgentManager(DEFAULT_CONFIG);
-    // Access private field via type cast to verify laziness
-    const before = (manager as unknown as Record<string, unknown>)._registry;
+    // Access private field via the internals containment helper to verify laziness
+    const before = agentManagerInternals(manager)._registry;
     expect(before).toBeUndefined();
     manager.getAgent("claude");
-    const after = (manager as unknown as Record<string, unknown>)._registry;
+    const after = agentManagerInternals(manager)._registry;
     expect(after).not.toBeUndefined();
   });
 });

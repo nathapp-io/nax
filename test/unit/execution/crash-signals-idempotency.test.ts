@@ -33,7 +33,7 @@ describe("crash-signals idempotency", () => {
     originalExit = process.exit;
     exitCalls = [];
     // Prevent the real process.exit from killing the test runner.
-    (process as unknown as { exit: (code?: number) => never }).exit = ((code?: number) => {
+    process.exit = ((code?: number) => {
       exitCalls.push(code ?? 0);
       return undefined as never;
     }) as typeof process.exit;
