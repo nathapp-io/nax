@@ -2619,3 +2619,49 @@ would silently no-op at teardown.
 
 **Do not delegate the 11.** Every one of them is a judgement call or an issue to file; a
 mechanical brief over them would produce exactly the wrong edit.
+
+## 45. The coverage gate caught what the typecheck ratchet cannot (2026-08-25)
+
+PR #1703's first CI run failed — not on typecheck, lint or the suite, all of which were
+green locally and in CI, but on the **per-file coverage ratchet**:
+`src/verification/mutation/classify.ts` at 68.18% against an 80% floor, on a branch that
+never touches that file.
+
+The cause was two batch-5 group-9 edits. `mutation-check-revert.test.ts` and
+`mutation-check-telemetry.test.ts` each carried `status: "FAILURE"` in a fake regression
+result, and `"FAILURE"` was never a member of `VerificationStatus` — one of the "fixtures
+asserting against impossible values" batch 5 was proud of finding. Both were corrected to
+`"TEST_FAILURE"`.
+
+**The correction was right and it still broke something.** Both fixtures simulate a
+regression run reporting test failures, and neither asserts on classification, so
+`"TEST_FAILURE"` is the truthful value. But `classifyMutant` switches on that status, and
+`"FAILURE"` had been the only thing in the entire suite reaching its `default:`
+exhaustiveness throw. `classify.test.ts` already pinned all five real statuses; nothing
+pinned the backstop. Fixing the fixture moved a live branch to dead.
+
+Fixed by pinning the guard directly — one test asserting `NaxError` /
+`MUTATION_UNHANDLED_STATUS` / the offending status in the message.
+
+### The lesson, which is batch 5's own, one level up
+
+Batch 5 wrote: "One tsc message, two different bugs. Swapping the value on the second, or
+annotating the first, silences tsc and leaves the defect." That was about *choosing* the
+right edit. This is the case where the right edit still costs something: **an invalid
+literal can be load-bearing for coverage**, because invalid values are exactly what reach
+`default:` branches and error paths.
+
+**The typecheck ratchet is structurally blind to this class.** It counts errors; it cannot
+see that removing one moved a branch from covered to dead. Neither can the suite — every
+test still passed, locally and in CI. Only the coverage gate noticed, and only because
+`classify.ts` sits outside the per-file baseline so any drop reads as a new file below the
+floor.
+
+**Carry forward:** when a drain edit changes a value that a `switch` or an error path
+reads — not merely a shape a type reads — run `bun run test:coverage`, not just
+`bun run test`. The six-step loop this issue has used throughout does not include it, and
+this is the first row in 2000 that needed it.
+
+One point of coverage-ratchet slack (101 below floor against a baseline of 103) was left
+alone: `main` measures 102, so the slack pre-dates this branch, and lowering a coverage
+baseline does not belong in a typecheck drain.
