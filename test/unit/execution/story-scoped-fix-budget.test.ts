@@ -39,6 +39,7 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import type { NaxConfig } from "@/config";
 import { StoryOrchestratorBuilder, _storyOrchestratorDeps, runRectification } from "@/execution";
 import type { InternalBuildState } from "@/execution";
 import { getStoryFixState, storyFixKey } from "@/findings";
@@ -562,7 +563,7 @@ async function runPlanResumeScenario(
     // during main rect's validate (else it would either prevent cycle
     // resolution or end up in phaseOutputs as passing and be skipped
     // by the resume loop).
-    const autofixImplementer: FixStrategy<Finding, unknown, unknown, unknown> = {
+    const autofixImplementer: FixStrategy<Finding, { story: string }, { applied: boolean }, NaxConfig> = {
       name: "autofix-implementer",
       appliesTo: (f: Finding) => f.source === "test-runner",
       fixOp: rbFixOp,
