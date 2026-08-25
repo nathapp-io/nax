@@ -306,9 +306,8 @@ Sequenced so each step has an independently checkable outcome:
    `biome check --write --linter-enabled=false` so the assist and formatter run but the
    step-4 lint fixes do not. Not fully mechanical in practice; see below.
 4. **Severity policy decision — the step that matters most.** Covers both the 546 new
-   warnings and the `test/` rules. If endgame item 4 is still wanted, promote
-   `noExplicitAny` and `noNonNullAssertion` to `"error"` here; if not, record that item 4 is
-   abandoned. Do not leave this implicit.
+   warnings and the `test/` rules. **Partly done** — the `test/` half is decided and the
+   `src/` half has landed; the 546 warnings are still unenforced. See "Step 4 Decision".
 5. **GritQL pilot** for `process.cwd()`, with `check:process-cwd` retained as a wrapper.
 6. Leave `check:test-mocks` alone.
 
@@ -337,6 +336,57 @@ Budget for them; they are found by running the gates, not by reading the diff.
 - **Two grandfathered files grew past their `check:file-sizes` baseline** where merged
   specifiers wrapped past `lineWidth: 120`. Bump those entries individually; do not run
   `--update-baseline`, which would ratchet every grown file at once.
+
+### Step 4 Decision: Promote `src/`, Defer `test/`, Promote It Back After The Drain
+
+Endgame item 4 is **kept, not abandoned**. The decision splits by scope, because the two
+halves have very different costs — a distinction the "High Risks" framing above blurs.
+
+Measured 2026-08-25 with both rules forced to `"error"`:
+
+| Scope | `noExplicitAny` | `noNonNullAssertion` | cost of promoting |
+|:--|--:|--:|:--|
+| `src/` + `bin/` | 0 | 0 | **none** |
+| `test/` (override dropped) | 1851 | 1092 | 2943 errors |
+
+- **`src/` + `bin/` are now `"error"`** (top-level `linter.rules` in `biome.json`). This was
+  free, and it closed a regression that steps 1-2 introduced without anyone noticing: under
+  1.9.4 a new `any` in `src/` **failed** `bun run lint`; under 2.5.10 at v2 defaults it
+  emitted a warning and `lint` exited 0. Verified with a deliberate violation before and
+  after — same probe, 2 warnings then, 2 errors now.
+- **`test/**` stays `"off"`.** Promoting it does not retire a single `any`; it only turns the
+  build red until 2943 edits are done. A gate can follow a drain, it cannot precede one.
+- **When the drain reaches zero, the override is PROMOTED BACK to `"error"`, not deleted.**
+  Deleting it lands the rules at v2's default warning severity and `biome check` exits 0 on
+  warnings — the exact trap in "v2 Demotes The `test/` Rules To Warnings". Recorded in the
+  header of `scripts/check-test-escape-hatches.ts`, where the next drainer will read it.
+  (`biome.json` cannot hold a comment — it is strict JSON, not JSONC.)
+
+Still open in step 4: the 546 unenforced warnings. `biome check --error-on-warnings` exists
+in 2.5.10 and would end the accumulation in one flag. Cost to get there, measured: a
+`--write --unsafe` pass takes **542 warnings to 54** across 275 files, leaving 27
+`noTemplateCurlyInString`, 17 `noUnusedVariables`, 8 dead suppressions and 2 others to fix by
+hand.
+
+### The `nonNullAssert` Ratchet Undercounts By 273
+
+Found while deciding the above, and it outlives this document's scope. The claim that the
+`test/` debt is "already tracked by the escape-hatch ratchet" is only three-quarters true:
+
+| Counter | ratchet | Biome | gap |
+|:--|--:|--:|--:|
+| `anyType` / `noExplicitAny` | 1860 | 1851 | ~equivalent |
+| `nonNullAssert` / `noNonNullAssertion` | 819 | 1092 | **273 uncounted** |
+
+`scripts/check-test-escape-hatches.ts` is a raw-text regex whose own doc comment concedes it
+"undercounts rather than over-" and that "doing better needs a parser". Biome has the parser.
+So 273 non-null assertions in `test/` are counted by nothing: the regex misses them and the
+rule is off.
+
+The fix does not need the drain finished or the severity flipped: run Biome with the rule
+enabled, parse `--reporter=json`, and ratchet on **that** count instead of the regex. The
+blind spot closes immediately, and when the drain lands, ratchet and rule are already
+measuring the same thing, so the promote-back becomes a one-line severity change.
 
 ## Revision Notes (2026-08-25)
 
