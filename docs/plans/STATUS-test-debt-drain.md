@@ -16,21 +16,21 @@ log — each entry records what was true when written and is not edited afterwar
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
 | `as unknown as` | **0** | 0 | done — closed invariant (§8.13) |
-| `asAny` | 51 | 1377 | yes, then biome `noExplicitAny` retires it |
-| `anyType` | 67 | 1860 | yes, retires with `asAny` — biome says **59** |
-| `nonNullAssert` | 792 | 819 | yes — biome says **1074**, see §0.1 (not started) |
-| `asNever` | 604 | 608 | yes |
+| `asAny` | 9 | 1377 | yes, then biome `noExplicitAny` retires it |
+| `anyType` | 18 | 1860 | yes, retires with `asAny` — biome says **8** |
+| `nonNullAssert` | 792 | 819 | yes — biome says **1064**, see §0.1 (not started) |
+| `asNever` | 603 | 608 | yes |
 | `ratchetAllow` | 103 | 105 | yes |
 | `tsSuppress` | 40 | 40 | yes |
 | `absentValue` | 17 | 17 | yes |
-| `looseCast` | 1802 | 1875 | **no** — guard only, see below |
+| `looseCast` | 1800 | 1875 | **no** — guard only, see below |
 
-The `noExplicitAny` drain is in progress on this branch (§8.14–§8.23): one hundred
-eighty-three files drained, `asAny` 1179 → 51 and `anyType` 1538 → 67 against the
+The `noExplicitAny` drain is in progress on this branch (§8.14–§8.23): two hundred thirty-four
+files drained, `asAny` 1179 → 9 and `anyType` 1538 → 18 against the
 branch-start ratchet, with every other counter flat except `nonNullAssert` (819 → 792),
-`looseCast` (1875 → 1802), `ratchetAllow` (105 → 103) and `asNever` (608 → 604) as benign side
+`looseCast` (1875 → 1800), `ratchetAllow` (105 → 103) and `asNever` (608 → 603) as benign side
 effects of removing `logger!.info = … as any` patterns and deleting real casts. Biome's
-authoritative count fell **1529 → 59**.
+authoritative count fell **1529 → 8**, all of it the held escalation.
 
 `as unknown as` went **101 → 0** across nine commits (§8.1–§8.4, §8.11–§8.13); `looseCast`
 fell 1888 → 1875 and `ratchetAllow` 107 → 105 as side effects of removing real casts, and
@@ -1684,3 +1684,65 @@ src-blocked), then a fifty-one-file tier tied at 1 spanning `test/integration/**
 `test/unit/**` and one ui file (`usePipelineBusEvents.test.tsx`) — 52 files hold the remaining
 59. The tier after this one is empty: draining it leaves only the held escalation, which ends
 the drain pending its src-side seam.
+
+### 8.24 Batch 11 of the `noExplicitAny` drain — the fifty-one-file tier tied at 1, four parallel delegates, biome 59 → 8 (2026-08-26)
+
+The §8.23 queue head drained: the whole fifty-one-file tier tied at 1 — 51 sites taken by four
+parallel agents on disjoint file sets grouped by subsystem under the same brief model as
+§8.16–§8.22 (`HANDOFF-explicit-any-batch11.md`; recipes table extended with the batch-9/10
+proven patterns: run-options stubs, logger overlays, capture-array typing). The held escalation
+(`interaction/plugins/cli`) was excluded by name. No delegate edited outside its set; zero
+src/ or helper changes; **all 51 files reached zero, with zero escalations held** — second
+consecutive clean batch. **The drain queue is now empty**: every remaining site is the held
+escalation, and the `noExplicitAny` half of endgame item 4 waits only on its src-side seam.
+
+Ratchet: `asAny` ↓42 (51 → 9) and `anyType` ↓49 (67 → 18); `looseCast` ↓2 (1802 → 1800) and
+`asNever` ↓1 (604 → 603, runner-plan-signal's callback-site `as never` among them) as benign
+side effects of deleting real casts; every other counter flat; no counter rose anywhere,
+including per-file (the two baseline lines that *look* added in the diff are pre-existing
+entries re-serialized after a sibling key was removed — verified against HEAD). Gates:
+typecheck 0 (all three), `check:all` green, full suite green (**14149 / 1136 / 38 pass,
+0 fail** — identical counts to batches 9 and 10), coverage OK (101 below floor against
+baseline 103 — run because fixture corrections landed).
+
+Recipe families applied (all proven in §8.14–§8.23 except where noted):
+
+| Shape | Where | Recipe |
+|:--|:--|:--|
+| dead casts on values/types already admitted ×14 | build-plan-for-strategy (`checks` literals ∈ schema enum), story-orchestrator-check-ops (literal satisfies `CallContext`), rectification-exhaustion (`config: testSel`, sibling ops never needed it), acp/registry (`{ agent: undefined }` assignable to `DeepPartial<NaxConfig>`), plan-mode + query-scratch (`makeLogger()` already returns the dep's declared type), routing-profile-tier (see below), pipeline-acceptance (statuses ∈ `StoryStatus`), tdd-conventions (`"go"` ∈ language union), verdict/scratch ctx bags → `makeTestContext(...)` | deleted outright |
+| **open-union discovery** — `"custom-tier" as any` | routing-profile-tier | `ModelTier = "fast" \| "balanced" \| "powerful" \| (string & {})` already admits any string — the "illegal literal" premise was false; cast deleted, test intent unchanged |
+| required run-options stubs ×3 | manager-lifetime, manager-stale-retry-hop-kind, timeout-retry-hop | §8.17 recipe verbatim, third application: local `makeStubRunOptions(config)` completing `modelTier`/`modelDef`/`timeoutSeconds`/`config` |
+| hand-rolled runtime/ctx bags | merge (`makeWorktreeManager()`), tier-escalation-source-tier + curator-scoping (`config: makeNaxConfig()`), autofix trio (`BuildContext<AutofixConfig>` from the drained sibling), debate-judge/synthesis (real `PackageView` via `makeTestRuntime().packages.repo().select(selector)`), review/runner (`makeMockAgentManager()`), adversarial-advisory-findings (`VerifyContext` via `opSelector`) | shared helpers / real objects |
+| story fragments | resume-integration, event-bus (`StoryEventSummary` completed with required `attempts`), mutation-check ×2, rectifier-builder-review-labels, usePipelineBusEvents (.tsx) | `makeStory(...)` |
+| loosely typed mock params/capture arrays | compose (`[AdapterFailure \| Error, number, RetryContext][]` from the dep signature), completion-review-gate (mock annotated at dep signature so `.mock.calls[0]` infers), lifecycle-completion (`Mock<typeof getSafeLogger>`), webhook-reporter (precise post envelope type), report-dead-tests (`Parameters<typeof generateDeadTestsReport>[0]` reaching an unexported type), plan-builder (`Partial<Parameters<…>[0]>` derivation) | typed at declaration; casts fall out |
+| null / corruption delivered as data | prior-failures (`formatPriorFailures(JSON.parse("null"))` — arrives deserialized from prd.json in production) | profile.test.ts precedent |
+| omission-under-test | cli-precheck-integration | `createMockStory` base + weak alias + `delete` (precheck-tier1 precedent) |
+| class-overlay mocks | plan-callop-migration (`makeInteractionChain({ destroy })` — MockInteractionChain ⊆ InteractionChain), map-source-to-tests-parallel (`Object.assign(Bun.file(p), { exists, text })` — intersection genuinely satisfies `BunFile`) | §8.13-A |
+| generic dep slot | runner-plan-signal | §8.13-C overload seam: strict generic signature for callers, loose concrete implementation; retired both `input: any` and the trailing `as never` |
+
+Fixture-value corrections, all assertion-preserving and reported per §4's carve-out:
+adversarial-pass-fail's priors carried `outcome: "fixes-applied"` → `"regressed"` (not an
+`IterationOutcome` member; exactly what production computes for that shape; classifier reads
+only fingerprints); event-bus summary gained required `attempts` and dropped non-member
+`acceptanceCriteria`; revalidation-repo-scope's phase list built real `InternalPhase` fixtures
+(the cast hid a missing required `slot`); the three retry files' run-options gained the
+cast-masked required tier/model/config fields; cli-precheck's story rebuilt on `createMockStory`
+(gained unread auto-defaults). None feeds a classifier or switch branch beyond what coverage
+already pins.
+
+Two integration notes. **The probe-config blind spot fired a fourth time but cost nothing:**
+two files landed with unsorted imports, and the owner's mandatory repo-config
+`biome check --write` pass over touched files fixed them before any gate ran — §8.22's
+promotion of the pass to "mandatory owner step" held. **The dead-cast majority held for the
+sixth consecutive batch** — fourteen of fifty-one sites were assertions doing nothing, and one
+of those exposed a new twist: an "illegal value" cast whose target union was secretly open
+(`ModelTier`'s `(string & {})` arm). Before treating a literal as deliberately-illegal, read
+the union's own arms — §1's first question ("is this cast doing anything at all?") applies to
+the *premise*, not just the assertion.
+
+**Remaining:** biome `noExplicitAny` = **8**, all in `interaction/plugins/cli.test.ts`
+(held, src-blocked per §8.19 — needs `_deps.createReadline` injection or `rl` protected plus a
+test subclass, plus that file's fixture corrections). With it drained or exempted, the
+`noExplicitAny` half of endgame item 4 is ready to promote to `"error"`. The other half —
+`nonNullAssertion`, biome 1064 against regex 792 — is untouched and is roughly ten times the
+size of the entire `noExplicitAny` drain just completed.
