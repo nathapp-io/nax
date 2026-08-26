@@ -83,6 +83,17 @@ The completion-phase branch keeps dropping `fallbackHops` and `runtimeCrashes`. 
 that terminated as an execution failure move branches, and a `passed` story carrying hops keeps the
 placeholder shape it has today.
 
+### Where the domain logic lives
+
+`src/execution/lifecycle/run-completion.ts` is **586 lines against a hard 600-line
+limit** and is not grandfathered, so it has ~14 lines of headroom and cannot absorb the
+union computation inline. `backfill-story-metrics.ts` is 114 lines and already declares
+itself the single source of truth for this synthesis, so the domain belongs there: it
+exports the eligible-story set and the skip predicate, and `run-completion.ts`'s loop
+changes only its iteration source. That is the better factoring regardless of the gate —
+the loop keeps doing one thing, and the "which stories deserve a row" rule sits next to
+the "what does that row look like" rule.
+
 ### Integration
 
 `handleRunCompletion`'s regression back-fill at `src/execution/lifecycle/run-completion.ts:277` is a
@@ -155,7 +166,8 @@ aggregator where a key exists and zero otherwise. Leave the merge branch for alr
 
 **US-002**
 
-- `src/execution/lifecycle/run-completion.ts` — the back-fill loop at the aggregator-keyed `for` must iterate the widened union and skip only when every signal is empty; the regression back-fill loop earlier in the same function is out of scope and must not change.
+- `src/execution/lifecycle/run-completion.ts` — the back-fill loop must iterate the widened union rather than the aggregator's keys and skip only when every signal is empty; the file is near its hard size limit, so the union itself is computed in `backfill-story-metrics.ts`. The regression back-fill loop earlier in the same function is out of scope and must not change.
+- `src/execution/lifecycle/backfill-story-metrics.ts` — additionally exports the back-fill domain (the eligible story ids) and the skip predicate that US-002's loop consumes.
 - `test/unit/execution/lifecycle/run-completion-backfill-seam.test.ts` — gains the zero-cost and aggregator-absent cases. This authorisation covers adding cases only; its existing assertion that a story with no recorded swaps produces no fallback aggregate must not be weakened.
 
 ## Acceptance Criteria
