@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 273,
+    "asNever": 265,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:23:58.548Z",
+  "updatedAt": "2026-08-26T15:28:50.308Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -457,9 +457,6 @@
     "test/unit/execution/merge.test.ts": {
       "tsSuppress": 10,
       "ratchetAllow": 1
-    },
-    "test/unit/execution/build-plan-for-strategy-triage-assembly.test.ts": {
-      "asNever": 8
     },
     "test/unit/execution/rectification-overrides.test.ts": {
       "asNever": 1

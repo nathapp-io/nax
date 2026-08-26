@@ -10,12 +10,17 @@ import {
 } from "@test/helpers";
 import type { PlanInputs } from "@/execution";
 import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
+import type { Finding, FixCycleContext, FixStrategy } from "@/findings";
 import type { UserStory } from "@/prd/types";
 import type { NaxRuntime } from "@/runtime";
 import { _rollbackDeps } from "@/tdd";
 
 function makeImplementerInput(story: UserStory): import("@/operations").ImplementerInput {
   return { story };
+}
+
+function makeFixCycleContext(): FixCycleContext {
+  return { ...makeMockCallContext(), storyId: "US-001" };
 }
 
 function makeVerifierInput(story: UserStory): import("@/operations").VerifierInput {
@@ -40,9 +45,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
   let capturedStrategyNamesByCall: string[][] = [];
   // Full strategy objects from each fix-cycle call, so tests can invoke
   // buildInput and assert the prompt severity floor was wired (not just names).
-  let capturedStrategiesByCall: Array<
-    Array<{ name: string; buildInput: (...args: never[]) => unknown; appliesTo: (f: never) => boolean }>
-  > = [];
+  let capturedStrategiesByCall: Array<Array<FixStrategy<Finding, { blockingThreshold?: string }, unknown>>> = [];
   let origRunFixCycle: typeof _storyOrchestratorDeps.runFixCycle;
   let origCallOp: typeof _storyOrchestratorDeps.callOp;
   let origCaptureGitRef: typeof _storyOrchestratorDeps.captureGitRef;
@@ -87,13 +90,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
     _storyOrchestratorDeps.runFixCycle = mock(
-      async (cycle: {
-        strategies: Array<{
-          name: string;
-          buildInput: (...args: never[]) => unknown;
-          appliesTo: (f: never) => boolean;
-        }>;
-      }) => {
+      async (cycle: { strategies: Array<FixStrategy<Finding, { blockingThreshold?: string }, unknown>> }) => {
         capturedStrategyNamesByCall.push(cycle.strategies.map((s) => s.name));
         capturedStrategiesByCall.push(cycle.strategies);
         return { iterations: [], finalFindings: [], exitReason: "no-strategy" as const, costUsd: 0 };
@@ -236,16 +233,15 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
     // strategies' buildInput and assert the "info" floor reached the op input.
     // A dropped `promptSeverityFloor: "info"` in either non-blocking branch would
     // surface here as "error" (the run threshold), reproducing the empty-prompt bug.
-    const advisory = {
+    const advisory: Finding = {
       source: "adversarial-review",
       severity: "info",
       category: "test-gap",
       message: "advisory gap",
       fixTarget: "test",
-    } as never;
-    const floorOf = (s?: { buildInput: (...args: never[]) => unknown }) =>
-      (s?.buildInput([advisory] as never, [] as never, {} as never) as { blockingThreshold?: string } | undefined)
-        ?.blockingThreshold;
+    };
+    const floorOf = (s?: FixStrategy<Finding, { blockingThreshold?: string }, unknown>) =>
+      s?.buildInput([advisory], [], makeFixCycleContext())?.blockingThreshold;
 
     const nbfSet = capturedStrategiesByCall[0] ?? [];
     expect(nbfSet.length).toBeGreaterThan(0);
@@ -338,13 +334,13 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
     });
   }
 
-  const advisoryAdversarial = {
+  const advisoryAdversarial: Finding = {
     source: "adversarial-review",
     severity: "info",
     category: "test-gap",
     message: "advisory gap",
     fixTarget: "test",
-  } as never;
+  };
 
   for (const scope of ["both", "triage", "source"] as const) {
     test(`single-session (tdd-simple) NBF scope=${scope} routes adversarial to implementer, never test-writer`, async () => {
@@ -376,11 +372,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
       expect(implementer?.appliesTo(advisoryAdversarial)).toBe(true);
       // The "info" floor must reach the op input — advisory findings sit below the
       // run's blocking threshold, so a dropped floor renders an empty prompt.
-      const floor = (
-        implementer?.buildInput([advisoryAdversarial] as never, [] as never, {} as never) as {
-          blockingThreshold?: string;
-        }
-      )?.blockingThreshold;
+      const floor = implementer?.buildInput([advisoryAdversarial], [], makeFixCycleContext())?.blockingThreshold;
       expect(floor).toBe("info");
     });
   }
