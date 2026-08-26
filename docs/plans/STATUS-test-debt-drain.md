@@ -16,21 +16,21 @@ log — each entry records what was true when written and is not edited afterwar
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
 | `as unknown as` | **0** | 0 | done — closed invariant (§8.13) |
-| `asAny` | 98 | 1377 | yes, then biome `noExplicitAny` retires it |
-| `anyType` | 135 | 1860 | yes, retires with `asAny` — biome says **127** |
+| `asAny` | 51 | 1377 | yes, then biome `noExplicitAny` retires it |
+| `anyType` | 67 | 1860 | yes, retires with `asAny` — biome says **59** |
 | `nonNullAssert` | 792 | 819 | yes — biome says **1074**, see §0.1 (not started) |
-| `asNever` | 605 | 608 | yes |
+| `asNever` | 604 | 608 | yes |
 | `ratchetAllow` | 103 | 105 | yes |
 | `tsSuppress` | 40 | 40 | yes |
 | `absentValue` | 17 | 17 | yes |
-| `looseCast` | 1806 | 1875 | **no** — guard only, see below |
+| `looseCast` | 1802 | 1875 | **no** — guard only, see below |
 
-The `noExplicitAny` drain is in progress on this branch (§8.14–§8.22): one hundred
-forty-eight files drained, `asAny` 1179 → 98 and `anyType` 1538 → 135 against the
+The `noExplicitAny` drain is in progress on this branch (§8.14–§8.23): one hundred
+eighty-three files drained, `asAny` 1179 → 51 and `anyType` 1538 → 67 against the
 branch-start ratchet, with every other counter flat except `nonNullAssert` (819 → 792),
-`looseCast` (1875 → 1803), `ratchetAllow` (105 → 103) and `asNever` (608 → 604) as benign side
+`looseCast` (1875 → 1802), `ratchetAllow` (105 → 103) and `asNever` (608 → 604) as benign side
 effects of removing `logger!.info = … as any` patterns and deleting real casts. Biome's
-authoritative count fell **1529 → 127**.
+authoritative count fell **1529 → 59**.
 
 `as unknown as` went **101 → 0** across nine commits (§8.1–§8.4, §8.11–§8.13); `looseCast`
 fell 1888 → 1875 and `ratchetAllow` 107 → 105 as side effects of removing real casts, and
@@ -1608,3 +1608,79 @@ src-blocked), then a tier tied at 2 led by `integration/cli/cli-precheck-run`,
 `context/engine/lint-config-factory`, `context/engine/providers/code-neighbor-size-cap`,
 `debate/verifiers/plan-checklist`, `execution/parallel-worker-isolation`,
 `execution/plan-inputs-review-wiring` — 86 files hold the remaining 127.
+
+### 8.23 Batch 10 of the `noExplicitAny` drain — the thirty-four-file tier tied at 2, four parallel delegates, biome 127 → 59 (2026-08-26)
+
+The §8.22 queue head drained: the whole thirty-four-file tier tied at 2 (a strict top-20 cut
+lands mid-tie; ride-along per §8.17–§8.19 precedent) — 68 sites taken by four parallel agents
+on disjoint file sets under the same brief model as §8.16–§8.21
+(`HANDOFF-explicit-any-batch10.md`). The held escalation (`interaction/plugins/cli`) was
+excluded by name. Files grouped by subsystem so shared helpers landed on one delegate each
+(the five `plan-decompose-*` files together; the two otel files together). No delegate edited
+outside its set; zero src/ or helper changes; **all 34 files reached zero, with zero
+escalations held** — the first batch since §8.20 with nothing left behind.
+
+Ratchet: `asAny` ↓47 (98 → 51) and `anyType` ↓68 (135 → 67); `looseCast` ↓1 (1803 → 1802,
+plan-checklist's dead cast among them) as benign side effects of deleting real casts; every
+other counter flat; no counter rose anywhere, including per-file. Gates: typecheck 0 (all
+three), `check:all` green, full suite green (**14149 / 1136 / 38 pass, 0 fail** — identical
+counts to batch 9), coverage OK (101 below floor against baseline 103 — run because multiple
+fixture corrections landed).
+
+Recipe families applied (all proven in §8.14–§8.22 except where noted):
+
+| Shape | Where | Recipe |
+|:--|:--|:--|
+| untyped JSONL-log readers + null-slot reads | cli-precheck-run | local `PrecheckLogEntry` interface mirroring the producer's shape; return typed at the exported src type (`NaxStatusFile \| null`) + `assertDefined` after the existing null checks |
+| dead casts on values/types already admitted ×8 | merger ×2 (`override` already `Record<string, unknown>`), acceptance-setup-agent-file (literal satisfies `NaxConfig`), storyid-events (`makeAgentAdapter` already returns `AgentAdapter`), hermetic ×2 (`"ruby"` ∈ language union), scratch-writer ×2 (typed `_deps` field assignment since #508-M8) | deleted outright |
+| untyped mock-callback params | plan-decompose-ac-repair/adapter/debate/regression/writeback ×10 | annotate at the dep's real signature (`CompleteOptions`) + `assertDefined(opts)` replacing dead `opts ?? {}`; capture arrays retyped to match |
+| hand-rolled logger literal / `mockLogger as any` | plugin-routing-advanced ×2, code-neighbor-size-cap | `Object.assign(makeLogger(), { warn })` real-Logger overlay (§8.13-A) |
+| `{ story }` fragments / story-slot bags | duplicate-phase, runner-retry, autofix-prompts, mutation-check-telemetry, lint-config-factory, verify-op twins, parallel-worker-isolation | `makeStory(...)` / `makePRD(...)` |
+| `(op.retry as any)(…)` union-member call ×2 | adversarial-review | §8.18 `resolveRetryStrategy()` recipe verbatim; gotcha recorded: op's `ReviewConfig` is the one in `@/config/selectors`, not `@/review/types` |
+| hop-body options bag `as any` | adversarial-review-inspection-trail, semantic-review-inspection-trail | `} satisfies HopBodyContext<Input>)` (§8.19) |
+| hand-typed ctx/runtime bags | plan-checklist, verify-op-parse-retry, verify-op-recover, debate-propose/rebut | `makeMockCallContext({ runtime })`; structural `PackageView` with generic `select<C>`; runId pinned via `Object.defineProperty(runtime, "runId", …)` preserving the path assertion |
+| restated generics from a dep | revalidation-carveout ×2 | `NonNullable<Parameters<typeof runRectification>[1]["rectification"]>["strategies"][number]` (§8.16 derivation) |
+| op-literal for `AnySlot` / callOp stubs | run-phase-telemetry | complete + `satisfies RunOperation<…>`; `makeCallOp({ fallback })` (§8.15) |
+| absent-key poke on a typed dep | code-neighbor-size-cap | §8.12 weak alias over `_codeNeighborDeps.fileSize` |
+| loosely typed OTLP accessors | otel-heartbeat ×2, otel-logs ×2 | drop `: any` where src already returns precise payloads; local payload interface + `"resourceLogs" in` predicate; typed gauge-point accessor that throws on missing metric |
+
+Fixture-value corrections, all assertion-preserving and reported per §4's carve-out:
+run-phase-telemetry's op carried `stage: "execution"`, not a `PipelineStage` member → `"run"`
+(implementerOp itself declares `"run"`; feeds only a log line); runner-retry's prd literal used
+key `stories`, which does not exist on `PRD` (correct key `userStories`), and missed five
+required fields → rebuilt via `makePRD` (retry logic never reads it); semantic/adversarial
+inspection-trails gained schema-required `resetRefOnRerun: false` and `estimatedCostUsd: 0`
+(TurnResult requires it, nothing asserts cost — §8.17/§8.19 precedents); plan-inputs routing
+gained required `complexity/modelTier/reasoning`; constitution `{content:""}` gained required
+`tokens/truncated`; parallel-worker-isolation's inline story gained required `title`;
+curator-seam's e2e config literal became a full `NaxConfig` (its `review.audit.enabled`
+resolves to schema default `false` vs the old bare literal's absence-as-enabled — verified
+behavior-neutral: `postRunAction.execute` never calls `shouldRun` and no collector reads
+`ctx.config`); scratch-writer's appendFile stub returned `0` mimicking writeFile → now matches
+the dep's real `Promise<void>`. None feeds a classifier or switch branch, but because several
+landed, §3's coverage rule ran at integration anyway: floors unaffected.
+
+Two integration notes. **The probe-config blind spot fired a third time (§8.21, §8.22):**
+delegate C left four files with unsorted imports its gate loop could not see; the owner's
+repo-config `biome check --write` pass over the touched files fixed all of them (five files,
+import order only). **A delegate ran `git stash push/pop` mid-batch in the shared worktree**,
+briefly cycling other delegates' in-flight edits through the stash — it popped cleanly here
+and tree integrity was verified at integration, but **state-mutating git commands are off
+limits for delegates on a shared worktree**: verifying a pre-existing failure should read HEAD
+(`git show HEAD:<path>`) instead of stashing live work. Related: concurrent delegates'
+in-flight edits made project-wide `tsc -p tsconfig.test.json` noisy mid-run (errors appearing
+and vanishing as siblings committed fixes to their own files); per-file gates stayed reliable,
+which is why the brief scopes the tsc gate to "my files contribute 0 errors" and defers the
+whole-project certification to the owner's quiet-tree run.
+
+Carry forward: the dead-cast family held for the fifth consecutive batch (~a third of this
+batch's sites deleted outright, led by hermetic's `"ruby"` ∈ union and merger's
+already-`Record<string, unknown>` params), and the tie-at-2 tier again needed no new recipes —
+every site fell to a pattern already proven in §8.14–§8.22. The queue head is now the last
+tier: after this batch only single-site files remain.
+
+**New top of queue** (biome count per file): `interaction/plugins/cli` 8 (held escalation,
+src-blocked), then a fifty-one-file tier tied at 1 spanning `test/integration/**`,
+`test/unit/**` and one ui file (`usePipelineBusEvents.test.tsx`) — 52 files hold the remaining
+59. The tier after this one is empty: draining it leaves only the held escalation, which ends
+the drain pending its src-side seam.
