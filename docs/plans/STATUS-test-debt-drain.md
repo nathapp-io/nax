@@ -16,21 +16,21 @@ log — each entry records what was true when written and is not edited afterwar
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
 | `as unknown as` | **0** | 0 | done — closed invariant (§8.13) |
-| `asAny` | 225 | 1377 | yes, then biome `noExplicitAny` retires it |
-| `anyType` | 289 | 1860 | yes, retires with `asAny` — biome says **278** |
-| `nonNullAssert` | 801 | 819 | yes — biome says **1085**, see §0.1 (not started) |
+| `asAny` | 152 | 1377 | yes, then biome `noExplicitAny` retires it |
+| `anyType` | 198 | 1860 | yes, retires with `asAny` — biome says **190** |
+| `nonNullAssert` | 792 | 819 | yes — biome says **1074**, see §0.1 (not started) |
 | `asNever` | 605 | 608 | yes |
 | `ratchetAllow` | 103 | 105 | yes |
 | `tsSuppress` | 40 | 40 | yes |
 | `absentValue` | 17 | 17 | yes |
 | `looseCast` | 1806 | 1875 | **no** — guard only, see below |
 
-The `noExplicitAny` drain is in progress on this branch (§8.14–§8.20): one hundred five files
-drained, `asAny` 1179 → 225 and `anyType` 1538 → 289 against the branch-start ratchet, with
-every other counter flat except `nonNullAssert` (819 → 801), `looseCast` (1875 → 1806),
-`ratchetAllow` (105 → 103) and `asNever` (608 → 605) as benign side effects of removing
-`logger!.info = … as any` patterns and deleting real casts. Biome's authoritative
-count fell **1529 → 278**.
+The `noExplicitAny` drain is in progress on this branch (§8.14–§8.21): one hundred
+twenty-seven files drained, `asAny` 1179 → 152 and `anyType` 1538 → 198 against the
+branch-start ratchet, with every other counter flat except `nonNullAssert` (819 → 792),
+`looseCast` (1875 → 1806), `ratchetAllow` (105 → 103) and `asNever` (608 → 605) as benign side
+effects of removing `logger!.info = … as any` patterns and deleting real casts. Biome's
+authoritative count fell **1529 → 190**.
 
 `as unknown as` went **101 → 0** across nine commits (§8.1–§8.4, §8.11–§8.13); `looseCast`
 fell 1888 → 1875 and `ratchetAllow` 107 → 105 as side effects of removing real casts, and
@@ -1464,3 +1464,76 @@ src-blocked), then a twenty-two-file tier tied at 4 (`integration/acceptance/red
 `plugins/builtin/otel-resource-git`, `review/recurrence-demotion`,
 `review/semantic-debate`, `session/session-keeper`, `verification/import-grep-fallback`) —
 129 files hold the remaining 278. The head has flattened again: no drainable file exceeds 4.
+
+### 8.21 Batch 8 of the `noExplicitAny` drain — the twenty-two-file tier tied at 4, four parallel delegates, biome 278 → 190 (2026-08-26)
+
+The §8.20 queue head drained: the whole twenty-two-file tier tied at 4 (a strict top-20 cut
+lands mid-tie; ride-along per §8.17–§8.19 precedent) — 88 sites taken by four parallel agents
+on disjoint file sets under the same brief model as §8.16–§8.20 (`HANDOFF-explicit-any-batch8.md`
+carried the §4 forbidden list, the cheap per-file gate loop, the standing recipe table). The
+held escalation (`interaction/plugins/cli`, 8 sites, src-blocked per §8.19) was excluded by
+name. No delegate edited outside its set; zero src/ or helper changes; **all 22 files reached
+zero.**
+
+Ratchet: `asAny` ↓73 (225 → 152) and `anyType` ↓91 (289 → 198); `nonNullAssert` ↓9 (801 →
+792) as a benign side effect of tracker-escalation's `assertDefined` migration retiring that
+file's ten pre-existing `!` assertions with its casts; every other counter flat; no counter
+rose anywhere, including per-file. Gates: typecheck 0 (all three), `check:all` green (after a
+lint fix, see carry-forward), full suite green (**14149 / 1136 / 38, 0 fail**), coverage OK
+(101 below floor against baseline 103, identical to main).
+
+Recipe families applied (all proven in §8.14–§8.20 except where noted):
+
+| Shape | Where | Recipe |
+|:--|:--|:--|
+| hand-rolled runtime bag inside a local `makeCallCtx` factory ×3 files | debate runner-events / one-shot-roles / rounds-and-cost | `makeMockCallContext({ runtime: makeMockRuntime({ agentManager }), storyId })`; the hand-mocked `configLoader`/`packages`/`packageView` and other unread fields went with the bag after verifying nothing in `src/debate/` reads them |
+| `(capture[0] as any).field` probes off an `unknown[]` audit capture | review/semantic-debate | type the array at declaration: `const auditCalls: ReviewAuditDecision[] = []` — probes become direct reads, nullable member via `?.` |
+| illegal union values masked by `as any` | recurrence-demotion ×2, adversarial-review-verify priors | real `IterationOutcome` members (`"unchanged"` where findings persist, `"regressed"` matching `classifyOutcome([], [f])`) |
+| generic op config slot `C` | rectification-routing ×4, `_revalidation-fixtures` | retype the fixture op's generic from `typeof DEFAULT_CONFIG` to `ReturnType<typeof testSel.select>`; params retyped at the real unions (`PipelineStage`, `SessionRole`) so inner casts fall out |
+| `const ctx = {} as any` build contexts | post-run-isolation, full-suite-rectify, autofix-test-writer | `makeTestContext()` + an intersection *alias* for the structural key src writes (a declaration, not a cast); local `makeFixCycleContext() = { ...makeMockCallContext(...), storyId }` (spread + declared field); typed `BuildContext<AutofixConfig>` via `packages.repo().select(selector)` |
+| dead casts on values/types already admitted | regression-gate-schema ×4 (`.default()` puts `mode` on the schema type), test-strategy ×6 (param already `string \| undefined`; row values ∈ language union), acceptance-setup-commit ×3 (literal satisfies `NaxConfig`; `{ hooks: {} }` fits `HooksConfig`; dep returns `AgentAdapter \| undefined`), session-keeper ×3 (fewer-params assignability holds) + 3 comments quoting the old cast rewritten (§8.13-D), curator-paths ×4 (`makeNaxConfig()`) | deleted outright |
+| partial fake into a typed Bun dep slot | import-grep-fallback ×4 | `Object.assign(_bunDeps, { glob })` + finally-restore (§8.14/§8.20 containment model) |
+| each()-row callbacks `(row: any)` | tracker-escalation ×4 | explicit `test.each<EscalatedStoryRow>` generic + `assertDefined(updatedStory)` at each callback head |
+| loosely typed OTLP posts/predicates | otel-resource-git ×4 | `OtlpTracesPayload \| OtlpMetricsPayload` union + `"resourceSpans" in p.body` guards narrowing to `KeyValue[]` (§8.18 recipe) |
+| hand-typed callOp impl params | red-green-cycle ×4 (one line) | declare the helper's return as `typeof _acceptanceSetupDeps.callOp` — contextual typing drops all four annotations |
+| `(inspection as any)?.kind` probes on unknowns | tiered-parse-retry ×4 | local `kindOf(inspection: unknown): string \| undefined` predicate via `typeof`/`"in"` |
+| manifest-table field readers `(m: any)` | init-context ×4 | explicit `test.each<[…]>` generic typing the reader at the real `ProjectScan["packageManifest"]` |
+| incomplete descriptor literal | session-keeper:384 | complete the `SessionDescriptor` fields + `satisfies SessionDescriptor` (`mock()` loses contextual typing and widens literals; satisfies keeps them narrow) |
+
+Fixture-value corrections, all assertion-preserving and reported per §4's carve-out:
+recurrence-demotion's two prior iterations carried `outcome: "fixes-applied"`, not an
+`IterationOutcome` member → `"unchanged"` (non-empty `findingsAfter` matches the documented
+meaning; `classifyRecurrence` never reads `outcome`); adversarial-review-verify's priors same
+illegal value → `"regressed"` (exactly what production computes for the shape); post-run-isolation's
+routing carried `testStrategy: "direct"`, not a `TestStrategy` member → `"test-after"`
+(unread by `applyPostRunInspection`; the non-TDD path is driven by `tddMode: null`) plus the
+cast-masked required `complexity`/`reasoning` completed on its `RoutingResult` literals.
+None feeds a classifier or switch branch (verified per-file by the delegates), but because
+three corrections landed §3's coverage rule was run anyway at integration: floors unaffected.
+
+**The one integration catch: the probe config cannot see what it disables.** Four files
+landed with unsorted imports — delegates had added imports while editing, and their gate loop
+verified biome through the probe config, which turns `assist.organizeImports` **off** by
+design (§0.1). The repo config gates that rule as error for `test/`, so `check:all` caught
+the four at integration and a scoped `biome check --write` cleared them. **When a verification
+config deliberately disables rules to reduce noise, it also stops verifying them — anything
+the probe silences still needs one repo-config pass over the touched files before hand-off.**
+
+Carry forward: the dead-cast majority held for the third batch running — roughly half this
+batch's 88 sites were deleted, not replaced (§8.19/§8.20 carry-forwards holding at the tie-at-4
+tier). Second: the three debate files each carried a private copy of the same runtime-bag
+factory; all three migrated to the shared helpers independently without conflict, which is
+the quiet argument for §8.16's `makePackageView(overrides)` promotion note still open.
+
+**New top of queue** (biome count per file): `interaction/plugins/cli` 8 (held escalation,
+src-blocked), then a twenty-one-file tier tied at 3 (`integration/agents/stale-retry-session-reuse`,
+`integration/agents/timeout-retry-fresh-session`, `agents/retry/types`, `cli/plan-decompose-ac13-14`,
+`cli/plan-decompose-mapper`, `context/context-core`, `context/engine/orchestrator-factory`,
+`context/engine/providers/code-neighbor-cap`, `context/provider-timeout-abort`,
+`debate/verifiers/review-grounding-filter`, `execution/lifecycle/run-cleanup`,
+`execution/unified-executor-reconcile`, `operations/full-suite-rectify-op`,
+`operations/semantic-review-verify`, `pipeline/stages/routing-idempotence`,
+`pipeline/subscribers/hooks`, `pipeline/subscribers/reporters`,
+`precheck/precheck-checks-tier1-blockers`, `review/orchestrator-wrapper-parity`,
+`verification/flake-probe`, `verification/smart-runner-packageprefix`) — 107 files hold the
+remaining 190.
