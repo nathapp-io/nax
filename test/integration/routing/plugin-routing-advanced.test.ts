@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, spyOn, test } from "bun:test";
-import { makeDispatchContext } from "@test/helpers";
+import { makeDispatchContext, makeLogger } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import * as loggerModule from "@/logger";
 import { PluginRegistry } from "@/plugins/registry";
@@ -102,17 +102,16 @@ describe("Plugin router error handling", () => {
   test("error in plugin router is logged", async () => {
     const loggedErrors: Array<{ category: string; message: string; data?: unknown }> = [];
 
-    // Mock logger to capture warn logs (resolveRouting logs plugin errors as warn)
-    const mockLogger = {
-      error: () => {},
-      info: () => {},
-      warn: (category: string, message: string, data?: unknown) => {
+    // Mock logger to capture warn logs (resolveRouting logs plugin errors as warn).
+    // A real silent Logger overlaid with the capturing warn — a bare literal cannot
+    // satisfy the Logger class structurally.
+    const mockLogger = Object.assign(makeLogger(), {
+      warn: (category: string, message: string, data?: Record<string, unknown>) => {
         loggedErrors.push({ category, message, data });
       },
-      debug: () => {},
-    };
+    });
 
-    spyOn(loggerModule, "getSafeLogger").mockReturnValue(mockLogger as any);
+    spyOn(loggerModule, "getSafeLogger").mockReturnValue(mockLogger);
 
     const errorRouter = createPluginRouter("error-router", () => {
       throw new Error("Plugin router failed");
@@ -226,16 +225,13 @@ describe("Plugin router error handling", () => {
   test("error message includes plugin name for debugging", async () => {
     const loggedErrors: Array<{ category: string; message: string; data?: unknown }> = [];
 
-    const mockLogger = {
-      error: () => {},
-      info: () => {},
-      warn: (category: string, message: string, data?: unknown) => {
+    const mockLogger = Object.assign(makeLogger(), {
+      warn: (category: string, message: string, data?: Record<string, unknown>) => {
         loggedErrors.push({ category, message, data });
       },
-      debug: () => {},
-    };
+    });
 
-    spyOn(loggerModule, "getSafeLogger").mockReturnValue(mockLogger as any);
+    spyOn(loggerModule, "getSafeLogger").mockReturnValue(mockLogger);
 
     const errorRouter = createPluginRouter("my-custom-router", () => {
       throw new Error("Custom error");

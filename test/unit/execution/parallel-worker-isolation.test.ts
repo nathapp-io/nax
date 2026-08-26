@@ -1,13 +1,23 @@
 import { describe, expect, test } from "bun:test";
+import { makeDispatchContext, makePRD, makeStory } from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
 import { buildWorktreePipelineContext } from "@/execution/parallel-worker";
 
 describe("buildWorktreePipelineContext", () => {
   test("deep-clones prd so concurrent stories never share one object", () => {
-    const base = {
-      prd: { feature: "f", userStories: [{ id: "US-001", status: "pending" }] },
+    const base: Parameters<typeof buildWorktreePipelineContext>[0] = {
+      ...makeDispatchContext(),
+      config: DEFAULT_CONFIG,
+      rootConfig: DEFAULT_CONFIG,
+      prd: makePRD({
+        feature: "f",
+        userStories: [makeStory({ id: "US-001", title: "t", status: "pending" })],
+      }),
+      projectDir: "/tmp",
+      hooks: { hooks: {} },
       skipPrdPersistence: true,
-    } as any;
-    const story = { id: "US-001", title: "t", status: "pending", attempts: 0, passes: false } as any;
+    };
+    const story = makeStory({ id: "US-001", title: "t", status: "pending", attempts: 0, passes: false });
     const a = buildWorktreePipelineContext(base, story);
     const b = buildWorktreePipelineContext(base, story);
     expect(a.prd).not.toBe(base.prd);

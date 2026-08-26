@@ -6,10 +6,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fullTest, makeNaxConfig, makePRD, makeStory, makeTempDir } from "@test/helpers";
+import { assertDefined, fullTest, makeNaxConfig, makePRD, makeStory, makeTempDir } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
 import { run } from "@/execution";
+import type { NaxStatusFile } from "@/execution/status-file";
 import type { PRD } from "@/prd/types";
 import { EXIT_CODES, runPrecheck } from "@/precheck";
 
@@ -292,7 +293,18 @@ describe("Precheck Integration with nax run", () => {
     return prdPath;
   }
 
-  async function readPrecheckLog(logFilePath: string): Promise<any | null> {
+  /** Shape of the JSONL entry runPrecheckValidation appends to the precheck log
+   * (src/execution/lifecycle/precheck-runner.ts) */
+  interface PrecheckLogEntry {
+    type: string;
+    timestamp: string;
+    passed: boolean;
+    blockers: Array<{ name: string; message: string }>;
+    warnings: Array<{ name: string; message: string }>;
+    summary: { total: number; passed: number; failed: number; warnings: number };
+  }
+
+  async function readPrecheckLog(logFilePath: string): Promise<PrecheckLogEntry | null> {
     const { existsSync, readFileSync } = await import("node:fs");
     if (!existsSync(logFilePath)) return null;
 
@@ -302,7 +314,7 @@ describe("Precheck Integration with nax run", () => {
     const lines = content.trim().split("\n");
     for (const line of lines) {
       try {
-        const entry = JSON.parse(line);
+        const entry: PrecheckLogEntry = JSON.parse(line);
         if (entry.type === "precheck") return entry;
       } catch {
         // ignore
@@ -312,7 +324,7 @@ describe("Precheck Integration with nax run", () => {
     return null;
   }
 
-  async function readStatusFile(statusFilePath: string): Promise<any | null> {
+  async function readStatusFile(statusFilePath: string): Promise<NaxStatusFile | null> {
     const statusFile = Bun.file(statusFilePath);
     if (!(await statusFile.exists())) {
       return null;
@@ -389,6 +401,7 @@ describe("Precheck Integration with nax run", () => {
 
     const precheckLog = await readPrecheckLog(logFilePath);
     expect(precheckLog).not.toBeNull();
+    assertDefined(precheckLog, "precheck log");
     expect(precheckLog.type).toBe("precheck");
     expect(precheckLog.passed).toBeDefined();
     expect(precheckLog.summary).toBeDefined();
@@ -467,11 +480,13 @@ describe("Precheck Integration with nax run", () => {
 
       const precheckLog = await readPrecheckLog(logFilePath);
       expect(precheckLog).not.toBeNull();
+      assertDefined(precheckLog, "precheck log");
       expect(precheckLog.passed).toBe(false);
       expect(precheckLog.blockers.length).toBeGreaterThan(0);
 
       const status = await readStatusFile(statusFilePath);
       expect(status).not.toBeNull();
+      assertDefined(status, "status file");
       expect(status.run.status).toBe("precheck-failed");
     } finally {
       rmSync(dirtyDir, { recursive: true, force: true });
@@ -511,6 +526,7 @@ describe("Precheck Integration with nax run", () => {
 
     const precheckLog = await readPrecheckLog(logFilePath);
     expect(precheckLog).not.toBeNull();
+    assertDefined(precheckLog, "precheck log");
     expect(precheckLog.passed).toBe(true);
     expect(precheckLog.warnings).toBeDefined();
   });
@@ -546,6 +562,7 @@ describe("Precheck Integration with nax run", () => {
 
     const precheckLog = await readPrecheckLog(logFilePath);
     expect(precheckLog).not.toBeNull();
+    assertDefined(precheckLog, "precheck log");
     expect(precheckLog.type).toBe("precheck");
     expect(precheckLog.timestamp).toBeDefined();
     expect(precheckLog.passed).toBeDefined();

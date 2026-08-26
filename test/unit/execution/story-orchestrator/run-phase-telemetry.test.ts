@@ -8,26 +8,29 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeMockCallContext } from "@test/helpers";
+import { makeCallOp, makeMockCallContext } from "@test/helpers";
 import { _storyOrchestratorDeps, runPhase } from "@/execution";
 import type { AnySlot } from "@/execution/story-orchestrator";
+import type { RunOperation } from "@/operations";
 import { pipelineEventBus } from "@/pipeline";
 import type { StoryPhaseCompletedEvent } from "@/pipeline/event-bus";
 
 // ─── fixtures ────────────────────────────────────────────────────────────────
 
 function makeSlot(opName: string): AnySlot {
-  return {
-    op: {
-      kind: "run" as const,
-      name: opName,
-      stage: "execution" as const,
-      session: { role: "implementer" as const, lifetime: "fresh" as const },
-      build: () => ({ prompt: "" }),
-      parse: () => ({}),
-    } as any,
-    input: {},
-  };
+  const op = {
+    kind: "run" as const,
+    name: opName,
+    stage: "run" as const,
+    config: [] as const,
+    session: { role: "implementer" as const, lifetime: "fresh" as const },
+    build: () => ({
+      role: { id: "role", content: "", overridable: false },
+      task: { id: "task", content: "", overridable: false },
+    }),
+    parse: () => ({}),
+  } satisfies RunOperation<unknown, unknown, unknown>;
+  return { op, input: {} };
 }
 
 async function capturePhaseEvent(fn: () => Promise<unknown>): Promise<StoryPhaseCompletedEvent | undefined> {
@@ -51,7 +54,7 @@ let origCaptureGitRef: typeof _storyOrchestratorDeps.captureGitRef;
 beforeEach(() => {
   origCallOp = _storyOrchestratorDeps.callOp;
   origCaptureGitRef = _storyOrchestratorDeps.captureGitRef;
-  _storyOrchestratorDeps.callOp = (async () => ({ passed: true, success: true })) as any;
+  _storyOrchestratorDeps.callOp = makeCallOp({ fallback: { passed: true, success: true } });
   _storyOrchestratorDeps.captureGitRef = async () => "HEAD";
 });
 

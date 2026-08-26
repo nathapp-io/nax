@@ -1,6 +1,6 @@
 // RE-ARCH: keep
 import { describe, expect, test } from "bun:test";
-import { makeDispatchContext } from "@test/helpers";
+import { makeDispatchContext, makePRD, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import type { PipelineContext, PipelineStage } from "@/pipeline";
 import { MAX_STAGE_RETRIES, runPipeline } from "@/pipeline";
@@ -9,8 +9,8 @@ function makeCtx(): PipelineContext {
   return {
     config: DEFAULT_CONFIG,
     rootConfig: DEFAULT_CONFIG,
-    prd: { stories: [], acceptanceOverrides: {} } as any,
-    story: { id: "US-001", title: "t", status: "pending", acceptanceCriteria: [] } as any,
+    prd: makePRD({ userStories: [] }),
+    story: makeStory({ id: "US-001", title: "t", status: "pending", acceptanceCriteria: [] }),
     stories: [],
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
     projectDir: "/tmp",

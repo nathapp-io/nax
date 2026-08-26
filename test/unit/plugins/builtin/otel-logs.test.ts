@@ -1,6 +1,22 @@
 import { describe, expect, test } from "bun:test";
 import type { LogEntry } from "@/logger/types";
-import { buildLogsPayload, toLogRecord } from "@/plugins";
+import { buildLogsPayload, type LogRecord, toLogRecord } from "@/plugins";
+import type { KeyValue } from "@/plugins/builtin/otel-reporter/otlp";
+
+interface ResourceLogsPayload {
+  resourceLogs: Array<{
+    resource: { attributes: KeyValue[] };
+    scopeLogs: Array<{ scope: { name: string }; logRecords: LogRecord[] }>;
+  }>;
+}
+
+/**
+ * buildLogsPayload's declared return type is bare `object`, so narrow it to
+ * the ResourceLogs envelope it actually builds before asserting on members.
+ */
+function isResourceLogsPayload(value: object): value is ResourceLogsPayload {
+  return "resourceLogs" in value;
+}
 
 const baseEntry: LogEntry = {
   timestamp: "2025-01-01T00:00:00.000Z",
@@ -125,15 +141,16 @@ describe("toLogRecord", () => {
 describe("buildLogsPayload", () => {
   test("returns an OTLP resourceLogs envelope with shared resource attributes", () => {
     const entry: LogEntry = { ...baseEntry, storyId: "s-1", data: { phase: "execute" } };
-    const payload: any = buildLogsPayload([entry], {
+    const payload = buildLogsPayload([entry], {
       serviceName: "nax",
       runId: "r1",
       feature: "feat",
     });
+    if (!isResourceLogsPayload(payload)) throw new Error("expected a resourceLogs envelope");
     const scopeLogs = payload.resourceLogs[0].scopeLogs[0];
     expect(scopeLogs.scope.name).toBe("nax");
     expect(scopeLogs.logRecords).toHaveLength(1);
-    const resourceAttrs = payload.resourceLogs[0].resource.attributes as { key: string }[];
+    const resourceAttrs = payload.resourceLogs[0].resource.attributes;
     expect(resourceAttrs).toContainEqual(expect.objectContaining({ key: "service.name" }));
     expect(resourceAttrs).toContainEqual(expect.objectContaining({ key: "nax.run_id" }));
   });
@@ -143,7 +160,8 @@ describe("buildLogsPayload", () => {
       { ...baseEntry, message: "first" },
       { ...baseEntry, message: "second", level: "warn" },
     ];
-    const payload: any = buildLogsPayload(entries, { serviceName: "nax", runId: "r1" });
+    const payload = buildLogsPayload(entries, { serviceName: "nax", runId: "r1" });
+    if (!isResourceLogsPayload(payload)) throw new Error("expected a resourceLogs envelope");
     const records = payload.resourceLogs[0].scopeLogs[0].logRecords;
     expect(records).toHaveLength(2);
     expect(records[0].body.stringValue).toBe("first");

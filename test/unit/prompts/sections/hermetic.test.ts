@@ -11,7 +11,7 @@ describe("buildHermeticSection", () => {
       ["single-session returns content", "single-session", true],
       ["verifier returns empty string", "verifier", false],
     ])("%s", (_label, role, hasContent) => {
-      const result = buildHermeticSection(role as any, undefined, undefined);
+      const result = buildHermeticSection(role, undefined, undefined);
       if (hasContent) {
         expect(result).not.toBe("");
         expect(result).toContain("# Hermetic Test Requirement");
@@ -84,7 +84,7 @@ describe("buildHermeticSection", () => {
         "injectable deps",
       );
       expect(buildHermeticSection("test-writer", undefined, undefined, undefined)).toContain("injectable deps");
-      expect(buildHermeticSection("test-writer", undefined, undefined, { language: "ruby" as any })).toContain(
+      expect(buildHermeticSection("test-writer", undefined, undefined, { language: "ruby" })).toContain(
         "injectable deps",
       );
     });

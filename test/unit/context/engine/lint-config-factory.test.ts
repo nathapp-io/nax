@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 import {
   _codeNeighborDeps,
   _gitHistoryDeps,
@@ -98,7 +98,7 @@ afterEach(() => {
 
 describe("createDefaultOrchestrator — LintConfigProvider registration (US-004 AC14)", () => {
   test("AC14: LintConfigProvider is registered — providerResults include id 'lint-config' after assemble", async () => {
-    const orchestrator = createDefaultOrchestrator({} as any, makeLintConfigFactoryConfig());
+    const orchestrator = createDefaultOrchestrator(makeStory(), makeLintConfigFactoryConfig());
     const request = makeRequest({ providerIds: ["lint-config"], storyScratchDirs: [] });
     const bundle = await orchestrator.assemble(request);
 
@@ -108,7 +108,7 @@ describe("createDefaultOrchestrator — LintConfigProvider registration (US-004 
   });
 
   test("AC14: LintConfigProvider is registered unconditionally — construction never throws", () => {
-    expect(() => createDefaultOrchestrator({} as any, makeLintConfigFactoryConfig())).not.toThrow();
+    expect(() => createDefaultOrchestrator(makeStory(), makeLintConfigFactoryConfig())).not.toThrow();
   });
 
   test("US-004 sanity: LintConfigProvider class is the one wired into the orchestrator (smoke)", () => {

@@ -121,7 +121,7 @@ describe("plan PRD preservation — issue #993 regression (AC1)", () => {
     // Simulate issue #993: agent declines regeneration on every retry attempt.
     // With the fix, callOp invokes op.recover which reads the real prd.json
     // from disk. planCommand writes back the recovered PRD. userStories unchanged.
-    _planDeps.createRuntime = mock((_cfg: any) =>
+    _planDeps.createRuntime = mock(() =>
       makeMockRuntime({
         agentManager: makeMockAgentManager({
           runAsSessionFn: async () => ({
@@ -130,7 +130,7 @@ describe("plan PRD preservation — issue #993 regression (AC1)", () => {
             estimatedCostUsd: 0,
             internalRoundTrips: 0,
           }),
-          runWithFallbackFn: async (req: any) => {
+          runWithFallbackFn: async (req) => {
             const result = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
             return {
               result: {

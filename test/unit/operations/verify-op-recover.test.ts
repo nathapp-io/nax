@@ -1,16 +1,34 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeStory, makeTempDir } from "@test/helpers";
+import { type ConfigSelector, DEFAULT_CONFIG, tddConfigSelector } from "@/config";
 import { verifierOp } from "@/operations";
+import type { PackageView } from "@/runtime";
 
-const STORY = { id: "S1", title: "t", workdir: "" } as any;
+const STORY = makeStory({ id: "S1", title: "t" });
 
 async function writeVerdict(dir: string, verdict: unknown): Promise<void> {
   await Bun.write(join(dir, ".nax-verifier-verdict.json"), JSON.stringify(verdict));
 }
 
+function makePackageView(packageDir: string, repoRoot?: string): PackageView {
+  return {
+    packageDir,
+    relativeFromRoot: "",
+    repoRoot: repoRoot ?? "",
+    hasOverride: false,
+    config: DEFAULT_CONFIG,
+    select: <C>(selector: ConfigSelector<C>) => selector.select(DEFAULT_CONFIG),
+  };
+}
+
 function ctx(packageDir: string, repoRoot?: string) {
-  return { packageView: { packageDir, repoRoot } } as any;
+  return {
+    packageView: makePackageView(packageDir, repoRoot),
+    config: tddConfigSelector.select(DEFAULT_CONFIG),
+    readFile: async () => null,
+    fileExists: async () => false,
+  };
 }
 
 describe("verifierOp.recover", () => {

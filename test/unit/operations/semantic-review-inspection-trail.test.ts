@@ -11,12 +11,15 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import type { SemanticReviewInput } from "@/operations/semantic-review";
 import { semanticReviewOp } from "@/operations/semantic-review";
+import type { HopBodyContext } from "@/operations/types";
 import { ReviewPromptBuilder } from "@/prompts";
 
 const SEMANTIC_CONFIG = {
   model: "balanced" as const,
   diffMode: "ref" as const,
+  resetRefOnRerun: false,
   rules: [] as string[],
   timeoutMs: 600_000,
   substantiation: { requote: false, maxRequotes: 0 },
@@ -32,7 +35,7 @@ const STORY = {
 };
 
 function turn(output: string) {
-  return { output, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+  return { output, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0, internalRoundTrips: 0 };
 }
 
 async function runHopBody(opts: {
@@ -51,7 +54,7 @@ async function runHopBody(opts: {
       semanticConfig: { ...SEMANTIC_CONFIG, ...opts.config },
       mode: opts.mode ?? "ref",
     },
-  } as any);
+  } satisfies HopBodyContext<SemanticReviewInput>);
   return { result, callCount };
 }
 
@@ -77,7 +80,7 @@ describe("semanticReviewOp.hopBody — inspection-trail guard (#3A)", () => {
       send: mockSend,
       sendWithParseRetry: mockSend,
       input: { workdir: "/tmp", story: STORY, semanticConfig: SEMANTIC_CONFIG, mode: "ref" },
-    } as any);
+    } satisfies HopBodyContext<SemanticReviewInput>);
     expect(secondPrompt).toBe(ReviewPromptBuilder.demandInspection());
   });
 

@@ -1,15 +1,15 @@
 {
   "counts": {
-    "asAny": 98,
+    "asAny": 51,
     "tsSuppress": 40,
     "ratchetAllow": 103,
     "absentValue": 17,
-    "anyType": 135,
-    "looseCast": 1803,
+    "anyType": 67,
+    "looseCast": 1802,
     "asNever": 604,
     "nonNullAssert": 792
   },
-  "updatedAt": "2026-08-26T05:55:50.578Z",
+  "updatedAt": "2026-08-26T06:59:34.350Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -77,10 +77,6 @@
     },
     "test/integration/tdd/story-orchestrator-verdict.test.ts": {
       "anyType": 1
-    },
-    "test/integration/routing/plugin-routing-advanced.test.ts": {
-      "asAny": 2,
-      "anyType": 2
     },
     "test/integration/prompts/pb-004-migration.test.ts": {
       "looseCast": 1
@@ -177,7 +173,6 @@
       "looseCast": 1
     },
     "test/integration/cli/cli-precheck-run.test.ts": {
-      "anyType": 2,
       "looseCast": 2
     },
     "test/integration/cli/cli-core-generate.test.ts": {
@@ -220,7 +215,6 @@
       "anyType": 1
     },
     "test/integration/plan/plan-prd-preservation.test.ts": {
-      "anyType": 2,
       "looseCast": 1,
       "asNever": 1
     },
@@ -232,8 +226,6 @@
       "anyType": 1
     },
     "test/integration/config/merger.test.ts": {
-      "asAny": 2,
-      "anyType": 2,
       "looseCast": 5
     },
     "test/integration/config/profile-loader.test.ts": {
@@ -282,10 +274,6 @@
     },
     "test/unit/session/manager-session-retry.test.ts": {
       "looseCast": 11
-    },
-    "test/unit/session/scratch-writer.test.ts": {
-      "asAny": 2,
-      "anyType": 2
     },
     "test/unit/session/manager-phase-b-prompt.test.ts": {
       "looseCast": 23
@@ -427,8 +415,6 @@
       "nonNullAssert": 3
     },
     "test/unit/prompts/sections/hermetic.test.ts": {
-      "asAny": 2,
-      "anyType": 2,
       "nonNullAssert": 1
     },
     "test/unit/prd/schema.test.ts": {
@@ -624,8 +610,6 @@
       "tsSuppress": 8
     },
     "test/unit/execution/story-orchestrator-duplicate-phase.test.ts": {
-      "asAny": 2,
-      "anyType": 2,
       "looseCast": 1
     },
     "test/unit/execution/nbf-readonly-flake-triage.test.ts": {
@@ -649,7 +633,6 @@
       "asNever": 5
     },
     "test/unit/execution/story-orchestrator-revalidation-carveout.test.ts": {
-      "anyType": 2,
       "looseCast": 4,
       "nonNullAssert": 4
     },
@@ -702,10 +685,6 @@
     },
     "test/unit/execution/parallel-batch.test.ts": {
       "looseCast": 10
-    },
-    "test/unit/execution/parallel-worker-isolation.test.ts": {
-      "asAny": 2,
-      "anyType": 2
     },
     "test/unit/execution/story-orchestrator-revalidation.test.ts": {
       "looseCast": 26,
@@ -805,8 +784,6 @@
       "looseCast": 9
     },
     "test/unit/execution/plan-inputs-review-wiring.test.ts": {
-      "asAny": 2,
-      "anyType": 2,
       "looseCast": 1,
       "nonNullAssert": 21
     },
@@ -864,8 +841,6 @@
       "looseCast": 1
     },
     "test/unit/execution/story-orchestrator/run-phase-telemetry.test.ts": {
-      "asAny": 2,
-      "anyType": 2,
       "looseCast": 2
     },
     "test/unit/execution/story-orchestrator/flake-triage-seam.test.ts": {
@@ -1027,8 +1002,6 @@
       "nonNullAssert": 6
     },
     "test/unit/operations/verify-op-recover.test.ts": {
-      "asAny": 2,
-      "anyType": 2,
       "nonNullAssert": 11
     },
     "test/unit/operations/full-suite-gate.test.ts": {
@@ -1045,10 +1018,6 @@
     "test/unit/operations/finish-review-quality-walk.test.ts": {
       "ratchetAllow": 2
     },
-    "test/unit/operations/debate-propose.test.ts": {
-      "asAny": 2,
-      "anyType": 2
-    },
     "test/unit/operations/plan-refine.test.ts": {
       "looseCast": 1,
       "asNever": 23,
@@ -1064,16 +1033,8 @@
     "test/unit/operations/finish-narrative.test.ts": {
       "ratchetAllow": 2
     },
-    "test/unit/operations/adversarial-review-inspection-trail.test.ts": {
-      "asAny": 2,
-      "anyType": 2
-    },
     "test/unit/operations/verify-op-normalized-findings.test.ts": {
       "asNever": 2
-    },
-    "test/unit/operations/debate-rebut.test.ts": {
-      "asAny": 2,
-      "anyType": 2
     },
     "test/unit/operations/plan-interactive.test.ts": {
       "looseCast": 3,
@@ -1082,10 +1043,6 @@
     },
     "test/unit/operations/call-run-counter.test.ts": {
       "asNever": 1
-    },
-    "test/unit/operations/semantic-review-inspection-trail.test.ts": {
-      "asAny": 2,
-      "anyType": 2
     },
     "test/unit/operations/ground.test.ts": {
       "asAny": 1,
@@ -1124,13 +1081,9 @@
       "nonNullAssert": 2
     },
     "test/unit/operations/verify-op-parse-retry.test.ts": {
-      "asAny": 2,
-      "anyType": 2,
       "nonNullAssert": 4
     },
     "test/unit/operations/mutation-check-telemetry.test.ts": {
-      "asAny": 1,
-      "anyType": 2,
       "looseCast": 1
     },
     "test/unit/operations/finding-to-check-tdd-verifier.test.ts": {
@@ -1161,10 +1114,6 @@
     },
     "test/unit/operations/test-edit-declaration.test.ts": {
       "nonNullAssert": 1
-    },
-    "test/unit/operations/adversarial-review.test.ts": {
-      "asAny": 2,
-      "anyType": 2
     },
     "test/unit/operations/build-hop-callback-stale-retry.test.ts": {
       "looseCast": 3,
@@ -1281,9 +1230,7 @@
       "looseCast": 4
     },
     "test/unit/debate/verifiers/plan-checklist.test.ts": {
-      "asAny": 2,
-      "anyType": 2,
-      "looseCast": 36
+      "looseCast": 35
     },
     "test/unit/debate/verifiers/checks.test.ts": {
       "looseCast": 7
@@ -1300,7 +1247,6 @@
       "nonNullAssert": 1
     },
     "test/unit/cli/plan-decompose-ac-repair.test.ts": {
-      "anyType": 2,
       "looseCast": 2
     },
     "test/unit/cli/setup-fill.test.ts": {
@@ -1308,7 +1254,6 @@
       "nonNullAssert": 5
     },
     "test/unit/cli/plan-decompose-writeback.test.ts": {
-      "anyType": 2,
       "looseCast": 4,
       "asNever": 4
     },
@@ -1324,7 +1269,6 @@
       "looseCast": 1
     },
     "test/unit/cli/plan-decompose-debate.test.ts": {
-      "anyType": 2,
       "looseCast": 5,
       "asNever": 13
     },
@@ -1353,7 +1297,6 @@
       "asNever": 13
     },
     "test/unit/cli/plan-decompose-regression.test.ts": {
-      "anyType": 2,
       "looseCast": 7
     },
     "test/unit/cli/rules-export-scope.test.ts": {
@@ -1398,7 +1341,6 @@
       "looseCast": 16
     },
     "test/unit/cli/plan-decompose-adapter.test.ts": {
-      "anyType": 2,
       "looseCast": 2
     },
     "test/unit/cli/prompts-export.test.ts": {
@@ -1640,9 +1582,6 @@
     "test/unit/plugins/plugin-logger.test.ts": {
       "nonNullAssert": 5
     },
-    "test/unit/plugins/builtin/otel-heartbeat.test.ts": {
-      "anyType": 2
-    },
     "test/unit/plugins/builtin/auto-pr-forge.test.ts": {
       "looseCast": 1
     },
@@ -1681,15 +1620,10 @@
     "test/unit/plugins/builtin/otel-reporter-logs-lifecycle.test.ts": {
       "nonNullAssert": 1
     },
-    "test/unit/plugins/builtin/curator-seam.test.ts": {
-      "asAny": 2,
-      "anyType": 2
-    },
     "test/unit/plugins/builtin/auto-pr-acceptance.test.ts": {
       "nonNullAssert": 12
     },
     "test/unit/plugins/builtin/otel-logs.test.ts": {
-      "anyType": 2,
       "looseCast": 1
     },
     "test/unit/plugins/builtin/auto-route-acceptance.test.ts": {
@@ -1853,8 +1787,6 @@
       "looseCast": 6
     },
     "test/unit/context/engine/lint-config-factory.test.ts": {
-      "asAny": 2,
-      "anyType": 2,
       "looseCast": 1
     },
     "test/unit/context/engine/query-feature-context-fragments.test.ts": {
@@ -1948,8 +1880,6 @@
       "nonNullAssert": 9
     },
     "test/unit/context/engine/providers/code-neighbor-size-cap.test.ts": {
-      "asAny": 2,
-      "anyType": 2,
       "looseCast": 1
     },
     "test/unit/context/rules/canonical-loader.test.ts": {
@@ -1966,13 +1896,7 @@
       "looseCast": 17
     },
     "test/unit/pipeline/storyid-events.test.ts": {
-      "asAny": 2,
-      "anyType": 2,
       "looseCast": 1
-    },
-    "test/unit/pipeline/runner-retry.test.ts": {
-      "asAny": 2,
-      "anyType": 2
     },
     "test/unit/pipeline/event-bus.test.ts": {
       "asAny": 1,
@@ -2061,8 +1985,6 @@
       "nonNullAssert": 5
     },
     "test/unit/pipeline/stages/autofix-prompts.test.ts": {
-      "asAny": 2,
-      "anyType": 2,
       "looseCast": 1
     },
     "test/unit/pipeline/stages/prompt-acceptance.test.ts": {
@@ -2080,8 +2002,6 @@
       "asNever": 9
     },
     "test/unit/pipeline/stages/acceptance-setup-agent-file.test.ts": {
-      "asAny": 2,
-      "anyType": 2,
       "nonNullAssert": 5
     },
     "test/unit/pipeline/stages/acceptance.test.ts": {

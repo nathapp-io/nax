@@ -41,7 +41,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
         redGate: true,
         model: "fast",
       },
-    } as any,
+    },
     prd,
     story: stories[0],
     stories,
@@ -50,7 +50,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     workdir: "/tmp/test-agent-file",
     projectDir: "/tmp/test-agent-file",
     featureDir: "/tmp/test-agent-file/.nax/features/test-feature",
-    hooks: {} as any,
+    hooks: { hooks: {} },
     ...makeDispatchContext(),
     ...overrides,
   };
