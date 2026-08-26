@@ -8,6 +8,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   agentManagerWithFixedLLMResponse,
+  assertDefined,
   captureAuditDecisions,
   makeMockRuntime,
   makeSpawn,
@@ -56,6 +57,12 @@ const ADVERSARIAL_LLM_RESPONSE = JSON.stringify({
   ],
 });
 
+function first<T>(items: T[]): T {
+  const v = items[0];
+  assertDefined(v, "first item");
+  return v;
+}
+
 describe("adversarial reviewer audit shape (#942 AC-1 / AC-2)", () => {
   let decisions: ReviewAuditDecision[];
   let teardown: () => void;
@@ -86,12 +93,13 @@ describe("adversarial reviewer audit shape (#942 AC-1 / AC-2)", () => {
     });
 
     expect(decisions.length).toBeGreaterThanOrEqual(1);
-    const decision = decisions[0]!;
+    const decision = first(decisions);
     const findings = decision.result?.findings as Array<Record<string, unknown>>;
+    assertDefined(findings, "result findings");
     expect(Array.isArray(findings)).toBe(true);
-    expect(findings!.length).toBe(2);
+    expect(findings.length).toBe(2);
 
-    for (const f of findings!) {
+    for (const f of findings) {
       expect(typeof f.ruleId).toBe("string");
       expect((f.ruleId as string).length).toBeGreaterThan(0);
       expect(typeof f.message).toBe("string");
@@ -100,7 +108,8 @@ describe("adversarial reviewer audit shape (#942 AC-1 / AC-2)", () => {
       expect(f.suggestion).toBeUndefined();
     }
 
-    const inputFinding = findings!.find((f) => f.line === 10)!;
+    const inputFinding = findings.find((f) => f.line === 10);
+    assertDefined(inputFinding, "line-10 finding");
     expect(inputFinding.category).toBe("input");
     expect((inputFinding.ruleId as string).startsWith("input:")).toBe(true);
     expect(inputFinding.message).toContain("Listener arg not validated");
@@ -145,7 +154,7 @@ describe("adversarial reviewer audit shape (#942 AC-1 / AC-2)", () => {
       runtime,
     });
 
-    const decision = decisions[0]!;
+    const decision = first(decisions);
     // The one real defect is a finding; the two acks are not.
     expect((decision.result?.findings as unknown[] | undefined)?.length).toBe(1);
     expect(decision.acks).toHaveLength(2);
@@ -173,7 +182,8 @@ describe("adversarial reviewer audit shape (#942 AC-1 / AC-2)", () => {
       runtime,
     });
 
-    expect(decisions[0]!.acks).toBeUndefined();
+    const decision = first(decisions);
+    expect(decision.acks).toBeUndefined();
   });
 
   test("ruleId starts with the finding's category", async () => {
@@ -192,7 +202,7 @@ describe("adversarial reviewer audit shape (#942 AC-1 / AC-2)", () => {
       runtime,
     });
 
-    const decision = decisions[0]!;
+    const decision = first(decisions);
     const findings = decision.result?.findings as Array<{ ruleId: string; category: string }>;
     for (const f of findings) {
       expect(f.ruleId).toContain(":");
@@ -258,12 +268,15 @@ describe("adversarial structural counterfactual telemetry (#986)", () => {
       });
 
       expect(decisions.length).toBeGreaterThanOrEqual(1);
-      const decision = decisions[0]!;
+      const decision = first(decisions);
       expect(decision.diffAvailable).toBe(true);
-      expect(Array.isArray(decision.adversarialDropAnalysis)).toBe(true);
-      expect(decision.adversarialDropAnalysis!.length).toBe(1);
+      const drops = decision.adversarialDropAnalysis;
+      assertDefined(drops, "drop analysis");
+      expect(Array.isArray(drops)).toBe(true);
+      expect(drops.length).toBe(1);
 
-      const drop = decision.adversarialDropAnalysis![0]!;
+      const drop = drops[0];
+      assertDefined(drop, "drop entry");
       expect(drop.dropCode).toBe("missing_ac_quote");
       expect(drop.finding.file).toBe("src/foo.ts");
       expect(drop.rawCategory).toBe("input");
@@ -321,12 +334,15 @@ describe("adversarial structural counterfactual telemetry (#986)", () => {
         runtime,
       });
 
-      const decision = decisions[0]!;
+      const decision = first(decisions);
       expect(decision.adversarialDropAnalysis ?? []).toEqual([]);
-      expect(Array.isArray(decision.adversarialAcceptAnalysis)).toBe(true);
-      expect(decision.adversarialAcceptAnalysis!.length).toBe(1);
+      const accepts = decision.adversarialAcceptAnalysis;
+      assertDefined(accepts, "accept analysis");
+      expect(Array.isArray(accepts)).toBe(true);
+      expect(accepts.length).toBe(1);
 
-      const accept = decision.adversarialAcceptAnalysis![0]!;
+      const accept = accepts[0];
+      assertDefined(accept, "accept entry");
       expect(accept.finding.file).toBe("src/foo.ts");
       expect(accept.acIndex).toBe(1);
       expect(accept.counterfactual.acIndexInRange).toBe(true);
@@ -354,7 +370,7 @@ describe("adversarial structural counterfactual telemetry (#986)", () => {
         runtime,
       });
 
-      const decision = decisions[0]!;
+      const decision = first(decisions);
       expect(decision.passed).toBe(true);
       // Pre-refactor (v0.80.0), every passed-style outcome hardcoded [] here —
       // only the blocking-failure branch ever recorded real accept-analysis.
@@ -408,6 +424,7 @@ describe("adversarial structural counterfactual telemetry (#986)", () => {
       runtime,
     });
 
-    expect(decisions[0]!.diffAvailable).toBe(false);
+    const decision = first(decisions);
+    expect(decision.diffAvailable).toBe(false);
   });
 });

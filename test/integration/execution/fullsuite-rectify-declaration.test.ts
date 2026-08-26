@@ -13,7 +13,14 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { makeMockPlanInputs, makeNaxConfig, makeStory, makeTestRuntime, withTempDir } from "@test/helpers";
+import {
+  assertDefined,
+  makeMockPlanInputs,
+  makeNaxConfig,
+  makeStory,
+  makeTestRuntime,
+  withTempDir,
+} from "@test/helpers";
 import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
 import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
@@ -107,11 +114,11 @@ describe("AC8: full-suite-rectify sink integration — test-writer receives mock
         return { success: true };
       }) as typeof _storyOrchestratorDeps.callOp;
 
-      let capturedCycle: FixCycle<Finding> | null = null;
-      let capturedCycleCtx: FixCycleContext | null = null;
+      const capturedCycles: FixCycle<Finding>[] = [];
+      const capturedCycleCtxs: FixCycleContext[] = [];
       _storyOrchestratorDeps.runFixCycle = mock(async (cycle, cycleCtx) => {
-        capturedCycle = cycle as FixCycle<Finding>;
-        capturedCycleCtx = cycleCtx as FixCycleContext;
+        capturedCycles.push(cycle as FixCycle<Finding>);
+        capturedCycleCtxs.push(cycleCtx as FixCycleContext);
         return {
           iterations: [],
           finalFindings: [],
@@ -123,12 +130,14 @@ describe("AC8: full-suite-rectify sink integration — test-writer receives mock
       const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
       await plan.run();
 
-      expect(capturedCycle).not.toBeNull();
-      expect(capturedCycleCtx).not.toBeNull();
+      const capturedCycle = capturedCycles[0];
+      const capturedCycleCtx = capturedCycleCtxs[0];
+      assertDefined(capturedCycle, "captured cycle");
+      assertDefined(capturedCycleCtx, "captured cycle ctx");
 
       // Find the full-suite-rectify strategy in the cycle.
-      const fullSuiteStrategy = capturedCycle!.strategies.find((s) => s.name === "full-suite-rectify");
-      expect(fullSuiteStrategy).toBeDefined();
+      const fullSuiteStrategy = capturedCycle.strategies.find((s) => s.name === "full-suite-rectify");
+      assertDefined(fullSuiteStrategy, "full-suite-rectify strategy");
 
       // Simulate extractApplied with a mock_structure declaration referencing the real test file.
       const mockOutput: FullSuiteRectifyOutput = {
@@ -143,7 +152,8 @@ describe("AC8: full-suite-rectify sink integration — test-writer receives mock
         ],
       };
       const mockInput: FullSuiteRectifyInput = { story, findings: [] };
-      await fullSuiteStrategy!.extractApplied!(mockOutput, mockInput);
+      assertDefined(fullSuiteStrategy.extractApplied, "extractApplied");
+      await fullSuiteStrategy.extractApplied(mockOutput, mockInput);
 
       // Set up callOp for the validate re-run (all phases pass).
       _storyOrchestratorDeps.callOp = mock(async () => ({
@@ -151,14 +161,14 @@ describe("AC8: full-suite-rectify sink integration — test-writer receives mock
       })) as typeof _storyOrchestratorDeps.callOp;
 
       // Call validate to trigger postValidate, which validates the file and updates the sink.
-      await capturedCycle!.validate(capturedCycleCtx!, {
+      await capturedCycle.validate(capturedCycleCtx, {
         mode: "full",
         strategiesRun: ["full-suite-rectify"],
       });
 
       // After postValidate, autofix-test-writer should apply (sink.mockHandoffs has valid entry).
-      const testWriterStrategy = capturedCycle!.strategies.find((s) => s.name === "autofix-test-writer");
-      expect(testWriterStrategy).toBeDefined();
+      const testWriterStrategy = capturedCycle.strategies.find((s) => s.name === "autofix-test-writer");
+      assertDefined(testWriterStrategy, "autofix-test-writer strategy");
 
       const dummyFinding: Finding = {
         source: "lint",
@@ -167,10 +177,10 @@ describe("AC8: full-suite-rectify sink integration — test-writer receives mock
         message: "dummy",
       };
       // AC8: appliesTo returns true because sink.mockHandoffs has the validated entry.
-      expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(true);
+      expect(testWriterStrategy.appliesTo(dummyFinding)).toBe(true);
 
       // AC8: buildInput reflects mock-restructure mode with the handoff file.
-      const builtInput = testWriterStrategy!.buildInput([dummyFinding], [], capturedCycleCtx!);
+      const builtInput = testWriterStrategy.buildInput([dummyFinding], [], capturedCycleCtx);
       expect(builtInput.mode).toBe("mock-restructure");
       expect(builtInput.handoffFiles).toContain("test/unit/service.test.ts");
     });
@@ -200,11 +210,11 @@ describe("AC9: invalid mock_structure files → diagnostic only, no unclaimable 
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    let capturedCycle: FixCycle<Finding> | null = null;
-    let capturedCycleCtx: FixCycleContext | null = null;
+    const capturedCycles: FixCycle<Finding>[] = [];
+    const capturedCycleCtxs: FixCycleContext[] = [];
     _storyOrchestratorDeps.runFixCycle = mock(async (cycle, cycleCtx) => {
-      capturedCycle = cycle as FixCycle<Finding>;
-      capturedCycleCtx = cycleCtx as FixCycleContext;
+      capturedCycles.push(cycle as FixCycle<Finding>);
+      capturedCycleCtxs.push(cycleCtx as FixCycleContext);
       return {
         iterations: [],
         finalFindings: [],
@@ -216,10 +226,13 @@ describe("AC9: invalid mock_structure files → diagnostic only, no unclaimable 
     const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     await plan.run();
 
-    expect(capturedCycle).not.toBeNull();
+    const capturedCycle = capturedCycles[0];
+    const capturedCycleCtx = capturedCycleCtxs[0];
+    assertDefined(capturedCycle, "captured cycle");
+    assertDefined(capturedCycleCtx, "captured cycle ctx");
 
-    const fullSuiteStrategy = capturedCycle!.strategies.find((s) => s.name === "full-suite-rectify");
-    expect(fullSuiteStrategy).toBeDefined();
+    const fullSuiteStrategy = capturedCycle.strategies.find((s) => s.name === "full-suite-rectify");
+    assertDefined(fullSuiteStrategy, "full-suite-rectify strategy");
 
     // Declare a mock_structure that references a file that does not exist.
     const invalidMockOutput: FullSuiteRectifyOutput = {
@@ -234,23 +247,24 @@ describe("AC9: invalid mock_structure files → diagnostic only, no unclaimable 
       ],
     };
     const mockInput: FullSuiteRectifyInput = { story, findings: [] };
-    await fullSuiteStrategy!.extractApplied!(invalidMockOutput, mockInput);
+    assertDefined(fullSuiteStrategy.extractApplied, "extractApplied");
+    await fullSuiteStrategy.extractApplied(invalidMockOutput, mockInput);
 
-    const testWriterStrategy = capturedCycle!.strategies.find((s) => s.name === "autofix-test-writer");
-    expect(testWriterStrategy).toBeDefined();
+    const testWriterStrategy = capturedCycle.strategies.find((s) => s.name === "autofix-test-writer");
+    assertDefined(testWriterStrategy, "autofix-test-writer strategy");
     const dummyFinding: Finding = { source: "lint", severity: "error", category: "style", message: "dummy" };
 
     // Precondition: extractApplied populated the sink, so the test-writer's
     // `sink.mockHandoffs.length > 0` clause claims. Without this, the
     // assertions below would also hold on the `postValidate` early-return
     // path (empty sink → returns findings untouched) and prove nothing.
-    expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(true);
+    expect(testWriterStrategy.appliesTo(dummyFinding)).toBe(true);
 
     // Set up callOp for validate re-run.
     _storyOrchestratorDeps.callOp = mock(async () => ({ success: true })) as typeof _storyOrchestratorDeps.callOp;
 
     // Call validate to trigger postValidate.
-    const validateResult = await capturedCycle!.validate(capturedCycleCtx!, {
+    const validateResult = await capturedCycle.validate(capturedCycleCtx, {
       mode: "full",
       strategiesRun: ["full-suite-rectify"],
     });
@@ -260,7 +274,7 @@ describe("AC9: invalid mock_structure files → diagnostic only, no unclaimable 
     // postValidate reached the validation branch and rejected the handoff: the
     // sink is now drained, so the test-writer no longer claims. This is the
     // positive artifact that the invalid-declaration path actually ran.
-    expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(false);
+    expect(testWriterStrategy.appliesTo(dummyFinding)).toBe(false);
 
     // AC9 (#1327): every phase passed, so validate yields no findings — and the
     // rejected handoff must not add one. It is reported as a log diagnostic
@@ -302,9 +316,9 @@ describe("AC11: single-session story with mock_structure output → no test-writ
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    let capturedCycle: FixCycle<Finding> | null = null;
+    const capturedCycles: FixCycle<Finding>[] = [];
     _storyOrchestratorDeps.runFixCycle = mock(async (cycle) => {
-      capturedCycle = cycle as FixCycle<Finding>;
+      capturedCycles.push(cycle as FixCycle<Finding>);
       return {
         iterations: [],
         finalFindings: [],
@@ -317,10 +331,11 @@ describe("AC11: single-session story with mock_structure output → no test-writ
     const plan = await buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
     await plan.run();
 
-    expect(capturedCycle).not.toBeNull();
+    const capturedCycle = capturedCycles[0];
+    assertDefined(capturedCycle, "captured cycle");
 
     // AC11: no autofix-test-writer strategy in the single-session cycle.
-    const hasTestWriter = capturedCycle!.strategies.some((s) => s.name === "autofix-test-writer");
+    const hasTestWriter = capturedCycle.strategies.some((s) => s.name === "autofix-test-writer");
     expect(hasTestWriter).toBe(false);
   });
 });

@@ -7,9 +7,9 @@
     "anyType": 10,
     "looseCast": 1800,
     "asNever": 603,
-    "nonNullAssert": 635
+    "nonNullAssert": 541
   },
-  "updatedAt": "2026-08-26T09:14:56.317Z",
+  "updatedAt": "2026-08-26T10:03:34.351Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -98,8 +98,7 @@
       "looseCast": 2
     },
     "test/integration/execution/fullsuite-rectify-declaration.test.ts": {
-      "looseCast": 9,
-      "nonNullAssert": 16
+      "looseCast": 9
     },
     "test/integration/execution/runner-fixes.test.ts": {
       "looseCast": 3
@@ -132,8 +131,7 @@
       "looseCast": 1
     },
     "test/integration/execution/runner-escalation.test.ts": {
-      "looseCast": 2,
-      "nonNullAssert": 13
+      "looseCast": 2
     },
     "test/integration/execution/parallel-batch-results.test.ts": {
       "looseCast": 4
@@ -458,8 +456,7 @@
       "looseCast": 1
     },
     "test/unit/review/adversarial-audit-shape.test.ts": {
-      "looseCast": 2,
-      "nonNullAssert": 16
+      "looseCast": 2
     },
     "test/unit/review/adversarial-threshold.test.ts": {
       "nonNullAssert": 8
@@ -923,9 +920,6 @@
       "asNever": 5,
       "nonNullAssert": 6
     },
-    "test/unit/operations/verify-op-recover.test.ts": {
-      "nonNullAssert": 11
-    },
     "test/unit/operations/full-suite-gate.test.ts": {
       "looseCast": 1,
       "nonNullAssert": 1
@@ -1329,8 +1323,7 @@
       "nonNullAssert": 2
     },
     "test/unit/agents/acp/spawn-client.test.ts": {
-      "ratchetAllow": 2,
-      "nonNullAssert": 18
+      "ratchetAllow": 2
     },
     "test/unit/agents/acp/spawn-client-cancel-cwd.test.ts": {
       "nonNullAssert": 2
@@ -1680,8 +1673,7 @@
       "looseCast": 5
     },
     "test/unit/context/engine/providers/code-neighbor-chunk.test.ts": {
-      "looseCast": 8,
-      "nonNullAssert": 20
+      "looseCast": 8
     },
     "test/unit/context/engine/providers/feature-context.test.ts": {
       "looseCast": 3
