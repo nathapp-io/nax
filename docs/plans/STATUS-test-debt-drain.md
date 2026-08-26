@@ -462,3 +462,91 @@ can't satisfy `UserStory`; the existing `makeTestStory(overrides)` helper in
 typecheck 0/0/0, check:all 24/24, full suite green before each `--update-baseline`;
 baseline diff per commit shows asNever strictly decreasing, every other counter flat.
 Cumulative: asNever 603 → 323 (−280) across 18 files since the drain started.
+
+### 8.4 Batch 4 — twenty-three commits, 159 sites, 323 → 159 (2026-08-26)
+
+Twenty-three commits in one drain session, dropping 164 sites across twenty-three files.
+The same recipes as 3a–3f repeat, with one new variant: `Logger` (a class with private
+fields) needs a real instance instead of a partial literal — `new Logger({ level: "silent" })`
+where info/warn methods are replaced to push into capturing arrays.
+
+**4a — `unified-executor-tier-budget` + `merge-conflict-rectify` (−19).** Typed
+`makeCtx` as `SequentialExecutionContext`, `makePrd` as `PRD` in tier-budget (recipe
+from 2c); replaced the hand-rolled `FAKE_RUNTIME` const in merge-conflict-rectify with
+`makeMockRuntime`/`createNoOpCostAggregator` defaults and the inline `pluginRegistry`
+with `makePluginRegistry()`.
+
+**4b — `execution-repo-scoped-fixes` partial (−7; 2 held back).** Dropped `as never` on
+`getAgent`, `recordRepoScopedFixes`, `applyPostRunInspection`, `decideStageAction` (made
+async to match the slot's `Promise<StageResult>` return) and `assemblePlanInputsFromCtx`
+(replaced cargo `{}` with `{ story: ctx.story, config: ctx.config }`). Held back the two
+`async () => ({ run: planRun }) as never` on `buildPlanForStrategy` — the dep slot returns
+`Promise<ExecutionPlan>` (class), the stub returns `Promise<{ run }>`, and class identity
+rejects the structural match. Per §5, this is an escalation candidate: production only uses
+`plan.run()` at `src/pipeline/stages/execution.ts:159`, so narrowing the dep slot's return
+to `{ run: () => Promise<StoryOrchestratorResult> }` is an additive src/ change worth
+pursuing in a follow-up batch.
+
+**4c — `fail-stale-agent-manager` (−9).** All nine `... } as never` on `new AgentManager({...})`
+config spreads became `new AgentManager(makeNaxConfig({agent: {...}}))`. Same recipe as 3c/3d.
+
+**4d — `full-suite-rectify` + `rectification-budget-invariants` (−15).** full-suite-rectify
+got a typed `makeRectifyInput` helper (the `as FullSuiteRectifyInput` trailing cast was
+a `looseCast` whose counter ticked up the same fix; `makeFixCycleContext` for the
+`buildInput` ctx). rectification-budget-invariants got the `ExecutionSlice = Pick<NaxConfig,
+"execution">` alias and the same recipe as 3f.
+
+**4e — `story-scoped-fix-budget` (−7).** Same recipe as 4d — `ExecutionSlice` alias, `makeStory`
+for the `addFullSuiteGate` `input.story`.
+
+**4f — `unified-executor-failure` + `lifecycle-completion` + `acceptance-loop` (−21).**
+unified-executor-failure got the 4a recipe for the unified executor (`executeUnified(makeCtx(), prd)`).
+The two `proc as never` on the `_resultHandlerDeps.spawn` stub became typed through-unknown
+casts (`proc as typeof Bun.spawn extends (...args: never) => infer R ? R : never`) — a
+narrowing at the boundary that keeps the cast at the seam without hiding the seed.
+The `catch () => ({...}) as never` returned a fake `SequentialExecutionResult`; replaced with
+a typed arrow that throws (the catch is unreachable in practice — `executeUnified`'s failure
+path does not throw). lifecycle-completion and acceptance-loop got the makeCapturingLogger →
+real `new Logger({ level: "silent" })` recipe, with `Object.assign(logger, { infoCalls, warnCalls })`
+to keep the capturing arrays. acceptance-loop also swapped `makePluginRegistry`/`makeStatusWriter`
+for the inline mock literals.
+
+**4g — `acceptance-loop-cycle` (−5).** `makeFixCycleCtx` helper that spreads
+`makeMockCallContext` and pins `storyId: "US-001"` (file-sizes baseline rose 835 → 849,
+grandfathered from the 400-line ceiling).
+
+**4h — `semantic-debate` (−6).** `makeStageConfig` returning a complete `DebateStageConfig`
+literal (`{ enabled: false, resolver: { type: "majority-fail-closed" }, sessionMode: "stateful",
+rounds: 0 }`) for the five `plan: {} as never` cargo entries; the standalone
+`pickBaseSelectorKind` test got a typed `DebateStageConfig` literal in place of
+`configured as never`.
+
+**4i — `plan-interactive` + `unified-executor-abort` + `cli-precheck-command` (−19).**
+plan-interactive dropped 6 redundant `input as never, makeInteractiveVerifyCtx() as never`
+cargo (both already satisfied the types). unified-executor-abort typed `makeCtxWithSignal` as
+`SequentialExecutionContext`; the signal-bearing runtime needed `Object.defineProperty` since
+`makeMockRuntime` doesn't accept one as an option. cli-precheck-command swapped the seven
+`process.exit = mock(...) as never` stubs to `as typeof process.exit`.
+
+**4j — `effectiveness-eval-command` + `prompts-export` + `routing-stability` (−15).**
+effectiveness-eval-command and prompts-export got the same `as typeof process.exit` recipe.
+routing-stability typed the two retry-resolver `buildCtx` literals as `BuildContext<RoutingConfig>`
+with a full `PackageView` (including the `select` method as a thunk over `ConfigSelector<C>`).
+
+**4k — `reviewer-verdict-invariant` + `plan-decompose-writeback` + `plan-decompose-ac13-14`
++ `build-plan-story-path-anchors` (−22).** reviewer-verdict-invariant typed
+`makeVerifyCtx(configSelector: ConfigSelector<T>)` and used `opSelector` to narrow the op's
+union config slot. plan-decompose-writeback and plan-decompose-ac13-14 used `makeDebateRunner()`
+for `createDebateRunner` stubs and `makeStageConfig` for the other required debate stages
+(`plan`/`review`/`acceptance`/`rectification`/`escalation`). build-plan-story-path-anchors
+completed the `TestPatternConfig` slice with `{ execution, project, quality }` from
+`DEFAULT_CONFIG` and typed the `TestEditDeclaration` discriminator with `as const`.
+
+**4l — `semantic-retry` + `adversarial-retry` (−8).** Same `Logger` recipe as 4f —
+`makeLogger` returns `Object.assign(new Logger({level: "silent"}), { infoCalls, warnCalls })`,
+info/warn methods overridden to push into the capturing arrays.
+
+**Cumulative across batches 1–4:** asNever 603 → 159 (−444 across 41 files since the drain
+started). Held-back items still open: 12 `mockImplementation as never` in `debate/runner-plan.test.ts`
+(§8.2 batch 2f held back, generic mock signature) and the `DebateConfig.stages.decompose?`
+additive src/ change recorded in §8.3 batch 3b.
