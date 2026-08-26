@@ -20,7 +20,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 | `asAny` | 1 | **0** | done — rule at `"error"` (`archive/LOG-no-explicit-any-drain.md`) |
 | `anyType` | 10 | **0** | done — rule at `"error"` (`archive/LOG-no-explicit-any-drain.md`) |
 | `nonNullAssert` | 2 | **0** | done — rule at `"error"` (`archive/LOG-non-null-assertion-drain.md`) |
-| `asNever` | **603** | — | **yes — current target (§1)** |
+| `asNever` | **323** | — | **yes — current target (§1)** |
 | `ratchetAllow` | 103 | — | yes — next |
 | `tsSuppress` | 25 | — | yes — next |
 | `absentValue` | 17 | — | yes — next |
@@ -401,3 +401,64 @@ is acceptable, or leave them as the cost of generic mock signatures.
 
 typecheck 0/0/0, check:all 24/24, full suite green before each `--update-baseline`;
 baseline diff per commit shows asNever strictly decreasing, every other counter flat.
+
+### 8.3 Batches 3a–3f — six commits, eight files, 393 → 323 (2026-08-26)
+
+Six commits in one drain session, dropping 70 sites across eight files. Per §6's
+"verifying a cluster costs about as much as doing it" ruling, batched closely-related
+files together when the recipe matched, kept unrelated ones in their own commit.
+
+**3a — `test/unit/cli/plan-interactive.test.ts` (−13).** Same recipe as 2a — `DEFAULT_CONFIG`
+is `NaxConfig`, `planCommand`'s `config` parameter is `NaxConfig`, the cargo `as never` was
+redundant on all thirteen invocations. Single edit; per the §6 ruling on the file pattern
+this is the "third option" the 2a log mentioned: complete the fixture by recognising the
+cast was always cargo.
+
+**3b — `test/unit/cli/plan-decompose-debate.test.ts` (−12).** Twelve `mock(() => ({ run:
+mock(...) })) as never` assignments to `_planDeps.createDebateRunner`. The plan-debate.test.ts
+file already solved the same shape by returning `makeDebateRunner(...)` — the helper
+constructs a real `DebateRunner` via `Object.assign` so its `run`/`runPlan` slots are bun
+mocks satisfying `toHaveBeenCalledWith`. Reused verbatim. **Held back the one remaining
+inner `} as never,` in `makeConfigWithDebate`**: it hides the `decompose` stage src/
+already reads via `as unknown as Record<string, DebateStageConfig>` (`src/cli/plan-decompose.ts:86`)
+— a `DebateConfig.stages.decompose?: DebateStageConfig` additive change. Per §5 that's a
+src/ additive change, not a free hand; recorded as the next batch's candidate rather
+than slipped in under this delta.
+
+**3c — `test/unit/agents/manager-swap-loop.test.ts` (−12).** All twelve were bare `{ storyId:
+"s1" } as never` / `{} as never` on the `runOptions` slot of `runWithFallback`. The fix
+is a per-file `makeRunOptions` helper returning a complete `AgentRunOptions`:
+`config: agentManagerConfigSelector.select(DEFAULT_CONFIG)` narrows to `AgentManagerConfig`
+(`Pick<NaxConfig, agent|execution|profile>`) without a cast. Per-file because three nearby
+files (manager.test.ts, manager-abort.test.ts, manager-types-phase5.test.ts) use a slightly
+different `runOptions` slice; a shared helper would need an overrides signature broad
+enough to swallow them all, which is the 3d batch's territory.
+
+**3d — three more manager tests (−12).** Extended the 3c recipe to manager-abort.test.ts (3),
+manager-types-phase5.test.ts (1), and manager.test.ts (8). Same `makeRunOptions` helper per
+file. manager.test.ts also had two non-`runOptions` `as never` sites in the same file: the
+`makeManager` helper (NaxConfig spread into AgentManagerConfig) and a `bundle: { files: []
+} as never` that pinned an impossible shape (`ContextBundle` has `chunks`, not `files`).
+Replaced with `agentManagerConfigSelector.select(...)` for the config helper and
+`makeContextBundle()` for the bundle (already in `test/helpers`), completing the file.
+
+**3e — `test/unit/operations/plan-refine-out-of-scope.test.ts` (−11).** Three structural
+fixes for eleven sites: `const input: PlanRefineInput` (5), `function makeVerifyCtx():
+VerifyContext<PlanConfig>` (5), drop the cargo `makePrd() as never` (1). The local
+`makePrd` already returns `PRD` via `makePRD`; the cast was redundant. No src/ change.
+
+**3f — `test/unit/execution/rectification-oscillation-circuit-breaker.test.ts` (−10).**
+Three distinct fixes: the eight `ctx.config = { ...ctx.config, review: { ...,
+conflictDetection: ... } } as typeof ctx.config` were all cargo — `NaxConfig.review.
+conflictDetection` is in the schema and the spread produces a valid `NaxConfig`. `as
+typeof ctx.config` is not looseCast (`typeof` starts lowercase) so dropping it loses
+nothing. The two `config: testSel as never` on `RunOperation<...>` had a C-type mismatch
+— `testSel` is a `ConfigSelector<Pick<NaxConfig, "execution">>` but C was `typeof
+DEFAULT_CONFIG`. Fixing C to match the selector (a typed alias `ExecutionSlice`) drops
+both casts. The eight `makeTestContext({ story: { id, title } as never })` — `Partial<UserStory>`
+can't satisfy `UserStory`; the existing `makeTestStory(overrides)` helper in
+`test/helpers/pipeline-context.ts` returns a complete `UserStory`.
+
+typecheck 0/0/0, check:all 24/24, full suite green before each `--update-baseline`;
+baseline diff per commit shows asNever strictly decreasing, every other counter flat.
+Cumulative: asNever 603 → 323 (−280) across 18 files since the drain started.
