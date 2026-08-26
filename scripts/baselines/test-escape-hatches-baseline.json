@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1799,
-    "asNever": 519,
+    "asNever": 495,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T14:08:40.788Z",
+  "updatedAt": "2026-08-26T14:15:14.569Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -480,8 +480,7 @@
       "looseCast": 5
     },
     "test/unit/execution/unified-executor-logging.test.ts": {
-      "looseCast": 18,
-      "asNever": 24
+      "looseCast": 18
     },
     "test/unit/execution/story-orchestrator-resume-integration.test.ts": {
       "looseCast": 1

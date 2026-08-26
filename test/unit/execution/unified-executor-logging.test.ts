@@ -11,8 +11,15 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { makeDispatchContext, makeMockRuntime, makePluginRegistry, makeStatusWriter } from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
+import type { SequentialExecutionContext } from "@/execution/unified-executor";
+import type { LoadedHooksConfig } from "@/hooks";
 import type { Logger } from "@/logger";
 import * as loggerModule from "@/logger";
+import type { EscalationAttempt, PRD, StoryRouting, UserStory } from "@/prd/types";
+
+const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
 
 /** One `logger.info` call captured by `installStoryLogSpy`. */
 interface CapturedLog {
@@ -44,19 +51,22 @@ function installStoryLogSpy(): { calls: CapturedLog[]; restore: () => void } {
 // Test fixture helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makePendingStory(id: string, routing?: Record<string, unknown>) {
+function makePendingStory(id: string, routing?: StoryRouting): UserStory {
+  const acceptanceCriteria: string[] = [];
+  const tags: string[] = [];
+  const dependencies: string[] = [];
+  const escalations: EscalationAttempt[] = [];
   return {
     id,
     title: `Story ${id}`,
     description: `Description for ${id}`,
-    acceptanceCriteria: [],
-    tags: [],
-    dependencies: [],
-    status: "pending" as const,
+    acceptanceCriteria,
+    tags,
+    dependencies,
+    status: "pending",
     passes: false,
     attempts: 0,
-    escalations: [],
-    priorFailures: [],
+    escalations,
     ...(routing ? { routing } : {}),
   };
 }
@@ -66,7 +76,7 @@ function makePendingStory(id: string, routing?: Record<string, unknown>) {
  * the #1575 shape. It must be announced as pi@balanced, not as the run default
  * agent at the leftover "fast" tier.
  */
-function makeProfileStory(id: string) {
+function makeProfileStory(id: string): UserStory {
   return makePendingStory(id, {
     complexity: "medium",
     testStrategy: "test-after",
@@ -79,80 +89,45 @@ function makeProfileStory(id: string) {
 }
 
 /** A story the run has already completed — `makePendingStory` pins status to "pending". */
-function makePassedStory(id: string) {
-  return { ...makePendingStory(id), status: "passed" as const, passes: true };
+function makePassedStory(id: string): UserStory {
+  return { ...makePendingStory(id), status: "passed", passes: true };
 }
 
-function makePrd(stories: Array<ReturnType<typeof makePendingStory> | ReturnType<typeof makePassedStory>>) {
+function makePrd(stories: UserStory[]): PRD {
   return {
     project: "test-project",
     feature: "test-feature",
     branchName: "test-branch",
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     userStories: stories,
   };
 }
 
-function makeCtx(overrides: { parallelCount?: number } = {}) {
+function makeCtx(overrides: { parallelCount?: number } = {}): SequentialExecutionContext {
   return {
     prdPath: "/tmp/test-prd.json",
     workdir: "/tmp/test-workdir",
     config: {
+      ...DEFAULT_CONFIG,
       execution: {
+        ...DEFAULT_CONFIG.execution,
         maxIterations: 1,
         costLimit: 10,
         iterationDelayMs: 0,
-        rectification: { maxAttemptsTotal: 2 },
       },
-      // complexityRouting is required by NaxConfigSchema; buildPreviewRouting resolves
-      // the announced tier through it, so the fixture must carry the real bands.
-      autoMode: {
-        defaultAgent: "claude-code",
-        complexityRouting: { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" },
-      },
-      interaction: {},
     },
-    hooks: {},
+    hooks: EMPTY_HOOKS,
     feature: "test-feature",
     dryRun: false,
     useBatch: false,
-    pluginRegistry: {
-      getReporters: () => [],
-      getContextProviders: () => [],
-    },
-    statusWriter: {
-      setPrd: mock(() => {}),
-      setCurrentStory: mock(() => {}),
-      setRunStatus: mock(() => {}),
-      update: mock(async () => {}),
-    },
+    pluginRegistry: makePluginRegistry(),
+    statusWriter: makeStatusWriter(),
     runId: "run-test",
     startTime: Date.now(),
     batchPlan: [],
     interactionChain: null,
-    runtime: {
-      outputDir: "/tmp/nax-test-logging-output",
-      // nax#1709: parallel metrics read these run-scoped stores.
-      agentFallbacks: new Map(),
-      runtimeCrashRetries: new Map(),
-      costAggregator: {
-        snapshot: () => ({
-          totalCostUsd: 0,
-          totalEstimatedCostUsd: 0,
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          callCount: 0,
-          errorCount: 0,
-        }),
-        byStage: () => ({}),
-        byStory: () => ({}),
-        byAgent: () => ({}),
-        record: () => {},
-        recordError: () => {},
-        recordOperationSummary: () => {},
-        drain: async () => {},
-      },
-    },
+    ...makeDispatchContext({ runtime: makeMockRuntime({ workdir: "/tmp/nax-test-logging-output" }) }),
     ...overrides,
   };
 }
@@ -220,7 +195,7 @@ describe("story.start logging — parallel batch dispatch", () => {
     const prd = makePrd([story1, story2]);
     const ctx = makeCtx({ parallelCount: 2 });
 
-    await executeUnified(ctx as never, prd as never).catch(() => {});
+    await executeUnified(ctx, prd).catch(() => {});
 
     const storyStartCalls = infoCalls.filter((c) => c.stage === "story.start");
     expect(storyStartCalls.length).toBeGreaterThanOrEqual(2);
@@ -257,7 +232,7 @@ describe("story.start logging — parallel batch dispatch", () => {
     const prd = makePrd([story1, makePendingStory("US-002")]);
     const ctx = makeCtx({ parallelCount: 2 });
 
-    await executeUnified(ctx as never, prd as never).catch(() => {});
+    await executeUnified(ctx, prd).catch(() => {});
 
     const call = infoCalls.find((c) => c.stage === "story.start" && c.data?.storyId === "US-001");
     expect(call).toBeDefined();
@@ -329,7 +304,7 @@ describe("story.start logging — sequential (single-story) dispatch", () => {
     const prd = makePrd([story1]);
     const ctx = makeCtx({ parallelCount: 2 });
 
-    await executeUnified(ctx as never, prd as never).catch(() => {});
+    await executeUnified(ctx, prd).catch(() => {});
 
     const storyStartCalls = infoCalls.filter((c) => c.stage === "story.start");
     expect(storyStartCalls.length).toBeGreaterThanOrEqual(1);
@@ -362,7 +337,7 @@ describe("story.start logging — sequential (single-story) dispatch", () => {
     const prd = makePrd([story1]);
     const ctx = makeCtx({ parallelCount: 2 });
 
-    await executeUnified(ctx as never, prd as never).catch(() => {});
+    await executeUnified(ctx, prd).catch(() => {});
 
     const call = infoCalls.find((c) => c.stage === "story.start" && c.data?.storyId === "US-001");
     expect(call).toBeDefined();
@@ -443,7 +418,7 @@ describe("story.start announcement — profile-assigned stories (#1575)", () => 
       prdDirty: false,
     }));
 
-    await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([story]) as never).catch(() => {});
+    await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([story])).catch(() => {});
 
     const call = infoCalls.find((c) => c.stage === "story.start" && c.data?.storyId === "US-001");
     expect(call?.data).toMatchObject({ agent: "pi", modelTier: "balanced" });
@@ -465,7 +440,7 @@ describe("story.start announcement — profile-assigned stories (#1575)", () => 
       totalCost: 0,
     }));
 
-    await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([profiled, plain]) as never).catch(() => {});
+    await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([profiled, plain])).catch(() => {});
 
     const profiledCall = infoCalls.find((c) => c.stage === "story.start" && c.data?.storyId === "US-001");
     expect(profiledCall?.data).toMatchObject({ agent: "pi", modelTier: "balanced" });
@@ -517,7 +492,7 @@ describe("story.start suppression when the tier ladder is exhausted (#1653)", ()
     });
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    await executeUnified(makeCtx({ parallelCount: 2 }) as never, prd as never).catch(() => {});
+    await executeUnified(makeCtx({ parallelCount: 2 }), prd).catch(() => {});
 
     expect(spy.calls.filter((c) => c.stage === "story.start")).toHaveLength(0);
   });
@@ -533,7 +508,7 @@ describe("story.start suppression when the tier ladder is exhausted (#1653)", ()
     });
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    await executeUnified(makeCtx() as never, prd as never).catch(() => {});
+    await executeUnified(makeCtx(), prd).catch(() => {});
 
     expect(spy.calls.filter((c) => c.stage === "story.start")).toHaveLength(0);
   });
@@ -551,7 +526,7 @@ describe("story.start suppression when the tier ladder is exhausted (#1653)", ()
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    await executeUnified(makeCtx() as never, prd as never).catch(() => {});
+    await executeUnified(makeCtx(), prd).catch(() => {});
 
     const calls = spy.calls.filter((c) => c.stage === "story.start");
     expect(calls).toHaveLength(1);
@@ -617,7 +592,7 @@ describe("story.start suppression in a parallel batch (#1653)", () => {
 
     const { executeUnified } = await import("@/execution/unified-executor");
     const ctx = { ...makeCtx({ parallelCount: 2 }), prdPath };
-    await executeUnified(ctx as never, prd as never).catch(() => {});
+    await executeUnified(ctx, prd).catch(() => {});
 
     const announced = spy.calls.filter((c) => c.stage === "story.start").map((c) => c.data?.storyId);
     expect(announced).toEqual(["US-001"]);
@@ -673,7 +648,7 @@ describe("story.start storyNumber is the story's PRD ordinal (#1653)", () => {
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    await executeUnified(makeCtx({ parallelCount: 2 }) as never, prd as never).catch(() => {});
+    await executeUnified(makeCtx({ parallelCount: 2 }), prd).catch(() => {});
 
     const call = spy.calls.find((c) => c.stage === "story.start" && c.data?.storyId === "US-003");
     expect(call?.data).toMatchObject({ storyNumber: 3, storyTotal: 3 });
@@ -696,7 +671,7 @@ describe("story.start storyNumber is the story's PRD ordinal (#1653)", () => {
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    await executeUnified(makeCtx({ parallelCount: 2 }) as never, prd as never).catch(() => {});
+    await executeUnified(makeCtx({ parallelCount: 2 }), prd).catch(() => {});
 
     const call = spy.calls.find((c) => c.stage === "story.start" && c.data?.storyId === "US-001");
     expect(call?.data).toMatchObject({ storyNumber: 1, storyTotal: 2 });
