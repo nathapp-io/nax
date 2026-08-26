@@ -317,4 +317,28 @@ opening an archive; open the archive when §6's one-line version is not enough t
 Entries below cover the current drain (`asNever`). The three closed drains' logs are in
 `archive/` per §7 — they were lifted out on 2026-08-26 when `noNonNullAssertion` closed.
 
-_No entries yet — the drain has not started._
+### 8.1 Batch 1 — one typed builder, three files, 603 → 547 (2026-08-26)
+
+First unit of the drain, and it validated §1's population claim exactly: the top file's 38
+sites were not 38 problems but one — `_parallel-metrics-helpers.ts#makeCtx` returned an
+inferred object-literal partial, so all three importer files
+(`runner-parallel-metrics`, `-cost-duration`, `-rectification-events`) re-applied
+`as never` at every `executeUnified` call site. 56 sites across the three files
+(38 + 10 + 8), overwhelmingly argument position.
+
+Fixed at the builder per route 1, using the recipe `unified-executor-fallback-seam.test.ts`
+already proved: `makeCtx` now returns `SequentialExecutionContext` — `DEFAULT_CONFIG`
+spread with the execution overrides it was pinning (`maxIterations`/`costLimit`/
+`iterationDelayMs: 0`/`rectification.maxAttemptsTotal: 2`), `EMPTY_HOOKS`,
+`makePluginRegistry()`/`makeStatusWriter()`, and `makeDispatchContext` over a
+`makeTestRuntime` wired with `createNoOpCostAggregator()` so cost accounting stays
+deterministic exactly as the old hand-rolled stub's always-zero snapshot was. Every call-site
+cast then fell out with no other edit; `makePrd` already returned `PRD`.
+
+Typing surfaced two latent fixture defects the cast had been hiding: `hooks: {}` was not a
+`LoadedHooksConfig`, and the hand-rolled runtime carried no `projectKey` (read by
+`wireReporters`). Both fixed by completing the fixture to the real types — nothing in `src/`
+loosened, no counter traded.
+
+typecheck 0/0/0, check:all 24/24, full suite green before `--update-baseline`; baseline diff
+shows asNever −56, every other counter flat.
