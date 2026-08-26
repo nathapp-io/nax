@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 237,
+    "asNever": 232,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:38:19.590Z",
+  "updatedAt": "2026-08-26T15:39:30.608Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -692,8 +692,7 @@
       "looseCast": 4
     },
     "test/unit/execution/lifecycle/acceptance-loop-cycle.test.ts": {
-      "looseCast": 8,
-      "asNever": 5
+      "looseCast": 8
     },
     "test/unit/execution/lifecycle/run-setup.test.ts": {
       "asNever": 1

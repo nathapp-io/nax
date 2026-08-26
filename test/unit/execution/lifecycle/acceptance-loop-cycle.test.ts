@@ -10,7 +10,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { assertDefined, makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import {
+  assertDefined,
+  makeMockAgentManager,
+  makeMockCallContext,
+  makeMockRuntime,
+  makeNaxConfig,
+} from "@test/helpers";
 import type { DiagnosisResult } from "@/acceptance";
 import { _diagnosisDeps } from "@/execution/lifecycle/acceptance-fix";
 import {
@@ -34,6 +40,10 @@ function stubStagesModule(execute: (ctx: PipelineContext) => Promise<StageResult
 }
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
+
+function makeFixCycleCtx(): FixCycleContext {
+  return { ...makeMockCallContext(), storyId: "US-001" };
+}
 
 function makePrd(): PRD {
   return {
@@ -525,7 +535,7 @@ describe("strategy buildInput closures", () => {
 
     assertDefined(capturedCycle, "captured acceptance fix cycle");
     const sourceStrategy = capturedCycle.strategies[0];
-    const input = sourceStrategy.buildInput([], [], {} as never) as Record<string, unknown>;
+    const input = sourceStrategy.buildInput([], [], makeFixCycleCtx()) as Record<string, unknown>;
     expect(input.testOutput).toBe("initial output");
     expect(input.acceptanceTestPath).toBe("/path/to/test.ts");
     expect(input.testCommand).toBe("bun test");
@@ -547,7 +557,10 @@ describe("strategy buildInput closures", () => {
     );
 
     assertDefined(capturedCycle, "captured acceptance fix cycle");
-    const input = capturedCycle.strategies[0].buildInput([], [makeIteration()], {} as never) as Record<string, unknown>;
+    const input = capturedCycle.strategies[0].buildInput([], [makeIteration()], makeFixCycleCtx()) as Record<
+      string,
+      unknown
+    >;
     expect(input.priorIterationsBlock).toContain("## Prior Iterations");
     expect(input.priorIterationsBlock).toContain("AC-1 failed");
   });
@@ -570,7 +583,7 @@ describe("strategy buildInput closures", () => {
 
     assertDefined(capturedCycle, "captured acceptance fix cycle");
     const testStrategy = capturedCycle.strategies[1];
-    const input = testStrategy.buildInput([], [], {} as never) as Record<string, unknown>;
+    const input = testStrategy.buildInput([], [], makeFixCycleCtx()) as Record<string, unknown>;
     expect(input.failedACs).toEqual(["AC-1", "AC-2"]);
     expect(input.testOutput).toBe("initial output");
   });
@@ -586,7 +599,7 @@ describe("strategy buildInput closures", () => {
 
     assertDefined(capturedCycle, "captured acceptance fix cycle");
     const testStrategy = capturedCycle.strategies[1];
-    const inputEmpty = testStrategy.buildInput([], [], {} as never) as Record<string, unknown>;
+    const inputEmpty = testStrategy.buildInput([], [], makeFixCycleCtx()) as Record<string, unknown>;
     expect(inputEmpty.testOutput).toBe("");
     expect(inputEmpty.failedACs).toEqual([]);
   });
@@ -608,7 +621,10 @@ describe("strategy buildInput closures", () => {
     );
 
     assertDefined(capturedCycle, "captured acceptance fix cycle");
-    const input = capturedCycle.strategies[1].buildInput([], [makeIteration()], {} as never) as Record<string, unknown>;
+    const input = capturedCycle.strategies[1].buildInput([], [makeIteration()], makeFixCycleCtx()) as Record<
+      string,
+      unknown
+    >;
     expect(input.priorIterationsBlock).toContain("## Prior Iterations");
     expect(input.priorIterationsBlock).toContain("unchanged");
   });
