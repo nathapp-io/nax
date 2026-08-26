@@ -32,7 +32,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertDefined, makeTestRuntime, withTempDir } from "@test/helpers";
+import { assertDefined, makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
+import type { ConfigSelector } from "@/config";
 import type { AdversarialReviewInput, SemanticReviewInput } from "@/operations";
 import { adversarialReviewOp, semanticReviewOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -89,13 +90,13 @@ interface ReviewerUnderTest {
   verify: (findings: unknown[], modelPassed: boolean, workdir: string) => Promise<Verdict>;
 }
 
-function makeVerifyCtx<T>(configSelector: T) {
+function makeVerifyCtx<T>(configSelector: ConfigSelector<T>) {
   const runtime = makeTestRuntime();
   createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
   return {
     packageView: view,
-    config: view.select(configSelector as never),
+    config: view.select(configSelector),
     readFile: async (_path: string) => null as string | null,
     fileExists: async (_path: string) => false,
   };
@@ -146,11 +147,11 @@ const semanticReviewer: ReviewerUnderTest = {
     };
     const parsed = {
       passed: modelPassed,
-      findings: findings as never[],
+      findings,
       normalizedFindings: [],
       acDropped: [],
     };
-    const result = await semanticReviewOp.verify(parsed, input, makeVerifyCtx(semanticReviewOp.config) as never);
+    const result = await semanticReviewOp.verify(parsed, input, makeVerifyCtx(opSelector(semanticReviewOp.config)));
     expect(result).not.toBeNull();
     assertDefined(result, "verify() result");
     return {
@@ -212,11 +213,15 @@ const adversarialReviewer: ReviewerUnderTest = {
     };
     const parsed = {
       passed: modelPassed,
-      findings: findings as never[],
+      findings,
       normalizedFindings: [],
       acDropped: [],
     };
-    const result = await adversarialReviewOp.verify(parsed, input, makeVerifyCtx(adversarialReviewOp.config) as never);
+    const result = await adversarialReviewOp.verify(
+      parsed,
+      input,
+      makeVerifyCtx(opSelector(adversarialReviewOp.config)),
+    );
     expect(result).not.toBeNull();
     assertDefined(result, "verify() result");
     return {

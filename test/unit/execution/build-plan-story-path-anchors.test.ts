@@ -14,6 +14,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
 import { resolveStoryPathAnchors } from "@/execution";
 import { validateMockStructureFiles } from "@/operations";
 import { resolveTestFilePatterns } from "@/test-runners";
@@ -90,7 +91,11 @@ describe("#1451 end-to-end — real resolver and validator against a temp monore
     const root = await makeMonorepo();
     try {
       const { repoRoot } = resolveStoryPathAnchors(join(root, "apps/api"), "apps/api");
-      const resolved = await resolveTestFilePatterns({} as never, repoRoot, "apps/api");
+      const resolved = await resolveTestFilePatterns(
+        { execution: DEFAULT_CONFIG.execution, project: DEFAULT_CONFIG.project, quality: DEFAULT_CONFIG.quality },
+        repoRoot,
+        "apps/api",
+      );
       expect(resolved.globs).toEqual(["tests/**/*.py"]);
     } finally {
       await cleanupTempDir(root);
@@ -104,10 +109,14 @@ describe("#1451 end-to-end — real resolver and validator against a temp monore
     const root = await makeMonorepo();
     try {
       const { repoRoot, packageDir } = resolveStoryPathAnchors(join(root, "apps/api"), "apps/api");
-      const resolved = await resolveTestFilePatterns({} as never, repoRoot, "apps/api");
+      const resolved = await resolveTestFilePatterns(
+        { execution: DEFAULT_CONFIG.execution, project: DEFAULT_CONFIG.project, quality: DEFAULT_CONFIG.quality },
+        repoRoot,
+        "apps/api",
+      );
 
       const { valid, invalid } = await validateMockStructureFiles(
-        [{ reason: "mock_structure", file: declared, files: [declared], reasonDetail: "mock moved" } as never],
+        [{ reason: "mock_structure" as const, file: declared, files: [declared], reasonDetail: "mock moved" }],
         resolved,
         packageDir,
         { repoRoot },
@@ -124,11 +133,15 @@ describe("#1451 end-to-end — real resolver and validator against a temp monore
     const root = await makeMonorepo();
     try {
       const { repoRoot, packageDir } = resolveStoryPathAnchors(join(root, "apps/api"), "apps/api");
-      const resolved = await resolveTestFilePatterns({} as never, repoRoot, "apps/api");
+      const resolved = await resolveTestFilePatterns(
+        { execution: DEFAULT_CONFIG.execution, project: DEFAULT_CONFIG.project, quality: DEFAULT_CONFIG.quality },
+        repoRoot,
+        "apps/api",
+      );
 
       const declared = "tests/test_absent.py";
       const { valid, invalid } = await validateMockStructureFiles(
-        [{ reason: "mock_structure", file: declared, files: [declared], reasonDetail: "x" } as never],
+        [{ reason: "mock_structure" as const, file: declared, files: [declared], reasonDetail: "x" }],
         resolved,
         packageDir,
         { repoRoot },

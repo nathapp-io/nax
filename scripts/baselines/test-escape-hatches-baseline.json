@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 190,
+    "asNever": 175,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:51:46.485Z",
+  "updatedAt": "2026-08-26T15:55:11.872Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -478,9 +478,6 @@
       "looseCast": 2,
       "asNever": 2
     },
-    "test/unit/execution/build-plan-story-path-anchors.test.ts": {
-      "asNever": 5
-    },
     "test/unit/execution/story-orchestrator-revalidation-carveout.test.ts": {
       "looseCast": 4
     },
@@ -776,8 +773,7 @@
       "asNever": 1
     },
     "test/unit/operations/reviewer-verdict-invariant.test.ts": {
-      "looseCast": 1,
-      "asNever": 5
+      "looseCast": 1
     },
     "test/unit/operations/full-suite-gate.test.ts": {
       "looseCast": 1
@@ -1019,9 +1015,6 @@
     },
     "test/unit/cli/plan-decompose-adapter.test.ts": {
       "looseCast": 2
-    },
-    "test/unit/cli/prompts-export.test.ts": {
-      "asNever": 5
     },
     "test/unit/cli/init-detect.test.ts": {
       "looseCast": 25
