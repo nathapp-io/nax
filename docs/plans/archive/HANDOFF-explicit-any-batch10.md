@@ -1,6 +1,6 @@
 # HANDOFF — `noExplicitAny` drain, batch 10 (the thirty-four-file tier tied at 2)
 
-Delegation brief for the queue head recorded in `STATUS-test-debt-drain.md` §8.22. Read that
+Delegation brief for the queue head recorded in `LOG-no-explicit-any-drain.md` §8.22 (archived from `../STATUS-test-debt-drain.md`). Read that
 doc's **§4 (forbidden list), §3 (per-commit loop), §5 (escalation rules)** before starting —
 they are binding and are not repeated in full here. Also read **§0.1**: biome is the
 authoritative counter, the regex ratchet is only the fast tripwire.

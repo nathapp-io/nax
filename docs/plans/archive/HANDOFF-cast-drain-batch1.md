@@ -1,6 +1,7 @@
 # HANDOFF — `as unknown as` drain, batch 1
 
-Delegation brief for the current target in `STATUS-test-debt-drain.md` §1. Read that doc's
+Completed brief for the `as unknown as` drain, which was the current target in
+`../STATUS-test-debt-drain.md` §1 when this was written; that log is now §8.1–§8.13. Read that doc's
 §2–§5 (the loop, the forbidden list, the escalation rules) before starting. They are binding
 and are not repeated in full here.
 
