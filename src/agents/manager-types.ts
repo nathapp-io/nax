@@ -230,6 +230,16 @@ export interface IAgentManager {
   completeAs(agentName: string, prompt: string, options: CompleteOptions): Promise<CompleteResult>;
 
   /**
+   * As `completeAs`, but surfaces the agent-swap records the call produced.
+   *
+   * nax#1712: callers that can attribute hops to a story (currently `callOp`'s
+   * complete branch) use this and hand `outcome.fallbacks` to the run-scoped sink;
+   * callers that cannot — the debate resolvers, `complete()` — keep using
+   * `completeAs`, which unwraps this.
+   */
+  completeAsWithFallback(agentName: string, prompt: string, options: CompleteOptions): Promise<AgentCompleteOutcome>;
+
+  /**
    * Send one prompt against a caller-managed session handle (Phase C).
    * The caller opens the handle via SessionManager.openSession; AgentManager
    * applies the middleware envelope (audit, cost, cancellation, logging) around

@@ -6,7 +6,6 @@
  */
 
 import { EventEmitter } from "node:events";
-import { trackedSpawnDeadlines } from "@/config";
 import type { AgentManagerConfig } from "@/config/selectors";
 import { resolvePermissions } from "../config/permissions";
 import type { AdapterFailure } from "../context/engine";
@@ -19,10 +18,15 @@ import type { MiddlewareContext } from "../runtime/agent-middleware";
 import { MiddlewareChain } from "../runtime/agent-middleware";
 import type { IDispatchEventBus } from "../runtime/dispatch-events";
 import { DispatchEventBus } from "../runtime/dispatch-events";
-import { formatSessionName } from "../runtime/session-name";
 import { cancellableDelay } from "../utils/bun-deps";
 import { classifyCompleteException } from "./complete-exception-classifier";
-import { buildCompleteEvent, buildDispatchErrorEvent, buildSessionTurnEvent } from "./manager-dispatch";
+import {
+  buildCompleteCallPreamble,
+  buildCompleteEvent,
+  buildDispatchErrorEvent,
+  buildFallbackRecord,
+  buildSessionTurnEvent,
+} from "./manager-dispatch";
 import type {
   AgentCompleteOutcome,
   AgentFallbackRecord,
@@ -39,6 +43,7 @@ import { createAgentRegistry } from "./registry";
 import { defaultRetryStrategy } from "./retry/default-strategy";
 import { describeRetryLogEvent, type SameAgentRetryState, trySameAgentRetry } from "./retry/hop-retry-policy";
 import type { RetryContext, RetryStrategy } from "./retry/types";
+import { availableCandidates, credentialCandidates, decideSwap, logSwapDecline } from "./swap-decision";
 import type { AgentResult, AgentRunOptions, CompleteOptions, CompleteResult, ResolvedCompleteOptions } from "./types";
 
 type LoggerLike = {
@@ -82,6 +87,7 @@ export class AgentManager implements IAgentManager {
     return ee;
   })();
   private readonly _logger: LoggerLike;
+  private readonly _loggerOverride: LoggerLike | undefined;
   private _middleware: MiddlewareChain;
   private _runId: string;
   private _sendPrompt: SendPromptFn | undefined;
@@ -106,6 +112,7 @@ export class AgentManager implements IAgentManager {
   ) {
     this._config = config;
     this._registry = registry;
+    this._loggerOverride = opts?.logger;
     this._logger = opts?.logger ?? getSafeLogger() ?? { warn: () => {}, info: () => {} };
     this._middleware = opts?.middleware ?? MiddlewareChain.empty();
     this._runId = opts?.runId ?? crypto.randomUUID();
@@ -162,13 +169,7 @@ export class AgentManager implements IAgentManager {
   }
   async validateCredentials(): Promise<void> {
     const primary = this.getDefault();
-    const map = (this._config.agent?.fallback?.map ?? {}) as Record<string, string[]>;
-    const candidates = new Set<string>([primary]);
-    for (const [from, tos] of Object.entries(map)) {
-      candidates.add(from);
-      for (const to of tos) candidates.add(to);
-    }
-    for (const name of candidates) {
+    for (const name of credentialCandidates(this._config.agent?.fallback?.map, primary)) {
       const adapter = this._resolveRegistry().getAgent(name);
       if (!adapter || typeof adapter.hasCredentials !== "function") continue;
       const ok = await adapter.hasCredentials();
@@ -187,32 +188,18 @@ export class AgentManager implements IAgentManager {
     }
   }
 
+  private readonly _isExcluded = (c: string): boolean => this._prunedFallback.has(c) || this.isUnavailable(c);
+
   resolveFallbackChain(agent: string, _failure: AdapterFailure): string[] {
-    const map = (this._config.agent?.fallback?.map ?? {}) as Record<string, string[]>;
-    const raw = map[agent] ?? [];
-    return raw.filter((a) => !this._prunedFallback.has(a) && !this.isUnavailable(a));
+    return availableCandidates(this._config.agent?.fallback?.map, agent, this._isExcluded);
   }
 
   shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number, hasBundle: boolean): boolean {
-    if (!failure) return false;
-    // abort = no swap (teardown); timeout = no swap (US-001 AC11, pool poison).
-    if (failure.outcome === "fail-aborted" || failure.outcome === "fail-timeout") return false;
-    const fallback = this._config.agent?.fallback;
-    if (!fallback?.enabled) return false;
-    if (!hasBundle) return false;
-    if (hopsSoFar >= (fallback.maxHopsPerStory ?? 2)) return false;
-    if (failure.category === "availability") return true;
-    return fallback.onQualityFailure ?? false;
+    return decideSwap(failure, hopsSoFar, hasBundle, this._config.agent?.fallback).swap;
   }
 
   nextCandidate(current: string, _hopsSoFar: number): string | null {
-    const map = (this._config.agent?.fallback?.map ?? {}) as Record<string, string[]>;
-    // Filter out pruned and already-unavailable candidates; return the first available one.
-    // Callers pass the primary agent (not the most-recently-failed agent) so flat maps like
-    // { claude: ["codex", "gemini"] } work correctly: unavailable agents are filtered out and
-    // the next available candidate in order is returned.
-    const candidates = (map[current] ?? []).filter((a) => !this._prunedFallback.has(a) && !this.isUnavailable(a));
-    return candidates[0] ?? null;
+    return availableCandidates(this._config.agent?.fallback?.map, current, this._isExcluded)[0] ?? null;
   }
 
   // Swap hops produced here reach StoryMetrics.fallback via the run-scoped
@@ -220,7 +207,7 @@ export class AgentManager implements IAgentManager {
   // callOp seam (#1707) — result-side data never back-flows through
   // CallContext, per .claude/rules/adapter-wiring.md Rule 6.
   async runWithFallback(request: AgentRunRequest, primaryAgentOverride?: string): Promise<AgentRunOutcome> {
-    const logger = getSafeLogger();
+    const logger = this._loggerOverride ?? getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
     let currentAgent = primaryAgent;
@@ -305,16 +292,14 @@ export class AgentManager implements IAgentManager {
           currentRunOptions =
             retryDecision.outcome === "timeout-retry" ? retryDecision.currentRunOptions : currentRunOptions;
 
-          const retryHop: AgentFallbackRecord = {
+          const retryHop = buildFallbackRecord({
             storyId: request.runOptions.storyId,
             priorAgent: currentAgent,
             newAgent: currentAgent,
             hop: retryDecision.kind.attempt,
-            outcome: retryDecision.fallbackRecord.outcome,
-            category: retryDecision.fallbackRecord.category,
-            timestamp: new Date().toISOString(),
+            failure: retryDecision.fallbackRecord,
             costUsd: retryDecision.fallbackRecord.costUsd,
-          };
+          });
           const logEvent = describeRetryLogEvent(retryDecision, request.runOptions.storyId, currentAgent);
           if (logEvent.recordFallback) {
             fallbacks.push(retryHop);
@@ -342,7 +327,16 @@ export class AgentManager implements IAgentManager {
         // context rebuild to decide whether to swap to a fallback agent.
         const hasBundleForSwap = !!bundleForSwapCheck || isFailStale;
 
-        if (!this.shouldSwap(result.adapterFailure, hopsSoFar, hasBundleForSwap)) {
+        const fb = this._config.agent?.fallback;
+        const swapDecision = decideSwap(result.adapterFailure, hopsSoFar, hasBundleForSwap, fb);
+        if (!swapDecision.swap) {
+          // #1713: the neighbouring terminal exits below emit; this one was silent.
+          logSwapDecline(logger, swapDecision.reason, {
+            storyId: request.runOptions.storyId,
+            agent: currentAgent,
+            hopsSoFar,
+            failure: result.adapterFailure,
+          });
           // For fail-stale with no swap available: exit immediately without backoff.
           // The session was stale — retrying with backoff won't help if no fallback exists.
           if (isFailStale) {
@@ -418,16 +412,14 @@ export class AgentManager implements IAgentManager {
         currentBundle = updatedBundle;
         currentHopKind = { kind: "swap", failure: adapterFailure };
 
-        const hop: AgentFallbackRecord = {
+        const hop = buildFallbackRecord({
           storyId: request.runOptions.storyId,
           priorAgent: currentAgent,
           newAgent: next,
           hop: hopsSoFar,
-          outcome: adapterFailure.outcome,
-          category: adapterFailure.category,
-          timestamp: new Date().toISOString(),
+          failure: adapterFailure,
           costUsd: result.estimatedCostUsd ?? 0,
-        };
+        });
         fallbacks.push(hop);
         this._emitter.emit("onSwapAttempt", hop);
 
@@ -465,7 +457,7 @@ export class AgentManager implements IAgentManager {
     options: ResolvedCompleteOptions,
     primaryAgentOverride?: string,
   ): Promise<AgentCompleteOutcome> {
-    const logger = getSafeLogger();
+    const logger = this._loggerOverride ?? getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
     let currentAgent = primaryAgent;
@@ -534,16 +526,14 @@ export class AgentManager implements IAgentManager {
         const isFailStale = result.adapterFailure.outcome === "fail-stale";
         if (isFailStale && result.adapterFailure.retriable && staleRetryAttempts < maxStaleRetries) {
           staleRetryAttempts++;
-          const retryHop: AgentFallbackRecord = {
+          const retryHop = buildFallbackRecord({
             storyId: options.storyId,
             priorAgent: currentAgent,
             newAgent: currentAgent,
             hop: staleRetryAttempts,
-            outcome: result.adapterFailure.outcome,
-            category: result.adapterFailure.category,
-            timestamp: new Date().toISOString(),
+            failure: result.adapterFailure,
             costUsd: result.estimatedCostUsd,
-          };
+          });
           fallbacks.push(retryHop);
           this._emitter.emit("onSwapAttempt", retryHop);
           logger?.info("agent-manager", "completeWithFallback: fail-stale same-agent retry", {
@@ -555,9 +545,15 @@ export class AgentManager implements IAgentManager {
           continue;
         }
 
-        // completeWithFallback has no ContextBundle object, but swap is still allowed on
-        // availability failures — pass true so the hasBundle guard does not block swapping.
-        if (!this.shouldSwap(result.adapterFailure, hopsSoFar, true)) {
+        // No ContextBundle here, but swap is still allowed: pass true past the hasBundle gate.
+        const dec = decideSwap(result.adapterFailure, hopsSoFar, true, this._config.agent?.fallback);
+        if (!dec.swap) {
+          logSwapDecline(logger, dec.reason, {
+            storyId: options.storyId,
+            agent: currentAgent,
+            hopsSoFar,
+            failure: result.adapterFailure,
+          });
           _finalStatus = hopsSoFar > 0 ? "exhausted" : "error";
           return { result, fallbacks };
         }
@@ -572,15 +568,14 @@ export class AgentManager implements IAgentManager {
 
         hopsSoFar += 1;
 
-        const hop: AgentFallbackRecord = {
+        const hop = buildFallbackRecord({
+          storyId: options.storyId,
           priorAgent: currentAgent,
           newAgent: next,
           hop: hopsSoFar,
-          outcome: result.adapterFailure.outcome,
-          category: result.adapterFailure.category,
-          timestamp: new Date().toISOString(),
+          failure: result.adapterFailure,
           costUsd: result.estimatedCostUsd,
-        };
+        });
         fallbacks.push(hop);
         this._emitter.emit("onSwapAttempt", hop);
 
@@ -711,23 +706,22 @@ export class AgentManager implements IAgentManager {
     }
   }
 
-  async completeAs(agentName: string, prompt: string, options: CompleteOptions): Promise<CompleteResult> {
+  /**
+   * One-shot completion pinned to an agent, surfacing its agent-swap records (nax#1712).
+   * `completeAs` owned this body and dropped `outcome.fallbacks`; the records are result-side,
+   * so they ride a sibling return value (adapter-wiring Rule 6) as `runWithFallback` does.
+   */
+  async completeAsWithFallback(
+    agentName: string,
+    prompt: string,
+    options: CompleteOptions,
+  ): Promise<AgentCompleteOutcome> {
     const stage = options.pipelineStage ?? "complete";
-    const resolvedPermissions = resolvePermissions(options.config ?? this._config, stage);
-    const augmented: ResolvedCompleteOptions = {
-      ...options,
-      resolvedPermissions,
-      promptRetries: this._config.agent?.acp?.promptRetries,
-      ...trackedSpawnDeadlines(this._config),
-    };
-    const sessionName =
-      options.sessionName ??
-      formatSessionName({
-        workdir: options.workdir ?? "",
-        featureName: options.featureName,
-        storyId: options.storyId,
-        role: options.sessionRole,
-      });
+    const { resolvedPermissions, augmented, sessionName } = buildCompleteCallPreamble({
+      options,
+      config: this._config,
+      stage,
+    });
     const start = Date.now();
     try {
       const outcome = await this.completeWithFallback(prompt, augmented, agentName);
@@ -746,7 +740,7 @@ export class AgentManager implements IAgentManager {
         startedAt: start,
       });
       this._dispatchEvents.emitDispatch(event);
-      return outcome.result;
+      return outcome;
     } catch (err) {
       const errEvent = buildDispatchErrorEvent({
         origin: "completeAs",
@@ -763,6 +757,10 @@ export class AgentManager implements IAgentManager {
       this._dispatchEvents.emitDispatchError(errEvent);
       throw err;
     }
+  }
+
+  async completeAs(agentName: string, prompt: string, options: CompleteOptions): Promise<CompleteResult> {
+    return (await this.completeAsWithFallback(agentName, prompt, options)).result;
   }
 
   close(): void {
