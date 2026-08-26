@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { makeMockAgentManager, makeMockRuntime, makeSpawn, withTempDir } from "@test/helpers";
+import { assertDefined, makeMockAgentManager, makeMockRuntime, makeSpawn, withTempDir } from "@test/helpers";
 import type { AgentResult } from "@/agents/types";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { SemanticStory } from "@/review/semantic";
@@ -223,7 +223,11 @@ describe("unverifiable finding handling", () => {
     expect(result.success).toBe(true);
     expect(result.output).toContain("advisory");
     expect(result.advisoryFindings).toBeDefined();
-    expect(result.advisoryFindings![0].message).toBe("Minor observation");
+    const advisoryFindings = result.advisoryFindings;
+    assertDefined(advisoryFindings, "result.advisoryFindings");
+    const firstAdvisory = advisoryFindings[0];
+    assertDefined(firstAdvisory, "result.advisoryFindings[0]");
+    expect(firstAdvisory.message).toBe("Minor observation");
   });
 
   test("ref mode downgrades error findings that were not verified against files", async () => {

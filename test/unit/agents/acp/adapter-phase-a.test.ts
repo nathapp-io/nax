@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { SessionTurnError } from "@/agents";
 import { _acpAdapterDeps, AcpAgentAdapter, type AcpSessionHandleImpl } from "@/agents/acp/adapter";
 import type { AdapterInteraction } from "@/agents/interaction-handler";
@@ -569,7 +570,8 @@ describe("sendTurn()", () => {
 
     expect(result.estimatedCostUsd).toBeGreaterThan(0);
     expect(result.exactCostUsd).toBeDefined();
-    const drift = Math.abs(result.exactCostUsd! - result.estimatedCostUsd) / result.estimatedCostUsd;
+    assertDefined(result.exactCostUsd, "result.exactCostUsd");
+    const drift = Math.abs(result.exactCostUsd - result.estimatedCostUsd) / result.estimatedCostUsd;
     expect(drift).toBeLessThan(0.5);
   });
 

@@ -10,6 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { initLogger, resetLogger } from "@/logger";
 import type { StoryMetrics } from "@/metrics";
 import type { PipelineEvent } from "@/pipeline/event-bus";
@@ -113,8 +114,8 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     );
 
     const rectMetrics = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
-    expect(rectMetrics).toBeDefined();
-    expect(rectMetrics!.source).toBe("rectification");
+    assertDefined(rectMetrics, "rectMetrics");
+    expect(rectMetrics.source).toBe("rectification");
   });
 
   test("rectified story metrics carries rectificationCost equal to conflict.cost", async () => {
@@ -141,9 +142,9 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     );
 
     const rectMetrics = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
-    expect(rectMetrics).toBeDefined();
-    expect(rectMetrics!.source).toBe("rectification");
-    expect(rectMetrics!.rectificationCost).toBe(0.04);
+    assertDefined(rectMetrics, "rectMetrics");
+    expect(rectMetrics.source).toBe("rectification");
+    expect(rectMetrics.rectificationCost).toBe(0.04);
   });
 
   test("non-rectified conflict (rectified: false) does NOT produce a 'rectification' source entry", async () => {

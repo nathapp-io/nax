@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeStory } from "@test/helpers";
+import { assertDefined, makeStory } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { initLogger, resetLogger } from "@/logger";
@@ -123,8 +123,10 @@ describe("LLM routing config accepts retry and timeout fields with correct defau
       },
     };
 
-    expect(config.routing.llm!.retries).toBe(2);
-    expect(config.routing.llm!.retryDelayMs).toBe(500);
+    const llm = config.routing.llm;
+    assertDefined(llm, "config.routing.llm");
+    expect(llm.retries).toBe(2);
+    expect(llm.retryDelayMs).toBe(500);
   });
 
   test("retries defaults to undefined — callLlm uses 1 internally", () => {
@@ -140,7 +142,9 @@ describe("LLM routing config accepts retry and timeout fields with correct defau
       },
     };
 
-    expect(config.routing.llm!.retries).toBeUndefined();
+    const llm = config.routing.llm;
+    assertDefined(llm, "config.routing.llm");
+    expect(llm.retries).toBeUndefined();
   });
 
   test("effective timeout defaults to 30000ms (raised from 15000)", () => {
@@ -157,7 +161,9 @@ describe("LLM routing config accepts retry and timeout fields with correct defau
     };
 
     // When timeoutMs unset, callLlm applies 30000 default (not old 15000)
-    const effectiveTimeout = config.routing.llm!.timeoutMs ?? 30000;
+    const llm = config.routing.llm;
+    assertDefined(llm, "config.routing.llm");
+    const effectiveTimeout = llm.timeoutMs ?? 30000;
     expect(effectiveTimeout).toBe(30000);
   });
 
@@ -170,7 +176,9 @@ describe("LLM routing config accepts retry and timeout fields with correct defau
       },
     };
 
-    expect(config.routing.llm!.retries).toBe(0);
+    const llm = config.routing.llm;
+    assertDefined(llm, "config.routing.llm");
+    expect(llm.retries).toBe(0);
   });
 
   test("NaxConfigSchema validates retries and retryDelayMs", async () => {

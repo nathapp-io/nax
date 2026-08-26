@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { DeepPartial } from "@test/helpers";
-import { makeNaxConfig, makeSpawn, makeStory, makeTestRuntime } from "@test/helpers";
+import { assertDefined, makeNaxConfig, makeSpawn, makeStory, makeTestRuntime } from "@test/helpers";
 import type { ConfigSelector, NaxConfig } from "@/config";
 import { _newPackageSetupDeps, markNewPackageDirs } from "@/execution";
 import type { CallContext, FullSuiteGateDeps, FullSuiteGateInput } from "@/operations";
@@ -134,7 +134,8 @@ describe("fullSuiteGateOp — test execution logic (US-006)", () => {
     expect(out.success).toBe(false);
     expect(out.status).toBe("execution-failed");
     expect(out.findings).toHaveLength(1);
-    const f = out.findings[0]!;
+    const f = out.findings[0];
+    assertDefined(f, "out.findings[0]");
     expect(f.source).toBe("test-runner");
     expect(f.category).toBe("execution-failed");
     expect(f.severity).toBe("error");

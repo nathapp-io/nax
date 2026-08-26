@@ -10,6 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { _scratchPurgeDeps, purgeStaleScratch } from "@/session/scratch-purge";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,7 +138,9 @@ describe("purgeStaleScratch", () => {
     const count = await purgeStaleScratch(PROJECT_DIR, FEATURE, 7, true);
     expect(count).toBe(1);
     expect(moved).toHaveLength(1);
-    const [src, dest] = moved[0]!;
+    const movedEntry = moved[0];
+    assertDefined(movedEntry, "moved[0]");
+    const [src, dest] = movedEntry;
     expect(src).toContain("sess-old");
     expect(dest).toContain("_archive");
     expect(dest).toContain("sess-old");
@@ -147,7 +150,9 @@ describe("purgeStaleScratch", () => {
     const moved: Array<[string, string]> = [];
     setupDeps([{ id: "sess-abc", lastActivityAt: daysAgo(9) }], [], moved);
     await purgeStaleScratch(PROJECT_DIR, FEATURE, 7, true);
-    const [_src, dest] = moved[0]!;
+    const movedEntry = moved[0];
+    assertDefined(movedEntry, "moved[0]");
+    const [_src, dest] = movedEntry;
     expect(dest).toBe(`${PROJECT_DIR}/.nax/features/${FEATURE}/_archive/sessions/sess-abc`);
   });
 

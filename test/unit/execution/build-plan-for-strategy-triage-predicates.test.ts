@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
+  assertDefined,
   makeMockCallContext,
   makeMockPlanInputs,
   makeNaxConfig,
@@ -150,12 +151,14 @@ describe("buildPlanForStrategy — AC2/AC3/AC4: triage strategy predicate behavi
     const story = makeStory({ attempts: 1 });
     const config = withTriageNbf();
     const ctx = makeCtxWithRuntime(config);
+    const adversarialConfig = config.review.adversarial;
+    assertDefined(adversarialConfig, "config.review.adversarial");
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
         workdir: "/tmp/test",
-        adversarialConfig: config.review.adversarial!,
-        mode: config.review.adversarial!.diffMode,
+        adversarialConfig,
+        mode: adversarialConfig.diffMode,
       },
       rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
     });
@@ -264,8 +267,8 @@ describe("buildPlanForStrategy — AC5/AC6: default-preserving factory options +
       expect(mainRectSet.length).toBeGreaterThan(0);
       const implementer = mainRectSet.find((strategy) => strategy.name === "autofix-implementer");
       const testWriter = mainRectSet.find((strategy) => strategy.name === "autofix-test-writer");
-      expect(implementer).toBeDefined();
-      expect(testWriter).toBeDefined();
+      assertDefined(implementer, "implementer");
+      assertDefined(testWriter, "testWriter");
       // Source-targeted adversarial finding (category ∈ BLOCKING_CATEGORIES) must
       // go to the implementer, which can edit source — NOT the test-writer, which
       // is forbidden from touching source. Prior to #1333 this was inverted and
@@ -277,8 +280,8 @@ describe("buildPlanForStrategy — AC5/AC6: default-preserving factory options +
         message: "source correctness bug",
         fixTarget: "source",
       };
-      expect(implementer!.appliesTo(sourceFinding)).toBe(true);
-      expect(testWriter!.appliesTo(sourceFinding)).toBe(false);
+      expect(implementer.appliesTo(sourceFinding)).toBe(true);
+      expect(testWriter.appliesTo(sourceFinding)).toBe(false);
       // Test-targeted adversarial finding still goes to the test-writer.
       const testFinding: import("@/findings").Finding = {
         source: "adversarial-review",
@@ -287,8 +290,8 @@ describe("buildPlanForStrategy — AC5/AC6: default-preserving factory options +
         message: "missing coverage",
         fixTarget: "test",
       };
-      expect(testWriter!.appliesTo(testFinding)).toBe(true);
-      expect(implementer!.appliesTo(testFinding)).toBe(false);
+      expect(testWriter.appliesTo(testFinding)).toBe(true);
+      expect(implementer.appliesTo(testFinding)).toBe(false);
     } finally {
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
       _storyOrchestratorDeps.callOp = origCallOp;

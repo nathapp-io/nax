@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMockCallContext, makeNaxConfig } from "@test/helpers";
+import { assertDefined, makeMockCallContext, makeNaxConfig } from "@test/helpers";
 import type { Finding, FixCycleContext } from "@/findings";
 import type { FullSuiteRectifyInput, FullSuiteRectifyOutput, TestEditDeclaration } from "@/operations";
 import {
@@ -84,7 +84,9 @@ describe("makeFullSuiteRectifyStrategy", () => {
     const input = strategy.buildInput([finding], [], makeFixCycleContext());
     expect(input.story).toBe(story);
     expect(typeof input.contextMarkdown).toBe("string");
-    expect(input.contextMarkdown!.length).toBeGreaterThan(0);
+    const contextMarkdown = input.contextMarkdown;
+    assertDefined(contextMarkdown, "input.contextMarkdown");
+    expect(contextMarkdown.length).toBeGreaterThan(0);
   });
 
   test("each call returns a new strategy instance closing over its own story", () => {

@@ -14,6 +14,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { _acpAdapterDeps } from "@/agents/acp/adapter";
 import { AgentManager } from "@/agents/manager";
 import type { SessionHandle, TurnResult } from "@/agents/types";
@@ -244,19 +245,22 @@ describe("runTrackedSession — dispatch emission", () => {
     return {
       sessions,
       transition: mock((_id, to) => {
-        const d = sessions.get(_id)!;
+        const d = sessions.get(_id);
+        assertDefined(d, "sessions.get(_id)");
         const updated = { ...d, state: to } as SessionDescriptor;
         sessions.set(_id, updated);
         return updated;
       }),
       bindHandle: mock((_id, handle, pids) => {
-        const d = sessions.get(_id)!;
+        const d = sessions.get(_id);
+        assertDefined(d, "sessions.get(_id)");
         const updated = { ...d, handle, protocolIds: pids };
         sessions.set(_id, updated);
         return updated;
       }),
       handoff: mock((_id, agent) => {
-        const d = sessions.get(_id)!;
+        const d = sessions.get(_id);
+        assertDefined(d, "sessions.get(_id)");
         const updated = { ...d, agent };
         sessions.set(_id, updated);
         return updated;

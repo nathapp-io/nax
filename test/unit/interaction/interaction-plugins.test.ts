@@ -7,6 +7,7 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { createHmac } from "node:crypto";
+import { assertDefined } from "@test/helpers";
 import type { InteractionRequest } from "@/interaction";
 import { _webhookPluginDeps, WebhookInteractionPlugin } from "@/interaction/plugins/webhook";
 import { addSink, initLogger, resetLogger } from "@/logger";
@@ -142,7 +143,8 @@ describe("WebhookInteractionPlugin - send() and HMAC validation", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    const callbackPort = plugin.callbackServerPort!;
+    const callbackPort = plugin.callbackServerPort;
+    assertDefined(callbackPort, "plugin.callbackServerPort");
 
     try {
       // POST without signature → 401
@@ -220,7 +222,8 @@ describe("WebhookInteractionPlugin - rate limiting (SEC-8)", () => {
     }
     await Promise.resolve();
     await Promise.resolve();
-    const port = plugin.callbackServerPort!;
+    const port = plugin.callbackServerPort;
+    assertDefined(port, "plugin.callbackServerPort");
 
     try {
       const statuses: number[] = [];
@@ -255,7 +258,8 @@ describe("WebhookInteractionPlugin - rate limiting (SEC-8)", () => {
     void plugin.receive("sec8-retry-after-2", 4000);
     await Promise.resolve();
     await Promise.resolve();
-    const port = plugin.callbackServerPort!;
+    const port = plugin.callbackServerPort;
+    assertDefined(port, "plugin.callbackServerPort");
 
     try {
       const under = await postCallback(port, "sec8-retry-after-1");
@@ -290,7 +294,8 @@ describe("WebhookInteractionPlugin - rate limiting (SEC-8)", () => {
     void plugin.receive("sec8-window-2", 4000);
     await Promise.resolve();
     await Promise.resolve();
-    const port = plugin.callbackServerPort!;
+    const port = plugin.callbackServerPort;
+    assertDefined(port, "plugin.callbackServerPort");
 
     try {
       const first = await postCallback(port, "sec8-window-1");
@@ -330,7 +335,8 @@ describe("WebhookInteractionPlugin - rate limiting (SEC-8)", () => {
     const receivePromise = plugin.receive("sec8-auth-1", 4000);
     await Promise.resolve();
     await Promise.resolve();
-    const port = plugin.callbackServerPort!;
+    const port = plugin.callbackServerPort;
+    assertDefined(port, "plugin.callbackServerPort");
 
     try {
       // The pre-auth bucket is a generous multiple of rateLimitMaxRequests
@@ -373,7 +379,8 @@ describe("WebhookInteractionPlugin - rate limiting (SEC-8)", () => {
     const receivePromise = plugin.receive("sec8-starve-1", 4000);
     await Promise.resolve();
     await Promise.resolve();
-    const port = plugin.callbackServerPort!;
+    const port = plugin.callbackServerPort;
+    assertDefined(port, "plugin.callbackServerPort");
 
     try {
       // Send more unauthenticated noise than the OLD single-bucket budget (2)
@@ -424,7 +431,8 @@ describe("WebhookInteractionPlugin - rate limiting (SEC-8)", () => {
     }
     await Promise.resolve();
     await Promise.resolve();
-    const port = plugin.callbackServerPort!;
+    const port = plugin.callbackServerPort;
+    assertDefined(port, "plugin.callbackServerPort");
 
     async function postAuthed(requestId: string): Promise<Response> {
       const payload = JSON.stringify({ requestId, action: "approve", respondedAt: Date.now() });

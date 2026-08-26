@@ -377,7 +377,9 @@ describe("testPatterns", () => {
     expect(r.testPatterns?.regex.length).toBeGreaterThan(0);
     // Rebuildable, and actually classifying — a plain string list would pass a
     // length assertion while being useless to the consumer.
-    const matchers = r.testPatterns!.regex.map((s) => new RegExp(s));
+    const testPatterns = r.testPatterns;
+    assertDefined(testPatterns, "r.testPatterns");
+    const matchers = testPatterns.regex.map((s) => new RegExp(s));
     expect(matchers.some((re) => re.test("test/unit/a.test.ts"))).toBe(true);
     expect(matchers.some((re) => re.test("src/scheduler.ts"))).toBe(false);
   });

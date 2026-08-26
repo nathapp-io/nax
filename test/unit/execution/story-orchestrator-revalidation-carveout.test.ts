@@ -9,7 +9,7 @@
  * discarded and then failed on by the staleness guard).
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeTestRuntime } from "@test/helpers";
+import { assertDefined, makeTestRuntime } from "@test/helpers";
 import { _storyOrchestratorDeps, type RectificationOverrides, runRectification } from "@/execution";
 import type { FixCycle, FixCycleContext, FixCycleExitReason, ValidateResult } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
@@ -130,8 +130,8 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
     phaseOutputs: Record<string, unknown>,
     overrides: Parameters<typeof runRectification>[4],
   ): Promise<{ cycle: FixCycle<Finding>; cycleCtx: FixCycleContext }> {
-    let cycle: FixCycle<Finding> | null = null;
-    let cycleCtx: FixCycleContext | null = null;
+    let cycle: FixCycle<Finding> | undefined;
+    let cycleCtx: FixCycleContext | undefined;
     _storyOrchestratorDeps.runFixCycle = mock(async (c: FixCycle<Finding>, cc: FixCycleContext) => {
       cycle = c;
       cycleCtx = cc;
@@ -140,15 +140,15 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
 
     await runRectification(ctx, state, {}, phaseOutputs, overrides);
     failGateOnly();
-    expect(cycle).not.toBeNull();
-    expect(cycleCtx).not.toBeNull();
-    return { cycle: cycle!, cycleCtx: cycleCtx! };
+    assertDefined(cycle, "cycle");
+    assertDefined(cycleCtx, "cycleCtx");
+    return { cycle, cycleCtx };
   }
 
   test("US-002 production composition: no-progress reason outranks count-increase", async () => {
     const ctx = makeCtx();
     const before = [ADVISORY];
-    let capturedCycle: FixCycle<Finding> | null = null;
+    let capturedCycle: FixCycle<Finding> | undefined;
     _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>) => {
       capturedCycle = cycle;
       return { iterations: [], finalFindings: [], exitReason: "resolved" as FixCycleExitReason, costUsd: 0 };
@@ -179,8 +179,8 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
       startedAt: "2026-01-01T00:00:00.000Z",
       finishedAt: "2026-01-01T00:00:01.000Z",
     }));
-    expect(capturedCycle).not.toBeNull();
-    const reason = capturedCycle!.strategies[0]?.bailWhen?.(iterations);
+    assertDefined(capturedCycle, "capturedCycle");
+    const reason = capturedCycle.strategies[0]?.bailWhen?.(iterations);
     expect(reason).toContain("no finding resolved");
   });
 
@@ -234,8 +234,8 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
       verifier: { success: true, passed: true, findings: [] },
       "lint-check": { success: false, passed: false, findings: [LINT_FINDING] },
     };
-    let cycle: FixCycle<Finding> | null = null;
-    let cycleCtx: FixCycleContext | null = null;
+    let cycle: FixCycle<Finding> | undefined;
+    let cycleCtx: FixCycleContext | undefined;
     _storyOrchestratorDeps.runFixCycle = mock(async (c: FixCycle<Finding>, cc: FixCycleContext) => {
       cycle = c;
       cycleCtx = cc;
@@ -251,9 +251,9 @@ describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale 
     );
     failGateOnly();
 
-    expect(cycle).not.toBeNull();
-    expect(cycleCtx).not.toBeNull();
-    const result = await cycle!.validate(cycleCtx!, {
+    assertDefined(cycle, "cycle");
+    assertDefined(cycleCtx, "cycleCtx");
+    const result = await cycle.validate(cycleCtx, {
       mode: "full",
       strategiesRun: ["autofix-implementer"],
     });

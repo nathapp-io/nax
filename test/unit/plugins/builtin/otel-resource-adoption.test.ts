@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { mockFetch } from "@test/helpers";
+import { assertDefined, mockFetch } from "@test/helpers";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { createOtelReporterPlugin } from "@/plugins";
 import { buildHeartbeatMetricsPayload, type HeartbeatSnapshot } from "@/plugins/builtin/otel-reporter/heartbeat";
@@ -341,7 +341,8 @@ describe("US-007 AC6: incremental span flush request carries nax.run_id resource
   test("success: an incremental flush before run end emits nax.run_id on its resource block", async () => {
     const { posts, deps } = capturingPosts();
     const plugin = createOtelReporterPlugin(baseCfg, deps);
-    const r = plugin.extensions.reporter!;
+    const r = plugin.extensions.reporter;
+    assertDefined(r, "plugin.extensions.reporter");
 
     await r.onRunStart?.({
       runId: "inc-run-1",
@@ -382,7 +383,8 @@ describe("US-007 AC6: incremental span flush request carries nax.run_id resource
   test("success: the incremental resource block also carries nax.feature and nax.project", async () => {
     const { posts, deps } = capturingPosts();
     const plugin = createOtelReporterPlugin(baseCfg, deps);
-    const r = plugin.extensions.reporter!;
+    const r = plugin.extensions.reporter;
+    assertDefined(r, "plugin.extensions.reporter");
 
     await r.onRunStart?.({
       runId: "inc-run-2",
@@ -417,7 +419,8 @@ describe("US-007 AC6: incremental span flush request carries nax.run_id resource
   test("boundary: no incremental flush when no spans have been enqueued", async () => {
     const { posts, deps } = capturingPosts();
     const plugin = createOtelReporterPlugin(baseCfg, deps);
-    const r = plugin.extensions.reporter!;
+    const r = plugin.extensions.reporter;
+    assertDefined(r, "plugin.extensions.reporter");
 
     await r.onRunStart?.({
       runId: "inc-run-empty",

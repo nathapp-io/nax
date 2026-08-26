@@ -5,6 +5,7 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { _sessionManagerDeps, SessionManager } from "@/session/manager";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,9 +89,11 @@ describe("SessionManager.resume()", () => {
   test("returns an immutable copy — mutations don't affect registry", () => {
     const mgr = new SessionManager();
     mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
-    const found = mgr.resume("US-001", "implementer")!;
+    const found = mgr.resume("US-001", "implementer");
+    assertDefined(found, "resume result");
     (found as { agent: string }).agent = "mutated";
-    const again = mgr.resume("US-001", "implementer")!;
+    const again = mgr.resume("US-001", "implementer");
+    assertDefined(again, "second resume result");
     expect(again.agent).toBe("claude");
   });
 
@@ -168,7 +171,9 @@ describe("SessionManager.closeStory()", () => {
     // lastActivityAt). The returned `closed` array carries the final descriptor,
     // so the timestamp is verifiable there.
     expect(closed).toHaveLength(1);
-    expect(closed[0]!.lastActivityAt).not.toBe(priorActivity);
+    const closedEntry = closed[0];
+    assertDefined(closedEntry, "closed[0]");
+    expect(closedEntry.lastActivityAt).not.toBe(priorActivity);
   });
 
   test("skips already-COMPLETED sessions", () => {
@@ -176,9 +181,13 @@ describe("SessionManager.closeStory()", () => {
     const desc = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
     mgr.transition(desc.id, "RUNNING");
     mgr.transition(desc.id, "COMPLETED");
-    const firstActivity = mgr.get(desc.id)!.lastActivityAt;
+    const session = mgr.get(desc.id);
+    assertDefined(session, "mgr.get(desc.id)");
+    const firstActivity = session.lastActivityAt;
     mgr.closeStory("US-001"); // second call — should no-op
-    expect(mgr.get(desc.id)!.lastActivityAt).toBe(firstActivity);
+    const afterClose = mgr.get(desc.id);
+    assertDefined(afterClose, "mgr.get(desc.id) after closeStory");
+    expect(afterClose.lastActivityAt).toBe(firstActivity);
   });
 
   test("resume() returns null after closeStory()", () => {

@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeDispatchContext, makeNaxConfig } from "@test/helpers";
+import { assertDefined, makeDispatchContext, makeNaxConfig } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
 import { _acceptanceSetupDeps, acceptanceSetupStage } from "@/pipeline/stages/acceptance-setup";
@@ -220,7 +220,8 @@ describe("acceptance-setup: testFramework appears in generate callOp input", () 
     await acceptanceSetupStage.execute(ctx);
 
     expect(capturedFrameworkOverrideLine).toBeDefined();
-    expect(capturedFrameworkOverrideLine!).toContain("ink-testing-library");
+    assertDefined(capturedFrameworkOverrideLine, "capturedFrameworkOverrideLine");
+    expect(capturedFrameworkOverrideLine).toContain("ink-testing-library");
   });
 
   test("frameworkOverrideLine is empty string when testFramework is not set", async () => {

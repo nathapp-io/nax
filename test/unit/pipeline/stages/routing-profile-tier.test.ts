@@ -9,7 +9,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { makeNaxConfig, makeStory } from "@test/helpers";
+import { assertDefined, makeNaxConfig, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import type { _routingDeps as RoutingDeps } from "@/pipeline/stages/routing";
 import type { PipelineContext } from "@/pipeline/types";
@@ -398,7 +398,9 @@ describe("routingStage — H2: initialAgent / initialProfileId written once", ()
     });
 
     // Simulate escalation changing the agent
-    story.routing!.agent = "claude";
+    const routing = story.routing;
+    assertDefined(routing, "story.routing");
+    routing.agent = "claude";
 
     const ctx = makeCtx(story);
 

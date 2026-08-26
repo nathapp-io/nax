@@ -13,7 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeTestRuntime } from "@test/helpers";
+import { assertDefined, makeTestRuntime } from "@test/helpers";
 import { pickSelector } from "@/config";
 import type { StoryOrchestratorResult } from "@/execution";
 import { _storyOrchestratorDeps, StoryOrchestratorBuilder } from "@/execution";
@@ -358,7 +358,7 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    let capturedCycle: FixCycle<Finding> | null = null;
+    let capturedCycle: FixCycle<Finding> | undefined;
     _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>) => {
       capturedCycle = cycle;
       return {
@@ -374,8 +374,8 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
     await plan.run();
 
     // Gate findings flow through to the cycle — verifier never ran so carve-out doesn't fire.
-    expect(capturedCycle).not.toBeNull();
-    const findings = capturedCycle!.findings;
+    assertDefined(capturedCycle, "capturedCycle");
+    const findings = capturedCycle.findings;
     const hasTestRunnerFinding = findings.some((f) => f.source === "test-runner");
     expect(hasTestRunnerFinding).toBe(true);
   });
@@ -390,7 +390,7 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    let capturedCycle: FixCycle<Finding> | null = null;
+    let capturedCycle: FixCycle<Finding> | undefined;
     _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>) => {
       capturedCycle = cycle;
       return {
@@ -407,8 +407,8 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
 
     // phaseOutputs[verifier] is undefined (verifier never ran), so the cross-iteration
     // carve-out never fires. Gate findings flow to cycle unfiltered.
-    expect(capturedCycle).not.toBeNull();
-    const findings = capturedCycle!.findings;
+    assertDefined(capturedCycle, "capturedCycle");
+    const findings = capturedCycle.findings;
     const hasTestRunnerFinding = findings.some((f) => f.source === "test-runner");
     expect(hasTestRunnerFinding).toBe(true);
   });
@@ -419,7 +419,7 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    let capturedCycle: FixCycle<Finding> | null = null;
+    let capturedCycle: FixCycle<Finding> | undefined;
     _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>) => {
       capturedCycle = cycle;
       return {
@@ -434,8 +434,8 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
     const plan = makePlanWithGateOnly(ctx);
     await plan.run();
 
-    expect(capturedCycle).not.toBeNull();
-    const findings = capturedCycle!.findings;
+    assertDefined(capturedCycle, "capturedCycle");
+    const findings = capturedCycle.findings;
     const hasTestRunnerFinding = findings.some((f) => f.source === "test-runner");
     expect(hasTestRunnerFinding).toBe(true);
   });

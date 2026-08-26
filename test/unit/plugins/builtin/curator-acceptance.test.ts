@@ -35,6 +35,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { CuratorConfigSchema } from "@/config/schemas-infra";
 import { curatorPlugin } from "@/plugins/builtin/curator";
 import type { PostRunContext } from "@/plugins/extensions";
@@ -88,7 +89,9 @@ describe("Curator Plugin Acceptance Criteria Coverage", () => {
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
     };
 
-    const result = await curatorPlugin.extensions.postRunAction!.shouldRun(context);
+    const postRunAction = curatorPlugin.extensions.postRunAction;
+    assertDefined(postRunAction, "postRunAction");
+    const result = await postRunAction.shouldRun(context);
     expect(typeof result).toBe("boolean");
   });
 
@@ -111,7 +114,9 @@ describe("Curator Plugin Acceptance Criteria Coverage", () => {
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
     };
 
-    const result = await curatorPlugin.extensions.postRunAction!.execute(context);
+    const postRunAction = curatorPlugin.extensions.postRunAction;
+    assertDefined(postRunAction, "postRunAction");
+    const result = await postRunAction.execute(context);
     expect(result).toHaveProperty("success");
     expect(result).toHaveProperty("message");
   });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeDispatchContext, makeNaxConfig, waitForCondition } from "@test/helpers";
+import { assertDefined, makeDispatchContext, makeNaxConfig, waitForCondition } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { _acceptanceSetupDeps, acceptanceSetupStage } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
@@ -204,7 +204,7 @@ describe("acceptance-setup: calls refinement and generation", () => {
   });
 
   test("calls generate op with refined criteria (criteriaList contains R:-prefixed entries)", async () => {
-    let capturedCriteriaList: string | null = null;
+    let capturedCriteriaList: string | undefined;
 
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
@@ -227,7 +227,8 @@ describe("acceptance-setup: calls refinement and generation", () => {
     await acceptanceSetupStage.execute(ctx);
 
     expect(capturedCriteriaList).not.toBeNull();
-    const lines = capturedCriteriaList!.split("\n");
+    assertDefined(capturedCriteriaList, "capturedCriteriaList");
+    const lines = capturedCriteriaList.split("\n");
     expect(lines.length).toBe(3);
     expect(lines.every((line) => line.includes("R:"))).toBe(true);
   });
@@ -250,7 +251,7 @@ describe("acceptance-setup: calls refinement and generation", () => {
   });
 
   test("falls back to unrefined criteria when refine op throws (e.g. after retry exhaustion)", async () => {
-    let capturedCriteriaList: string | null = null;
+    let capturedCriteriaList: string | undefined;
 
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
@@ -272,9 +273,10 @@ describe("acceptance-setup: calls refinement and generation", () => {
 
     // generate must still run — with the original (unrefined) AC text
     expect(capturedCriteriaList).not.toBeNull();
-    expect(capturedCriteriaList!).toContain("AC-1: first criterion");
-    expect(capturedCriteriaList!).toContain("AC-2: second criterion");
-    expect(capturedCriteriaList!).toContain("AC-1: third criterion");
+    assertDefined(capturedCriteriaList, "capturedCriteriaList");
+    expect(capturedCriteriaList).toContain("AC-1: first criterion");
+    expect(capturedCriteriaList).toContain("AC-2: second criterion");
+    expect(capturedCriteriaList).toContain("AC-1: third criterion");
   });
 });
 
@@ -337,7 +339,7 @@ describe("acceptance-setup: decomposed story exclusion", () => {
   });
 
   test("decomposed story criteria are not included in the generate criteriaList", async () => {
-    let capturedCriteriaList: string | null = null;
+    let capturedCriteriaList: string | undefined;
     _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
       if (op.name === "acceptance-refine") {
         const { criteria, storyId } = input as { criteria: string[]; storyId: string };
@@ -353,9 +355,10 @@ describe("acceptance-setup: decomposed story exclusion", () => {
     await acceptanceSetupStage.execute(makeDecomposedCtx());
 
     expect(capturedCriteriaList).not.toBeNull();
-    expect(capturedCriteriaList!).not.toContain("parent AC-1");
-    expect(capturedCriteriaList!).toContain("child AC-1");
-    expect(capturedCriteriaList!).toContain("child AC-2");
+    assertDefined(capturedCriteriaList, "capturedCriteriaList");
+    expect(capturedCriteriaList).not.toContain("parent AC-1");
+    expect(capturedCriteriaList).toContain("child AC-1");
+    expect(capturedCriteriaList).toContain("child AC-2");
   });
 });
 
@@ -419,7 +422,7 @@ describe("acceptance-setup: refinement concurrency", () => {
   test("preserves story order regardless of completion order", async () => {
     stubDeps();
     const resolvers = new Map<string, () => void>();
-    let capturedCriteriaList: string | null = null;
+    let capturedCriteriaList: string | undefined;
 
     _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
       if (op.name === "acceptance-refine") {
@@ -444,7 +447,8 @@ describe("acceptance-setup: refinement concurrency", () => {
     await runPromise;
 
     expect(capturedCriteriaList).not.toBeNull();
-    const lines = capturedCriteriaList!.split("\n");
+    assertDefined(capturedCriteriaList, "capturedCriteriaList");
+    const lines = capturedCriteriaList.split("\n");
     // Order must match story order (US-001, US-002, US-003) despite resolving in reverse.
     // Each story's unique criterion number appears in the R: prefix.
     expect(lines[0]).toContain("R:AC-1:");

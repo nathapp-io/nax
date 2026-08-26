@@ -11,7 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { fakeAgentManager, makeAgentAdapter, makeNaxConfig, makeStory } from "@test/helpers";
+import { assertDefined, fakeAgentManager, makeAgentAdapter, makeNaxConfig, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { PipelineContext } from "@/pipeline/types";
@@ -131,7 +131,8 @@ describe("storyId is present in JSONL event payloads", () => {
 
       const call = debugSpy.mock.calls.find(([, msg]) => msg === "Agent tier mismatch — clamping to supported tier");
       expect(call).toBeDefined();
-      expect(call![2]).toEqual(
+      assertDefined(call, "tier mismatch debug call");
+      expect(call[2]).toEqual(
         expect.objectContaining({
           storyId: STORY_ID,
           agentName: "claude",

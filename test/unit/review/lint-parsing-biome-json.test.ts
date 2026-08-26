@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { parseBiomeJson } from "@/review/lint-parsing/strategies/biome-json";
 
 const REAL_BIOME_ERROR_OUTPUT =
@@ -11,10 +12,11 @@ describe("parseBiomeJson — actual --reporter json format", () => {
   test("parses real biome error output", () => {
     const result = parseBiomeJson(REAL_BIOME_ERROR_OUTPUT);
     expect(result).not.toBeNull();
-    expect(result!.format).toBe("biome-json");
-    expect(result!.diagnostics).toHaveLength(1);
+    assertDefined(result, "parseBiomeJson result");
+    expect(result.format).toBe("biome-json");
+    expect(result.diagnostics).toHaveLength(1);
 
-    const diag = result!.diagnostics[0];
+    const diag = result.diagnostics[0];
     expect(diag.file).toBe("/repo/src/foo.ts");
     expect(diag.ruleId).toBe("lint/suspicious/noDebugger");
     expect(diag.message).toBe("This is an unexpected use of the debugger statement.");
@@ -55,8 +57,9 @@ describe("parseBiomeJson — actual --reporter json format", () => {
 
     const result = parseBiomeJson(multi);
     expect(result).not.toBeNull();
-    expect(result!.diagnostics).toHaveLength(2);
-    expect(result!.diagnostics[0].file).toBe("/repo/src/a.ts");
-    expect(result!.diagnostics[1].file).toBe("/repo/src/b.ts");
+    assertDefined(result, "parseBiomeJson result");
+    expect(result.diagnostics).toHaveLength(2);
+    expect(result.diagnostics[0].file).toBe("/repo/src/a.ts");
+    expect(result.diagnostics[1].file).toBe("/repo/src/b.ts");
   });
 });

@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import type { RetryContext, RetryStrategy } from "@/agents";
 import { makeTieredParseRetryStrategy, ParseValidationError } from "@/agents";
 
@@ -124,7 +125,8 @@ describe("makeTieredParseRetryStrategy — AC-3: retry with inspection and retry
     strategy.shouldRetry(new ParseValidationError("probe"), 0, makeCtx({ lastOutput: output }));
 
     expect(logCalls.length).toBe(1);
-    const call = logCalls[0]!;
+    const call = logCalls[0];
+    assertDefined(call, "logCalls[0]");
     expect(call.kind).toBe("test-reviewer");
     expect(call.msg).toContain("Parse retry");
     expect(call.data.storyId).toBe("story-1");

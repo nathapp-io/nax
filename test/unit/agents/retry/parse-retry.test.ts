@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { absentValue } from "@test/helpers";
+import { absentValue, assertDefined } from "@test/helpers";
 import { makeParseRetryStrategy } from "@/agents/retry/parse-retry";
 import type { RetryContext } from "@/agents/retry/types";
 import { ParseValidationError } from "@/agents/retry/types";
@@ -229,7 +229,9 @@ describe("makeParseRetryStrategy", () => {
       strategy.shouldRetry(parseError, 0, makeCtx({ storyId: "story-abc", lastOutput: "bad" }));
 
       expect(warnCalls).toHaveLength(1);
-      const [, , data] = warnCalls[0]!;
+      const firstWarn = warnCalls[0];
+      assertDefined(firstWarn, "warnCalls[0]");
+      const [, , data] = firstWarn;
       const keys = Object.keys(data);
       expect(keys[0]).toBe("storyId");
       expect(data.storyId).toBe("story-abc");
@@ -249,7 +251,9 @@ describe("makeParseRetryStrategy", () => {
         ...opts,
       } as Parameters<typeof makeParseRetryStrategy>[0]);
       strategy.shouldRetry(parseError, 0, makeCtx({ lastOutput }));
-      return warnCalls[0]![2];
+      const firstWarn = warnCalls[0];
+      assertDefined(firstWarn, "warnCalls[0]");
+      return firstWarn[2];
     }
 
     test("includes whitespace-collapsed outputPreview when outputPreviewBytes is set", () => {

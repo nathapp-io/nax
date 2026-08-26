@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import type { MiddlewareContext } from "@/runtime/agent-middleware";
 import { cancellationMiddleware } from "@/runtime/middleware/cancellation";
@@ -20,12 +21,14 @@ function makeCtx(aborted = false): MiddlewareContext {
 describe("cancellationMiddleware", () => {
   test("before() passes through when signal is not aborted", async () => {
     const mw = cancellationMiddleware();
-    await expect(mw.before!(makeCtx(false))).resolves.toBeUndefined();
+    assertDefined(mw.before, "mw.before");
+    await expect(mw.before(makeCtx(false))).resolves.toBeUndefined();
   });
 
   test("before() throws NaxError when signal is already aborted", async () => {
     const mw = cancellationMiddleware();
-    await expect(mw.before!(makeCtx(true))).rejects.toThrow("Agent call cancelled");
+    assertDefined(mw.before, "mw.before");
+    await expect(mw.before(makeCtx(true))).rejects.toThrow("Agent call cancelled");
   });
 
   test("before() passes through when signal is undefined", async () => {
@@ -38,7 +41,8 @@ describe("cancellationMiddleware", () => {
       config: DEFAULT_CONFIG,
       resolvedPermissions: { mode: "approve-reads" },
     };
-    await expect(mw.before!(ctx)).resolves.toBeUndefined();
+    assertDefined(mw.before, "mw.before");
+    await expect(mw.before(ctx)).resolves.toBeUndefined();
   });
 
   test("before() throws for kind='complete' with aborted signal", async () => {
@@ -54,6 +58,7 @@ describe("cancellationMiddleware", () => {
       signal: ctrl.signal,
       resolvedPermissions: { mode: "approve-reads" },
     };
-    await expect(mw.before!(ctx)).rejects.toThrow("Agent call cancelled");
+    assertDefined(mw.before, "mw.before");
+    await expect(mw.before(ctx)).rejects.toThrow("Agent call cancelled");
   });
 });

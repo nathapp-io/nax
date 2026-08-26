@@ -13,6 +13,7 @@
 
 import { describe, expect, mock, test } from "bun:test";
 import {
+  assertDefined,
   DEFAULT_TEST_ROUTING,
   type DeepPartial,
   makeNaxConfig,
@@ -531,8 +532,8 @@ describe("assemblePlanInputsFromCtx — no-progress fields (US-1496)", () => {
       },
     });
     const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.rectification).toBeDefined();
-    expect(inputs.rectification!.abortOnNoProgress).toBe(false);
+    assertDefined(inputs.rectification, "inputs.rectification");
+    expect(inputs.rectification.abortOnNoProgress).toBe(false);
   });
 
   test("[US-1496 AC 8] RectificationPhaseOptions.consecutiveNoProgressToBail reads from config.execution.rectification.consecutiveNoProgressToBail", async () => {
@@ -553,7 +554,7 @@ describe("assemblePlanInputsFromCtx — no-progress fields (US-1496)", () => {
       },
     });
     const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.rectification).toBeDefined();
-    expect(inputs.rectification!.consecutiveNoProgressToBail).toBe(7);
+    assertDefined(inputs.rectification, "inputs.rectification");
+    expect(inputs.rectification.consecutiveNoProgressToBail).toBe(7);
   });
 });

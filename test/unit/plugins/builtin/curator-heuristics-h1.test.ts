@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import type { Observation } from "@/plugins/builtin/curator";
 import type { CuratorThresholds } from "@/plugins/builtin/curator/heuristics";
 import { runHeuristics } from "@/plugins/builtin/curator/heuristics";
@@ -58,7 +59,8 @@ describe("H1 — sample messages in evidence", () => {
     ];
 
     const proposals = runHeuristics(observations, { repeatedFinding: 2 } as CuratorThresholds);
-    const h1 = proposals.find((p) => p.id === "H1")!;
+    const h1 = proposals.find((p) => p.id === "H1");
+    assertDefined(h1, "H1 proposal");
 
     expect(h1).toBeDefined();
     expect(h1.evidence).toContain("(register path)");
@@ -73,7 +75,8 @@ describe("H1 — sample messages in evidence", () => {
     ];
 
     const proposals = runHeuristics(observations, { repeatedFinding: 2 } as CuratorThresholds);
-    const h1 = proposals.find((p) => p.id === "H1")!;
+    const h1 = proposals.find((p) => p.id === "H1");
+    assertDefined(h1, "H1 proposal");
     expect(h1).toBeDefined();
     expect(h1.evidence).not.toContain("Examples:");
   });
@@ -95,7 +98,8 @@ describe("H1 — sample messages in evidence", () => {
     ];
 
     const proposals = runHeuristics(observations, { repeatedFinding: 2 } as CuratorThresholds);
-    const h1 = proposals.find((p) => p.id === "H1")!;
+    const h1 = proposals.find((p) => p.id === "H1");
+    assertDefined(h1, "H1 proposal");
     expect(h1.evidence).toContain("Null check missing");
     expect(h1.evidence).not.toContain("→ Add a guard");
   });

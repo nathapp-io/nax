@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeSpawn, mockFetch } from "@test/helpers";
+import { assertDefined, makeSpawn, mockFetch } from "@test/helpers";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { createOtelReporterPlugin } from "@/plugins";
 import type { KeyValue, OtlpMetricsPayload, OtlpTracesPayload } from "@/plugins/builtin/otel-reporter/otlp";
@@ -69,7 +69,8 @@ describe("US-007 AC7: git branch and sha resolution failure does not throw onRun
     }).spawn;
 
     const plugin = createOtelReporterPlugin(baseCfg, undefined, "/tmp/nax-test-repo");
-    const r = plugin.extensions.reporter!;
+    const r = plugin.extensions.reporter;
+    assertDefined(r, "plugin.extensions.reporter");
     await expect(
       r.onRunStart?.({
         runId: "gitfail-1",
@@ -90,7 +91,8 @@ describe("US-007 AC7: git branch and sha resolution failure does not throw onRun
   test("success: spawn throwing during git reads does not reject the onRunStart hook", async () => {
     _gitDeps.spawn = spawnThrowsOnRead();
     const plugin = createOtelReporterPlugin(baseCfg, undefined, "/tmp/nax-test-repo");
-    const r = plugin.extensions.reporter!;
+    const r = plugin.extensions.reporter;
+    assertDefined(r, "plugin.extensions.reporter");
     await expect(
       r.onRunStart?.({
         runId: "gitfail-2",
@@ -106,7 +108,8 @@ describe("US-007 AC7: git branch and sha resolution failure does not throw onRun
   test("success: subsequent onStoryComplete and onRunEnd keep working after a git failure", async () => {
     _gitDeps.spawn = spawnAlwaysFails();
     const plugin = createOtelReporterPlugin(baseCfg, undefined, "/tmp/nax-test-repo");
-    const r = plugin.extensions.reporter!;
+    const r = plugin.extensions.reporter;
+    assertDefined(r, "plugin.extensions.reporter");
     await r.onRunStart?.({
       runId: "gitfail-3",
       feature: "f",
@@ -146,7 +149,8 @@ describe("US-007 AC8: when git branch resolution fails, exported payloads omit n
     }).spawn;
     const { posts, deps } = capturingPosts();
     const plugin = createOtelReporterPlugin(baseCfg, deps, "/tmp/nax-test-repo");
-    const r = plugin.extensions.reporter!;
+    const r = plugin.extensions.reporter;
+    assertDefined(r, "plugin.extensions.reporter");
 
     await r.onRunStart?.({
       runId: "nogitbranch-1",
@@ -192,7 +196,8 @@ describe("US-007 AC8: when git branch resolution fails, exported payloads omit n
     }).spawn;
     const { posts, deps } = capturingPosts();
     const plugin = createOtelReporterPlugin(baseCfg, deps, "/tmp/nax-test-repo");
-    const r = plugin.extensions.reporter!;
+    const r = plugin.extensions.reporter;
+    assertDefined(r, "plugin.extensions.reporter");
 
     await r.onRunStart?.({
       runId: "nogitbranch-2",

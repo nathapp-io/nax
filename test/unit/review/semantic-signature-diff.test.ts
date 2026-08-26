@@ -4,7 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
+import { assertDefined, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
 import type { AgentResult } from "@/agents/types";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { RunSemanticReviewOptions, SemanticStory } from "@/review/semantic";
@@ -304,7 +304,8 @@ describe("runSemanticReview — git diff invocation", () => {
       .map((c) => c[0] as { cmd: string[] })
       .find((opts) => opts.cmd?.includes("--unified=3"));
     expect(unifiedCallOpts).toBeDefined();
-    const spawnOpts = unifiedCallOpts!;
+    const spawnOpts = unifiedCallOpts;
+    assertDefined(spawnOpts, "unifiedCallOpts");
     expect(spawnOpts.cmd).toContain("git");
     expect(spawnOpts.cmd).toContain("diff");
     expect(spawnOpts.cmd).toContain("--unified=3");

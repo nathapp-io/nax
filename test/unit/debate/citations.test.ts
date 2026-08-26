@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import type { FactsManifest } from "@/debate";
 import { citationDistribution, citationRate, extractClaims, type ParsedClaim } from "@/debate";
 
@@ -47,9 +48,13 @@ describe("extractClaims", () => {
     });
     const claims = extractClaims(structured);
     expect(claims).toHaveLength(2);
-    expect(claims[0]!.factIds).toEqual(["F-001"]);
-    expect(claims[0]!.cited).toBe(true);
-    expect(claims[1]!.cited).toBe(false);
+    const first = claims[0];
+    assertDefined(first, "claims[0]");
+    expect(first.factIds).toEqual(["F-001"]);
+    expect(first.cited).toBe(true);
+    const second = claims[1];
+    assertDefined(second, "claims[1]");
+    expect(second.cited).toBe(false);
   });
 
   test("falls back to regex when JSON has no claims array", () => {
@@ -64,8 +69,10 @@ describe("extractClaims", () => {
     });
     const claims = extractClaims(structured);
     expect(claims).toHaveLength(1);
-    expect(claims[0]!.cited).toBe(false);
-    expect(claims[0]!.factIds).toEqual([]);
+    const first = claims[0];
+    assertDefined(first, "claims[0]");
+    expect(first.cited).toBe(false);
+    expect(first.factIds).toEqual([]);
   });
 
   test("multiple paragraphs each become separate claims in regex mode", () => {

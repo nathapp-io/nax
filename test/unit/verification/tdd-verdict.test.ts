@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
 import type { FailureCategory } from "@/tdd/types";
 import {
   categorizeVerdict,
@@ -220,7 +220,8 @@ describe("readVerdict", () => {
     await writeVerdictFile(tmpDir, data);
     const result = await readVerdict(tmpDir);
     expect(result).not.toBeNull();
-    expect(getField(result!)).toEqual(expected);
+    assertDefined(result, "result");
+    expect(getField(result)).toEqual(expected);
   });
 
   test("parses verdict with approved=false correctly", async () => {

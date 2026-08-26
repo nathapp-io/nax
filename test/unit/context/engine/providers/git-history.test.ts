@@ -6,6 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import type { GitHistoryProviderOptions } from "@/context/engine/providers/git-history";
 import { _gitHistoryDeps, GitHistoryProvider } from "@/context/engine/providers/git-history";
 import type { ContextRequest } from "@/context/engine/types";
@@ -147,7 +148,8 @@ describe("GitHistoryProvider", () => {
   test("chunk tokens equals ceil(content.length / 4)", async () => {
     mockGit(new Map([["src/foo.ts", { stdout: "abc1234 fix: null check", exitCode: 0 }]]));
     const result = await provider.fetch(makeRequest({ touchedFiles: ["src/foo.ts"] }));
-    const chunk = result.chunks[0]!;
+    const chunk = result.chunks[0];
+    assertDefined(chunk, "result.chunks[0]");
     expect(chunk.tokens).toBe(Math.ceil(chunk.content.length / 4));
   });
 
@@ -172,7 +174,8 @@ describe("GitHistoryProvider", () => {
     const longLog = "a".repeat(3_000);
     mockGit(new Map([["src/big.ts", { stdout: longLog, exitCode: 0 }]]));
     const result = await provider.fetch(makeRequest({ touchedFiles: ["src/big.ts"] }));
-    const chunk = result.chunks[0]!;
+    const chunk = result.chunks[0];
+    assertDefined(chunk, "result.chunks[0]");
     expect(chunk.content.length).toBeLessThanOrEqual(600 * 4);
     expect(chunk.tokens).toBe(Math.ceil(chunk.content.length / 4));
   });

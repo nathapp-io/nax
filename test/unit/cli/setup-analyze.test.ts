@@ -7,6 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { _analyzeRepoDeps, analyzeRepo } from "@/cli/setup-analyze";
 import type { ProjectProfile } from "@/config";
 import type { DetectionResult } from "@/test-runners/detect";
@@ -99,8 +100,10 @@ describe("analyzeRepo — AC5: missingScripts detection", () => {
       scripts: { build: "bun run build", test: "bun test", lint: "bun run lint" },
     }));
     const result = await analyzeRepo("/repo");
-    expect(result.packages[0]!.missingScripts).toContain("type-check");
-    expect(result.packages[0]!.missingScripts).toContain("lint:fix");
+    const pkg = result.packages[0];
+    assertDefined(pkg, "result.packages[0]");
+    expect(pkg.missingScripts).toContain("type-check");
+    expect(pkg.missingScripts).toContain("lint:fix");
   });
 
   test("does not include scripts that are present in package.json", async () => {
@@ -114,8 +117,10 @@ describe("analyzeRepo — AC5: missingScripts detection", () => {
       },
     }));
     const result = await analyzeRepo("/repo");
-    expect(result.packages[0]!.missingScripts).not.toContain("type-check");
-    expect(result.packages[0]!.missingScripts).not.toContain("lint:fix");
+    const pkg = result.packages[0];
+    assertDefined(pkg, "result.packages[0]");
+    expect(pkg.missingScripts).not.toContain("type-check");
+    expect(pkg.missingScripts).not.toContain("lint:fix");
   });
 });
 
@@ -165,8 +170,10 @@ describe("analyzeRepo — AC8: jest testFramework and testFilePatterns", () => {
       "": jestDetection,
     }));
     const result = await analyzeRepo("/repo");
-    expect(result.packages[0]!.testFramework).toBe("jest");
-    expect(result.packages[0]!.testFilePatterns).toEqual(jestDetection.patterns);
+    const pkg = result.packages[0];
+    assertDefined(pkg, "result.packages[0]");
+    expect(pkg.testFramework).toBe("jest");
+    expect(pkg.testFilePatterns).toEqual(jestDetection.patterns);
   });
 });
 
@@ -180,8 +187,8 @@ describe("analyzeRepo — AC9: relativeDir is relative", () => {
     }));
     const result = await analyzeRepo("/repo");
     const fooFacts = result.packages.find((p) => p.relativeDir === "packages/foo");
-    expect(fooFacts).toBeDefined();
-    expect(fooFacts!.relativeDir).toBe("packages/foo");
-    expect(fooFacts!.relativeDir.startsWith("/")).toBe(false);
+    assertDefined(fooFacts, "packages/foo facts");
+    expect(fooFacts.relativeDir).toBe("packages/foo");
+    expect(fooFacts.relativeDir.startsWith("/")).toBe(false);
   });
 });

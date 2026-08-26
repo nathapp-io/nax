@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeAdversarialOutput, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
+import { assertDefined, makeAdversarialOutput, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
 import * as loggerModule from "@/logger";
 import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
 import { _diffUtilsDeps } from "@/review/diff-utils";
@@ -215,8 +215,12 @@ describe("runAdversarialReview — JSON retry outcomes", () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.findings).toHaveLength(1);
-    expect(result.findings![0].source).toBe("adversarial-review");
+    const findings = result.findings;
+    assertDefined(findings, "result.findings");
+    expect(findings).toHaveLength(1);
+    const firstFinding = findings[0];
+    assertDefined(firstFinding, "result.findings[0]");
+    expect(firstFinding.source).toBe("adversarial-review");
   });
 
   test("passes resolver-derived testGlobs and refExcludePatterns to callOp input", async () => {

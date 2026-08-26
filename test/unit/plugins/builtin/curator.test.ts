@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { curatorPlugin } from "@/plugins/builtin/curator";
 import type { PostRunContext } from "@/plugins/extensions";
 
@@ -46,7 +47,9 @@ describe("curatorPlugin.shouldRun", () => {
       config: { curator: { enabled: false } },
     };
 
-    const result = await curatorPlugin.extensions.postRunAction!.shouldRun(context);
+    const postRunAction = curatorPlugin.extensions.postRunAction;
+    assertDefined(postRunAction, "postRunAction");
+    const result = await postRunAction.shouldRun(context);
     expect(result).toBe(false);
   });
 
@@ -66,7 +69,9 @@ describe("curatorPlugin.shouldRun", () => {
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
     };
 
-    const result = await curatorPlugin.extensions.postRunAction!.shouldRun(context);
+    const postRunAction = curatorPlugin.extensions.postRunAction;
+    assertDefined(postRunAction, "postRunAction");
+    const result = await postRunAction.shouldRun(context);
     expect(result).toBe(false);
   });
 
@@ -87,7 +92,9 @@ describe("curatorPlugin.shouldRun", () => {
       config: { curator: { enabled: true } },
     };
 
-    const result = await curatorPlugin.extensions.postRunAction!.shouldRun(context);
+    const postRunAction = curatorPlugin.extensions.postRunAction;
+    assertDefined(postRunAction, "postRunAction");
+    const result = await postRunAction.shouldRun(context);
     expect(result).toBe(true);
   });
 
@@ -107,7 +114,9 @@ describe("curatorPlugin.shouldRun", () => {
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
     };
 
-    const result = await curatorPlugin.extensions.postRunAction!.shouldRun(context);
+    const postRunAction = curatorPlugin.extensions.postRunAction;
+    assertDefined(postRunAction, "postRunAction");
+    const result = await postRunAction.shouldRun(context);
     expect(result).toBe(true);
   });
 
@@ -136,7 +145,9 @@ describe("curatorPlugin.shouldRun", () => {
       config: { review: { audit: { enabled: false } } },
     };
 
-    await curatorPlugin.extensions.postRunAction!.shouldRun(context);
+    const postRunAction = curatorPlugin.extensions.postRunAction;
+    assertDefined(postRunAction, "postRunAction");
+    await postRunAction.shouldRun(context);
     expect(warnCalled).toBe(true);
   });
 });
@@ -158,7 +169,9 @@ describe("curatorPlugin.execute", () => {
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
     };
 
-    const result = await curatorPlugin.extensions.postRunAction!.execute(context);
+    const postRunAction = curatorPlugin.extensions.postRunAction;
+    assertDefined(postRunAction, "postRunAction");
+    const result = await postRunAction.execute(context);
     expect(result).toHaveProperty("success");
     expect(result).toHaveProperty("message");
   });
@@ -184,7 +197,9 @@ describe("curatorPlugin.execute", () => {
       config: { curator: { enabled: true } },
     };
 
-    const result = await curatorPlugin.extensions.postRunAction!.execute(context);
+    const postRunAction = curatorPlugin.extensions.postRunAction;
+    assertDefined(postRunAction, "postRunAction");
+    const result = await postRunAction.execute(context);
     expect(result).toBeDefined();
   });
 
@@ -208,7 +223,9 @@ describe("curatorPlugin.execute", () => {
       curatorRollupPath: "/tmp/rollup.jsonl",
     };
 
-    const result = await curatorPlugin.extensions.postRunAction!.execute(context);
+    const postRunAction = curatorPlugin.extensions.postRunAction;
+    assertDefined(postRunAction, "postRunAction");
+    const result = await postRunAction.execute(context);
     // TODO: Verify observations.jsonl was written after implementation
     expect(result.success).toBeDefined();
   });

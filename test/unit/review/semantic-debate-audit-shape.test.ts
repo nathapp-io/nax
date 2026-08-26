@@ -5,6 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
+  assertDefined,
   captureAuditDecisions,
   makeDebateRunner,
   makeMockAgentManager,
@@ -113,12 +114,14 @@ describe("semantic-debate reviewer audit shape (#942 AC-1 / AC-2)", () => {
     });
 
     expect(decisions.length).toBeGreaterThanOrEqual(1);
-    const decision = decisions[0]!;
+    const decision = decisions[0];
+    assertDefined(decision, "decisions[0]");
     const findings = decision.result?.findings as Array<Record<string, unknown>>;
     expect(Array.isArray(findings)).toBe(true);
-    expect(findings!.length).toBeGreaterThan(0);
+    assertDefined(findings, "decision.result?.findings");
+    expect(findings.length).toBeGreaterThan(0);
 
-    for (const f of findings!) {
+    for (const f of findings) {
       expect(typeof f.ruleId).toBe("string");
       expect((f.ruleId as string).length).toBeGreaterThan(0);
       expect(typeof f.message).toBe("string");
@@ -127,7 +130,8 @@ describe("semantic-debate reviewer audit shape (#942 AC-1 / AC-2)", () => {
       expect(f.suggestion).toBeUndefined();
     }
 
-    const finding = findings!.find((f) => f.line === 10)!;
+    const finding = findings.find((f) => f.line === 10);
+    assertDefined(finding, "findings entry with line === 10");
     expect(finding.message).toContain("Listener callback errors are not handled");
     expect(finding.message).toContain("→ Wrap the listener call");
     expect(finding.ruleId as string).toContain(":");
@@ -161,7 +165,8 @@ describe("semantic-debate reviewer audit shape (#942 AC-1 / AC-2)", () => {
       createDebateRunner: () => makeMockDebateRunner(debateResult),
     });
 
-    const decision = decisions[0]!;
+    const decision = decisions[0];
+    assertDefined(decision, "decisions[0]");
     const findings = decision.result?.findings as Array<{ ruleId: string }>;
     for (const f of findings) {
       expect(f.ruleId).toContain(":");

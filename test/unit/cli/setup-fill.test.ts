@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { withTempDir } from "@test/helpers";
+import { assertDefined, withTempDir } from "@test/helpers";
 import { _analyzeRepoDeps, analyzeRepo } from "@/cli/setup-analyze";
 import { _fillScriptsDeps, fillScripts } from "@/cli/setup-fill";
 import type { RepoAnalysis } from "@/cli/setup-types";
@@ -67,7 +67,9 @@ describe("fillScripts — AC1: writes type-check script into package.json", () =
 
     const pkgPath = "/work/package.json";
     expect(written.has(pkgPath)).toBe(true);
-    const pkg = JSON.parse(written.get(pkgPath)!);
+    const rawPkg = written.get(pkgPath);
+    assertDefined(rawPkg, "written package.json");
+    const pkg = JSON.parse(rawPkg);
     expect(pkg.scripts["type-check"]).toBe("tsc --noEmit -p tsconfig.json");
   });
 
@@ -86,7 +88,9 @@ describe("fillScripts — AC1: writes type-check script into package.json", () =
 
     await fillScripts("/work", SINGLE_MISSING_TYPE_CHECK);
 
-    const pkg = JSON.parse(written.get("/work/package.json")!);
+    const rawPkg = written.get("/work/package.json");
+    assertDefined(rawPkg, "written package.json");
+    const pkg = JSON.parse(rawPkg);
     expect(pkg.scripts.build).toBe("tsc");
     expect(pkg.scripts.test).toBe("bun test");
   });
@@ -142,7 +146,9 @@ describe("fillScripts — AC3: mono+turbo writes turbo.json and root passthrough
 
     const turboPath = "/work/turbo.json";
     expect(written.has(turboPath)).toBe(true);
-    const turbo = JSON.parse(written.get(turboPath)!);
+    const rawTurbo = written.get(turboPath);
+    assertDefined(rawTurbo, "written turbo.json");
+    const turbo = JSON.parse(rawTurbo);
     expect(turbo.pipeline["type-check"]).toBeDefined();
   });
 
@@ -159,7 +165,9 @@ describe("fillScripts — AC3: mono+turbo writes turbo.json and root passthrough
 
     await fillScripts("/work", MONO_TURBO_MISSING);
 
-    const turbo = JSON.parse(written.get("/work/turbo.json")!);
+    const rawTurbo = written.get("/work/turbo.json");
+    assertDefined(rawTurbo, "written turbo.json");
+    const turbo = JSON.parse(rawTurbo);
     expect(turbo.tasks["type-check"]).toBeDefined();
   });
 
@@ -178,7 +186,9 @@ describe("fillScripts — AC3: mono+turbo writes turbo.json and root passthrough
 
     const rootPkgPath = "/work/package.json";
     expect(written.has(rootPkgPath)).toBe(true);
-    const rootPkg = JSON.parse(written.get(rootPkgPath)!);
+    const rawRootPkg = written.get(rootPkgPath);
+    assertDefined(rawRootPkg, "written root package.json");
+    const rootPkg = JSON.parse(rawRootPkg);
     expect(rootPkg.scripts["type-check"]).toBe("turbo run type-check");
   });
 });

@@ -1,5 +1,6 @@
 // RE-ARCH: keep
 import { describe, expect, spyOn, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import * as loggerModule from "@/logger";
 import { PipelineEventBus, wireReporters } from "@/pipeline";
 import type { PluginRegistry } from "@/plugins";
@@ -310,7 +311,9 @@ describe("wireReporters", () => {
   });
 
   test("isolates logger failures while continuing phase completion fan-out", async () => {
-    const warn = spyOn(loggerModule.getSafeLogger()!, "warn").mockImplementation(() => {
+    const logger = loggerModule.getSafeLogger();
+    assertDefined(logger, "getSafeLogger()");
+    const warn = spyOn(logger, "warn").mockImplementation(() => {
       throw new Error("logger failed");
     });
     const calls: string[] = [];

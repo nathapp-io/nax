@@ -35,7 +35,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { type MockLogger, makeLogger } from "@test/helpers";
+import { assertDefined, type MockLogger, makeLogger } from "@test/helpers";
 import {
   _orchestratorDeps,
   type AdapterFailure,
@@ -339,8 +339,8 @@ describe("US-001 — rebuild() AC6: unknown agent id sets bundle.agentId AND emi
 
     const warnCalls = mockLogger.calls.filter((c) => c.level === "warn");
     const unknownAgentWarn = warnCalls.find((c) => /unknown agent/i.test(c.message));
-    expect(unknownAgentWarn).toBeDefined();
-    expect(unknownAgentWarn!.stage).toBe("context-v2");
+    assertDefined(unknownAgentWarn, "unknown-agent warn log call");
+    expect(unknownAgentWarn.stage).toBe("context-v2");
   });
 });
 
@@ -457,7 +457,9 @@ describe("US-003 — repack to target ceiling", () => {
 
     const result = rebuild(prior, {});
 
-    expect(result.manifest.usedTokens).toBeLessThanOrEqual(result.manifest.effectiveBudget!);
+    const effectiveBudget = result.manifest.effectiveBudget;
+    assertDefined(effectiveBudget, "manifest.effectiveBudget");
+    expect(result.manifest.usedTokens).toBeLessThanOrEqual(effectiveBudget);
   });
 
   test("AC2: over-budget rebuild omits excluded non-floor chunks", () => {
@@ -636,10 +638,10 @@ describe("US-003 — repack to target ceiling", () => {
     });
 
     const map = result.manifest.rebuildInfo?.chunkIdMap;
-    expect(map).toBeDefined();
+    assertDefined(map, "manifest.rebuildInfo.chunkIdMap");
     // 2 prior chunks + 1 injected failure-note = 3 entries
-    expect(map!.length).toBe(3);
-    expect(map!).toEqual(
+    expect(map.length).toBe(3);
+    expect(map).toEqual(
       expect.arrayContaining([
         { priorChunkId: "c1", newChunkId: "c1" },
         { priorChunkId: "c2", newChunkId: "c2" },

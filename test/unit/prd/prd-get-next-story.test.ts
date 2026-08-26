@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { getNextStory, markStoryFailed } from "@/prd";
 import type { PRD, UserStory } from "@/prd/types";
 
@@ -147,22 +148,25 @@ describe("getNextStory() — run order S1-I1 -> S1-I2 (retry) -> S2-I1", () => {
 
     // Iteration 1: S1 first attempt
     const pick1 = getNextStory(prd, lastId, maxRetries);
-    expect(pick1?.id).toBe("US-001");
-    order.push(pick1!.id);
-    lastId = pick1!.id;
+    assertDefined(pick1, "pick1");
+    expect(pick1.id).toBe("US-001");
+    order.push(pick1.id);
+    lastId = pick1.id;
     markStoryFailed(prd, "US-001"); // S1 fails (attempts = 1)
 
     // Iteration 2: S1 retry (attempts=1 <= maxRetries=1)
     const pick2 = getNextStory(prd, lastId, maxRetries);
-    expect(pick2?.id).toBe("US-001");
-    order.push(pick2!.id);
-    lastId = pick2!.id;
+    assertDefined(pick2, "pick2");
+    expect(pick2.id).toBe("US-001");
+    order.push(pick2.id);
+    lastId = pick2.id;
     markStoryFailed(prd, "US-001"); // S1 fails again (attempts = 2)
 
     // Iteration 3: S1 exhausted (attempts=2 > maxRetries=1), move to S2
     const pick3 = getNextStory(prd, lastId, maxRetries);
-    expect(pick3?.id).toBe("US-002");
-    order.push(pick3!.id);
+    assertDefined(pick3, "pick3");
+    expect(pick3.id).toBe("US-002");
+    order.push(pick3.id);
 
     expect(order).toEqual(["US-001", "US-001", "US-002"]);
   });
@@ -174,8 +178,9 @@ describe("getNextStory() — run order S1-I1 -> S1-I2 (retry) -> S2-I1", () => {
 
     // Iteration 1: S1 picked
     const pick1 = getNextStory(prd, lastId, maxRetries);
-    expect(pick1?.id).toBe("US-001");
-    lastId = pick1!.id;
+    assertDefined(pick1, "pick1");
+    expect(pick1.id).toBe("US-001");
+    lastId = pick1.id;
 
     // S1 passes
     prd.userStories[0].status = "passed";

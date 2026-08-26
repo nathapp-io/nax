@@ -8,7 +8,7 @@
  * Use plan.phaseNames() to inspect the set of included phases.
  */
 import { describe, expect, test } from "bun:test";
-import { makeMockCallContext, makeMockPlanInputs, makeNaxConfig, makeStory } from "@test/helpers";
+import { assertDefined, makeMockCallContext, makeMockPlanInputs, makeNaxConfig, makeStory } from "@test/helpers";
 import type { TestStrategy } from "@/config/schema-types";
 import type { PlanInputs } from "@/execution";
 import { buildPlanForStrategy, ExecutionPlan } from "@/execution";
@@ -383,12 +383,14 @@ describe("buildPlanForStrategy — AC3: new check phase wiring (US-005)", () => 
     const story = makeStory();
     const ctx = makeMockCallContext();
     const config = makeNaxConfig();
+    const semanticConfig = config.review.semantic;
+    assertDefined(semanticConfig, "config.review.semantic");
     const inputs = makeNonTddInputs(story, {
       semanticReview: {
         workdir: "/tmp/test",
         story,
-        semanticConfig: config.review.semantic!,
-        mode: config.review.semantic!.diffMode,
+        semanticConfig,
+        mode: semanticConfig.diffMode,
       },
     });
     const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
@@ -410,12 +412,14 @@ describe("buildPlanForStrategy — AC3: new check phase wiring (US-005)", () => 
         },
       },
     });
+    const adversarialConfig = config.review.adversarial;
+    assertDefined(adversarialConfig, "config.review.adversarial");
     const inputs = makeNonTddInputs(story, {
       adversarialReview: {
         story,
         workdir: "/tmp/test",
-        adversarialConfig: config.review.adversarial!,
-        mode: config.review.adversarial!.diffMode,
+        adversarialConfig,
+        mode: adversarialConfig.diffMode,
       },
     });
     const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
@@ -448,6 +452,10 @@ describe("buildPlanForStrategy — AC3: new check phase wiring (US-005)", () => 
         },
       },
     });
+    const semanticConfig = config.review.semantic;
+    assertDefined(semanticConfig, "config.review.semantic");
+    const adversarialConfig = config.review.adversarial;
+    assertDefined(adversarialConfig, "config.review.adversarial");
     const inputs = makeNonTddInputs(story, {
       verifyScoped: { workdir: "/tmp/test", storyId: story.id },
       lintCheck: { workdir: "/tmp/test", storyId: story.id },
@@ -455,14 +463,14 @@ describe("buildPlanForStrategy — AC3: new check phase wiring (US-005)", () => 
       semanticReview: {
         workdir: "/tmp/test",
         story,
-        semanticConfig: config.review.semantic!,
-        mode: config.review.semantic!.diffMode,
+        semanticConfig,
+        mode: semanticConfig.diffMode,
       },
       adversarialReview: {
         story,
         workdir: "/tmp/test",
-        adversarialConfig: config.review.adversarial!,
-        mode: config.review.adversarial!.diffMode,
+        adversarialConfig,
+        mode: adversarialConfig.diffMode,
       },
     });
     const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);

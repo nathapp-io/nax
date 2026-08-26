@@ -8,7 +8,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
 import type { CodeNeighborProviderOptions } from "@/context/engine/providers/code-neighbor";
 import { _codeNeighborDeps, CodeNeighborProvider } from "@/context/engine/providers/code-neighbor";
 import type { ContextRequest } from "@/context/engine/types";
@@ -204,7 +204,8 @@ describe("CodeNeighborProvider", () => {
   test("chunk tokens = ceil(content.length/4); pullTools empty; content capped at MAX_CHUNK_TOKENS*4", async () => {
     setupDeps({ files: { "src/a.ts": "" }, globFiles: [] });
     const result = await provider.fetch(makeRequest({ touchedFiles: ["src/a.ts"] }));
-    const chunk = result.chunks[0]!;
+    const chunk = result.chunks[0];
+    assertDefined(chunk, "result.chunks[0]");
     expect(chunk.tokens).toBe(Math.ceil(chunk.content.length / 4));
     expect(result.pullTools).toEqual([]);
 
@@ -595,21 +596,23 @@ describe("CodeNeighborProvider — US-002 scope attribution", () => {
     const result = await provider.fetch(makeRequest({ touchedFiles: ["src/foo.ts"] }));
     expect(result.chunks).toHaveLength(1);
 
-    const scope = result.chunks[0]?.scopePaths;
-    const body = result.chunks[0]?.content ?? "";
+    const chunk = result.chunks[0];
+    assertDefined(chunk, "result.chunks[0]");
+    const scope = chunk.scopePaths;
+    assertDefined(scope, "chunks[0].scopePaths");
+    const body = chunk.content ?? "";
 
     // AC2 contract: scopePaths is populated AND contains every neighbor
     // path rendered in the chunk body.
-    expect(scope).toBeDefined();
-    expect(scope!.length).toBeGreaterThan(0);
+    expect(scope.length).toBeGreaterThan(0);
     // Forward dep rendered in the body must be in scopePaths.
-    expect(scope!).toContain("src/foo/dep.ts");
+    expect(scope).toContain("src/foo/dep.ts");
     // Sibling test hint rendered in the body must also be in scopePaths.
-    expect(scope!).toContain("test/unit/foo.test.ts");
+    expect(scope).toContain("test/unit/foo.test.ts");
     // Touched file is in scopePaths.
-    expect(scope!).toContain("src/foo.ts");
+    expect(scope).toContain("src/foo.ts");
     // Every entry in scopePaths appears in the body (no orphan scopes).
-    for (const neighbor of scope!) {
+    for (const neighbor of scope) {
       expect(body).toContain(neighbor);
     }
   });

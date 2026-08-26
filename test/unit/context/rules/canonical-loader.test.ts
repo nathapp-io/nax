@@ -42,7 +42,8 @@ function setupFiles(files: Record<string, string>) {
   const paths = Object.keys(files).sort();
   _canonicalLoaderDeps.globInDir = () => paths;
   _canonicalLoaderDeps.readFile = async (p: string) => {
-    if (p in files) return files[p]!;
+    const content = files[p];
+    if (content !== undefined) return content;
     throw new Error(`File not found: ${p}`);
   };
 }

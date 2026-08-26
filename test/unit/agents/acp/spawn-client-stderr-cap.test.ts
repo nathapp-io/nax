@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { withDepsRestore } from "@test/helpers";
+import { assertDefined, withDepsRestore } from "@test/helpers";
 import { _spawnClientDeps, SpawnAcpClient } from "@/agents/acp";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,7 +88,8 @@ describe("SpawnAcpClient — MEM-1: stderr buffering cap", () => {
 
     const client = new SpawnAcpClient("acpx claude", "/tmp");
     const session = await client.loadSession("test-session", "claude", "approve-reads");
-    const response = await session!.prompt("hello");
+    assertDefined(session, "session");
+    const response = await session.prompt("hello");
 
     expect(response.stopReason).toBe("error");
     const content = response.messages[0]?.content ?? "";
@@ -126,7 +127,8 @@ describe("SpawnAcpClient — MEM-1: stderr buffering cap", () => {
 
     const client = new SpawnAcpClient("acpx claude", "/tmp");
     const session = await client.loadSession("test-session", "claude", "approve-reads");
-    const response = await session!.prompt("hello");
+    assertDefined(session, "session");
+    const response = await session.prompt("hello");
     expect(response.messages[0]?.content).toBe("connection refused");
   });
 });

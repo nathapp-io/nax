@@ -14,7 +14,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { Command } from "commander";
 import {
   _resumeCmdDeps,
@@ -204,7 +204,8 @@ describe("runResume — AC3: resume summary with checkpoint", () => {
     // first non-empty stdout write is the summary line, not the underlying run output.
     const firstWrite = stdoutWrites.find((w) => w.trim().length > 0);
     expect(firstWrite).toBeDefined();
-    expect(firstWrite!).toContain("Resume:");
+    assertDefined(firstWrite, "firstWrite");
+    expect(firstWrite).toContain("Resume:");
     // The underlying run was invoked exactly once.
     expect((deps.runInvocation as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
   });

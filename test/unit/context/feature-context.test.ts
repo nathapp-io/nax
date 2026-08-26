@@ -5,7 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
+import { assertDefined, makeNaxConfig } from "@test/helpers";
 import { _featureContextDeps, FeatureContextProvider } from "@/context/providers/feature-context";
 import type { UserStory } from "@/prd";
 
@@ -93,13 +93,13 @@ describe("FeatureContextProvider", () => {
     const config = makeNaxConfig({ context: { featureEngine: { enabled: true, budgetTokens: 2048 } } });
     const result = await provider.getContext(story, "/workdir", config);
 
-    expect(result).not.toBeNull();
-    expect(result!.label).toBe("feature-context:auth-feature");
-    expect(result!.featureId).toBe("auth-feature");
-    expect(result!.content).toContain("## Feature Context");
-    expect(result!.content).toContain("_Feature: auth-feature_");
-    expect(result!.content).toContain("Some context here.");
-    expect(result!.estimatedTokens).toBeGreaterThan(0);
+    assertDefined(result, "getContext() result");
+    expect(result.label).toBe("feature-context:auth-feature");
+    expect(result.featureId).toBe("auth-feature");
+    expect(result.content).toContain("## Feature Context");
+    expect(result.content).toContain("_Feature: auth-feature_");
+    expect(result.content).toContain("Some context here.");
+    expect(result.estimatedTokens).toBeGreaterThan(0);
   });
 
   test("returns null and warns when file read throws an error", async () => {

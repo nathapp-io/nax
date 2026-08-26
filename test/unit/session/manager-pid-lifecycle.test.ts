@@ -5,7 +5,7 @@
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
+import { assertDefined, makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 import { PidRegistry } from "@/execution/pid-registry";
 import { _sessionManagerDeps, SessionManager } from "@/session/manager";
 
@@ -57,11 +57,13 @@ describe("SessionManager PID lifecycle — configureRuntime", () => {
 
     expect(capturedOnPidSpawned).toBeDefined();
     expect(capturedOnPidExited).toBeDefined();
+    assertDefined(capturedOnPidSpawned, "capturedOnPidSpawned");
+    assertDefined(capturedOnPidExited, "capturedOnPidExited");
 
-    capturedOnPidSpawned!(42);
+    capturedOnPidSpawned(42);
     expect(registerSpy).toHaveBeenCalledWith(42);
 
-    capturedOnPidExited!(42);
+    capturedOnPidExited(42);
     expect(unregisterSpy).toHaveBeenCalledWith(42);
   });
 

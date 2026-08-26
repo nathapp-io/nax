@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { withDepsRestore } from "@test/helpers";
+import { assertDefined, withDepsRestore } from "@test/helpers";
 import { _spawnClientDeps, SpawnAcpClient } from "@/agents/acp";
 import { makeSpawnResult, stubProcessKill } from "./_spawn-client-test-helpers";
 
@@ -29,10 +29,10 @@ describe("SpawnAcpSession — --cwd on cancel/stop (BUG-3)", () => {
 
     const client = new SpawnAcpClient("acpx claude", "/tmp/my-worktree");
     const session = await client.loadSession("test-session", "claude", "approve-reads");
-    expect(session).not.toBeNull();
+    assertDefined(session, "session");
     spawnedCommands.length = 0; // drop the loadSession/ensure-session spawn(s)
 
-    await session!.close({ forceTerminate: true });
+    await session.close({ forceTerminate: true });
 
     const stopCall = spawnedCommands.find((c) => c.includes("stop"));
     expect(stopCall).toEqual(["acpx", "--cwd", "/tmp/my-worktree", "claude", "stop"]);
@@ -47,10 +47,10 @@ describe("SpawnAcpSession — --cwd on cancel/stop (BUG-3)", () => {
 
     const client = new SpawnAcpClient("acpx claude", "/tmp/my-worktree");
     const session = await client.loadSession("test-session", "claude", "approve-reads");
-    expect(session).not.toBeNull();
+    assertDefined(session, "session");
     spawnedCommands.length = 0;
 
-    await session!.cancelActivePrompt();
+    await session.cancelActivePrompt();
 
     const cancelCall = spawnedCommands.find((c) => c.includes("cancel"));
     expect(cancelCall).toEqual(["acpx", "--cwd", "/tmp/my-worktree", "claude", "cancel"]);

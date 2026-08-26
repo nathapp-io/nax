@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { type DeepPartial, makeNaxConfig, makeResolvedTestPatterns } from "@test/helpers";
+import { assertDefined, type DeepPartial, makeNaxConfig, makeResolvedTestPatterns } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import type { ContextV2Config } from "@/config/runtime-types";
 import { createDefaultOrchestrator } from "@/context/engine/orchestrator-factory";
@@ -190,7 +190,11 @@ describe("createDefaultOrchestrator — #507 provider scope config", () => {
       return { files: [], truncated: false };
     };
     const config = makeConfig();
-    config.context!.v2!.providers.maxGlobFiles = 750;
+    const context = config.context;
+    assertDefined(context, "config.context");
+    const v2 = context.v2;
+    assertDefined(v2, "context.v2");
+    v2.providers.maxGlobFiles = 750;
     const orchestrator = createDefaultOrchestrator(makeStory(), config);
     await orchestrator.assemble(makeRequest());
     expect(capturedCap).toBe(750);

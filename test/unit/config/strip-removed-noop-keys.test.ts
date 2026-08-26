@@ -22,7 +22,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
 import { stripRemovedNoOpKeys } from "@/config/config-guards";
 import { _clearRootConfigCache, loadConfig, loadConfigForWorkdir } from "@/config/loader";
@@ -116,23 +116,25 @@ describe("stripRemovedNoOpKeys — direct unit", () => {
   test("AC-7: handles a config with no tdd property without warning or throwing", () => {
     const captured: string[] = [];
     const input = { execution: {} };
-    let result: Record<string, unknown>;
+    let result: Record<string, unknown> | undefined;
     expect(() => {
       result = stripRemovedNoOpKeys(input, (msg) => captured.push(msg));
     }).not.toThrow();
+    assertDefined(result, "result");
     expect(captured.length).toBe(0);
-    expect(result!).toEqual(input);
+    expect(result).toEqual(input);
   });
 
   test("AC-8: handles a tdd property of unexpected shape (number) without warning or throwing", () => {
     const captured: string[] = [];
     const input = { tdd: 42 };
-    let result: Record<string, unknown>;
+    let result: Record<string, unknown> | undefined;
     expect(() => {
       result = stripRemovedNoOpKeys(input, (msg) => captured.push(msg));
     }).not.toThrow();
+    assertDefined(result, "result");
     expect(captured.length).toBe(0);
-    expect((result!.tdd as unknown) === 42).toBe(true);
+    expect((result.tdd as unknown) === 42).toBe(true);
   });
 
   test("AC-9: warns and strips when tdd.autoVerifyIsolation is a string", () => {

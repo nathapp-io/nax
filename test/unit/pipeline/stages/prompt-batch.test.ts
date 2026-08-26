@@ -9,7 +9,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { makeNaxConfig, makeTestContext } from "@test/helpers";
+import { assertDefined, makeNaxConfig, makeTestContext } from "@test/helpers";
 import { promptStage } from "@/pipeline/stages/prompt";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
@@ -87,7 +87,9 @@ describe("promptStage.execute() — batch (multiple stories)", () => {
     await promptStage.execute(ctx);
     expect(ctx.prompt).toBeTruthy();
     expect(typeof ctx.prompt).toBe("string");
-    expect(ctx.prompt!.length).toBeGreaterThan(0);
+    const prompt = ctx.prompt;
+    assertDefined(prompt, "ctx.prompt");
+    expect(prompt.length).toBeGreaterThan(0);
   });
 
   test("batch prompt contains 'Role: Batch Implementer' (from PromptBuilder)", async () => {
@@ -178,7 +180,9 @@ describe("promptStage.execute() — batch (multiple stories)", () => {
     const ctx = makeCtx(stories);
     await promptStage.execute(ctx);
     // Batch role should not have a verdict section (that's for verifier role)
-    const verdictMatch = ctx.prompt!.match(/# Verdict/);
+    const prompt = ctx.prompt;
+    assertDefined(prompt, "ctx.prompt");
+    const verdictMatch = prompt.match(/# Verdict/);
     expect(verdictMatch).toBeNull();
   });
 

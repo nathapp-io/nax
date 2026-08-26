@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
+import { assertDefined, makeNaxConfig } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
 import { escalateTier } from "@/execution/runner";
@@ -250,11 +250,13 @@ describe("escalateTier", () => {
   test("explicit 3-tier escalation chain: fast → balanced → powerful → null", () => {
     let result = escalateTier({ tier: "fast" }, defaultTiers);
     expect(result?.tier).toBe("balanced");
+    assertDefined(result, "escalateTier(fast) result");
 
-    result = escalateTier({ tier: result!.tier }, defaultTiers);
+    result = escalateTier({ tier: result.tier }, defaultTiers);
     expect(result?.tier).toBe("powerful");
+    assertDefined(result, "escalateTier(balanced) result");
 
-    result = escalateTier({ tier: result!.tier }, defaultTiers);
+    result = escalateTier({ tier: result.tier }, defaultTiers);
     expect(result).toBeNull();
   });
 });

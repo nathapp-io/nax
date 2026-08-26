@@ -20,6 +20,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import {
+  assertDefined,
   makeCallOp,
   makeFixCycleResult,
   makeIteration,
@@ -1206,7 +1207,7 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
     });
     rt = makeTestRuntime({ config });
 
-    let capturedCycleFindings: Finding[] | null = null;
+    let capturedCycleFindings: Finding[] | undefined;
     const gateOp = makeDeterministicOp("full-suite-gate", {
       success: false,
       findings: [
@@ -1247,9 +1248,9 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
         .build(ctx);
       await plan.run();
 
-      expect(capturedCycleFindings).not.toBeNull();
-      expect(capturedCycleFindings!.length).toBe(2);
-      expect(capturedCycleFindings!.map((f) => f.source)).toEqual(["test-runner", "lint"]);
+      assertDefined(capturedCycleFindings, "capturedCycleFindings");
+      expect(capturedCycleFindings.length).toBe(2);
+      expect(capturedCycleFindings.map((f) => f.source)).toEqual(["test-runner", "lint"]);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
@@ -1263,7 +1264,7 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
     });
     rt = makeTestRuntime({ config });
 
-    let capturedCycleFindings: Finding[] | null = null;
+    let capturedCycleFindings: Finding[] | undefined;
     const gateOp = makeDeterministicOp("full-suite-gate", { success: true });
     const verOp = makeDeterministicOp("verifier", {
       success: false,
@@ -1303,9 +1304,8 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
         .build(ctx);
       await plan.run();
 
-      expect(capturedCycleFindings).not.toBeNull();
-      // Non-null assertion: TypeScript CFA doesn't track closure assignments, so we assert explicitly.
-      expect(capturedCycleFindings!).toEqual([
+      assertDefined(capturedCycleFindings, "capturedCycleFindings");
+      expect(capturedCycleFindings).toEqual([
         {
           source: "semantic-review",
           category: "semantic",

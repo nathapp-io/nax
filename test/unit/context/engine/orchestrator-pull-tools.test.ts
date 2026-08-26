@@ -5,6 +5,7 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import {
   _orchestratorDeps,
   ContextOrchestrator,
@@ -51,7 +52,8 @@ describe("Phase 4: pull tools", () => {
       ...TDD_IMPLEMENTER_REQUEST,
       pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 3 },
     });
-    const tool = bundle.pullTools[0]!;
+    const tool = bundle.pullTools[0];
+    assertDefined(tool, "bundle.pullTools[0]");
     expect(typeof tool.name).toBe("string");
     expect(typeof tool.description).toBe("string");
     expect(typeof tool.inputSchema).toBe("object");
@@ -66,8 +68,11 @@ describe("Phase 4: pull tools", () => {
       ...TDD_IMPLEMENTER_REQUEST,
       pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
     });
-    const toolName = probe.pullTools[0]!.name;
-    const original = PULL_TOOL_REGISTRY[toolName]!;
+    const firstTool = probe.pullTools[0];
+    assertDefined(firstTool, "probe.pullTools[0]");
+    const toolName = firstTool.name;
+    const original = PULL_TOOL_REGISTRY[toolName];
+    assertDefined(original, `PULL_TOOL_REGISTRY.${toolName}`);
 
     PULL_TOOL_REGISTRY[toolName] = { ...original, maxCallsPerSession: 9 };
     try {
