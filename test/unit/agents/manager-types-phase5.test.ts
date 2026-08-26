@@ -1,11 +1,25 @@
 import { describe, expect, test } from "bun:test";
-import type { AgentResult, AgentRunOutcome, AgentRunRequest, HopKind } from "@/agents";
+import type { AgentResult, AgentRunOptions, AgentRunOutcome, AgentRunRequest, HopKind } from "@/agents";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { agentManagerConfigSelector } from "@/config/selectors";
 import type { ContextBundle } from "@/context/engine";
+
+function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptions {
+  return {
+    prompt: "p",
+    workdir: "/tmp",
+    modelTier: "balanced",
+    modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+    timeoutSeconds: 60,
+    config: agentManagerConfigSelector.select(DEFAULT_CONFIG),
+    ...overrides,
+  };
+}
 
 describe("AgentRunRequest — executeHop callback", () => {
   test("AgentRunRequest accepts executeHop callback", () => {
     const req: AgentRunRequest = {
-      runOptions: {} as never,
+      runOptions: makeRunOptions(),
       executeHop: async (_agentName: string, bundle: ContextBundle | undefined, _hopKind: HopKind) => ({
         result: {} as AgentResult,
         bundle,

@@ -7,8 +7,10 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import type { AgentRunOptions } from "@/agents";
 import { _agentManagerDeps, AgentManager } from "@/agents/manager";
 import { DEFAULT_CONFIG } from "@/config/defaults";
+import { agentManagerConfigSelector } from "@/config/selectors";
 
 const rateLimitFailure = {
   category: "availability" as const,
@@ -28,6 +30,18 @@ function makeConfigNoFallback() {
       fallback: { enabled: false, map: {}, maxHopsPerStory: 0, onQualityFailure: false, rebuildContext: false },
     },
   } as never;
+}
+
+function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptions {
+  return {
+    prompt: "p",
+    workdir: "/tmp",
+    modelTier: "balanced",
+    modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+    timeoutSeconds: 60,
+    config: agentManagerConfigSelector.select(DEFAULT_CONFIG),
+    ...overrides,
+  };
 }
 
 function makeRateLimitedRunHop() {
@@ -62,7 +76,7 @@ describe("AgentManager.runWithFallback — abort signal (#585)", () => {
 
     const m = new AgentManager(makeConfigNoFallback(), undefined, { runHop: makeRateLimitedRunHop() });
     const outcome = await m.runWithFallback({
-      runOptions: { storyId: "s1" } as never,
+      runOptions: makeRunOptions({ storyId: "s1" }),
       bundle: mockBundle,
       signal: controller.signal,
     });
@@ -82,7 +96,7 @@ describe("AgentManager.runWithFallback — abort signal (#585)", () => {
     const controller = new AbortController();
     const m = new AgentManager(makeConfigNoFallback(), undefined, { runHop: makeRateLimitedRunHop() });
     await m.runWithFallback({
-      runOptions: { storyId: "s1" } as never,
+      runOptions: makeRunOptions({ storyId: "s1" }),
       bundle: mockBundle,
       signal: controller.signal,
     });
@@ -107,7 +121,7 @@ describe("AgentManager.runWithFallback — abort signal (#585)", () => {
     const m = new AgentManager(makeConfigNoFallback(), undefined, { runHop: makeRateLimitedRunHop() });
     const startHops = performance.now();
     const outcome = await m.runWithFallback({
-      runOptions: { storyId: "s1" } as never,
+      runOptions: makeRunOptions({ storyId: "s1" }),
       bundle: mockBundle,
       signal: controller.signal,
     });

@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1799,
-    "asNever": 356,
+    "asNever": 344,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T14:53:41.096Z",
+  "updatedAt": "2026-08-26T14:56:21.788Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -1095,15 +1095,13 @@
       "asNever": 9
     },
     "test/unit/agents/manager.test.ts": {
-      "looseCast": 3,
-      "asNever": 8
+      "looseCast": 3
     },
     "test/unit/agents/resolve-default-agent.test.ts": {
       "looseCast": 1
     },
     "test/unit/agents/manager-types-phase5.test.ts": {
-      "looseCast": 2,
-      "asNever": 1
+      "looseCast": 2
     },
     "test/unit/agents/manager-iface-run.test.ts": {
       "looseCast": 1,
@@ -1126,7 +1124,7 @@
       "looseCast": 1
     },
     "test/unit/agents/manager-abort.test.ts": {
-      "asNever": 4
+      "asNever": 1
     },
     "test/unit/agents/manager-credentials.test.ts": {
       "looseCast": 1
