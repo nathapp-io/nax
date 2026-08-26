@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 251,
+    "asNever": 244,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:35:34.800Z",
+  "updatedAt": "2026-08-26T15:36:53.718Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -545,8 +545,7 @@
       "looseCast": 4
     },
     "test/unit/execution/lifecycle-completion.test.ts": {
-      "looseCast": 2,
-      "asNever": 7
+      "looseCast": 2
     },
     "test/unit/execution/helpers.test.ts": {
       "looseCast": 1

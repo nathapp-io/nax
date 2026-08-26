@@ -13,6 +13,7 @@ import { purgeStaleManifests } from "@/context/engine";
 import { _runCompletionDeps, handleRunCompletion, type RunCompletionOptions } from "@/execution/lifecycle";
 import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
 import * as loggerModule from "@/logger";
+import { Logger } from "@/logger";
 import type { StoryMetrics } from "@/metrics";
 import type { RunCompletedEvent } from "@/pipeline";
 import { pipelineEventBus } from "@/pipeline";
@@ -634,11 +635,15 @@ describe("US-002: handleRunCompletion — manifest retention sweep", () => {
   function makeCapturingLogger() {
     const infoCalls: LogCall[] = [];
     const warnCalls: LogCall[] = [];
-    const logger = {
-      info: (stage: string, msg: string, ctx: Record<string, unknown>) => infoCalls.push([stage, msg, ctx]),
-      warn: (stage: string, msg: string, ctx: Record<string, unknown>) => warnCalls.push([stage, msg, ctx]),
-      debug: () => {},
-      error: () => {},
+    const base = new Logger({ level: "silent" });
+    const logger = new Logger({ level: "silent" });
+    logger.info = (stage: string, msg: string, ctx: Record<string, unknown>) => {
+      infoCalls.push([stage, msg, ctx]);
+      return base.info(stage, msg, ctx);
+    };
+    logger.warn = (stage: string, msg: string, ctx: Record<string, unknown>) => {
+      warnCalls.push([stage, msg, ctx]);
+      return base.warn(stage, msg, ctx);
     };
     return { logger, infoCalls, warnCalls };
   }
@@ -682,7 +687,7 @@ describe("US-002: handleRunCompletion — manifest retention sweep", () => {
 
   test("AC1: invokes purgeStaleManifests exactly once with resolved projectDir and retentionDays when configured", async () => {
     const { logger } = makeCapturingLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
     const config = makeConfigWithManifest(30);
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
 
@@ -694,7 +699,7 @@ describe("US-002: handleRunCompletion — manifest retention sweep", () => {
 
   test("AC1: falls back to workdir when projectDir is not provided", async () => {
     const { logger } = makeCapturingLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
     const config = makeConfigWithManifest(14);
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
 
@@ -706,7 +711,7 @@ describe("US-002: handleRunCompletion — manifest retention sweep", () => {
 
   test("AC2: does not invoke purgeStaleManifests when context.v2.manifest is unset", async () => {
     const { logger } = makeCapturingLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
     const config = makeConfigWithManifest(undefined);
     expect(config.context.v2.manifest).toBeUndefined();
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
@@ -719,7 +724,7 @@ describe("US-002: handleRunCompletion — manifest retention sweep", () => {
 
   test("AC3: handleRunCompletion resolves with normal completion result when purgeStaleManifests rejects", async () => {
     const { logger } = makeCapturingLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
     _runCompletionDeps.purgeStaleManifests = mock(async () => {
       throw new Error("disk full");
     }) as typeof _runCompletionDeps.purgeStaleManifests;
@@ -740,7 +745,7 @@ describe("US-002: handleRunCompletion — manifest retention sweep", () => {
 
   test("AC4: emits warn-level log when purgeStaleManifests rejects", async () => {
     const { logger, warnCalls } = makeCapturingLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
     _runCompletionDeps.purgeStaleManifests = mock(async () => {
       throw new Error("manifest sweep failed");
     }) as typeof _runCompletionDeps.purgeStaleManifests;
@@ -757,7 +762,7 @@ describe("US-002: handleRunCompletion — manifest retention sweep", () => {
 
   test("AC5: emits info-level log carrying the deleted count when purgeStaleManifests returns > 0", async () => {
     const { logger, infoCalls } = makeCapturingLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
     _runCompletionDeps.purgeStaleManifests = mock(async () => 7) as typeof _runCompletionDeps.purgeStaleManifests;
     const config = makeConfigWithManifest(30);
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
@@ -771,7 +776,7 @@ describe("US-002: handleRunCompletion — manifest retention sweep", () => {
 
   test("AC5 (boundary): does NOT emit info-level manifest log when purgeStaleManifests returns 0", async () => {
     const { logger, infoCalls } = makeCapturingLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
     _runCompletionDeps.purgeStaleManifests = mock(async () => 0) as typeof _runCompletionDeps.purgeStaleManifests;
     const config = makeConfigWithManifest(30);
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
