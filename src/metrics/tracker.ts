@@ -341,6 +341,10 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
  * Creates individual story metrics for each story in the batch,
  * distributing the total cost and duration proportionally.
  *
+ * Agent-swap hops and crash retries are NOT distributed — each story reads its own
+ * id out of the run-scoped stores (nax#1709), so they are attributed where they were
+ * actually recorded and counted once at run level.
+ *
  * @param ctx - Pipeline context with batch execution results
  * @param storyStartTime - Batch start timestamp (ISO string)
  * @returns Array of story metrics (one per story in batch)
@@ -384,6 +388,13 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
     // fall back to shared routing.complexity (batch stories classified together)
     const initialComplexity = story.routing?.initialComplexity ?? routing.complexity;
 
+    // nax#1709: read the run-scoped stores per story id, exactly as the sequential,
+    // parallel and back-fill builders do. callOp keys hops by ctx.story.id — the batch's
+    // lead story — so the lead carries the hops and its siblings carry none. That counts
+    // every hop once at run level; fabricating a per-sibling share would inflate
+    // totalHops and perPair in deriveRunFallbackAggregates.
+    const fallbackHops = toFallbackHops(ctx.runtime.agentFallbacks.get(story.id), story.id);
+
     return {
       storyId: story.id,
       complexity: routing.complexity,
@@ -400,7 +411,8 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
       startedAt: storyStartTime,
       completedAt: new Date().toISOString(),
       fullSuiteGatePassed: false, // batches are not TDD-gated
-      runtimeCrashes: 0, // batch stories don't have individual crash tracking
+      runtimeCrashes: ctx.runtime.runtimeCrashRetries.get(story.id) ?? 0,
+      ...(fallbackHops.length > 0 ? { fallback: { hops: fallbackHops } } : {}),
     };
   });
 }

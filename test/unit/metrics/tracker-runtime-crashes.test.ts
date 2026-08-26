@@ -159,7 +159,7 @@ describe("StoryMetrics type — runtimeCrashes field", () => {
 // ---------------------------------------------------------------------------
 
 describe("collectBatchMetrics - runtimeCrashes per story", () => {
-  test("batch stories have runtimeCrashes set to 0 (no individual crash tracking)", async () => {
+  test("batch stories with no recorded crash retries report 0", async () => {
     const { collectBatchMetrics } = await import("@/metrics/tracker");
 
     const stories = [makeStory({ id: "US-001" }), makeStory({ id: "US-002" })];
