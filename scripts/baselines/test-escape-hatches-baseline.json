@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 281,
+    "asNever": 273,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:21:25.319Z",
+  "updatedAt": "2026-08-26T15:23:58.548Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -613,8 +613,7 @@
       "looseCast": 1
     },
     "test/unit/execution/rectification-budget-invariants.test.ts": {
-      "looseCast": 2,
-      "asNever": 8
+      "looseCast": 2
     },
     "test/unit/execution/story-orchestrator-no-progress-bail.test.ts": {
       "anyType": 1,
