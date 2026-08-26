@@ -85,8 +85,8 @@ function makeCtx(tmpDir: string, overrides: Partial<PipelineContext> = {}): Pipe
   };
 }
 
-function makeDefaultCallOp(testCode?: string) {
-  return async (_ctx: any, _packageDir: any, op: any, input: any) => {
+function makeDefaultCallOp(testCode?: string): typeof _acceptanceSetupDeps.callOp {
+  return async (_ctx, _packageDir, op, input) => {
     if (op.name === "acceptance-refine") {
       const { criteria, storyId } = input as { criteria: string[]; storyId: string };
       return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));

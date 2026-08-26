@@ -8,17 +8,21 @@
  *
  * Not a `.test.ts` file — the runner only collects tests, so this holds no assertions.
  */
-import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import { type PipelineStage, pickSelector } from "@/config";
 import type { Finding } from "@/findings/types";
 import type { RunOperation } from "@/operations";
+import type { SessionRole } from "@/session";
 
 const testSel = pickSelector("test-revalidation-sel", "execution");
 
-export const mockImplementerOp: RunOperation<{ story: string }, { success: boolean }, typeof DEFAULT_CONFIG> = {
+/** The config slice {@link testSel} projects — the C these fixture ops are generic over. */
+type TestSelConfig = ReturnType<typeof testSel.select>;
+
+export const mockImplementerOp: RunOperation<{ story: string }, { success: boolean }, TestSelConfig> = {
   kind: "run",
   name: "implementer",
   stage: "run",
-  config: testSel as any,
+  config: testSel,
   session: { role: "implementer", lifetime: "warm" },
   build: () => ({
     role: { id: "r", content: "impl", overridable: false },
@@ -29,15 +33,15 @@ export const mockImplementerOp: RunOperation<{ story: string }, { success: boole
 
 export function makePhaseOp(
   name: string,
-  stage: string,
-  role: string,
-): RunOperation<{ story: string }, { success: boolean; findings: Finding[] }, typeof DEFAULT_CONFIG> {
+  stage: PipelineStage,
+  role: SessionRole,
+): RunOperation<{ story: string }, { success: boolean; findings: Finding[] }, TestSelConfig> {
   return {
     kind: "run",
     name,
-    stage: stage as any,
-    config: testSel as any,
-    session: { role: role as any, lifetime: "fresh" },
+    stage,
+    config: testSel,
+    session: { role, lifetime: "fresh" },
     build: () => ({
       role: { id: "r", content: name, overridable: false },
       task: { id: "t", content: "", overridable: false },

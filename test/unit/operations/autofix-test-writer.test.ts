@@ -7,9 +7,17 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeStory } from "@test/helpers";
+import { makeStory, makeTestRuntime } from "@test/helpers";
+import { autofixConfigSelector } from "@/config";
+import type { AutofixConfig } from "@/config/selectors";
 import type { AutofixTestWriterInput } from "@/operations";
 import { testWriterRectifyOp } from "@/operations";
+import type { BuildContext } from "@/operations/types";
+
+function makeBuildCtx(): BuildContext<AutofixConfig> {
+  const view = makeTestRuntime().packages.repo();
+  return { packageView: view, config: view.select(autofixConfigSelector) };
+}
 
 describe("AutofixTestWriterInput", () => {
   test("interface accepts mode: 'mock-restructure'", () => {
@@ -63,7 +71,7 @@ describe("testWriterRectifyOp.build", () => {
       handoffFiles: ["test/dispatcher.test.ts"],
     };
 
-    const ctx = {} as any;
+    const ctx = makeBuildCtx();
 
     const result = testWriterRectifyOp.build(input, ctx);
 
@@ -82,7 +90,7 @@ describe("testWriterRectifyOp.build", () => {
       handoffFiles: ["test/x.test.ts"],
     };
 
-    const ctx = {} as any;
+    const ctx = makeBuildCtx();
 
     const result = testWriterRectifyOp.build(input, ctx);
 
@@ -99,7 +107,7 @@ describe("testWriterRectifyOp.build", () => {
       handoffFiles: [],
     };
 
-    const ctx = {} as any;
+    const ctx = makeBuildCtx();
 
     const result = testWriterRectifyOp.build(input, ctx);
 
@@ -116,7 +124,7 @@ describe("testWriterRectifyOp.build", () => {
       // handoffReason omitted
     };
 
-    const ctx = {} as any;
+    const ctx = makeBuildCtx();
 
     const result = testWriterRectifyOp.build(input, ctx);
 

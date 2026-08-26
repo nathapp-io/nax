@@ -1,15 +1,15 @@
 {
   "counts": {
-    "asAny": 225,
+    "asAny": 152,
     "tsSuppress": 40,
     "ratchetAllow": 103,
     "absentValue": 17,
-    "anyType": 289,
+    "anyType": 198,
     "looseCast": 1806,
     "asNever": 605,
-    "nonNullAssert": 801
+    "nonNullAssert": 792
   },
-  "updatedAt": "2026-08-26T04:16:19.490Z",
+  "updatedAt": "2026-08-26T05:15:38.843Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -122,8 +122,6 @@
       "looseCast": 6
     },
     "test/integration/execution/rectification-routing.test.ts": {
-      "asAny": 4,
-      "anyType": 4,
       "looseCast": 4,
       "nonNullAssert": 5
     },
@@ -164,9 +162,6 @@
     "test/integration/execution/verdict-cleanup.test.ts": {
       "asAny": 1,
       "anyType": 1
-    },
-    "test/integration/acceptance/red-green-cycle.test.ts": {
-      "anyType": 4
     },
     "test/integration/operations/run-empty-output-retry.test.ts": {
       "looseCast": 2
@@ -284,8 +279,6 @@
       "looseCast": 2
     },
     "test/unit/session/session-keeper.test.ts": {
-      "asAny": 7,
-      "anyType": 7,
       "looseCast": 1
     },
     "test/unit/session/scratch-purge.test.ts": {
@@ -482,8 +475,6 @@
       "nonNullAssert": 9
     },
     "test/unit/review/semantic-debate.test.ts": {
-      "asAny": 4,
-      "anyType": 4,
       "looseCast": 3,
       "asNever": 6
     },
@@ -533,8 +524,6 @@
       "looseCast": 2
     },
     "test/unit/review/recurrence-demotion.test.ts": {
-      "asAny": 4,
-      "anyType": 4,
       "looseCast": 1
     },
     "test/unit/review/runner.test.ts": {
@@ -644,10 +633,6 @@
     "test/unit/execution/worktree-manager.test.ts": {
       "tsSuppress": 8
     },
-    "test/unit/execution/_revalidation-fixtures.ts": {
-      "asAny": 4,
-      "anyType": 4
-    },
     "test/unit/execution/story-orchestrator-duplicate-phase.test.ts": {
       "asAny": 2,
       "anyType": 2,
@@ -655,10 +640,6 @@
     },
     "test/unit/execution/nbf-readonly-flake-triage.test.ts": {
       "looseCast": 5
-    },
-    "test/unit/execution/post-run-isolation.test.ts": {
-      "asAny": 2,
-      "anyType": 4
     },
     "test/unit/execution/unified-executor-logging.test.ts": {
       "looseCast": 18,
@@ -1012,10 +993,6 @@
     "test/unit/verification/smart-runner.test.ts": {
       "looseCast": 1
     },
-    "test/unit/verification/import-grep-fallback.test.ts": {
-      "asAny": 4,
-      "anyType": 4
-    },
     "test/unit/verification/smart-runner-config.test.ts": {
       "looseCast": 2
     },
@@ -1140,10 +1117,6 @@
     "test/unit/operations/stateful-debater-op.test.ts": {
       "looseCast": 7
     },
-    "test/unit/operations/autofix-test-writer.test.ts": {
-      "asAny": 4,
-      "anyType": 4
-    },
     "test/unit/operations/plan-refine-out-of-scope.test.ts": {
       "looseCast": 2,
       "asNever": 11
@@ -1153,8 +1126,6 @@
       "asNever": 1
     },
     "test/unit/operations/full-suite-rectify.test.ts": {
-      "asAny": 4,
-      "anyType": 4,
       "looseCast": 6,
       "asNever": 8,
       "nonNullAssert": 1
@@ -1265,8 +1236,6 @@
       "looseCast": 1
     },
     "test/unit/operations/adversarial-review-verify.test.ts": {
-      "asAny": 4,
-      "anyType": 4,
       "looseCast": 5,
       "asNever": 1,
       "nonNullAssert": 19
@@ -1304,10 +1273,6 @@
     "test/unit/debate/race-against-abort.test.ts": {
       "looseCast": 2
     },
-    "test/unit/debate/runner-rounds-and-cost.test.ts": {
-      "asAny": 4,
-      "anyType": 4
-    },
     "test/unit/debate/session-helpers-resolver-model.test.ts": {
       "absentValue": 5,
       "looseCast": 1
@@ -1317,16 +1282,10 @@
       "anyType": 1,
       "looseCast": 4
     },
-    "test/unit/debate/runner-one-shot-roles.test.ts": {
-      "asAny": 4,
-      "anyType": 4
-    },
     "test/unit/debate/session-helpers.test.ts": {
       "looseCast": 1
     },
     "test/unit/debate/runner-events.test.ts": {
-      "asAny": 4,
-      "anyType": 4,
       "asNever": 4
     },
     "test/unit/debate/citations.test.ts": {
@@ -1441,9 +1400,6 @@
     },
     "test/unit/cli/plan-callop.test.ts": {
       "looseCast": 10
-    },
-    "test/unit/cli/init-context.test.ts": {
-      "anyType": 4
     },
     "test/unit/cli/prompts-init-config-wiring.test.ts": {
       "nonNullAssert": 1
@@ -1632,8 +1588,6 @@
       "anyType": 3
     },
     "test/unit/agents/retry/tiered-parse-retry.test.ts": {
-      "asAny": 4,
-      "anyType": 4,
       "nonNullAssert": 1
     },
     "test/unit/agents/retry/hop-retry-policy.test.ts": {
@@ -1735,16 +1689,11 @@
       "nonNullAssert": 3
     },
     "test/unit/plugins/builtin/otel-resource-git.test.ts": {
-      "anyType": 4,
       "nonNullAssert": 5
     },
     "test/unit/plugins/builtin/curator-registration.test.ts": {
       "asAny": 1,
       "anyType": 1
-    },
-    "test/unit/plugins/builtin/curator-paths.test.ts": {
-      "asAny": 4,
-      "anyType": 4
     },
     "test/unit/plugins/builtin/curator.test.ts": {
       "nonNullAssert": 8
@@ -1804,10 +1753,6 @@
     },
     "test/unit/config/defaults-schema-derive.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/config/regression-gate-schema.test.ts": {
-      "asAny": 4,
-      "anyType": 4
     },
     "test/unit/config/schemas-context-fragments.test.ts": {
       "looseCast": 10
@@ -1876,8 +1821,6 @@
       "looseCast": 4
     },
     "test/unit/config/test-strategy.test.ts": {
-      "asAny": 4,
-      "anyType": 4,
       "looseCast": 2
     },
     "test/unit/config/strip-removed-noop-keys.test.ts": {
@@ -2182,10 +2125,6 @@
     "test/unit/pipeline/stages/prompt-acceptance.test.ts": {
       "looseCast": 1
     },
-    "test/unit/pipeline/stages/acceptance-setup-commit.test.ts": {
-      "asAny": 4,
-      "anyType": 4
-    },
     "test/unit/pipeline/stages/acceptance-setup-criteria.test.ts": {
       "nonNullAssert": 8
     },
@@ -2214,9 +2153,7 @@
       "asNever": 1
     },
     "test/unit/metrics/tracker-escalation.test.ts": {
-      "anyType": 4,
-      "looseCast": 1,
-      "nonNullAssert": 9
+      "looseCast": 1
     },
     "test/unit/metrics/tracker-full-suite-gate.test.ts": {
       "looseCast": 2

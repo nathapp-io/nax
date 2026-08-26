@@ -89,7 +89,7 @@ describe("makeTieredParseRetryStrategy — AC-3: retry with inspection and retry
     const strategy = makeTieredParseRetryStrategyMock({
       inspect: () => ({ ok: false, kind: "citation-low" }),
       buildRetryPrompt: (inspection: unknown, isTruncated: boolean) => {
-        promptCalls.push({ kind: (inspection as any)?.kind, isTruncated });
+        promptCalls.push({ kind: kindOf(inspection), isTruncated });
         return "retry prompt";
       },
       exhaustedFallback: () => ({ fallback: "value" }),
@@ -201,7 +201,7 @@ describe("makeTieredParseRetryStrategy — AC-4: exhaustion with fallback", () =
     strategy.shouldRetry(new ParseValidationError("probe"), 1, makeCtx({ lastOutput: "bad output" }));
 
     expect(exhaustedCalls.length).toBe(1);
-    expect((exhaustedCalls[0]?.inspection as any)?.kind).toBe("citation-low");
+    expect(kindOf(exhaustedCalls[0]?.inspection)).toBe("citation-low");
     expect(exhaustedCalls[0]?.lastOutput).toBe("bad output");
   });
 });
@@ -312,9 +312,9 @@ function makeTieredParseRetryStrategyMock(opts: {
       const isTruncated = ctx.lastOutput.length > 100_000; // placeholder check
       const nextPrompt = buildRetryPrompt(inspection, isTruncated);
 
-      (logger ?? getSafeLoggerMock())?.warn(reviewerKind, `Parse retry — ${(inspection as any)?.kind ?? "unknown"}`, {
+      (logger ?? getSafeLoggerMock())?.warn(reviewerKind, `Parse retry — ${kindOf(inspection) ?? "unknown"}`, {
         storyId: ctx.storyId,
-        kind: (inspection as any)?.kind,
+        kind: kindOf(inspection),
         isTruncated,
         originalByteSize: ctx.lastOutput.length,
       });
@@ -322,6 +322,15 @@ function makeTieredParseRetryStrategyMock(opts: {
       return { retry: true, delayMs: 0, nextPrompt };
     },
   };
+}
+
+/** Reads `kind` off an inspection value without asserting its shape — undefined-safe. */
+function kindOf(inspection: unknown): string | undefined {
+  if (typeof inspection === "object" && inspection !== null && "kind" in inspection) {
+    const kind = inspection.kind;
+    return typeof kind === "string" ? kind : undefined;
+  }
+  return undefined;
 }
 
 function makeCtx(overrides?: Partial<RetryContext>): RetryContext {

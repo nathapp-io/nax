@@ -41,9 +41,7 @@ describe("RegressionGateConfigSchema - mode field", () => {
     const result = NaxConfigSchema.safeParse(raw);
     expect(result.success).toBe(true);
     if (result.success) {
-      // Cast needed until schema is updated (mode not yet in inferred type)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((result.data.execution.regressionGate as any).mode).toBe("deferred");
+      expect(result.data.execution.regressionGate.mode).toBe("deferred");
     }
   });
 
@@ -52,8 +50,7 @@ describe("RegressionGateConfigSchema - mode field", () => {
     const result = NaxConfigSchema.safeParse(raw);
     expect(result.success).toBe(true);
     if (result.success) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((result.data.execution.regressionGate as any).mode).toBe("per-story");
+      expect(result.data.execution.regressionGate.mode).toBe("per-story");
     }
   });
 
@@ -62,8 +59,7 @@ describe("RegressionGateConfigSchema - mode field", () => {
     const result = NaxConfigSchema.safeParse(raw);
     expect(result.success).toBe(true);
     if (result.success) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((result.data.execution.regressionGate as any).mode).toBe("disabled");
+      expect(result.data.execution.regressionGate.mode).toBe("disabled");
     }
   });
 
@@ -72,8 +68,7 @@ describe("RegressionGateConfigSchema - mode field", () => {
     const result = NaxConfigSchema.safeParse(raw);
     expect(result.success).toBe(true);
     if (result.success) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((result.data.execution.regressionGate as any).mode).toBe("deferred");
+      expect(result.data.execution.regressionGate.mode).toBe("deferred");
     }
   });
 

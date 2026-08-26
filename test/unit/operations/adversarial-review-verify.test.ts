@@ -9,7 +9,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertDefined, makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
+import { assertDefined, makeResolvedTestPatterns, makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
+import type { Iteration } from "@/findings";
 import type { AdversarialReviewInput, AdversarialReviewOutput } from "@/operations/adversarial-review";
 import { adversarialReviewOp } from "@/operations/adversarial-review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
@@ -282,11 +283,11 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
       acIndex: 1,
       verifiedBy: { file: "lib/store.ts", observed: OBSERVED },
     };
-    const priors = Array.from({ length: 2 }, (_v, i) => ({
+    const priors: Iteration[] = Array.from({ length: 2 }, (_v, i) => ({
       iterationNum: i + 1,
       findingsBefore: [],
       fixesApplied: [],
-      outcome: "fixes-applied",
+      outcome: "regressed",
       startedAt: "2026-07-17T00:00:00.000Z",
       finishedAt: "2026-07-17T00:00:01.000Z",
       findingsAfter: [
@@ -303,8 +304,8 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
     const input: AdversarialReviewInput = {
       ...BASE_INPUT,
       story: { ...STORY, acceptanceCriteria: [AC_TEXT] },
-      priorAdversarialIterations: priors as any,
-      resolvedTestPatterns: { regex: [/\.spec\.ts$/] } as any,
+      priorAdversarialIterations: priors,
+      resolvedTestPatterns: makeResolvedTestPatterns({ regex: [/\.spec\.ts$/] }),
     };
     const parsed = makeOutput({ passed: false, findings: [finding], normalizedFindings: [], acDropped: [] });
     const out = await adversarialReviewOp.verify!(parsed, input, ctx);
@@ -334,12 +335,12 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
       verifiedBy: { file: "lib/store.ts", observed: OBSERVED },
     };
     // exactly ONE prior round, where the same fingerprint appeared as a WARNING
-    const priors = [
+    const priors: Iteration[] = [
       {
         iterationNum: 1,
         findingsBefore: [],
         fixesApplied: [],
-        outcome: "fixes-applied",
+        outcome: "regressed",
         startedAt: "2026-07-17T00:00:00.000Z",
         finishedAt: "2026-07-17T00:00:01.000Z",
         findingsAfter: [
@@ -357,8 +358,8 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
     const input: AdversarialReviewInput = {
       ...BASE_INPUT,
       story: { ...STORY, acceptanceCriteria: [AC_TEXT] },
-      priorAdversarialIterations: priors as any,
-      resolvedTestPatterns: { regex: [/\.spec\.ts$/] } as any,
+      priorAdversarialIterations: priors,
+      resolvedTestPatterns: makeResolvedTestPatterns({ regex: [/\.spec\.ts$/] }),
     };
     const parsed = makeOutput({ passed: false, findings: [finding], normalizedFindings: [], acDropped: [] });
     const out = await adversarialReviewOp.verify!(parsed, input, ctx);
