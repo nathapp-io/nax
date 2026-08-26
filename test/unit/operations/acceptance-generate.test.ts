@@ -172,7 +172,7 @@ describe("acceptanceGenerateOp.verify()", () => {
   test("returns parsed unchanged when testCode is non-null (stdout had real code)", async () => {
     const ctx = makeVerifyCtx();
     const parsed = { testCode: "describe('x', () => {})" };
-    const result = await acceptanceGenerateOp.verify!(parsed, SAMPLE_INPUT, ctx);
+    const result = await acceptanceGenerateOp.verify(parsed, SAMPLE_INPUT, ctx);
     expect(result).toEqual(parsed);
   });
 
@@ -190,7 +190,7 @@ describe("acceptanceGenerateOp.verify()", () => {
         },
       });
 
-      const result = await acceptanceGenerateOp.verify!({ testCode: null }, input, ctx);
+      const result = await acceptanceGenerateOp.verify({ testCode: null }, input, ctx);
       expect(result?.testCode).toContain("describe");
     });
   });
@@ -210,7 +210,7 @@ describe("acceptanceGenerateOp.verify()", () => {
         },
       });
 
-      const result = await acceptanceGenerateOp.verify!({ testCode: null }, input, ctx);
+      const result = await acceptanceGenerateOp.verify({ testCode: null }, input, ctx);
       expect(result?.testCode).toBe(diskCode);
     });
   });
@@ -228,7 +228,7 @@ describe("acceptanceGenerateOp.verify()", () => {
     ["disk content has no test markers", async () => "just some random text"],
   ])("returns null when %s", async (_label, readFile) => {
     const ctx = makeVerifyCtx({ readFile });
-    const result = await acceptanceGenerateOp.verify!({ testCode: null }, SAMPLE_INPUT, ctx);
+    const result = await acceptanceGenerateOp.verify({ testCode: null }, SAMPLE_INPUT, ctx);
     expect(result).toBeNull();
   });
 });
@@ -263,7 +263,7 @@ describe("acceptanceGenerateOp.hopBody", () => {
       send,
       sendWithParseRetry,
     };
-    const result = await acceptanceGenerateOp.hopBody!("gen prompt", ctx);
+    const result = await acceptanceGenerateOp.hopBody("gen prompt", ctx);
     expect(sendWithParseRetry).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledTimes(0);
     expect(result.output).toBe("gen-confirmation");
@@ -280,7 +280,7 @@ describe("acceptanceGenerateOp.hopBody", () => {
       send,
       sendWithParseRetry,
     };
-    const result = await acceptanceGenerateOp.hopBody!("gen prompt", ctx);
+    const result = await acceptanceGenerateOp.hopBody("gen prompt", ctx);
     expect(sendWithParseRetry).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0][0]).toContain(target);

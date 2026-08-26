@@ -1,6 +1,6 @@
 import type { NaxConfig } from "../config/schema";
 import type { AutofixConfig, TddConfig } from "../config/selectors";
-import type { FixStrategy } from "../findings";
+import type { FixStrategy, FixStrategyWithExtractApplied } from "../findings";
 import type { Finding } from "../findings/types";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
@@ -38,11 +38,11 @@ export function makeFullSuiteRectifyStrategy(
   config: NaxConfig,
   sink: DeclarationSink,
   hasTestWriterDrainer?: boolean,
-): FixStrategy<Finding, FullSuiteRectifyInput, FullSuiteRectifyOutput, AutofixConfig>;
+): FixStrategyWithExtractApplied<Finding, FullSuiteRectifyInput, FullSuiteRectifyOutput, AutofixConfig>;
 export function makeFullSuiteRectifyStrategy(
   story: UserStory,
   config: NaxConfig,
-): FixStrategy<Finding, ImplementerInput, ImplementerOutput, TddConfig>;
+): FixStrategyWithExtractApplied<Finding, ImplementerInput, ImplementerOutput, TddConfig>;
 export function makeFullSuiteRectifyStrategy(
   story: UserStory,
   config: NaxConfig,

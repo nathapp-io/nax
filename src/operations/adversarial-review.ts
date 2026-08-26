@@ -28,7 +28,7 @@ import type { ResolvedTestPatterns } from "../test-runners";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { reviewExhaustedFallback } from "./_review-fallback";
 import { extractRepromptInfo, withRepromptMarker } from "./adversarial-reprompt-marker";
-import type { HopBodyContext, RunOperation } from "./types";
+import type { HopBodyContext, RunOperation, RunOperationWithHooks } from "./types";
 
 export type { AdversarialReviewConfig, SemanticStory, TestInventory };
 export type ValidatedAdversarialShape = NonNullable<ReturnType<typeof validateAdversarialShape>>;
@@ -364,7 +364,12 @@ async function maybeRepromptForInspection(
     : { ...turn, estimatedCostUsd: costUsd };
 }
 
-export const adversarialReviewOp: RunOperation<AdversarialReviewInput, AdversarialReviewOutput, ReviewConfig> = {
+export const adversarialReviewOp: RunOperationWithHooks<
+  AdversarialReviewInput,
+  AdversarialReviewOutput,
+  ReviewConfig,
+  "hopBody" | "verify"
+> = {
   kind: "run",
   name: "adversarial-review",
   stage: "review",

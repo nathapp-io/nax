@@ -45,7 +45,7 @@ async function runHopBody(opts: {
 }) {
   let callCount = 0;
   const mockSend = mock(async () => turn(opts.responses[Math.min(callCount++, opts.responses.length - 1)]));
-  const result = await semanticReviewOp.hopBody!("initial prompt", {
+  const result = await semanticReviewOp.hopBody("initial prompt", {
     send: mockSend,
     sendWithParseRetry: mockSend,
     input: {
@@ -76,7 +76,7 @@ describe("semanticReviewOp.hopBody — inspection-trail guard (#3A)", () => {
       n += 1;
       return turn(n === 1 ? RUBBER_STAMP : second);
     });
-    await semanticReviewOp.hopBody!("initial prompt", {
+    await semanticReviewOp.hopBody("initial prompt", {
       send: mockSend,
       sendWithParseRetry: mockSend,
       input: { workdir: "/tmp", story: STORY, semanticConfig: SEMANTIC_CONFIG, mode: "ref" },

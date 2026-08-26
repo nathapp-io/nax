@@ -406,7 +406,7 @@ describe("semanticReviewOp.verify() — recurrence demotion", () => {
       priorSemanticIterations: [priorSemanticRound(1, RECURRING), priorSemanticRound(2, `${RECURRING} again`)],
     };
     const parsed = makeOutput({ passed: false, findings: [finding], normalizedFindings: [], acDropped: [] });
-    const result = await semanticReviewOp.verify!(parsed, input, makeVerifyCtx());
+    const result = await semanticReviewOp.verify(parsed, input, makeVerifyCtx());
     assertDefined(result);
     return result;
   }

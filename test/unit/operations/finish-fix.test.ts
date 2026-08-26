@@ -118,7 +118,7 @@ describe("finishFixOp.verify()", () => {
           { index: 2, disposition: "rejected" as const, evidence: "missing.ts:1" },
         ],
       };
-      const result = await finishFixOp.verify!(
+      const result = await finishFixOp.verify(
         parsed,
         { ...SPEC_INPUT, workdir: dir },
         {
@@ -137,7 +137,7 @@ describe("finishFixOp.recover()", () => {
   test("returns an empty dispositions array rather than throwing", async () => {
     await withTempDir(async (dir) => {
       const ctx = makeCtx();
-      const result = await finishFixOp.recover!(
+      const result = await finishFixOp.recover(
         { ...SPEC_INPUT, workdir: dir },
         {
           ...ctx,

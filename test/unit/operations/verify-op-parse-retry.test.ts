@@ -110,7 +110,7 @@ describe("verifierOp.recover — fail-closed when no usable disk verdict", () =>
   });
 
   test("returns non-null fail-closed VerifierOutput when disk verdict is missing", async () => {
-    const out = await verifierOp.recover!(INPUT, makeCtx(workdir));
+    const out = await verifierOp.recover(INPUT, makeCtx(workdir));
     expect(out).not.toBeNull();
     expect(out!.success).toBe(false);
     expect(out!.reviewReason).toMatch(/verdict|unparseable|invalid/i);
@@ -118,14 +118,14 @@ describe("verifierOp.recover — fail-closed when no usable disk verdict", () =>
 
   test("returns non-null fail-closed VerifierOutput when disk verdict is invalid JSON", async () => {
     await Bun.write(join(workdir, ".nax-verifier-verdict.json"), '{"approved":');
-    const out = await verifierOp.recover!(INPUT, makeCtx(workdir));
+    const out = await verifierOp.recover(INPUT, makeCtx(workdir));
     expect(out).not.toBeNull();
     expect(out!.success).toBe(false);
   });
 
   test("returns success=true when disk verdict is valid and approved", async () => {
     await Bun.write(join(workdir, ".nax-verifier-verdict.json"), VALID_VERDICT_JSON);
-    const out = await verifierOp.recover!(INPUT, makeCtx(workdir));
+    const out = await verifierOp.recover(INPUT, makeCtx(workdir));
     expect(out).not.toBeNull();
     expect(out!.success).toBe(true);
   });

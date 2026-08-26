@@ -218,6 +218,21 @@ export interface FixStrategy<
   coRun?: "exclusive" | "co-run-sequential";
 }
 
+/**
+ * A FixStrategy whose factory always supplies extractApplied — the declared
+ * type keeps the method required instead of optional, so consumers (tests
+ * included) can call it without asserting away the absence check.
+ */
+export type FixStrategyWithExtractApplied<
+  F extends Finding,
+  I,
+  O,
+  // biome-ignore lint/suspicious/noExplicitAny: heterogeneous strategies share a cycle; C is opaque at the cycle layer
+  C = any,
+> = FixStrategy<F, I, O, C> & {
+  extractApplied: NonNullable<FixStrategy<F, I, O, C>["extractApplied"]>;
+};
+
 // ─── Cycle ───────────────────────────────────────────────────────────────────
 
 export interface FixCycle<F extends Finding> {

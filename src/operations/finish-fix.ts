@@ -13,7 +13,7 @@ import type { FinishConfig } from "@/config/selectors";
 import type { FixOutcome } from "../finish/ops";
 import { buildFixPrompt, parseDispositions, validateDispositions } from "../finish/review";
 import type { Finding, FinishPhase } from "../finish/types";
-import type { RunOperation } from "./types";
+import type { RunOperation, RunOperationWithHooks } from "./types";
 
 export interface FinishFixInput {
   phase: FinishPhase;
@@ -27,7 +27,7 @@ export interface FinishFixInput {
   timeoutMs?: number;
 }
 
-export const finishFixOp: RunOperation<FinishFixInput, FixOutcome, FinishConfig> = {
+export const finishFixOp: RunOperationWithHooks<FinishFixInput, FixOutcome, FinishConfig, "verify" | "recover"> = {
   kind: "run",
   name: "finish-fix",
   stage: "rectification",

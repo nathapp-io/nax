@@ -1,6 +1,6 @@
 import type { NaxConfig } from "../config/schema";
 import type { AutofixConfig } from "../config/selectors";
-import type { FixStrategy } from "../findings";
+import type { FixStrategyWithExtractApplied } from "../findings";
 import type { Finding } from "../findings/types";
 import type { UserStory } from "../prd";
 import { findingsToFailedChecks } from "./_finding-to-check";
@@ -51,7 +51,7 @@ export function makeAutofixImplementerStrategy(
   config: NaxConfig,
   sink: DeclarationSink,
   opts: AutofixImplementerStrategyOptions = {},
-): FixStrategy<Finding, AutofixImplementerInput, AutofixImplementerOutput, AutofixConfig> {
+): FixStrategyWithExtractApplied<Finding, AutofixImplementerInput, AutofixImplementerOutput, AutofixConfig> {
   const claimsAdversarial = opts.includeAdversarialReview === true;
   const adversarialReviewByFixTarget = opts.adversarialReviewByFixTarget;
   const blockingThreshold = opts.promptSeverityFloor ?? config.review?.blockingThreshold;

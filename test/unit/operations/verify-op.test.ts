@@ -267,7 +267,7 @@ describe("verifierOp.verify — isolation", () => {
         fileExists: async () => false,
       };
 
-      const result = await verifierOp.verify!(parsed, input, ctx);
+      const result = await verifierOp.verify(parsed, input, ctx);
       expect(result).not.toBeNull();
       expect(result!.isolation).toBeDefined();
       expect(result!.isolation!.passed).toBe(true);
@@ -299,7 +299,7 @@ describe("verifierOp.verify — isolation", () => {
       fileExists: async () => false,
     };
 
-    const result = await verifierOp.verify!(parsed, input, ctx);
+    const result = await verifierOp.verify(parsed, input, ctx);
     expect(result).not.toBeNull();
     expect(result!.success).toBe(false);
   });

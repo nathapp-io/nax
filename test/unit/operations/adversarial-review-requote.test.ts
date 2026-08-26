@@ -98,7 +98,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
         return makeTurnResult({ output: callCount === 1 ? initial : requote });
       });
 
-      const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      const result = await adversarialReviewOp.hopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -152,7 +152,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
         return makeTurnResult({ output: callCount === 1 ? initial : requote });
       });
 
-      const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      const result = await adversarialReviewOp.hopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -201,7 +201,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
         return makeTurnResult({ output: callCount === 1 ? initial : "not valid json response" });
       });
 
-      const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      const result = await adversarialReviewOp.hopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -245,7 +245,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
         return makeTurnResult({ output: initial });
       });
 
-      const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      const result = await adversarialReviewOp.hopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -289,7 +289,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
         return makeTurnResult({ output: initial });
       });
 
-      const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      const result = await adversarialReviewOp.hopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -336,7 +336,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
         return makeTurnResult({ output: initial });
       });
 
-      const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      const result = await adversarialReviewOp.hopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -368,7 +368,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
       return makeTurnResult({ output: initial });
     });
 
-    const result = await adversarialReviewOp.hopBody!("initial prompt", {
+    const result = await adversarialReviewOp.hopBody("initial prompt", {
       send: mockSend,
       sendWithParseRetry: mockSend,
       input: {

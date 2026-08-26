@@ -22,7 +22,7 @@ import { parseRequoteResponse } from "../review/requote-response";
 import type { ReviewAck, SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { reviewExhaustedFallback } from "./_review-fallback";
-import type { HopBodyContext, RunOperation } from "./types";
+import type { HopBodyContext, RunOperation, RunOperationWithHooks } from "./types";
 
 export type { SemanticReviewConfig, SemanticStory };
 export type ValidatedSemanticShape = NonNullable<ReturnType<typeof validateLLMShape>>;
@@ -313,7 +313,12 @@ async function performSemanticReground(
   };
 }
 
-export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewOutput, ReviewConfig> = {
+export const semanticReviewOp: RunOperationWithHooks<
+  SemanticReviewInput,
+  SemanticReviewOutput,
+  ReviewConfig,
+  "hopBody" | "verify"
+> = {
   kind: "run",
   name: "semantic-review",
   stage: "review",

@@ -142,6 +142,19 @@ interface OperationBase<I, O, C> {
 }
 
 /**
+ * A RunOperation whose listed optional hooks are declared present.
+ *
+ * Keeps every signature at its declared domain type (unlike `satisfies`, which
+ * would expose the literal's inferred shapes to consumers) and removes the
+ * optionality of only the named hooks — so callers that know the op defines
+ * them can invoke them without a non-null assertion. Assigning an op literal
+ * that lacks a listed hook still fails to compile, so the claim stays checked.
+ */
+export type RunOperationWithHooks<I, O, C, K extends keyof RunOperation<I, O, C>> = RunOperation<I, O, C> & {
+  [P in K]-?: NonNullable<RunOperation<I, O, C>[P]>;
+};
+
+/**
  * Read-only context for verify/recover hooks. Mirrors BuildContext<C>'s narrow
  * surface plus filesystem reads. No agent calls, no writes, no runtime
  * mutation — both hooks operate on disk artifacts the agent may have

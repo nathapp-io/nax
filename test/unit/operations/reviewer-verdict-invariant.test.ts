@@ -150,7 +150,7 @@ const semanticReviewer: ReviewerUnderTest = {
       normalizedFindings: [],
       acDropped: [],
     };
-    const result = await semanticReviewOp.verify!(parsed, input, makeVerifyCtx(semanticReviewOp.config) as never);
+    const result = await semanticReviewOp.verify(parsed, input, makeVerifyCtx(semanticReviewOp.config) as never);
     expect(result).not.toBeNull();
     return {
       passed: result!.passed,
@@ -215,7 +215,7 @@ const adversarialReviewer: ReviewerUnderTest = {
       normalizedFindings: [],
       acDropped: [],
     };
-    const result = await adversarialReviewOp.verify!(parsed, input, makeVerifyCtx(adversarialReviewOp.config) as never);
+    const result = await adversarialReviewOp.verify(parsed, input, makeVerifyCtx(adversarialReviewOp.config) as never);
     expect(result).not.toBeNull();
     return {
       passed: result!.passed,

@@ -4,7 +4,7 @@ import { acceptanceGenConfigSelector } from "../config";
 import type { AcceptanceGenConfig } from "../config/selectors";
 import { AcceptancePromptBuilder } from "../prompts";
 import { makeSelfHealStep, runSelfHealChain, type SelfHealStep } from "./self-heal";
-import type { RunOperation } from "./types";
+import type { RunOperation, RunOperationWithHooks } from "./types";
 
 export interface AcceptanceGenerateInput {
   featureName: string;
@@ -48,10 +48,11 @@ function pathCorrectionStep(): SelfHealStep<AcceptanceGenerateInput> {
   });
 }
 
-export const acceptanceGenerateOp: RunOperation<
+export const acceptanceGenerateOp: RunOperationWithHooks<
   AcceptanceGenerateInput,
   AcceptanceGenerateOutput,
-  AcceptanceGenConfig
+  AcceptanceGenConfig,
+  "hopBody" | "verify"
 > = {
   kind: "run",
   name: "acceptance-generate",
