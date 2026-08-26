@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 159,
+    "asNever": 155,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T16:00:57.645Z",
+  "updatedAt": "2026-08-26T16:02:19.295Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -662,8 +662,7 @@
       "asNever": 1
     },
     "test/unit/execution/lifecycle/acceptance-loop-routing.test.ts": {
-      "looseCast": 1,
-      "asNever": 4
+      "looseCast": 1
     },
     "test/unit/execution/lifecycle/default-agent-migration.test.ts": {
       "asNever": 1
