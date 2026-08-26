@@ -155,10 +155,10 @@ describe("runReplanLoop", () => {
     // Default mocks — override per test as needed
     _planDeps.processExit = mock((_code: number): never => {
       throw new Error(`process.exit(${_code})`);
-    }) as never;
-    _planDeps.planDecompose = mock(async () => () => {}) as never;
-    _planDeps.readFile = mock(async () => JSON.stringify(prd)) as never;
-    _planDeps.runPrecheck = mock(async () => makePassingPrecheck()) as never;
+    });
+    _planDeps.planDecompose = mock(async () => () => {});
+    _planDeps.readFile = mock(async () => JSON.stringify(prd));
+    _planDeps.runPrecheck = mock(async () => makePassingPrecheck());
   });
 
   afterEach(() => {
@@ -173,7 +173,7 @@ describe("runReplanLoop", () => {
   // ── AC-6: action === 'warn' — loop does NOT fire ──────────────────────────
 
   test("AC-6: does not call planDecomposeCommand when storySizeGate action is warn", async () => {
-    _planDeps.runPrecheck = mock(async () => makeWarnPrecheck(["US-001"])) as never;
+    _planDeps.runPrecheck = mock(async () => makeWarnPrecheck(["US-001"]));
 
     await runReplanLoop(tmpDir, makeConfig("warn"), {
       feature: "test-feature",
@@ -185,7 +185,7 @@ describe("runReplanLoop", () => {
   });
 
   test("AC-6: does not call processExit when action is warn even with flagged stories", async () => {
-    _planDeps.runPrecheck = mock(async () => makeWarnPrecheck(["US-001"])) as never;
+    _planDeps.runPrecheck = mock(async () => makeWarnPrecheck(["US-001"]));
 
     await runReplanLoop(tmpDir, makeConfig("warn"), {
       feature: "test-feature",
@@ -199,7 +199,7 @@ describe("runReplanLoop", () => {
   // ── AC-6: no flagged stories — loop does NOT fire ─────────────────────────
 
   test("AC-6: does not fire when precheck returns no flagged stories", async () => {
-    _planDeps.runPrecheck = mock(async () => makePassingPrecheck()) as never;
+    _planDeps.runPrecheck = mock(async () => makePassingPrecheck());
 
     await runReplanLoop(tmpDir, makeConfig("block"), {
       feature: "test-feature",
@@ -220,8 +220,8 @@ describe("runReplanLoop", () => {
       callCount++;
       if (callCount === 1) return makeBlockedPrecheck(["US-001", "US-002"]);
       return makePassingPrecheck();
-    }) as never;
-    _planDeps.readFile = mock(async () => JSON.stringify(prd2)) as never;
+    });
+    _planDeps.readFile = mock(async () => JSON.stringify(prd2));
 
     await runReplanLoop(tmpDir, makeConfig("block"), {
       feature: "test-feature",
@@ -238,7 +238,7 @@ describe("runReplanLoop", () => {
       callCount++;
       if (callCount === 1) return makeBlockedPrecheck(["US-001"]);
       return makePassingPrecheck();
-    }) as never;
+    });
 
     await runReplanLoop(tmpDir, makeConfig("block"), {
       feature: "test-feature",
@@ -260,7 +260,7 @@ describe("runReplanLoop", () => {
       callCount++;
       if (callCount === 1) return makeBlockedPrecheck(["US-001"]);
       return makePassingPrecheck();
-    }) as never;
+    });
 
     await runReplanLoop(tmpDir, makeConfig("block"), {
       feature: "test-feature",
@@ -277,7 +277,7 @@ describe("runReplanLoop", () => {
       callCount++;
       if (callCount === 1) return makeBlockedPrecheck(["US-001"]);
       return makePassingPrecheck();
-    }) as never;
+    });
 
     await runReplanLoop(tmpDir, makeConfig("block"), {
       feature: "test-feature",
@@ -297,7 +297,7 @@ describe("runReplanLoop", () => {
       callCount++;
       if (callCount === 1) return makeBlockedPrecheck(["US-001"]);
       return makePassingPrecheck(); // Clears on second check
-    }) as never;
+    });
 
     await runReplanLoop(tmpDir, makeConfig("block", 5), {
       feature: "test-feature",
@@ -316,7 +316,7 @@ describe("runReplanLoop", () => {
       callCount++;
       if (callCount === 1) return makeBlockedPrecheck(["US-001"]);
       return makePassingPrecheck();
-    }) as never;
+    });
 
     await expect(
       runReplanLoop(tmpDir, makeConfig("block"), {
@@ -330,7 +330,7 @@ describe("runReplanLoop", () => {
   // ── AC-4: respects maxReplanAttempts ─────────────────────────────────────
 
   test("AC-4: calls planDecompose exactly maxReplanAttempts times when always blocked (custom: 2)", async () => {
-    _planDeps.runPrecheck = mock(async () => makeBlockedPrecheck(["US-001"])) as never;
+    _planDeps.runPrecheck = mock(async () => makeBlockedPrecheck(["US-001"]));
 
     await expect(
       runReplanLoop(tmpDir, makeConfig("block", 2), {
@@ -357,7 +357,7 @@ describe("runReplanLoop", () => {
       },
     });
 
-    _planDeps.runPrecheck = mock(async () => makeBlockedPrecheck(["US-001"])) as never;
+    _planDeps.runPrecheck = mock(async () => makeBlockedPrecheck(["US-001"]));
 
     await expect(
       runReplanLoop(tmpDir, configNoAttempts, {
@@ -374,7 +374,7 @@ describe("runReplanLoop", () => {
   // ── AC-5: exits with code 1 after max attempts exhausted ─────────────────
 
   test("AC-5: calls processExit(1) when max attempts exhausted and stories still blocked", async () => {
-    _planDeps.runPrecheck = mock(async () => makeBlockedPrecheck(["US-001"])) as never;
+    _planDeps.runPrecheck = mock(async () => makeBlockedPrecheck(["US-001"]));
 
     await expect(
       runReplanLoop(tmpDir, makeConfig("block", 1), {
@@ -393,7 +393,7 @@ describe("runReplanLoop", () => {
       callCount++;
       if (callCount === 1) return makeBlockedPrecheck(["US-001"]);
       return makePassingPrecheck();
-    }) as never;
+    });
 
     await runReplanLoop(tmpDir, makeConfig("block"), {
       feature: "test-feature",
@@ -415,7 +415,7 @@ describe("runReplanLoop", () => {
       callCount++;
       if (callCount <= 2) return makeBlockedPrecheck(["US-001"]);
       return makePassingPrecheck();
-    }) as never;
+    });
 
     await runReplanLoop(tmpDir, makeConfig("block", 5), {
       feature: "test-feature",
@@ -434,8 +434,8 @@ describe("runReplanLoop", () => {
       callCount++;
       if (callCount === 1) return makeBlockedPrecheck(["US-001", "US-002", "US-003"]);
       return makePassingPrecheck();
-    }) as never;
-    _planDeps.readFile = mock(async () => JSON.stringify(prd3)) as never;
+    });
+    _planDeps.readFile = mock(async () => JSON.stringify(prd3));
 
     await runReplanLoop(tmpDir, makeConfig("block"), {
       feature: "test-feature",

@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1799,
-    "asNever": 442,
+    "asNever": 421,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T14:23:29.569Z",
+  "updatedAt": "2026-08-26T14:26:28.597Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -1005,9 +1005,6 @@
     },
     "test/unit/cli/runs.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/cli/plan-replan.test.ts": {
-      "asNever": 21
     },
     "test/unit/cli/status-cost.test.ts": {
       "looseCast": 1,
