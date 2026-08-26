@@ -59,11 +59,11 @@ const SAMPLE_RECORD: RepoScopedFixRecord = {
 };
 
 const baseOverrides = {
-  getAgent: () => makeAgentAdapter({ name: "claude" }) as never,
+  getAgent: () => makeAgentAdapter({ name: "claude" }),
   validateAgentForTier: () => true,
   captureGitRef: async () => "HEAD",
   getUntrackedPaths: async () => [],
-  assemblePlanInputsFromCtx: async () => ({}) as never,
+  assemblePlanInputsFromCtx: async (ctx: PipelineContext) => ({ story: ctx.story, config: ctx.config }),
 } as const;
 
 describe("executionStage.execute — recordRepoScopedFixes wiring (US-002)", () => {
@@ -123,9 +123,9 @@ describe("executionStage.execute — recordRepoScopedFixes wiring (US-002)", () 
     return withExecutionDeps({
       ...baseOverrides,
       buildPlanForStrategy: async () => ({ run: planRun }) as never,
-      recordRepoScopedFixes: recordSpy as never,
-      applyPostRunInspection: inspectSpy as never,
-      decideStageAction: (() => ({ action: "continue" }) as StageResult) as never,
+      recordRepoScopedFixes: recordSpy,
+      applyPostRunInspection: inspectSpy,
+      decideStageAction: async () => ({ action: "continue" }) as StageResult,
     });
   }
 
@@ -149,8 +149,8 @@ describe("executionStage.execute — recordRepoScopedFixes wiring (US-002)", () 
     return withExecutionDeps({
       ...baseOverrides,
       buildPlanForStrategy: async () => ({ run: planRun }) as never,
-      applyPostRunInspection: inspectStub as never,
-      decideStageAction: (() => ({ action: "continue" }) as StageResult) as never,
+      applyPostRunInspection: inspectStub,
+      decideStageAction: async () => ({ action: "continue" }) as StageResult,
     });
   }
 

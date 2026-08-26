@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1799,
-    "asNever": 304,
+    "asNever": 297,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:10:02.541Z",
+  "updatedAt": "2026-08-26T15:16:48.621Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -1568,7 +1568,7 @@
     "test/unit/pipeline/stages/execution-repo-scoped-fixes.test.ts": {
       "ratchetAllow": 2,
       "looseCast": 2,
-      "asNever": 9
+      "asNever": 2
     },
     "test/unit/pipeline/stages/acceptance.test.ts": {
       "ratchetAllow": 7,
