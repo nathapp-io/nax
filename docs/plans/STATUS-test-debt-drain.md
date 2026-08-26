@@ -10,7 +10,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 
 ---
 
-## 0. Current state — re-measured 2026-08-26 on `main` (after #1719)
+## 0. Current state — re-measured 2026-08-26 on `chore/drain-no-non-null-assertion` (after the noNonNullAssertion drain closed)
 
 | Counter | Regex ratchet | Biome | Drain target? |
 |:--|--:|--:|:--|
@@ -19,24 +19,21 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 | `as unknown as` | **0** | — | done — closed invariant (§8.13) |
 | `asAny` | 1 | **0** | done — rule at `"error"` (archive §8.25) |
 | `anyType` | 10 | **0** | done — rule at `"error"` (archive §8.25) |
-| `nonNullAssert` | 792 | **1064** | **yes — the current target** |
+| `nonNullAssert` | 2 | **0** | **done — rule at `"error"` (§8.14–§8.16)**; the 2 regex hits are prose/fixture strings biome does not see (§0.1) |
 | `asNever` | 603 | — | yes |
 | `ratchetAllow` | 103 | — | yes |
-| `tsSuppress` | 40 | — | yes |
+| `tsSuppress` | 25 | — | yes |
 | `absentValue` | 17 | — | yes |
-| `looseCast` | 1800 | — | **no** — guard only, see below |
+| `looseCast` | 1799 | — | **no** — guard only, see below |
 
-Two ratchets are closed and gated. **`as unknown as` went 101 → 0** across nine commits
+Three ratchets are closed and gated. `as unknown as` went 101 → 0 across nine commits
 (§8.1–§8.13) and is now a pure invariant: any nonzero reading is a regression to reject, not
-a number to work down. **`noExplicitAny` went biome 1529 → 0** across twelve batches and 235
-files, and `biome.json`'s `test/**` override now says `"noExplicitAny": "error"` — the first
-half of endgame item 4, closed. The full per-batch log is
-`archive/LOG-no-explicit-any-drain.md`; the residual regex readings (`asAny` 1, `anyType` 10)
-are comments and the ratchet parser's own string fixtures, which biome does not see.
-
-**Endgame item 4's remaining half is `noNonNullAssertion`, and it is the current target**
-(§1). Biome counts **1064** sites in 170 files against the regex ratchet's 792 — see §0.1 for
-why the two disagree and why biome is the finish line.
+a number to work down. `noExplicitAny` went biome 1529 → 0 across twelve batches and 235
+files (`archive/LOG-no-explicit-any-drain.md`). **`noNonNullAssertion` went biome 1064 → 0**
+across nine commits on the branch (§8.14–§8.16 below cover this session's final three), and
+`biome.json`'s `test/**` override now says `"error"` for both rules explicitly — endgame
+item 4 is fully closed. The residual regex readings are comments and string fixtures
+(`asAny` 1, `anyType` 10, `nonNullAssert` 2) which biome does not see.
 
 `looseCast` is not a target. It exists so the TS2352 population ("convert the
 expression to `unknown` first") cannot escape into unmarked single casts. That job
@@ -67,21 +64,10 @@ From `archive/2026-08-22-1514-phase3c-test-debt-drain.md` §6, with steps 1–3 
    way to buy a green build.** They are what stops that trade. Since §8.13 the
    `as unknown as` ratchet is baselined at **0**, so it no longer tracks a drain — it is a
    pure invariant.
-4. **half done** — retire the `test/**` exemptions in `biome.json`.
-   `noExplicitAny` is closed at `"error"` (archive §8.25). **`noNonNullAssertion` is what is
-   left.** Two corrections still govern how it finishes, both from the Biome v2 upgrade
-   (`docs/findings/biome-migration-risk.md`):
-
-   - **Promote the override to `"error"`, do not delete it.** Under 1.9.4 both rules were
-     error-severity, so deleting the exemption turned a counting ratchet into a hard gate.
-     Under 2.5.10 they land at **warning**, and `biome check` exits 0 on warnings — deleting
-     the override would retire the drained sites into no enforcement at all. The override
-     block must end up saying `"error"`, explicitly.
-   - **Judge "at 0" with biome, not the regex counters** — see §0.1. `nonNullAssert` at 0 on
-     the ratchet still leaves ~272 live sites, which fails the promote-back.
-
-   `src/` and `bin/` are already done: both rules are `"error"` there as of the v2 rollout's
-   step 4, at zero cost, because neither had a single violation. Only `test/**` is left.
+4. ~~retire the `test/**` exemptions in `biome.json`~~ **done** — both rules sit at
+   `"error"` in the override block, explicitly (promoting, not deleting: under Biome v2.5.10
+   deleting would retire the drained sites into warnings that exit 0). Judged at 0 by
+   biome's JSON reporter per §0.1.
 5. ~~update `.nax/rules/test-ratchets.md`, close #1514~~ done
 
 ---
@@ -152,51 +138,39 @@ in milliseconds. Use biome for "are we done yet".
 
 ---
 
-## 1. Current target — `noNonNullAssertion`, biome 1064 in 170 files, not started
+## 1. ~~Current target — `noNonNullAssertion`~~ CLOSED — biome 1064 → 0
 
-The last open half of endgame item 4. Roughly ten times the `as unknown as` drain and about
-two thirds the size of `noExplicitAny`, but with a much flatter distribution: the top 20 files
-hold only **403 of 1064** sites, and 78 files hold three or fewer. There is no small head to
-clear first — batch by tier, as the `noExplicitAny` drain did (archive §8.16 onward).
+The drain is complete: **0 sites in 0 files** on biome's count (§0.1), rule promoted to
+`"error"` in `biome.json`'s `test/**` override. The per-batch log is §8.14–§8.16 below;
+batches 1–6 predate this session's entries and live in the branch history
+(`chore/drain-no-non-null-assertion`, commits `9fb596297`..`435f6edd1`). The regex ratchet
+baselines 2 residual matches, both prose/fixture strings (`assert-defined.ts`'s own doc
+comment and a declaration-fixture string) that biome does not parse.
 
-Head of the queue, biome-counted, 2026-08-26:
-
-| Sites | File |
-|--:|:--|
-| 39 | `test/unit/operations/adversarial-review-verify.test.ts` |
-| 34 | `test/unit/operations/semantic-review-verify.test.ts` |
-| 29 | `test/unit/prd/schema.test.ts` |
-| 28 | `test/unit/review/orchestrator-wrapper-parity.test.ts` |
-| 24 | `test/integration/execution/nbf-rectify-declaration.test.ts` |
-| 24 | `test/unit/operations/apply-test-edit-declarations.test.ts` |
-| 21 | `test/unit/execution/plan-inputs-review-wiring.test.ts` |
-| 20 | `test/unit/context/engine/providers/code-neighbor-chunk.test.ts` |
-| 18 | five files (`fullsuite-rectify-declaration`, `runner-escalation`, `spawn-client`, `verify-op-recover`, `adversarial-audit-shape`) |
-
-Tail shape: 3 files at 14, 5 at 13, 7 at 12, 5 at 11, 6 at 10, 4 at 9, 9 at 8, 5 at 7, 13 at
-6, 12 at 5, 10 at 4, 12 at 3, 26 at 2, 40 at 1.
+What remains of this section is the recipe record, for the next drain:
 
 **The primary recipe already exists and is documented.** `test/helpers/assert-defined.ts`
-(exported from `@test/helpers`) holds `assertDefined` and `firstCall`, written for exactly this
-population during #1514 — 51 and 12 call sites so far. Its doc comment is the ruling: `!` is
-matched by *none* of the escape-hatch counters, `expect(x).not.toBeNull()` does not narrow, and
-`expect(x?.y).toBe(v)` narrows but **goes vacuously true** when the value really is absent,
-converting a real failure into a green test. The helpers throw, so a missing value fails loudly
-and names what was missing. Read that file before the first batch.
+(exported from `@test/helpers`) holds `assertDefined` and `firstCall`. Its doc comment is
+the ruling: `!` is matched by *none* of the escape-hatch counters, `expect(x).not.toBeNull()`
+does not narrow, and `expect(x?.y).toBe(v)` narrows but **goes vacuously true** when the
+value really is absent, converting a real failure into a green test. The helpers throw, so a
+missing value fails loudly and names what was missing.
 
-Two other routes, in preference order before reaching for the helper:
+Route order, as proven across the drain:
 
-- **Complete the fixture** so the value is not optional in the first place. Same ruling as the
-  cast drain (§4): if the compiler is right that the mock is incomplete, complete the mock.
-- **Tighten the accessor's return type.** A helper that returns `T | undefined` because one
-  caller needs that, forcing `!` on twenty others, is the defect — see §6's "a defensive `?.`
-  is not evidence of a tolerated absence".
+1. **Declare the hook present** when a shared type erases what a concrete value defines
+   (§8.15) — `RunOperationWithHooks<I, O, C, K>` / `FixStrategyWithExtractApplied<F, I, O, C>`.
+   This beats fifty `!`s at call sites and, unlike `satisfies`, keeps every other signature
+   at its declared domain type.
+2. **Complete the fixture** so the value is not optional in the first place.
+3. **Tighten the accessor's return type** — a helper returning `T | undefined` because one
+   caller needs that, forcing `!` on twenty others, is the defect (§6).
+4. **`assertDefined`** for genuinely-optional values — captured callback writes, indexed
+   reads under `noUncheckedIndexedAccess`, optional config fields whose schema defaults make
+   absence impossible. One assertion per variable per scope, placed at the first read.
 
-`assertDefined` is the fallback for genuinely-optional values, not the default. A file that
-becomes twenty `assertDefined` lines has usually not been drained; its fixture has.
-
-Regenerate the per-file queue any time with the §0.1 probe. The closed `as unknown as` ratchet
-is regenerated with:
+Regenerate the per-file queue any time with the §0.1 probe. The closed `as unknown as`
+ratchet is regenerated with:
 
 ```bash
 bun run scripts/check-test-as-unknown-as.ts --list
@@ -1049,3 +1023,83 @@ the same test files.** `bun test <dir>` and `bun run test:e2e` are not the same 
 the difference was a flag that turns a passing suite into a cascade of misleading failures.
 The claim reached a commit message, a status doc and a PR body before the gate itself was
 ever run. Cheapest check available: run the gate, then read its exit code.
+
+### 8.14 Batch 7 — the `executeHop!` seam, 414 → 362 (2026-08-26)
+
+The first session batch after the queue re-measure. 52 sites across 18 files, all the same
+shape: inside a `runWithFallbackFn` callback, `await req.executeHop!("claude", …)`.
+
+**The seam question came first and answered "not this seam".** The tempting fix was
+tightening `MockAgentManagerOptions.runWithFallbackFn`'s parameter to require
+`executeHop` — but the override is reached through BOTH dispatch paths (`run()` and
+`runWithFallback()`), and `SessionManager.runInSession` drives requests that genuinely lack
+`executeHop`; the real manager accepts hop-less requests too (it falls back to internal
+send machinery). So the optionality is real, not type-erasure — **§1 route 2 does not apply
+when the accessor's optionality is honest**, and `assertDefined` (route 4) is the correct
+tool for a value that is optional for real.
+
+Mechanically: one destructure + assert per callback, then plain calls. All 18 files green,
+gates clean. Commit `904da46b9`.
+
+Side finding: `lint:fix` auto-converted 15 pre-existing `@ts-ignore` directives in
+`shell-security.test.ts` / `on-all-stories-complete.test.ts` to `@ts-expect-error`, which
+surfaced them as TS2578 — they suppress nothing (the imports/functions have been exported
+for a long time; HOOK_EVENTS long since contains the event). Deleted rather than converted;
+`tsSuppress` 40 → 25 as a side effect. **A suppression that errors when unused is a lint for
+dead suppressions — worth sweeping for on purpose, not by lint:fix accident.**
+
+File-sizes: plan.test.ts and call.test.ts each +1 over grandfathered baselines from the
+added assert lines; baselines raised by exactly that much with disclosure in the commit.
+Compaction was attempted first but every route touched unrelated test semantics.
+
+### 8.15 Batch 8 — declare the hook present, 362 → 311 (2026-08-26)
+
+51 sites across 14 files, all `op.verify!` / `op.hopBody!` / `op.recover!` /
+`strategy.extractApplied!`. Root cause one level up: the seven exported op constants annotate
+themselves `: RunOperation<I, O, C>`, which erases which optional hooks the literal actually
+defines; same for the two strategy factories returning `FixStrategy<…>` with `extractApplied?`.
+
+**`satisfies` was tried first and reverted.** It makes the const's type the literal's own,
+so `parse`'s return narrowed from the declared domain type to the literal's inferred union —
+and unrelated `.failOpen` reads broke across several suites. The landed shape is a targeted
+intersection, `RunOperationWithHooks<I, O, C, K>` (`src/operations/types.ts`):
+`RunOperation<I, O, C> & { [P in K]-?: NonNullable<RunOperation<I,O,C>[P]> }`. Every other
+signature stays declared; only the named hooks lose optionality; assigning an op that lacks a
+listed hook still fails to compile, so the claim stays checked. Same shape for strategies:
+`FixStrategyWithExtractApplied<F, I, O, C>` in `src/findings/cycle-types.ts`.
+**This is a new §1 route, above "complete the fixture": when a shared type erases what a
+concrete exported value defines, declare the hooks present instead of asserting them present
+at fifty call sites.** The `NonNullable` matters: `-?` removes the optional modifier but an
+indexed read still carries `undefined` into the property type. Commit `5cec76b31`.
+
+### 8.16 Batches delegated — 311 → 0, rule promoted, drain closed (2026-08-26)
+
+The remaining 311 sites across 100 files were all the captured-variable / indexed-read /
+optional-config-field population — mechanical under the recipes, so per §6 ("delegate a
+proven recipe with many sites left") four parallel delegates took disjoint file sets with a
+written brief. **311/311 fixed, zero escalations, zero src changes**, verified at
+integration by the owner: added-line diff audited for forbidden patterns (none), full gates
+re-run (typecheck 0 all three, check:all, suite 14156/1173/38). Commit `435f6edd1`.
+
+Two recipe refinements the delegates surfaced:
+
+- **`let x: T | null = null` assigned inside a mock closure narrows to `null` at the
+  read** — `assertDefined(x)` infers `NonNullable<null>` = `never` and fails to compile.
+  Dropping the initializer alone trips TS2454. The working declaration is
+  `let x: T | undefined;` with any `=== null` guards updated to `=== undefined`. This is the
+  write-side twin of §1's vacuous-`?.` ruling.
+- **`expect(x).toBeDefined()` immediately before reads does not narrow** and was folded into
+  `assertDefined(x)` where both coexisted — strictly stronger, no line cost.
+
+`cycle.test.ts` grew 3 lines past its grandfathered size baseline (+3 assertion lines);
+raised with disclosure, consistent with batch 7's two files.
+
+**Promote-back.** With biome reading 0, `biome.json`'s `test/**` override flipped
+`noNonNullAssertion` `"off"` → `"error"` explicitly (kept, not deleted — §0's Biome-v2
+correction). `biome check test/` exits 0; the regex ratchet baselines 2 residual matches,
+both prose (`assert-defined.ts`'s doc comment explaining why `!` is invisible to counters)
+and a fixture string exercising `foo!.bar → foo?.bar` edits — the parser-fixtures family §0
+already documents for `asAny`/`anyType`.
+
+Against the branch start: **biome nonNullAssert 1064 → 0 (−100%)**, regex 792 → 2 (prose).
+Endgame item 4 closed; endgame complete.
