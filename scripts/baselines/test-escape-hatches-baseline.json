@@ -5,11 +5,11 @@
     "ratchetAllow": 103,
     "absentValue": 17,
     "anyType": 10,
-    "looseCast": 1799,
-    "asNever": 288,
+    "looseCast": 1798,
+    "asNever": 281,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:19:02.628Z",
+  "updatedAt": "2026-08-26T15:21:25.319Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -837,8 +837,8 @@
       "asNever": 1
     },
     "test/unit/operations/full-suite-rectify.test.ts": {
-      "looseCast": 6,
-      "asNever": 8
+      "looseCast": 5,
+      "asNever": 1
     },
     "test/unit/operations/plan-critic-llm.test.ts": {
       "looseCast": 3
