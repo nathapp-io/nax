@@ -28,7 +28,7 @@ import type { DeferredReviewResult } from "../deferred-review";
 import type { ExitReason } from "../executor-types";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import type { StatusWriter } from "../status-writer";
-import { synthesizeBackfillMetric } from "./backfill-story-metrics";
+import { applyBackfill } from "./backfill-story-metrics";
 import { runDeferredRegression } from "./run-regression";
 
 /**
@@ -356,49 +356,16 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   const aggByStage = options.runtime.costAggregator.byStage();
   const aggByStory = options.runtime.costAggregator.byStory();
 
-  // Back-fill storyMetrics for stories whose only spend was in the completion phase
-  // (acceptance refinement, hardening, diagnosis, fix-cycle). These stories have cost
-  // in the aggregator but no entry in allStoryMetrics from the execution phase.
-  {
-    const existingIndex = new Map(allStoryMetrics.map((m, i) => [m.storyId, i]));
-    const completionCompletedAt = new Date().toISOString();
-    const defaultAgent = options.agentManager?.getDefault() ?? resolveDefaultAgent(config);
-
-    for (const [storyId, snap] of Object.entries(aggByStory)) {
-      if (snap.totalCostUsd <= 0) continue;
-      const existingIdx = existingIndex.get(storyId);
-      if (existingIdx === undefined) {
-        const story = prd.userStories.find((s) => s.id === storyId);
-        // A story with cost but no execution-phase metric either failed in the
-        // execution stage (pipeline stopped before the completion stage) or spent
-        // only in completion phases. synthesizeBackfillMetric distinguishes the two so
-        // a failed story gets its real attempts/model/tier instead of the corrupt
-        // attempts:0 / modelUsed=<agentName> placeholder (issue #1296).
-        allStoryMetrics.push(
-          synthesizeBackfillMetric({
-            storyId,
-            story,
-            totalCostUsd: snap.totalCostUsd,
-            config,
-            defaultAgent,
-            timestamp: completionCompletedAt,
-            // nax#1709: the run-scoped stores outlive the per-attempt PipelineContext, so a
-            // story that failed in the execution stage still has its swap hops and crash
-            // retries here even though it never reached collectStoryMetrics.
-            fallbackHops: toFallbackHops(options.runtime.agentFallbacks.get(storyId), storyId),
-            runtimeCrashes: options.runtime.runtimeCrashRetries.get(storyId) ?? 0,
-          }),
-        );
-      } else {
-        // Story already has an execution-phase entry — replace cost with the aggregator
-        // value if it's higher (aggregator is authoritative across all phases).
-        const existing = allStoryMetrics[existingIdx];
-        if (snap.totalCostUsd > (existing.cost ?? 0)) {
-          allStoryMetrics[existingIdx] = { ...existing, cost: snap.totalCostUsd };
-        }
-      }
-    }
-  }
+  // nax#1721: domain, evidence rule and synthesis all live in backfill-story-metrics.ts.
+  applyBackfill({
+    allStoryMetrics,
+    aggByStory,
+    stories: prd.userStories,
+    agentFallbacks: options.runtime.agentFallbacks,
+    runtimeCrashRetries: options.runtime.runtimeCrashRetries,
+    config,
+    defaultAgent: options.agentManager?.getDefault() ?? resolveDefaultAgent(config),
+  });
 
   const durationMs = Date.now() - startTime;
   const runCompletedAt = new Date().toISOString();

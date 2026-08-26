@@ -226,3 +226,120 @@ describe("handleRunCompletion — nax#1709 back-fill reads the run-scoped stores
     expect(event?.fallback).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// nax#1721 (closes #1714) — the back-fill loop iterated the cost aggregator's
+// keys and skipped anything that did not spend. Two classes of story got no row
+// at all, not a row missing a field:
+//
+//   - a story that failed having spent nothing (a fallback chain whose candidates
+//     all fail auth instantly), which kept deriveRunFallbackAggregates' exhausted
+//     rule unreachable for exactly the case it measures;
+//   - a sibling of a failed batch, whose spend was filed under the batch's LEAD
+//     (one session, ctx.storyId = the lead) so it has no aggregator key of its own.
+//
+// The domain is now the union of the aggregator's keys, the two run-scoped stores'
+// keys, and the PRD stories that terminated as an execution failure.
+// ---------------------------------------------------------------------------
+
+/** A PRD of N stories all marked failed — the failed-batch shape. */
+function makeFailedBatchPRD(ids: string[]): PRD {
+  return makePRDHelper({
+    project: "test-project",
+    feature: "test-feature",
+    branchName: "test-branch",
+    userStories: ids.map((id) =>
+      makeStory({ id, title: `Story ${id}`, description: "Test story", status: "failed", passes: false, attempts: 2 }),
+    ),
+  });
+}
+
+describe("handleRunCompletion — back-fill domain covers every story that ran (#1721)", () => {
+  test("AC-1: a zero-cost failed story with hops still gets a row carrying them", async () => {
+    const zeroHop = hop({ costUsd: 0, outcome: "fail-auth" });
+    const runtime = runtimeWith({ "US-001": [zeroHop] }, {}, {});
+    const opts = makeOpts(makeFailedPRD("US-001"), runtime);
+
+    await captureRunCompleted(opts);
+
+    const metric = opts.allStoryMetrics.find((m) => m.storyId === "US-001");
+    expect(metric).toBeDefined();
+    expect(metric?.cost).toBe(0);
+    expect(metric?.fallback?.hops).toHaveLength(1);
+  });
+
+  test("AC-2: the exhausted rule is reachable for a story that spent nothing", async () => {
+    const runtime = runtimeWith({ "US-001": [hop({ costUsd: 0, outcome: "fail-auth" })] }, {}, {});
+
+    const event = await captureRunCompleted(makeOpts(makeFailedPRD("US-001"), runtime));
+
+    expect(event?.fallback?.exhaustedStories).toEqual(["US-001"]);
+  });
+
+  test("AC-3/AC-4: a failed batch's siblings get rows, not just the lead", async () => {
+    // All spend is filed under the lead, matching how the cost aggregator groups a
+    // batch: one session, ctx.storyId = US-001.
+    const runtime = runtimeWith({}, {}, { "US-001": 3.0 });
+    const opts = makeOpts(makeFailedBatchPRD(["US-001", "US-002", "US-003"]), runtime);
+
+    await captureRunCompleted(opts);
+
+    const ids = opts.allStoryMetrics.map((m) => m.storyId).sort();
+    expect(ids).toEqual(["US-001", "US-002", "US-003"]);
+
+    const sibling = opts.allStoryMetrics.find((m) => m.storyId === "US-002");
+    expect(sibling?.cost).toBe(0);
+    expect(sibling?.source).toBe("execution-failed");
+    expect(sibling?.success).toBe(false);
+  });
+
+  test("AC-5: a pending story that never ran still gets no row", async () => {
+    const prd = makePRDHelper({
+      project: "test-project",
+      feature: "test-feature",
+      branchName: "test-branch",
+      userStories: [
+        makeStory({ id: "US-001", status: "failed", passes: false, attempts: 2 }),
+        makeStory({ id: "US-002", status: "pending", passes: false, attempts: 0 }),
+      ],
+    });
+    const opts = makeOpts(prd, runtimeWith({}, {}, { "US-001": 1.25 }));
+
+    await captureRunCompleted(opts);
+
+    expect(opts.allStoryMetrics.map((m) => m.storyId)).toEqual(["US-001"]);
+  });
+
+  test("AC-6: a story already in allStoryMetrics is merged, not duplicated", async () => {
+    const opts = makeOpts(makeFailedPRD("US-001"), runtimeWith({}, {}, { "US-001": 5.0 }));
+    opts.allStoryMetrics.push({
+      storyId: "US-001",
+      complexity: "simple",
+      modelTier: "balanced",
+      modelUsed: "sonnet",
+      attempts: 1,
+      finalTier: "balanced",
+      success: false,
+      cost: 1.0,
+      durationMs: 10,
+      firstPassSuccess: false,
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+    });
+
+    await captureRunCompleted(opts);
+
+    const rows = opts.allStoryMetrics.filter((m) => m.storyId === "US-001");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].cost).toBe(5.0);
+  });
+
+  test("AC-7: a zero-cost failed story with only crash retries gets a row", async () => {
+    const opts = makeOpts(makeFailedPRD("US-001"), runtimeWith({}, { "US-001": 2 }, {}));
+
+    await captureRunCompleted(opts);
+
+    const metric = opts.allStoryMetrics.find((m) => m.storyId === "US-001");
+    expect(metric?.runtimeCrashes).toBe(2);
+  });
+});
