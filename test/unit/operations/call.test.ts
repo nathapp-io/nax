@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, type mock, test } from "bun:test";
-import { firstCall, makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import { assertDefined, firstCall, makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { AgentRunRequest } from "@/agents/manager-types";
 import type { RetryPreset } from "@/agents/retry";
 import type { CompleteResult, TurnResult } from "@/agents/types";
@@ -834,7 +834,8 @@ describe("callOp — run-kind op.recover invocation on retry exhaustion (#993)",
         internalRoundTrips: 0,
       }),
       runWithFallbackFn: async (req) => {
-        const result = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        assertDefined(req.executeHop, "req.executeHop");
+        const result = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return {
           result: {
             success: true,

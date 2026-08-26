@@ -1,7 +1,7 @@
 {
   "counts": {
     "asAny": 1,
-    "tsSuppress": 40,
+    "tsSuppress": 25,
     "ratchetAllow": 103,
     "absentValue": 17,
     "anyType": 10,
@@ -9,7 +9,7 @@
     "asNever": 603,
     "nonNullAssert": 295
   },
-  "updatedAt": "2026-08-26T11:32:22.495Z",
+  "updatedAt": "2026-08-26T11:58:22.338Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -480,11 +480,7 @@
       "asNever": 1
     },
     "test/unit/hooks/on-all-stories-complete.test.ts": {
-      "tsSuppress": 2,
       "looseCast": 1
-    },
-    "test/unit/hooks/shell-security.test.ts": {
-      "tsSuppress": 13
     },
     "test/unit/execution/unified-executor-rl002.test.ts": {
       "asNever": 2

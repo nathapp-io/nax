@@ -9,13 +9,13 @@
     "src/prompts/builders/rectifier-builder.ts": 902,
     "src/session/manager.ts": 731,
     "test/unit/agents/acp/spawn-client.test.ts": 818,
-    "test/unit/cli/plan.test.ts": 1197,
+    "test/unit/cli/plan.test.ts": 1198,
     "test/unit/debate/runner-plan.test.ts": 1109,
     "test/unit/execution/escalation/tier-escalation.test.ts": 1025,
     "test/unit/execution/lifecycle/acceptance-loop-cycle.test.ts": 835,
     "test/unit/execution/story-orchestrator.test.ts": 2000,
     "test/unit/findings/cycle.test.ts": 930,
     "test/unit/interaction/plugins/telegram.test.ts": 870,
-    "test/unit/operations/call.test.ts": 959
+    "test/unit/operations/call.test.ts": 960
   }
 }

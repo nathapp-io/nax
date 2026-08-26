@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime, opSelector } from "@test/helpers";
+import {
+  assertDefined,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeSessionManager,
+  makeTestRuntime,
+  opSelector,
+} from "@test/helpers";
 import type { Iteration } from "@/findings";
 import { callOp } from "@/operations";
 import type { SemanticReviewInput } from "@/operations/semantic-review";
@@ -209,7 +216,9 @@ describe("semanticReviewOp — AC4: empty-output exhaustion returns FAIL_OPEN", 
     // produce the same FAIL_OPEN that parse failure already produces.
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => ({

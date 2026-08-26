@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
+import { assertDefined, makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
 import type { RetryStrategy } from "@/agents/retry";
 import { makeParseRetryStrategy, ParseValidationError } from "@/agents/retry";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
@@ -23,7 +23,9 @@ afterEach(async () => {
 function makeEmptyOutputAgentManager(costUsd = 0) {
   return makeMockAgentManager({
     runWithFallbackFn: async (req) => {
-      const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+      const { executeHop } = req;
+      assertDefined(executeHop, "req.executeHop");
+      const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
       return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
     },
     runAsSessionFn: async () => ({
@@ -365,7 +367,9 @@ describe("callOp empty-output — no regression: non-empty output uses op.parse"
     // the !rawOutput branch does NOT fire — op.parse handles the output instead.
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => ({
@@ -412,7 +416,9 @@ describe("callOp — BUG-62: provider-refusal turn with a strict parser returns 
   test("returns the exhaustedFallback object, not a raw TurnResult, for a refusal-classified turn", async () => {
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => ({

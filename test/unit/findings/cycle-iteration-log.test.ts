@@ -442,7 +442,7 @@ describe("recordIteration — no fixTargetFiles when fixesApplied empty (US-002 
     assertDefined(call, "log entry");
     const data = call.data;
     assertDefined(data, "entry data");
-    expect(Object.prototype.hasOwnProperty.call(data, "fixTargetFiles")).toBe(false);
+    expect(Object.hasOwn(data, "fixTargetFiles")).toBe(false);
   });
 });
 
@@ -466,7 +466,7 @@ describe("recordIteration — no fixSummaries when fixesApplied empty (US-002 AC
     assertDefined(call, "log entry");
     const data = call.data;
     assertDefined(data, "entry data");
-    expect(Object.prototype.hasOwnProperty.call(data, "fixSummaries")).toBe(false);
+    expect(Object.hasOwn(data, "fixSummaries")).toBe(false);
   });
 });
 
@@ -515,6 +515,6 @@ describe("recordIteration — costUsd omission (US-002 AC11)", () => {
     assertDefined(call, "log entry");
     const data = call.data;
     assertDefined(data, "entry data");
-    expect(Object.prototype.hasOwnProperty.call(data, "costUsd")).toBe(false);
+    expect(Object.hasOwn(data, "costUsd")).toBe(false);
   });
 });

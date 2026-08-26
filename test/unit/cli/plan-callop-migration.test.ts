@@ -32,7 +32,7 @@ describe("planCommand — callOp migration (US-003)", () => {
     // If the code compiles, auto is not a required property
     expect(options).toBeTruthy();
     // Verify the optional field is not present
-    expect(Object.prototype.hasOwnProperty.call(options, "auto")).toBe(false);
+    expect(Object.hasOwn(options, "auto")).toBe(false);
   });
 
   // AC10: planInteractiveOp is imported instead of planOp

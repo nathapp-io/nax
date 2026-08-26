@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { makeMockAgentManager, makeMockRuntime, makePRD, makeStory, makeTempDir } from "@test/helpers";
+import { assertDefined, makeMockAgentManager, makeMockRuntime, makePRD, makeStory, makeTempDir } from "@test/helpers";
 import { _planDeps, buildPlanComposition, planCommand, runPlanPipeline } from "@/cli";
 import { DEFAULT_CONFIG, type DebateStageConfig, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
@@ -709,7 +709,8 @@ describe("assertIsValidPrd guard (#993)", () => {
           internalRoundTrips: 0,
         }),
         runWithFallbackFn: async (req) => {
-          const result = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+          assertDefined(req.executeHop, "req.executeHop");
+          const result = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
           return {
             result: {
               success: true,

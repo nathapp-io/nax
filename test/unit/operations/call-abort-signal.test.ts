@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import { assertDefined, makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import type { CallContext, RunOperation } from "@/operations";
 import { callOp } from "@/operations";
@@ -68,7 +68,9 @@ describe("callOp — CallContext.signal (Task 4: caller-supplied abort signal)",
         internalRoundTrips: 0,
       }),
       runWithFallbackFn: async (req) => {
-        const result = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const result = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return {
           result: {
             success: true,

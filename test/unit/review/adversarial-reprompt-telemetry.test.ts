@@ -14,7 +14,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
+import { assertDefined, makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
 import type { IAgentManager } from "@/agents";
 import { runAdversarialReview } from "@/review/adversarial";
 import { _diffUtilsDeps } from "@/review/diff-utils";
@@ -81,7 +81,9 @@ function makeAgentManager(llmResponse: string): IAgentManager {
     getDefaultAgent: "claude",
     getAgentFn: () => makeAgentAdapter(),
     runWithFallbackFn: async (req) => {
-      const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+      const { executeHop } = req;
+      assertDefined(executeHop, "req.executeHop");
+      const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
       return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
     },
     runAsSessionFn: mock(async () => ({
@@ -134,7 +136,9 @@ describe("review-reprompt-on-drop telemetry integration", () => {
       getDefaultAgent: "claude",
       getAgentFn: () => makeAgentAdapter(),
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: mock(async () => {
@@ -185,7 +189,9 @@ describe("review-reprompt-on-drop telemetry integration", () => {
       getDefaultAgent: "claude",
       getAgentFn: () => makeAgentAdapter(),
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: mock(async () => {
@@ -248,7 +254,9 @@ describe("review-reprompt-on-drop telemetry integration", () => {
       getDefaultAgent: "claude",
       getAgentFn: () => makeAgentAdapter(),
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: mock(async () => {
@@ -298,7 +306,9 @@ describe("review-reprompt-on-drop telemetry integration", () => {
       getDefaultAgent: "claude",
       getAgentFn: () => makeAgentAdapter(),
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: mock(async () => {

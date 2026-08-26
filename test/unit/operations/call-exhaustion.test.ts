@@ -19,6 +19,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   agentManagerInternals,
+  assertDefined,
   makeMockAgentManager,
   makeMockRuntime,
   makeNaxConfig,
@@ -81,7 +82,9 @@ describe("AC7: run-kind — all retries exhaust → CALL_OP_NO_OUTPUT", () => {
     // runWithFallbackFn performs a single hop with empty output (no same-agent retry).
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hop = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hop = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hop.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async (): Promise<TurnResult> => ({
@@ -114,12 +117,14 @@ describe("AC7: run-kind — all retries exhaust → CALL_OP_NO_OUTPUT", () => {
     let hopCount = 0;
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
         // Simulate 3 retries (1 initial + 2 retries), all returning empty.
-        let lastHop = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        let lastHop = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         hopCount++;
         for (let attempt = 1; attempt <= 2; attempt++) {
           if (lastHop.result.adapterFailure?.outcome !== "fail-stale") break;
-          lastHop = await req.executeHop!("claude", undefined, { kind: "stale-retry", attempt }, req.runOptions);
+          lastHop = await executeHop("claude", undefined, { kind: "stale-retry", attempt }, req.runOptions);
           hopCount++;
         }
         return { result: { ...lastHop.result, agentFallbacks: [] }, fallbacks: [] };
@@ -262,7 +267,9 @@ describe("AC7: error code is CALL_OP_NO_OUTPUT specifically (run-kind)", () => {
   test("run-kind empty output throws with code CALL_OP_NO_OUTPUT", async () => {
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hop = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hop = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hop.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async (): Promise<TurnResult> => ({

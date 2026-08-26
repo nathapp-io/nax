@@ -19,7 +19,6 @@ import { HOOK_EVENTS } from "@/hooks/types";
 describe("HookEvent: on-all-stories-complete type registration", () => {
   test("on-all-stories-complete is in the HOOK_EVENTS registry", () => {
     // FAILS until "on-all-stories-complete" is added to HOOK_EVENTS in types.ts
-    // @ts-ignore - "on-all-stories-complete" intentionally not yet in HookEvent
     expect(HOOK_EVENTS).toContain("on-all-stories-complete");
   });
 
@@ -28,8 +27,6 @@ describe("HookEvent: on-all-stories-complete type registration", () => {
     expect(events).toContain("on-start");
     expect(events).toContain("on-story-complete");
     expect(events).toContain("on-complete");
-    // FAILS until "on-all-stories-complete" is added
-    // @ts-ignore - "on-all-stories-complete" intentionally not yet in HookEvent
     expect(events).toContain("on-all-stories-complete");
   });
 });

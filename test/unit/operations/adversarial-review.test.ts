@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime, opSelector } from "@test/helpers";
+import {
+  assertDefined,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeSessionManager,
+  makeTestRuntime,
+  opSelector,
+} from "@test/helpers";
 import type { RetryStrategy } from "@/agents/retry";
 import type { ReviewConfig } from "@/config/selectors";
 import { callOp } from "@/operations";
@@ -265,7 +272,9 @@ describe("adversarialReviewOp — AC3: empty-output exhaustion returns FAIL_OPEN
     // adversarialReviewOp has exhaustedFallback declared; callOp now honors it on empty output.
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => ({

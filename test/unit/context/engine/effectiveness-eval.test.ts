@@ -526,12 +526,12 @@ describe("scoreEffectiveness (US-001 AC6 — git-history chunk in fixture)", () 
   function makeWholeDiffClassifier(): Classifier {
     return (c) => {
       const diffTerms = new Set<string>();
-      for (const match of c.diffText.toLowerCase().matchAll(/[^\s_\-./:,;()\[\]{}'"!?]+/g)) {
+      for (const match of c.diffText.toLowerCase().matchAll(/[^\s_\-./:,;()[\]{}'"!?]+/g)) {
         const term = match[0];
         if (term.length >= 4) diffTerms.add(term);
       }
       const summaryTerms = new Set<string>();
-      for (const match of c.chunkSummary.toLowerCase().matchAll(/[^\s_\-./:,;()\[\]{}'"!?]+/g)) {
+      for (const match of c.chunkSummary.toLowerCase().matchAll(/[^\s_\-./:,;()[\]{}'"!?]+/g)) {
         const term = match[0];
         if (term.length >= 4) summaryTerms.add(term);
       }
@@ -602,12 +602,12 @@ describe("scoreEffectiveness (US-002 AC6 — code-neighbor chunk in fixture)", (
   function makeWholeDiffClassifier(): Classifier {
     return (c) => {
       const diffTerms = new Set<string>();
-      for (const match of c.diffText.toLowerCase().matchAll(/[^\s_\-./:,;()\[\]{}'"!?]+/g)) {
+      for (const match of c.diffText.toLowerCase().matchAll(/[^\s_\-./:,;()[\]{}'"!?]+/g)) {
         const term = match[0];
         if (term.length >= 4) diffTerms.add(term);
       }
       const summaryTerms = new Set<string>();
-      for (const match of c.chunkSummary.toLowerCase().matchAll(/[^\s_\-./:,;()\[\]{}'"!?]+/g)) {
+      for (const match of c.chunkSummary.toLowerCase().matchAll(/[^\s_\-./:,;()[\]{}'"!?]+/g)) {
         const term = match[0];
         if (term.length >= 4) summaryTerms.add(term);
       }
