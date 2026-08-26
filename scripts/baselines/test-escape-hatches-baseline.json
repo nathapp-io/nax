@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 194,
+    "asNever": 190,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:48:30.775Z",
+  "updatedAt": "2026-08-26T15:51:46.485Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -279,8 +279,7 @@
       "asNever": 3
     },
     "test/unit/routing/routing-stability.test.ts": {
-      "looseCast": 2,
-      "asNever": 4
+      "looseCast": 2
     },
     "test/unit/routing/calibrate/band-stats.test.ts": {
       "asNever": 1
