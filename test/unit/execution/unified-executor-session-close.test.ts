@@ -1,8 +1,20 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeSessionManager as makeMockSessionManager } from "@test/helpers";
+import {
+  makeDispatchContext,
+  makeMockRuntime,
+  makeSessionManager as makeMockSessionManager,
+  makePluginRegistry,
+  makeStatusWriter,
+} from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
+import type { SequentialExecutionContext } from "@/execution/unified-executor";
 import { _unifiedExecutorDeps, executeUnified } from "@/execution/unified-executor";
+import type { LoadedHooksConfig } from "@/hooks";
 import type { PRD, UserStory } from "@/prd/types";
+import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 import type { ISessionManager } from "@/session";
+
+const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
 
 function makePendingStory(id: string): UserStory {
   return {
@@ -53,62 +65,40 @@ function makeSessionManager(): ISessionManager {
   });
 }
 
-function makeCtx(sessionManager: ISessionManager) {
+function makeCtx(sessionManager: ISessionManager): SequentialExecutionContext {
+  const runtime = makeMockRuntime({
+    workdir: "/tmp/nax-test-session-close-output",
+    costAggregator: createNoOpCostAggregator(),
+    sessionManager,
+  });
   return {
     prdPath: "/tmp/test-prd.json",
     workdir: "/tmp/test-workdir",
     config: {
+      ...DEFAULT_CONFIG,
       execution: {
+        ...DEFAULT_CONFIG.execution,
         maxIterations: 1,
         costLimit: 10,
         iterationDelayMs: 0,
-        rectification: { maxAttemptsTotal: 2 },
+        rectification: {
+          ...DEFAULT_CONFIG.execution.rectification,
+          maxAttemptsTotal: 2,
+        },
       },
-      autoMode: { defaultAgent: "claude-code" },
-      interaction: {},
     },
-    hooks: {},
+    hooks: EMPTY_HOOKS,
     feature: "test-feature",
     dryRun: false,
     useBatch: false,
-    pluginRegistry: {
-      getReporters: () => [],
-      getContextProviders: () => [],
-    },
-    statusWriter: {
-      setPrd: mock(() => {}),
-      setCurrentStory: mock(() => {}),
-      setRunStatus: mock(() => {}),
-      update: mock(async () => {}),
-    },
+    pluginRegistry: makePluginRegistry(),
+    statusWriter: makeStatusWriter(),
     runId: "run-test",
     startTime: Date.now(),
     batchPlan: [],
     interactionChain: null,
+    ...makeDispatchContext({ runtime }),
     sessionManager,
-    runtime: {
-      outputDir: "/tmp/nax-test-session-close-output",
-      // nax#1709: parallel metrics read these run-scoped stores.
-      agentFallbacks: new Map(),
-      runtimeCrashRetries: new Map(),
-      costAggregator: {
-        snapshot: () => ({
-          totalCostUsd: 0,
-          totalEstimatedCostUsd: 0,
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          callCount: 0,
-          errorCount: 0,
-        }),
-        byStage: () => ({}),
-        byStory: () => ({}),
-        byAgent: () => ({}),
-        record: () => {},
-        recordError: () => {},
-        recordOperationSummary: () => {},
-        drain: async () => {},
-      },
-    },
   };
 }
 
@@ -136,7 +126,7 @@ describe("unified-executor session close policy", () => {
       finalAction: "escalate",
     }));
 
-    await executeUnified(makeCtx(sessionManager) as never, prd as never);
+    await executeUnified(makeCtx(sessionManager), prd);
 
     expect(sessionManager.closeStory).not.toHaveBeenCalled();
   });
@@ -153,7 +143,7 @@ describe("unified-executor session close policy", () => {
       finalAction: "fail",
     }));
 
-    await executeUnified(makeCtx(sessionManager) as never, prd as never);
+    await executeUnified(makeCtx(sessionManager), prd);
 
     expect(sessionManager.closeStory).toHaveBeenCalledWith("US-001");
   });
