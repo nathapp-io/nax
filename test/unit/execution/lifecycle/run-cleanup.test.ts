@@ -12,6 +12,7 @@
 
 import { afterEach, beforeEach, describe, expect, type Mock, mock, spyOn, test } from "bun:test";
 import {
+  assertDefined,
   makeDispatchContext,
   makeNaxConfig,
   makePluginRegistry as makePluginRegistryHelper,
@@ -585,7 +586,8 @@ describe("runner.ts — cleanupRun receives feature/prdPath/branch/version", () 
     // Must pass them inside the cleanupRun call block (not just as variable declarations)
     const cleanupCallMatch = runnerSource.match(/cleanupRun\(\{[\s\S]*?\}\)/m);
     expect(cleanupCallMatch).not.toBeNull();
-    const cleanupBlock = cleanupCallMatch![0];
+    assertDefined(cleanupCallMatch, "cleanupCallMatch");
+    const cleanupBlock = cleanupCallMatch[0];
     expect(cleanupBlock).toContain("feature");
     expect(cleanupBlock).toContain("prdPath");
     expect(cleanupBlock).toContain("branch");

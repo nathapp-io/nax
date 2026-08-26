@@ -39,6 +39,7 @@ export type {
   FixCycleExitReason,
   FixCycleResult,
   FixStrategy,
+  FixStrategyWithExtractApplied,
   Iteration,
   IterationOutcome,
   ValidateResult,

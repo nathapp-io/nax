@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
+import { assertDefined, makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 import type { OpenSessionOpts, SessionHandle } from "@/agents/types";
 import { SessionManager } from "@/session/manager";
 import type { NameForRequest, OpenSessionRequest } from "@/session/types";
@@ -215,7 +215,8 @@ describe("openSession()", () => {
     // Simulate runTrackedSession completing without closeSession (keepOpen path):
     // descriptor goes COMPLETED but handle stays in _liveHandles
     const desc = sm.descriptor(name);
-    sm.transition(desc!.id, "COMPLETED");
+    assertDefined(desc, "descriptor");
+    sm.transition(desc.id, "COMPLETED");
     expect(sm.descriptor(name)?.state).toBe("COMPLETED");
 
     // openSession must NOT return the stale live handle; it must open fresh and

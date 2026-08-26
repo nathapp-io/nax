@@ -6,6 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { _staticRulesDeps, type CanonicalRule, type ContextRequest, StaticRulesProvider } from "@/context/engine";
 
 let origReadFile: typeof _staticRulesDeps.readFile;
@@ -167,7 +168,8 @@ describe("StaticRulesProvider — US-003 per-stage rules budget derivation", () 
     expect(async () => {
       result = await provider.fetch(BASE_REQUEST);
     }).not.toThrow();
-    expect(result!.chunks).toHaveLength(0);
+    assertDefined(result, "fetch() result");
+    expect(result.chunks).toHaveLength(0);
   });
 
   test("[US-003 AC 8] when constructed without enforceBudget (default false) and budgetTokens is smaller than corpus, fetch returns one chunk per canonical rule (soft mode)", async () => {

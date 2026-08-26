@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { withTempDir } from "@test/helpers";
+import { assertDefined, withTempDir } from "@test/helpers";
 import { _costAggDeps, CostAggregator, type CostEvent, createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 
 function makeEvent(overrides: Partial<CostEvent> = {}): CostEvent {
@@ -152,10 +152,7 @@ describe("CostAggregator", () => {
     await withTempDir(async (dir) => {
       const drainDir = join(dir, "cost");
       const written: string[] = [];
-      let resolveWrite: (value: number | PromiseLike<number>) => void;
-      const writePromise = new Promise<number>((r) => {
-        resolveWrite = r;
-      });
+      const { promise: writePromise, resolve: resolveWrite } = Promise.withResolvers<number>();
       const origWrite = _costAggDeps.write;
       _costAggDeps.write = async (_p, d) => {
         written.push(String(d));
@@ -166,7 +163,7 @@ describe("CostAggregator", () => {
 
       const drainTask = agg.drain();
       agg.record(makeEvent({ ts: 2000 }));
-      resolveWrite!(0);
+      resolveWrite(0);
       await drainTask;
 
       expect(written).toHaveLength(2);
@@ -183,10 +180,7 @@ describe("CostAggregator", () => {
     await withTempDir(async (dir) => {
       const drainDir = join(dir, "cost");
       const written: string[] = [];
-      let resolveWrite: (value: number | PromiseLike<number>) => void;
-      const writePromise = new Promise<number>((r) => {
-        resolveWrite = r;
-      });
+      const { promise: writePromise, resolve: resolveWrite } = Promise.withResolvers<number>();
       const origWrite = _costAggDeps.write;
       _costAggDeps.write = async (_p, d) => {
         written.push(String(d));
@@ -204,7 +198,7 @@ describe("CostAggregator", () => {
         errorCode: "TIMEOUT",
         durationMs: 100,
       });
-      resolveWrite!(0);
+      resolveWrite(0);
       await drainTask;
 
       expect(written).toHaveLength(2);
@@ -219,10 +213,7 @@ describe("CostAggregator", () => {
   test("snapshot() includes in-flight events during drain", async () => {
     await withTempDir(async (dir) => {
       const drainDir = join(dir, "cost");
-      let resolveWrite: (value: number | PromiseLike<number>) => void;
-      const writePromise = new Promise<number>((r) => {
-        resolveWrite = r;
-      });
+      const { promise: writePromise, resolve: resolveWrite } = Promise.withResolvers<number>();
       const origWrite = _costAggDeps.write;
       _costAggDeps.write = async (_p, _d) => writePromise;
       const agg = new CostAggregator("r-test", drainDir);
@@ -235,7 +226,7 @@ describe("CostAggregator", () => {
       expect(snap.callCount).toBe(1);
       expect(snap.totalCostUsd).toBeCloseTo(0.02);
 
-      resolveWrite!(0);
+      resolveWrite(0);
       await drainTask;
       _costAggDeps.write = origWrite;
     });
@@ -397,8 +388,8 @@ describe("CostAggregator", () => {
     const drainWarn = warnCalls1.find(
       ([, , data]) => typeof (data as Record<string, unknown>).openScopeCount === "number",
     );
-    expect(drainWarn).toBeDefined();
-    expect((drainWarn![2] as Record<string, unknown>).openScopeCount).toBe(1);
+    assertDefined(drainWarn, "drainWarn");
+    expect(drainWarn[2].openScopeCount).toBe(1);
 
     // Scenario 2: closed scope → no warn with openScopeCount
     const warnCalls2: Array<Record<string, unknown>> = [];

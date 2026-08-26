@@ -8,6 +8,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { assertDefined } from "@test/helpers";
 import type { Finding } from "@/findings/types";
 
 const BASE = join(import.meta.dir, "../../../src/operations");
@@ -44,9 +45,10 @@ describe("AC5: SOURCE_TO_CHECK maps tdd-verifier to test check", () => {
 
     // Guard: fails assertively if tdd-verifier not mapped in SOURCE_TO_CHECK
     expect(results.length).toBeGreaterThan(0);
-    expect(results[0].findings).toBeDefined();
-    expect(results[0].findings!.length).toBe(1);
-    expect(results[0].findings![0].source).toBe("tdd-verifier");
+    const groupedFindings = results[0].findings;
+    assertDefined(groupedFindings, "results[0].findings");
+    expect(groupedFindings.length).toBe(1);
+    expect(groupedFindings[0].source).toBe("tdd-verifier");
   });
 
   test("AC5: source file contains exactly one tdd-verifier: test line in SOURCE_TO_CHECK", async () => {

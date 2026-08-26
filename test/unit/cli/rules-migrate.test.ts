@@ -14,7 +14,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { withTempDir } from "@test/helpers";
+import { assertDefined, withTempDir } from "@test/helpers";
 import {
   _rulesCLIDeps,
   type MigrationOutcome,
@@ -173,7 +173,8 @@ describe("rulesMigrateCommand", () => {
     _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
     _rulesCLIDeps.readFile = async () => "See CLAUDE.md. IMPORTANT: do this. 🎯";
     await rulesMigrateCommand({ dir: "/project" });
-    const content = written["/project/.nax/rules/project-conventions.md"]!;
+    const content = written["/project/.nax/rules/project-conventions.md"];
+    assertDefined(content, "written[/project/.nax/rules/project-conventions.md]");
     expect(content).not.toContain("CLAUDE.md");
     expect(content).not.toContain("IMPORTANT:");
     expect(content).not.toContain("🎯");
@@ -187,7 +188,8 @@ describe("rulesMigrateCommand", () => {
     _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
     _rulesCLIDeps.readFile = async () => "IMPORTANT: do this.";
     await rulesMigrateCommand({ dir: "/project" });
-    const content = written["/project/.nax/rules/project-conventions.md"]!;
+    const content = written["/project/.nax/rules/project-conventions.md"];
+    assertDefined(content, "written[/project/.nax/rules/project-conventions.md]");
     expect(content).toContain("neutralization");
     expect(createdDirs.some((d) => d.includes(".nax/rules"))).toBe(true);
   });

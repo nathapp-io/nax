@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { makeSpawn, makeStory, makeTestRuntime } from "@test/helpers";
+import { assertDefined, makeSpawn, makeStory, makeTestRuntime } from "@test/helpers";
 import { tddConfigSelector } from "@/config";
 import { testWriterOp } from "@/operations";
 import type { BuildContext, VerifyContext } from "@/operations/types";
@@ -28,6 +28,15 @@ function makeParseCtx(): BuildContext<TestWriterOpConfig> {
 
 function makeInput(story: Partial<UserStory> = {}): TestWriterInput {
   return { story: makeStory({ id: "US-001", ...story }) };
+}
+
+async function runVerify(
+  parsed: Parameters<NonNullable<typeof testWriterOp.verify>>[0],
+  input: Parameters<NonNullable<typeof testWriterOp.verify>>[1],
+  ctx: Parameters<NonNullable<typeof testWriterOp.verify>>[2],
+) {
+  assertDefined(testWriterOp.verify, "testWriterOp.verify");
+  return testWriterOp.verify(parsed, input, ctx);
 }
 
 describe("testWriterOp — RunOperation shape", () => {
@@ -171,12 +180,13 @@ describe("testWriterOp.verify — isolation", () => {
       const input: TestWriterInput = { story: makeStory({ id: "US-001" }), beforeRef: "HEAD~1" };
       const ctx = makeVerifyCtx();
 
-      const result = await testWriterOp.verify!(parsed, input, ctx);
+      const result = await runVerify(parsed, input, ctx);
 
-      expect(result).not.toBeNull();
-      expect(result!.isolation).toBeDefined();
-      expect(result!.isolation!.passed).toBe(true);
-      expect(result!.isolation!.violations).toEqual([]);
+      assertDefined(result, "verify() result");
+      const isolation = result.isolation;
+      assertDefined(isolation, "verify().isolation");
+      expect(isolation.passed).toBe(true);
+      expect(isolation.violations).toEqual([]);
     } finally {
       _isolationDeps.spawn = origSpawn;
     }
@@ -200,10 +210,13 @@ describe("testWriterOp.verify — isolation", () => {
       const input: TestWriterInput = { story: makeStory({ id: "US-001" }), beforeRef: "HEAD~1" };
       const ctx = makeVerifyCtx();
 
-      const result = await testWriterOp.verify!(parsed, input, ctx);
+      const result = await runVerify(parsed, input, ctx);
 
-      expect(result!.isolation!.passed).toBe(false);
-      expect(result!.isolation!.violations).toContain("src/foo.ts");
+      assertDefined(result, "verify() result");
+      const isolation = result.isolation;
+      assertDefined(isolation, "verify().isolation");
+      expect(isolation.passed).toBe(false);
+      expect(isolation.violations).toContain("src/foo.ts");
     } finally {
       _isolationDeps.spawn = origSpawn;
     }
@@ -222,7 +235,7 @@ describe("testWriterOp.verify — isolation", () => {
     const input: TestWriterInput = { story: makeStory({ id: "US-001" }) }; // no beforeRef
     const ctx = makeVerifyCtx();
 
-    const result = await testWriterOp.verify!(parsed, input, ctx);
+    const result = await runVerify(parsed, input, ctx);
     expect(result).toEqual(parsed);
   });
 });

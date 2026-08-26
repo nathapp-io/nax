@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
+import { assertDefined, makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import type { AdapterFailure } from "@/context/engine";
 import type { RunOperation } from "@/operations";
@@ -84,7 +84,8 @@ describe("sendWithFileOutput — AC1: empty output synthesises fail-stale Adapte
     // runAsSessionFn is the underlying send stub that returns empty output.
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        assertDefined(req.executeHop, "req.executeHop");
+        const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => ({
@@ -125,7 +126,8 @@ describe("sendWithFileOutput — AC1: empty output synthesises fail-stale Adapte
     let capturedAdapterFailure: unknown;
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        assertDefined(req.executeHop, "req.executeHop");
+        const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         // Capture what sendWithFileOutput synthesised on the TurnResult
         capturedAdapterFailure = (hopResult.result as { adapterFailure?: unknown }).adapterFailure;
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
@@ -163,7 +165,8 @@ describe("sendWithFileOutput — AC1: empty output synthesises fail-stale Adapte
     let capturedOutput: string | undefined;
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        assertDefined(req.executeHop, "req.executeHop");
+        const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         capturedOutput = hopResult.result.output;
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
@@ -213,7 +216,8 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        assertDefined(req.executeHop, "req.executeHop");
+        const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => ({
@@ -242,7 +246,8 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        assertDefined(req.executeHop, "req.executeHop");
+        const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => ({
@@ -273,7 +278,8 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
   test("non-empty agent output without fileOutput → synthesis does NOT fire", async () => {
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        assertDefined(req.executeHop, "req.executeHop");
+        const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => ({
@@ -299,7 +305,8 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
     let capturedAdapterFailure: unknown;
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        assertDefined(req.executeHop, "req.executeHop");
+        const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         capturedAdapterFailure = (hopResult.result as { adapterFailure?: unknown }).adapterFailure;
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
@@ -333,7 +340,8 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
     let capturedAdapterFailure: unknown;
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        assertDefined(req.executeHop, "req.executeHop");
+        const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         capturedAdapterFailure = (hopResult.result as { adapterFailure?: unknown }).adapterFailure;
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
@@ -374,7 +382,8 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
     let capturedAdapterFailure: unknown;
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        assertDefined(req.executeHop, "req.executeHop");
+        const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         capturedAdapterFailure = (hopResult.result as { adapterFailure?: unknown }).adapterFailure;
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
@@ -410,7 +419,8 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
     let capturedAdapterFailure: unknown;
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        assertDefined(req.executeHop, "req.executeHop");
+        const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         capturedAdapterFailure = (hopResult.result as { adapterFailure?: unknown }).adapterFailure;
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },

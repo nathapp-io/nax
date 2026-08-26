@@ -26,7 +26,7 @@ import { finishConfigSelector } from "@/config";
 import type { FinishConfig } from "@/config/selectors";
 import { auditGaps, buildReviewPrompt, parseReviewReport } from "../finish/review";
 import type { Finding, ReviewReport } from "../finish/types";
-import type { RunOperation } from "./types";
+import type { RunOperation, RunOperationWithHooks } from "./types";
 
 export interface FinishReviewInput {
   phase: "spec" | "quality";
@@ -120,7 +120,7 @@ const TRUNCATED_PROMPT = [
   "and `Fix:` lines, or the literal line `No findings.` if there are none.",
 ].join("\n");
 
-export const finishReviewOp: RunOperation<FinishReviewInput, FinishReviewOutput, FinishConfig> = {
+export const finishReviewOp: RunOperationWithHooks<FinishReviewInput, FinishReviewOutput, FinishConfig, "verify"> = {
   kind: "run",
   name: "finish-review",
   stage: "review",

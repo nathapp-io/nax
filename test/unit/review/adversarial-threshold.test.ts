@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
+import { assertDefined, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
 import type { IAgentManager } from "@/agents/manager-types";
 import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
 import { _diffUtilsDeps } from "@/review/diff-utils";
@@ -223,8 +223,9 @@ describe("runAdversarialReview — blockingThreshold defaults to 'error'", () =>
 
     expect(result.success).toBe(true);
     expect(!result.findings || result.findings.length === 0).toBe(true);
-    expect(result.advisoryFindings).toBeDefined();
-    expect(result.advisoryFindings![0].message).toBe("A warning");
+    const advisoryFindings = result.advisoryFindings;
+    assertDefined(advisoryFindings, "result.advisoryFindings");
+    expect(advisoryFindings[0].message).toBe("A warning");
   });
 
   // #1359 — the actionability filter reads `actionRequired` off the wire Finding, so it
@@ -277,7 +278,9 @@ describe("runAdversarialReview — blockingThreshold defaults to 'error'", () =>
     });
 
     expect(result.success).toBe(false);
-    expect(result.findings!.length).toBe(1);
+    const findings = result.findings;
+    assertDefined(findings, "result.findings");
+    expect(findings.length).toBe(1);
     expect(!result.advisoryFindings || result.advisoryFindings.length === 0).toBe(true);
   });
 
@@ -294,10 +297,14 @@ describe("runAdversarialReview — blockingThreshold defaults to 'error'", () =>
     });
 
     expect(result.success).toBe(false);
-    expect(result.findings!.length).toBe(1);
-    expect(result.findings![0].message).toBe("An error");
-    expect(result.advisoryFindings!.length).toBe(1);
-    expect(result.advisoryFindings![0].message).toBe("A warning");
+    const findings = result.findings;
+    assertDefined(findings, "result.findings");
+    expect(findings.length).toBe(1);
+    expect(findings[0].message).toBe("An error");
+    const advisoryFindings = result.advisoryFindings;
+    assertDefined(advisoryFindings, "result.advisoryFindings");
+    expect(advisoryFindings.length).toBe(1);
+    expect(advisoryFindings[0].message).toBe("A warning");
   });
 
   test("info finding goes to advisoryFindings by default", async () => {
@@ -314,7 +321,9 @@ describe("runAdversarialReview — blockingThreshold defaults to 'error'", () =>
 
     expect(result.success).toBe(true);
     expect(!result.findings || result.findings.length === 0).toBe(true);
-    expect(result.advisoryFindings!.length).toBe(1);
+    const advisoryFindings = result.advisoryFindings;
+    assertDefined(advisoryFindings, "result.advisoryFindings");
+    expect(advisoryFindings.length).toBe(1);
   });
 });
 
@@ -337,7 +346,9 @@ describe("runAdversarialReview — blockingThreshold: 'warning'", () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.findings!.length).toBe(1);
+    const findings = result.findings;
+    assertDefined(findings, "result.findings");
+    expect(findings.length).toBe(1);
     expect(!result.advisoryFindings || result.advisoryFindings.length === 0).toBe(true);
   });
 
@@ -355,7 +366,9 @@ describe("runAdversarialReview — blockingThreshold: 'warning'", () => {
 
     expect(result.success).toBe(true);
     expect(!result.findings || result.findings.length === 0).toBe(true);
-    expect(result.advisoryFindings!.length).toBe(1);
+    const advisoryFindings = result.advisoryFindings;
+    assertDefined(advisoryFindings, "result.advisoryFindings");
+    expect(advisoryFindings.length).toBe(1);
   });
 
   test("both error and warning block when threshold is 'warning'", async () => {
@@ -372,7 +385,9 @@ describe("runAdversarialReview — blockingThreshold: 'warning'", () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.findings!.length).toBe(2);
+    const findings = result.findings;
+    assertDefined(findings, "result.findings");
+    expect(findings.length).toBe(2);
     expect(!result.advisoryFindings || result.advisoryFindings.length === 0).toBe(true);
   });
 });
@@ -396,7 +411,9 @@ describe("runAdversarialReview — blockingThreshold: 'info'", () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.findings!.length).toBe(1);
+    const findings = result.findings;
+    assertDefined(findings, "result.findings");
+    expect(findings.length).toBe(1);
     expect(!result.advisoryFindings || result.advisoryFindings.length === 0).toBe(true);
   });
 });

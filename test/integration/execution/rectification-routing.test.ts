@@ -10,7 +10,7 @@
  * causing autofix-implementer (not full-suite-rectify) to be selected.
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
+import { assertDefined, makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
 import { pickSelector } from "@/config";
 import { _storyOrchestratorDeps, StoryOrchestratorBuilder } from "@/execution";
 import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
@@ -177,7 +177,7 @@ describe("AC2.5: rectification routing — gate failure halts loop, gate finding
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    let capturedCycle: FixCycle<Finding> | null = null;
+    let capturedCycle: FixCycle<Finding> | undefined;
     _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>) => {
       capturedCycle = cycle;
       return {
@@ -213,9 +213,9 @@ describe("AC2.5: rectification routing — gate failure halts loop, gate finding
     expect(semanticCalled).toBe(false);
 
     // runFixCycle must have been called (gate findings are present)
-    expect(capturedCycle).not.toBeNull();
+    assertDefined(capturedCycle, "capturedCycle");
 
-    const cycle = capturedCycle!;
+    const cycle = capturedCycle;
 
     // AC2.5a: exactly 6 findings (gate findings, not semantic)
     expect(cycle.findings).toHaveLength(6);
@@ -252,8 +252,8 @@ describe("AC3.8: verifier op dispatched during initial run and re-dispatched dur
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    let capturedCycle: FixCycle<Finding> | null = null;
-    let capturedCtx: FixCycleContext | null = null;
+    let capturedCycle: FixCycle<Finding> | undefined;
+    let capturedCtx: FixCycleContext | undefined;
 
     _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>, cycleCtx: FixCycleContext) => {
       capturedCycle = cycle;
@@ -286,8 +286,8 @@ describe("AC3.8: verifier op dispatched during initial run and re-dispatched dur
     // Verifier ran exactly once during the initial plan execution
     expect(initialCallCounts.verifier).toBe(1);
 
-    expect(capturedCycle).not.toBeNull();
-    expect(capturedCtx).not.toBeNull();
+    assertDefined(capturedCycle, "capturedCycle");
+    assertDefined(capturedCtx, "capturedCtx");
 
     // Now set up tracking for the validate call
     const validateCallCounts: Record<string, number> = {};
@@ -297,7 +297,7 @@ describe("AC3.8: verifier op dispatched during initial run and re-dispatched dur
     }) as typeof _storyOrchestratorDeps.callOp;
 
     // Invoke validate with autofix-implementer strategiesRun
-    await capturedCycle!.validate(capturedCtx!, {
+    await capturedCycle.validate(capturedCtx, {
       mode: "full",
       strategiesRun: ["autofix-implementer"],
     });
@@ -327,8 +327,8 @@ describe("AC3.9: after autofix-implementer iteration, full-suite-gate and semant
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    let capturedCycle: FixCycle<Finding> | null = null;
-    let capturedCtx: FixCycleContext | null = null;
+    let capturedCycle: FixCycle<Finding> | undefined;
+    let capturedCtx: FixCycleContext | undefined;
 
     _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>, cycleCtx: FixCycleContext) => {
       capturedCycle = cycle;
@@ -358,8 +358,8 @@ describe("AC3.9: after autofix-implementer iteration, full-suite-gate and semant
 
     await plan.run();
 
-    expect(capturedCycle).not.toBeNull();
-    expect(capturedCtx).not.toBeNull();
+    assertDefined(capturedCycle, "capturedCycle");
+    assertDefined(capturedCtx, "capturedCtx");
 
     // Set up tracking callOp for the validate call
     const validateCallCounts: Record<string, number> = {};
@@ -369,7 +369,7 @@ describe("AC3.9: after autofix-implementer iteration, full-suite-gate and semant
     }) as typeof _storyOrchestratorDeps.callOp;
 
     // Simulate: after an autofix-implementer iteration, call validate
-    await capturedCycle!.validate(capturedCtx!, {
+    await capturedCycle.validate(capturedCtx, {
       mode: "full",
       strategiesRun: ["autofix-implementer"],
     });

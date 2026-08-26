@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
-import { makeSpawn, makeStory } from "@test/helpers";
+import { assertDefined, makeSpawn, makeStory } from "@test/helpers";
 import { type ConfigSelector, DEFAULT_CONFIG, type TddConfig, tddConfigSelector } from "@/config";
 import type { Logger } from "@/logger";
 import { verifierOp } from "@/operations";
@@ -267,10 +267,12 @@ describe("verifierOp.verify — isolation", () => {
         fileExists: async () => false,
       };
 
-      const result = await verifierOp.verify!(parsed, input, ctx);
+      const result = await verifierOp.verify(parsed, input, ctx);
       expect(result).not.toBeNull();
-      expect(result!.isolation).toBeDefined();
-      expect(result!.isolation!.passed).toBe(true);
+      assertDefined(result, "verify() result");
+      const isolation = result.isolation;
+      assertDefined(isolation, "result.isolation");
+      expect(isolation.passed).toBe(true);
     } finally {
       _isolationDeps.spawn = origSpawn;
     }
@@ -299,9 +301,10 @@ describe("verifierOp.verify — isolation", () => {
       fileExists: async () => false,
     };
 
-    const result = await verifierOp.verify!(parsed, input, ctx);
+    const result = await verifierOp.verify(parsed, input, ctx);
     expect(result).not.toBeNull();
-    expect(result!.success).toBe(false);
+    assertDefined(result, "verify() result");
+    expect(result.success).toBe(false);
   });
 });
 

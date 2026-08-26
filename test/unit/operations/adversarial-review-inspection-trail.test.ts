@@ -46,7 +46,7 @@ async function runHopBody(opts: {
 }) {
   let callCount = 0;
   const mockSend = mock(async () => turn(opts.responses[Math.min(callCount++, opts.responses.length - 1)]));
-  const result = await adversarialReviewOp.hopBody!("initial prompt", {
+  const result = await adversarialReviewOp.hopBody("initial prompt", {
     send: mockSend,
     sendWithParseRetry: mockSend,
     input: {
@@ -77,7 +77,7 @@ describe("adversarialReviewOp.hopBody — inspection-trail guard (#3A)", () => {
       n += 1;
       return turn(n === 1 ? RUBBER_STAMP : second);
     });
-    await adversarialReviewOp.hopBody!("initial prompt", {
+    await adversarialReviewOp.hopBody("initial prompt", {
       send: mockSend,
       sendWithParseRetry: mockSend,
       input: { workdir: "/tmp", story: STORY, adversarialConfig: ADVERSARIAL_CONFIG, mode: "ref" },

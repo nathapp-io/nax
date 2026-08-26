@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import { assertDefined, makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { AgentRunRequest } from "@/agents";
 import type { DEFAULT_CONFIG } from "@/config";
 import { pickSelector } from "@/config";
@@ -160,8 +160,10 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
         // Invoke executeHop to drive the effective hop body
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async (_agentName, _handle, _prompt, _opts) => ({
@@ -216,7 +218,9 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async (_agentName, _handle, _prompt, _opts) => {
@@ -341,7 +345,9 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
     // executeHop must be called so sendWithParseRetry drives the retry loop inside one session.
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async (_agentName, _handle, _prompt, _opts) => ({
@@ -399,7 +405,9 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async (_agentName, _handle, _prompt, _opts) => {
@@ -452,7 +460,9 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async (_agentName, _handle, _prompt, _opts) => {
@@ -499,7 +509,9 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async (_agentName, _handle, _prompt, _opts) => ({
@@ -560,7 +572,9 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => {
@@ -620,7 +634,9 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
     let sessionCallCount = 0;
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => {

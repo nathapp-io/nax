@@ -14,6 +14,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  assertDefined,
   makeAdversarialReviewConfig,
   makeCallOp,
   makeFixCycleResult,
@@ -139,9 +140,10 @@ describe("AC3: validate-short-circuit + empty findings → liteScopeIncomplete",
     });
 
     try {
+      assertDefined(runtime, "runtime");
       const ctx: CallContext = {
-        runtime: runtime!,
-        packageView: runtime!.packages.repo(),
+        runtime,
+        packageView: runtime.packages.repo(),
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-ac3",
@@ -188,9 +190,10 @@ describe("AC4: validate-short-circuit + non-empty findings → rectificationExha
       });
 
     try {
+      assertDefined(runtime, "runtime");
       const ctx: CallContext = {
-        runtime: runtime!,
-        packageView: runtime!.packages.repo(),
+        runtime,
+        packageView: runtime.packages.repo(),
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-ac4",
@@ -247,9 +250,10 @@ describe("AC5: rectificationExhausted: true → resume NOT entered", () => {
       });
 
     try {
+      assertDefined(runtime, "runtime");
       const ctx: CallContext = {
-        runtime: runtime!,
-        packageView: runtime!.packages.repo(),
+        runtime,
+        packageView: runtime.packages.repo(),
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-ac5",
@@ -316,9 +320,10 @@ describe("AC6: liteScopeIncomplete: true → resume IS entered", () => {
     });
 
     try {
+      assertDefined(runtime, "runtime");
       const ctx: CallContext = {
-        runtime: runtime!,
-        packageView: runtime!.packages.repo(),
+        runtime,
+        packageView: runtime.packages.repo(),
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-ac6",
@@ -401,9 +406,10 @@ describe("AC7: mechanical-only rectificationExhausted → resume IS entered for 
       });
 
     try {
+      assertDefined(runtime, "runtime");
       const ctx: CallContext = {
-        runtime: runtime!,
-        packageView: runtime!.packages.repo(),
+        runtime,
+        packageView: runtime.packages.repo(),
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-ac7",
@@ -474,9 +480,10 @@ describe("AC7: mechanical-only rectificationExhausted → resume IS entered for 
       });
 
     try {
+      assertDefined(runtime, "runtime");
       const ctx: CallContext = {
-        runtime: runtime!,
-        packageView: runtime!.packages.repo(),
+        runtime,
+        packageView: runtime.packages.repo(),
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-ac7b",

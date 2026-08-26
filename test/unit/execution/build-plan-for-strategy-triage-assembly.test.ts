@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
+  assertDefined,
   makeMockCallContext,
   makeMockPlanInputs,
   makeNaxConfig,
@@ -172,12 +173,13 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
     const story = makeStory({ attempts: 1 });
     const config = withTriageNbf();
     const ctx = makeCtxWithRuntime(config);
+    assertDefined(config.review.adversarial, "config.review.adversarial");
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
         workdir: "/tmp/test",
-        adversarialConfig: config.review.adversarial!,
-        mode: config.review.adversarial!.diffMode,
+        adversarialConfig: config.review.adversarial,
+        mode: config.review.adversarial.diffMode,
       },
       rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
     });
@@ -217,12 +219,13 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
     const story = makeStory({ attempts: 1 });
     const config = withNbfScope("triage");
     const ctx = makeCtxWithRuntime(config);
+    assertDefined(config.review.adversarial, "config.review.adversarial");
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
         workdir: "/tmp/test",
-        adversarialConfig: config.review.adversarial!,
-        mode: config.review.adversarial!.diffMode,
+        adversarialConfig: config.review.adversarial,
+        mode: config.review.adversarial.diffMode,
       },
       rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
     });
@@ -254,12 +257,13 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
     const story = makeStory({ attempts: 1 });
     const config = withNbfScope("both");
     const ctx = makeCtxWithRuntime(config);
+    assertDefined(config.review.adversarial, "config.review.adversarial");
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
         workdir: "/tmp/test",
-        adversarialConfig: config.review.adversarial!,
-        mode: config.review.adversarial!.diffMode,
+        adversarialConfig: config.review.adversarial,
+        mode: config.review.adversarial.diffMode,
       },
       rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
     });
@@ -295,12 +299,13 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
     const story = makeStory({ attempts: 1 });
     const config = withNbfScope("source");
     const ctx = makeCtxWithRuntime(config);
+    assertDefined(config.review.adversarial, "config.review.adversarial");
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
         workdir: "/tmp/test",
-        adversarialConfig: config.review.adversarial!,
-        mode: config.review.adversarial!.diffMode,
+        adversarialConfig: config.review.adversarial,
+        mode: config.review.adversarial.diffMode,
       },
       rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
     });
@@ -318,6 +323,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
   // adversarial findings to the warm implementer instead of waking a cold
   // test-writer session — regardless of nbf.scope. (US-003 in 2026-06-23 run log.)
   function makeSingleSessionInputs(story: UserStory, config: ReturnType<typeof makeNaxConfig>): PlanInputs {
+    assertDefined(config.review.adversarial, "config.review.adversarial");
     return makeMockPlanInputs({
       story,
       implementer: makeImplementerInput(story),
@@ -325,8 +331,8 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
       adversarialReview: {
         story,
         workdir: "/tmp/test",
-        adversarialConfig: config.review.adversarial!,
-        mode: config.review.adversarial!.diffMode,
+        adversarialConfig: config.review.adversarial,
+        mode: config.review.adversarial.diffMode,
       },
       rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
     });

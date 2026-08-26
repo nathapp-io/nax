@@ -228,7 +228,7 @@ describe("makeAutofixImplementerStrategy", () => {
           reasonDetail: "needs mock restructure",
         },
       ]);
-      strategy.extractApplied!(output, input);
+      strategy.extractApplied(output, input);
       expect(sink.mockHandoffs).toHaveLength(1);
       expect(sink.mockHandoffs[0]).toEqual({
         files: ["test/foo.test.ts", "test/bar.test.ts"],
@@ -244,7 +244,7 @@ describe("makeAutofixImplementerStrategy", () => {
       const lintDecl = { reason: "lint_only" as const, file: "test/foo.test.ts", finding: "some lint" };
       const prdDecl = { reason: "prd_contract" as const, file: "test/bar.test.ts" };
       const output = makeOutput([lintDecl, prdDecl]);
-      strategy.extractApplied!(output, input);
+      strategy.extractApplied(output, input);
       expect(sink.testEdits).toHaveLength(2);
       expect(sink.mockHandoffs).toHaveLength(0);
     });
@@ -254,7 +254,7 @@ describe("makeAutofixImplementerStrategy", () => {
       const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), sink);
       const input = strategy.buildInput([], [], {} as FixCycleContext);
       const output = makeOutput([]);
-      strategy.extractApplied!(output, input);
+      strategy.extractApplied(output, input);
       expect(sink.testEdits).toHaveLength(0);
       expect(sink.mockHandoffs).toHaveLength(0);
     });
@@ -264,7 +264,7 @@ describe("makeAutofixImplementerStrategy", () => {
       const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), sink);
       const input = strategy.buildInput([], [], {} as FixCycleContext);
       const output = makeOutput([], "reviewer contradiction");
-      const result = await strategy.extractApplied!(output, input);
+      const result = await strategy.extractApplied(output, input);
       expect(result.summary).toBe("reviewer contradiction");
       expect(result.unresolved).toBe("reviewer contradiction");
     });
@@ -274,7 +274,7 @@ describe("makeAutofixImplementerStrategy", () => {
       const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), sink);
       const input = strategy.buildInput([], [], {} as FixCycleContext);
       const output = makeOutput([]);
-      const result = await strategy.extractApplied!(output, input);
+      const result = await strategy.extractApplied(output, input);
       expect(result.summary).toBe("");
       expect(result.unresolved).toBeUndefined();
     });
@@ -294,7 +294,7 @@ describe("makeAutofixImplementerStrategy", () => {
         },
         { reason: "prd_contract", file: "test/d.test.ts" },
       ]);
-      strategy.extractApplied!(output, input);
+      strategy.extractApplied(output, input);
       expect(sink.mockHandoffs).toHaveLength(2);
       expect(sink.testEdits).toHaveLength(2);
     });

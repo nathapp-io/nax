@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeDispatchContext } from "@test/helpers";
+import { assertDefined, makeDispatchContext } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { _acceptanceSetupDeps, acceptanceSetupStage, computeACFingerprint } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
@@ -324,10 +324,12 @@ describe("US-001: per-package test file generation by workdir", () => {
     await acceptanceSetupStage.execute(ctx);
 
     expect(ctx.acceptanceTestPaths).toBeDefined();
-    expect(ctx.acceptanceTestPaths!.length).toBe(2);
-    expect(ctx.acceptanceTestPaths!.every((p) => p.testPath && p.packageDir)).toBe(true);
-    expect(ctx.acceptanceTestPaths!.some((p) => p.packageDir.endsWith("apps/api"))).toBe(true);
-    expect(ctx.acceptanceTestPaths!.some((p) => p.packageDir.endsWith("apps/cli"))).toBe(true);
+    const acceptancePaths = ctx.acceptanceTestPaths;
+    assertDefined(acceptancePaths, "ctx.acceptanceTestPaths");
+    expect(acceptancePaths.length).toBe(2);
+    expect(acceptancePaths.every((p) => p.testPath && p.packageDir)).toBe(true);
+    expect(acceptancePaths.some((p) => p.packageDir.endsWith("apps/api"))).toBe(true);
+    expect(acceptancePaths.some((p) => p.packageDir.endsWith("apps/cli"))).toBe(true);
   });
 
   test("US-003 AC-10: each ctx.acceptanceTestPaths entry's storyCount equals the number of PRD stories grouped into its package", async () => {
@@ -359,8 +361,10 @@ describe("US-001: per-package test file generation by workdir", () => {
     await acceptanceSetupStage.execute(ctx);
 
     expect(ctx.acceptanceTestPaths).toBeDefined();
-    const apiEntry = ctx.acceptanceTestPaths!.find((p) => p.packageDir.endsWith("apps/api"));
-    const cliEntry = ctx.acceptanceTestPaths!.find((p) => p.packageDir.endsWith("apps/cli"));
+    const groupedPaths = ctx.acceptanceTestPaths;
+    assertDefined(groupedPaths, "ctx.acceptanceTestPaths");
+    const apiEntry = groupedPaths.find((p) => p.packageDir.endsWith("apps/api"));
+    const cliEntry = groupedPaths.find((p) => p.packageDir.endsWith("apps/cli"));
     expect(apiEntry?.storyCount).toBe(2);
     expect(cliEntry?.storyCount).toBe(1);
   });
@@ -421,7 +425,9 @@ describe("US-003: semantic-verdicts cleared on fingerprint mismatch", () => {
     const ctx = makeCtx();
     await acceptanceSetupStage.execute(ctx);
 
-    expect(capturedFeatureDir).toBe(ctx.featureDir!);
+    const featureDir = ctx.featureDir;
+    assertDefined(featureDir, "ctx.featureDir");
+    expect(capturedFeatureDir).toBe(featureDir);
   });
 
   test("does not call deleteSemanticVerdicts when fingerprint matches", async () => {

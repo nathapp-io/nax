@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { makeTempDir } from "@test/helpers";
+import { assertDefined, makeTempDir } from "@test/helpers";
 import { _promptsInitDeps, promptsInitCommand } from "@/cli/prompts";
 
 const EXPECTED_OVERRIDES = {
@@ -80,8 +80,8 @@ describe("promptsInitCommand — auto-wires prompts.overrides", () => {
 
     const config = readConfigJson(tempDir);
     const overrides = (config.prompts as { overrides?: Record<string, string> })?.overrides;
-    expect(overrides).toBeDefined();
-    expect(Object.keys(overrides!).sort()).toEqual(
+    assertDefined(overrides, "prompts.overrides");
+    expect(Object.keys(overrides).sort()).toEqual(
       ["implementer", "single-session", "tdd-simple", "test-writer", "verifier"].sort(),
     );
   });

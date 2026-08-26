@@ -1,14 +1,15 @@
-# HANDOFF — `noExplicitAny` drain, batch 8 (the tier tied at 4)
+# HANDOFF — `noExplicitAny` drain, batch 11 (the fifty-one-file tier tied at 1 — the last tier)
 
-Delegation brief for the queue head recorded in `STATUS-test-debt-drain.md` §8.20. Read that
+Delegation brief for the queue head recorded in `LOG-no-explicit-any-drain.md` §8.23 (archived from `../STATUS-test-debt-drain.md`). Read that
 doc's **§4 (forbidden list), §3 (per-commit loop), §5 (escalation rules)** before starting —
 they are binding and are not repeated in full here. Also read **§0.1**: biome is the
 authoritative counter, the regex ratchet is only the fast tripwire.
 
 Branch: `fix/drain-no-explicit-any-story-orchestrator`. Baseline at hand-off: biome
-`noExplicitAny` **278 across 129 files**. This batch: **22 files tied at 4 (88 sites)** taken
-to zero by four delegates on disjoint file sets. `interaction/plugins/cli.test.ts` (8 sites)
-is **out of scope** — held escalation, src-blocked (§8.19); do not touch it.
+`noExplicitAny` **59 across 52 files**. This batch: **51 files tied at 1 (51 sites)** taken
+to zero by four delegates on disjoint file sets — the last tier; draining it leaves only the
+held escalation. `interaction/plugins/cli.test.ts` (8 sites) is **out of scope** — held
+escalation, src-blocked (§8.19); do not touch it.
 
 ---
 
@@ -21,7 +22,9 @@ is **out of scope** — held escalation, src-blocked (§8.19); do not touch it.
   shared-helper change, escalate with file:line and reason instead.
 - **Do not delete/skip a test, narrow a describe, weaken an assertion, or exclude a file from
   tsconfig.test.json.**
-- **Do not commit. Do not run any `--update-baseline` script.** The owner integrates.
+- **Do not commit. Do not run any `--update-baseline` script. Do not run any state-mutating
+  git command (`stash`, `checkout --`, `reset`) — the worktree is shared** (§8.23). To see
+  pre-existing content use `git show HEAD:<path>`.
 - **Do not quote the drained shape in surviving prose/comments** — the raw-text ratchet counts
   backticked text (`[:<|&,(]\s*any\b` matches inside code spans; §8.16).
 - **Never invoke bare `bun test <path>` without `--timeout=60000`** — bunfig.toml defaults to
@@ -30,23 +33,29 @@ is **out of scope** — held escalation, src-blocked (§8.19); do not touch it.
 ## 1. Your file set
 
 Each delegate owns exactly these files. Nobody else touches them; you touch nothing else.
+(The sets are listed in your dispatch prompt; this section is intentionally empty.)
 
-## 2. Standing recipes — proven in batches 1–7, apply by shape
+## 2. Standing recipes — proven in batches 1–10, apply by shape
 
 | Shape | Recipe |
 |:--|:--|
-| dead cast on a value/type the declared types already admit | delete outright — **first question at every site: is this cast doing anything at all?** Largest single family in batches 6–7 |
-| hand-rolled runtime bag `{ agentManager, … } as any` | `makeMockRuntime({ … })` / `makeMockCallContext()` / `makeTestContext()` from `@test/helpers` |
+| dead cast on a value/type the declared types already admit | delete outright — **first question at every site: is this cast doing anything at all?** Largest single family in batches 6–10 |
+| hand-rolled runtime bag `{ agentManager, … } as any` | `makeMockRuntime({ … })` / `makeMockCallContext()` / `makeTestContext()` / `makeTestRuntime()` from `@test/helpers` |
 | partial-config literal | `makeNaxConfig(overrides)`; `makeSparseNaxConfig` where an *omission* is under test |
 | story / PRD fragments | `makeStory(...)` / `makePRD(...)` / `makeResolvedTestPatterns(...)` |
 | generic dep slot `<I, O, C>` | `makeCallOp({ fallback, onDispatch })`; or mock typed via `Parameters<typeof origFn>` and swapped with `Object.assign(_deps, {…})` + finally-restore |
 | spawn mocks / `(Bun as any).x` patches | `makeSpawn(...)` / `makeSpawnResult(...)`; `Object.assign(Bun, { … })` with restore likewise |
-| union-member call `(op.retry as any)(…)`, `(op.build as any)` | `typeof === "function"` guard, `"prop" in` narrowing, deterministically-typed local |
+| union-member call `(op.retry as any)(…)`, `(op.verify as any)` | `typeof === "function"` guard, `"prop" in` narrowing, deterministically-typed local |
 | absent-key probes `(x as any)?.key` | local predicate via `key in obj`, undefined-safe |
+| loosely typed capture arrays / mock-callback params | annotate at the dep's real signature (`CompleteOptions`, `Mock<typeof fn>`, tuple element from `Parameters<typeof fn>`) — the mock then infers and casts fall out (§8.2 cluster A) |
 | loosely typed `test.each` rows | explicit `test.each<[TupleTypes]>(…)` generic |
-| poke narrows a type (setting a key `undefined`) | §8.12 weak alias: `const w: { mode?: T } = obj; w.mode = undefined;` — no assertion needed |
+| poke narrows a type (setting a key undefined) | §8.12 weak alias: `const w: { mode?: T } = obj; w.mode = undefined;` — no assertion needed; extends to null (`§8.22`: `{ acceptanceCriteria?: string[] \| null }`) |
 | `session!.x` / non-null after async load | `assertDefined(x, …)` from `@test/helpers` right after the load |
 | incomplete object the type requires | complete the fixture at its declared type; `satisfies RealType` gets you contextual typing |
+| deliberate illegal literal under test | supply via `JSON.parse('…')` — the corruption arrives as JSON in production (profile.test.ts precedent) |
+| omission-under-test fixtures | factory base + weak alias + `delete` for genuinely-absent keys (precheck-tier1 precedent) |
+| required run-options stub `{ prompt, workdir, storyId } as any` | §8.17 recipe verbatim: local `makeStubRunOptions(config)` completing the `AgentRunOptions`-required `modelTier`/`modelDef`/`config`; each test passes its own manager config |
+| class-typed dep bags / logger spies | `makeLogger()` from helpers; real silent `Logger` overlaid via `Object.assign(makeLogger(), { warn })` (§8.13-A) |
 
 ### Known traps
 
@@ -75,6 +84,7 @@ bun x @biomejs/biome@2.5.10 check --config-path=/tmp/biome-probe "$PWD/<file>" \
 | python3 -c "import json,sys,collections;d=json.load(sys.stdin)['diagnostics'];print(collections.Counter(x['category'] for x in d))"
 
 # NOTE: pass ABSOLUTE paths — relative args resolve against the --config-path dir.
+# The probe config already exists at /tmp/biome-probe/biome.json (organizeImports off).
 
 # 2. fix (recipes above)
 
@@ -89,6 +99,9 @@ bun run check:deep-relatives                       # green
 
 A file is done when its `noExplicitAny` count reads 0 in step 1 and all six gates stay green.
 If a gate you did not cause fails, report it — do not chase it into another delegate's files.
+**Known blind spot:** the probe config turns `organizeImports` off, so your loop cannot see
+import-order problems — the owner runs one repo-config pass over touched files at integration;
+do not try to fix that yourself.
 
 ## 4. Stop and hand back when
 

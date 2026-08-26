@@ -8,7 +8,7 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { rmSync } from "node:fs";
-import { makeLogger, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { assertDefined, makeLogger, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 import { _runSetupDeps, warnFallbackMisconfiguration, warnProfileMismatch } from "@/execution/lifecycle/run-setup";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,7 +185,8 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
     warnProfileMismatch(prd, config, logger);
 
     expect(logger.calls).toHaveLength(1);
-    const call = logger.calls[0]!;
+    const call = logger.calls[0];
+    assertDefined(call, "logger.calls[0]");
     expect(call.stage).toBe("setup");
     expect(call.message).toContain("removed-profile");
     expect(call.message).toContain("no longer exists");
@@ -268,7 +269,8 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
     warnProfileMismatch(prd, config, logger);
 
     expect(logger.calls).toHaveLength(1);
-    const call = logger.calls[0]!;
+    const call = logger.calls[0];
+    assertDefined(call, "logger.calls[0]");
     expect(call.stage).toBe("prd");
     expect(call.message).toContain('planned with config profile "aggressive"');
     expect(call.data?.storyId).toBe("prd");

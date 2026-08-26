@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeStory, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeStory, makeTempDir } from "@test/helpers";
 import { type ConfigSelector, DEFAULT_CONFIG, tddConfigSelector } from "@/config";
 import { verifierOp } from "@/operations";
 import type { PackageView } from "@/runtime";
@@ -31,6 +31,11 @@ function ctx(packageDir: string, repoRoot?: string) {
   };
 }
 
+async function runRecover(input: { story: typeof STORY }, c: ReturnType<typeof ctx>) {
+  assertDefined(verifierOp.recover, "verifierOp.recover");
+  return verifierOp.recover(input, c);
+}
+
 describe("verifierOp.recover", () => {
   test("returns failureCategory='verifier-rejected' when test mods are illegitimate", async () => {
     const dir = makeTempDir("verify-op-rejected-");
@@ -50,11 +55,11 @@ describe("verifierOp.recover", () => {
         fixes: [],
         reasoning: "rejected",
       });
-      const out = await verifierOp.recover!({ story: STORY }, ctx(dir));
-      expect(out).not.toBeNull();
-      expect(out!.success).toBe(false);
-      expect(out!.failureCategory).toBe("verifier-rejected");
-      expect(out!.reviewReason).toContain("a.test.ts");
+      const out = await runRecover({ story: STORY }, ctx(dir));
+      assertDefined(out, "recover() result");
+      expect(out.success).toBe(false);
+      expect(out.failureCategory).toBe("verifier-rejected");
+      expect(out.reviewReason).toContain("a.test.ts");
     } finally {
       cleanupTempDir(dir);
     }
@@ -73,9 +78,10 @@ describe("verifierOp.recover", () => {
         fixes: [],
         reasoning: "3 failures",
       });
-      const out = await verifierOp.recover!({ story: STORY }, ctx(dir));
-      expect(out!.success).toBe(false);
-      expect(out!.failureCategory).toBe("tests-failing");
+      const out = await runRecover({ story: STORY }, ctx(dir));
+      assertDefined(out, "recover() result");
+      expect(out.success).toBe(false);
+      expect(out.failureCategory).toBe("tests-failing");
     } finally {
       cleanupTempDir(dir);
     }
@@ -94,9 +100,10 @@ describe("verifierOp.recover", () => {
         fixes: [],
         reasoning: "ok",
       });
-      const out = await verifierOp.recover!({ story: STORY }, ctx(dir));
-      expect(out!.success).toBe(true);
-      expect(out!.failureCategory).toBeUndefined();
+      const out = await runRecover({ story: STORY }, ctx(dir));
+      assertDefined(out, "recover() result");
+      expect(out.success).toBe(true);
+      expect(out.failureCategory).toBeUndefined();
     } finally {
       cleanupTempDir(dir);
     }
@@ -115,7 +122,7 @@ describe("verifierOp.recover", () => {
         fixes: [],
         reasoning: "ok",
       });
-      await verifierOp.recover!({ story: STORY }, ctx(dir));
+      await runRecover({ story: STORY }, ctx(dir));
       const exists = await Bun.file(join(dir, ".nax-verifier-verdict.json")).exists();
       expect(exists).toBe(false);
     } finally {
@@ -141,8 +148,9 @@ describe("verifierOp.recover — resolveAbsolutePackageDir (repoRoot join)", () 
         fixes: [],
         reasoning: "ok",
       });
-      const out = await verifierOp.recover!({ story: STORY }, ctx(relativePackageDir, repoRoot));
-      expect(out!.success).toBe(true);
+      const out = await runRecover({ story: STORY }, ctx(relativePackageDir, repoRoot));
+      assertDefined(out, "recover() result");
+      expect(out.success).toBe(true);
     } finally {
       cleanupTempDir(repoRoot);
     }
@@ -161,9 +169,10 @@ describe("verifierOp.recover — resolveAbsolutePackageDir (repoRoot join)", () 
         fixes: [],
         reasoning: "1 failure",
       });
-      const out = await verifierOp.recover!({ story: STORY }, ctx("", repoRoot));
-      expect(out!.success).toBe(false);
-      expect(out!.failureCategory).toBe("tests-failing");
+      const out = await runRecover({ story: STORY }, ctx("", repoRoot));
+      assertDefined(out, "recover() result");
+      expect(out.success).toBe(false);
+      expect(out.failureCategory).toBe("tests-failing");
     } finally {
       cleanupTempDir(repoRoot);
     }
@@ -173,7 +182,8 @@ describe("verifierOp.recover — resolveAbsolutePackageDir (repoRoot join)", () 
     // !packageDir && !repoRoot -> resolveAbsolutePackageDir returns "" (the
     // `repoRoot || ""` fallback for callers with no repo root at all). No
     // verdict file exists there, so recover must fail closed, never throw.
-    const out = await verifierOp.recover!({ story: STORY }, ctx(""));
-    expect(out!.success).toBe(false);
+    const out = await runRecover({ story: STORY }, ctx(""));
+    assertDefined(out, "recover() result");
+    expect(out.success).toBe(false);
   });
 });

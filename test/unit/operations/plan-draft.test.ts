@@ -5,7 +5,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { type DeepPartial, makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { assertDefined, type DeepPartial, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import { ParseValidationError } from "@/agents";
 import type { NaxConfig } from "@/config";
 import { inspectDraftOutput, type PlanDraftInput, planDraftOp } from "@/operations";
@@ -186,14 +186,18 @@ describe("inspectDraftOutput — AC-11, AC-12, AC-13: tiered inspection", () => 
     expect(result.ok).toBe(false);
     expect(result.kind).toBe("citation-low");
     expect(result.citationRate).toBeDefined();
-    expect(result.citationRate!).toBeLessThan(0.5);
+    const citationRate = result.citationRate;
+    assertDefined(citationRate, "result.citationRate");
+    expect(citationRate).toBeLessThan(0.5);
   });
 
   test("AC-13: partial is the validated PRD when citation is low", () => {
     const result = inspectDraftOutput(VALID_PRD_NO_CITATION);
     expect(result.partial).toBeDefined();
     // inspectDraftOutput is called without feature arg so feature is ""; check project from JSON
-    expect(result.partial!.project).toBe("auth-service");
+    const partial = result.partial;
+    assertDefined(partial, "result.partial");
+    expect(partial.project).toBe("auth-service");
   });
 
   test("AC-13: ok is true when rate >= DEFAULT 0.5", () => {

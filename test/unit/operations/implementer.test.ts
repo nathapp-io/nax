@@ -1,11 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { makeMockCallContext, makeSpawn, makeStory } from "@test/helpers";
+import { assertDefined, makeMockCallContext, makeSpawn, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG, resolveConfiguredModel, tddConfigSelector } from "@/config";
 import { implementerOp, testWriterOp } from "@/operations";
 import type { UserStory } from "@/prd";
 
 /** Real package view for parse/verify/build contexts — read-only surface the ops actually use. */
 const testPackageView = makeMockCallContext().packageView;
+
+async function runVerify(
+  parsed: Parameters<NonNullable<typeof implementerOp.verify>>[0],
+  input: Parameters<NonNullable<typeof implementerOp.verify>>[1],
+  ctx: Parameters<NonNullable<typeof implementerOp.verify>>[2],
+) {
+  assertDefined(implementerOp.verify, "implementerOp.verify");
+  return implementerOp.verify(parsed, input, ctx);
+}
 
 /**
  * Tests for implementerOp — the full RunOperation shape for the implementer role.
@@ -237,11 +246,12 @@ describe("implementerOp.verify — isolation", () => {
         fileExists: async () => false,
       };
 
-      const result = await implementerOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
-      expect(result!.isolation).toBeDefined();
-      expect(result!.isolation!.passed).toBe(true);
-      expect(result!.isolation!.warnings).toContain("test/foo.test.ts");
+      const result = await runVerify(parsed, input, ctx);
+      assertDefined(result, "verify() result");
+      const isolation = result.isolation;
+      assertDefined(isolation, "verify().isolation");
+      expect(isolation.passed).toBe(true);
+      expect(isolation.warnings).toContain("test/foo.test.ts");
     } finally {
       _isolationDeps.spawn = origSpawn;
     }
@@ -271,9 +281,12 @@ describe("implementerOp.verify — isolation", () => {
         fileExists: async () => false,
       };
 
-      const result = await implementerOp.verify!(parsed, input, ctx);
-      expect(result!.isolation!.passed).toBe(true);
-      expect(result!.isolation!.warnings ?? []).toEqual([]);
+      const result = await runVerify(parsed, input, ctx);
+      assertDefined(result, "verify() result");
+      const isolation = result.isolation;
+      assertDefined(isolation, "verify().isolation");
+      expect(isolation.passed).toBe(true);
+      expect(isolation.warnings ?? []).toEqual([]);
     } finally {
       _isolationDeps.spawn = origSpawn;
     }
@@ -298,7 +311,7 @@ describe("implementerOp.verify — isolation", () => {
       fileExists: async () => false,
     };
 
-    const result = await implementerOp.verify!(parsed, input, ctx);
+    const result = await runVerify(parsed, input, ctx);
     expect(result).toEqual(parsed);
   });
 });

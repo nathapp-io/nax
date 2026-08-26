@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import type { AgentRoutingProfile } from "@/config";
 import { OneShotPromptBuilder } from "@/prompts";
 
@@ -92,8 +93,10 @@ describe("agentCapabilityCards", () => {
     // The row must not contain unescaped pipes beyond the column delimiters
     const rows = result.split("\n").filter((l: string) => l.startsWith("| pipe"));
     expect(rows).toHaveLength(1);
+    const firstRow = rows[0];
+    assertDefined(firstRow, "rows[0]");
     // A well-formed row has exactly 8 unescaped pipe chars (column delimiters for 7 columns)
-    const unescapedPipes = (rows[0]!.match(/(?<!\\)\|/g) ?? []).length;
+    const unescapedPipes = (firstRow.match(/(?<!\\)\|/g) ?? []).length;
     expect(unescapedPipes).toBe(8);
   });
 

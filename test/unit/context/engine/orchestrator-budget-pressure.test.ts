@@ -61,6 +61,6 @@ describe("ContextOrchestrator.assemble() — US-004 budgetPressure propagation (
     expect(entry?.budgetPressure).toBeUndefined();
     // Property must be absent — not just undefined — to keep the persisted
     // manifest shape honest for legacy readers that look up `in` operator.
-    expect(Object.prototype.hasOwnProperty.call(entry ?? {}, "budgetPressure")).toBe(false);
+    expect(Object.hasOwn(entry ?? {}, "budgetPressure")).toBe(false);
   });
 });

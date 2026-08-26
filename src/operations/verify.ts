@@ -11,7 +11,7 @@ import type { FailureCategory, IsolationCheck } from "../tdd/types";
 import type { VerdictCategorization, VerifierVerdict } from "../tdd/verdict";
 import { categorizeVerdict, cleanupVerdict, coerceVerdict, isValidVerdict, readVerdict } from "../tdd/verdict";
 import { tryParseLLMJson } from "../utils/llm-json";
-import type { BuildContext, RunOperation, VerifyContext } from "./types";
+import type { BuildContext, RunOperation, RunOperationWithHooks, VerifyContext } from "./types";
 
 void _isolationDeps; // re-export to keep test mocks pointed at the same singleton
 
@@ -180,7 +180,7 @@ function resolveAbsolutePackageDir(ctx: VerifyContext<TddConfig>): string {
   return join(repoRoot, packageDir);
 }
 
-export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> = {
+export const verifierOp: RunOperationWithHooks<VerifierInput, VerifierOutput, TddConfig, "verify" | "recover"> = {
   kind: "run",
   name: "verifier",
   stage: "verify",

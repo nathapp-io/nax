@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type DeepPartial, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { assertDefined, type DeepPartial, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { ResolvedProject } from "@/commands/common";
 import { _curatorCmdDeps as _deps, curatorCommit, curatorDryrun, curatorStatus } from "@/commands/curator";
 import type { NaxConfig } from "@/config";
@@ -618,8 +618,8 @@ describe("curatorCommit", () => {
       });
 
       await curatorCommit({ runId });
-      expect(editorOpenedPath).toBeDefined();
-      expect(editorOpenedPath!.endsWith("curator-suggestions.md")).toBe(true);
+      assertDefined(editorOpenedPath, "editorOpenedPath");
+      expect(editorOpenedPath.endsWith("curator-suggestions.md")).toBe(true);
     });
   });
 

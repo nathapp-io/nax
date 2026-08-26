@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { buildHermeticSection } from "@/prompts/sections/hermetic";
 
 describe("buildHermeticSection", () => {
@@ -43,7 +44,8 @@ describe("buildHermeticSection", () => {
       const result = buildHermeticSection("test-writer", boundaries ?? undefined, undefined);
       if (hasBoundaries) {
         expect(result).toContain("Project-specific boundaries to mock");
-        for (const b of boundaries!) expect(result).toContain(`\`${b}\``);
+        assertDefined(boundaries, "boundaries");
+        for (const b of boundaries) expect(result).toContain(`\`${b}\``);
       } else {
         expect(result).not.toContain("Project-specific boundaries");
       }

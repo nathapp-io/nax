@@ -12,7 +12,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { makeNaxConfig, makeTestContext } from "@test/helpers";
+import { assertDefined, makeNaxConfig, makeTestContext } from "@test/helpers";
 import { promptStage } from "@/pipeline/stages/prompt";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
@@ -106,7 +106,9 @@ describe("promptStage.execute() — tdd-simple strategy", () => {
     await promptStage.execute(ctx);
     expect(ctx.prompt).toBeTruthy();
     expect(typeof ctx.prompt).toBe("string");
-    expect(ctx.prompt!.length).toBeGreaterThan(0);
+    const prompt = ctx.prompt;
+    assertDefined(prompt, "ctx.prompt");
+    expect(prompt.length).toBeGreaterThan(0);
   });
 
   test("prompt contains TDD-Simple role header (not Single-Session)", async () => {

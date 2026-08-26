@@ -26,6 +26,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import {
+  assertDefined,
   DEFAULT_AGENT_ENVELOPE,
   makeCallOp,
   makeFixCycleResult,
@@ -156,7 +157,8 @@ describe("AC1: passing phase triggers exactly one recordGreen call", () => {
       });
 
     try {
-      const ctx = makeCtx(runtime!, "AC1");
+      assertDefined(runtime, "runtime");
+      const ctx = makeCtx(runtime, "AC1");
       const implementerOp = makeRunOp("implementer", "implementer", { success: true });
       await new StoryOrchestratorBuilder()
         .addImplementer({ op: implementerOp, input: { code: "" } })
@@ -205,7 +207,8 @@ describe("AC2: failing phase does not trigger recordGreen", () => {
       });
 
     try {
-      const ctx = makeCtx(runtime!, "AC2");
+      assertDefined(runtime, "runtime");
+      const ctx = makeCtx(runtime, "AC2");
       const implementerOp = makeRunOp("implementer", "implementer", { success: true });
       await new StoryOrchestratorBuilder()
         .addImplementer({ op: implementerOp, input: { code: "" } })
@@ -251,7 +254,8 @@ describe("AC2: failing phase does not trigger recordGreen", () => {
       });
 
     try {
-      const ctx = makeCtx(runtime!, "AC2-multi");
+      assertDefined(runtime, "runtime");
+      const ctx = makeCtx(runtime, "AC2-multi");
       const imp = makeRunOp("implementer", "implementer", { success: true });
       const gate = makeDeterministic("full-suite-gate", { success: false });
       await new StoryOrchestratorBuilder()
@@ -306,7 +310,8 @@ describe("AC3: resume plan skipPhases are not dispatched; later non-skipped phas
       }) satisfies ResumePlan;
 
     try {
-      const ctx = makeCtx(runtime!, "AC3", { withFeatureDir: true });
+      assertDefined(runtime, "runtime");
+      const ctx = makeCtx(runtime, "AC3", { withFeatureDir: true });
       const tw = makeRunOp("test-writer", "test-writer", { success: true });
       const imp = makeRunOp("implementer", "implementer", { success: true });
       const ver = makeRunOp("verifier", "verifier", { success: true });
@@ -373,7 +378,8 @@ describe("AC5: cheap gates dispatch on resume", () => {
       }) satisfies ResumePlan;
 
     try {
-      const ctx = makeCtx(runtime!, "AC5", { withFeatureDir: true });
+      assertDefined(runtime, "runtime");
+      const ctx = makeCtx(runtime, "AC5", { withFeatureDir: true });
       const tw = makeRunOp("test-writer", "test-writer", { success: true });
       const imp = makeRunOp("implementer", "implementer", { success: true });
       const ver = makeRunOp("verifier", "verifier", { success: true });
@@ -443,7 +449,8 @@ describe("AC6: failing re-run cheap gate short-circuits", () => {
       }) satisfies ResumePlan;
 
     try {
-      const ctx = makeCtx(runtime!, "AC6", { withFeatureDir: true });
+      assertDefined(runtime, "runtime");
+      const ctx = makeCtx(runtime, "AC6", { withFeatureDir: true });
       const tw = makeRunOp("test-writer", "test-writer", { success: true });
       const imp = makeRunOp("implementer", "implementer", { success: true });
       const ver = makeRunOp("verifier", "verifier", { success: true });
@@ -530,7 +537,8 @@ describe("AC7: buildResumePlan invoked once; phaseOutputs seeded", () => {
     };
 
     try {
-      const ctx = makeCtx(runtime!, "AC7-count", { withFeatureDir: true });
+      assertDefined(runtime, "runtime");
+      const ctx = makeCtx(runtime, "AC7-count", { withFeatureDir: true });
       const imp = makeRunOp("implementer", "implementer", { success: true });
       await new StoryOrchestratorBuilder()
         .addImplementer({ op: imp, input: { code: "" } })

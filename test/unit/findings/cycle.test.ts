@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { makeLogger } from "@test/helpers";
+import { assertDefined, makeLogger } from "@test/helpers";
 import type { Finding, FixCycleContext, Iteration, IterationOutcome, ValidateResult } from "@/findings";
 import { classifyOutcome, runFixCycle } from "@/findings";
 import {
@@ -678,8 +678,11 @@ describe("runFixCycle — lite validate on terminal exhausted", () => {
         (c) => c.level === "info" && c.stage === "findings.cycle" && c.data?.reason === reason,
       );
       expect(infoCall).toBeDefined();
-      expect(Object.keys(infoCall!.data!)[0]).toBe("storyId");
-      expect(infoCall?.data).toMatchObject(expectedData);
+      assertDefined(infoCall, "infoCall");
+      const infoData = infoCall.data;
+      assertDefined(infoData, "infoCall.data");
+      expect(Object.keys(infoData)[0]).toBe("storyId");
+      expect(infoData).toMatchObject(expectedData);
     },
   );
 });

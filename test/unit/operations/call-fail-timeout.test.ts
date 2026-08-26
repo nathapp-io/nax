@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
+import { assertDefined, makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import type { RunOperation } from "@/operations";
 import { _callOpDeps, callOp } from "@/operations";
@@ -42,7 +42,9 @@ describe("callOp end-to-end — turn with timedOut=true is classified fail-timeo
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         capturedAdapterFailure = (hopResult.result as { adapterFailure?: typeof capturedAdapterFailure })
           .adapterFailure;
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
@@ -84,7 +86,9 @@ describe("callOp end-to-end — turn with timedOut=true is classified fail-timeo
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         capturedAdapterFailure = (hopResult.result as { adapterFailure?: typeof capturedAdapterFailure })
           .adapterFailure;
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };

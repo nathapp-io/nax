@@ -13,7 +13,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { cleanupTempDir, makeMockAgentManager, makeMockRuntime, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeMockAgentManager, makeMockRuntime, makeTempDir } from "@test/helpers";
 import { _planDeps, planCommand } from "@/cli";
 import { DEFAULT_CONFIG } from "@/config";
 import type { PRD } from "@/prd/types";
@@ -131,7 +131,9 @@ describe("plan PRD preservation — issue #993 regression (AC1)", () => {
             internalRoundTrips: 0,
           }),
           runWithFallbackFn: async (req) => {
-            const result = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+            const { executeHop } = req;
+            assertDefined(executeHop, "req.executeHop");
+            const result = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
             return {
               result: {
                 success: true,

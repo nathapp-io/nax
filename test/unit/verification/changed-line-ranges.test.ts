@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import * as path from "node:path";
-import { makeSpawn, withDepsRestore } from "@test/helpers";
+import { assertDefined, makeSpawn, withDepsRestore } from "@test/helpers";
 import { _gitDeps } from "@/utils/git";
 import { _changedLineRangesDeps, getChangedLineRanges } from "@/verification/changed-line-ranges";
 
@@ -211,10 +211,12 @@ new file mode 100644
 
     const result = await getChangedLineRanges("relative/workdir", "abc123");
     expect(result).not.toBeNull();
-    expect(result).not.toBeNull();
-    const keys = Array.from(result!.keys());
+    assertDefined(result, "result");
+    const keys = Array.from(result.keys());
     expect(keys).toHaveLength(1);
-    expect(path.isAbsolute(keys[0]!)).toBe(true);
+    const firstKey = keys[0];
+    assertDefined(firstKey, "keys[0]");
+    expect(path.isAbsolute(firstKey)).toBe(true);
     expect(keys[0]).toMatch(/relative[/\\]workdir[/\\]src[/\\]a\.ts$/);
   });
 });

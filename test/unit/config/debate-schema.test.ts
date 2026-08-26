@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { NaxConfigSchema } from "@/config/schemas";
@@ -147,7 +148,9 @@ describe("debate config schema — AC-2: no agent/model fields when not specifie
     const result = NaxConfigSchema.safeParse(baseConfig);
     expect(result.success).toBe(true);
     if (!result.success) return;
-    expect(getField(result.data.debate!)).toBeUndefined();
+    const debate = result.data.debate;
+    assertDefined(debate, "result.data.debate");
+    expect(getField(debate)).toBeUndefined();
   });
 });
 

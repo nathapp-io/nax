@@ -25,7 +25,7 @@ function makeCtx(
   const ctx = makeTestContext({
     story: { id: storyId, title: "Breaker unit" } as never,
   });
-  const hasConflictDetectionOverride = Object.prototype.hasOwnProperty.call(overrides, "conflictDetection");
+  const hasConflictDetectionOverride = Object.hasOwn(overrides, "conflictDetection");
   ctx.config = {
     ...ctx.config,
     review: {
@@ -43,7 +43,7 @@ function makeCtx(
     });
   } else {
     const sharedRuntime = makeTestRuntime();
-    if (Object.prototype.hasOwnProperty.call(overrides, "store")) {
+    if (Object.hasOwn(overrides, "store")) {
       Object.defineProperty(sharedRuntime, "rectificationOscillations", {
         value: overrides.store,
         configurable: true,

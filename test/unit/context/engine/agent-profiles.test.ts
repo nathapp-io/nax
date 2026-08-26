@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { AGENT_PROFILES, CONSERVATIVE_DEFAULT_PROFILE, getAgentProfile } from "@/context/engine/agent-profiles";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -18,27 +19,39 @@ describe("AGENT_PROFILES", () => {
   });
 
   test("claude >= 128_000 and codex >= 64_000 maxContextTokens", () => {
-    expect(AGENT_PROFILES.claude!.caps.maxContextTokens).toBeGreaterThanOrEqual(128_000);
-    expect(AGENT_PROFILES.codex!.caps.maxContextTokens).toBeGreaterThanOrEqual(64_000);
+    const claude = AGENT_PROFILES.claude;
+    assertDefined(claude, "AGENT_PROFILES.claude");
+    const codex = AGENT_PROFILES.codex;
+    assertDefined(codex, "AGENT_PROFILES.codex");
+    expect(claude.caps.maxContextTokens).toBeGreaterThanOrEqual(128_000);
+    expect(codex.caps.maxContextTokens).toBeGreaterThanOrEqual(64_000);
   });
 
   test.each([
     ["claude", "markdown-sections"],
     ["codex", "xml-tagged"],
   ] as const)("%s systemPromptStyle is %s", (name, style) => {
-    expect(AGENT_PROFILES[name]!.caps.systemPromptStyle).toBe(style);
+    const profile = AGENT_PROFILES[name];
+    assertDefined(profile, `AGENT_PROFILES.${name}`);
+    expect(profile.caps.systemPromptStyle).toBe(style);
   });
 
   test.each([
     ["claude", "anthropic"],
     ["codex", "openai"],
   ] as const)("%s toolSchemaDialect is %s", (name, dialect) => {
-    expect(AGENT_PROFILES[name]!.caps.toolSchemaDialect).toBe(dialect);
+    const profile = AGENT_PROFILES[name];
+    assertDefined(profile, `AGENT_PROFILES.${name}`);
+    expect(profile.caps.toolSchemaDialect).toBe(dialect);
   });
 
   test("claude and codex supportsToolCalls is true", () => {
-    expect(AGENT_PROFILES.claude!.caps.supportsToolCalls).toBe(true);
-    expect(AGENT_PROFILES.codex!.caps.supportsToolCalls).toBe(true);
+    const claude = AGENT_PROFILES.claude;
+    assertDefined(claude, "AGENT_PROFILES.claude");
+    const codex = AGENT_PROFILES.codex;
+    assertDefined(codex, "AGENT_PROFILES.codex");
+    expect(claude.caps.supportsToolCalls).toBe(true);
+    expect(codex.caps.supportsToolCalls).toBe(true);
   });
 
   test("all profiles have preferredPromptTokens > 0", () => {

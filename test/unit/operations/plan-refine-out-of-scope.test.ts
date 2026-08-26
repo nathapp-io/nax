@@ -74,7 +74,7 @@ describe("planRefineOp.hopBody — out-of-scope self-heal turn", () => {
     const repairSpy = spyOn(PlanPromptBuilder.prototype, "buildOutOfScopeRepair").mockReturnValue("REPAIR-PROMPT");
     const { ctx, send } = makeCtx();
 
-    const result = await planRefineOp.hopBody!("init", ctx);
+    const result = await planRefineOp.hopBody("init", ctx);
 
     expect(repairSpy).toHaveBeenCalledTimes(1);
     expect(repairSpy.mock.calls[0][0]).toEqual(["An interactive Ink TUI", "Per-story checkpoints"]);
@@ -89,7 +89,7 @@ describe("planRefineOp.hopBody — out-of-scope self-heal turn", () => {
     const repairSpy = spyOn(PlanPromptBuilder.prototype, "buildOutOfScopeRepair");
     const { ctx, send } = makeCtx();
 
-    const result = await planRefineOp.hopBody!("init", ctx);
+    const result = await planRefineOp.hopBody("init", ctx);
 
     expect(repairSpy).not.toHaveBeenCalled();
     expect(send).toHaveBeenCalledTimes(1);
@@ -101,7 +101,7 @@ describe("planRefineOp.hopBody — out-of-scope self-heal turn", () => {
     const repairSpy = spyOn(PlanPromptBuilder.prototype, "buildOutOfScopeRepair");
     const { ctx, send } = makeCtx();
 
-    await planRefineOp.hopBody!("init", ctx);
+    await planRefineOp.hopBody("init", ctx);
 
     expect(repairSpy).not.toHaveBeenCalled();
     expect(send).toHaveBeenCalledTimes(1);
@@ -131,7 +131,7 @@ describe("planRefineOp.verify — out-of-scope backfill", () => {
 
   test("restores exclusions the repair turn still missed, and warns", async () => {
     await withWarnSpy(async (warnSpy) => {
-      const result = await planRefineOp.verify!(makePrd(), input as never, makeVerifyCtx() as never);
+      const result = await planRefineOp.verify(makePrd(), input as never, makeVerifyCtx() as never);
 
       expect(result?.outOfScope).toEqual(["An interactive Ink TUI", "Per-story checkpoints"]);
       const warn = warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("out-of-scope"));
@@ -143,7 +143,7 @@ describe("planRefineOp.verify — out-of-scope backfill", () => {
   test("leaves a fully preserved list untouched and does not warn", async () => {
     await withWarnSpy(async (warnSpy) => {
       const preserved = ["An interactive Ink TUI", "Per-story checkpoints"];
-      const result = await planRefineOp.verify!(makePrd(preserved), input as never, makeVerifyCtx() as never);
+      const result = await planRefineOp.verify(makePrd(preserved), input as never, makeVerifyCtx() as never);
 
       expect(result?.outOfScope).toEqual(preserved);
       expect(warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("out-of-scope"))).toBeUndefined();
@@ -152,7 +152,7 @@ describe("planRefineOp.verify — out-of-scope backfill", () => {
 
   test("adds no field when the spec declares no exclusions", async () => {
     const noScope = { ...input, specContent: "# Feature\n\n## Design\n- build it\n" };
-    const result = await planRefineOp.verify!(makePrd() as never, noScope as never, makeVerifyCtx() as never);
+    const result = await planRefineOp.verify(makePrd() as never, noScope as never, makeVerifyCtx() as never);
 
     expect(result?.outOfScope).toBeUndefined();
   });
@@ -198,7 +198,7 @@ describe("planRefineOp.verify — story-local hoist demotion (#1446)", () => {
         "body-size limits on the import endpoint, deferred to arc 3.",
       ]);
 
-      const result = await planRefineOp.verify!(hoisted, input as never, makeVerifyCtx() as never);
+      const result = await planRefineOp.verify(hoisted, input as never, makeVerifyCtx() as never);
 
       expect(result?.outOfScope).toEqual(["An interactive Ink TUI"]);
       expect(result?.userStories[0].outOfScope).toEqual([
@@ -213,7 +213,7 @@ describe("planRefineOp.verify — story-local hoist demotion (#1446)", () => {
   test("the demotion does not trip the backfill into restoring it at feature level", async () => {
     const hoisted = makePrd(["An interactive Ink TUI", "body-size limits on the import endpoint, deferred to arc 3."]);
 
-    const result = await planRefineOp.verify!(hoisted, input as never, makeVerifyCtx() as never);
+    const result = await planRefineOp.verify(hoisted, input as never, makeVerifyCtx() as never);
 
     expect(result?.outOfScope).not.toContain("body-size limits on the import endpoint, deferred to arc 3.");
   });

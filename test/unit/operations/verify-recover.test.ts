@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeTestRuntime, withTempDir } from "@test/helpers";
+import { assertDefined, makeTestRuntime, withTempDir } from "@test/helpers";
 import { _runPostParseForTest } from "@/operations/call";
 import type { BuildContext, VerifyContext } from "@/operations/types";
 
@@ -67,7 +67,7 @@ describe("runPostParse — VerifyContext filesystem helpers", () => {
       const filePath = join(dir, "artifact.txt");
       await Bun.write(filePath, "artifact content");
 
-      let capturedCtx: VerifyContext<unknown> | null = null;
+      let capturedCtx: VerifyContext<unknown> | undefined;
       const op = {
         verify: async (_parsed: string, _input: unknown, ctx: VerifyContext<unknown>): Promise<string | null> => {
           capturedCtx = ctx;
@@ -77,10 +77,12 @@ describe("runPostParse — VerifyContext filesystem helpers", () => {
 
       await _runPostParseForTest(op, "ignored", "input", FAKE_CTX);
 
-      const content = await capturedCtx!.readFile(filePath);
+      assertDefined(capturedCtx, "capturedCtx");
+      const vctx = capturedCtx;
+      const content = await vctx.readFile(filePath);
       expect(content).toBe("artifact content");
 
-      const missing = await capturedCtx!.readFile(join(dir, "nonexistent.txt"));
+      const missing = await vctx.readFile(join(dir, "nonexistent.txt"));
       expect(missing).toBeNull();
     });
   });
@@ -90,7 +92,7 @@ describe("runPostParse — VerifyContext filesystem helpers", () => {
       const filePath = join(dir, "artifact.txt");
       await Bun.write(filePath, "content");
 
-      let capturedCtx: VerifyContext<unknown> | null = null;
+      let capturedCtx: VerifyContext<unknown> | undefined;
       const op = {
         verify: async (_parsed: string, _input: unknown, ctx: VerifyContext<unknown>): Promise<string | null> => {
           capturedCtx = ctx;
@@ -100,8 +102,10 @@ describe("runPostParse — VerifyContext filesystem helpers", () => {
 
       await _runPostParseForTest(op, "ignored", "input", FAKE_CTX);
 
-      expect(await capturedCtx!.fileExists(filePath)).toBe(true);
-      expect(await capturedCtx!.fileExists(join(dir, "nonexistent.txt"))).toBe(false);
+      assertDefined(capturedCtx, "capturedCtx");
+      const vctx = capturedCtx;
+      expect(await vctx.fileExists(filePath)).toBe(true);
+      expect(await vctx.fileExists(join(dir, "nonexistent.txt"))).toBe(false);
     });
   });
 });

@@ -16,7 +16,13 @@
  *   - runAsSessionFn controls what the underlying send returns (stateful via counter)
  */
 import { describe, expect, test } from "bun:test";
-import { makeMockAgentManager, makeMockCallContext, makeMockRuntime, makeSessionManager } from "@test/helpers";
+import {
+  assertDefined,
+  makeMockAgentManager,
+  makeMockCallContext,
+  makeMockRuntime,
+  makeSessionManager,
+} from "@test/helpers";
 import type { TurnResult } from "@/agents/types";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import type { RunOperation } from "@/operations";
@@ -59,20 +65,17 @@ describe("AC3: run-kind empty-output → runWithFallback retry (same agent)", ()
     // runAsSessionFn is the underlying send. Return empty on first call, success on second.
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
         // Simulate retry: first hop triggers fail-stale synthesis, second succeeds.
         // executeHop calls sendWithFileOutput internally which synthesises fail-stale
         // when output is empty — we call it twice to exercise the retry loop.
-        const firstHop = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const firstHop = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
 
         // After first hop with empty output, adapterFailure is synthesised (fail-stale).
         // Retry by calling executeHop again (same agent).
         if (firstHop.result.adapterFailure?.outcome === "fail-stale") {
-          const retryHop = await req.executeHop!(
-            "claude",
-            undefined,
-            { kind: "stale-retry", attempt: 1 },
-            req.runOptions,
-          );
+          const retryHop = await executeHop("claude", undefined, { kind: "stale-retry", attempt: 1 }, req.runOptions);
           return { result: { ...retryHop.result, agentFallbacks: [] }, fallbacks: [] };
         }
 
@@ -100,12 +103,14 @@ describe("AC3: run-kind empty-output → runWithFallback retry (same agent)", ()
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
         // Loop up to 3 times, retrying when fail-stale is synthesised.
-        let lastHop = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        let lastHop = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
 
         for (let attempt = 1; attempt <= 2; attempt++) {
           if (lastHop.result.adapterFailure?.outcome !== "fail-stale") break;
-          lastHop = await req.executeHop!("claude", undefined, { kind: "stale-retry", attempt }, req.runOptions);
+          lastHop = await executeHop("claude", undefined, { kind: "stale-retry", attempt }, req.runOptions);
         }
 
         return { result: { ...lastHop.result, agentFallbacks: [] }, fallbacks: [] };
@@ -139,12 +144,14 @@ describe("AC3: run-kind empty-output — all retries exhausted → CALL_OP_NO_OU
     // maxRetryAttempts=2: simulate 3 total hops (1 initial + 2 retries), all empty.
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
         // 1 initial + 2 retries = 3 hops, all producing empty output.
-        let lastHop = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        let lastHop = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
 
         for (let attempt = 1; attempt <= 2; attempt++) {
           if (lastHop.result.adapterFailure?.outcome !== "fail-stale") break;
-          lastHop = await req.executeHop!("claude", undefined, { kind: "stale-retry", attempt }, req.runOptions);
+          lastHop = await executeHop("claude", undefined, { kind: "stale-retry", attempt }, req.runOptions);
         }
 
         // All retries exhausted — pass empty result back to callOp.
@@ -177,7 +184,9 @@ describe("AC3: run-kind empty-output — all retries exhausted → CALL_OP_NO_OU
     // runWithFallbackFn performs no retry — simulates maxRetryAttempts=0 case.
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hop = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hop = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hop.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => {
@@ -211,7 +220,9 @@ describe("AC3: sendWithFileOutput synthesises fail-stale on empty run-kind outpu
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         // Capture what sendWithFileOutput synthesised on the hop result.
         capturedAdapterFailure = (hopResult.result as { adapterFailure?: unknown }).adapterFailure;
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };

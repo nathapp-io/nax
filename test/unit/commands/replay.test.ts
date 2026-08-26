@@ -21,7 +21,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { Command } from "commander";
 import {
   _replayCmdDeps,
@@ -255,7 +255,8 @@ describe("registerReplayCommand — AC7: commander wiring", () => {
 
     const sub = program.commands.find((c) => c.name() === "replay");
     expect(sub).toBeDefined();
-    const help = sub!.helpInformation();
+    assertDefined(sub, "replay subcommand");
+    const help = sub.helpInformation();
     expect(help).toContain("[run-id]");
     expect(help).toContain("--json");
   });

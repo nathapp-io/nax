@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import {
   _groupDeps,
   groupStoriesByPackage,
@@ -134,8 +135,10 @@ describe("groupStoriesByPackage()", () => {
         relativeDir === "apps/web" ? ".nax-acceptance.test.ts" : undefined;
       const prd = makePRD([makeStory("US-001", "apps/web"), makeStory("US-002", "apps/api")]);
       const groups = await groupStoriesByPackage(prd, WORKDIR, "my-feature", undefined, "python");
-      const web = groups.find((g) => g.packageDir.endsWith("apps/web"))!;
-      const api = groups.find((g) => g.packageDir.endsWith("apps/api"))!;
+      const web = groups.find((g) => g.packageDir.endsWith("apps/web"));
+      const api = groups.find((g) => g.packageDir.endsWith("apps/api"));
+      assertDefined(web, "web group");
+      assertDefined(api, "api group");
       expect(web.testPath).toBe("/repo/apps/web/.nax/features/my-feature/.nax-acceptance.test.ts");
       expect(api.testPath).toBe("/repo/apps/api/.nax/features/my-feature/_nax_acceptance_test.py");
     });
@@ -180,8 +183,10 @@ describe("groupStoriesByPackage()", () => {
       };
       const prd = makePRD([makeStory("US-001", "apps/api"), makeStory("US-002", "apps/web")]);
       const groups = await groupStoriesByPackage(prd, WORKDIR, "my-feature", undefined, "python");
-      const api = groups.find((g) => g.packageDir.endsWith("apps/api"))!;
-      const web = groups.find((g) => g.packageDir.endsWith("apps/web"))!;
+      const api = groups.find((g) => g.packageDir.endsWith("apps/api"));
+      const web = groups.find((g) => g.packageDir.endsWith("apps/web"));
+      assertDefined(api, "api group");
+      assertDefined(web, "web group");
       expect(api.testPath).toBe("/repo/apps/api/.nax/features/my-feature/_nax_acceptance_test.py");
       expect(web.testPath).toBe("/repo/apps/web/.nax/features/my-feature/.nax-acceptance.test.ts");
     });
@@ -198,8 +203,10 @@ describe("groupStoriesByPackage()", () => {
       _groupDeps.detectLanguage = async (dir: string) => (dir.endsWith("apps/web") ? "typescript" : undefined);
       const prd = makePRD([makeStory("US-001", "apps/web"), makeStory("US-002", "apps/api")]);
       const groups = await groupStoriesByPackage(prd, WORKDIR, "my-feature", undefined, "python");
-      const web = groups.find((g) => g.packageDir.endsWith("apps/web"))!;
-      const api = groups.find((g) => g.packageDir.endsWith("apps/api"))!;
+      const web = groups.find((g) => g.packageDir.endsWith("apps/web"));
+      const api = groups.find((g) => g.packageDir.endsWith("apps/api"));
+      assertDefined(web, "web group");
+      assertDefined(api, "api group");
       expect(web.language).toBe("typescript");
       expect(api.language).toBe("python");
     });

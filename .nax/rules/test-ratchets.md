@@ -37,13 +37,14 @@ Two ratchets remain, guarding the side doors a clean typecheck can be bought wit
 
 Both behave like the existing `check:nax-error` / `check:import-cycles` ratchets: they have a `--update-baseline` to lower the threshold when intentional improvements land, and `--list` to surface offenders.
 
-`test/` is also linted by Biome (`bun run lint`), with three rules deferred for
+`test/` is also linted by Biome (`bun run lint`), with one rule deferred for
 `test/**` in `biome.json` (plus one narrower override: `complexity/useLiteralKeys` is off
 for `test/helpers/*-internals.ts`, where element access is what makes a `private` member
-reachable and the rule's "fix" would not compile). Those overrides are not a licence to use what they
-disable — `noExplicitAny` in particular is deferred *because* the escape-hatch
-ratchet is counting it instead (as `anyType`), and turns back on when the drain
-retires it.
+reachable and the rule's "fix" would not compile). The deferred rule is `performance/noDelete`.
+The two former deferrals are closed: after their drains reached zero on biome's count,
+`noExplicitAny` and `noNonNullAssertion` were promoted to `"error"` in the same override
+block, explicitly — promote, never delete, because under Biome v2 a deleted override lands
+the rule at warning and `biome check` exits 0.
 
 ## Why the ratchets still exist
 

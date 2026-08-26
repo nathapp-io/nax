@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import type { GuardrailRole } from "@/prompts/sections";
 import { buildNaxArtifactsSection } from "@/prompts/sections";
 
@@ -14,8 +15,9 @@ describe("buildNaxArtifactsSection", () => {
     test("returns non-null string", () => {
       const result = buildNaxArtifactsSection("test-writer");
       expect(result).not.toBeNull();
+      assertDefined(result, "result");
       expect(typeof result).toBe("string");
-      expect(result!.length).toBeGreaterThan(0);
+      expect(result.length).toBeGreaterThan(0);
     });
 
     test("mentions .nax/ files must never be moved, renamed, or deleted", () => {
@@ -45,8 +47,9 @@ describe("buildNaxArtifactsSection", () => {
     test("returns non-null string", () => {
       const result = buildNaxArtifactsSection("implementer");
       expect(result).not.toBeNull();
+      assertDefined(result, "result");
       expect(typeof result).toBe("string");
-      expect(result!.length).toBeGreaterThan(0);
+      expect(result.length).toBeGreaterThan(0);
     });
   });
 
@@ -54,8 +57,9 @@ describe("buildNaxArtifactsSection", () => {
     test("returns non-null string", () => {
       const result = buildNaxArtifactsSection("verifier");
       expect(result).not.toBeNull();
+      assertDefined(result, "result");
       expect(typeof result).toBe("string");
-      expect(result!.length).toBeGreaterThan(0);
+      expect(result.length).toBeGreaterThan(0);
     });
 
     test("verifier also sees the immutability text (AC-4 / story deviation)", () => {

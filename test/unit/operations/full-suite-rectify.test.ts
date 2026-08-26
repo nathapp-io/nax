@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMockCallContext, makeNaxConfig } from "@test/helpers";
+import { assertDefined, makeMockCallContext, makeNaxConfig } from "@test/helpers";
 import type { Finding, FixCycleContext } from "@/findings";
 import type { FullSuiteRectifyInput, FullSuiteRectifyOutput, TestEditDeclaration } from "@/operations";
 import {
@@ -84,7 +84,9 @@ describe("makeFullSuiteRectifyStrategy", () => {
     const input = strategy.buildInput([finding], [], makeFixCycleContext());
     expect(input.story).toBe(story);
     expect(typeof input.contextMarkdown).toBe("string");
-    expect(input.contextMarkdown!.length).toBeGreaterThan(0);
+    const contextMarkdown = input.contextMarkdown;
+    assertDefined(contextMarkdown, "input.contextMarkdown");
+    expect(contextMarkdown.length).toBeGreaterThan(0);
   });
 
   test("each call returns a new strategy instance closing over its own story", () => {
@@ -137,7 +139,7 @@ describe("makeFullSuiteRectifyStrategy — with DeclarationSink", () => {
       ],
     };
     const input: FullSuiteRectifyInput = { story: makeTestStory(), findings: [] };
-    strategy.extractApplied!(output, input);
+    strategy.extractApplied(output, input);
     expect(sink.mockHandoffs).toHaveLength(1);
     expect(sink.mockHandoffs[0]?.files).toEqual(["test/unit/foo.test.ts", "test/unit/bar.test.ts"]);
     expect(sink.mockHandoffs[0]?.reasonDetail).toBe("mock setup needs restructuring");
@@ -153,7 +155,7 @@ describe("makeFullSuiteRectifyStrategy — with DeclarationSink", () => {
     };
     const output: FullSuiteRectifyOutput = { applied: true, testEditDeclarations: [declWithoutFiles] };
     const input: FullSuiteRectifyInput = { story: makeTestStory(), findings: [] };
-    strategy.extractApplied!(output, input);
+    strategy.extractApplied(output, input);
     expect(sink.mockHandoffs).toHaveLength(0);
   });
 
@@ -169,7 +171,7 @@ describe("makeFullSuiteRectifyStrategy — with DeclarationSink", () => {
     };
     const output: FullSuiteRectifyOutput = { applied: true, testEditDeclarations: [decl] };
     const input: FullSuiteRectifyInput = { story: makeTestStory(), findings: [] };
-    strategy.extractApplied!(output, input);
+    strategy.extractApplied(output, input);
     expect(sink.testEdits).toHaveLength(1);
     expect(sink.testEdits[0]).toEqual(decl);
   });
@@ -179,7 +181,7 @@ describe("makeFullSuiteRectifyStrategy — with DeclarationSink", () => {
     const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink);
     const output: FullSuiteRectifyOutput = { applied: true, testEditDeclarations: [] };
     const input: FullSuiteRectifyInput = { story: makeTestStory(), findings: [] };
-    strategy.extractApplied!(output, input);
+    strategy.extractApplied(output, input);
     expect(sink.testEdits).toHaveLength(0);
     expect(sink.mockHandoffs).toHaveLength(0);
   });
@@ -193,7 +195,7 @@ describe("makeFullSuiteRectifyStrategy — with DeclarationSink", () => {
       unresolvedReason: "Test uses relative URLs that the library rejects",
     };
     const input: FullSuiteRectifyInput = { story: makeTestStory(), findings: [] };
-    const result = await strategy.extractApplied!(output, input);
+    const result = await strategy.extractApplied(output, input);
     expect(result.unresolved).toBe("Test uses relative URLs that the library rejects");
     expect(result.summary).toBe("Test uses relative URLs that the library rejects");
   });
@@ -203,7 +205,7 @@ describe("makeFullSuiteRectifyStrategy — with DeclarationSink", () => {
     const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink);
     const output: FullSuiteRectifyOutput = { applied: true, testEditDeclarations: [] };
     const input: FullSuiteRectifyInput = { story: makeTestStory(), findings: [] };
-    const result = await strategy.extractApplied!(output, input);
+    const result = await strategy.extractApplied(output, input);
     expect(result.unresolved).toBeUndefined();
     expect(result.summary).toBe("Fixed failing tests");
   });
@@ -221,7 +223,7 @@ describe("makeFullSuiteRectifyStrategy — with DeclarationSink", () => {
       unresolvedReason: "Test uses relative URLs",
     };
     const input: FullSuiteRectifyInput = { story: makeTestStory(), findings: [] };
-    const result = await strategy.extractApplied!(output, input);
+    const result = await strategy.extractApplied(output, input);
     // Declaration flows through to sink so test-writer handoff can fire via postValidate
     expect(sink.testEdits).toHaveLength(1);
     // unresolved is suppressed — agent-gave-up must NOT fire when a handoff can still run

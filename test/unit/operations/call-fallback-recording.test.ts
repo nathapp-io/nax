@@ -10,7 +10,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMockAgentManager, makeMockRuntime } from "@test/helpers";
+import { assertDefined, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 import type { AgentFallbackRecord } from "@/agents/manager-types";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import type { RunOperation } from "@/operations";
@@ -43,7 +43,9 @@ function hop(overrides: Partial<AgentFallbackRecord> = {}): AgentFallbackRecord 
 function managerReporting(fallbacks: AgentFallbackRecord[]) {
   return makeMockAgentManager({
     runWithFallbackFn: async (req) => {
-      const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+      const { executeHop } = req;
+      assertDefined(executeHop, "req.executeHop");
+      const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
       return { result: { ...hopResult.result, agentFallbacks: fallbacks }, fallbacks };
     },
     runAsSessionFn: async () => ({

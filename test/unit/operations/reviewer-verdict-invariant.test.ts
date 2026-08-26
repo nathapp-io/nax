@@ -32,7 +32,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { makeTestRuntime, withTempDir } from "@test/helpers";
+import { assertDefined, makeTestRuntime, withTempDir } from "@test/helpers";
 import type { AdversarialReviewInput, SemanticReviewInput } from "@/operations";
 import { adversarialReviewOp, semanticReviewOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -150,12 +150,13 @@ const semanticReviewer: ReviewerUnderTest = {
       normalizedFindings: [],
       acDropped: [],
     };
-    const result = await semanticReviewOp.verify!(parsed, input, makeVerifyCtx(semanticReviewOp.config) as never);
+    const result = await semanticReviewOp.verify(parsed, input, makeVerifyCtx(semanticReviewOp.config) as never);
     expect(result).not.toBeNull();
+    assertDefined(result, "verify() result");
     return {
-      passed: result!.passed,
-      routable: result!.normalizedFindings.length,
-      surviving: result!.findings.length,
+      passed: result.passed,
+      routable: result.normalizedFindings.length,
+      surviving: result.findings.length,
     };
   },
 };
@@ -215,12 +216,13 @@ const adversarialReviewer: ReviewerUnderTest = {
       normalizedFindings: [],
       acDropped: [],
     };
-    const result = await adversarialReviewOp.verify!(parsed, input, makeVerifyCtx(adversarialReviewOp.config) as never);
+    const result = await adversarialReviewOp.verify(parsed, input, makeVerifyCtx(adversarialReviewOp.config) as never);
     expect(result).not.toBeNull();
+    assertDefined(result, "verify() result");
     return {
-      passed: result!.passed,
-      routable: result!.normalizedFindings.length,
-      surviving: result!.findings.length,
+      passed: result.passed,
+      routable: result.normalizedFindings.length,
+      surviving: result.findings.length,
     };
   },
 };

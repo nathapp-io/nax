@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeDispatchContext } from "@test/helpers";
+import { assertDefined, makeDispatchContext } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import {
   _acceptanceSetupDeps,
@@ -403,7 +403,7 @@ describe("acceptance-setup: no regeneration when fingerprint unchanged (AC-16)",
 describe("acceptance-setup: writes acceptance-meta.json (P2-B, AC-15)", () => {
   test("writes meta file after generating test (AC-15)", async () => {
     let writtenMetaPath = "";
-    let writtenMeta: object | null = null;
+    let writtenMeta: object | undefined;
 
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
@@ -428,7 +428,7 @@ describe("acceptance-setup: writes acceptance-meta.json (P2-B, AC-15)", () => {
   });
 
   test("meta contains correct fingerprint and counts (P2-B)", async () => {
-    let writtenMeta: AcceptanceMeta | null = null;
+    let writtenMeta: AcceptanceMeta | undefined;
 
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
@@ -449,10 +449,11 @@ describe("acceptance-setup: writes acceptance-meta.json (P2-B, AC-15)", () => {
     await acceptanceSetupStage.execute(ctx);
 
     expect(writtenMeta).not.toBeNull();
-    expect(writtenMeta!.acFingerprint).toBe(computeACFingerprint(DEFAULT_CRITERIA));
-    expect(writtenMeta!.acCount).toBe(3);
-    expect(writtenMeta!.storyCount).toBe(2);
-    expect(writtenMeta!.generatedAt).toBeString();
-    expect(writtenMeta!.generator).toBe("nax");
+    assertDefined(writtenMeta, "writtenMeta");
+    expect(writtenMeta.acFingerprint).toBe(computeACFingerprint(DEFAULT_CRITERIA));
+    expect(writtenMeta.acCount).toBe(3);
+    expect(writtenMeta.storyCount).toBe(2);
+    expect(writtenMeta.generatedAt).toBeString();
+    expect(writtenMeta.generator).toBe("nax");
   });
 });

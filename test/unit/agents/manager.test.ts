@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
+import { assertDefined, makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 import { _acpAdapterDeps } from "@/agents/acp/adapter";
 import { AgentManager } from "@/agents/manager";
 import type { AgentRegistry } from "@/agents/registry";
@@ -272,7 +272,8 @@ describe("AgentManager — middleware envelope", () => {
       await manager.runAs("claude", { runOptions: { prompt: "test", workdir: "/tmp" } as never });
     } catch {}
     expect(capturedPerms).toBeDefined();
-    expect(typeof capturedPerms!.mode).toBe("string");
+    assertDefined(capturedPerms, "capturedPerms");
+    expect(typeof capturedPerms.mode).toBe("string");
   });
 
   test("runAs() re-throws adapter errors (middleware onError no longer invoked — ADR-020 Wave 1)", async () => {

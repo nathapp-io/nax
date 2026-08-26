@@ -16,6 +16,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import type { RunTimeline, StoryTimeline } from "@/replay";
 import { type RenderOptions, renderReport } from "@/replay";
 
@@ -331,8 +332,12 @@ describe("renderReport — AC6: root cause marker", () => {
 
     expect(verifierLineIdx).toBeGreaterThan(0);
     expect(testWriterLineIdx).toBeGreaterThan(0);
-    expect(lines[verifierLineIdx]!.toLowerCase()).toContain("root cause");
-    expect(lines[testWriterLineIdx]!.toLowerCase()).not.toContain("root cause");
+    const verifierLine = lines[verifierLineIdx];
+    const testWriterLine = lines[testWriterLineIdx];
+    assertDefined(verifierLine, "verifier line");
+    assertDefined(testWriterLine, "test-writer line");
+    expect(verifierLine.toLowerCase()).toContain("root cause");
+    expect(testWriterLine.toLowerCase()).not.toContain("root cause");
   });
 });
 
@@ -434,14 +439,15 @@ describe("renderReport — AC9: crashed-run rendering", () => {
       ],
     });
 
-    let out: string;
+    let out: string | undefined;
     expect(() => {
       out = renderReport(tl);
     }).not.toThrow();
 
-    expect(out!).toContain("CRASHED");
+    assertDefined(out, "renderReport output");
+    expect(out).toContain("CRASHED");
     // Header cost line must render a placeholder for missing cost
-    expect(out!).toMatch(/^Cost:.*(\?|--|unknown|—|n\/a)\s*$/im);
+    expect(out).toMatch(/^Cost:.*(\?|--|unknown|—|n\/a)\s*$/im);
   });
 
   test("AC9 boundary: crashed run header contains CRASHED even when no stories have cost", () => {

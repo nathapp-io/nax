@@ -394,7 +394,7 @@ describe("PostRunStatus type hierarchy", () => {
 
 describe("buildStatusSnapshot postRun field", () => {
   test("omitted when undefined; present with all fields intact when set", () => {
-    expect(Object.prototype.hasOwnProperty.call(buildStatusSnapshot(makeRunState()), "postRun")).toBe(false);
+    expect(Object.hasOwn(buildStatusSnapshot(makeRunState()), "postRun")).toBe(false);
 
     const postRun: PostRunStatus = {
       acceptance: { status: "passed", lastRunAt: "2026-04-04T10:00:00.000Z", retries: 0 },

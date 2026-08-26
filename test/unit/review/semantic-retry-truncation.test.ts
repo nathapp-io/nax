@@ -7,7 +7,7 @@
  */
 
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import { assertDefined, makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { AgentRunRequest } from "@/agents";
 import * as loggerModule from "@/logger";
 import { callOp, semanticReviewOp } from "@/operations";
@@ -83,7 +83,9 @@ function makeCallOpRuntime(responses: Array<{ output: string; cost?: number }>):
 
   const agentManager = makeMockAgentManager({
     runWithFallbackFn: async (req: AgentRunRequest) => {
-      const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+      const { executeHop } = req;
+      assertDefined(executeHop, "req.executeHop");
+      const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
       return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
     },
     runAsSessionFn: async (_agentName, _handle, prompt) => {

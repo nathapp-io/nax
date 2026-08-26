@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import {
+  assertDefined,
   cleanupTempDir,
   makeMutationCheckDeps as fakeDeps,
   makeMutationCheckCtx,
@@ -129,7 +130,8 @@ describe("mutationCheckOp — US-003 AC9: null range result emits a warning with
         deps,
       );
 
-      const calls = warnSpy!.mock.calls as Array<[string, string, Record<string, unknown>]>;
+      assertDefined(warnSpy, "warnSpy");
+      const calls = warnSpy.mock.calls as Array<[string, string, Record<string, unknown>]>;
       const matching = calls.filter(
         ([stage, message, data]) =>
           data?.storyId === "US-003" &&
@@ -223,7 +225,8 @@ describe("mutationCheckOp — US-003 AC11: unmapped file emits a debug log with 
         deps,
       );
 
-      const calls = debugSpy!.mock.calls as Array<[string, string, Record<string, unknown>]>;
+      assertDefined(debugSpy, "debugSpy");
+      const calls = debugSpy.mock.calls as Array<[string, string, Record<string, unknown>]>;
       const matching = calls.filter(([, , data]) => data?.storyId === "US-003" && data?.file === file);
       expect(matching.length).toBeGreaterThan(0);
     } finally {
@@ -395,7 +398,8 @@ describe("mutationCheckOp — US-003 AC15: file with no mutable content emits no
         deps,
       );
 
-      const calls = warnSpy!.mock.calls as Array<[string, string, Record<string, unknown>]>;
+      assertDefined(warnSpy, "warnSpy");
+      const calls = warnSpy.mock.calls as Array<[string, string, Record<string, unknown>]>;
       const matching = calls.filter(
         ([, message, data]) => data?.storyId === "US-003" && data?.file === file && typeof message === "string",
       );

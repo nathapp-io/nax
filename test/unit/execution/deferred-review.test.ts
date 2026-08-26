@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeConfigSlice, makePluginRegistry, makePRD, makeSpawn, withDepsRestore } from "@test/helpers";
+import { assertDefined, makeConfigSlice, makePluginRegistry, makePRD, makeSpawn, withDepsRestore } from "@test/helpers";
 import { _deferredReviewDeps, captureRunStartRef, runDeferredReview } from "@/execution/deferred-review";
 import type { PluginRegistry } from "@/plugins";
 import type { IReviewPlugin } from "@/plugins/extensions";
@@ -184,11 +184,11 @@ describe("runDeferredReview — runs reviewers with full diff when deferred", ()
 
     const result = await runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF);
 
-    expect(result).toBeDefined();
-    expect(result!.anyFailed).toBe(false);
-    expect(result!.reviewerResults).toHaveLength(1);
-    expect(result!.reviewerResults[0].name).toBe("semgrep");
-    expect(result!.reviewerResults[0].passed).toBe(true);
+    assertDefined(result, "runDeferredReview result");
+    expect(result.anyFailed).toBe(false);
+    expect(result.reviewerResults).toHaveLength(1);
+    expect(result.reviewerResults[0].name).toBe("semgrep");
+    expect(result.reviewerResults[0].passed).toBe(true);
   });
 
   test("returns result with anyFailed=true when a reviewer fails", async () => {
@@ -197,9 +197,9 @@ describe("runDeferredReview — runs reviewers with full diff when deferred", ()
 
     const result = await runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF);
 
-    expect(result).toBeDefined();
-    expect(result!.anyFailed).toBe(true);
-    expect(result!.reviewerResults[0].passed).toBe(false);
+    assertDefined(result, "runDeferredReview result");
+    expect(result.anyFailed).toBe(true);
+    expect(result.reviewerResults[0].passed).toBe(false);
   });
 
   test("includes runStartRef in the returned result", async () => {
@@ -208,7 +208,8 @@ describe("runDeferredReview — runs reviewers with full diff when deferred", ()
 
     const result = await runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF);
 
-    expect(result!.runStartRef).toBe(FAKE_REF);
+    assertDefined(result, "runDeferredReview result");
+    expect(result.runStartRef).toBe(FAKE_REF);
   });
 
   test("continues running remaining reviewers when one fails (does not short-circuit)", async () => {
@@ -221,7 +222,8 @@ describe("runDeferredReview — runs reviewers with full diff when deferred", ()
     // Both reviewers should run even though first one failed
     expect(reviewer1.check).toHaveBeenCalledTimes(1);
     expect(reviewer2.check).toHaveBeenCalledTimes(1);
-    expect(result!.reviewerResults).toHaveLength(2);
+    assertDefined(result, "runDeferredReview result");
+    expect(result.reviewerResults).toHaveLength(2);
   });
 });
 
@@ -260,9 +262,10 @@ describe("runDeferredReview — plugin failures do NOT fail the run", () => {
 
     const result = await runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF);
 
-    expect(result!.anyFailed).toBe(true);
-    expect(result!.reviewerResults[0].passed).toBe(false);
-    expect(result!.reviewerResults[0].error).toContain("reviewer crashed");
+    assertDefined(result, "runDeferredReview result");
+    expect(result.anyFailed).toBe(true);
+    expect(result.reviewerResults[0].passed).toBe(false);
+    expect(result.reviewerResults[0].error).toContain("reviewer crashed");
   });
 
   test("continues running remaining reviewers when one throws", async () => {
@@ -279,7 +282,8 @@ describe("runDeferredReview — plugin failures do NOT fail the run", () => {
     const result = await runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF);
 
     expect(passingReviewer.check).toHaveBeenCalledTimes(1);
-    expect(result!.reviewerResults).toHaveLength(2);
+    assertDefined(result, "runDeferredReview result");
+    expect(result.reviewerResults).toHaveLength(2);
   });
 });
 
@@ -305,8 +309,9 @@ describe("SequentialExecutionResult — includes optional deferredReview field",
       },
     };
 
-    expect(result.deferredReview).toBeDefined();
-    expect(result.deferredReview!.runStartRef).toBe(FAKE_REF);
+    const dr = result.deferredReview;
+    assertDefined(dr, "result.deferredReview");
+    expect(dr.runStartRef).toBe(FAKE_REF);
   });
 
   test("SequentialExecutionResult allows deferredReview to be undefined", () => {

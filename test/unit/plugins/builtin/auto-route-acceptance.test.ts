@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { assertDefined } from "@test/helpers";
 import type { RunMetrics, StoryMetrics } from "@/metrics";
 import { _autoRouteDeps, type AutoRouteDeps, autoRoutePlugin, loadPlugins } from "@/plugins";
 import type { PostRunContext } from "@/plugins/extensions";
@@ -228,19 +229,25 @@ describe("autoRoutePlugin.shouldRun", () => {
         },
       },
     });
-    expect(await autoRoutePlugin.extensions.postRunAction!.shouldRun(ctx)).toBe(false);
+    const postRunAction = autoRoutePlugin.extensions.postRunAction;
+    assertDefined(postRunAction, "postRunAction");
+    expect(await postRunAction.shouldRun(ctx)).toBe(false);
   });
 
   test("AC2 — returns false when injected history yields no band reaching minSamples", async () => {
     _autoRouteDeps.loadRunMetrics = (async () => makeBelowThresholdHistory()) as typeof _autoRouteDeps.loadRunMetrics;
     const ctx = makeContext();
-    expect(await autoRoutePlugin.extensions.postRunAction!.shouldRun(ctx)).toBe(false);
+    const postRunAction = autoRoutePlugin.extensions.postRunAction;
+    assertDefined(postRunAction, "postRunAction");
+    expect(await postRunAction.shouldRun(ctx)).toBe(false);
   });
 
   test("AC3 — returns true when enabled and history yields at least one adjustment", async () => {
     _autoRouteDeps.loadRunMetrics = (async () => makeAdjustmentHistory()) as typeof _autoRouteDeps.loadRunMetrics;
     const ctx = makeContext();
-    expect(await autoRoutePlugin.extensions.postRunAction!.shouldRun(ctx)).toBe(true);
+    const postRunAction = autoRoutePlugin.extensions.postRunAction;
+    assertDefined(postRunAction, "postRunAction");
+    expect(await postRunAction.shouldRun(ctx)).toBe(true);
   });
 });
 
@@ -255,7 +262,9 @@ describe("autoRoutePlugin.execute", () => {
     }) as typeof _autoRouteDeps.writeFile;
 
     const ctx = makeContext();
-    await autoRoutePlugin.extensions.postRunAction!.execute(ctx);
+    const postRunAction = autoRoutePlugin.extensions.postRunAction;
+    assertDefined(postRunAction, "postRunAction");
+    await postRunAction.execute(ctx);
 
     const expectedAdjustment = makeAdjustment();
 
@@ -282,7 +291,9 @@ describe("autoRoutePlugin.execute", () => {
     }) as typeof _autoRouteDeps.writeFile;
 
     const ctx = makeContext();
-    await autoRoutePlugin.extensions.postRunAction!.execute(ctx);
+    const postRunAction = autoRoutePlugin.extensions.postRunAction;
+    assertDefined(postRunAction, "postRunAction");
+    await postRunAction.execute(ctx);
 
     expect(captured.length).toBe(1);
     expect(captured[0]?.path.endsWith("routing-proposal.json")).toBe(true);
@@ -314,8 +325,10 @@ describe("autoRoutePlugin.execute", () => {
       | Awaited<ReturnType<NonNullable<typeof autoRoutePlugin.extensions.postRunAction>["execute"]>>
       | undefined;
     let threw = false;
+    const postRunAction = autoRoutePlugin.extensions.postRunAction;
+    assertDefined(postRunAction, "postRunAction");
     try {
-      result = await autoRoutePlugin.extensions.postRunAction!.execute(ctx);
+      result = await postRunAction.execute(ctx);
     } catch {
       threw = true;
     }

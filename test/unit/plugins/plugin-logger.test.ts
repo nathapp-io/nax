@@ -3,6 +3,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import { createPluginLogger } from "@/plugins/plugin-logger";
 import type { PluginLogger } from "@/plugins/types";
@@ -33,7 +34,9 @@ describe("createPluginLogger", () => {
 
     // Read the JSONL log file
     const content = await Bun.file(logFile).text();
-    const entry = JSON.parse(content.trim().split("\n").pop()!);
+    const lastLine = content.trim().split("\n").pop();
+    assertDefined(lastLine, "last log line");
+    const entry = JSON.parse(lastLine);
 
     expect(entry.stage).toBe("plugin:test-plugin");
     expect(entry.level).toBe("info");
@@ -46,7 +49,9 @@ describe("createPluginLogger", () => {
     await getLogger().flush();
 
     const content = await Bun.file(logFile).text();
-    const entry = JSON.parse(content.trim().split("\n").pop()!);
+    const lastLine = content.trim().split("\n").pop();
+    assertDefined(lastLine, "last log line");
+    const entry = JSON.parse(lastLine);
 
     expect(entry.stage).toBe("plugin:test-plugin");
     expect(entry.level).toBe("error");
@@ -58,7 +63,9 @@ describe("createPluginLogger", () => {
     await getLogger().flush();
 
     const content = await Bun.file(logFile).text();
-    const entry = JSON.parse(content.trim().split("\n").pop()!);
+    const lastLine = content.trim().split("\n").pop();
+    assertDefined(lastLine, "last log line");
+    const entry = JSON.parse(lastLine);
 
     expect(entry.level).toBe("warn");
     expect(entry.stage).toBe("plugin:test-plugin");
@@ -69,7 +76,9 @@ describe("createPluginLogger", () => {
     await getLogger().flush();
 
     const content = await Bun.file(logFile).text();
-    const entry = JSON.parse(content.trim().split("\n").pop()!);
+    const lastLine = content.trim().split("\n").pop();
+    assertDefined(lastLine, "last log line");
+    const entry = JSON.parse(lastLine);
 
     expect(entry.level).toBe("debug");
     expect(entry.data).toEqual({ phase: "init" });
@@ -97,7 +106,9 @@ describe("createPluginLogger", () => {
     await getLogger().flush();
 
     const content = await Bun.file(logFile).text();
-    const entry = JSON.parse(content.trim().split("\n").pop()!);
+    const lastLine = content.trim().split("\n").pop();
+    assertDefined(lastLine, "last log line");
+    const entry = JSON.parse(lastLine);
 
     expect(entry.message).toBe("No data");
     expect(entry.data).toBeUndefined();

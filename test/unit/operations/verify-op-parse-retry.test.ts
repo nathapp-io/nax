@@ -11,7 +11,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeStory, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeStory, makeTempDir } from "@test/helpers";
 import { type ConfigSelector, DEFAULT_CONFIG, tddConfigSelector } from "@/config";
 import { verifierOp } from "@/operations";
 import type { PackageView } from "@/runtime";
@@ -110,23 +110,26 @@ describe("verifierOp.recover — fail-closed when no usable disk verdict", () =>
   });
 
   test("returns non-null fail-closed VerifierOutput when disk verdict is missing", async () => {
-    const out = await verifierOp.recover!(INPUT, makeCtx(workdir));
+    const out = await verifierOp.recover(INPUT, makeCtx(workdir));
     expect(out).not.toBeNull();
-    expect(out!.success).toBe(false);
-    expect(out!.reviewReason).toMatch(/verdict|unparseable|invalid/i);
+    assertDefined(out, "recover() output");
+    expect(out.success).toBe(false);
+    expect(out.reviewReason).toMatch(/verdict|unparseable|invalid/i);
   });
 
   test("returns non-null fail-closed VerifierOutput when disk verdict is invalid JSON", async () => {
     await Bun.write(join(workdir, ".nax-verifier-verdict.json"), '{"approved":');
-    const out = await verifierOp.recover!(INPUT, makeCtx(workdir));
+    const out = await verifierOp.recover(INPUT, makeCtx(workdir));
     expect(out).not.toBeNull();
-    expect(out!.success).toBe(false);
+    assertDefined(out, "recover() output");
+    expect(out.success).toBe(false);
   });
 
   test("returns success=true when disk verdict is valid and approved", async () => {
     await Bun.write(join(workdir, ".nax-verifier-verdict.json"), VALID_VERDICT_JSON);
-    const out = await verifierOp.recover!(INPUT, makeCtx(workdir));
+    const out = await verifierOp.recover(INPUT, makeCtx(workdir));
     expect(out).not.toBeNull();
-    expect(out!.success).toBe(true);
+    assertDefined(out, "recover() output");
+    expect(out.success).toBe(true);
   });
 });

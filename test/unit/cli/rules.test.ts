@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { makeLogger, withTempDir } from "@test/helpers";
+import { assertDefined, makeLogger, withTempDir } from "@test/helpers";
 import {
   _rulesCLIDeps,
   neutralizeContent,
@@ -365,7 +365,8 @@ describe("rulesExportCommand", () => {
       { fileName: "testing.md", content: "Testing content." },
     ];
     await rulesExportCommand({ dir: "/project", agent: "codex" });
-    const content = written["/project/AGENTS.md"]!;
+    const content = written["/project/AGENTS.md"];
+    assertDefined(content, "written[/project/AGENTS.md]");
     expect(content).toContain("AUTO-GENERATED");
     expect(content).toContain(".nax/rules/");
     expect(content).toContain("Style content.");

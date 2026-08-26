@@ -1,6 +1,7 @@
 // test/unit/execution/non-blocking-fix-wiring.test.ts
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
+  assertDefined,
   makeFixCycleResult,
   makeIteration,
   makeMockCallContext,
@@ -145,6 +146,8 @@ describe("non-blocking-fix runtime wiring", () => {
     const story = makeStory({ attempts: 1 });
     runtime = makeTestRuntime({ config });
     const ctx = makeMockCallContext({ runtime });
+    const adversarialConfig = config.review.adversarial;
+    assertDefined(adversarialConfig, "config.review.adversarial");
     const inputs = makeMockPlanInputs({
       story,
       implementer: { story },
@@ -153,8 +156,8 @@ describe("non-blocking-fix runtime wiring", () => {
       adversarialReview: {
         story,
         workdir: "/tmp/test",
-        adversarialConfig: config.review.adversarial!,
-        mode: config.review.adversarial!.diffMode,
+        adversarialConfig,
+        mode: adversarialConfig.diffMode,
       },
       rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
     });
@@ -220,6 +223,8 @@ describe("non-blocking-fix runtime wiring", () => {
     const story = makeStory({ attempts: 1 });
     runtime = makeTestRuntime({ config });
     const ctx = makeMockCallContext({ runtime });
+    const adversarialConfig = config.review.adversarial;
+    assertDefined(adversarialConfig, "config.review.adversarial");
     const inputs = makeMockPlanInputs({
       story,
       implementer: { story },
@@ -228,8 +233,8 @@ describe("non-blocking-fix runtime wiring", () => {
       adversarialReview: {
         story,
         workdir: "/tmp/test",
-        adversarialConfig: config.review.adversarial!,
-        mode: config.review.adversarial!.diffMode,
+        adversarialConfig,
+        mode: adversarialConfig.diffMode,
       },
       rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
     });
@@ -305,6 +310,8 @@ describe("non-blocking-fix runtime wiring", () => {
     const story = makeStory({ attempts: 1 });
     runtime = makeTestRuntime({ config });
     const ctx = makeMockCallContext({ runtime });
+    const adversarialConfig = config.review.adversarial;
+    assertDefined(adversarialConfig, "config.review.adversarial");
     const inputs = makeMockPlanInputs({
       story,
       implementer: { story },
@@ -313,8 +320,8 @@ describe("non-blocking-fix runtime wiring", () => {
       adversarialReview: {
         story,
         workdir: "/tmp/test",
-        adversarialConfig: config.review.adversarial!,
-        mode: config.review.adversarial!.diffMode,
+        adversarialConfig,
+        mode: adversarialConfig.diffMode,
       },
       rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
     });

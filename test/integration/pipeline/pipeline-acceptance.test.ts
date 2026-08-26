@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { cleanupTempDir, makeConfigSlice, makeDispatchContext, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeConfigSlice, makeDispatchContext, makeTempDir } from "@test/helpers";
 import type { NaxConfig } from "@/config/schema";
 import { DEFAULT_CONFIG } from "@/config/schema";
 import { initLogger, resetLogger } from "@/logger";
@@ -348,8 +348,8 @@ describe("broken", () => {
     }
 
     // Should populate acceptanceFailures for fix generation
-    expect(ctx.acceptanceFailures).toBeDefined();
-    expect(ctx.acceptanceFailures!.failedACs).toContain("AC-ERROR");
+    assertDefined(ctx.acceptanceFailures, "ctx.acceptanceFailures");
+    expect(ctx.acceptanceFailures.failedACs).toContain("AC-ERROR");
   });
 });
 

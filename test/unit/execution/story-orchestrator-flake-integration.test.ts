@@ -21,7 +21,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeMockCallContext, makeTestRuntime } from "@test/helpers";
+import { assertDefined, makeMockCallContext, makeTestRuntime } from "@test/helpers";
 import { pickSelector } from "@/config";
 import {
   _storyOrchestratorDeps,
@@ -165,7 +165,7 @@ describe("AC1: triage runs once with gate failed-test findings before gatherRect
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    let capturedCycle: FixCycle<Finding> | null = null;
+    let capturedCycle: FixCycle<Finding> | undefined;
     _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>) => {
       callOrder.push("runFixCycle");
       capturedCycle = cycle;
@@ -195,8 +195,8 @@ describe("AC1: triage runs once with gate failed-test findings before gatherRect
       rule: "shouldBar",
     });
     // The fix cycle must see the gate's failed-test finding (triage passed it through).
-    expect(capturedCycle).not.toBeNull();
-    const cycleFindings = capturedCycle!.findings;
+    assertDefined(capturedCycle, "capturedCycle");
+    const cycleFindings = capturedCycle.findings;
     expect(cycleFindings.some((f) => f.source === "test-runner" && f.file === "test/foo.test.ts")).toBe(true);
   });
 
@@ -321,13 +321,13 @@ describe("AC3: mixed triage → fix cycle receives only failed-test findings", (
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    let capturedCycle: FixCycle<Finding> | null = null;
+    let capturedCycle: FixCycle<Finding> | undefined;
     _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>) => {
       // Capture only the FIRST cycle — the post-rectification resume's
       // second pass re-runs the gate (overwriting the triaged output) and
       // dispatches a fresh cycle whose findings are an un-triaged re-run.
       // AC3 asserts the triage-induced filtering on the first cycle.
-      if (capturedCycle === null) capturedCycle = cycle;
+      if (capturedCycle === undefined) capturedCycle = cycle;
       return {
         iterations: [],
         finalFindings: [],
@@ -344,8 +344,8 @@ describe("AC3: mixed triage → fix cycle receives only failed-test findings", (
       .build(ctx, { isThreeSession: true });
     await plan.run();
 
-    expect(capturedCycle).not.toBeNull();
-    const cycleFindings = capturedCycle!.findings;
+    assertDefined(capturedCycle, "capturedCycle");
+    const cycleFindings = capturedCycle.findings;
     // Exactly 2 failed-test findings reach the cycle (indices 1 and 3).
     expect(cycleFindings.length).toBe(2);
     for (const f of cycleFindings) {
@@ -508,9 +508,9 @@ describe("F3: triage seam is awaited and its throw is caught", () => {
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    let capturedCycle: FixCycle<Finding> | null = null;
+    let capturedCycle: FixCycle<Finding> | undefined;
     _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>) => {
-      if (capturedCycle === null) capturedCycle = cycle;
+      if (capturedCycle === undefined) capturedCycle = cycle;
       return {
         iterations: [],
         finalFindings: [],
@@ -531,8 +531,8 @@ describe("F3: triage seam is awaited and its throw is caught", () => {
     // Triage was invoked (then threw) and the fix cycle still ran with the
     // un-triaged failed-test finding — degrade to "no quarantine".
     expect(triageStub.mock.calls.length).toBeGreaterThanOrEqual(1);
-    expect(capturedCycle).not.toBeNull();
-    const cycleFindings = capturedCycle!.findings;
+    assertDefined(capturedCycle, "capturedCycle");
+    const cycleFindings = capturedCycle.findings;
     expect(cycleFindings.some((f) => f.file === "test/unit/foo.test.ts" && f.category === "failed-test")).toBe(true);
     // Story completes (does not crash on the seam throw) — success is false
     // because the un-triaged failed-test finding remains blocking, not because

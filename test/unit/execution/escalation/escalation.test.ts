@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import type { TierConfig } from "@/config";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "@/execution/escalation";
 
@@ -105,12 +106,14 @@ describe("escalateTier", () => {
       { tier: "powerful", agent: "claude", attempts: 2 },
     ];
     const step1 = escalateTier({ tier: "balanced", agent: "opencode" }, tierOrder);
+    assertDefined(step1, "step1");
     expect(step1).toEqual({ tier: "balanced", agent: "claude" });
 
-    const step2 = escalateTier({ tier: step1!.tier, agent: step1!.agent }, tierOrder);
+    const step2 = escalateTier({ tier: step1.tier, agent: step1.agent }, tierOrder);
+    assertDefined(step2, "step2");
     expect(step2).toEqual({ tier: "powerful", agent: "claude" });
 
-    const step3 = escalateTier({ tier: step2!.tier, agent: step2!.agent }, tierOrder);
+    const step3 = escalateTier({ tier: step2.tier, agent: step2.agent }, tierOrder);
     expect(step3).toBeNull();
   });
 

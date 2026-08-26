@@ -16,7 +16,7 @@ import type { SessionRole } from "../session/types";
 import { errorMessage } from "../utils/errors";
 import { applyPlanFidelity, warnOnSpecDrift } from "./plan-fidelity";
 import { makeSelfHealStep, runSelfHealChain, type SelfHealStep } from "./self-heal";
-import type { RunOperation } from "./types";
+import type { RunOperation, RunOperationWithHooks } from "./types";
 
 /** Injectable I/O for the hopBody self-heal step (testable without disk). */
 export const _planRefineDeps = {
@@ -329,7 +329,7 @@ function specDriftSelfHealStep(builder: PlanPromptBuilder): SelfHealStep<PlanRef
   });
 }
 
-export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
+export const planRefineOp: RunOperationWithHooks<PlanRefineInput, PRD, PlanConfig, "hopBody" | "verify" | "recover"> = {
   kind: "run",
   name: "plan-refine",
   stage: "plan",

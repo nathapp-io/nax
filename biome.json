@@ -22,7 +22,7 @@
       "linter": {
         "rules": {
           "suspicious": { "noExplicitAny": "error" },
-          "style": { "noNonNullAssertion": "off" },
+          "style": { "noNonNullAssertion": "error" },
           "performance": { "noDelete": "off" }
         }
       }

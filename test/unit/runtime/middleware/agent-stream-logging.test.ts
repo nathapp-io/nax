@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 import type {
@@ -169,9 +169,9 @@ describe("attachAgentStreamLogging", () => {
 
     const entries = await parseAllEntries(logFile);
     const endedEntry = entries.find((e) => e.message === "Agent call ended");
-    expect(endedEntry).toBeDefined();
-    expect(endedEntry!.level).toBe("info");
-    expect(endedEntry!.data).toMatchObject({
+    assertDefined(endedEntry, "endedEntry");
+    expect(endedEntry.level).toBe("info");
+    expect(endedEntry.data).toMatchObject({
       storyId: "s-42",
       callId: "call-001",
       messageUpdates: 1,

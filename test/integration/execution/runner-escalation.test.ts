@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { escalateTier } from "@/execution/escalation";
 import { resolveMaxAttemptsOutcome } from "@/execution/runner";
 import type { UserStory } from "@/prd";
@@ -72,13 +73,16 @@ describe("Batch Failure Escalation Strategy", () => {
     // When batch fails at 'fast' tier:
     // 1. First story (US-001) should escalate to 'balanced'
     const firstStory = batchStories[0];
-    const currentTier = firstStory.routing!.modelTier;
+    assertDefined(firstStory, "first story");
+    assertDefined(firstStory.routing, "first story routing");
+    const currentTier = firstStory.routing.modelTier;
+    assertDefined(currentTier, "currentTier");
     const tierOrder = [
       { tier: "fast", attempts: 5 },
       { tier: "balanced", attempts: 3 },
       { tier: "powerful", attempts: 2 },
     ];
-    const nextTier = escalateTier({ tier: currentTier! }, tierOrder);
+    const nextTier = escalateTier({ tier: currentTier }, tierOrder);
 
     expect(currentTier).toBe("fast");
     expect(nextTier?.tier).toBe("balanced");
@@ -87,7 +91,8 @@ describe("Batch Failure Escalation Strategy", () => {
     // They will be retried individually at the same tier on next iteration
     const remainingStories = batchStories.slice(1);
     for (const story of remainingStories) {
-      expect(story.routing!.modelTier).toBe("fast");
+      assertDefined(story.routing, `routing for ${story.id}`);
+      expect(story.routing.modelTier).toBe("fast");
       expect(story.status).toBe("pending");
     }
 
@@ -226,14 +231,16 @@ describe("Pre-Iteration Escalation: tier budget exhaustion triggers escalation b
     };
 
     // Get tier config
-    const currentTier = story.routing!.modelTier;
+    assertDefined(story.routing, "story.routing");
+    const currentTier = story.routing.modelTier;
+    assertDefined(currentTier, "currentTier");
     const tierCfg = defaultTiers.find((t) => t.tier === currentTier);
 
-    expect(tierCfg).toBeDefined();
-    expect(story.attempts).toBeGreaterThanOrEqual(tierCfg!.attempts);
+    assertDefined(tierCfg, `tier config for ${currentTier}`);
+    expect(story.attempts).toBeGreaterThanOrEqual(tierCfg.attempts);
 
     // Should escalate to next tier
-    const nextTier = escalateTier({ tier: currentTier! }, defaultTiers);
+    const nextTier = escalateTier({ tier: currentTier }, defaultTiers);
     expect(nextTier?.tier).toBe("balanced");
   });
 
@@ -252,13 +259,15 @@ describe("Pre-Iteration Escalation: tier budget exhaustion triggers escalation b
       routing: { complexity: "medium", modelTier: "balanced", testStrategy: "test-after", reasoning: "medium" },
     };
 
-    const currentTier = story.routing!.modelTier;
+    assertDefined(story.routing, "story.routing");
+    const currentTier = story.routing.modelTier;
+    assertDefined(currentTier, "currentTier");
     const tierCfg = defaultTiers.find((t) => t.tier === currentTier);
 
-    expect(tierCfg).toBeDefined();
-    expect(story.attempts).toBeGreaterThanOrEqual(tierCfg!.attempts);
+    assertDefined(tierCfg, `tier config for ${currentTier}`);
+    expect(story.attempts).toBeGreaterThanOrEqual(tierCfg.attempts);
 
-    const nextTier = escalateTier({ tier: currentTier! }, defaultTiers);
+    const nextTier = escalateTier({ tier: currentTier }, defaultTiers);
     expect(nextTier?.tier).toBe("powerful");
   });
 
@@ -277,14 +286,16 @@ describe("Pre-Iteration Escalation: tier budget exhaustion triggers escalation b
       routing: { complexity: "complex", modelTier: "powerful", testStrategy: "test-after", reasoning: "complex" },
     };
 
-    const currentTier = story.routing!.modelTier;
+    assertDefined(story.routing, "story.routing");
+    const currentTier = story.routing.modelTier;
+    assertDefined(currentTier, "currentTier");
     const tierCfg = defaultTiers.find((t) => t.tier === currentTier);
 
-    expect(tierCfg).toBeDefined();
-    expect(story.attempts).toBeGreaterThanOrEqual(tierCfg!.attempts);
+    assertDefined(tierCfg, `tier config for ${currentTier}`);
+    expect(story.attempts).toBeGreaterThanOrEqual(tierCfg.attempts);
 
     // No next tier available
-    const nextTier = escalateTier({ tier: currentTier! }, defaultTiers);
+    const nextTier = escalateTier({ tier: currentTier }, defaultTiers);
     expect(nextTier).toBeNull();
 
     // Story should be marked as FAILED (not retried)
@@ -311,13 +322,16 @@ describe("Pre-Iteration Escalation: tier budget exhaustion triggers escalation b
     };
 
     // Pre-iteration check should trigger escalation
-    const currentTier = story.routing!.modelTier;
+    assertDefined(story.routing, "story.routing");
+    const currentTier = story.routing.modelTier;
+    assertDefined(currentTier, "currentTier");
     const tierCfg = defaultTiers.find((t) => t.tier === currentTier);
 
-    expect(story.attempts).toBeGreaterThanOrEqual(tierCfg!.attempts);
+    assertDefined(tierCfg, `tier config for ${currentTier}`);
+    expect(story.attempts).toBeGreaterThanOrEqual(tierCfg.attempts);
 
     // Should escalate instead of retrying at same tier
-    const nextTier = escalateTier({ tier: currentTier! }, defaultTiers);
+    const nextTier = escalateTier({ tier: currentTier }, defaultTiers);
     expect(nextTier?.tier).toBe("balanced");
   });
 
@@ -348,7 +362,8 @@ describe("Pre-Iteration Escalation: tier budget exhaustion triggers escalation b
 
     // Now attempts >= tier budget, should escalate on next iteration
     const tierCfg = defaultTiers.find((t) => t.tier === "fast");
-    expect(updatedStory.attempts).toBeGreaterThanOrEqual(tierCfg!.attempts);
+    assertDefined(tierCfg, "tier config for fast");
+    expect(updatedStory.attempts).toBeGreaterThanOrEqual(tierCfg.attempts);
 
     const nextTier = escalateTier({ tier: "fast" }, defaultTiers);
     expect(nextTier?.tier).toBe("balanced");
@@ -369,11 +384,12 @@ describe("Pre-Iteration Escalation: tier budget exhaustion triggers escalation b
       routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
     };
 
-    const currentTier = story.routing!.modelTier;
+    assertDefined(story.routing, "story.routing");
+    const currentTier = story.routing.modelTier;
     const tierCfg = defaultTiers.find((t) => t.tier === currentTier);
 
-    expect(tierCfg).toBeDefined();
-    expect(story.attempts).toBeLessThan(tierCfg!.attempts);
+    assertDefined(tierCfg, `tier config for ${currentTier}`);
+    expect(story.attempts).toBeLessThan(tierCfg.attempts);
 
     // Should NOT escalate (continue at same tier)
   });

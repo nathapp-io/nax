@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { buildPhaseOutcomeLogData, formatPhaseResultMessage } from "@/execution";
 
 describe("formatPhaseResultMessage — stage-aware messaging", () => {
@@ -75,7 +76,8 @@ describe("buildPhaseOutcomeLogData — verdict detail surfacing", () => {
 
   test("storyId is the first key (parallel-log correlation)", () => {
     const built = buildPhaseOutcomeLogData("US-001", "verifier", { success: false, normalizedFindings: [] }, 10);
-    expect(Object.keys(built!.data)[0]).toBe("storyId");
+    assertDefined(built, "built");
+    expect(Object.keys(built.data)[0]).toBe("storyId");
   });
 
   test("preserves status=skipped so log formatting can avoid false 'passed' wording", () => {
@@ -148,6 +150,7 @@ describe("buildPhaseOutcomeLogData — finding identities (#1392)", () => {
   test("storyId stays the first key", () => {
     const output = { success: false, findings: [testFinding("a.test.ts", "t")] };
     const built = buildPhaseOutcomeLogData("US-001", "full-suite-gate", output, 10);
-    expect(Object.keys(built!.data)[0]).toBe("storyId");
+    assertDefined(built, "built");
+    expect(Object.keys(built.data)[0]).toBe("storyId");
   });
 });

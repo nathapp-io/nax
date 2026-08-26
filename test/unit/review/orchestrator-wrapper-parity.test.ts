@@ -39,6 +39,24 @@ afterEach(async () => {
   createdRuntimes.length = 0;
 });
 
+/**
+ * Narrow an op's optional verify() hook to a callable that fails the test loudly
+ * if the hook is absent or returns null, so call sites get a non-null result
+ * without a postfix `!`.
+ */
+function requireVerify<I, C, O>(op: {
+  readonly name: string;
+  readonly verify?: (parsed: O, input: I, ctx: C) => Promise<O | null>;
+}): (parsed: O, input: I, ctx: C) => Promise<O> {
+  const { verify } = op;
+  assertDefined(verify, `${op.name}.verify`);
+  return async (parsed, input, ctx) => {
+    const result = await verify(parsed, input, ctx);
+    assertDefined(result, `${op.name}.verify() result`);
+    return result;
+  };
+}
+
 const STORY = {
   id: "STORY-PARITY-S01",
   title: "Parity test story",
@@ -126,20 +144,19 @@ describe("Semantic op verify() parity with wrapper consumer (AC10, AC11)", () =>
         acDropped: [],
       };
 
-      const result = await semanticReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
+      const result = await requireVerify(semanticReviewOp)(parsed, input, ctx);
 
       // The blocking error finding should be in normalizedFindings — the wrapper
       // returns these as `findings` on ReviewCheckResult.
-      expect(result!.normalizedFindings).toHaveLength(1);
-      expect(result!.normalizedFindings[0]?.source).toBe("semantic-review");
-      expect(result!.normalizedFindings[0]?.message).toContain("SQL injection");
+      expect(result.normalizedFindings).toHaveLength(1);
+      expect(result.normalizedFindings[0]?.source).toBe("semantic-review");
+      expect(result.normalizedFindings[0]?.message).toContain("SQL injection");
 
       // The advisory warning should NOT be in normalizedFindings.
-      expect(result!.normalizedFindings.some((f) => f.message?.includes("Consider logging"))).toBe(false);
+      expect(result.normalizedFindings.some((f) => f.message?.includes("Consider logging"))).toBe(false);
 
       // opResult.findings contains all accepted findings (blocking + advisory).
-      expect(result!.findings).toHaveLength(2);
+      expect(result.findings).toHaveLength(2);
     });
   });
 
@@ -177,15 +194,14 @@ describe("Semantic op verify() parity with wrapper consumer (AC10, AC11)", () =>
         acDropped: [],
       };
 
-      const result = await semanticReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
+      const result = await requireVerify(semanticReviewOp)(parsed, input, ctx);
 
       // nax#1347: with only advisory (sub-threshold) findings surviving, the verdict
       // honours blockingThreshold and passes — the LLM's raw passed:false no longer
       // fails the review when nothing is blocking. The advisory finding is still surfaced.
-      expect(result!.passed).toBe(true);
-      expect(result!.findings).toHaveLength(1);
-      expect(result!.normalizedFindings).toHaveLength(0);
+      expect(result.passed).toBe(true);
+      expect(result.findings).toHaveLength(1);
+      expect(result.normalizedFindings).toHaveLength(0);
     });
   });
 
@@ -223,14 +239,13 @@ describe("Semantic op verify() parity with wrapper consumer (AC10, AC11)", () =>
         acDropped: [],
       };
 
-      const result = await semanticReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
+      const result = await requireVerify(semanticReviewOp)(parsed, input, ctx);
 
       // Dropped by AC-grounding filter — should not reach normalizedFindings.
-      expect(result!.findings).toHaveLength(0);
-      expect(result!.normalizedFindings).toHaveLength(0);
+      expect(result.findings).toHaveLength(0);
+      expect(result.normalizedFindings).toHaveLength(0);
       // verify() preserves the failure signal so the wrapper can fail-closed.
-      expect(result!.passed).toBe(false);
+      expect(result.passed).toBe(false);
     });
   });
 });
@@ -285,16 +300,15 @@ describe("Adversarial op verify() parity with wrapper consumer (AC10, AC11 adver
         acDropped: [],
       };
 
-      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
+      const result = await requireVerify(adversarialReviewOp)(parsed, input, ctx);
 
       // Blocking error finding survives → in normalizedFindings with source tag.
-      expect(result!.normalizedFindings).toHaveLength(1);
-      expect(result!.normalizedFindings[0]?.source).toBe("adversarial-review");
-      expect(result!.normalizedFindings[0]?.message).toContain("SQL injection");
+      expect(result.normalizedFindings).toHaveLength(1);
+      expect(result.normalizedFindings[0]?.source).toBe("adversarial-review");
+      expect(result.normalizedFindings[0]?.message).toContain("SQL injection");
 
       // Advisory warning NOT in normalizedFindings.
-      expect(result!.normalizedFindings.some((f) => f.message?.includes("Missing error logging"))).toBe(false);
+      expect(result.normalizedFindings.some((f) => f.message?.includes("Missing error logging"))).toBe(false);
     });
   });
 
@@ -333,15 +347,14 @@ describe("Adversarial op verify() parity with wrapper consumer (AC10, AC11 adver
         acDropped: [],
       };
 
-      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
+      const result = await requireVerify(adversarialReviewOp)(parsed, input, ctx);
 
       // nax#1378 — parity with semantic (nax#1347): the verdict honours blockingThreshold,
       // so an advisory-only result passes. Preserving the LLM's raw failure signal here
       // deadlocked the story: the wrapper saw passed:false with nothing routable, so the
       // rectification cycle had no finding to hand a fix strategy.
-      expect(result!.passed).toBe(true);
-      expect(result!.normalizedFindings).toHaveLength(0);
+      expect(result.passed).toBe(true);
+      expect(result.normalizedFindings).toHaveLength(0);
     });
   });
 
@@ -386,15 +399,14 @@ describe("Adversarial op verify() parity with wrapper consumer (AC10, AC11 adver
         acDropped: [],
       };
 
-      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
+      const result = await requireVerify(adversarialReviewOp)(parsed, input, ctx);
 
       // AC-dropped → verify() preserves passed:false so the wrapper can fail-closed.
-      expect(result!.passed).toBe(false);
-      expect(result!.findings).toHaveLength(0);
-      expect(result!.normalizedFindings).toHaveLength(0);
+      expect(result.passed).toBe(false);
+      expect(result.findings).toHaveLength(0);
+      expect(result.normalizedFindings).toHaveLength(0);
       // The drop is tracked in acDropped for counterfactual telemetry.
-      expect((result as import("@/operations/adversarial-review").AdversarialReviewOutput).acDropped).toHaveLength(1);
+      expect(result.acDropped).toHaveLength(1);
     });
   });
 });
@@ -477,7 +489,9 @@ describe("Recurrence-demotion parity: op verify() vs wrapper recomputation", () 
         estimatedCostUsd: 0.001,
       }),
       runWithFallbackFn: async (req) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => ({
@@ -546,8 +560,7 @@ describe("Recurrence-demotion parity: op verify() vs wrapper recomputation", () 
       normalizedFindings: [],
       acDropped: [],
     };
-    const opResult = await adversarialReviewOp.verify!(opParsed, opInput, opCtx);
-    assertDefined(opResult, "verify() result");
+    const opResult = await requireVerify(adversarialReviewOp)(opParsed, opInput, opCtx);
 
     // --- Path B: full wrapper dispatch — runAdversarialReview() -> callOp -> adversarialReviewOp. ---
     const agentManager = makeAgentManager(llmResponse);

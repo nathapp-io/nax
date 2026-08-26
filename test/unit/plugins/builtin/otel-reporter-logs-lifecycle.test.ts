@@ -12,7 +12,7 @@
  * existing reports in `otel-reporter-lifecycle.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { mockFetch, withWarnSpy } from "@test/helpers";
+import { assertDefined, mockFetch, withWarnSpy } from "@test/helpers";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { initLogger, resetLogger } from "@/logger";
 import { buildLogsPayload, createOtelReporterPlugin, type LogRecord, type PostJsonDeps } from "@/plugins";
@@ -95,7 +95,8 @@ interface RunFixture {
 }
 
 async function startRun(plugin: ReturnType<typeof createOtelReporterPlugin>, fixture: RunFixture) {
-  const r = plugin.extensions.reporter!;
+  const r = plugin.extensions.reporter;
+  assertDefined(r, "plugin.extensions.reporter");
   await r.onRunStart?.({
     runId: fixture.runId,
     feature: fixture.feat ?? "f",

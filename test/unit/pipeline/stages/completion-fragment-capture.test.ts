@@ -14,6 +14,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import {
+  assertDefined,
   makeMockRuntime,
   makeNaxConfig,
   makePRD,
@@ -96,7 +97,8 @@ function makeCtx(
   tempDir: string,
   overrides: Partial<PipelineContext> = {},
 ): PipelineContext {
-  const story = prd.userStories[0]!;
+  const story = prd.userStories[0];
+  assertDefined(story, "prd.userStories[0]");
   return Object.assign(
     makeTestContext({
       config,
@@ -378,7 +380,9 @@ describe("completionStage — fragment capture fail-open (AC7)", () => {
         const result = await completionStage.execute(ctx);
 
         expect(result.action).toBe("continue");
-        expect(ctx.prd.userStories[0]!.status).toBe("passed");
+        const firstStory = ctx.prd.userStories[0];
+        assertDefined(firstStory, "ctx.prd.userStories[0]");
+        expect(firstStory.status).toBe("passed");
         const debugCalls = debugSpy.mock.calls;
         const fragmentCall = debugCalls.find((c) => typeof c[1] === "string" && c[1].includes("Fragment"));
         expect(fragmentCall).toBeDefined();
@@ -411,8 +415,10 @@ describe("completionStage — fragment capture on re-run (AC8)", () => {
 
       await completionStage.execute(ctx);
       // Reset story status so the second run exercises the same code path.
-      ctx.prd.userStories[0]!.status = "in-progress";
-      ctx.prd.userStories[0]!.passes = false;
+      const rerunStory = ctx.prd.userStories[0];
+      assertDefined(rerunStory, "ctx.prd.userStories[0]");
+      rerunStory.status = "in-progress";
+      rerunStory.passes = false;
 
       await completionStage.execute(ctx);
 

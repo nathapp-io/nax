@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { makeNaxConfig } from "@test/helpers";
+import { assertDefined, makeNaxConfig } from "@test/helpers";
 import type {
   BakeoffCoordinatorDeps,
   BakeoffOptions,
@@ -387,7 +387,11 @@ describe("runBakeoff (AC-8: all-DNF persistence + non-zero outcome)", () => {
           validAgents: names,
           profileData: {},
         })) as BakeoffCoordinatorDeps["validateContestants"],
-        runContestant: mock(async (agent: string) => allDnf.find((d) => d.agent === agent)!),
+        runContestant: mock(async (agent: string) => {
+          const result = allDnf.find((d) => d.agent === agent);
+          assertDefined(result, `allDnf entry for ${agent}`);
+          return result;
+        }),
         rankContestants,
         // Use real write semantics so the file actually exists on disk.
         persistBakeoffResult: async (r: BakeoffResult, dir: string) => {

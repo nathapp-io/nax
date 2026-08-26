@@ -14,7 +14,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeDispatchContext, makePRD, makeStory } from "@test/helpers";
+import { assertDefined, makeDispatchContext, makePRD, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { _acceptanceSetupDeps, acceptanceSetupStage } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
@@ -140,8 +140,10 @@ describe("acceptance-setup: ACP agent-written file handling (ADR-020 Wave 3)", (
     const testFileWrites = writtenFiles.filter((f) => f.path.endsWith(".nax-acceptance.test.ts"));
     expect(testFileWrites).toHaveLength(1);
     // Content is the real acceptance test, not a skeleton placeholder.
-    expect(testFileWrites[0]!.content).toContain("const name\\s*=");
-    expect(testFileWrites[0]!.content).not.toContain("expect(true).toBe(false)");
+    const firstWrite = testFileWrites[0];
+    assertDefined(firstWrite, "testFileWrites[0]");
+    expect(firstWrite.content).toContain("const name\\s*=");
+    expect(firstWrite.content).not.toContain("expect(true).toBe(false)");
 
     // No .llm-recovery.bak — backup is not done at stage level.
     const backupWrites = writtenFiles.filter((f) => f.path.endsWith(".llm-recovery.bak"));
@@ -157,7 +159,9 @@ describe("acceptance-setup: ACP agent-written file handling (ADR-020 Wave 3)", (
 
     const testFileWrites = writtenFiles.filter((f) => f.path.endsWith(".nax-acceptance.test.ts"));
     expect(testFileWrites).toHaveLength(1);
-    expect(testFileWrites[0]!.content).toBe(BARE_TIER2_TEST);
+    const bareWrite = testFileWrites[0];
+    assertDefined(bareWrite, "testFileWrites[0]");
+    expect(bareWrite.content).toBe(BARE_TIER2_TEST);
 
     // No backup at stage level — backup was stage-side behavior removed in ADR-020 Wave 3.
     const backupWrites = writtenFiles.filter((f) => f.path.endsWith(".llm-recovery.bak"));
@@ -175,7 +179,9 @@ describe("acceptance-setup: ACP agent-written file handling (ADR-020 Wave 3)", (
 
     const testFileWrites = writtenFiles.filter((f) => f.path.endsWith(".nax-acceptance.test.ts"));
     expect(testFileWrites).toHaveLength(1);
-    expect(testFileWrites[0]!.content).toContain("expect(true).toBe(false)");
+    const skeletonWrite = testFileWrites[0];
+    assertDefined(skeletonWrite, "testFileWrites[0]");
+    expect(skeletonWrite.content).toContain("expect(true).toBe(false)");
 
     // No backup at stage level.
     const backupWrites = writtenFiles.filter((f) => f.path.endsWith(".llm-recovery.bak"));
@@ -190,7 +196,9 @@ describe("acceptance-setup: ACP agent-written file handling (ADR-020 Wave 3)", (
 
     const testFileWrites = writtenFiles.filter((f) => f.path.endsWith(".nax-acceptance.test.ts"));
     expect(testFileWrites).toHaveLength(1);
-    expect(testFileWrites[0]!.content).toContain("expect(true).toBe(false)");
+    const skeletonWrite2 = testFileWrites[0];
+    assertDefined(skeletonWrite2, "testFileWrites[0]");
+    expect(skeletonWrite2.content).toContain("expect(true).toBe(false)");
 
     const backupWrites = writtenFiles.filter((f) => f.path.endsWith(".llm-recovery.bak"));
     expect(backupWrites).toHaveLength(0);

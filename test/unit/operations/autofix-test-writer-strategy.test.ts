@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeStory } from "@test/helpers";
+import { assertDefined, makeNaxConfig, makeStory } from "@test/helpers";
 import type { Finding } from "@/findings";
 import type { FixCycleContext } from "@/findings/cycle-types";
 import { makeAutofixTestWriterStrategy, makeDeclarationSink } from "@/operations";
@@ -207,7 +207,8 @@ describe("makeAutofixTestWriterStrategy", () => {
       const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), sink);
       const input = strategy.buildInput([], [], {} as FixCycleContext);
       expect(input.handoffFiles).toBeDefined();
-      const files = input.handoffFiles!;
+      const files = input.handoffFiles;
+      assertDefined(files, "input.handoffFiles");
       const unique = new Set(files);
       expect(files.length).toBe(unique.size);
       expect(files).toContain("test/foo.test.ts");

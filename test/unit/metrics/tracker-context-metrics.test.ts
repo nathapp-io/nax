@@ -518,7 +518,7 @@ describe("collectStoryMetrics — US-004 context.providers[].budgetPressure", ()
     const pressure = metrics.context?.providers["static-rules"]?.budgetPressure;
 
     expect(pressure).toBeDefined();
-    expect(Object.prototype.hasOwnProperty.call(pressure ?? {}, "droppedIds")).toBe(false);
+    expect(Object.hasOwn(pressure ?? {}, "droppedIds")).toBe(false);
     expect(pressure?.overageTokens).toBe(50);
     expect(pressure?.droppedCount).toBe(2);
     expect(pressure?.droppedTokens).toBe(200);

@@ -178,7 +178,7 @@ describe("finishReviewOp.verify()", () => {
     await withTempDir(async (dir) => {
       const ctx = makeCtx();
       const parsed = finishReviewOp.parse("[HIGH] Some finding\nProblem: p\nFix: f", SPEC_INPUT, ctx);
-      const result = await finishReviewOp.verify!(
+      const result = await finishReviewOp.verify(
         parsed,
         { ...SPEC_INPUT, workdir: dir },
         {
@@ -198,7 +198,7 @@ describe("finishReviewOp.verify()", () => {
     await withTempDir(async (dir) => {
       const ctx = makeCtx();
       const parsed = finishReviewOp.parse("No findings.", SPEC_INPUT, ctx);
-      const result = await finishReviewOp.verify!(
+      const result = await finishReviewOp.verify(
         parsed,
         { ...SPEC_INPUT, workdir: dir },
         {

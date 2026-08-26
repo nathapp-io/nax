@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { type MockLogger, makeLogger } from "@test/helpers";
+import { assertDefined, type MockLogger, makeLogger } from "@test/helpers";
 import { _orchestratorDeps, ContextOrchestrator, DIGEST_RESERVE_TOKENS, FIXED_RENDER_OVERHEAD_TOKENS } from "@/context";
 import type { ChunkKind, ContextProviderResult, ContextRequest, IContextProvider } from "@/context/engine/types";
 
@@ -109,9 +109,9 @@ describe("ContextOrchestrator.assemble() — US-003 floor overage warn log (AC-4
 
     const warnCalls = mockLogger.calls.filter((c) => c.level === "warn");
     const floorWarn = warnCalls.find((c) => c.message.includes("floor") || c.stage.includes("floor"));
-    expect(floorWarn).toBeDefined();
-    expect(floorWarn!.stage).toBe("context-v2");
-    const data = floorWarn!.data as Record<string, unknown>;
+    assertDefined(floorWarn, "floor warn log call");
+    expect(floorWarn.stage).toBe("context-v2");
+    const data = floorWarn.data as Record<string, unknown>;
     // storyId is the first key.
     const firstKey = Object.keys(data)[0];
     expect(firstKey).toBe("storyId");
@@ -170,8 +170,8 @@ describe("ContextOrchestrator.assemble() — US-003 floor overage warn log (AC-4
 
     const warnCalls = mockLogger.calls.filter((c) => c.level === "warn");
     const floorWarn = warnCalls.find((c) => c.message.includes("floor") || c.stage.includes("floor"));
-    expect(floorWarn).toBeDefined();
-    const data = floorWarn!.data as Record<string, unknown>;
+    assertDefined(floorWarn, "floor warn log call");
+    const data = floorWarn.data as Record<string, unknown>;
     // Single chunk, no prior digest → no separator overhead, no prior-digest reserve.
     const expectedEffectiveBudget = 400 - DIGEST_RESERVE_TOKENS - FIXED_RENDER_OVERHEAD_TOKENS;
     expect(data.effectiveBudget).toBe(expectedEffectiveBudget);

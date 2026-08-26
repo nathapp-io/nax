@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
+import { assertDefined, makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
 import type { IAgentManager } from "@/agents";
 import type { Iteration } from "@/findings";
 import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
@@ -50,7 +50,8 @@ function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
       estimatedCostUsd: cost,
     }),
     runWithFallbackFn: async (req) => {
-      const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+      assertDefined(req.executeHop, "req.executeHop");
+      const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
       return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
     },
     runAsSessionFn: async () => ({
@@ -366,8 +367,8 @@ describe("runAdversarialReview — fail with error finding", () => {
 
   test("findings array is populated on failure", async () => {
     const result = await callRunAdversarialReview(FAILING_ERROR_RESPONSE);
-    expect(result.findings).toBeDefined();
-    expect(result.findings!.length).toBeGreaterThan(0);
+    assertDefined(result.findings, "result.findings");
+    expect(result.findings.length).toBeGreaterThan(0);
   });
 });
 
@@ -386,8 +387,8 @@ describe("runAdversarialReview — fail with warn finding", () => {
   test("returns success=true with advisory findings when LLM returns 'warn' severity (advisory at default threshold)", async () => {
     const result = await callRunAdversarialReview(FAILING_WARN_RESPONSE);
     expect(result.success).toBe(true);
-    expect(result.advisoryFindings).toBeDefined();
-    expect(result.advisoryFindings![0].message).toBe("Token never invalidated on logout");
+    assertDefined(result.advisoryFindings, "result.advisoryFindings");
+    expect(result.advisoryFindings[0].message).toBe("Token never invalidated on logout");
   });
 });
 
@@ -414,8 +415,8 @@ describe("runAdversarialReview — non-blocking only findings", () => {
   test("returns success=false when LLM says passed:true but includes error findings (findings take precedence)", async () => {
     const result = await callRunAdversarialReview(PASSED_TRUE_WITH_ERROR_RESPONSE);
     expect(result.success).toBe(false);
-    expect(result.findings).toBeDefined();
-    expect(result.findings!.length).toBeGreaterThan(0);
+    assertDefined(result.findings, "result.findings");
+    expect(result.findings.length).toBeGreaterThan(0);
   });
 });
 
@@ -515,8 +516,8 @@ describe("runAdversarialReview — recurrence demotion (parity with op verify())
 
     expect(result.success).toBe(true);
     expect(result.findings).toBeUndefined();
-    expect(result.advisoryFindings).toBeDefined();
-    expect(result.advisoryFindings!.some((f) => f.message === "No error handling on login")).toBe(true);
+    assertDefined(result.advisoryFindings, "result.advisoryFindings");
+    expect(result.advisoryFindings.some((f) => f.message === "No error handling on login")).toBe(true);
   });
 });
 
@@ -766,12 +767,12 @@ describe("runAdversarialReview — flip-to-pass on all-hallucinated drops", () =
 
   test("Case 1: demoted finding appears in advisoryFindings at warning severity", async () => {
     const result = await callRunAdversarialReview(HALLUCINATED_QUOTE_RESPONSE);
-    expect(result.advisoryFindings).toBeDefined();
-    expect(result.advisoryFindings!.length).toBeGreaterThan(0);
+    assertDefined(result.advisoryFindings, "result.advisoryFindings");
+    expect(result.advisoryFindings.length).toBeGreaterThan(0);
     // Finding.message = f.issue (toAdversarialReviewFindings uses issue directly, not joinMessage)
-    const demoted = result.advisoryFindings!.find((f) => f.message.includes("Exit code not set on partial failure"));
-    expect(demoted).toBeDefined();
-    expect(demoted!.severity).toBe("warning");
+    const demoted = result.advisoryFindings.find((f) => f.message.includes("Exit code not set on partial failure"));
+    assertDefined(demoted, "demoted finding");
+    expect(demoted.severity).toBe("warning");
   });
 
   test.each([
@@ -787,10 +788,10 @@ describe("runAdversarialReview — flip-to-pass on all-hallucinated drops", () =
   test("Case 5: all drops hallucinated + pre-existing advisory → advisory merged", async () => {
     const result = await callRunAdversarialReview(HALLUCINATED_QUOTE_WITH_ADVISORY_RESPONSE);
     expect(result.success).toBe(true);
-    expect(result.advisoryFindings).toBeDefined();
+    assertDefined(result.advisoryFindings, "result.advisoryFindings");
     // Finding.message = f.issue (toAdversarialReviewFindings uses issue directly, not joinMessage)
-    const hasDemoted = result.advisoryFindings!.some((f) => f.message.includes("Exit code not set on partial failure"));
-    const hasOriginal = result.advisoryFindings!.some((f) => f.message.includes("Token never invalidated on logout"));
+    const hasDemoted = result.advisoryFindings.some((f) => f.message.includes("Exit code not set on partial failure"));
+    const hasOriginal = result.advisoryFindings.some((f) => f.message.includes("Token never invalidated on logout"));
     expect(hasDemoted).toBe(true);
     expect(hasOriginal).toBe(true);
   });

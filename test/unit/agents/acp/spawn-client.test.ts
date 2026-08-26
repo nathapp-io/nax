@@ -6,7 +6,7 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import { waitForCondition, withDepsRestore, withTimerSpy } from "@test/helpers";
+import { assertDefined, waitForCondition, withDepsRestore, withTimerSpy } from "@test/helpers";
 import { _spawnClientDeps, SpawnAcpClient } from "@/agents/acp";
 import type { SpawnOptions } from "@/utils/bun-deps";
 import { makeSpawnResult, stubProcessKill } from "./_spawn-client-test-helpers";
@@ -27,6 +27,16 @@ import { makeSpawnResult, stubProcessKill } from "./_spawn-client-test-helpers";
 // ─────────────────────────────────────────────────────────────────────────────
 
 stubProcessKill();
+
+/**
+ * Load the standard test session, failing the test loudly if it is absent —
+ * loadSession() returns `AcpSession | null`, which neither narrows nor throws.
+ */
+async function loadSession(client: SpawnAcpClient) {
+  const session = await client.loadSession("test-session", "claude", "approve-reads");
+  assertDefined(session, "loaded session");
+  return session;
+}
 
 /**
  * Spawn mock where process exit resolves only after stdout starts being consumed.
@@ -192,11 +202,10 @@ describe("SpawnAcpClient — prompt EPIPE resilience", () => {
     };
 
     const client = new SpawnAcpClient("acpx claude", "/tmp");
-    const session = await client.loadSession("test-session", "claude", "approve-reads");
-    expect(session).not.toBeNull();
+    const session = await loadSession(client);
 
     // Must not throw — EPIPE is swallowed, error response from exit code returned
-    const response = await session!.prompt("hello");
+    const response = await session.prompt("hello");
     expect(response.stopReason).toBe("error");
     expect(response.messages[0]?.content).toContain("connection failed");
   });
@@ -235,8 +244,8 @@ describe("SpawnAcpClient — prompt EPIPE resilience", () => {
     };
 
     const client = new SpawnAcpClient("acpx claude", "/tmp");
-    const session = await client.loadSession("test-session", "claude", "approve-reads");
-    const response = await session!.prompt("hello");
+    const session = await loadSession(client);
+    const response = await session.prompt("hello");
     expect(response.stopReason).toBe("error");
   });
 });
@@ -275,11 +284,10 @@ describe("SpawnAcpClient — stream drain resilience", () => {
     };
 
     const client = new SpawnAcpClient("acpx claude", "/tmp");
-    const session = await client.loadSession("test-session", "claude", "approve-reads");
-    expect(session).not.toBeNull();
+    const session = await loadSession(client);
 
     // .catch(() => "") guards must swallow the stream error — prompt resolves, not rejects
-    const response = await session!.prompt("hello");
+    const response = await session.prompt("hello");
     expect(response.stopReason).toBe("error");
   });
 
@@ -314,13 +322,12 @@ describe("SpawnAcpClient — stream drain resilience", () => {
     };
 
     const client = new SpawnAcpClient("acpx claude", "/tmp");
-    const session = await client.loadSession("test-session", "claude", "approve-reads");
-    expect(session).not.toBeNull();
+    const session = await loadSession(client);
 
     const MARGIN_MS = 500;
     const timed = Symbol("timed");
     const result = await Promise.race([
-      session!.prompt("hello"),
+      session.prompt("hello"),
       new Promise<typeof timed>((resolve) =>
         setTimeout(() => resolve(timed), _spawnClientDeps.streamDrainTimeoutMs + MARGIN_MS),
       ),
@@ -377,10 +384,9 @@ describe("SpawnAcpSession — success-path response fidelity (BUG-1/BUG-2)", () 
     };
 
     const client = new SpawnAcpClient("acpx claude", "/tmp");
-    const session = await client.loadSession("test-session", "claude", "approve-reads");
-    expect(session).not.toBeNull();
+    const session = await loadSession(client);
 
-    const response = await session!.prompt("hello");
+    const response = await session.prompt("hello");
     expect(response.error).toBe("recoverable acpx fault");
     expect(response.retryable).toBe(true);
   });
@@ -425,15 +431,14 @@ describe("SpawnAcpSession — success-path response fidelity (BUG-1/BUG-2)", () 
     };
 
     const client = new SpawnAcpClient("acpx claude", "/tmp");
-    const session = await client.loadSession("test-session", "claude", "approve-reads");
-    expect(session).not.toBeNull();
+    const session = await loadSession(client);
 
     // async function bodies run synchronously up to their first `await` — by the
     // time prompt() returns a pending promise, `this.activeProc` is already set
     // (the first await inside prompt() is `await proc.exited`), so cancelActivePrompt()
     // observes the in-flight process without any extra synchronization.
-    const promptPromise = session!.prompt("hello");
-    await session!.cancelActivePrompt();
+    const promptPromise = session.prompt("hello");
+    await session.cancelActivePrompt();
     resolvePromptExit?.(0);
 
     const response = await promptPromise;
@@ -468,8 +473,8 @@ describe("SpawnAcpSession — process-tree cleanup (ORPHAN-1)", () => {
     };
 
     const client = new SpawnAcpClient("acpx claude", "/tmp");
-    const session = await client.loadSession("test-session", "claude", "approve-reads");
-    await session!.prompt("hello");
+    const session = await loadSession(client);
+    await session.prompt("hello");
 
     expect(capturedOpts?.detached).toBe(true);
   });
@@ -512,10 +517,10 @@ describe("SpawnAcpSession — process-tree cleanup (ORPHAN-1)", () => {
     }) as typeof process.kill;
 
     const client = new SpawnAcpClient("acpx claude", "/tmp");
-    const session = await client.loadSession("test-session", "claude", "approve-reads");
+    const session = await loadSession(client);
 
-    const promptPromise = session!.prompt("hello");
-    await session!.close();
+    const promptPromise = session.prompt("hello");
+    await session.close();
     resolvePromptExit?.(0);
     await promptPromise;
 
@@ -550,13 +555,12 @@ describe("SpawnAcpSession — trackedSpawn hard deadline (PERF-1)", () => {
     };
 
     const client = new SpawnAcpClient("acpx claude", "/tmp");
-    const session = await client.loadSession("test-session", "claude", "approve-reads");
-    expect(session).not.toBeNull();
+    const session = await loadSession(client);
 
     const MARGIN_MS = 500;
     const timed = Symbol("timed");
     const result = await Promise.race([
-      session!.close(),
+      session.close(),
       new Promise<typeof timed>((resolve) =>
         setTimeout(() => resolve(timed), _spawnClientDeps.trackedSpawnDeadlineMs + MARGIN_MS),
       ),
@@ -609,8 +613,8 @@ describe("SpawnAcpSession — trackedSpawn hard deadline (PERF-1)", () => {
     }) as typeof process.kill;
 
     const client = new SpawnAcpClient("acpx claude", "/tmp");
-    const session = await client.loadSession("test-session", "claude", "approve-reads");
-    await session!.close();
+    const session = await loadSession(client);
+    await session.close();
 
     expect(killCalls.some((c) => c.pid === -99999999 && c.signal === "SIGTERM")).toBe(true);
     expect(stdoutCancelled).toBe(true);
@@ -649,7 +653,7 @@ describe("SpawnAcpSession — trackedSpawn hard deadline (PERF-1)", () => {
     }) as typeof process.kill;
 
     const client = new SpawnAcpClient("acpx claude", "/tmp");
-    const session = await client.loadSession("test-session", "claude", "approve-reads");
+    const session = await loadSession(client);
 
     const controller = new AbortController();
     controller.abort(); // already aborted before close() is even called
@@ -657,7 +661,7 @@ describe("SpawnAcpSession — trackedSpawn hard deadline (PERF-1)", () => {
     const MARGIN_MS = 500;
     const timed = Symbol("timed");
     const result = await Promise.race([
-      session!.close({ signal: controller.signal }),
+      session.close({ signal: controller.signal }),
       new Promise<typeof timed>((resolve) => setTimeout(() => resolve(timed), MARGIN_MS)),
     ]);
 
@@ -681,11 +685,10 @@ describe("SpawnAcpSession — trackedSpawn hard deadline (PERF-1)", () => {
     };
 
     const client = new SpawnAcpClient("acpx claude", "/tmp");
-    const session = await client.loadSession("test-session", "claude", "approve-reads");
-    expect(session).not.toBeNull();
+    const session = await loadSession(client);
 
     const { leaked } = await withTimerSpy(async () => {
-      await session!.close();
+      await session.close();
     });
 
     expect(leaked).toEqual([]);
@@ -753,12 +756,11 @@ describe("SpawnAcpClient — loadSession (SEC-3)", () => {
     };
 
     const client = new SpawnAcpClient("acpx --model claude-sonnet-4-5 claude", "/tmp");
-    const session = await client.loadSession("test-session", "claude", "approve-reads");
-    expect(session).not.toBeNull();
+    const session = await loadSession(client);
 
     const timed = Symbol("timed");
     const result = await Promise.race([
-      session!.prompt("hello"),
+      session.prompt("hello"),
       new Promise<typeof timed>((resolve) => setTimeout(() => resolve(timed), 200)),
     ]);
 
@@ -792,9 +794,8 @@ describe("SpawnAcpClient — --prompt-retries flag passthrough", () => {
 
   test("prompt cmd includes --prompt-retries when promptRetries > 0", async () => {
     const { capturedCmd, client } = capturePromptCmd(2);
-    const session = await client.loadSession("test-session", "claude", "approve-reads");
-    expect(session).not.toBeNull();
-    await session!.prompt("hello");
+    const session = await loadSession(client);
+    await session.prompt("hello");
     expect(capturedCmd()).toContain("--prompt-retries");
     const idx = capturedCmd().indexOf("--prompt-retries");
     expect(capturedCmd()[idx + 1]).toBe("2");
@@ -802,17 +803,15 @@ describe("SpawnAcpClient — --prompt-retries flag passthrough", () => {
 
   test("prompt cmd omits --prompt-retries when promptRetries is 0 (default)", async () => {
     const { capturedCmd, client } = capturePromptCmd(0);
-    const session = await client.loadSession("test-session", "claude", "approve-reads");
-    expect(session).not.toBeNull();
-    await session!.prompt("hello");
+    const session = await loadSession(client);
+    await session.prompt("hello");
     expect(capturedCmd()).not.toContain("--prompt-retries");
   });
 
   test("prompt cmd omits --prompt-retries when promptRetries is unset", async () => {
     const { capturedCmd, client } = capturePromptCmd(undefined);
-    const session = await client.loadSession("test-session", "claude", "approve-reads");
-    expect(session).not.toBeNull();
-    await session!.prompt("hello");
+    const session = await loadSession(client);
+    await session.prompt("hello");
     expect(capturedCmd()).not.toContain("--prompt-retries");
   });
 });
