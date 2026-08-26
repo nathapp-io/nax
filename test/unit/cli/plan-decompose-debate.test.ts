@@ -18,6 +18,7 @@ import { join } from "node:path";
 import {
   assertDefined,
   cleanupTempDir,
+  makeDebateRunner,
   makeMockAgentManager,
   makeMockRuntime,
   makeNaxConfig,
@@ -28,6 +29,7 @@ import {
 import type { DecomposedStory } from "@/agents/shared/types-extended";
 import type { CompleteOptions } from "@/agents/types";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
+import type { DebateRunnerOptions } from "@/debate";
 import type { DebateResult } from "@/debate/types";
 import type { PRD, UserStory } from "@/prd";
 
@@ -251,10 +253,8 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     const prd = makePrd();
     setupDeps(prd);
 
-    const createDebateMock = mock((_opts: unknown) => ({
-      run: mock(async () => makePassedDebateResult()),
-    }));
-    _planDeps.createDebateRunner = createDebateMock as never;
+    const createDebateMock = mock(() => makeDebateRunner({ run: mock(async () => makePassedDebateResult()) }));
+    _planDeps.createDebateRunner = createDebateMock;
 
     await planDecomposeCommand(tmpDir, makeConfigWithDebate(true), {
       feature: FEATURE,
@@ -269,10 +269,11 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     setupDeps(prd);
 
     const capturedOpts: unknown[] = [];
-    _planDeps.createDebateRunner = mock((opts: unknown) => {
+    const createDebateMock = mock((opts: DebateRunnerOptions) => {
       capturedOpts.push(opts);
-      return { run: mock(async () => makePassedDebateResult()) };
-    }) as never;
+      return makeDebateRunner({ run: mock(async () => makePassedDebateResult()) });
+    });
+    _planDeps.createDebateRunner = createDebateMock;
 
     await planDecomposeCommand(tmpDir, makeConfigWithDebate(true), {
       feature: FEATURE,
@@ -302,9 +303,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
       }),
     );
 
-    _planDeps.createDebateRunner = mock((_opts: unknown) => ({
-      run: mock(async () => makePassedDebateResult()),
-    })) as never;
+    _planDeps.createDebateRunner = mock(() => makeDebateRunner({ run: mock(async () => makePassedDebateResult()) }));
 
     await planDecomposeCommand(tmpDir, makeConfigWithDebate(true), {
       feature: FEATURE,
@@ -318,9 +317,9 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     const prd = makePrd();
     setupDeps(prd);
 
-    _planDeps.createDebateRunner = mock((_opts: unknown) => ({
-      run: mock(async () => makePassedDebateResult(DEBATE_OUTPUT_JSON)),
-    })) as never;
+    _planDeps.createDebateRunner = mock(() =>
+      makeDebateRunner({ run: mock(async () => makePassedDebateResult(DEBATE_OUTPUT_JSON)) }),
+    );
 
     await planDecomposeCommand(tmpDir, makeConfigWithDebate(true), {
       feature: FEATURE,
@@ -358,9 +357,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
       }),
     );
 
-    _planDeps.createDebateRunner = mock((_opts: unknown) => ({
-      run: mock(async () => makeFailedDebateResult()),
-    })) as never;
+    _planDeps.createDebateRunner = mock(() => makeDebateRunner({ run: mock(async () => makeFailedDebateResult()) }));
 
     await planDecomposeCommand(tmpDir, makeConfigWithDebate(true), {
       feature: FEATURE,
@@ -374,9 +371,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     const prd = makePrd();
     setupDeps(prd);
 
-    _planDeps.createDebateRunner = mock((_opts: unknown) => ({
-      run: mock(async () => makeFailedDebateResult()),
-    })) as never;
+    _planDeps.createDebateRunner = mock(() => makeDebateRunner({ run: mock(async () => makeFailedDebateResult()) }));
 
     await planDecomposeCommand(tmpDir, makeConfigWithDebate(true), {
       feature: FEATURE,
@@ -396,10 +391,8 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     const prd = makePrd();
     setupDeps(prd);
 
-    const createDebateMock = mock((_opts: unknown) => ({
-      run: mock(async () => makePassedDebateResult()),
-    }));
-    _planDeps.createDebateRunner = createDebateMock as never;
+    const createDebateMock = mock(() => makeDebateRunner({ run: mock(async () => makePassedDebateResult()) }));
+    _planDeps.createDebateRunner = createDebateMock;
 
     await planDecomposeCommand(tmpDir, makeConfigWithDebate(false), {
       feature: FEATURE,
@@ -429,9 +422,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
       }),
     );
 
-    _planDeps.createDebateRunner = mock((_opts: unknown) => ({
-      run: mock(async () => makePassedDebateResult()),
-    })) as never;
+    _planDeps.createDebateRunner = mock(() => makeDebateRunner({ run: mock(async () => makePassedDebateResult()) }));
 
     await planDecomposeCommand(tmpDir, makeConfigWithDebate(false), {
       feature: FEATURE,
@@ -461,10 +452,8 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
       }),
     );
 
-    const createDebateMock = mock((_opts: unknown) => ({
-      run: mock(async () => makePassedDebateResult()),
-    }));
-    _planDeps.createDebateRunner = createDebateMock as never;
+    const createDebateMock = mock(() => makeDebateRunner({ run: mock(async () => makePassedDebateResult()) }));
+    _planDeps.createDebateRunner = createDebateMock;
 
     await planDecomposeCommand(tmpDir, makeNaxConfig({ agent: { default: "claude" } }), {
       feature: FEATURE,
@@ -483,9 +472,9 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     const prd = makePrd();
     setupDeps(prd);
 
-    _planDeps.createDebateRunner = mock((_opts: unknown) => ({
-      run: mock(async () => makePassedDebateResult(DEBATE_OUTPUT_JSON_FENCED)),
-    })) as never;
+    _planDeps.createDebateRunner = mock(() =>
+      makeDebateRunner({ run: mock(async () => makePassedDebateResult(DEBATE_OUTPUT_JSON_FENCED)) }),
+    );
 
     await planDecomposeCommand(tmpDir, makeConfigWithDebate(true), {
       feature: FEATURE,
@@ -502,9 +491,9 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     const prd = makePrd();
     setupDeps(prd);
 
-    _planDeps.createDebateRunner = mock((_opts: unknown) => ({
-      run: mock(async () => makePassedDebateResult(DEBATE_OUTPUT_PLAIN_FENCED)),
-    })) as never;
+    _planDeps.createDebateRunner = mock(() =>
+      makeDebateRunner({ run: mock(async () => makePassedDebateResult(DEBATE_OUTPUT_PLAIN_FENCED)) }),
+    );
 
     await planDecomposeCommand(tmpDir, makeConfigWithDebate(true), {
       feature: FEATURE,
@@ -519,9 +508,9 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     const prd = makePrd();
     setupDeps(prd);
 
-    _planDeps.createDebateRunner = mock((_opts: unknown) => ({
-      run: mock(async () => makePassedDebateResult(DEBATE_OUTPUT_JSON_FENCED)),
-    })) as never;
+    _planDeps.createDebateRunner = mock(() =>
+      makeDebateRunner({ run: mock(async () => makePassedDebateResult(DEBATE_OUTPUT_JSON_FENCED)) }),
+    );
 
     await planDecomposeCommand(tmpDir, makeConfigWithDebate(true), {
       feature: FEATURE,

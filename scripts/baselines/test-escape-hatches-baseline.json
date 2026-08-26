@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1799,
-    "asNever": 380,
+    "asNever": 368,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T14:46:41.492Z",
+  "updatedAt": "2026-08-26T14:51:06.548Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -993,7 +993,7 @@
     },
     "test/unit/cli/plan-decompose-debate.test.ts": {
       "looseCast": 5,
-      "asNever": 13
+      "asNever": 1
     },
     "test/unit/cli/rules-lint.test.ts": {
       "looseCast": 1
