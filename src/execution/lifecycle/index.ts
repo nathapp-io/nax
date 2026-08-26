@@ -8,7 +8,14 @@ export {
   type AcceptanceLoopResult,
   runAcceptanceLoop,
 } from "./acceptance-loop";
-export { type BackfillMetricArgs, synthesizeBackfillMetric } from "./backfill-story-metrics";
+export {
+  applyBackfill,
+  type BackfillMetricArgs,
+  backfillDomain,
+  hasBackfillEvidence,
+  isExecutionFailure,
+  synthesizeBackfillMetric,
+} from "./backfill-story-metrics";
 export {
   outputAdvisoryFindingsSummary,
   outputMutationSummary,

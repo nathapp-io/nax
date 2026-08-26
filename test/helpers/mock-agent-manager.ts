@@ -1,6 +1,6 @@
 import { mock } from "bun:test";
 import type { AgentAdapter, IAgentManager } from "@/agents";
-import type { AgentRunRequest, RunAsSessionOpts } from "@/agents/manager-types";
+import type { AgentFallbackRecord, AgentRunRequest, RunAsSessionOpts } from "@/agents/manager-types";
 import type {
   AgentResult,
   AgentRunOptions,
@@ -125,6 +125,16 @@ export interface MockAgentManagerOptions {
   }>;
   completeAsFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
   /**
+   * Override for `IAgentManager.completeAsWithFallback` (nax#1712). Use this when a test
+   * needs the complete() path to report agent-swap records; without it the mock derives
+   * the outcome from `completeAs` and reports no hops.
+   */
+  completeAsWithFallbackFn?: (
+    agentName: string,
+    prompt: string,
+    opts?: CompleteOptions,
+  ) => Promise<{ result: CompleteResult; fallbacks: AgentFallbackRecord[] }>;
+  /**
    * runAsSession override, in the real method's shape: (agentName, handle, prompt, opts).
    * When provided, the mock's runWithFallback also routes hops through it (with the
    * request adapted to those four arguments) instead of returning DEFAULT_RESULT.
@@ -237,10 +247,11 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
 
   const runAsOverride = opts.runAsFn;
   const completeAsOverride = opts.completeAsFn;
+  const completeAsWithFallbackOverride = opts.completeAsWithFallbackFn;
   const completeWithFallbackOverride = opts.completeWithFallbackFn;
   const runAsSessionOverride = opts.runAsSessionFn;
 
-  return {
+  const mgr = {
     getDefault: () => opts.getDefaultAgent ?? "claude",
     isUnavailable: () => false,
     markUnavailable: () => {},
@@ -272,6 +283,18 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
               agentFallbacks: [],
             }),
           ),
+    // nax#1712: derived from completeAs so every existing caller of this helper keeps
+    // working unchanged. This literal is returned through a widening type assertion, so
+    // omitting the method would not fail typecheck — it would fail at runtime, as an
+    // undefined call, inside callOp's complete branch.
+    completeAsWithFallback: completeAsWithFallbackOverride
+      ? mock((name: string, prompt: string, completeOpts?: CompleteOptions) =>
+          completeAsWithFallbackOverride(name, prompt, completeOpts),
+        )
+      : mock(async (name: string, prompt: string, completeOpts: CompleteOptions) => ({
+          result: await mgr.completeAs(name, prompt, completeOpts),
+          fallbacks: [],
+        })),
     completeAs: completeAsOverride
       ? mock((name: string, prompt: string, completeOpts?: CompleteOptions) =>
           completeAsOverride(name, prompt, completeOpts),
@@ -301,6 +324,7 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
         ),
     close: () => {},
   } as IAgentManager;
+  return mgr;
 }
 
 /** @deprecated Use {@link makeMockAgentManager} with options instead. */

@@ -55,6 +55,7 @@ export {
   type DeferredRegressionResult,
   findResponsibleStoryByTransition,
   handleRunCompletion,
+  isExecutionFailure,
   outputAdvisoryFindingsSummary,
   outputMutationSummary,
   type RunCleanupOptions,

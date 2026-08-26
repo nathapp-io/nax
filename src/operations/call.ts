@@ -104,7 +104,15 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     let attempt = 0;
     while (attempt <= MAX_COMPLETE_RETRY_ATTEMPTS) {
       try {
-        const raw = await ctx.runtime.agentManager.completeAs(dispatchAgent, prompt, completeOptions);
+        const completeOutcome = await ctx.runtime.agentManager.completeAsWithFallback(
+          dispatchAgent,
+          prompt,
+          completeOptions,
+        );
+        // nax#1712: mirror the run branch at the bottom of this file — a swap taken
+        // inside completeWithFallback is only attributable to a story here.
+        recordAgentFallbacks(ctx, completeOutcome.fallbacks);
+        const raw = completeOutcome.result;
         const parsedComplete = op.parse(raw.output, input, buildCtx);
         return await runPostParse(op, parsedComplete, input, buildCtx);
       } catch (err) {

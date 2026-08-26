@@ -179,6 +179,11 @@ export function fakeAgentManager(
       warnMismatch("completeAs", agentName);
       return adapter.complete(prompt, resolveCompleteOpts(opts));
     },
+    // nax#1712: this fake drives a single adapter and never swaps, so it reports no hops.
+    completeAsWithFallback: async (agentName, prompt, opts) => ({
+      result: await mgr.completeAs(agentName, prompt, opts),
+      fallbacks: [],
+    }),
     runAsSession: async (_agentName, handle, prompt, _opts) => {
       return adapter.sendTurn(handle, prompt, { interactionHandler: NO_OP_INTERACTION_HANDLER });
     },
