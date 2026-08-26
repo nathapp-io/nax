@@ -16,8 +16,8 @@ log — each entry records what was true when written and is not edited afterwar
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
 | `as unknown as` | **0** | 0 | done — closed invariant (§8.13) |
-| `asAny` | 152 | 1377 | yes, then biome `noExplicitAny` retires it |
-| `anyType` | 198 | 1860 | yes, retires with `asAny` — biome says **190** |
+| `asAny` | 98 | 1377 | yes, then biome `noExplicitAny` retires it |
+| `anyType` | 135 | 1860 | yes, retires with `asAny` — biome says **127** |
 | `nonNullAssert` | 792 | 819 | yes — biome says **1074**, see §0.1 (not started) |
 | `asNever` | 605 | 608 | yes |
 | `ratchetAllow` | 103 | 105 | yes |
@@ -25,12 +25,12 @@ log — each entry records what was true when written and is not edited afterwar
 | `absentValue` | 17 | 17 | yes |
 | `looseCast` | 1806 | 1875 | **no** — guard only, see below |
 
-The `noExplicitAny` drain is in progress on this branch (§8.14–§8.21): one hundred
-twenty-seven files drained, `asAny` 1179 → 152 and `anyType` 1538 → 198 against the
+The `noExplicitAny` drain is in progress on this branch (§8.14–§8.22): one hundred
+forty-eight files drained, `asAny` 1179 → 98 and `anyType` 1538 → 135 against the
 branch-start ratchet, with every other counter flat except `nonNullAssert` (819 → 792),
-`looseCast` (1875 → 1806), `ratchetAllow` (105 → 103) and `asNever` (608 → 605) as benign side
+`looseCast` (1875 → 1803), `ratchetAllow` (105 → 103) and `asNever` (608 → 604) as benign side
 effects of removing `logger!.info = … as any` patterns and deleting real casts. Biome's
-authoritative count fell **1529 → 190**.
+authoritative count fell **1529 → 127**.
 
 `as unknown as` went **101 → 0** across nine commits (§8.1–§8.4, §8.11–§8.13); `looseCast`
 fell 1888 → 1875 and `ratchetAllow` 107 → 105 as side effects of removing real casts, and
@@ -1537,3 +1537,74 @@ src-blocked), then a twenty-one-file tier tied at 3 (`integration/agents/stale-r
 `precheck/precheck-checks-tier1-blockers`, `review/orchestrator-wrapper-parity`,
 `verification/flake-probe`, `verification/smart-runner-packageprefix`) — 107 files hold the
 remaining 190.
+
+### 8.22 Batch 9 of the `noExplicitAny` drain — the twenty-one-file tier tied at 3, four parallel delegates, biome 190 → 127 (2026-08-26)
+
+The §8.21 queue head drained: the whole twenty-one-file tier tied at 3 — a clean tier boundary,
+no ride-along forced (§8.17–§8.19 precedent applies only when a strict cut lands mid-tie) — 63
+sites taken by four parallel agents on disjoint file sets under the same brief model as
+§8.16–§8.20 (`HANDOFF-explicit-any-batch9.md`). The held escalation (`interaction/plugins/cli`)
+was excluded by name. No delegate edited outside its set; zero src/ or helper changes;
+**all 21 files reached zero.**
+
+Ratchet: `asAny` ↓54 (152 → 98) and `anyType` ↓63 (198 → 135); `looseCast` ↓3 (1806 → 1803)
+and `asNever` ↓1 (605 → 604) as benign side effects of deleting real casts (code-neighbor-cap's
+read-side `as Record<string, unknown>`, orchestrator-factory's dead config-field cast, and one
+of provider-timeout-abort's pre-existing `as never`s among them); every other counter flat; no
+counter rose anywhere, including per-file (`git diff scripts/baselines/` shows removals and
+reductions only). Gates: typecheck 0 (all three), `check:all` green, full suite green, coverage
+OK (101 below floor against baseline 103 — run because multiple fixture corrections landed).
+
+Recipe families applied (all proven in §8.14–§8.21 except where noted):
+
+| Shape | Where | Recipe |
+|:--|:--|:--|
+| malformed-data pokes (`acceptanceCriteria: null as any`) | context-core ×2 | §8.12 weak alias extended to null: hoist to typed `UserStory`, plant via `const m: { acceptanceCriteria?: string[] \| null } = story; m.acceptanceCriteria = null` |
+| illegal value in an otherwise-valid row (`priorErrors: "not an array"`) | context-core | row passes clean into the factory; poke the built object through a typed alias |
+| dead casts on real fields / satisfied fixtures ×10+ | orchestrator-factory ×2, retry/types ×2 (`nextPrompt?` declared), review-grounding-filter (spread loses freshness), flake-probe (barrel re-export), semantic-review-verify, routing-idempotence `"medium"`/`"test-after"` ∈ unions, stale-retry deps returning declared optionals | deleted outright |
+| incomplete fixture under its declared type | hooks/reporters (`StoryEventSummary` needs title/status/attempts), unified-executor-reconcile (`makeStory`), provider-timeout-abort (`kind: "static"` + full `ContextRequest`), orchestrator-factory (`makeResolvedTestPatterns`) | completed at the type; `satisfies`/factory contextual typing |
+| class-typed dep bags / logger spies | code-neighbor-cap, run-cleanup | `makeLogger()` from helpers; spy typed `Mock<typeof module.getSafeLogger>`, real silent `Logger` overlaid via `Object.assign` (§8.13-A) |
+| hand-rolled ctx/runtime bags | review-grounding-filter, semantic-review-verify, full-suite-rectify-op | `makeMockCallContext({...})`; local `makeCtx(): BuildContext<AutofixConfig>` copied verbatim from drained sibling autofix-test-writer |
+| module-level run-options cast bag | stale-retry / timeout-retry twins | §8.17 recipe verbatim: local `makeStubRunOptions(config)` completing `modelTier`/`modelDef`/`config`, each test passing its own manager config |
+| `(Bun as any).file` patches | smart-runner-packageprefix | `Object.assign(Bun, { … })` + restore (§8.14) |
+| untyped mock/callback params | flake-probe `_env: any`, plan-decompose callbacks ×5 | annotate at the dep's real signature (`CompleteOptions`); defensive `opts ?? {}` → `assertDefined(opts)` — the real caller always passes them |
+| deliberate illegal literal under test | routing-idempotence garbage persisted tier | supplied via `JSON.parse('"ultra-mega"')` — the corruption arrives as JSON in production (profile.test.ts precedent) |
+| omission-under-test fixtures | precheck-tier1 tags/status/storyPoints | `createMockStory()` base + weak alias + `delete` for genuinely-absent keys — absent vs undefined share the single `??` branch |
+
+Fixture-value corrections, all assertion-preserving and reported per §4's carve-out:
+orchestrator-wrapper-parity's prior iteration carried `outcome: "fixes-applied"`, not an
+`IterationOutcome` member → `"regressed"` (exactly what `classifyOutcome([], [f])` computes for
+that shape; recurrence classifiers never read `outcome`); semantic-review-verify same illegal
+value → `"unchanged"`; the retry twins' run-options gained the cast-masked required
+`modelTier`/`modelDef`/`config` (dispatch mocked before the adapter reads them);
+hooks/reporters' summaries gained required `title`/`status`/`attempts` (`wireHooks`/
+`wireReporters` read only `ev.storyId`); ac13-14's debate section rebuilt through
+`makeNaxConfig({ debate: { enabled: false } })` (`stages: {}` cannot exist post-parse; the
+`enabled` branch value is preserved); run-cleanup dropped config keys `headless`/`autoCommit`
+that do not exist on `NaxConfig`. None feeds a classifier or switch branch (verified per-file),
+but because several corrections landed §3's coverage rule ran anyway at integration: floors
+unaffected.
+
+Two integration notes. **The probe-config blind spot fired again, identically to §8.21:** two
+cli files landed with unsorted imports the delegates' gate loop could not see, and `check:all`
+caught both — the scoped repo-config `biome check --write` is now understood as a mandatory
+owner step, not a per-batch judgement call. **The suite-count bookkeeping was reconciled:**
+this entry initially recorded "14156 / 1173 / 38" against earlier entries' "14149 / 1136 /
+38", but bun prints both lines — `1136 pass` + `37 skip` = `Ran 1173 tests`, and `14149 pass`
++ `7 skip` = `Ran 14156` — so the suites are identical and the skips were always there.
+Earlier entries quoted the pass line; future entries should quote pass counts explicitly
+(`14149 / 1136 / 38 pass, 0 fail`) so a skip-count change cannot masquerade as a suite change.
+
+Carry forward: the dead-cast majority held for the fourth batch running — ten-plus of this
+batch's 63 sites were assertions doing nothing, retired by deleting. And the tie-at-3 tier
+needed no new recipes at all: every site fell to a pattern already proven in §8.14–§8.21,
+which is what a flattened queue head should look like. Remaining tail: 85 files hold 119 sites,
+none above 2.
+
+**New top of queue** (biome count per file): `interaction/plugins/cli` 8 (held escalation,
+src-blocked), then a tier tied at 2 led by `integration/cli/cli-precheck-run`,
+`integration/config/merger`, `integration/plan/plan-prd-preservation`,
+`integration/routing/plugin-routing-advanced`, five `cli/plan-decompose-*` files,
+`context/engine/lint-config-factory`, `context/engine/providers/code-neighbor-size-cap`,
+`debate/verifiers/plan-checklist`, `execution/parallel-worker-isolation`,
+`execution/plan-inputs-review-wiring` — 86 files hold the remaining 127.
