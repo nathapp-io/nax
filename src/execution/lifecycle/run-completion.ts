@@ -15,7 +15,7 @@ import { fireHook } from "@/hooks";
 import type { HooksConfig } from "@/hooks/types";
 import { getSafeLogger } from "@/logger";
 import type { StoryMetrics } from "@/metrics";
-import { deriveRunFallbackAggregates, saveRunMetrics, toFallbackHops } from "@/metrics";
+import { deriveRunFallbackAggregates, saveRunMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline";
 import type { PRD } from "@/prd";
 import { countStories, isComplete, isStalled } from "@/prd";

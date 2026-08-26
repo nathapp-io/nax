@@ -202,6 +202,9 @@ export function applyBackfill(input: {
 }): void {
   const { allStoryMetrics, aggByStory, stories, agentFallbacks, runtimeCrashRetries, config, defaultAgent } = input;
   const existingIndex = new Map(allStoryMetrics.map((m, i) => [m.storyId, i]));
+  // Indexed once: the widened domain can span every story, so a linear find per id
+  // would be quadratic in PRD size.
+  const storyById = new Map(stories.map((s) => [s.id, s]));
   const timestamp = new Date().toISOString();
 
   const domain = backfillDomain({
@@ -218,7 +221,7 @@ export function applyBackfill(input: {
     // retries here even though it never reached collectStoryMetrics.
     const fallbackHops = toFallbackHops(agentFallbacks.get(storyId), storyId);
     const runtimeCrashes = runtimeCrashRetries.get(storyId) ?? 0;
-    const story = stories.find((s) => s.id === storyId);
+    const story = storyById.get(storyId);
     const hopCount = fallbackHops.length;
     if (!hasBackfillEvidence({ costUsd: totalCostUsd, hopCount, crashCount: runtimeCrashes, story })) continue;
 
