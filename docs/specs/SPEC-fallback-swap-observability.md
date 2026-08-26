@@ -89,8 +89,8 @@ reading. The answer belongs in a follow-up issue.
 `makeMockAgentManager` (`test/helpers/mock-agent-manager.ts:158`) returns its object literal through an
 `as IAgentManager` cast at `:278`, so a new required interface method will **not** fail typecheck there —
 it will fail at runtime, as an undefined call, in every test that drives `callOp`'s complete branch through
-this mock. `makeFakeAgentManager` (`test/helpers/fake-agent-manager.ts:59`) is hard-typed as
-`const mgr: IAgentManager` and will fail typecheck. Both helpers must gain the method, and the mock's
+this mock. `fakeAgentManager` (`test/helpers/fake-agent-manager.ts:31`, whose returned literal is hard-typed at `:59`)
+is declared `const mgr: IAgentManager` and will fail typecheck. Both helpers must gain the method, and the mock's
 must be derivable from its existing `completeAsFn` / `completeWithFallbackFn` options so no caller of
 either helper has to change.
 
@@ -198,9 +198,9 @@ Fixtures for every criterion below configure a swap that is **declined**, unlike
 
 4. `[unit]` Given an availability failure, fallback enabled, hops under the cap, and `hasBundle` false, the decision reports no swap and names the bundle gate — distinct from the values AC-1 through AC-3 return.
 
-5. `[unit]` For every input combination covered by AC-1 through AC-4, and for an input that yields a swap, the boolean `shouldSwap` returns exactly what it returned before this change — the decision semantics are unchanged.
+5. `[unit]` The boolean `shouldSwap` returns `false` for each of the four declined inputs of AC-1 through AC-4, `false` for an undefined failure, and `true` for an availability failure with fallback enabled, `hasBundle` true and `hopsSoFar` below the cap — the reason-carrying form and the boolean agree on every gate.
 
-6. `[unit]` Running `runWithFallback` against a captured logger, with a failure that reaches the decline gate with fallback disabled, produces a log entry whose fields carry the deciding gate, the failure's outcome, and the failure's category.
+6. `[unit]` Running `runWithFallback` against a captured logger, with a failure that reaches the decline gate with fallback disabled, produces a log entry whose fields carry `storyId`, the deciding gate, the failure's outcome, and the failure's category — `storyId` is mandated by `.nax/rules/project-conventions.md` and is already carried by both neighbouring decline logs.
 
 7. `[unit]` In that same declined run, the `fail-stale` no-candidate warning is **not** emitted, confirming the new log is an addition at the decline site rather than a replacement of a neighbouring signal.
 
