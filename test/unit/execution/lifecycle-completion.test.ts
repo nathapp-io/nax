@@ -5,7 +5,7 @@
  * Extracted from lifecycle.test.ts for size management.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, type Mock, mock, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { type DeepPartial, makeDispatchContext, makeNaxConfig, makeStatusWriter } from "@test/helpers";
 import type { NaxConfig } from "@/config";
@@ -650,7 +650,7 @@ describe("US-002: handleRunCompletion — manifest retention sweep", () => {
     });
   }
 
-  let loggerSpy: any;
+  let loggerSpy: Mock<typeof loggerModule.getSafeLogger> | undefined;
 
   beforeEach(() => {
     // Force the regression gate off so we test the manifest branch in isolation.

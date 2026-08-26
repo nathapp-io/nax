@@ -5,8 +5,6 @@ import type { FixCycleContext } from "@/findings/cycle-types";
 import { makeAutofixTestWriterStrategy, makeDeclarationSink } from "@/operations";
 import { RectifierPromptBuilder } from "@/prompts";
 
-const mockCtx = {} as any;
-
 function makeSink() {
   return makeDeclarationSink();
 }
@@ -24,53 +22,53 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
 
 describe("makeAutofixTestWriterStrategy", () => {
   test("name is autofix-test-writer", () => {
-    const strategy = makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), makeSink());
+    const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink());
     expect(strategy.name).toBe("autofix-test-writer");
   });
 
   test("fixOp name is autofix-test-writer", () => {
-    const strategy = makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), makeSink());
+    const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink());
     expect(strategy.fixOp.name).toBe("autofix-test-writer");
   });
 
   test("maxAttempts is a positive number", () => {
-    const strategy = makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), makeSink());
+    const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink());
     expect(strategy.maxAttempts).toBeGreaterThan(0);
   });
 
   describe("AC4: appliesTo predicate — test-targeted findings", () => {
     test("AC4: returns true when fixTarget=test", () => {
-      const strategy = makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink());
       const finding = makeFinding({ fixTarget: "test", source: "lint" });
       expect(strategy.appliesTo(finding)).toBe(true);
     });
 
     test("AC4: returns true when source=adversarial-review", () => {
-      const strategy = makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink());
       const finding = makeFinding({ fixTarget: "source", source: "adversarial-review" });
       expect(strategy.appliesTo(finding)).toBe(true);
     });
 
     test("AC4: returns true when fixTarget=test and source=adversarial-review", () => {
-      const strategy = makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink());
       const finding = makeFinding({ fixTarget: "test", source: "adversarial-review" });
       expect(strategy.appliesTo(finding)).toBe(true);
     });
 
     test("AC4: returns false when fixTarget=source and source is not adversarial-review (lint)", () => {
-      const strategy = makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink());
       const finding = makeFinding({ fixTarget: "source", source: "lint" });
       expect(strategy.appliesTo(finding)).toBe(false);
     });
 
     test("AC4: returns false when fixTarget=source and source=typecheck", () => {
-      const strategy = makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink());
       const finding = makeFinding({ fixTarget: "source", source: "typecheck" });
       expect(strategy.appliesTo(finding)).toBe(false);
     });
 
     test("AC4: returns false when fixTarget=source and source=semantic-review", () => {
-      const strategy = makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink());
       const finding = makeFinding({ fixTarget: "source", source: "semantic-review" });
       expect(strategy.appliesTo(finding)).toBe(false);
     });
@@ -78,7 +76,7 @@ describe("makeAutofixTestWriterStrategy", () => {
     test("AC4: returns true when sink.mockHandoffs is non-empty (even source finding)", () => {
       const sink = makeSink();
       sink.mockHandoffs.push({ files: ["test/foo.test.ts"], reasonDetail: "mock reason" });
-      const strategy = makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), sink);
+      const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), sink);
       // A source finding that would normally not match
       const finding = makeFinding({ fixTarget: "source", source: "lint" });
       expect(strategy.appliesTo(finding)).toBe(true);
@@ -141,13 +139,13 @@ describe("makeAutofixTestWriterStrategy", () => {
 
   describe("triage: includeAdversarialReview opt-out", () => {
     test("AC5: default opts still claim adversarial source finding (blanket behaviour preserved)", () => {
-      const strategy = makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink());
       const finding = makeFinding({ fixTarget: "source", source: "adversarial-review" });
       expect(strategy.appliesTo(finding)).toBe(true);
     });
 
     test("does NOT claim adversarial source finding when includeAdversarialReview=false", () => {
-      const strategy = makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+      const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink(), {
         includeAdversarialReview: false,
       });
       const finding = makeFinding({ fixTarget: "source", source: "adversarial-review" });
@@ -155,7 +153,7 @@ describe("makeAutofixTestWriterStrategy", () => {
     });
 
     test("still claims adversarial test finding when includeAdversarialReview=false", () => {
-      const strategy = makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+      const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink(), {
         includeAdversarialReview: false,
       });
       const finding = makeFinding({ fixTarget: "test", source: "adversarial-review" });
@@ -163,7 +161,7 @@ describe("makeAutofixTestWriterStrategy", () => {
     });
 
     test("AC4: still claims convention test finding when includeAdversarialReview=false", () => {
-      const strategy = makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+      const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink(), {
         includeAdversarialReview: false,
       });
       const finding = makeFinding({
@@ -177,7 +175,7 @@ describe("makeAutofixTestWriterStrategy", () => {
     test("still claims mockHandoffs when includeAdversarialReview=false", () => {
       const sink = makeSink();
       sink.mockHandoffs.push({ files: ["test/foo.test.ts"], reasonDetail: "mock reason" });
-      const strategy = makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), sink, {
+      const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), sink, {
         includeAdversarialReview: false,
       });
       const finding = makeFinding({ fixTarget: "source", source: "lint" });
@@ -185,7 +183,7 @@ describe("makeAutofixTestWriterStrategy", () => {
     });
 
     test("does NOT claim lint source finding when includeAdversarialReview=false and no mockHandoffs", () => {
-      const strategy = makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+      const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink(), {
         includeAdversarialReview: false,
       });
       const finding = makeFinding({ fixTarget: "source", source: "lint" });

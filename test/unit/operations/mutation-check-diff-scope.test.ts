@@ -13,6 +13,7 @@ import {
   makeMutationCheckDeps as fakeDeps,
   makeMutationCheckCtx,
   makeResolvedTestPatterns,
+  makeStory,
   makeTempDir,
 } from "@test/helpers";
 import * as loggerModule from "@/logger";
@@ -20,7 +21,7 @@ import { mutationCheckOp } from "@/operations";
 import * as mutationModule from "@/verification/mutation";
 import type { GenerateMutantsInput } from "@/verification/mutation/mutator";
 
-const FAKE_STORY = { id: "US-003", title: "scope mutation candidates" } as any;
+const FAKE_STORY = makeStory({ id: "US-003", title: "scope mutation candidates" });
 
 const ctxWithConfig = (execution: Record<string, unknown> = {}) =>
   makeMutationCheckCtx(execution, { storyId: "US-003" });

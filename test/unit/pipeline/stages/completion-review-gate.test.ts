@@ -12,6 +12,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { makeMockRuntime, makeNaxConfig, makeTestContext, withTempDir } from "@test/helpers";
 import type { InteractionConfig } from "@/config/selectors";
 import { InteractionChain } from "@/interaction/chain";
+import type { TriggerContext } from "@/interaction/triggers";
 import type { InteractionPlugin, InteractionResponse } from "@/interaction/types";
 import { _completionDeps } from "@/pipeline/stages/completion";
 import type { PipelineContext } from "@/pipeline/types";
@@ -213,7 +214,11 @@ describe("completionStage — review-gate trigger", () => {
   test("passes correct context to checkReviewGate", async () => {
     await withTempDir(async (tempDir) => {
       const { completionStage } = await import("@/pipeline/stages/completion");
-      _completionDeps.checkReviewGate = mock(async () => true);
+      const checkReviewGateMock = mock(
+        async (_context: TriggerContext, _config: InteractionConfig, _chain: InteractionChain): Promise<boolean> =>
+          true,
+      );
+      _completionDeps.checkReviewGate = checkReviewGateMock;
 
       const config = makeConfig({ "review-gate": { enabled: true } });
       const chain = makeChain("approve");
@@ -221,7 +226,7 @@ describe("completionStage — review-gate trigger", () => {
 
       await completionStage.execute(ctx);
 
-      const callArgs = (_completionDeps.checkReviewGate as any).mock.calls[0];
+      const callArgs = checkReviewGateMock.mock.calls[0];
       expect(callArgs[0].featureName).toBe("my-feature");
       expect(callArgs[0].storyId).toBe("US-001");
     });

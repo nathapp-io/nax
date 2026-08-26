@@ -76,7 +76,7 @@ function mockGitAndTest(opts: { diffFiles?: string[][]; onTestCmd?: () => { exit
   let diffCount = 0;
 
   mockAllSpawn(
-    mock((cmd: string[], _spawnOpts?: any) => {
+    mock((cmd: string[]) => {
       if (cmd[0] === "/bin/sh" && cmd[2]?.includes("bun test")) {
         const r = opts.onTestCmd?.() ?? { exitCode: 0, stdout: "5 pass, 0 fail\n" };
         return {

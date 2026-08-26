@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeMockAgentManager, makeTempDir } from "@test/helpers";
+import {
+  cleanupTempDir,
+  DEFAULT_TEST_ROUTING,
+  makeNaxConfig,
+  makeTempDir,
+  makeTestContext,
+  makeTestStory,
+} from "@test/helpers";
 import { applyPostRunInspection } from "@/execution/post-run";
 import { testWriterOp, verifierOp } from "@/operations";
 
@@ -8,15 +15,14 @@ describe("applyPostRunInspection — per-role scratch entries", () => {
   test("writes tdd-session entries for test-writer and verifier roles", async () => {
     const scratchDir = makeTempDir("scratch-per-role-");
     try {
-      const ctx = {
+      const ctx = makeTestContext({
         workdir: scratchDir,
-        story: { id: "S1", title: "t" },
-        config: { context: { v2: { enabled: true } } },
+        projectDir: scratchDir,
+        story: makeTestStory({ id: "S1", title: "t" }),
+        config: makeNaxConfig({ context: { v2: { enabled: true } } }),
         sessionScratchDir: scratchDir,
-        agentManager: makeMockAgentManager(),
-        routing: { agent: "claude", testStrategy: "three-session-tdd" },
-        selfVerification: undefined,
-      } as any;
+        routing: { ...DEFAULT_TEST_ROUTING, testStrategy: "three-session-tdd" },
+      });
 
       const planResult = {
         success: true,

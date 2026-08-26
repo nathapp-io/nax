@@ -191,17 +191,17 @@ describe("buildRebuttalPrompt()", () => {
     expect(result).toContain("proposal from agent-b");
   });
 
-  test.each([
-    ["empty rebuttals", [], false, [] as string[]],
+  test.each<[string, Rebuttal[], boolean, string[]]>([
+    ["empty rebuttals", [], false, []],
     [
       "provided rebuttals",
       [makeRebuttal("agent-a", "rebuttal 1"), makeRebuttal("agent-b", "rebuttal 2")],
       true,
       ["rebuttal 1", "rebuttal 2"],
     ],
-  ] as const)("## Previous Rebuttals section when %s: included=%s", (_label, rebuttals, shouldInclude, contents) => {
+  ])("## Previous Rebuttals section when %s: included=%s", (_label, rebuttals, shouldInclude, contents) => {
     const builder = makeBuilder("ctx", "fmt", [], "stateful");
-    const result = builder.buildRebuttalPrompt(0, proposals, rebuttals as any);
+    const result = builder.buildRebuttalPrompt(0, proposals, rebuttals);
     if (shouldInclude) {
       expect(result).toContain("## Previous Rebuttals");
       for (const c of contents) expect(result).toContain(c);

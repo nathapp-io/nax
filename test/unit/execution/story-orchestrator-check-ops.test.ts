@@ -59,7 +59,7 @@ function makeCtx(): CallContext {
     packageDir: "/tmp",
     agentName: "claude",
     storyId: "US-003",
-  } as any;
+  };
 }
 
 afterEach(async () => {

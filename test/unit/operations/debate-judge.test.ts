@@ -1,16 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { opModelResolver } from "@test/helpers";
-import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
+import { makeTestRuntime, opModelResolver } from "@test/helpers";
+import { debateConfigSelector } from "@/config";
 import type { Debater } from "@/debate/types";
 import { judgeOp } from "@/operations";
 import type { DebateJudgeInput } from "@/operations/debate-judge";
 import { composeSections, DebatePromptBuilder, join } from "@/prompts";
 
-function makeBuildCtx() {
-  return {
-    packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG.debate } as any,
-    config: DEFAULT_CONFIG.debate,
-  } as Parameters<typeof judgeOp.build>[1];
+function makeBuildCtx(): Parameters<typeof judgeOp.build>[1] {
+  const view = makeTestRuntime().packages.repo();
+  return { packageView: view, config: view.select(debateConfigSelector) };
 }
 
 describe("judgeOp", () => {

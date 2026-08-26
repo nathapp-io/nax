@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { RetryContext, RetryDecision, RetryStrategy } from "@/agents/retry/index";
 import { composeRetry } from "@/agents/retry/index";
+import type { AdapterFailure } from "@/context/engine";
 
 const ctx: RetryContext = { site: "run" as const, agentName: "claude", stage: "run" as const, storyId: "US-001" };
 const testErr = new Error("test error");
@@ -121,7 +122,7 @@ describe("composeRetry", () => {
   });
 
   test("passes failure, attempt, and context through to each strategy", () => {
-    const receivedArgs: [any, number, RetryContext][] = [];
+    const receivedArgs: [AdapterFailure | Error, number, RetryContext][] = [];
     const s0: RetryStrategy = {
       shouldRetry(failure, attempt, c): RetryDecision {
         receivedArgs.push([failure, attempt, c]);

@@ -1,10 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { makeStory } from "@test/helpers";
+import { makeStory, makeTestRuntime } from "@test/helpers";
+import { autofixConfigSelector } from "@/config";
+import type { AutofixConfig } from "@/config/selectors";
 import { implementerRectifyOp } from "@/operations";
+import type { BuildContext } from "@/operations/types";
+
+function makeBuildCtx(): BuildContext<AutofixConfig> {
+  const view = makeTestRuntime().packages.repo();
+  return { packageView: view, config: view.select(autofixConfigSelector) };
+}
 
 describe("implementerRectifyOp.parse", () => {
   const input = { failedChecks: [], story: makeStory() };
-  const ctx = { story: makeStory() } as any;
+  const ctx = makeBuildCtx();
 
   test("returns applied=true with empty declarations on plain output", () => {
     const out = implementerRectifyOp.parse("ok, fixed", input, ctx);

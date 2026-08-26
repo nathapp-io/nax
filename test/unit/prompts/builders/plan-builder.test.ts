@@ -383,7 +383,9 @@ describe("PlanPromptBuilder — shared quality rules", () => {
 // ─── PlanPromptBuilder.buildDraft() — US-003 ────────────────────────────────
 
 describe("PlanPromptBuilder.buildDraft() — US-003", () => {
-  const makePlanDraftInput = (overrides?: any) => ({
+  type PlanDraftOverrides = Partial<Parameters<InstanceType<typeof PlanPromptBuilder>["buildDraft"]>[0]>;
+
+  const makePlanDraftInput = (overrides?: PlanDraftOverrides) => ({
     manifestSection: "## Manifest\nF-001: user table exists\nS-001: users have emails",
     manifest: { repoFacts: [], specClaims: [], gaps: [] },
     specContent: "Users should be able to login with email/password",

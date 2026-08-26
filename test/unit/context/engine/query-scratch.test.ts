@@ -31,7 +31,7 @@ let origGetLogger: typeof _pullToolsDeps.getLogger;
 
 beforeEach(() => {
   origGetLogger = _pullToolsDeps.getLogger;
-  _pullToolsDeps.getLogger = () => makeLogger() as any;
+  _pullToolsDeps.getLogger = () => makeLogger();
 });
 
 afterEach(() => {

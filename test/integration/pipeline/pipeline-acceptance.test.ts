@@ -12,7 +12,7 @@ import { DEFAULT_CONFIG } from "@/config/schema";
 import { initLogger, resetLogger } from "@/logger";
 import { acceptanceStage } from "@/pipeline/stages/acceptance";
 import type { PipelineContext } from "@/pipeline/types";
-import type { PRD } from "@/prd/types";
+import type { PRD, StoryStatus } from "@/prd/types";
 
 let testDir: string;
 let featureDir: string;
@@ -53,7 +53,7 @@ function createTestContext(prd: PRD, config: Partial<NaxConfig> = {}): PipelineC
   };
 }
 
-function createTestPRD(stories: Array<{ id: string; status: string }>): PRD {
+function createTestPRD(stories: Array<{ id: string; status: StoryStatus }>): PRD {
   return {
     project: "test",
     feature: "test-feature",
@@ -67,7 +67,7 @@ function createTestPRD(stories: Array<{ id: string; status: string }>): PRD {
       acceptanceCriteria: [],
       tags: [],
       dependencies: [],
-      status: s.status as any,
+      status: s.status,
       passes: s.status === "passed",
       escalations: [],
       attempts: 0,

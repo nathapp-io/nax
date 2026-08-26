@@ -15,7 +15,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
 import { initProject } from "@/cli/init";
-import type { StackInfo } from "@/cli/init-detect";
+import type { StackInfo, UIFramework } from "@/cli/init-detect";
 import { buildInitConfig, detectStack } from "@/cli/init-detect";
 
 // ---------------------------------------------------------------------------
@@ -44,16 +44,19 @@ async function writePackageJson(
 // ---------------------------------------------------------------------------
 
 describe("StackInfo type — shape contracts", () => {
-  test.each(["ink", "react", "vue", "svelte", undefined])("StackInfo accepts uiFramework: %s", (uiFramework) => {
-    const info: StackInfo = {
-      runtime: "bun",
-      language: "typescript",
-      linter: "unknown",
-      monorepo: "none",
-      uiFramework: uiFramework as any,
-    };
-    expect(info.uiFramework).toBe(uiFramework);
-  });
+  test.each<UIFramework | undefined>(["ink", "react", "vue", "svelte", undefined])(
+    "StackInfo accepts uiFramework: %s",
+    (uiFramework) => {
+      const info: StackInfo = {
+        runtime: "bun",
+        language: "typescript",
+        linter: "unknown",
+        monorepo: "none",
+        uiFramework,
+      };
+      expect(info.uiFramework).toBe(uiFramework);
+    },
+  );
 
   test.each([true, false])("StackInfo accepts hasBin: %s", (hasBin) => {
     const info: StackInfo = { runtime: "bun", language: "typescript", linter: "unknown", monorepo: "none", hasBin };

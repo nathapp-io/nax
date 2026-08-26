@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
 import type { IAgentManager } from "@/agents";
+import type { Iteration } from "@/findings";
 import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
@@ -484,11 +485,11 @@ describe("runAdversarialReview — recurrence demotion (parity with op verify())
     // Same fingerprint (file + category + issue prefix) appeared as an "error"
     // in two prior iterations. With default maxBlockingRounds=2, the third
     // sighting (n=3 >= maxBlockingRounds+1) demotes to advisory.
-    const priorAdversarialIterations = Array.from({ length: 2 }, (_v, i) => ({
+    const priorAdversarialIterations: Iteration[] = Array.from({ length: 2 }, (_v, i) => ({
       iterationNum: i + 1,
       findingsBefore: [],
       fixesApplied: [],
-      outcome: "fixes-applied",
+      outcome: "regressed",
       startedAt: "2026-07-17T00:00:00.000Z",
       finishedAt: "2026-07-17T00:00:01.000Z",
       findingsAfter: [
@@ -500,7 +501,7 @@ describe("runAdversarialReview — recurrence demotion (parity with op verify())
           message: "No error handling on login",
         },
       ],
-    })) as any;
+    }));
 
     const result = await runAdversarialReview({
       workdir: "/tmp/wd",

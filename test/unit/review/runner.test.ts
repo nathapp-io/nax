@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeConfigSlice, makeSpawn, makeSpawnResult } from "@test/helpers";
+import { makeConfigSlice, makeMockAgentManager, makeSpawn, makeSpawnResult } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _qualityRunnerDeps as _runnerDeps } from "@/quality/runner";
 import {
@@ -448,7 +448,7 @@ describe("runReview — semantic check integration (AC-9)", () => {
       storyId: "US-001",
       storyGitRef: "abc1234",
       story,
-      agentManager: (() => null) as any,
+      agentManager: makeMockAgentManager(),
     });
     expect(_semanticDeps.runSemanticReview).toHaveBeenCalledWith(
       expect.objectContaining({

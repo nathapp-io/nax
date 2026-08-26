@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { makeSpawn } from "@test/helpers";
+import { makeSpawn, makeWorktreeManager } from "@test/helpers";
 import { _gitDeps } from "@/utils/git";
 import type { StoryDependencies } from "@/worktree";
 import { MergeEngine } from "@/worktree";
@@ -15,11 +15,7 @@ import { MergeEngine } from "@/worktree";
 // Test fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
-const mockWorktreeManager = {
-  create: async () => {},
-  remove: async () => {},
-  list: async () => [],
-} as any;
+const mockWorktreeManager = makeWorktreeManager();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MergeEngine.topologicalSort
@@ -204,10 +200,7 @@ describe("MergeEngine.topologicalSort", () => {
 
 describe("MergeEngine.mergeAll", () => {
   it("skips stories with failed dependencies", async () => {
-    const mockManager = {
-      ...mockWorktreeManager,
-      remove: async () => {},
-    };
+    const mockManager = makeWorktreeManager({ remove: async () => {} });
 
     const engine = new MergeEngine(mockManager);
 
@@ -239,10 +232,7 @@ describe("MergeEngine.mergeAll", () => {
   });
 
   it("continues with remaining stories after one fails", async () => {
-    const mockManager = {
-      ...mockWorktreeManager,
-      remove: async () => {},
-    };
+    const mockManager = makeWorktreeManager({ remove: async () => {} });
 
     const engine = new MergeEngine(mockManager);
 

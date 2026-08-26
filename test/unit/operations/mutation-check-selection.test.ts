@@ -20,11 +20,12 @@ import {
   makeMutationCheckCtx as ctxWithConfig,
   makeMutationCheckDeps as fakeDeps,
   makeResolvedTestPatterns,
+  makeStory,
   makeTempDir,
 } from "@test/helpers";
 import { _mutationCheckDeps, mutationCheckOp } from "@/operations";
 
-const FAKE_STORY = { id: "US-004", title: "mutation-check op" } as any;
+const FAKE_STORY = makeStory({ id: "US-004", title: "mutation-check op" });
 
 const originalMutationCheckDeps = { ..._mutationCheckDeps };
 afterEach(() => Object.assign(_mutationCheckDeps, originalMutationCheckDeps));

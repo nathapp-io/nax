@@ -31,6 +31,7 @@ import {
   makeFixCycleResult,
   makeMockCallContext,
   makeNaxConfig,
+  makeStory,
   makeTestRuntime,
 } from "@test/helpers";
 import { pickSelector } from "@/config";
@@ -255,7 +256,7 @@ describe("AC2: failing phase does not trigger recordGreen", () => {
       const gate = makeDeterministic("full-suite-gate", { success: false });
       await new StoryOrchestratorBuilder()
         .addImplementer({ op: imp, input: { code: "" } })
-        .addFullSuiteGate({ op: gate, input: { story: { id: "AC2-multi" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gate, input: { story: makeStory({ id: "AC2-multi" }), workdir: "/tmp" } })
         .build(ctx)
         .run();
 

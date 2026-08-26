@@ -17,7 +17,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeInProgressStory, makeLogger } from "@test/helpers";
+import { makeInProgressStory, makeLogger, makeNaxConfig } from "@test/helpers";
 import { _tierEscalationDeps, handleTierEscalation, preIterationTierCheck } from "@/execution/escalation";
 import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
 import { collectObservations } from "@/plugins/builtin/curator";
@@ -106,7 +106,7 @@ function makeCollectorContext(root: string, workdir: string, logFilePath: string
     version: "0.1.0",
     pluginConfig: {},
     logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-    config: {} as any,
+    config: makeNaxConfig(),
     outputDir: join(root, "out"),
     globalDir: join(root, "global"),
     projectKey: "test-project-us001",

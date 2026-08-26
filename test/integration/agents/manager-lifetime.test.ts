@@ -11,7 +11,8 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { makeContextBundle, makeNaxConfig } from "@test/helpers";
 import { AgentManager } from "@/agents/manager";
-import type { AgentResult } from "@/agents/types";
+import type { AgentResult, AgentRunOptions } from "@/agents/types";
+import type { NaxConfig } from "@/config";
 import type { AdapterFailure } from "@/context/engine/types";
 
 // adapterFailure that triggers a swap (category: "availability" → shouldSwap() returns true).
@@ -63,8 +64,20 @@ function makeFallbackConfig() {
 }
 
 // Minimal AgentRunOptions — runOptions is threaded through but never used by executeHop.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const STUB_RUN_OPTIONS = { prompt: "fix it", workdir: "/tmp", storyId: "US-001" } as any;
+// `config` must be passed by each caller: the manager reads
+// `runOptions.config ?? this._config`, so the caller's own manager config is the
+// behavior-preserving choice.
+function makeStubRunOptions(config: NaxConfig): AgentRunOptions {
+  return {
+    prompt: "fix it",
+    workdir: "/tmp",
+    storyId: "US-001",
+    modelTier: "balanced",
+    modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+    timeoutSeconds: 60,
+    config,
+  };
+}
 
 describe("ADR-013 Phase 6 — manager unavailability state threading", () => {
   let config: ReturnType<typeof makeFallbackConfig>;
@@ -83,7 +96,7 @@ describe("ADR-013 Phase 6 — manager unavailability state threading", () => {
 
     // executeHop captures which agent each hop targets and controls the outcome.
     const result = await manager.run({
-      runOptions: STUB_RUN_OPTIONS,
+      runOptions: makeStubRunOptions(config),
       bundle: STUB_BUNDLE,
       executeHop: async (agentName) => {
         agentsTried.push(agentName);
@@ -106,7 +119,7 @@ describe("ADR-013 Phase 6 — manager unavailability state threading", () => {
     const agentsTried: string[] = [];
 
     const result = await freshManager.run({
-      runOptions: STUB_RUN_OPTIONS,
+      runOptions: makeStubRunOptions(config),
       bundle: STUB_BUNDLE,
       executeHop: async (agentName) => {
         agentsTried.push(agentName);
@@ -151,7 +164,7 @@ describe("ADR-013 Phase 6 — manager unavailability state threading", () => {
     // claude and codex fail (adapterFailure triggers markUnavailable inside runWithFallback);
     // gemini succeeds.
     await manager.run({
-      runOptions: STUB_RUN_OPTIONS,
+      runOptions: makeStubRunOptions(config),
       bundle: STUB_BUNDLE,
       executeHop: async (agentName) => {
         const res = agentName === "gemini" ? makeSuccessResult() : makeFailResult();
