@@ -498,7 +498,7 @@ describe("planInteractiveOp.verify — out-of-scope backfill (single mode)", () 
 
   test("backfills every spec exclusion the planner omitted, and warns", async () => {
     await withWarnSpy(async (warnSpy) => {
-      const result = await runVerify(prdWith(), input as never, makeInteractiveVerifyCtx() as never);
+      const result = await runVerify(prdWith(), input, makeInteractiveVerifyCtx());
       expect(result?.outOfScope).toEqual(["An interactive Ink TUI", "Per-story checkpoints"]);
       const warn = warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("out-of-scope"));
       expect(warn).toBeDefined();
@@ -508,7 +508,7 @@ describe("planInteractiveOp.verify — out-of-scope backfill (single mode)", () 
 
   test("keeps the planner's own wording and restores only what it dropped", async () => {
     const prd = prdWith(["An interactive Ink TUI — deferred to arc 3"]);
-    const result = await runVerify(prd, input as never, makeInteractiveVerifyCtx() as never);
+    const result = await runVerify(prd, input, makeInteractiveVerifyCtx());
     // Restored items lead so the cap can never truncate them away.
     expect(result?.outOfScope).toEqual(["Per-story checkpoints", "An interactive Ink TUI — deferred to arc 3"]);
   });
@@ -516,7 +516,7 @@ describe("planInteractiveOp.verify — out-of-scope backfill (single mode)", () 
   test("does not warn or add a field when the spec declares no exclusions", async () => {
     await withWarnSpy(async (warnSpy) => {
       const noScopeInput = { ...input, specContent: "# Feature\n\n## Design\n- build it\n" };
-      const result = await runVerify(prdWith(), noScopeInput as never, makeInteractiveVerifyCtx() as never);
+      const result = await runVerify(prdWith(), noScopeInput, makeInteractiveVerifyCtx());
       expect(result?.outOfScope).toBeUndefined();
       expect(warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("out-of-scope"))).toBeUndefined();
     });

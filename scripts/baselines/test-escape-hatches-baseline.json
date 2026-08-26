@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 219,
+    "asNever": 213,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:44:13.981Z",
+  "updatedAt": "2026-08-26T15:45:20.141Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -805,8 +805,7 @@
       "asNever": 2
     },
     "test/unit/operations/plan-interactive.test.ts": {
-      "looseCast": 3,
-      "asNever": 6
+      "looseCast": 3
     },
     "test/unit/operations/call-run-counter.test.ts": {
       "asNever": 1
