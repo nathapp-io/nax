@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1799,
-    "asNever": 547,
+    "asNever": 519,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T13:52:54.422Z",
+  "updatedAt": "2026-08-26T14:08:40.788Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -1041,8 +1041,7 @@
       "asNever": 1
     },
     "test/unit/cli/plan.test.ts": {
-      "looseCast": 17,
-      "asNever": 28
+      "looseCast": 17
     },
     "test/unit/cli/plan-decompose-guards.test.ts": {
       "looseCast": 5
