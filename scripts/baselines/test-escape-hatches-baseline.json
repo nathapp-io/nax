@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1799,
-    "asNever": 344,
+    "asNever": 333,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T14:56:21.788Z",
+  "updatedAt": "2026-08-26T14:58:26.299Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -835,8 +835,7 @@
       "looseCast": 7
     },
     "test/unit/operations/plan-refine-out-of-scope.test.ts": {
-      "looseCast": 2,
-      "asNever": 11
+      "looseCast": 2
     },
     "test/unit/operations/setup-generate.test.ts": {
       "looseCast": 3,
