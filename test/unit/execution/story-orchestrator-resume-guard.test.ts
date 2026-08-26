@@ -14,9 +14,13 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  makeAdversarialReviewConfig,
+  makeCallOp,
   makeFixCycleResult,
   makeMockAgentManager,
   makeNaxConfig,
+  makeSemanticReviewConfig,
+  makeStory,
   makeTestRuntime,
   makeTurnResult,
 } from "@test/helpers";
@@ -125,10 +129,7 @@ describe("AC3: validate-short-circuit + empty findings → liteScopeIncomplete",
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp();
     // Simulate cycle exiting with validate-short-circuit + no remaining findings.
     _storyOrchestratorDeps.runFixCycle = async () => ({
       iterations: [],
@@ -144,11 +145,11 @@ describe("AC3: validate-short-circuit + empty findings → liteScopeIncomplete",
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-ac3",
-      } as any;
+      };
 
       const result = await new StoryOrchestratorBuilder()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-ac3" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-ac3" }), workdir: "/tmp" } })
         .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
         .build(ctx)
         .run();
@@ -175,10 +176,7 @@ describe("AC4: validate-short-circuit + non-empty findings → rectificationExha
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp();
     // Simulate cycle exiting with validate-short-circuit but still has unfixed findings.
     const unfixed: Finding[] = [GATE_FINDING];
     _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
@@ -196,11 +194,11 @@ describe("AC4: validate-short-circuit + non-empty findings → rectificationExha
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-ac4",
-      } as any;
+      };
 
       const result = await new StoryOrchestratorBuilder()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-ac4" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-ac4" }), workdir: "/tmp" } })
         .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
         .build(ctx)
         .run();
@@ -234,11 +232,11 @@ describe("AC5: rectificationExhausted: true → resume NOT entered", () => {
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      opRunCount[op.name] = (opRunCount[op.name] ?? 0) + 1;
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: (op) => {
+        opRunCount[op.name] = (opRunCount[op.name] ?? 0) + 1;
+      },
+    });
     // validate-short-circuit + non-empty → runRectification should return rectificationExhausted: true
     _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
       makeFixCycleResult<F>({
@@ -255,11 +253,11 @@ describe("AC5: rectificationExhausted: true → resume NOT entered", () => {
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-ac5",
-      } as any;
+      };
 
       await new StoryOrchestratorBuilder()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-ac5" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-ac5" }), workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
         .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
         .build(ctx)
@@ -295,16 +293,19 @@ describe("AC6: liteScopeIncomplete: true → resume IS entered", () => {
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      opRunCount[op.name] = (opRunCount[op.name] ?? 0) + 1;
-      if (op.name === "full-suite-gate") {
-        // Gate passes after rectification (so resume continues past it).
-        if (opRunCount["full-suite-gate"] > 1) {
-          return { success: true, findings: [], estimatedCostUsd: 0 };
-        }
-      }
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: (op) => {
+        opRunCount[op.name] = (opRunCount[op.name] ?? 0) + 1;
+      },
+    });
+    // Gate passes after rectification (so resume continues past it) — the
+    // deterministic execute carries the count-based override instead of the mock.
+    const gateExecute = gateOp.execute;
+    let gateRuns = 0;
+    gateOp.execute = async (input, ctx) => {
+      gateRuns++;
+      if (gateRuns > 1) return { success: true, findings: [], estimatedCostUsd: 0 };
+      return gateExecute(input, ctx);
     };
     // validate-short-circuit + empty → runRectification should return liteScopeIncomplete: true
     _storyOrchestratorDeps.runFixCycle = async () => ({
@@ -321,11 +322,11 @@ describe("AC6: liteScopeIncomplete: true → resume IS entered", () => {
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-ac6",
-      } as any;
+      };
 
       const result = await new StoryOrchestratorBuilder()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-ac6" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-ac6" }), workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
         .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
         .build(ctx)
@@ -373,15 +374,11 @@ describe("AC7: mechanical-only rectificationExhausted → resume IS entered for 
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      opRunCount[op.name] = (opRunCount[op.name] ?? 0) + 1;
-      if (op.name === "full-suite-gate") {
-        // Gate stays failing — lint error is unfixable.
-        return { success: false, findings: [LINT_FINDING], estimatedCostUsd: 0 };
-      }
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: (op) => {
+        opRunCount[op.name] = (opRunCount[op.name] ?? 0) + 1;
+      },
+    });
     // rectificationExhausted=true with mechanical-only unfixedFindings
     _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
       makeFixCycleResult<F>({
@@ -404,7 +401,7 @@ describe("AC7: mechanical-only rectificationExhausted → resume IS entered for 
       });
 
     try {
-      const ctx: any = {
+      const ctx: CallContext = {
         runtime: runtime!,
         packageView: runtime!.packages.repo(),
         packageDir: "/tmp",
@@ -417,10 +414,26 @@ describe("AC7: mechanical-only rectificationExhausted → resume IS entered for 
 
       await new StoryOrchestratorBuilder()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-ac7" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-ac7" }), workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
-        .addSemanticReview({ op: semOp, input: {} as any })
-        .addAdversarialReview({ op: advOp, input: {} as any })
+        .addSemanticReview({
+          op: semOp,
+          input: {
+            workdir: "/tmp",
+            story: makeStory({ id: "US-ac7" }),
+            semanticConfig: makeSemanticReviewConfig(),
+            mode: "ref",
+          },
+        })
+        .addAdversarialReview({
+          op: advOp,
+          input: {
+            workdir: "/tmp",
+            story: makeStory({ id: "US-ac7" }),
+            adversarialConfig: makeAdversarialReviewConfig(),
+            mode: "ref",
+          },
+        })
         .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
         .build(ctx)
         .run();
@@ -447,11 +460,11 @@ describe("AC7: mechanical-only rectificationExhausted → resume IS entered for 
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      opRunCount[op.name] = (opRunCount[op.name] ?? 0) + 1;
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: (op) => {
+        opRunCount[op.name] = (opRunCount[op.name] ?? 0) + 1;
+      },
+    });
     _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
       makeFixCycleResult<F>({
         iterations: [],
@@ -461,7 +474,7 @@ describe("AC7: mechanical-only rectificationExhausted → resume IS entered for 
       });
 
     try {
-      const ctx: any = {
+      const ctx: CallContext = {
         runtime: runtime!,
         packageView: runtime!.packages.repo(),
         packageDir: "/tmp",
@@ -471,7 +484,7 @@ describe("AC7: mechanical-only rectificationExhausted → resume IS entered for 
 
       await new StoryOrchestratorBuilder()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-ac7b" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-ac7b" }), workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
         .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
         .build(ctx)

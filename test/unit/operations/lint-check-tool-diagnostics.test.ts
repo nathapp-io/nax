@@ -14,9 +14,12 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import type { LintCheckDeps } from "@/operations";
+import type { DeepPartial } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir, makeTestRuntime } from "@test/helpers";
+import type { ConfigSelector, QualityConfig } from "@/config";
+import type { CallContext, LintCheckDeps, LintCheckOutput } from "@/operations";
 import { lintCheckOp } from "@/operations";
+import type { ToolDiagnosticsScratchEntry } from "@/session/scratch-writer";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -32,19 +35,25 @@ afterEach(() => {
   cleanupTempDir(tmpDir);
 });
 
-function ctxWithQuality(quality?: Record<string, unknown>, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
-  const config = { quality, execution: {} } as any;
+function ctxWithQuality(
+  quality?: DeepPartial<QualityConfig>,
+  opts: { hasOverride?: boolean; repoRoot?: string } = {},
+): CallContext {
+  const config = makeNaxConfig({ quality });
   return {
-    runtime: {},
+    runtime: makeTestRuntime({ config }),
     storyId: "US-003",
+    packageDir: "packages/agent",
+    agentName: "claude",
     packageView: {
       packageDir: "packages/agent",
+      relativeFromRoot: "packages/agent",
       repoRoot: opts.repoRoot ?? "/repo",
       hasOverride: opts.hasOverride ?? false,
       config,
-      select: (sel: any) => sel.select(config),
+      select: <C>(selector: ConfigSelector<C>): C => selector.select(config),
     },
-  } as any;
+  };
 }
 
 const failedLintResult = {
@@ -82,9 +91,9 @@ function makeDeps(overrides: Partial<LintCheckDeps> = {}): LintCheckDeps {
 describe("lintCheckOp — AC11: tool-diagnostics capture on non-zero lint exit", () => {
   test("AC11: non-zero lint exit triggers appendScratchEntry with kind=tool-diagnostics to sessionScratchDir", async () => {
     const scratchDir = join(tmpDir, "sess-ac11");
-    const appendSpy = mock(async (_dir: string, _entry: unknown) => undefined);
+    const appendSpy = mock(async (_dir: string, _entry: ToolDiagnosticsScratchEntry) => undefined);
 
-    const out = await (lintCheckOp as any).execute(
+    const out = await lintCheckOp.execute(
       { workdir: "/tmp", storyId: "US-003" },
       ctxWithQuality({ commands: { lint: "bun run lint" } }),
       makeDeps({
@@ -94,7 +103,7 @@ describe("lintCheckOp — AC11: tool-diagnostics capture on non-zero lint exit",
     );
 
     expect(appendSpy).toHaveBeenCalledTimes(1);
-    const [calledDir, calledEntry] = appendSpy.mock.calls[0] as [string, any];
+    const [calledDir, calledEntry] = appendSpy.mock.calls[0];
     expect(calledDir).toBe(scratchDir);
     expect(calledEntry.kind).toBe("tool-diagnostics");
     expect(calledEntry.storyId).toBe("US-003");
@@ -105,9 +114,9 @@ describe("lintCheckOp — AC11: tool-diagnostics capture on non-zero lint exit",
 
   test("AC11: zero lint exit does NOT trigger tool-diagnostics capture", async () => {
     const scratchDir = join(tmpDir, "sess-ac11-pass");
-    const appendSpy = mock(async (_dir: string, _entry: unknown) => undefined);
+    const appendSpy = mock(async (_dir: string, _entry: ToolDiagnosticsScratchEntry) => undefined);
 
-    const out = await (lintCheckOp as any).execute(
+    const out = await lintCheckOp.execute(
       { workdir: "/tmp", storyId: "US-003" },
       ctxWithQuality({ commands: { lint: "bun run lint" } }),
       {
@@ -137,10 +146,10 @@ describe("lintCheckOp — AC12: capture is best-effort", () => {
     // The op must NOT throw even though capture throws. It must still return
     // its normal failure result (success=false because the lint command failed)
     // so the calling pipeline can keep routing.
-    let out: any;
+    let out: LintCheckOutput | undefined;
     let threw = false;
     try {
-      out = await (lintCheckOp as any).execute(
+      out = await lintCheckOp.execute(
         { workdir: "/tmp", storyId: "US-003" },
         ctxWithQuality({ commands: { lint: "bun run lint" } }),
         {
@@ -156,8 +165,8 @@ describe("lintCheckOp — AC12: capture is best-effort", () => {
 
     expect(threw).toBe(false);
     expect(out).toBeDefined();
-    expect(out.success).toBe(false);
-    expect(out.findings.length).toBeGreaterThan(0);
+    expect(out?.success).toBe(false);
+    expect(out?.findings.length).toBeGreaterThan(0);
     expect(appendSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -167,7 +176,7 @@ describe("lintCheckOp — AC12: capture is best-effort", () => {
     });
 
     // No sessionScratchDir → no capture call → op completes normally.
-    const out = await (lintCheckOp as any).execute(
+    const out = await lintCheckOp.execute(
       { workdir: "/tmp", storyId: "US-003" },
       ctxWithQuality({ commands: { lint: "bun run lint" } }),
       {

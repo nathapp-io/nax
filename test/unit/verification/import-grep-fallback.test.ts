@@ -6,22 +6,26 @@ describe("importGrepFallback", () => {
     const many = Array.from({ length: 1000 }, (_, i) => `test/a${i}.test.ts`);
     // Patch glob to return 1000 files
     const origGlob = _bunDeps.glob;
-    _bunDeps.glob = (() => ({
-      async *scan() {
-        for (const f of many) yield f;
-      },
-    })) as any;
+    Object.assign(_bunDeps, {
+      glob: (_p: string) => ({
+        async *scan() {
+          for (const f of many) yield f;
+        },
+      }),
+    });
     let reads = 0;
     const origFile = _bunDeps.file;
-    _bunDeps.file = ((_p: string) => ({
-      async text() {
-        reads++;
-        return "needle";
-      },
-      async exists() {
-        return true;
-      },
-    })) as any;
+    Object.assign(_bunDeps, {
+      file: (_p: string) => ({
+        async text() {
+          reads++;
+          return "needle";
+        },
+        async exists() {
+          return true;
+        },
+      }),
+    });
 
     try {
       await importGrepFallback(["src/x.ts"], "/repo", ["test/**/*.test.ts"]);
@@ -35,22 +39,26 @@ describe("importGrepFallback", () => {
   test("honors an explicit maxScanFiles cap (config.execution.smartTestRunner.maxScanFiles)", async () => {
     const many = Array.from({ length: 1000 }, (_, i) => `test/a${i}.test.ts`);
     const origGlob = _bunDeps.glob;
-    _bunDeps.glob = (() => ({
-      async *scan() {
-        for (const f of many) yield f;
-      },
-    })) as any;
+    Object.assign(_bunDeps, {
+      glob: (_p: string) => ({
+        async *scan() {
+          for (const f of many) yield f;
+        },
+      }),
+    });
     let reads = 0;
     const origFile = _bunDeps.file;
-    _bunDeps.file = ((_p: string) => ({
-      async text() {
-        reads++;
-        return "needle";
-      },
-      async exists() {
-        return true;
-      },
-    })) as any;
+    Object.assign(_bunDeps, {
+      file: (_p: string) => ({
+        async text() {
+          reads++;
+          return "needle";
+        },
+        async exists() {
+          return true;
+        },
+      }),
+    });
 
     try {
       await importGrepFallback(["src/x.ts"], "/repo", ["test/**/*.test.ts"], 5);

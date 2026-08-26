@@ -1,13 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { ContextOrchestrator, fetchWithTimeout } from "@/context/engine/orchestrator";
+import type { ContextProviderResult, ContextRequest, IContextProvider } from "@/context/engine/types";
 
 describe("fetchWithTimeout", () => {
   test("aborts the losing provider fetch when the timeout wins and does not throw unhandled", async () => {
     let aborted = false;
-    const slowProvider = {
+    const slowProvider: IContextProvider = {
       id: "slow",
-      fetch: (_req: any, signal?: AbortSignal) =>
-        new Promise((_res, rej) => {
+      kind: "static",
+      fetch: (_req: ContextRequest, signal?: AbortSignal) =>
+        new Promise<ContextProviderResult>((_res, rej) => {
           signal?.addEventListener("abort", () => {
             aborted = true;
             rej(new Error("aborted"));
@@ -15,7 +17,15 @@ describe("fetchWithTimeout", () => {
           // never resolves on its own
         }),
     };
-    await expect(fetchWithTimeout(slowProvider as any, {} as any, 20)).rejects.toThrow(/timed out/);
+    const req: ContextRequest = {
+      storyId: "US-001",
+      repoRoot: "/p",
+      packageDir: "/p",
+      stage: "execution",
+      role: "implementer",
+      budgetTokens: 8000,
+    };
+    await expect(fetchWithTimeout(slowProvider, req, 20)).rejects.toThrow(/timed out/);
     // Give the abort event a tick to fire
     await new Promise((r) => setTimeout(r, 5));
     expect(aborted).toBe(true);

@@ -200,7 +200,7 @@ describe("routingStage — H1: profileModelTier seeds starting tier", () => {
         complexity: "simple",
         testStrategy: "test-after",
         reasoning: "",
-        profileModelTier: "custom-tier" as any,
+        profileModelTier: "custom-tier",
       },
     });
     const ctx = makeCtx(story);

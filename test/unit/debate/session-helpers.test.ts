@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { makeLogger, makeMockAgentManager } from "@test/helpers";
+import { makeDispatchContext, makeLogger, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 import { computeAcpHandle } from "@/agents/acp/adapter";
 import type { CompleteOptions } from "@/agents/types";
 import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
@@ -20,6 +20,7 @@ import type { DebateSessionOptions } from "@/debate/session-helpers";
 import { _debateSessionDeps, resolveOutcome } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import type { CallContext } from "@/operations/types";
+import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 
 const DEFAULT_DEBATE_CONFIG = debateConfigSelector.select(DEFAULT_CONFIG);
 
@@ -68,6 +69,7 @@ describe("_debateSessionDeps export from session-helpers.ts (AC5)", () => {
 describe("DebateSessionOptions type export from session-helpers.ts (AC7)", () => {
   test("DebateSessionOptions: required + optional fields; accessible through barrel", () => {
     const opts1: DebateSessionOptions = {
+      ...makeDispatchContext(),
       storyId: "US-000",
       stage: "review",
       stageConfig: {
@@ -78,11 +80,12 @@ describe("DebateSessionOptions type export from session-helpers.ts (AC7)", () =>
         debaters: [{ agent: "claude" }],
         timeoutSeconds: 60,
       },
-    } as any;
+    };
     expect(opts1.storyId).toBe("US-000");
     expect(opts1.stageConfig.rounds).toBe(1);
 
     const opts2: DebateSessionOptions = {
+      ...makeDispatchContext(),
       storyId: "US-000",
       stage: "plan",
       stageConfig: {
@@ -96,10 +99,11 @@ describe("DebateSessionOptions type export from session-helpers.ts (AC7)", () =>
       workdir: "/tmp/workspace",
       featureName: "my-feature",
       timeoutSeconds: 300,
-    } as any;
+    };
     expect(opts2.workdir).toBe("/tmp/workspace");
 
     const opts3: BarrelDebateSessionOptions = {
+      ...makeDispatchContext(),
       storyId: "US-000",
       stage: "review",
       stageConfig: {
@@ -110,7 +114,7 @@ describe("DebateSessionOptions type export from session-helpers.ts (AC7)", () =>
         debaters: [{ agent: "claude" }],
         timeoutSeconds: 60,
       },
-    } as any;
+    };
     expect(opts3.storyId).toBe("US-000");
   });
 });
@@ -121,14 +125,15 @@ function makeResolveStageConfig(
   resolverType: "synthesis" | "majority-fail-closed" | "majority-fail-open" | "custom",
   agent?: string,
 ): DebateStageConfig {
+  const resolver: DebateStageConfig["resolver"] = { type: resolverType, ...(agent !== undefined ? { agent } : {}) };
   return {
     enabled: true,
-    resolver: { type: resolverType, ...(agent !== undefined ? { agent } : {}) },
+    resolver,
     sessionMode: "one-shot",
     rounds: 1,
     debaters: [{ agent: "claude" }],
     timeoutSeconds: 60,
-  } as DebateStageConfig;
+  };
 }
 
 function makeCaptureManager(captured: { opts?: CompleteOptions }[], output = "resolved") {
@@ -357,15 +362,13 @@ describe("resolveOutcome() — majority resolver warns when workdir provided (US
 // ─── callContext threading (Phase 1, #855) ────────────────────────────────────
 
 function makeMinimalCallCtx(): CallContext {
+  const runtime = makeMockRuntime({
+    agentManager: makeMockAgentManager(),
+    costAggregator: createNoOpCostAggregator(),
+  });
   return {
-    runtime: {
-      agentManager: makeMockAgentManager(),
-      sessionManager: {} as any,
-      configLoader: { current: () => DEFAULT_CONFIG } as any,
-      packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG }) } as any,
-      signal: undefined,
-    } as any,
-    packageView: { config: DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG } as any,
+    runtime,
+    packageView: runtime.packages.repo(),
     packageDir: "/tmp",
     agentName: "claude",
     storyId: "US-cc",
@@ -427,7 +430,8 @@ describe("resolveOutcome() — callContext parameter (AC2)", () => {
     expect(r1.outcome).toBe("passed");
 
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.agentManager = makeCaptureManager(captured, '{"passed": true}');
+    const captureManager = makeCaptureManager(captured, '{"passed": true}');
+    _debateSessionDeps.agentManager = captureManager;
     const r2 = await resolveOutcome(
       ["proposal-a"],
       [],
@@ -440,7 +444,7 @@ describe("resolveOutcome() — callContext parameter (AC2)", () => {
       undefined,
       undefined,
       undefined,
-      _debateSessionDeps.agentManager as NonNullable<typeof _debateSessionDeps.agentManager>,
+      captureManager,
     );
     expect(r2).toBeDefined();
   });

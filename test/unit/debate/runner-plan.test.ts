@@ -1,28 +1,27 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeLogger, makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/helpers";
-import type { NaxConfig } from "@/config";
+import { makeLogger, makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeSessionManager } from "@test/helpers";
+import type { ConfigSelector, NaxConfig } from "@/config";
 import { DEFAULT_CONFIG, reshapeSelector } from "@/config";
+import type { PostDebateVerifier } from "@/debate";
 import { _runPlanDeps } from "@/debate";
 import type { PreDebatePhase } from "@/debate/pre-phase";
 import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
+import type { Operation } from "@/operations";
 import * as callModule from "@/operations";
 import type { CallContext } from "@/operations/types";
+import type { PackageView } from "@/runtime";
+import type { NameForRequest } from "@/session/types";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 function makeCallCtx(overrides: Partial<CallContext> = {}): CallContext {
   const agentManager = makeMockAgentManager();
+  const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
   return {
-    runtime: {
-      agentManager,
-      sessionManager: makeSessionManager(),
-      configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
-      packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
-      signal: undefined,
-    } as any,
-    packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
+    runtime,
+    packageView: runtime.packages.repo(),
     packageDir: "/tmp/work",
     agentName: "claude",
     storyId: "US-020",
@@ -36,17 +35,12 @@ function makeCallCtxWithIds(
   agentManager: ReturnType<typeof makeMockAgentManager>,
   sessionManager: ReturnType<typeof makeSessionManager>,
   config: NaxConfig = DEFAULT_CONFIG,
-  packageView: CallContext["packageView"] = { config, select: (_sel: unknown) => config } as any,
+  packageView?: CallContext["packageView"],
 ): CallContext {
+  const runtime = makeMockRuntime({ agentManager, sessionManager, config });
   return {
-    runtime: {
-      agentManager,
-      sessionManager,
-      configLoader: { current: () => config, select: (_sel: unknown) => config } as any,
-      packages: { resolve: () => ({ config, select: (_sel: unknown) => config }) } as any,
-      signal: undefined,
-    } as any,
-    packageView,
+    runtime,
+    packageView: packageView ?? runtime.packages.repo(),
     packageDir: "/tmp/work",
     agentName: "claude",
     storyId,
@@ -101,10 +95,12 @@ beforeEach(() => {
   _debateSessionDeps.readFile = mock(async (_path: string) => '{"plan": "output"}');
   // Default callOp mock for plan debater ops — intercepts only "debate-plan" op calls.
   // All other ops (synthesis resolver, verifier, etc.) fall through to the real callOp.
-  spyOn(callModule, "callOp").mockImplementation(async (ctx, op: any, input) => {
-    if (op?.name === "debate-plan") return { success: true, rebut: '{"plan":"output"}' } as never;
-    return origCallOp(ctx, op, input);
-  });
+  spyOn(callModule, "callOp").mockImplementation(
+    async <I, O, C>(ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> => {
+      if (op?.name === "debate-plan") return { success: true, rebut: '{"plan":"output"}' } as never;
+      return origCallOp(ctx, op, input);
+    },
+  );
 });
 
 afterEach(() => {
@@ -120,13 +116,7 @@ describe("DebateRunner.runPlan() — plan mode uses callOp (one-shot path)", () 
     const sm = makeSessionManager();
     const agentManager = makeMockAgentManager({});
     const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-      } as any,
+      runtime: makeMockRuntime({ agentManager, sessionManager: sm }),
     });
 
     const runner = new DebateRunner({
@@ -158,13 +148,7 @@ describe("DebateRunner.runPlan() — plan mode uses callOp (one-shot path)", () 
     const sm = makeSessionManager();
     const agentManager = makeMockAgentManager({});
     const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-      } as any,
+      runtime: makeMockRuntime({ agentManager, sessionManager: sm }),
     });
 
     const runner = new DebateRunner({
@@ -189,24 +173,13 @@ describe("DebateRunner.runPlan() — plan mode uses callOp (one-shot path)", () 
 
   test("runPlan() returns a DebateResult", async () => {
     const sm = makeSessionManager({
-      runInSession: mock(async (_name: string, _prompt: string, _opts: unknown) => ({
-        output: "plan output",
-        tokenUsage: { inputTokens: 10, outputTokens: 20 },
-        internalRoundTrips: 1,
-      })) as any,
       nameFor: mock((_req: unknown) => "nax-result-session"),
     });
 
     const agentManager = makeMockAgentManager();
 
     const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-      } as any,
+      runtime: makeMockRuntime({ agentManager, sessionManager: sm }),
     });
 
     const runner = new DebateRunner({
@@ -234,15 +207,11 @@ describe("DebateRunner.runPlan() — plan mode uses callOp (one-shot path)", () 
   test("runPlan() returns failed when sessionManager is missing", async () => {
     const agentManager = makeMockAgentManager();
 
-    const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: undefined as any,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-      } as any,
-    });
+    // runPlan guards on runtime.sessionManager — drive the guard with a real
+    // runtime stripped of it (readonly property, so defineProperty).
+    const runtimeWithoutSessionManager = makeMockRuntime({ agentManager });
+    Object.defineProperty(runtimeWithoutSessionManager, "sessionManager", { value: undefined, configurable: true });
+    const ctx = makeCallCtx({ runtime: runtimeWithoutSessionManager });
 
     const runner = new DebateRunner({
       ctx,
@@ -269,11 +238,15 @@ describe("DebateRunner.runPlan()", () => {
   test("passes unique index and storyId to each plan debater callOp", async () => {
     const capturedIndices: number[] = [];
     const capturedStoryIds: string[] = [];
-    spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, input: any) => {
-      capturedIndices.push(input.index as number);
-      capturedStoryIds.push((callCtx as any).storyId ?? "");
-      return { success: true, rebut: "ok" } as never;
-    });
+    spyOn(callModule, "callOp").mockImplementation(
+      async <I, O, C>(callCtx: CallContext, _op: Operation<I, O, C>, input: I): Promise<O> => {
+        if (typeof input === "object" && input !== null && "index" in input && typeof input.index === "number") {
+          capturedIndices.push(input.index);
+        }
+        capturedStoryIds.push(callCtx.storyId ?? "");
+        return { success: true, rebut: "ok" } as never;
+      },
+    );
 
     const config = makePlanDebateConfig(3);
     const sm = makeSessionManager();
@@ -343,12 +316,7 @@ describe("DebateRunner.runPlan()", () => {
     const runAsSessionCalls: Array<{ prompt: string }> = [];
 
     const sm = makeSessionManager({
-      runInSession: mock(async () => ({
-        output: "ok",
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 0,
-      })) as any,
-      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+      nameFor: mock((req: NameForRequest) => `nax-${req.role ?? "unknown"}`),
     });
 
     const agentManager = makeMockAgentManager({
@@ -393,12 +361,7 @@ describe("DebateRunner.runPlan()", () => {
     _debateSessionDeps.getSafeLogger = () => logger;
 
     const sm = makeSessionManager({
-      runInSession: mock(async () => ({
-        output: "ok",
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 0,
-      })) as any,
-      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+      nameFor: mock((req: NameForRequest) => `nax-${req.role ?? "unknown"}`),
     });
 
     _debateSessionDeps.readFile = mock(async () => "{}");
@@ -434,12 +397,7 @@ describe("DebateRunner.runPlan()", () => {
     let capturedSynthesisPrompt = "";
     const config = makePlanDebateConfig(2);
     const sm = makeSessionManager({
-      runInSession: mock(async () => ({
-        output: "ok",
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 0,
-      })) as any,
-      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+      nameFor: mock((req: NameForRequest) => `nax-${req.role ?? "unknown"}`),
     });
     const agentManager = makeMockAgentManager({
       completeFn: async (_agentName, prompt) => {
@@ -486,15 +444,20 @@ describe("DebateRunner.runPlan()", () => {
     const startedOrder: number[] = [];
     const resolvers: Array<() => void> = [];
 
-    spyOn(callModule, "callOp").mockImplementation(async (_ctx, op: any, input: any) => {
-      if (op?.name !== "debate-plan") return origCallOp(_ctx, op, input);
-      const idx = input.index as number;
-      startedOrder.push(idx);
-      await new Promise<void>((resolve) => {
-        resolvers[idx] = resolve;
-      });
-      return { success: true, rebut: "ok" } as never;
-    });
+    spyOn(callModule, "callOp").mockImplementation(
+      async <I, O, C>(_ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> => {
+        if (op?.name !== "debate-plan") return origCallOp(_ctx, op, input);
+        const idx =
+          typeof input === "object" && input !== null && "index" in input && typeof input.index === "number"
+            ? input.index
+            : -1;
+        startedOrder.push(idx);
+        await new Promise<void>((resolve) => {
+          resolvers[idx] = resolve;
+        });
+        return { success: true, rebut: "ok" } as never;
+      },
+    );
 
     const config = makePlanDebateConfig(2);
     const sm = makeSessionManager();
@@ -528,11 +491,22 @@ describe("DebateRunner.runPlan()", () => {
 
   test("prepends manifestSection to each debater prompt when provided, omits when not", async () => {
     const capturedPrompts: string[] = [];
-    spyOn(callModule, "callOp").mockImplementation(async (_ctx, op: any, input: any) => {
-      if (op?.name === "debate-plan") capturedPrompts.push(input.proposePrompt as string);
-      else return origCallOp(_ctx, op, input);
-      return { success: true, rebut: "ok" } as never;
-    });
+    spyOn(callModule, "callOp").mockImplementation(
+      async <I, O, C>(_ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> => {
+        if (
+          op?.name === "debate-plan" &&
+          typeof input === "object" &&
+          input !== null &&
+          "proposePrompt" in input &&
+          typeof input.proposePrompt === "string"
+        ) {
+          capturedPrompts.push(input.proposePrompt);
+        } else {
+          return origCallOp(_ctx, op, input);
+        }
+        return { success: true, rebut: "ok" } as never;
+      },
+    );
 
     const config = makePlanDebateConfig(2);
     const sm = makeSessionManager();
@@ -593,15 +567,10 @@ describe("runner-plan — preDebatePhase invocation", () => {
     _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) => {
       prePhaseCalled.push(_kind);
       return async () => ({ manifestSection: "## Grounded Facts\n- F-001", costUsd: 0 });
-    }) as any;
+    });
 
     const sm = makeSessionManager({
-      runInSession: mock(async () => ({
-        output: "ok",
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 0,
-      })) as any,
-      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+      nameFor: mock((req: NameForRequest) => `nax-${req.role ?? "unknown"}`),
     });
     _debateSessionDeps.readFile = mock(async () => "{}");
 
@@ -627,10 +596,24 @@ describe("runner-plan — preDebatePhase invocation", () => {
   });
 
   test("AC-3: threads packageView through the plan pre-phase context", async () => {
-    const packageView = {
+    // PackageView.select is generic (`select<C>(selector): C`) — no concrete
+    // function can satisfy it, so the strict signature is an overload and the
+    // implementation works in unknown (§8.13 C). A counter stands in for
+    // toHaveBeenCalled because a bun mock loses the overload's genericity.
+    let selectCalls = 0;
+    function selectFor<C>(_sel: ConfigSelector<C>): C;
+    function selectFor(_sel: unknown): unknown {
+      selectCalls++;
+      return DEFAULT_CONFIG;
+    }
+    const packageView: PackageView = {
+      packageDir: "/tmp",
+      relativeFromRoot: "",
+      repoRoot: "/tmp",
+      hasOverride: false,
       config: DEFAULT_CONFIG,
-      select: mock((_sel: unknown) => DEFAULT_CONFIG),
-    } as any;
+      select: selectFor,
+    };
     let receivedPackageView: unknown;
 
     _runPlanDeps.resolvePreDebatePhase = mock(
@@ -640,15 +623,10 @@ describe("runner-plan — preDebatePhase invocation", () => {
           preCtx.ctx.packageView.select(reshapeSelector("runner-plan-test", () => DEFAULT_CONFIG));
           return { manifestSection: "## Grounded Facts\n- F-001", costUsd: 0 };
         },
-    ) as any;
+    );
 
     const sm = makeSessionManager({
-      runInSession: mock(async () => ({
-        output: "ok",
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 0,
-      })) as any,
-      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+      nameFor: mock((req: NameForRequest) => `nax-${req.role ?? "unknown"}`),
     });
     _debateSessionDeps.readFile = mock(async () => "{}");
 
@@ -672,21 +650,32 @@ describe("runner-plan — preDebatePhase invocation", () => {
     });
 
     expect(receivedPackageView).toBe(packageView);
-    expect(packageView.select).toHaveBeenCalled();
+    expect(selectCalls).toBeGreaterThan(0);
   });
 
   test("AC-3: prepends prePhase manifestSection to proposal taskContext", async () => {
     _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) => async () => ({
       manifestSection: "## Grounded Facts\n- F-001: critical fact",
       costUsd: 0,
-    })) as any;
+    }));
 
     const capturedPrompts: string[] = [];
-    spyOn(callModule, "callOp").mockImplementation(async (_ctx, op: any, input: any) => {
-      if (op?.name === "debate-plan") capturedPrompts.push(input.proposePrompt as string);
-      else return origCallOp(_ctx, op, input);
-      return { success: true, rebut: "ok" } as never;
-    });
+    spyOn(callModule, "callOp").mockImplementation(
+      async <I, O, C>(_ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> => {
+        if (
+          op?.name === "debate-plan" &&
+          typeof input === "object" &&
+          input !== null &&
+          "proposePrompt" in input &&
+          typeof input.proposePrompt === "string"
+        ) {
+          capturedPrompts.push(input.proposePrompt);
+        } else {
+          return origCallOp(_ctx, op, input);
+        }
+        return { success: true, rebut: "ok" } as never;
+      },
+    );
 
     const config = makePlanDebateConfig(2);
     const sm = makeSessionManager();
@@ -720,16 +709,18 @@ describe("runner-plan — preDebatePhase invocation", () => {
 
     _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) => async () => {
       throw new Error("grounder failed");
-    }) as any;
+    });
 
     let debaterCallCount = 0;
-    spyOn(callModule, "callOp").mockImplementation(async (_ctx, op: any, input: any) => {
-      if (op?.name === "debate-plan") {
-        debaterCallCount++;
-        return { success: true, rebut: "ok" } as never;
-      }
-      return origCallOp(_ctx, op, input);
-    });
+    spyOn(callModule, "callOp").mockImplementation(
+      async <I, O, C>(_ctx: CallContext, op: Operation<I, O, C>, _input: I): Promise<O> => {
+        if (op?.name === "debate-plan") {
+          debaterCallCount++;
+          return { success: true, rebut: "ok" } as never;
+        }
+        return origCallOp(_ctx, op, _input);
+      },
+    );
 
     const config = makePlanDebateConfig(2);
     const sm = makeSessionManager();
@@ -766,15 +757,10 @@ describe("runner-plan — preDebatePhase invocation", () => {
   test("AC-3: onFailure block — returns failed before any proposer runs when prePhase throws", async () => {
     _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) => async () => {
       throw new Error("grounder blocked");
-    }) as any;
+    });
 
     const sm = makeSessionManager({
-      runInSession: mock(async () => ({
-        output: "ok",
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 0,
-      })) as any,
-      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+      nameFor: mock((req: NameForRequest) => `nax-${req.role ?? "unknown"}`),
     });
     _debateSessionDeps.readFile = mock(async () => "{}");
 
@@ -814,7 +800,7 @@ describe("runner-plan — stateful session lifecycle", () => {
     _runPlanDeps.resolvePostDebateVerifier = mock(() => async () => ({
       outcome: "passed" as const,
       costUsd: 0,
-    })) as any;
+    }));
   });
 
   afterEach(() => {
@@ -860,14 +846,25 @@ describe("runner-plan — stateful session lifecycle", () => {
   test("AC-4: passes selectionSignal and rebuttalBarrier to each callOp when sessionMode is stateful", async () => {
     // Verify coordinator passes the correct barrier/signal wiring to each debater callOp.
     const capturedInputs: Array<{ index: number; hasSelectionSignal: boolean; hasRebuttalBarrier: boolean }> = [];
-    spyOn(callModule, "callOp").mockImplementation(async (_ctx, _op, input: any) => {
-      capturedInputs.push({
-        index: input.index,
-        hasSelectionSignal: input.selectionSignal instanceof Promise,
-        hasRebuttalBarrier: input.rebuttalBarrier != null,
-      });
-      return { success: true, rebut: `output-${input.index}` } as never;
-    });
+    spyOn(callModule, "callOp").mockImplementation(
+      async <I, O, C>(_ctx: CallContext, _op: Operation<I, O, C>, input: I): Promise<O> => {
+        if (
+          typeof input === "object" &&
+          input !== null &&
+          "index" in input &&
+          typeof input.index === "number" &&
+          "selectionSignal" in input &&
+          "rebuttalBarrier" in input
+        ) {
+          capturedInputs.push({
+            index: input.index,
+            hasSelectionSignal: input.selectionSignal instanceof Promise,
+            hasRebuttalBarrier: input.rebuttalBarrier != null,
+          });
+        }
+        return { success: true, rebut: "ok" } as never;
+      },
+    );
 
     const sm = makeSessionManager();
     const agentManager = makeMockAgentManager();
@@ -901,7 +898,13 @@ describe("runner-plan — stateful session lifecycle", () => {
     // Verifies coordinator returns a valid result after both stateful callOps complete.
     // Session lifecycle (open/close) is now managed internally by callOp/buildHopCallback.
     spyOn(callModule, "callOp").mockImplementation(
-      async (_ctx, _op, input: any) => ({ success: true, rebut: `output-${input.index}` }) as never,
+      async <I, O, C>(_ctx: CallContext, _op: Operation<I, O, C>, input: I): Promise<O> => {
+        const index =
+          typeof input === "object" && input !== null && "index" in input && typeof input.index === "number"
+            ? input.index
+            : 0;
+        return { success: true, rebut: `output-${index}` } as never;
+      },
     );
 
     const sm = makeSessionManager();
@@ -952,23 +955,18 @@ describe("runner-plan — postDebateVerifier and tag-expert rewrite", () => {
   // BUG-15: no file-read fallback anymore — stub both debaters' proposals directly.
   const stubDebatePlanOp = (output: string) =>
     spyOn(callModule, "callOp").mockImplementation(
-      async (_c, op: any) =>
+      async <I, O, C>(_c: CallContext, op: Operation<I, O, C>, _input: I): Promise<O> =>
         (op?.name === "debate-plan" ? { success: true, rebut: output } : Promise.reject(new Error(op?.name))) as never,
     );
-  function makeRunWithVerifier(verifierFn: () => Promise<{ outcome: string; costUsd: number }>) {
+  function makeRunWithVerifier(verifierFn: PostDebateVerifier) {
     const verifierCalled: string[] = [];
     _runPlanDeps.resolvePostDebateVerifier = mock((_kind: string) => {
       verifierCalled.push(_kind);
       return verifierFn;
-    }) as any;
+    });
 
     const sm = makeSessionManager({
-      runInSession: mock(async () => ({
-        output: "ok",
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 0,
-      })) as any,
-      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+      nameFor: mock((req: NameForRequest) => `nax-${req.role ?? "unknown"}`),
     });
 
     const prdOutput = JSON.stringify({
@@ -1025,15 +1023,10 @@ describe("runner-plan — postDebateVerifier and tag-expert rewrite", () => {
       outcome: "passed" as const,
       findings: [{ checklistItem: "files-exist", severity: "blocker", message: "file missing" }],
       costUsd: 0,
-    })) as any;
+    }));
 
     const sm = makeSessionManager({
-      runInSession: mock(async () => ({
-        output: "ok",
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 0,
-      })) as any,
-      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+      nameFor: mock((req: NameForRequest) => `nax-${req.role ?? "unknown"}`),
     });
     stubDebatePlanOp(prdOutput);
     const config = makePlanDebateConfig(2);
@@ -1070,15 +1063,10 @@ describe("runner-plan — postDebateVerifier and tag-expert rewrite", () => {
       outcome: "passed" as const,
       findings: [],
       costUsd: 0,
-    })) as any;
+    }));
 
     const sm = makeSessionManager({
-      runInSession: mock(async () => ({
-        output: "ok",
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 0,
-      })) as any,
-      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+      nameFor: mock((req: NameForRequest) => `nax-${req.role ?? "unknown"}`),
     });
     stubDebatePlanOp(prdOutput);
     const config = makePlanDebateConfig(2);

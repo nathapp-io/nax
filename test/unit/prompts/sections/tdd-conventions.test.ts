@@ -81,10 +81,12 @@ describe("buildTddLanguageSection", () => {
 });
 
 describe("PromptBuilder — language-aware TDD convention integration", () => {
-  function makeConfig(language: string): NaxConfig {
+  type ProfileLanguage = NonNullable<NaxConfig["project"]>["language"];
+
+  function makeConfig(language: ProfileLanguage): NaxConfig {
     return {
       version: 1,
-      project: { language: language as any },
+      project: { language },
     } as NaxConfig;
   }
 

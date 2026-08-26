@@ -11,12 +11,12 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { PathLike } from "node:fs";
+import { makeMockCallContext, makeMockRuntime } from "@test/helpers";
 import type { PostDebateVerifierContext } from "@/debate";
 import { _planChecklistDeps, planChecklistVerifier, resolvePostDebateVerifier } from "@/debate";
 import type { FactsManifest } from "@/debate/facts-manifest";
 import type { SelectorResult } from "@/debate/selectors/types";
 import type { DebateStageConfig } from "@/debate/types";
-import type { CallContext } from "@/operations/types";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -42,30 +42,35 @@ const makeValidPRDJson = (stories: Record<string, unknown>[] = [makeValidStory()
 const makeManifestJson = (overrides: Partial<FactsManifest> = {}): string =>
   JSON.stringify({ repoFacts: [], specClaims: [], gaps: [], ...overrides });
 
-const makeVerifierContext = (overrides: Partial<PostDebateVerifierContext> = {}): PostDebateVerifierContext => ({
-  storyId: "US-001",
-  stage: "plan",
-  stageConfig: {
-    enabled: true,
-    sessionMode: "one-shot",
-    rounds: 1,
-    resolver: { type: "synthesis" },
-  } as DebateStageConfig,
-  selectorResult: {
-    outcome: "passed",
-    output: makeValidPRDJson(),
-  } as SelectorResult,
-  workdir: "/test/workdir",
-  ctx: {
-    runtime: { runId: "test-run-001" } as any,
-    packageView: {} as any,
-    packageDir: "/test/workdir",
-    agentName: "claude",
+const RUN_ID = "test-run-001";
+
+const makeVerifierContext = (overrides: Partial<PostDebateVerifierContext> = {}): PostDebateVerifierContext => {
+  const runtime = makeMockRuntime();
+  Object.defineProperty(runtime, "runId", { value: RUN_ID });
+  return {
     storyId: "US-001",
-    featureName: "test-feature",
-  } as CallContext,
-  ...overrides,
-});
+    stage: "plan",
+    stageConfig: {
+      enabled: true,
+      sessionMode: "one-shot",
+      rounds: 1,
+      resolver: { type: "synthesis" },
+    } as DebateStageConfig,
+    selectorResult: {
+      outcome: "passed",
+      output: makeValidPRDJson(),
+    } as SelectorResult,
+    workdir: "/test/workdir",
+    ctx: makeMockCallContext({
+      runtime,
+      packageDir: "/test/workdir",
+      agentName: "claude",
+      storyId: "US-001",
+      featureName: "test-feature",
+    }),
+    ...overrides,
+  };
+};
 
 const EXPECTED_ARTIFACT_PATH = "/test/workdir/.nax/runs/test-run-001/plan/US-001/spec-deltas.md";
 

@@ -6,6 +6,8 @@ import { wireHooks } from "@/pipeline/subscribers/hooks";
 
 const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
 
+const STORY_SUMMARY = { id: "US-001", title: "US-001", status: "pending", attempts: 1 };
+
 describe("wireHooks", () => {
   test("subscribes to all lifecycle events", () => {
     const bus = new PipelineEventBus();
@@ -55,7 +57,7 @@ describe("wireHooks", () => {
       bus.emit({
         type: "story:completed",
         storyId: "US-001",
-        story: { id: "US-001" } as any,
+        story: STORY_SUMMARY,
         passed: true,
         runElapsedMs: 100,
       }),
@@ -77,7 +79,7 @@ describe("wireHooks", () => {
       bus.emit({
         type: "story:completed",
         storyId: "US-001",
-        story: { id: "US-001" } as any,
+        story: STORY_SUMMARY,
         passed: true,
         runElapsedMs: 100,
       }),
@@ -92,7 +94,7 @@ describe("wireHooks", () => {
       bus.emit({
         type: "story:failed",
         storyId: "US-001",
-        story: { id: "US-001" } as any,
+        story: STORY_SUMMARY,
         reason: "test failure",
         countsTowardEscalation: true,
       }),

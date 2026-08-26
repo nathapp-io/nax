@@ -9,8 +9,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { pickSelector } from "@/config";
 import type { PhaseKind } from "@/execution";
 import { phasesToRevalidate } from "@/execution";
+import type { InternalPhase } from "@/execution/story-orchestrator";
 import { STRATEGY_TO_REVALIDATION_PHASES } from "@/execution/story-orchestrator";
 
 const ALL_PHASE_KINDS: PhaseKind[] = [
@@ -28,7 +30,24 @@ const ALL_PHASE_KINDS: PhaseKind[] = [
   "adversarial-review",
 ];
 
-const allPhases = ALL_PHASE_KINDS.map((kind) => ({ kind }) as any);
+const testSel = pickSelector("test-revalidation-sel", "execution");
+
+/** Real InternalPhase fixtures — phasesToRevalidate only reads `kind`, but the slot is typed. */
+const allPhases: InternalPhase[] = ALL_PHASE_KINDS.map(
+  (kind): InternalPhase => ({
+    kind,
+    slot: {
+      op: {
+        kind: "deterministic",
+        name: `${kind}-op`,
+        stage: "run",
+        config: testSel,
+        execute: async () => ({}),
+      },
+      input: {},
+    },
+  }),
+);
 
 describe("repo-scoped-test-fix revalidation mapping (#1654)", () => {
   test("is declared in the SSOT map, not left to the unknown-strategy fallback", () => {

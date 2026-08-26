@@ -6,15 +6,26 @@
  */
 
 import { describe, expect, it, mock } from "bun:test";
+import { makeAgentAdapter } from "@test/helpers";
 import type { PromptOptimizerResult } from "@/optimizer/types";
 import { PluginRegistry } from "@/plugins/registry";
-import type { NaxPlugin, PluginType } from "@/plugins/types";
+import type {
+  IContextProvider,
+  IPostRunAction,
+  IPromptOptimizer,
+  IReporter,
+  IReviewPlugin,
+  NaxPlugin,
+  PluginExtensions,
+  PluginType,
+} from "@/plugins/types";
+import type { RoutingStrategy } from "@/routing/router";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
-const createMockPlugin = (name: string, provides: PluginType[], extensions: any = {}): NaxPlugin => ({
+const createMockPlugin = (name: string, provides: PluginType[], extensions: PluginExtensions = {}): NaxPlugin => ({
   name,
   version: "1.0.0",
   provides,
@@ -28,7 +39,34 @@ const optimizerResult: PromptOptimizerResult = {
   savings: 0,
   appliedRules: [],
 };
-const makeOptimizerStub = (name: string) => ({ name, optimize: async () => optimizerResult });
+const makeOptimizerStub = (name: string): IPromptOptimizer => ({
+  name,
+  optimize: async () => optimizerResult,
+});
+
+const makeReviewerStub = (name: string): IReviewPlugin => ({
+  name,
+  description: name,
+  check: async () => ({ passed: true, output: "" }),
+});
+
+const makeContextProviderStub = (name: string): IContextProvider => ({
+  name,
+  getContext: async () => ({ content: "", estimatedTokens: 0, label: name }),
+});
+
+/** All IPostRunAction members beyond `name` are required; none are read by these tests. */
+const makePostRunActionStub = (name: string): IPostRunAction => ({
+  name,
+  description: name,
+  shouldRun: async () => true,
+  execute: async () => ({ success: true, message: "" }),
+});
+
+const makeRouterStub = (name: string): RoutingStrategy => ({
+  name,
+  route: () => null,
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PluginRegistry.getOptimizers
@@ -71,8 +109,8 @@ describe("PluginRegistry.getRouters", () => {
   it("returns empty array when no router plugins; returns all in load order when present", () => {
     expect(new PluginRegistry([createMockPlugin("agent-plugin", ["agent"])]).getRouters().length).toBe(0);
 
-    const router1 = { name: "router1" } as any;
-    const router2 = { name: "router2" } as any;
+    const router1 = makeRouterStub("router1");
+    const router2 = makeRouterStub("router2");
     const routers = new PluginRegistry([
       createMockPlugin("router-1", ["router"], { router: router1 }),
       createMockPlugin("router-2", ["router"], { router: router2 }),
@@ -93,8 +131,8 @@ describe("PluginRegistry.getAgent", () => {
       new PluginRegistry([createMockPlugin("optimizer-plugin", ["optimizer"])]).getAgent("claude"),
     ).toBeUndefined();
 
-    const claudeAgent = { name: "claude" } as any;
-    const cursorAgent = { name: "cursor" } as any;
+    const claudeAgent = makeAgentAdapter({ name: "claude" });
+    const cursorAgent = makeAgentAdapter({ name: "cursor" });
     const registry = new PluginRegistry([
       createMockPlugin("claude-plugin", ["agent"], { agent: claudeAgent }),
       createMockPlugin("cursor-plugin", ["agent"], { agent: cursorAgent }),
@@ -104,8 +142,9 @@ describe("PluginRegistry.getAgent", () => {
   });
 
   it("last loaded wins on name collision", () => {
-    const claudeAgent1 = { name: "claude", version: 1 } as any;
-    const claudeAgent2 = { name: "claude", version: 2 } as any;
+    // displayName only distinguishes the two fixtures; getAgent resolves by name.
+    const claudeAgent1 = makeAgentAdapter({ name: "claude", displayName: "Claude v1" });
+    const claudeAgent2 = makeAgentAdapter({ name: "claude", displayName: "Claude v2" });
 
     const registry = new PluginRegistry([
       createMockPlugin("claude-v1", ["agent"], { agent: claudeAgent1 }),
@@ -125,8 +164,8 @@ describe("PluginRegistry.getReviewers", () => {
   it("returns empty array when no reviewer plugins; returns all when present", () => {
     expect(new PluginRegistry([createMockPlugin("agent-plugin", ["agent"])]).getReviewers().length).toBe(0);
 
-    const reviewer1 = { name: "reviewer1" } as any;
-    const reviewer2 = { name: "reviewer2" } as any;
+    const reviewer1 = makeReviewerStub("reviewer1");
+    const reviewer2 = makeReviewerStub("reviewer2");
     const reviewers = new PluginRegistry([
       createMockPlugin("rev-1", ["reviewer"], { reviewer: reviewer1 }),
       createMockPlugin("rev-2", ["reviewer"], { reviewer: reviewer2 }),
@@ -145,8 +184,8 @@ describe("PluginRegistry.getContextProviders", () => {
   it("returns empty array when no context provider plugins; returns all when present", () => {
     expect(new PluginRegistry([createMockPlugin("agent-plugin", ["agent"])]).getContextProviders().length).toBe(0);
 
-    const provider1 = { name: "provider1" } as any;
-    const provider2 = { name: "provider2" } as any;
+    const provider1 = makeContextProviderStub("provider1");
+    const provider2 = makeContextProviderStub("provider2");
     const providers = new PluginRegistry([
       createMockPlugin("prov-1", ["context-provider"], { contextProvider: provider1 }),
       createMockPlugin("prov-2", ["context-provider"], { contextProvider: provider2 }),
@@ -165,8 +204,9 @@ describe("PluginRegistry.getReporters", () => {
   it("returns empty array when no reporter plugins; returns all when present", () => {
     expect(new PluginRegistry([createMockPlugin("agent-plugin", ["agent"])]).getReporters().length).toBe(0);
 
-    const reporter1 = { name: "reporter1" } as any;
-    const reporter2 = { name: "reporter2" } as any;
+    // Every IReporter method is optional — a bare named object satisfies it.
+    const reporter1: IReporter = { name: "reporter1" };
+    const reporter2: IReporter = { name: "reporter2" };
     const reporters = new PluginRegistry([
       createMockPlugin("rep-1", ["reporter"], { reporter: reporter1 }),
       createMockPlugin("rep-2", ["reporter"], { reporter: reporter2 }),
@@ -185,9 +225,9 @@ describe("PluginRegistry.getPostRunActions", () => {
   it("returns empty array when no plugins or undefined extension; returns all in registration order when present", () => {
     expect(new PluginRegistry([createMockPlugin("agent-plugin", ["agent"])]).getPostRunActions().length).toBe(0);
 
-    const action1 = { name: "action1" } as any;
-    const action2 = { name: "action2" } as any;
-    const action3 = { name: "action3" } as any;
+    const action1 = makePostRunActionStub("action1");
+    const action2 = makePostRunActionStub("action2");
+    const action3 = makePostRunActionStub("action3");
     const actions = new PluginRegistry([
       createMockPlugin("pra-1", ["post-run-action"], { postRunAction: action1 }),
       createMockPlugin("pra-2", ["post-run-action"], { postRunAction: action2 }),
@@ -208,8 +248,8 @@ describe("PluginRegistry.getPostRunActions", () => {
   });
 
   it("retains the owning plugin name for post-run hook attribution", () => {
-    const action = { name: "publish-report" } as any;
-    const builtin = { name: "publish-pr" } as any;
+    const action = makePostRunActionStub("publish-report");
+    const builtin = makePostRunActionStub("publish-pr");
     const registry = new PluginRegistry(
       [createMockPlugin("report-plugin", ["post-run-action"], { postRunAction: action })],
       [{ pluginName: "auto-pr", action: builtin }],
@@ -222,7 +262,7 @@ describe("PluginRegistry.getPostRunActions", () => {
   });
 
   it("keeps legacy action-only registrations compatible", () => {
-    const builtin = { name: "auto-pr" } as any;
+    const builtin = makePostRunActionStub("auto-pr");
     expect(new PluginRegistry([], [builtin]).getPostRunActionRegistrations()).toEqual([
       { pluginName: "auto-pr", action: builtin },
     ]);

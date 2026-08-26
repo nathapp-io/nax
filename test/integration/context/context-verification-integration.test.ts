@@ -7,7 +7,7 @@
 import { describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makeTempDir } from "@test/helpers";
 import { buildContext } from "@/context/builder";
 import type { ContextBudget, StoryContext } from "@/context/types";
 import type { PRD, UserStory } from "@/prd";
@@ -60,7 +60,7 @@ describe("Context and Verification Integration", () => {
         prd,
         currentStoryId: "US-001",
         workdir: tempDir,
-        config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
+        config: makeNaxConfig({ context: { fileInjection: "keyword", testCoverage: { enabled: false } } }),
       };
 
       const budget: ContextBudget = {
@@ -109,7 +109,7 @@ describe("Context and Verification Integration", () => {
         prd,
         currentStoryId: "US-001",
         workdir: tempDir,
-        config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
+        config: makeNaxConfig({ context: { fileInjection: "keyword", testCoverage: { enabled: false } } }),
       };
 
       const budget: ContextBudget = {
@@ -178,7 +178,7 @@ describe("Context and Verification Integration", () => {
         prd,
         currentStoryId: "US-001",
         workdir: tempDir,
-        config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
+        config: makeNaxConfig({ context: { fileInjection: "keyword", testCoverage: { enabled: false } } }),
       };
 
       const budget: ContextBudget = {
@@ -225,7 +225,7 @@ describe("Context and Verification Integration", () => {
         prd,
         currentStoryId: "US-001",
         workdir: tempDir,
-        config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
+        config: makeNaxConfig({ context: { fileInjection: "keyword", testCoverage: { enabled: false } } }),
       };
 
       const budget: ContextBudget = {
@@ -275,7 +275,7 @@ describe("Context and Verification Integration", () => {
         prd,
         currentStoryId: "US-001",
         workdir: tempDir,
-        config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
+        config: makeNaxConfig({ context: { fileInjection: "keyword", testCoverage: { enabled: false } } }),
       };
 
       const budget: ContextBudget = {

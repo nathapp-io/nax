@@ -23,7 +23,15 @@ import {
 } from "@/execution/lifecycle/acceptance-loop";
 import type { Finding, FixCycle, FixCycleContext, FixCycleResult } from "@/findings";
 import { acFailureToFinding, acSentinelToFinding } from "@/findings";
+import * as pipelineStages from "@/pipeline/stages";
+import type { PipelineContext, StageResult } from "@/pipeline/types";
 import type { PRD } from "@/prd";
+
+/** Stages-module namespace rebuilt with a stubbed acceptanceStage — swap without mock.module(). */
+function stubStagesModule(execute: (ctx: PipelineContext) => Promise<StageResult>) {
+  return async () =>
+    Object.assign({}, pipelineStages, { acceptanceStage: { ...pipelineStages.acceptanceStage, execute } });
+}
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -630,7 +638,7 @@ describe("runAcceptanceLoop per-package fan-out", () => {
     // failed packages, subsequent calls (final validation pass) pass.
     let callCount = 0;
     const origImportAcceptanceStage = _runAcceptanceTestsOnceDeps.importAcceptanceStage;
-    const stubbedExecute = (ctx: any) => {
+    const stubbedExecute = async (ctx: PipelineContext): Promise<StageResult> => {
       callCount++;
       if (callCount === 1) {
         ctx.acceptanceFailures = {
@@ -639,12 +647,11 @@ describe("runAcceptanceLoop per-package fan-out", () => {
           testOutput: "combined output",
           failedPackages: [apiPkg, webPkg],
         };
-        return Promise.resolve({ action: "fail" as const });
+        return { action: "fail", reason: "acceptance tests failed" };
       }
-      return Promise.resolve({ action: "continue" as const });
+      return { action: "continue" };
     };
-    _runAcceptanceTestsOnceDeps.importAcceptanceStage = async () =>
-      ({ acceptanceStage: { execute: stubbedExecute } }) as any;
+    _runAcceptanceTestsOnceDeps.importAcceptanceStage = stubStagesModule(stubbedExecute);
 
     // Stub loadAcceptanceTestContent via _deps to return empty entries (no real files).
     const origLoadContent = _acceptanceLoopDeps.loadAcceptanceTestContent;
@@ -652,10 +659,7 @@ describe("runAcceptanceLoop per-package fan-out", () => {
 
     // Stub diagnosis to skip real LLM call.
     const origCallOp = _diagnosisDeps.callOp;
-    (_diagnosisDeps as any).callOp = async () => ({
-      output: { verdict: "source_bug", reasoning: "stub", confidence: 0.9 },
-      costUsd: 0,
-    });
+    _diagnosisDeps.callOp = async () => ({ verdict: "source_bug", reasoning: "stub", confidence: 0.9 });
 
     try {
       const ctx = makeCtx();
@@ -670,7 +674,7 @@ describe("runAcceptanceLoop per-package fan-out", () => {
 
       expect(fixedPackages.sort()).toEqual(["/repo/apps/api", "/repo/apps/web"]);
     } finally {
-      (_diagnosisDeps as any).callOp = origCallOp;
+      _diagnosisDeps.callOp = origCallOp;
       _runAcceptanceTestsOnceDeps.importAcceptanceStage = origImportAcceptanceStage;
       _acceptanceLoopDeps.loadAcceptanceTestContent = origLoadContent;
     }
@@ -693,7 +697,7 @@ describe("runAcceptanceLoop retry-index threading (#1424)", () => {
     // the final full pass then succeed. All three belong to attempt 0.
     let callCount = 0;
     const origImportAcceptanceStage = _runAcceptanceTestsOnceDeps.importAcceptanceStage;
-    const stubbedExecute = (ctx: any) => {
+    const stubbedExecute = async (ctx: PipelineContext): Promise<StageResult> => {
       seen.push(ctx.acceptanceRetries);
       callCount++;
       if (callCount === 1) {
@@ -703,21 +707,17 @@ describe("runAcceptanceLoop retry-index threading (#1424)", () => {
           testOutput: "boom",
           failedPackages: [{ testPath: "/repo/t.test.ts", packageDir: "/repo", output: "boom", failedACs: ["AC-1"] }],
         };
-        return Promise.resolve({ action: "fail" as const });
+        return { action: "fail", reason: "acceptance tests failed" };
       }
-      return Promise.resolve({ action: "continue" as const });
+      return { action: "continue" };
     };
-    _runAcceptanceTestsOnceDeps.importAcceptanceStage = async () =>
-      ({ acceptanceStage: { execute: stubbedExecute } }) as any;
+    _runAcceptanceTestsOnceDeps.importAcceptanceStage = stubStagesModule(stubbedExecute);
 
     const origLoadContent = _acceptanceLoopDeps.loadAcceptanceTestContent;
     _acceptanceLoopDeps.loadAcceptanceTestContent = async () => [];
 
     const origCallOp = _diagnosisDeps.callOp;
-    (_diagnosisDeps as any).callOp = async () => ({
-      output: { verdict: "source_bug", reasoning: "stub", confidence: 0.9 },
-      costUsd: 0,
-    });
+    _diagnosisDeps.callOp = async () => ({ verdict: "source_bug", reasoning: "stub", confidence: 0.9 });
 
     try {
       const ctx = makeCtx();
@@ -734,7 +734,7 @@ describe("runAcceptanceLoop retry-index threading (#1424)", () => {
       // Re-validations inside one attempt do not inflate the count.
       expect(seen).toEqual(seen.map(() => 0));
     } finally {
-      (_diagnosisDeps as any).callOp = origCallOp;
+      _diagnosisDeps.callOp = origCallOp;
       _runAcceptanceTestsOnceDeps.importAcceptanceStage = origImportAcceptanceStage;
       _acceptanceLoopDeps.loadAcceptanceTestContent = origLoadContent;
     }
@@ -768,7 +768,7 @@ describe("US-003 rect: runAcceptanceTestsOnce propagates missing-target failures
     // but the result MUST be passed: false so the run fails closed.
     const origImportAcceptanceStage = _runAcceptanceTestsOnceDeps.importAcceptanceStage;
     let callCount = 0;
-    const stubbedExecute = (ctx: any) => {
+    const stubbedExecute = async (ctx: PipelineContext): Promise<StageResult> => {
       callCount++;
       if (callCount === 1) {
         ctx.acceptanceFailures = {
@@ -779,7 +779,7 @@ describe("US-003 rect: runAcceptanceTestsOnce propagates missing-target failures
             { testPath: "/tmp/test.ts", packageDir: "/tmp/workdir", output: "boom", failedACs: ["AC-1"] },
           ],
         };
-        return Promise.resolve({ action: "fail" as const });
+        return { action: "fail", reason: "acceptance tests failed" };
       }
       // Missing target: action=fail but failedACs=[] and the failures object records
       // it via the missingTargets field (US-003 wiring in acceptance.ts).
@@ -790,26 +790,21 @@ describe("US-003 rect: runAcceptanceTestsOnce propagates missing-target failures
         failedPackages: [],
         missingTargets: ["/tmp/workdir"],
       };
-      return Promise.resolve({ action: "fail" as const });
+      return { action: "fail", reason: "missing acceptance test target" };
     };
-    _runAcceptanceTestsOnceDeps.importAcceptanceStage = async () =>
-      ({ acceptanceStage: { execute: stubbedExecute } }) as any;
+    _runAcceptanceTestsOnceDeps.importAcceptanceStage = stubStagesModule(stubbedExecute);
 
-    _acceptanceFixCycleDeps.runFixCycle = async () =>
-      ({
-        iterations: [],
-        finalFindings: [],
-        exitReason: "resolved",
-      }) as any;
+    _acceptanceFixCycleDeps.runFixCycle = async () => ({
+      iterations: [],
+      finalFindings: [],
+      exitReason: "resolved",
+    });
 
     const origLoadContent = _acceptanceLoopDeps.loadAcceptanceTestContent;
     _acceptanceLoopDeps.loadAcceptanceTestContent = async () => [];
 
     const origCallOp = _diagnosisDeps.callOp;
-    (_diagnosisDeps as any).callOp = async () => ({
-      output: { verdict: "source_bug", reasoning: "stub", confidence: 0.9 },
-      costUsd: 0,
-    });
+    _diagnosisDeps.callOp = async () => ({ verdict: "source_bug", reasoning: "stub", confidence: 0.9 });
 
     try {
       const ctx = makeCtx();
@@ -824,7 +819,7 @@ describe("US-003 rect: runAcceptanceTestsOnce propagates missing-target failures
       // even though the acceptance target is missing.
       expect(result.success).toBe(false);
     } finally {
-      (_diagnosisDeps as any).callOp = origCallOp;
+      _diagnosisDeps.callOp = origCallOp;
       _acceptanceFixCycleDeps.runFixCycle = (() => {
         throw new Error("not set in beforeEach");
       }) as typeof _acceptanceFixCycleDeps.runFixCycle;

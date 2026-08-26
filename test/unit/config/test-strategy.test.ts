@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import type { ProjectProfile } from "@/config";
+import type { TestStrategy } from "@/config/test-strategy";
 import {
   AC_QUALITY_RULES,
   COMPLEXITY_GUIDE,
@@ -21,12 +23,12 @@ describe("resolveTestStrategy", () => {
     expect(resolveTestStrategy("three-session-tdd-lite")).toBe("three-session-tdd-lite");
   });
 
-  test.each([
+  test.each<[string, TestStrategy]>([
     ["tdd", "tdd-simple"],
     ["three-session", "three-session-tdd"],
     ["tdd-lite", "three-session-tdd-lite"],
-  ])("legacy '%s' maps to '%s'", (input: string, expected: string) => {
-    expect(resolveTestStrategy(input as any)).toBe(expected as any);
+  ])("legacy '%s' maps to '%s'", (input, expected) => {
+    expect(resolveTestStrategy(input)).toBe(expected);
   });
 
   test("unknown value falls back to 'test-after'", () => {
@@ -122,19 +124,19 @@ describe("TEST_STRATEGY_GUIDE", () => {
 
 describe("getAcQualityRules", () => {
   describe("language-specific patterns", () => {
-    test.each<[string, string]>([
+    test.each<[NonNullable<ProjectProfile["language"]>, string]>([
       ["go", "[function] returns (value, error) where error is [specific error type]"],
       ["python", "raises [ExceptionType] with message containing"],
       ["rust", "Result<[Ok type], [Err type]>"],
-    ])("returns language-specific pattern for '%s'", (language: string, expected: string) => {
-      const result = getAcQualityRules({ language: language as any });
+    ])("returns language-specific pattern for '%s'", (language, expected) => {
+      const result = getAcQualityRules({ language });
       expect(result).toContain(expected);
     });
 
-    test.each<[string]>([["typescript"], ["javascript"]])(
+    test.each<[NonNullable<ProjectProfile["language"]>]>([["typescript"], ["javascript"]])(
       "returns default rules when language is '%s'",
-      (language: string) => {
-        expect(getAcQualityRules({ language: language as any })).toBe(AC_QUALITY_RULES);
+      (language) => {
+        expect(getAcQualityRules({ language })).toBe(AC_QUALITY_RULES);
       },
     );
   });

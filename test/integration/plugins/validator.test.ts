@@ -6,8 +6,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { NaxPlugin } from "@/plugins/types";
+import type { PromptOptimizerInput } from "@/optimizer/types";
+import type { NaxPlugin, RunEndEvent, RunStartEvent, StoryCompleteEvent } from "@/plugins/types";
 import { validatePlugin } from "@/plugins/validator";
+import type { UserStory } from "@/prd/types";
+import type { RoutingContext } from "@/routing/router";
 
 describe("validatePlugin", () => {
   describe("valid plugins", () => {
@@ -19,7 +22,7 @@ describe("validatePlugin", () => {
         extensions: {
           optimizer: {
             name: "test",
-            async optimize(input: any) {
+            async optimize(input: PromptOptimizerInput) {
               return {
                 prompt: input.prompt,
                 originalTokens: 100,
@@ -45,7 +48,7 @@ describe("validatePlugin", () => {
         extensions: {
           optimizer: {
             name: "test",
-            async optimize(input: any) {
+            async optimize(input: PromptOptimizerInput) {
               return {
                 prompt: input.prompt,
                 originalTokens: 100,
@@ -57,7 +60,7 @@ describe("validatePlugin", () => {
           },
           router: {
             name: "test-router",
-            route(story: any, context: any) {
+            route(story: UserStory, context: RoutingContext) {
               return null;
             },
           },
@@ -105,7 +108,7 @@ describe("validatePlugin", () => {
         extensions: {
           contextProvider: {
             name: "jira",
-            async getContext(story: any) {
+            async getContext(story: UserStory) {
               return {
                 content: "# Jira ticket",
                 estimatedTokens: 100,
@@ -128,13 +131,13 @@ describe("validatePlugin", () => {
         extensions: {
           reporter: {
             name: "slack",
-            async onRunStart(event: any) {
+            async onRunStart(event: RunStartEvent) {
               // Send to Slack
             },
-            async onStoryComplete(event: any) {
+            async onStoryComplete(event: StoryCompleteEvent) {
               // Send to Slack
             },
-            async onRunEnd(event: any) {
+            async onRunEnd(event: RunEndEvent) {
               // Send to Slack
             },
           },
@@ -177,10 +180,10 @@ describe("validatePlugin", () => {
           provides: ["optimizer"],
           extensions: {
             optimizer: {
-              async optimize(input: any) {
+              async optimize(input: PromptOptimizerInput) {
                 return {
                   optimizedPrompt: input.prompt,
-                  estimatedTokens: input.estimatedTokens,
+                  estimatedTokens: input.stories.length,
                   tokensSaved: 0,
                   appliedStrategies: [],
                 };
@@ -207,7 +210,7 @@ describe("validatePlugin", () => {
           provides: ["router"],
           extensions: {
             router: {
-              route(_story: any, _context: any) {
+              route(_story: UserStory, _context: RoutingContext) {
                 return null;
               },
             },
@@ -253,7 +256,7 @@ describe("validatePlugin", () => {
     });
 
     test("rejects invalid context-provider (missing name or getContext) and invalid reporter (missing name)", () => {
-      const getContext = async (_s: any) => ({ content: "test", estimatedTokens: 100, label: "Test" });
+      const getContext = async (_s: UserStory) => ({ content: "test", estimatedTokens: 100, label: "Test" });
       expect(
         validatePlugin({
           name: "test",
@@ -294,7 +297,7 @@ describe("validatePlugin", () => {
       const ext = {
         optimizer: {
           name: "test",
-          async optimize(input: any) {
+          async optimize(input: PromptOptimizerInput) {
             return { prompt: input.prompt, originalTokens: 100, optimizedTokens: 100, savings: 0, appliedRules: [] };
           },
         },

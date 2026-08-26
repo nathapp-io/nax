@@ -1,16 +1,60 @@
 import { describe, expect, test } from "bun:test";
+import type { DeepPartial } from "@test/helpers";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import type { ConfigSelector, NaxConfig } from "@/config";
+import type { QualityConfig } from "@/config/selectors";
 import type { Finding } from "@/findings";
-import type { MechanicalFormatFixDeps } from "@/operations";
+import type {
+  CallContext,
+  MechanicalFormatFixDeps,
+  MechanicalFormatFixInput,
+  MechanicalFormatFixOutput,
+} from "@/operations";
 import { _mechanicalFormatFixDeps, makeMechanicalFormatFixStrategy } from "@/operations";
+import type { DeterministicOperation } from "@/operations/types";
 import type { QualityCommandOptions } from "@/quality";
 
-function ctxWithQuality(quality?: Record<string, unknown>) {
-  const config = { quality, execution: {} } as any;
+function ctxWithQuality(quality?: DeepPartial<NaxConfig["quality"]>): CallContext {
+  const config = makeNaxConfig({ quality });
   return {
-    runtime: {},
+    runtime: makeTestRuntime({ config }),
     storyId: "US-004",
-    packageView: { packageDir: "packages/agent", config, select: (s: any) => s.select(config) },
-  } as any;
+    packageDir: "packages/agent",
+    agentName: "claude",
+    packageView: {
+      packageDir: "packages/agent",
+      relativeFromRoot: "packages/agent",
+      repoRoot: "/repo",
+      hasOverride: false,
+      config,
+      select: <C>(selector: ConfigSelector<C>): C => selector.select(config),
+    },
+  };
+}
+
+/**
+ * `FixStrategy.fixOp` is declared as the broad `Operation<I, O, C>` union, so
+ * `.execute` needs narrowing. The guard discriminates on the union; the local
+ * re-states the deterministic shape (with its real deps type) instead of
+ * casting, so drift stays a compile error.
+ */
+function executeFixOp(
+  strategy: ReturnType<typeof makeMechanicalFormatFixStrategy>,
+  input: MechanicalFormatFixInput,
+  ctx: CallContext,
+  deps: MechanicalFormatFixDeps,
+): Promise<MechanicalFormatFixOutput> {
+  const { fixOp } = strategy;
+  if (!("execute" in fixOp)) {
+    throw new Error(`${strategy.name}.fixOp is not a deterministic op — no execute() to call`);
+  }
+  const op: DeterministicOperation<
+    MechanicalFormatFixInput,
+    MechanicalFormatFixOutput,
+    QualityConfig,
+    MechanicalFormatFixDeps
+  > = fixOp;
+  return op.execute(input, ctx, deps);
 }
 
 const passedResult = {
@@ -94,7 +138,7 @@ describe("makeMechanicalFormatFixStrategy — execute invokes runQualityCommand"
       },
     });
 
-    await (strategy.fixOp as any).execute({ workdir: "/tmp", storyId: "US-004" }, ctxWithFormatFix, deps);
+    await executeFixOp(strategy, { workdir: "/tmp", storyId: "US-004" }, ctxWithFormatFix, deps);
 
     expect(capturedCommandName).toBe("formatFix");
     expect(capturedCommand).toBe("bun run format:fix");
@@ -112,7 +156,8 @@ describe("makeMechanicalFormatFixStrategy — execute invokes runQualityCommand"
       },
     });
 
-    await (strategy.fixOp as any).execute(
+    await executeFixOp(
+      strategy,
       { workdir: "/tmp", storyId: "US-004", scopeFiles: ["src/a.ts"] },
       ctxWithScopedFormatFix,
       deps,
@@ -135,11 +180,7 @@ describe("makeMechanicalFormatFixStrategy — AC6: no-command early return", () 
       },
     });
 
-    const output = await (strategy.fixOp as any).execute(
-      { workdir: "/tmp", storyId: "US-004" },
-      ctxWithNoFormatFix,
-      deps,
-    );
+    const output = await executeFixOp(strategy, { workdir: "/tmp", storyId: "US-004" }, ctxWithNoFormatFix, deps);
 
     expect(output.applied).toBe(true);
     expect(output.exitCode).toBe(0);
@@ -158,11 +199,7 @@ describe("makeMechanicalFormatFixStrategy — AC6: no-command early return", () 
       },
     });
 
-    const output = await (strategy.fixOp as any).execute(
-      { workdir: "/tmp", storyId: "US-004" },
-      ctxWithNoCommands,
-      deps,
-    );
+    const output = await executeFixOp(strategy, { workdir: "/tmp", storyId: "US-004" }, ctxWithNoCommands, deps);
 
     expect(output.applied).toBe(true);
     expect(output.exitCode).toBe(0);

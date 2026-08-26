@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { makeMockAgentManager, makeMockRuntime, makeTempDir } from "@test/helpers";
+import type { AgentRunOptions } from "@/agents";
 import { _planDeps as _deps, planCommand } from "@/cli";
 import { DEFAULT_CONFIG } from "@/config";
 import type { PRD } from "@/prd/types";
@@ -17,7 +18,7 @@ import type { PRD } from "@/prd/types";
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeMockPlanManager(runFn?: (runOptions: any) => Promise<any>) {
+function makeMockPlanManager(runFn?: (runOptions: AgentRunOptions) => Promise<void>) {
   return makeMockRuntime({
     agentManager: makeMockAgentManager({
       runWithFallbackFn: runFn
@@ -191,7 +192,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   test("AC-1: default nax plan (no --auto) calls adapter.runAs() for interactive planning", async () => {
     const capturedPlans: unknown[] = [];
     _deps.createRuntime = mock(() =>
-      makeMockPlanManager(async (opts: any) => {
+      makeMockPlanManager(async (opts: AgentRunOptions) => {
         capturedPlans.push(opts);
       }),
     );
@@ -211,7 +212,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   test("AC-2: agent questions are forwarded via interaction bridge", async () => {
     const questionsAsked: string[] = [];
     _deps.createRuntime = mock(() =>
-      makeMockPlanManager(async (opts: any) => {
+      makeMockPlanManager(async (opts: AgentRunOptions) => {
         const bridge = opts.interactionBridge;
         if (bridge) {
           const question = "Should URLs expire?";
@@ -242,7 +243,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   test("AC-3: human answers sent as follow-up prompts to session", async () => {
     const prompts: string[] = [];
     _deps.createRuntime = mock(() =>
-      makeMockPlanManager(async (opts: any) => {
+      makeMockPlanManager(async (opts: AgentRunOptions) => {
         const bridge = opts.interactionBridge;
         if (bridge) {
           const question = "Should URLs expire?";
@@ -336,7 +337,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   test("AC-6: passes timeout option to adapter.runAs()", async () => {
     let capturedTimeoutSeconds: number | undefined;
     _deps.createRuntime = mock(() =>
-      makeMockPlanManager(async (opts: any) => {
+      makeMockPlanManager(async (opts: AgentRunOptions) => {
         capturedTimeoutSeconds = opts.timeoutSeconds;
       }),
     );
@@ -352,7 +353,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   test("AC-6: defaults to 10 min timeout if not specified", async () => {
     let capturedTimeoutSeconds: number | undefined;
     _deps.createRuntime = mock(() =>
-      makeMockPlanManager(async (opts: any) => {
+      makeMockPlanManager(async (opts: AgentRunOptions) => {
         capturedTimeoutSeconds = opts.timeoutSeconds;
       }),
     );
@@ -372,7 +373,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   test("AC-7: interaction bridge is provided to adapter for CLI stdin support", async () => {
     let bridgeProvided = false;
     _deps.createRuntime = mock(() =>
-      makeMockPlanManager(async (opts: any) => {
+      makeMockPlanManager(async (opts: AgentRunOptions) => {
         bridgeProvided = !!opts.interactionBridge;
       }),
     );
@@ -388,7 +389,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   test("AC-7: interaction bridge has detectQuestion and onQuestionDetected methods", async () => {
     let bridgeHasRequiredMethods = false;
     _deps.createRuntime = mock(() =>
-      makeMockPlanManager(async (opts: any) => {
+      makeMockPlanManager(async (opts: AgentRunOptions) => {
         const bridge = opts.interactionBridge;
         bridgeHasRequiredMethods =
           typeof bridge?.detectQuestion === "function" && typeof bridge?.onQuestionDetected === "function";
@@ -406,7 +407,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   test("AC-8: interactive planning passes sessionRole 'plan' to adapter.runAs()", async () => {
     let capturedSessionRole: string | undefined;
     _deps.createRuntime = mock(() =>
-      makeMockPlanManager(async (opts: any) => {
+      makeMockPlanManager(async (opts: AgentRunOptions) => {
         capturedSessionRole = opts.sessionRole;
       }),
     );

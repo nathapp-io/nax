@@ -14,9 +14,12 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import type { TypecheckCheckDeps } from "@/operations";
+import type { DeepPartial } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir, makeTestRuntime } from "@test/helpers";
+import type { ConfigSelector, QualityConfig } from "@/config";
+import type { CallContext, TypecheckCheckDeps, TypecheckCheckOutput } from "@/operations";
 import { typecheckCheckOp } from "@/operations";
+import type { ToolDiagnosticsScratchEntry } from "@/session/scratch-writer";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -32,19 +35,25 @@ afterEach(() => {
   cleanupTempDir(tmpDir);
 });
 
-function ctxWithQuality(quality?: Record<string, unknown>, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
-  const config = { quality, execution: {} } as any;
+function ctxWithQuality(
+  quality?: DeepPartial<QualityConfig>,
+  opts: { hasOverride?: boolean; repoRoot?: string } = {},
+): CallContext {
+  const config = makeNaxConfig({ quality });
   return {
-    runtime: {},
+    runtime: makeTestRuntime({ config }),
     storyId: "US-003",
+    packageDir: "packages/agent",
+    agentName: "claude",
     packageView: {
       packageDir: "packages/agent",
+      relativeFromRoot: "packages/agent",
       repoRoot: opts.repoRoot ?? "/repo",
       hasOverride: opts.hasOverride ?? false,
       config,
-      select: (sel: any) => sel.select(config),
+      select: <C>(selector: ConfigSelector<C>): C => selector.select(config),
     },
-  } as any;
+  };
 }
 
 const failedTypecheckResult = {
@@ -82,9 +91,9 @@ function makeDeps(overrides: Partial<TypecheckCheckDeps> = {}): TypecheckCheckDe
 describe("typecheckCheckOp — AC11: tool-diagnostics capture on non-zero typecheck exit", () => {
   test("AC11: non-zero typecheck exit triggers appendScratchEntry with kind=tool-diagnostics to sessionScratchDir", async () => {
     const scratchDir = join(tmpDir, "sess-ac11");
-    const appendSpy = mock(async (_dir: string, _entry: unknown) => undefined);
+    const appendSpy = mock(async (_dir: string, _entry: ToolDiagnosticsScratchEntry) => undefined);
 
-    const out = await (typecheckCheckOp as any).execute(
+    const out = await typecheckCheckOp.execute(
       { workdir: "/tmp", storyId: "US-003" },
       ctxWithQuality({ commands: { typecheck: "bun run typecheck" } }),
       makeDeps({
@@ -94,7 +103,7 @@ describe("typecheckCheckOp — AC11: tool-diagnostics capture on non-zero typech
     );
 
     expect(appendSpy).toHaveBeenCalledTimes(1);
-    const [calledDir, calledEntry] = appendSpy.mock.calls[0] as [string, any];
+    const [calledDir, calledEntry] = appendSpy.mock.calls[0];
     expect(calledDir).toBe(scratchDir);
     expect(calledEntry.kind).toBe("tool-diagnostics");
     expect(calledEntry.storyId).toBe("US-003");
@@ -105,9 +114,9 @@ describe("typecheckCheckOp — AC11: tool-diagnostics capture on non-zero typech
 
   test("AC11: zero typecheck exit does NOT trigger tool-diagnostics capture", async () => {
     const scratchDir = join(tmpDir, "sess-ac11-pass");
-    const appendSpy = mock(async (_dir: string, _entry: unknown) => undefined);
+    const appendSpy = mock(async (_dir: string, _entry: ToolDiagnosticsScratchEntry) => undefined);
 
-    const out = await (typecheckCheckOp as any).execute(
+    const out = await typecheckCheckOp.execute(
       { workdir: "/tmp", storyId: "US-003" },
       ctxWithQuality({ commands: { typecheck: "bun run typecheck" } }),
       {
@@ -134,10 +143,10 @@ describe("typecheckCheckOp — AC12: capture is best-effort", () => {
       throw new Error("disk full");
     });
 
-    let out: any;
+    let out: TypecheckCheckOutput | undefined;
     let threw = false;
     try {
-      out = await (typecheckCheckOp as any).execute(
+      out = await typecheckCheckOp.execute(
         { workdir: "/tmp", storyId: "US-003" },
         ctxWithQuality({ commands: { typecheck: "bun run typecheck" } }),
         {
@@ -153,8 +162,8 @@ describe("typecheckCheckOp — AC12: capture is best-effort", () => {
 
     expect(threw).toBe(false);
     expect(out).toBeDefined();
-    expect(out.success).toBe(false);
-    expect(out.findings.length).toBeGreaterThan(0);
+    expect(out?.success).toBe(false);
+    expect(out?.findings.length).toBeGreaterThan(0);
     expect(appendSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -163,7 +172,7 @@ describe("typecheckCheckOp — AC12: capture is best-effort", () => {
       throw new Error("should not be called");
     });
 
-    const out = await (typecheckCheckOp as any).execute(
+    const out = await typecheckCheckOp.execute(
       { workdir: "/tmp", storyId: "US-003" },
       ctxWithQuality({ commands: { typecheck: "bun run typecheck" } }),
       {

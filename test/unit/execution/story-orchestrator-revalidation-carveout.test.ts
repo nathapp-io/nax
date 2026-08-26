@@ -11,13 +11,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeTestRuntime } from "@test/helpers";
 import { _storyOrchestratorDeps, type RectificationOverrides, runRectification } from "@/execution";
-import type {
-  FixCycle,
-  FixCycleContext,
-  FixCycleExitReason,
-  FixStrategy,
-  ValidateResult,
-} from "@/findings/cycle-types";
+import type { FixCycle, FixCycleContext, FixCycleExitReason, ValidateResult } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
 import type { CallContext } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -82,9 +76,10 @@ afterEach(async () => {
 describe("verifier-SSOT carve-out — nbf revalidation must not inherit a stale verifier pass (#1401)", () => {
   /** Gate + verifier + the cheap checks: the minimum to reproduce the stale read. */
   // Strategies passed here have heterogeneous concrete op I/O types (e.g. mockImplementerOp's
-  // { story: string } -> { success: boolean }); `unknown` rejects them on variance, so this
-  // mirrors FixStrategy's own C=any default.
-  function makeRectifyState(strategies: FixStrategy<Finding, any, any>[] = []): Parameters<typeof runRectification>[1] {
+  // { story: string } -> { success: boolean }), so they are typed as exactly what the
+  // rectification strategy slot declares, derived from runRectification's own state type.
+  type RectifyStrategy = NonNullable<Parameters<typeof runRectification>[1]["rectification"]>["strategies"][number];
+  function makeRectifyState(strategies: RectifyStrategy[] = []): Parameters<typeof runRectification>[1] {
     return {
       fullSuiteGate: { kind: "full-suite-gate", slot: { op: mockFullSuiteGateOp, input: { story: "US-1401" } } },
       verifier: { kind: "verifier", slot: { op: mockVerifierOp, input: { story: "US-1401" } } },

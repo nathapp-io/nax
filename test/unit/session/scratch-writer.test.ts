@@ -112,19 +112,17 @@ describe("appendScratchEntry", () => {
   });
 
   describe("throws on append failure (dep injection)", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const deps = _scratchWriterDeps as any;
-    let origAppend: unknown;
+    let origAppend: typeof _scratchWriterDeps.appendFile;
 
     beforeEach(() => {
-      origAppend = deps.appendFile;
-      deps.appendFile = async () => {
+      origAppend = _scratchWriterDeps.appendFile;
+      _scratchWriterDeps.appendFile = async () => {
         throw new Error("disk full");
       };
     });
 
     afterEach(() => {
-      deps.appendFile = origAppend;
+      _scratchWriterDeps.appendFile = origAppend;
     });
 
     test("propagates append error", async () => {
@@ -144,22 +142,18 @@ describe("appendScratchEntry", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("appendScratchEntry — #508-M8 append-atomic dep injection", () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const deps = _scratchWriterDeps as any;
-
   test("_scratchWriterDeps exposes appendFile for injection", () => {
-    expect(typeof deps.appendFile).toBe("function");
+    expect(typeof _scratchWriterDeps.appendFile).toBe("function");
   });
 
   test("appendScratchEntry calls appendFile dep (not read+writeFile) for append", async () => {
     let appendPayload: string | undefined;
     let writeCalled = false;
 
-    const origAppend = deps.appendFile;
+    const origAppend = _scratchWriterDeps.appendFile;
     const origWrite = _scratchWriterDeps.writeFile;
-    deps.appendFile = async (_path: string, content: string) => {
+    _scratchWriterDeps.appendFile = async (_path: string, content: string) => {
       appendPayload = content;
-      return 0;
     };
     _scratchWriterDeps.writeFile = async () => {
       writeCalled = true;
@@ -173,14 +167,14 @@ describe("appendScratchEntry — #508-M8 append-atomic dep injection", () => {
       expect(appendPayload).toContain('"kind":"verify-result"');
       expect(writeCalled).toBe(false);
     } finally {
-      deps.appendFile = origAppend;
+      _scratchWriterDeps.appendFile = origAppend;
       _scratchWriterDeps.writeFile = origWrite;
     }
   });
 
   test("appendFile error propagates out of appendScratchEntry", async () => {
-    const origAppend = deps.appendFile;
-    deps.appendFile = async () => {
+    const origAppend = _scratchWriterDeps.appendFile;
+    _scratchWriterDeps.appendFile = async () => {
       throw new Error("disk full (append)");
     };
 
@@ -193,7 +187,7 @@ describe("appendScratchEntry — #508-M8 append-atomic dep injection", () => {
       }
       expect(threw).toBe(true);
     } finally {
-      deps.appendFile = origAppend;
+      _scratchWriterDeps.appendFile = origAppend;
     }
   });
 });

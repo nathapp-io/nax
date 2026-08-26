@@ -5,13 +5,15 @@ import {
   makeMutationCheckDeps as fakeDeps,
   makeMutationCheckCtx,
   makeResolvedTestPatterns,
+  makeStory,
   makeTempDir,
 } from "@test/helpers";
+import type { MutationCheckInput } from "@/operations";
 import { _mutationCheckDeps, mutationCheckOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 import { applyMutant, journalPathFor, recordInFlight } from "@/verification";
 
-const FAKE_STORY = { id: "US-004", title: "mutation-check op" } as any;
+const FAKE_STORY = makeStory({ id: "US-004", title: "mutation-check op" });
 
 const ctxWithConfig = (execution: Record<string, unknown> = {}, runtime: Partial<NaxRuntime> = {}) =>
   makeMutationCheckCtx(execution, { runtime });
@@ -69,14 +71,14 @@ describe("mutationCheckOp — AC9: regression throw still reverts and reports su
   });
 });
 
-const PATTERNS = {
+const PATTERNS = makeResolvedTestPatterns({
   globs: ["**/*.test.ts"],
   regex: [/\.test\.ts$/],
   pathspec: [":!*.test.ts"],
   testDirs: ["test"],
-};
+});
 
-function runInput(dir: string) {
+function runInput(dir: string): MutationCheckInput {
   return {
     story: FAKE_STORY,
     workdir: dir,
@@ -84,7 +86,7 @@ function runInput(dir: string) {
     storyGitRef: "abc",
     repoRoot: dir,
     resolvedTestPatterns: PATTERNS,
-  } as any;
+  };
 }
 
 const ENABLED = { mutationCheck: { enabled: true, maxMutants: 3, timeoutSeconds: 60 } };
@@ -228,7 +230,7 @@ describe("mutationCheckOp — leftover mutations from an interrupted run", () =>
           storyGitRef: "abc",
           repoRoot: projectRoot,
           resolvedTestPatterns: PATTERNS,
-        } as any,
+        },
         ctxWithConfig(ENABLED),
         deps,
       );
@@ -280,7 +282,7 @@ describe("mutationCheckOp — leftover mutations from an interrupted run", () =>
           repoRoot: projectRoot,
           packagePrefix: "packages/api",
           resolvedTestPatterns: PATTERNS,
-        } as any,
+        },
         ctxWithConfig(ENABLED),
         deps,
       );
@@ -325,7 +327,7 @@ describe("mutationCheckOp — leftover mutations from an interrupted run", () =>
           storyGitRef: "abc",
           repoRoot: projectRoot,
           resolvedTestPatterns: PATTERNS,
-        } as any,
+        },
         ctxWithConfig(ENABLED),
         fakeDeps({
           getGitRoot: async (dir: string) => dir,

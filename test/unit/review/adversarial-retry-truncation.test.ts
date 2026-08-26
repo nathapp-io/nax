@@ -7,10 +7,12 @@
  */
 
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeTestRuntime } from "@test/helpers";
-import { ParseValidationError } from "@/agents/retry/types";
+import { makeTestRuntime, opSelector } from "@test/helpers";
+import { ParseValidationError, type RetryStrategy } from "@/agents/retry/types";
+import type { ReviewConfig } from "@/config/selectors";
 import * as loggerModule from "@/logger";
-import { adversarialReviewOp } from "@/operations/adversarial-review";
+import { type AdversarialReviewInput, adversarialReviewOp } from "@/operations/adversarial-review";
+import type { BuildContext } from "@/operations/types";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
 import type { NaxRuntime } from "@/runtime";
 
@@ -37,6 +39,13 @@ const DEFAULT_ADVERSARIAL_CONFIG: AdversarialReviewConfig = {
   excludePatterns: [],
   parallel: false,
   maxConcurrentSessions: 1,
+};
+
+const RETRY_INPUT: AdversarialReviewInput = {
+  workdir: "/tmp/test",
+  story: STORY,
+  adversarialConfig: DEFAULT_ADVERSARIAL_CONFIG,
+  mode: "embedded",
 };
 
 // A response whose JSON structure was opened and never closed — what
@@ -70,7 +79,16 @@ function makeBuildCtx() {
   const runtime = makeTestRuntime();
   createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
-  return { packageView: view, config: view.select(adversarialReviewOp.config as any) };
+  return { packageView: view, config: view.select(opSelector(adversarialReviewOp.config)) };
+}
+
+/** Resolve the op's retry field through its declared resolver form into a strategy. */
+function resolveRetryStrategy(input: AdversarialReviewInput, buildCtx: BuildContext<ReviewConfig>): RetryStrategy {
+  const retry = adversarialReviewOp.retry;
+  if (typeof retry !== "function") throw new Error("adversarialReviewOp.retry must be a resolver");
+  const resolved = retry(input, buildCtx);
+  if (resolved !== undefined && "shouldRetry" in resolved) return resolved;
+  throw new Error("adversarialReviewOp.retry must resolve to a strategy");
 }
 
 function makeRetryCtx(lastOutput: string, storyId = STORY.id) {
@@ -88,23 +106,18 @@ function makeRetryCtx(lastOutput: string, storyId = STORY.id) {
 describe("adversarialReviewOp.retry — truncation-detected condensed retry", () => {
   test("uses condensed retry prompt when the JSON structure is unfinished", () => {
     const ctx = makeBuildCtx();
-    const strategy = (adversarialReviewOp.retry as any)(
-      { story: STORY, adversarialConfig: DEFAULT_ADVERSARIAL_CONFIG, mode: "embedded" },
-      ctx,
-    );
+    const strategy = resolveRetryStrategy(RETRY_INPUT, ctx);
 
     const result = strategy.shouldRetry(new ParseValidationError("parse failed"), 0, makeRetryCtx(UNFINISHED_JSON));
 
     expect(result.retry).toBe(true);
+    if (!result.retry) throw new Error("expected a retry decision");
     expect(result.nextPrompt).toContain("truncated");
   });
 
   test("uses standard retry prompt when response is short unparseable text (structurally complete)", () => {
     const ctx = makeBuildCtx();
-    const strategy = (adversarialReviewOp.retry as any)(
-      { story: STORY, adversarialConfig: DEFAULT_ADVERSARIAL_CONFIG, mode: "embedded" },
-      ctx,
-    );
+    const strategy = resolveRetryStrategy(RETRY_INPUT, ctx);
 
     const result = strategy.shouldRetry(
       new ParseValidationError("parse failed"),
@@ -113,15 +126,13 @@ describe("adversarialReviewOp.retry — truncation-detected condensed retry", ()
     );
 
     expect(result.retry).toBe(true);
+    if (!result.retry) throw new Error("expected a retry decision");
     expect(result.nextPrompt).not.toContain("truncated");
   });
 
   test("fires retry when JSON is unfinished, even before attempting parse", () => {
     const ctx = makeBuildCtx();
-    const strategy = (adversarialReviewOp.retry as any)(
-      { story: STORY, adversarialConfig: DEFAULT_ADVERSARIAL_CONFIG, mode: "embedded" },
-      ctx,
-    );
+    const strategy = resolveRetryStrategy(RETRY_INPUT, ctx);
 
     const result = strategy.shouldRetry(new ParseValidationError("parse failed"), 0, makeRetryCtx(UNFINISHED_JSON));
 
@@ -135,10 +146,7 @@ describe("adversarialReviewOp.retry — truncation logging", () => {
     const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
     const ctx = makeBuildCtx();
-    const strategy = (adversarialReviewOp.retry as any)(
-      { story: STORY, adversarialConfig: DEFAULT_ADVERSARIAL_CONFIG, mode: "embedded" },
-      ctx,
-    );
+    const strategy = resolveRetryStrategy(RETRY_INPUT, ctx);
 
     strategy.shouldRetry(new ParseValidationError("parse failed"), 0, makeRetryCtx(UNFINISHED_JSON));
 
@@ -154,10 +162,7 @@ describe("adversarialReviewOp.retry — truncation logging", () => {
     const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
     const ctx = makeBuildCtx();
-    const strategy = (adversarialReviewOp.retry as any)(
-      { story: STORY, adversarialConfig: DEFAULT_ADVERSARIAL_CONFIG, mode: "embedded" },
-      ctx,
-    );
+    const strategy = resolveRetryStrategy(RETRY_INPUT, ctx);
 
     strategy.shouldRetry(
       new ParseValidationError("shape invalid"),
@@ -189,10 +194,7 @@ describe("adversarialReviewOp.retry — Bug 4 regression: parser-first, length i
     expect(validNearCap.length).toBeGreaterThanOrEqual(4900);
 
     const ctx = makeBuildCtx();
-    const strategy = (adversarialReviewOp.retry as any)(
-      { story: STORY, adversarialConfig: DEFAULT_ADVERSARIAL_CONFIG, mode: "embedded" },
-      ctx,
-    );
+    const strategy = resolveRetryStrategy(RETRY_INPUT, ctx);
 
     const result = strategy.shouldRetry(new ParseValidationError("shape invalid"), 0, makeRetryCtx(validNearCap));
 
@@ -202,14 +204,12 @@ describe("adversarialReviewOp.retry — Bug 4 regression: parser-first, length i
 
   test("unparseable unfinished response still triggers condensed retry", () => {
     const ctx = makeBuildCtx();
-    const strategy = (adversarialReviewOp.retry as any)(
-      { story: STORY, adversarialConfig: DEFAULT_ADVERSARIAL_CONFIG, mode: "embedded" },
-      ctx,
-    );
+    const strategy = resolveRetryStrategy(RETRY_INPUT, ctx);
 
     const result = strategy.shouldRetry(new ParseValidationError("parse failed"), 0, makeRetryCtx(UNFINISHED_JSON));
 
     expect(result.retry).toBe(true);
+    if (!result.retry) throw new Error("expected a retry decision");
     expect(result.nextPrompt).toContain("truncated");
   });
 
@@ -217,14 +217,12 @@ describe("adversarialReviewOp.retry — Bug 4 regression: parser-first, length i
     const wrongShape = JSON.stringify({ passed: true }); // missing findings array
 
     const ctx = makeBuildCtx();
-    const strategy = (adversarialReviewOp.retry as any)(
-      { story: STORY, adversarialConfig: DEFAULT_ADVERSARIAL_CONFIG, mode: "embedded" },
-      ctx,
-    );
+    const strategy = resolveRetryStrategy(RETRY_INPUT, ctx);
 
     const result = strategy.shouldRetry(new ParseValidationError("shape invalid"), 0, makeRetryCtx(wrongShape));
 
     expect(result.retry).toBe(true);
+    if (!result.retry) throw new Error("expected a retry decision");
     expect(result.nextPrompt).not.toContain("truncated");
   });
 });

@@ -11,8 +11,10 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeStory, makeTempDir } from "@test/helpers";
+import { type ConfigSelector, DEFAULT_CONFIG, tddConfigSelector } from "@/config";
 import { verifierOp } from "@/operations";
+import type { PackageView } from "@/runtime";
 
 const VALID_VERDICT = {
   version: 1,
@@ -27,11 +29,27 @@ const VALID_VERDICT = {
 
 const VALID_VERDICT_JSON = JSON.stringify(VALID_VERDICT);
 
-function makeCtx(packageDir: string) {
-  return { packageView: { packageDir } } as any;
+function makePackageView(packageDir: string): PackageView {
+  return {
+    packageDir,
+    relativeFromRoot: "",
+    repoRoot: "",
+    hasOverride: false,
+    config: DEFAULT_CONFIG,
+    select: <C>(selector: ConfigSelector<C>) => selector.select(DEFAULT_CONFIG),
+  };
 }
 
-const STORY = { id: "US-001", title: "t", workdir: "" } as any;
+function makeCtx(packageDir: string) {
+  return {
+    packageView: makePackageView(packageDir),
+    config: tddConfigSelector.select(DEFAULT_CONFIG),
+    readFile: async () => null,
+    fileExists: async () => false,
+  };
+}
+
+const STORY = makeStory({ id: "US-001", title: "t" });
 const INPUT = { story: STORY };
 
 // ─────────────────────────────────────────────────────────────────────────────

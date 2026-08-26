@@ -5,8 +5,6 @@ import type { FixCycleContext } from "@/findings/cycle-types";
 import { makeAutofixImplementerStrategy, makeDeclarationSink } from "@/operations";
 import type { AutofixImplementerOutput } from "@/operations/autofix-implementer";
 
-const mockCtx = {} as any;
-
 function makeSink() {
   return makeDeclarationSink();
 }
@@ -24,53 +22,53 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
 
 describe("makeAutofixImplementerStrategy", () => {
   test("name is autofix-implementer", () => {
-    const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink());
+    const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink());
     expect(strategy.name).toBe("autofix-implementer");
   });
 
   test("fixOp name is autofix-implementer", () => {
-    const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink());
+    const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink());
     expect(strategy.fixOp.name).toBe("autofix-implementer");
   });
 
   test("maxAttempts is a positive number", () => {
-    const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink());
+    const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink());
     expect(strategy.maxAttempts).toBeGreaterThan(0);
   });
 
   describe("AC3: appliesTo predicate — source includes list", () => {
     test("AC3: returns true when fixTarget=source and source=lint", () => {
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink());
       const finding = makeFinding({ fixTarget: "source", source: "lint" });
       expect(strategy.appliesTo(finding)).toBe(true);
     });
 
     test("AC3: returns true when fixTarget=source and source=typecheck", () => {
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink());
       const finding = makeFinding({ fixTarget: "source", source: "typecheck" });
       expect(strategy.appliesTo(finding)).toBe(true);
     });
 
     test("AC3: returns true when fixTarget=source and source=semantic-review", () => {
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink());
       const finding = makeFinding({ fixTarget: "source", source: "semantic-review" });
       expect(strategy.appliesTo(finding)).toBe(true);
     });
 
     test("AC3: returns false when fixTarget=test", () => {
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink());
       const finding = makeFinding({ fixTarget: "test", source: "lint" });
       expect(strategy.appliesTo(finding)).toBe(false);
     });
 
     test("AC3: returns false when source=test-runner", () => {
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink());
       const finding = makeFinding({ fixTarget: "source", source: "test-runner" });
       expect(strategy.appliesTo(finding)).toBe(false);
     });
 
     test("AC3: returns false when source is not in allowed list (adversarial-review with fixTarget=source)", () => {
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink());
       const finding = makeFinding({ fixTarget: "source", source: "adversarial-review" });
       expect(strategy.appliesTo(finding)).toBe(false);
     });
@@ -78,7 +76,7 @@ describe("makeAutofixImplementerStrategy", () => {
 
   describe("single-session: includeAdversarialReview opt-in", () => {
     test("claims adversarial-review findings (fixTarget undefined) when includeAdversarialReview=true", () => {
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink(), {
         includeAdversarialReview: true,
       });
       const finding = makeFinding({ fixTarget: undefined, source: "adversarial-review" });
@@ -86,7 +84,7 @@ describe("makeAutofixImplementerStrategy", () => {
     });
 
     test("claims adversarial-review test-gap findings (fixTarget=test) when includeAdversarialReview=true", () => {
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink(), {
         includeAdversarialReview: true,
       });
       const finding = makeFinding({ fixTarget: "test", source: "adversarial-review" });
@@ -94,13 +92,13 @@ describe("makeAutofixImplementerStrategy", () => {
     });
 
     test("does NOT claim adversarial-review findings by default (three-session)", () => {
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink());
       const finding = makeFinding({ fixTarget: undefined, source: "adversarial-review" });
       expect(strategy.appliesTo(finding)).toBe(false);
     });
 
     test("still claims semantic-review source findings when includeAdversarialReview=true", () => {
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink(), {
         includeAdversarialReview: true,
       });
       const finding = makeFinding({ fixTarget: "source", source: "semantic-review" });
@@ -108,7 +106,7 @@ describe("makeAutofixImplementerStrategy", () => {
     });
 
     test("does not claim unrelated test-runner findings even when includeAdversarialReview=true", () => {
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink(), {
         includeAdversarialReview: true,
       });
       const finding = makeFinding({ fixTarget: "test", source: "test-runner" });
@@ -151,7 +149,7 @@ describe("makeAutofixImplementerStrategy", () => {
 
   describe("triage: adversarialReviewByFixTarget opt-in", () => {
     test("claims adversarial-review with fixTarget=source when adversarialReviewByFixTarget='source'", () => {
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink(), {
         adversarialReviewByFixTarget: "source",
       });
       const finding = makeFinding({ fixTarget: "source", source: "adversarial-review" });
@@ -159,7 +157,7 @@ describe("makeAutofixImplementerStrategy", () => {
     });
 
     test("does NOT claim adversarial-review with fixTarget=test when adversarialReviewByFixTarget='source'", () => {
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink(), {
         adversarialReviewByFixTarget: "source",
       });
       const finding = makeFinding({ fixTarget: "test", source: "adversarial-review" });
@@ -167,7 +165,7 @@ describe("makeAutofixImplementerStrategy", () => {
     });
 
     test("does NOT claim adversarial-review with fixTarget=undefined when adversarialReviewByFixTarget='source'", () => {
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink(), {
         adversarialReviewByFixTarget: "source",
       });
       const finding = makeFinding({ fixTarget: undefined, source: "adversarial-review" });
@@ -175,19 +173,19 @@ describe("makeAutofixImplementerStrategy", () => {
     });
 
     test("default opts do NOT claim any adversarial findings (adversarialReviewByFixTarget unset)", () => {
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink());
       const finding = makeFinding({ fixTarget: "source", source: "adversarial-review" });
       expect(strategy.appliesTo(finding)).toBe(false);
     });
 
     test("AC6: three-session default (no opts) does NOT claim adversarial source findings", () => {
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink());
       const finding = makeFinding({ fixTarget: "source", source: "adversarial-review" });
       expect(strategy.appliesTo(finding)).toBe(false);
     });
 
     test("still claims IMPLEMENTER_SOURCES source findings when adversarialReviewByFixTarget='source'", () => {
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink(), {
         adversarialReviewByFixTarget: "source",
       });
       const finding = makeFinding({ fixTarget: "source", source: "lint" });
@@ -197,7 +195,7 @@ describe("makeAutofixImplementerStrategy", () => {
     test("does NOT claim adversarial findings with fixTarget=test even alongside includeAdversarialReview=true", () => {
       // AC3 routing: even with the blanket opt-in, the test-targeted adversarial
       // finding must NOT be claimed by the implementer (it's the test-writer's lane).
-      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+      const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink(), {
         includeAdversarialReview: true,
         adversarialReviewByFixTarget: "source",
       });

@@ -103,7 +103,7 @@ describe("Config schema — AgentConfig", () => {
   });
 
   test("NaxConfig agent field is optional (backward compatibility)", () => {
-    const config: NaxConfig = makeNaxConfig({ agent: undefined as any });
+    const config: NaxConfig = makeNaxConfig({ agent: undefined });
     expect(config.agent).toBeUndefined();
   });
 

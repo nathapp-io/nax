@@ -1,5 +1,5 @@
 import { getSafeLogger } from "@/logger";
-import { attr, buildResourceAttributes, type KeyValue } from "./otlp";
+import { attr, buildResourceAttributes, type KeyValue, type OtlpMetricsPayload } from "./otlp";
 
 const STAGE = "otel-reporter-heartbeat";
 
@@ -110,7 +110,7 @@ export interface HeartbeatMetricsInput {
 }
 
 /** Build the OTLP/HTTP-JSON gauge payload for one heartbeat tick. */
-export function buildHeartbeatMetricsPayload(p: HeartbeatMetricsInput): object {
+export function buildHeartbeatMetricsPayload(p: HeartbeatMetricsInput): OtlpMetricsPayload {
   const attributes = heartbeatAttributes(p.snapshot.attributes);
   const gauge = (name: string, value: number) => ({
     name,

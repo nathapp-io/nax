@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import type { FailureCategory } from "@/tdd/types";
 import {
   categorizeVerdict,
   cleanupVerdict,
@@ -44,6 +45,37 @@ function makeVerdict(overrides: Partial<VerifierVerdict> = {}): VerifierVerdict 
     ...overrides,
   };
 }
+
+/**
+ * Loosened verdict shape used by coercion cases: every field is optional so a
+ * case can delete or blank it before persistence, simulating a malformed
+ * document for the reader to coerce.
+ */
+interface CoercionFixture {
+  version?: number;
+  approved?: boolean;
+  tests?: {
+    allPassing?: boolean;
+    passCount?: number;
+    failCount?: number;
+  };
+  testModifications?: VerifierVerdict["testModifications"];
+  acceptanceCriteria?: VerifierVerdict["acceptanceCriteria"];
+  quality?: {
+    rating?: string;
+    issues?: string[];
+  };
+  fixes?: string[];
+  reasoning?: string;
+}
+
+/** One coercion case: [label, mutate fixture, read coerced field, expected]. */
+type CoercionCase = readonly [
+  label: string,
+  mutate: (d: CoercionFixture) => void,
+  getField: (r: VerifierVerdict) => unknown,
+  expected: unknown,
+];
 
 async function writeVerdictFile(workdir: string, content: unknown): Promise<void> {
   const filePath = path.join(workdir, VERDICT_FILE);
@@ -101,10 +133,10 @@ describe("readVerdict", () => {
     expect(result).toBeNull();
   });
 
-  test.each([
+  test.each<CoercionCase>([
     [
       "version missing",
-      (d: any) => {
+      (d) => {
         delete d.version;
       },
       (r: VerifierVerdict) => r.version,
@@ -112,7 +144,7 @@ describe("readVerdict", () => {
     ],
     [
       "approved missing",
-      (d: any) => {
+      (d: CoercionFixture) => {
         d.approved = undefined;
       },
       (r: VerifierVerdict) => r.approved,
@@ -120,7 +152,7 @@ describe("readVerdict", () => {
     ],
     [
       "tests missing",
-      (d: any) => {
+      (d: CoercionFixture) => {
         d.tests = undefined;
       },
       (r: VerifierVerdict) => r.tests.passCount,
@@ -128,15 +160,15 @@ describe("readVerdict", () => {
     ],
     [
       "tests.allPassing missing",
-      (d: any) => {
-        d.tests.allPassing = undefined;
+      (d: CoercionFixture) => {
+        if (d.tests) d.tests.allPassing = undefined;
       },
       (r: VerifierVerdict) => r.tests.passCount,
       10,
     ],
     [
       "testModifications missing",
-      (d: any) => {
+      (d: CoercionFixture) => {
         d.testModifications = undefined;
       },
       (r: VerifierVerdict) => r.testModifications.detected,
@@ -144,7 +176,7 @@ describe("readVerdict", () => {
     ],
     [
       "acceptanceCriteria missing",
-      (d: any) => {
+      (d: CoercionFixture) => {
         d.acceptanceCriteria = undefined;
       },
       (r: VerifierVerdict) => r.acceptanceCriteria.criteria,
@@ -152,7 +184,7 @@ describe("readVerdict", () => {
     ],
     [
       "quality missing",
-      (d: any) => {
+      (d: CoercionFixture) => {
         d.quality = undefined;
       },
       (r: VerifierVerdict) => r.quality.rating,
@@ -160,15 +192,15 @@ describe("readVerdict", () => {
     ],
     [
       "quality.rating invalid",
-      (d: any) => {
-        d.quality.rating = "excellent";
+      (d: CoercionFixture) => {
+        if (d.quality) d.quality.rating = "excellent";
       },
       (r: VerifierVerdict) => r.quality.rating,
       "acceptable",
     ],
     [
       "fixes missing",
-      (d: any) => {
+      (d: CoercionFixture) => {
         d.fixes = undefined;
       },
       (r: VerifierVerdict) => r.fixes,
@@ -176,20 +208,19 @@ describe("readVerdict", () => {
     ],
     [
       "reasoning missing",
-      (d: any) => {
+      (d: CoercionFixture) => {
         d.reasoning = undefined;
       },
       (r: VerifierVerdict) => r.version,
       1,
     ],
   ])("coerces when %s", async (_label, mutate, getField, expected) => {
-    const data = makeVerdict() as any;
+    const data: CoercionFixture = makeVerdict();
     mutate(data);
     await writeVerdictFile(tmpDir, data);
     const result = await readVerdict(tmpDir);
     expect(result).not.toBeNull();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(getField(result!) as any).toEqual(expected);
+    expect(getField(result!)).toEqual(expected);
   });
 
   test("parses verdict with approved=false correctly", async () => {
@@ -637,13 +668,13 @@ describe("categorizeVerdict", () => {
 
   // --- null verdict fallback ---
 
-  test.each<[boolean, boolean, string | undefined]>([
+  test.each<[boolean, boolean, FailureCategory | undefined]>([
     [true, true, undefined],
     [false, false, "tests-failing"],
   ])("null verdict + testsPass=%s → success=%s", (testsPass, expectedSuccess, expectedCategory) => {
     const result = categorizeVerdict(null, testsPass);
     expect(result.success).toBe(expectedSuccess);
-    if (expectedCategory) expect(result.failureCategory).toBe(expectedCategory as any);
+    if (expectedCategory) expect(result.failureCategory).toBe(expectedCategory);
     else expect(result.failureCategory).toBeUndefined();
   });
 

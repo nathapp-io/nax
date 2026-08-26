@@ -292,7 +292,7 @@ const mockFullSuiteGateOp: RunOperation<{ story: string }, { success: boolean; f
   kind: "run",
   name: "full-suite-gate",
   stage: "verify",
-  config: testSel as any,
+  config: testSel,
   session: { role: "verifier", lifetime: "fresh" },
   build: () => ({
     role: { id: "r", content: "gate", overridable: false },

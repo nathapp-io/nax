@@ -1,16 +1,25 @@
 import { describe, expect, test } from "bun:test";
+import { makeTestContext } from "@test/helpers";
+import type { IsolationCheck } from "@/execution/types";
+import type { PipelineContext } from "@/pipeline/types";
+
+/** PipelineContext plus the isolation bag applyPostRunInspection writes onto ctx. */
+type IsolationCtx = PipelineContext & { tddIsolations?: Record<string, IsolationCheck> };
 
 describe("applyPostRunInspection — isolation aggregation", () => {
   test("collects isolation from TDD phase outputs into ctx.tddIsolations", async () => {
     const { applyPostRunInspection } = await import("@/execution");
 
     // Minimal ctx — only what applyPostRunInspection reads
-    const ctx: any = {
-      story: { id: "US-001" },
+    const ctx: IsolationCtx = makeTestContext({
       workdir: "/tmp/x",
-      routing: { testStrategy: "three-session-tdd", modelTier: "balanced" },
-      config: {},
-    };
+      routing: {
+        complexity: "simple",
+        modelTier: "balanced",
+        testStrategy: "three-session-tdd",
+        reasoning: "",
+      },
+    });
 
     const planResult = {
       success: true,
@@ -32,7 +41,7 @@ describe("applyPostRunInspection — isolation aggregation", () => {
       totalCostUsd: 0,
     };
 
-    await applyPostRunInspection(ctx, planResult as any, {
+    await applyPostRunInspection(ctx, planResult, {
       capturedTokenUsage: undefined,
       capturedResponse: "",
       capturedCostUsd: 0,
@@ -42,21 +51,24 @@ describe("applyPostRunInspection — isolation aggregation", () => {
     });
 
     expect(ctx.tddIsolations).toBeDefined();
-    expect(ctx.tddIsolations["test-writer"].passed).toBe(true);
-    expect(ctx.tddIsolations.implementer.passed).toBe(true);
+    expect(ctx.tddIsolations?.["test-writer"]?.passed).toBe(true);
+    expect(ctx.tddIsolations?.implementer?.passed).toBe(true);
     // verifier has no isolation — should not appear
-    expect(ctx.tddIsolations.verifier).toBeUndefined();
+    expect(ctx.tddIsolations?.verifier).toBeUndefined();
   });
 
   test("does not set tddIsolations when no phase has isolation", async () => {
     const { applyPostRunInspection } = await import("@/execution");
 
-    const ctx: any = {
-      story: { id: "US-001" },
+    const ctx: IsolationCtx = makeTestContext({
       workdir: "/tmp/x",
-      routing: { testStrategy: "direct", modelTier: "fast" },
-      config: {},
-    };
+      routing: {
+        complexity: "simple",
+        modelTier: "fast",
+        testStrategy: "test-after",
+        reasoning: "",
+      },
+    });
 
     const planResult = {
       success: true,
@@ -68,7 +80,7 @@ describe("applyPostRunInspection — isolation aggregation", () => {
       totalCostUsd: 0,
     };
 
-    await applyPostRunInspection(ctx, planResult as any, {
+    await applyPostRunInspection(ctx, planResult, {
       capturedTokenUsage: undefined,
       capturedResponse: "",
       capturedCostUsd: 0,

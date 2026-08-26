@@ -15,11 +15,30 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mockFetch, withWarnSpy } from "@test/helpers";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { initLogger, resetLogger } from "@/logger";
-import { buildLogsPayload, createOtelReporterPlugin, type PostJsonDeps } from "@/plugins";
+import { buildLogsPayload, createOtelReporterPlugin, type LogRecord, type PostJsonDeps } from "@/plugins";
+
+/** Attribute pair as emitted by the OTLP encoders, derived from the real exported LogRecord. */
+type LogAttribute = LogRecord["attributes"][number];
+
+/**
+ * Payload subset this suite probes. The src builders return bare objects
+ * (`buildLogsPayload(): object`), so reads go through this structural view
+ * plus a user-defined guard instead of blind property access.
+ */
+interface ProbedPayload {
+  resourceLogs?: Array<{
+    resource: { attributes: LogAttribute[] };
+    scopeLogs?: Array<{ logRecords?: LogRecord[] }>;
+  }>;
+}
+
+function hasResourceLogs(payload: object): payload is ProbedPayload {
+  return "resourceLogs" in payload;
+}
 
 interface CapturedPost {
   url: string;
-  body: any;
+  body: ProbedPayload;
 }
 
 function capturingDeps() {
@@ -35,10 +54,12 @@ function capturingDeps() {
 
 const logsPosts = (posts: CapturedPost[]) => posts.filter((p) => p.url.endsWith("/v1/logs"));
 const tracesPosts = (posts: CapturedPost[]) => posts.filter((p) => p.url.endsWith("/v1/traces"));
-const allLogRecords = (posts: CapturedPost[]): any[] =>
-  logsPosts(posts).flatMap((p) => p.body?.resourceLogs?.[0]?.scopeLogs?.[0]?.logRecords ?? []);
-const findLogRecord = (posts: CapturedPost[], predicate: (rec: any) => boolean): any | undefined =>
+const allLogRecords = (posts: CapturedPost[]): LogRecord[] =>
+  logsPosts(posts).flatMap((p) => p.body.resourceLogs?.[0]?.scopeLogs?.[0]?.logRecords ?? []);
+const findLogRecord = (posts: CapturedPost[], predicate: (rec: LogRecord) => boolean): LogRecord | undefined =>
   allLogRecords(posts).find(predicate);
+const resourceAttributesOf = (payload: object): LogAttribute[] =>
+  hasResourceLogs(payload) ? (payload.resourceLogs?.[0]?.resource.attributes ?? []) : [];
 
 const baseCfg: OtelReporterConfig = {
   enabled: true,
@@ -94,32 +115,36 @@ async function endRun(r: ReturnType<typeof createOtelReporterPlugin>["extensions
   });
 }
 
-function makeLogsOn(logs: any) {
-  return { ...baseCfg, logs } as any;
+function makeLogsOn(logs: OtelReporterConfig["logs"]) {
+  return { ...baseCfg, logs };
 }
 
-function makeHeadersLogsOn(headers: Record<string, string>, logs: any) {
-  return { ...baseCfg, headers, logs } as any;
+function makeHeadersLogsOn(headers: Record<string, string>, logs: OtelReporterConfig["logs"]) {
+  return { ...baseCfg, headers, logs };
 }
 
 // ─── AC1: buildLogsPayload resource attributes include nax.feature ───────────
 // logs.ts already exists from US-004; this is the missing coverage gap.
 describe("AC1: buildLogsPayload resource attributes include nax.feature", () => {
   test("success: emits a nax.feature resource attribute equal to the supplied feature", () => {
-    const payload: any = buildLogsPayload(
-      [{ timestamp: "2025-01-01T00:00:00.000Z", level: "info", stage: "verify", message: "test" }],
-      { serviceName: "nax", runId: "r1", feature: "my-feature" },
+    const attrs = resourceAttributesOf(
+      buildLogsPayload([{ timestamp: "2025-01-01T00:00:00.000Z", level: "info", stage: "verify", message: "test" }], {
+        serviceName: "nax",
+        runId: "r1",
+        feature: "my-feature",
+      }),
     );
-    const attrs = payload.resourceLogs[0].resource.attributes;
     expect(attrs).toContainEqual({ key: "nax.feature", value: { stringValue: "my-feature" } });
   });
 
   test("boundary: emits a nax.run_id resource attribute alongside nax.feature", () => {
-    const payload: any = buildLogsPayload(
-      [{ timestamp: "2025-01-01T00:00:00.000Z", level: "info", stage: "verify", message: "test" }],
-      { serviceName: "nax", runId: "run-abc", feature: "feat-x" },
+    const attrs = resourceAttributesOf(
+      buildLogsPayload([{ timestamp: "2025-01-01T00:00:00.000Z", level: "info", stage: "verify", message: "test" }], {
+        serviceName: "nax",
+        runId: "run-abc",
+        feature: "feat-x",
+      }),
     );
-    const attrs = payload.resourceLogs[0].resource.attributes;
     expect(attrs).toContainEqual({ key: "nax.feature", value: { stringValue: "feat-x" } });
     expect(attrs).toContainEqual({ key: "nax.run_id", value: { stringValue: "run-abc" } });
   });
@@ -275,7 +300,7 @@ describe("AC9: a logged message is exported to /v1/logs when the queue flushes",
     await endRun(r, "ac9b");
     const found = findLogRecord(posts, (rec) => rec.body?.stringValue === "no test command");
     expect(found).toBeDefined();
-    const stage = found?.attributes?.find((a: any) => a.key === "nax.stage");
+    const stage = found?.attributes?.find((a) => a.key === "nax.stage");
     expect(stage?.value?.stringValue).toBe("verify");
   });
 });

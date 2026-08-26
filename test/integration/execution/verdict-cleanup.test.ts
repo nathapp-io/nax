@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeTempDir, makeTestContext, makeTestStory } from "@test/helpers";
 import { applyPostRunInspection } from "@/execution/post-run";
 
 describe("applyPostRunInspection — TDD verdict cleanup", () => {
@@ -9,15 +9,11 @@ describe("applyPostRunInspection — TDD verdict cleanup", () => {
     const verdictPath = join(dir, ".nax-verifier-verdict.json");
     await Bun.write(verdictPath, "{}");
 
-    const ctx = {
+    const ctx = makeTestContext({
       workdir: dir,
-      packageDir: dir,
-      story: { id: "S1", title: "t" },
-      config: {},
-      selfVerification: undefined,
-      sessionScratchDir: undefined,
-      routing: { agent: "claude" },
-    } as any;
+      projectDir: dir,
+      story: makeTestStory({ id: "S1", title: "t" }),
+    });
     const planResult = {
       success: false,
       phaseOutputs: {},

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeStory } from "@test/helpers";
 import { Text } from "ink";
 import { render } from "ink-testing-library";
 import { act } from "react";
@@ -8,7 +9,7 @@ import type { StoryDisplayState } from "@/tui/types";
 
 function makeInitialStory(id: string): StoryDisplayState {
   return {
-    story: { id, title: `Story ${id}`, passes: false, workdir: ".", acceptanceCriteria: [] } as any,
+    story: makeStory({ id, title: `Story ${id}`, passes: false, workdir: "." }),
     status: "pending",
   };
 }

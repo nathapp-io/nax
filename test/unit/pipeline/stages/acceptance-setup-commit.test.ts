@@ -38,7 +38,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     config: {
       ...DEFAULT_CONFIG,
       acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: true, refinement: false, redGate: false, model: "fast" },
-    } as any,
+    },
     prd: {
       project: "p",
       feature: "my-feature",
@@ -54,7 +54,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     workdir: "/tmp/test-workdir",
     projectDir: "/tmp/test-workdir",
     featureDir: "/tmp/test-workdir/.nax/features/my-feature",
-    hooks: {} as any,
+    hooks: { hooks: {} },
     ...makeDispatchContext(),
     ...overrides,
   };
@@ -78,7 +78,7 @@ function setupGenerationDeps(commitCalls: Array<{ workdir: string; stage: string
   _acceptanceSetupDeps.writeFile = async () => {};
   _acceptanceSetupDeps.writeMeta = async () => {};
   _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "RED" });
-  _acceptanceSetupDeps.getAgent = mock(() => null as any);
+  _acceptanceSetupDeps.getAgent = mock(() => undefined);
   _acceptanceSetupDeps.autoCommitIfDirty = async (workdir, stage, role, storyId) => {
     commitCalls.push({ workdir, stage, role, storyId });
   };
@@ -98,7 +98,7 @@ function setupFingerprintMatchDeps(
     generator: "nax",
   });
   _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "RED" });
-  _acceptanceSetupDeps.getAgent = mock(() => null as any);
+  _acceptanceSetupDeps.getAgent = mock(() => undefined);
   _acceptanceSetupDeps.autoCommitIfDirty = async (workdir, stage, role, storyId) => {
     commitCalls.push({ workdir, stage, role, storyId });
   };

@@ -190,12 +190,18 @@ describeWithClaude("runPrecheck integration", () => {
     await Bun.spawn(["git", "commit", "-m", "Add node_modules"], { cwd: testDir, stdout: "ignore", stderr: "ignore" })
       .exited;
 
-    const storyWithMissingFields = {
-      id: "US-001",
-      title: "Test",
-      description: "Description",
-      passes: false,
-    } as any;
+    // The absent keys are what prd-valid auto-defaults in-memory (tags=[],
+    // status="pending", acceptanceCriteria=[]) — build a complete story, then
+    // reach those keys through a weakly typed alias so each deletion stays checked.
+    const storyWithMissingFields = createMockStory({ id: "US-001", title: "Test", description: "Description" });
+    const omitting: {
+      tags?: UserStory["tags"];
+      status?: UserStory["status"];
+      acceptanceCriteria?: UserStory["acceptanceCriteria"];
+    } = storyWithMissingFields;
+    delete omitting.tags;
+    delete omitting.status;
+    delete omitting.acceptanceCriteria;
 
     const config = createMockConfig(testDir);
     const prd = createMockPRD([storyWithMissingFields]);

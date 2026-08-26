@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { makeStory } from "@test/helpers";
-import { resolveConfiguredModel } from "@/config";
+import { makeMockCallContext, makeSpawn, makeStory } from "@test/helpers";
+import { DEFAULT_CONFIG, resolveConfiguredModel, tddConfigSelector } from "@/config";
 import { implementerOp, testWriterOp } from "@/operations";
 import type { UserStory } from "@/prd";
+
+/** Real package view for parse/verify/build contexts — read-only surface the ops actually use. */
+const testPackageView = makeMockCallContext().packageView;
 
 /**
  * Tests for implementerOp — the full RunOperation shape for the implementer role.
@@ -61,12 +64,12 @@ describe("implementerOp.parse — error handling", () => {
     const { DEFAULT_CONFIG, pickSelector } = await import("@/config");
 
     const ctx = {
-      packageView: {} as any,
+      packageView: testPackageView,
       config: DEFAULT_CONFIG,
     };
 
     const input = {
-      story: { id: "US-001" } as any,
+      story: makeStory({ id: "US-001" }),
     };
 
     const result = implementerOp.parse("", input, ctx);
@@ -80,12 +83,12 @@ describe("implementerOp.parse — error handling", () => {
     const { DEFAULT_CONFIG } = await import("@/config");
 
     const ctx = {
-      packageView: {} as any,
+      packageView: testPackageView,
       config: DEFAULT_CONFIG,
     };
 
     const input = {
-      story: { id: "US-001" } as any,
+      story: makeStory({ id: "US-001" }),
     };
 
     const result = implementerOp.parse('Agent "mock" failed: Agent failed', input, ctx);
@@ -99,12 +102,12 @@ describe("implementerOp.parse — error handling", () => {
     const { DEFAULT_CONFIG } = await import("@/config");
 
     const ctx = {
-      packageView: {} as any,
+      packageView: testPackageView,
       config: DEFAULT_CONFIG,
     };
 
     const input = {
-      story: { id: "US-001" } as any,
+      story: makeStory({ id: "US-001" }),
     };
 
     const result = implementerOp.parse("I implemented the story and committed all changes.", input, ctx);
@@ -119,12 +122,12 @@ describe("implementerOp.parse — error handling", () => {
     const { DEFAULT_CONFIG } = await import("@/config");
 
     const ctx = {
-      packageView: {} as any,
+      packageView: testPackageView,
       config: DEFAULT_CONFIG,
     };
 
     const input = {
-      story: { id: "US-001" } as any,
+      story: makeStory({ id: "US-001" }),
     };
 
     const result = implementerOp.parse('{ "broken": ', input, ctx);
@@ -139,12 +142,12 @@ describe("implementerOp.parse — error handling", () => {
     const { DEFAULT_CONFIG } = await import("@/config");
 
     const ctx = {
-      packageView: {} as any,
+      packageView: testPackageView,
       config: DEFAULT_CONFIG,
     };
 
     const input = {
-      story: { id: "US-001" } as any,
+      story: makeStory({ id: "US-001" }),
     };
 
     const result = implementerOp.parse("", input, ctx);
@@ -180,7 +183,7 @@ describe("implementerOp input/output types", () => {
     // Verifying the input type carries story field
     const { implementerOp } = await import("@/operations");
     const mockInput = {
-      story: { id: "US-001" } as any,
+      story: makeStory({ id: "US-001" }),
     };
     // If this compiles, the type is correct
     expect(mockInput.story).toBeDefined();
@@ -191,12 +194,12 @@ describe("implementerOp input/output types", () => {
     const { DEFAULT_CONFIG } = await import("@/config");
 
     const ctx = {
-      packageView: {} as any,
+      packageView: testPackageView,
       config: DEFAULT_CONFIG,
     };
 
     const input = {
-      story: { id: "US-001" } as any,
+      story: makeStory({ id: "US-001" }),
     };
 
     const output = implementerOp.parse("", input, ctx);
@@ -216,11 +219,7 @@ describe("implementerOp.verify — isolation", () => {
     const { _isolationDeps } = await import("@/tdd");
 
     const origSpawn = _isolationDeps.spawn;
-    _isolationDeps.spawn = ((_cmd: string[]) => ({
-      stdout: new Response("src/foo.ts\ntest/foo.test.ts\n").body,
-      stderr: new Response("").body,
-      exited: Promise.resolve(0),
-    })) as any;
+    _isolationDeps.spawn = makeSpawn(() => "src/foo.ts\ntest/foo.test.ts\n").spawn;
 
     try {
       const parsed = {
@@ -230,15 +229,15 @@ describe("implementerOp.verify — isolation", () => {
         durationMs: 0,
         output: "ok",
       };
-      const input = { story: { id: "US-001" } as any, beforeRef: "HEAD~1" };
+      const input = { story: makeStory({ id: "US-001" }), beforeRef: "HEAD~1" };
       const ctx = {
-        packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
-        config: DEFAULT_CONFIG.tdd,
+        packageView: testPackageView,
+        config: DEFAULT_CONFIG,
         readFile: async () => null,
         fileExists: async () => false,
       };
 
-      const result = await implementerOp.verify!(parsed, input, ctx as any);
+      const result = await implementerOp.verify!(parsed, input, ctx);
       expect(result).not.toBeNull();
       expect(result!.isolation).toBeDefined();
       expect(result!.isolation!.passed).toBe(true);
@@ -254,11 +253,7 @@ describe("implementerOp.verify — isolation", () => {
     const { _isolationDeps } = await import("@/tdd");
 
     const origSpawn = _isolationDeps.spawn;
-    _isolationDeps.spawn = ((_cmd: string[]) => ({
-      stdout: new Response("src/foo.ts\n").body,
-      stderr: new Response("").body,
-      exited: Promise.resolve(0),
-    })) as any;
+    _isolationDeps.spawn = makeSpawn(() => "src/foo.ts\n").spawn;
 
     try {
       const parsed = {
@@ -268,15 +263,15 @@ describe("implementerOp.verify — isolation", () => {
         durationMs: 0,
         output: "ok",
       };
-      const input = { story: { id: "US-001" } as any, beforeRef: "HEAD~1" };
+      const input = { story: makeStory({ id: "US-001" }), beforeRef: "HEAD~1" };
       const ctx = {
-        packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
-        config: DEFAULT_CONFIG.tdd,
+        packageView: testPackageView,
+        config: DEFAULT_CONFIG,
         readFile: async () => null,
         fileExists: async () => false,
       };
 
-      const result = await implementerOp.verify!(parsed, input, ctx as any);
+      const result = await implementerOp.verify!(parsed, input, ctx);
       expect(result!.isolation!.passed).toBe(true);
       expect(result!.isolation!.warnings ?? []).toEqual([]);
     } finally {
@@ -295,15 +290,15 @@ describe("implementerOp.verify — isolation", () => {
       durationMs: 0,
       output: "ok",
     };
-    const input = { story: { id: "US-001" } as any };
+    const input = { story: makeStory({ id: "US-001" }) };
     const ctx = {
-      packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
-      config: DEFAULT_CONFIG.tdd,
+      packageView: testPackageView,
+      config: DEFAULT_CONFIG,
       readFile: async () => null,
       fileExists: async () => false,
     };
 
-    const result = await implementerOp.verify!(parsed, input, ctx as any);
+    const result = await implementerOp.verify!(parsed, input, ctx);
     expect(result).toEqual(parsed);
   });
 });
@@ -314,26 +309,34 @@ function storyWithTier(tier: string | undefined): UserStory {
   });
 }
 
-const buildCtx = { config: {} as any, packageView: {} as any };
+const buildCtx = { config: tddConfigSelector.select(DEFAULT_CONFIG), packageView: testPackageView };
 
-function tddBuildCtx(sessionTiers?: Record<string, unknown>) {
-  return { config: { tdd: { sessionTiers } }, packageView: {} as any };
+function tddBuildCtx(sessionTiers: Partial<typeof DEFAULT_CONFIG.tdd.sessionTiers> = {}) {
+  return {
+    config: {
+      ...tddConfigSelector.select(DEFAULT_CONFIG),
+      tdd: { ...DEFAULT_CONFIG.tdd, sessionTiers: { ...DEFAULT_CONFIG.tdd.sessionTiers, ...sessionTiers } },
+    },
+    packageView: testPackageView,
+  };
 }
 
 describe("implementerOp.model — routing-driven", () => {
   test("returns the story's initial modelTier", () => {
-    const resolver = implementerOp.model as (i: unknown, c: unknown) => unknown;
-    expect(resolver({ story: storyWithTier("fast") }, buildCtx)).toBe("fast");
+    const model = implementerOp.model;
+    expect(typeof model === "function" ? model({ story: storyWithTier("fast") }, buildCtx) : model).toBe("fast");
   });
 
   test("follows the escalated tier (escalation mutates story.routing.modelTier)", () => {
-    const resolver = implementerOp.model as (i: unknown, c: unknown) => unknown;
-    expect(resolver({ story: storyWithTier("powerful") }, buildCtx)).toBe("powerful");
+    const model = implementerOp.model;
+    expect(typeof model === "function" ? model({ story: storyWithTier("powerful") }, buildCtx) : model).toBe(
+      "powerful",
+    );
   });
 
   test("returns undefined when routing is absent (callOp then defaults)", () => {
-    const resolver = implementerOp.model as (i: unknown, c: unknown) => unknown;
-    expect(resolver({ story: storyWithTier(undefined) }, buildCtx)).toBeUndefined();
+    const model = implementerOp.model;
+    expect(typeof model === "function" ? model({ story: storyWithTier(undefined) }, buildCtx) : model).toBeUndefined();
   });
 });
 
@@ -343,14 +346,19 @@ describe("per-role tier reaches effectiveTier (callOp contract)", () => {
   };
 
   test("fast story → implementer resolves to the fast model, NOT balanced", () => {
-    const opModel = (implementerOp.model as any)({ story: storyWithTier("fast") }, buildCtx) ?? "balanced";
-    const resolved = resolveConfiguredModel(models as any, "opencode", opModel, "opencode");
+    const model = implementerOp.model;
+    const opModel =
+      (typeof model === "function" ? model({ story: storyWithTier("fast") }, buildCtx) : model) ?? "balanced";
+    const resolved = resolveConfiguredModel(models, "opencode", opModel, "opencode");
     expect(resolved.modelTier).toBe("fast");
   });
 
   test("unconfigured test-writer still defaults to fast via schema, not balanced", () => {
-    const opModel = (testWriterOp.model as any)({}, tddBuildCtx({ testWriter: "fast" })) ?? "balanced";
-    const resolved = resolveConfiguredModel(models as any, "opencode", opModel, "opencode");
+    const model = testWriterOp.model;
+    const opModel =
+      (typeof model === "function" ? model({ story: makeStory() }, tddBuildCtx({ testWriter: "fast" })) : model) ??
+      "balanced";
+    const resolved = resolveConfiguredModel(models, "opencode", opModel, "opencode");
     expect(resolved.modelTier).toBe("fast");
   });
 });

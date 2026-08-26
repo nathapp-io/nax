@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import {
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeNaxConfig,
+  makePRD,
+  makeSessionManager,
+  makeStory,
+} from "@test/helpers";
 import { _hardeningDeps, type HardeningContext, runHardeningPass } from "@/acceptance/hardening";
 import type { NaxConfig } from "@/config";
 
@@ -22,38 +29,9 @@ function makeCtx(overrides: Partial<HardeningContext> = {}): HardeningContext {
     featureDir: "/tmp/features/test",
     workdir: "/tmp/workdir",
     config: TEST_CONFIG,
-    agentManager: agentManager as any,
-    sessionManager: {
-      openSession: mock(async () => ({ id: "test-session", role: "test" }) as any),
-      closeSession: mock(async () => {}),
-      getSession: mock(() => undefined),
-      listSessions: mock(() => []),
-      sendMessage: mock(async () => ({
-        success: true,
-        output: "",
-        rateLimited: false,
-        durationMs: 0,
-        estimatedCostUsd: 0,
-        agentFallbacks: [],
-      })),
-      on: mock(() => {}),
-      off: mock(() => {}),
-    } as any,
-    runtime: {
-      configLoader: { current: () => TEST_CONFIG },
-      packages: {
-        resolve: () => ({ select: () => TEST_CONFIG }),
-        repo: () => ({ select: () => TEST_CONFIG }),
-      },
-      agentManager: runtimeAgentManager,
-      sessionManager: {
-        openSession: mock(async () => ({ id: "test-session", role: "test" }) as any),
-        closeSession: mock(async () => {}),
-      },
-      projectDir: "/tmp",
-      signal: new AbortController().signal,
-      onPidSpawned: undefined,
-    } as any,
+    agentManager,
+    sessionManager: makeSessionManager(),
+    runtime: makeMockRuntime({ agentManager: runtimeAgentManager, config: TEST_CONFIG }),
     abortSignal: new AbortController().signal,
     ...overrides,
   };
@@ -127,7 +105,7 @@ function failingSpawn(output: string) {
 }
 
 function mockCallOp(refineReturn: object[], generateReturn: object): typeof _hardeningDeps.callOp {
-  return mock(async (_ctx: any, op: any, _input: any) => {
+  return mock(async (_ctx: unknown, op: { name: string }, _input: unknown) => {
     if (op.name === "acceptance-refine") return refineReturn;
     if (op.name === "acceptance-generate") return generateReturn;
     throw new Error(`Unexpected op: ${op.name}`);
@@ -443,7 +421,7 @@ describe("runHardeningPass()", () => {
     const ctx = makeCtx({ prd: makePRD({ userStories: [story] }) });
 
     let capturedRefineInput: unknown;
-    _hardeningDeps.callOp = mock(async (_ctx: any, op: any, input: any) => {
+    _hardeningDeps.callOp = mock(async (_ctx: unknown, op: { name: string }, input: unknown) => {
       if (op.name === "acceptance-refine") {
         capturedRefineInput = input;
         return [{ original: "edge case", refined: "edge case", testable: true, storyId: "US-001" }];

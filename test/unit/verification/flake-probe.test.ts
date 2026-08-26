@@ -57,10 +57,17 @@ function noTestsExec(): ExecResultWithOutput {
  */
 function installFakeExecutor(results: ExecResultWithOutput[]) {
   const calls: Array<{ command: string; cwd?: string; timeoutSeconds: number }> = [];
-  const fake = mock(async (command: string, timeoutSeconds: number, _env: any, opts: any) => {
-    calls.push({ command, cwd: opts?.cwd, timeoutSeconds });
-    return results.shift() ?? failExec();
-  });
+  const fake = mock(
+    async (
+      command: string,
+      timeoutSeconds: number,
+      _env?: Record<string, string | undefined>,
+      opts?: { cwd?: string },
+    ) => {
+      calls.push({ command, cwd: opts?.cwd, timeoutSeconds });
+      return results.shift() ?? failExec();
+    },
+  );
   _flakeProbeDeps.execute = fake as typeof _flakeProbeDeps.execute;
   return { calls, fake };
 }
@@ -88,7 +95,7 @@ describe("runFlakeProbe — export surface (AC2)", () => {
 
   test("AC2 — runFlakeProbe is re-exported from src/verification index barrel", async () => {
     const mod = await import("@/verification");
-    expect(typeof (mod as any).runFlakeProbe).toBe("function");
+    expect(typeof mod.runFlakeProbe).toBe("function");
   });
 });
 

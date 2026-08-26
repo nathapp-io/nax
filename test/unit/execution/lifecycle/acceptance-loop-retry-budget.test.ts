@@ -9,7 +9,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeTempDir } from "@test/helpers";
-import type { DiagnosisResult } from "@/acceptance";
 import { _diagnosisDeps } from "@/execution/lifecycle/acceptance-fix";
 import {
   _acceptanceFixCycleDeps,
@@ -21,7 +20,18 @@ import {
 } from "@/execution/lifecycle/acceptance-loop";
 import type { Finding } from "@/findings";
 import { addSink, initLogger, resetLogger } from "@/logger";
+import * as pipelineStages from "@/pipeline/stages";
+import type { PipelineContext, StageResult } from "@/pipeline/types";
 import type { PRD } from "@/prd";
+
+/**
+ * Rebuild the stages module namespace with a stubbed acceptanceStage, so
+ * importAcceptanceStage can be swapped without mock.module().
+ */
+function stubStagesModule(execute: (ctx: PipelineContext) => Promise<StageResult>) {
+  return async () =>
+    Object.assign({}, pipelineStages, { acceptanceStage: { ...pipelineStages.acceptanceStage, execute } });
+}
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -101,7 +111,7 @@ describe("runAcceptanceLoop — BUG-11 off-by-one at maxRetries:1", () => {
 
     let callCount = 0;
     const origImportAcceptanceStage = _runAcceptanceTestsOnceDeps.importAcceptanceStage;
-    const stubbedExecute = (ctx: any) => {
+    const stubbedExecute = async (ctx: PipelineContext): Promise<StageResult> => {
       callCount++;
       if (callCount === 1) {
         ctx.acceptanceFailures = {
@@ -110,21 +120,21 @@ describe("runAcceptanceLoop — BUG-11 off-by-one at maxRetries:1", () => {
           testOutput: "boom",
           failedPackages: [{ testPath: "/repo/t.test.ts", packageDir: "/repo", output: "boom", failedACs: ["AC-1"] }],
         };
-        return Promise.resolve({ action: "fail" as const });
+        return { action: "fail", reason: "acceptance tests failed" };
       }
       // Final full validation pass (post-fix-cycle) — reports success.
-      return Promise.resolve({ action: "continue" as const });
+      return { action: "continue" };
     };
-    _runAcceptanceTestsOnceDeps.importAcceptanceStage = async () =>
-      ({ acceptanceStage: { execute: stubbedExecute } }) as any;
+    _runAcceptanceTestsOnceDeps.importAcceptanceStage = stubStagesModule(stubbedExecute);
 
     const origLoadContent = _acceptanceLoopDeps.loadAcceptanceTestContent;
     _acceptanceLoopDeps.loadAcceptanceTestContent = async () => [];
 
     const origCallOp = _diagnosisDeps.callOp;
-    (_diagnosisDeps as any).callOp = async () => ({
-      output: { verdict: "source_bug", reasoning: "stub", confidence: 0.9 } satisfies DiagnosisResult,
-      costUsd: 0,
+    _diagnosisDeps.callOp = async () => ({
+      verdict: "source_bug",
+      reasoning: "stub",
+      confidence: 0.9,
     });
 
     try {
@@ -142,7 +152,7 @@ describe("runAcceptanceLoop — BUG-11 off-by-one at maxRetries:1", () => {
       expect(fixCycleRan).toBe(true);
       expect(result.success).toBe(true);
     } finally {
-      (_diagnosisDeps as any).callOp = origCallOp;
+      _diagnosisDeps.callOp = origCallOp;
       _runAcceptanceTestsOnceDeps.importAcceptanceStage = origImportAcceptanceStage;
       _acceptanceLoopDeps.loadAcceptanceTestContent = origLoadContent;
     }
@@ -167,7 +177,7 @@ describe("runAcceptanceLoop — BUG-11 off-by-one at maxRetries:1", () => {
     };
 
     const origImportAcceptanceStage = _runAcceptanceTestsOnceDeps.importAcceptanceStage;
-    const stubbedExecute = (ctx: any) => {
+    const stubbedExecute = async (ctx: PipelineContext): Promise<StageResult> => {
       ctx.acceptanceFailures = {
         failedACs: ["AC-1"],
         findings: [],
@@ -176,18 +186,18 @@ describe("runAcceptanceLoop — BUG-11 off-by-one at maxRetries:1", () => {
           { testPath: "/repo/t.test.ts", packageDir: "/repo", output: "still boom", failedACs: ["AC-1"] },
         ],
       };
-      return Promise.resolve({ action: "fail" as const });
+      return { action: "fail", reason: "acceptance tests failed" };
     };
-    _runAcceptanceTestsOnceDeps.importAcceptanceStage = async () =>
-      ({ acceptanceStage: { execute: stubbedExecute } }) as any;
+    _runAcceptanceTestsOnceDeps.importAcceptanceStage = stubStagesModule(stubbedExecute);
 
     const origLoadContent = _acceptanceLoopDeps.loadAcceptanceTestContent;
     _acceptanceLoopDeps.loadAcceptanceTestContent = async () => [];
 
     const origCallOp = _diagnosisDeps.callOp;
-    (_diagnosisDeps as any).callOp = async () => ({
-      output: { verdict: "source_bug", reasoning: "stub", confidence: 0.9 } satisfies DiagnosisResult,
-      costUsd: 0,
+    _diagnosisDeps.callOp = async () => ({
+      verdict: "source_bug",
+      reasoning: "stub",
+      confidence: 0.9,
     });
 
     try {
@@ -206,7 +216,7 @@ describe("runAcceptanceLoop — BUG-11 off-by-one at maxRetries:1", () => {
       expect(fixCycleRunCount).toBe(1);
       expect(result.success).toBe(false);
     } finally {
-      (_diagnosisDeps as any).callOp = origCallOp;
+      _diagnosisDeps.callOp = origCallOp;
       _runAcceptanceTestsOnceDeps.importAcceptanceStage = origImportAcceptanceStage;
       _acceptanceLoopDeps.loadAcceptanceTestContent = origLoadContent;
     }
@@ -258,16 +268,15 @@ describe("runAcceptanceLoop — BUG-3 exhaustion logs and fires on-pause", () =>
     };
 
     const origImportAcceptanceStage = _runAcceptanceTestsOnceDeps.importAcceptanceStage;
-    const stubbedExecute = (ctx: any) => {
+    const stubbedExecute = async (ctx: PipelineContext): Promise<StageResult> => {
       ctx.acceptanceFailures = {
         failedACs: ["AC-1"],
         findings: [],
         testOutput: "boom",
       };
-      return Promise.resolve({ action: "fail" as const });
+      return { action: "fail", reason: "acceptance tests failed" };
     };
-    _runAcceptanceTestsOnceDeps.importAcceptanceStage = async () =>
-      ({ acceptanceStage: { execute: stubbedExecute } }) as any;
+    _runAcceptanceTestsOnceDeps.importAcceptanceStage = stubStagesModule(stubbedExecute);
 
     const origLoadContent = _acceptanceLoopDeps.loadAcceptanceTestContent;
     _acceptanceLoopDeps.loadAcceptanceTestContent = async () => [];

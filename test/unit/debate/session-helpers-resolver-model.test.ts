@@ -7,28 +7,19 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { absentValue, makeMockAgentManager } from "@test/helpers";
+import { absentValue, makeMockAgentManager, makeMockCallContext, makeMockRuntime } from "@test/helpers";
 import type { CompleteOptions, IAgentManager } from "@/agents";
 import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
 import type { DebateStageConfig } from "@/debate";
 import { _debateSessionDeps, resolveOutcome } from "@/debate";
-import type { CallContext } from "@/operations";
 
-function makeCallCtx(): CallContext {
-  return {
-    runtime: {
-      agentManager: makeMockAgentManager(),
-      sessionManager: {} as any,
-      configLoader: { current: () => DEFAULT_CONFIG } as any,
-      packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG }) } as any,
-      signal: undefined,
-    } as any,
-    packageView: { config: DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG } as any,
+function makeCallCtx() {
+  return makeMockCallContext({
+    runtime: makeMockRuntime({ agentManager: makeMockAgentManager() }),
     packageDir: "/tmp",
-    agentName: "claude",
     storyId: "US-352",
     featureName: "feat-352",
-  };
+  });
 }
 
 const DEFAULT_DEBATE_CONFIG = debateConfigSelector.select(DEFAULT_CONFIG);

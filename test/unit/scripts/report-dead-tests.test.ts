@@ -343,7 +343,7 @@ describe("generateDeadTestsReport", () => {
   });
 
   test("shows empty section when no dead tests found", () => {
-    const findings: any[] = [];
+    const findings: Parameters<typeof generateDeadTestsReport>[0] = [];
     const report = generateDeadTestsReport(findings);
     expect(report).toContain("No dead tests detected");
   });

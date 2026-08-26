@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeSpawn } from "@test/helpers";
+import { makeDispatchContext, makePRD, makeSpawn } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { NaxConfig } from "@/config/schema";
 import { assemblePlanInputsFromCtx } from "@/execution/plan-inputs";
+import type { PipelineContext } from "@/pipeline/types";
 import { _diffUtilsDeps } from "@/review";
 
 // ─── Spawn mock for diff-utils used inside prepare-inputs ──────────────────────
@@ -47,7 +48,7 @@ afterEach(() => {
   _diffUtilsDeps.getMergeBase = origMergeBase;
 });
 
-function makeCtx(configOverride: Partial<NaxConfig> = {}) {
+function makeCtx(configOverride: Partial<NaxConfig> = {}): PipelineContext {
   const config: NaxConfig = {
     ...DEFAULT_CONFIG,
     ...configOverride,
@@ -75,14 +76,24 @@ function makeCtx(configOverride: Partial<NaxConfig> = {}) {
       workdir: "",
     },
     config,
+    rootConfig: DEFAULT_CONFIG,
     workdir: "/tmp/repo",
-    routing: { testStrategy: "three-session-tdd", agent: "claude" },
+    routing: {
+      complexity: "simple",
+      modelTier: "balanced",
+      testStrategy: "three-session-tdd",
+      reasoning: "",
+      agent: "claude",
+    },
     prompt: "ctx",
     featureContextMarkdown: "feat",
-    constitution: { content: "" },
-    prd: { feature: "f" },
+    constitution: { content: "", tokens: 0, truncated: false },
+    prd: makePRD({ feature: "f", userStories: [] }),
     projectDir: "/tmp/proj",
-  } as any;
+    hooks: { hooks: {} },
+    stories: [],
+    ...makeDispatchContext(),
+  };
 }
 
 describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
@@ -95,11 +106,17 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
   });
 
   test("uses the existing single-session prompt for non-TDD implementer plans", async () => {
-    const ctx = {
+    const ctx: PipelineContext = {
       ...makeCtx(),
-      routing: { testStrategy: "test-after", agent: "claude" },
+      routing: {
+        complexity: "simple",
+        modelTier: "balanced",
+        testStrategy: "test-after",
+        reasoning: "",
+        agent: "claude",
+      },
       prompt: "single-session prompt",
-    } as any;
+    };
     const inputs = await assemblePlanInputsFromCtx(ctx);
     expect(inputs.testWriter).toBeUndefined();
     expect(inputs.implementer?.promptMarkdown).toBe("single-session prompt");

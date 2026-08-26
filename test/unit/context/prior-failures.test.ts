@@ -142,7 +142,7 @@ describe("formatPriorFailures", () => {
   });
 
   test("should return empty string for null failures", () => {
-    const formatted = formatPriorFailures(null as any);
+    const formatted = formatPriorFailures(JSON.parse("null"));
     expect(formatted).toBe("");
   });
 

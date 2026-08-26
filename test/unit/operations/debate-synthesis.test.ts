@@ -1,16 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { opModelResolver } from "@test/helpers";
-import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
+import { makeTestRuntime, opModelResolver } from "@test/helpers";
+import { debateConfigSelector } from "@/config";
 import type { Debater } from "@/debate/types";
 import { synthesisOp } from "@/operations";
 import type { DebateSynthesisInput } from "@/operations/debate-synthesis";
 import { composeSections, DebatePromptBuilder, join } from "@/prompts";
 
-function makeBuildCtx() {
-  return {
-    packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG.debate } as any,
-    config: DEFAULT_CONFIG.debate,
-  } as Parameters<typeof synthesisOp.build>[1];
+function makeBuildCtx(): Parameters<typeof synthesisOp.build>[1] {
+  const view = makeTestRuntime().packages.repo();
+  return { packageView: view, config: view.select(debateConfigSelector) };
 }
 
 describe("synthesisOp", () => {

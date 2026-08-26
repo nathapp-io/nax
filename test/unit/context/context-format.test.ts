@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makeTempDir } from "@test/helpers";
 import { buildContext, formatContextAsMarkdown } from "@/context";
 import type { BuiltContext, ContextBudget, StoryContext } from "@/context/types";
 import type { PRD, UserStory } from "@/prd";
@@ -152,7 +152,9 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
-          config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
+          config: makeNaxConfig({
+            context: { fileInjection: "keyword", testCoverage: { enabled: false } },
+          }),
         };
 
         const budget: ContextBudget = {

@@ -22,7 +22,8 @@ import { describe, expect, test } from "bun:test";
 import { makeContextBundle, makeNaxConfig } from "@test/helpers";
 import type { AgentResult, HopKind } from "@/agents";
 import { AgentManager } from "@/agents";
-import { DEFAULT_CONFIG } from "@/config";
+import type { AgentRunOptions } from "@/agents/types";
+import { DEFAULT_CONFIG, type NaxConfig } from "@/config";
 import type { AdapterFailure } from "@/context/engine";
 
 // Retriable wall-clock timeout — US-001 marked these as retriable=true so a
@@ -48,12 +49,23 @@ const STUB_BUNDLE = makeContextBundle({
   chunks: [],
 });
 
-const STUB_RUN_OPTIONS = {
-  prompt: "p",
-  workdir: "/tmp",
-  storyId: "US-002",
-  sessionRole: "implementer" as const,
-} as any;
+/**
+ * Fully-typed run options. `config` must be passed by each caller:
+ * runWithFallback reads `request.runOptions.config ?? this._config`, so the
+ * caller's own AgentManager config is the behavior-preserving choice.
+ */
+function makeStubRunOptions(config: NaxConfig): AgentRunOptions {
+  return {
+    prompt: "p",
+    workdir: "/tmp",
+    storyId: "US-002",
+    sessionRole: "implementer",
+    modelTier: "balanced",
+    modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+    timeoutSeconds: 60,
+    config,
+  };
+}
 
 function makeSuccessResult(): AgentResult {
   return { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 };
@@ -85,7 +97,7 @@ describe("AC1 — fail-timeout dispatches exactly one retry by default", () => {
     const hopKinds: HopKind[] = [];
     let calls = 0;
     const outcome = await manager.runWithFallback({
-      runOptions: { ...STUB_RUN_OPTIONS, timeoutSeconds: 60 },
+      runOptions: { ...makeStubRunOptions(config), timeoutSeconds: 60 },
       bundle: STUB_BUNDLE,
       executeHop: async (_agent, _bundle, hopKind) => {
         hopKinds.push(hopKind);
@@ -114,7 +126,7 @@ describe("AC1 — fail-timeout dispatches exactly one retry by default", () => {
 
     let calls = 0;
     const outcome = await manager.runWithFallback({
-      runOptions: { ...STUB_RUN_OPTIONS, timeoutSeconds: 60 },
+      runOptions: { ...makeStubRunOptions(config), timeoutSeconds: 60 },
       bundle: STUB_BUNDLE,
       noFallback: true,
       executeHop: async (_agent, _bundle, _hopKind) => {
@@ -144,7 +156,7 @@ describe("AC2 — timeout-retry hop receives half the previous timeoutSeconds", 
     const seenTimeoutSeconds: number[] = [];
     let calls = 0;
     const outcome = await manager.runWithFallback({
-      runOptions: { ...STUB_RUN_OPTIONS, timeoutSeconds: 60 },
+      runOptions: { ...makeStubRunOptions(config), timeoutSeconds: 60 },
       bundle: STUB_BUNDLE,
       executeHop: async (_agent, _bundle, _hopKind, resolvedRunOptions) => {
         calls++;
@@ -175,7 +187,7 @@ describe("AC2 — timeout-retry hop receives half the previous timeoutSeconds", 
     const seenTimeoutSeconds: number[] = [];
     let calls = 0;
     const outcome = await manager.runWithFallback({
-      runOptions: { ...STUB_RUN_OPTIONS, timeoutSeconds: 80 },
+      runOptions: { ...makeStubRunOptions(config), timeoutSeconds: 80 },
       bundle: STUB_BUNDLE,
       executeHop: async (_agent, _bundle, _hopKind, resolvedRunOptions) => {
         calls++;
@@ -203,7 +215,7 @@ describe("AC3 — exhausted fail-timeout retry does NOT dispatch a 3rd hop", () 
 
     let calls = 0;
     const outcome = await manager.runWithFallback({
-      runOptions: { ...STUB_RUN_OPTIONS, timeoutSeconds: 60 },
+      runOptions: { ...makeStubRunOptions(config), timeoutSeconds: 60 },
       bundle: STUB_BUNDLE,
       executeHop: async (_agent, _bundle, _hopKind) => {
         calls++;
@@ -224,7 +236,7 @@ describe("AC3 — exhausted fail-timeout retry does NOT dispatch a 3rd hop", () 
 
     let calls = 0;
     const outcome = await manager.runWithFallback({
-      runOptions: { ...STUB_RUN_OPTIONS, timeoutSeconds: 60 },
+      runOptions: { ...makeStubRunOptions(DEFAULT_CONFIG), timeoutSeconds: 60 },
       bundle: STUB_BUNDLE,
       executeHop: async (_agent, _bundle, _hopKind) => {
         calls++;
@@ -251,7 +263,7 @@ describe("AC8 — maxAttempts=0 disables fail-timeout retry", () => {
     const hopKinds: HopKind[] = [];
     let calls = 0;
     const outcome = await manager.runWithFallback({
-      runOptions: { ...STUB_RUN_OPTIONS, timeoutSeconds: 60 },
+      runOptions: { ...makeStubRunOptions(config), timeoutSeconds: 60 },
       bundle: STUB_BUNDLE,
       executeHop: async (_agent, _bundle, hopKind) => {
         hopKinds.push(hopKind);
@@ -282,7 +294,7 @@ describe("AC5 — fail-timeout retry emits { kind: 'timeout-retry', attempt: N }
     const hopKinds: HopKind[] = [];
     let calls = 0;
     const outcome = await manager.runWithFallback({
-      runOptions: { ...STUB_RUN_OPTIONS, timeoutSeconds: 60 },
+      runOptions: { ...makeStubRunOptions(config), timeoutSeconds: 60 },
       bundle: STUB_BUNDLE,
       executeHop: async (_agent, _bundle, hopKind) => {
         hopKinds.push(hopKind);
@@ -316,7 +328,7 @@ describe("AC5 — fail-timeout retry emits { kind: 'timeout-retry', attempt: N }
     const seenTimeoutRetry: HopKind[] = [];
     let calls = 0;
     await manager.runWithFallback({
-      runOptions: { ...STUB_RUN_OPTIONS, timeoutSeconds: 60 },
+      runOptions: { ...makeStubRunOptions(config), timeoutSeconds: 60 },
       bundle: STUB_BUNDLE,
       executeHop: async (_agent, _bundle, hopKind) => {
         calls++;
@@ -363,7 +375,7 @@ describe("AC9 — fail-stale retries still respect idleWatchdog.maxRetryAttempts
     const hopKinds: HopKind[] = [];
     let calls = 0;
     const outcome = await manager.runWithFallback({
-      runOptions: { ...STUB_RUN_OPTIONS, timeoutSeconds: 60 },
+      runOptions: { ...makeStubRunOptions(config), timeoutSeconds: 60 },
       bundle: STUB_BUNDLE,
       executeHop: async (agent, _bundle, hopKind) => {
         agents.push(agent);
@@ -401,7 +413,7 @@ describe("AC10 — exhausted fail-timeout surfaces no partial output and follows
     const manager = new AgentManager(config);
 
     const outcome = await manager.runWithFallback({
-      runOptions: { ...STUB_RUN_OPTIONS, timeoutSeconds: 60 },
+      runOptions: { ...makeStubRunOptions(config), timeoutSeconds: 60 },
       bundle: STUB_BUNDLE,
       executeHop: async (_agent, _bundle, _hopKind) => {
         // Both hops timeout — wall-clock exhausted, no partial output.
@@ -436,7 +448,7 @@ describe("AC10 — exhausted fail-timeout surfaces no partial output and follows
     const RETRY_MESSAGE = "wall-clock timeout exceeded (30s limit, retry)";
     let calls = 0;
     const outcome = await manager.runWithFallback({
-      runOptions: { ...STUB_RUN_OPTIONS, timeoutSeconds: 60 },
+      runOptions: { ...makeStubRunOptions(config), timeoutSeconds: 60 },
       bundle: STUB_BUNDLE,
       executeHop: async (_agent, _bundle, _hopKind) => {
         calls++;

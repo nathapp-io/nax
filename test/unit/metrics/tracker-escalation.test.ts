@@ -20,7 +20,7 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { makeMockRuntime, makeNaxConfig, makeTestContext } from "@test/helpers";
+import { assertDefined, makeMockRuntime, makeNaxConfig, makeTestContext } from "@test/helpers";
 import { _tierEscalationDeps, handleTierEscalation } from "@/execution/escalation/tier-escalation";
 import { collectStoryMetrics } from "@/metrics/tracker";
 import type { PipelineContext } from "@/pipeline/types";
@@ -382,37 +382,47 @@ describe("handleTierEscalation — priorFailures records attempt data for cross-
     }
   });
 
-  test.each([
+  interface EscalatedStoryRow {
+    name: string;
+    checkKey: string;
+    assertion: (updatedStory: UserStory | undefined) => void;
+  }
+
+  test.each<EscalatedStoryRow>([
     {
       name: "escalated story has priorFailures entry identifying the failed tier",
       checkKey: "priorFailures",
-      assertion: (updatedStory: any) => {
-        expect(updatedStory!.priorFailures).toBeDefined();
-        expect(updatedStory!.priorFailures!.length).toBeGreaterThanOrEqual(1);
-        expect(updatedStory!.priorFailures![0].modelTier).toBe("fast");
+      assertion: (updatedStory) => {
+        assertDefined(updatedStory, "escalated story missing from PRD");
+        expect(updatedStory.priorFailures).toBeDefined();
+        expect(updatedStory.priorFailures?.length).toBeGreaterThanOrEqual(1);
+        expect(updatedStory.priorFailures?.[0]?.modelTier).toBe("fast");
       },
     },
     {
       name: "escalated story has attempts reset to 0 (BUG-011 preserved)",
       checkKey: "attempts",
-      assertion: (updatedStory: any) => {
-        expect(updatedStory!.attempts).toBe(0);
+      assertion: (updatedStory) => {
+        assertDefined(updatedStory, "escalated story missing from PRD");
+        expect(updatedStory.attempts).toBe(0);
       },
     },
     {
       name: "escalated story modelTier is updated to next tier (regression guard)",
       checkKey: "routing",
-      assertion: (updatedStory: any) => {
-        expect(updatedStory!.routing?.modelTier).toBe("balanced");
+      assertion: (updatedStory) => {
+        assertDefined(updatedStory, "escalated story missing from PRD");
+        expect(updatedStory.routing?.modelTier).toBe("balanced");
       },
     },
     {
       name: "escalated story records escalation history for retry prioritization",
       checkKey: "escalations",
-      assertion: (updatedStory: any) => {
-        expect(updatedStory!.escalations).toBeDefined();
-        expect(updatedStory!.escalations.length).toBe(1);
-        expect(updatedStory!.escalations[0]).toMatchObject({
+      assertion: (updatedStory) => {
+        assertDefined(updatedStory, "escalated story missing from PRD");
+        expect(updatedStory.escalations).toBeDefined();
+        expect(updatedStory.escalations.length).toBe(1);
+        expect(updatedStory.escalations[0]).toMatchObject({
           fromTier: "fast",
           toTier: "balanced",
         });

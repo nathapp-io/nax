@@ -5,6 +5,31 @@
 import { describe, expect, test } from "bun:test";
 import { migrateLegacyReviewModelKey, migrateLegacyTestPattern } from "@/config/migrations";
 
+// ─── Raw-config probes ───────────────────────────────────────────────────────
+
+/**
+ * User-defined narrowing predicate: v is a non-null object carrying `key`.
+ * Post-migration configs are `Record<string, unknown>`, so nested reads need
+ * `in`-narrowing instead of property access on opaque values.
+ */
+function hasKey<K extends string>(v: unknown, key: K): v is object & Record<K, unknown> {
+  return typeof v === "object" && v !== null && key in v;
+}
+
+/**
+ * Walk a key path through a raw (pre-Zod) config object, yielding `undefined`
+ * whenever any hop is missing — mirroring the optional-chain reads these
+ * tests made before the drain.
+ */
+function probe(root: unknown, keys: readonly string[]): unknown {
+  let current: unknown = root;
+  for (const key of keys) {
+    if (!hasKey(current, key)) return undefined;
+    current = current[key];
+  }
+  return current;
+}
+
 describe("migrateLegacyTestPattern", () => {
   test("no-op when testPattern absent", () => {
     const raw = { execution: { smartTestRunner: { enabled: true } } };
@@ -19,12 +44,10 @@ describe("migrateLegacyTestPattern", () => {
     };
     const result = migrateLegacyTestPattern(raw, null);
 
-    const exec = result.execution as any;
-    expect(exec?.smartTestRunner?.testFilePatterns).toEqual(["**/*.test.ts"]);
+    expect(probe(result, ["execution", "smartTestRunner", "testFilePatterns"])).toEqual(["**/*.test.ts"]);
 
     // Legacy key is removed
-    const ctx = result.context as any;
-    expect(ctx?.testCoverage?.testPattern).toBeUndefined();
+    expect(probe(result, ["context", "testCoverage", "testPattern"])).toBeUndefined();
   });
 
   test("drops testPattern when testFilePatterns already set (canonical wins)", () => {
@@ -34,13 +57,11 @@ describe("migrateLegacyTestPattern", () => {
     };
     const result = migrateLegacyTestPattern(raw, null);
 
-    const exec = result.execution as any;
     // Canonical value preserved unchanged
-    expect(exec?.smartTestRunner?.testFilePatterns).toEqual(["src/**/*.spec.ts"]);
+    expect(probe(result, ["execution", "smartTestRunner", "testFilePatterns"])).toEqual(["src/**/*.spec.ts"]);
 
     // Legacy key removed from context
-    const ctx = result.context as any;
-    expect(ctx?.testCoverage?.testPattern).toBeUndefined();
+    expect(probe(result, ["context", "testCoverage", "testPattern"])).toBeUndefined();
   });
 
   test("is immutable: original object is not mutated", () => {
@@ -58,9 +79,8 @@ describe("migrateLegacyTestPattern", () => {
     };
     const result = migrateLegacyTestPattern(raw, null);
     // extraField preserved; testPattern removed
-    const ctx = result.context as any;
-    expect(ctx?.testCoverage?.extraField).toBe("kept");
-    expect(ctx?.testCoverage?.testPattern).toBeUndefined();
+    expect(probe(result, ["context", "testCoverage", "extraField"])).toBe("kept");
+    expect(probe(result, ["context", "testCoverage", "testPattern"])).toBeUndefined();
   });
 
   test("handles completely absent context object", () => {
@@ -74,9 +94,10 @@ describe("migrateLegacyTestPattern", () => {
       context: { testCoverage: { testPattern: "src/**/*.spec.ts" } },
     };
     const result = migrateLegacyTestPattern(raw, null);
-    const patterns = (result.execution as any)?.smartTestRunner?.testFilePatterns;
+    const patterns = probe(result, ["execution", "smartTestRunner", "testFilePatterns"]);
     expect(patterns).toEqual(["src/**/*.spec.ts"]);
-    expect(typeof patterns[0]).toBe("string");
+    const firstPattern: unknown = Array.isArray(patterns) ? patterns[0] : undefined;
+    expect(typeof firstPattern).toBe("string");
   });
 
   test("preserves existing smartTestRunner fields when aliasing", () => {
@@ -85,10 +106,9 @@ describe("migrateLegacyTestPattern", () => {
       execution: { smartTestRunner: { enabled: true, fallback: "import-grep" } },
     };
     const result = migrateLegacyTestPattern(raw, null);
-    const runner = (result.execution as any)?.smartTestRunner;
-    expect(runner?.enabled).toBe(true);
-    expect(runner?.fallback).toBe("import-grep");
-    expect(runner?.testFilePatterns).toEqual(["**/*.test.ts"]);
+    expect(probe(result, ["execution", "smartTestRunner", "enabled"])).toBe(true);
+    expect(probe(result, ["execution", "smartTestRunner", "fallback"])).toBe("import-grep");
+    expect(probe(result, ["execution", "smartTestRunner", "testFilePatterns"])).toEqual(["**/*.test.ts"]);
   });
 });
 
@@ -116,10 +136,9 @@ describe("migrateLegacyReviewModelKey", () => {
       review: { semantic: { modelTier: "powerful", rules: [] } },
     };
     const result = migrateLegacyReviewModelKey(raw, null);
-    const sem = (result.review as any)?.semantic;
-    expect(sem?.model).toBe("powerful");
-    expect(sem?.modelTier).toBeUndefined();
-    expect(sem?.rules).toEqual([]);
+    expect(probe(result, ["review", "semantic", "model"])).toBe("powerful");
+    expect(probe(result, ["review", "semantic", "modelTier"])).toBeUndefined();
+    expect(probe(result, ["review", "semantic", "rules"])).toEqual([]);
   });
 
   test("aliases adversarial.modelTier to adversarial.model", () => {
@@ -127,10 +146,9 @@ describe("migrateLegacyReviewModelKey", () => {
       review: { adversarial: { modelTier: "fast", parallel: true } },
     };
     const result = migrateLegacyReviewModelKey(raw, null);
-    const adv = (result.review as any)?.adversarial;
-    expect(adv?.model).toBe("fast");
-    expect(adv?.modelTier).toBeUndefined();
-    expect(adv?.parallel).toBe(true);
+    expect(probe(result, ["review", "adversarial", "model"])).toBe("fast");
+    expect(probe(result, ["review", "adversarial", "modelTier"])).toBeUndefined();
+    expect(probe(result, ["review", "adversarial", "parallel"])).toBe(true);
   });
 
   test("when both modelTier and model present, model wins and modelTier is dropped", () => {
@@ -140,9 +158,8 @@ describe("migrateLegacyReviewModelKey", () => {
       },
     };
     const result = migrateLegacyReviewModelKey(raw, null);
-    const sem = (result.review as any)?.semantic;
-    expect(sem?.model).toBe("powerful");
-    expect(sem?.modelTier).toBeUndefined();
+    expect(probe(result, ["review", "semantic", "model"])).toBe("powerful");
+    expect(probe(result, ["review", "semantic", "modelTier"])).toBeUndefined();
   });
 
   test("does not mutate input", () => {
@@ -162,11 +179,9 @@ describe("migrateLegacyReviewModelKey", () => {
       },
     };
     const result = migrateLegacyReviewModelKey(raw, null);
-    const sem = (result.review as any)?.semantic;
-    const adv = (result.review as any)?.adversarial;
-    expect(sem?.model).toBe("fast");
-    expect(sem?.modelTier).toBeUndefined();
-    expect(adv?.model).toBe("balanced");
-    expect(adv?.modelTier).toBeUndefined();
+    expect(probe(result, ["review", "semantic", "model"])).toBe("fast");
+    expect(probe(result, ["review", "semantic", "modelTier"])).toBeUndefined();
+    expect(probe(result, ["review", "adversarial", "model"])).toBe("balanced");
+    expect(probe(result, ["review", "adversarial", "modelTier"])).toBeUndefined();
   });
 });

@@ -9,7 +9,11 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
+import type { ProjectScan } from "@/cli/init-context";
 import { generateContextTemplate, initContext, scanProject } from "@/cli/init-context";
+
+/** A row's field reader: probes the parsed manifest scanProject produced (null when absent). */
+type ManifestFieldReader = (m: ProjectScan["packageManifest"]) => unknown;
 
 // ---------------------------------------------------------------------------
 // scanProject — file tree
@@ -58,22 +62,12 @@ describe("scanProject — file tree", () => {
 // ---------------------------------------------------------------------------
 
 describe("scanProject — package manifest", () => {
-  test.each([
-    ["name", { name: "my-project", version: "1.0.0" }, (m: any) => m?.name, "my-project"],
-    [
-      "description",
-      { name: "my-project", description: "A test project" },
-      (m: any) => m?.description,
-      "A test project",
-    ],
-    [
-      "scripts.build",
-      { name: "proj", scripts: { build: "bun run build" } },
-      (m: any) => m?.scripts?.build,
-      "bun run build",
-    ],
-    ["dependencies.zod", { name: "proj", dependencies: { zod: "^3.0.0" } }, (m: any) => m?.dependencies?.zod, "^3.0.0"],
-  ] as const)("reads %s from package.json", async (_field, pkgJson, getField, expected) => {
+  test.each<[string, Record<string, unknown>, ManifestFieldReader, string]>([
+    ["name", { name: "my-project", version: "1.0.0" }, (m) => m?.name, "my-project"],
+    ["description", { name: "my-project", description: "A test project" }, (m) => m?.description, "A test project"],
+    ["scripts.build", { name: "proj", scripts: { build: "bun run build" } }, (m) => m?.scripts?.build, "bun run build"],
+    ["dependencies.zod", { name: "proj", dependencies: { zod: "^3.0.0" } }, (m) => m?.dependencies?.zod, "^3.0.0"],
+  ])("reads %s from package.json", async (_field, pkgJson, getField, expected) => {
     await withTempDir(async (dir) => {
       await Bun.write(join(dir, "package.json"), JSON.stringify(pkgJson));
       const scan = await scanProject(dir);

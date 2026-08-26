@@ -1,22 +1,28 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { makeMockCallContext, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import type { ConfigSelector } from "@/config";
 import type { Finding } from "@/findings";
 import type { VerifyScopedDeps } from "@/operations";
 import { _verifyScopedDeps, verifyScopedOp } from "@/operations";
-import type { SelectScopedTestsInput } from "@/test-runners";
+import type { CallContext } from "@/operations/types";
+import type { PackageView } from "@/runtime";
+import type { ResolvedTestPatterns, SelectScopedTestsInput } from "@/test-runners";
 
-function ctxWithQuality(quality?: Record<string, unknown>, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
-  const config = { quality, execution: {} } as any;
-  return {
-    runtime: {},
-    storyId: "US-003",
-    packageView: {
-      packageDir: "packages/agent",
-      repoRoot: opts.repoRoot ?? "/repo",
-      hasOverride: opts.hasOverride ?? false,
-      config,
-      select: (s: any) => s.select(config),
-    },
-  } as any;
+function ctxWithQuality(
+  quality?: { commands?: { test?: string } },
+  opts: { hasOverride?: boolean; repoRoot?: string } = {},
+): CallContext {
+  const config = makeNaxConfig(quality ? { quality: { commands: quality.commands } } : {});
+  const runtime = makeMockRuntime({ config });
+  const packageView: PackageView = {
+    packageDir: "packages/agent",
+    relativeFromRoot: "packages/agent",
+    repoRoot: opts.repoRoot ?? "/repo",
+    hasOverride: opts.hasOverride ?? false,
+    config,
+    select: <C>(selector: ConfigSelector<C>) => selector.select(config),
+  };
+  return makeMockCallContext({ runtime, packageView, storyId: "US-003" });
 }
 
 const mockFinding: Finding = {
@@ -63,8 +69,8 @@ describe("verifyScopedOp — AC2: DeterministicOperation shape", () => {
 
   test("has execute function, not build/parse", () => {
     expect(typeof verifyScopedOp.execute).toBe("function");
-    expect((verifyScopedOp as any).build).toBeUndefined();
-    expect((verifyScopedOp as any).parse).toBeUndefined();
+    expect("build" in verifyScopedOp).toBe(false);
+    expect("parse" in verifyScopedOp).toBe(false);
   });
 });
 
@@ -252,7 +258,7 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
         failed: 2,
         failures: [{ testName: "t1", file: "a.test.ts", error: "boom", stackTrace: [] }],
       }),
-      testSummaryToFindings: () => [{ kind: "test", id: "f1" } as any],
+      testSummaryToFindings: () => [mockFinding],
     });
     const ctx = ctxWithQuality({ commands: { test: "bun test" } });
     const result = await verifyScopedOp.execute(
@@ -299,12 +305,13 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
 
   test("forwards repoRoot/packagePrefix/resolvedTestPatterns to selectScopedTests (Pass 0 anchors)", async () => {
     let seen: SelectScopedTestsInput | undefined;
-    const resolvedTestPatterns = {
+    const resolvedTestPatterns: ResolvedTestPatterns = {
       globs: ["tests/**/*.py"],
       pathspec: [],
       regex: [/test_.*\.py$/],
       testDirs: ["tests"],
-    } as any;
+      resolution: "per-package",
+    };
     const deps = fakeDeps({
       selectScopedTests: async (input) => {
         seen = input;

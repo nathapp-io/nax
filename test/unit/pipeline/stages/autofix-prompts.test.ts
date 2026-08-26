@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeStory } from "@test/helpers";
 import { RectifierPromptBuilder } from "@/prompts";
 import type { ReviewCheckResult } from "@/review/types";
 
@@ -31,16 +32,16 @@ function makeCheck(check: string, output: string): ReviewCheckResult {
   };
 }
 
-const STORY_BASE = {
+const STORY_BASE = makeStory({
   id: "US-010",
   title: "i18n migration",
   acceptanceCriteria: ["AC1: uses t('foo.bar')", "AC2: locale files have key"],
-} as any;
+});
 
 const STORY_MONOREPO = {
   ...STORY_BASE,
   workdir: "apps/web",
-} as any;
+};
 
 // ---------------------------------------------------------------------------
 // Tests

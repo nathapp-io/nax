@@ -24,9 +24,8 @@ import {
   makeNaxConfig,
   makeTempDir,
 } from "@test/helpers";
-import type { CompleteOptions, CompleteResult } from "@/agents/types";
+import type { AgentRunOptions, CompleteOptions, CompleteResult } from "@/agents/types";
 import { _planDeps, planCommand } from "@/cli";
-import type { NaxConfig } from "@/config";
 import type { DebateRunner, DebateRunnerOptions } from "@/debate";
 import type { DebateResult } from "@/debate/types";
 import type { PRD } from "@/prd/types";
@@ -36,7 +35,7 @@ import type { PRD } from "@/prd/types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 function makeMockPlanManager(
-  runFn?: (runOptions: any) => Promise<any>,
+  runFn?: (runOptions: AgentRunOptions) => Promise<void>,
   completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>,
 ) {
   return makeMockRuntime({
@@ -103,7 +102,7 @@ const SAMPLE_PRD: PRD = {
   ],
 };
 
-const DEBATE_PLAN_ENABLED_CONFIG: NaxConfig = {
+const DEBATE_PLAN_ENABLED_CONFIG = makeNaxConfig({
   debate: {
     enabled: true,
     agents: 2,
@@ -141,9 +140,9 @@ const DEBATE_PLAN_ENABLED_CONFIG: NaxConfig = {
       },
     },
   },
-} as NaxConfig;
+});
 
-const DEBATE_PLAN_STAGE_DISABLED_CONFIG: NaxConfig = {
+const DEBATE_PLAN_STAGE_DISABLED_CONFIG = makeNaxConfig({
   debate: {
     enabled: true,
     agents: 2,
@@ -180,7 +179,7 @@ const DEBATE_PLAN_STAGE_DISABLED_CONFIG: NaxConfig = {
       },
     },
   },
-} as NaxConfig;
+});
 
 const DEBATE_PASSED_RESULT: DebateResult = {
   storyId: "debate-plan",
@@ -231,7 +230,7 @@ const origInitInteractionChain = _planDeps.initInteractionChain;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Set up mocks for a successful interactive plan (callOp + planInteractiveOp path) */
-function setupInteractivePlanMocks(runFn: (_runOptions: any) => Promise<any>) {
+function setupInteractivePlanMocks(runFn: (_runOptions: AgentRunOptions) => Promise<void>) {
   _planDeps.createRuntime = mock(() => makeMockPlanManager(runFn));
   _planDeps.existsSync = mock((p: string) => p.includes(".nax"));
   _planDeps.readFile = mock(async () => JSON.stringify(SAMPLE_PRD));
@@ -335,7 +334,7 @@ describe("planCommand — debate integration (US-004)", () => {
   test("AC1: adapter.complete() is NOT called when debate is enabled and succeeds", async () => {
     const adapterComplete = mock(async () => JSON.stringify(SAMPLE_PRD));
     _planDeps.createRuntime = mock(() =>
-      makeMockPlanManager(undefined, async (_name: string, _prompt: string, _opts: any) => {
+      makeMockPlanManager(undefined, async (_name, _prompt, _opts) => {
         adapterComplete();
         return {
           output: JSON.stringify(SAMPLE_PRD),
@@ -399,7 +398,7 @@ describe("planCommand — debate integration (US-004)", () => {
     const createDebateMock = mock(() => makeDebateRunner({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
     _planDeps.createDebateRunner = createDebateMock;
 
-    await planCommand(tmpDir, makeNaxConfig({ debate: { enabled: false } } as any), {
+    await planCommand(tmpDir, makeNaxConfig({ debate: { enabled: false } }), {
       from: "/spec.md",
       feature: "debate-plan",
       auto: true,
@@ -489,7 +488,7 @@ describe("planCommand — debate integration (US-004)", () => {
 
   test("AC6: falls back to interactive plan path when DebateSession returns outcome=failed", async () => {
     const adapterPlan = mock(async () => {});
-    setupInteractivePlanMocks(async (_runOptions: any) => {
+    setupInteractivePlanMocks(async (_runOptions) => {
       adapterPlan();
     });
 
@@ -505,7 +504,7 @@ describe("planCommand — debate integration (US-004)", () => {
 
   test("AC6: planCommand succeeds (does not throw) when debate fails and fallback is used", async () => {
     const adapterPlan = mock(async () => {});
-    setupInteractivePlanMocks(async (_runOptions: any) => {
+    setupInteractivePlanMocks(async (_runOptions) => {
       adapterPlan();
     });
 

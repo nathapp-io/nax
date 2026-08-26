@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime, opSelector } from "@test/helpers";
+import type { RetryStrategy } from "@/agents/retry";
+import type { ReviewConfig } from "@/config/selectors";
 import { callOp } from "@/operations";
 import type { AdversarialReviewInput } from "@/operations/adversarial-review";
 import { adversarialReviewOp } from "@/operations/adversarial-review";
+import type { BuildContext } from "@/operations/types";
 import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -41,6 +44,15 @@ function makeBuildCtx() {
   createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
   return { packageView: view, config: view.select(opSelector(adversarialReviewOp.config)) };
+}
+
+/** Resolve the op's retry field through its declared resolver form into a strategy. */
+function resolveRetryStrategy(input: AdversarialReviewInput, buildCtx: BuildContext<ReviewConfig>): RetryStrategy {
+  const retry = adversarialReviewOp.retry;
+  if (typeof retry !== "function") throw new Error("adversarialReviewOp.retry must be a resolver");
+  const resolved = retry(input, buildCtx);
+  if (resolved !== undefined && "shouldRetry" in resolved) return resolved;
+  throw new Error("adversarialReviewOp.retry must resolve to a strategy");
 }
 
 describe("adversarialReviewOp shape", () => {
@@ -222,7 +234,7 @@ describe("adversarialReviewOp.retry", () => {
 
   test("retry resolver returns a RetryStrategy", () => {
     const ctx = makeBuildCtx();
-    const result = (adversarialReviewOp.retry as any)(SAMPLE_INPUT, ctx);
+    const result = resolveRetryStrategy(SAMPLE_INPUT, ctx);
     expect(result).toHaveProperty("shouldRetry");
     expect(typeof result.shouldRetry).toBe("function");
   });
@@ -234,7 +246,7 @@ describe("adversarialReviewOp.retry", () => {
       blockingThreshold: "warning",
     };
 
-    const strategy = (adversarialReviewOp.retry as any)(inputWithThreshold, ctx);
+    const strategy = resolveRetryStrategy(inputWithThreshold, ctx);
     expect(strategy).toHaveProperty("shouldRetry");
 
     // Verify the retry strategy is constructed correctly by testing shouldRetry

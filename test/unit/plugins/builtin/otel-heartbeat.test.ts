@@ -196,13 +196,17 @@ describe("startHeartbeat", () => {
 });
 
 describe("buildHeartbeatMetricsPayload", () => {
-  const payload: any = buildHeartbeatMetricsPayload({
+  const payload = buildHeartbeatMetricsPayload({
     serviceName: "nax",
     timeUnixNano: "5000",
     snapshot: snapshot({ phaseElapsedMs: 250, costUsd: 1.5 }),
   });
   const metrics = payload.resourceMetrics[0].scopeMetrics[0].metrics;
-  const byName = (n: string) => metrics.find((m: any) => m.name === n);
+  const gaugePoint = (name: string) => {
+    const metric = metrics.find((m) => m.name === name);
+    if (!metric?.gauge) throw new Error(`missing gauge metric: ${name}`);
+    return metric.gauge.dataPoints[0];
+  };
 
   test("nests one resource metrics entry with service.name resource attr", () => {
     const rm = payload.resourceMetrics[0];
@@ -210,20 +214,20 @@ describe("buildHeartbeatMetricsPayload", () => {
   });
 
   test("AC1: emits a nax.run.active gauge with value 1", () => {
-    expect(byName("nax.run.active").gauge.dataPoints[0].asDouble).toBe(1);
+    expect(gaugePoint("nax.run.active").asDouble).toBe(1);
   });
 
   test("AC2: emits a nax.run.phase_elapsed_ms gauge equal to the snapshot's phaseElapsedMs", () => {
-    expect(byName("nax.run.phase_elapsed_ms").gauge.dataPoints[0].asDouble).toBe(250);
+    expect(gaugePoint("nax.run.phase_elapsed_ms").asDouble).toBe(250);
   });
 
   test("AC3: emits a nax.run.cost_usd gauge equal to the snapshot's costUsd", () => {
-    expect(byName("nax.run.cost_usd").gauge.dataPoints[0].asDouble).toBe(1.5);
+    expect(gaugePoint("nax.run.cost_usd").asDouble).toBe(1.5);
   });
 
   test("AC4+AC5: every gauge data point carries phase, run_id, feature, project, story_id, tier, and test_strategy attributes", () => {
     for (const name of ["nax.run.active", "nax.run.phase_elapsed_ms", "nax.run.cost_usd"]) {
-      const attrs = byName(name).gauge.dataPoints[0].attributes;
+      const attrs = gaugePoint(name).attributes;
       expect(attrs).toContainEqual(attr("run_id", "r1"));
       expect(attrs).toContainEqual(attr("feature", "f"));
       expect(attrs).toContainEqual(attr("project", "nax"));
@@ -235,6 +239,6 @@ describe("buildHeartbeatMetricsPayload", () => {
   });
 
   test("data points carry the given timeUnixNano", () => {
-    expect(byName("nax.run.active").gauge.dataPoints[0].timeUnixNano).toBe("5000");
+    expect(gaugePoint("nax.run.active").timeUnixNano).toBe("5000");
   });
 });

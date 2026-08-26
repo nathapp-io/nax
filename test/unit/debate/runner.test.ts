@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeLogger, makeMockAgentManager, makeSessionManager } from "@test/helpers";
+import { makeCallOp, makeLogger, makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
 import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
 import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
 import * as callModule from "@/operations";
-import type { CallContext } from "@/operations/types";
+import type { CallContext, Operation } from "@/operations/types";
+import type { ICostAggregator } from "@/runtime";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 
 function makeCallCtx(overrides: Partial<CallContext> = {}): CallContext {
@@ -16,16 +17,16 @@ function makeCallCtx(overrides: Partial<CallContext> = {}): CallContext {
       estimatedCostUsd: 0,
     }),
   });
-  return {
-    runtime: {
+  const runtime =
+    overrides.runtime ??
+    makeMockRuntime({
       agentManager,
       sessionManager: makeSessionManager(),
-      configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
-      packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
-      signal: undefined,
       costAggregator: createNoOpCostAggregator(),
-    } as any,
-    packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
+    });
+  return {
+    runtime,
+    packageView: overrides.packageView ?? runtime.packages.repo(),
     packageDir: "/tmp/work",
     agentName: "claude",
     storyId: "US-001",
@@ -87,14 +88,11 @@ describe("DebateRunner — one-shot panel mode", () => {
       },
     });
     const ctx = makeCallCtx({
-      runtime: {
+      runtime: makeMockRuntime({
         agentManager,
         sessionManager: makeSessionManager(),
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
         costAggregator: createNoOpCostAggregator(),
-      } as any,
+      }),
     });
     const runner = new DebateRunner({
       ctx,
@@ -115,14 +113,11 @@ describe("DebateRunner — one-shot panel mode", () => {
       },
     });
     const ctx = makeCallCtx({
-      runtime: {
+      runtime: makeMockRuntime({
         agentManager,
         sessionManager: makeSessionManager(),
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
         costAggregator: createNoOpCostAggregator(),
-      } as any,
+      }),
     });
     const runner = new DebateRunner({
       ctx,
@@ -150,14 +145,11 @@ describe("DebateRunner — one-shot panel mode", () => {
       ],
     });
     const ctx = makeCallCtx({
-      runtime: {
+      runtime: makeMockRuntime({
         agentManager,
         sessionManager: makeSessionManager(),
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
         costAggregator: createNoOpCostAggregator(),
-      } as any,
+      }),
     });
     const runner = new DebateRunner({ ctx, stage: "review", stageConfig, config: DEFAULT_CONFIG, workdir: "/tmp" });
     await runner.run("prompt");
@@ -191,17 +183,14 @@ describe("DebateRunner.toStatefulCtx — callContext included (AC5)", () => {
         internalRoundTrips: 0,
       }),
     });
+    const sessionManager = makeSessionManager();
     const ctx = makeCallCtx({
-      runtime: {
+      runtime: makeMockRuntime({
         agentManager,
-        sessionManager: makeSessionManager(),
-        configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
+        sessionManager,
         costAggregator: createNoOpCostAggregator(),
-      } as any,
+      }),
     });
-    const sm = (ctx.runtime as any).sessionManager;
     const runner = new DebateRunner({
       ctx,
       stage: "review",
@@ -215,7 +204,7 @@ describe("DebateRunner.toStatefulCtx — callContext included (AC5)", () => {
       },
       config: DEFAULT_CONFIG,
       workdir: "/tmp",
-      sessionManager: sm,
+      sessionManager,
     });
     const result = await runner.run("test prompt");
     expect(result.outcome).toBe("passed");
@@ -260,16 +249,18 @@ describe("DebateRunner.runPanelOneShot() — four-scope cost tracking (US-006)",
         estimatedCostUsd: 0,
       }),
     });
+    const costAggregator: ICostAggregator = {
+      ...createNoOpCostAggregator(),
+      openScope: costAgg.openScope,
+    };
+    const runtime = makeMockRuntime({
+      agentManager,
+      sessionManager: makeSessionManager(),
+      costAggregator,
+    });
     return {
-      runtime: {
-        agentManager,
-        sessionManager: makeSessionManager(),
-        configLoader: { current: () => DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-        costAggregator: costAgg,
-      } as any,
-      packageView: { config: DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG } as any,
+      runtime,
+      packageView: runtime.packages.repo(),
       packageDir: "/tmp/work",
       agentName: "claude",
       storyId: "US-cost",
@@ -302,10 +293,14 @@ describe("DebateRunner.runPanelOneShot() — four-scope cost tracking (US-006)",
     const costAgg = makeScopedCostAgg();
     const ctx = makeCtxWithCostAgg(costAgg);
     const capturedIds: (string | undefined)[] = [];
-    spyOn(callModule, "callOp").mockImplementation(async (callCtx, op) => {
-      if ((op as { name?: string }).name === "debate-propose") capturedIds.push(callCtx.scopeId);
-      return '{"passed":true}' as any;
-    });
+    spyOn(callModule, "callOp").mockImplementation(
+      makeCallOp({
+        fallback: '{"passed":true}',
+        onDispatch: (op, callCtx) => {
+          if (op.name === "debate-propose") capturedIds.push(callCtx.scopeId);
+        },
+      }),
+    );
     await makePanelCostRunner(ctx).run("prompt");
     expect(capturedIds.length).toBeGreaterThan(0);
     expect(capturedIds.every((id) => id === "debater-scope")).toBe(true);
@@ -314,9 +309,7 @@ describe("DebateRunner.runPanelOneShot() — four-scope cost tracking (US-006)",
   test("AC6: totalCostUsd = sum of all four scope snapshots", async () => {
     const costAgg = makeScopedCostAgg([0.01, 0.1, 0.02, 0]);
     const ctx = makeCtxWithCostAgg(costAgg);
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op) => {
-      return '{"passed":true}' as any;
-    });
+    spyOn(callModule, "callOp").mockImplementation(makeCallOp({ fallback: '{"passed":true}' }));
     const result = await makePanelCostRunner(ctx).run("prompt");
     expect(result.totalCostUsd).toBeCloseTo(0.13);
   });

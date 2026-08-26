@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeDispatchContext, makeStory } from "@test/helpers";
+import { makeDispatchContext, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import { acceptanceStage, parseTestFailures } from "@/pipeline/stages/acceptance";
@@ -17,35 +17,41 @@ import { _executorDeps } from "@/verification";
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** A BunFile-shaped stub for replacing Bun.file. */
+function fileStub(_path: string): { exists: () => Promise<boolean>; text: () => Promise<string> } {
+  return {
+    exists: () => Promise.resolve(true),
+    text: () => Promise.resolve(""),
+  };
+}
+
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   const stories = [
     makeStory({ id: "US-001", status: "passed", passes: true, attempts: 0, acceptanceCriteria: ["AC-1: criterion"] }),
   ];
   return {
-    config: {
-      ...DEFAULT_CONFIG,
+    config: makeNaxConfig({
       acceptance: {
-        ...DEFAULT_CONFIG.acceptance,
         enabled: true,
         testPath: "acceptance.test.ts",
       },
-    } as any,
+    }),
     rootConfig: DEFAULT_CONFIG,
-    prd: {
+    prd: makePRD({
       project: "test-project",
       feature: "test-feature",
       branchName: "feat/test",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       userStories: stories,
-    } as any,
+    }),
     story: stories[0],
     stories,
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
     workdir: "/tmp/test-workdir",
     projectDir: "/tmp/test-workdir",
     featureDir: "/tmp/test-workdir/.nax/features/test-feature",
-    hooks: {} as any,
+    hooks: { hooks: {} },
     ...makeDispatchContext(),
     ...overrides,
   };
@@ -65,8 +71,8 @@ describe("US-002: per-package acceptance runner", () => {
 
     // Patch Bun.spawn for this test
     const origSpawn = _executorDeps.spawn;
-    _executorDeps.spawn = ((cmd: string[], opts: any) => {
-      spawnCalls.push({ cwd: opts.cwd, cmd });
+    _executorDeps.spawn = ((cmd: string[], opts: { cwd?: string }) => {
+      spawnCalls.push({ cwd: opts.cwd ?? "", cmd });
       const mockProc = {
         exited: Promise.resolve(0),
         stdout: new ReadableStream({
@@ -93,10 +99,7 @@ describe("US-002: per-package acceptance runner", () => {
 
     // Mock Bun.file().exists() to return true for test files
     const origFile = Bun.file;
-    (Bun as any).file = (p: string) => ({
-      exists: () => Promise.resolve(true),
-      text: () => Promise.resolve(""),
-    });
+    Object.assign(Bun, { file: fileStub });
 
     try {
       await acceptanceStage.execute(ctx);
@@ -104,7 +107,7 @@ describe("US-002: per-package acceptance runner", () => {
       expect(spawnCalls.some((c) => c.cwd === "/tmp/test-workdir/apps/cli")).toBe(true);
     } finally {
       _executorDeps.spawn = origSpawn;
-      (Bun as any).file = origFile;
+      Object.assign(Bun, { file: origFile });
     }
   });
 
@@ -125,7 +128,7 @@ describe("US-002: per-package acceptance runner", () => {
 
   test("AC-4: all packages passing returns continue", async () => {
     const origSpawn = _executorDeps.spawn;
-    _executorDeps.spawn = ((_cmd: string[], _opts: any) => ({
+    _executorDeps.spawn = ((_cmd: string[], _opts: { cwd?: string }) => ({
       exited: Promise.resolve(0),
       stdout: new ReadableStream({
         start(controller) {
@@ -141,10 +144,7 @@ describe("US-002: per-package acceptance runner", () => {
     })) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
 
     const origFile = Bun.file;
-    (Bun as any).file = (_p: string) => ({
-      exists: () => Promise.resolve(true),
-      text: () => Promise.resolve(""),
-    });
+    Object.assign(Bun, { file: fileStub });
 
     const ctx = makeCtx({
       acceptanceTestPaths: [
@@ -158,7 +158,7 @@ describe("US-002: per-package acceptance runner", () => {
       expect(result.action).toBe("continue");
     } finally {
       _executorDeps.spawn = origSpawn;
-      (Bun as any).file = origFile;
+      Object.assign(Bun, { file: origFile });
     }
   });
 
@@ -166,8 +166,8 @@ describe("US-002: per-package acceptance runner", () => {
     const spawnCalls: Array<{ cmd: string[]; cwd: string }> = [];
 
     const origSpawn = _executorDeps.spawn;
-    _executorDeps.spawn = ((cmd: string[], opts: any) => {
-      spawnCalls.push({ cmd, cwd: opts.cwd });
+    _executorDeps.spawn = ((cmd: string[], opts: { cwd?: string }) => {
+      spawnCalls.push({ cmd, cwd: opts.cwd ?? "" });
       return {
         exited: Promise.resolve(0),
         stdout: new ReadableStream({
@@ -185,10 +185,7 @@ describe("US-002: per-package acceptance runner", () => {
     }) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
 
     const origFile = Bun.file;
-    (Bun as any).file = (_p: string) => ({
-      exists: () => Promise.resolve(true),
-      text: () => Promise.resolve(""),
-    });
+    Object.assign(Bun, { file: fileStub });
 
     // apps/api has jest, apps/web has bun (undefined = default)
     const ctx = makeCtx({
@@ -223,13 +220,13 @@ describe("US-002: per-package acceptance runner", () => {
       expect(webCall?.cmd[2]).toContain("test");
     } finally {
       _executorDeps.spawn = origSpawn;
-      (Bun as any).file = origFile;
+      Object.assign(Bun, { file: origFile });
     }
   });
 
   test("records failed package metadata in acceptanceFailures for downstream fix routing", async () => {
     const origSpawn = _executorDeps.spawn;
-    _executorDeps.spawn = ((cmd: string[], opts: any) => {
+    _executorDeps.spawn = ((_cmd: string[], opts: { cwd?: string }) => {
       const isApi = opts.cwd === "/tmp/test-workdir/apps/api";
       const output = isApi ? "FAIL AC-2" : "1 pass\n";
       const exitCode = isApi ? 1 : 0;
@@ -250,10 +247,7 @@ describe("US-002: per-package acceptance runner", () => {
     }) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
 
     const origFile = Bun.file;
-    (Bun as any).file = (_p: string) => ({
-      exists: () => Promise.resolve(true),
-      text: () => Promise.resolve(""),
-    });
+    Object.assign(Bun, { file: fileStub });
 
     const ctx = makeCtx({
       acceptanceTestPaths: [
@@ -287,13 +281,13 @@ describe("US-002: per-package acceptance runner", () => {
       ]);
     } finally {
       _executorDeps.spawn = origSpawn;
-      (Bun as any).file = origFile;
+      Object.assign(Bun, { file: origFile });
     }
   });
 
   test("records per-package output and failedACs on each failed package entry", async () => {
     const origSpawn = _executorDeps.spawn;
-    _executorDeps.spawn = ((_cmd: string[], opts: any) => {
+    _executorDeps.spawn = ((_cmd: string[], opts: { cwd?: string }) => {
       const isApi = opts.cwd === "/tmp/test-workdir/apps/api";
       const output = isApi ? "FAIL AC-1 api boom\n" : "FAIL AC-2 web boom\n";
       return {
@@ -313,10 +307,7 @@ describe("US-002: per-package acceptance runner", () => {
     }) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
 
     const origFile = Bun.file;
-    (Bun as any).file = (_p: string) => ({
-      exists: () => Promise.resolve(true),
-      text: () => Promise.resolve(""),
-    });
+    Object.assign(Bun, { file: fileStub });
 
     const ctx = makeCtx({
       acceptanceTestPaths: [
@@ -348,7 +339,7 @@ describe("US-002: per-package acceptance runner", () => {
       expect(ctx.acceptanceFailures?.failedACs).toEqual(["AC-1", "AC-2"]);
     } finally {
       _executorDeps.spawn = origSpawn;
-      (Bun as any).file = origFile;
+      Object.assign(Bun, { file: origFile });
     }
   });
 
@@ -357,7 +348,7 @@ describe("US-002: per-package acceptance runner", () => {
   // the aggregate — not collapsed into a single entry by bare-id dedup.
   test("BUG-12: colliding AC-2 ids from two different packages are not deduped in the aggregate", async () => {
     const origSpawn = _executorDeps.spawn;
-    _executorDeps.spawn = ((_cmd: string[], opts: any) => {
+    _executorDeps.spawn = ((_cmd: string[], opts: { cwd?: string }) => {
       const isApi = opts.cwd === "/tmp/test-workdir/apps/api";
       const output = isApi ? "FAIL AC-2 api boom\n" : "FAIL AC-2 web boom\n";
       return {
@@ -377,10 +368,7 @@ describe("US-002: per-package acceptance runner", () => {
     }) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
 
     const origFile = Bun.file;
-    (Bun as any).file = (_p: string) => ({
-      exists: () => Promise.resolve(true),
-      text: () => Promise.resolve(""),
-    });
+    Object.assign(Bun, { file: fileStub });
 
     const ctx = makeCtx({
       acceptanceTestPaths: [
@@ -412,7 +400,7 @@ describe("US-002: per-package acceptance runner", () => {
       expect(ctx.acceptanceFailures?.findings).toHaveLength(2);
     } finally {
       _executorDeps.spawn = origSpawn;
-      (Bun as any).file = origFile;
+      Object.assign(Bun, { file: origFile });
     }
   });
 });
@@ -438,14 +426,14 @@ describe("acceptanceStage.enabled()", () => {
       }),
     ];
     const ctx = makeCtx({
-      prd: {
+      prd: makePRD({
         project: "test",
         feature: "test",
         branchName: "feat/test",
         createdAt: "",
         updatedAt: "",
         userStories: stories,
-      } as any,
+      }),
       story: stories[0],
       stories,
     });
@@ -454,10 +442,9 @@ describe("acceptanceStage.enabled()", () => {
 
   test("disabled when acceptance.enabled is false", () => {
     const ctx = makeCtx({
-      config: {
-        ...DEFAULT_CONFIG,
-        acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false },
-      } as any,
+      config: makeNaxConfig({
+        acceptance: { enabled: false },
+      }),
     });
     expect(acceptanceStage.enabled(ctx)).toBe(false);
   });
@@ -558,7 +545,7 @@ describe("parseTestFailures()", () => {
   test("vitest: strips leading erase-line codes before the FAIL anchor", () => {
     const esc = String.fromCharCode(27);
     const output = [
-      " Test Files  1 failed (1)",
+      " Test Files  1 passed (1)",
       `${esc}[2K${esc}[1G FAIL  .nax/x.test.tsx > AC-4: still detected`,
     ].join("\n");
 
@@ -643,7 +630,8 @@ describe("acceptance verdict logger emit", () => {
     origSpawn = _executorDeps.spawn;
     origFile = Bun.file;
     const out = pass ? "1 pass\n" : "  (fail) AC-2: handles empty input\n";
-    _executorDeps.spawn = ((_cmd: string[], _opts: any) => ({
+    Object.assign(Bun, { file: fileStub });
+    _executorDeps.spawn = ((_cmd: string[], _opts: { cwd?: string }) => ({
       exited: Promise.resolve(pass ? 0 : 1),
       stdout: new ReadableStream({
         start(controller) {
@@ -657,10 +645,6 @@ describe("acceptance verdict logger emit", () => {
         },
       }),
     })) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
-    (Bun as any).file = (_p: string) => ({
-      exists: () => Promise.resolve(true),
-      text: () => Promise.resolve(""),
-    });
   }
 
   beforeEach(() => {
@@ -673,7 +657,7 @@ describe("acceptance verdict logger emit", () => {
     unsubscribe = null;
     resetLogger();
     if (origSpawn) _executorDeps.spawn = origSpawn;
-    if (origFile) (Bun as any).file = origFile;
+    if (origFile) Object.assign(Bun, { file: origFile });
   });
 
   test("AC-1: pass verdict carries passed:true and no failed ACs", async () => {

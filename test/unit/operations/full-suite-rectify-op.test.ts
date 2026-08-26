@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { makeStory } from "@test/helpers";
+import { makeStory, makeTestRuntime } from "@test/helpers";
+import { autofixConfigSelector } from "@/config";
+import type { AutofixConfig } from "@/config/selectors";
 import type { Finding } from "@/findings/types";
 import { fullSuiteRectifyOp } from "@/operations";
+import type { BuildContext } from "@/operations/types";
 import { RectifierPromptBuilder, repoScopedRectification } from "@/prompts";
 
 const finding: Finding = {
@@ -17,7 +20,14 @@ const story = makeStory({
   routing: { testStrategy: "three-session-tdd", complexity: "medium", reasoning: "tdd" },
 });
 
-const ctx = { story } as any;
+// The op's build/parse/keepOpen never read the context — it only needs to
+// satisfy BuildContext<AutofixConfig>, which the real runtime's package view does.
+function makeCtx(): BuildContext<AutofixConfig> {
+  const view = makeTestRuntime().packages.repo();
+  return { packageView: view, config: view.select(autofixConfigSelector) };
+}
+
+const ctx = makeCtx();
 
 describe("fullSuiteRectifyOp — shape (AC-1)", () => {
   test("kind is 'run'", () => {
@@ -143,10 +153,10 @@ describe("fullSuiteRectifyOp.keepOpen — scope: 'repo'", () => {
   test("repo scope does not keep the session open", () => {
     // The repo-scoped dispatch runs under its own session role and gets one
     // attempt; leaving it warm would strand a session nothing resumes.
-    expect(fullSuiteRectifyOp.keepOpen?.({ story, findings: [finding], scope: "repo" }, {} as any)).toBe(false);
+    expect(fullSuiteRectifyOp.keepOpen?.({ story, findings: [finding], scope: "repo" }, ctx)).toBe(false);
   });
 
   test("story scope keeps the warm session the op declares", () => {
-    expect(fullSuiteRectifyOp.keepOpen?.({ story, findings: [finding] }, {} as any)).toBe(true);
+    expect(fullSuiteRectifyOp.keepOpen?.({ story, findings: [finding] }, ctx)).toBe(true);
   });
 });

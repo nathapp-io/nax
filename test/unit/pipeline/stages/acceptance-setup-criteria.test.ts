@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeDispatchContext, waitForCondition } from "@test/helpers";
+import { makeDispatchContext, makeNaxConfig, waitForCondition } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { _acceptanceSetupDeps, acceptanceSetupStage } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
@@ -40,16 +40,14 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     makeStory("US-002", ["AC-1: third criterion"]),
   ];
   return {
-    config: {
-      ...DEFAULT_CONFIG,
+    config: makeNaxConfig({
       acceptance: {
-        ...DEFAULT_CONFIG.acceptance,
         enabled: true,
         refinement: true,
         redGate: true,
         model: "fast",
       },
-    } as any,
+    }),
     prd: makePrd(stories),
     story: stories[0],
     stories,
@@ -58,14 +56,20 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     workdir: "/tmp/test-workdir",
     projectDir: "/tmp/test-workdir",
     featureDir: "/tmp/test-workdir/.nax/features/test-feature",
-    hooks: {} as any,
+    hooks: { hooks: {} },
     ...makeDispatchContext(),
     ...overrides,
   };
 }
 
 function makeDefaultCallOp(testCode = 'test("AC-1", () => { throw new Error("red") })') {
-  return async (_ctx: any, _packageDir: any, op: any, input: any) => {
+  type SetupCallOp = typeof _acceptanceSetupDeps.callOp;
+  return async (
+    _ctx: Parameters<SetupCallOp>[0],
+    _packageDir: Parameters<SetupCallOp>[1],
+    op: Parameters<SetupCallOp>[2],
+    input: Parameters<SetupCallOp>[3],
+  ) => {
     if (op.name === "acceptance-refine") {
       const { criteria, storyId } = input as { criteria: string[]; storyId: string };
       return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
@@ -131,8 +135,8 @@ describe("acceptance-setup: criteria collection", () => {
     const ctx = makeCtx();
     await acceptanceSetupStage.execute(ctx);
 
-    expect((ctx as any).acceptanceSetup).toBeDefined();
-    expect((ctx as any).acceptanceSetup.totalCriteria).toBe(3);
+    expect(ctx.acceptanceSetup).toBeDefined();
+    expect(ctx.acceptanceSetup?.totalCriteria).toBe(3);
   });
 });
 
@@ -189,10 +193,9 @@ describe("acceptance-setup: calls refinement and generation", () => {
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
     const ctx = makeCtx({
-      config: {
-        ...DEFAULT_CONFIG,
-        acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: true, refinement: false, redGate: true },
-      } as any,
+      config: makeNaxConfig({
+        acceptance: { enabled: true, refinement: false, redGate: true },
+      }),
     });
     await acceptanceSetupStage.execute(ctx);
 
@@ -238,13 +241,12 @@ describe("acceptance-setup: calls refinement and generation", () => {
     _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
 
     const ctx = makeCtx({
-      config: {
-        ...DEFAULT_CONFIG,
-        acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: true, refinement: true, model: "balanced" },
-      } as any,
+      config: makeNaxConfig({
+        acceptance: { enabled: true, refinement: true, model: "balanced" },
+      }),
     });
     await acceptanceSetupStage.execute(ctx);
-    expect((ctx as any).acceptanceSetup).toBeDefined();
+    expect(ctx.acceptanceSetup).toBeDefined();
   });
 
   test("falls back to unrefined criteria when refine op throws (e.g. after retry exhaustion)", async () => {
@@ -370,16 +372,14 @@ describe("acceptance-setup: refinement concurrency", () => {
       prd: makePrd(stories),
       stories,
       story: stories[0],
-      config: {
-        ...DEFAULT_CONFIG,
+      config: makeNaxConfig({
         acceptance: {
-          ...DEFAULT_CONFIG.acceptance,
           enabled: true,
           refinement: true,
           redGate: true,
           ...(refinementConcurrency !== undefined ? { refinementConcurrency } : {}),
         },
-      } as any,
+      }),
     });
   }
 
@@ -453,7 +453,7 @@ describe("acceptance-setup: refinement concurrency", () => {
   });
 
   test("DEFAULT_CONFIG.acceptance.refinementConcurrency is 3", () => {
-    expect((DEFAULT_CONFIG.acceptance as any).refinementConcurrency).toBe(3);
+    expect(DEFAULT_CONFIG.acceptance.refinementConcurrency).toBe(3);
   });
 
   test("single story works without concurrency edge case", async () => {

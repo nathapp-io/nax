@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeLogger, makeMockAgentManager, makeSessionManager } from "@test/helpers";
+import { makeLogger, makeMockAgentManager, makeMockCallContext, makeMockRuntime } from "@test/helpers";
 import type { CompleteOptions, CompleteResult } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config";
 import { DebateRunner } from "@/debate/runner";
@@ -32,20 +32,7 @@ function makeCallCtx(
         estimatedCostUsd: 0,
       })),
   });
-  return {
-    runtime: {
-      agentManager,
-      sessionManager: makeSessionManager(),
-      configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
-      packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
-      signal: undefined,
-    } as any,
-    packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
-    packageDir: "/tmp/work",
-    agentName: "claude",
-    storyId,
-    featureName: "test",
-  };
+  return makeMockCallContext({ runtime: makeMockRuntime({ agentManager }), storyId });
 }
 
 let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;

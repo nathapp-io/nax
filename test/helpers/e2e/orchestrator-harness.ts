@@ -180,32 +180,31 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
   ]);
   const strategiesFired: string[] = [];
 
-  // Wrap callOp to record phase order — use type assertion to satisfy the
-  // generic signature which can't be expressed concisely without losing information.
-  (_storyOrchestratorDeps as { callOp: (...args: any[]) => any }).callOp = async (
-    ctx: unknown,
-    op: unknown,
-    input: unknown,
-  ) => {
-    const opName = (op as { name?: string }).name ?? "";
-    if (PHASE_NAMES.has(opName)) {
-      phaseLog.push(opName);
-    } else if (opName) {
-      strategiesFired.push(opName);
-    }
-    return origCallOp(
-      ctx as Parameters<typeof origCallOp>[0],
-      op as Parameters<typeof origCallOp>[1],
-      input as Parameters<typeof origCallOp>[2],
-    );
-  };
+  // Wrap callOp to record phase order. The dep slot is generic (<I, O, C>), so
+  // no concrete wrapper can satisfy it by assignment alone; Object.assign keeps
+  // the replacement un-asserted while parameter types still derive from the slot.
+  Object.assign(_storyOrchestratorDeps, {
+    callOp: async (
+      ctx: Parameters<typeof origCallOp>[0],
+      op: Parameters<typeof origCallOp>[1],
+      input: Parameters<typeof origCallOp>[2],
+    ) => {
+      const opName = op.name;
+      if (PHASE_NAMES.has(opName)) {
+        phaseLog.push(opName);
+      } else if (opName) {
+        strategiesFired.push(opName);
+      }
+      return origCallOp(ctx, op, input);
+    },
+  });
 
   // ExecutionPlan discards runNonBlockingFix's return — spy it so the nbf outcome
   // ({ ran, kept, restored }) is observable. Delegates to the real implementation.
   let nonBlockingFix: E2ENonBlockingFix | undefined;
-  (_storyOrchestratorDeps as { runNonBlockingFix: (...args: any[]) => any }).runNonBlockingFix = async (
-    nbfArgs: unknown,
-    nbfDeps: unknown,
+  _storyOrchestratorDeps.runNonBlockingFix = async (
+    nbfArgs: Parameters<typeof origRunNbf>[0],
+    nbfDeps: Parameters<typeof origRunNbf>[1],
   ) => {
     // Stub the git-backed snapshot/rollback/diff deps so nbf works in the non-git
     // temp workdir and the source-diff cap path is deterministic. Merged AFTER the
@@ -215,13 +214,7 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
       rollbackToRef: async () => {},
       measureSourceDiff: async () => opts.nonBlockingFixDiff ?? { fileCount: 0, sourceLineCount: 0 },
     };
-    const out = await origRunNbf(
-      nbfArgs as Parameters<typeof origRunNbf>[0],
-      {
-        ...(nbfDeps as object),
-        ...stubDeps,
-      } as Parameters<typeof origRunNbf>[1],
-    );
+    const out = await origRunNbf(nbfArgs, { ...(nbfDeps ?? {}), ...stubDeps });
     nonBlockingFix = { ran: out.ran, kept: out.kept, restored: out.restored };
     return out;
   };
@@ -232,24 +225,27 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
 
   _lintCheckDeps.runQualityCommand = async () => opts.gates?.lint?.(lintAttempts.n++) ?? PASS_QC("lint");
   _typecheckCheckDeps.runQualityCommand = async () => opts.gates?.typecheck?.(tcAttempts.n++) ?? PASS_QC("typecheck");
-  _fullSuiteGateDeps.runTests = async (_input, _gateCtx) => {
-    const g = opts.gates?.fullSuite?.(fsAttempts.n++) ?? { passed: true, failed: 0 };
-    return {
-      passed: g.passed,
-      failed: g.failed,
-      output: g.output ?? "",
-      // TestSummary has a complex shape; cast via unknown to avoid importing its full type.
-      // `failures` is only set when the caller supplies it — otherwise it stays undefined
-      // to preserve the legacy gate-parse-crash → validator-error behavior some tests rely on.
-      parsedSummary: {
-        passed: g.passed ? 1 : 0,
+  // The legacy branch intentionally omits parsedSummary.failures so a failed>0
+  // gate crashes testSummaryToFindings and is swallowed as validator-error — a
+  // branch some e2e tests assert on. That shape cannot satisfy RunTestsResult,
+  // so the replacement is merged in via Object.assign instead of asserted.
+  Object.assign(_fullSuiteGateDeps, {
+    runTests: async (_input: Parameters<typeof origRunTests>[0], _gateCtx: Parameters<typeof origRunTests>[1]) => {
+      const g = opts.gates?.fullSuite?.(fsAttempts.n++) ?? { passed: true, failed: 0 };
+      return {
+        passed: g.passed,
         failed: g.failed,
-        skipped: 0,
-        ...(g.failures ? { failures: g.failures } : {}),
-      } as any,
-      timedOut: false,
-    };
-  };
+        output: g.output ?? "",
+        parsedSummary: {
+          passed: g.passed ? 1 : 0,
+          failed: g.failed,
+          skipped: 0,
+          ...(g.failures ? { failures: g.failures } : {}),
+        },
+        timedOut: false,
+      };
+    },
+  });
 
   // Build minimal PlanInputs via makeMockPlanInputs (handles defaults) with
   // overrides for each slot. Review inputs use the defaults baked into makeE2EConfig

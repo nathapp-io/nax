@@ -11,7 +11,9 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import type { AdversarialReviewInput } from "@/operations/adversarial-review";
 import { adversarialReviewOp } from "@/operations/adversarial-review";
+import type { HopBodyContext } from "@/operations/types";
 import { AdversarialReviewPromptBuilder } from "@/prompts";
 
 const ADVERSARIAL_CONFIG = {
@@ -34,7 +36,7 @@ const STORY = {
 };
 
 function turn(output: string) {
-  return { output, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+  return { output, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0, internalRoundTrips: 0 };
 }
 
 async function runHopBody(opts: {
@@ -53,7 +55,7 @@ async function runHopBody(opts: {
       adversarialConfig: { ...ADVERSARIAL_CONFIG, ...opts.config },
       mode: opts.mode ?? "ref",
     },
-  } as any);
+  } satisfies HopBodyContext<AdversarialReviewInput>);
   return { result, callCount };
 }
 
@@ -79,7 +81,7 @@ describe("adversarialReviewOp.hopBody — inspection-trail guard (#3A)", () => {
       send: mockSend,
       sendWithParseRetry: mockSend,
       input: { workdir: "/tmp", story: STORY, adversarialConfig: ADVERSARIAL_CONFIG, mode: "ref" },
-    } as any);
+    } satisfies HopBodyContext<AdversarialReviewInput>);
     expect(secondPrompt).toBe(AdversarialReviewPromptBuilder.demandInspection());
   });
 

@@ -6,6 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeLogger } from "@test/helpers";
 import { _codeNeighborDeps, CodeNeighborProvider } from "@/context/engine/providers/code-neighbor";
 import type { ContextRequest } from "@/context/engine/types";
 import { extractTestDirs, globsToPathspec, globsToTestRegex } from "@/test-runners/conventions";
@@ -57,7 +58,7 @@ beforeEach(() => {
   _codeNeighborDeps.readFile = async () => "";
   _codeNeighborDeps.discoverWorkspacePackages = async () => [];
   _codeNeighborDeps.detectLanguage = async () => undefined;
-  _codeNeighborDeps.getLogger = () => ({ debug: () => {}, warn: () => {}, info: () => {}, error: () => {} }) as any;
+  _codeNeighborDeps.getLogger = () => makeLogger();
 });
 
 afterEach(() => {
@@ -137,9 +138,8 @@ describe("CodeNeighborProvider — language-aware glob and cap (#895)", () => {
   });
 
   test("emits warn-level log on truncation with storyId, packageDir, pattern, cap, hint", async () => {
-    const warnArgs: unknown[][] = [];
-    _codeNeighborDeps.getLogger = () =>
-      ({ debug: () => {}, warn: (...a: unknown[]) => warnArgs.push(a), info: () => {}, error: () => {} }) as any;
+    const logger = makeLogger();
+    _codeNeighborDeps.getLogger = () => logger;
     // Simulate the real glob behaviour: when truncated=true it calls warn internally.
     // We replace glob with one that calls getLogger().warn exactly as the real dep does.
     _codeNeighborDeps.glob = (_p, _c, _m, cap, ctx) => {
@@ -153,8 +153,9 @@ describe("CodeNeighborProvider — language-aware glob and cap (#895)", () => {
       return { files: ["src/a.ts"], truncated: true };
     };
     await new CodeNeighborProvider().fetch(makeRequest({ touchedFiles: ["src/b.ts"] }));
-    expect(warnArgs.length).toBeGreaterThan(0);
-    const data = warnArgs[0]?.[2] as Record<string, unknown>;
+    const warnEntries = logger.calls.filter((c) => c.level === "warn");
+    expect(warnEntries.length).toBeGreaterThan(0);
+    const data = warnEntries[0]?.data;
     expect(data).toHaveProperty("storyId");
     expect(data).toHaveProperty("packageDir");
     expect(data).toHaveProperty("pattern");
@@ -170,12 +171,11 @@ describe("CodeNeighborProvider — language-aware glob and cap (#895)", () => {
   });
 
   test("does not warn or append note when glob is below cap", async () => {
-    const warnCalls: unknown[] = [];
-    _codeNeighborDeps.getLogger = () =>
-      ({ debug: () => {}, warn: (...a: unknown[]) => warnCalls.push(a), info: () => {}, error: () => {} }) as any;
+    const logger = makeLogger();
+    _codeNeighborDeps.getLogger = () => logger;
     _codeNeighborDeps.glob = () => ({ files: ["src/a.ts"], truncated: false });
     const result = await new CodeNeighborProvider().fetch(makeRequest({ touchedFiles: ["src/b.ts"] }));
-    expect(warnCalls).toHaveLength(0);
+    expect(logger.calls.some((c) => c.level === "warn")).toBe(false);
     expect(result.chunks[0]?.content ?? "").not.toContain("> Note:");
   });
 });

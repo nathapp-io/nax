@@ -16,8 +16,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mapSourceToTests } from "@/verification/smart-runner";
 
 function mockFileExists(existingPaths: string[]) {
-  (Bun as any).file = (path: string) => ({
-    exists: () => Promise.resolve(existingPaths.includes(path)),
+  Object.assign(Bun, {
+    file: (path: string) => ({
+      exists: () => Promise.resolve(existingPaths.includes(path)),
+    }),
   });
 }
 
@@ -29,7 +31,7 @@ describe("mapSourceToTests — packagePrefix (monorepo)", () => {
   });
 
   afterEach(() => {
-    (Bun as any).file = originalFile;
+    Object.assign(Bun, { file: originalFile });
   });
 
   test("maps monorepo source to package-local test/unit when packagePrefix is set", async () => {
@@ -81,7 +83,7 @@ describe("mapSourceToTests — co-located test files (testFilePatterns)", () => 
   });
 
   afterEach(() => {
-    (Bun as any).file = originalFile;
+    Object.assign(Bun, { file: originalFile });
   });
 
   test("finds co-located .spec.ts in monorepo src/ when pattern includes src/**/*.spec.ts (NestJS)", async () => {

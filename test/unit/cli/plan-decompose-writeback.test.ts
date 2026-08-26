@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  assertDefined,
   cleanupTempDir,
   makeMockAgentManager,
   makeMockRuntime,
@@ -18,17 +19,19 @@ import {
   makeTempDir,
 } from "@test/helpers";
 import type { DecomposedStory } from "@/agents/shared/types-extended";
+import type { CompleteOptions } from "@/agents/types";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import type { PRD, UserStory } from "@/prd";
 import { getContextFiles } from "@/prd";
 
 function makeMockDecomposeManager(
-  decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
+  decomposeFn?: (agentName: string, opts: CompleteOptions) => Promise<{ stories: DecomposedStory[] }>,
 ) {
   return makeMockAgentManager({
     completeAsFn: decomposeFn
-      ? async (name: string, _prompt: string, opts?: any) => {
-          const result = await decomposeFn(name, opts ?? {});
+      ? async (name: string, _prompt: string, opts?: CompleteOptions) => {
+          assertDefined(opts, "completeAs opts");
+          const result = await decomposeFn(name, opts);
           return {
             output: JSON.stringify(result.stories),
             tokenUsage: { inputTokens: 0, outputTokens: 0 },

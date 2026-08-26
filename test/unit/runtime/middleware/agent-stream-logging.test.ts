@@ -3,11 +3,17 @@ import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
-import type { AgentStreamEvent } from "@/runtime/agent-stream-events";
+import type {
+  AgentCallEndedEvent,
+  AgentCallStartedEvent,
+  AgentMessageUpdateEvent,
+  AgentThinkingUpdateEvent,
+  AgentUsageUpdateEvent,
+} from "@/runtime/agent-stream-events";
 import { AgentStreamEventBus } from "@/runtime/agent-stream-events";
 import { attachAgentStreamLogging } from "@/runtime/middleware/agent-stream-logging";
 
-function makeCallStartedEvent(overrides: Partial<AgentStreamEvent> = {}): AgentStreamEvent {
+function makeCallStartedEvent(overrides: Partial<AgentCallStartedEvent> = {}): AgentCallStartedEvent {
   return {
     kind: "agent.call_started",
     callId: "call-001",
@@ -21,10 +27,10 @@ function makeCallStartedEvent(overrides: Partial<AgentStreamEvent> = {}): AgentS
     model: "claude-opus-4-5",
     timeoutSeconds: 60,
     ...overrides,
-  } as AgentStreamEvent;
+  };
 }
 
-function makeCallEndedEvent(overrides: Partial<AgentStreamEvent> = {}): AgentStreamEvent {
+function makeCallEndedEvent(overrides: Partial<AgentCallEndedEvent> = {}): AgentCallEndedEvent {
   return {
     kind: "agent.call_ended",
     callId: "call-001",
@@ -36,10 +42,10 @@ function makeCallEndedEvent(overrides: Partial<AgentStreamEvent> = {}): AgentStr
     timestamp: 5000,
     status: "success",
     ...overrides,
-  } as AgentStreamEvent;
+  };
 }
 
-function makeMessageUpdateEvent(overrides: Partial<AgentStreamEvent> = {}): AgentStreamEvent {
+function makeMessageUpdateEvent(overrides: Partial<AgentMessageUpdateEvent> = {}): AgentMessageUpdateEvent {
   return {
     kind: "agent.message_update",
     callId: "call-001",
@@ -51,10 +57,10 @@ function makeMessageUpdateEvent(overrides: Partial<AgentStreamEvent> = {}): Agen
     timestamp: 2000,
     deltaBytes: 100,
     ...overrides,
-  } as AgentStreamEvent;
+  };
 }
 
-function makeThinkingUpdateEvent(overrides: Partial<AgentStreamEvent> = {}): AgentStreamEvent {
+function makeThinkingUpdateEvent(overrides: Partial<AgentThinkingUpdateEvent> = {}): AgentThinkingUpdateEvent {
   return {
     kind: "agent.thinking_update",
     callId: "call-001",
@@ -66,10 +72,10 @@ function makeThinkingUpdateEvent(overrides: Partial<AgentStreamEvent> = {}): Age
     timestamp: 3000,
     deltaBytes: 50,
     ...overrides,
-  } as AgentStreamEvent;
+  };
 }
 
-function makeUsageUpdateEvent(overrides: Partial<AgentStreamEvent> = {}): AgentStreamEvent {
+function makeUsageUpdateEvent(overrides: Partial<AgentUsageUpdateEvent> = {}): AgentUsageUpdateEvent {
   return {
     kind: "agent.usage_update",
     callId: "call-001",
@@ -82,7 +88,7 @@ function makeUsageUpdateEvent(overrides: Partial<AgentStreamEvent> = {}): AgentS
     inputTokens: 100,
     outputTokens: 50,
     ...overrides,
-  } as AgentStreamEvent;
+  };
 }
 
 async function parseAllEntries(logFile: string): Promise<LogEntry[]> {
@@ -128,7 +134,7 @@ describe("attachAgentStreamLogging", () => {
         stage: "run",
         model: "claude-opus-4-5",
         timeoutSeconds: 120,
-      } as any),
+      }),
     );
     await getLogger().flush();
 
@@ -154,11 +160,11 @@ describe("attachAgentStreamLogging", () => {
     const lastActivityAt = 4000;
     const endedAt = 5000;
 
-    bus.emitAgentStream(makeCallStartedEvent({ timestamp: startedAt } as any));
-    bus.emitAgentStream(makeMessageUpdateEvent({ timestamp: 2000 } as any));
-    bus.emitAgentStream(makeThinkingUpdateEvent({ timestamp: 3000 } as any));
-    bus.emitAgentStream(makeUsageUpdateEvent({ timestamp: lastActivityAt } as any));
-    bus.emitAgentStream(makeCallEndedEvent({ timestamp: endedAt } as any));
+    bus.emitAgentStream(makeCallStartedEvent({ timestamp: startedAt }));
+    bus.emitAgentStream(makeMessageUpdateEvent({ timestamp: 2000 }));
+    bus.emitAgentStream(makeThinkingUpdateEvent({ timestamp: 3000 }));
+    bus.emitAgentStream(makeUsageUpdateEvent({ timestamp: lastActivityAt }));
+    bus.emitAgentStream(makeCallEndedEvent({ timestamp: endedAt }));
     await getLogger().flush();
 
     const entries = await parseAllEntries(logFile);
@@ -186,7 +192,7 @@ describe("attachAgentStreamLogging", () => {
       makeThinkingUpdateEvent({
         // deltaBytes is a byte count (number), not a string — verify no raw text leaks
         deltaBytes: 42,
-      } as any),
+      }),
     );
     bus.emitAgentStream(makeCallEndedEvent());
     await getLogger().flush();
@@ -205,14 +211,14 @@ describe("attachAgentStreamLogging", () => {
     const bus = new AgentStreamEventBus();
     const unsub = attachAgentStreamLogging(bus, "r-001");
 
-    bus.emitAgentStream(makeCallStartedEvent({ callId: "call-A" } as any));
+    bus.emitAgentStream(makeCallStartedEvent({ callId: "call-A" }));
     await getLogger().flush();
 
     const contentBefore = await Bun.file(logFile).text();
     const linesBefore = contentBefore.trim().split("\n").filter(Boolean).length;
 
     unsub();
-    bus.emitAgentStream(makeCallStartedEvent({ callId: "call-B" } as any));
+    bus.emitAgentStream(makeCallStartedEvent({ callId: "call-B" }));
     await getLogger().flush();
 
     const contentAfter = await Bun.file(logFile).text();
@@ -234,15 +240,15 @@ describe("attachAgentStreamLogging", () => {
     const bus = new AgentStreamEventBus();
     attachAgentStreamLogging(bus, "r-001");
 
-    bus.emitAgentStream(makeCallStartedEvent({ callId: "call-A", agentName: "claude", timestamp: 1000 } as any));
-    bus.emitAgentStream(makeCallStartedEvent({ callId: "call-B", agentName: "codex", timestamp: 1000 } as any));
+    bus.emitAgentStream(makeCallStartedEvent({ callId: "call-A", agentName: "claude", timestamp: 1000 }));
+    bus.emitAgentStream(makeCallStartedEvent({ callId: "call-B", agentName: "codex", timestamp: 1000 }));
 
-    bus.emitAgentStream(makeMessageUpdateEvent({ callId: "call-A", timestamp: 2000 } as any));
-    bus.emitAgentStream(makeMessageUpdateEvent({ callId: "call-A", timestamp: 2100 } as any));
-    bus.emitAgentStream(makeMessageUpdateEvent({ callId: "call-B", timestamp: 2200 } as any));
+    bus.emitAgentStream(makeMessageUpdateEvent({ callId: "call-A", timestamp: 2000 }));
+    bus.emitAgentStream(makeMessageUpdateEvent({ callId: "call-A", timestamp: 2100 }));
+    bus.emitAgentStream(makeMessageUpdateEvent({ callId: "call-B", timestamp: 2200 }));
 
-    bus.emitAgentStream(makeCallEndedEvent({ callId: "call-A", timestamp: 3000 } as any));
-    bus.emitAgentStream(makeCallEndedEvent({ callId: "call-B", timestamp: 4000 } as any));
+    bus.emitAgentStream(makeCallEndedEvent({ callId: "call-A", timestamp: 3000 }));
+    bus.emitAgentStream(makeCallEndedEvent({ callId: "call-B", timestamp: 4000 }));
     await getLogger().flush();
 
     const entries = await parseAllEntries(logFile);

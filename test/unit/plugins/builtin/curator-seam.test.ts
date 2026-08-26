@@ -17,6 +17,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { makeNaxConfig } from "@test/helpers";
 import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
 import { collectObservations, curatorPlugin, readHeuristicWindow } from "@/plugins/builtin/curator";
 import type { CuratorThresholds } from "@/plugins/builtin/curator/heuristics";
@@ -54,7 +55,7 @@ function makeContext(
     version: "0.1.0",
     pluginConfig: {},
     logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-    config: {} as any,
+    config: makeNaxConfig(),
     outputDir: join(root, "out", projectKey),
     globalDir: join(root, "global"),
     projectKey,
@@ -351,7 +352,7 @@ describe("curator plugin — end to end", () => {
     );
     const ctx = {
       ...makeContext(root, feature, runId, Date.parse(when) - 60_000, projectKey),
-      config: {
+      config: makeNaxConfig({
         curator: {
           enabled: true,
           thresholds: {
@@ -363,7 +364,7 @@ describe("curator plugin — end to end", () => {
             unchangedOutcome: 3,
           },
         },
-      } as any,
+      }),
     };
     await curatorPlugin.extensions.postRunAction?.execute(ctx);
     return join(root, "out", projectKey, "runs", runId, "curator-proposals.md");

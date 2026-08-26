@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  assertDefined,
   cleanupTempDir,
   makeMockAgentManager,
   makeMockRuntime,
@@ -283,8 +284,9 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     _planDeps.createRuntime = mock(() =>
       makeMockRuntime({
         agentManager: makeMockAgentManager({
-          completeAsFn: async (_name: string, _prompt: string, opts?: any) => {
-            capturedDecomposeOpts.push(opts ?? {});
+          completeAsFn: async (_name: string, _prompt: string, opts) => {
+            assertDefined(opts);
+            capturedDecomposeOpts.push(opts);
             return {
               output: JSON.stringify([makeSubStory("US-001-A"), makeSubStory("US-001-B")].map(toDecomposedStory)),
               tokenUsage: { inputTokens: 0, outputTokens: 0 },

@@ -1,16 +1,19 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
+  assertDefined,
   cleanupTempDir,
   makeMutationCheckDeps as fakeDeps,
   makeMutationCheckCtx,
   makeResolvedTestPatterns,
+  makeStory,
   makeTempDir,
 } from "@test/helpers";
+import type { MutationCheckDeps } from "@/operations";
 import { _mutationCheckDeps, mutationCheckOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 
-const FAKE_STORY = { id: "US-004", title: "mutation-check op" } as any;
+const FAKE_STORY = makeStory({ id: "US-004", title: "mutation-check op" });
 
 const ctxWithConfig = (execution: Record<string, unknown> = {}, runtime: Partial<NaxRuntime> = {}) =>
   makeMutationCheckCtx(execution, { runtime });
@@ -144,7 +147,7 @@ describe("mutationCheckOp — AC3: surviving mutant (regression SUCCESS)", () =>
           thresholdFallback: false,
           isMonorepoOrchestrator: false,
         }),
-        regression: async (opts: any) => {
+        regression: async (opts) => {
           capturedRegressionCommand = opts.command;
           return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
         },
@@ -514,7 +517,7 @@ describe("mutationCheckOp — AC6: unsupported language no-ops", () => {
     const dir = makeTempDir("nax-mutation-test-");
     try {
       const deps = fakeDeps({
-        detectLanguage: async () => "python" as any,
+        detectLanguage: async () => "python",
         getChangedNonTestFiles: async () => ["src/foo.py"],
         regression: async () => {
           regressionCalled = true;
@@ -550,7 +553,7 @@ describe("mutationCheckOp — AC6: unsupported language no-ops", () => {
     const dir = makeTempDir("nax-mutation-test-");
     try {
       const deps = fakeDeps({
-        detectLanguage: async () => undefined as any,
+        detectLanguage: async () => undefined,
         getChangedNonTestFiles: async () => ["src/foo.unknown"],
         regression: async () => {
           regressionCalled = true;
@@ -694,7 +697,7 @@ describe("mutationCheckOp — AC7: maxMutants caps regression calls", () => {
 describe("mutationCheckOp — AC8: forwards storyGitRef + configured command; regression receives effectiveCommand", () => {
   test("selectScopedTests receives storyGitRef and the configured base test command; regression receives effectiveCommand", async () => {
     const dir = makeTempDir("nax-mutation-test-");
-    let capturedSelectInput: any = undefined;
+    let capturedSelectInput: Parameters<MutationCheckDeps["selectScopedTests"]>[0] | undefined;
     let capturedRegressionCommand: string | undefined;
     try {
       const file = join(dir, "src", "foo.ts");
@@ -703,7 +706,7 @@ describe("mutationCheckOp — AC8: forwards storyGitRef + configured command; re
       const deps = fakeDeps({
         getChangedNonTestFiles: async () => [file],
         getChangedLineRanges: async () => new Map([[file, [{ start: 1, end: 1 }]]]),
-        selectScopedTests: async (input: any) => {
+        selectScopedTests: async (input) => {
           capturedSelectInput = input;
           return {
             effectiveCommand: "bun test src/foo.test.ts",
@@ -712,7 +715,7 @@ describe("mutationCheckOp — AC8: forwards storyGitRef + configured command; re
             isMonorepoOrchestrator: false,
           };
         },
-        regression: async (opts: any) => {
+        regression: async (opts) => {
           capturedRegressionCommand = opts.command;
           return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
         },
@@ -736,7 +739,7 @@ describe("mutationCheckOp — AC8: forwards storyGitRef + configured command; re
         deps,
       );
 
-      expect(capturedSelectInput).toBeDefined();
+      assertDefined(capturedSelectInput, "selectScopedTests input");
       expect(capturedSelectInput.storyGitRef).toBe("deadbeef");
       expect(capturedSelectInput.testCommand).toBe("bun test");
       expect(capturedRegressionCommand).toBe("bun test src/foo.test.ts");

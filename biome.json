@@ -21,7 +21,7 @@
       "includes": ["**/test/**"],
       "linter": {
         "rules": {
-          "suspicious": { "noExplicitAny": "off" },
+          "suspicious": { "noExplicitAny": "error" },
           "style": { "noNonNullAssertion": "off" },
           "performance": { "noDelete": "off" }
         }

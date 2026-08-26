@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import type { Complexity, TestStrategy } from "@/config";
 import { MAX_OUT_OF_SCOPE_ITEMS } from "@/prd";
 import { extractJsonFromMarkdown, validatePlanOutput } from "@/prd/schema";
+import type { UserStory } from "@/prd/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -64,10 +66,10 @@ describe("validatePlanOutput — valid input", () => {
     expect(validatePlanOutput(JSON.stringify(makeInput()), "feat", "branch").userStories).toHaveLength(1);
   });
 
-  test.each([
-    ["status to 'pending'", makeInput([makeStory({ status: "passed" })]), (s: any) => s.status, "pending"],
-    ["passes to false", makeInput([makeStory({ passes: true })]), (s: any) => s.passes, false],
-    ["attempts to 0", makeInput([makeStory({ attempts: 5 })]), (s: any) => s.attempts, 0],
+  test.each<[string, unknown, (s: UserStory) => unknown, unknown]>([
+    ["status to 'pending'", makeInput([makeStory({ status: "passed" })]), (s: UserStory) => s.status, "pending"],
+    ["passes to false", makeInput([makeStory({ passes: true })]), (s: UserStory) => s.passes, false],
+    ["attempts to 0", makeInput([makeStory({ attempts: 5 })]), (s: UserStory) => s.attempts, 0],
   ])("forces %s", (_label, input, getField, expected) => {
     const prd = validatePlanOutput(input, "feat", "branch");
     expect(getField(prd.userStories[0]!)).toBe(expected);
@@ -292,21 +294,21 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
     expect(prd.userStories[0]!.id).toBe(expected);
   });
 
-  test.each([
+  test.each<[string, Complexity]>([
     ["Simple", "simple"],
     ["COMPLEX", "complex"],
   ])("normalizes complexity '%s' to '%s'", (input, expected) => {
     const prd = validatePlanOutput(makeInput([makeStory({ complexity: input })]), "feat", "branch");
-    expect(prd.userStories[0]!.routing?.complexity).toBe(expected as any);
+    expect(prd.userStories[0]!.routing?.complexity).toBe(expected);
   });
 
-  test.each([
+  test.each<[string, string, TestStrategy]>([
     ["maps legacy 'tdd-lite' alias", "tdd-lite", "three-session-tdd-lite"],
     ["accepts valid 'tdd-simple' as-is", "tdd-simple", "tdd-simple"],
     ["falls back to test-after for unknown", "unknown-strategy", "test-after"],
-  ] as const)("testStrategy: %s", (_label, input, expected) => {
+  ])("testStrategy: %s", (_label, input, expected) => {
     const prd = validatePlanOutput(makeInput([makeStory({ testStrategy: input })]), "feat", "branch");
-    expect(prd.userStories[0]!.routing?.testStrategy).toBe(expected as any);
+    expect(prd.userStories[0]!.routing?.testStrategy).toBe(expected);
   });
 
   test.each([
@@ -530,14 +532,14 @@ describe("validatePlanOutput — modifiedFiles parsing", () => {
   });
 
   test("keeps an entry whose reason is missing rather than dropping the authorisation", () => {
-    const story = makeStory({ modifiedFiles: [{ path: "src/bare.ts" } as never] });
+    const story = makeStory({ modifiedFiles: [{ path: "src/bare.ts" }] });
     const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
     expect(prd.userStories[0].modifiedFiles).toEqual([{ path: "src/bare.ts", reason: "" }]);
   });
 
   test("filters entries that are not objects or carry no path", () => {
     const story = makeStory({
-      modifiedFiles: ["src/str.ts", 42, null, { reason: "no path" }, { path: "  " }, { path: "src/ok.ts" }] as never,
+      modifiedFiles: ["src/str.ts", 42, null, { reason: "no path" }, { path: "  " }, { path: "src/ok.ts" }],
     });
     const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
     expect(prd.userStories[0].modifiedFiles).toEqual([{ path: "src/ok.ts", reason: "" }]);
@@ -624,14 +626,14 @@ describe("validatePlanOutput — Phase 2 citation fields (AC4-AC6)", () => {
     expect(prd2.userStories[1]!.verifiedBy?.kind).toBe("file");
   });
 
-  test.each([
+  test.each<[string, Record<string, unknown>, (s: UserStory) => unknown, unknown]>([
     [
       "verifiedBy",
       makeStory({ verifiedBy: { kind: "test", anchor: "src/foo.test.ts#should work", factIds: ["fact-001"] } }),
-      (s: any) => s.verifiedBy,
+      (s: UserStory) => s.verifiedBy,
       { kind: "test", anchor: "src/foo.test.ts#should work", factIds: ["fact-001"] },
     ],
-    ["intent", makeStory({ intent: true }), (s: any) => s.intent, true],
+    ["intent", makeStory({ intent: true }), (s: UserStory) => s.intent, true],
   ])("AC5: preserves %s when present", (_label, story, getField, expected) => {
     const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
     expect(getField(prd.userStories[0]!)).toEqual(expected);

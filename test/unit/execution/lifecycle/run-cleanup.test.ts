@@ -10,8 +10,13 @@
  * - Execution order guarantees
  */
 
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeDispatchContext, makePluginRegistry as makePluginRegistryHelper, makeStory } from "@test/helpers";
+import { afterEach, beforeEach, describe, expect, type Mock, mock, spyOn, test } from "bun:test";
+import {
+  makeDispatchContext,
+  makeNaxConfig,
+  makePluginRegistry as makePluginRegistryHelper,
+  makeStory,
+} from "@test/helpers";
 import { _runCleanupDeps, cleanupRun } from "@/execution";
 import type { RunCleanupOptions } from "@/execution/lifecycle/run-cleanup";
 import type { HookContext } from "@/hooks";
@@ -346,10 +351,12 @@ describe("cleanupRun — action result logging", () => {
   let logInfoCalls: Array<[string, string, unknown]> = [];
   let logWarnCalls: Array<[string, string, unknown]> = [];
   let logDebugCalls: Array<[string, string, unknown]> = [];
-  let loggerSpy: any;
+  let loggerSpy: Mock<typeof loggerModule.getSafeLogger> | undefined;
 
   function makeLogger() {
-    return {
+    // Real silent Logger instance (writes nothing) with the observed methods
+    // overlaid — the intersection satisfies Logger directly.
+    return Object.assign(new loggerModule.Logger({ level: "silent", suppressConsole: true }), {
       info: mock((...args: [string, string, unknown]) => {
         logInfoCalls.push(args);
       }),
@@ -360,7 +367,7 @@ describe("cleanupRun — action result logging", () => {
         logDebugCalls.push(args);
       }),
       error: mock(() => {}),
-    };
+    });
   }
 
   beforeEach(() => {
@@ -368,7 +375,7 @@ describe("cleanupRun — action result logging", () => {
     logWarnCalls = [];
     logDebugCalls = [];
     // Wire the local mock logger into getSafeLogger so cleanupRun's internal logging is captured
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(makeLogger() as any);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(makeLogger());
   });
 
   afterEach(() => {
@@ -607,11 +614,7 @@ describe("runner-completion.ts — does not invoke post-run actions", () => {
 
     try {
       await runCompletionPhase({
-        config: {
-          acceptance: { enabled: false },
-          headless: { enabled: true },
-          autoCommit: { enabled: false },
-        } as any,
+        config: makeNaxConfig({ acceptance: { enabled: false } }),
         hooks: { hooks: [] } as import("@/hooks").LoadedHooksConfig,
         feature: "test-feat",
         workdir: "/tmp/test",

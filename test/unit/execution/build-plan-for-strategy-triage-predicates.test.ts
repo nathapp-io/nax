@@ -22,6 +22,14 @@ function makeVerifierInput(story: UserStory): import("@/operations").VerifierInp
   return { story };
 }
 
+/**
+ * The fix-cycle argument captured by the runFixCycle dep slot, derived from the
+ * real signature instead of restating the FixStrategy generics (src declares
+ * them once, behind biome-ignore comments).
+ */
+type RunFixCycleCycle = Parameters<typeof _storyOrchestratorDeps.runFixCycle>[0];
+type CapturedStrategy = RunFixCycleCycle["strategies"][number];
+
 function makeFullSuiteGateInput(story: UserStory): import("@/operations").FullSuiteGateInput {
   return { story, workdir: "/tmp/test" };
 }
@@ -37,9 +45,7 @@ function makeTddRetryInputs(story: UserStory, extra: Partial<PlanInputs> = {}): 
 }
 
 describe("buildPlanForStrategy — AC2/AC3/AC4: triage strategy predicate behavior (driven through plan)", () => {
-  let capturedStrategiesByCall: Array<
-    Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>>
-  > = [];
+  let capturedStrategiesByCall: CapturedStrategy[][] = [];
   let origRunFixCycle: typeof _storyOrchestratorDeps.runFixCycle;
   let origCallOp: typeof _storyOrchestratorDeps.callOp;
   let origCaptureGitRef: typeof _storyOrchestratorDeps.captureGitRef;
@@ -76,14 +82,14 @@ describe("buildPlanForStrategy — AC2/AC3/AC4: triage strategy predicate behavi
       }
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.runFixCycle = mock(
-      async (cycle: {
-        strategies: Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>>;
-      }) => {
-        capturedStrategiesByCall.push(cycle.strategies);
-        return { iterations: [], finalFindings: [], exitReason: "no-strategy" as const, costUsd: 0 };
-      },
-    ) as typeof _storyOrchestratorDeps.runFixCycle;
+    // The dep slot is generic (<F extends Finding>); bun's mock() erases
+    // genericity, so the stub is concretized to FixCycle<Finding> — the same
+    // instantiation src builds at run-regression.ts:452 — and asserted back to
+    // the dep's declared type.
+    _storyOrchestratorDeps.runFixCycle = mock(async (cycle: RunFixCycleCycle) => {
+      capturedStrategiesByCall.push(cycle.strategies);
+      return { iterations: [], finalFindings: [], exitReason: "no-strategy" as const, costUsd: 0 };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
   });
 
   afterEach(async () => {
@@ -125,17 +131,14 @@ describe("buildPlanForStrategy — AC2/AC3/AC4: triage strategy predicate behavi
     });
   }
 
-  function nbfStrategies(): Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>> {
+  function nbfStrategies(): CapturedStrategy[] {
     if (capturedStrategiesByCall.length === 0) {
       throw new Error("NBF never fired — capturedStrategiesByCall is empty");
     }
     return capturedStrategiesByCall[capturedStrategiesByCall.length - 1] ?? [];
   }
 
-  function findStrategy(
-    name: string,
-    set: Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>>,
-  ): import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any> {
+  function findStrategy(name: string, set: CapturedStrategy[]): CapturedStrategy {
     const strategy = set.find((entry) => entry.name === name);
     if (!strategy) {
       throw new Error(`strategy '${name}' not found in captured NBF set: ${set.map((entry) => entry.name).join(", ")}`);
@@ -218,9 +221,7 @@ describe("buildPlanForStrategy — AC5/AC6: default-preserving factory options +
   });
 
   test("AC6 (#1333): blocking three-session set → implementer claims adversarial SOURCE finding, test-writer claims adversarial TEST finding (driven through plan)", async () => {
-    const capturedStrategySets: Array<
-      Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>>
-    > = [];
+    const capturedStrategySets: CapturedStrategy[][] = [];
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origCaptureGitRef = _storyOrchestratorDeps.captureGitRef;
@@ -241,14 +242,10 @@ describe("buildPlanForStrategy — AC5/AC6: default-preserving factory options +
         }
         return { success: true };
       }) as typeof _storyOrchestratorDeps.callOp;
-      _storyOrchestratorDeps.runFixCycle = mock(
-        async (cycle: {
-          strategies: Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>>;
-        }) => {
-          capturedStrategySets.push(cycle.strategies);
-          return { iterations: [], finalFindings: [], exitReason: "no-strategy" as const, costUsd: 0 };
-        },
-      ) as typeof _storyOrchestratorDeps.runFixCycle;
+      _storyOrchestratorDeps.runFixCycle = mock(async (cycle: RunFixCycleCycle) => {
+        capturedStrategySets.push(cycle.strategies);
+        return { iterations: [], finalFindings: [], exitReason: "no-strategy" as const, costUsd: 0 };
+      }) as typeof _storyOrchestratorDeps.runFixCycle;
 
       const config = makeNaxConfig({
         quality: { commands: {}, autofix: { enabled: true } },

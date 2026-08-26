@@ -16,14 +16,16 @@ import { join } from "node:path";
 import {
   assertDefined,
   makeAgentAdapter,
+  makeIteration,
   makeMockAgentManager,
   makeMockRuntime,
+  makeSpawn,
   makeTestRuntime,
   opSelector,
   withTempDir,
 } from "@test/helpers";
 import type { IAgentManager } from "@/agents";
-import type { AdversarialReviewInput } from "@/operations/adversarial-review";
+import type { AdversarialReviewInput, AdversarialReviewOutput } from "@/operations/adversarial-review";
 import { adversarialReviewOp } from "@/operations/adversarial-review";
 import type { SemanticReviewInput } from "@/operations/semantic-review";
 import { semanticReviewOp } from "@/operations/semantic-review";
@@ -446,43 +448,25 @@ describe("Recurrence-demotion parity: op verify() vs wrapper recomputation", () 
   // Two prior iterations under the same fingerprint (file + category + issue
   // prefix), both "error" — with default maxBlockingRounds=2, the third
   // sighting (n=3 >= maxBlockingRounds+1) demotes to advisory + coverage-gap.
-  const PRIOR_ITERATIONS = Array.from({ length: 2 }, (_v, i) => ({
-    iterationNum: i + 1,
-    findingsBefore: [],
-    fixesApplied: [],
-    outcome: "fixes-applied",
-    startedAt: "2026-07-17T00:00:00.000Z",
-    finishedAt: "2026-07-17T00:00:01.000Z",
-    findingsAfter: [
-      {
-        source: "adversarial-review",
-        severity: "error",
-        category: "error-path",
-        file: "src/log.ts",
-        message: "No error handling on login",
-      },
-    ],
-  })) as any;
+  const PRIOR_ITERATIONS = Array.from({ length: 2 }, (_v, i) =>
+    makeIteration({
+      iterationNum: i + 1,
+      outcome: "regressed",
+      startedAt: "2026-07-17T00:00:00.000Z",
+      finishedAt: "2026-07-17T00:00:01.000Z",
+      findingsAfter: [
+        {
+          source: "adversarial-review",
+          severity: "error",
+          category: "error-path",
+          file: "src/log.ts",
+          message: "No error handling on login",
+        },
+      ],
+    }),
+  );
 
   const STAT_OUTPUT = "src/log.ts | 5 +++++\n 1 file changed, 5 insertions(+)";
-
-  function makeSpawnMock(stdout: string) {
-    return mock((_opts: unknown) => ({
-      exited: Promise.resolve(0),
-      stdout: new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode(stdout));
-          controller.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(controller) {
-          controller.close();
-        },
-      }),
-      kill: () => {},
-    })) as any;
-  }
 
   function makeAgentManager(llmResponse: string): IAgentManager {
     return makeMockAgentManager({
@@ -531,7 +515,7 @@ describe("Recurrence-demotion parity: op verify() vs wrapper recomputation", () 
     origWriteReviewAudit = _adversarialDeps.writeReviewAudit;
     _diffUtilsDeps.isGitRefValid = mock(async () => true);
     _diffUtilsDeps.getMergeBase = mock(async () => undefined);
-    _diffUtilsDeps.spawn = makeSpawnMock(STAT_OUTPUT);
+    _diffUtilsDeps.spawn = makeSpawn(() => STAT_OUTPUT).spawn;
   });
 
   afterEach(() => {
@@ -556,12 +540,12 @@ describe("Recurrence-demotion parity: op verify() vs wrapper recomputation", () 
       blockingThreshold: "error",
       priorAdversarialIterations: PRIOR_ITERATIONS,
     };
-    const opParsed = {
+    const opParsed: AdversarialReviewOutput = {
       passed: false,
       findings: [RECURRING_FINDING],
       normalizedFindings: [],
       acDropped: [],
-    } as any;
+    };
     const opResult = await adversarialReviewOp.verify!(opParsed, opInput, opCtx);
     assertDefined(opResult, "verify() result");
 

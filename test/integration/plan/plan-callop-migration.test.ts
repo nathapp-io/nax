@@ -14,7 +14,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { makeMockAgentManager, makeMockRuntime, makeTempDir } from "@test/helpers";
+import { makeInteractionChain, makeMockAgentManager, makeMockRuntime, makeTempDir } from "@test/helpers";
 import { _planDeps, planCommand } from "@/cli";
 import { DEFAULT_CONFIG } from "@/config";
 
@@ -242,14 +242,14 @@ describe("planCommand callOp migration (US-003)", () => {
   // Test interaction chain cleanup
   test("planCommand destroys interaction chain after completion", async () => {
     let chainDestroyWasCalled = false;
-    const mockChain = {
+    const mockChain = makeInteractionChain({
       destroy: mock(async () => {
         chainDestroyWasCalled = true;
       }),
-    };
+    });
 
     const origInitChain = _planDeps.initInteractionChain;
-    _planDeps.initInteractionChain = mock(async () => mockChain as any);
+    _planDeps.initInteractionChain = mock(async () => mockChain);
 
     try {
       try {

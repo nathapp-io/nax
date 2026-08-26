@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeSpawn, mockFetch } from "@test/helpers";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { createOtelReporterPlugin } from "@/plugins";
+import type { KeyValue, OtlpMetricsPayload, OtlpTracesPayload } from "@/plugins/builtin/otel-reporter/otlp";
 import type { PostJsonDeps } from "@/plugins/builtin/reporter-shared";
 import { _gitDeps } from "@/utils/git";
 
@@ -38,7 +39,7 @@ afterEach(() => {
 });
 
 function capturingPosts() {
-  const posts: Array<{ url: string; body: any }> = [];
+  const posts: Array<{ url: string; body: OtlpTracesPayload | OtlpMetricsPayload }> = [];
   const deps: PostJsonDeps = {
     fetch: mockFetch(async (url, init) => {
       posts.push({ url: String(url), body: JSON.parse(String(init?.body)) });
@@ -167,11 +168,15 @@ describe("US-007 AC8: when git branch resolution fails, exported payloads omit n
     });
 
     // Inspect every captured resource block — terminal traces + terminal metrics.
-    const allAttrs: any[] = [];
+    const allAttrs: KeyValue[] = [];
     for (const p of posts) {
-      const body = p.body ?? {};
-      allAttrs.push(...(body?.resourceSpans?.[0]?.resource?.attributes ?? []));
-      allAttrs.push(...(body?.resourceMetrics?.[0]?.resource?.attributes ?? []));
+      if (!p.body) continue;
+      if ("resourceSpans" in p.body) {
+        allAttrs.push(...(p.body.resourceSpans[0]?.resource.attributes ?? []));
+      }
+      if ("resourceMetrics" in p.body) {
+        allAttrs.push(...(p.body.resourceMetrics[0]?.resource.attributes ?? []));
+      }
     }
     expect(allAttrs.some((a) => a.key === "nax.git.branch")).toBe(false);
     expect(allAttrs.some((a) => a.key === "nax.git.sha")).toBe(false);
@@ -217,9 +222,11 @@ describe("US-007 AC8: when git branch resolution fails, exported payloads omit n
 
     const metricsPosts = posts.filter((p) => p.url.endsWith("/v1/metrics"));
     expect(metricsPosts.length).toBeGreaterThan(0);
-    const metricsAttrs = metricsPosts.flatMap((p) => p.body?.resourceMetrics?.[0]?.resource?.attributes ?? []);
-    expect(metricsAttrs.some((a: any) => a.key === "nax.git.branch")).toBe(false);
-    expect(metricsAttrs.some((a: any) => a.key === "nax.git.sha")).toBe(false);
+    const metricsAttrs = metricsPosts.flatMap((p) =>
+      "resourceMetrics" in p.body ? (p.body.resourceMetrics[0]?.resource.attributes ?? []) : [],
+    );
+    expect(metricsAttrs.some((a) => a.key === "nax.git.branch")).toBe(false);
+    expect(metricsAttrs.some((a) => a.key === "nax.git.sha")).toBe(false);
 
     await plugin.teardown?.();
   });

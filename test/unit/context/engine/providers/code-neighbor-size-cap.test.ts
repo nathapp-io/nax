@@ -11,6 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { type MockLogger, makeLogger } from "@test/helpers";
 import type { ContextRequest } from "@/context/engine";
 import { _codeNeighborDeps, CodeNeighborProvider } from "@/context/engine";
 
@@ -64,19 +65,15 @@ function makeRequest(overrides: Partial<ContextRequest> = {}): ContextRequest {
 
 const OVERSIZED_BYTES = 2 * 1024 * 1024; // 2MB — over the 1MB cap
 
-/** Captures logger.warn calls so tests can assert on them without a real logger. */
-function spyLogger() {
-  const warnCalls: unknown[][] = [];
-  _codeNeighborDeps.getLogger = () =>
-    ({
-      debug: () => {},
-      info: () => {},
-      error: () => {},
-      warn: (...args: unknown[]) => {
-        warnCalls.push(args);
-      },
-    }) as any;
-  return warnCalls;
+/** Installs a silent mock logger so tests can assert on warn calls without real output. */
+function spyLogger(): MockLogger {
+  const logger = makeLogger();
+  _codeNeighborDeps.getLogger = () => logger;
+  return logger;
+}
+
+function warnCount(logger: MockLogger): number {
+  return logger.calls.filter((call) => call.level === "warn").length;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -133,7 +130,7 @@ describe("CodeNeighborProvider — fileSize failure observability", () => {
   test("falls through silently on a benign ENOENT stat race (no warning)", async () => {
     const touchedFiles = ["src/a.ts"];
     const candidateFiles = ["src/deleted-mid-scan.ts"];
-    const warnCalls = spyLogger();
+    const logger = spyLogger();
 
     _codeNeighborDeps.detectLanguage = async () => "typescript";
     _codeNeighborDeps.discoverWorkspacePackages = async () => [];
@@ -149,13 +146,13 @@ describe("CodeNeighborProvider — fileSize failure observability", () => {
     const provider = new CodeNeighborProvider({ crossPackageDepth: 0 });
     await provider.fetch(makeRequest({ touchedFiles }));
 
-    expect(warnCalls.length).toBe(0);
+    expect(warnCount(logger)).toBe(0);
   });
 
   test("logs a warning when fileSize throws an unexpected (non-ENOENT) error", async () => {
     const touchedFiles = ["src/a.ts"];
     const candidateFiles = ["src/candidate.ts"];
-    const warnCalls = spyLogger();
+    const logger = spyLogger();
 
     _codeNeighborDeps.detectLanguage = async () => "typescript";
     _codeNeighborDeps.discoverWorkspacePackages = async () => [];
@@ -169,26 +166,27 @@ describe("CodeNeighborProvider — fileSize failure observability", () => {
     const provider = new CodeNeighborProvider({ crossPackageDepth: 0 });
     await provider.fetch(makeRequest({ touchedFiles }));
 
-    expect(warnCalls.length).toBeGreaterThan(0);
+    expect(warnCount(logger)).toBeGreaterThan(0);
   });
 
   test("logs a warning when _codeNeighborDeps.fileSize is not a function", async () => {
     const touchedFiles = ["src/a.ts"];
     const candidateFiles = ["src/candidate.ts"];
-    const warnCalls = spyLogger();
+    const logger = spyLogger();
 
     _codeNeighborDeps.detectLanguage = async () => "typescript";
     _codeNeighborDeps.discoverWorkspacePackages = async () => [];
     _codeNeighborDeps.glob = () => ({ files: candidateFiles, truncated: false });
     _codeNeighborDeps.fileExists = async (p: string) => touchedFiles.some((tf) => p.endsWith(tf));
     // Simulate a caller passing a partial deps object without fileSize wired up.
-    (_codeNeighborDeps as any).fileSize = undefined;
+    const depsWithoutFileSize: { fileSize?: typeof _codeNeighborDeps.fileSize } = _codeNeighborDeps;
+    depsWithoutFileSize.fileSize = undefined;
     _codeNeighborDeps.readFile = async () => "";
 
     const provider = new CodeNeighborProvider({ crossPackageDepth: 0 });
     await provider.fetch(makeRequest({ touchedFiles }));
 
-    expect(warnCalls.length).toBeGreaterThan(0);
+    expect(warnCount(logger)).toBeGreaterThan(0);
   });
 });
 

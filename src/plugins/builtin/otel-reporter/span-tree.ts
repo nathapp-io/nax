@@ -6,6 +6,7 @@ import {
   buildHistogramPoint,
   buildResourceAttributes,
   type KeyValue,
+  type OtlpMetricsPayload,
   type SpanEvent,
 } from "./otlp";
 
@@ -124,7 +125,7 @@ export interface PhaseMetricsAggregator {
   /** Record a `story:escalated` event for `nax.escalations`, tagged with `to_tier`. */
   recordEscalation(toTier: string, count: number): void;
   /** Build the OTLP ResourceMetrics payload for everything recorded so far. */
-  buildMetricsPayload(input: AggregatorMetricsInput): object;
+  buildMetricsPayload(input: AggregatorMetricsInput): OtlpMetricsPayload;
 }
 
 export interface AggregatorMetricsInput {
@@ -176,7 +177,7 @@ export function createPhaseMetricsAggregator(): PhaseMetricsAggregator {
     bumpCounter(escalations, [attr("to_tier", toTier)], count);
   }
 
-  function buildMetricsPayload(input: AggregatorMetricsInput): object {
+  function buildMetricsPayload(input: AggregatorMetricsInput): OtlpMetricsPayload {
     const { serviceName, runId, timeUnixNano, feature, project, gitBranch, gitSha } = input;
     const groups = [...phaseGroups.values()];
     const counterMetric = (name: string, source: Map<string, CounterGroup>) => ({
@@ -187,7 +188,7 @@ export function createPhaseMetricsAggregator(): PhaseMetricsAggregator {
         dataPoints: [...source.values()].map((g) => buildCounterPoint(g.count, g.attributes, timeUnixNano)),
       },
     });
-    const metrics: object[] = [];
+    const metrics: import("./otlp").OtlpMetric[] = [];
     if (groups.length > 0) {
       metrics.push({
         name: "nax.phase.duration",

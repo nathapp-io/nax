@@ -23,6 +23,7 @@ import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { SemanticStory } from "@/review/semantic";
 import { _semanticDeps, runSemanticReview } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
+import type { ReviewAuditDecision } from "@/runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -464,7 +465,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
   });
 
   test("records review audit decision for semantic debate result", async () => {
-    const auditCalls: unknown[] = [];
+    const auditCalls: ReviewAuditDecision[] = [];
     _semanticDeps.createDebateRunner = mock(() =>
       makeDebateRunner({ run: mock(async () => DEBATE_MAJORITY_FAIL_RESULT) }),
     );
@@ -492,10 +493,10 @@ describe("runSemanticReview — debate integration (US-004)", () => {
 
     expect(result.success).toBe(false);
     expect(auditCalls).toHaveLength(1);
-    expect((auditCalls[0] as any).reviewer).toBe("semantic");
-    expect((auditCalls[0] as any).parsed).toBe(true);
-    expect((auditCalls[0] as any).passed).toBe(false);
-    expect((auditCalls[0] as any).result.findings).toHaveLength(1);
+    expect(auditCalls[0]?.reviewer).toBe("semantic");
+    expect(auditCalls[0]?.parsed).toBe(true);
+    expect(auditCalls[0]?.passed).toBe(false);
+    expect(auditCalls[0]?.result?.findings).toHaveLength(1);
   });
 
   test("AC4: success=false when majority (2 of 3) proposals have passed=false", async () => {

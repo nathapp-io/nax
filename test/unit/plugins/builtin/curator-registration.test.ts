@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { curatorPlugin } from "@/plugins/builtin/curator";
 import { loadPlugins } from "@/plugins/loader";
 import { PluginRegistry } from "@/plugins/registry";
+import type { NaxPlugin } from "@/plugins/types";
 
 describe("Curator Plugin Registration", () => {
   test("should be available as a built-in plugin", () => {
@@ -75,7 +76,7 @@ describe("Curator Plugin Registration", () => {
   });
 
   test("curator should coexist with other plugins in registry", () => {
-    const otherPlugin = {
+    const otherPlugin: NaxPlugin = {
       name: "test-plugin",
       version: "1.0.0",
       provides: ["reporter"],
@@ -87,7 +88,7 @@ describe("Curator Plugin Registration", () => {
           },
         },
       },
-    } as any;
+    };
 
     const registry = new PluginRegistry([curatorPlugin, otherPlugin]);
     const actions = registry.getPostRunActions();

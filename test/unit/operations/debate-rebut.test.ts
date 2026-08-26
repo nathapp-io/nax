@@ -1,11 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
+import { type ConfigSelector, DEFAULT_CONFIG, debateConfigSelector } from "@/config";
 import type { Debater, Proposal } from "@/debate/types";
 import { debateRebutOp } from "@/operations/debate-rebut";
+import type { PackageView } from "@/runtime";
 
 function makeBuildCtx() {
+  const packageView: PackageView = {
+    packageDir: "",
+    relativeFromRoot: "",
+    repoRoot: "",
+    hasOverride: false,
+    config: DEFAULT_CONFIG,
+    select: <C>(selector: ConfigSelector<C>) => selector.select(DEFAULT_CONFIG),
+  };
   return {
-    packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG.debate } as any,
+    packageView,
     config: debateConfigSelector.select(DEFAULT_CONFIG),
   };
 }
@@ -106,7 +115,8 @@ describe("debateRebutOp", () => {
 
   test("parse returns the raw output string unchanged", () => {
     const output = "rebuttal critique text";
-    const parsed = debateRebutOp.parse(output, {} as any, makeBuildCtx());
+    const input = { taskContext: "", stage: "review", debaterIndex: 0, proposals, debaters };
+    const parsed = debateRebutOp.parse(output, input, makeBuildCtx());
     expect(parsed).toBe(output);
   });
 

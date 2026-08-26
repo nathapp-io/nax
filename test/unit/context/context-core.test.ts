@@ -287,26 +287,30 @@ describe("Context Builder", () => {
   describe("defensive checks", () => {
     test("should handle story with null acceptanceCriteria", async () => {
       // Create PRD directly to bypass helper defaults
+      const story: UserStory = {
+        id: "US-001",
+        title: "Malformed Story",
+        description: "Test",
+        acceptanceCriteria: [],
+        dependencies: [],
+        tags: [],
+        status: "pending",
+        passes: false,
+        escalations: [],
+        attempts: 0,
+      };
+      // Simulate malformed data: plant null through a widened alias so the
+      // runtime value reaches buildContext exactly as corrupt prd.json would.
+      const malformedAcceptanceCriteria: { acceptanceCriteria?: string[] | null } = story;
+      malformedAcceptanceCriteria.acceptanceCriteria = null;
+
       const prd: PRD = {
         project: "test-project",
         feature: "test-feature",
         branchName: "test-branch",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        userStories: [
-          {
-            id: "US-001",
-            title: "Malformed Story",
-            description: "Test",
-            acceptanceCriteria: null as any, // Simulate malformed data
-            dependencies: [],
-            tags: [],
-            status: "pending",
-            passes: false,
-            escalations: [],
-            attempts: 0,
-          },
-        ],
+        userStories: [story],
       };
 
       const context: StoryContext = {
@@ -327,26 +331,30 @@ describe("Context Builder", () => {
     });
 
     test("should handle story with undefined acceptanceCriteria", async () => {
+      const story: UserStory = {
+        id: "US-001",
+        title: "Malformed Story",
+        description: "Test",
+        acceptanceCriteria: [],
+        dependencies: [],
+        tags: [],
+        status: "pending",
+        passes: false,
+        escalations: [],
+        attempts: 0,
+      };
+      // Simulate malformed data: plant undefined through a widened alias so the
+      // runtime value reaches buildContext exactly as corrupt prd.json would.
+      const malformedAcceptanceCriteria: { acceptanceCriteria?: string[] } = story;
+      malformedAcceptanceCriteria.acceptanceCriteria = undefined;
+
       const prd: PRD = {
         project: "test-project",
         feature: "test-feature",
         branchName: "test-branch",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        userStories: [
-          {
-            id: "US-001",
-            title: "Malformed Story",
-            description: "Test",
-            acceptanceCriteria: undefined as any, // Simulate malformed data
-            dependencies: [],
-            tags: [],
-            status: "pending",
-            passes: false,
-            escalations: [],
-            attempts: 0,
-          },
-        ],
+        userStories: [story],
       };
 
       const context: StoryContext = {
@@ -401,9 +409,12 @@ describe("Context Builder", () => {
           title: "Story with Malformed Errors",
           description: "Test",
           acceptanceCriteria: ["AC1"],
-          priorErrors: "not an array" as any, // Malformed data
         },
       ]);
+      // Simulate malformed data: plant the bad value through a widened alias so
+      // the runtime value reaches buildContext exactly as corrupt prd.json would.
+      const malformedStory: { priorErrors?: string[] | string } = prd.userStories[0];
+      malformedStory.priorErrors = "not an array";
 
       const context: StoryContext = {
         prd,

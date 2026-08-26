@@ -192,7 +192,7 @@ describe("AC-NBF1: nbf cycle drains nbSink — test-writer receives mock-structu
         ],
       };
       const mockInput: FullSuiteRectifyInput = { story, findings: [] };
-      await fullSuiteStrategy!.extractApplied!(mockOutput as any, mockInput as any);
+      await fullSuiteStrategy!.extractApplied!(mockOutput, mockInput);
 
       _storyOrchestratorDeps.callOp = mock(async () => ({ success: true })) as typeof _storyOrchestratorDeps.callOp;
 
@@ -210,8 +210,8 @@ describe("AC-NBF1: nbf cycle drains nbSink — test-writer receives mock-structu
       expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(true);
 
       const builtInput = testWriterStrategy!.buildInput([dummyFinding], [], capturedCycleCtx!);
-      expect((builtInput as any).mode).toBe("mock-restructure");
-      expect((builtInput as any).handoffFiles).toContain("test/unit/service.test.ts");
+      expect(builtInput.mode).toBe("mock-restructure");
+      expect(builtInput.handoffFiles).toContain("test/unit/service.test.ts");
     });
   });
 });
@@ -343,7 +343,7 @@ describe("AC-NBF3: invalid mock_structure in nbf cycle → diagnostic only, no u
       ],
     };
     const mockInput: FullSuiteRectifyInput = { story, findings: [] };
-    await fullSuiteStrategy!.extractApplied!(invalidOutput as any, mockInput as any);
+    await fullSuiteStrategy!.extractApplied!(invalidOutput, mockInput);
 
     const testWriterStrategy = capturedCycle!.strategies.find((s) => s.name === "autofix-test-writer");
     expect(testWriterStrategy).toBeDefined();

@@ -3,6 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
 import { resolveCuratorOutputs } from "@/plugins/builtin/curator/paths";
 
@@ -21,7 +22,7 @@ describe("resolveCuratorOutputs", () => {
       version: "0.1.0",
       pluginConfig: {},
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-      config: {} as any,
+      config: makeNaxConfig(),
       outputDir: "/home/user/.nax/project123",
       globalDir: "/home/user/.nax/global",
       projectKey: "project123",
@@ -47,7 +48,7 @@ describe("resolveCuratorOutputs", () => {
       version: "0.1.0",
       pluginConfig: {},
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-      config: {} as any,
+      config: makeNaxConfig(),
       outputDir: "/home/user/.nax/project123",
       globalDir: "/home/user/.nax/global",
       projectKey: "project123",
@@ -74,7 +75,7 @@ describe("resolveCuratorOutputs", () => {
       version: "0.1.0",
       pluginConfig: {},
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-      config: {} as any,
+      config: makeNaxConfig(),
       outputDir: "/home/user/.nax/project123",
       globalDir: "/home/user/.nax/global",
       projectKey: "project123",
@@ -99,7 +100,7 @@ describe("resolveCuratorOutputs", () => {
       version: "0.1.0",
       pluginConfig: {},
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-      config: {} as any,
+      config: makeNaxConfig(),
       outputDir: "/output",
       globalDir: "/global",
       projectKey: "proj",

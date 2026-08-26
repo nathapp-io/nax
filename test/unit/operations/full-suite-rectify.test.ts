@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
-import type { Finding } from "@/findings";
+import { makeMockCallContext, makeNaxConfig } from "@test/helpers";
+import type { Finding, FixCycleContext } from "@/findings";
 import type { FullSuiteRectifyInput, FullSuiteRectifyOutput, TestEditDeclaration } from "@/operations";
 import {
   _repoScopedFixDeps,
@@ -30,6 +30,11 @@ function makeTestStory(overrides: Partial<UserStory> = {}): UserStory {
     workdir: ".",
     ...overrides,
   } as UserStory;
+}
+
+/** Mock CallContext with storyId pinned — FixCycleContext requires it. */
+function makeFixCycleContext(packageDir?: string): FixCycleContext {
+  return { ...makeMockCallContext({ packageDir }), storyId: "US-001" };
 }
 
 describe("makeFullSuiteRectifyStrategy", () => {
@@ -76,7 +81,7 @@ describe("makeFullSuiteRectifyStrategy", () => {
     const story = makeTestStory();
     const strategy = makeFullSuiteRectifyStrategy(story, makeNaxConfig());
     const finding = makeTestFinding();
-    const input = strategy.buildInput([finding], [], {} as any);
+    const input = strategy.buildInput([finding], [], makeFixCycleContext());
     expect(input.story).toBe(story);
     expect(typeof input.contextMarkdown).toBe("string");
     expect(input.contextMarkdown!.length).toBeGreaterThan(0);
@@ -87,8 +92,8 @@ describe("makeFullSuiteRectifyStrategy", () => {
     const story2 = makeTestStory({ id: "US-002" });
     const s1 = makeFullSuiteRectifyStrategy(story1, makeNaxConfig());
     const s2 = makeFullSuiteRectifyStrategy(story2, makeNaxConfig());
-    const input1 = s1.buildInput([], [], {} as any);
-    const input2 = s2.buildInput([], [], {} as any);
+    const input1 = s1.buildInput([], [], makeFixCycleContext());
+    const input2 = s2.buildInput([], [], makeFixCycleContext());
     expect(input1.story.id).toBe("US-001");
     expect(input2.story.id).toBe("US-002");
   });
@@ -363,7 +368,7 @@ describe("makeRepoScopedTestFixStrategy — change attribution", () => {
   afterEach(() => Object.assign(_repoScopedFixDeps, origDeps));
 
   const output = { applied: true, testEditDeclarations: [] } as FullSuiteRectifyOutput;
-  const ctx = { packageDir: "/repo" } as any;
+  const ctx = makeFixCycleContext("/repo");
 
   test("reports the files changed since the ref captured before the dispatch", async () => {
     _repoScopedFixDeps.captureGitRef = async () => "abc123";

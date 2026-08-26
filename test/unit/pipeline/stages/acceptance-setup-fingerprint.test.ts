@@ -49,7 +49,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
         redGate: true,
         model: "fast",
       },
-    } as any,
+    },
     prd: makePrd(stories),
     story: stories[0],
     stories,
@@ -58,14 +58,14 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     workdir: "/tmp/test-workdir",
     projectDir: "/tmp/test-workdir",
     featureDir: "/tmp/test-workdir/.nax/features/test-feature",
-    hooks: {} as any,
+    hooks: { hooks: {} },
     ...makeDispatchContext(),
     ...overrides,
   };
 }
 
-function makeDefaultCallOp() {
-  return async (_ctx: any, _packageDir: any, op: any, input: any) => {
+function makeDefaultCallOp(): typeof _acceptanceSetupDeps.callOp {
+  return async (_ctx, _packageDir, op, input) => {
     if (op.name === "acceptance-refine") {
       const { criteria, storyId } = input as { criteria: string[]; storyId: string };
       return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));

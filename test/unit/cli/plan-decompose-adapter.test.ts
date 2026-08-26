@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  assertDefined,
   cleanupTempDir,
   makeMockAgentManager,
   makeMockRuntime,
@@ -22,17 +23,19 @@ import {
   makeTempDir,
 } from "@test/helpers";
 import type { DecomposedStory, DecomposeResult } from "@/agents/shared/types-extended";
+import type { CompleteOptions } from "@/agents/types";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import type { NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd/types";
 
 function makeMockDecomposeManager(
-  decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
+  decomposeFn?: (agentName: string, opts: CompleteOptions) => Promise<{ stories: DecomposedStory[] }>,
 ) {
   return makeMockAgentManager({
     completeAsFn: decomposeFn
-      ? async (name: string, _prompt: string, opts?: any) => {
-          const result = await decomposeFn(name, opts ?? {});
+      ? async (name: string, _prompt: string, opts?: CompleteOptions) => {
+          assertDefined(opts, "completeAs opts");
+          const result = await decomposeFn(name, opts);
           return {
             output: JSON.stringify(result.stories),
             tokenUsage: { inputTokens: 0, outputTokens: 0 },
@@ -219,7 +222,7 @@ describe("planDecomposeCommand — calls adapter.decompose() not adapter.complet
 
 describe("planDecomposeCommand — adapter.decompose() option forwarding (US-002 AC-5)", () => {
   let tmpDir: string;
-  let capturedDecomposeOpts: Record<string, unknown>[];
+  let capturedDecomposeOpts: CompleteOptions[];
 
   beforeEach(async () => {
     tmpDir = makeTempDir("nax-decompose-opts-test-");
@@ -242,7 +245,7 @@ describe("planDecomposeCommand — adapter.decompose() option forwarding (US-002
 
     _planDeps.createRuntime = mock((_cfg: unknown, _wd: unknown, _fn: unknown) =>
       makeMockRuntime({
-        agentManager: makeMockDecomposeManager(async (_name: string, opts: Record<string, unknown>) => {
+        agentManager: makeMockDecomposeManager(async (_name: string, opts: CompleteOptions) => {
           capturedDecomposeOpts.push(opts);
           return { stories: makeDecomposeResult().stories };
         }),
@@ -286,7 +289,7 @@ describe("planDecomposeCommand — adapter.decompose() option forwarding (US-002
     // config is no longer forwarded in CompleteOptions (removed in issue #853).
     // Model resolution now happens at the callOp boundary — verify modelDef is present.
     expect(capturedDecomposeOpts[0].modelDef).toBeDefined();
-    expect(typeof (capturedDecomposeOpts[0].modelDef as { model?: string } | undefined)?.model).toBe("string");
+    expect(typeof capturedDecomposeOpts[0].modelDef.model).toBe("string");
   });
 });
 

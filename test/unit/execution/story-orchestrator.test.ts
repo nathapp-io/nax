@@ -25,6 +25,7 @@ import {
   makeIteration,
   makeMockAgentManager,
   makeNaxConfig,
+  makeStory,
   makeTestRuntime,
 } from "@test/helpers";
 import { pickSelector } from "@/config";
@@ -36,6 +37,7 @@ import {
   refreshReviewInputForDispatch,
   StoryOrchestratorBuilder,
 } from "@/execution";
+import type { InternalPhase } from "@/execution/story-orchestrator";
 import type { Finding, FixCycle, FixCycleContext, ReviewCheckResult } from "@/findings";
 import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -87,6 +89,11 @@ interface TestTestWriterInput {
 interface TestTestWriterOutput {
   success: boolean;
   tests?: string;
+}
+
+/** Only `validate` is used — narrower than `FixCycle<F>` (invariant in F), so a cycle captured in a generic runFixCycle mock fits. */
+interface CapturedCycle {
+  validate: (ctx: FixCycleContext, opts: { mode: "full" | "lite" }) => Promise<unknown>;
 }
 
 const testSel = pickSelector("test-orchestrator-selector", "execution");
@@ -200,9 +207,15 @@ afterEach(async () => {
 
 describe("StoryOrchestratorBuilder — AC1: Generic OrchestratorSlot<I, O, C>", () => {
   test.each([
-    ["addImplementer", (b: any) => b.addImplementer({ op: mockImplementerOp, input: { code: "test" } })],
-    ["addTestWriter", (b: any) => b.addTestWriter({ op: mockTestWriterOp, input: { story: "test" } })],
-    ["addVerifier", (b: any) => b.addVerifier({ op: mockVerifierOp, input: { code: "test" } })],
+    [
+      "addImplementer",
+      (b: StoryOrchestratorBuilder) => b.addImplementer({ op: mockImplementerOp, input: { code: "test" } }),
+    ],
+    [
+      "addTestWriter",
+      (b: StoryOrchestratorBuilder) => b.addTestWriter({ op: mockTestWriterOp, input: { story: "test" } }),
+    ],
+    ["addVerifier", (b: StoryOrchestratorBuilder) => b.addVerifier({ op: mockVerifierOp, input: { code: "test" } })],
   ])("%s accepts typed op + input without casting", async (_label, addFn) => {
     const config = makeNaxConfig();
     runtime = makeTestRuntime({ config });
@@ -743,8 +756,8 @@ describe("StoryOrchestratorBuilder — AC8: SessionKeeper reuse", () => {
           sessionIds.push(sessionId);
         }
         return {
-          sessionHandle: { sessionId } as any,
-          sessionManager: {} as any,
+          sessionHandle: { id: sessionId, agentName: req.sessionRole ?? "claude" },
+          sessionManager: {},
         };
       },
       runWithFallbackTransportFn: async (_req, onSuccess) => {
@@ -855,11 +868,11 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.name === "verifier") verifierRan = true;
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: (op) => {
+        if (op.name === "verifier") verifierRan = true;
+      },
+    });
     _storyOrchestratorDeps.runFixCycle = async () => ({
       iterations: [],
       finalFindings: [],
@@ -874,10 +887,10 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-t",
-      } as any;
+      };
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
         .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
         .build(ctx);
@@ -901,11 +914,11 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     const verOp = makeDeterministicOp("verifier", { success: true });
 
     const origCallOp = _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.name === "verifier") verifierRan = true;
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: (op) => {
+        if (op.name === "verifier") verifierRan = true;
+      },
+    });
 
     try {
       const ctx: CallContext = {
@@ -914,10 +927,10 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-t",
-      } as any;
+      };
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
         .build(ctx);
       await plan.run();
@@ -941,11 +954,11 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     const verOp = makeDeterministicOp("verifier", { success: true });
 
     const origCallOp = _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.name === "verifier") verifierRan = true;
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: (op) => {
+        if (op.name === "verifier") verifierRan = true;
+      },
+    });
 
     try {
       const ctx: CallContext = {
@@ -954,10 +967,10 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-t",
-      } as any;
+      };
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
         .build(ctx);
       const result = await plan.run();
@@ -978,10 +991,7 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     const verOp = makeDeterministicOp("verifier", { success: true });
 
     const origCallOp = _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp();
 
     try {
       const ctx: CallContext = {
@@ -990,10 +1000,10 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-t",
-      } as any;
+      };
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
         .build(ctx);
       const result = await plan.run();
@@ -1021,10 +1031,7 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     };
 
     const origCallOp = _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp();
 
     try {
       const ctx: CallContext = {
@@ -1033,10 +1040,10 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-t",
-      } as any;
+      };
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } })
         .addVerifier({ op: malformedVerifierOp, input: { code: "" } })
         .build(ctx);
       const result = await plan.run();
@@ -1060,10 +1067,7 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     };
 
     const origCallOp = _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp();
 
     try {
       const ctx: CallContext = {
@@ -1072,11 +1076,11 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-t",
-      } as any;
+      };
 
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: malformedGateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: malformedGateOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } })
         .build(ctx);
 
       const result = await plan.run();
@@ -1105,10 +1109,7 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     };
 
     const origCallOp = _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp();
 
     try {
       const ctx: CallContext = {
@@ -1117,7 +1118,7 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-t",
-      } as any;
+      };
 
       const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)().addImplementer({
         op: mockImplementerOp,
@@ -1125,13 +1126,22 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
       });
 
       if (phaseName === "full-suite-gate") {
-        builder.addFullSuiteGate({ op: malformedStrictOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } });
+        builder.addFullSuiteGate({
+          op: malformedStrictOp,
+          input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" },
+        });
       } else if (phaseName === "verify-scoped") {
-        builder.addVerifyScoped({ op: malformedStrictOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } });
+        builder.addVerifyScoped({
+          op: malformedStrictOp,
+          input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" },
+        });
       } else if (phaseName === "lint-check") {
-        builder.addLintCheck({ op: malformedStrictOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } });
+        builder.addLintCheck({ op: malformedStrictOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } });
       } else if (phaseName === "typecheck-check") {
-        builder.addTypecheckCheck({ op: malformedStrictOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } });
+        builder.addTypecheckCheck({
+          op: malformedStrictOp,
+          input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" },
+        });
       } else {
         builder.addVerifier({ op: malformedStrictOp, input: { code: "" } });
       }
@@ -1154,10 +1164,7 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     const verOp = makeDeterministicOp("verifier", { success: false });
 
     const origCallOp = _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp();
 
     try {
       const ctx: CallContext = {
@@ -1166,10 +1173,10 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-t",
-      } as any;
+      };
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
         .build(ctx);
       const result = await plan.run();
@@ -1218,11 +1225,8 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
-    _storyOrchestratorDeps.runFixCycle = async (cycle: any) => {
+    _storyOrchestratorDeps.callOp = makeCallOp();
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>(cycle: FixCycle<F>) => {
       capturedCycleFindings = cycle.findings;
       return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
     };
@@ -1234,10 +1238,10 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-t",
-      } as any;
+      };
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
         .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
         .build(ctx);
@@ -1245,7 +1249,7 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
 
       expect(capturedCycleFindings).not.toBeNull();
       expect(capturedCycleFindings!.length).toBe(2);
-      expect(capturedCycleFindings!.map((f: any) => f.source)).toEqual(["test-runner", "lint"]);
+      expect(capturedCycleFindings!.map((f) => f.source)).toEqual(["test-runner", "lint"]);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
@@ -1277,11 +1281,8 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
-    _storyOrchestratorDeps.runFixCycle = async (cycle: any) => {
+    _storyOrchestratorDeps.callOp = makeCallOp();
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>(cycle: FixCycle<F>) => {
       capturedCycleFindings = cycle.findings;
       return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
     };
@@ -1293,10 +1294,10 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-t",
-      } as any;
+      };
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
         .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
         .build(ctx);
@@ -1340,19 +1341,15 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
-    _storyOrchestratorDeps.runFixCycle = async (cycle: any) => {
-      capturedStrategyNames = (cycle.strategies ?? []).map((s: any) => s.name);
+    _storyOrchestratorDeps.callOp = makeCallOp();
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>(cycle: FixCycle<F>) => {
+      capturedStrategyNames = (cycle.strategies ?? []).map((s) => s.name);
       return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
     };
 
     try {
       const { makeFullSuiteRectifyStrategy } = require("@/operations/full-suite-rectify");
-      const { makeStory: ms } = require("@test/helpers");
-      const story = ms({ id: "US-t", title: "test" });
+      const story = makeStory({ id: "US-t", title: "test" });
       const fullSuiteStrategy = makeFullSuiteRectifyStrategy(story, makeNaxConfig());
 
       const ctx: CallContext = {
@@ -1361,10 +1358,10 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-t",
-      } as any;
+      };
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
         .addRectification({
           maxAttempts: 3,
@@ -1396,7 +1393,7 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
 
     const gateRunCount = { n: 0 };
     const verifierRunCount = { n: 0 };
-    let capturedCycle: any = null;
+    const capturedCycle: { current: CapturedCycle | null } = { current: null };
 
     // Gate passes during validate so the revalidation short-circuit doesn't fire;
     // this test asserts "verifier IS re-run when strategy maps to it", not gate-halt.
@@ -1406,28 +1403,28 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.name === "full-suite-gate") gateRunCount.n++;
-      if (op.name === "verifier") verifierRunCount.n++;
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
-    _storyOrchestratorDeps.runFixCycle = async (cycle: any) => {
-      capturedCycle = cycle;
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: (op) => {
+        if (op.name === "full-suite-gate") gateRunCount.n++;
+        if (op.name === "verifier") verifierRunCount.n++;
+      },
+    });
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>(cycle: FixCycle<F>) => {
+      capturedCycle.current = cycle;
       return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
     };
 
     try {
-      const ctx: CallContext = {
+      const ctx: FixCycleContext = {
         runtime: rt,
         packageView: rt.packages.repo(),
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-t",
-      } as any;
+      };
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
         .addRectification({
           maxAttempts: 3,
@@ -1446,10 +1443,10 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
         .build(ctx);
       await plan.run();
 
-      if (capturedCycle) {
+      if (capturedCycle.current) {
         const beforeGate = gateRunCount.n;
         const beforeVerifier = verifierRunCount.n;
-        await capturedCycle.validate(ctx, { mode: "full" });
+        await capturedCycle.current.validate(ctx, { mode: "full" });
         // Gate still runs during validate (keeps phaseOutputs current for applyPostRunInspection).
         expect(gateRunCount.n).toBeGreaterThan(beforeGate);
         // New contract (Task 2): verifier IS re-run when the strategy maps to it or is unknown.
@@ -1470,7 +1467,7 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
 
     const gateRunCount = { n: 0 };
     const verifierRunCount = { n: 0 };
-    let capturedCycle: any = null;
+    const capturedCycle: { current: CapturedCycle | null } = { current: null };
 
     const gateOp = makeDeterministicOp("full-suite-gate", {
       success: false,
@@ -1482,28 +1479,28 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.name === "full-suite-gate") gateRunCount.n++;
-      if (op.name === "verifier") verifierRunCount.n++;
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
-    _storyOrchestratorDeps.runFixCycle = async (cycle: any) => {
-      capturedCycle = cycle;
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: (op) => {
+        if (op.name === "full-suite-gate") gateRunCount.n++;
+        if (op.name === "verifier") verifierRunCount.n++;
+      },
+    });
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>(cycle: FixCycle<F>) => {
+      capturedCycle.current = cycle;
       return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
     };
 
     try {
-      const ctx: CallContext = {
+      const ctx: FixCycleContext = {
         runtime: rt,
         packageView: rt.packages.repo(),
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-t",
-      } as any;
+      };
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
         .addRectification({
           maxAttempts: 3,
@@ -1522,10 +1519,10 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
         .build(ctx);
       await plan.run();
 
-      if (capturedCycle) {
+      if (capturedCycle.current) {
         const beforeGate = gateRunCount.n;
         const beforeVerifier = verifierRunCount.n;
-        await capturedCycle.validate(ctx, { mode: "lite" });
+        await capturedCycle.current.validate(ctx, { mode: "lite" });
         expect(gateRunCount.n).toBe(beforeGate); // lite mode: gate skipped
         // New contract (Task 2): verifier re-runs even in lite mode — lite only exempts the gate.
         // Unknown strategy "s" → fallback to all phases → verifier included; gate guard fires only on "full-suite-gate".
@@ -1545,7 +1542,7 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
 
     const gateRunCount = { n: 0 };
     const verifierRunCount = { n: 0 };
-    let capturedCycle: any = null;
+    const capturedCycle: { current: CapturedCycle | null } = { current: null };
 
     const gateOp = makeDeterministicOp("full-suite-gate", {
       success: false,
@@ -1557,28 +1554,28 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.name === "full-suite-gate") gateRunCount.n++;
-      if (op.name === "verifier") verifierRunCount.n++;
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
-    _storyOrchestratorDeps.runFixCycle = async (cycle: any) => {
-      capturedCycle = cycle;
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: (op) => {
+        if (op.name === "full-suite-gate") gateRunCount.n++;
+        if (op.name === "verifier") verifierRunCount.n++;
+      },
+    });
+    _storyOrchestratorDeps.runFixCycle = async <F extends Finding>(cycle: FixCycle<F>) => {
+      capturedCycle.current = cycle;
       return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
     };
 
     try {
-      const ctx: CallContext = {
+      const ctx: FixCycleContext = {
         runtime: rt,
         packageView: rt.packages.repo(),
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-t",
-      } as any;
+      };
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
         .addRectification({
           maxAttempts: 3,
@@ -1597,10 +1594,10 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
         .build(ctx);
       await plan.run();
 
-      if (capturedCycle) {
+      if (capturedCycle.current) {
         const beforeGate = gateRunCount.n;
         const beforeVerifier = verifierRunCount.n;
-        await capturedCycle.validate(ctx, { mode: "full" });
+        await capturedCycle.current.validate(ctx, { mode: "full" });
         // Gate runs during validate and fails.
         expect(gateRunCount.n).toBeGreaterThan(beforeGate);
         // Verifier MUST NOT run after a failing gate (spec §2C halt contract,
@@ -1637,21 +1634,21 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      opRuns[op.name] = (opRuns[op.name] ?? 0) + 1;
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: (op) => {
+        opRuns[op.name] = (opRuns[op.name] ?? 0) + 1;
+      },
+    });
     // Simulate rectification resolving the gate: swap gateOp.execute to succeed
     // during the validate sweep, then restore. After the swap, the cycle reports
     // "resolved" so the post-rectification resume kicks in.
     _storyOrchestratorDeps.runFixCycle = async <F extends Finding>(cycle: FixCycle<F>, cycleCtx: FixCycleContext) => {
       const origGateExecute = gateOp.execute;
-      (gateOp as any).execute = () => ({ success: true, findings: [] });
+      gateOp.execute = async () => ({ success: true, findings: [] });
       try {
         await cycle.validate(cycleCtx, { mode: "full", strategiesRun: ["full-suite-rectify"] });
       } finally {
-        (gateOp as any).execute = origGateExecute;
+        gateOp.execute = origGateExecute;
       }
       return makeFixCycleResult<F>({ iterations: [makeIteration()] });
     };
@@ -1663,10 +1660,10 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-t",
-      } as any;
+      };
       const plan = new StoryOrchestratorBuilder()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } })
         .addVerifier({ op: verOp, input: { code: "" } })
         .addAdversarialReview({ op: advOp, input: { code: "" } })
         .addRectification({
@@ -1714,8 +1711,8 @@ describe("refreshReviewInputForDispatch — re-prepare review inputs at dispatch
     try {
       const staleInput = {
         workdir: "/tmp/repo",
-        story: { id: "US-x" } as any,
-        semanticConfig: { diffMode: "ref" } as any,
+        story: { id: "US-x" },
+        semanticConfig: { diffMode: "ref" },
         mode: "ref" as const,
         stat: "",
         diff: undefined,
@@ -1727,11 +1724,13 @@ describe("refreshReviewInputForDispatch — re-prepare review inputs at dispatch
           storyGitRef: "stale-ref",
         },
       };
-      const refreshed = (await refreshReviewInputForDispatch("semantic-review", staleInput)) as any;
-      expect(refreshed.stat).toBe("src/foo.ts | 5 ++++-");
-      expect(refreshed.diff).toBe("diff content");
-      expect(refreshed.excludePatterns).toEqual(["test/**"]);
-      expect(refreshed.storyGitRef).toBe("fresh-ref");
+      const refreshed = await refreshReviewInputForDispatch("semantic-review", staleInput);
+      expect(refreshed).toMatchObject({
+        stat: "src/foo.ts | 5 ++++-",
+        diff: "diff content",
+        excludePatterns: ["test/**"],
+        storyGitRef: "fresh-ref",
+      });
     } finally {
       _storyOrchestratorDeps.prepareSemanticReviewInput = origPrepare;
     }
@@ -1743,25 +1742,27 @@ describe("refreshReviewInputForDispatch — re-prepare review inputs at dispatch
       effectiveRef: "fresh-ref",
       stat: "src/foo.ts | 5",
       diff: "diff",
-      testInventory: { tests: 3 } as any,
+      testInventory: { addedTestFiles: [], newSourceFilesWithoutTests: [] },
       excludePatterns: ["test/**"],
       testGlobs: ["test/**/*.test.ts"],
       refExcludePatterns: [":(exclude)test/**"],
     })) as typeof _storyOrchestratorDeps.prepareAdversarialReviewInput;
 
     try {
-      const refreshed = (await refreshReviewInputForDispatch("adversarial-review", {
+      const refreshed = await refreshReviewInputForDispatch("adversarial-review", {
         workdir: "/tmp/repo",
-        story: { id: "US-x" } as any,
-        adversarialConfig: { diffMode: "ref" } as any,
+        story: { id: "US-x" },
+        adversarialConfig: { diffMode: "ref" },
         mode: "ref" as const,
         stat: "",
         diff: undefined,
         _refresh: { projectDir: "/tmp/repo", storyId: "US-x", storyGitRef: undefined },
-      })) as any;
-      expect(refreshed.stat).toBe("src/foo.ts | 5");
-      expect(refreshed.testInventory).toEqual({ tests: 3 });
-      expect(refreshed.testGlobs).toEqual(["test/**/*.test.ts"]);
+      });
+      expect(refreshed).toMatchObject({
+        stat: "src/foo.ts | 5",
+        testInventory: { addedTestFiles: [], newSourceFilesWithoutTests: [] },
+        testGlobs: ["test/**/*.test.ts"],
+      });
     } finally {
       _storyOrchestratorDeps.prepareAdversarialReviewInput = origPrepare;
     }
@@ -1786,7 +1787,10 @@ describe("refreshReviewInputForDispatch — re-prepare review inputs at dispatch
 
 describe("phasesToRevalidate — verifier inclusion after fix strategies", () => {
   // Helper to construct an InternalPhase stub — only `kind` matters for filtering.
-  const phase = (kind: string) => ({ kind, slot: { op: { name: kind } as any, input: {} } }) as any;
+  const phase = (kind: InternalPhase["kind"]): InternalPhase => ({
+    kind,
+    slot: { op: makeDeterministicOp(kind, { success: true }), input: {} },
+  });
 
   const allPhases = [
     phase("full-suite-gate"),
@@ -1799,14 +1803,14 @@ describe("phasesToRevalidate — verifier inclusion after fix strategies", () =>
 
   test("full-suite-rectify strategy re-runs verifier (previously hard-stripped)", () => {
     const result = phasesToRevalidate(["full-suite-rectify"], allPhases);
-    const kinds = result.map((p: any) => p.kind);
+    const kinds = result.map((p) => p.kind);
     expect(kinds).toContain("verifier");
     expect(kinds).toContain("full-suite-gate");
   });
 
   test("autofix-implementer strategy does NOT re-run verifier (once-per-story TDD isolation check)", () => {
     const result = phasesToRevalidate(["autofix-implementer"], allPhases);
-    const kinds = result.map((p: any) => p.kind);
+    const kinds = result.map((p) => p.kind);
     // autofix-implementer addresses review findings, not the TDD boundary — verifier excluded.
     expect(kinds).not.toContain("verifier");
     // Lint, typecheck, gate, semantic, adversarial are still re-run.
@@ -1816,7 +1820,7 @@ describe("phasesToRevalidate — verifier inclusion after fix strategies", () =>
 
   test("autofix-test-writer strategy does NOT re-run verifier (once-per-story TDD isolation check)", () => {
     const result = phasesToRevalidate(["autofix-test-writer"], allPhases);
-    const kinds = result.map((p: any) => p.kind);
+    const kinds = result.map((p) => p.kind);
     // autofix-test-writer rewrites tests for adversarial-review — not re-doing TDD boundary.
     expect(kinds).not.toContain("verifier");
     expect(kinds).toContain("full-suite-gate");
@@ -1825,23 +1829,23 @@ describe("phasesToRevalidate — verifier inclusion after fix strategies", () =>
 
   test("mechanical-lintfix does NOT re-run verifier (style-only, no semantic regression risk)", () => {
     const result = phasesToRevalidate(["mechanical-lintfix"], allPhases);
-    expect(result.map((p: any) => p.kind)).not.toContain("verifier");
-    expect(result.map((p: any) => p.kind)).toEqual(["lint-check"]);
+    expect(result.map((p) => p.kind)).not.toContain("verifier");
+    expect(result.map((p) => p.kind)).toEqual(["lint-check"]);
   });
 
   test("unknown strategy falls back to all phases including verifier", () => {
     const result = phasesToRevalidate(["plugin-unknown-strategy"], allPhases);
-    expect(result.map((p: any) => p.kind)).toContain("verifier");
+    expect(result.map((p) => p.kind)).toContain("verifier");
   });
 
   test("empty strategiesRun falls back to all phases including verifier", () => {
     const result = phasesToRevalidate([], allPhases);
-    expect(result.map((p: any) => p.kind)).toContain("verifier");
+    expect(result.map((p) => p.kind)).toContain("verifier");
   });
 
   test("undefined strategiesRun falls back to all phases including verifier", () => {
     const result = phasesToRevalidate(undefined, allPhases);
-    expect(result.map((p: any) => p.kind)).toContain("verifier");
+    expect(result.map((p) => p.kind)).toContain("verifier");
   });
 });
 
@@ -1901,10 +1905,7 @@ describe("rectification phase envelope", () => {
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp();
     _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
       makeFixCycleResult<F>({
         iterations: [makeIteration()],
@@ -1917,10 +1918,10 @@ describe("rectification phase envelope", () => {
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-t",
-      } as any;
+      };
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } })
         .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
         .build(ctx);
       const result = await plan.run();
@@ -1954,10 +1955,7 @@ describe("rectification phase envelope", () => {
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
-    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
-      if (op.kind === "deterministic") return op.execute(input, _ctx);
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
-    };
+    _storyOrchestratorDeps.callOp = makeCallOp();
     _storyOrchestratorDeps.runFixCycle = async <F extends Finding>() =>
       makeFixCycleResult<F>({
         finalFindings: [
@@ -1980,10 +1978,10 @@ describe("rectification phase envelope", () => {
         packageDir: "/tmp",
         agentName: "claude",
         storyId: "US-t",
-      } as any;
+      };
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } })
         .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
         .build(ctx);
       const result = await plan.run();

@@ -3,6 +3,20 @@ import { makeLogger, makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeS
 import { _debateSessionDeps } from "@/debate";
 import { runPlan } from "@/debate/runner-plan";
 import * as callModule from "@/operations";
+import type { DebatePlanInput } from "@/operations/debate-plan";
+
+/**
+ * Overload seam (deepMerge precedent): callers see callOp's real generic
+ * signature; the implementation works in concrete DebatePlanInput, so the
+ * mock can read `input.index` without an assertion.
+ */
+function makeRebuttingCallOp(rebutFor: (index: number) => string): typeof callModule.callOp;
+function makeRebuttingCallOp(rebutFor: (index: number) => string): unknown {
+  return async (_ctx: unknown, _op: unknown, input: DebatePlanInput) => ({
+    success: true,
+    rebut: rebutFor(input.index),
+  });
+}
 
 interface PlanCallInput {
   readonly debater?: { readonly agent: string; readonly model?: string };
@@ -157,9 +171,7 @@ describe("runPlan coordinator", () => {
       selector: undefined,
     });
 
-    spyOn(callModule, "callOp").mockImplementation(
-      async (_callCtx, _op, input: any) => ({ success: true, rebut: `rebut-1-${input.index}` }) as never,
-    );
+    spyOn(callModule, "callOp").mockImplementation(makeRebuttingCallOp((index) => `rebut-1-${index}`));
 
     const result = await runPlan(ctx, "task context", "output format", {
       workdir: "/tmp/work",

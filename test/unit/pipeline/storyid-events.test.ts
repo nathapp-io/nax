@@ -94,14 +94,14 @@ function makeCtx(qualityOverrides: Partial<{ testCommand: string | undefined }> 
     projectDir: WORKDIR,
     prd: { feature: "test", userStories: [mockStory] },
     agentManager: fakeAgentManager(mockAgent),
-    hooks: {} as any,
+    hooks: { hooks: {} },
   } as PipelineContext;
 }
 
 // ── Logger lifecycle ──────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  _executionDeps.getAgent = () => mockAgent as any;
+  _executionDeps.getAgent = () => mockAgent;
   resetLogger();
   initLogger({ level: "silent" });
 });

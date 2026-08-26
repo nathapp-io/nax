@@ -12,19 +12,64 @@
  */
 
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { makeLogger, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeTestRuntime } from "@test/helpers";
-import type { AgentRunRequest } from "@/agents";
+import {
+  assertDefined,
+  makeLogger,
+  makeMockAgentManager,
+  makeNaxConfig,
+  makeSessionManager,
+  makeTestRuntime,
+} from "@test/helpers";
+import type { AgentRunRequest, RetryStrategy } from "@/agents";
 import { ParseValidationError } from "@/agents";
+import type { ConfigSelector, NaxConfig } from "@/config";
+import type { ReviewConfig } from "@/config/selectors";
 import * as loggerModule from "@/logger";
-import { _callOpDeps, adversarialReviewOp, type CallContext, callOp } from "@/operations";
-import type { AdversarialReviewInput } from "@/operations/adversarial-review";
-import type { NaxRuntime } from "@/runtime";
+import { _callOpDeps, adversarialReviewOp, type BuildContext, type CallContext, callOp } from "@/operations";
+import type { AdversarialReviewInput, AdversarialReviewOutput } from "@/operations/adversarial-review";
+import type { NaxRuntime, PackageView } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
+
+/**
+ * `RunOperation.config` is declared as a selector-or-key-list union; this op's
+ * actual value is always the selector half, so narrow before handing it to
+ * `view.select`.
+ */
+function isConfigSelector<C>(
+  candidate: ConfigSelector<C> | readonly (keyof NaxConfig)[],
+): candidate is ConfigSelector<C> {
+  return !Array.isArray(candidate);
+}
+
+function selectOpConfig(view: PackageView): ReviewConfig {
+  const selector = adversarialReviewOp.config;
+  if (!isConfigSelector(selector)) throw new Error("adversarialReviewOp.config must be a ConfigSelector");
+  return view.select(selector);
+}
+
+/** Resolve the op's retry field through its declared resolver form into a strategy. */
+function resolveRetryStrategy(input: AdversarialReviewInput, buildCtx: BuildContext<ReviewConfig>): RetryStrategy {
+  const retry = adversarialReviewOp.retry;
+  if (typeof retry !== "function") throw new Error("adversarialReviewOp.retry must be a resolver");
+  const resolved = retry(input, buildCtx);
+  if (resolved !== undefined && "shouldRetry" in resolved) return resolved;
+  throw new Error("adversarialReviewOp.retry must resolve to a strategy");
+}
+
+/**
+ * callOp injects the accumulated hop cost onto the returned value at runtime
+ * without declaring it on `O` — narrow through a predicate instead of casting.
+ */
+function hasEstimatedCostUsd(
+  value: AdversarialReviewOutput,
+): value is AdversarialReviewOutput & { estimatedCostUsd: number } {
+  return "estimatedCostUsd" in value;
+}
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -59,7 +104,7 @@ function makeBuildCtx() {
   const runtime = makeTestRuntime();
   createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
-  return { packageView: view, config: view.select(adversarialReviewOp.config as any) };
+  return { packageView: view, config: selectOpConfig(view) };
 }
 
 // ─── AC2: Valid JSON = 1 send() call ─────────────────────────────────────────
@@ -68,14 +113,14 @@ describe("AC2: retry behavior — valid JSON response", () => {
   test("retry strategy does not retry when parse succeeds", () => {
     const ctx = makeBuildCtx();
     const opCtx = { packageView: ctx.packageView, config: ctx.config };
-    const strategy = (adversarialReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
+    const strategy = resolveRetryStrategy(SAMPLE_INPUT, opCtx);
 
     expect(typeof strategy.shouldRetry).toBe("function");
   });
 
   test("parse receives valid JSON and returns parsed result", () => {
     const ctx = makeBuildCtx();
-    const result = adversarialReviewOp.parse(VALID_JSON_OUTPUT, SAMPLE_INPUT, ctx as any);
+    const result = adversarialReviewOp.parse(VALID_JSON_OUTPUT, SAMPLE_INPUT, ctx);
 
     expect(result.passed).toBe(true);
     expect(result.findings).toEqual([]);
@@ -94,7 +139,7 @@ describe("AC3: retry behavior — truncated JSON response", () => {
       ...SAMPLE_INPUT,
       blockingThreshold: "warning",
     };
-    const strategy = (adversarialReviewOp.retry as any)(inputWithThreshold, opCtx);
+    const strategy = resolveRetryStrategy(inputWithThreshold, opCtx);
 
     // Unfinished JSON — an object opened and never closed, which is what
     // looksLikeTruncatedJson() detects now that nothing truncates by length.
@@ -111,6 +156,7 @@ describe("AC3: retry behavior — truncated JSON response", () => {
     const result = strategy.shouldRetry(new ParseValidationError("JSON shape validation failed"), 0, retryCtx);
 
     expect(result.retry).toBe(true);
+    if (!result.retry) throw new Error("expected a retry decision");
     expect(result.delayMs).toBeDefined();
     expect(result.nextPrompt).toBeDefined();
   });
@@ -118,7 +164,7 @@ describe("AC3: retry behavior — truncated JSON response", () => {
   test("condensed retry prompt contains 'truncated'", () => {
     const ctx = makeBuildCtx();
     const opCtx = { packageView: ctx.packageView, config: ctx.config };
-    const strategy = (adversarialReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
+    const strategy = resolveRetryStrategy(SAMPLE_INPUT, opCtx);
 
     const result = strategy.shouldRetry(new ParseValidationError("parse failed"), 0, {
       site: "complete" as const,
@@ -129,6 +175,7 @@ describe("AC3: retry behavior — truncated JSON response", () => {
     });
 
     expect(result.retry).toBe(true);
+    if (!result.retry) throw new Error("expected a retry decision");
     expect(result.nextPrompt).toContain("truncated");
   });
 });
@@ -139,7 +186,7 @@ describe("AC4: retry behavior — invalid but non-truncated response", () => {
   test("retry strategy detects invalid non-truncated response and retries", () => {
     const ctx = makeBuildCtx();
     const opCtx = { packageView: ctx.packageView, config: ctx.config };
-    const strategy = (adversarialReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
+    const strategy = resolveRetryStrategy(SAMPLE_INPUT, opCtx);
 
     const shortInvalidOutput = "this is not valid JSON at all";
 
@@ -154,6 +201,7 @@ describe("AC4: retry behavior — invalid but non-truncated response", () => {
     const result = strategy.shouldRetry(new ParseValidationError("JSON parsing failed"), 0, retryCtx);
 
     expect(result.retry).toBe(true);
+    if (!result.retry) throw new Error("expected a retry decision");
     expect(result.nextPrompt).not.toContain("truncated");
   });
 });
@@ -164,7 +212,7 @@ describe("AC5: retry behavior — budget exhaustion at review.parseRetryMaxAttem
   test("retry strategy does not retry after maxAttempts exhausted", () => {
     const ctx = makeBuildCtx();
     const opCtx = { packageView: ctx.packageView, config: ctx.config };
-    const strategy = (adversarialReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
+    const strategy = resolveRetryStrategy(SAMPLE_INPUT, opCtx);
 
     const invalidOutput = "not json";
 
@@ -192,8 +240,8 @@ describe("AC5: retry behavior — budget exhaustion at review.parseRetryMaxAttem
     const runtime = makeTestRuntime({ config: makeNaxConfig({ review: { parseRetryMaxAttempts: 2 } }) });
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
-    const opCtx = { packageView: view, config: view.select(adversarialReviewOp.config as any) };
-    const strategy = (adversarialReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
+    const opCtx = { packageView: view, config: selectOpConfig(view) };
+    const strategy = resolveRetryStrategy(SAMPLE_INPUT, opCtx);
 
     const retryCtx = {
       site: "complete" as const,
@@ -233,14 +281,16 @@ describe("AC6: cost accumulation — estimatedCostUsd sums all turns", () => {
     createdRuntimes.push(runtime);
 
     const originalParse = adversarialReviewOp.parse;
-    (adversarialReviewOp as any).parse = () => {
-      throw new ParseValidationError("invalid shape — triggers retry");
-    };
+    Object.assign(adversarialReviewOp, {
+      parse: () => {
+        throw new ParseValidationError("invalid shape — triggers retry");
+      },
+    });
 
     const origSleep = _callOpDeps.sleep;
     _callOpDeps.sleep = async () => {};
 
-    let result: unknown;
+    let result: AdversarialReviewOutput | undefined;
     try {
       const ctx: CallContext = {
         runtime,
@@ -252,13 +302,15 @@ describe("AC6: cost accumulation — estimatedCostUsd sums all turns", () => {
       };
       result = await callOp(ctx, adversarialReviewOp, SAMPLE_INPUT);
     } finally {
-      (adversarialReviewOp as any).parse = originalParse;
+      Object.assign(adversarialReviewOp, { parse: originalParse });
       _callOpDeps.sleep = origSleep;
     }
 
     // Default review.parseRetryMaxAttempts is 3 — one initial call + two re-prompts.
+    assertDefined(result, "callOp result");
+    if (!hasEstimatedCostUsd(result)) throw new Error("callOp did not surface estimatedCostUsd");
     expect(turnCount).toBe(3);
-    expect((result as any).estimatedCostUsd).toBeCloseTo(0.001 + 0.002 + 0.003, 6);
+    expect(result.estimatedCostUsd).toBeCloseTo(0.001 + 0.002 + 0.003, 6);
   });
 });
 
@@ -272,7 +324,7 @@ describe("AC7: logging — storyId is first key in data object", () => {
     try {
       const ctx = makeBuildCtx();
       const opCtx = { packageView: ctx.packageView, config: ctx.config };
-      const strategy = (adversarialReviewOp.retry as any)(SAMPLE_INPUT, opCtx);
+      const strategy = resolveRetryStrategy(SAMPLE_INPUT, opCtx);
 
       // Unfinished JSON — an object opened and never closed, which is what
       // looksLikeTruncatedJson() detects now that nothing truncates by length.

@@ -12,8 +12,12 @@
  * type. Merging them would be an abstraction over a coincidence of naming.
  */
 
+import type { ConfigSelector, NaxConfig } from "@/config";
 import type { MutationCheckDeps } from "@/operations";
-import type { NaxRuntime } from "@/runtime";
+import type { CallContext } from "@/operations/types";
+import type { NaxRuntime, PackageView } from "@/runtime";
+import { makeNaxConfig } from "./mock-nax-config";
+import { makeMockRuntime } from "./runtime";
 
 /**
  * `MutationCheckDeps` with every collaborator stubbed to a benign success: no
@@ -22,7 +26,7 @@ import type { NaxRuntime } from "@/runtime";
  */
 export function makeMutationCheckDeps(overrides: Partial<MutationCheckDeps> = {}): MutationCheckDeps {
   return {
-    detectLanguage: async () => "typescript" as any,
+    detectLanguage: async () => "typescript",
     getChangedNonTestFiles: async () => [],
     getChangedLineRanges: async () => new Map(),
     getGitRoot: async () => null,
@@ -52,36 +56,65 @@ export interface MutationCheckCtxOptions {
   readonly repoRoot?: string;
 }
 
+function makePackageView(config: NaxConfig, packageDir: string, repoRoot: string): PackageView {
+  return {
+    packageDir,
+    relativeFromRoot: "",
+    repoRoot,
+    hasOverride: false,
+    config,
+    select<C>(selector: ConfigSelector<C>): C {
+      return selector.select(config);
+    },
+  };
+}
+
 /**
- * A `CallContext` for `mutationCheckOp`, with `execution` as the first argument
- * because that is the slice almost every test varies.
+ * Mirror the historical config contract onto a real `NaxConfig`: the default is
+ * `quality.commands = { test: "bun test" }`, and a supplied `quality` replaces
+ * the subtree wholesale (so `{}` means "no commands configured").
  *
- * The runtime always carries both `mutationSummaries` and `dirtyWorktrees`.
- * The op reaches each through optional chaining, so supplying them is
- * harmless for tests that ignore them and removes a footgun for tests that
- * exercise the revert path and would otherwise fail on an absent `Set`.
+ * `makeNaxConfig()` shares each unmodified subtree with `DEFAULT_CONFIG`
+ * (deepMerge clones only the levels it descends into), so the config is
+ * deep-cloned before either write below — otherwise they would mutate the
+ * process-wide default and leak into every later test in the same worker.
  */
+function applyQuality(config: NaxConfig, quality: Record<string, unknown> | undefined): void {
+  if (quality === undefined) {
+    config.quality.commands = { test: "bun test" };
+    return;
+  }
+  config.quality.commands = {};
+  const commands = quality.commands;
+  if (typeof commands === "object" && commands !== null) {
+    Object.assign(config.quality.commands, commands);
+  }
+}
+
+/**
+ * A real `CallContext` for `mutationCheckOp`, with `execution` as the first
+ * argument because that is the slice almost every test varies. The execution
+ * bag is merged over the default config; `quality` (see options) replaces
+ * wholesale.
+ *
+ * `storyId` stays writable: tests re-point it (or strip it) after construction
+ * to exercise summary attribution, which `CallContext` declares readonly.
+ */
+type MutationCheckCtx = Omit<CallContext, "storyId"> & { storyId?: string | undefined };
+
 export function makeMutationCheckCtx(
   execution: Record<string, unknown> = {},
   options: MutationCheckCtxOptions = {},
-): any {
-  const {
-    runtime = {},
-    quality = { commands: { test: "bun test" } },
-    storyId = "US-004",
-    packageDir = "packages/agent",
-    repoRoot = "/repo",
-  } = options;
-  const config = { execution, quality } as any;
+): MutationCheckCtx {
+  const { runtime = {}, quality, storyId = "US-004", packageDir = "packages/agent", repoRoot = "/repo" } = options;
+  const config = structuredClone(makeNaxConfig());
+  applyQuality(config, quality);
+  Object.assign(config.execution, execution);
   return {
-    runtime: { mutationSummaries: new Map(), dirtyWorktrees: new Set<string>(), ...runtime },
+    runtime: Object.assign(makeMockRuntime(), runtime),
     storyId,
-    packageView: {
-      packageDir,
-      repoRoot,
-      hasOverride: false,
-      config,
-      select: (s: any) => s.select(config),
-    },
-  } as any;
+    packageDir,
+    packageView: makePackageView(config, packageDir, repoRoot),
+    agentName: "claude",
+  };
 }

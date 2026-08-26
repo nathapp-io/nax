@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makePRD, makeStory as makeStoryBase, makeTempDir } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeMergeEngine,
+  makePRD,
+  makeStory as makeStoryBase,
+  makeTempDir,
+  makeTestContext,
+  makeWorktreeManager,
+} from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
 import type { LoadedHooksConfig } from "@/hooks";
@@ -65,9 +73,11 @@ describe("AC-6: runParallelBatch rectification success", () => {
     const origMerge = _parallelBatchDeps.createMergeEngine;
     const origRectify = _parallelBatchDeps.rectifyConflictedStory;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createWorktreeManager = async () => makeWorktreeManager();
     _parallelBatchDeps.createMergeEngine = async () =>
-      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
+      makeMergeEngine({
+        mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })),
+      });
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],
@@ -91,7 +101,7 @@ describe("AC-6: runParallelBatch rectification success", () => {
           hooks: {} as LoadedHooksConfig,
           pluginRegistry: {} as PluginRegistry,
           maxConcurrency: 2,
-          pipelineContext: {} as any,
+          pipelineContext: makeTestContext({ prd, projectDir: tmpDir }),
         },
       });
       expect(rectifyCalled).toBe(true);
@@ -113,9 +123,11 @@ describe("AC-6: runParallelBatch rectification success", () => {
     const origMerge = _parallelBatchDeps.createMergeEngine;
     const origRectify = _parallelBatchDeps.rectifyConflictedStory;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createWorktreeManager = async () => makeWorktreeManager();
     _parallelBatchDeps.createMergeEngine = async () =>
-      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
+      makeMergeEngine({
+        mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })),
+      });
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],
@@ -136,7 +148,7 @@ describe("AC-6: runParallelBatch rectification success", () => {
           hooks: {} as LoadedHooksConfig,
           pluginRegistry: {} as PluginRegistry,
           maxConcurrency: 2,
-          pipelineContext: {} as any,
+          pipelineContext: makeTestContext({ prd, projectDir: tmpDir }),
         },
       });
       expect(result.mergeConflicts[0].rectified).toBe(true);
@@ -164,9 +176,11 @@ describe("AC-7: runParallelBatch rectification failure", () => {
     const origMerge = _parallelBatchDeps.createMergeEngine;
     const origRectify = _parallelBatchDeps.rectifyConflictedStory;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createWorktreeManager = async () => makeWorktreeManager();
     _parallelBatchDeps.createMergeEngine = async () =>
-      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
+      makeMergeEngine({
+        mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })),
+      });
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],
@@ -189,7 +203,7 @@ describe("AC-7: runParallelBatch rectification failure", () => {
           hooks: {} as LoadedHooksConfig,
           pluginRegistry: {} as PluginRegistry,
           maxConcurrency: 2,
-          pipelineContext: {} as any,
+          pipelineContext: makeTestContext({ prd, projectDir: tmpDir }),
         },
       });
       expect(result.mergeConflicts[0].rectified).toBe(false);

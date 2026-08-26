@@ -19,14 +19,15 @@ import {
   makeMutationCheckDeps as fakeDeps,
   makeMutationCheckCtx,
   makeResolvedTestPatterns,
+  makeStory,
   makeTempDir,
   withInfoSpy,
 } from "@test/helpers";
-import type { MutationCheckDeps } from "@/operations";
+import type { MutationCheckDeps, MutationCheckOutput } from "@/operations";
 import { _mutationCheckDeps, mutationCheckOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 
-const FAKE_STORY = { id: "US-004", title: "mutation-check telemetry" } as any;
+const FAKE_STORY = makeStory({ id: "US-004", title: "mutation-check telemetry" });
 const ENABLED = { enabled: true, maxMutants: 3, timeoutSeconds: 60 };
 
 const ctxWithConfig = (
@@ -50,7 +51,7 @@ async function runAndCaptureInfo(
   },
   mutationsConfig: Record<string, unknown> = ENABLED,
   opts: { depsOverrides?: Partial<MutationCheckDeps>; quality?: Record<string, unknown> } = {},
-): Promise<{ calls: unknown[][]; out: any }> {
+): Promise<{ calls: unknown[][]; out: MutationCheckOutput }> {
   const dir = makeTempDir("nax-mutation-telemetry-");
   try {
     const file = join(dir, "src", "foo.ts");

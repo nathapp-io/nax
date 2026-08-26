@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { makeSpawn, makeStory, makeTestRuntime } from "@test/helpers";
+import { tddConfigSelector } from "@/config";
 import { testWriterOp } from "@/operations";
+import type { BuildContext, VerifyContext } from "@/operations/types";
+import type { TestWriterInput, TestWriterOutput } from "@/operations/write-test";
+import type { UserStory } from "@/prd";
+
+type TestWriterOpConfig = ReturnType<typeof tddConfigSelector.select>;
 
 /**
  * Tests for testWriterOp — the full RunOperation shape for the test-writer role.
@@ -13,6 +20,15 @@ import { testWriterOp } from "@/operations";
  * Given non-JSON or malformed output (e.g. buildHopCallback error strings),
  * parse returns success: false — agent failure must not be masked as success.
  */
+
+function makeParseCtx(): BuildContext<TestWriterOpConfig> {
+  const view = makeTestRuntime().packages.repo();
+  return { packageView: view, config: view.select(tddConfigSelector) };
+}
+
+function makeInput(story: Partial<UserStory> = {}): TestWriterInput {
+  return { story: makeStory({ id: "US-001", ...story }) };
+}
 
 describe("testWriterOp — RunOperation shape", () => {
   test("exports testWriterOp as a RunOperation with kind=run", async () => {
@@ -56,17 +72,9 @@ describe("testWriterOp — RunOperation shape", () => {
 describe("testWriterOp.parse — error handling", () => {
   test("returns TestWriterOutput with success=false when output is empty", async () => {
     const { testWriterOp } = await import("@/operations");
-    const { DEFAULT_CONFIG } = await import("@/config");
 
-    const ctx = {
-      packageView: {} as any,
-      config: DEFAULT_CONFIG,
-    };
-
-    const input = {
-      story: { id: "US-001" } as any,
-    };
-
+    const ctx = makeParseCtx();
+    const input = makeInput();
     const result = testWriterOp.parse("", input, ctx);
 
     expect(result.success).toBe(false);
@@ -75,17 +83,9 @@ describe("testWriterOp.parse — error handling", () => {
 
   test("returns TestWriterOutput with success=false when output is non-JSON (e.g. buildHopCallback error string)", async () => {
     const { testWriterOp } = await import("@/operations");
-    const { DEFAULT_CONFIG } = await import("@/config");
 
-    const ctx = {
-      packageView: {} as any,
-      config: DEFAULT_CONFIG,
-    };
-
-    const input = {
-      story: { id: "US-001" } as any,
-    };
-
+    const ctx = makeParseCtx();
+    const input = makeInput();
     const result = testWriterOp.parse('Agent "mock" failed: Agent failed', input, ctx);
 
     expect(result.success).toBe(false);
@@ -96,17 +96,9 @@ describe("testWriterOp.parse — error handling", () => {
     // Mirrors implementerOp: agents that reply in prose instead of the JSON
     // envelope are treated as successful — downstream gates catch real failures.
     const { testWriterOp } = await import("@/operations");
-    const { DEFAULT_CONFIG } = await import("@/config");
 
-    const ctx = {
-      packageView: {} as any,
-      config: DEFAULT_CONFIG,
-    };
-
-    const input = {
-      story: { id: "US-001" } as any,
-    };
-
+    const ctx = makeParseCtx();
+    const input = makeInput();
     const result = testWriterOp.parse("Tests added to src/calc.test.ts — RED as expected.", input, ctx);
 
     expect(result.success).toBe(true);
@@ -115,17 +107,9 @@ describe("testWriterOp.parse — error handling", () => {
 
   test("returns TestWriterOutput with success=false when output is an injected agent-failure marker", async () => {
     const { testWriterOp } = await import("@/operations");
-    const { DEFAULT_CONFIG } = await import("@/config");
 
-    const ctx = {
-      packageView: {} as any,
-      config: DEFAULT_CONFIG,
-    };
-
-    const input = {
-      story: { id: "US-001" } as any,
-    };
-
+    const ctx = makeParseCtx();
+    const input = makeInput();
     const result = testWriterOp.parse('Agent "opencode" failed: timeout', input, ctx);
 
     expect(result.success).toBe(false);
@@ -134,17 +118,9 @@ describe("testWriterOp.parse — error handling", () => {
 
   test("returns TestWriterOutput with success=true when output is valid JSON envelope", async () => {
     const { testWriterOp } = await import("@/operations");
-    const { DEFAULT_CONFIG } = await import("@/config");
 
-    const ctx = {
-      packageView: {} as any,
-      config: DEFAULT_CONFIG,
-    };
-
-    const input = {
-      story: { id: "US-001" } as any,
-    };
-
+    const ctx = makeParseCtx();
+    const input = makeInput();
     const result = testWriterOp.parse('{"success":true,"filesChanged":["test/foo.test.ts"]}', input, ctx);
 
     expect(result.success).toBe(true);
@@ -154,17 +130,9 @@ describe("testWriterOp.parse — error handling", () => {
 
   test("returns TestWriterOutput with all required fields on parse failure", async () => {
     const { testWriterOp } = await import("@/operations");
-    const { DEFAULT_CONFIG } = await import("@/config");
 
-    const ctx = {
-      packageView: {} as any,
-      config: DEFAULT_CONFIG,
-    };
-
-    const input = {
-      story: { id: "US-001" } as any,
-    };
-
+    const ctx = makeParseCtx();
+    const input = makeInput();
     const result = testWriterOp.parse("", input, ctx);
 
     expect(result.success).toBeDefined();
@@ -175,35 +143,35 @@ describe("testWriterOp.parse — error handling", () => {
 });
 
 describe("testWriterOp.verify — isolation", () => {
+  function makeVerifyCtx(): VerifyContext<TestWriterOpConfig> {
+    const view = makeTestRuntime().packages.repo();
+    return {
+      packageView: view,
+      config: view.select(tddConfigSelector),
+      readFile: async () => null,
+      fileExists: async () => false,
+    };
+  }
+
   test("attaches isolation result when beforeRef provided and only test files changed", async () => {
     const { testWriterOp } = await import("@/operations");
-    const { DEFAULT_CONFIG } = await import("@/config");
     const { _isolationDeps } = await import("@/tdd");
 
     const origSpawn = _isolationDeps.spawn;
-    _isolationDeps.spawn = ((_cmd: string[]) => ({
-      stdout: new Response("test/foo.test.ts\n").body,
-      stderr: new Response("").body,
-      exited: Promise.resolve(0),
-    })) as any;
+    _isolationDeps.spawn = makeSpawn(() => ({ stdout: "test/foo.test.ts\n" })).spawn;
 
     try {
-      const parsed = {
+      const parsed: TestWriterOutput = {
         success: true,
         filesChanged: ["test/foo.test.ts"],
         estimatedCostUsd: 0,
         durationMs: 0,
         output: "ok",
       };
-      const input = { story: { id: "US-001" } as any, beforeRef: "HEAD~1" };
-      const ctx = {
-        packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
-        config: DEFAULT_CONFIG.tdd,
-        readFile: async () => null,
-        fileExists: async () => false,
-      };
+      const input: TestWriterInput = { story: makeStory({ id: "US-001" }), beforeRef: "HEAD~1" };
+      const ctx = makeVerifyCtx();
 
-      const result = await testWriterOp.verify!(parsed, input, ctx as any);
+      const result = await testWriterOp.verify!(parsed, input, ctx);
 
       expect(result).not.toBeNull();
       expect(result!.isolation).toBeDefined();
@@ -216,33 +184,23 @@ describe("testWriterOp.verify — isolation", () => {
 
   test("attaches isolation result with violations when source files changed", async () => {
     const { testWriterOp } = await import("@/operations");
-    const { DEFAULT_CONFIG } = await import("@/config");
     const { _isolationDeps } = await import("@/tdd");
 
     const origSpawn = _isolationDeps.spawn;
-    _isolationDeps.spawn = ((_cmd: string[]) => ({
-      stdout: new Response("src/foo.ts\ntest/foo.test.ts\n").body,
-      stderr: new Response("").body,
-      exited: Promise.resolve(0),
-    })) as any;
+    _isolationDeps.spawn = makeSpawn(() => ({ stdout: "src/foo.ts\ntest/foo.test.ts\n" })).spawn;
 
     try {
-      const parsed = {
+      const parsed: TestWriterOutput = {
         success: true,
         filesChanged: ["src/foo.ts", "test/foo.test.ts"],
         estimatedCostUsd: 0,
         durationMs: 0,
         output: "ok",
       };
-      const input = { story: { id: "US-001" } as any, beforeRef: "HEAD~1" };
-      const ctx = {
-        packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
-        config: DEFAULT_CONFIG.tdd,
-        readFile: async () => null,
-        fileExists: async () => false,
-      };
+      const input: TestWriterInput = { story: makeStory({ id: "US-001" }), beforeRef: "HEAD~1" };
+      const ctx = makeVerifyCtx();
 
-      const result = await testWriterOp.verify!(parsed, input, ctx as any);
+      const result = await testWriterOp.verify!(parsed, input, ctx);
 
       expect(result!.isolation!.passed).toBe(false);
       expect(result!.isolation!.violations).toContain("src/foo.ts");
@@ -253,24 +211,18 @@ describe("testWriterOp.verify — isolation", () => {
 
   test("returns parsed unchanged when beforeRef absent (skip isolation)", async () => {
     const { testWriterOp } = await import("@/operations");
-    const { DEFAULT_CONFIG } = await import("@/config");
 
-    const parsed = {
+    const parsed: TestWriterOutput = {
       success: true,
       filesChanged: [],
       estimatedCostUsd: 0,
       durationMs: 0,
       output: "ok",
     };
-    const input = { story: { id: "US-001" } as any }; // no beforeRef
-    const ctx = {
-      packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
-      config: DEFAULT_CONFIG.tdd,
-      readFile: async () => null,
-      fileExists: async () => false,
-    };
+    const input: TestWriterInput = { story: makeStory({ id: "US-001" }) }; // no beforeRef
+    const ctx = makeVerifyCtx();
 
-    const result = await testWriterOp.verify!(parsed, input, ctx as any);
+    const result = await testWriterOp.verify!(parsed, input, ctx);
     expect(result).toEqual(parsed);
   });
 });
@@ -287,26 +239,17 @@ describe("testWriterOp.recover — disk artifact recovery", () => {
 
 describe("testWriterOp input/output types", () => {
   test("testWriterOp input includes story", async () => {
-    const { testWriterOp } = await import("@/operations");
-    const mockInput = {
-      story: { id: "US-001" } as any,
-    };
+    const mockInput = makeInput();
     expect(mockInput.story).toBeDefined();
+    const { testWriterOp } = await import("@/operations");
+    expect(testWriterOp).toBeDefined();
   });
 
   test("testWriterOp output includes success, filesChanged, estimatedCostUsd, durationMs", async () => {
     const { testWriterOp } = await import("@/operations");
-    const { DEFAULT_CONFIG } = await import("@/config");
 
-    const ctx = {
-      packageView: {} as any,
-      config: DEFAULT_CONFIG,
-    };
-
-    const input = {
-      story: { id: "US-001" } as any,
-    };
-
+    const ctx = makeParseCtx();
+    const input = makeInput();
     const output = testWriterOp.parse("", input, ctx);
 
     expect("success" in output).toBe(true);
@@ -317,26 +260,33 @@ describe("testWriterOp input/output types", () => {
   });
 });
 
-function tddBuildCtx(sessionTiers?: Record<string, unknown>) {
-  return { config: { tdd: { sessionTiers } }, packageView: {} as any };
+function tddBuildCtx(sessionTiers?: TestWriterOpConfig["tdd"]["sessionTiers"]): BuildContext<TestWriterOpConfig> {
+  const view = makeTestRuntime().packages.repo();
+  const base = view.select(tddConfigSelector);
+  return {
+    packageView: view,
+    config: { ...base, tdd: { ...base.tdd, sessionTiers } },
+  };
 }
 
 describe("testWriterOp.model — tdd.sessionTiers.testWriter", () => {
+  function callModel(ctx: BuildContext<TestWriterOpConfig>) {
+    if (typeof testWriterOp.model !== "function") throw new Error("testWriterOp.model must be a resolver");
+    return testWriterOp.model(makeInput(), ctx);
+  }
+
   test("returns the configured testWriter tier", () => {
-    const resolver = testWriterOp.model as (i: unknown, c: unknown) => unknown;
-    expect(resolver({}, tddBuildCtx({ testWriter: "fast" }))).toBe("fast");
+    expect(callModel(tddBuildCtx({ testWriter: "fast" }))).toBe("fast");
   });
 
   test("passes a ConfiguredModel object through unchanged", () => {
-    const resolver = testWriterOp.model as (i: unknown, c: unknown) => unknown;
-    expect(resolver({}, tddBuildCtx({ testWriter: { agent: "claude", model: "haiku" } }))).toEqual({
+    expect(callModel(tddBuildCtx({ testWriter: { agent: "claude", model: "haiku" } }))).toEqual({
       agent: "claude",
       model: "haiku",
     });
   });
 
   test("returns undefined when sessionTiers is absent (callOp then defaults)", () => {
-    const resolver = testWriterOp.model as (i: unknown, c: unknown) => unknown;
-    expect(resolver({}, tddBuildCtx(undefined))).toBeUndefined();
+    expect(callModel(tddBuildCtx(undefined))).toBeUndefined();
   });
 });

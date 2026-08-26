@@ -10,12 +10,30 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeMockAgentManager, makeNaxConfig, makeStory } from "@test/helpers";
-import type { PipelineContext } from "@/pipeline/types";
+import {
+  makeInteractionChain,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeNaxConfig,
+  makeSessionManager,
+  makeStory,
+} from "@test/helpers";
+import type { PipelineContext, RoutingResult } from "@/pipeline/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Complete RoutingResult with only testStrategy varying between call sites. */
+function makeRouting(testStrategy: RoutingResult["testStrategy"]): RoutingResult {
+  return {
+    complexity: "simple",
+    modelTier: "fast",
+    testStrategy,
+    agent: "claude",
+    reasoning: "test fixture",
+  };
+}
 
 /**
  * Create a minimal PipelineContext for testing the execution stage.
@@ -41,26 +59,10 @@ function makePipelineContext(overrides: Partial<PipelineContext> = {}): Pipeline
     },
     projectDir: "/tmp/test",
     workdir: "/tmp/test",
-    routing: {
-      complexity: "simple",
-      modelTier: "fast",
-      testStrategy: "test-after",
-      agent: "claude",
-    },
+    routing: makeRouting("test-after"),
     agentManager,
-    sessionManager: {
-      openSession: async () => ({ sessionId: "test-session" }) as any,
-      sendPrompt: async () => ({ output: "test" }) as any,
-      closeSession: async () => {},
-      runInSession: async () => ({ output: "test" }) as any,
-      handoff: async () => {},
-      nameFor: () => "test-session",
-    } as any,
-    runtime: {
-      signal: AbortSignal.timeout(300000),
-      onPidSpawned: () => {},
-      dispatchEvents: undefined,
-    } as any,
+    sessionManager: makeSessionManager(),
+    runtime: makeMockRuntime({ agentManager }),
     abortSignal: AbortSignal.timeout(300000),
     hooks: {},
     prompt: "Test prompt",
@@ -78,7 +80,7 @@ describe("Unified Execution Stage — AC1: Single plan build and run", () => {
   test.each(["test-after", "three-session-tdd", "three-session-tdd-lite"] as const)(
     "builds exactly one plan for %s strategy",
     (testStrategy) => {
-      const ctx = makePipelineContext({ routing: { testStrategy } as any });
+      const ctx = makePipelineContext({ routing: makeRouting(testStrategy) });
       expect(ctx.story.id).toBeDefined();
       expect(ctx.routing.testStrategy).toBe(testStrategy);
     },
@@ -98,7 +100,7 @@ describe("Unified Execution Stage — AC2: No strategy branching", () => {
   test.each(["test-after", "three-session-tdd"] as const)(
     "uses unified path for %s strategy (not direct orchestration)",
     (testStrategy) => {
-      const ctx = makePipelineContext({ routing: { testStrategy } as any });
+      const ctx = makePipelineContext({ routing: makeRouting(testStrategy) });
       expect(ctx.routing.testStrategy).toBe(testStrategy);
     },
   );
@@ -115,7 +117,7 @@ describe("Unified Execution Stage — AC2: No strategy branching", () => {
 
 describe("Unified Execution Stage — AC3: Post-run inspection", () => {
   test("placeholder — verdict/failure-categories/rollback/isolation/pauseReason covered in integration tests", () => {
-    const ctx = makePipelineContext({ routing: { testStrategy: "three-session-tdd" } as any });
+    const ctx = makePipelineContext({ routing: makeRouting("three-session-tdd") });
     expect(ctx.story).toBeDefined();
     expect(ctx.config).toBeDefined();
     expect(ctx.workdir).toBeDefined();
@@ -129,7 +131,7 @@ describe("Unified Execution Stage — AC3: Post-run inspection", () => {
 
 describe("Unified Execution Stage — AC4: pauseReason interaction and pause action", () => {
   test("placeholder — pauseReason notify/stage-pause/notification-failure covered in integration tests", () => {
-    const ctx = makePipelineContext({ interaction: { send: async () => ({}) } as any });
+    const ctx = makePipelineContext({ interaction: makeInteractionChain({ send: async () => ({}) }) });
     expect(ctx.interaction).toBeDefined();
     expect(ctx.story.id).toBeDefined();
   });
@@ -161,7 +163,7 @@ describe("Unified Execution Stage — AC5: Source guard - orchestration isolatio
 
 describe("Unified Execution Stage — Integration: Full flow", () => {
   test("placeholder — success/failure/pause paths covered in integration tests", () => {
-    const ctx = makePipelineContext({ interaction: { send: async () => ({}) } as any });
+    const ctx = makePipelineContext({ interaction: makeInteractionChain({ send: async () => ({}) }) });
     expect(ctx.story).toBeDefined();
     expect(ctx.config).toBeDefined();
     expect(ctx.prd).toBeDefined();
@@ -169,8 +171,8 @@ describe("Unified Execution Stage — Integration: Full flow", () => {
   });
 
   test("works identically for TDD and non-TDD strategies", () => {
-    const tddCtx = makePipelineContext({ routing: { testStrategy: "three-session-tdd" } as any });
-    const nonTddCtx = makePipelineContext({ routing: { testStrategy: "test-after" } as any });
+    const tddCtx = makePipelineContext({ routing: makeRouting("three-session-tdd") });
+    const nonTddCtx = makePipelineContext({ routing: makeRouting("test-after") });
     expect(tddCtx.routing.testStrategy).toBe("three-session-tdd");
     expect(nonTddCtx.routing.testStrategy).toBe("test-after");
   });
@@ -182,7 +184,7 @@ describe("Unified Execution Stage — Integration: Full flow", () => {
 
 describe("Unified Execution Stage — Error handling", () => {
   test("handles missing required fields in plan assembly", () => {
-    const ctx = makePipelineContext({ story: { id: "" } as any });
+    const ctx = makePipelineContext({ story: makeStory({ id: "" }) });
     expect(ctx.story.id).toBe("");
   });
 
@@ -193,11 +195,11 @@ describe("Unified Execution Stage — Error handling", () => {
 
   test("placeholder — plan.run() and interaction.send() failure handling covered in integration tests", () => {
     const ctx = makePipelineContext({
-      interaction: {
+      interaction: makeInteractionChain({
         send: async () => {
           throw new Error("Notification failed");
         },
-      } as any,
+      }),
     });
     expect(ctx.runtime).toBeDefined();
     expect(ctx.interaction).toBeDefined();

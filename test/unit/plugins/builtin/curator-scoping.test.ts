@@ -9,6 +9,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { makeNaxConfig } from "@test/helpers";
 import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
 import { collectObservations } from "@/plugins/builtin/curator";
 
@@ -27,7 +28,7 @@ function makeContext(root: string, workdir: string): CuratorPostRunContext {
     version: "0.1.0",
     pluginConfig: {},
     logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-    config: {} as any,
+    config: makeNaxConfig(),
     outputDir: join(root, "out"),
     globalDir: join(root, "global"),
     projectKey: "test-project",

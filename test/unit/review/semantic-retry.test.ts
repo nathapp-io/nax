@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  assertDefined,
   makeMockAgentManager,
   makeMockRuntime,
   makeSemanticOutput,
@@ -21,7 +22,10 @@ import {
 import type { AgentRunRequest } from "@/agents";
 import * as loggerModule from "@/logger";
 import { callOp, semanticReviewOp } from "@/operations";
+import type { SemanticReviewInput } from "@/operations/semantic-review";
+import type { HopBodyContext } from "@/operations/types";
 import { _diffUtilsDeps } from "@/review/diff-utils";
+import type { ReviewAuditDecision } from "@/review/review-audit";
 import type { SemanticStory } from "@/review/semantic";
 import { _semanticDeps, runSemanticReview } from "@/review/semantic";
 import type { SemanticReviewConfig } from "@/review/types";
@@ -141,7 +145,7 @@ describe("runSemanticReview — JSON retry outcomes", () => {
 
   test("returns success when callOp returns valid findings", async () => {
     _semanticDeps.callOp = mock(async () => makeSemanticOutput({ passed: true, findings: [] }));
-    const auditCalls: unknown[] = [];
+    const auditCalls: ReviewAuditDecision[] = [];
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
     const runtime = makeMockRuntime({
       agentManager,
@@ -165,9 +169,11 @@ describe("runSemanticReview — JSON retry outcomes", () => {
     expect(result.success).toBe(true);
     expect(result.output).toContain("Semantic review passed");
     expect(auditCalls).toHaveLength(1);
-    expect((auditCalls[0] as any).reviewer).toBe("semantic");
-    expect((auditCalls[0] as any).parsed).toBe(true);
-    expect((auditCalls[0] as any).passed).toBe(true);
+    const decision = auditCalls[0];
+    assertDefined(decision, "review audit decision");
+    expect(decision.reviewer).toBe("semantic");
+    expect(decision.parsed).toBe(true);
+    expect(decision.passed).toBe(true);
   });
 
   test("returns fail-open when callOp returns failOpen", async () => {
@@ -487,6 +493,7 @@ describe("semanticReviewOp.hopBody — same-session requote", () => {
         return {
           output: callCount === 1 ? initial : requote,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       });
@@ -501,7 +508,7 @@ describe("semanticReviewOp.hopBody — same-session requote", () => {
           semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
           mode: "ref",
         },
-      } as any);
+      } satisfies HopBodyContext<SemanticReviewInput>);
 
       const parsed = JSON.parse(result.output);
       expect(callCount).toBe(2);
@@ -538,6 +545,7 @@ describe("semanticReviewOp.hopBody — same-session requote", () => {
         return {
           output: callCount === 1 ? initial : "not json",
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       });
@@ -552,7 +560,7 @@ describe("semanticReviewOp.hopBody — same-session requote", () => {
           semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
           mode: "ref",
         },
-      } as any);
+      } satisfies HopBodyContext<SemanticReviewInput>);
 
       const parsed = JSON.parse(result.output);
       expect(callCount).toBe(2);
@@ -603,6 +611,7 @@ describe("semanticReviewOp.hopBody — requote recovery regressions", () => {
         return {
           output: callCount === 1 ? initial : requote,
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       });
@@ -617,7 +626,7 @@ describe("semanticReviewOp.hopBody — requote recovery regressions", () => {
           semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
           mode: "ref",
         },
-      } as any);
+      } satisfies HopBodyContext<SemanticReviewInput>);
 
       const parsed = JSON.parse(result.output);
       expect(callCount).toBe(2);
@@ -654,6 +663,7 @@ describe("semanticReviewOp.hopBody — requote recovery regressions", () => {
         return {
           output: callCount === 1 ? initial : "not json",
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       });
@@ -668,7 +678,7 @@ describe("semanticReviewOp.hopBody — requote recovery regressions", () => {
           semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
           mode: "ref",
         },
-      } as any);
+      } satisfies HopBodyContext<SemanticReviewInput>);
 
       const parsed = JSON.parse(result.output);
       expect(callCount).toBe(2);
@@ -718,6 +728,7 @@ describe("semanticReviewOp.hopBody — requote recovery regressions", () => {
         return {
           output: callCount === 1 ? initial : "not json",
           tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
           internalRoundTrips: 0,
         };
       });
@@ -732,7 +743,7 @@ describe("semanticReviewOp.hopBody — requote recovery regressions", () => {
           semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
           mode: "ref",
         },
-      } as any);
+      } satisfies HopBodyContext<SemanticReviewInput>);
 
       const parsed = JSON.parse(result.output);
       expect(callCount).toBe(2);

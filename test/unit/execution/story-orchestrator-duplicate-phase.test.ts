@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { makeStory } from "@test/helpers";
 import { NaxError } from "@/errors";
 import { StoryOrchestratorBuilder } from "@/execution/story-orchestrator";
 
-const INPUT = { story: { id: "S1", title: "t" } as any, contextMarkdown: "c" };
+const INPUT = { story: makeStory({ id: "S1", title: "t" }), contextMarkdown: "c" };
 
 describe("StoryOrchestratorBuilder — duplicate phase guard", () => {
   test("addImplementer called twice throws ORCHESTRATOR_PHASE_DUPLICATE", () => {
@@ -24,7 +25,7 @@ describe("StoryOrchestratorBuilder — duplicate phase guard", () => {
 
   test("addTestWriter called twice throws ORCHESTRATOR_PHASE_DUPLICATE", () => {
     const b = new StoryOrchestratorBuilder();
-    const writerInput = { story: { id: "S1", title: "t" } as any, contextMarkdown: "c" };
+    const writerInput = { story: makeStory({ id: "S1", title: "t" }), contextMarkdown: "c" };
     b.addTestWriter(writerInput);
     expect(() => b.addTestWriter(writerInput)).toThrow(NaxError);
   });

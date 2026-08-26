@@ -11,7 +11,7 @@
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
-import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import { pickSelector } from "@/config";
 import { _storyOrchestratorDeps, StoryOrchestratorBuilder } from "@/execution";
 import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
@@ -25,11 +25,14 @@ import type { NaxRuntime } from "@/runtime";
 
 const testSel = pickSelector("test-routing-sel", "execution");
 
-const mockImplementerOp: RunOperation<{ story: string }, { success: boolean }, typeof DEFAULT_CONFIG> = {
+/** The config slice {@link testSel} projects — the C these fixture ops are generic over. */
+type TestSelConfig = ReturnType<typeof testSel.select>;
+
+const mockImplementerOp: RunOperation<{ story: string }, { success: boolean }, TestSelConfig> = {
   kind: "run",
   name: "implementer",
   stage: "run",
-  config: testSel as any,
+  config: testSel,
   session: { role: "implementer", lifetime: "warm" },
   build: () => ({
     role: { id: "r", content: "impl", overridable: false },
@@ -38,15 +41,11 @@ const mockImplementerOp: RunOperation<{ story: string }, { success: boolean }, t
   parse: () => ({ success: true }),
 };
 
-const mockVerifierOp: RunOperation<
-  { story: string },
-  { success: boolean; findings: Finding[] },
-  typeof DEFAULT_CONFIG
-> = {
+const mockVerifierOp: RunOperation<{ story: string }, { success: boolean; findings: Finding[] }, TestSelConfig> = {
   kind: "run",
   name: "verifier",
   stage: "verify",
-  config: testSel as any,
+  config: testSel,
   session: { role: "verifier", lifetime: "fresh" },
   build: () => ({
     role: { id: "r", content: "verify", overridable: false },
@@ -55,15 +54,11 @@ const mockVerifierOp: RunOperation<
   parse: () => ({ success: true, findings: [] }),
 };
 
-const mockFullSuiteGateOp: RunOperation<
-  { story: string },
-  { success: boolean; findings: Finding[] },
-  typeof DEFAULT_CONFIG
-> = {
+const mockFullSuiteGateOp: RunOperation<{ story: string }, { success: boolean; findings: Finding[] }, TestSelConfig> = {
   kind: "run",
   name: "full-suite-gate",
   stage: "verify",
-  config: testSel as any,
+  config: testSel,
   session: { role: "verifier", lifetime: "fresh" },
   build: () => ({
     role: { id: "r", content: "gate", overridable: false },
@@ -75,12 +70,12 @@ const mockFullSuiteGateOp: RunOperation<
 const mockSemanticReviewOp: RunOperation<
   { story: string },
   { success: boolean; passed: boolean; findings: Finding[] },
-  typeof DEFAULT_CONFIG
+  TestSelConfig
 > = {
   kind: "run",
   name: "semantic-review",
   stage: "review",
-  config: testSel as any,
+  config: testSel,
   session: { role: "reviewer-semantic", lifetime: "fresh" },
   build: () => ({
     role: { id: "r", content: "review", overridable: false },

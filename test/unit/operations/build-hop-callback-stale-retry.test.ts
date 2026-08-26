@@ -12,10 +12,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
-import type { SessionHandle, TurnResult } from "@/agents/types";
+import { makeContextBundle, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
+import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents/types";
 import type { AdapterFailure } from "@/context/engine";
 import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
+import type { SessionDescriptor } from "@/session/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared stubs
@@ -37,14 +38,28 @@ const SWAP_FAILURE: AdapterFailure = {
   message: "401",
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const STUB_RUN_OPTIONS = {
+const HANDOFF_DESCRIPTOR: SessionDescriptor = {
+  id: "session-1",
+  role: "main",
+  state: "RUNNING",
+  agent: "codex",
+  workdir: "/tmp",
+  protocolIds: { recordId: null, sessionId: null },
+  completedStages: [],
+  createdAt: new Date(0).toISOString(),
+  lastActivityAt: new Date(0).toISOString(),
+};
+
+const STUB_RUN_OPTIONS: AgentRunOptions = {
   prompt: "do the thing",
   workdir: "/tmp",
+  modelTier: "balanced",
+  modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
   storyId: "US-001",
-  sessionRole: "implementer" as const,
+  sessionRole: "implementer",
   timeoutSeconds: 30,
-} as any;
+  config: makeNaxConfig(),
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection save/restore
@@ -57,8 +72,8 @@ beforeEach(() => {
   origCreateContextToolRuntime = _buildHopCallbackDeps.createContextToolRuntime;
   origRebuildForAgent = _buildHopCallbackDeps.rebuildForAgent;
   // Suppress context tool runtime creation — not relevant to session reuse tests.
-  _buildHopCallbackDeps.createContextToolRuntime = () => undefined as any;
-  _buildHopCallbackDeps.rebuildForAgent = (prior) => prior as any;
+  _buildHopCallbackDeps.createContextToolRuntime = () => undefined;
+  _buildHopCallbackDeps.rebuildForAgent = (prior) => prior;
 });
 
 afterEach(() => {
@@ -127,12 +142,12 @@ describe("buildHopCallback — session-scoped pull budget registry", () => {
     const seen: unknown[] = [];
     _buildHopCallbackDeps.createContextToolRuntime = (opts: { sessionBudgets?: unknown }) => {
       seen.push(opts.sessionBudgets);
-      return undefined as any;
+      return undefined;
     };
     const sessionMgr = makeSessionManager({});
     const cb = buildHopCallback(makeCtx(sessionMgr), undefined, STUB_RUN_OPTIONS);
 
-    const bundle = { pushMarkdown: "", pullTools: [], digest: "", manifest: {} } as any;
+    const bundle = makeContextBundle();
     await cb("claude", bundle, { kind: "primary" }, STUB_RUN_OPTIONS);
     await cb("claude", bundle, { kind: "stale-retry", attempt: 2 }, STUB_RUN_OPTIONS);
 
@@ -205,7 +220,7 @@ describe("buildHopCallback — stale-retry session reuse", () => {
   });
 
   test("swap: handoff fires with failure outcome; stale-retry does not trigger handoff", async () => {
-    const handoff = mock(() => ({ id: "session-1", state: "RUNNING" }) as any);
+    const handoff = mock(() => HANDOFF_DESCRIPTOR);
     const openSession = mock(async () => STUB_HANDLE);
     const closeSession = mock(async () => {});
     const getLiveHandle = mock((_name: string) => STUB_HANDLE);

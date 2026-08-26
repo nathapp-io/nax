@@ -12,10 +12,20 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { makeNaxConfig, makeSpawn, makeStory } from "@test/helpers";
-import { DEFAULT_CONFIG } from "@/config";
+import {
+  DEFAULT_TEST_ROUTING,
+  type DeepPartial,
+  makeNaxConfig,
+  makePRD,
+  makeSpawn,
+  makeStory,
+  makeTestContext,
+} from "@test/helpers";
+import { DEFAULT_CONFIG, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "@/execution";
+import type { PipelineContext } from "@/pipeline/types";
+import type { UserStory } from "@/prd/types";
 import { _diffUtilsDeps } from "@/review";
 import type { ResolvedTestPatterns } from "@/test-runners";
 
@@ -90,8 +100,8 @@ describe("assemblePlanInputs validation", () => {
     ["story.title empty", { id: "US-001", title: "" }],
     ["story.id whitespace", { id: "   ", title: "Test" }],
     ["story.title whitespace", { id: "US-001", title: "   " }],
-  ])("throws NaxError when %s", (_label, storyOverrides) => {
-    const story = makeStory(storyOverrides as any);
+  ])("throws NaxError when %s", (_label: string, storyOverrides: Partial<UserStory>) => {
+    const story = makeStory(storyOverrides);
     const config = makeNaxConfig();
     expect(() => {
       assemblePlanInputs(story, config);
@@ -198,8 +208,10 @@ describe("assemblePlanInputs - NaxError contract", () => {
     ["config", { id: "US-001" }, { agent: { default: "", fallback: { map: {} } } }, "CONFIG_INVALID"],
   ])(
     "NaxError has machine-readable code on %s failure",
-    (_label: string, storyOverrides: any, configOverrides: any, expectedCode: string) => {
-      const story = makeStory(storyOverrides as any);
+    (_label: string, storyOverrides: Partial<UserStory>, configOverrides:
+      | DeepPartial<NaxConfig>
+      | undefined, expectedCode: string) => {
+      const story = makeStory(storyOverrides);
       const config = configOverrides ? makeNaxConfig(configOverrides) : makeNaxConfig();
       try {
         assemblePlanInputs(story, config);
@@ -227,19 +239,19 @@ describe("assemblePlanInputs - NaxError contract", () => {
 
 // AC6: Validation behavior covered by targeted unit tests
 describe("assemblePlanInputs - edge cases", () => {
-  test.each([
+  test.each<[string, Partial<UserStory>, keyof UserStory, UserStory[keyof UserStory] | undefined]>([
     ["undefined workdir (single-package)", { workdir: undefined }, "workdir", undefined],
     ["workdir (monorepo)", { workdir: "packages/api" }, "workdir", "packages/api"],
     ["empty dependencies", { dependencies: [] }, "dependencies", []],
     ["filled dependencies", { dependencies: ["US-005"] }, "dependencies", ["US-005"]],
-  ])("handles story with %s", (_label: string, overrides: any, field: string, expected: any) => {
+  ])("handles story with %s", (_label, overrides, field, expected) => {
     const story = makeStory({ id: "US-001", title: "Test", ...overrides });
     const config = makeNaxConfig();
     const result = assemblePlanInputs(story, config);
     if (expected === undefined) {
-      expect((result.story as any)[field]).toBeUndefined();
+      expect(result.story[field]).toBeUndefined();
     } else {
-      expect((result.story as any)[field]).toEqual(expected);
+      expect(result.story[field]).toEqual(expected);
     }
   });
 
@@ -284,38 +296,20 @@ describe("assemblePlanInputs - edge cases", () => {
 // US-005 AC1: PlanInputs new slots (verifyScoped, lintCheck, typecheckCheck)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeNonTddCtx(configOverride: Record<string, unknown> = {}): any {
-  const config = {
-    ...DEFAULT_CONFIG,
-    ...configOverride,
-    execution: {
-      ...DEFAULT_CONFIG.execution,
-      ...((configOverride.execution as object) ?? {}),
-    },
-    review: {
-      ...DEFAULT_CONFIG.review,
-      ...((configOverride.review as object) ?? {}),
-    },
-    quality: {
-      ...DEFAULT_CONFIG.quality,
-      ...((configOverride.quality as object) ?? {}),
-      commands: {
-        ...(DEFAULT_CONFIG.quality?.commands ?? {}),
-        ...(((configOverride.quality as Record<string, unknown>)?.commands as object) ?? {}),
-      },
-    },
-  };
-  return {
+function makeNonTddCtx(configOverride: DeepPartial<NaxConfig> = {}): PipelineContext {
+  const config = makeNaxConfig(configOverride);
+  return makeTestContext({
     story: makeStory({ id: "US-001", title: "Test" }),
+    prd: makePRD({ feature: "f" }),
     config,
+    rootConfig: config,
+    routing: { ...DEFAULT_TEST_ROUTING, testStrategy: "no-test", agent: "claude" },
+    projectDir: "/tmp/proj",
     workdir: "/tmp/repo",
-    routing: { testStrategy: "no-test", agent: "claude" },
     prompt: "do the thing",
     featureContextMarkdown: "feat",
-    constitution: { content: "" },
-    prd: { feature: "f" },
-    projectDir: "/tmp/proj",
-  };
+    constitution: { content: "", tokens: 0, truncated: false },
+  });
 }
 
 describe("PlanInputs — AC1: new optional slots (US-005)", () => {
@@ -523,7 +517,6 @@ describe("assemblePlanInputsFromCtx — no-progress fields (US-1496)", () => {
     const ctx = makeNonTddCtx({
       execution: {
         ...DEFAULT_CONFIG.execution,
-        inlineReview: true,
         rectification: {
           ...DEFAULT_CONFIG.execution.rectification,
           enabled: true,
@@ -546,7 +539,6 @@ describe("assemblePlanInputsFromCtx — no-progress fields (US-1496)", () => {
     const ctx = makeNonTddCtx({
       execution: {
         ...DEFAULT_CONFIG.execution,
-        inlineReview: true,
         rectification: {
           ...DEFAULT_CONFIG.execution.rectification,
           enabled: true,

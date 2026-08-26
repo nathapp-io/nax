@@ -1,65 +1,50 @@
 import { describe, expect, mock, test } from "bun:test";
-import { withDepsRestore } from "@test/helpers";
+import { makeSpawn, withDepsRestore } from "@test/helpers";
 import { _cleanupDeps, cleanupProcessTree, getPgid } from "@/tdd/cleanup";
 
 withDepsRestore(_cleanupDeps, ["spawn", "sleep", "kill", "killProcessGroupFn"]);
 
 describe("getPgid", () => {
   test("returns PGID for valid process", async () => {
-    const realSpawn = _cleanupDeps.spawn;
-    _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    _cleanupDeps.spawn = makeSpawn(({ cmd }) => {
       if (cmd[0] === "ps" && cmd[1] === "-o" && cmd[2] === "pgid=") {
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response("  12345\n").body,
-          stderr: new Response("").body,
-        };
+        return { stdout: "  12345\n" };
       }
-      return realSpawn(cmd, spawnOpts);
-    }) as any;
+      return { stdout: "" };
+    }).spawn;
 
     const pgid = await getPgid(12345);
     expect(pgid).toBe(12345);
   });
 
   test("returns null for non-existent process", async () => {
-    const realSpawn = _cleanupDeps.spawn;
-    _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    _cleanupDeps.spawn = makeSpawn(({ cmd }) => {
       if (cmd[0] === "ps") {
-        return {
-          exited: Promise.resolve(1),
-          stdout: new Response("").body,
-          stderr: new Response("No such process\n").body,
-        };
+        return { stdout: "", stderr: "No such process\n", exitCode: 1 };
       }
-      return realSpawn(cmd, spawnOpts);
-    }) as any;
+      return { stdout: "" };
+    }).spawn;
 
     const pgid = await getPgid(99999);
     expect(pgid).toBeNull();
   });
 
   test("returns null for invalid ps output", async () => {
-    const realSpawn = _cleanupDeps.spawn;
-    _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    _cleanupDeps.spawn = makeSpawn(({ cmd }) => {
       if (cmd[0] === "ps") {
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response("not-a-number\n").body,
-          stderr: new Response("").body,
-        };
+        return { stdout: "not-a-number\n" };
       }
-      return realSpawn(cmd, spawnOpts);
-    }) as any;
+      return { stdout: "" };
+    }).spawn;
 
     const pgid = await getPgid(12345);
     expect(pgid).toBeNull();
   });
 
   test("handles ps command error gracefully", async () => {
-    _cleanupDeps.spawn = mock(() => {
+    _cleanupDeps.spawn = makeSpawn(() => {
       throw new Error("ps command failed");
-    }) as any;
+    }).spawn;
 
     const pgid = await getPgid(12345);
     expect(pgid).toBeNull();
@@ -69,25 +54,20 @@ describe("getPgid", () => {
 describe("cleanupProcessTree", () => {
   test("cleans up process group with SIGTERM then SIGKILL", async () => {
     const killCalls: Array<{ pid: number; signal: string }> = [];
-    const realSpawn = _cleanupDeps.spawn;
 
-    _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    _cleanupDeps.spawn = makeSpawn(({ cmd }) => {
       if (cmd[0] === "ps") {
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response("  12345\n").body,
-          stderr: new Response("").body,
-        };
+        return { stdout: "  12345\n" };
       }
-      return realSpawn(cmd, spawnOpts);
-    }) as any;
+      return { stdout: "" };
+    }).spawn;
 
-    _cleanupDeps.killProcessGroupFn = mock((pid: number, signal?: string | number) => {
+    _cleanupDeps.killProcessGroupFn = mock((pid: number, signal: string | number) => {
       killCalls.push({ pid, signal: String(signal) });
       return true;
-    }) as any;
+    });
 
-    _cleanupDeps.sleep = mock(async () => {}) as any;
+    _cleanupDeps.sleep = mock(async () => {});
 
     await cleanupProcessTree(12345);
 
@@ -98,23 +78,19 @@ describe("cleanupProcessTree", () => {
   });
 
   test("handles already-dead process gracefully", async () => {
-    const realSpawn = _cleanupDeps.spawn;
-    _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    _cleanupDeps.spawn = makeSpawn(({ cmd }) => {
       if (cmd[0] === "ps") {
-        return {
-          exited: Promise.resolve(1),
-          stdout: new Response("").body,
-          stderr: new Response("No such process\n").body,
-        };
+        return { stdout: "", stderr: "No such process\n", exitCode: 1 };
       }
-      return realSpawn(cmd, spawnOpts);
-    }) as any;
+      return { stdout: "" };
+    }).spawn;
 
-    const killCalls: any[] = [];
-    _cleanupDeps.kill = mock((pid: number, signal?: string | number) => {
-      killCalls.push({ pid, signal });
+    const killCalls: Array<{ pid: number; signal: string | number }> = [];
+    const killImpl: typeof _cleanupDeps.kill = (pid: number, signal?: NodeJS.Signals | number) => {
+      killCalls.push({ pid, signal: signal ?? 0 });
       return true;
-    }) as any;
+    };
+    _cleanupDeps.kill = mock(killImpl);
 
     await cleanupProcessTree(12345);
 
@@ -123,26 +99,21 @@ describe("cleanupProcessTree", () => {
   });
 
   test("handles ESRCH error when sending SIGTERM", async () => {
-    const realSpawn = _cleanupDeps.spawn;
-    _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    _cleanupDeps.spawn = makeSpawn(({ cmd }) => {
       if (cmd[0] === "ps") {
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response("  12345\n").body,
-          stderr: new Response("").body,
-        };
+        return { stdout: "  12345\n" };
       }
-      return realSpawn(cmd, spawnOpts);
-    }) as any;
+      return { stdout: "" };
+    }).spawn;
 
-    const killCalls: any[] = [];
-    _cleanupDeps.killProcessGroupFn = mock((pid: number, signal?: string | number) => {
+    const killCalls: Array<{ pid: number; signal: string | number }> = [];
+    _cleanupDeps.killProcessGroupFn = mock((pid: number, signal: string | number) => {
       killCalls.push({ pid, signal });
       const err = new Error("No such process") as NodeJS.ErrnoException;
       err.code = "ESRCH";
       throw err;
-    }) as any;
-    _cleanupDeps.sleep = mock(async () => {}) as any;
+    });
+    _cleanupDeps.sleep = mock(async () => {});
 
     await cleanupProcessTree(12345);
 
@@ -152,29 +123,24 @@ describe("cleanupProcessTree", () => {
   });
 
   test("handles errors during SIGKILL gracefully", async () => {
-    const killCalls: any[] = [];
-    const realSpawn = _cleanupDeps.spawn;
+    const killCalls: Array<{ pid: number; signal: string | number }> = [];
 
-    _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    _cleanupDeps.spawn = makeSpawn(({ cmd }) => {
       if (cmd[0] === "ps") {
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response("  12345\n").body,
-          stderr: new Response("").body,
-        };
+        return { stdout: "  12345\n" };
       }
-      return realSpawn(cmd, spawnOpts);
-    }) as any;
+      return { stdout: "" };
+    }).spawn;
 
-    _cleanupDeps.killProcessGroupFn = mock((pid: number, signal?: string | number) => {
+    _cleanupDeps.killProcessGroupFn = mock((pid: number, signal: string | number) => {
       killCalls.push({ pid, signal });
       if (signal === "SIGKILL") {
         throw new Error("Process already exited");
       }
       return true;
-    }) as any;
+    });
 
-    _cleanupDeps.sleep = mock(async () => {}) as any;
+    _cleanupDeps.sleep = mock(async () => {});
 
     // Should not throw despite SIGKILL error
     await cleanupProcessTree(12345);
@@ -185,23 +151,18 @@ describe("cleanupProcessTree", () => {
   });
 
   test("logs warning on unexpected cleanup error", async () => {
-    const realSpawn = _cleanupDeps.spawn;
-    _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    _cleanupDeps.spawn = makeSpawn(({ cmd }) => {
       if (cmd[0] === "ps") {
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response("  12345\n").body,
-          stderr: new Response("").body,
-        };
+        return { stdout: "  12345\n" };
       }
-      return realSpawn(cmd, spawnOpts);
-    }) as any;
+      return { stdout: "" };
+    }).spawn;
 
-    _cleanupDeps.killProcessGroupFn = mock(() => {
+    _cleanupDeps.killProcessGroupFn = mock((): boolean => {
       const err = new Error("Unexpected error") as NodeJS.ErrnoException;
       err.code = "EUNKNOWN";
       throw err;
-    }) as any;
+    });
 
     // Should log a warning via structured logger but not throw
     await cleanupProcessTree(12345);

@@ -15,9 +15,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeContextBundle, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
 import { AgentManager, SessionFailureError, SessionTurnError } from "@/agents";
-import type { SessionHandle, TurnResult } from "@/agents/types";
+import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents/types";
+import type { NaxConfig } from "@/config";
 import type { AdapterFailure } from "@/context/engine";
 import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
+import type { SessionDescriptor } from "@/session/types";
 
 // ─── Stubs ───────────────────────────────────────────────────────────────────
 
@@ -44,14 +46,35 @@ const STUB_BUNDLE = makeContextBundle({
   chunks: [],
 });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const STUB_RUN_OPTIONS = {
-  prompt: "implement the story",
+/**
+ * Fully-typed run options. `config` must be passed by each caller:
+ * runWithFallback reads `request.runOptions.config ?? this._config`, so the
+ * caller's own AgentManager config is the behavior-preserving choice.
+ */
+function makeStubRunOptions(config: NaxConfig): AgentRunOptions {
+  return {
+    prompt: "implement the story",
+    workdir: "/tmp",
+    storyId: "US-977",
+    sessionRole: "implementer",
+    timeoutSeconds: 30,
+    modelTier: "balanced",
+    modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+    config,
+  };
+}
+
+const HANDOFF_DESCRIPTOR: SessionDescriptor = {
+  id: "sess-001",
+  role: "implementer",
+  state: "RUNNING",
+  agent: "codex",
   workdir: "/tmp",
-  storyId: "US-977",
-  sessionRole: "implementer" as const,
-  timeoutSeconds: 30,
-} as any;
+  protocolIds: { recordId: null, sessionId: null },
+  completedStages: [],
+  createdAt: new Date(0).toISOString(),
+  lastActivityAt: new Date(0).toISOString(),
+};
 
 // Config: one stale retry allowed, then swap to codex
 function makeSwapConfig() {
@@ -78,8 +101,8 @@ let origRebuildForAgent: typeof _buildHopCallbackDeps.rebuildForAgent;
 beforeEach(() => {
   origCreateContextToolRuntime = _buildHopCallbackDeps.createContextToolRuntime;
   origRebuildForAgent = _buildHopCallbackDeps.rebuildForAgent;
-  _buildHopCallbackDeps.createContextToolRuntime = () => undefined as any;
-  _buildHopCallbackDeps.rebuildForAgent = (prior) => prior as any;
+  _buildHopCallbackDeps.createContextToolRuntime = () => undefined;
+  _buildHopCallbackDeps.rebuildForAgent = (prior) => prior;
 });
 
 afterEach(() => {
@@ -112,8 +135,9 @@ function makeHopCtx(
 describe("stale-then-swap — full runWithFallback loop", () => {
   test("handoff fires once (swap only); stale-retry does NOT trigger handoff", async () => {
     const manager = new AgentManager(makeSwapConfig());
+    const runOptions = makeStubRunOptions(makeSwapConfig());
 
-    const handoff = mock(() => ({ id: "sess-001", state: "RUNNING" }) as any);
+    const handoff = mock(() => HANDOFF_DESCRIPTOR);
     const getLiveHandle = mock((_name: string) => CLAUDE_HANDLE);
     const openSession = mock(async (name: string) => (name.includes("codex") ? CODEX_HANDLE : CLAUDE_HANDLE));
     const sessionMgr = makeSessionManager({ handoff, getLiveHandle, openSession });
@@ -130,9 +154,9 @@ describe("stale-then-swap — full runWithFallback loop", () => {
     });
 
     const ctx = makeHopCtx(sessionMgr, runAsSessionFn);
-    const hopCb = buildHopCallback(ctx, "sess-001", STUB_RUN_OPTIONS);
+    const hopCb = buildHopCallback(ctx, "sess-001", runOptions);
     const outcome = await manager.runWithFallback({
-      runOptions: STUB_RUN_OPTIONS,
+      runOptions,
       bundle: STUB_BUNDLE,
       executeHop: hopCb,
     });
@@ -147,6 +171,7 @@ describe("stale-then-swap — full runWithFallback loop", () => {
 
   test("closeSession fires twice (primary + swap agent), skipped for stale-retry", async () => {
     const manager = new AgentManager(makeSwapConfig());
+    const runOptions = makeStubRunOptions(makeSwapConfig());
 
     const closeSession = mock(async () => {});
     const getLiveHandle = mock((_name: string) => CLAUDE_HANDLE);
@@ -161,9 +186,9 @@ describe("stale-then-swap — full runWithFallback loop", () => {
     });
 
     const ctx = makeHopCtx(sessionMgr, runAsSessionFn);
-    const hopCb = buildHopCallback(ctx, undefined, STUB_RUN_OPTIONS);
+    const hopCb = buildHopCallback(ctx, undefined, runOptions);
     const outcome = await manager.runWithFallback({
-      runOptions: STUB_RUN_OPTIONS,
+      runOptions,
       bundle: STUB_BUNDLE,
       executeHop: hopCb,
     });
@@ -180,6 +205,7 @@ describe("stale-then-swap — full runWithFallback loop", () => {
 
   test("full hop sequence: primary(stale) → stale-retry(stale,exhausted) → swap(success)", async () => {
     const manager = new AgentManager(makeSwapConfig());
+    const runOptions = makeStubRunOptions(makeSwapConfig());
 
     const agents: string[] = [];
     const getLiveHandle = mock((_name: string) => CLAUDE_HANDLE);
@@ -194,9 +220,9 @@ describe("stale-then-swap — full runWithFallback loop", () => {
     });
 
     const ctx = makeHopCtx(sessionMgr, runAsSessionFn);
-    const hopCb = buildHopCallback(ctx, undefined, STUB_RUN_OPTIONS);
+    const hopCb = buildHopCallback(ctx, undefined, runOptions);
     const outcome = await manager.runWithFallback({
-      runOptions: STUB_RUN_OPTIONS,
+      runOptions,
       bundle: STUB_BUNDLE,
       executeHop: hopCb,
     });
@@ -246,9 +272,9 @@ describe("fail-adapter-error retry — QUEUE_DISCONNECTED_BEFORE_COMPLETION (#10
       defaultAgent: "claude",
       pipelineStage: "run" as const,
     };
-    const hopCb = buildHopCallback(hopCtx, undefined, { ...STUB_RUN_OPTIONS, storyId: "US-1027" } as any);
+    const hopCb = buildHopCallback(hopCtx, undefined, { ...makeStubRunOptions(config), storyId: "US-1027" });
     const outcome = await manager.runWithFallback({
-      runOptions: { ...STUB_RUN_OPTIONS, storyId: "US-1027", config } as any,
+      runOptions: { ...makeStubRunOptions(config), storyId: "US-1027", config },
       bundle: STUB_BUNDLE,
       executeHop: hopCb,
     });
@@ -282,9 +308,9 @@ describe("fail-adapter-error retry — QUEUE_DISCONNECTED_BEFORE_COMPLETION (#10
       defaultAgent: "claude",
       pipelineStage: "run" as const,
     };
-    const hopCb = buildHopCallback(hopCtx, undefined, { ...STUB_RUN_OPTIONS, storyId: "US-1027b" } as any);
+    const hopCb = buildHopCallback(hopCtx, undefined, { ...makeStubRunOptions(config), storyId: "US-1027b" });
     const outcome = await manager.runWithFallback({
-      runOptions: { ...STUB_RUN_OPTIONS, storyId: "US-1027b", config } as any,
+      runOptions: { ...makeStubRunOptions(config), storyId: "US-1027b", config },
       bundle: STUB_BUNDLE,
       executeHop: hopCb,
     });
@@ -322,9 +348,9 @@ describe("fail-adapter-error retry — QUEUE_DISCONNECTED_BEFORE_COMPLETION (#10
       defaultAgent: "claude",
       pipelineStage: "run" as const,
     };
-    const hopCb = buildHopCallback(hopCtx, undefined, { ...STUB_RUN_OPTIONS, storyId: "US-1027c" } as any);
+    const hopCb = buildHopCallback(hopCtx, undefined, { ...makeStubRunOptions(config), storyId: "US-1027c" });
     await manager.runWithFallback({
-      runOptions: { ...STUB_RUN_OPTIONS, storyId: "US-1027c", config } as any,
+      runOptions: { ...makeStubRunOptions(config), storyId: "US-1027c", config },
       bundle: STUB_BUNDLE,
       executeHop: hopCb,
     });

@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeFinding } from "@test/helpers";
+import { makeFinding, makeStory } from "@test/helpers";
 import { RectifierPromptBuilder } from "@/prompts/builders/rectifier-builder";
 import type { ReviewCheckResult } from "@/review/types";
 
@@ -29,11 +29,11 @@ function makeCheck(check: ReviewCheckResult["check"], output: string): ReviewChe
   };
 }
 
-const STORY = {
+const STORY = makeStory({
   id: "US-001",
   title: "Add auth",
   acceptanceCriteria: ["Users can log in", "Invalid credentials are rejected"],
-} as any;
+});
 
 // ---------------------------------------------------------------------------
 // Adversarial-only failure

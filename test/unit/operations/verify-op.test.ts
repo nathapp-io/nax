@@ -1,6 +1,36 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
+import { makeSpawn, makeStory } from "@test/helpers";
+import { type ConfigSelector, DEFAULT_CONFIG, type TddConfig, tddConfigSelector } from "@/config";
 import type { Logger } from "@/logger";
 import { verifierOp } from "@/operations";
+import type { PackageView } from "@/runtime";
+
+/**
+ * A real `PackageView` over `DEFAULT_CONFIG`. `parse` reads nothing from it,
+ * `verify`/`recover` read `packageDir`/`repoRoot`/`config.execution` — all
+ * served faithfully by this shape (STATUS §8.14 recipe table).
+ */
+function makePackageView(): PackageView {
+  const config = DEFAULT_CONFIG;
+  return {
+    packageDir: "",
+    relativeFromRoot: "",
+    repoRoot: "",
+    hasOverride: false,
+    config,
+    select: <C>(selector: ConfigSelector<C>) => selector.select(config),
+  };
+}
+
+/**
+ * BuildContext for parse calls: production passes the op's selected config
+ * slice (`op.config.select(...)`), not the whole NaxConfig.
+ */
+function makeParseCtx() {
+  return { packageView: makePackageView(), config: tddConfigSelector.select(DEFAULT_CONFIG) };
+}
+
+type SessionTiers = NonNullable<TddConfig["sessionTiers"]>;
 
 /**
  * Tests for verifierOp — the full RunOperation shape for the verifier role.
@@ -55,10 +85,9 @@ describe("verifierOp.parse — error handling (strict: throws ParseValidationErr
   ])("throws ParseValidationError when output is %s", async (_label, output) => {
     const { verifierOp } = await import("@/operations");
     const { ParseValidationError } = await import("@/agents/retry");
-    const { DEFAULT_CONFIG } = await import("@/config");
 
-    const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
-    const input = { story: { id: "US-001" } as any };
+    const ctx = makeParseCtx();
+    const input = { story: makeStory({ id: "US-001" }) };
 
     expect(() => verifierOp.parse(output, input, ctx)).toThrow(ParseValidationError);
   });
@@ -68,7 +97,7 @@ describe("verifierOp input type", () => {
   test("verifierOp input includes only story (limited context)", async () => {
     const { verifierOp } = await import("@/operations");
     const mockInput = {
-      story: { id: "US-001" } as any,
+      story: makeStory({ id: "US-001" }),
     };
     expect(mockInput.story).toBeDefined();
   });
@@ -78,7 +107,7 @@ describe("verifierOp input type", () => {
     const { verifierOp } = await import("@/operations");
     // Type verification: the input type should only have 'story' property
     const mockInput = {
-      story: { id: "US-001" } as any,
+      story: makeStory({ id: "US-001" }),
     };
     expect(Object.keys(mockInput)).toEqual(["story"]);
   });
@@ -98,10 +127,9 @@ const VALID_VERDICT_JSON = JSON.stringify({
 describe("verifierOp output type", () => {
   test("verifierOp output includes success, filesChanged, estimatedCostUsd, durationMs", async () => {
     const { verifierOp } = await import("@/operations");
-    const { DEFAULT_CONFIG } = await import("@/config");
 
-    const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
-    const input = { story: { id: "US-001" } as any };
+    const ctx = makeParseCtx();
+    const input = { story: makeStory({ id: "US-001" }) };
 
     const result = verifierOp.parse(VALID_VERDICT_JSON, input, ctx);
 
@@ -114,16 +142,15 @@ describe("verifierOp output type", () => {
 
   test("verifierOp output may include optional isolation field", async () => {
     const { verifierOp } = await import("@/operations");
-    const { DEFAULT_CONFIG } = await import("@/config");
 
-    const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
-    const input = { story: { id: "US-001" } as any };
+    const ctx = makeParseCtx();
+    const input = { story: makeStory({ id: "US-001" }) };
 
     const result = verifierOp.parse(VALID_VERDICT_JSON, input, ctx);
 
     // isolation is optional, may be present or absent
     if ("isolation" in result) {
-      expect(typeof (result as any).isolation).toBeDefined();
+      expect(typeof result.isolation).toBeDefined();
     }
   });
 });
@@ -166,10 +193,9 @@ describe("verifierOp.parse — verdict logging", () => {
 
   test("logs 'Verdict categorized' with advisoryOverride=true when approved:false but tests pass and mods legitimate", async () => {
     const { verifierOp } = await import("@/operations");
-    const { DEFAULT_CONFIG } = await import("@/config");
 
-    const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
-    const input = { story: { id: "US-001" } as any };
+    const ctx = makeParseCtx();
+    const input = { story: makeStory({ id: "US-001" }) };
 
     const result = verifierOp.parse(ADVISORY_VERDICT_JSON, input, ctx);
     // Categorization treats approved:false (advisory AC/quality) as success.
@@ -177,7 +203,7 @@ describe("verifierOp.parse — verdict logging", () => {
 
     const call = infoSpy?.mock.calls.find((c) => c[0] === "verifier" && c[1] === "Verdict categorized");
     expect(call).toBeDefined();
-    const data = call?.[2] as Record<string, unknown>;
+    const data = call?.[2] ?? {};
     expect(data.storyId).toBe("US-001");
     expect(data.approved).toBe(false);
     expect(data.success).toBe(true);
@@ -189,18 +215,17 @@ describe("verifierOp.parse — verdict logging", () => {
 
   test("logs advisoryOverride=false when verdict is approved", async () => {
     const { verifierOp } = await import("@/operations");
-    const { DEFAULT_CONFIG } = await import("@/config");
 
-    const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
-    const input = { story: { id: "US-002" } as any };
+    const ctx = makeParseCtx();
+    const input = { story: makeStory({ id: "US-002" }) };
 
     verifierOp.parse(VALID_VERDICT_JSON, input, ctx);
 
     const call = infoSpy?.mock.calls.find(
-      (c) => c[0] === "verifier" && c[1] === "Verdict categorized" && (c[2] as any)?.storyId === "US-002",
+      (c) => c[0] === "verifier" && c[1] === "Verdict categorized" && c[2]?.storyId === "US-002",
     );
     expect(call).toBeDefined();
-    const data = call?.[2] as Record<string, unknown>;
+    const data = call?.[2] ?? {};
     expect(data.approved).toBe(true);
     expect(data.success).toBe(true);
     expect(data.advisoryOverride).toBe(false);
@@ -220,15 +245,10 @@ describe("verifierOp.recover — disk artifact recovery", () => {
 describe("verifierOp.verify — isolation", () => {
   test("attaches isolation result when beforeRef supplied (happy path)", async () => {
     const { verifierOp } = await import("@/operations");
-    const { DEFAULT_CONFIG } = await import("@/config");
     const { _isolationDeps } = await import("@/tdd");
 
     const origSpawn = _isolationDeps.spawn;
-    _isolationDeps.spawn = ((_cmd: string[]) => ({
-      stdout: new Response("src/foo.ts\n").body,
-      stderr: new Response("").body,
-      exited: Promise.resolve(0),
-    })) as any;
+    _isolationDeps.spawn = makeSpawn(() => "src/foo.ts\n").spawn;
 
     try {
       const parsed = {
@@ -239,15 +259,15 @@ describe("verifierOp.verify — isolation", () => {
         output: "",
         normalizedFindings: [],
       };
-      const input = { story: { id: "US-001" } as any, beforeRef: "HEAD~1" };
+      const input = { story: makeStory({ id: "US-001" }), beforeRef: "HEAD~1" };
       const ctx = {
-        packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
-        config: DEFAULT_CONFIG.tdd,
+        packageView: { ...makePackageView(), packageDir: "/tmp/x" },
+        config: tddConfigSelector.select(DEFAULT_CONFIG),
         readFile: async () => null,
         fileExists: async () => false,
       };
 
-      const result = await verifierOp.verify!(parsed, input, ctx as any);
+      const result = await verifierOp.verify!(parsed, input, ctx);
       expect(result).not.toBeNull();
       expect(result!.isolation).toBeDefined();
       expect(result!.isolation!.passed).toBe(true);
@@ -271,22 +291,22 @@ describe("verifierOp.verify — isolation", () => {
       output: "",
       normalizedFindings: [],
     };
-    const input = { story: { id: "US-001" } as any };
+    const input = { story: makeStory({ id: "US-001" }) };
     const ctx = {
-      packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
-      config: DEFAULT_CONFIG.tdd,
+      packageView: { ...makePackageView(), packageDir: "/tmp/x" },
+      config: tddConfigSelector.select(DEFAULT_CONFIG),
       readFile: async () => null,
       fileExists: async () => false,
     };
 
-    const result = await verifierOp.verify!(parsed, input, ctx as any);
+    const result = await verifierOp.verify!(parsed, input, ctx);
     expect(result).not.toBeNull();
     expect(result!.success).toBe(false);
   });
 });
 
-function tddBuildCtx(sessionTiers?: Record<string, unknown>) {
-  return { config: { tdd: { sessionTiers } }, packageView: {} as any };
+function tddBuildCtx(sessionTiers?: SessionTiers) {
+  return { config: { tdd: { sessionTiers } }, packageView: makePackageView() };
 }
 
 describe("verifierOp.model — tdd.sessionTiers.verifier", () => {

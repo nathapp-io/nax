@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Iteration } from "@/findings";
+import type { Finding, FindingSeverity, Iteration } from "@/findings";
 import {
   classifyRecurrence,
   countPriorAppearances,
@@ -11,21 +11,23 @@ import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 
 function iter(
   num: number,
-  findings: Array<{ file: string; category: string; message: string; severity: string; acIndex?: number }>,
+  findings: Array<{ file: string; category: string; message: string; severity: FindingSeverity; acIndex?: number }>,
 ): Iteration {
   return {
     iterationNum: num,
     findingsBefore: [],
     fixesApplied: [],
-    findingsAfter: findings.map((f) => ({
-      source: "adversarial-review",
-      severity: f.severity as any,
-      category: f.category,
-      file: f.file,
-      message: f.message,
-      ...(f.acIndex !== undefined ? { meta: { acIndex: f.acIndex } } : {}),
-    })),
-    outcome: "fixes-applied" as any,
+    findingsAfter: findings.map(
+      (f): Finding => ({
+        source: "adversarial-review",
+        severity: f.severity,
+        category: f.category,
+        file: f.file,
+        message: f.message,
+        ...(f.acIndex !== undefined ? { meta: { acIndex: f.acIndex } } : {}),
+      }),
+    ),
+    outcome: "unchanged",
     startedAt: "2026-07-17T00:00:00.000Z",
     finishedAt: "2026-07-17T00:00:01.000Z",
   };
@@ -148,7 +150,7 @@ describe("countPriorAppearances", () => {
   });
   test("ignores non-adversarial-review findings", () => {
     const priors = [iter(1, [{ file: "a.ts", category: "input", message: "t", severity: "error" }])];
-    priors[0].findingsAfter[0].source = "lint" as any;
+    priors[0].findingsAfter[0].source = "lint";
     expect(countPriorAppearances(priors).size).toBe(0);
   });
 
@@ -177,7 +179,7 @@ function adv(sev: string, over: Partial<AdversarialLLMFinding> = {}): Adversaria
     ...over,
   };
 }
-function priorAdv(sev: string, n: number): Iteration[] {
+function priorAdv(sev: FindingSeverity, n: number): Iteration[] {
   return Array.from({ length: n }, (_v, i) =>
     iter(i + 1, [{ file: "lib/store.ts", category: "assumption", message: "window expiry non-atomic", severity: sev }]),
   );
@@ -330,25 +332,24 @@ describe("tagCoverageGap", () => {
 });
 
 describe("classifyRecurrence — semantic source (F1b)", () => {
-  const semanticIter = (n: number, message: string, acIndex?: number): Iteration =>
-    ({
-      iterationNum: n,
-      findingsBefore: [],
-      fixesApplied: [],
-      findingsAfter: [
-        {
-          source: "semantic-review",
-          severity: "error",
-          category: "",
-          file: REPLAY_STORE,
-          message,
-          ...(acIndex !== undefined ? { meta: { acIndex } } : {}),
-        },
-      ],
-      outcome: "fixes-applied",
-      startedAt: "2026-08-01T00:00:00.000Z",
-      finishedAt: "2026-08-01T00:00:01.000Z",
-    }) as any;
+  const semanticIter = (n: number, message: string, acIndex?: number): Iteration => ({
+    iterationNum: n,
+    findingsBefore: [],
+    fixesApplied: [],
+    findingsAfter: [
+      {
+        source: "semantic-review",
+        severity: "error",
+        category: "",
+        file: REPLAY_STORE,
+        message,
+        ...(acIndex !== undefined ? { meta: { acIndex } } : {}),
+      },
+    ],
+    outcome: "unchanged",
+    startedAt: "2026-08-01T00:00:00.000Z",
+    finishedAt: "2026-08-01T00:00:01.000Z",
+  });
 
   // Semantic findings carry no `category`, so the fingerprint's prose fallback
   // sees category undefined — the AC anchor is what has to carry them.

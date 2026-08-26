@@ -101,8 +101,8 @@ function redactString(value: string): string {
  * - String values (not key-redacted) → token-pattern scan.
  * - Arrays and nested objects are walked recursively.
  */
-export function redactSecrets(input: unknown): unknown {
-  return redactValue(input);
+export function redactSecrets<T>(input: T): T {
+  return redactValue(input) as T;
 }
 
 /**

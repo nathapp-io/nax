@@ -19,6 +19,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeLogger } from "@test/helpers";
 import type { ContextRequest } from "@/context/engine";
 import { _codeNeighborDeps, CodeNeighborProvider } from "@/context/engine";
 
@@ -38,7 +39,7 @@ beforeEach(() => {
   origDetectLanguage = _codeNeighborDeps.detectLanguage;
   origDiscoverWorkspacePackages = _codeNeighborDeps.discoverWorkspacePackages;
   origGetLogger = _codeNeighborDeps.getLogger;
-  _codeNeighborDeps.getLogger = () => ({ debug: () => {}, warn: () => {}, info: () => {}, error: () => {} }) as any;
+  _codeNeighborDeps.getLogger = () => makeLogger();
 });
 
 afterEach(() => {

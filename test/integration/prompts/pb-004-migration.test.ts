@@ -130,7 +130,7 @@ describe("PromptBuilder.withLoader(workdir, config)", () => {
   test("withLoader is chainable and returns a PromptBuilder", () => {
     const config = makeConfig();
     // FAILS: withLoader does not exist on PromptBuilder
-    const pb = (PromptBuilder.for("test-writer") as any).withLoader(tmpDir, config);
+    const pb = PromptBuilder.for("test-writer").withLoader(tmpDir, config);
     expect(pb).toBeInstanceOf(PromptBuilder);
   });
 
@@ -138,7 +138,7 @@ describe("PromptBuilder.withLoader(workdir, config)", () => {
     const config = makeConfig(); // no prompts.overrides
     const story = makeStory();
     // FAILS: withLoader does not exist on PromptBuilder
-    const prompt = await (PromptBuilder.for("test-writer") as any).withLoader(tmpDir, config).story(story).build();
+    const prompt = await PromptBuilder.for("test-writer").withLoader(tmpDir, config).story(story).build();
     expect(prompt).toContain(story.title);
   });
 
@@ -155,7 +155,7 @@ describe("PromptBuilder.withLoader(workdir, config)", () => {
     const story = makeStory();
 
     // FAILS: withLoader does not exist on PromptBuilder
-    const prompt = await (PromptBuilder.for("test-writer") as any).withLoader(tmpDir, config).story(story).build();
+    const prompt = await PromptBuilder.for("test-writer").withLoader(tmpDir, config).story(story).build();
 
     expect(prompt).toContain("CUSTOM_TEST_WRITER_OVERRIDE");
     // Story context (non-overridable) must still appear
@@ -172,7 +172,7 @@ describe("PromptBuilder.withLoader(workdir, config)", () => {
     const story = makeStory({ title: "FALLBACK_STORY_TITLE" });
 
     // FAILS: withLoader does not exist on PromptBuilder
-    const prompt = await (PromptBuilder.for("test-writer") as any).withLoader(tmpDir, config).story(story).build();
+    const prompt = await PromptBuilder.for("test-writer").withLoader(tmpDir, config).story(story).build();
 
     expect(prompt).toContain("FALLBACK_STORY_TITLE");
   });
@@ -191,7 +191,7 @@ describe("Integration: 6 roles with no override — story title and AC present",
 
   test("test-writer (strict): contains story/criteria and test-only isolation instructions", async () => {
     const config = makeConfig();
-    const prompt = await (PromptBuilder.for("test-writer", { isolation: "strict" }) as any)
+    const prompt = await PromptBuilder.for("test-writer", { isolation: "strict" })
       .withLoader(tmpDir, config)
       .story(story)
       .build();
@@ -208,7 +208,7 @@ describe("Integration: 6 roles with no override — story title and AC present",
 
   test("test-writer (lite): contains story/criteria and allows src/ reads or stubs", async () => {
     const config = makeConfig();
-    const prompt = await (PromptBuilder.for("test-writer", { isolation: "lite" }) as any)
+    const prompt = await PromptBuilder.for("test-writer", { isolation: "lite" })
       .withLoader(tmpDir, config)
       .story(story)
       .build();
@@ -226,7 +226,7 @@ describe("Integration: 6 roles with no override — story title and AC present",
 
   test("implementer (standard): contains story/criteria and implementation instructions", async () => {
     const config = makeConfig();
-    const prompt = await (PromptBuilder.for("implementer", { variant: "standard" }) as any)
+    const prompt = await PromptBuilder.for("implementer", { variant: "standard" })
       .withLoader(tmpDir, config)
       .story(story)
       .build();
@@ -240,7 +240,7 @@ describe("Integration: 6 roles with no override — story title and AC present",
 
   test("implementer (lite): contains story/criteria and mentions tests+implementing", async () => {
     const config = makeConfig();
-    const prompt = await (PromptBuilder.for("implementer", { variant: "lite" }) as any)
+    const prompt = await PromptBuilder.for("implementer", { variant: "lite" })
       .withLoader(tmpDir, config)
       .story(story)
       .build();
@@ -253,7 +253,7 @@ describe("Integration: 6 roles with no override — story title and AC present",
 
   test("verifier: contains story/criteria and verification instructions", async () => {
     const config = makeConfig();
-    const prompt = await (PromptBuilder.for("verifier") as any).withLoader(tmpDir, config).story(story).build();
+    const prompt = await PromptBuilder.for("verifier").withLoader(tmpDir, config).story(story).build();
 
     expect(prompt).toContain("ROLE_INTEGRATION_TEST_STORY");
     expect(prompt).toContain("CRITERIA_ONE");
@@ -264,7 +264,7 @@ describe("Integration: 6 roles with no override — story title and AC present",
 
   test("single-session: contains story/criteria and both test+implementation instructions", async () => {
     const config = makeConfig();
-    const prompt = await (PromptBuilder.for("single-session") as any).withLoader(tmpDir, config).story(story).build();
+    const prompt = await PromptBuilder.for("single-session").withLoader(tmpDir, config).story(story).build();
 
     expect(prompt).toContain("ROLE_INTEGRATION_TEST_STORY");
     expect(prompt).toContain("CRITERIA_ONE");
@@ -373,10 +373,7 @@ describe("PromptBuilder.withLoader override content integration", () => {
         prompts: { overrides: { [key]: relPath }, behavioralGuardrails: "lite" },
       });
       const story = makeStory({ title });
-      const prompt = await (PromptBuilder.for(role, opts as never) as any)
-        .withLoader(tmpDir, config)
-        .story(story)
-        .build();
+      const prompt = await PromptBuilder.for(role, opts).withLoader(tmpDir, config).story(story).build();
       expect(prompt, role).toContain(marker);
       expect(prompt, role).toContain(title);
     }

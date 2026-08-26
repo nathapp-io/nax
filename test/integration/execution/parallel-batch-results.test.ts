@@ -1,10 +1,18 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { cleanupTempDir, makePRD, makeStory as makeStoryBase, makeTempDir } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeMergeEngine,
+  makePluginRegistry,
+  makePRD,
+  makeStory as makeStoryBase,
+  makeTempDir,
+  makeTestContext,
+  makeWorktreeManager,
+} from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
-import type { LoadedHooksConfig } from "@/hooks";
+import type { ParallelBatchCtx } from "@/execution/parallel-batch";
 import { initLogger, resetLogger } from "@/logger";
-import type { PluginRegistry } from "@/plugins";
 import type { PRD, StoryStatus, UserStory } from "@/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -33,6 +41,24 @@ function makePrd(stories: UserStory[]): PRD {
     updatedAt: new Date().toISOString(),
     userStories: stories,
   });
+}
+
+function makeCtx(): ParallelBatchCtx {
+  return {
+    workdir: tmpDir,
+    config: DEFAULT_CONFIG as NaxConfig,
+    hooks: { hooks: {} },
+    pluginRegistry: makePluginRegistry(),
+    maxConcurrency: 2,
+    pipelineContext: makeTestContext({
+      config: DEFAULT_CONFIG as NaxConfig,
+      rootConfig: DEFAULT_CONFIG as NaxConfig,
+      prd: makePrd([makeStory("US-001")]),
+      hooks: { hooks: {} },
+      plugins: makePluginRegistry(),
+      storyStartTime: new Date().toISOString(),
+    }),
+  };
 }
 
 let tmpDir: string;
@@ -64,9 +90,11 @@ describe("AC-1: runParallelBatch completed stories", () => {
     const origWorktree = _parallelBatchDeps.createWorktreeManager;
     const origMerge = _parallelBatchDeps.createMergeEngine;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createWorktreeManager = async () => makeWorktreeManager();
     _parallelBatchDeps.createMergeEngine = async () =>
-      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
+      makeMergeEngine({
+        mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })),
+      });
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: stories,
       merged: stories,
@@ -77,18 +105,7 @@ describe("AC-1: runParallelBatch completed stories", () => {
     });
 
     try {
-      const result = await runParallelBatch({
-        stories,
-        prd,
-        ctx: {
-          workdir: tmpDir,
-          config: DEFAULT_CONFIG as NaxConfig,
-          hooks: {} as LoadedHooksConfig,
-          pluginRegistry: {} as PluginRegistry,
-          maxConcurrency: 2,
-          pipelineContext: {} as any,
-        },
-      });
+      const result = await runParallelBatch({ stories, prd, ctx: makeCtx() });
       expect(result.completed).toHaveLength(1);
       expect(result.completed[0].id).toBe("US-001");
       expect(result.failed).toHaveLength(0);
@@ -110,14 +127,16 @@ describe("AC-2: runParallelBatch failed stories", () => {
 
     const stories = [makeStory("US-001")];
     const prd = makePrd(stories);
-    const failureContext = { config: DEFAULT_CONFIG, story: stories[0], stories } as any;
+    const failureContext = makeTestContext({ config: DEFAULT_CONFIG as NaxConfig, story: stories[0], stories });
     const origExecute = _parallelBatchDeps.executeParallelBatch;
     const origWorktree = _parallelBatchDeps.createWorktreeManager;
     const origMerge = _parallelBatchDeps.createMergeEngine;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createWorktreeManager = async () => makeWorktreeManager();
     _parallelBatchDeps.createMergeEngine = async () =>
-      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
+      makeMergeEngine({
+        mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })),
+      });
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],
@@ -134,18 +153,7 @@ describe("AC-2: runParallelBatch failed stories", () => {
     });
 
     try {
-      const result = await runParallelBatch({
-        stories,
-        prd,
-        ctx: {
-          workdir: tmpDir,
-          config: DEFAULT_CONFIG as NaxConfig,
-          hooks: {} as LoadedHooksConfig,
-          pluginRegistry: {} as PluginRegistry,
-          maxConcurrency: 2,
-          pipelineContext: {} as any,
-        },
-      });
+      const result = await runParallelBatch({ stories, prd, ctx: makeCtx() });
       expect(result.failed).toHaveLength(1);
       expect(result.failed[0].story.id).toBe("US-001");
       expect(result.failed[0].pipelineResult.success).toBe(false);
@@ -172,9 +180,11 @@ describe("AC-3: runParallelBatch merge conflicts", () => {
     const origMerge = _parallelBatchDeps.createMergeEngine;
     const origRectify = _parallelBatchDeps.rectifyConflictedStory;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createWorktreeManager = async () => makeWorktreeManager();
     _parallelBatchDeps.createMergeEngine = async () =>
-      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
+      makeMergeEngine({
+        mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })),
+      });
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],
@@ -186,18 +196,7 @@ describe("AC-3: runParallelBatch merge conflicts", () => {
     _parallelBatchDeps.rectifyConflictedStory = async () => ({ success: true, storyId: "US-001", cost: 0.2 });
 
     try {
-      const result = await runParallelBatch({
-        stories,
-        prd,
-        ctx: {
-          workdir: tmpDir,
-          config: DEFAULT_CONFIG as NaxConfig,
-          hooks: {} as LoadedHooksConfig,
-          pluginRegistry: {} as PluginRegistry,
-          maxConcurrency: 2,
-          pipelineContext: {} as any,
-        },
-      });
+      const result = await runParallelBatch({ stories, prd, ctx: makeCtx() });
       expect(result.mergeConflicts).toHaveLength(1);
       expect(result.mergeConflicts[0].story.id).toBe("US-001");
     } finally {
@@ -227,9 +226,11 @@ describe("AC-4: runParallelBatch per-story costs", () => {
     const origWorktree = _parallelBatchDeps.createWorktreeManager;
     const origMerge = _parallelBatchDeps.createMergeEngine;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createWorktreeManager = async () => makeWorktreeManager();
     _parallelBatchDeps.createMergeEngine = async () =>
-      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
+      makeMergeEngine({
+        mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })),
+      });
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: stories,
       merged: stories,
@@ -240,18 +241,7 @@ describe("AC-4: runParallelBatch per-story costs", () => {
     });
 
     try {
-      const result = await runParallelBatch({
-        stories,
-        prd,
-        ctx: {
-          workdir: tmpDir,
-          config: DEFAULT_CONFIG as NaxConfig,
-          hooks: {} as LoadedHooksConfig,
-          pluginRegistry: {} as PluginRegistry,
-          maxConcurrency: 2,
-          pipelineContext: {} as any,
-        },
-      });
+      const result = await runParallelBatch({ stories, prd, ctx: makeCtx() });
       expect(result.storyCosts.get("US-001")).toBe(0.5);
       expect(result.storyCosts.get("US-002")).toBe(0.3);
     } finally {
@@ -281,9 +271,11 @@ describe("AC-5: runParallelBatch totalCost", () => {
     const origWorktree = _parallelBatchDeps.createWorktreeManager;
     const origMerge = _parallelBatchDeps.createMergeEngine;
 
-    _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} }) as any;
+    _parallelBatchDeps.createWorktreeManager = async () => makeWorktreeManager();
     _parallelBatchDeps.createMergeEngine = async () =>
-      ({ mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })) }) as any;
+      makeMergeEngine({
+        mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })),
+      });
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: stories,
       merged: stories,
@@ -294,18 +286,7 @@ describe("AC-5: runParallelBatch totalCost", () => {
     });
 
     try {
-      const result = await runParallelBatch({
-        stories,
-        prd,
-        ctx: {
-          workdir: tmpDir,
-          config: DEFAULT_CONFIG as NaxConfig,
-          hooks: {} as LoadedHooksConfig,
-          pluginRegistry: {} as PluginRegistry,
-          maxConcurrency: 2,
-          pipelineContext: {} as any,
-        },
-      });
+      const result = await runParallelBatch({ stories, prd, ctx: makeCtx() });
       expect(result.totalCost).toBeCloseTo(1.0);
     } finally {
       _parallelBatchDeps.executeParallelBatch = origExecute;

@@ -424,10 +424,10 @@ describe("config/merger", () => {
       const base = { hooks: { hooks: { "on-start": { command: "echo base" } } } };
       const override = { hooks: { hooks: ["not-an-object"] } };
 
-      const result = deepMergeConfig(base, override as any);
+      const result = deepMergeConfig<typeof base>(base, override);
 
       // The base hooks should be preserved; the invalid override should be ignored
-      const onStart = (result as any).hooks?.hooks?.["on-start"];
+      const onStart = result.hooks.hooks["on-start"];
       expect(onStart).toEqual({ command: "echo base" });
     });
   });

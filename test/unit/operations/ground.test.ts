@@ -12,8 +12,10 @@ afterEach(async () => {
   createdRuntimes.length = 0;
 });
 
-function makeBuildCtx(grounderOverrides?: { model?: unknown; timeoutSeconds?: number }) {
-  const base = grounderOverrides ? ({ debate: { grounder: grounderOverrides } } as any) : {};
+type GrounderOverrides = NonNullable<NonNullable<Parameters<typeof makeNaxConfig>[0]>["debate"]>["grounder"];
+
+function makeBuildCtx(grounderOverrides?: GrounderOverrides) {
+  const base = grounderOverrides ? { debate: { grounder: grounderOverrides } } : {};
   const config = makeNaxConfig(base);
   const runtime = makeTestRuntime({ config });
   createdRuntimes.push(runtime);

@@ -1,11 +1,20 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeLogger, makeMockAgentManager, makeSessionManager, withDepsRestore } from "@test/helpers";
+import {
+  makeAgentAdapter,
+  makeLogger,
+  makeMockAgentManager,
+  makeNaxConfig,
+  makeSessionManager,
+  makeTestRuntime,
+  withDepsRestore,
+} from "@test/helpers";
 import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
 import type { DebateRunnerOptions, DebateStageConfig } from "@/debate";
 import { _debateSessionDeps, DebateRunner } from "@/debate";
 import type { HybridCtx } from "@/debate/runner-hybrid";
 import { _hybridDeps } from "@/debate/runner-hybrid";
 import type { CallContext } from "@/operations";
+import type { ICostAggregator } from "@/runtime/cost-aggregator";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 
 function installCallOp(impl: typeof _hybridDeps.callOp) {
@@ -46,16 +55,10 @@ function makeCallCtx(overrides: Partial<CallContext> = {}): CallContext {
     closeSession: mock(async () => {}),
     nameFor: mock((req) => req.role ?? ""),
   });
+  const runtime = makeTestRuntime({ agentManager, sessionManager, costAggregator: createNoOpCostAggregator() });
   return {
-    runtime: {
-      agentManager,
-      sessionManager,
-      configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
-      packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
-      signal: undefined,
-      costAggregator: createNoOpCostAggregator(),
-    } as any,
-    packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
+    runtime,
+    packageView: runtime.packages.repo(),
     packageDir: "/tmp/work",
     agentName: "claude",
     storyId: "US-test",
@@ -70,7 +73,7 @@ function makeRunner(
   extraOpts: Partial<DebateRunnerOptions> = {},
 ): DebateRunner {
   const ctx = makeCallCtx(ctxOverrides);
-  const sm = (ctx.runtime as any).sessionManager;
+  const sm = ctx.runtime.sessionManager;
   return new DebateRunner({
     ctx,
     stage: "run",
@@ -120,14 +123,7 @@ describe("DebateRunner hybrid mode — handle IDs correspond to sessionRole (AC1
       }),
     });
     const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-        costAggregator: createNoOpCostAggregator(),
-      } as any,
+      runtime: makeTestRuntime({ agentManager, sessionManager: sm, costAggregator: createNoOpCostAggregator() }),
     });
     const runner = new DebateRunner({
       ctx,
@@ -163,14 +159,7 @@ describe("DebateRunner hybrid mode — handle IDs correspond to sessionRole (AC1
       }),
     });
     const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-        costAggregator: createNoOpCostAggregator(),
-      } as any,
+      runtime: makeTestRuntime({ agentManager, sessionManager: sm, costAggregator: createNoOpCostAggregator() }),
     });
     const runner = new DebateRunner({
       ctx,
@@ -217,14 +206,7 @@ describe("DebateRunner hybrid mode — parallel proposals via allSettledBounded 
       },
     });
     const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-        costAggregator: createNoOpCostAggregator(),
-      } as any,
+      runtime: makeTestRuntime({ agentManager, sessionManager: sm, costAggregator: createNoOpCostAggregator() }),
     });
     const runner = new DebateRunner({
       ctx,
@@ -267,20 +249,13 @@ describe("DebateRunner hybrid mode — parallel proposals via allSettledBounded 
       },
     });
     const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-        costAggregator: createNoOpCostAggregator(),
-      } as any,
+      runtime: makeTestRuntime({ agentManager, sessionManager: sm, costAggregator: createNoOpCostAggregator() }),
     });
     const runner = new DebateRunner({
       ctx,
       stage: "run",
       stageConfig: makeHybridStageConfig(),
-      config: { ...DEFAULT_CONFIG, debate: { maxConcurrentDebaters: 1 } } as any,
+      config: makeNaxConfig({ debate: { maxConcurrentDebaters: 1 } }),
       workdir: "/tmp/work",
       timeoutSeconds: 60,
       sessionManager: sm,
@@ -320,14 +295,7 @@ describe("DebateRunner hybrid mode — pre-opened sessions per debater (AC3)", (
       },
     });
     const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-        costAggregator: createNoOpCostAggregator(),
-      } as any,
+      runtime: makeTestRuntime({ agentManager, sessionManager: sm, costAggregator: createNoOpCostAggregator() }),
     });
     const runner = new DebateRunner({
       ctx,
@@ -370,14 +338,7 @@ describe("DebateRunner hybrid mode — single-agent fallback when fewer than 2 p
       },
     });
     const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-        costAggregator: createNoOpCostAggregator(),
-      } as any,
+      runtime: makeTestRuntime({ agentManager, sessionManager: sm, costAggregator: createNoOpCostAggregator() }),
     });
     const runner = new DebateRunner({
       ctx,
@@ -408,14 +369,7 @@ describe("DebateRunner hybrid mode — single-agent fallback when fewer than 2 p
       },
     });
     const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-        costAggregator: createNoOpCostAggregator(),
-      } as any,
+      runtime: makeTestRuntime({ agentManager, sessionManager: sm, costAggregator: createNoOpCostAggregator() }),
     });
     const runner = new DebateRunner({
       ctx,
@@ -470,7 +424,7 @@ describe("DebateRunner hybrid mode — adapter resolution via getAgent (AC6)", (
     const agentManager = makeMockAgentManager({
       getAgentFn: (name: string) => {
         agentCalls.push(name);
-        return {} as any;
+        return makeAgentAdapter();
       },
       runAsSessionFn: async (agentName) => ({
         output: `proposal-${agentName}`,
@@ -480,14 +434,7 @@ describe("DebateRunner hybrid mode — adapter resolution via getAgent (AC6)", (
       }),
     });
     const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-        costAggregator: createNoOpCostAggregator(),
-      } as any,
+      runtime: makeTestRuntime({ agentManager, sessionManager: sm, costAggregator: createNoOpCostAggregator() }),
     });
     const runner = new DebateRunner({
       ctx,
@@ -519,14 +466,7 @@ describe("DebateRunner hybrid mode — adapter resolution via getAgent (AC6)", (
       }),
     });
     const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-        costAggregator: createNoOpCostAggregator(),
-      } as any,
+      runtime: makeTestRuntime({ agentManager, sessionManager: sm, costAggregator: createNoOpCostAggregator() }),
     });
     const runner = new DebateRunner({
       ctx,
@@ -559,7 +499,7 @@ describe("HybridCtx — callContext field (AC4)", () => {
       callContext: callCtx,
       agentManager: makeMockAgentManager(),
       sessionManager: makeSessionManager(),
-      runtime: { signal: undefined } as any,
+      runtime: callCtx.runtime,
       abortSignal: new AbortController().signal,
     };
     expect(ctx.callContext).toBeDefined();
@@ -572,7 +512,7 @@ describe("HybridCtx — callContext field (AC4)", () => {
 describe("runHybrid() — two-scope cost tracking (US-005)", () => {
   withDepsRestore(_hybridDeps);
 
-  function makeScopedCostAgg(debaterCost = 0, resolverCost = 0) {
+  function makeScopedCostAgg(debaterCost = 0, resolverCost = 0): ICostAggregator & { closed: string[] } {
     let callCount = 0;
     const closed: string[] = [];
     const openFn = mock(() => {
@@ -594,7 +534,28 @@ describe("runHybrid() — two-scope cost tracking (US-005)", () => {
         }),
       };
     });
-    return { openScope: openFn, closed };
+    return {
+      openScope: openFn,
+      record() {},
+      recordError() {},
+      recordOperationSummary() {},
+      snapshot: () => ({
+        totalCostUsd: 0,
+        totalEstimatedCostUsd: 0,
+        totalExactCostUsd: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        callCount: 0,
+        errorCount: 0,
+      }),
+      byAgent: () => ({}),
+      byStage: () => ({}),
+      byStory: () => ({}),
+      byCall: () => ({}),
+      byScope: () => ({}),
+      drain: async () => {},
+      closed,
+    };
   }
 
   function makeCtxWithCostAgg(costAgg: ReturnType<typeof makeScopedCostAgg>): CallContext {
@@ -611,16 +572,10 @@ describe("runHybrid() — two-scope cost tracking (US-005)", () => {
       closeSession: mock(async () => {}),
       nameFor: mock((req) => req.role ?? ""),
     });
+    const runtime = makeTestRuntime({ agentManager, sessionManager: sm, costAggregator: costAgg });
     return {
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-        costAggregator: costAgg,
-      } as any,
-      packageView: { config: DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG } as any,
+      runtime,
+      packageView: runtime.packages.repo(),
       packageDir: "/tmp/work",
       agentName: "claude",
       storyId: "US-cost-hybrid",
@@ -631,7 +586,7 @@ describe("runHybrid() — two-scope cost tracking (US-005)", () => {
   test("AC5/AC1: opens debaterScope and resolverScope, both closed in finally", async () => {
     const costAgg = makeScopedCostAgg();
     const ctx = makeCtxWithCostAgg(costAgg);
-    const sm = (ctx.runtime as any).sessionManager;
+    const sm = ctx.runtime.sessionManager;
     const runner = new DebateRunner({
       ctx,
       stage: "run",
@@ -649,7 +604,7 @@ describe("runHybrid() — two-scope cost tracking (US-005)", () => {
   test("AC6: totalCostUsd = debaterScope (0.10) + resolverScope (0.02) = 0.12", async () => {
     const costAgg = makeScopedCostAgg(0.1, 0.02);
     const ctx = makeCtxWithCostAgg(costAgg);
-    const sm = (ctx.runtime as any).sessionManager;
+    const sm = ctx.runtime.sessionManager;
     installCallOp(async (_callCtx, _op, input) => {
       input.proposalBarriers[0]?.resolve("ok");
       return { success: true, rebut: "ok" };

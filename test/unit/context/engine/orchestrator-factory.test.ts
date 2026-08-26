@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { type DeepPartial, makeNaxConfig } from "@test/helpers";
+import { type DeepPartial, makeNaxConfig, makeResolvedTestPatterns } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import type { ContextV2Config } from "@/config/runtime-types";
 import { createDefaultOrchestrator } from "@/context/engine/orchestrator-factory";
@@ -190,7 +190,7 @@ describe("createDefaultOrchestrator — #507 provider scope config", () => {
       return { files: [], truncated: false };
     };
     const config = makeConfig();
-    (config.context!.v2!.providers as any).maxGlobFiles = 750;
+    config.context!.v2!.providers.maxGlobFiles = 750;
     const orchestrator = createDefaultOrchestrator(makeStory(), config);
     await orchestrator.assemble(makeRequest());
     expect(capturedCap).toBe(750);
@@ -211,15 +211,14 @@ describe("createDefaultOrchestrator — TestCoverageProvider registration", () =
     origResolvePatterns = _testCoverageProviderDeps.resolveTestFilePatterns;
     origGetContextFiles = _testCoverageProviderDeps.getContextFiles;
     _testCoverageProviderDeps.getContextFiles = () => [];
-    _testCoverageProviderDeps.generateTestCoverageSummary = async () =>
-      ({
-        summary: "test coverage summary",
-        tokens: 100,
-        files: [],
-        totalTests: 5,
-      }) as any;
+    _testCoverageProviderDeps.generateTestCoverageSummary = async () => ({
+      summary: "test coverage summary",
+      tokens: 100,
+      files: [],
+      totalTests: 5,
+    });
     _testCoverageProviderDeps.resolveTestFilePatterns = async () =>
-      ({ patterns: ["**/*.test.ts"], strategy: "glob" }) as any;
+      makeResolvedTestPatterns({ globs: ["**/*.test.ts"] });
   });
 
   afterEach(() => {

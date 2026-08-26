@@ -7,27 +7,19 @@
  * queries continue to match.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { mockFetch } from "@test/helpers";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { createOtelReporterPlugin } from "@/plugins";
+import { buildHeartbeatMetricsPayload, type HeartbeatSnapshot } from "@/plugins/builtin/otel-reporter/heartbeat";
 import {
-  buildHeartbeatMetricsPayload,
-  type Heartbeat,
-  type HeartbeatSnapshot,
-} from "@/plugins/builtin/otel-reporter/heartbeat";
-import { buildMetricsPayload, buildResourceAttributes, buildTracesPayload } from "@/plugins/builtin/otel-reporter/otlp";
+  buildMetricsPayload,
+  buildResourceAttributes,
+  buildTracesPayload,
+  type KeyValue,
+} from "@/plugins/builtin/otel-reporter/otlp";
 import { createPhaseMetricsAggregator, createSpanTree } from "@/plugins/builtin/otel-reporter/span-tree";
 import type { PostJsonDeps } from "@/plugins/builtin/reporter-shared";
-
-const liveHeartbeats: Heartbeat[] = [];
-function track(hb: Heartbeat): Heartbeat {
-  liveHeartbeats.push(hb);
-  return hb;
-}
-afterEach(() => {
-  for (const hb of liveHeartbeats.splice(0)) hb.stop();
-});
 
 function snapshot(overrides: Partial<HeartbeatSnapshot> = {}): HeartbeatSnapshot {
   return {
@@ -46,14 +38,13 @@ function snapshot(overrides: Partial<HeartbeatSnapshot> = {}): HeartbeatSnapshot
   };
 }
 
-function capturingDeps(): PostJsonDeps {
-  return {
-    fetch: mockFetch(async (_url, _init) => new Response(null, { status: 200 })),
-  };
-}
+type CapturedPayload = {
+  resourceSpans?: Array<{ resource?: { attributes: KeyValue[] } }>;
+  resourceMetrics?: Array<{ resource?: { attributes: KeyValue[] } }>;
+};
 
 function capturingPosts() {
-  const posts: Array<{ url: string; body: any }> = [];
+  const posts: Array<{ url: string; body: CapturedPayload }> = [];
   const deps: PostJsonDeps = {
     fetch: mockFetch(async (url, init) => {
       posts.push({ url: String(url), body: JSON.parse(String(init?.body)) });
@@ -63,15 +54,9 @@ function capturingPosts() {
   return { posts, deps };
 }
 
-function resourceAttributes(payload: any) {
-  return (payload?.resourceSpans?.[0]?.resource?.attributes ?? []).concat(
-    payload?.resourceMetrics?.[0]?.resource?.attributes ?? [],
-  );
-}
-
 describe("US-007 AC1: buildTracesPayload resource attributes include nax.feature", () => {
   test("success: emits nax.feature resource attribute equal to the supplied feature", () => {
-    const payload: any = buildTracesPayload({
+    const payload = buildTracesPayload({
       serviceName: "nax",
       traceId: "a".repeat(32),
       spanId: "b".repeat(16),
@@ -85,13 +70,13 @@ describe("US-007 AC1: buildTracesPayload resource attributes include nax.feature
       storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
       totalCost: 0.42,
       events: [],
-    } as any);
+    });
     const attrs = payload.resourceSpans[0].resource.attributes;
     expect(attrs).toContainEqual({ key: "nax.feature", value: { stringValue: "my-feature" } });
   });
 
   test("success: also includes nax.run_id and nax.project on the same resource block", () => {
-    const payload: any = buildTracesPayload({
+    const payload = buildTracesPayload({
       serviceName: "nax",
       traceId: "a".repeat(32),
       spanId: "b".repeat(16),
@@ -103,14 +88,14 @@ describe("US-007 AC1: buildTracesPayload resource attributes include nax.feature
       storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
       totalCost: 0,
       events: [],
-    } as any);
+    });
     const attrs = payload.resourceSpans[0].resource.attributes;
     expect(attrs).toContainEqual({ key: "nax.run_id", value: { stringValue: "r1" } });
     expect(attrs).toContainEqual({ key: "nax.project", value: { stringValue: "proj-1" } });
   });
 
   test("boundary: omits nax.git.branch when gitBranch is not provided", () => {
-    const payload: any = buildTracesPayload({
+    const payload = buildTracesPayload({
       serviceName: "nax",
       traceId: "a".repeat(32),
       spanId: "b".repeat(16),
@@ -122,16 +107,16 @@ describe("US-007 AC1: buildTracesPayload resource attributes include nax.feature
       storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
       totalCost: 0,
       events: [],
-    } as any);
+    });
     const attrs = payload.resourceSpans[0].resource.attributes;
-    expect(attrs.some((a: any) => a.key === "nax.git.branch")).toBe(false);
-    expect(attrs.some((a: any) => a.key === "nax.git.sha")).toBe(false);
+    expect(attrs.some((a) => a.key === "nax.git.branch")).toBe(false);
+    expect(attrs.some((a) => a.key === "nax.git.sha")).toBe(false);
   });
 });
 
 describe("US-007 AC2: buildMetricsPayload (otlp.ts) resource attributes include nax.feature", () => {
   test("success: emits nax.feature resource attribute equal to the supplied feature", () => {
-    const payload: any = buildMetricsPayload({
+    const payload = buildMetricsPayload({
       serviceName: "nax",
       runId: "r1",
       feature: "my-feature",
@@ -140,13 +125,13 @@ describe("US-007 AC2: buildMetricsPayload (otlp.ts) resource attributes include 
       storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
       totalCost: 0.42,
       totalDurationMs: 1234,
-    } as any);
+    });
     const attrs = payload.resourceMetrics[0].resource.attributes;
     expect(attrs).toContainEqual({ key: "nax.feature", value: { stringValue: "my-feature" } });
   });
 
   test("success: also includes nax.run_id and nax.project", () => {
-    const payload: any = buildMetricsPayload({
+    const payload = buildMetricsPayload({
       serviceName: "nax",
       runId: "r42",
       feature: "f",
@@ -155,14 +140,14 @@ describe("US-007 AC2: buildMetricsPayload (otlp.ts) resource attributes include 
       storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
       totalCost: 0,
       totalDurationMs: 0,
-    } as any);
+    });
     const attrs = payload.resourceMetrics[0].resource.attributes;
     expect(attrs).toContainEqual({ key: "nax.run_id", value: { stringValue: "r42" } });
     expect(attrs).toContainEqual({ key: "nax.project", value: { stringValue: "proj-2" } });
   });
 
   test("boundary: emits git attributes when gitBranch and gitSha are provided", () => {
-    const payload: any = buildMetricsPayload({
+    const payload = buildMetricsPayload({
       serviceName: "nax",
       runId: "r1",
       feature: "f",
@@ -173,7 +158,7 @@ describe("US-007 AC2: buildMetricsPayload (otlp.ts) resource attributes include 
       storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
       totalCost: 0,
       totalDurationMs: 0,
-    } as any);
+    });
     const attrs = payload.resourceMetrics[0].resource.attributes;
     expect(attrs).toContainEqual({ key: "nax.git.branch", value: { stringValue: "feat-x" } });
     expect(attrs).toContainEqual({ key: "nax.git.sha", value: { stringValue: "deadbeef" } });
@@ -181,7 +166,7 @@ describe("US-007 AC2: buildMetricsPayload (otlp.ts) resource attributes include 
 });
 
 describe("US-007 AC3: buildHeartbeatMetricsPayload resource attributes include nax.run_id", () => {
-  const payload: any = buildHeartbeatMetricsPayload({
+  const payload = buildHeartbeatMetricsPayload({
     serviceName: "nax",
     timeUnixNano: "5000",
     snapshot: snapshot(),
@@ -199,27 +184,28 @@ describe("US-007 AC3: buildHeartbeatMetricsPayload resource attributes include n
 });
 
 describe("US-007 AC4: buildHeartbeatMetricsPayload gauge points retain the bare feature attribute", () => {
-  const payload: any = buildHeartbeatMetricsPayload({
+  const payload = buildHeartbeatMetricsPayload({
     serviceName: "nax",
     timeUnixNano: "5000",
     snapshot: snapshot(),
   });
   const metrics = payload.resourceMetrics[0].scopeMetrics[0].metrics;
-  const byName = (n: string) => metrics.find((m: any) => m.name === n);
+  const byName = (n: string) => metrics.find((m) => m.name === n);
+  const gaugeAttrs = (n: string) => byName(n)?.gauge?.dataPoints[0]?.attributes ?? [];
 
   test("nax.run.active gauge data point carries the bare 'feature' attribute (no nax.feature)", () => {
-    const attrs = byName("nax.run.active").gauge.dataPoints[0].attributes;
+    const attrs = gaugeAttrs("nax.run.active");
     expect(attrs).toContainEqual({ key: "feature", value: { stringValue: "feat-1" } });
-    expect(attrs.some((a: any) => a.key === "nax.feature")).toBe(false);
+    expect(attrs.some((a) => a.key === "nax.feature")).toBe(false);
   });
 
   test("nax.run.cost_usd gauge data point still carries the bare 'feature' attribute", () => {
-    const attrs = byName("nax.run.cost_usd").gauge.dataPoints[0].attributes;
+    const attrs = gaugeAttrs("nax.run.cost_usd");
     expect(attrs).toContainEqual({ key: "feature", value: { stringValue: "feat-1" } });
   });
 
   test("nax.run.phase_elapsed_ms gauge data point still carries the bare 'feature' attribute", () => {
-    const attrs = byName("nax.run.phase_elapsed_ms").gauge.dataPoints[0].attributes;
+    const attrs = gaugeAttrs("nax.run.phase_elapsed_ms");
     expect(attrs).toContainEqual({ key: "feature", value: { stringValue: "feat-1" } });
   });
 });
@@ -239,7 +225,7 @@ describe("US-007 AC5: span-tree payload builder resource attributes include nax.
       testStrategy: "tdd-simple",
       sessionModel: "single-session",
     });
-    const payload: any = agg.buildMetricsPayload({
+    const payload = agg.buildMetricsPayload({
       serviceName: "nax",
       runId: "r1",
       timeUnixNano: "1000",
@@ -264,7 +250,7 @@ describe("US-007 AC5: span-tree payload builder resource attributes include nax.
       testStrategy: "tdd-simple",
       sessionModel: "single-session",
     });
-    const payload: any = agg.buildMetricsPayload({
+    const payload = agg.buildMetricsPayload({
       serviceName: "nax",
       runId: "r1",
       timeUnixNano: "1000",
@@ -290,7 +276,7 @@ describe("US-007 AC5: span-tree payload builder resource attributes include nax.
       testStrategy: "tdd-simple",
       sessionModel: "single-session",
     });
-    const payload: any = agg.buildMetricsPayload({
+    const payload = agg.buildMetricsPayload({
       serviceName: "my-service",
       runId: "r42",
       timeUnixNano: "1000",
@@ -314,7 +300,7 @@ describe("US-007 AC5: span-tree payload builder resource attributes include nax.
 
   test("boundary: empty aggregator still emits nax.project on its resource block", () => {
     const agg = createPhaseMetricsAggregator();
-    const payload: any = agg.buildMetricsPayload({
+    const payload = agg.buildMetricsPayload({
       serviceName: "nax",
       runId: "r1",
       timeUnixNano: "1000",
@@ -385,7 +371,7 @@ describe("US-007 AC6: incremental span flush request carries nax.run_id resource
     // At least one incremental traces request must carry nax.run_id.
     const withRunId = traces.some((p) =>
       (p.body?.resourceSpans?.[0]?.resource?.attributes ?? []).some(
-        (a: any) => a.key === "nax.run_id" && a.value.stringValue === "inc-run-1",
+        (a) => a.key === "nax.run_id" && a.value.stringValue === "inc-run-1",
       ),
     );
     expect(withRunId).toBe(true);

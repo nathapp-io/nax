@@ -144,7 +144,7 @@ describe("planCommand — pipeline branch stub", () => {
   // AC14: pipeline mode + debate.enabled emits one logger.warn then throws
   test("AC14: pipeline mode + debate.enabled emits logger.warn once before throwing", async () => {
     const logger = makeLogger();
-    _planDeps.getLogger = () => logger as any;
+    _planDeps.getLogger = () => logger;
 
     const config = makeMinimalConfig({
       plan: { ...DEFAULT_CONFIG.plan, mode: "pipeline" },

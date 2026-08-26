@@ -12,12 +12,26 @@ import type { InteractionPlugin, InteractionRequest, InteractionResponse } from 
 const CLIConfigSchema = z.object({}).passthrough();
 
 /**
+ * The subset of `readline.Interface` this plugin uses.
+ *
+ * Declared as its own interface rather than depending on the whole
+ * `readline.Interface` surface: the plugin only ever asks a question and closes,
+ * and naming that contract is what lets a caller (or a test) supply a readline
+ * without reproducing an interface it never touches. A real
+ * `readline.Interface` satisfies it structurally.
+ */
+export interface CLIReadline {
+  question(prompt: string, callback: (answer: string) => void): void;
+  close(): void;
+}
+
+/**
  * CLI plugin for interactive prompts via stdin/stdout
  */
 export class CLIInteractionPlugin implements InteractionPlugin {
   name = "cli";
   private pendingRequests = new Map<string, InteractionRequest>();
-  private rl: readline.Interface | null = null;
+  private rl: CLIReadline | null = null;
 
   async init(config: Record<string, unknown> = {}): Promise<void> {
     CLIConfigSchema.parse(config);

@@ -61,7 +61,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
         redGate: true,
         model: "fast",
       },
-    } as any,
+    },
     prd: makePrd(stories),
     story: stories[0],
     stories,
@@ -70,7 +70,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     workdir: "/tmp/test-workdir",
     projectDir: "/tmp/test-workdir",
     featureDir: "/tmp/test-workdir/.nax/features/test-feature",
-    hooks: {} as any,
+    hooks: { hooks: {} },
     ...makeDispatchContext(),
     ...overrides,
   };
@@ -272,7 +272,7 @@ describe("acceptance-setup: regenerates when fingerprint is stale (P2-A)", () =>
       makeStory("US-001", ["AC-1: first criterion", "AC-2: second criterion"]),
       makeStory("US-002", ["AC-3: third criterion", "AC-4: new criterion"]), // extra AC
     ];
-    const ctx = makeCtx({ prd: makePrd(stories) as any });
+    const ctx = makeCtx({ prd: makePrd(stories) });
 
     await acceptanceSetupStage.execute(ctx);
 
@@ -314,7 +314,7 @@ describe("acceptance-setup: regenerates when fingerprint is stale (P2-A)", () =>
       makeStory("US-001", ["AC-1: first criterion MODIFIED", "AC-2: second criterion"]),
       makeStory("US-002", ["AC-3: third criterion"]),
     ];
-    const ctx = makeCtx({ prd: makePrd(stories) as any });
+    const ctx = makeCtx({ prd: makePrd(stories) });
 
     await acceptanceSetupStage.execute(ctx);
 
@@ -355,7 +355,7 @@ describe("acceptance-setup: US-FIX-* stories excluded from fingerprint", () => {
       makeStory("US-002", ["AC-3: third criterion"]),
       makeStory("US-FIX-001", ["Fix the broken validation logic"]),
     ];
-    const ctx = makeCtx({ prd: makePrd(stories) as any });
+    const ctx = makeCtx({ prd: makePrd(stories) });
 
     await acceptanceSetupStage.execute(ctx);
 

@@ -13,6 +13,8 @@ import { describe, expect, test } from "bun:test";
 import { makeContextBundle, makeNaxConfig } from "@test/helpers";
 import type { AgentResult, HopKind } from "@/agents";
 import { AgentManager } from "@/agents";
+import type { AgentRunOptions } from "@/agents/types";
+import type { NaxConfig } from "@/config";
 import type { AdapterFailure } from "@/context/engine";
 
 const STALE_FAILURE: AdapterFailure = {
@@ -35,8 +37,22 @@ const STUB_BUNDLE = makeContextBundle({
   chunks: [],
 });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const STUB_RUN_OPTIONS = { prompt: "do it", workdir: "/tmp", storyId: "US-001" } as any;
+/**
+ * Fully-typed run options. `config` must be passed by each caller:
+ * runWithFallback reads `request.runOptions.config ?? this._config`, so the
+ * caller's own AgentManager config is the behavior-preserving choice.
+ */
+function makeStubRunOptions(config: NaxConfig): AgentRunOptions {
+  return {
+    prompt: "do it",
+    workdir: "/tmp",
+    storyId: "US-001",
+    modelTier: "balanced",
+    modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+    timeoutSeconds: 60,
+    config,
+  };
+}
 
 function makeSuccessResult(): AgentResult {
   return { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 };
@@ -61,7 +77,7 @@ describe("runWithFallback — HopKind routing", () => {
 
     const hopKinds: HopKind[] = [];
     const outcome = await manager.runWithFallback({
-      runOptions: STUB_RUN_OPTIONS,
+      runOptions: makeStubRunOptions(config),
       bundle: STUB_BUNDLE,
       executeHop: async (_agent, _bundle, hopKind, _opts) => {
         hopKinds.push(hopKind);
@@ -86,7 +102,7 @@ describe("runWithFallback — HopKind routing", () => {
     const hopKinds: HopKind[] = [];
     let calls = 0;
     const outcome = await manager.runWithFallback({
-      runOptions: STUB_RUN_OPTIONS,
+      runOptions: makeStubRunOptions(config),
       bundle: STUB_BUNDLE,
       executeHop: async (_agent, _bundle, hopKind, _opts) => {
         hopKinds.push(hopKind);
@@ -115,7 +131,7 @@ describe("runWithFallback — HopKind routing", () => {
     const hopKinds: HopKind[] = [];
     let calls = 0;
     await manager.runWithFallback({
-      runOptions: STUB_RUN_OPTIONS,
+      runOptions: makeStubRunOptions(config),
       bundle: STUB_BUNDLE,
       executeHop: async (_agent, _bundle, hopKind, _opts) => {
         hopKinds.push(hopKind);
@@ -149,7 +165,7 @@ describe("runWithFallback — HopKind routing", () => {
     const hopKinds: HopKind[] = [];
     const agents: string[] = [];
     await manager.runWithFallback({
-      runOptions: STUB_RUN_OPTIONS,
+      runOptions: makeStubRunOptions(config),
       bundle: STUB_BUNDLE,
       executeHop: async (agentName, _bundle, hopKind, _opts) => {
         hopKinds.push(hopKind);
@@ -185,7 +201,7 @@ describe("runWithFallback — HopKind routing", () => {
     const agents: string[] = [];
     let calls = 0;
     const outcome = await manager.runWithFallback({
-      runOptions: STUB_RUN_OPTIONS,
+      runOptions: makeStubRunOptions(config),
       bundle: STUB_BUNDLE,
       executeHop: async (agentName, _bundle, hopKind, _opts) => {
         hopKinds.push(hopKind);
