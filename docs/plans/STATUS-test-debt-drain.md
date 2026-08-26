@@ -16,21 +16,21 @@ log — each entry records what was true when written and is not edited afterwar
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
 | `as unknown as` | **0** | 0 | done — closed invariant (§8.13) |
-| `asAny` | 435 | 1377 | yes, then biome `noExplicitAny` retires it |
-| `anyType` | 557 | 1860 | yes, retires with `asAny` — biome says **548** |
-| `nonNullAssert` | 812 | 819 | yes — biome says **1085**, see §0.1 (not started) |
-| `asNever` | 607 | 608 | yes |
+| `asAny` | 311 | 1377 | yes, then biome `noExplicitAny` retires it |
+| `anyType` | 389 | 1860 | yes, retires with `asAny` — biome says **380** |
+| `nonNullAssert` | 801 | 819 | yes — biome says **1085**, see §0.1 (not started) |
+| `asNever` | 605 | 608 | yes |
 | `ratchetAllow` | 103 | 105 | yes |
 | `tsSuppress` | 40 | 40 | yes |
 | `absentValue` | 17 | 17 | yes |
-| `looseCast` | 1815 | 1875 | **no** — guard only, see below |
+| `looseCast` | 1811 | 1875 | **no** — guard only, see below |
 
-The `noExplicitAny` drain is in progress on this branch (§8.14–§8.18): sixty-three files
-drained, `asAny` 1179 → 435 and `anyType` 1538 → 557 against the branch-start ratchet, with
-every other counter flat except `nonNullAssert` (819 → 812 as a benign side effect of removing
-`logger!.info = … as any` patterns), `looseCast` (1875 → 1815), `ratchetAllow` (105 → 103)
-and `asNever` (608 → 607) as benign side effects of deleting real casts. Biome's authoritative
-count fell **1529 → 548**.
+The `noExplicitAny` drain is in progress on this branch (§8.14–§8.19): eighty-six files
+drained, `asAny` 1179 → 311 and `anyType` 1538 → 389 against the branch-start ratchet, with
+every other counter flat except `nonNullAssert` (819 → 801), `looseCast` (1875 → 1811),
+`ratchetAllow` (105 → 103) and `asNever` (608 → 605) as benign side effects of removing
+`logger!.info = … as any` patterns and deleting real casts. Biome's authoritative
+count fell **1529 → 380**.
 
 `as unknown as` went **101 → 0** across nine commits (§8.1–§8.4, §8.11–§8.13); `looseCast`
 fell 1888 → 1875 and `ratchetAllow` 107 → 105 as side effects of removing real casts, and
@@ -1303,3 +1303,76 @@ input and widen only at the presentation seam — not by re-loosening the helper
 `interaction/plugins/cli`, `precheck/precheck-checks-tier2-warnings`,
 `review/semantic-retry` — 171 files hold the remaining 548. The head has flattened again:
 no file exceeds 8, and the next ten-file batch spans five of these ties exactly.
+
+### 8.19 Batch 6 of the `noExplicitAny` drain — the top 20 (+ full 7-tie ride-along), four parallel delegates, biome 548 → 380 (2026-08-26)
+
+The §8.18 queue head drained: eight files tied at 8, then a sixteen-file tier at 7 spanning
+ranks 9–24. A strict top-20 cut lands mid-tie, so the whole tier rode along (§8.17/§8.18
+precedent) — 24 files, ~168 biome sites taken by four parallel agents on disjoint file sets
+under the same brief model as §8.16–§8.18 (§4 forbidden list, the cheap per-file gate loop,
+the standing recipe table). No delegate edited outside its set; zero src/ or helper changes;
+23 of 24 files reached zero.
+
+**One escalation held: `interaction/plugins/cli.test.ts` (8 sites, untouched, gates green).**
+The tests inject into `CLIInteractionPlugin`'s class-private `rl` and call private
+`promptUser`. Two structural attempts failed: an upcast to a local view interface hits TS2342
+(privacy modifiers break structural comparability in both directions), and generic keyed
+accessors fail because `keyof CLIInteractionPlugin` excludes private members at external call
+sites. A public-API-only redesign (`send` + `receive`) cannot faithfully preserve BUG-21's
+assertions (`closeCalls === 1`, post-recreate identity of the private `rl`). **The site is
+src-blocked, not test-hard**: it needs a sanctioned seam (`_deps.createReadline` injection,
+or `rl` protected plus a tiny test subclass) before it can drain. Whoever takes it should
+also correct the fixture then — it pokes `stage: "verify"` (not an `InteractionStage`
+member) and `prompt`/`context` fields that do not exist on `InteractionRequest`, while the
+required `fallback`/`createdAt` are missing.
+
+Ratchet: `asAny` ↓124 (435 → 311) and `anyType` ↓168 (557 → 389); `looseCast` ↓4
+(1815 → 1811), `asNever` ↓2 (607 → 605) and `nonNullAssert` ↓11 (812 → 801) as benign side
+effects of deleting real casts and `!` assertions; `tsSuppress`/`ratchetAllow`/`absentValue`
+flat; no counter rose anywhere, including per-file. Gates: typecheck 0 (all three),
+`check:all` green, full suite green (14149 / 1136 / 38, 0 fail), coverage OK (101 below floor
+against baseline 103 — run explicitly because two fixture corrections touch values feeding
+source branches).
+
+**Recipe families applied** (all proven in §8.14–§8.18 except where noted):
+
+| Shape | Where | Recipe |
+|:--|:--|:--|
+| absent-key probes `(x as any)?.key` ×8 | acp/activity-emission | local predicate `activityLacksKey(a, key)` via `key in obj`, undefined-safe |
+| `session!.x` after async load ×4 | acp/activity-emission | `assertDefined(session, …)` from `@test/helpers` immediately after `loadSession` — throws like the removed `expect(...).not.toBeNull()` |
+| hand-typed ctx masked by a whole-arg cast / hop-body literals | adversarial-review-requote, review/semantic-retry | delete the cast — the literal is contextually typed against the real `HopBodyContext<Input>`; or close with `} satisfies HopBodyContext<SemanticReviewInput>)` (adversarial-review-reground verbatim) |
+| restated generic unions `<FixStrategy<…, any, any>>` | fix-strategy-composition | `type ComposedStrategy = ReturnType<typeof makeXStrategy> \| …` over the four factories — self-maintaining, no widened holes |
+| dead casts on union members and null slots | role-task ×7, pull-tools ×7, mutation-check, precheck-tier2 ×5, plan-debate | `"python"` is already in `ProjectProfile["language"]`; `null ∈ string \| null \| undefined`; src's role union already contains `"tdd-simple"`/`"standard"`/`"lite"`; `getLogger` slot returns a real `Logger` — deleted outright, no replacement construct |
+| partial-`NaxConfig` hydrate literals | runtime/packages ×4 | **`Partial<NaxConfig>` is not deep** — nested sections must be complete, so build overrides through `makeNaxConfig({ quality: { commands: { lint } } })` (a full config) instead of nesting literals |
+| normalize-row expected values typed loosely | prd/schema | explicit `test.each<[string, Complexity]>` generics; every expected literal is already a union member once the tuple is typed |
+| each()-row illegal values `false` for `cmd` fields | precheck-tier2 ×3 | `false` is not a legal value of the field type; source skip branch is `!cmd \|\| cmd === null`, so falsy/null/undefined share one path — rows now use `undefined` |
+| `(op as any).build/.parse` property-pokes | lint-check, typecheck-check, verify-scoped, mechanical-formatfix | `"build" in op` guards + deterministically-typed locals (mechanical-lintfix precedent); ctx bags rebuilt from the already-drained `-tool-diagnostics` twins |
+| weak-alias deletes on stage config | debate/runner-mode-routing | §8.12's move: `const withoutMode: { mode?: DebateMode } = stageConfig; withoutMode.mode = undefined;` — the runner reads `.mode ?? default`, so explicit undefined ≡ absent key |
+
+**Fixture-value corrections, all assertion-preserving and reported per §4's carve-out:** mock
+send returns gained required `estimatedCostUsd: 0` (`TurnResult` requires it; nothing asserts
+cost) in requote and semantic-retry; lint-check's dep stub returned `format: "text"`, which is
+not an `LintParserFormat` member (`"text"` belongs to the *input* union) → `"text-block"`;
+verify-scoped passed `{ kind: "test", id }` where a real `Finding` is required → replaced with
+the in-file well-formed fixture, and its `resolvedTestPatterns` literal gained the cast-masked
+required `resolution: "per-package"`; coverage-parity dropped a `patterns` key that is not on
+`ResolvedTestPatterns` (the provider reads `resolved.patterns ?? resolved.globs`, so `globs`
+supplies the identical value). The precheck correction touches a value feeding the skip
+branch, so §3's coverage rule fired at integration: floors unaffected.
+
+**Carry forward: even at flattened queue heads, half the population is still assertions doing
+nothing.** Of ~168 sites this batch, the largest single family was *dead casts* — values or
+shapes the declared types already admit (`role-task`'s seven, `pull-tools`' seven, precheck's
+five `null as any`s, mutation-check's `"python"`) — retired by deleting, not by building.
+The standing recipes keep paying, but the first question at each site remains §1's original:
+is this cast doing anything at all? Second carry forward: **a private-member injection site
+with no existing seam is src-blocked** — two failed structural routes plus an assertion-losing
+public redesign is the evidence, and the honest outcome is a held count plus a written seam
+proposal, not a third workaround.
+
+**New top of queue** (biome count per file): `interaction/plugins/cli` 8 (held escalation,
+src-blocked), then seven files tied at 6 — `integration/execution/fullsuite-rectify-declaration`,
+`integration/execution/nbf-rectify-declaration`, `operations/build-hop-callback-stale-retry`,
+`pipeline/stages/acceptance-setup-fingerprint`,
+`pipeline/stages/completion-fragment-capture`, `prompts/builders/critic-builder`,
+`prompts/sections/isolation` — 148 files hold the remaining 380.
