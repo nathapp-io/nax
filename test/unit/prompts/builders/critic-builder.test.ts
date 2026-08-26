@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { makePRD, makeStory } from "@test/helpers";
 import type { FactsManifest } from "@/debate/facts-manifest";
 import type { PRD } from "@/prd";
+import { CriticPromptBuilder } from "@/prompts/builders/critic-builder";
 
 /**
  * CriticPromptBuilder tests — US-003 AC15
@@ -8,15 +10,6 @@ import type { PRD } from "@/prd";
  * Tests for the prompt building logic that the LLM critic uses
  * to audit acceptance criteria testability and failure-mode coverage.
  */
-
-let CriticPromptBuilder: any;
-
-try {
-  const module = require("@/prompts/builders/critic-builder");
-  CriticPromptBuilder = module.CriticPromptBuilder;
-} catch (e) {
-  // Module not yet created; tests will fail appropriately
-}
 
 describe("CriticPromptBuilder", () => {
   describe("build() method", () => {
@@ -113,19 +106,24 @@ describe("CriticPromptBuilder", () => {
     const baseManifest: FactsManifest = { repoFacts: [], specClaims: [], gaps: [] };
 
     test("build() serializes user story IDs into the prompt", () => {
-      const prd: any = {
+      const prd = makePRD({
         feature: "feat-x",
+        branchName: "feat/x",
         userStories: [
-          { id: "US-001", title: "first story", description: "do thing", acceptanceCriteria: ["When X, then Y"] },
-          {
+          makeStory({
+            id: "US-001",
+            title: "first story",
+            description: "do thing",
+            acceptanceCriteria: ["When X, then Y"],
+          }),
+          makeStory({
             id: "US-002",
             title: "second story",
             description: "do other thing",
             acceptanceCriteria: ["When A, then B"],
-          },
+          }),
         ],
-        branchName: "feat/x",
-      };
+      });
       const result = new CriticPromptBuilder().build(prd, baseManifest);
       expect(result.task.content).toContain("US-001");
       expect(result.task.content).toContain("US-002");
@@ -134,17 +132,18 @@ describe("CriticPromptBuilder", () => {
     });
 
     test("build() emits a placeholder when PRD has no user stories", () => {
-      const prd: any = { feature: "feat-empty", userStories: [], branchName: "main" };
+      const prd = makePRD({ feature: "feat-empty", userStories: [], branchName: "main" });
       const result = new CriticPromptBuilder().build(prd, baseManifest);
       expect(result.task.content).toContain("no user stories");
     });
 
     test("build() includes failure-table-enumerated when specContent provided and omits it when empty", () => {
-      const prd: any = {
+      const prd = makePRD({
         feature: "f",
-        userStories: [{ id: "US-001", title: "t", description: "d", acceptanceCriteria: ["When X, then Y"] }],
-        branchName: "main",
-      };
+        userStories: [
+          makeStory({ id: "US-001", title: "t", description: "d", acceptanceCriteria: ["When X, then Y"] }),
+        ],
+      });
 
       const withSpec = new CriticPromptBuilder().build(prd, baseManifest, "## Failure handling\n| row | behaviour |");
       expect(withSpec.task.content).toContain("failure-table-enumerated");
@@ -156,21 +155,23 @@ describe("CriticPromptBuilder", () => {
     });
 
     test("build() includes description-ac-contradiction checklist item", () => {
-      const prd: any = {
+      const prd = makePRD({
         feature: "f",
-        userStories: [{ id: "US-001", title: "t", description: "d", acceptanceCriteria: ["When X, then Y"] }],
-        branchName: "main",
-      };
+        userStories: [
+          makeStory({ id: "US-001", title: "t", description: "d", acceptanceCriteria: ["When X, then Y"] }),
+        ],
+      });
       const result = new CriticPromptBuilder().build(prd, baseManifest);
       expect(result.task.content).toContain("description-ac-contradiction");
     });
 
     test("build() includes ALL manifest spec claims (not capped at 5)", () => {
-      const prd: any = {
+      const prd = makePRD({
         feature: "f",
-        userStories: [{ id: "US-001", title: "t", description: "d", acceptanceCriteria: ["When X, then Y"] }],
-        branchName: "main",
-      };
+        userStories: [
+          makeStory({ id: "US-001", title: "t", description: "d", acceptanceCriteria: ["When X, then Y"] }),
+        ],
+      });
       const specClaims = Array.from({ length: 8 }, (_, i) => ({
         id: `S-${String(i + 1).padStart(3, "0")}`,
         specSpan: `span ${i + 1}`,

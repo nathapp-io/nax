@@ -10,7 +10,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeLogger, makeMockAgentManager, makeSessionManager, waitForCondition } from "@test/helpers";
+import {
+  makeAgentAdapter,
+  makeLogger,
+  makeMockAgentManager,
+  makeMockCallContext,
+  makeMockRuntime,
+  waitForCondition,
+} from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
@@ -22,21 +29,13 @@ function makeCallCtx(
 ): CallContext {
   const { agentManagerOverride, ...rest } = overrides;
   const agentManager = agentManagerOverride ?? makeMockAgentManager();
-  return {
-    runtime: {
-      agentManager,
-      sessionManager: makeSessionManager(),
-      configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
-      packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
-      signal: undefined,
-    } as any,
-    packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
+  return makeMockCallContext({
+    runtime: makeMockRuntime({ agentManager }),
     packageDir: "/tmp/work",
-    agentName: "claude",
     storyId: "US-002",
     featureName: "test",
     ...rest,
-  };
+  });
 }
 
 function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
@@ -75,7 +74,7 @@ describe("DebateRunner.run() — agent resolution", () => {
     const agentManager = makeMockAgentManager({
       getAgentFn: (name: string) => {
         agentCalls.push(name);
-        return {} as any;
+        return makeAgentAdapter();
       },
     });
 

@@ -12,8 +12,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeFinding, makeStory } from "@test/helpers";
+import { makeStory as makeBaseStory, makeFinding } from "@test/helpers";
 import type { Finding } from "@/findings";
+import type { UserStory } from "@/prd";
 import { RectifierPromptBuilder } from "@/prompts";
 import type { ReviewCheckResult } from "@/review";
 
@@ -134,12 +135,12 @@ describe("RectifierPromptBuilder.continuation", () => {
     expect(prompt).toContain("### lint (exit 2)");
   });
 
-  test.each([
+  test.each<[string, ReviewCheckResult[], boolean]>([
     ["present", [makeCheckWithFindings("semantic", "Semantic review failed")], true],
     ["absent", [makeCheck("lint", "some lint error")], false],
-  ] as const)("structured findings when %s", (_label, checks, shouldInclude) => {
+  ])("structured findings when %s", (_label, checks, shouldInclude) => {
     const prompt = RectifierPromptBuilder.continuation(
-      checks as any,
+      checks,
       ...(Object.values(DEFAULTS) as [number, number, number]),
     );
     if (shouldInclude) {
@@ -242,15 +243,13 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
     };
   }
 
-  function makeStory(
-    overrides: Partial<{ id: string; title: string; workdir: string; acceptanceCriteria: string[] }> = {},
-  ) {
-    return {
-      id: overrides.id ?? "US-409",
-      title: overrides.title ?? "Fix deadlock",
-      workdir: overrides.workdir,
-      acceptanceCriteria: overrides.acceptanceCriteria ?? ["AC-1: Does the thing", "AC-2: Handles edge case"],
-    } as any;
+  function makeStory(overrides: Partial<UserStory> = {}) {
+    return makeBaseStory({
+      id: "US-409",
+      title: "Fix deadlock",
+      acceptanceCriteria: ["AC-1: Does the thing", "AC-2: Handles edge case"],
+      ...overrides,
+    });
   }
 
   test("adversarial check: finding message/file/severity, multiple findings, adversarial opener, section label, and spec instruction", () => {
@@ -360,12 +359,11 @@ describe("RectifierPromptBuilder.testWriterRectification — write-failing-test 
   }
 
   function makeStory() {
-    return {
+    return makeBaseStory({
       id: "US-897",
       title: "Incremental Graph Diff",
-      workdir: undefined,
       acceptanceCriteria: ["AC-1: Graph diffs are computed correctly"],
-    } as any;
+    });
   }
 
   test("write-failing-test mode: instructs to write failing test, excludes source-fix language, includes bug details", () => {
@@ -454,12 +452,11 @@ describe("buildEscapeHatch({ includeMockHandoff: true }) — Exception 4", () =>
 
 describe("RectifierPromptBuilder.testWriterRectification — mock-restructure mode", () => {
   function makeStory() {
-    return {
+    return makeBaseStory({
       id: "US-003",
       title: "Restructure mocks",
-      workdir: undefined,
       acceptanceCriteria: ["AC-1: Mocks align with dispatch shape", "AC-2: No source changes"],
-    } as any;
+    });
   }
 
   function makeCheck(check: string, output: string): ReviewCheckResult {
@@ -531,12 +528,11 @@ describe("RectifierPromptBuilder.testWriterRectification — mock-restructure mo
 
 describe("RectifierPromptBuilder.reviewRectification — blocking-only defensive filter", () => {
   function makeStory() {
-    return {
+    return makeBaseStory({
       id: "US-test",
       title: "Test story",
-      workdir: undefined,
       acceptanceCriteria: ["AC-1: Does the thing"],
-    } as any;
+    });
   }
 
   function makeMixedSeverityCheck(): import("@/review/types").ReviewCheckResult {
@@ -571,7 +567,7 @@ describe("RectifierPromptBuilder.reviewRectification — blocking-only defensive
 
 describe("RectifierPromptBuilder.reviewRectification — scope guidance (package-local prerequisite)", () => {
   test("allows package-local prerequisite fixes before classifying a failure as sibling spillover", () => {
-    const story = makeStory({
+    const story = makeBaseStory({
       id: "US-001",
       title: "Prefer const over let in greet()",
       acceptanceCriteria: ["bun run typecheck exits with code 0"],
@@ -646,7 +642,7 @@ describe("RectifierPromptBuilder.failingTestRectification", () => {
 
   // AC-2
   test("three-session TDD story: contains finding message, TEST_EDIT_REASON, and mock_structure", () => {
-    const story = makeStory({
+    const story = makeBaseStory({
       routing: { testStrategy: "three-session-tdd", complexity: "medium", reasoning: "tdd" },
     });
     const result = RectifierPromptBuilder.failingTestRectification([finding], story);
@@ -657,7 +653,7 @@ describe("RectifierPromptBuilder.failingTestRectification", () => {
 
   // AC-3
   test("three-session story: contains loosen assertion guard", () => {
-    const story = makeStory({
+    const story = makeBaseStory({
       routing: { testStrategy: "three-session-tdd", complexity: "medium", reasoning: "tdd" },
     });
     const result = RectifierPromptBuilder.failingTestRectification([finding], story);
@@ -666,7 +662,7 @@ describe("RectifierPromptBuilder.failingTestRectification", () => {
 
   // AC-4
   test("single-session test-after story: contains permit and does not contain mock_structure", () => {
-    const story = makeStory({
+    const story = makeBaseStory({
       routing: { testStrategy: "test-after", complexity: "simple", reasoning: "test-after" },
     });
     const result = RectifierPromptBuilder.failingTestRectification([finding], story);

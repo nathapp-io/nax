@@ -143,7 +143,7 @@ describe("AC8: full-suite-rectify sink integration — test-writer receives mock
         ],
       };
       const mockInput: FullSuiteRectifyInput = { story, findings: [] };
-      await fullSuiteStrategy!.extractApplied!(mockOutput as any, mockInput as any);
+      await fullSuiteStrategy!.extractApplied!(mockOutput, mockInput);
 
       // Set up callOp for the validate re-run (all phases pass).
       _storyOrchestratorDeps.callOp = mock(async () => ({
@@ -171,8 +171,8 @@ describe("AC8: full-suite-rectify sink integration — test-writer receives mock
 
       // AC8: buildInput reflects mock-restructure mode with the handoff file.
       const builtInput = testWriterStrategy!.buildInput([dummyFinding], [], capturedCycleCtx!);
-      expect((builtInput as any).mode).toBe("mock-restructure");
-      expect((builtInput as any).handoffFiles).toContain("test/unit/service.test.ts");
+      expect(builtInput.mode).toBe("mock-restructure");
+      expect(builtInput.handoffFiles).toContain("test/unit/service.test.ts");
     });
   });
 });
@@ -234,7 +234,7 @@ describe("AC9: invalid mock_structure files → diagnostic only, no unclaimable 
       ],
     };
     const mockInput: FullSuiteRectifyInput = { story, findings: [] };
-    await fullSuiteStrategy!.extractApplied!(invalidMockOutput as any, mockInput as any);
+    await fullSuiteStrategy!.extractApplied!(invalidMockOutput, mockInput);
 
     const testWriterStrategy = capturedCycle!.strategies.find((s) => s.name === "autofix-test-writer");
     expect(testWriterStrategy).toBeDefined();

@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeMockCallContext } from "@test/helpers";
+import { makeFinding, makeIteration, makeMockCallContext } from "@test/helpers";
 import { _storyOrchestratorDeps, runPhase } from "@/execution";
 import type { AnySlot } from "@/execution/story-orchestrator";
 import type { Finding, Iteration } from "@/findings";
@@ -19,24 +19,23 @@ import type { Finding, Iteration } from "@/findings";
 function makeSlot(opName: string): AnySlot {
   return {
     op: {
-      kind: "run" as const,
+      kind: "run",
       name: opName,
-      stage: "review" as const,
-      session: { role: "reviewer-semantic" as const, lifetime: "fresh" as const },
-      build: () => ({ prompt: "" }),
+      stage: "review",
+      config: [],
+      session: { role: "reviewer-semantic", lifetime: "fresh" },
+      build: () => ({
+        role: { id: "role", content: "", overridable: false },
+        task: { id: "task", content: "", overridable: false },
+      }),
       parse: () => ({}),
-    } as any,
+    },
     input: {},
   };
 }
 
 function semanticFinding(issue: string): Finding {
-  return {
-    source: "semantic-review",
-    severity: "error",
-    file: "src/thing.ts",
-    message: issue,
-  } as any;
+  return makeFinding({ source: "semantic-review", severity: "error", file: "src/thing.ts", message: issue });
 }
 
 /** Runs one semantic-review phase, returning the input the op was dispatched with. */
@@ -46,13 +45,21 @@ async function dispatchSemanticPhase(
 ): Promise<Record<string, unknown>> {
   const origCallOp = _storyOrchestratorDeps.callOp;
   let seenInput: Record<string, unknown> = {};
-  _storyOrchestratorDeps.callOp = (async (_ctx: unknown, _op: unknown, input: unknown) => {
-    seenInput = input as Record<string, unknown>;
-    return output;
-  }) as any;
+  // The dep slot is generic (<I, O, C>), so Object.assign replaces it without
+  // an assertion while parameter types still derive from the slot.
+  Object.assign(_storyOrchestratorDeps, {
+    callOp: async (
+      _ctx: Parameters<typeof origCallOp>[0],
+      _op: Parameters<typeof origCallOp>[1],
+      input: Parameters<typeof origCallOp>[2],
+    ) => {
+      seenInput = input as Record<string, unknown>;
+      return output;
+    },
+  });
   try {
     const ctx = makeMockCallContext({ storyId: "US-001" });
-    (ctx.runtime as any).semanticIterations = store;
+    Object.assign(ctx.runtime, { semanticIterations: store });
     await runPhase(ctx, makeSlot("semantic-review"), {}, {});
   } finally {
     _storyOrchestratorDeps.callOp = origCallOp;
@@ -63,15 +70,11 @@ async function dispatchSemanticPhase(
 describe("runPhase — semantic-review iteration history", () => {
   test("injects priorSemanticIterations from the runtime store", async () => {
     const store = new Map<string, Iteration[]>();
-    const prior: Iteration = {
-      iterationNum: 1,
-      findingsBefore: [],
-      fixesApplied: [],
+    const prior: Iteration = makeIteration({
       findingsAfter: [semanticFinding("round one finding")],
-      outcome: "fixes-applied",
       startedAt: "2026-08-01T00:00:00.000Z",
       finishedAt: "2026-08-01T00:00:01.000Z",
-    } as any;
+    });
     store.set("US-001", [prior]);
 
     const input = await dispatchSemanticPhase(store, { passed: true, findings: [] });

@@ -1,15 +1,15 @@
 {
   "counts": {
-    "asAny": 311,
+    "asAny": 225,
     "tsSuppress": 40,
     "ratchetAllow": 103,
     "absentValue": 17,
-    "anyType": 389,
-    "looseCast": 1811,
+    "anyType": 289,
+    "looseCast": 1806,
     "asNever": 605,
     "nonNullAssert": 801
   },
-  "updatedAt": "2026-08-26T03:10:42.734Z",
+  "updatedAt": "2026-08-26T04:16:19.490Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -42,10 +42,6 @@
     "test/helpers/config-selector.ts": {
       "looseCast": 1
     },
-    "test/helpers/mutation-check.ts": {
-      "asAny": 3,
-      "anyType": 5
-    },
     "test/helpers/fake-agent-manager.ts": {
       "looseCast": 1
     },
@@ -68,9 +64,7 @@
       "looseCast": 1
     },
     "test/helpers/e2e/orchestrator-harness.ts": {
-      "asAny": 1,
-      "anyType": 3,
-      "looseCast": 6
+      "looseCast": 1
     },
     "test/e2e/scripted-agent.e2e.test.ts": {
       "asNever": 2
@@ -111,8 +105,6 @@
       "looseCast": 2
     },
     "test/integration/execution/fullsuite-rectify-declaration.test.ts": {
-      "asAny": 6,
-      "anyType": 6,
       "looseCast": 9,
       "nonNullAssert": 16
     },
@@ -123,8 +115,6 @@
       "looseCast": 14
     },
     "test/integration/execution/nbf-rectify-declaration.test.ts": {
-      "asAny": 6,
-      "anyType": 6,
       "looseCast": 10,
       "nonNullAssert": 22
     },
@@ -260,10 +250,6 @@
     },
     "test/integration/context/feature-engine-read-path.test.ts": {
       "nonNullAssert": 11
-    },
-    "test/integration/context/context-verification-integration.test.ts": {
-      "asAny": 5,
-      "anyType": 5
     },
     "test/integration/pipeline/pipeline.test.ts": {
       "looseCast": 1,
@@ -426,20 +412,15 @@
       "asNever": 1
     },
     "test/unit/prompts/builder.test.ts": {
-      "asAny": 5,
-      "anyType": 5,
       "looseCast": 3
     },
     "test/unit/prompts/builders/critic-builder.test.ts": {
-      "anyType": 6,
       "looseCast": 3
     },
     "test/unit/prompts/builders/plan-builder.test.ts": {
       "anyType": 1
     },
     "test/unit/prompts/builders/rectifier-builder.test.ts": {
-      "asAny": 5,
-      "anyType": 5,
       "looseCast": 2
     },
     "test/unit/prompts/builders/one-shot-builder.test.ts": {
@@ -451,10 +432,6 @@
     },
     "test/unit/prompts/sections/role-task.test.ts": {
       "looseCast": 3
-    },
-    "test/unit/prompts/sections/isolation.test.ts": {
-      "asAny": 6,
-      "anyType": 6
     },
     "test/unit/prompts/sections/tdd-conventions.test.ts": {
       "asAny": 1,
@@ -915,8 +892,6 @@
       "looseCast": 1
     },
     "test/unit/execution/story-orchestrator/semantic-iteration-wiring.test.ts": {
-      "asAny": 5,
-      "anyType": 5,
       "looseCast": 1
     },
     "test/unit/execution/story-orchestrator/run-phase-telemetry.test.ts": {
@@ -1173,10 +1148,6 @@
       "looseCast": 2,
       "asNever": 11
     },
-    "test/unit/operations/mutation-check-revert.test.ts": {
-      "asAny": 5,
-      "anyType": 5
-    },
     "test/unit/operations/setup-generate.test.ts": {
       "looseCast": 3,
       "asNever": 1
@@ -1248,8 +1219,6 @@
       "anyType": 2
     },
     "test/unit/operations/build-hop-callback-stale-retry.test.ts": {
-      "asAny": 6,
-      "anyType": 6,
       "looseCast": 3,
       "asNever": 3
     },
@@ -1340,9 +1309,7 @@
       "anyType": 4
     },
     "test/unit/debate/session-helpers-resolver-model.test.ts": {
-      "asAny": 5,
       "absentValue": 5,
-      "anyType": 5,
       "looseCast": 1
     },
     "test/unit/debate/prompt-builder.test.ts": {
@@ -1356,10 +1323,6 @@
     },
     "test/unit/debate/session-helpers.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/debate/runner-agent-resolution.test.ts": {
-      "asAny": 5,
-      "anyType": 5
     },
     "test/unit/debate/runner-events.test.ts": {
       "asAny": 4,
@@ -1862,10 +1825,6 @@
     "test/unit/config/dotenv.test.ts": {
       "looseCast": 1
     },
-    "test/unit/config/reporters-schema.test.ts": {
-      "asAny": 5,
-      "anyType": 5
-    },
     "test/unit/config/mutation-check-schema.test.ts": {
       "looseCast": 6
     },
@@ -1933,10 +1892,6 @@
     },
     "test/unit/logger/redact.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/context/context-build.test.ts": {
-      "asAny": 5,
-      "anyType": 5
     },
     "test/unit/context/feature-context.test.ts": {
       "nonNullAssert": 6
@@ -2154,8 +2109,6 @@
       "asNever": 1
     },
     "test/unit/pipeline/stages/acceptance-setup-fingerprint.test.ts": {
-      "asAny": 2,
-      "anyType": 6,
       "nonNullAssert": 7
     },
     "test/unit/pipeline/stages/context-scope-files.test.ts": {
@@ -2179,9 +2132,7 @@
       "looseCast": 10
     },
     "test/unit/pipeline/stages/completion-fragment-capture.test.ts": {
-      "asAny": 6,
       "ratchetAllow": 4,
-      "anyType": 6,
       "looseCast": 1,
       "nonNullAssert": 4
     },
@@ -2221,8 +2172,6 @@
       "looseCast": 6
     },
     "test/unit/pipeline/stages/acceptance-setup-regeneration.test.ts": {
-      "asAny": 5,
-      "anyType": 5,
       "nonNullAssert": 5
     },
     "test/unit/pipeline/stages/autofix-prompts.test.ts": {

@@ -188,8 +188,7 @@ describe("src/prompts/types exports", () => {
   test("PromptRole includes all roles: 4 base + tdd-simple + batch = 6 total", () => {
     const baseRoles: PromptRole[] = ["test-writer", "implementer", "verifier", "single-session"];
     expect(baseRoles).toHaveLength(4);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const withTddSimple: PromptRole[] = [...baseRoles, "tdd-simple" as any];
+    const withTddSimple: PromptRole[] = [...baseRoles, "tdd-simple"];
     expect(withTddSimple).toContain("tdd-simple");
     expect(withTddSimple).toHaveLength(5);
     const withBatch: PromptRole[] = [...withTddSimple, "batch"];
@@ -204,14 +203,10 @@ describe("src/prompts/types exports", () => {
 
 describe("PromptBuilder — tdd-simple role", () => {
   test("returns PromptBuilder instance; non-empty; isolation ok; story + conventions present", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const builder = PromptBuilder.for("tdd-simple" as any);
+    const builder = PromptBuilder.for("tdd-simple");
     expect(builder).toBeInstanceOf(PromptBuilder);
     const story = makeStory({ title: "TDD_SIMPLE_STORY_MARKER" });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any)
-      .story(story)
-      .build();
+    const prompt = await PromptBuilder.for("tdd-simple").story(story).build();
     expect(prompt.length).toBeGreaterThan(0);
     expect(prompt).not.toContain("Only create or modify files in the test/ directory");
     expect(prompt).not.toContain("Do not modify test files");
@@ -223,20 +218,13 @@ describe("PromptBuilder — tdd-simple role", () => {
     ["TDD instructions", "Write failing tests FIRST"],
     ["git commit instruction", "git commit -m"],
   ])("tdd-simple prompt contains %s", async (_label, expected) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any)
-      .story(makeStory())
-      .build();
+    const prompt = await PromptBuilder.for("tdd-simple").story(makeStory()).build();
     expect(prompt).toContain(expected);
   });
 
   test("tdd-simple prompt section order: role task before story before conventions", async () => {
     const story = makeStory({ title: "TDD_SIMPLE_ORDER_MARKER" });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any)
-      .story(story)
-      .constitution("TDD_SIMPLE_CONSTITUTION")
-      .build();
+    const prompt = await PromptBuilder.for("tdd-simple").story(story).constitution("TDD_SIMPLE_CONSTITUTION").build();
 
     const constitutionIdx = prompt.indexOf("TDD_SIMPLE_CONSTITUTION");
     const storyIdx = prompt.indexOf("TDD_SIMPLE_ORDER_MARKER");

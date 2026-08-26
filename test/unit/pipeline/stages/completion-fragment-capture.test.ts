@@ -56,6 +56,12 @@ const DEFAULT_STORY = {
   attempts: 1,
 };
 
+type WriteFragmentArgs = Parameters<typeof _completionDeps.writeFragment>;
+
+function makeWriteMock() {
+  return mock(async (..._args: WriteFragmentArgs) => {});
+}
+
 /** Local wrapper around the shared `makeStory` helper that applies this
  *  story's defaults. Each test passes its own overrides on top. */
 function makeStoryWithDefaults(overrides: Partial<UserStory> = {}): UserStory {
@@ -151,7 +157,7 @@ describe("completionStage — fragment capture (AC1)", () => {
       const prd = makePRDWithStory(story);
       const ctx = makeCtx(fragmentCaptureConfig({ v2Enabled: true, fragmentsEnabled: true }), prd, tempDir);
       _completionDeps.savePRD = mock(async () => {});
-      const writeMock = mock(async () => {});
+      const writeMock = makeWriteMock();
       _completionDeps.writeFragment = writeMock;
       _completionDeps.getDiffFilePaths = mock(async () => new Set<string>());
 
@@ -175,7 +181,7 @@ describe("completionStage — fragment capture (AC2)", () => {
       const prd = makePRDWithStory(story);
       const ctx = makeCtx(fragmentCaptureConfig({ v2Enabled: true, fragmentsEnabled: false }), prd, tempDir);
       _completionDeps.savePRD = mock(async () => {});
-      const writeMock = mock(async () => {});
+      const writeMock = makeWriteMock();
       _completionDeps.writeFragment = writeMock;
       _completionDeps.getDiffFilePaths = mock(async () => new Set<string>());
 
@@ -197,7 +203,7 @@ describe("completionStage — fragment capture (AC3)", () => {
       const prd = makePRDWithStory(story);
       const ctx = makeCtx(fragmentCaptureConfig({ v2Enabled: false, fragmentsEnabled: true }), prd, tempDir);
       _completionDeps.savePRD = mock(async () => {});
-      const writeMock = mock(async () => {});
+      const writeMock = makeWriteMock();
       _completionDeps.writeFragment = writeMock;
       _completionDeps.getDiffFilePaths = mock(async () => new Set<string>());
 
@@ -223,14 +229,14 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
       const prd = makePRDWithStory(story);
       const ctx = makeCtx(fragmentCaptureConfig(), prd, tempDir);
       _completionDeps.savePRD = mock(async () => {});
-      const writeMock = mock(async () => {});
+      const writeMock = makeWriteMock();
       _completionDeps.writeFragment = writeMock;
       _completionDeps.getDiffFilePaths = mock(async () => new Set<string>());
 
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(1);
-      const calls = writeMock.mock.calls as any[];
+      const calls = writeMock.mock.calls;
       const body = calls[0]?.[3];
       expect(body).toContain("Add the fragment store");
     });
@@ -246,14 +252,14 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
       const prd = makePRDWithStory(story);
       const ctx = makeCtx(fragmentCaptureConfig(), prd, tempDir);
       _completionDeps.savePRD = mock(async () => {});
-      const writeMock = mock(async () => {});
+      const writeMock = makeWriteMock();
       _completionDeps.writeFragment = writeMock;
       _completionDeps.getDiffFilePaths = mock(async () => new Set<string>());
 
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(1);
-      const calls = writeMock.mock.calls as any[];
+      const calls = writeMock.mock.calls;
       const body = calls[0]?.[3];
       expect(body).toContain("First criterion");
       expect(body).toContain("Second criterion");
@@ -268,14 +274,14 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
       const ctx = makeCtx(fragmentCaptureConfig(), prd, tempDir);
       _completionDeps.savePRD = mock(async () => {});
 
-      const writeMock = mock(async () => {});
+      const writeMock = makeWriteMock();
       _completionDeps.writeFragment = writeMock;
       _completionDeps.getDiffFilePaths = mock(async () => new Set(["src/foo.ts", "src/bar.ts"]));
 
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(1);
-      const calls = writeMock.mock.calls as any[];
+      const calls = writeMock.mock.calls;
       const body = calls[0]?.[3];
       expect(body).toContain("src/foo.ts");
       expect(body).toContain("src/bar.ts");
@@ -291,14 +297,14 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
       const ctx = makeCtx(fragmentCaptureConfig(), prd, tempDir);
       _completionDeps.savePRD = mock(async () => {});
 
-      const writeMock = mock(async () => {});
+      const writeMock = makeWriteMock();
       _completionDeps.writeFragment = writeMock;
       _completionDeps.getDiffFilePaths = mock(async () => new Set(["src/foo.ts", "src/gone.ts", "src/new.ts"]));
 
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(1);
-      const calls = writeMock.mock.calls as any[];
+      const calls = writeMock.mock.calls;
       const body = calls[0]?.[3];
       expect(body).toContain("src/foo.ts");
       expect(body).toContain("src/gone.ts");
@@ -326,14 +332,14 @@ describe("completionStage — fragment capture body (AC4–6)", () => {
         paths.add(`src/file-${i.toString().padStart(4, "0")}.ts`);
       }
 
-      const writeMock = mock(async () => {});
+      const writeMock = makeWriteMock();
       _completionDeps.writeFragment = writeMock;
       _completionDeps.getDiffFilePaths = mock(async () => paths);
 
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(1);
-      const calls = writeMock.mock.calls as any[];
+      const calls = writeMock.mock.calls;
       const body = calls[0]?.[3] as string;
       // Spot-check the first and last file paths appear in the body.
       expect(body).toContain("src/file-0000.ts");
@@ -399,7 +405,7 @@ describe("completionStage — fragment capture on re-run (AC8)", () => {
       const prd = makePRDWithStory(story);
       const ctx = makeCtx(fragmentCaptureConfig(), prd, tempDir);
       _completionDeps.savePRD = mock(async () => {});
-      const writeMock = mock(async () => {});
+      const writeMock = makeWriteMock();
       _completionDeps.writeFragment = writeMock;
       _completionDeps.getDiffFilePaths = mock(async () => new Set<string>());
 
@@ -411,7 +417,7 @@ describe("completionStage — fragment capture on re-run (AC8)", () => {
       await completionStage.execute(ctx);
 
       expect(writeMock).toHaveBeenCalledTimes(2);
-      const calls = writeMock.mock.calls as any[];
+      const calls = writeMock.mock.calls;
       expect(calls[0]?.[2]).toBe("US-001");
       expect(calls[1]?.[2]).toBe("US-001");
     });
