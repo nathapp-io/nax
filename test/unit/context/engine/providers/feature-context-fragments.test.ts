@@ -18,7 +18,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { assertDefined, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 import type { NaxConfig } from "@/config/types";
 import { _featureContextV2Deps, FeatureContextProviderV2 } from "@/context/engine";
 import type { ContextRequest, RawChunk } from "@/context/engine/types";
@@ -220,11 +220,11 @@ describe("FeatureContextProviderV2 US-003 — fragment dependency walk", () => {
     const f = fragmentChunks(result.chunks);
     const bChunk = f.find((chunk) => chunk.id === "feature-fragment:US-002");
     const cChunk = f.find((chunk) => chunk.id === "feature-fragment:US-003");
-    expect(bChunk).toBeDefined();
-    expect(cChunk).toBeDefined();
-    expect(bChunk!.rawScore).toBeCloseTo(0.6, 5);
-    expect(cChunk!.rawScore).toBeCloseTo(0.36, 5);
-    expect(cChunk!.rawScore).toBeLessThan(bChunk!.rawScore);
+    assertDefined(bChunk, "US-002 fragment chunk");
+    assertDefined(cChunk, "US-003 fragment chunk");
+    expect(bChunk.rawScore).toBeCloseTo(0.6, 5);
+    expect(cChunk.rawScore).toBeCloseTo(0.36, 5);
+    expect(cChunk.rawScore).toBeLessThan(bChunk.rawScore);
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -253,7 +253,7 @@ describe("FeatureContextProviderV2 US-003 — fragment dependency walk", () => {
 
     const f = fragmentChunks(result.chunks);
     expect(f).toHaveLength(1);
-    const dChunk = f[0]!;
+    const dChunk = f[0];
     expect(dChunk.id).toBe("feature-fragment:US-D");
     // D via C: A → C → D = distance 2 (shorter); via B: A → X → B → D = distance 3.
     // rawScore = decay^2 = 0.36.
@@ -282,7 +282,8 @@ describe("FeatureContextProviderV2 US-003 — fragment dependency walk", () => {
       raised = err;
     }
     expect(raised).toBeNull();
-    const f = fragmentChunks(result!.chunks);
+    assertDefined(result, "fetch result after cycle walk");
+    const f = fragmentChunks(result.chunks);
     expect(f).toHaveLength(1);
     expect(f[0]?.id).toBe("feature-fragment:US-002");
   });
@@ -314,15 +315,15 @@ describe("FeatureContextProviderV2 US-003 — fragment dependency walk", () => {
     const bChunk = f.find((chunk) => chunk.id === "feature-fragment:US-B");
     const cChunk = f.find((chunk) => chunk.id === "feature-fragment:US-C");
     const dChunk = f.find((chunk) => chunk.id === "feature-fragment:US-D");
-    expect(bChunk).toBeDefined();
-    expect(cChunk).toBeDefined();
-    expect(dChunk).toBeDefined();
+    assertDefined(bChunk, "US-B fragment chunk");
+    assertDefined(cChunk, "US-C fragment chunk");
+    assertDefined(dChunk, "US-D fragment chunk");
     // distance 1: 0.6^1 = 0.6
-    expect(bChunk!.rawScore).toBeCloseTo(0.6, 5);
+    expect(bChunk.rawScore).toBeCloseTo(0.6, 5);
     // distance 2: 0.6^2 = 0.36
-    expect(cChunk!.rawScore).toBeCloseTo(0.36, 5);
+    expect(cChunk.rawScore).toBeCloseTo(0.36, 5);
     // distance 3: 0.6^3 = 0.216
-    expect(dChunk!.rawScore).toBeCloseTo(0.216, 5);
+    expect(dChunk.rawScore).toBeCloseTo(0.216, 5);
   });
 
   // ─────────────────────────────────────────────────────────────────────────

@@ -27,6 +27,18 @@ afterEach(async () => {
   createdRuntimes.length = 0;
 });
 
+/** Drive the run request's optional executeHop callback, failing loudly if absent. */
+async function runPrimaryHop(req: AgentRunRequest) {
+  assertDefined(req.executeHop, "AgentRunRequest.executeHop");
+  return req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
+}
+
+/** Run planRefineOp's optional hopBody("init") turn, failing loudly if absent. */
+async function hopBodyInit(ctx: HopBodyContext<PlanRefineInput>) {
+  assertDefined(planRefineOp.hopBody, "planRefineOp.hopBody");
+  return planRefineOp.hopBody("init", ctx);
+}
+
 function makeValidPrd(feature: string, branchName: string) {
   return {
     project: "test-project",
@@ -188,7 +200,7 @@ describe("planRefineOp.hopBody()", () => {
 
       const agentManager = makeMockAgentManager({
         runWithFallbackFn: async (req: AgentRunRequest) => {
-          const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+          const hopResult = await runPrimaryHop(req);
           return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
         },
         runAsSessionFn: async (_agentName, _handle, prompt) => {
@@ -248,7 +260,7 @@ describe("planRefineOp.hopBody()", () => {
 
       const agentManager = makeMockAgentManager({
         runWithFallbackFn: async (req: AgentRunRequest) => {
-          const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+          const hopResult = await runPrimaryHop(req);
           return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
         },
         runAsSessionFn: async (_agentName, _handle, prompt) => {
@@ -345,7 +357,7 @@ describe("planRefineOp.hopBody — specGuard spec-drift repair turn", () => {
     const driftSpy = spyOn(PlanPromptBuilder.prototype, "buildSpecDriftRepair").mockReturnValue("DRIFT-REPAIR");
     const { ctx, send } = makeCtx(true);
 
-    const result = await planRefineOp.hopBody!("init", ctx);
+    const result = await hopBodyInit(ctx);
 
     expect(send).toHaveBeenCalledTimes(2); // refine + drift repair
     expect(driftSpy).toHaveBeenCalledTimes(1);
@@ -359,7 +371,7 @@ describe("planRefineOp.hopBody — specGuard spec-drift repair turn", () => {
     const driftSpy = spyOn(PlanPromptBuilder.prototype, "buildSpecDriftRepair");
     const { ctx, send } = makeCtx(true);
 
-    const result = await planRefineOp.hopBody!("init", ctx);
+    const result = await hopBodyInit(ctx);
 
     expect(send).toHaveBeenCalledTimes(1); // refine only
     expect(driftSpy).not.toHaveBeenCalled();
@@ -372,7 +384,7 @@ describe("planRefineOp.hopBody — specGuard spec-drift repair turn", () => {
     const driftSpy = spyOn(PlanPromptBuilder.prototype, "buildSpecDriftRepair");
     const { ctx, send } = makeCtx(false);
 
-    await planRefineOp.hopBody!("init", ctx);
+    await hopBodyInit(ctx);
 
     expect(send).toHaveBeenCalledTimes(1); // refine only
     expect(driftSpy).not.toHaveBeenCalled();
@@ -603,7 +615,8 @@ describe("normalizeCreatedContextFiles — move absent reads to expectedFiles", 
         userStories: Array<{ id: string; contextFiles?: unknown[]; expectedFiles?: string[] }>;
       };
 
-      const b = out.userStories.find((s) => s.id === "US-002")!;
+      const b = out.userStories.find((s) => s.id === "US-002");
+      assertDefined(b, "US-002 story");
       // Kept as a read hint — NOT moved to expectedFiles (US-002 reads it but does not author it).
       expect(b.contextFiles).toEqual(["src/Card.tsx"]);
       expect(b.expectedFiles).toEqual(["src/Badge.tsx"]);
@@ -628,7 +641,8 @@ describe("normalizeCreatedContextFiles — move absent reads to expectedFiles", 
         userStories: Array<{ id: string; contextFiles?: unknown[]; expectedFiles?: string[] }>;
       };
 
-      const b = out.userStories.find((s) => s.id === "US-002")!;
+      const b = out.userStories.find((s) => s.id === "US-002");
+      assertDefined(b, "US-002 story");
       expect(b.contextFiles ?? []).toEqual([]);
       expect(b.expectedFiles).toEqual(["src/own.tsx"]);
     });
@@ -656,8 +670,10 @@ describe("normalizeCreatedContextFiles — move absent reads to expectedFiles", 
       };
 
       expect(out).not.toBe(prd as never); // a story changed → new PRD object
-      const a = out.userStories.find((s) => s.id === "US-001")!;
-      const b = out.userStories.find((s) => s.id === "US-002")!;
+      const a = out.userStories.find((s) => s.id === "US-001");
+      const b = out.userStories.find((s) => s.id === "US-002");
+      assertDefined(a, "US-001 story");
+      assertDefined(b, "US-002 story");
       // Unchanged story keeps its original object reference (no needless copy).
       expect(a).toBe(s0 as never);
       expect(a.contextFiles).toEqual(["src/real.ts"]);

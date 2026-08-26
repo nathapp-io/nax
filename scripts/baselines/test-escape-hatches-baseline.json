@@ -7,9 +7,9 @@
     "anyType": 10,
     "looseCast": 1800,
     "asNever": 603,
-    "nonNullAssert": 366
+    "nonNullAssert": 295
   },
-  "updatedAt": "2026-08-26T11:04:32.602Z",
+  "updatedAt": "2026-08-26T11:32:22.495Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -36,8 +36,7 @@
       "looseCast": 3
     },
     "test/helpers/mock-agent-manager.ts": {
-      "looseCast": 1,
-      "nonNullAssert": 1
+      "looseCast": 1
     },
     "test/helpers/config-selector.ts": {
       "looseCast": 1
@@ -314,9 +313,6 @@
     "test/unit/replay/discovery.test.ts": {
       "looseCast": 2
     },
-    "test/unit/replay/reconstruct.test.ts": {
-      "nonNullAssert": 10
-    },
     "test/unit/replay/report.test.ts": {
       "nonNullAssert": 4
     },
@@ -431,9 +427,6 @@
       "looseCast": 8,
       "nonNullAssert": 1
     },
-    "test/unit/review/adversarial-pass-fail.test.ts": {
-      "nonNullAssert": 8
-    },
     "test/unit/review/ac-quote-validator.test.ts": {
       "looseCast": 2
     },
@@ -519,8 +512,7 @@
       "ratchetAllow": 1
     },
     "test/unit/execution/build-plan-for-strategy-triage-assembly.test.ts": {
-      "asNever": 8,
-      "nonNullAssert": 10
+      "asNever": 8
     },
     "test/unit/execution/rectification-overrides.test.ts": {
       "asNever": 1
@@ -784,8 +776,7 @@
     },
     "test/unit/execution/lifecycle/acceptance-loop-cycle.test.ts": {
       "looseCast": 8,
-      "asNever": 5,
-      "nonNullAssert": 9
+      "asNever": 5
     },
     "test/unit/execution/lifecycle/run-setup.test.ts": {
       "asNever": 1,
@@ -806,9 +797,6 @@
     "test/unit/execution/checkpoint/writer.test.ts": {
       "looseCast": 4
     },
-    "test/unit/execution/checkpoint/resume-hydrate.test.ts": {
-      "nonNullAssert": 10
-    },
     "test/unit/findings/_cycle-fixtures.ts": {
       "looseCast": 1,
       "asNever": 1
@@ -816,9 +804,6 @@
     "test/unit/findings/cycle.test.ts": {
       "ratchetAllow": 1,
       "nonNullAssert": 2
-    },
-    "test/unit/findings/cycle-iteration-log.test.ts": {
-      "nonNullAssert": 10
     },
     "test/unit/findings/adapters/acceptance-diagnose.test.ts": {
       "looseCast": 1
@@ -909,8 +894,7 @@
     },
     "test/unit/operations/plan-refine.test.ts": {
       "looseCast": 1,
-      "asNever": 23,
-      "nonNullAssert": 4
+      "asNever": 23
     },
     "test/unit/operations/call-exhaustion.test.ts": {
       "looseCast": 6
@@ -1671,8 +1655,7 @@
       "looseCast": 1
     },
     "test/unit/context/engine/providers/feature-context-fragments.test.ts": {
-      "looseCast": 6,
-      "nonNullAssert": 9
+      "looseCast": 6
     },
     "test/unit/context/engine/providers/code-neighbor-size-cap.test.ts": {
       "looseCast": 1

@@ -31,7 +31,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeSpawn, makeSpawnResult, type SpawnStub } from "@test/helpers";
+import { assertDefined, makeSpawn, makeSpawnResult, type SpawnStub } from "@test/helpers";
 import {
   buildCheckpointLogData,
   buildResumePlan,
@@ -102,7 +102,8 @@ afterEach(() => {
 describe("captureTreeState (AC8)", () => {
   test("AC8: returns a TreeState whose headSha equals captureGitRef's value", async () => {
     // captureGitRef runs `git rev-parse HEAD` — fake that to return the sha.
-    const state = await captureTreeState(tempDir!, {
+    assertDefined(tempDir, "tempDir");
+    const state = await captureTreeState(tempDir, {
       _deps: treeDeps(makeSpawn(() => "deadbeef-head-sha\n")),
     });
     expect(state.headSha).toBe("deadbeef-head-sha");
@@ -118,7 +119,8 @@ describe("captureTreeState (AC8)", () => {
     });
     const deps = treeDeps(stub);
 
-    const state = await captureTreeState(tempDir!, { _deps: deps });
+    assertDefined(tempDir, "tempDir");
+    const state = await captureTreeState(tempDir, { _deps: deps });
 
     // Must have called both `git rev-parse HEAD` and `git status --porcelain`.
     const calledRevParse = capturedArgs.some((a) => a.includes("rev-parse") && a.includes("HEAD"));
@@ -133,7 +135,7 @@ describe("captureTreeState (AC8)", () => {
     expect(typeof state.dirtyDigest).toBe("string");
     expect(state.dirtyDigest.length).toBeGreaterThan(0);
 
-    const repeated = await captureTreeState(tempDir!, { _deps: deps });
+    const repeated = await captureTreeState(tempDir, { _deps: deps });
     expect(repeated.dirtyDigest).toBe(state.dirtyDigest);
   });
 
@@ -148,10 +150,11 @@ describe("captureTreeState (AC8)", () => {
     });
     const deps = treeDeps(stub);
 
-    const dirty = await captureTreeState(tempDir!, { _deps: deps });
+    assertDefined(tempDir, "tempDir");
+    const dirty = await captureTreeState(tempDir, { _deps: deps });
     dirtyOutput = "";
     callIndex = 0;
-    const clean = await captureTreeState(tempDir!, { _deps: deps });
+    const clean = await captureTreeState(tempDir, { _deps: deps });
     expect(clean.dirtyDigest).not.toBe(dirty.dirtyDigest);
   });
 
@@ -180,13 +183,14 @@ describe("captureTreeState (AC8)", () => {
     });
     const deps = treeDeps(stub);
 
-    const first = await captureTreeState(tempDir!, { _deps: deps });
+    assertDefined(tempDir, "tempDir");
+    const first = await captureTreeState(tempDir, { _deps: deps });
 
     // Simulate the escalated agent rewriting the same already-modified file:
     // `git status --porcelain` is unchanged (still just " M src/foo.ts"),
     // but the actual diff content differs.
     diffOutput = "diff --git a/src/foo.ts b/src/foo.ts\n-old line\n+new line v2 (rewritten by escalated agent)\n";
-    const second = await captureTreeState(tempDir!, { _deps: deps });
+    const second = await captureTreeState(tempDir, { _deps: deps });
 
     expect(first.dirtyDigest).not.toBe(second.dirtyDigest);
   });
@@ -218,12 +222,13 @@ describe("captureTreeState (AC8)", () => {
     });
     const deps = treeDeps(stub);
 
-    const first = await captureTreeState(tempDir!, { _deps: deps });
+    assertDefined(tempDir, "tempDir");
+    const first = await captureTreeState(tempDir, { _deps: deps });
 
     // The agent rewrites the same untracked file: identical status line, still
     // absent from both diffs, but git's content hash for it changes.
     untrackedBlobSha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n";
-    const second = await captureTreeState(tempDir!, { _deps: deps });
+    const second = await captureTreeState(tempDir, { _deps: deps });
 
     expect(first.dirtyDigest).not.toBe(second.dirtyDigest);
   });
@@ -265,9 +270,11 @@ describe("captureTreeState (AC8)", () => {
     // the helper is allowed to spend.
     const TEST_CALL_TIMEOUT_MS = 50;
     const RACE_CEILING_MS = 1000;
+    assertDefined(tempDir, "tempDir");
+    const workdir = tempDir;
     const timedCapture = async (): Promise<TreeState | "TIMEOUT"> => {
       return Promise.race<Promise<TreeState> | Promise<"TIMEOUT">>([
-        captureTreeState(tempDir!, { _deps: treeDeps(stub, TEST_CALL_TIMEOUT_MS) }),
+        captureTreeState(workdir, { _deps: treeDeps(stub, TEST_CALL_TIMEOUT_MS) }),
         new Promise<"TIMEOUT">((resolve) => setTimeout(() => resolve("TIMEOUT"), RACE_CEILING_MS)),
       ]);
     };

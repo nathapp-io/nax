@@ -5,7 +5,7 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import { makeLogger } from "@test/helpers";
+import { assertDefined, makeLogger } from "@test/helpers";
 import type { Finding, FixCycle } from "@/findings";
 import { findingKey, recordIteration } from "@/findings";
 
@@ -174,8 +174,10 @@ describe("recordIteration — storyId first key (AC6)", () => {
     );
 
     const call = logger.calls.find((c) => c.stage === "findings.cycle" && c.message === "iteration completed");
-    expect(call?.data).toBeDefined();
-    expect(Object.keys(call!.data!)[0]).toBe("storyId");
+    assertDefined(call, "log entry");
+    const data = call.data;
+    assertDefined(data, "entry data");
+    expect(Object.keys(data)[0]).toBe("storyId");
   });
 
   test("storyId is still the first key when ctx does not supply one", () => {
@@ -195,8 +197,10 @@ describe("recordIteration — storyId first key (AC6)", () => {
     );
 
     const call = logger.calls.find((c) => c.stage === "findings.cycle" && c.message === "iteration completed");
-    expect(call?.data).toBeDefined();
-    expect(Object.keys(call!.data!)[0]).toBe("storyId");
+    assertDefined(call, "log entry");
+    const data = call.data;
+    assertDefined(data, "entry data");
+    expect(Object.keys(data)[0]).toBe("storyId");
   });
 });
 
@@ -435,8 +439,10 @@ describe("recordIteration — no fixTargetFiles when fixesApplied empty (US-002 
       logger,
     );
     const call = recordCall(logger);
-    expect(call?.data).toBeDefined();
-    expect(Object.prototype.hasOwnProperty.call(call!.data!, "fixTargetFiles")).toBe(false);
+    assertDefined(call, "log entry");
+    const data = call.data;
+    assertDefined(data, "entry data");
+    expect(Object.prototype.hasOwnProperty.call(data, "fixTargetFiles")).toBe(false);
   });
 });
 
@@ -457,8 +463,10 @@ describe("recordIteration — no fixSummaries when fixesApplied empty (US-002 AC
       logger,
     );
     const call = recordCall(logger);
-    expect(call?.data).toBeDefined();
-    expect(Object.prototype.hasOwnProperty.call(call!.data!, "fixSummaries")).toBe(false);
+    assertDefined(call, "log entry");
+    const data = call.data;
+    assertDefined(data, "entry data");
+    expect(Object.prototype.hasOwnProperty.call(data, "fixSummaries")).toBe(false);
   });
 });
 
@@ -504,7 +512,9 @@ describe("recordIteration — costUsd omission (US-002 AC11)", () => {
       logger,
     );
     const call = recordCall(logger);
-    expect(call?.data).toBeDefined();
-    expect(Object.prototype.hasOwnProperty.call(call!.data!, "costUsd")).toBe(false);
+    assertDefined(call, "log entry");
+    const data = call.data;
+    assertDefined(data, "entry data");
+    expect(Object.prototype.hasOwnProperty.call(data, "costUsd")).toBe(false);
   });
 });

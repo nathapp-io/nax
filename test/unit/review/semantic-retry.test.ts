@@ -51,6 +51,18 @@ const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
 
 const PASSING_LLM_RESPONSE = JSON.stringify({ passed: true, findings: [] });
 
+/** Drive the run request's optional executeHop callback, failing loudly if absent. */
+async function runPrimaryHop(req: AgentRunRequest) {
+  assertDefined(req.executeHop, "AgentRunRequest.executeHop");
+  return req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
+}
+
+/** Run semanticReviewOp's optional hopBody("initial prompt") turn, failing loudly if absent. */
+async function hopBodyInitial(ctx: HopBodyContext<SemanticReviewInput>) {
+  assertDefined(semanticReviewOp.hopBody, "semanticReviewOp.hopBody");
+  return semanticReviewOp.hopBody("initial prompt", ctx);
+}
+
 // ─── Logger mock helpers ─────────────────────────────────────────────────────
 
 interface LogCall {
@@ -244,7 +256,9 @@ describe("runSemanticReview — JSON retry outcomes", () => {
 
     expect(result.success).toBe(false);
     expect(result.findings).toHaveLength(1);
-    expect(result.findings![0].source).toBe("semantic-review");
+    const findings = result.findings;
+    assertDefined(findings, "semantic review findings");
+    expect(findings[0].source).toBe("semantic-review");
   });
 
   test("returns fail-open when callOp throws", async () => {
@@ -375,7 +389,7 @@ describe("semanticReviewOp — retry behaviour (callOp integration)", () => {
     let sessionCallCount = 0;
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const hopResult = await runPrimaryHop(req);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => {
@@ -404,7 +418,7 @@ describe("semanticReviewOp — retry behaviour (callOp integration)", () => {
     let sessionCallCount = 0;
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const hopResult = await runPrimaryHop(req);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => {
@@ -433,7 +447,7 @@ describe("semanticReviewOp — retry behaviour (callOp integration)", () => {
     let sessionCallCount = 0;
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        const hopResult = await runPrimaryHop(req);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => {
@@ -498,8 +512,7 @@ describe("semanticReviewOp.hopBody — same-session requote", () => {
         };
       });
 
-      const { semanticReviewOp } = await import("@/operations");
-      const result = await semanticReviewOp.hopBody!("initial prompt", {
+      const result = await hopBodyInitial({
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -508,7 +521,7 @@ describe("semanticReviewOp.hopBody — same-session requote", () => {
           semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
           mode: "ref",
         },
-      } satisfies HopBodyContext<SemanticReviewInput>);
+      });
 
       const parsed = JSON.parse(result.output);
       expect(callCount).toBe(2);
@@ -550,8 +563,7 @@ describe("semanticReviewOp.hopBody — same-session requote", () => {
         };
       });
 
-      const { semanticReviewOp } = await import("@/operations");
-      const result = await semanticReviewOp.hopBody!("initial prompt", {
+      const result = await hopBodyInitial({
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -560,7 +572,7 @@ describe("semanticReviewOp.hopBody — same-session requote", () => {
           semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
           mode: "ref",
         },
-      } satisfies HopBodyContext<SemanticReviewInput>);
+      });
 
       const parsed = JSON.parse(result.output);
       expect(callCount).toBe(2);
@@ -616,8 +628,7 @@ describe("semanticReviewOp.hopBody — requote recovery regressions", () => {
         };
       });
 
-      const { semanticReviewOp } = await import("@/operations");
-      const result = await semanticReviewOp.hopBody!("initial prompt", {
+      const result = await hopBodyInitial({
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -626,7 +637,7 @@ describe("semanticReviewOp.hopBody — requote recovery regressions", () => {
           semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
           mode: "ref",
         },
-      } satisfies HopBodyContext<SemanticReviewInput>);
+      });
 
       const parsed = JSON.parse(result.output);
       expect(callCount).toBe(2);
@@ -668,8 +679,7 @@ describe("semanticReviewOp.hopBody — requote recovery regressions", () => {
         };
       });
 
-      const { semanticReviewOp } = await import("@/operations");
-      const result = await semanticReviewOp.hopBody!("initial prompt", {
+      const result = await hopBodyInitial({
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -678,7 +688,7 @@ describe("semanticReviewOp.hopBody — requote recovery regressions", () => {
           semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
           mode: "ref",
         },
-      } satisfies HopBodyContext<SemanticReviewInput>);
+      });
 
       const parsed = JSON.parse(result.output);
       expect(callCount).toBe(2);
@@ -733,8 +743,7 @@ describe("semanticReviewOp.hopBody — requote recovery regressions", () => {
         };
       });
 
-      const { semanticReviewOp } = await import("@/operations");
-      const result = await semanticReviewOp.hopBody!("initial prompt", {
+      const result = await hopBodyInitial({
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -743,7 +752,7 @@ describe("semanticReviewOp.hopBody — requote recovery regressions", () => {
           semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
           mode: "ref",
         },
-      } satisfies HopBodyContext<SemanticReviewInput>);
+      });
 
       const parsed = JSON.parse(result.output);
       expect(callCount).toBe(2);

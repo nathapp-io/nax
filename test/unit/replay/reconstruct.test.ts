@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import type { NaxStatusFile } from "@/execution/status-file";
 import type { LogEntry } from "@/logger/types";
 import type { RunMetrics, StoryMetrics } from "@/metrics/types";
@@ -188,7 +189,8 @@ describe("reconstructTimeline — AC8: StoryTimeline fields from StoryMetrics", 
     const metrics = buildRunMetrics({ runId: "run-001", feature: "feat-x", stories: [sm] });
 
     const tl = reconstructTimeline({ entries: [], runMetrics: metrics, meta: { runId: "run-001", feature: "feat-x" } });
-    const story: StoryTimeline = tl.stories[0]!;
+    const story: StoryTimeline = tl.stories[0];
+    assertDefined(story, "tl.stories[0]");
 
     expect(story.status).toBe("passed");
   });
@@ -198,7 +200,8 @@ describe("reconstructTimeline — AC8: StoryTimeline fields from StoryMetrics", 
     const metrics = buildRunMetrics({ runId: "run-001", feature: "feat-x", stories: [sm] });
 
     const tl = reconstructTimeline({ entries: [], runMetrics: metrics, meta: { runId: "run-001", feature: "feat-x" } });
-    const story = tl.stories[0]!;
+    const story = tl.stories[0];
+    assertDefined(story, "tl.stories[0]");
 
     expect(story.finalTier).toBe("balanced");
   });
@@ -208,7 +211,8 @@ describe("reconstructTimeline — AC8: StoryTimeline fields from StoryMetrics", 
     const metrics = buildRunMetrics({ runId: "run-001", feature: "feat-x", stories: [sm] });
 
     const tl = reconstructTimeline({ entries: [], runMetrics: metrics, meta: { runId: "run-001", feature: "feat-x" } });
-    const story = tl.stories[0]!;
+    const story = tl.stories[0];
+    assertDefined(story, "tl.stories[0]");
 
     expect(story.cost).toBe(0.42);
   });
@@ -218,7 +222,8 @@ describe("reconstructTimeline — AC8: StoryTimeline fields from StoryMetrics", 
     const metrics = buildRunMetrics({ runId: "run-001", feature: "feat-x", stories: [sm] });
 
     const tl = reconstructTimeline({ entries: [], runMetrics: metrics, meta: { runId: "run-001", feature: "feat-x" } });
-    const story = tl.stories[0]!;
+    const story = tl.stories[0];
+    assertDefined(story, "tl.stories[0]");
 
     expect(story.attempts).toBe(2);
   });
@@ -228,7 +233,8 @@ describe("reconstructTimeline — AC8: StoryTimeline fields from StoryMetrics", 
     const metrics = buildRunMetrics({ runId: "run-001", feature: "feat-x", stories: [sm] });
 
     const tl = reconstructTimeline({ entries: [], runMetrics: metrics, meta: { runId: "run-001", feature: "feat-x" } });
-    const story = tl.stories[0]!;
+    const story = tl.stories[0];
+    assertDefined(story, "tl.stories[0]");
 
     expect({
       status: story.status,
@@ -308,10 +314,10 @@ describe("reconstructTimeline — AC10: rootCausePhaseIndex", () => {
     const tl = reconstructTimeline({ entries, runMetrics: metrics, meta: { runId: "run-001", feature: "feat-x" } });
     const story = tl.stories.find((s) => s.storyId === "US-002");
 
-    expect(story).toBeDefined();
-    const failedIndex = story!.phases.findIndex((p) => p.status === "fail");
+    assertDefined(story, "US-002 timeline");
+    const failedIndex = story.phases.findIndex((p) => p.status === "fail");
     expect(failedIndex).toBeGreaterThanOrEqual(0);
-    expect(story!.rootCausePhaseIndex).toBe(failedIndex);
+    expect(story.rootCausePhaseIndex).toBe(failedIndex);
   });
 
   test("AC10: failed story with full-suite-gate as the last inferred phase has rootCausePhaseIndex = last index", () => {
@@ -324,10 +330,13 @@ describe("reconstructTimeline — AC10: rootCausePhaseIndex", () => {
     ];
 
     const tl = reconstructTimeline({ entries, runMetrics: metrics, meta: { runId: "run-001", feature: "feat-x" } });
-    const story = tl.stories.find((s) => s.storyId === "US-002")!;
+    const story = tl.stories.find((s) => s.storyId === "US-002");
+    assertDefined(story, "US-002 timeline");
 
     expect(story.rootCausePhaseIndex).toBe(story.phases.length - 1);
-    expect(story.phases[story.rootCausePhaseIndex!]!.status).toBe("fail");
+    const rootCausePhaseIndex = story.rootCausePhaseIndex;
+    assertDefined(rootCausePhaseIndex, "story.rootCausePhaseIndex");
+    expect(story.phases[rootCausePhaseIndex].status).toBe("fail");
   });
 });
 

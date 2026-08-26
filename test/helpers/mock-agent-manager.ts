@@ -159,17 +159,24 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
   const unavailable = opts.unavailableAgents ?? new Set<string>();
   const defaultAdapter = makeAgentAdapter();
 
-  const runFn = opts.runWithFallbackFn
+  // Hoisted into consts so the ternary guards below narrow inside the mock
+  // closures — narrowing does not survive a property access captured by a
+  // closure, but it does survive a const.
+  const runWithFallbackOverride = opts.runWithFallbackFn;
+  const runOverride = opts.runFn;
+  const completeOverride = opts.completeFn;
+
+  const runFn = runWithFallbackOverride
     ? mock(async (req: AgentRunRequest) => {
-        const outcome = await opts.runWithFallbackFn!(req);
+        const outcome = await runWithFallbackOverride(req);
         return { ...outcome.result, agentFallbacks: outcome.fallbacks };
       })
-    : opts.runFn
-      ? mock((req: AgentRunRequest) => opts.runFn!(opts.getDefaultAgent ?? "claude", req.runOptions))
+    : runOverride
+      ? mock((req: AgentRunRequest) => runOverride(opts.getDefaultAgent ?? "claude", req.runOptions))
       : mock(() => Promise.resolve({ ...DEFAULT_RESULT, agentFallbacks: [] }));
 
-  const completeFn = opts.completeFn
-    ? mock((prompt: string, completeOpts?: CompleteOptions) => opts.completeFn!("claude", prompt, completeOpts))
+  const completeFn = completeOverride
+    ? mock((prompt: string, completeOpts?: CompleteOptions) => completeOverride("claude", prompt, completeOpts))
     : mock(() =>
         Promise.resolve({
           output: "",
@@ -184,36 +191,54 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
   // is required for callOp's retry logic. The transport callbacks are only used
   // as the hop transport when no explicit runWithFallbackFn is set.
   const buildRunWithFallback = () => {
-    if (opts.runWithFallbackFn) {
+    if (runWithFallbackOverride) {
       return mock((req: AgentRunRequest, primaryAgentOverride?: string) =>
-        opts.runWithFallbackFn!(req, primaryAgentOverride),
+        runWithFallbackOverride(req, primaryAgentOverride),
       );
     }
     const transport = opts.runWithFallbackTransportFn;
     const asSession = opts.runAsSessionFn;
-    if (transport || asSession) {
+    // Sequential ifs (not `if (transport || asSession)`): each arm needs its
+    // own closure-stable narrowing, which a compound guard cannot give.
+    const notifyOpenSession = async (req: AgentRunRequest) => {
+      if (opts.openSessionFn) {
+        // Notify observer (return value is ignored).
+        await opts.openSessionFn(req.runOptions).catch(() => {});
+      }
+    };
+    const hopOutcome = (turn: TurnResult): { result: AgentResult; fallbacks: unknown[] } => ({
+      result: {
+        success: true,
+        exitCode: 0,
+        output: turn.output ?? "",
+        rateLimited: false,
+        durationMs: 0,
+        estimatedCostUsd: turn.estimatedCostUsd ?? 0,
+        agentFallbacks: [],
+      },
+      fallbacks: [],
+    });
+    if (transport) {
+      return mock(async (req: AgentRunRequest) => {
+        await notifyOpenSession(req);
+        return hopOutcome(await transport(req.runOptions, (t: TurnResult) => t));
+      });
+    }
+    if (asSession) {
       return mock(async (req: AgentRunRequest, primaryAgentOverride?: string) => {
-        if (opts.openSessionFn) {
-          // Notify observer (return value is ignored).
-          await opts.openSessionFn(req.runOptions).catch(() => {});
-        }
-        const turn = transport
-          ? await transport(req.runOptions, (t: TurnResult) => t)
-          : await runAsSessionHop(asSession!, req, primaryAgentOverride ?? opts.getDefaultAgent ?? "claude");
-        const result: AgentResult = {
-          success: true,
-          exitCode: 0,
-          output: turn.output ?? "",
-          rateLimited: false,
-          durationMs: 0,
-          estimatedCostUsd: turn.estimatedCostUsd ?? 0,
-          agentFallbacks: [],
-        };
-        return { result, fallbacks: [] };
+        await notifyOpenSession(req);
+        return hopOutcome(
+          await runAsSessionHop(asSession, req, primaryAgentOverride ?? opts.getDefaultAgent ?? "claude"),
+        );
       });
     }
     return mock(() => Promise.resolve({ result: DEFAULT_RESULT, fallbacks: [] }));
   };
+
+  const runAsOverride = opts.runAsFn;
+  const completeAsOverride = opts.completeAsFn;
+  const completeWithFallbackOverride = opts.completeWithFallbackFn;
+  const runAsSessionOverride = opts.runAsSessionFn;
 
   return {
     getDefault: () => opts.getDefaultAgent ?? "claude",
@@ -225,17 +250,17 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
     shouldSwap: () => false,
     nextCandidate: () => null,
     runWithFallback: buildRunWithFallback(),
-    completeWithFallback: opts.completeWithFallbackFn
-      ? mock((prompt: string, completeOpts?: CompleteOptions) => opts.completeWithFallbackFn!(prompt, completeOpts))
+    completeWithFallback: completeWithFallbackOverride
+      ? mock((prompt: string, completeOpts?: CompleteOptions) => completeWithFallbackOverride(prompt, completeOpts))
       : mock(() => Promise.resolve({ result: DEFAULT_COMPLETE_RESULT, fallbacks: [] })),
     run: runFn,
     complete: completeFn,
     getAgent: opts.getAgentFn ?? ((name: string) => (unavailable.has(name) ? undefined : defaultAdapter)),
     events: { on: () => {} },
-    runAs: opts.runAsFn
-      ? mock((agentName: string, request: AgentRunRequest) => opts.runAsFn!(agentName, request.runOptions))
-      : opts.runFn
-        ? mock((agentName: string, request: AgentRunRequest) => opts.runFn!(agentName, request.runOptions))
+    runAs: runAsOverride
+      ? mock((agentName: string, request: AgentRunRequest) => runAsOverride(agentName, request.runOptions))
+      : runOverride
+        ? mock((agentName: string, request: AgentRunRequest) => runOverride(agentName, request.runOptions))
         : mock((name: string, _req: AgentRunRequest) =>
             Promise.resolve({
               success: true,
@@ -247,13 +272,13 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
               agentFallbacks: [],
             }),
           ),
-    completeAs: opts.completeAsFn
+    completeAs: completeAsOverride
       ? mock((name: string, prompt: string, completeOpts?: CompleteOptions) =>
-          opts.completeAsFn!(name, prompt, completeOpts),
+          completeAsOverride(name, prompt, completeOpts),
         )
-      : opts.completeFn
+      : completeOverride
         ? mock((name: string, prompt: string, completeOpts?: CompleteOptions) =>
-            opts.completeFn!(name, prompt, completeOpts),
+            completeOverride(name, prompt, completeOpts),
           )
         : mock((name: string, _p: string, _o?: CompleteOptions) =>
             Promise.resolve({
@@ -262,9 +287,9 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
               estimatedCostUsd: 0,
             } satisfies CompleteResult),
           ),
-    runAsSession: opts.runAsSessionFn
+    runAsSession: runAsSessionOverride
       ? mock((agentName: string, handle: SessionHandle, prompt: string, sessionOpts: RunAsSessionOpts) =>
-          opts.runAsSessionFn!(agentName, handle, prompt, sessionOpts),
+          runAsSessionOverride(agentName, handle, prompt, sessionOpts),
         )
       : mock((_agentName: string, _handle: SessionHandle, _prompt: string, _sessionOpts: RunAsSessionOpts) =>
           Promise.resolve({
