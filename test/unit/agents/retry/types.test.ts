@@ -44,14 +44,14 @@ describe("RetryDecision type", () => {
     const decision: RetryDecision = { retry: true, delayMs: 1000, nextPrompt: "retry this" };
     expect(decision.retry).toBe(true);
     expect(decision.delayMs).toBe(1000);
-    expect((decision as any).nextPrompt).toBe("retry this");
+    expect(decision.nextPrompt).toBe("retry this");
   });
 
   test("true variant works without nextPrompt field", () => {
     const decision: RetryDecision = { retry: true, delayMs: 500 };
     expect(decision.retry).toBe(true);
     expect(decision.delayMs).toBe(500);
-    expect((decision as any).nextPrompt).toBeUndefined();
+    expect(decision.nextPrompt).toBeUndefined();
   });
 });
 
@@ -141,6 +141,6 @@ describe("RetryContext interface", () => {
     };
     // This test verifies that lastParsed is not in the interface
     // If it were present, TypeScript would allow accessing it
-    expect((ctx as any).lastParsed).toBeUndefined();
+    expect("lastParsed" in ctx).toBe(false);
   });
 });

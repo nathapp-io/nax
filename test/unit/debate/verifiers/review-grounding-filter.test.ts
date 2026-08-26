@@ -8,10 +8,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeMockCallContext } from "@test/helpers";
 import type { SelectorResult } from "@/debate/selectors/types";
 import type { DebateStageConfig } from "@/debate/types";
 import type { PostDebateVerifierContext, PostDebateVerifierResult } from "@/debate/verifiers/types";
-import type { CallContext } from "@/operations/types";
 
 // Stub implementation placeholder
 const reviewGroundingFilterVerifier = async (_ctx: PostDebateVerifierContext): Promise<PostDebateVerifierResult> => {
@@ -40,14 +40,12 @@ describe("reviewGroundingFilterVerifier (US-003 AC6)", () => {
       outcome: "passed",
     } as SelectorResult,
     workdir: "/test",
-    ctx: {
-      runtime: {} as any,
-      packageView: {} as any,
+    ctx: makeMockCallContext({
       packageDir: "/test",
       agentName: "claude",
       storyId: "story-1",
       featureName: "test-feature",
-    } as CallContext,
+    }),
     ...overrides,
   });
 
@@ -78,7 +76,7 @@ describe("reviewGroundingFilterVerifier (US-003 AC6)", () => {
         selectorResult: {
           ...selectorResult,
           // Would contain findings in real implementation
-        } as any,
+        },
       });
 
       // Test expects filterByAcGroundingMinimal to be invoked

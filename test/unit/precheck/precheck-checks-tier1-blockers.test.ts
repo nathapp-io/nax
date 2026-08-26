@@ -207,17 +207,11 @@ describe("checkPRDValid (Tier 1 blocker)", () => {
   });
 
   test("auto-defaults missing tags to empty array in-memory", async () => {
-    const storyWithoutTags = {
-      id: "US-001",
-      title: "Story",
-      description: "Description",
-      acceptanceCriteria: [],
-      dependencies: [],
-      status: "pending" as const,
-      passes: false,
-      escalations: [],
-      attempts: 0,
-    } as any;
+    const storyWithoutTags = createMockStory();
+    // The absent key is what the check normalizes — reach it through a weakly
+    // typed alias so the deletion stays checked.
+    const weakTags: { tags?: UserStory["tags"] } = storyWithoutTags;
+    delete weakTags.tags;
 
     const prd = createMockPRD([storyWithoutTags]);
 
@@ -228,17 +222,9 @@ describe("checkPRDValid (Tier 1 blocker)", () => {
   });
 
   test("auto-defaults missing status to pending in-memory", async () => {
-    const storyWithoutStatus = {
-      id: "US-001",
-      title: "Story",
-      description: "Description",
-      acceptanceCriteria: [],
-      tags: [],
-      dependencies: [],
-      passes: false,
-      escalations: [],
-      attempts: 0,
-    } as any;
+    const storyWithoutStatus = createMockStory();
+    const weakStatus: { status?: UserStory["status"] } = storyWithoutStatus;
+    delete weakStatus.status;
 
     const prd = createMockPRD([storyWithoutStatus]);
 
@@ -249,18 +235,7 @@ describe("checkPRDValid (Tier 1 blocker)", () => {
   });
 
   test("auto-defaults missing storyPoints to 1 in-memory", async () => {
-    const storyWithoutPoints = {
-      id: "US-001",
-      title: "Story",
-      description: "Description",
-      acceptanceCriteria: [],
-      tags: [],
-      dependencies: [],
-      status: "pending" as const,
-      passes: false,
-      escalations: [],
-      attempts: 0,
-    } as any;
+    const storyWithoutPoints = createMockStory();
 
     const prd = createMockPRD([storyWithoutPoints]);
 

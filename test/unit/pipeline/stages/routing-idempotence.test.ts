@@ -136,12 +136,14 @@ describe("routingStage - unknown previousTier is not escalated", () => {
       }),
     );
 
-    // Story with a garbage tier persisted from a corrupted prd.json
+    // Story with a garbage tier persisted from a corrupted prd.json. The tier
+    // value arrives via JSON.parse because no ModelTier member can spell it —
+    // exactly the untyped shape production would hand the stage.
     const story = makeStory({
       routing: {
-        modelTier: "ultra-mega" as any,
-        complexity: "medium" as any,
-        testStrategy: "test-after" as any,
+        modelTier: JSON.parse('"ultra-mega"'),
+        complexity: "medium",
+        testStrategy: "test-after",
         reasoning: "corrupted",
       },
       status: "in-progress",

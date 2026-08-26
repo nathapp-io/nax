@@ -17,6 +17,8 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeContextBundle, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
 import type { SessionHandle, TurnResult } from "@/agents";
 import { AgentManager, SessionFailureError } from "@/agents";
+import type { AgentRunOptions } from "@/agents/types";
+import type { NaxConfig } from "@/config";
 import type { AdapterFailure } from "@/context/engine";
 import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
 
@@ -42,13 +44,23 @@ const STUB_BUNDLE = makeContextBundle({
   chunks: [],
 });
 
-const STUB_RUN_OPTIONS = {
-  prompt: "implement the story",
-  workdir: "/tmp",
-  storyId: "US-002",
-  sessionRole: "implementer" as const,
-  timeoutSeconds: 60,
-} as any;
+/**
+ * Fully-typed run options. `config` must be passed by each caller:
+ * runWithFallback reads `request.runOptions.config ?? this._config`, so the
+ * caller's own AgentManager config is the behavior-preserving choice.
+ */
+function makeStubRunOptions(config: NaxConfig): AgentRunOptions {
+  return {
+    prompt: "implement the story",
+    workdir: "/tmp",
+    storyId: "US-002",
+    sessionRole: "implementer",
+    timeoutSeconds: 60,
+    modelTier: "balanced",
+    modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+    config,
+  };
+}
 
 let origCreateContextToolRuntime: typeof _buildHopCallbackDeps.createContextToolRuntime;
 let origRebuildForAgent: typeof _buildHopCallbackDeps.rebuildForAgent;
@@ -56,8 +68,8 @@ let origRebuildForAgent: typeof _buildHopCallbackDeps.rebuildForAgent;
 beforeEach(() => {
   origCreateContextToolRuntime = _buildHopCallbackDeps.createContextToolRuntime;
   origRebuildForAgent = _buildHopCallbackDeps.rebuildForAgent;
-  _buildHopCallbackDeps.createContextToolRuntime = () => undefined as any;
-  _buildHopCallbackDeps.rebuildForAgent = (prior) => prior as any;
+  _buildHopCallbackDeps.createContextToolRuntime = () => undefined;
+  _buildHopCallbackDeps.rebuildForAgent = (prior) => prior;
 });
 
 afterEach(() => {
@@ -93,6 +105,7 @@ describe("AC5 — timeout-retry opens a fresh session, never reuses the cached l
       },
     });
     const manager = new AgentManager(config);
+    const runOptions = makeStubRunOptions(config);
 
     const openSession = mock(async () => CLAUDE_HANDLE);
     const closeSession = mock(async () => {});
@@ -110,9 +123,9 @@ describe("AC5 — timeout-retry opens a fresh session, never reuses the cached l
     });
 
     const ctx = makeHopCtx(sessionMgr, runAsSessionFn);
-    const hopCb = buildHopCallback(ctx, undefined, STUB_RUN_OPTIONS);
+    const hopCb = buildHopCallback(ctx, undefined, runOptions);
     const outcome = await manager.runWithFallback({
-      runOptions: STUB_RUN_OPTIONS,
+      runOptions,
       bundle: STUB_BUNDLE,
       executeHop: hopCb,
     });
@@ -141,6 +154,7 @@ describe("AC5 — timeout-retry opens a fresh session, never reuses the cached l
       },
     });
     const manager = new AgentManager(config);
+    const runOptions = makeStubRunOptions(config);
 
     const openSession = mock(async () => CLAUDE_HANDLE);
     const closeSession = mock(async () => {});
@@ -156,9 +170,9 @@ describe("AC5 — timeout-retry opens a fresh session, never reuses the cached l
     });
 
     const ctx = makeHopCtx(sessionMgr, runAsSessionFn);
-    const hopCb = buildHopCallback(ctx, undefined, STUB_RUN_OPTIONS);
+    const hopCb = buildHopCallback(ctx, undefined, runOptions);
     await manager.runWithFallback({
-      runOptions: STUB_RUN_OPTIONS,
+      runOptions,
       bundle: STUB_BUNDLE,
       executeHop: hopCb,
     });

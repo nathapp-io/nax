@@ -15,7 +15,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeContextBundle, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
 import { AgentManager, SessionFailureError } from "@/agents";
-import type { SessionHandle, TurnResult } from "@/agents/types";
+import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents/types";
+import type { NaxConfig } from "@/config";
 import type { AdapterFailure } from "@/context/engine";
 import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
 
@@ -43,14 +44,23 @@ const STUB_BUNDLE = makeContextBundle({
   chunks: [],
 });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const STUB_RUN_OPTIONS = {
-  prompt: "implement the story",
-  workdir: "/tmp",
-  storyId: "US-977",
-  sessionRole: "implementer" as const,
-  timeoutSeconds: 30,
-} as any;
+/**
+ * Fully-typed run options. `config` must be passed by each caller:
+ * runWithFallback reads `request.runOptions.config ?? this._config`, so the
+ * caller's own AgentManager config is the behavior-preserving choice.
+ */
+function makeStubRunOptions(config: NaxConfig): AgentRunOptions {
+  return {
+    prompt: "implement the story",
+    workdir: "/tmp",
+    storyId: "US-977",
+    sessionRole: "implementer",
+    timeoutSeconds: 30,
+    modelTier: "balanced",
+    modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+    config,
+  };
+}
 
 // ─── Dep injection save/restore ───────────────────────────────────────────────
 
@@ -60,8 +70,8 @@ let origRebuildForAgent: typeof _buildHopCallbackDeps.rebuildForAgent;
 beforeEach(() => {
   origCreateContextToolRuntime = _buildHopCallbackDeps.createContextToolRuntime;
   origRebuildForAgent = _buildHopCallbackDeps.rebuildForAgent;
-  _buildHopCallbackDeps.createContextToolRuntime = () => undefined as any;
-  _buildHopCallbackDeps.rebuildForAgent = (prior) => prior as any;
+  _buildHopCallbackDeps.createContextToolRuntime = () => undefined;
+  _buildHopCallbackDeps.rebuildForAgent = (prior) => prior;
 });
 
 afterEach(() => {
@@ -101,6 +111,7 @@ describe("stale-retry session reuse — full runWithFallback loop", () => {
       },
     });
     const manager = new AgentManager(config);
+    const runOptions = makeStubRunOptions(config);
 
     const openSession = mock(async () => CLAUDE_HANDLE);
     const closeSession = mock(async () => {});
@@ -119,9 +130,9 @@ describe("stale-retry session reuse — full runWithFallback loop", () => {
     });
 
     const ctx = makeHopCtx(sessionMgr, runAsSessionFn);
-    const hopCb = buildHopCallback(ctx, undefined, STUB_RUN_OPTIONS);
+    const hopCb = buildHopCallback(ctx, undefined, runOptions);
     const outcome = await manager.runWithFallback({
-      runOptions: STUB_RUN_OPTIONS,
+      runOptions,
       bundle: STUB_BUNDLE,
       executeHop: hopCb,
     });
@@ -145,6 +156,7 @@ describe("stale-retry session reuse — full runWithFallback loop", () => {
       },
     });
     const manager = new AgentManager(config);
+    const runOptions = makeStubRunOptions(config);
 
     const getLiveHandle = mock((_name: string) => CLAUDE_HANDLE);
     const sessionMgr = makeSessionManager({ getLiveHandle });
@@ -159,17 +171,17 @@ describe("stale-retry session reuse — full runWithFallback loop", () => {
     });
 
     const ctx = makeHopCtx(sessionMgr, runAsSessionFn);
-    const hopCb = buildHopCallback(ctx, undefined, STUB_RUN_OPTIONS);
+    const hopCb = buildHopCallback(ctx, undefined, runOptions);
     await manager.runWithFallback({
-      runOptions: STUB_RUN_OPTIONS,
+      runOptions,
       bundle: STUB_BUNDLE,
       executeHop: hopCb,
     });
 
     expect(capturedPrompts).toHaveLength(2);
     // Both the primary and stale-retry use the same original prompt
-    expect(capturedPrompts[0]).toBe(STUB_RUN_OPTIONS.prompt);
-    expect(capturedPrompts[1]).toBe(STUB_RUN_OPTIONS.prompt);
+    expect(capturedPrompts[0]).toBe(runOptions.prompt);
+    expect(capturedPrompts[1]).toBe(runOptions.prompt);
   });
 
   test("stale-retry cache miss: falls back to openSession, closeSession still skipped", async () => {
@@ -180,6 +192,7 @@ describe("stale-retry session reuse — full runWithFallback loop", () => {
       },
     });
     const manager = new AgentManager(config);
+    const runOptions = makeStubRunOptions(config);
 
     const openSession = mock(async () => CLAUDE_HANDLE);
     const closeSession = mock(async () => {});
@@ -195,9 +208,9 @@ describe("stale-retry session reuse — full runWithFallback loop", () => {
     });
 
     const ctx = makeHopCtx(sessionMgr, runAsSessionFn);
-    const hopCb = buildHopCallback(ctx, undefined, STUB_RUN_OPTIONS);
+    const hopCb = buildHopCallback(ctx, undefined, runOptions);
     const outcome = await manager.runWithFallback({
-      runOptions: STUB_RUN_OPTIONS,
+      runOptions,
       bundle: STUB_BUNDLE,
       executeHop: hopCb,
     });

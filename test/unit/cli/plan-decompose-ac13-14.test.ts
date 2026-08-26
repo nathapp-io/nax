@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  assertDefined,
   cleanupTempDir,
   makeMockAgentManager,
   makeMockRuntime,
@@ -17,18 +18,20 @@ import {
   makeTempDir,
 } from "@test/helpers";
 import type { DecomposedStory } from "@/agents/shared/types-extended";
+import type { CompleteOptions } from "@/agents/types";
 import type { SourceRoot } from "@/analyze/types";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import type { NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd";
 
 function makeMockDecomposeManager(
-  decomposeFn?: (agentName: string, opts: any) => Promise<{ stories: DecomposedStory[] }>,
+  decomposeFn?: (agentName: string, opts: CompleteOptions) => Promise<{ stories: DecomposedStory[] }>,
 ) {
   return makeMockAgentManager({
     completeAsFn: decomposeFn
-      ? async (name: string, _prompt: string, opts?: any) => {
-          const result = await decomposeFn(name, opts ?? {});
+      ? async (name: string, _prompt: string, opts?: CompleteOptions) => {
+          assertDefined(opts, "completeAs opts");
+          const result = await decomposeFn(name, opts);
           return {
             output: JSON.stringify(result.stories),
             tokenUsage: { inputTokens: 0, outputTokens: 0 },
@@ -289,11 +292,10 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
       return {} as never;
     });
 
-    await planDecomposeCommand(
-      tmpDir,
-      makeConfig({ debate: { enabled: false, agents: 2, stages: {} as never } as any }),
-      { feature: FEATURE, storyId: "US-001" },
-    );
+    await planDecomposeCommand(tmpDir, makeNaxConfig({ debate: { enabled: false } }), {
+      feature: FEATURE,
+      storyId: "US-001",
+    });
 
     expect(createDebateCalled).toHaveLength(0);
   });

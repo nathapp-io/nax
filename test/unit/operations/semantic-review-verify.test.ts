@@ -7,7 +7,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
+import { assertDefined, makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
+import type { Iteration } from "@/findings";
 import type { SemanticReviewInput, SemanticReviewOutput } from "@/operations/semantic-review";
 import { semanticReviewOp } from "@/operations/semantic-review";
 import type { NaxRuntime } from "@/runtime";
@@ -364,7 +365,7 @@ describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
 describe("semanticReviewOp.verify() — recurrence demotion", () => {
   const RECURRING = "AC0 is not implemented — the handler returns 500";
 
-  function priorSemanticRound(n: number, message: string) {
+  function priorSemanticRound(n: number, message: string): Iteration {
     return {
       iterationNum: n,
       findingsBefore: [],
@@ -372,10 +373,10 @@ describe("semanticReviewOp.verify() — recurrence demotion", () => {
       findingsAfter: [
         { source: "semantic-review", severity: "error", category: "", file: "src/h.ts", message, meta: { acIndex: 1 } },
       ],
-      outcome: "fixes-applied",
+      outcome: "unchanged",
       startedAt: "2026-08-01T00:00:00.000Z",
       finishedAt: "2026-08-01T00:00:01.000Z",
-    } as any;
+    };
   }
 
   const finding = {
@@ -394,8 +395,10 @@ describe("semanticReviewOp.verify() — recurrence demotion", () => {
       semanticConfig: { ...BASE_INPUT.semanticConfig, recurrenceDemotion: { enabled, maxBlockingRounds: 2 } },
       priorSemanticIterations: [priorSemanticRound(1, RECURRING), priorSemanticRound(2, `${RECURRING} again`)],
     };
-    const parsed = { passed: false, findings: [finding], normalizedFindings: [], acDropped: [] };
-    return (await semanticReviewOp.verify!(parsed as any, input, {} as any)) as SemanticReviewOutput;
+    const parsed = makeOutput({ passed: false, findings: [finding], normalizedFindings: [], acDropped: [] });
+    const result = await semanticReviewOp.verify!(parsed, input, makeVerifyCtx());
+    assertDefined(result);
+    return result;
   }
 
   test("demotes a third-round recurrence to advisory and lets the story pass", async () => {

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { makeStory } from "@test/helpers";
 import { reconcileBatchOutcome } from "@/execution/unified-executor";
 import type { PRD } from "@/prd/types";
 
@@ -13,7 +14,7 @@ describe("reconcileBatchOutcome (single PRD writer)", () => {
   test("marks completed stories passed", () => {
     const prd = prdWith("US-001", "US-002");
     reconcileBatchOutcome(prd, {
-      completed: [{ id: "US-001", title: "t", status: "pending", attempts: 0, passes: false } as any],
+      completed: [makeStory({ id: "US-001", title: "t" })],
       mergeConflicts: [],
     });
     expect(prd.userStories.find((s) => s.id === "US-001")?.status).toBe("passed");
@@ -31,7 +32,7 @@ describe("reconcileBatchOutcome (single PRD writer)", () => {
     const prd = prdWith("US-001");
     reconcileBatchOutcome(prd, {
       completed: [],
-      mergeConflicts: [{ story: { id: "US-001" } as any, rectified: false, cost: 0 }],
+      mergeConflicts: [{ story: makeStory({ id: "US-001" }), rectified: false, cost: 0 }],
     });
     expect(prd.userStories.find((s) => s.id === "US-001")?.status).toBe("failed");
   });
@@ -40,7 +41,7 @@ describe("reconcileBatchOutcome (single PRD writer)", () => {
     const prd = prdWith("US-001");
     reconcileBatchOutcome(prd, {
       completed: [],
-      mergeConflicts: [{ story: { id: "US-001" } as any, rectified: true, cost: 0 }],
+      mergeConflicts: [{ story: makeStory({ id: "US-001" }), rectified: true, cost: 0 }],
     });
     expect(prd.userStories.find((s) => s.id === "US-001")?.status).toBe("passed");
   });

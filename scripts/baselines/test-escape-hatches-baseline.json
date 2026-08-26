@@ -1,15 +1,15 @@
 {
   "counts": {
-    "asAny": 152,
+    "asAny": 98,
     "tsSuppress": 40,
     "ratchetAllow": 103,
     "absentValue": 17,
-    "anyType": 198,
-    "looseCast": 1806,
-    "asNever": 605,
+    "anyType": 135,
+    "looseCast": 1803,
+    "asNever": 604,
     "nonNullAssert": 792
   },
-  "updatedAt": "2026-08-26T05:15:38.843Z",
+  "updatedAt": "2026-08-26T05:55:50.578Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -203,8 +203,6 @@
       "looseCast": 1
     },
     "test/integration/agents/timeout-retry-fresh-session.test.ts": {
-      "asAny": 3,
-      "anyType": 3,
       "looseCast": 1
     },
     "test/integration/agents/stale-then-swap.test.ts": {
@@ -215,8 +213,6 @@
       "anyType": 1
     },
     "test/integration/agents/stale-retry-session-reuse.test.ts": {
-      "asAny": 3,
-      "anyType": 3,
       "looseCast": 1
     },
     "test/integration/plan/plan-callop-migration.test.ts": {
@@ -373,10 +369,6 @@
     "test/unit/replay/report.test.ts": {
       "nonNullAssert": 4
     },
-    "test/unit/precheck/precheck-checks-tier1-blockers.test.ts": {
-      "asAny": 3,
-      "anyType": 3
-    },
     "test/unit/precheck/precheck-canonical-lint-orchestrator.test.ts": {
       "looseCast": 2
     },
@@ -507,8 +499,6 @@
       "asNever": 2
     },
     "test/unit/review/orchestrator-wrapper-parity.test.ts": {
-      "asAny": 3,
-      "anyType": 3,
       "nonNullAssert": 20
     },
     "test/unit/review/semantic-signature-diff.test.ts": {
@@ -725,8 +715,6 @@
       "looseCast": 1
     },
     "test/unit/execution/unified-executor-reconcile.test.ts": {
-      "asAny": 3,
-      "anyType": 3,
       "looseCast": 1
     },
     "test/unit/execution/build-plan-for-strategy-triage-predicates.test.ts": {
@@ -915,8 +903,6 @@
       "looseCast": 1
     },
     "test/unit/execution/lifecycle/run-cleanup.test.ts": {
-      "asAny": 2,
-      "anyType": 3,
       "looseCast": 4
     },
     "test/unit/execution/lifecycle/acceptance-loop-cycle.test.ts": {
@@ -1010,13 +996,7 @@
       "nonNullAssert": 2
     },
     "test/unit/verification/flake-probe.test.ts": {
-      "asAny": 1,
-      "anyType": 3,
       "looseCast": 1
-    },
-    "test/unit/verification/smart-runner-packageprefix.test.ts": {
-      "asAny": 3,
-      "anyType": 3
     },
     "test/unit/verification/smart-runner-discovery.test.ts": {
       "absentValue": 5
@@ -1157,9 +1137,6 @@
       "nonNullAssert": 1
     },
     "test/unit/operations/semantic-review-verify.test.ts": {
-      "asAny": 3,
-      "anyType": 3,
-      "looseCast": 1,
       "nonNullAssert": 22
     },
     "test/unit/operations/lint-check-tool-diagnostics.test.ts": {
@@ -1202,10 +1179,6 @@
     },
     "test/unit/operations/debate-plan.test.ts": {
       "looseCast": 6
-    },
-    "test/unit/operations/full-suite-rectify-op.test.ts": {
-      "asAny": 3,
-      "anyType": 3
     },
     "test/unit/operations/mutation-check-diff-scope.test.ts": {
       "asAny": 1,
@@ -1305,9 +1278,7 @@
       "looseCast": 2
     },
     "test/unit/debate/verifiers/review-grounding-filter.test.ts": {
-      "asAny": 3,
-      "anyType": 3,
-      "looseCast": 5
+      "looseCast": 4
     },
     "test/unit/debate/verifiers/plan-checklist.test.ts": {
       "asAny": 2,
@@ -1342,9 +1313,7 @@
       "asNever": 4
     },
     "test/unit/cli/plan-decompose-ac13-14.test.ts": {
-      "asAny": 1,
-      "anyType": 3,
-      "asNever": 6
+      "asNever": 5
     },
     "test/unit/cli/plan-mode.test.ts": {
       "asAny": 1,
@@ -1395,7 +1364,6 @@
       "looseCast": 13
     },
     "test/unit/cli/plan-decompose-mapper.test.ts": {
-      "anyType": 3,
       "looseCast": 6
     },
     "test/unit/cli/plan-callop.test.ts": {
@@ -1582,10 +1550,6 @@
       "absentValue": 1,
       "looseCast": 2,
       "nonNullAssert": 1
-    },
-    "test/unit/agents/retry/types.test.ts": {
-      "asAny": 3,
-      "anyType": 3
     },
     "test/unit/agents/retry/tiered-parse-retry.test.ts": {
       "nonNullAssert": 1
@@ -1840,8 +1804,6 @@
       "nonNullAssert": 6
     },
     "test/unit/context/provider-timeout-abort.test.ts": {
-      "asAny": 2,
-      "anyType": 3,
       "asNever": 4
     },
     "test/unit/context/prior-failures.test.ts": {
@@ -1851,10 +1813,6 @@
     "test/unit/context/context-format.test.ts": {
       "asAny": 1,
       "anyType": 1
-    },
-    "test/unit/context/context-core.test.ts": {
-      "asAny": 3,
-      "anyType": 3
     },
     "test/unit/context/generator.test.ts": {
       "asNever": 1
@@ -1928,8 +1886,6 @@
       "nonNullAssert": 3
     },
     "test/unit/context/engine/orchestrator-factory.test.ts": {
-      "asAny": 3,
-      "anyType": 3,
       "looseCast": 1,
       "nonNullAssert": 2
     },
@@ -1978,11 +1934,6 @@
       "looseCast": 4,
       "nonNullAssert": 2
     },
-    "test/unit/context/engine/providers/code-neighbor-cap.test.ts": {
-      "asAny": 3,
-      "anyType": 3,
-      "looseCast": 1
-    },
     "test/unit/context/engine/providers/prior-run-failure.test.ts": {
       "ratchetAllow": 4
     },
@@ -2030,16 +1981,10 @@
     "test/unit/pipeline/routing-partial-override.test.ts": {
       "looseCast": 5
     },
-    "test/unit/pipeline/subscribers/hooks.test.ts": {
-      "asAny": 3,
-      "anyType": 3
-    },
     "test/unit/pipeline/subscribers/registry.test.ts": {
       "looseCast": 5
     },
     "test/unit/pipeline/subscribers/reporters.test.ts": {
-      "asAny": 3,
-      "anyType": 3,
       "looseCast": 1,
       "nonNullAssert": 1
     },
@@ -2107,8 +2052,6 @@
       "looseCast": 6
     },
     "test/unit/pipeline/stages/routing-idempotence.test.ts": {
-      "asAny": 3,
-      "anyType": 3,
       "looseCast": 5
     },
     "test/unit/pipeline/stages/routing-initial-model-tier.test.ts": {

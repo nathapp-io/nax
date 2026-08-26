@@ -5,6 +5,8 @@ import { PipelineEventBus, wireReporters } from "@/pipeline";
 import type { PluginRegistry } from "@/plugins";
 import type { IReporter, PhaseCompleteEvent, PhaseStartEvent, RunStartEvent } from "@/plugins/types";
 
+const STORY_SUMMARY = { id: "US-001", title: "US-001", status: "pending", attempts: 1 };
+
 function makeReporter(): IReporter & { calls: string[] } {
   const calls: string[] = [];
   return {
@@ -66,7 +68,7 @@ describe("wireReporters", () => {
     bus.emit({
       type: "story:completed",
       storyId: "US-001",
-      story: { id: "US-001" } as any,
+      story: STORY_SUMMARY,
       passed: true,
       runElapsedMs: 100,
     });
@@ -83,7 +85,7 @@ describe("wireReporters", () => {
     bus.emit({
       type: "story:failed",
       storyId: "US-001",
-      story: { id: "US-001" } as any,
+      story: STORY_SUMMARY,
       reason: "tests failed",
       countsTowardEscalation: true,
     });
@@ -147,7 +149,7 @@ describe("wireReporters", () => {
       bus.emit({
         type: "story:completed",
         storyId: "US-001",
-        story: { id: "US-001" } as any,
+        story: STORY_SUMMARY,
         passed: true,
         runElapsedMs: 100,
       }),
