@@ -43,6 +43,7 @@ import { createAgentRegistry } from "./registry";
 import { defaultRetryStrategy } from "./retry/default-strategy";
 import { describeRetryLogEvent, type SameAgentRetryState, trySameAgentRetry } from "./retry/hop-retry-policy";
 import type { RetryContext, RetryStrategy } from "./retry/types";
+import { availableCandidates, credentialCandidates, decideSwap, logSwapDecline } from "./swap-decision";
 import type { AgentResult, AgentRunOptions, CompleteOptions, CompleteResult, ResolvedCompleteOptions } from "./types";
 
 type LoggerLike = {
@@ -86,6 +87,7 @@ export class AgentManager implements IAgentManager {
     return ee;
   })();
   private readonly _logger: LoggerLike;
+  private readonly _loggerOverride: LoggerLike | undefined;
   private _middleware: MiddlewareChain;
   private _runId: string;
   private _sendPrompt: SendPromptFn | undefined;
@@ -110,6 +112,7 @@ export class AgentManager implements IAgentManager {
   ) {
     this._config = config;
     this._registry = registry;
+    this._loggerOverride = opts?.logger;
     this._logger = opts?.logger ?? getSafeLogger() ?? { warn: () => {}, info: () => {} };
     this._middleware = opts?.middleware ?? MiddlewareChain.empty();
     this._runId = opts?.runId ?? crypto.randomUUID();
@@ -166,13 +169,7 @@ export class AgentManager implements IAgentManager {
   }
   async validateCredentials(): Promise<void> {
     const primary = this.getDefault();
-    const map = (this._config.agent?.fallback?.map ?? {}) as Record<string, string[]>;
-    const candidates = new Set<string>([primary]);
-    for (const [from, tos] of Object.entries(map)) {
-      candidates.add(from);
-      for (const to of tos) candidates.add(to);
-    }
-    for (const name of candidates) {
+    for (const name of credentialCandidates(this._config.agent?.fallback?.map, primary)) {
       const adapter = this._resolveRegistry().getAgent(name);
       if (!adapter || typeof adapter.hasCredentials !== "function") continue;
       const ok = await adapter.hasCredentials();
@@ -191,32 +188,22 @@ export class AgentManager implements IAgentManager {
     }
   }
 
+  private _isExcludedCandidate(candidate: string): boolean {
+    return this._prunedFallback.has(candidate) || this.isUnavailable(candidate);
+  }
+
   resolveFallbackChain(agent: string, _failure: AdapterFailure): string[] {
-    const map = (this._config.agent?.fallback?.map ?? {}) as Record<string, string[]>;
-    const raw = map[agent] ?? [];
-    return raw.filter((a) => !this._prunedFallback.has(a) && !this.isUnavailable(a));
+    return availableCandidates(this._config.agent?.fallback?.map, agent, (c) => this._isExcludedCandidate(c));
   }
 
   shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number, hasBundle: boolean): boolean {
-    if (!failure) return false;
-    // abort = no swap (teardown); timeout = no swap (US-001 AC11, pool poison).
-    if (failure.outcome === "fail-aborted" || failure.outcome === "fail-timeout") return false;
-    const fallback = this._config.agent?.fallback;
-    if (!fallback?.enabled) return false;
-    if (!hasBundle) return false;
-    if (hopsSoFar >= (fallback.maxHopsPerStory ?? 2)) return false;
-    if (failure.category === "availability") return true;
-    return fallback.onQualityFailure ?? false;
+    return decideSwap(failure, hopsSoFar, hasBundle, this._config.agent?.fallback).swap;
   }
 
   nextCandidate(current: string, _hopsSoFar: number): string | null {
-    const map = (this._config.agent?.fallback?.map ?? {}) as Record<string, string[]>;
-    // Filter out pruned and already-unavailable candidates; return the first available one.
-    // Callers pass the primary agent (not the most-recently-failed agent) so flat maps like
-    // { claude: ["codex", "gemini"] } work correctly: unavailable agents are filtered out and
-    // the next available candidate in order is returned.
-    const candidates = (map[current] ?? []).filter((a) => !this._prunedFallback.has(a) && !this.isUnavailable(a));
-    return candidates[0] ?? null;
+    return (
+      availableCandidates(this._config.agent?.fallback?.map, current, (c) => this._isExcludedCandidate(c))[0] ?? null
+    );
   }
 
   // Swap hops produced here reach StoryMetrics.fallback via the run-scoped
@@ -224,7 +211,7 @@ export class AgentManager implements IAgentManager {
   // callOp seam (#1707) — result-side data never back-flows through
   // CallContext, per .claude/rules/adapter-wiring.md Rule 6.
   async runWithFallback(request: AgentRunRequest, primaryAgentOverride?: string): Promise<AgentRunOutcome> {
-    const logger = getSafeLogger();
+    const logger = this._loggerOverride ?? getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
     let currentAgent = primaryAgent;
@@ -344,7 +331,20 @@ export class AgentManager implements IAgentManager {
         // context rebuild to decide whether to swap to a fallback agent.
         const hasBundleForSwap = !!bundleForSwapCheck || isFailStale;
 
-        if (!this.shouldSwap(result.adapterFailure, hopsSoFar, hasBundleForSwap)) {
+        const swapDecision = decideSwap(
+          result.adapterFailure,
+          hopsSoFar,
+          hasBundleForSwap,
+          this._config.agent?.fallback,
+        );
+        if (!swapDecision.swap) {
+          // #1713: the neighbouring terminal exits below emit; this one was silent.
+          logSwapDecline(logger, swapDecision.reason, {
+            storyId: request.runOptions.storyId,
+            agent: currentAgent,
+            hopsSoFar,
+            failure: result.adapterFailure,
+          });
           // For fail-stale with no swap available: exit immediately without backoff.
           // The session was stale — retrying with backoff won't help if no fallback exists.
           if (isFailStale) {
