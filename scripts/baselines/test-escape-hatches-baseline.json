@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1799,
-    "asNever": 323,
+    "asNever": 304,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:00:55.675Z",
+  "updatedAt": "2026-08-26T15:10:02.541Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -454,9 +454,6 @@
       "ratchetAllow": 5,
       "asNever": 2
     },
-    "test/unit/execution/unified-executor-tier-budget.test.ts": {
-      "asNever": 10
-    },
     "test/unit/execution/merge.test.ts": {
       "tsSuppress": 10,
       "ratchetAllow": 1
@@ -525,8 +522,7 @@
       "looseCast": 1
     },
     "test/unit/execution/merge-conflict-rectify.test.ts": {
-      "looseCast": 1,
-      "asNever": 9
+      "looseCast": 1
     },
     "test/unit/execution/parallel-batch.test.ts": {
       "looseCast": 10

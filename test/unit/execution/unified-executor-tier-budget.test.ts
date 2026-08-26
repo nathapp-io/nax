@@ -20,14 +20,21 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { firstCall } from "@test/helpers";
+import { firstCall, makeDispatchContext, makeMockRuntime, makePluginRegistry, makeStatusWriter } from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
+import type { SequentialExecutionContext } from "@/execution/unified-executor";
 import { executeUnified } from "@/execution/unified-executor";
+import type { LoadedHooksConfig } from "@/hooks";
+import type { PRD, UserStory } from "@/prd/types";
+import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
+
+const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixture helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makePendingStory(id: string, overrides: Record<string, unknown> = {}) {
+function makePendingStory(id: string, overrides: Record<string, unknown> = {}): UserStory {
   return {
     id,
     title: `Story ${id}`,
@@ -35,80 +42,61 @@ function makePendingStory(id: string, overrides: Record<string, unknown> = {}) {
     acceptanceCriteria: [],
     tags: [],
     dependencies: [],
-    status: "pending" as const,
+    status: "pending",
     passes: false,
     attempts: 0,
     priorFailures: [],
+    escalations: [],
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
     ...overrides,
   };
 }
 
-function makePrd(stories: ReturnType<typeof makePendingStory>[]) {
+function makePrd(stories: ReturnType<typeof makePendingStory>[]): PRD {
+  const ts = new Date().toISOString();
   return {
     project: "test-project",
     feature: "test-feature",
     branchName: "test-branch",
-    createdAt: new Date().toISOString(),
+    createdAt: ts,
+    updatedAt: ts,
     userStories: stories,
   };
 }
 
-function makeCtx(overrides: Record<string, unknown> = {}) {
+function makeCtx(overrides: { parallelCount?: number } = {}): SequentialExecutionContext {
   return {
     prdPath: "/tmp/test-prd-tier-budget.json",
     workdir: "/tmp/test-workdir-tier-budget",
     config: {
+      ...DEFAULT_CONFIG,
       execution: {
+        ...DEFAULT_CONFIG.execution,
         maxIterations: 1,
         costLimit: 10,
         iterationDelayMs: 0,
-        rectification: { maxAttemptsTotal: 2 },
+        rectification: {
+          ...DEFAULT_CONFIG.execution.rectification,
+          maxAttemptsTotal: 2,
+        },
       },
-      autoMode: { defaultAgent: "claude-code" },
-      interaction: {},
     },
-    hooks: {},
+    hooks: EMPTY_HOOKS,
     feature: "test-feature",
     dryRun: false,
     useBatch: false,
-    pluginRegistry: {
-      getReporters: () => [],
-      getContextProviders: () => [],
-    },
-    statusWriter: {
-      setPrd: mock(() => {}),
-      setCurrentStory: mock(() => {}),
-      setRunStatus: mock(() => {}),
-      update: mock(async () => {}),
-    },
+    pluginRegistry: makePluginRegistry(),
+    statusWriter: makeStatusWriter(),
     runId: "run-tier-budget",
     startTime: Date.now(),
     batchPlan: [],
     interactionChain: null,
-    runtime: {
-      outputDir: "/tmp/nax-test-tier-budget-output",
-      // nax#1709: parallel metrics read these run-scoped stores.
-      agentFallbacks: new Map(),
-      runtimeCrashRetries: new Map(),
-      costAggregator: {
-        snapshot: () => ({
-          totalCostUsd: 0,
-          totalEstimatedCostUsd: 0,
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          callCount: 0,
-          errorCount: 0,
-        }),
-        byStage: () => ({}),
-        byStory: () => ({}),
-        byAgent: () => ({}),
-        record: () => {},
-        recordError: () => {},
-        recordOperationSummary: () => {},
-        drain: async () => {},
-      },
-    },
+    ...makeDispatchContext({
+      runtime: makeMockRuntime({
+        workdir: "/tmp/nax-test-tier-budget-output",
+        costAggregator: createNoOpCostAggregator(),
+      }),
+    }),
     ...overrides,
   };
 }
@@ -180,7 +168,7 @@ describe("US-003 AC-9: sequential executor invokes preIterationTierCheck once be
     const prd = makePrd([story]);
     const ctx = makeCtx({ parallelCount: undefined });
 
-    await executeUnified(ctx as never, prd as never).catch(() => {});
+    await executeUnified(ctx, prd).catch(() => {});
 
     // AC-9: preIterationTierCheck is invoked exactly once with that story.
     expect(preIterationTierCheckMock).toHaveBeenCalledTimes(1);
@@ -244,7 +232,7 @@ describe("US-003 AC-10: sequential executor skips runIteration when shouldSkipIt
     const prd = makePrd([story]);
     const ctx = makeCtx({ parallelCount: undefined });
 
-    await executeUnified(ctx as never, prd as never).catch(() => {});
+    await executeUnified(ctx, prd).catch(() => {});
 
     // AC-10: preIterationTierCheck was consulted.
     expect(preIterationTierCheckMock).toHaveBeenCalledTimes(1);
@@ -310,7 +298,7 @@ describe("US-003 AC-11: batch executor invokes preIterationTierCheck once per ba
     const prd = makePrd([story1, story2, story3]);
     const ctx = makeCtx({ parallelCount: 3 });
 
-    await executeUnified(ctx as never, prd as never).catch(() => {});
+    await executeUnified(ctx, prd).catch(() => {});
 
     // AC-11: one call per batch story (3 stories → 3 calls).
     expect(preIterationTierCheckMock).toHaveBeenCalledTimes(3);
@@ -388,7 +376,7 @@ describe("US-003: batch executor excludes shouldSkipIteration stories from dispa
     const prd = makePrd([story1, story2, story3]);
     const ctx = makeCtx({ parallelCount: 3 });
 
-    await executeUnified(ctx as never, prd as never).catch(() => {});
+    await executeUnified(ctx, prd).catch(() => {});
 
     expect(runParallelBatchMock).toHaveBeenCalledTimes(1);
     const [batchArg] = firstCall(runParallelBatchMock, "runParallelBatchMock");
@@ -423,7 +411,7 @@ describe("US-003: batch executor excludes shouldSkipIteration stories from dispa
     const prd = makePrd([story1, story2]);
     const ctx = makeCtx({ parallelCount: 2 });
 
-    await executeUnified(ctx as never, prd as never).catch(() => {});
+    await executeUnified(ctx, prd).catch(() => {});
 
     expect(runParallelBatchMock).not.toHaveBeenCalled();
   });
