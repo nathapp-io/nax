@@ -1,15 +1,15 @@
 {
   "counts": {
-    "asAny": 509,
+    "asAny": 435,
     "tsSuppress": 40,
-    "ratchetAllow": 105,
+    "ratchetAllow": 103,
     "absentValue": 17,
-    "anyType": 659,
-    "looseCast": 1816,
+    "anyType": 557,
+    "looseCast": 1815,
     "asNever": 607,
     "nonNullAssert": 812
   },
-  "updatedAt": "2026-08-25T19:07:17.670Z",
+  "updatedAt": "2026-08-26T02:17:43.366Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -78,10 +78,6 @@
     "test/integration/interaction/interaction-chain-pipeline.test.ts": {
       "looseCast": 3
     },
-    "test/integration/tdd/_tdd-test-helpers.ts": {
-      "asAny": 5,
-      "anyType": 9
-    },
     "test/integration/tdd/tdd-cleanup.test.ts": {
       "looseCast": 2
     },
@@ -145,8 +141,6 @@
       "looseCast": 1
     },
     "test/integration/execution/parallel-batch-rectification.test.ts": {
-      "asAny": 9,
-      "anyType": 9,
       "looseCast": 9
     },
     "test/integration/execution/runner-parallel-metrics-cost-duration.test.ts": {
@@ -511,8 +505,6 @@
       "anyType": 1
     },
     "test/unit/review/adversarial-metadata-audit.test.ts": {
-      "asAny": 10,
-      "anyType": 10,
       "looseCast": 1
     },
     "test/unit/review/semantic-audit-shape.test.ts": {
@@ -545,8 +537,6 @@
       "asNever": 4
     },
     "test/unit/review/adversarial-retry-truncation.test.ts": {
-      "asAny": 9,
-      "anyType": 9,
       "asNever": 2
     },
     "test/unit/review/semantic-retry.test.ts": {
@@ -650,9 +640,7 @@
       "asNever": 2
     },
     "test/unit/execution/plan-inputs.test.ts": {
-      "asAny": 4,
-      "anyType": 9,
-      "looseCast": 10,
+      "looseCast": 9,
       "nonNullAssert": 2
     },
     "test/unit/execution/story-orchestrator.test.ts": {
@@ -1104,8 +1092,7 @@
       "absentValue": 2
     },
     "test/unit/operations/mechanical-lintfix-strategy.test.ts": {
-      "asAny": 8,
-      "anyType": 9
+      "looseCast": 1
     },
     "test/unit/operations/adversarial-review-reground.test.ts": {
       "looseCast": 2
@@ -1277,8 +1264,6 @@
       "nonNullAssert": 22
     },
     "test/unit/operations/lint-check-tool-diagnostics.test.ts": {
-      "asAny": 6,
-      "anyType": 9,
       "looseCast": 4
     },
     "test/unit/operations/autofix-implementer-strategy-tdd-verifier.test.ts": {
@@ -1371,8 +1356,6 @@
       "looseCast": 3
     },
     "test/unit/operations/typecheck-check-tool-diagnostics.test.ts": {
-      "asAny": 6,
-      "anyType": 9,
       "looseCast": 4
     },
     "test/unit/debate/runner-plan.test.ts": {
@@ -1881,7 +1864,6 @@
       "looseCast": 3
     },
     "test/unit/plugins/builtin/otel-reporter-lifecycle.test.ts": {
-      "anyType": 10,
       "nonNullAssert": 12
     },
     "test/unit/plugins/builtin/auto-pr-template.test.ts": {
@@ -2272,18 +2254,8 @@
       "ratchetAllow": 2,
       "looseCast": 8
     },
-    "test/unit/pipeline/stages/execution-phase-telemetry.test.ts": {
-      "asAny": 10,
-      "anyType": 10,
-      "looseCast": 1
-    },
     "test/unit/pipeline/stages/acceptance-setup-events.test.ts": {
       "looseCast": 10
-    },
-    "test/unit/pipeline/stages/acceptance-missing-target.test.ts": {
-      "asAny": 7,
-      "ratchetAllow": 2,
-      "anyType": 9
     },
     "test/unit/pipeline/stages/completion-fragment-capture.test.ts": {
       "asAny": 6,

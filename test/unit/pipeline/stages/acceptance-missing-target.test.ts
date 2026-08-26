@@ -7,7 +7,7 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { makeDispatchContext, makeStory } from "@test/helpers";
+import { makeDispatchContext, makeSpawn, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { acceptanceStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
@@ -39,7 +39,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
         enabled: true,
         testPath: "acceptance.test.ts",
       },
-    } as any,
+    },
     rootConfig: DEFAULT_CONFIG,
     prd: {
       project: "test-project",
@@ -48,14 +48,14 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       userStories: stories,
-    } as any,
+    },
     story: stories[0],
     stories,
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
     workdir: "/tmp/test-workdir",
     projectDir: "/tmp/test-workdir",
     featureDir: "/tmp/test-workdir/.nax/features/test-feature",
-    hooks: {} as any,
+    hooks: { hooks: {} },
     ...makeDispatchContext(),
     ...overrides,
   };
@@ -67,12 +67,14 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
  */
 function stubFileExists(presentPaths: Set<string>): () => void {
   const origFile = Bun.file;
-  (Bun as any).file = (p: string) => ({
-    exists: () => Promise.resolve(presentPaths.has(p)),
-    text: () => Promise.resolve(""),
+  Object.assign(Bun, {
+    file: (p: string) => ({
+      exists: () => Promise.resolve(presentPaths.has(p)),
+      text: () => Promise.resolve(""),
+    }),
   });
   return () => {
-    (Bun as any).file = origFile;
+    Object.assign(Bun, { file: origFile });
   };
 }
 
@@ -192,7 +194,7 @@ describe("US-003: missing acceptance target fails the run", () => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           userStories: [story],
-        } as any,
+        },
         story,
         stories: [story],
         acceptanceTestPaths: [
@@ -256,7 +258,7 @@ describe("US-003: missing acceptance target fails the run", () => {
       config: {
         ...DEFAULT_CONFIG,
         acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false },
-      } as any,
+      },
     });
     expect(acceptanceStage.enabled(ctx)).toBe(false);
   });
@@ -265,20 +267,10 @@ describe("US-003: missing acceptance target fails the run", () => {
     const present = new Set(["/tmp/a.test.ts", "/tmp/b.test.ts"]);
     const restoreFile = stubFileExists(present);
     const origSpawn = _executorDeps.spawn;
-    _executorDeps.spawn = ((_cmd: string[], _opts: any) => ({
-      exited: Promise.resolve(0),
-      stdout: new ReadableStream({
-        start(c) {
-          c.enqueue(new TextEncoder().encode("1 pass\n"));
-          c.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(c) {
-          c.close();
-        },
-      }),
-    })) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
+    _executorDeps.spawn = makeSpawn(() => ({
+      exitCode: 0,
+      stdout: "1 pass\n",
+    })).spawn;
     try {
       const ctx = makeCtx({
         acceptanceTestPaths: [
@@ -302,20 +294,10 @@ describe("US-003: missing acceptance target fails the run", () => {
     const present = new Set(["/tmp/present.test.ts"]);
     const restoreFile = stubFileExists(present);
     const origSpawn = _executorDeps.spawn;
-    _executorDeps.spawn = ((_cmd: string[], _opts: any) => ({
-      exited: Promise.resolve(1),
-      stdout: new ReadableStream({
-        start(c) {
-          c.enqueue(new TextEncoder().encode("  (fail) AC-2: present boom\n"));
-          c.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(c) {
-          c.close();
-        },
-      }),
-    })) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
+    _executorDeps.spawn = makeSpawn(() => ({
+      exitCode: 1,
+      stdout: "  (fail) AC-2: present boom\n",
+    })).spawn;
     try {
       const ctx = makeCtx({
         acceptanceTestPaths: [

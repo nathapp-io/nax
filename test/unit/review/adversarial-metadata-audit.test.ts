@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
+import { captureAuditDecisions, makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeSpawn } from "@test/helpers";
 import type { IAgentManager } from "@/agents/manager-types";
 import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
 import { _diffUtilsDeps } from "@/review/diff-utils";
@@ -299,17 +299,9 @@ describe("runAdversarialReview — review audit gate", () => {
   afterEach(restoreAllDeps);
 
   test("audit disabled (default) — injected ReviewAuditor records success decisions", async () => {
-    const auditCalls: unknown[] = [];
+    const { auditor, decisions: auditCalls } = captureAuditDecisions();
     const agentManager = makeAgentManager(PASSING_RESPONSE);
-    const runtime = makeMockRuntime({
-      agentManager,
-      reviewAuditor: {
-        recordDispatch() {},
-        recordDecision: (entry) => auditCalls.push(entry),
-        getAdvisoryFindings: () => [],
-        async flush() {},
-      },
-    });
+    const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
 
     await runAdversarialReview({
       workdir: "/tmp/wd",
@@ -321,23 +313,15 @@ describe("runAdversarialReview — review audit gate", () => {
     });
 
     expect(auditCalls).toHaveLength(1);
-    expect((auditCalls[0] as any).parsed).toBe(true);
-    expect((auditCalls[0] as any).passed).toBe(true);
+    expect(auditCalls[0]?.parsed).toBe(true);
+    expect(auditCalls[0]?.passed).toBe(true);
   });
 
   test("audit enabled — ReviewAuditor records parsed:true on success", async () => {
-    const auditCalls: unknown[] = [];
+    const { auditor, decisions: auditCalls } = captureAuditDecisions();
     const agentManager = makeAgentManager(PASSING_RESPONSE);
-    const runtime = makeMockRuntime({
-      agentManager,
-      reviewAuditor: {
-        recordDispatch() {},
-        recordDecision: (entry) => auditCalls.push(entry),
-        getAdvisoryFindings: () => [],
-        async flush() {},
-      },
-    });
-    const config = { review: { audit: { enabled: true } } } as any;
+    const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
+    const config = makeNaxConfig({ review: { audit: { enabled: true } } });
 
     await runAdversarialReview({
       workdir: "/tmp/wd",
@@ -350,24 +334,16 @@ describe("runAdversarialReview — review audit gate", () => {
     });
 
     expect(auditCalls).toHaveLength(1);
-    expect((auditCalls[0] as any).parsed).toBe(true);
-    expect((auditCalls[0] as any).reviewer).toBe("adversarial");
-    expect((auditCalls[0] as any).result.passed).toBe(true);
+    expect(auditCalls[0]?.parsed).toBe(true);
+    expect(auditCalls[0]?.reviewer).toBe("adversarial");
+    expect(auditCalls[0]?.result?.passed).toBe(true);
   });
 
   test("audit enabled — ReviewAuditor records parsed:false on parse failure", async () => {
-    const auditCalls: unknown[] = [];
+    const { auditor, decisions: auditCalls } = captureAuditDecisions();
     const agentManager = makeAgentManager("not json at all");
-    const runtime = makeMockRuntime({
-      agentManager,
-      reviewAuditor: {
-        recordDispatch() {},
-        recordDecision: (entry) => auditCalls.push(entry),
-        getAdvisoryFindings: () => [],
-        async flush() {},
-      },
-    });
-    const config = { review: { audit: { enabled: true } } } as any;
+    const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
+    const config = makeNaxConfig({ review: { audit: { enabled: true } } });
 
     await runAdversarialReview({
       workdir: "/tmp/wd",
@@ -380,9 +356,9 @@ describe("runAdversarialReview — review audit gate", () => {
     });
 
     expect(auditCalls).toHaveLength(1);
-    expect((auditCalls[0] as any).parsed).toBe(false);
-    expect((auditCalls[0] as any).looksLikeFail).toBe(false);
-    expect((auditCalls[0] as any).result).toBeNull();
+    expect(auditCalls[0]?.parsed).toBe(false);
+    expect(auditCalls[0]?.looksLikeFail).toBe(false);
+    expect(auditCalls[0]?.result).toBeNull();
   });
 });
 

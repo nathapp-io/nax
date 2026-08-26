@@ -2,7 +2,13 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { mockFetch, withWarnSpy } from "@test/helpers";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { createOtelReporterPlugin, type PostJsonDeps } from "@/plugins";
-import { attr } from "@/plugins/builtin/otel-reporter/otlp";
+import {
+  attr,
+  type KeyValue,
+  type OtlpMetric,
+  type OtlpMetricsPayload,
+  type OtlpTracesPayload,
+} from "@/plugins/builtin/otel-reporter/otlp";
 
 /**
  * Heartbeat cadence/content, detail-level redaction (counts vs verbose), and
@@ -27,31 +33,60 @@ const baseCfg: OtelReporterConfig = {
   logs: { enabled: false, level: "info" },
 };
 
+type OtlpPost = { url: string; body: OtlpTracesPayload | OtlpMetricsPayload };
+type MetricsPost = OtlpPost & { body: OtlpMetricsPayload };
+type TracesPost = OtlpPost & { body: OtlpTracesPayload };
+
+// The src `OtlpTracesPayload` types `scopeSpans[].spans` as bare `object[]`, so this
+// interface narrows the span shape the reporter actually emits (traceId/spanId/name/
+// kind/times/attributes — see otlp.ts buildTracesPayload and span-tree.ts Span),
+// verified at runtime by the `isSpan` guard, never asserted.
+interface SpanProbe {
+  attributes?: KeyValue[];
+  startTimeUnixNano: string;
+}
+
+function isSpan(value: object): value is SpanProbe {
+  return "startTimeUnixNano" in value;
+}
+
+function isMetricsPost(post: OtlpPost): post is MetricsPost {
+  return post.url.endsWith("/v1/metrics") && "resourceMetrics" in post.body;
+}
+
+function isTracesPost(post: OtlpPost): post is TracesPost {
+  return post.url.endsWith("/v1/traces") && "resourceSpans" in post.body;
+}
+
 function capturing() {
-  const posts: Array<{ url: string; body: any }> = [];
+  const posts: OtlpPost[] = [];
   const deps: PostJsonDeps = {
     fetch: mockFetch(async (url, init) => {
-      posts.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+      posts.push({ url: String(url), body: parseOtlpBody(String(init?.body)) });
       return new Response(null, { status: 200 });
     }),
   };
   return { posts, deps };
 }
 
-function metricsPosts(posts: Array<{ url: string; body: any }>) {
-  return posts.filter((p) => p.url.endsWith("/v1/metrics"));
+function parseOtlpBody(raw: string): OtlpTracesPayload | OtlpMetricsPayload {
+  return JSON.parse(raw);
 }
 
-function tracesPosts(posts: Array<{ url: string; body: any }>) {
-  return posts.filter((p) => p.url.endsWith("/v1/traces"));
+function metricsPosts(posts: OtlpPost[]) {
+  return posts.filter(isMetricsPost);
 }
 
-function allTraceSpans(posts: Array<{ url: string; body: any }>) {
-  return tracesPosts(posts).flatMap((p) => p.body.resourceSpans[0].scopeSpans[0].spans);
+function tracesPosts(posts: OtlpPost[]) {
+  return posts.filter(isTracesPost);
 }
 
-function findMetric(metrics: any[], name: string) {
-  return metrics.find((m: any) => m.name === name);
+function allTraceSpans(posts: OtlpPost[]) {
+  return tracesPosts(posts).flatMap((p) => p.body.resourceSpans[0].scopeSpans[0].spans.filter(isSpan));
+}
+
+function findMetric(metrics: OtlpMetric[], name: string) {
+  return metrics.find((m) => m.name === name);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -236,8 +271,8 @@ describe("otel-reporter detail-gated review payloads", () => {
       storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
     });
 
-    const reviewSpan = allTraceSpans(posts).find((s: any) =>
-      (s.attributes ?? []).some((a: any) => a.key === "phase" && a.value.stringValue === "adversarial-review"),
+    const reviewSpan = allTraceSpans(posts).find((s) =>
+      (s.attributes ?? []).some((a) => a.key === "phase" && a.value.stringValue === "adversarial-review"),
     );
     expect(reviewSpan).toBeDefined(); // exported at all
 
@@ -428,8 +463,8 @@ describe("otel-reporter flush and teardown lifecycle", () => {
 
     const spans = allTraceSpans(posts);
     for (const phase of phases) {
-      const found = spans.some((s: any) =>
-        (s.attributes ?? []).some((a: any) => a.key === "phase" && a.value.stringValue === phase),
+      const found = spans.some((s) =>
+        (s.attributes ?? []).some((a) => a.key === "phase" && a.value.stringValue === phase),
       );
       expect(found).toBe(true);
     }
@@ -504,7 +539,7 @@ describe("otel-reporter flush and teardown lifecycle", () => {
     });
     const after = Date.now();
 
-    const span = tracesPosts(posts)[0]?.body.resourceSpans[0].scopeSpans[0].spans[0];
+    const span = allTraceSpans(posts)[0];
     expect(span).toBeDefined();
     const startMs = Number(BigInt(span.startTimeUnixNano) / 1_000_000n);
     expect(startMs).toBeGreaterThanOrEqual(before - 5_000 - 50);

@@ -11,96 +11,87 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeAgentAdapter, makeMockAgentManager, makeNaxConfig, makeStory } from "@test/helpers";
+import { makeAgentAdapter, makeNaxConfig, makeStory, makeTestContext } from "@test/helpers";
+import type { ConfigSelector } from "@/config";
+import { _storyOrchestratorDeps, ExecutionPlan } from "@/execution";
 import type { CallContext } from "@/operations/types";
 import { _executionDeps, executionStage } from "@/pipeline";
-import type { PipelineContext } from "@/pipeline/types";
+import type { PipelineContext, RoutingResult } from "@/pipeline/types";
 
-function makePipelineContext(overrides: Partial<PipelineContext> = {}): PipelineContext {
+const BASE_ROUTING: RoutingResult = {
+  complexity: "simple",
+  modelTier: "fast",
+  testStrategy: "test-after",
+  reasoning: "",
+  agent: "claude",
+};
+
+function makePipelineContext(routingOverrides: Partial<RoutingResult> = {}): PipelineContext {
   const config = makeNaxConfig();
-  const story = makeStory();
-  const agentManager = makeMockAgentManager();
-
-  return {
-    story,
-    stories: [story],
+  return makeTestContext({
     config,
     rootConfig: config,
-    prd: {
-      project: "test",
-      feature: "test-feature",
-      branchName: "test-branch",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      userStories: [story],
+    routing: { ...BASE_ROUTING, ...routingOverrides },
+    packageView: {
+      packageDir: "/tmp/test",
+      relativeFromRoot: "",
+      repoRoot: "/tmp/test",
+      hasOverride: false,
+      config,
+      select: <C>(selector: ConfigSelector<C>) => selector.select(config),
     },
-    projectDir: "/tmp/test",
-    workdir: "/tmp/test",
-    packageView: {} as any,
-    routing: {
-      complexity: "simple",
-      modelTier: "fast",
-      testStrategy: "test-after",
-      agent: "claude",
-    },
-    agentManager,
-    sessionManager: {
-      openSession: async () => ({ sessionId: "test-session" }) as any,
-      sendPrompt: async () => ({ output: "test" }) as any,
-      closeSession: async () => {},
-      runInSession: async () => ({ output: "test" }) as any,
-      handoff: async () => {},
-      nameFor: () => "test-session",
-    } as any,
-    runtime: {
-      signal: AbortSignal.timeout(300000),
-      onPidSpawned: () => {},
-      dispatchEvents: undefined,
-    } as any,
-    abortSignal: AbortSignal.timeout(300000),
-    hooks: {},
-    prompt: "Test prompt",
-    featureContextMarkdown: "Feature context",
-    constitution: { content: "Constitution" },
-    ...overrides,
-  } as PipelineContext;
+  });
 }
 
 let orig: typeof _executionDeps;
+let origCaptureTreeState: typeof _storyOrchestratorDeps.captureTreeState;
 let capturedCallCtx: CallContext | undefined;
 
 beforeEach(() => {
   orig = { ..._executionDeps };
+  origCaptureTreeState = _storyOrchestratorDeps.captureTreeState;
   capturedCallCtx = undefined;
   _executionDeps.getAgent = () => makeAgentAdapter({ name: "claude" });
   _executionDeps.validateAgentForTier = () => true;
   _executionDeps.captureGitRef = async () => "HEAD";
   _executionDeps.getUntrackedPaths = async () => [];
-  _executionDeps.assemblePlanInputsFromCtx = async () => ({}) as any;
+  _executionDeps.assemblePlanInputsFromCtx = async () => ({ story: makeStory(), config: makeNaxConfig() });
   _executionDeps.buildPlanForStrategy = async (callCtx: CallContext) => {
     capturedCallCtx = callCtx;
-    return { run: async () => ({ storyId: callCtx.storyId }) } as any;
+    return new ExecutionPlan(callCtx, {}, false);
   };
-  _executionDeps.applyPostRunInspection = async () => ({}) as any;
-  _executionDeps.decideStageAction = () => ({ action: "continue" }) as any;
+  _executionDeps.applyPostRunInspection = async () => ({
+    agentResult: {
+      success: true,
+      exitCode: 0,
+      output: "",
+      rateLimited: false,
+      durationMs: 0,
+      estimatedCostUsd: 0,
+    },
+    selfVerificationFailed: false,
+    needsHumanReview: false,
+    combinedOutput: "",
+  });
+  _executionDeps.decideStageAction = async () => ({ action: "continue" });
+  _storyOrchestratorDeps.captureTreeState = async () => ({ headSha: "test-head", dirtyDigest: "" });
 });
 
 afterEach(() => {
   Object.assign(_executionDeps, orig);
+  _storyOrchestratorDeps.captureTreeState = origCaptureTreeState;
 });
 
 describe("execution stage — phaseTelemetry derivation (US-003 ACs 1-4)", () => {
   test("AC1/AC2: three-session-tdd derives sessionModel=three-session and forwards testStrategy unchanged", async () => {
-    const ctx = makePipelineContext({
-      routing: { ...makePipelineContext().routing, testStrategy: "three-session-tdd" },
-    });
+    const ctx = makePipelineContext({ testStrategy: "three-session-tdd" });
     await executionStage.execute(ctx);
     expect(capturedCallCtx?.phaseTelemetry?.sessionModel).toBe("three-session");
     expect(capturedCallCtx?.phaseTelemetry?.testStrategy).toBe("three-session-tdd");
   });
 
   test("AC3: no-test derives sessionModel=single-session", async () => {
-    const ctx = makePipelineContext({ routing: { ...makePipelineContext().routing, testStrategy: "no-test" } });
+    const ctx = makePipelineContext({ testStrategy: "no-test" });
     await executionStage.execute(ctx);
     expect(capturedCallCtx?.phaseTelemetry?.sessionModel).toBe("single-session");
   });
@@ -116,7 +107,7 @@ describe("execution stage — phaseTelemetry derivation (US-003 ACs 1-4)", () =>
           supportedTiers: ["fast"],
         },
       });
-    const ctx = makePipelineContext({ routing: { ...makePipelineContext().routing, modelTier: "powerful" } });
+    const ctx = makePipelineContext({ modelTier: "powerful" });
     await executionStage.execute(ctx);
     expect(capturedCallCtx?.phaseTelemetry?.tier).toBe("fast");
   });

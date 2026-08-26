@@ -6,6 +6,7 @@
  * global Bun.spawn to avoid cross-file contamination in parallel test runs.
  */
 import { mock } from "bun:test";
+import { makeNaxConfig, makeSpawn } from "@test/helpers";
 import type { AgentAdapter, AgentResult } from "@/agents";
 import { _fullSuiteGateDeps } from "@/operations/full-suite-gate";
 import { _isolationDeps } from "@/tdd/isolation";
@@ -57,12 +58,12 @@ export function restoreDeps(saved: SavedDeps): void {
  * call adds 2s of wall-clock time to integration tests.
  */
 export function stubFullSuiteGateContext(testCmd = "bun test"): void {
-  _fullSuiteGateDeps.resolveGateContext = async () =>
-    ({
-      config: {} as any,
-      testCmd,
-      fullSuiteTimeout: 60,
-    }) as any;
+  _fullSuiteGateDeps.resolveGateContext = async (input) => ({
+    config: makeNaxConfig(),
+    testCmd,
+    fullSuiteTimeout: 60,
+    cmdWorkdir: input.workdir,
+  });
   _regressionRunnerDeps.sleep = async () => {};
 }
 
@@ -116,20 +117,40 @@ export function createMockAgent(results: Partial<AgentResult>[]): AgentAdapter {
   };
 }
 
-/** Standard mock response for Bun.spawn */
-function mockResponse(text: string) {
-  return new Response(text).body;
+/**
+ * The subset of a subprocess that inline spawn mocks provide and the source
+ * actually reads — same contract as makeSpawn's FakeProcSpec, expressed from
+ * the fake side. Everything else on Subprocess (kill/ref/unref/…) is never
+ * touched on these paths.
+ */
+interface PartialSubprocess {
+  exited?: Promise<number>;
+  stdout?: ReadableStream<Uint8Array> | null;
+  stderr?: ReadableStream<Uint8Array> | null;
+  pid?: number;
+}
+
+/**
+ * Present a partially-shaped spawn fake at the type the `_xDeps.spawn` slots
+ * declare — same overload move as makeSpawnResult: the public signature is
+ * what the slots require, while the implementation hands the fake through
+ * untouched, because the source reads only the PartialSubprocess subset.
+ */
+function presentAsSpawn(mockFn: (cmd: string[], opts?: Record<string, unknown>) => PartialSubprocess): typeof Bun.spawn;
+function presentAsSpawn(mockFn: (cmd: string[], opts?: Record<string, unknown>) => PartialSubprocess): unknown {
+  return (cmd: string[], opts?: Record<string, unknown>) => mockFn(cmd, opts);
 }
 
 /**
  * Set all spawn deps to a single mock function.
  * Use for inline mocks that need custom behavior across all spawn points.
  */
-export function mockAllSpawn(mockFn: any): void {
-  _isolationDeps.spawn = mockFn;
-  _executorDeps.spawn = mockFn;
-  _gitDeps.spawn = mockFn;
-  _rollbackDeps.spawn = mockFn;
+export function mockAllSpawn(mockFn: (cmd: string[], opts?: Record<string, unknown>) => PartialSubprocess): void {
+  const presented = presentAsSpawn(mockFn);
+  _isolationDeps.spawn = presented;
+  _executorDeps.spawn = presented;
+  _gitDeps.spawn = presented;
+  _rollbackDeps.spawn = presented;
 }
 
 /**
@@ -147,60 +168,36 @@ export function mockGitSpawn(opts: {
   const testSuccess = opts.testCommandSuccess ?? true;
 
   // Mock git diff calls (isolation checks + getChangedFiles)
-  _isolationDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
+  _isolationDeps.spawn = makeSpawn(({ cmd }) => {
     if (cmd[0] === "git" && cmd[1] === "diff") {
       const files = opts.diffFiles[diffCount] || [];
       diffCount++;
-      return {
-        exited: Promise.resolve(0),
-        stdout: mockResponse(`${files.join("\n")}\n`),
-        stderr: mockResponse(""),
-      };
+      return `${files.join("\n")}\n`;
     }
     // Fallback — shouldn't happen in normal test flow
-    return {
-      exited: Promise.resolve(0),
-      stdout: mockResponse(""),
-      stderr: mockResponse(""),
-    };
-  }) as any;
+    return "";
+  }).spawn;
 
   // Mock git rev-parse, checkout, reset, clean, status, add, commit (captureGitRef, rollback, autoCommit)
-  const gitMock = mock((cmd: string[], spawnOpts?: any) => {
+  const gitStub = makeSpawn(({ cmd, opts }) => {
     if (cmd[0] === "git" && cmd[1] === "rev-parse") {
       if (cmd[2] === "--show-toplevel") {
         // autoCommitIfDirty guard — return the workdir so it passes
-        return {
-          exited: Promise.resolve(0),
-          stdout: mockResponse(`${spawnOpts?.cwd ?? "/tmp/test"}\n`),
-          stderr: mockResponse(""),
-        };
+        return `${typeof opts.cwd === "string" ? opts.cwd : "/tmp/test"}\n`;
       }
       revParseCount++;
-      return {
-        exited: Promise.resolve(0),
-        stdout: mockResponse(`ref-${revParseCount}\n`),
-        stderr: mockResponse(""),
-      };
+      return `ref-${revParseCount}\n`;
     }
     // Default: succeed silently (git checkout, reset, clean, status, add, commit)
-    return {
-      exited: Promise.resolve(0),
-      stdout: mockResponse(""),
-      stderr: mockResponse(""),
-    };
-  }) as any;
-
-  _gitDeps.spawn = gitMock;
-  _rollbackDeps.spawn = gitMock;
+    return "";
+  });
+  _gitDeps.spawn = gitStub.spawn;
+  _rollbackDeps.spawn = gitStub.spawn;
 
   // Mock test command execution (executeWithTimeout)
-  _executorDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
-    return {
-      pid: 9999,
-      exited: Promise.resolve(testSuccess ? 0 : 1),
-      stdout: mockResponse(testSuccess ? "tests pass\n" : "tests fail\n"),
-      stderr: mockResponse(""),
-    };
-  }) as any;
+  _executorDeps.spawn = makeSpawn(() => ({
+    pid: 9999,
+    exitCode: testSuccess ? 0 : 1,
+    stdout: testSuccess ? "tests pass\n" : "tests fail\n",
+  })).spawn;
 }
