@@ -1,5 +1,13 @@
 import { describe, expect, mock, test } from "bun:test";
-import { makeLogger, makeMockAgentManager, makeMockRuntime, makePRD, makeStory } from "@test/helpers";
+import {
+  makeDebateRunner,
+  makeLogger,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeNaxConfig,
+  makePRD,
+  makeStory,
+} from "@test/helpers";
 import { NaxError } from "@/errors";
 import { _pipelinePlanDeps, PipelinePlanStrategy } from "@/plan";
 import type { PlanCriticVerdict } from "@/plan/critic";
@@ -38,7 +46,7 @@ function makeCtx(overrides: Partial<PlanModeContext> = {}): PlanModeContext {
     branchName: "feat/feat-x",
     profileName: "default",
     timeoutSeconds: 30,
-    config: { citationThreshold: 0.55, plan: { citationThreshold: 0.55 }, project: { language: "ts" } } as never,
+    config: makeNaxConfig({ plan: { citationThreshold: 0.55 }, project: { language: "typescript" } }),
     options: { from: "/tmp/spec.md", feature: "feat-x" },
     runtime: makeRuntime(),
     interactionChain: null,
@@ -54,7 +62,7 @@ function makeCtx(overrides: Partial<PlanModeContext> = {}): PlanModeContext {
       spawnSync: () => ({ stdout: Buffer.from(""), exitCode: 0 }),
       initInteractionChain: async () => null,
       createInteractionBridge: () => ({ detectQuestion: async () => false, onQuestionDetected: async () => "" }),
-      createDebateRunner: () => ({}) as never,
+      createDebateRunner: () => makeDebateRunner(),
       getLogger: () => makeLogger(),
     },
     ...overrides,
@@ -138,17 +146,16 @@ describe("PipelinePlanStrategy", () => {
     let writtenContent = "";
     const ctx = makeCtx({
       profileName: "team-a",
-      config: {
-        citationThreshold: 0.55,
+      config: makeNaxConfig({
         plan: { citationThreshold: 0.55 },
-        project: { language: "ts" },
+        project: { language: "typescript" },
         routing: {
           agents: {
             enabled: true,
             profiles: [{ id: "senior", target: { agent: "claude", model: "powerful" } }],
           },
         },
-      } as never,
+      }),
       deps: {
         readFile: async () => "",
         writeFile: async (_path: string, content: string) => {
@@ -162,7 +169,7 @@ describe("PipelinePlanStrategy", () => {
         spawnSync: () => ({ stdout: Buffer.from(""), exitCode: 0 }),
         initInteractionChain: async () => null,
         createInteractionBridge: () => ({ detectQuestion: async () => false, onQuestionDetected: async () => "" }),
-        createDebateRunner: () => ({}) as never,
+        createDebateRunner: () => makeDebateRunner(),
         getLogger: () => makeLogger(),
       },
     });

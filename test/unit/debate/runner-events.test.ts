@@ -11,6 +11,7 @@ import { DEFAULT_CONFIG } from "@/config";
 import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
+import { Logger } from "@/logger";
 import type { CallContext } from "@/operations/types";
 
 function makeCallCtx(storyId: string, agentManager: ReturnType<typeof makeMockAgentManager>): CallContext {
@@ -49,18 +50,27 @@ afterEach(() => {
 
 // ─── JSONL log events ─────────────────────────────────────────────────────────
 
+function makeCapturingLogger(
+  infoEvents: Array<{ stage: string; event: string; data: Record<string, unknown> }>,
+  warnEvents?: Array<{ stage: string; event: string; data: Record<string, unknown> }>,
+): Logger {
+  const logger = new Logger({ level: "silent" });
+  logger.info = ((stage: string, event: string, data?: Record<string, unknown>) => {
+    infoEvents.push({ stage, event, data: data ?? {} });
+  }) as typeof logger.info;
+  if (warnEvents) {
+    logger.warn = ((stage: string, event: string, data?: Record<string, unknown>) => {
+      warnEvents.push({ stage, event, data: data ?? {} });
+    }) as typeof logger.warn;
+  }
+  return logger;
+}
+
 describe("DebateRunner.run() — JSONL log events", () => {
   test("emits debate:start event with storyId, stage, and debaters", async () => {
     const events: Array<{ stage: string; event: string; data: Record<string, unknown> }> = [];
 
-    _debateSessionDeps.getSafeLogger = mock(() => ({
-      info: (stage: string, event: string, data: Record<string, unknown>) => {
-        events.push({ stage, event, data });
-      },
-      debug: () => {},
-      warn: () => {},
-      error: () => {},
-    })) as never;
+    _debateSessionDeps.getSafeLogger = mock(() => makeCapturingLogger(events));
 
     const agentManager = makeMockAgentManager();
 
@@ -87,14 +97,7 @@ describe("DebateRunner.run() — JSONL log events", () => {
   test("emits debate:proposal events after proposal round", async () => {
     const events: Array<{ stage: string; event: string; data: Record<string, unknown> }> = [];
 
-    _debateSessionDeps.getSafeLogger = mock(() => ({
-      info: (stage: string, event: string, data: Record<string, unknown>) => {
-        events.push({ stage, event, data });
-      },
-      debug: () => {},
-      warn: () => {},
-      error: () => {},
-    })) as never;
+    _debateSessionDeps.getSafeLogger = mock(() => makeCapturingLogger(events));
 
     const agentManager = makeMockAgentManager();
 
@@ -120,14 +123,7 @@ describe("DebateRunner.run() — JSONL log events", () => {
   test("emits debate:result event at the end of a successful debate", async () => {
     const events: Array<{ stage: string; event: string; data: Record<string, unknown> }> = [];
 
-    _debateSessionDeps.getSafeLogger = mock(() => ({
-      info: (stage: string, event: string, data: Record<string, unknown>) => {
-        events.push({ stage, event, data });
-      },
-      debug: () => {},
-      warn: () => {},
-      error: () => {},
-    })) as never;
+    _debateSessionDeps.getSafeLogger = mock(() => makeCapturingLogger(events));
 
     const agentManager = makeMockAgentManager();
 
@@ -152,15 +148,9 @@ describe("DebateRunner.run() — JSONL log events", () => {
 
   test("emits debate:fallback warn event when only 1 debater succeeds", async () => {
     const warnings: Array<{ stage: string; event: string; data: Record<string, unknown> }> = [];
+    const infoSink: Array<{ stage: string; event: string; data: Record<string, unknown> }> = [];
 
-    _debateSessionDeps.getSafeLogger = mock(() => ({
-      info: () => {},
-      debug: () => {},
-      warn: (stage: string, event: string, data: Record<string, unknown>) => {
-        warnings.push({ stage, event, data });
-      },
-      error: () => {},
-    })) as never;
+    _debateSessionDeps.getSafeLogger = mock(() => makeCapturingLogger(infoSink, warnings));
 
     const agentManager = makeMockAgentManager({
       unavailableAgents: new Set(["missing"]),
