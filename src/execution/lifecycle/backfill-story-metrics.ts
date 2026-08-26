@@ -18,16 +18,23 @@
  *    diagnosis); the placeholder shape, unchanged.
  */
 
+import type { AgentFallbackRecord } from "@/agents/manager-types";
 import type { NaxConfig } from "@/config";
 import { resolveModelForAgent } from "@/config";
 import type { AgentFallbackHop, StoryMetrics } from "@/metrics";
+import { toFallbackHops } from "@/metrics";
 import type { UserStory } from "@/prd/types";
 
 export interface BackfillMetricArgs {
   storyId: string;
   /** The story from the PRD, if found. */
   story: UserStory | undefined;
-  /** Aggregator cost for this story (already known to be > 0 by the caller). */
+  /**
+   * Aggregator cost for this story. May be `0`: nax#1714 — a story can fail having
+   * spent nothing (a fallback chain whose candidates all fail auth instantly), and
+   * its hops and crash retries are still worth recording. Nothing below branches on
+   * this being positive.
+   */
   totalCostUsd: number;
   config: NaxConfig;
   /** Resolved default agent, used only for the completion-phase placeholder. */
@@ -46,11 +53,21 @@ export interface BackfillMetricArgs {
   runtimeCrashes?: number;
 }
 
-/** True when the story ran and terminated as a failure in the execution stage. */
-function isExecutionFailure(story: UserStory | undefined): boolean {
-  return (
-    story != null && (story.status === "failed" || story.status === "regression-failed") && (story.attempts ?? 0) > 0
-  );
+/**
+ * True when the story ran and terminated as a failure in the execution stage.
+ *
+ * nax#1714: this used to also require `attempts > 0`, which excluded a story that
+ * died at session creation — it carries a failed status with no attempt recorded, and
+ * so fell to the completion-phase placeholder that drops its hops and crash retries.
+ * The requirement was redundant anyway: the branch it guards floors attempts at
+ * `Math.max(1, ...)`.
+ *
+ * Exported because nax#1721's back-fill domain must admit stories using the same
+ * definition this function branches on — a story the loop admits but this rejects
+ * would get the very placeholder it was admitted to avoid.
+ */
+export function isExecutionFailure(story: UserStory | undefined): boolean {
+  return story != null && (story.status === "failed" || story.status === "regression-failed");
 }
 
 /**
@@ -111,4 +128,124 @@ export function synthesizeBackfillMetric(args: BackfillMetricArgs): StoryMetrics
     source: "completion-phase",
     runtimeCrashes: 0,
   };
+}
+
+/**
+ * Which stories the back-fill should consider, and in what order.
+ *
+ * nax#1721: the loop used to iterate the cost aggregator's keys alone, so a story
+ * with no key was never visited. Two classes were invisible — a story that failed
+ * having spent nothing, and a sibling of a failed batch, whose spend is filed under
+ * the batch's LEAD (one session, one `ctx.storyId`) and which therefore has no key
+ * of its own.
+ *
+ * Aggregator keys come first so the pre-existing emission order is preserved; the
+ * other sources only append ids that order did not already cover.
+ */
+export function backfillDomain(input: {
+  aggregatorKeys: Iterable<string>;
+  fallbackKeys: Iterable<string>;
+  crashKeys: Iterable<string>;
+  stories: readonly UserStory[];
+}): string[] {
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  const add = (id: string): void => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    ordered.push(id);
+  };
+  for (const id of input.aggregatorKeys) add(id);
+  for (const id of input.fallbackKeys) add(id);
+  for (const id of input.crashKeys) add(id);
+  for (const story of input.stories) if (isExecutionFailure(story)) add(story.id);
+  return ordered;
+}
+
+/**
+ * Whether a story in the domain has any evidence worth a metric.
+ *
+ * Preserves the original guard's purpose — do not synthesize a row for a story that
+ * genuinely did nothing — without using cost as the proxy for it. A swap hop and a
+ * crash retry are both evidence of something that can cost nothing, and a story that
+ * terminated as an execution failure ran whether or not it left any of the three.
+ * A `pending` story a cost limit stopped the run before reaching matches none.
+ */
+export function hasBackfillEvidence(input: {
+  costUsd: number;
+  hopCount: number;
+  crashCount: number;
+  story: UserStory | undefined;
+}): boolean {
+  return input.costUsd > 0 || input.hopCount > 0 || input.crashCount > 0 || isExecutionFailure(input.story);
+}
+
+/**
+ * Apply the back-fill to `allStoryMetrics`, in place.
+ *
+ * For each story in the domain with evidence: synthesize a metric when it has no
+ * entry yet, or raise an existing entry's cost to the aggregator's value, which is
+ * authoritative across all phases.
+ *
+ * Lives here rather than inline in run-completion.ts so the domain rule, the evidence
+ * rule and the synthesis stay in one reviewable place (and run-completion.ts is close
+ * to its file-size limit).
+ */
+export function applyBackfill(input: {
+  allStoryMetrics: StoryMetrics[];
+  aggByStory: Record<string, { totalCostUsd: number }>;
+  stories: readonly UserStory[];
+  agentFallbacks: ReadonlyMap<string, AgentFallbackRecord[]>;
+  runtimeCrashRetries: ReadonlyMap<string, number>;
+  config: NaxConfig;
+  defaultAgent: string;
+}): void {
+  const { allStoryMetrics, aggByStory, stories, agentFallbacks, runtimeCrashRetries, config, defaultAgent } = input;
+  const existingIndex = new Map(allStoryMetrics.map((m, i) => [m.storyId, i]));
+  const timestamp = new Date().toISOString();
+
+  const domain = backfillDomain({
+    aggregatorKeys: Object.keys(aggByStory),
+    fallbackKeys: agentFallbacks.keys(),
+    crashKeys: runtimeCrashRetries.keys(),
+    stories,
+  });
+
+  for (const storyId of domain) {
+    const totalCostUsd = aggByStory[storyId]?.totalCostUsd ?? 0;
+    // nax#1709: the run-scoped stores outlive the per-attempt PipelineContext, so a
+    // story that failed in the execution stage still has its swap hops and crash
+    // retries here even though it never reached collectStoryMetrics.
+    const fallbackHops = toFallbackHops(agentFallbacks.get(storyId), storyId);
+    const runtimeCrashes = runtimeCrashRetries.get(storyId) ?? 0;
+    const story = stories.find((s) => s.id === storyId);
+    const hopCount = fallbackHops.length;
+    if (!hasBackfillEvidence({ costUsd: totalCostUsd, hopCount, crashCount: runtimeCrashes, story })) continue;
+
+    const existingIdx = existingIndex.get(storyId);
+    if (existingIdx === undefined) {
+      // A story with evidence but no execution-phase metric either failed in the
+      // execution stage (the pipeline stopped before the completion stage) or spent
+      // only in completion phases. synthesizeBackfillMetric distinguishes the two so a
+      // failed story gets its real attempts/model/tier instead of the corrupt
+      // attempts:0 / modelUsed=<agentName> placeholder (issue #1296).
+      allStoryMetrics.push(
+        synthesizeBackfillMetric({
+          storyId,
+          story,
+          totalCostUsd,
+          config,
+          defaultAgent,
+          timestamp,
+          fallbackHops,
+          runtimeCrashes,
+        }),
+      );
+      continue;
+    }
+    const existing = allStoryMetrics[existingIdx];
+    if (totalCostUsd > (existing.cost ?? 0)) {
+      allStoryMetrics[existingIdx] = { ...existing, cost: totalCostUsd };
+    }
+  }
 }
