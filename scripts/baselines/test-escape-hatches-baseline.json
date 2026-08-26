@@ -7,9 +7,9 @@
     "anyType": 10,
     "looseCast": 1800,
     "asNever": 603,
-    "nonNullAssert": 792
+    "nonNullAssert": 751
   },
-  "updatedAt": "2026-08-26T07:58:35.723Z",
+  "updatedAt": "2026-08-26T08:40:49.443Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -1005,9 +1005,6 @@
     "test/unit/operations/finding-to-check-tdd-verifier.test.ts": {
       "nonNullAssert": 1
     },
-    "test/unit/operations/semantic-review-verify.test.ts": {
-      "nonNullAssert": 22
-    },
     "test/unit/operations/lint-check-tool-diagnostics.test.ts": {
       "looseCast": 4
     },
@@ -1057,8 +1054,7 @@
     },
     "test/unit/operations/adversarial-review-verify.test.ts": {
       "looseCast": 5,
-      "asNever": 1,
-      "nonNullAssert": 19
+      "asNever": 1
     },
     "test/unit/operations/call-exhausted-fallback.test.ts": {
       "looseCast": 3

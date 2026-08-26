@@ -72,6 +72,19 @@ function makeOutput(overrides: Partial<AdversarialReviewOutput> = {}): Adversari
   };
 }
 
+// verify is optional on the op interface (src/operations/types.ts) because ops may omit
+// it; this op implements it. Asserting on the method keeps absence failing loudly here
+// instead of relying on a compile-only `!`.
+async function runVerify(
+  parsed: AdversarialReviewOutput,
+  input: AdversarialReviewInput,
+  ctx: ReturnType<typeof makeVerifyCtx>,
+) {
+  const { verify } = adversarialReviewOp;
+  assertDefined(verify, "adversarialReviewOp.verify");
+  return verify(parsed, input, ctx);
+}
+
 describe("adversarialReviewOp.verify() — short-circuits (AC13)", () => {
   // Contract drift (US-003 AC8): verify() now always persists blockingThreshold onto
   // the output, so it returns a new object (not the same reference as parsed).
@@ -79,21 +92,21 @@ describe("adversarialReviewOp.verify() — short-circuits (AC13)", () => {
   test("FAIL_OPEN short-circuits verify — returns parsed content unchanged", async () => {
     const ctx = makeVerifyCtx();
     const parsed = makeOutput({ failOpen: true, passed: true, findings: [], normalizedFindings: [] });
-    const result = await adversarialReviewOp.verify!(parsed, BASE_INPUT, ctx);
+    const result = await runVerify(parsed, BASE_INPUT, ctx);
     expect(result).toMatchObject(parsed);
   });
 
   test("looksLikeFail short-circuits verify — returns parsed content unchanged", async () => {
     const ctx = makeVerifyCtx();
     const parsed = makeOutput({ looksLikeFail: true, passed: false, findings: [], normalizedFindings: [] });
-    const result = await adversarialReviewOp.verify!(parsed, BASE_INPUT, ctx);
+    const result = await runVerify(parsed, BASE_INPUT, ctx);
     expect(result).toMatchObject(parsed);
   });
 
   test("empty findings short-circuits verify — returns parsed content unchanged", async () => {
     const ctx = makeVerifyCtx();
     const parsed = makeOutput({ passed: true, findings: [], normalizedFindings: [] });
-    const result = await adversarialReviewOp.verify!(parsed, BASE_INPUT, ctx);
+    const result = await runVerify(parsed, BASE_INPUT, ctx);
     expect(result).toMatchObject(parsed);
   });
 
@@ -101,7 +114,7 @@ describe("adversarialReviewOp.verify() — short-circuits (AC13)", () => {
     const ctx = makeVerifyCtx();
     const input: AdversarialReviewInput = { ...BASE_INPUT, blockingThreshold: "warning" };
     const parsed = makeOutput({ passed: true, findings: [], normalizedFindings: [] });
-    const result = await adversarialReviewOp.verify!(parsed, input, ctx);
+    const result = await runVerify(parsed, input, ctx);
     expect((result as AdversarialReviewOutput & Record<string, unknown>).blockingThreshold).toBe("warning");
   });
 });
@@ -150,11 +163,11 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
         ],
         normalizedFindings: [],
       });
-      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
+      const result = await runVerify(parsed, input, ctx);
+      assertDefined(result, "verify() result");
       // error finding should be in normalizedFindings; warning should not
-      expect(result!.normalizedFindings.some((f) => f.message?.includes("SQL injection"))).toBe(true);
-      expect(result!.normalizedFindings.some((f) => f.message?.includes("Logging missing"))).toBe(false);
+      expect(result.normalizedFindings.some((f) => f.message?.includes("SQL injection"))).toBe(true);
+      expect(result.normalizedFindings.some((f) => f.message?.includes("Logging missing"))).toBe(false);
     });
   });
 
@@ -187,10 +200,10 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
         ],
         normalizedFindings: [],
       });
-      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
-      expect(result!.findings).toHaveLength(0);
-      expect(result!.normalizedFindings).toHaveLength(0);
+      const result = await runVerify(parsed, input, ctx);
+      assertDefined(result, "verify() result");
+      expect(result.findings).toHaveLength(0);
+      expect(result.normalizedFindings).toHaveLength(0);
     });
   });
 
@@ -220,11 +233,11 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
         ],
         normalizedFindings: [],
       });
-      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
-      expect(result!.passed).toBe(true);
-      expect(result!.findings).toHaveLength(1);
-      expect(result!.normalizedFindings).toHaveLength(0);
+      const result = await runVerify(parsed, input, ctx);
+      assertDefined(result, "verify() result");
+      expect(result.passed).toBe(true);
+      expect(result.findings).toHaveLength(1);
+      expect(result.normalizedFindings).toHaveLength(0);
     });
   });
 
@@ -259,11 +272,11 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
         ],
         normalizedFindings: [],
       });
-      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
-      expect(result!.findings).toHaveLength(1);
-      expect(result!.normalizedFindings).toHaveLength(1);
-      expect(result!.passed).toBe(false);
+      const result = await runVerify(parsed, input, ctx);
+      assertDefined(result, "verify() result");
+      expect(result.findings).toHaveLength(1);
+      expect(result.normalizedFindings).toHaveLength(1);
+      expect(result.passed).toBe(false);
     });
   });
 
@@ -308,7 +321,7 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
       resolvedTestPatterns: makeResolvedTestPatterns({ regex: [/\.spec\.ts$/] }),
     };
     const parsed = makeOutput({ passed: false, findings: [finding], normalizedFindings: [], acDropped: [] });
-    const out = await adversarialReviewOp.verify!(parsed, input, ctx);
+    const out = await runVerify(parsed, input, ctx);
     assertDefined(out, "verify() result");
     expect(out.passed).toBe(true);
     expect(out.normalizedFindings.length).toBe(0);
@@ -362,7 +375,7 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
       resolvedTestPatterns: makeResolvedTestPatterns({ regex: [/\.spec\.ts$/] }),
     };
     const parsed = makeOutput({ passed: false, findings: [finding], normalizedFindings: [], acDropped: [] });
-    const out = await adversarialReviewOp.verify!(parsed, input, ctx);
+    const out = await runVerify(parsed, input, ctx);
     assertDefined(out, "verify() result");
     // n=2, prev=warning → entry guard suppresses → advisory, not blocking
     expect(out.passed).toBe(true);
@@ -402,8 +415,8 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
         ],
         normalizedFindings: [],
       });
-      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
+      const result = await runVerify(parsed, input, ctx);
+      assertDefined(result, "verify() result");
       // acDropped should have the dropped finding
       expect((result as AdversarialReviewOutput).acDropped).toHaveLength(1);
     });
@@ -435,7 +448,7 @@ describe("adversarialReviewOp.verify() — scope grounding", () => {
     const ctx = makeVerifyCtx();
     const parsed = makeOutput({ passed: false, findings: [scopeFinding()], normalizedFindings: [] });
 
-    const result = await adversarialReviewOp.verify!(parsed, inputWithScope, ctx);
+    const result = await runVerify(parsed, inputWithScope, ctx);
 
     expect(result?.findings).toHaveLength(1);
     expect((result?.findings[0] as AdversarialLLMFinding | undefined)?.scopeQuote).toBe("An interactive Ink TUI");
@@ -449,7 +462,7 @@ describe("adversarialReviewOp.verify() — scope grounding", () => {
       normalizedFindings: [],
     });
 
-    const result = await adversarialReviewOp.verify!(parsed, inputWithScope, ctx);
+    const result = await runVerify(parsed, inputWithScope, ctx);
 
     expect(result?.findings).toHaveLength(0);
   });
@@ -458,7 +471,7 @@ describe("adversarialReviewOp.verify() — scope grounding", () => {
     const ctx = makeVerifyCtx();
     const parsed = makeOutput({ passed: false, findings: [scopeFinding()], normalizedFindings: [] });
 
-    const result = await adversarialReviewOp.verify!(parsed, BASE_INPUT, ctx);
+    const result = await runVerify(parsed, BASE_INPUT, ctx);
 
     expect(result?.findings).toHaveLength(0);
   });
@@ -481,7 +494,7 @@ describe("adversarialReviewOp.verify() — scope grounding", () => {
         normalizedFindings: [],
       });
 
-      await adversarialReviewOp.verify!(parsed, inputWithScope, ctx);
+      await runVerify(parsed, inputWithScope, ctx);
 
       const events = calls.filter((c) => c[2]?.event === "review.adversarial.scope_finding_accepted");
       expect(events).toHaveLength(2);
@@ -498,7 +511,7 @@ describe("adversarialReviewOp.verify() — scope grounding", () => {
     const finding = scopeFinding({ scopeQuote: undefined, scopeIndex: undefined });
     const parsed = makeOutput({ passed: false, findings: [finding], normalizedFindings: [] });
 
-    const result = await adversarialReviewOp.verify!(parsed, inputWithScope, ctx);
+    const result = await runVerify(parsed, inputWithScope, ctx);
 
     expect(result?.findings).toHaveLength(1);
     expect((result?.findings[0] as AdversarialLLMFinding | undefined)?.scopeQuote).toBeUndefined();
@@ -540,12 +553,12 @@ describe("adversarialReviewOp.verify() — sub-threshold verdict (#1378)", () =>
         normalizedFindings: [],
       });
 
-      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
+      const result = await runVerify(parsed, input, ctx);
 
-      expect(result).not.toBeNull();
-      expect(result!.passed).toBe(true); // no blocking findings -> pass
-      expect(result!.findings).toHaveLength(2); // advisory findings still surfaced
-      expect(result!.normalizedFindings).toHaveLength(0); // but not blocking
+      assertDefined(result, "verify() result");
+      expect(result.passed).toBe(true); // no blocking findings -> pass
+      expect(result.findings).toHaveLength(2); // advisory findings still surfaced
+      expect(result.normalizedFindings).toHaveLength(0); // but not blocking
     });
   });
 
@@ -578,11 +591,11 @@ describe("adversarialReviewOp.verify() — sub-threshold verdict (#1378)", () =>
         normalizedFindings: [],
       });
 
-      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
+      const result = await runVerify(parsed, input, ctx);
 
-      expect(result).not.toBeNull();
-      expect(result!.findings).toHaveLength(0); // dropped as ungrounded
-      expect(result!.passed).toBe(false); // fail closed
+      assertDefined(result, "verify() result");
+      expect(result.findings).toHaveLength(0); // dropped as ungrounded
+      expect(result.passed).toBe(false); // fail closed
     });
   });
 
@@ -612,11 +625,11 @@ describe("adversarialReviewOp.verify() — sub-threshold verdict (#1378)", () =>
         normalizedFindings: [],
       });
 
-      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
+      const result = await runVerify(parsed, input, ctx);
 
-      expect(result).not.toBeNull();
-      expect(result!.passed).toBe(false);
-      expect(result!.normalizedFindings.length).toBeGreaterThan(0); // routable for rectification
+      assertDefined(result, "verify() result");
+      expect(result.passed).toBe(false);
+      expect(result.normalizedFindings.length).toBeGreaterThan(0); // routable for rectification
     });
   });
 
@@ -644,11 +657,11 @@ describe("adversarialReviewOp.verify() — sub-threshold verdict (#1378)", () =>
         normalizedFindings: [],
       });
 
-      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
+      const result = await runVerify(parsed, input, ctx);
 
-      expect(result).not.toBeNull();
-      expect(result!.passed).toBe(true); // threshold-adjusted: nothing blocks
-      expect(result!.modelPassed).toBe(false); // raw model claim preserved
+      assertDefined(result, "verify() result");
+      expect(result.passed).toBe(true); // threshold-adjusted: nothing blocks
+      expect(result.modelPassed).toBe(false); // raw model claim preserved
     });
   });
 });

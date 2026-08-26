@@ -63,25 +63,38 @@ function makeOutput(overrides: Partial<SemanticReviewOutput> = {}): SemanticRevi
   };
 }
 
+// verify is optional on the op interface (src/operations/types.ts) because ops may omit
+// it; this op implements it. Asserting on the method keeps absence failing loudly here
+// instead of relying on a compile-only `!`.
+async function runVerify(
+  parsed: SemanticReviewOutput,
+  input: SemanticReviewInput,
+  ctx: ReturnType<typeof makeVerifyCtx>,
+) {
+  const { verify } = semanticReviewOp;
+  assertDefined(verify, "semanticReviewOp.verify");
+  return verify(parsed, input, ctx);
+}
+
 describe("semanticReviewOp.verify() — short-circuits (AC13)", () => {
   test("FAIL_OPEN short-circuits verify — returns parsed unchanged", async () => {
     const ctx = makeVerifyCtx();
     const parsed = makeOutput({ failOpen: true, passed: true, findings: [], normalizedFindings: [] });
-    const result = await semanticReviewOp.verify!(parsed, BASE_INPUT, ctx);
+    const result = await runVerify(parsed, BASE_INPUT, ctx);
     expect(result).toBe(parsed); // exact reference equality — no mutation
   });
 
   test("looksLikeFail short-circuits verify — returns parsed unchanged", async () => {
     const ctx = makeVerifyCtx();
     const parsed = makeOutput({ looksLikeFail: true, passed: false, findings: [], normalizedFindings: [] });
-    const result = await semanticReviewOp.verify!(parsed, BASE_INPUT, ctx);
+    const result = await runVerify(parsed, BASE_INPUT, ctx);
     expect(result).toBe(parsed);
   });
 
   test("empty findings short-circuits verify — returns parsed unchanged", async () => {
     const ctx = makeVerifyCtx();
     const parsed = makeOutput({ passed: true, findings: [], normalizedFindings: [] });
-    const result = await semanticReviewOp.verify!(parsed, BASE_INPUT, ctx);
+    const result = await runVerify(parsed, BASE_INPUT, ctx);
     expect(result).toBe(parsed);
   });
 });
@@ -109,10 +122,9 @@ describe("semanticReviewOp.verify() — acDropped (AC2/AC3)", () => {
         ],
         normalizedFindings: [],
       });
-      const result = await semanticReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
-      expect(result!.acDropped).toBeDefined();
-      expect(result!.acDropped).toHaveLength(0);
+      const result = await runVerify(parsed, input, ctx);
+      assertDefined(result, "verify() result");
+      expect(result.acDropped).toHaveLength(0);
     });
   });
 
@@ -138,12 +150,11 @@ describe("semanticReviewOp.verify() — acDropped (AC2/AC3)", () => {
         ],
         normalizedFindings: [],
       });
-      const result = await semanticReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
-      expect(result!.acDropped).toBeDefined();
-      expect(result!.acDropped).toHaveLength(1);
-      expect(result!.acDropped[0].code).toBe("missing_ac_index");
-      expect(result!.acDropped[0].finding.issue).toBe("No AC attribution");
+      const result = await runVerify(parsed, input, ctx);
+      assertDefined(result, "verify() result");
+      expect(result.acDropped).toHaveLength(1);
+      expect(result.acDropped[0].code).toBe("missing_ac_index");
+      expect(result.acDropped[0].finding.issue).toBe("No AC attribution");
     });
   });
 
@@ -169,12 +180,11 @@ describe("semanticReviewOp.verify() — acDropped (AC2/AC3)", () => {
         ],
         normalizedFindings: [],
       });
-      const result = await semanticReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
-      expect(result!.acDropped).toBeDefined();
-      expect(result!.acDropped).toHaveLength(1);
-      expect(result!.acDropped[0].code).toBe("ac_index_out_of_range");
-      expect(result!.acDropped[0].finding.issue).toBe("Out of range AC");
+      const result = await runVerify(parsed, input, ctx);
+      assertDefined(result, "verify() result");
+      expect(result.acDropped).toHaveLength(1);
+      expect(result.acDropped[0].code).toBe("ac_index_out_of_range");
+      expect(result.acDropped[0].finding.issue).toBe("Out of range AC");
     });
   });
 });
@@ -217,11 +227,11 @@ describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
         ],
         normalizedFindings: [],
       });
-      const result = await semanticReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
+      const result = await runVerify(parsed, input, ctx);
+      assertDefined(result, "verify() result");
       // error finding should appear in normalizedFindings; warning should not
-      expect(result!.normalizedFindings.some((f) => f.message?.includes("Missing input validation"))).toBe(true);
-      expect(result!.normalizedFindings.some((f) => f.message?.includes("Consider logging"))).toBe(false);
+      expect(result.normalizedFindings.some((f) => f.message?.includes("Missing input validation"))).toBe(true);
+      expect(result.normalizedFindings.some((f) => f.message?.includes("Consider logging"))).toBe(false);
     });
   });
 
@@ -247,10 +257,10 @@ describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
         ],
         normalizedFindings: [],
       });
-      const result = await semanticReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
-      expect(result!.findings).toHaveLength(0);
-      expect(result!.normalizedFindings).toHaveLength(0);
+      const result = await runVerify(parsed, input, ctx);
+      assertDefined(result, "verify() result");
+      expect(result.findings).toHaveLength(0);
+      expect(result.normalizedFindings).toHaveLength(0);
     });
   });
 
@@ -280,11 +290,11 @@ describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
         ],
         normalizedFindings: [],
       });
-      const result = await semanticReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
-      expect(result!.passed).toBe(true); // no blocking findings → pass
-      expect(result!.findings).toHaveLength(1); // advisory finding still surfaced
-      expect(result!.normalizedFindings).toHaveLength(0); // but not blocking
+      const result = await runVerify(parsed, input, ctx);
+      assertDefined(result, "verify() result");
+      expect(result.passed).toBe(true); // no blocking findings → pass
+      expect(result.findings).toHaveLength(1); // advisory finding still surfaced
+      expect(result.normalizedFindings).toHaveLength(0); // but not blocking
     });
   });
 
@@ -313,10 +323,10 @@ describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
         ],
         normalizedFindings: [],
       });
-      const result = await semanticReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
-      expect(result!.findings).toHaveLength(0); // all dropped
-      expect(result!.passed).toBe(false); // fail-closed preserved
+      const result = await runVerify(parsed, input, ctx);
+      assertDefined(result, "verify() result");
+      expect(result.findings).toHaveLength(0); // all dropped
+      expect(result.passed).toBe(false); // fail-closed preserved
     });
   });
 
@@ -345,11 +355,11 @@ describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
         ],
         normalizedFindings: [],
       });
-      const result = await semanticReviewOp.verify!(parsed, input, ctx);
-      expect(result).not.toBeNull();
-      expect(result!.findings).toHaveLength(1);
-      expect(result!.normalizedFindings).toHaveLength(1);
-      expect(result!.passed).toBe(false);
+      const result = await runVerify(parsed, input, ctx);
+      assertDefined(result, "verify() result");
+      expect(result.findings).toHaveLength(1);
+      expect(result.normalizedFindings).toHaveLength(1);
+      expect(result.passed).toBe(false);
     });
   });
 });
@@ -388,7 +398,7 @@ describe("semanticReviewOp.verify() — recurrence demotion", () => {
     acIndex: 1,
   };
 
-  async function runVerify(enabled: boolean) {
+  async function verifyWithDemotion(enabled: boolean) {
     const input: SemanticReviewInput = {
       ...BASE_INPUT,
       mode: "embedded", // skip evidence substantiation (ref-mode only)
@@ -402,19 +412,19 @@ describe("semanticReviewOp.verify() — recurrence demotion", () => {
   }
 
   test("demotes a third-round recurrence to advisory and lets the story pass", async () => {
-    const out = await runVerify(true);
+    const out = await verifyWithDemotion(true);
     expect(out.normalizedFindings).toHaveLength(0);
     expect(out.passed).toBe(true);
   });
 
   test("tags the demoted finding coverageGap so the audit record can distinguish it", async () => {
-    const out = await runVerify(true);
+    const out = await verifyWithDemotion(true);
     expect(out.advisoryFindings).toHaveLength(1);
     expect(out.advisoryFindings?.[0].meta?.coverageGap).toBe(true);
   });
 
   test("keeps the finding blocking when demotion is disabled (the default)", async () => {
-    const out = await runVerify(false);
+    const out = await verifyWithDemotion(false);
     expect(out.normalizedFindings).toHaveLength(1);
     expect(out.passed).toBe(false);
   });
