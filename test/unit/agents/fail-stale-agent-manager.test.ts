@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import { AgentManager } from "@/agents/manager";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { AdapterFailure } from "@/context/engine";
@@ -49,19 +50,19 @@ function hopResult(
 
 describe("AgentManager with fail-stale availability failures", () => {
   test("shouldSwap() returns true for fail-stale availability failure when hasBundle=true", () => {
-    const manager = new AgentManager({
-      ...DEFAULT_CONFIG,
-      agent: {
-        ...DEFAULT_CONFIG.agent,
-        fallback: {
-          enabled: true,
-          map: { claude: ["codex"] },
-          maxHopsPerStory: 2,
-          onQualityFailure: false,
-          rebuildContext: true,
+    const manager = new AgentManager(
+      makeNaxConfig({
+        agent: {
+          fallback: {
+            enabled: true,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: false,
+            rebuildContext: true,
+          },
         },
-      },
-    } as never);
+      }),
+    );
     expect(manager.shouldSwap(staleFailureRetryable, 0, true)).toBe(true);
   });
 
@@ -71,19 +72,19 @@ describe("AgentManager with fail-stale availability failures", () => {
   });
 
   test("fail-stale does NOT trigger quality escalation (category is availability)", () => {
-    const manager = new AgentManager({
-      ...DEFAULT_CONFIG,
-      agent: {
-        ...DEFAULT_CONFIG.agent,
-        fallback: {
-          enabled: true,
-          map: { claude: ["codex"] },
-          maxHopsPerStory: 2,
-          onQualityFailure: true, // escalate on quality failures
-          rebuildContext: true,
+    const manager = new AgentManager(
+      makeNaxConfig({
+        agent: {
+          fallback: {
+            enabled: true,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: true, // escalate on quality failures
+            rebuildContext: true,
+          },
         },
-      },
-    } as never);
+      }),
+    );
     // shouldSwap checks category != 'quality' for onQualityFailure
     // fail-stale is availability, so should not trigger quality escalation
     expect(manager.shouldSwap(staleFailureRetryable, 0, true)).toBe(true);
@@ -96,19 +97,19 @@ describe("AgentManager with fail-stale availability failures", () => {
   });
 
   test("nextCandidate() returns fallback agent when primary fails with fail-stale", () => {
-    const manager = new AgentManager({
-      ...DEFAULT_CONFIG,
-      agent: {
-        ...DEFAULT_CONFIG.agent,
-        fallback: {
-          enabled: true,
-          map: { claude: ["codex"] },
-          maxHopsPerStory: 2,
-          onQualityFailure: false,
-          rebuildContext: true,
+    const manager = new AgentManager(
+      makeNaxConfig({
+        agent: {
+          fallback: {
+            enabled: true,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: false,
+            rebuildContext: true,
+          },
         },
-      },
-    } as never);
+      }),
+    );
     const next = manager.nextCandidate("claude", 0);
     expect(next).toBe("codex");
   });
@@ -119,10 +120,8 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
     let callCount = 0;
 
     const manager = new AgentManager(
-      {
-        ...DEFAULT_CONFIG,
+      makeNaxConfig({
         agent: {
-          ...DEFAULT_CONFIG.agent,
           fallback: {
             enabled: true,
             map: { claude: ["codex"] },
@@ -131,7 +130,7 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
             rebuildContext: true,
           },
         },
-      } as never,
+      }),
       undefined,
       {
         runHop: async () => {
@@ -169,10 +168,8 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
     const agents: string[] = [];
 
     const manager = new AgentManager(
-      {
-        ...DEFAULT_CONFIG,
+      makeNaxConfig({
         agent: {
-          ...DEFAULT_CONFIG.agent,
           fallback: {
             enabled: true,
             map: { claude: ["codex"] },
@@ -181,7 +178,7 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
             rebuildContext: true,
           },
         },
-      } as never,
+      }),
       undefined,
       {
         runHop: async (agent) => {
@@ -220,10 +217,8 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
     const agents: string[] = [];
 
     const manager = new AgentManager(
-      {
-        ...DEFAULT_CONFIG,
+      makeNaxConfig({
         agent: {
-          ...DEFAULT_CONFIG.agent,
           idleWatchdog: {
             enabled: true,
             mode: "warn-then-cancel",
@@ -240,7 +235,7 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
             rebuildContext: true,
           },
         },
-      } as never,
+      }),
       undefined,
       {
         runHop: async (agent) => {
@@ -278,10 +273,8 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
 
   test("returns terminal failure when fail-stale exhausts retries and no fallback available", async () => {
     const manager = new AgentManager(
-      {
-        ...DEFAULT_CONFIG,
+      makeNaxConfig({
         agent: {
-          ...DEFAULT_CONFIG.agent,
           fallback: {
             enabled: false, // No fallback
             map: {},
@@ -290,7 +283,7 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
             rebuildContext: true,
           },
         },
-      } as never,
+      }),
       undefined,
       {
         runHop: async () =>
@@ -320,10 +313,8 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
     const agents: string[] = [];
 
     const manager = new AgentManager(
-      {
-        ...DEFAULT_CONFIG,
+      makeNaxConfig({
         agent: {
-          ...DEFAULT_CONFIG.agent,
           acp: { promptRetries: 0 },
           idleWatchdog: {
             enabled: true,
@@ -341,7 +332,7 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
             rebuildContext: true,
           },
         },
-      } as never,
+      }),
       undefined,
       {
         runHop: async (agent) => {
@@ -373,10 +364,8 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
     const agents: string[] = [];
 
     const manager = new AgentManager(
-      {
-        ...DEFAULT_CONFIG,
+      makeNaxConfig({
         agent: {
-          ...DEFAULT_CONFIG.agent,
           acp: { promptRetries: 0 },
           idleWatchdog: {
             enabled: true,
@@ -394,7 +383,7 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
             rebuildContext: true,
           },
         },
-      } as never,
+      }),
       undefined,
       {
         runHop: async (agent) => {
