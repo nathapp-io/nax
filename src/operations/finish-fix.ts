@@ -13,7 +13,7 @@ import type { FinishConfig } from "@/config/selectors";
 import type { FixOutcome } from "../finish/ops";
 import { buildFixPrompt, parseDispositions, validateDispositions } from "../finish/review";
 import type { Finding, FinishPhase } from "../finish/types";
-import type { RunOperation, RunOperationWithHooks } from "./types";
+import type { RunOperationWithHooks } from "./types";
 
 export interface FinishFixInput {
   phase: FinishPhase;

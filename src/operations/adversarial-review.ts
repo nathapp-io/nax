@@ -28,7 +28,7 @@ import type { ResolvedTestPatterns } from "../test-runners";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { reviewExhaustedFallback } from "./_review-fallback";
 import { extractRepromptInfo, withRepromptMarker } from "./adversarial-reprompt-marker";
-import type { HopBodyContext, RunOperation, RunOperationWithHooks } from "./types";
+import type { HopBodyContext, RunOperationWithHooks } from "./types";
 
 export type { AdversarialReviewConfig, SemanticStory, TestInventory };
 export type ValidatedAdversarialShape = NonNullable<ReturnType<typeof validateAdversarialShape>>;

@@ -4,7 +4,7 @@ import { acceptanceGenConfigSelector } from "../config";
 import type { AcceptanceGenConfig } from "../config/selectors";
 import { AcceptancePromptBuilder } from "../prompts";
 import { makeSelfHealStep, runSelfHealChain, type SelfHealStep } from "./self-heal";
-import type { RunOperation, RunOperationWithHooks } from "./types";
+import type { RunOperationWithHooks } from "./types";
 
 export interface AcceptanceGenerateInput {
   featureName: string;

@@ -16,7 +16,7 @@ import type { SessionRole } from "../session/types";
 import { errorMessage } from "../utils/errors";
 import { applyPlanFidelity, warnOnSpecDrift } from "./plan-fidelity";
 import { makeSelfHealStep, runSelfHealChain, type SelfHealStep } from "./self-heal";
-import type { RunOperation, RunOperationWithHooks } from "./types";
+import type { RunOperationWithHooks } from "./types";
 
 /** Injectable I/O for the hopBody self-heal step (testable without disk). */
 export const _planRefineDeps = {
