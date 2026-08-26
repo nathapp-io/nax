@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 213,
+    "asNever": 207,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:45:20.141Z",
+  "updatedAt": "2026-08-26T15:46:29.020Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -567,9 +567,6 @@
     },
     "test/unit/execution/story-orchestrator-flake-integration.test.ts": {
       "looseCast": 19
-    },
-    "test/unit/execution/unified-executor-abort.test.ts": {
-      "asNever": 6
     },
     "test/unit/execution/pid-registry.test.ts": {
       "ratchetAllow": 1

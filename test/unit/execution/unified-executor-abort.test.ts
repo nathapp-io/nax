@@ -14,71 +14,67 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import {
+  makeDispatchContext,
+  makeMockRuntime,
+  makeNaxConfig,
+  makePluginRegistry,
+  makePRD,
+  makeStatusWriter,
+  makeStory,
+} from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
 import { _unifiedExecutorDeps, executeUnified } from "@/execution";
+import type { SequentialExecutionContext } from "@/execution/unified-executor";
+import type { LoadedHooksConfig } from "@/hooks";
+import type { PRD, UserStory } from "@/prd/types";
+import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 
-function makePendingStory(id: string) {
+const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
+
+function makePendingStory(id: string): UserStory {
   return makeStory({ id, title: `Story ${id}`, description: `Description for ${id}` });
 }
 
-function makePrd(stories: ReturnType<typeof makePendingStory>[]) {
+function makePrd(stories: ReturnType<typeof makePendingStory>[]): PRD {
   return makePRD({ userStories: stories });
 }
 
-function makeCtxWithSignal(signal: AbortSignal, overrides: Record<string, unknown> = {}) {
+function makeCtxWithSignal(signal: AbortSignal, overrides: Record<string, unknown> = {}): SequentialExecutionContext {
+  const runtime = makeMockRuntime({
+    workdir: "/tmp/nax-test-results-output",
+    costAggregator: createNoOpCostAggregator(),
+  });
+  // `signal` is part of NaxRuntime; the helper does not (yet) accept it as
+  // an option, so wire it here where the test owns the signal.
+  Object.defineProperty(runtime, "signal", { value: signal, configurable: true });
   return {
     prdPath: "/tmp/test-prd.json",
     workdir: "/tmp/test-workdir",
-    config: makeNaxConfig({
+    config: {
+      ...DEFAULT_CONFIG,
       execution: {
+        ...DEFAULT_CONFIG.execution,
         maxIterations: 2,
         costLimit: 100,
         iterationDelayMs: 10,
-        rectification: { maxAttemptsTotal: 2 },
+        rectification: {
+          ...DEFAULT_CONFIG.execution.rectification,
+          maxAttemptsTotal: 2,
+        },
       },
-    }),
-    hooks: {},
+    },
+    hooks: EMPTY_HOOKS,
     feature: "test-feature",
     dryRun: false,
     useBatch: false,
-    pluginRegistry: {
-      getReporters: () => [],
-      getContextProviders: () => [],
-    },
-    statusWriter: {
-      setPrd: mock(() => {}),
-      setCurrentStory: mock(() => {}),
-      setRunStatus: mock(() => {}),
-      update: mock(async () => {}),
-    },
+    pluginRegistry: makePluginRegistry(),
+    statusWriter: makeStatusWriter(),
     runId: "run-test",
     startTime: Date.now(),
     batchPlan: [],
     interactionChain: null,
-    runtime: {
-      outputDir: "/tmp/nax-test-results-output",
-      // nax#1709: parallel metrics read these run-scoped stores.
-      agentFallbacks: new Map(),
-      runtimeCrashRetries: new Map(),
-      signal,
-      costAggregator: {
-        snapshot: () => ({
-          totalCostUsd: 0,
-          totalEstimatedCostUsd: 0,
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          callCount: 0,
-          errorCount: 0,
-        }),
-        byStage: () => ({}),
-        byStory: () => ({}),
-        byAgent: () => ({}),
-        record: () => {},
-        recordError: () => {},
-        recordOperationSummary: () => {},
-        drain: async () => {},
-      },
-    },
+    ...makeDispatchContext({ runtime }),
     parallelCount: 0,
     ...overrides,
   };
@@ -114,7 +110,7 @@ describe("executeUnified — BUG-2: abort during iteration delay", () => {
       prdDirty: false,
     }));
 
-    const result = await executeUnified(makeCtxWithSignal(controller.signal) as never, prd as never);
+    const result = await executeUnified(makeCtxWithSignal(controller.signal), prd);
 
     expect(result.exitReason).toBe("aborted");
     expect(result.prd).toBeDefined();
@@ -142,7 +138,7 @@ describe("executeUnified — BUG-2: abort during iteration delay", () => {
       };
     });
 
-    const result = await executeUnified(makeCtxWithSignal(controller.signal) as never, prd as never);
+    const result = await executeUnified(makeCtxWithSignal(controller.signal), prd);
 
     expect(result.exitReason).toBe("aborted");
   });
@@ -171,7 +167,7 @@ describe("executeUnified — BUG-2: abort during iteration delay", () => {
       prdDirty: false,
     }));
 
-    const result = await executeUnified(makeCtxWithSignal(controller.signal) as never, prd as never);
+    const result = await executeUnified(makeCtxWithSignal(controller.signal), prd);
 
     // No abort → delay completes normally → loop completes (maxIterations=2,
     // one iteration done in the mock). Result must NOT be 'aborted'.
