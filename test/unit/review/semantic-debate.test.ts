@@ -18,7 +18,7 @@ import {
 } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { pickBaseSelectorKind } from "@/debate";
-import type { DebateResult } from "@/debate/types";
+import type { DebateResult, DebateStageConfig } from "@/debate/types";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { SemanticStory } from "@/review/semantic";
 import { _semanticDeps, runSemanticReview } from "@/review/semantic";
@@ -240,6 +240,15 @@ function makeSpawnMock(stdout = "", exitCode = 0) {
   return makeSpawn(() => ({ exitCode, stdout })).spawn;
 }
 
+function makeStageConfig(): DebateStageConfig {
+  return {
+    enabled: false,
+    resolver: { type: "majority-fail-closed" },
+    sessionMode: "stateful",
+    rounds: 0,
+  };
+}
+
 function makeAgentManager(llmResponse: string, cost = 0) {
   return makeMockAgentManager({
     getDefaultAgent: "claude",
@@ -427,11 +436,11 @@ describe("runSemanticReview — debate integration (US-004)", () => {
           maxConcurrentDebaters: 0,
           grounder: { model: "fast", timeoutSeconds: 60 },
           stages: {
-            plan: {} as never,
-            review: {} as never,
-            acceptance: {} as never,
-            rectification: {} as never,
-            escalation: {} as never,
+            plan: makeStageConfig(),
+            review: makeStageConfig(),
+            acceptance: makeStageConfig(),
+            rectification: makeStageConfig(),
+            escalation: makeStageConfig(),
           },
         },
       }),
@@ -664,12 +673,14 @@ describe("runSemanticReview — debate integration (US-004)", () => {
 });
 
 test("review-debate stageConfig resolves to the resolver-derived base selector, not dialogue-verdict", () => {
-  const configured = {
-    resolver: { type: "majority-fail-closed" as const },
-    sessionMode: "stateful" as const,
-    mode: "panel" as const,
+  const configured: DebateStageConfig = {
+    enabled: true,
+    resolver: { type: "majority-fail-closed" },
+    sessionMode: "stateful",
+    mode: "panel",
+    rounds: 1,
   };
-  const reviewSelectorKind = pickBaseSelectorKind(configured as never);
+  const reviewSelectorKind = pickBaseSelectorKind(configured);
   expect(reviewSelectorKind).toBe("majority-fail-closed");
   expect(reviewSelectorKind).not.toBe("dialogue-verdict");
 });

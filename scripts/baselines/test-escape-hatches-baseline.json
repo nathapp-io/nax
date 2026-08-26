@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 225,
+    "asNever": 219,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:42:26.360Z",
+  "updatedAt": "2026-08-26T15:44:13.981Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -359,8 +359,7 @@
       "looseCast": 2
     },
     "test/unit/review/semantic-debate.test.ts": {
-      "looseCast": 3,
-      "asNever": 6
+      "looseCast": 3
     },
     "test/unit/review/adversarial-verifiedby.test.ts": {
       "looseCast": 2
