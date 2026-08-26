@@ -38,7 +38,7 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { makeMockAgentManager, makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { makeMockAgentManager, makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import type { InternalBuildState } from "@/execution";
@@ -53,6 +53,7 @@ import type { NaxRuntime } from "@/runtime";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const testSel = pickSelector("test-story-budget-sel", "execution");
+type ExecutionSlice = Pick<typeof DEFAULT_CONFIG, "execution">;
 
 const RB_FIXOP_NAME = "rb-fixop";
 
@@ -67,19 +68,19 @@ const RB_FINDING: Finding = {
   file: "test/rb.test.ts",
 };
 
-const rbGateOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+const rbGateOp: DeterministicOperation<unknown, unknown, ExecutionSlice> = {
   kind: "deterministic",
   name: "full-suite-gate",
   stage: "verify",
-  config: testSel as never,
+  config: testSel,
   execute: async () => ({ success: false, findings: [], normalizedFindings: [], estimatedCostUsd: 0 }),
 };
 
-const rbFixOp: RunOperation<{ story: string }, { applied: boolean }, typeof DEFAULT_CONFIG> = {
+const rbFixOp: RunOperation<{ story: string }, { applied: boolean }, ExecutionSlice> = {
   kind: "run",
   name: RB_FIXOP_NAME,
   stage: "rectification",
-  config: testSel as never,
+  config: testSel,
   session: { role: "implementer", lifetime: "warm" },
   build: () => ({
     role: { id: "r", content: "Fix", overridable: false },
@@ -120,7 +121,7 @@ function rbSeedPhaseOutputs(): Record<string, unknown> {
 function makeBudgetRuntime(storyScopedFixBudget: boolean): NaxRuntime {
   const config = makeNaxConfig({
     execution: { rectification: { storyScopedFixBudget } },
-  } as never);
+  });
   const runtime = createRuntimeWithConfig(config);
   return runtime;
 }
@@ -194,7 +195,7 @@ async function rbRun(
     const result = await runRectification(ctx, rbState(maxAttempts), {}, phaseOutputs, {
       skipGateTriage: true,
       ...overrides,
-    } as never);
+    });
     return { dispatchCount, phaseOutputs, result };
   } finally {
     _storyOrchestratorDeps.callOp = origCallOp;
@@ -489,11 +490,11 @@ async function runPlanResumeScenario(
   let lintCalls = 0;
   let dispatchCount = 0;
 
-  const lintOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+  const lintOp: DeterministicOperation<unknown, unknown, ExecutionSlice> = {
     kind: "deterministic",
     name: "lint-check",
     stage: "verify",
-    config: testSel as never,
+    config: testSel,
     // 1st call lands in the main rect's iter-2 validate (alongside the
     // gate going green) — must pass so cycle.findings becomes empty and
     // the cycle resolves. Every subsequent call must fail so the resume
@@ -513,11 +514,11 @@ async function runPlanResumeScenario(
     },
   };
 
-  const verifierOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+  const verifierOp: DeterministicOperation<unknown, unknown, ExecutionSlice> = {
     kind: "deterministic",
     name: "verifier",
     stage: "verify",
-    config: testSel as never,
+    config: testSel,
     // Always fails with a test-runner finding. The verifier is
     // configured but excluded from the `autofix-implementer`
     // strategy's revalidation set, so main rect's validate does NOT
@@ -573,7 +574,7 @@ async function runPlanResumeScenario(
     // during main rect's validate (else it would either prevent cycle
     // resolution or end up in phaseOutputs as passing and be skipped
     // by the resume loop).
-    const autofixImplementer: FixStrategy<Finding, { story: string }, { applied: boolean }, NaxConfig> = {
+    const autofixImplementer: FixStrategy<Finding, { story: string }, { applied: boolean }, ExecutionSlice> = {
       name: "autofix-implementer",
       appliesTo: (f: Finding) => f.source === "test-runner",
       fixOp: rbFixOp,
@@ -585,7 +586,7 @@ async function runPlanResumeScenario(
       .addImplementer({ op: rbFixOp, input: { story: storyId } })
       .addFullSuiteGate({
         op: rbGateOp,
-        input: { story: { id: storyId } as never, workdir: "/tmp" },
+        input: { story: makeStory({ id: storyId }), workdir: "/tmp" },
       })
       .addVerifier({ op: verifierOp, input: { code: "" } })
       .addLintCheck({ op: lintOp, input: { workdir: "/tmp" } })

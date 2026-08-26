@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 265,
+    "asNever": 258,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:28:50.308Z",
+  "updatedAt": "2026-08-26T15:31:30.406Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -555,8 +555,7 @@
       "looseCast": 8
     },
     "test/unit/execution/story-scoped-fix-budget.test.ts": {
-      "looseCast": 3,
-      "asNever": 7
+      "looseCast": 3
     },
     "test/unit/execution/plan-inputs-models.test.ts": {
       "looseCast": 6
