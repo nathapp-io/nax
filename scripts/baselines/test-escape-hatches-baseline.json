@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1799,
-    "asNever": 333,
+    "asNever": 323,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T14:58:26.299Z",
+  "updatedAt": "2026-08-26T15:00:55.675Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -608,8 +608,7 @@
       "asNever": 3
     },
     "test/unit/execution/rectification-oscillation-circuit-breaker.test.ts": {
-      "looseCast": 19,
-      "asNever": 10
+      "looseCast": 19
     },
     "test/unit/execution/parallel-batch-rectification-context.test.ts": {
       "looseCast": 9
