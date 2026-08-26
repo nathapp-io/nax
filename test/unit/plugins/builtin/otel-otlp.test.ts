@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { hostname } from "node:os";
 import { newSpanId, newTraceId } from "@/plugins/builtin/otel-reporter/ids";
+import type {
+  CounterDataPoint,
+  KeyValue,
+  OtlpMetric,
+  OtlpMetricsPayload,
+  OtlpTracesPayload,
+} from "@/plugins/builtin/otel-reporter/otlp";
 import {
   attr,
   buildCounterPoint,
@@ -13,6 +20,41 @@ import {
 } from "@/plugins/builtin/otel-reporter/otlp";
 import { PHASE_DURATION_BOUNDS } from "@/plugins/builtin/otel-reporter/span-tree";
 import { NAX_VERSION } from "@/version";
+
+// The src payload types keep spans (`object[]`) and `OtlpMetric.sum` (bare
+// `object`) vague, so these narrow the shapes otlp.ts actually builds — verified
+// at runtime by a type guard, never asserted (same pattern as otel-span-tree.test.ts).
+interface BuiltSpan {
+  traceId: string;
+  spanId: string;
+  parentSpanId?: string;
+  name: string;
+  startTimeUnixNano: string;
+  endTimeUnixNano: string;
+  attributes: KeyValue[];
+  events: SpanEvent[];
+  status: { code: number };
+}
+
+interface SumMetric extends OtlpMetric {
+  sum: { aggregationTemporality: number; isMonotonic: boolean; dataPoints: CounterDataPoint[] };
+}
+
+function isBuiltSpan(v: object): v is BuiltSpan {
+  return "traceId" in v && "spanId" in v && "name" in v;
+}
+
+function hasSum(metric: OtlpMetric): metric is SumMetric {
+  return metric.sum !== undefined;
+}
+
+function spansOf(payload: OtlpTracesPayload): BuiltSpan[] {
+  const spans = payload.resourceSpans[0]?.scopeSpans[0]?.spans ?? [];
+  return spans.map((span) => {
+    if (!isBuiltSpan(span)) throw new Error("unexpected span shape in traces payload");
+    return span;
+  });
+}
 
 describe("ids", () => {
   test("newTraceId is 32 lowercase hex chars", () => {
@@ -40,7 +82,7 @@ const summary = { completed: 2, failed: 1, skipped: 0, paused: 0 };
 const events: SpanEvent[] = [{ timeUnixNano: "1000000", name: "story.complete", attributes: [attr("storyId", "s1")] }];
 
 describe("buildTracesPayload", () => {
-  const payload: any = buildTracesPayload({
+  const payload: OtlpTracesPayload = buildTracesPayload({
     serviceName: "nax",
     traceId: "a".repeat(32),
     spanId: "b".repeat(16),
@@ -59,7 +101,7 @@ describe("buildTracesPayload", () => {
   });
 
   test("root span carries ids, timing, run attrs, and buffered events", () => {
-    const span = payload.resourceSpans[0].scopeSpans[0].spans[0];
+    const span = spansOf(payload)[0];
     expect(span.traceId).toBe("a".repeat(32));
     expect(span.spanId).toBe("b".repeat(16));
     expect(span.name).toBe("nax.run");
@@ -71,12 +113,12 @@ describe("buildTracesPayload", () => {
   });
 
   test("status code is ERROR (2) when any story failed", () => {
-    const span = payload.resourceSpans[0].scopeSpans[0].spans[0];
+    const span = spansOf(payload)[0];
     expect(span.status).toEqual({ code: 2 });
   });
 
   test("status code is OK (1) when nothing failed", () => {
-    const ok: any = buildTracesPayload({
+    const ok: OtlpTracesPayload = buildTracesPayload({
       serviceName: "nax",
       traceId: "a".repeat(32),
       spanId: "b".repeat(16),
@@ -88,7 +130,7 @@ describe("buildTracesPayload", () => {
       totalCost: 0,
       events: [],
     });
-    expect(ok.resourceSpans[0].scopeSpans[0].spans[0].status).toEqual({ code: 1 });
+    expect(spansOf(ok)[0].status).toEqual({ code: 1 });
   });
 
   test("US-008: extraSpans are appended to scopeSpans[0].spans after the root span", () => {
@@ -96,7 +138,7 @@ describe("buildTracesPayload", () => {
       { traceId: "a".repeat(32), spanId: "c".repeat(16), name: "nax.phase", attributes: [] },
       { traceId: "a".repeat(32), spanId: "d".repeat(16), name: "nax.phase", attributes: [] },
     ];
-    const withExtras: any = buildTracesPayload({
+    const withExtras: OtlpTracesPayload = buildTracesPayload({
       serviceName: "nax",
       traceId: "a".repeat(32),
       spanId: "b".repeat(16),
@@ -111,21 +153,23 @@ describe("buildTracesPayload", () => {
     });
 
     const spans = withExtras.resourceSpans[0].scopeSpans[0].spans;
+    const root = spans[0];
+    if (!isBuiltSpan(root)) throw new Error("root span missing from traces payload");
     expect(spans).toHaveLength(3);
-    expect(spans[0].name).toBe("nax.run"); // root span stays first
-    expect(spans[0].spanId).toBe("b".repeat(16));
+    expect(root.name).toBe("nax.run"); // root span stays first
+    expect(root.spanId).toBe("b".repeat(16));
     expect(spans.slice(1)).toEqual(extraSpans);
   });
 
   test("US-008 boundary: an omitted extraSpans yields only the root span", () => {
-    const spans = payload.resourceSpans[0].scopeSpans[0].spans;
+    const spans = spansOf(payload);
     expect(spans).toHaveLength(1);
     expect(spans[0].name).toBe("nax.run");
   });
 });
 
 describe("buildMetricsPayload", () => {
-  const payload: any = buildMetricsPayload({
+  const payload: OtlpMetricsPayload = buildMetricsPayload({
     serviceName: "nax",
     runId: "r1",
     timeUnixNano: "2000",
@@ -134,21 +178,27 @@ describe("buildMetricsPayload", () => {
     totalDurationMs: 1234,
   });
   const metrics = payload.resourceMetrics[0].scopeMetrics[0].metrics;
-  const byName = (n: string) => metrics.find((m: any) => m.name === n);
+  const byName = (n: string): OtlpMetric => {
+    const found = metrics.find((m) => m.name === n);
+    if (found === undefined) throw new Error(`metric ${n} was not exported`);
+    return found;
+  };
 
   test("emits a stories.total counter with one data point per non-zero status", () => {
-    const sum = byName("nax.stories.total").sum;
+    const metric = byName("nax.stories.total");
+    if (!hasSum(metric)) throw new Error("nax.stories.total carries no sum");
+    const sum = metric.sum;
     expect(sum.isMonotonic).toBe(true);
     expect(sum.aggregationTemporality).toBe(2);
-    const statuses = sum.dataPoints.map((d: any) => d.attributes[0].value.stringValue).sort();
+    const statuses = sum.dataPoints.map((d) => d.attributes?.[0]?.value.stringValue).sort();
     expect(statuses).toEqual(["completed", "failed"]);
-    const completed = sum.dataPoints.find((d: any) => d.attributes[0].value.stringValue === "completed");
-    expect(completed.asInt).toBe("2");
+    const completed = sum.dataPoints.find((d) => d.attributes?.[0]?.value.stringValue === "completed");
+    expect(completed?.asInt).toBe("2");
   });
 
   test("emits run.cost and run.duration_ms gauges", () => {
-    expect(byName("nax.run.cost").gauge.dataPoints[0].asDouble).toBe(0.42);
-    expect(byName("nax.run.duration_ms").gauge.dataPoints[0].asDouble).toBe(1234);
+    expect(byName("nax.run.cost").gauge?.dataPoints[0]?.asDouble).toBe(0.42);
+    expect(byName("nax.run.duration_ms").gauge?.dataPoints[0]?.asDouble).toBe(1234);
   });
 });
 

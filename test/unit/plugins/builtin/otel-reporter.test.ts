@@ -2,6 +2,74 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mockFetch } from "@test/helpers";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { createOtelReporterPlugin, type PostJsonDeps } from "@/plugins";
+import type {
+  CounterDataPoint,
+  HistogramDataPoint,
+  KeyValue,
+  OtlpMetric,
+  OtlpMetricsPayload,
+  OtlpTracesPayload,
+  SpanEvent,
+} from "@/plugins/builtin/otel-reporter/otlp";
+
+// src keeps span arrays (`object[]`) and `OtlpMetric.sum`/`.histogram` (bare
+// `object`) vague, so these narrow the shapes the reporter actually exports —
+// verified at runtime by type guards, never asserted (otel-span-tree pattern).
+type CapturedBody = OtlpTracesPayload | OtlpMetricsPayload;
+
+interface ExportedSpan {
+  traceId: string;
+  spanId: string;
+  parentSpanId?: string;
+  name: string;
+  startTimeUnixNano?: string;
+  endTimeUnixNano?: string;
+  attributes: KeyValue[];
+  events: SpanEvent[];
+  status?: { code: number };
+}
+
+interface HistogramMetric extends OtlpMetric {
+  histogram: { aggregationTemporality: number; dataPoints: HistogramDataPoint[] };
+}
+
+interface SumMetric extends OtlpMetric {
+  sum: { aggregationTemporality: number; isMonotonic: boolean; dataPoints: CounterDataPoint[] };
+}
+
+function isExportedSpan(v: object): v is ExportedSpan {
+  return "traceId" in v && "spanId" in v && "name" in v;
+}
+
+function hasHistogram(metric: OtlpMetric): metric is HistogramMetric {
+  return metric.histogram !== undefined;
+}
+
+function hasSum(metric: OtlpMetric): metric is SumMetric {
+  return metric.sum !== undefined;
+}
+
+function tracesPayload(body: CapturedBody): OtlpTracesPayload {
+  if (!("resourceSpans" in body)) throw new Error("expected a /v1/traces payload");
+  return body;
+}
+
+function metricsPayload(body: CapturedBody): OtlpMetricsPayload {
+  if (!("resourceMetrics" in body)) throw new Error("expected a /v1/metrics payload");
+  return body;
+}
+
+function spansOf(payload: OtlpTracesPayload): ExportedSpan[] {
+  const spans = payload.resourceSpans[0]?.scopeSpans[0]?.spans ?? [];
+  return spans.map((span) => {
+    if (!isExportedSpan(span)) throw new Error("unexpected span shape in traces payload");
+    return span;
+  });
+}
+
+function metricsOf(payload: OtlpMetricsPayload): OtlpMetric[] {
+  return payload.resourceMetrics[0]?.scopeMetrics[0]?.metrics ?? [];
+}
 
 const cfg: OtelReporterConfig = {
   enabled: true,
@@ -30,7 +98,7 @@ const fullCfg: OtelReporterConfig = {
 };
 
 function capturing() {
-  const posts: Array<{ url: string; body: any }> = [];
+  const posts: Array<{ url: string; body: CapturedBody }> = [];
   const deps: PostJsonDeps = {
     fetch: mockFetch(async (url, init) => {
       posts.push({ url: String(url), body: JSON.parse(String(init?.body)) });
@@ -40,8 +108,14 @@ function capturing() {
   return { posts, deps };
 }
 
+function reporterOf(plugin: ReturnType<typeof createOtelReporterPlugin>) {
+  const reporter = plugin.extensions.reporter;
+  if (reporter === undefined) throw new Error("otel-reporter did not declare a reporter extension");
+  return reporter;
+}
+
 async function runOnce(plugin: ReturnType<typeof createOtelReporterPlugin>) {
-  const r = plugin.extensions.reporter!;
+  const r = reporterOf(plugin);
   await r.onRunStart?.({ runId: "r1", feature: "f", totalStories: 2, startTime: "1970-01-01T00:00:00.000Z" });
   await r.onStoryComplete?.({
     runId: "r1",
@@ -88,18 +162,18 @@ describe("otel-reporter", () => {
   test("buffers story completions as span events on the root span", async () => {
     const { posts, deps } = capturing();
     await runOnce(createOtelReporterPlugin(cfg, deps));
-    const span = posts[0].body.resourceSpans[0].scopeSpans[0].spans[0];
+    const span = spansOf(tracesPayload(posts[0].body))[0];
     expect(span.events).toHaveLength(2);
     expect(span.events[0].name).toBe("story.complete");
     // startMs (epoch 0, from onRunStart's startTime) + runElapsedMs(100) -> 100ms -> 100_000_000 ns
     expect(span.events[0].timeUnixNano).toBe("100000000");
-    expect(span.status.code).toBe(2); // one failed
+    expect(span.status?.code).toBe(2); // one failed
     expect(span.attributes).toContainEqual({ key: "feature", value: { stringValue: "f" } });
   });
 
   test("emits no story events before onRunStart is dropped (no state)", async () => {
     const { posts, deps } = capturing();
-    const r = createOtelReporterPlugin(cfg, deps).extensions.reporter!;
+    const r = reporterOf(createOtelReporterPlugin(cfg, deps));
     // onStoryComplete with no prior onRunStart is a no-op, not a throw
     await r.onStoryComplete?.({
       runId: "x",
@@ -115,7 +189,7 @@ describe("otel-reporter", () => {
 
   test("onRunEnd without a prior onRunStart still flushes a best-effort span", async () => {
     const { posts, deps } = capturing();
-    const r = createOtelReporterPlugin(cfg, deps).extensions.reporter!;
+    const r = reporterOf(createOtelReporterPlugin(cfg, deps));
     await r.onRunEnd?.({
       runId: "orphan",
       totalDurationMs: 300,
@@ -123,9 +197,9 @@ describe("otel-reporter", () => {
       storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
     });
     expect(posts).toHaveLength(2);
-    const span = posts[0].body.resourceSpans[0].scopeSpans[0].spans[0];
+    const span = spansOf(tracesPayload(posts[0].body))[0];
     expect(span.events).toEqual([]);
-    expect(span.status.code).toBe(1);
+    expect(span.status?.code).toBe(1);
   });
 
   test("deletes run state after onRunEnd (second onRunEnd is inert best-effort)", async () => {
@@ -181,7 +255,8 @@ describe("otel-reporter", () => {
 
     const tracesPost = posts.find((p) => p.url.endsWith("/v1/traces"));
     expect(tracesPost).toBeDefined();
-    const span = tracesPost?.body.resourceSpans[0].scopeSpans[0].spans[0];
+    if (tracesPost === undefined) throw new Error("no /v1/traces POST captured");
+    const span = spansOf(tracesPayload(tracesPost.body))[0];
     expect(span.attributes).toContainEqual({ key: "cost.total", value: { doubleValue: 0.3 } });
   });
 
@@ -190,7 +265,7 @@ describe("otel-reporter", () => {
   test("SEAM-5: a completed phase produces an exported nax.phase.duration data point matching the event's durationMs", async () => {
     const { posts, deps } = capturing();
     const plugin = createOtelReporterPlugin(fullCfg, deps);
-    const r = plugin.extensions.reporter!;
+    const r = reporterOf(plugin);
 
     await r.onRunStart?.({ runId: "seam5", feature: "f", totalStories: 1, startTime: new Date().toISOString() });
     await r.onPhaseComplete?.({
@@ -213,9 +288,12 @@ describe("otel-reporter", () => {
     });
 
     const metricsPost = posts.find((p) => p.url.endsWith("/v1/metrics"));
-    const metrics = metricsPost?.body.resourceMetrics[0].scopeMetrics[0].metrics;
-    const durationMetric = metrics.find((m: any) => m.name === "nax.phase.duration");
+    if (metricsPost === undefined) throw new Error("no /v1/metrics POST captured");
+    const durationMetric = metricsOf(metricsPayload(metricsPost.body)).find((m) => m.name === "nax.phase.duration");
     expect(durationMetric).toBeDefined();
+    if (durationMetric === undefined || !hasHistogram(durationMetric)) {
+      throw new Error("nax.phase.duration histogram missing from metrics payload");
+    }
     const point = durationMetric.histogram.dataPoints[0];
     expect(point.sum).toBe(1234);
     expect(point.count).toBe(1);
@@ -224,7 +302,7 @@ describe("otel-reporter", () => {
   test("a story:escalated event reaches the reporter's onEscalation hook and produces an exported nax.escalations counter", async () => {
     const { posts, deps } = capturing();
     const plugin = createOtelReporterPlugin(fullCfg, deps);
-    const r = plugin.extensions.reporter!;
+    const r = reporterOf(plugin);
 
     await r.onRunStart?.({ runId: "esc1", feature: "f", totalStories: 1, startTime: new Date().toISOString() });
     await r.onEscalation?.({ runId: "esc1", storyId: "s1", fromTier: "fast", toTier: "powerful" });
@@ -236,16 +314,19 @@ describe("otel-reporter", () => {
     });
 
     const metricsPost = posts.find((p) => p.url.endsWith("/v1/metrics"));
-    const metrics = metricsPost?.body.resourceMetrics[0].scopeMetrics[0].metrics;
-    const escalations = metrics.find((m: any) => m.name === "nax.escalations");
+    if (metricsPost === undefined) throw new Error("no /v1/metrics POST captured");
+    const escalations = metricsOf(metricsPayload(metricsPost.body)).find((m) => m.name === "nax.escalations");
     expect(escalations).toBeDefined();
+    if (escalations === undefined || !hasSum(escalations)) {
+      throw new Error("nax.escalations sum missing from metrics payload");
+    }
     expect(escalations.sum.dataPoints[0].asInt).toBe("1");
   });
 
   test("a story with completed phases exports a nax.story span parented to the run span, and its phase span is parented to the story span", async () => {
     const { posts, deps } = capturing();
     const plugin = createOtelReporterPlugin(fullCfg, deps);
-    const r = plugin.extensions.reporter!;
+    const r = reporterOf(plugin);
 
     await r.onRunStart?.({ runId: "story1", feature: "f", totalStories: 1, startTime: new Date().toISOString() });
     await r.onPhaseComplete?.({
@@ -273,18 +354,16 @@ describe("otel-reporter", () => {
       storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
     });
 
-    const allSpans = posts
-      .filter((p) => p.url.endsWith("/v1/traces"))
-      .flatMap((p) => p.body.resourceSpans[0].scopeSpans[0].spans);
-    const runSpan = allSpans.find((s: any) => s.name === "nax.run");
-    const storySpan = allSpans.find((s: any) => s.name === "nax.story");
-    const phaseSpan = allSpans.find((s: any) => s.name === "nax.phase");
+    const allSpans = posts.filter((p) => p.url.endsWith("/v1/traces")).flatMap((p) => spansOf(tracesPayload(p.body)));
+    const runSpan = allSpans.find((s) => s.name === "nax.run");
+    const storySpan = allSpans.find((s) => s.name === "nax.story");
+    const phaseSpan = allSpans.find((s) => s.name === "nax.phase");
 
     expect(runSpan).toBeDefined();
     expect(storySpan).toBeDefined();
-    expect(storySpan.parentSpanId).toBe(runSpan.spanId);
+    expect(storySpan?.parentSpanId).toBe(runSpan?.spanId);
     expect(phaseSpan).toBeDefined();
-    expect(phaseSpan.parentSpanId).toBe(storySpan.spanId);
+    expect(phaseSpan?.parentSpanId).toBe(storySpan?.spanId);
   });
 });
 
@@ -300,9 +379,10 @@ describe("otel-reporter traceparent adoption", () => {
     else process.env.TRACEPARENT = originalTraceparent;
   });
 
-  function runSpanOf(posts: Array<{ url: string; body: any }>) {
+  function runSpanOf(posts: Array<{ url: string; body: CapturedBody }>): ExportedSpan | undefined {
     const tracesPost = posts.find((p) => p.url.endsWith("/v1/traces"));
-    return tracesPost?.body.resourceSpans[0].scopeSpans[0].spans[0];
+    if (tracesPost === undefined) return undefined;
+    return spansOf(tracesPayload(tracesPost.body))[0];
   }
 
   test("AC12: a valid W3C traceparent produces a run span whose parent span id equals its span id", async () => {
@@ -310,7 +390,7 @@ describe("otel-reporter traceparent adoption", () => {
     const { posts, deps } = capturing();
     await runOnce(createOtelReporterPlugin(fullCfg, deps));
 
-    expect(runSpanOf(posts).parentSpanId).toBe("b7ad6b7169203331");
+    expect(runSpanOf(posts)?.parentSpanId).toBe("b7ad6b7169203331");
   });
 
   test("AC13: a malformed traceparent produces a run span with no parent span id", async () => {
@@ -318,7 +398,9 @@ describe("otel-reporter traceparent adoption", () => {
     const { posts, deps } = capturing();
     await runOnce(createOtelReporterPlugin(fullCfg, deps));
 
-    expect(runSpanOf(posts).parentSpanId).toBeUndefined();
+    const span = runSpanOf(posts);
+    expect(span).toBeDefined();
+    expect(span?.parentSpanId).toBeUndefined();
   });
 
   test("AC14: a traceparent whose trace id is all zeros produces a run span with no parent span id", async () => {
@@ -326,7 +408,9 @@ describe("otel-reporter traceparent adoption", () => {
     const { posts, deps } = capturing();
     await runOnce(createOtelReporterPlugin(fullCfg, deps));
 
-    expect(runSpanOf(posts).parentSpanId).toBeUndefined();
+    const span = runSpanOf(posts);
+    expect(span).toBeDefined();
+    expect(span?.parentSpanId).toBeUndefined();
   });
 
   test("boundary: no TRACEPARENT env var produces a run span with no parent span id", async () => {
@@ -334,6 +418,8 @@ describe("otel-reporter traceparent adoption", () => {
     const { posts, deps } = capturing();
     await runOnce(createOtelReporterPlugin(fullCfg, deps));
 
-    expect(runSpanOf(posts).parentSpanId).toBeUndefined();
+    const span = runSpanOf(posts);
+    expect(span).toBeDefined();
+    expect(span?.parentSpanId).toBeUndefined();
   });
 });

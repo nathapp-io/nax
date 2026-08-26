@@ -25,7 +25,8 @@ describe("detectProjectStack — runtime detection", () => {
     { lockfile: "bun.lockb+package-lock.json", runtime: "bun", extraFiles: ["package-lock.json"] },
   ])("detects $lockfile → $runtime runtime", async ({ lockfile, runtime, extraFiles }) => {
     await withTempDir(async (dir) => {
-      await Bun.write(join(dir, lockfile.split("+")[0]!), lockfile.endsWith(".json") ? "{}" : "");
+      const [primary] = lockfile.split("+");
+      await Bun.write(join(dir, primary), lockfile.endsWith(".json") ? "{}" : "");
       if (extraFiles) {
         for (const f of extraFiles) await Bun.write(join(dir, f), "{}");
       }
@@ -193,14 +194,14 @@ describe("buildQualityCommands — bun + typescript", () => {
     ["unknown", "lint", "bun run lint"],
     ["biome", "lint", "biome check ."],
     ["eslint", "lint", "eslint ."],
-  ])("linter=%s: %s command", (linter: string, cmd: string, expected: string) => {
+  ] as const)("linter=%s: %s command", (linter, cmd, expected) => {
     const commands = buildQualityCommands({
       runtime: "bun",
       language: "typescript",
-      linter: linter as any,
+      linter,
       monorepo: "none",
     });
-    expect((commands as any)[cmd]).toBe(expected);
+    expect(commands[cmd]).toBe(expected);
   });
 });
 
@@ -211,14 +212,14 @@ describe("buildQualityCommands — node + typescript", () => {
     ["unknown", "lint", "npm run lint"],
     ["biome", "lint", "biome check ."],
     ["eslint", "lint", "eslint ."],
-  ])("linter=%s: %s command", (linter: string, cmd: string, expected: string) => {
+  ] as const)("linter=%s: %s command", (linter, cmd, expected) => {
     const commands = buildQualityCommands({
       runtime: "node",
       language: "typescript",
-      linter: linter as any,
+      linter,
       monorepo: "none",
     });
-    expect((commands as any)[cmd]).toBe(expected);
+    expect(commands[cmd]).toBe(expected);
   });
 });
 
@@ -234,9 +235,9 @@ describe("buildQualityCommands — python", () => {
     ["lint", "ruff check ."],
     ["test", "pytest"],
     ["typecheck", undefined],
-  ])("%s command", (cmd: string, expected: string | undefined) => {
+  ] as const)("%s command", (cmd, expected) => {
     const commands = buildQualityCommands(PYTHON_STACK);
-    expect((commands as any)[cmd]).toBe(expected);
+    expect(commands[cmd]).toBe(expected);
   });
 });
 
@@ -252,8 +253,8 @@ describe("buildQualityCommands — rust", () => {
     ["typecheck", "cargo check"],
     ["lint", "cargo clippy"],
     ["test", "cargo test"],
-  ])("%s command", (cmd: string, expected: string) => {
-    expect((buildQualityCommands(RUST_STACK) as any)[cmd]).toBe(expected);
+  ] as const)("%s command", (cmd, expected) => {
+    expect(buildQualityCommands(RUST_STACK)[cmd]).toBe(expected);
   });
 });
 
@@ -269,8 +270,8 @@ describe("buildQualityCommands — go", () => {
     ["typecheck", "go vet ./..."],
     ["lint", "golangci-lint run"],
     ["test", "go test ./..."],
-  ])("%s command", (cmd: string, expected: string) => {
-    expect((buildQualityCommands(GO_STACK) as any)[cmd]).toBe(expected);
+  ] as const)("%s command", (cmd, expected) => {
+    expect(buildQualityCommands(GO_STACK)[cmd]).toBe(expected);
   });
 });
 

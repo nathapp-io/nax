@@ -8,7 +8,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeDispatchContext } from "@test/helpers";
+import { makeDispatchContext, makeNaxConfig } from "@test/helpers";
+import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
 import { _acceptanceSetupDeps, acceptanceSetupStage } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
@@ -44,20 +45,18 @@ function makePrd(stories: UserStory[]) {
   };
 }
 
-function makeCtx(acceptanceOverrides: Record<string, unknown> = {}): PipelineContext {
+function makeCtx(acceptanceOverrides: Partial<NaxConfig["acceptance"]> = {}): PipelineContext {
   const stories = [makeStory("US-001", ["renders correctly", "shows expected output"])];
   return {
-    config: {
-      ...DEFAULT_CONFIG,
+    config: makeNaxConfig({
       acceptance: {
-        ...DEFAULT_CONFIG.acceptance,
         enabled: true,
         refinement: true,
         redGate: false,
         model: "fast",
         ...acceptanceOverrides,
       },
-    } as any,
+    }),
     prd: makePrd(stories),
     story: stories[0],
     stories,
@@ -66,13 +65,13 @@ function makeCtx(acceptanceOverrides: Record<string, unknown> = {}): PipelineCon
     workdir: "/tmp/test-workdir",
     projectDir: "/tmp/test-workdir",
     featureDir: "/tmp/test-workdir/nax/features/test-feature",
-    hooks: {} as any,
+    hooks: { hooks: {} },
     ...makeDispatchContext(),
   };
 }
 
-function makeDefaultCallOp() {
-  return async (_ctx: any, _packageDir: any, op: any, input: any) => {
+function makeDefaultCallOp(): typeof _acceptanceSetupDeps.callOp {
+  return async (_ctx, _packageDir, op, input) => {
     if (op.name === "acceptance-refine") {
       const { criteria, storyId } = input as { criteria: string[]; storyId: string };
       return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
@@ -274,6 +273,6 @@ describe("acceptance-setup: testFramework appears in generate callOp input", () 
 
     const ctx = makeCtx({ testStrategy: "component", testFramework: "ink-testing-library" });
     await acceptanceSetupStage.execute(ctx);
-    expect((ctx as any).acceptanceSetup).toBeDefined();
+    expect(ctx.acceptanceSetup).toBeDefined();
   });
 });

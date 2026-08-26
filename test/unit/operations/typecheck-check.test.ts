@@ -1,21 +1,30 @@
 import { describe, expect, test } from "bun:test";
+import type { DeepPartial } from "@test/helpers";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import type { ConfigSelector, QualityConfig } from "@/config";
 import type { Finding } from "@/findings";
-import type { TypecheckCheckDeps } from "@/operations";
+import type { CallContext, TypecheckCheckDeps } from "@/operations";
 import { typecheckCheckOp } from "@/operations";
 
-function ctxWithQuality(quality?: Record<string, unknown>, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
-  const config = { quality, execution: {} } as any;
+function ctxWithQuality(
+  quality?: DeepPartial<QualityConfig>,
+  opts: { hasOverride?: boolean; repoRoot?: string } = {},
+): CallContext {
+  const config = makeNaxConfig({ quality });
   return {
-    runtime: {},
+    runtime: makeTestRuntime({ config }),
     storyId: "US-003",
+    packageDir: "packages/agent",
+    agentName: "claude",
     packageView: {
       packageDir: "packages/agent",
+      relativeFromRoot: "packages/agent",
       repoRoot: opts.repoRoot ?? "/repo",
       hasOverride: opts.hasOverride ?? false,
       config,
-      select: (sel: any) => sel.select(config),
+      select: <C>(selector: ConfigSelector<C>): C => selector.select(config),
     },
-  } as any;
+  };
 }
 
 const passedResult = {
@@ -66,8 +75,8 @@ describe("typecheckCheckOp — AC2: DeterministicOperation shape", () => {
 
   test("has execute function, not build/parse", () => {
     expect(typeof typecheckCheckOp.execute).toBe("function");
-    expect((typecheckCheckOp as any).build).toBeUndefined();
-    expect((typecheckCheckOp as any).parse).toBeUndefined();
+    expect("build" in typecheckCheckOp).toBe(false);
+    expect("parse" in typecheckCheckOp).toBe(false);
   });
 });
 
@@ -89,7 +98,7 @@ describe("typecheckCheckOp — AC4: execute returns success=true when command ex
       makeDeps({
         runQualityCommand: async () => failedResult,
         parseTypecheckOutput: () => ({
-          format: "tsc" as any,
+          format: "tsc",
           diagnostics: [],
           findings: [mockFinding],
         }),
@@ -106,7 +115,7 @@ describe("typecheckCheckOp — AC4: execute returns success=true when command ex
       makeDeps({
         runQualityCommand: async () => failedResult,
         parseTypecheckOutput: () => ({
-          format: "tsc" as any,
+          format: "tsc",
           diagnostics: [],
           findings: [mockFinding],
         }),

@@ -11,12 +11,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { type MockLogger, makeLogger, makeMockAgentManager, makeSessionManager } from "@test/helpers";
+import { type MockLogger, makeLogger, makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { DebateRunner } from "@/debate/runner";
 import { _debateSessionDeps } from "@/debate/session-helpers";
-import type { DebateStageConfig } from "@/debate/types";
+import type { DebateMode, DebateStageConfig, SessionMode } from "@/debate/types";
 import type { CallContext } from "@/operations/types";
+import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 
 // ─── Mock Helpers ──────────────────────────────────────────────────────────────
 
@@ -37,18 +38,17 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
 }
 
 function makeCallCtx(storyId: string, agentManager: ReturnType<typeof makeMockAgentManager>): CallContext {
+  const runtime = makeMockRuntime({
+    agentManager,
+    sessionManager: makeSessionManager({
+      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
+      closeSession: mock(async () => {}),
+    }),
+    costAggregator: createNoOpCostAggregator(),
+  });
   return {
-    runtime: {
-      agentManager,
-      sessionManager: makeSessionManager({
-        openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
-        closeSession: mock(async () => {}),
-      }),
-      configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
-      packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
-      signal: undefined,
-    } as any,
-    packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
+    runtime,
+    packageView: runtime.packages.repo(),
     packageDir: "/tmp/work",
     agentName: "claude",
     storyId,
@@ -138,8 +138,11 @@ describe("DebateRunner.run() mode routing — AC3: mode undefined defaults to pa
     const stageConfig = makeStageConfig({
       sessionMode: "one-shot",
     });
-    // Explicitly set mode to undefined to test backward compatibility
-    delete (stageConfig as any).mode;
+    // Explicitly clear mode to test backward compatibility — the runner reads
+    // `this.stageConfig.mode ?? "panel"`, so an explicit undefined behaves like
+    // an absent key.
+    const withoutMode: { mode?: DebateMode } = stageConfig;
+    withoutMode.mode = undefined;
 
     const agentManager = makeMockAgentManager({
       completeAsFn: async (_name, _p, _o) => ({
@@ -152,7 +155,7 @@ describe("DebateRunner.run() mode routing — AC3: mode undefined defaults to pa
     const runner = new DebateRunner({
       ctx: makeCallCtx("test-story", agentManager),
       stage: "review",
-      stageConfig: stageConfig as any,
+      stageConfig,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/work",
     });
@@ -234,8 +237,11 @@ describe("DebateRunner.run() mode routing — AC6: hybrid + undefined sessionMod
     const stageConfig = makeStageConfig({
       mode: "hybrid",
     });
-    // Remove sessionMode to test undefined behavior
-    delete (stageConfig as any).sessionMode;
+    // Clear sessionMode to test the undefined fallback path — the runner reads
+    // `this.stageConfig.sessionMode ?? "one-shot"`, so an explicit undefined
+    // behaves like an absent key.
+    const withoutSessionMode: { sessionMode?: SessionMode } = stageConfig;
+    withoutSessionMode.sessionMode = undefined;
 
     const agentManager = makeMockAgentManager({
       completeAsFn: async (_name, _p, _o) => ({
@@ -248,7 +254,7 @@ describe("DebateRunner.run() mode routing — AC6: hybrid + undefined sessionMod
     const runner = new DebateRunner({
       ctx: makeCallCtx("test-story", agentManager),
       stage: "review",
-      stageConfig: stageConfig as any,
+      stageConfig,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/work",
     });

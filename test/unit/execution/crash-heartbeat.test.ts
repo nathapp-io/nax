@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeLogger, makeStatusWriter } from "@test/helpers";
 import { _heartbeatDeps, _isHeartbeatActive, startHeartbeat, stopHeartbeat } from "@/execution/crash-heartbeat";
 
 let origSleep: typeof _heartbeatDeps.sleep;
@@ -18,10 +19,10 @@ afterEach(() => {
 
 describe("crash-heartbeat — startHeartbeat", () => {
   test("starts without throwing when given a valid status writer", () => {
-    const writer = { update: async () => {} };
+    const writer = makeStatusWriter();
     expect(() =>
       startHeartbeat(
-        writer as any,
+        writer,
         () => 0,
         () => 0,
       ),
@@ -32,17 +33,9 @@ describe("crash-heartbeat — startHeartbeat", () => {
     // The outer .catch in startHeartbeat fires when heartbeatLoop itself rejects.
     // That happens when sleep throws — the error propagates past the inner try-catch
     // (which only wraps the tick body, not the sleep call).
-    const warnings: string[] = [];
+    const logger = makeLogger();
 
-    _heartbeatDeps.getSafeLogger = () =>
-      ({
-        warn: (_stage: string, msg: string) => {
-          warnings.push(msg);
-        },
-        debug: () => {},
-        info: () => {},
-        error: () => {},
-      }) as any;
+    _heartbeatDeps.getSafeLogger = () => logger;
 
     // Make sleep throw immediately — heartbeatLoop rejects without spinning.
     _heartbeatDeps.sleep = async () => {
@@ -50,7 +43,7 @@ describe("crash-heartbeat — startHeartbeat", () => {
     };
 
     startHeartbeat(
-      { update: async () => {} } as any,
+      makeStatusWriter(),
       () => 0,
       () => 0,
     );
@@ -58,8 +51,11 @@ describe("crash-heartbeat — startHeartbeat", () => {
     // Give the microtask queue one macro-task tick to process the rejection.
     await new Promise((resolve) => setTimeout(resolve, 10));
 
-    // The catch handler must log "crashed" / "stopped", not swallow silently.
-    expect(warnings.some((w) => w.includes("crashed") || w.includes("stopped"))).toBe(true);
+    // The catch handler must log "crashed" / "stopped" as a warning, not swallow silently.
+    const warnedCrashStop = logger.calls.some(
+      (c) => c.level === "warn" && (c.message.includes("crashed") || c.message.includes("stopped")),
+    );
+    expect(warnedCrashStop).toBe(true);
   });
 
   // MEM-3: stopHeartbeat left one in-flight uncancellable 60s Bun.sleep running —
@@ -74,7 +70,7 @@ describe("crash-heartbeat — startHeartbeat", () => {
       capturedSignal = signal;
       // Hang until aborted — never resolve, so the loop stays parked in the
       // sleep and no busy-spin starves the event loop.
-      return new Promise<void>((resolve, reject) => {
+      return new Promise<void>((_resolve, reject) => {
         signal?.addEventListener("abort", () => {
           sleepSettled = true;
           reject(signal.reason);
@@ -83,7 +79,7 @@ describe("crash-heartbeat — startHeartbeat", () => {
     };
 
     startHeartbeat(
-      { update: async () => {} } as any,
+      makeStatusWriter(),
       () => 0,
       () => 0,
     );
@@ -105,17 +101,9 @@ describe("crash-heartbeat — startHeartbeat", () => {
   // stopHeartbeat() nulled the controller before the loop's catch ran, every
   // normal stop logged a spurious "Heartbeat loop crashed" warning.
   test("MEM-3: a normal stop does not log a spurious 'loop crashed' warning", async () => {
-    const warnings: string[] = [];
+    const logger = makeLogger();
 
-    _heartbeatDeps.getSafeLogger = () =>
-      ({
-        warn: (_stage: string, msg: string) => {
-          warnings.push(msg);
-        },
-        debug: () => {},
-        info: () => {},
-        error: () => {},
-      }) as any;
+    _heartbeatDeps.getSafeLogger = () => logger;
 
     _heartbeatDeps.sleep = (_ms: number, signal?: AbortSignal) =>
       new Promise<void>((_resolve, reject) => {
@@ -123,7 +111,7 @@ describe("crash-heartbeat — startHeartbeat", () => {
       });
 
     startHeartbeat(
-      { update: async () => {} } as any,
+      makeStatusWriter(),
       () => 0,
       () => 0,
     );
@@ -131,7 +119,7 @@ describe("crash-heartbeat — startHeartbeat", () => {
     stopHeartbeat();
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(warnings).toEqual([]);
+    expect(logger.calls.filter((c) => c.level === "warn")).toEqual([]);
   });
   test("a stale-generation loop exits at the gen check when its sleep resolves after stopHeartbeat", async () => {
     // Line-51 guard: the loop re-checks the generation counter AFTER waking, so
@@ -150,11 +138,11 @@ describe("crash-heartbeat — startHeartbeat", () => {
       });
 
     startHeartbeat(
-      {
+      makeStatusWriter({
         update: async () => {
           updates++;
         },
-      } as any,
+      }),
       () => 0,
       () => 0,
     );

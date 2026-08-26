@@ -60,27 +60,27 @@ describe("PackageView.select()", () => {
 
 describe("PackageRegistry.hydrate — per-package merge", () => {
   test("resolve(pkg) returns merged config after hydrate", async () => {
-    const loader = createConfigLoader(makeNaxConfig({ quality: { commands: { lint: "root-lint" } } } as any));
+    const loader = createConfigLoader(makeNaxConfig({ quality: { commands: { lint: "root-lint" } } }));
     const registry = createPackageRegistry(loader, "/repo");
     // Inject a fake override loader to avoid disk I/O.
     await registry.hydrate(["packages/agent"], async (_root, dir) =>
-      dir === "packages/agent" ? ({ quality: { commands: { lint: "pkg-lint" } } } as any) : null,
+      dir === "packages/agent" ? makeNaxConfig({ quality: { commands: { lint: "pkg-lint" } } }) : null,
     );
     const view = registry.resolve("packages/agent");
     expect(view.config.quality?.commands?.lint).toBe("pkg-lint");
   });
 
   test("resolve(unhydrated pkg) falls back to root config", () => {
-    const loader = createConfigLoader(makeNaxConfig({ quality: { commands: { lint: "root-lint" } } } as any));
+    const loader = createConfigLoader(makeNaxConfig({ quality: { commands: { lint: "root-lint" } } }));
     const registry = createPackageRegistry(loader, "/repo");
     expect(registry.resolve("packages/other").config.quality?.commands?.lint).toBe("root-lint");
   });
 
   test("resolve(absolute path) hits the same merged config as resolve(relative)", async () => {
-    const loader = createConfigLoader(makeNaxConfig({ quality: { commands: { lint: "root-lint" } } } as any));
+    const loader = createConfigLoader(makeNaxConfig({ quality: { commands: { lint: "root-lint" } } }));
     const registry = createPackageRegistry(loader, "/repo");
     await registry.hydrate(["packages/agent"], async (_root, dir) =>
-      dir === "packages/agent" ? ({ quality: { commands: { lint: "pkg-lint" } } } as any) : null,
+      dir === "packages/agent" ? makeNaxConfig({ quality: { commands: { lint: "pkg-lint" } } }) : null,
     );
     // Pipeline stages call resolve() with an absolute path like /repo/packages/agent.
     const viewAbsolute = registry.resolve("/repo/packages/agent");
@@ -103,7 +103,7 @@ describe("PackageView.hasOverride and repoRoot", () => {
     const loader = createConfigLoader(minConfig);
     const registry = createPackageRegistry(loader, "/repo");
     await registry.hydrate(["packages/lib"], async (_root, dir) =>
-      dir === "packages/lib" ? ({ quality: { commands: { lint: "echo ok" } } } as any) : null,
+      dir === "packages/lib" ? makeNaxConfig({ quality: { commands: { lint: "echo ok" } } }) : null,
     );
     const view = registry.resolve("packages/lib");
     expect(view.hasOverride).toBe(true);
@@ -173,7 +173,7 @@ describe("F2 invariant — pre-hydrate warn for non-root resolve()", () => {
     const registry = createPackageRegistry(loader, "/repo");
 
     await registry.hydrate(["packages/app"], async (_root, dir) =>
-      dir === "packages/app" ? ({ quality: { commands: { lint: "pkg-lint" } } } as any) : null,
+      dir === "packages/app" ? makeNaxConfig({ quality: { commands: { lint: "pkg-lint" } } }) : null,
     );
     registry.resolve("packages/app");
 

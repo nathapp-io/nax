@@ -191,29 +191,25 @@ describe("buildRoleTaskSection — single-session", () => {
 
 describe("buildRoleTaskSection — tdd-simple", () => {
   test("names RED, GREEN, REFACTOR phases", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = buildRoleTaskSection("tdd-simple" as any);
+    const result = buildRoleTaskSection("tdd-simple");
     expect(result.toUpperCase()).toMatch(/RED/);
     expect(result.toUpperCase()).toMatch(/GREEN/);
     expect(result.toLowerCase()).toMatch(/refactor/);
   });
 
   test("contains verify-RED (assertion failures NOT import errors)", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = buildRoleTaskSection("tdd-simple" as any);
+    const result = buildRoleTaskSection("tdd-simple");
     expect(result).toMatch(/ASSERTION failure/i);
     expect(result).toMatch(/NOT.*import error/i);
   });
 
   test("contains git commit -m instruction", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = buildRoleTaskSection("tdd-simple" as any);
+    const result = buildRoleTaskSection("tdd-simple");
     expect(result).toContain("git commit -m");
   });
 
   test("is distinct from single-session and test-writer roles", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tddSimple = buildRoleTaskSection("tdd-simple" as any);
+    const tddSimple = buildRoleTaskSection("tdd-simple");
     expect(tddSimple).not.toEqual(buildRoleTaskSection("single-session"));
     expect(tddSimple).not.toEqual(buildRoleTaskSection("test-writer"));
   });
@@ -256,8 +252,7 @@ describe("buildRoleTaskSection — batch", () => {
   test("is distinct from single-session and tdd-simple roles", () => {
     const batch = buildRoleTaskSection("batch");
     expect(batch).not.toEqual(buildRoleTaskSection("single-session"));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(batch).not.toEqual(buildRoleTaskSection("tdd-simple" as any));
+    expect(batch).not.toEqual(buildRoleTaskSection("tdd-simple"));
   });
 });
 
@@ -380,13 +375,11 @@ describe("AC-10: storyId plumbing for commit format", () => {
 
 describe("backwards-compat: old API buildRoleTaskSection('standard'/'lite')", () => {
   test("buildRoleTaskSection('standard') equals buildRoleTaskSection('implementer', 'standard')", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(buildRoleTaskSection("standard" as any)).toEqual(buildRoleTaskSection("implementer", "standard"));
+    expect(buildRoleTaskSection("standard")).toEqual(buildRoleTaskSection("implementer", "standard"));
   });
 
   test("buildRoleTaskSection('lite') equals buildRoleTaskSection('implementer', 'lite')", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(buildRoleTaskSection("lite" as any)).toEqual(buildRoleTaskSection("implementer", "lite"));
+    expect(buildRoleTaskSection("lite")).toEqual(buildRoleTaskSection("implementer", "lite"));
   });
 
   test("defaults to standard variant when no variant provided", () => {

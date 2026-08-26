@@ -10,7 +10,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { withTempDir } from "@test/helpers";
+import { makeTurnResult, withTempDir } from "@test/helpers";
 import { adversarialReviewOp } from "@/operations/adversarial-review";
 import type { NaxRuntime } from "@/runtime";
 
@@ -95,11 +95,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
       let callCount = 0;
       const mockSend = mock(async () => {
         callCount += 1;
-        return {
-          output: callCount === 1 ? initial : requote,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
+        return makeTurnResult({ output: callCount === 1 ? initial : requote });
       });
 
       const result = await adversarialReviewOp.hopBody!("initial prompt", {
@@ -111,7 +107,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
           adversarialConfig: { ...ADVERSARIAL_CONFIG, diffMode: "ref" },
           mode: "ref",
         },
-      } as any);
+      });
 
       const parsed = JSON.parse(result.output);
       // Two calls: initial + requote
@@ -153,11 +149,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
       let callCount = 0;
       const mockSend = mock(async () => {
         callCount += 1;
-        return {
-          output: callCount === 1 ? initial : requote,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
+        return makeTurnResult({ output: callCount === 1 ? initial : requote });
       });
 
       const result = await adversarialReviewOp.hopBody!("initial prompt", {
@@ -169,7 +161,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
           adversarialConfig: { ...ADVERSARIAL_CONFIG, diffMode: "ref" },
           mode: "ref",
         },
-      } as any);
+      });
 
       const parsed = JSON.parse(result.output);
       expect(parsed.findings[0].verifiedBy.observed).toContain("db.rawQuery");
@@ -206,11 +198,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
       let callCount = 0;
       const mockSend = mock(async () => {
         callCount += 1;
-        return {
-          output: callCount === 1 ? initial : "not valid json response",
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
+        return makeTurnResult({ output: callCount === 1 ? initial : "not valid json response" });
       });
 
       const result = await adversarialReviewOp.hopBody!("initial prompt", {
@@ -222,7 +210,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
           adversarialConfig: { ...ADVERSARIAL_CONFIG, diffMode: "ref" },
           mode: "ref",
         },
-      } as any);
+      });
 
       const parsed = JSON.parse(result.output);
       expect(callCount).toBe(2);
@@ -254,11 +242,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
       let callCount = 0;
       const mockSend = mock(async () => {
         callCount += 1;
-        return {
-          output: initial,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
+        return makeTurnResult({ output: initial });
       });
 
       const result = await adversarialReviewOp.hopBody!("initial prompt", {
@@ -270,7 +254,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
           adversarialConfig: { ...ADVERSARIAL_CONFIG, diffMode: "embedded" },
           mode: "embedded",
         },
-      } as any);
+      });
 
       // Only one call (no requote in embedded mode)
       expect(callCount).toBe(1);
@@ -302,11 +286,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
       let callCount = 0;
       const mockSend = mock(async () => {
         callCount += 1;
-        return {
-          output: initial,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
+        return makeTurnResult({ output: initial });
       });
 
       const result = await adversarialReviewOp.hopBody!("initial prompt", {
@@ -322,7 +302,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
           },
           mode: "ref",
         },
-      } as any);
+      });
 
       // Only one call (requote disabled)
       expect(callCount).toBe(1);
@@ -353,11 +333,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
       let callCount = 0;
       const mockSend = mock(async () => {
         callCount += 1;
-        return {
-          output: initial,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
+        return makeTurnResult({ output: initial });
       });
 
       const result = await adversarialReviewOp.hopBody!("initial prompt", {
@@ -373,7 +349,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
           },
           mode: "ref",
         },
-      } as any);
+      });
 
       // Only one call (maxRequotes: 0)
       expect(callCount).toBe(1);
@@ -389,11 +365,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
     let callCount = 0;
     const mockSend = mock(async () => {
       callCount += 1;
-      return {
-        output: initial,
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 0,
-      };
+      return makeTurnResult({ output: initial });
     });
 
     const result = await adversarialReviewOp.hopBody!("initial prompt", {
@@ -405,7 +377,7 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
         adversarialConfig: ADVERSARIAL_CONFIG,
         mode: "ref",
       },
-    } as any);
+    });
 
     // Only one call (no findings)
     expect(callCount).toBe(1);

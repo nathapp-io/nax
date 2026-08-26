@@ -63,8 +63,8 @@ describe("checkTestCommand (Tier 2 warning)", () => {
     expect(result.message).toContain("custom-test-cmd");
   });
 
-  test.each([null, false])("skips silently when test command is %s", async (testCommand) => {
-    const config = createMockConfig({ testCommand: testCommand as any });
+  test.each([null, undefined])("skips silently when test command is %s", async (testCommand) => {
+    const config = createMockConfig({ testCommand });
     const result = await checkTestCommand(config);
     expect(result.passed).toBe(true);
     expect(result.message).toContain("default");
@@ -80,8 +80,8 @@ describe("checkLintCommand (Tier 2 warning)", () => {
     expect(result.message).toContain("custom-lint-cmd");
   });
 
-  test.each([null, false])("skips silently when lint command is %s", async (lintCommand) => {
-    const config = createMockConfig({ lintCommand: lintCommand as any });
+  test.each([null, undefined])("skips silently when lint command is %s", async (lintCommand) => {
+    const config = createMockConfig({ lintCommand });
     const result = await checkLintCommand(config);
     expect(result.passed).toBe(true);
     expect(result.message).toContain("skip");
@@ -97,8 +97,8 @@ describe("checkTypecheckCommand (Tier 2 warning)", () => {
     expect(result.message).toContain("tsc");
   });
 
-  test.each([null, false])("skips silently when typecheck command is %s", async (typecheckCommand) => {
-    const config = createMockConfig({ typecheckCommand: typecheckCommand as any });
+  test.each([null, undefined])("skips silently when typecheck command is %s", async (typecheckCommand) => {
+    const config = createMockConfig({ typecheckCommand });
     const result = await checkTypecheckCommand(config);
     expect(result.passed).toBe(true);
     expect(result.message).toContain("skip");
@@ -190,7 +190,7 @@ describe("checkOptionalCommands (Tier 2 warning)", () => {
 
   test("warns and lists missing commands when optional commands are absent", async () => {
     let result = await checkOptionalCommands(
-      createMockConfig({ testCommand: null as any, lintCommand: null as any, typecheckCommand: null as any }),
+      createMockConfig({ testCommand: null, lintCommand: null, typecheckCommand: null }),
       testDir,
     );
     expect(result.name).toBe("optional-commands-configured");
@@ -198,7 +198,7 @@ describe("checkOptionalCommands (Tier 2 warning)", () => {
     expect(result.passed).toBe(false);
 
     result = await checkOptionalCommands(
-      createMockConfig({ testCommand: "bun test", lintCommand: null as any, typecheckCommand: null as any }),
+      createMockConfig({ testCommand: "bun test", lintCommand: null, typecheckCommand: null }),
       testDir,
     );
     expect(result.message).toContain("lint");

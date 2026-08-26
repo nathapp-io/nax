@@ -52,7 +52,7 @@ beforeEach(() => {
       getContext: async () => null,
     }) as ReturnType<typeof origCreateV1Provider>;
   // Default: no-op logger (real logger is used)
-  _pullToolsDeps.getLogger = () => makeLogger() as any;
+  _pullToolsDeps.getLogger = () => makeLogger();
 });
 
 afterEach(() => {
@@ -271,7 +271,7 @@ describe("handleQueryNeighbor", () => {
   test("emits logger.info with tool/resultCount/truncated fields", async () => {
     // Sub-scenario 1: basic invocation — fields present, resultCount=0, resultBytes=0
     const mockLogger = makeLogger();
-    _pullToolsDeps.getLogger = () => mockLogger as any;
+    _pullToolsDeps.getLogger = () => mockLogger;
     _codeNeighborDeps.fileExists = async () => false;
     _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
     await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget());
@@ -283,7 +283,7 @@ describe("handleQueryNeighbor", () => {
 
     // Sub-scenario 2: truncated=true when content exceeds cap
     const mockLogger2 = makeLogger();
-    _pullToolsDeps.getLogger = () => mockLogger2 as any;
+    _pullToolsDeps.getLogger = () => mockLogger2;
     const manyNeighbors = Array.from({ length: 20 }, (_, i) => `src/file${i}.ts`);
     _codeNeighborDeps.fileExists = async () => false;
     _codeNeighborDeps.glob = () => ({ files: manyNeighbors, truncated: false });
@@ -297,7 +297,7 @@ describe("handleQueryNeighbor", () => {
 
     // Sub-scenario 3: resultCount>0 when neighbors found
     const mockLogger3 = makeLogger();
-    _pullToolsDeps.getLogger = () => mockLogger3 as any;
+    _pullToolsDeps.getLogger = () => mockLogger3;
     _codeNeighborDeps.fileExists = async (p) => p.includes("test/");
     _codeNeighborDeps.glob = () => ({ files: ["src/imported.ts"], truncated: false });
     _codeNeighborDeps.readFile = async () => 'import { x } from "./a"';
@@ -417,7 +417,7 @@ describe("handleQueryFeatureContext", () => {
 
   test("emits logger.info with tool=query_feature_context; keyword from filter or null", async () => {
     const mockLogger = makeLogger();
-    _pullToolsDeps.getLogger = () => mockLogger as any;
+    _pullToolsDeps.getLogger = () => mockLogger;
     mockV1Provider("## Conventions\nUse async/await.");
     await handleQueryFeatureContext({ filter: "conventions" }, STORY, CONFIG, "/repo", makeBudget());
     const callWithFilter = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
@@ -428,7 +428,7 @@ describe("handleQueryFeatureContext", () => {
 
   test("logger includes resultCount and resultBytes (>0 when content exists, 0 when none)", async () => {
     const mockLogger = makeLogger();
-    _pullToolsDeps.getLogger = () => mockLogger as any;
+    _pullToolsDeps.getLogger = () => mockLogger;
 
     mockV1Provider("## Section\nSome content here");
     await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget());
@@ -446,7 +446,7 @@ describe("handleQueryFeatureContext", () => {
 
   test("logger emit includes keyword=null when no filter is provided", async () => {
     const mockLogger2 = makeLogger();
-    _pullToolsDeps.getLogger = () => mockLogger2 as any;
+    _pullToolsDeps.getLogger = () => mockLogger2;
     mockV1Provider("## Section\nContent");
     await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget());
     const callNoFilter = mockLogger2.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");

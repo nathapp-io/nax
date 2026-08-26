@@ -1,15 +1,15 @@
 {
   "counts": {
-    "asAny": 435,
+    "asAny": 311,
     "tsSuppress": 40,
     "ratchetAllow": 103,
     "absentValue": 17,
-    "anyType": 557,
-    "looseCast": 1815,
-    "asNever": 607,
-    "nonNullAssert": 812
+    "anyType": 389,
+    "looseCast": 1811,
+    "asNever": 605,
+    "nonNullAssert": 801
   },
-  "updatedAt": "2026-08-26T02:17:43.366Z",
+  "updatedAt": "2026-08-26T03:10:42.734Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -265,10 +265,6 @@
       "asAny": 5,
       "anyType": 5
     },
-    "test/integration/context/test-coverage-parity.test.ts": {
-      "asAny": 8,
-      "anyType": 8
-    },
     "test/integration/pipeline/pipeline.test.ts": {
       "looseCast": 1,
       "asNever": 1
@@ -405,10 +401,6 @@
     "test/unit/precheck/precheck-canonical-lint-orchestrator.test.ts": {
       "looseCast": 2
     },
-    "test/unit/precheck/precheck-checks-tier2-warnings.test.ts": {
-      "asAny": 8,
-      "anyType": 8
-    },
     "test/unit/commands/migrate.test.ts": {
       "looseCast": 4
     },
@@ -458,8 +450,6 @@
       "anyType": 1
     },
     "test/unit/prompts/sections/role-task.test.ts": {
-      "asAny": 7,
-      "anyType": 7,
       "looseCast": 3
     },
     "test/unit/prompts/sections/isolation.test.ts": {
@@ -480,10 +470,7 @@
       "nonNullAssert": 1
     },
     "test/unit/prd/schema.test.ts": {
-      "asAny": 2,
-      "anyType": 7,
       "looseCast": 1,
-      "asNever": 2,
       "nonNullAssert": 29
     },
     "test/unit/prd/prd-get-next-story.test.ts": {
@@ -540,8 +527,6 @@
       "asNever": 2
     },
     "test/unit/review/semantic-retry.test.ts": {
-      "asAny": 8,
-      "anyType": 8,
       "asNever": 4
     },
     "test/unit/review/semantic-evidence.test.ts": {
@@ -809,10 +794,6 @@
     },
     "test/unit/execution/story-orchestrator-logs.test.ts": {
       "nonNullAssert": 13
-    },
-    "test/unit/execution/crash-heartbeat.test.ts": {
-      "asAny": 7,
-      "anyType": 7
     },
     "test/unit/execution/plan-inputs-test-patterns.test.ts": {
       "looseCast": 8
@@ -1108,10 +1089,6 @@
     "test/unit/operations/decompose.test.ts": {
       "asNever": 1
     },
-    "test/unit/operations/verify-scoped.test.ts": {
-      "asAny": 6,
-      "anyType": 7
-    },
     "test/unit/operations/reviewer-verdict-invariant.test.ts": {
       "looseCast": 1,
       "asNever": 5,
@@ -1125,10 +1102,6 @@
     "test/unit/operations/full-suite-gate.test.ts": {
       "looseCast": 1,
       "nonNullAssert": 1
-    },
-    "test/unit/operations/typecheck-check.test.ts": {
-      "asAny": 6,
-      "anyType": 7
     },
     "test/unit/operations/autofix-implementer.test.ts": {
       "asAny": 1,
@@ -1151,10 +1124,6 @@
     },
     "test/unit/operations/call-exhaustion.test.ts": {
       "looseCast": 6
-    },
-    "test/unit/operations/mechanical-formatfix-strategy.test.ts": {
-      "asAny": 6,
-      "anyType": 7
     },
     "test/unit/operations/mutation-check-selection.test.ts": {
       "asAny": 1,
@@ -1186,10 +1155,6 @@
       "asAny": 2,
       "anyType": 2
     },
-    "test/unit/operations/lint-check.test.ts": {
-      "asAny": 6,
-      "anyType": 7
-    },
     "test/unit/operations/ground.test.ts": {
       "asAny": 1,
       "anyType": 1
@@ -1199,10 +1164,6 @@
     },
     "test/unit/operations/stateful-debater-op.test.ts": {
       "looseCast": 7
-    },
-    "test/unit/operations/mutation-check.test.ts": {
-      "asAny": 3,
-      "anyType": 7
     },
     "test/unit/operations/autofix-test-writer.test.ts": {
       "asAny": 4,
@@ -1229,10 +1190,6 @@
     },
     "test/unit/operations/implementer.test.ts": {
       "nonNullAssert": 9
-    },
-    "test/unit/operations/adversarial-review-requote.test.ts": {
-      "asAny": 7,
-      "anyType": 7
     },
     "test/unit/operations/plan-critic-llm.test.ts": {
       "looseCast": 3
@@ -1322,10 +1279,6 @@
       "looseCast": 8,
       "nonNullAssert": 1
     },
-    "test/unit/operations/fix-strategy-composition.test.ts": {
-      "asAny": 1,
-      "anyType": 7
-    },
     "test/unit/operations/call-correlation.test.ts": {
       "looseCast": 7
     },
@@ -1402,17 +1355,11 @@
       "anyType": 4
     },
     "test/unit/debate/session-helpers.test.ts": {
-      "asAny": 8,
-      "anyType": 8,
-      "looseCast": 3
+      "looseCast": 1
     },
     "test/unit/debate/runner-agent-resolution.test.ts": {
       "asAny": 5,
       "anyType": 5
-    },
-    "test/unit/debate/runner-mode-routing.test.ts": {
-      "asAny": 8,
-      "anyType": 8
     },
     "test/unit/debate/runner-events.test.ts": {
       "asAny": 4,
@@ -1453,11 +1400,6 @@
     },
     "test/unit/cli/rules-migrate.test.ts": {
       "nonNullAssert": 2
-    },
-    "test/unit/cli/plan-debate.test.ts": {
-      "asAny": 1,
-      "anyType": 8,
-      "looseCast": 2
     },
     "test/unit/cli/rules.test.ts": {
       "looseCast": 5,
@@ -1576,10 +1518,7 @@
       "asNever": 5
     },
     "test/unit/cli/init-detect.test.ts": {
-      "asAny": 7,
-      "anyType": 7,
-      "looseCast": 25,
-      "nonNullAssert": 1
+      "looseCast": 25
     },
     "test/unit/cli/config-display.test.ts": {
       "ratchetAllow": 1,
@@ -1698,11 +1637,6 @@
     "test/unit/agents/acp/spawn-client-cancel-cwd.test.ts": {
       "nonNullAssert": 2
     },
-    "test/unit/agents/acp/activity-emission.test.ts": {
-      "asAny": 8,
-      "anyType": 8,
-      "nonNullAssert": 4
-    },
     "test/unit/agents/acp/registry.test.ts": {
       "asAny": 1,
       "anyType": 1
@@ -1754,10 +1688,6 @@
     },
     "test/unit/runtime/dispatch-context.test.ts": {
       "looseCast": 7
-    },
-    "test/unit/runtime/packages.test.ts": {
-      "asAny": 7,
-      "anyType": 7
     },
     "test/unit/runtime/cost-aggregator.test.ts": {
       "looseCast": 2,
@@ -1841,10 +1771,6 @@
     "test/unit/plugins/builtin/otel-resource-adoption.test.ts": {
       "nonNullAssert": 3
     },
-    "test/unit/plugins/builtin/otel-reporter.test.ts": {
-      "anyType": 7,
-      "nonNullAssert": 6
-    },
     "test/unit/plugins/builtin/otel-resource-git.test.ts": {
       "anyType": 4,
       "nonNullAssert": 5
@@ -1875,9 +1801,6 @@
     },
     "test/unit/plugins/builtin/webhook-reporter.test.ts": {
       "anyType": 1
-    },
-    "test/unit/plugins/builtin/otel-otlp.test.ts": {
-      "anyType": 7
     },
     "test/unit/plugins/builtin/otel-reporter-logs-lifecycle.test.ts": {
       "nonNullAssert": 1
@@ -2071,8 +1994,6 @@
       "looseCast": 2
     },
     "test/unit/context/engine/pull-tools.test.ts": {
-      "asAny": 7,
-      "anyType": 7,
       "looseCast": 6
     },
     "test/unit/context/engine/lint-config-factory.test.ts": {
@@ -2320,8 +2241,6 @@
       "nonNullAssert": 8
     },
     "test/unit/pipeline/stages/acceptance-setup-strategy.test.ts": {
-      "asAny": 3,
-      "anyType": 7,
       "nonNullAssert": 1
     },
     "test/unit/pipeline/stages/execution-repo-scoped-fixes.test.ts": {

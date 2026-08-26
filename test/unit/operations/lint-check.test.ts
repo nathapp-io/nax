@@ -1,21 +1,30 @@
 import { describe, expect, test } from "bun:test";
+import type { DeepPartial } from "@test/helpers";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import type { ConfigSelector, QualityConfig } from "@/config";
 import type { Finding } from "@/findings";
-import type { LintCheckDeps } from "@/operations";
+import type { CallContext, LintCheckDeps } from "@/operations";
 import { lintCheckOp } from "@/operations";
 
-function ctxWithQuality(quality?: Record<string, unknown>, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
-  const config = { quality, execution: {} } as any;
+function ctxWithQuality(
+  quality?: DeepPartial<QualityConfig>,
+  opts: { hasOverride?: boolean; repoRoot?: string } = {},
+): CallContext {
+  const config = makeNaxConfig({ quality });
   return {
-    runtime: {},
+    runtime: makeTestRuntime({ config }),
     storyId: "US-003",
+    packageDir: "packages/agent",
+    agentName: "claude",
     packageView: {
       packageDir: "packages/agent",
+      relativeFromRoot: "packages/agent",
       repoRoot: opts.repoRoot ?? "/repo",
       hasOverride: opts.hasOverride ?? false,
       config,
-      select: (sel: any) => sel.select(config),
+      select: <C>(selector: ConfigSelector<C>): C => selector.select(config),
     },
-  } as any;
+  };
 }
 
 const passedResult = {
@@ -66,8 +75,8 @@ describe("lintCheckOp — AC2: DeterministicOperation shape", () => {
 
   test("has execute function, not build/parse", () => {
     expect(typeof lintCheckOp.execute).toBe("function");
-    expect((lintCheckOp as any).build).toBeUndefined();
-    expect((lintCheckOp as any).parse).toBeUndefined();
+    expect("build" in lintCheckOp).toBe(false);
+    expect("parse" in lintCheckOp).toBe(false);
   });
 });
 
@@ -89,7 +98,7 @@ describe("lintCheckOp — AC3: execute returns success=true when command exits 0
       makeDeps({
         runQualityCommand: async () => failedResult,
         parseLintOutput: () => ({
-          format: "text" as any,
+          format: "text-block",
           diagnostics: [],
           findings: [mockFinding],
         }),
@@ -106,7 +115,7 @@ describe("lintCheckOp — AC3: execute returns success=true when command exits 0
       makeDeps({
         runQualityCommand: async () => failedResult,
         parseLintOutput: () => ({
-          format: "text" as any,
+          format: "text-block",
           diagnostics: [],
           findings: [mockFinding],
         }),

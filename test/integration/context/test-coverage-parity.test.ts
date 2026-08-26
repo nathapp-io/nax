@@ -12,7 +12,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeNaxConfig, makeStory, withTempDir } from "@test/helpers";
+import { makeNaxConfig, makeResolvedTestPatterns, makeStory, withTempDir } from "@test/helpers";
 import { _testCoverageProviderDeps, TestCoverageProvider } from "@/context/engine/providers/test-coverage";
 import { generateTestCoverageSummary } from "@/context/test-scanner";
 
@@ -44,6 +44,18 @@ async function writeTestFile(dir: string, filename: string, content: string): Pr
   await Bun.write(join(dir, "test", filename), content);
 }
 
+function stubDepsForScan(): void {
+  _testCoverageProviderDeps.resolveTestFilePatterns = async () =>
+    makeResolvedTestPatterns({
+      globs: ["**/*.test.ts"],
+      pathspec: [],
+      regex: [],
+      testDirs: ["test"],
+      resolution: "fallback",
+    });
+  _testCoverageProviderDeps.generateTestCoverageSummary = generateTestCoverageSummary;
+}
+
 describe("test-coverage-parity", () => {
   let origDeps: typeof _testCoverageProviderDeps;
 
@@ -69,17 +81,7 @@ describe("test-coverage-parity", () => {
           ].join("\n"),
         );
 
-        _testCoverageProviderDeps.resolveTestFilePatterns = async () =>
-          ({
-            globs: ["**/*.test.ts"],
-            patterns: ["**/*.test.ts"],
-            testDirs: ["test"],
-            pathspec: [],
-            regex: [],
-            resolution: "fallback" as const,
-          }) as any;
-
-        _testCoverageProviderDeps.generateTestCoverageSummary = generateTestCoverageSummary as any;
+        stubDepsForScan();
         _testCoverageProviderDeps.getContextFiles = () => [];
 
         const v2Provider = new TestCoverageProvider(STORY, BASE_CONFIG);
@@ -112,17 +114,7 @@ describe("test-coverage-parity", () => {
           ['describe("bar suite", () => {', '  test("bar test", () => {});', "});"].join("\n"),
         );
 
-        _testCoverageProviderDeps.resolveTestFilePatterns = async () =>
-          ({
-            globs: ["**/*.test.ts"],
-            patterns: ["**/*.test.ts"],
-            testDirs: ["test"],
-            pathspec: [],
-            regex: [],
-            resolution: "fallback" as const,
-          }) as any;
-
-        _testCoverageProviderDeps.generateTestCoverageSummary = generateTestCoverageSummary as any;
+        stubDepsForScan();
         _testCoverageProviderDeps.getContextFiles = () => ["src/foo.ts"];
 
         const storyWithContextFiles = makeStory({ id: "story-001", contextFiles: ["src/foo.ts"] });
@@ -168,17 +160,7 @@ describe("test-coverage-parity", () => {
           ['describe("beta suite", () => {', '  test("beta test", () => {});', "});"].join("\n"),
         );
 
-        _testCoverageProviderDeps.resolveTestFilePatterns = async () =>
-          ({
-            globs: ["**/*.test.ts"],
-            patterns: ["**/*.test.ts"],
-            testDirs: ["test"],
-            pathspec: [],
-            regex: [],
-            resolution: "fallback" as const,
-          }) as any;
-
-        _testCoverageProviderDeps.generateTestCoverageSummary = generateTestCoverageSummary as any;
+        stubDepsForScan();
         _testCoverageProviderDeps.getContextFiles = () => [];
 
         const cfgNoScope = makeNaxConfig({
@@ -208,17 +190,7 @@ describe("test-coverage-parity", () => {
       await withTempDir(async (dir) => {
         Bun.spawnSync(["mkdir", "-p", join(dir, "test")]);
 
-        _testCoverageProviderDeps.resolveTestFilePatterns = async () =>
-          ({
-            globs: ["**/*.test.ts"],
-            patterns: ["**/*.test.ts"],
-            testDirs: ["test"],
-            pathspec: [],
-            regex: [],
-            resolution: "fallback" as const,
-          }) as any;
-
-        _testCoverageProviderDeps.generateTestCoverageSummary = generateTestCoverageSummary as any;
+        stubDepsForScan();
         _testCoverageProviderDeps.getContextFiles = () => [];
 
         const v2Provider = new TestCoverageProvider(STORY, BASE_CONFIG);

@@ -7,8 +7,7 @@
  * contract is locked before wiring occurs.
  */
 import { describe, expect, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
-import type { Finding, FixStrategy } from "@/findings";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 import {
   makeAutofixImplementerStrategy,
   makeAutofixTestWriterStrategy,
@@ -17,7 +16,17 @@ import {
   makeMechanicalLintFixStrategy,
 } from "@/operations";
 
-const mockCtx = {} as any;
+/**
+ * The composition contract under test is which strategies the assembly orders
+ * together — asserted via `.name`. Each factory returns its fully-typed
+ * `FixStrategy<Finding, I, O, C>`, so the array type is their exact union
+ * rather than a restated generic with widened holes.
+ */
+type ComposedStrategy =
+  | ReturnType<typeof makeMechanicalLintFixStrategy>
+  | ReturnType<typeof makeMechanicalFormatFixStrategy>
+  | ReturnType<typeof makeAutofixImplementerStrategy>
+  | ReturnType<typeof makeAutofixTestWriterStrategy>;
 
 /**
  * Assemble strategy array from config options in the same order that
@@ -27,14 +36,14 @@ function assembleStrategies(opts: {
   lintFix?: string;
   formatFix?: string;
   autofixEnabled: boolean;
-}): FixStrategy<Finding, any, any, any>[] {
-  const strategies: FixStrategy<Finding, any, any, any>[] = [];
+}): ComposedStrategy[] {
+  const strategies: ComposedStrategy[] = [];
   if (opts.lintFix) strategies.push(makeMechanicalLintFixStrategy());
   if (opts.formatFix) strategies.push(makeMechanicalFormatFixStrategy());
   if (opts.autofixEnabled) {
     const sink = makeDeclarationSink();
-    strategies.push(makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), sink));
-    strategies.push(makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig(), sink));
+    strategies.push(makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), sink));
+    strategies.push(makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), sink));
   }
   return strategies;
 }

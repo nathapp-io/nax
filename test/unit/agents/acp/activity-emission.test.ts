@@ -12,9 +12,18 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { withDepsRestore } from "@test/helpers";
+import { assertDefined, withDepsRestore } from "@test/helpers";
 import { _spawnClientDeps, type AcpLineActivity, createParseState, parseAcpxJsonLine, SpawnAcpClient } from "@/agents";
 import type { AgentStreamEvent } from "@/runtime";
+
+/**
+ * Probe for absent metadata keys on a parsed activity: true when the key is
+ * not exposed. `parseAcpxJsonLine` builds plain literal objects, so `in` and
+ * an own-property check agree here.
+ */
+function activityLacksKey(activity: AcpLineActivity | undefined, key: string): boolean {
+  return activity === undefined || !(key in activity);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // parseAcpxJsonLine activity metadata tests
@@ -118,8 +127,8 @@ describe("parseAcpxJsonLine — activity metadata return (AC1-3)", () => {
     // Activity should return metadata only
     expect(activity?.kind).toBe("message_update");
     // Activity should NOT include raw text
-    expect((activity as any)?.text).toBeUndefined();
-    expect((activity as any)?.content).toBeUndefined();
+    expect(activityLacksKey(activity, "text")).toBe(true);
+    expect(activityLacksKey(activity, "content")).toBe(true);
   });
 
   test("multiple activity events produce cumulative deltaBytes across calls", () => {
@@ -173,9 +182,9 @@ describe("parseAcpxJsonLine — no raw content in activity metadata (AC4)", () =
     });
     const activity = parseAcpxJsonLine(line, createParseState());
     expect(activity).toBeDefined();
-    expect((activity as any)?.text).toBeUndefined();
-    expect((activity as any)?.content).toBeUndefined();
-    expect((activity as any)?.thought).toBeUndefined();
+    expect(activityLacksKey(activity, "text")).toBe(true);
+    expect(activityLacksKey(activity, "content")).toBe(true);
+    expect(activityLacksKey(activity, "thought")).toBe(true);
     expect(activity?.deltaBytes).toBeGreaterThan(0);
   });
 
@@ -189,9 +198,9 @@ describe("parseAcpxJsonLine — no raw content in activity metadata (AC4)", () =
     expect(activity.kind).toBe("message_update");
     expect(activity.deltaBytes).toBe(42);
     // These should not exist in the type at all
-    expect((activity as any).text).toBeUndefined();
-    expect((activity as any).message).toBeUndefined();
-    expect((activity as any).thought).toBeUndefined();
+    expect(activityLacksKey(activity, "text")).toBe(true);
+    expect(activityLacksKey(activity, "message")).toBe(true);
+    expect(activityLacksKey(activity, "thought")).toBe(true);
   });
 });
 
@@ -414,12 +423,12 @@ describe("AC9 — spawn failure emits call_ended without prior call_started", ()
     );
 
     const session = await client.loadSession("test-session", "claude", "approve-reads");
-    expect(session).not.toBeNull();
+    assertDefined(session, "loaded ACP session");
 
     // Prompt must throw because spawn failed.
     let threw = false;
     try {
-      await session!.prompt("hello");
+      await session.prompt("hello");
     } catch {
       threw = true;
     }
@@ -453,8 +462,9 @@ describe("AC9 — spawn failure emits call_ended without prior call_started", ()
     });
 
     const session = await client.loadSession("test-session", "claude", "approve-reads");
+    assertDefined(session, "loaded ACP session");
     try {
-      await session!.prompt("hello");
+      await session.prompt("hello");
     } catch {
       /* expected */
     }
@@ -497,7 +507,8 @@ describe("AC10 — correlation metadata flows from AcpClientOptions to session s
     });
 
     const session = await client.loadSession("test-session", "claude", "approve-reads");
-    await session!.prompt("hello");
+    assertDefined(session, "loaded ACP session");
+    await session.prompt("hello");
 
     const callStarted = events.find((e) => e.kind === "agent.call_started");
     expect(callStarted).toBeDefined();
@@ -545,7 +556,8 @@ describe("AC10 — correlation metadata flows from AcpClientOptions to session s
     });
 
     const session = await client.loadSession("test-session", "claude", "approve-reads");
-    await session!.prompt("hello");
+    assertDefined(session, "loaded ACP session");
+    await session.prompt("hello");
 
     const toolCallEvent = events.find((event) => event.kind === "agent.tool_call_update");
     expect(toolCallEvent).toBeDefined();
