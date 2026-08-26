@@ -342,3 +342,62 @@ loosened, no counter traded.
 
 typecheck 0/0/0, check:all 24/24, full suite green before `--update-baseline`; baseline diff
 shows asNever −56, every other counter flat.
+
+### 8.2 Batches 2a–2f — six commits, eight files, 547 → 393 (2026-08-26)
+
+Six commits in one drain session, dropping 154 sites across eight files. Per §6's
+"verifying a cluster costs about as much as doing it" ruling, batched closely-related
+files together when the recipe matched, kept unrelated ones in their own commit.
+
+**2a — `test/unit/cli/plan.test.ts` (−28).** Twenty-eight sites were pure cargo-copies
+of `DEFAULT_CONFIG as never` — `DEFAULT_CONFIG` is already typed as `NaxConfig` and
+`planCommand` takes `NaxConfig`, so the casts were always redundant. The one
+substantive site was `{} as never` for "throws when nax directory not found":
+substituted `DEFAULT_CONFIG` since `buildPlanModeContext` throws on `.nax` existence
+before reading config.
+
+**2b — `test/unit/execution/unified-executor-logging.test.ts` (−24).** Exact §1 recipe.
+`makeCtx`/`makePrd` were inferred partials; typed as `SequentialExecutionContext`/`PRD`,
+completed via the shared helpers (`makeDispatchContext`, `makePluginRegistry`,
+`makeStatusWriter`, `makeMockRuntime`). Surfaced four latent defects: `hooks: {}` not
+`LoadedHooksConfig`; `pluginRegistry` partial; hand-rolled runtime literal covering
+the nax#1709 stores (which `createRuntime` already builds); `autoMode.defaultAgent`
+removed in the agent config migration (spread `DEFAULT_CONFIG` instead).
+
+**2c — `unified-executor-{dispatch,results,cost}.test.ts` (−53).** Same recipe across
+three files. `results.test.ts` already imported the shared `makeNaxConfig`/`makePRD`/
+`makeStory` helpers, so its local `makeCtx` collapsed to one call site. `cost.test.ts`
+was the tricky one: two sites overrode `config.interaction.triggers` — the spread of
+`NaxConfig.interaction` (typed optional even though `.default()` always fills it) widens
+to `Partial`, and the compiler rejected the override. Fixed by extracting typed locals
+(`costWarningInteraction: InteractionConfig`, `costExceededInteraction: InteractionConfig`)
+that carry every required field. No counter traded.
+
+**2d — `test/unit/cli/plan-replan.test.ts` (−21).** All `as never` were on
+`_planDeps.X = mock(...)` assignments — `mock()` returns a generic mock type that's
+structurally assignable to `_planDeps`'s concrete function fields (`Promise<string>`,
+`Promise<PrecheckResultWithCode>`, etc.), so every cast was redundant.
+
+**2e — `test/unit/operations/plan-refine.test.ts` (−23).** `makeValidPrd`/`prdWith`
+were inferred objects; typed them as `PRD`, casts on `normalizeCreatedContextFiles`
+callers fell out. Also completed the `verify()` call sites (typed `input` as
+`PlanRefineInput`; the optional fields are genuinely optional, just need an explicit
+type) and replaced `fileOutput?.({ outputPath } as never)` with a complete input.
+`story0`'s `as { contextFiles?: unknown[]; expectedFiles?: string[] }` (already 1
+looseCast at baseline) became `assertDefined(prd.userStories[0], …)` — kept the trade
+flat, didn't add a new one.
+
+**2f — `test/unit/debate/runner-plan.test.ts` (−5).** Five sites on `stages: { plan: {}
+as never, review: {} as never, ... }` — the file already exported `makePlanStageConfig()`
+that returns a complete `DebateStageConfig`. Substituted the helper, all five drops.
+
+**Held back: 12 mockImplementation `as never` in runner-plan.test.ts.** Those guard the
+generic `<I, O, C>` signature of `mockImplementation` against the
+`{ success: true, rebut: ... }` literal returns — `O` is generic so the literal can't
+be widened without a counter trade (`as DebateHybridOutput` / `as DebatePlanOutput`).
+Per §5 this is a "two attempts then hand back" rule; not pursued this session.
+Next batch should revisit with a typed mock factory helper if the per-counter trade
+is acceptable, or leave them as the cost of generic mock signatures.
+
+typecheck 0/0/0, check:all 24/24, full suite green before each `--update-baseline`;
+baseline diff per commit shows asNever strictly decreasing, every other counter flat.
