@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 167,
+    "asNever": 163,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:58:39.538Z",
+  "updatedAt": "2026-08-26T16:00:32.662Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -368,9 +368,6 @@
     },
     "test/unit/review/adversarial-retry-truncation.test.ts": {
       "asNever": 2
-    },
-    "test/unit/review/semantic-retry.test.ts": {
-      "asNever": 4
     },
     "test/unit/review/semantic-evidence.test.ts": {
       "anyType": 1
