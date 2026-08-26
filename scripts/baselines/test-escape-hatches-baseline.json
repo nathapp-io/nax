@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 139,
+    "asNever": 135,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T16:06:46.616Z",
+  "updatedAt": "2026-08-26T16:07:29.226Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -1310,9 +1310,6 @@
     },
     "test/unit/logger/redact.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/context/provider-timeout-abort.test.ts": {
-      "asNever": 4
     },
     "test/unit/context/generator.test.ts": {
       "asNever": 1
