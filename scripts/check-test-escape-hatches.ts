@@ -10,11 +10,13 @@
  * gone: `test/` reached 0 errors (#1514 §47), so `bun run typecheck` now
  * compiles `tsconfig.test.json` outright and a hard gate replaced the count.
  *
- *   asAny        `as any` — invisible to both ratchets. Biome's noExplicitAny
- *                is `error` everywhere EXCEPT test/**, where the override
- *                still turns it off until the drain lands (see biome.json and
- *                the note below). Counted here instead; retires when the
- *                override is promoted back to `error`.
+ *   asAny        `as any` — invisible to both ratchets. DRAINED: biome's
+ *                noExplicitAny is now `error` for test/** too (biome.json),
+ *                and reads 0. This counter did NOT retire with it, because
+ *                biome sees code and this sees text: the residue it still
+ *                baselines is `as any` inside comments and parser-fixture
+ *                strings, which no lint rule will ever cover. Treat a rise
+ *                as a regression, not as a drain to resume.
  *   tsSuppress   `@ts-expect-error` / `@ts-ignore` / `@ts-nocheck` — removes a
  *                typecheck error without fixing anything.
  *   ratchetAllow `test-ratchet-allow: as-unknown-as` — the cast ratchet's own
@@ -27,38 +29,56 @@
  *                `undefined as unknown as T` / `null as unknown as T`.
  *   anyType      `any` in TYPE position — `: any`, `<any>`, `as any`. The
  *                cheapest way to silence a TS7006 implicit any without fixing
- *                it. A superset of `asAny`; both retire together when biome's
- *                noExplicitAny turns on for test/**.
- *   looseCast    single `as T` casts. NOT a drain target — guards the 189
- *                TS2352 errors ("convert the expression to `unknown` first")
- *                from escaping into unmarked single casts while the cast
- *                ratchet is at its floor.
+ *                it. A superset of `asAny`, and DRAINED with it (biome 1529 →
+ *                0). Same reason for staying: its baseline is prose and
+ *                fixture strings biome cannot see.
+ *   looseCast    single `as T` casts. NOT a drain target, and MORE
+ *                load-bearing now than when it was written: with
+ *                `check-test-as-unknown-as` baselined at 0 and test/
+ *                typecheck a hard gate at 0, an unmarked single `as X` is the
+ *                cheapest remaining way to buy a green build. This guards the
+ *                TS2352 population ("convert the expression to `unknown`
+ *                first") from walking out under a name the closed ratchet no
+ *                longer sees. Driving it down is not progress; keeping it
+ *                from rising is.
  *   asNever      `as never` — assignable to EVERY type, so it silences any
  *                assignment error outright. Lowercase, so `looseCast` (which
- *                anchors on an uppercase initial) never saw it.
+ *                anchors on an uppercase initial) never saw it. THE CURRENT
+ *                DRAIN TARGET: 603 sites across 117 files, and the largest
+ *                counter left with real work behind it. No biome rule covers
+ *                this shape, so unlike the two drains before it this regex IS
+ *                the measure — see docs/plans/STATUS-test-debt-drain.md §1.
  *   nonNullAssert
  *                postfix `!`. Narrows away null/undefined with no runtime
- *                check and no counter — and biome's `noNonNullAssertion` is
- *                off for test/** (biome.json), so nothing else sees it either.
- *                NOTE: this counter is known to undercount. Measured
- *                2026-08-25, biome's own noNonNullAssertion finds 1092 in
- *                test/ against this regex's 819 — 273 sites that NOTHING
- *                counts. See the regex's own doc comment for why (raw text,
- *                no parser). Do not read the baseline as the true total.
+ *                check. DRAINED: biome's `noNonNullAssertion` is now `error`
+ *                for test/** and reads 0; the 2 matches still baselined here
+ *                are prose and a parser fixture.
+ *                HISTORICAL NOTE, kept because the lesson generalises: this
+ *                regex undercounted badly. At the drain's start biome found
+ *                1064 sites against this pattern's 792 — 272 that NOTHING
+ *                counted. Draining to 0 as measured HERE would have left them
+ *                live and failed the promote-back on a red build. Where a
+ *                lint rule can see the same shape, it is the finish line and
+ *                this is not. See the regex's own doc comment for why (raw
+ *                text, no parser) and
+ *                docs/plans/archive/LOG-non-null-assertion-drain.md.
  *
- * Every counter fails on growth only; all eight shrink as the drain proceeds.
+ * Every counter fails on growth only. Four are drained and now hold a residue
+ * of comments and fixture strings no parser will ever cover; `looseCast` is a
+ * guard that is not meant to fall; `asNever`, `ratchetAllow`, `tsSuppress` and
+ * `absentValue` are what is left to drain.
  *
- * SEVERITY POLICY (decided 2026-08-25, Biome v2 rollout step 4):
- * `noExplicitAny` and `noNonNullAssertion` are `error` for src/ and bin/,
- * where both are already at zero, so the gate costs nothing and new
- * violations fail `bun run lint`. They stay `off` for test/** ONLY because
- * 2943 existing sites would fail the build; the exemption is a consequence of
- * the debt, not a judgement that test/ deserves looser rules.
+ * SEVERITY POLICY (decided 2026-08-25, Biome v2 rollout step 4; DISCHARGED
+ * 2026-08-26): `noExplicitAny` and `noNonNullAssertion` were `error` for src/
+ * and bin/ and `off` for test/** only because thousands of existing sites
+ * would have failed the build — an exemption that was a consequence of the
+ * debt, not a judgement that test/ deserves looser rules. Both drains have
+ * landed and both rules are now `error` for test/** as well.
  *
- * When asAny/anyType and nonNullAssert reach zero, the test/** override must
- * be PROMOTED BACK to `error` — not deleted. Deleting it lands the rules at
- * v2's default warning severity, `biome check` exits 0 on warnings, and the
- * whole drain would retire into no enforcement at all. See
+ * The promote-back was done by SETTING "error" in the test/** override, NOT by
+ * deleting the override. Do not "tidy up" by deleting it: under Biome v2 that
+ * lands the rules at default WARNING severity, `biome check` exits 0 on
+ * warnings, and both drains retire into no enforcement at all. See
  * docs/findings/biome-migration-risk.md.
  *
  * Usage:
@@ -87,9 +107,10 @@ const PATTERNS = {
   absentValue: /\b(absentValue|nullValue)\s*</g,
   /**
    * `any` in TYPE position — `: any`, `<any>`, `Record<string, any>`, `as any`.
-   * Uncounted until now, and the cheapest possible way to silence a
-   * `TS7006 implicit any` without fixing it. A superset of `asAny`; both
-   * retire together when biome's `noExplicitAny` is enabled for `test/**`.
+   * The cheapest possible way to silence a `TS7006 implicit any` without
+   * fixing it. A superset of `asAny`. Both are drained (biome 1529 → 0) but
+   * neither retired: biome parses code, this reads text, and the residue is
+   * comments and parser fixtures.
    *
    * Anchored to a type-position prefix on purpose. A bare /\bany\b/ also
    * matches the ENGLISH WORD in comments and fixture strings — 262 of them
@@ -98,26 +119,30 @@ const PATTERNS = {
    */
   anyType: /(?:\bas\s+any\b|[:<|&,(]\s*any\b)/g,
   /**
-   * Single `as T` casts. NOT a drain target — this exists so the 189 `TS2352`
-   * errors ("convert the expression to `unknown` first") cannot escape into
-   * unmarked single casts while the cast ratchet is at its floor.
+   * Single `as T` casts. NOT a drain target — this exists so the `TS2352`
+   * population ("convert the expression to `unknown` first") cannot escape
+   * into unmarked single casts. With the cast ratchet baselined at 0, that
+   * job matters more, not less: a single `as X` is now the cheapest way to
+   * reintroduce the debt under a name the closed ratchet does not see.
    */
   looseCast: /\bas\s+[A-Z]\w*/g,
   /**
    * `as never`. The bottom type is assignable to every other type, so this
    * silences ANY assignment error in one word — including the whole
-   * `Mock<() => X>`-into-a-typed-dep-slot family that dominates the remaining
-   * residue. `looseCast` anchors on `as [A-Z]` and `never` is lowercase, so
-   * for the first two phases of the drain this walked out uncounted; 619 of
-   * them accumulated. Deliberately its own counter rather than a `looseCast`
-   * widening: the two retire on different timelines.
+   * `Mock<() => X>`-into-a-typed-dep-slot family. `looseCast` anchors on
+   * `as [A-Z]` and `never` is lowercase, so for the first two phases of the
+   * drain this walked out uncounted; 619 of them accumulated. Deliberately
+   * its own counter rather than a `looseCast` widening: the two retire on
+   * different timelines — `asNever` is being drained, `looseCast` is a guard
+   * that stays.
    */
   asNever: /\bas\s+never\b/g,
   /**
    * Postfix `!` — the non-null assertion. Discards `null`/`undefined` from a
    * type with no runtime check, so it clears `TS18047`/`TS18048` while leaving
-   * the unsafe access exactly as it was. Nothing else in the repo sees it:
-   * biome's `noNonNullAssertion` is `off` for `test/**` (biome.json).
+   * the unsafe access exactly as it was. Since the drain closed, biome's
+   * `noNonNullAssertion` is `error` for `test/**` too and is the real gate;
+   * this counter now guards only the text biome cannot parse.
    *
    * Anchored to POSTFIX position — an identifier, `)` or `]`, then `!`, then a
    * member/argument/terminator character. That excludes prefix negation
@@ -125,7 +150,8 @@ const PATTERNS = {
    * undercounts rather than over-: `x! + 1` and an end-of-line `!` are missed.
    *
    * One false positive survives and is pinned by a test: prose punctuation
-   * inside a string, as in `"wow!, really"`. There are none in test/ today.
+   * inside a string, as in `"wow!, really"`. The 2 sites this still baselines
+   * are of exactly that family — a doc comment and a declaration fixture.
    * Doing better needs a parser — like `anyType` above, this is a raw-text
    * regex and inherits that ceiling.
    */
