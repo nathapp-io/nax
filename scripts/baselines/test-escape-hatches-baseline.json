@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1799,
-    "asNever": 495,
+    "asNever": 442,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T14:15:14.569Z",
+  "updatedAt": "2026-08-26T14:23:29.569Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -499,8 +499,7 @@
       "ratchetAllow": 1
     },
     "test/unit/execution/unified-executor-cost.test.ts": {
-      "looseCast": 14,
-      "asNever": 16
+      "looseCast": 14
     },
     "test/unit/execution/review-input-repo-root.test.ts": {
       "looseCast": 2
@@ -517,8 +516,7 @@
       "asNever": 2
     },
     "test/unit/execution/unified-executor-dispatch.test.ts": {
-      "looseCast": 6,
-      "asNever": 20
+      "looseCast": 6
     },
     "test/unit/execution/story-orchestrator-rectification-exhaustion.test.ts": {
       "looseCast": 25
@@ -590,8 +588,7 @@
       "looseCast": 2
     },
     "test/unit/execution/unified-executor-results.test.ts": {
-      "looseCast": 10,
-      "asNever": 17
+      "looseCast": 10
     },
     "test/unit/execution/unified-executor-signature.test.ts": {
       "looseCast": 3

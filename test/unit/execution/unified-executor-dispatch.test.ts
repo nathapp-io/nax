@@ -11,94 +11,74 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeDispatchContext, makeMockRuntime, makePluginRegistry, makeStatusWriter } from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
 import { precomputeBatchPlan } from "@/execution/batching";
+import type { SequentialExecutionContext } from "@/execution/unified-executor";
+import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineEvent } from "@/pipeline/event-bus";
-import type { UserStory } from "@/prd/types";
+import type { EscalationAttempt, PRD, UserStory } from "@/prd/types";
+
+const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixture helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 function makePendingStory(id: string): UserStory {
+  const acceptanceCriteria: string[] = [];
+  const tags: string[] = [];
+  const dependencies: string[] = [];
+  const escalations: EscalationAttempt[] = [];
   return {
     id,
     title: `Story ${id}`,
     description: `Description for ${id}`,
-    acceptanceCriteria: [],
-    tags: [],
-    dependencies: [],
+    acceptanceCriteria,
+    tags,
+    dependencies,
     status: "pending",
     passes: false,
-    escalations: [],
+    escalations,
     attempts: 0,
   };
 }
 
-function makePrd(stories: ReturnType<typeof makePendingStory>[]) {
+function makePrd(stories: UserStory[]): PRD {
   return {
     project: "test-project",
     feature: "test-feature",
     branchName: "test-branch",
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     userStories: stories,
   };
 }
 
-function makeCtx(overrides: { parallelCount?: number } = {}) {
+function makeCtx(overrides: { parallelCount?: number } = {}): SequentialExecutionContext {
   return {
     prdPath: "/tmp/test-prd.json",
     workdir: "/tmp/test-workdir",
     config: {
+      ...DEFAULT_CONFIG,
       execution: {
+        ...DEFAULT_CONFIG.execution,
         maxIterations: 1,
         costLimit: 10,
         iterationDelayMs: 0,
-        rectification: { maxAttemptsTotal: 2 },
       },
-      autoMode: { defaultAgent: "claude-code" },
-      interaction: {},
     },
-    hooks: {},
+    hooks: EMPTY_HOOKS,
     feature: "test-feature",
     dryRun: false,
     useBatch: false,
-    pluginRegistry: {
-      getReporters: () => [],
-      getContextProviders: () => [],
-    },
-    statusWriter: {
-      setPrd: mock(() => {}),
-      setCurrentStory: mock(() => {}),
-      setRunStatus: mock(() => {}),
-      update: mock(async () => {}),
-    },
+    pluginRegistry: makePluginRegistry(),
+    statusWriter: makeStatusWriter(),
     runId: "run-test",
     startTime: Date.now(),
     batchPlan: [],
     interactionChain: null,
-    runtime: {
-      outputDir: "/tmp/nax-test-dispatch-output",
-      // nax#1709: parallel metrics read these run-scoped stores.
-      agentFallbacks: new Map(),
-      runtimeCrashRetries: new Map(),
-      costAggregator: {
-        snapshot: () => ({
-          totalCostUsd: 0,
-          totalEstimatedCostUsd: 0,
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          callCount: 0,
-          errorCount: 0,
-        }),
-        byStage: () => ({}),
-        byStory: () => ({}),
-        byAgent: () => ({}),
-        record: () => {},
-        recordError: () => {},
-        recordOperationSummary: () => {},
-        drain: async () => {},
-      },
-    },
+    ...makeDispatchContext({ runtime: makeMockRuntime({ workdir: "/tmp/nax-test-dispatch-output" }) }),
     ...overrides,
   };
 }
@@ -148,7 +128,7 @@ describe("AC-2 — runParallelBatch dispatch via _deps injection", () => {
     const prd = makePrd([story]);
     const ctx = makeCtx({ parallelCount: 2 });
 
-    await executeUnified(ctx as never, prd as never).catch(() => {});
+    await executeUnified(ctx, prd).catch(() => {});
 
     expect(calls.length).toBeGreaterThan(0);
     const [_stories, maxCount] = calls[0];
@@ -185,7 +165,7 @@ describe("AC-2 — runParallelBatch dispatch via _deps injection", () => {
     const prd = makePrd([story1, story2]);
     const ctx = makeCtx({ parallelCount: 2 });
 
-    await executeUnified(ctx as never, prd as never).catch(() => {});
+    await executeUnified(ctx, prd).catch(() => {});
 
     expect(parallelCalls.length).toBeGreaterThan(0);
     expect(iterationCalls.length).toBe(0);
@@ -211,7 +191,7 @@ describe("AC-2 — runParallelBatch dispatch via _deps injection", () => {
     const prd = makePrd([story1]);
     const ctx = makeCtx({ parallelCount: undefined });
 
-    await executeUnified(ctx as never, prd as never).catch(() => {});
+    await executeUnified(ctx, prd).catch(() => {});
 
     expect(parallelCalls.length).toBe(0);
     expect(iterationCalls.length).toBeGreaterThan(0);
@@ -238,7 +218,7 @@ describe("AC-2 — runParallelBatch dispatch via _deps injection", () => {
     const prd = makePrd([story1]);
     const ctx = makeCtx({ parallelCount: 0 });
 
-    await executeUnified(ctx as never, prd as never).catch(() => {});
+    await executeUnified(ctx, prd).catch(() => {});
 
     expect(parallelCalls.length).toBe(0);
   });
@@ -263,7 +243,7 @@ describe("AC-2 — runParallelBatch dispatch via _deps injection", () => {
     const prd = makePrd([story1]);
     const ctx = makeCtx({ parallelCount: 4 });
 
-    await executeUnified(ctx as never, prd as never).catch(() => {});
+    await executeUnified(ctx, prd).catch(() => {});
 
     expect(parallelCalls.length).toBe(0);
     expect(iterationCalls.length).toBeGreaterThan(0);
@@ -327,7 +307,7 @@ describe("AC-5 — story:started per-batch story via _deps injection", () => {
     const prd = makePrd([story1, story2]);
     const ctx = makeCtx({ parallelCount: 2 });
 
-    await executeUnified(ctx as never, prd as never).catch(() => {});
+    await executeUnified(ctx, prd).catch(() => {});
 
     pipelineEventBus.emit = origEmit;
 
@@ -412,7 +392,7 @@ describe("useBatch scheduling refresh", () => {
       batchPlan: staleBatchPlan,
     };
 
-    await executeUnified(ctx as never, initialPrd as never);
+    await executeUnified(ctx, initialPrd);
 
     expect(selectedStoryIds).toEqual(["US-000", "US-001"]);
   });
@@ -478,7 +458,7 @@ describe("useBatch scheduling refresh", () => {
       batchPlan: precomputeBatchPlan([us000, us001], 4),
     };
 
-    await executeUnified(ctx as never, initialPrd as never);
+    await executeUnified(ctx, initialPrd);
 
     // US-000 retried immediately after failing — before US-001 ever runs.
     expect(selectedStoryIds).toEqual(["US-000", "US-000", "US-001"]);
@@ -562,7 +542,7 @@ describe("useBatch scheduling refresh", () => {
       batchPlan: precomputeBatchPlan([us000, us001], 4),
     };
 
-    await executeUnified(ctx as never, initialPrd as never);
+    await executeUnified(ctx, initialPrd);
 
     // US-000 dispatched once (fails), retried once more (goes terminal via
     // preIterationTierCheck, never reaching runIteration again) — US-001 must
@@ -624,7 +604,7 @@ describe("useBatch scheduling refresh", () => {
       batchPlan: [],
     };
 
-    await executeUnified(ctx as never, initialPrd as never);
+    await executeUnified(ctx, initialPrd);
 
     expect(selectedStoryIds).toEqual(["US-000", "US-000", "US-001"]);
   });
