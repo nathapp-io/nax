@@ -73,11 +73,11 @@ function makePlanDebateConfig(agents = 2): NaxConfig {
       maxConcurrentDebaters: agents,
       grounder: { model: "fast", timeoutSeconds: 60 },
       stages: {
-        plan: {} as never,
-        review: {} as never,
-        acceptance: {} as never,
-        rectification: {} as never,
-        escalation: {} as never,
+        plan: makePlanStageConfig(),
+        review: makePlanStageConfig(),
+        acceptance: makePlanStageConfig(),
+        rectification: makePlanStageConfig(),
+        escalation: makePlanStageConfig(),
       },
     },
   });

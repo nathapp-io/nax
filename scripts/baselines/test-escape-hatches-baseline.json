@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1799,
-    "asNever": 398,
+    "asNever": 393,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T14:32:34.692Z",
+  "updatedAt": "2026-08-26T14:39:41.177Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -908,7 +908,7 @@
       "looseCast": 4
     },
     "test/unit/debate/runner-plan.test.ts": {
-      "asNever": 17
+      "asNever": 12
     },
     "test/unit/debate/resolvers.test.ts": {
       "looseCast": 20
