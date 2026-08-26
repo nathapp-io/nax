@@ -35,6 +35,8 @@ export { makeFixCycleResult, makeIteration } from "./fix-cycle-result";
 export { waitForFile } from "./fs";
 export { type MockInteractionChain, makeInteractionChain } from "./interaction-chain";
 export {
+  type CLIInternals,
+  cliInternals,
   type TelegramInternals,
   telegramInternals,
   type WebhookInternals,

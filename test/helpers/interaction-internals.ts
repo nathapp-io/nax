@@ -1,5 +1,7 @@
+import type { CLIInteractionPlugin, CLIReadline } from "@/interaction/plugins/cli";
 import type { TelegramInteractionPlugin } from "@/interaction/plugins/telegram";
 import type { WebhookInteractionPlugin } from "@/interaction/plugins/webhook";
+import type { InteractionRequest, InteractionResponse } from "@/interaction/types";
 
 /**
  * Private surface of `TelegramInteractionPlugin` that
@@ -75,6 +77,31 @@ export function webhookInternals(p: WebhookInteractionPlugin): WebhookInternals 
     },
     get registeredRequestIds() {
       return p["registeredRequestIds"];
+    },
+  };
+}
+
+/**
+ * Private surface of `CLIInteractionPlugin` that `plugins/cli.test.ts` drives
+ * directly: the readline slot the timeout path recreates, and the prompt entry
+ * point that races user input against the timer. Same live-view shape as
+ * {@link telegramInternals} — element access, no assertion.
+ */
+export type CLIInternals = {
+  rl: CLIReadline | null;
+  promptUser: (request: InteractionRequest, timeout: number) => Promise<InteractionResponse>;
+};
+
+export function cliInternals(p: CLIInteractionPlugin): CLIInternals {
+  return {
+    get rl() {
+      return p["rl"];
+    },
+    set rl(next) {
+      p["rl"] = next;
+    },
+    get promptUser() {
+      return p["promptUser"].bind(p);
     },
   };
 }
