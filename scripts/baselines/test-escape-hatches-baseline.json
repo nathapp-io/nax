@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 244,
+    "asNever": 237,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:36:53.718Z",
+  "updatedAt": "2026-08-26T15:38:19.590Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -662,9 +662,6 @@
     },
     "test/unit/execution/story-orchestrator/phase-details.test.ts": {
       "looseCast": 39
-    },
-    "test/unit/execution/lifecycle/acceptance-loop.test.ts": {
-      "asNever": 7
     },
     "test/unit/execution/lifecycle/acceptance-loop-skipped-packages.test.ts": {
       "looseCast": 1,
