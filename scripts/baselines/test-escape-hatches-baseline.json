@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 207,
+    "asNever": 200,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:46:29.020Z",
+  "updatedAt": "2026-08-26T15:47:10.883Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -155,9 +155,6 @@
     },
     "test/integration/cli/cli-core-generate.test.ts": {
       "asNever": 1
-    },
-    "test/integration/cli/cli-precheck-command.test.ts": {
-      "asNever": 7
     },
     "test/integration/cli/cli-core-logs.test.ts": {
       "looseCast": 1

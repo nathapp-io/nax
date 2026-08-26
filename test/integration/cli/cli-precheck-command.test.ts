@@ -109,7 +109,7 @@ describe("CLI precheck command", () => {
     const originalExit = process.exit;
     process.exit = ((code?: number) => {
       exitCode = code;
-    }) as never;
+    }) as typeof process.exit;
 
     try {
       await precheckCommand({
@@ -140,7 +140,7 @@ describe("CLI precheck command", () => {
     const originalExit = process.exit;
     process.exit = ((code?: number) => {
       exitCode = code;
-    }) as never;
+    }) as typeof process.exit;
 
     try {
       await precheckCommand({
@@ -175,7 +175,7 @@ describe("CLI precheck command", () => {
     const originalExit = process.exit;
     process.exit = ((code?: number) => {
       exitCode = code;
-    }) as never;
+    }) as typeof process.exit;
 
     try {
       await precheckCommand({
@@ -227,7 +227,7 @@ describe("CLI precheck command", () => {
 
     process.exit = ((code?: number) => {
       exitCode = code;
-    }) as never;
+    }) as typeof process.exit;
 
     try {
       await precheckCommand({
@@ -256,7 +256,7 @@ describe("CLI precheck command", () => {
 
     process.exit = ((code?: number) => {
       exitCode = code;
-    }) as never;
+    }) as typeof process.exit;
 
     try {
       await precheckCommand({
@@ -301,7 +301,7 @@ describe("CLI precheck command", () => {
 
     process.exit = ((code?: number) => {
       exitCode = code;
-    }) as never;
+    }) as typeof process.exit;
 
     try {
       await precheckCommand({
@@ -330,7 +330,7 @@ describe("CLI precheck command", () => {
     const originalExit = process.exit;
     process.exit = ((code?: number) => {
       exitCode = code;
-    }) as never;
+    }) as typeof process.exit;
 
     try {
       await precheckCommand({
