@@ -197,7 +197,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
       }),
     );
 
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -227,7 +227,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
       }),
     );
 
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -254,7 +254,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
       }),
     );
 
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -269,7 +269,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   test("AC-4: extracts JSON from agent final output wrapped in code block", async () => {
     _deps.createRuntime = mock(() => makeMockPlanManager());
 
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -302,7 +302,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     _deps.existsSync = mock((path: string) => path.endsWith(".nax"));
 
     await expect(
-      planCommand(tmpDir, DEFAULT_CONFIG as never, {
+      planCommand(tmpDir, DEFAULT_CONFIG, {
         from: "/spec.md",
         feature: "url-shortener",
       }),
@@ -316,7 +316,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   test("AC-5: validates output and writes to nax/features/<feature>/prd.json", async () => {
     _deps.createRuntime = mock(() => makeMockPlanManager());
 
-    const result = await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    const result = await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -342,7 +342,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
       }),
     );
 
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -358,7 +358,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
       }),
     );
 
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -378,7 +378,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
       }),
     );
 
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -396,7 +396,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
       }),
     );
 
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -412,7 +412,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
       }),
     );
 
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -433,7 +433,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
       path.endsWith("prd.json") ? JSON.stringify(SAMPLE_PRD) : SAMPLE_SPEC,
     );
 
-    const result = await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    const result = await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -451,7 +451,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     _deps.existsSync = mock((path: string) => path.endsWith(".nax"));
 
     await expect(
-      planCommand(tmpDir, DEFAULT_CONFIG as never, {
+      planCommand(tmpDir, DEFAULT_CONFIG, {
         from: "/spec.md",
         feature: "url-shortener",
       }),

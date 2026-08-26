@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1799,
-    "asNever": 393,
+    "asNever": 380,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T14:39:41.177Z",
+  "updatedAt": "2026-08-26T14:46:41.492Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -1010,8 +1010,7 @@
       "asNever": 3
     },
     "test/unit/cli/plan-interactive.test.ts": {
-      "looseCast": 3,
-      "asNever": 13
+      "looseCast": 3
     },
     "test/unit/cli/plan-decompose-regression.test.ts": {
       "looseCast": 7
