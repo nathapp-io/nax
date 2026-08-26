@@ -16,20 +16,21 @@ log — each entry records what was true when written and is not edited afterwar
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
 | `as unknown as` | **0** | 0 | done — closed invariant (§8.13) |
-| `asAny` | 509 | 1377 | yes, then biome `noExplicitAny` retires it |
-| `anyType` | 659 | 1860 | yes, retires with `asAny` — biome says **650** |
+| `asAny` | 435 | 1377 | yes, then biome `noExplicitAny` retires it |
+| `anyType` | 557 | 1860 | yes, retires with `asAny` — biome says **548** |
 | `nonNullAssert` | 812 | 819 | yes — biome says **1085**, see §0.1 (not started) |
 | `asNever` | 607 | 608 | yes |
-| `ratchetAllow` | 105 | 105 | yes |
+| `ratchetAllow` | 103 | 105 | yes |
 | `tsSuppress` | 40 | 40 | yes |
 | `absentValue` | 17 | 17 | yes |
-| `looseCast` | 1816 | 1875 | **no** — guard only, see below |
+| `looseCast` | 1815 | 1875 | **no** — guard only, see below |
 
-The `noExplicitAny` drain is in progress on this branch (§8.14–§8.17): fifty-two files
-drained, `asAny` 1179 → 509 and `anyType` 1538 → 659 against the branch-start ratchet, with
+The `noExplicitAny` drain is in progress on this branch (§8.14–§8.18): sixty-three files
+drained, `asAny` 1179 → 435 and `anyType` 1538 → 557 against the branch-start ratchet, with
 every other counter flat except `nonNullAssert` (819 → 812 as a benign side effect of removing
-`logger!.info = … as any` patterns), `looseCast` (1875 → 1816) and `asNever` (608 → 607) as
-benign side effects of deleting real casts. Biome's authoritative count fell **1529 → 650**.
+`logger!.info = … as any` patterns), `looseCast` (1875 → 1815), `ratchetAllow` (105 → 103)
+and `asNever` (608 → 607) as benign side effects of deleting real casts. Biome's authoritative
+count fell **1529 → 548**.
 
 `as unknown as` went **101 → 0** across nine commits (§8.1–§8.4, §8.11–§8.13); `looseCast`
 fell 1888 → 1875 and `ratchetAllow` 107 → 105 as side effects of removing real casts, and
@@ -1251,3 +1252,54 @@ other side). Because these are values classifiers read, §3's coverage rule fire
 `otel-reporter-lifecycle` 10, `adversarial-metadata-audit` 10, then six files at 9 — 182 files
 hold the remaining 650. The head has flattened again: no file exceeds 10, so the next batch is
 necessarily wider and shallower.
+
+### 8.18 Batch 5 of the `noExplicitAny` drain — the top 10 (+1 tie), four parallel delegates, biome 650 → 548 (2026-08-26)
+
+The §8.17 queue head drained: three files at 10 plus eight files tied at 9. A strict
+top-10 cut lands mid-tie, so the tie rode along as an 11th file (§8.17's precedent) —
+93 biome sites taken to zero by four parallel agents on disjoint file sets under the same
+brief model as §8.16/§8.17 (§4 forbidden list, the cheap per-file gate loop, the standing
+recipe table). No delegate edited outside its set; all escalations resolved test-side, with
+zero src/ or helper changes required. `asAny` ↓74 (509 → 435) and `anyType` ↓102 (659 → 557)
+on the ratchet; `ratchetAllow` ↓2 (105 → 103) and `looseCast` ↓1 (1816 → 1815) as benign side
+effects of deleting real casts (acceptance-missing-target's two spawn-stub markers among
+them); every other counter flat, none rose. Gates: typecheck 0 (all three), `check:all`
+green, full suite green (unit / integration / ui, 0 fail).
+
+**Recipe families applied** (all proven in §8.14–§8.17 except where noted):
+
+| Shape | Where | Recipe |
+|:--|:--|:--|
+| dep-slot stub factories (`createWorktreeManager`/`createMergeEngine`) | parallel-batch-rectification | `makeWorktreeManager()` / `makeMergeEngine({ mergeAll })` from `@test/helpers` — both intersection types fit the slots directly |
+| probe reads on captured audit calls ×8 | adversarial-metadata-audit | shared `captureAuditDecisions()` from `@test/helpers` (already used by a sibling) → typed `ReviewAuditDecision[]`, probes index without casts |
+| union-member call `(op.retry as any)(…)` ×8 | adversarial-retry-truncation | local `resolveRetryStrategy()`: `typeof !== "function"` guard narrows to the resolver, `"shouldRetry" in` narrows the result — verbatim from `adversarial-review-retry-flip.test.ts` |
+| whole-context hand-rolled bags | execution-phase-telemetry, plan-inputs | `makeTestContext()` / `makeDispatchContext()` supply real runtime/session/agent surfaces; the trailing `} as PipelineContext` fell with them |
+| dep slot returning a fabricated object | execution-phase-telemetry | complete at the declared type — including a **real `ExecutionPlan`** for `buildPlanForStrategy` (private fields make it unsatisfiable structurally; `new ExecutionPlan(callCtx, {}, false)` + one typed `_deps` stub for its only I/O seam) |
+| OTLP payload/spans typed loosely | otel-reporter-lifecycle | `OtlpTracesPayload \| OtlpMetricsPayload` union on the posts array; URL-filter predicates narrow to `MetricsPost`/`TracesPost`; local `SpanProbe` predicate over src's vague `object[]` spans (otel-span-tree precedent) |
+| each()-tuple params + dynamic-key probes | plan-inputs | explicit `test.each<[…]>` generics: `Partial<UserStory>` overrides, `keyof UserStory` field → direct indexing, no annotations |
+| `(op.execute as any)`-style calls ×14 across twins | lint/typecheck-check-tool-diagnostics | dead casts — `execute` exists on the declared op type; deleted outright. mechanical-lintfix's variant was NOT dead (broad `Operation` union): `"execute" in fixOp` guard + deterministically-typed local |
+| spawn mocks, monkey-patches, gate-ctx stubs | _tdd-test-helpers, acceptance-missing-target | `makeSpawn(...)` for every `_xDeps.spawn` slot; `Object.assign(Bun, { file })` patch/restore; gate-ctx completed at real `FullSuiteGateContext` |
+
+**Fixture-value corrections, all assertion-preserving and reported per §4's carve-out:** the
+retry-truncation input literals lacked required `workdir` (masked by the old cast); the
+metadata-audit config sat under a key path the review slice never had — moved to the real
+`review.audit.enabled` schema path; the tdd gate-ctx stub gained the schema-required
+`cmdWorkdir`; execution-phase-telemetry's routing gained required `reasoning: ""`; and two
+plan-inputs fixtures dropped `inlineReview: true` — a legacy field already **deleted from
+src/** that compat-shims strips with a warning, asserted by nothing. None is a value a
+classifier branches on, so §3's coverage rule did not fire.
+
+**One containment worth naming:** typing `_tdd-test-helpers`'s `mockAllSpawn(mockFn: any)`
+strictly as `typeof Bun.spawn` broke an importer outside the delegate's set that passes a
+partial-shape mock. The fix is a structural `PartialSubprocess` contract presented into the
+dep slots through a contained overload (`presentAsSpawn`, the `makeSpawnResult` move) — the
+helper keeps accepting what callers actually pass while every *dep slot* stays fully typed.
+**When tightening a shared helper's parameter breaks a caller you cannot edit, contract the
+input and widen only at the presentation seam — not by re-loosening the helper.**
+
+**New top of queue** (biome count per file): eight files tied at 8 —
+`integration/context/test-coverage-parity`, `agents/acp/activity-emission`, `cli/plan-debate`,
+`debate/runner-mode-routing`, `debate/session-helpers`,
+`interaction/plugins/cli`, `precheck/precheck-checks-tier2-warnings`,
+`review/semantic-retry` — 171 files hold the remaining 548. The head has flattened again:
+no file exceeds 8, and the next ten-file batch spans five of these ties exactly.
