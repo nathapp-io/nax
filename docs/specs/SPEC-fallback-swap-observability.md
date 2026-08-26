@@ -25,7 +25,7 @@ genuine `claude -> opencode` swap was logged by `completeWithFallback` in the sa
 For #1713: the decline at `src/agents/manager.ts:345` is the only one of three terminal exits in that
 region that is silent. The `fail-stale` no-candidate exit logs a warning at `:349`, and the exhausted
 exit emits `onSwapExhausted` at `:389`. Because the plain decline emits nothing, diagnosing a real
-non-swap required eliminating each of `shouldSwap`'s five false-branches by hand against the effective
+non-swap required eliminating each of `shouldSwap`'s six decline paths by hand against the effective
 config, and the surviving candidate — the `hasBundle` guard — was reached by elimination rather than by
 observation. Making the decision self-describing is what turns that from an investigation into a log line.
 
@@ -59,9 +59,11 @@ trap for the first consumer that reads the raw records, and the fix is one field
 
 ### Making the decline observable
 
-`shouldSwap` (`src/agents/manager.ts:196`) returns a bare boolean and has five distinct false-branches:
-absent failure; a refused `fail-aborted` / `fail-timeout` outcome; fallback disabled; no bundle; and the
-hop cap reached. The decision becomes a discriminated result carrying which gate decided it, so both call
+`shouldSwap` (`src/agents/manager.ts:196`) returns a bare boolean and has **six** distinct decline paths:
+absent failure; a refused `fail-aborted` / `fail-timeout` outcome; fallback disabled; no bundle; the hop cap
+reached; and — found during implementation, and missed by this spec's first revision, which said five — the
+`onQualityFailure` fallthrough, which declines a quality failure when the flag is off. It is the only decline
+that is not an explicit `return false`, which is why counting early returns undercounts it. The decision becomes a discriminated result carrying which gate decided it, so both call
 sites — `:345` on the run path and `:560` on the complete path — can report the reason rather than
 re-deriving it.
 
@@ -130,7 +132,7 @@ matching the fail-stale retry record in the same function. Give both shared test
 
 **US-002 — Report the gate that declined a swap** *(no dependencies)*
 
-Give the swap decision a reason-carrying form that names which of `shouldSwap`'s five gates returned false,
+Give the swap decision a reason-carrying form that names which of `shouldSwap`'s six gates declined,
 keeping the existing boolean `shouldSwap` intact and delegating to it. Log the declined decision at the run
 path's decline site with that reason plus the failure's outcome and category, without displacing the
 `fail-stale` warning or the `onSwapExhausted` emit that follow it.
