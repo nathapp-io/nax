@@ -11,6 +11,7 @@ import { join } from "node:path";
 import {
   assertDefined,
   cleanupTempDir,
+  makeDebateRunner,
   makeMockAgentManager,
   makeMockRuntime,
   makeNaxConfig,
@@ -205,20 +206,19 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
     const prd = makePrd();
     setupDeps(prd, stories);
 
-    _planDeps.createDebateRunner = mock(
-      () =>
-        ({
-          run: mock(async () => ({
-            storyId: "US-001",
-            stage: "decompose",
-            outcome: "failed" as const,
-            rounds: 0,
-            debaters: [],
-            resolverType: "synthesis" as const,
-            proposals: [],
-            totalCostUsd: 0,
-          })),
-        }) as never,
+    _planDeps.createDebateRunner = mock(() =>
+      makeDebateRunner({
+        run: mock(async () => ({
+          storyId: "US-001",
+          stage: "decompose",
+          outcome: "failed" as const,
+          rounds: 0,
+          debaters: [],
+          resolverType: "synthesis" as const,
+          proposals: [],
+          totalCostUsd: 0,
+        })),
+      }),
     );
 
     const adapterDecomposeCalls: unknown[] = [];
@@ -273,7 +273,7 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
     const createDebateCalled: boolean[] = [];
     _planDeps.createDebateRunner = mock(() => {
       createDebateCalled.push(true);
-      return {} as never;
+      return makeDebateRunner();
     });
 
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
@@ -289,7 +289,7 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
     const createDebateCalled: boolean[] = [];
     _planDeps.createDebateRunner = mock(() => {
       createDebateCalled.push(true);
-      return {} as never;
+      return makeDebateRunner();
     });
 
     await planDecomposeCommand(tmpDir, makeNaxConfig({ debate: { enabled: false } }), {
@@ -307,7 +307,7 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
     const createDebateCalled: boolean[] = [];
     _planDeps.createDebateRunner = mock(() => {
       createDebateCalled.push(true);
-      return {} as never;
+      return makeDebateRunner();
     });
 
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
