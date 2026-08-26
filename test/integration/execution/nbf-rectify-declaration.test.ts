@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
+  assertDefined,
   type makeMockCallContext,
   makeMockPlanInputs,
   makeNaxConfig,
@@ -104,10 +105,11 @@ function makeNbfConfig() {
 }
 
 function makeNbfCtx(packageDir: string, config = makeNbfConfig()) {
-  runtime = makeTestRuntime({ config });
+  const rt = makeTestRuntime({ config });
+  runtime = rt;
   return {
-    runtime,
-    packageView: runtime!.packages.repo(),
+    runtime: rt,
+    packageView: rt.packages.repo(),
     packageDir,
     agentName: "claude",
     storyId: "US-nbf",
@@ -115,6 +117,8 @@ function makeNbfCtx(packageDir: string, config = makeNbfConfig()) {
 }
 
 function makeNbfInputs(story: ReturnType<typeof makeStory>, packageDir: string, config = makeNbfConfig()) {
+  const adversarial = config.review.adversarial;
+  assertDefined(adversarial, "config.review.adversarial");
   return makeMockPlanInputs({
     story,
     implementer: { story },
@@ -122,8 +126,8 @@ function makeNbfInputs(story: ReturnType<typeof makeStory>, packageDir: string, 
     adversarialReview: {
       workdir: packageDir,
       story,
-      adversarialConfig: config.review.adversarial!,
-      mode: config.review.adversarial!.diffMode,
+      adversarialConfig: adversarial,
+      mode: adversarial.diffMode,
     },
     rectification: { maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false },
   });
@@ -156,8 +160,8 @@ describe("AC-NBF1: nbf cycle drains nbSink — test-writer receives mock-structu
       // Capture the FixCycle constructed by runRectification for the nbf path.
       // The main rectification has no findings (all phases pass), so runFixCycle
       // is called exactly once — from the nbf path.
-      let capturedCycle: FixCycle<Finding> | null = null;
-      let capturedCycleCtx: FixCycleContext | null = null;
+      let capturedCycle: FixCycle<Finding> | undefined;
+      let capturedCycleCtx: FixCycleContext | undefined;
       _storyOrchestratorDeps.runFixCycle = mock(async (cycle, cycleCtx) => {
         capturedCycle = cycle as FixCycle<Finding>;
         capturedCycleCtx = cycleCtx as FixCycleContext;
@@ -172,12 +176,12 @@ describe("AC-NBF1: nbf cycle drains nbSink — test-writer receives mock-structu
       const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
       await plan.run();
 
-      expect(capturedCycle).not.toBeNull();
-      expect(capturedCycleCtx).not.toBeNull();
+      assertDefined(capturedCycle, "captured nbf FixCycle");
+      assertDefined(capturedCycleCtx, "captured FixCycleContext");
 
       // The nbf cycle contains the full-suite-rectify strategy.
-      const fullSuiteStrategy = capturedCycle!.strategies.find((s) => s.name === "full-suite-rectify");
-      expect(fullSuiteStrategy).toBeDefined();
+      const fullSuiteStrategy = capturedCycle.strategies.find((s) => s.name === "full-suite-rectify");
+      assertDefined(fullSuiteStrategy, "full-suite-rectify strategy in nbf cycle");
 
       // Simulate the strategy emitting a mock_structure declaration.
       const mockOutput: FullSuiteRectifyOutput = {
@@ -192,24 +196,25 @@ describe("AC-NBF1: nbf cycle drains nbSink — test-writer receives mock-structu
         ],
       };
       const mockInput: FullSuiteRectifyInput = { story, findings: [] };
-      await fullSuiteStrategy!.extractApplied!(mockOutput, mockInput);
+      assertDefined(fullSuiteStrategy.extractApplied, "extractApplied on full-suite-rectify");
+      await fullSuiteStrategy.extractApplied(mockOutput, mockInput);
 
       _storyOrchestratorDeps.callOp = mock(async () => ({ success: true })) as typeof _storyOrchestratorDeps.callOp;
 
       // Call validate — this triggers nbPostValidate which drains nbSink (#1227 fix).
-      await capturedCycle!.validate(capturedCycleCtx!, {
+      await capturedCycle.validate(capturedCycleCtx, {
         mode: "full",
         strategiesRun: ["full-suite-rectify"],
       });
 
       // AC-NBF1: autofix-test-writer must apply now that nbSink.mockHandoffs is populated.
-      const testWriterStrategy = capturedCycle!.strategies.find((s) => s.name === "autofix-test-writer");
-      expect(testWriterStrategy).toBeDefined();
+      const testWriterStrategy = capturedCycle.strategies.find((s) => s.name === "autofix-test-writer");
+      assertDefined(testWriterStrategy, "autofix-test-writer strategy in nbf cycle");
 
       const dummyFinding: Finding = { source: "lint", severity: "error", category: "style", message: "dummy" };
-      expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(true);
+      expect(testWriterStrategy.appliesTo(dummyFinding)).toBe(true);
 
-      const builtInput = testWriterStrategy!.buildInput([dummyFinding], [], capturedCycleCtx!);
+      const builtInput = testWriterStrategy.buildInput([dummyFinding], [], capturedCycleCtx);
       expect(builtInput.mode).toBe("mock-restructure");
       expect(builtInput.handoffFiles).toContain("test/unit/service.test.ts");
     });
@@ -253,8 +258,8 @@ describe("AC-NBF2: nbf cycle validate uses nbPostValidate bound to nbSink", () =
         return { success: true };
       }) as typeof _storyOrchestratorDeps.callOp;
 
-      let capturedCycle: FixCycle<Finding> | null = null;
-      let capturedCycleCtx: FixCycleContext | null = null;
+      let capturedCycle: FixCycle<Finding> | undefined;
+      let capturedCycleCtx: FixCycleContext | undefined;
       _storyOrchestratorDeps.runFixCycle = mock(async (cycle, cycleCtx) => {
         capturedCycle = cycle as FixCycle<Finding>;
         capturedCycleCtx = cycleCtx as FixCycleContext;
@@ -270,22 +275,22 @@ describe("AC-NBF2: nbf cycle validate uses nbPostValidate bound to nbSink", () =
       await plan.run();
 
       // Only the NBF cycle should have fired.
-      expect(capturedCycle).not.toBeNull();
-      expect(capturedCycleCtx).not.toBeNull();
+      assertDefined(capturedCycle, "captured nbf FixCycle");
+      assertDefined(capturedCycleCtx, "captured FixCycleContext");
 
       _storyOrchestratorDeps.callOp = mock(async () => ({ success: true })) as typeof _storyOrchestratorDeps.callOp;
 
       // Call validate without injecting anything into nbSink.
-      await capturedCycle!.validate(capturedCycleCtx!, {
+      await capturedCycle.validate(capturedCycleCtx, {
         mode: "full",
         strategiesRun: ["full-suite-rectify"],
       });
 
       // AC-NBF2: empty nbSink → nbPostValidate is a no-op → test-writer must not apply.
-      const testWriterStrategy = capturedCycle!.strategies.find((s) => s.name === "autofix-test-writer");
-      expect(testWriterStrategy).toBeDefined();
+      const testWriterStrategy = capturedCycle.strategies.find((s) => s.name === "autofix-test-writer");
+      assertDefined(testWriterStrategy, "autofix-test-writer strategy in nbf cycle");
       const dummyFinding: Finding = { source: "lint", severity: "error", category: "style", message: "dummy" };
-      expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(false);
+      expect(testWriterStrategy.appliesTo(dummyFinding)).toBe(false);
     });
   });
 });
@@ -309,8 +314,8 @@ describe("AC-NBF3: invalid mock_structure in nbf cycle → diagnostic only, no u
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    let capturedCycle: FixCycle<Finding> | null = null;
-    let capturedCycleCtx: FixCycleContext | null = null;
+    let capturedCycle: FixCycle<Finding> | undefined;
+    let capturedCycleCtx: FixCycleContext | undefined;
     _storyOrchestratorDeps.runFixCycle = mock(async (cycle, cycleCtx) => {
       capturedCycle = cycle as FixCycle<Finding>;
       capturedCycleCtx = cycleCtx as FixCycleContext;
@@ -325,10 +330,11 @@ describe("AC-NBF3: invalid mock_structure in nbf cycle → diagnostic only, no u
     const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     await plan.run();
 
-    expect(capturedCycle).not.toBeNull();
+    assertDefined(capturedCycle, "captured nbf FixCycle");
+    assertDefined(capturedCycleCtx, "captured FixCycleContext");
 
-    const fullSuiteStrategy = capturedCycle!.strategies.find((s) => s.name === "full-suite-rectify");
-    expect(fullSuiteStrategy).toBeDefined();
+    const fullSuiteStrategy = capturedCycle.strategies.find((s) => s.name === "full-suite-rectify");
+    assertDefined(fullSuiteStrategy, "full-suite-rectify strategy in nbf cycle");
 
     // Declare a mock_structure referencing a file that does not exist.
     const invalidOutput: FullSuiteRectifyOutput = {
@@ -343,21 +349,22 @@ describe("AC-NBF3: invalid mock_structure in nbf cycle → diagnostic only, no u
       ],
     };
     const mockInput: FullSuiteRectifyInput = { story, findings: [] };
-    await fullSuiteStrategy!.extractApplied!(invalidOutput, mockInput);
+    assertDefined(fullSuiteStrategy.extractApplied, "extractApplied on full-suite-rectify");
+    await fullSuiteStrategy.extractApplied(invalidOutput, mockInput);
 
-    const testWriterStrategy = capturedCycle!.strategies.find((s) => s.name === "autofix-test-writer");
-    expect(testWriterStrategy).toBeDefined();
+    const testWriterStrategy = capturedCycle.strategies.find((s) => s.name === "autofix-test-writer");
+    assertDefined(testWriterStrategy, "autofix-test-writer strategy in nbf cycle");
     const dummyFinding: Finding = { source: "lint", severity: "error", category: "style", message: "dummy" };
 
     // Precondition: extractApplied populated nbSink, so the test-writer claims
     // via its `sink.mockHandoffs.length > 0` clause. This also proves the
     // captured cycle is the nbf one (it shares nbSink). Without it, the
     // assertions below would also hold on nbPostValidate's early-return path.
-    expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(true);
+    expect(testWriterStrategy.appliesTo(dummyFinding)).toBe(true);
 
     _storyOrchestratorDeps.callOp = mock(async () => ({ success: true })) as typeof _storyOrchestratorDeps.callOp;
 
-    const validateResult = await capturedCycle!.validate(capturedCycleCtx!, {
+    const validateResult = await capturedCycle.validate(capturedCycleCtx, {
       mode: "full",
       strategiesRun: ["full-suite-rectify"],
     });
@@ -366,7 +373,7 @@ describe("AC-NBF3: invalid mock_structure in nbf cycle → diagnostic only, no u
 
     // nbPostValidate reached the validation branch and rejected the handoff:
     // nbSink is drained, so the test-writer no longer claims.
-    expect(testWriterStrategy!.appliesTo(dummyFinding)).toBe(false);
+    expect(testWriterStrategy.appliesTo(dummyFinding)).toBe(false);
 
     // AC-NBF3 (#1327): the rejected handoff is reported as a log diagnostic, not
     // appended as a finding. An appended advisory is claimed by no nbf strategy,

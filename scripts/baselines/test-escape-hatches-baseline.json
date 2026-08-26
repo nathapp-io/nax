@@ -7,9 +7,9 @@
     "anyType": 10,
     "looseCast": 1800,
     "asNever": 603,
-    "nonNullAssert": 751
+    "nonNullAssert": 635
   },
-  "updatedAt": "2026-08-26T08:40:49.443Z",
+  "updatedAt": "2026-08-26T09:14:56.317Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -108,8 +108,7 @@
       "looseCast": 14
     },
     "test/integration/execution/nbf-rectify-declaration.test.ts": {
-      "looseCast": 10,
-      "nonNullAssert": 22
+      "looseCast": 10
     },
     "test/integration/execution/status-writer-postrun.test.ts": {
       "looseCast": 6
@@ -380,8 +379,7 @@
       "nonNullAssert": 1
     },
     "test/unit/prd/schema.test.ts": {
-      "looseCast": 1,
-      "nonNullAssert": 29
+      "looseCast": 1
     },
     "test/unit/prd/prd-get-next-story.test.ts": {
       "nonNullAssert": 6
@@ -442,9 +440,6 @@
     },
     "test/unit/review/semantic-retry-truncation.test.ts": {
       "asNever": 2
-    },
-    "test/unit/review/orchestrator-wrapper-parity.test.ts": {
-      "nonNullAssert": 20
     },
     "test/unit/review/semantic-signature-diff.test.ts": {
       "looseCast": 8,
@@ -720,8 +715,7 @@
       "looseCast": 9
     },
     "test/unit/execution/plan-inputs-review-wiring.test.ts": {
-      "looseCast": 1,
-      "nonNullAssert": 21
+      "looseCast": 1
     },
     "test/unit/execution/rectification-budget-invariants.test.ts": {
       "looseCast": 2,
@@ -1027,9 +1021,6 @@
     "test/unit/operations/build-hop-callback-stale-retry.test.ts": {
       "looseCast": 3,
       "asNever": 3
-    },
-    "test/unit/operations/apply-test-edit-declarations.test.ts": {
-      "nonNullAssert": 24
     },
     "test/unit/operations/finish-review.test.ts": {
       "ratchetAllow": 1,

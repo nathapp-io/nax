@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeStory } from "@test/helpers";
+import { assertDefined, makeNaxConfig, makeStory } from "@test/helpers";
 import type { Finding } from "@/findings";
 import type { TestEditDeclaration } from "@/operations";
 import { applyTestEditDeclarations, makeAutofixImplementerStrategy, makeDeclarationSink } from "@/operations";
@@ -15,6 +15,13 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
     fixTarget: "source",
     ...overrides,
   };
+}
+
+/** The first element of a result array, failing the test loudly if it is absent. */
+function first<T>(items: T[], label: string): T {
+  const item = items[0];
+  assertDefined(item, label);
+  return item;
 }
 
 describe("applyTestEditDeclarations", () => {
@@ -35,7 +42,7 @@ describe("applyTestEditDeclarations", () => {
       const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
       expect(result).toHaveLength(1);
-      expect(result[0]!.fixTarget).toBe("test");
+      expect(first(result, "result[0]").fixTarget).toBe("test");
     });
 
     test("attaches prdContractDeclaration to meta", () => {
@@ -51,7 +58,8 @@ describe("applyTestEditDeclarations", () => {
 
       const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
-      expect(result[0]!.meta?.prdContractDeclaration).toEqual(decl);
+      const finding = first(result, "result[0]");
+      expect(finding.meta?.prdContractDeclaration).toEqual(decl);
     });
 
     test("preserves existing meta alongside prdContractDeclaration", () => {
@@ -73,8 +81,9 @@ describe("applyTestEditDeclarations", () => {
 
       const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
-      expect(result[0]!.meta?.existingKey).toBe("existingValue");
-      expect(result[0]!.meta?.prdContractDeclaration).toEqual(decl);
+      const finding = first(result, "result[0]");
+      expect(finding.meta?.existingKey).toBe("existingValue");
+      expect(finding.meta?.prdContractDeclaration).toEqual(decl);
     });
 
     test("does not re-tag finding with different file", () => {
@@ -90,8 +99,9 @@ describe("applyTestEditDeclarations", () => {
 
       const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
-      expect(result[0]!.fixTarget).toBe("source");
-      expect(result[0]!.meta?.prdContractDeclaration).toBeUndefined();
+      const finding = first(result, "result[0]");
+      expect(finding.fixTarget).toBe("source");
+      expect(finding.meta?.prdContractDeclaration).toBeUndefined();
     });
 
     test("does not re-tag findings that are already fixTarget: test", () => {
@@ -108,7 +118,7 @@ describe("applyTestEditDeclarations", () => {
       const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
       // fixTarget was already "test", meta should still be set
-      expect(result[0]!.fixTarget).toBe("test");
+      expect(first(result, "result[0]").fixTarget).toBe("test");
     });
   });
 
@@ -129,11 +139,12 @@ describe("applyTestEditDeclarations", () => {
       // Original finding unchanged, and nothing appended: a rejected declaration
       // is not a defect, and an unclaimable finding dead-ends the cycle (#1327).
       expect(result).toHaveLength(1);
-      expect(result[0]!.fixTarget).toBe("source");
+      expect(first(result, "result[0]").fixTarget).toBe("source");
       expect(diagnostics).toHaveLength(1);
-      expect(diagnostics[0]!.reason).toBe("prd_quote_mismatch");
-      expect(diagnostics[0]!.file).toBe("test/unit/foo.test.ts");
-      expect(diagnostics[0]!.detail).toContain("test/unit/foo.test.ts");
+      const diagnostic = first(diagnostics, "diagnostics[0]");
+      expect(diagnostic.reason).toBe("prd_quote_mismatch");
+      expect(diagnostic.file).toBe("test/unit/foo.test.ts");
+      expect(diagnostic.detail).toContain("test/unit/foo.test.ts");
     });
 
     test("rejected quote leaves the finding claimable by autofix-implementer", () => {
@@ -170,7 +181,7 @@ describe("applyTestEditDeclarations", () => {
 
       const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
-      expect(result[0]!.fixTarget).toBe("source");
+      expect(first(result, "result[0]").fixTarget).toBe("source");
     });
   });
 
@@ -187,7 +198,7 @@ describe("applyTestEditDeclarations", () => {
       const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
       expect(result).toHaveLength(1);
-      expect(result[0]!.fixTarget).toBe("source");
+      expect(first(result, "result[0]").fixTarget).toBe("source");
     });
   });
 
@@ -204,7 +215,7 @@ describe("applyTestEditDeclarations", () => {
       const { findings: result } = applyTestEditDeclarations(findings, [decl], story);
 
       expect(result).toHaveLength(1);
-      expect(result[0]!.fixTarget).toBe("source");
+      expect(first(result, "result[0]").fixTarget).toBe("source");
     });
   });
 
@@ -227,8 +238,9 @@ describe("applyTestEditDeclarations", () => {
       // test-writer sees it — there is no fix to queue here (#1327).
       expect(result).toEqual(findings);
       expect(diagnostics).toHaveLength(1);
-      expect(diagnostics[0]!.reason).toBe("mock_structure_invalid_files");
-      expect(diagnostics[0]!.file).toBe("test/unit/mock.test.ts");
+      const diagnostic = first(diagnostics, "diagnostics[0]");
+      expect(diagnostic.reason).toBe("mock_structure_invalid_files");
+      expect(diagnostic.file).toBe("test/unit/mock.test.ts");
     });
 
     test("includes every declared file name in the diagnostic detail", () => {
@@ -242,8 +254,9 @@ describe("applyTestEditDeclarations", () => {
 
       const { diagnostics } = applyTestEditDeclarations([], [], story, { invalidMockStructure: [invalidDecl] });
 
-      expect(diagnostics[0]!.detail).toContain("test/unit/a.test.ts");
-      expect(diagnostics[0]!.detail).toContain("test/unit/b.test.ts");
+      const diagnostic = first(diagnostics, "diagnostics[0]");
+      expect(diagnostic.detail).toContain("test/unit/a.test.ts");
+      expect(diagnostic.detail).toContain("test/unit/b.test.ts");
     });
 
     test("uses d.file when d.files is absent", () => {
@@ -256,7 +269,7 @@ describe("applyTestEditDeclarations", () => {
 
       const { diagnostics } = applyTestEditDeclarations([], [], story, { invalidMockStructure: [invalidDecl] });
 
-      expect(diagnostics[0]!.detail).toContain("test/unit/only.test.ts");
+      expect(first(diagnostics, "diagnostics[0]").detail).toContain("test/unit/only.test.ts");
     });
 
     test("emits one diagnostic per invalid declaration", () => {
@@ -295,8 +308,9 @@ describe("applyTestEditDeclarations", () => {
         allowTestRetag: false,
       });
 
-      expect(result[0]!.fixTarget).toBe("source");
-      expect(result[0]!.meta?.prdContractDeclaration).toBeUndefined();
+      const finding = first(result, "result[0]");
+      expect(finding.fixTarget).toBe("source");
+      expect(finding.meta?.prdContractDeclaration).toBeUndefined();
     });
 
     test("allowTestRetag: false → a valid quote is NOT reported as a quote mismatch", () => {
@@ -328,7 +342,7 @@ describe("applyTestEditDeclarations", () => {
         allowTestRetag: false,
       });
 
-      expect(result[0]!.fixTarget).toBe("source");
+      expect(first(result, "result[0]").fixTarget).toBe("source");
       expect(diagnostics.map((d) => d.reason)).toEqual(["prd_quote_mismatch"]);
     });
 
@@ -337,7 +351,7 @@ describe("applyTestEditDeclarations", () => {
 
       const { findings: result } = applyTestEditDeclarations(findings, [decl], story());
 
-      expect(result[0]!.fixTarget).toBe("test");
+      expect(first(result, "result[0]").fixTarget).toBe("test");
     });
   });
 
@@ -490,7 +504,7 @@ describe("applyTestEditDeclarations", () => {
       // Input array not mutated
       expect(original).toHaveLength(1);
       expect(original[0]).toBe(originalRef);
-      expect(original[0]!.fixTarget).toBe("source");
+      expect(first(original, "original[0]").fixTarget).toBe("source");
       // Result is a different array
       expect(result).not.toBe(original);
     });

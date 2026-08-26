@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeDispatchContext, makePRD, makeSpawn } from "@test/helpers";
+import { assertDefined, makeDispatchContext, makePRD, makeSpawn } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { NaxConfig } from "@/config/schema";
 import { assemblePlanInputsFromCtx } from "@/execution/plan-inputs";
@@ -136,8 +136,8 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
       },
     });
     const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.rectification).toBeDefined();
-    expect(inputs.rectification!.maxAttempts).toBe(2);
+    assertDefined(inputs.rectification, "inputs.rectification");
+    expect(inputs.rectification.maxAttempts).toBe(2);
   });
 
   test("semantic review input carries stat and effectiveRef in ref mode", async () => {
@@ -146,10 +146,10 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     });
     ctx.storyGitRef = "abc123";
     const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.semanticReview).toBeDefined();
-    expect(inputs.semanticReview!.stat).toContain("src/foo.ts");
-    expect(inputs.semanticReview!.storyGitRef).toBe("abc123");
-    expect(inputs.semanticReview!.diff).toBeUndefined();
+    assertDefined(inputs.semanticReview, "inputs.semanticReview");
+    expect(inputs.semanticReview.stat).toContain("src/foo.ts");
+    expect(inputs.semanticReview.storyGitRef).toBe("abc123");
+    expect(inputs.semanticReview.diff).toBeUndefined();
   });
 
   test("semantic review slot is registered with _refresh payload even when plan-build diff is empty", async () => {
@@ -163,9 +163,9 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     });
     ctx.storyGitRef = "abc123";
     const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.semanticReview).toBeDefined();
-    expect(inputs.semanticReview!._refresh).toBeDefined();
-    expect(inputs.semanticReview!._refresh!.storyGitRef).toBe("abc123");
+    assertDefined(inputs.semanticReview, "inputs.semanticReview");
+    assertDefined(inputs.semanticReview._refresh, "inputs.semanticReview._refresh");
+    expect(inputs.semanticReview._refresh.storyGitRef).toBe("abc123");
   });
 
   test("adversarial review input carries stat, testGlobs, refExcludePatterns", async () => {
@@ -174,9 +174,9 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     });
     ctx.storyGitRef = "abc123";
     const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.adversarialReview).toBeDefined();
-    expect(inputs.adversarialReview!.stat).toContain("src/foo.ts");
-    expect(inputs.adversarialReview!.refExcludePatterns?.length ?? 0).toBeGreaterThan(0);
+    assertDefined(inputs.adversarialReview, "inputs.adversarialReview");
+    expect(inputs.adversarialReview.stat).toContain("src/foo.ts");
+    expect(inputs.adversarialReview.refExcludePatterns?.length ?? 0).toBeGreaterThan(0);
   });
 
   test("AC#4 (#1120): resolveTestFilePatterns result is shared between semantic and adversarial helpers via resolvedTestPatterns", async () => {
@@ -191,6 +191,11 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     const SENTINEL_GLOB = "custom-e2e/**/*.e2etest.ts";
     const SENTINEL_PATHSPEC = ":!*.e2etest.ts";
     const SENTINEL_DIR_PATHSPEC = ":!custom-e2e/";
+
+    const defaultSemantic = DEFAULT_CONFIG.review.semantic;
+    assertDefined(defaultSemantic, "DEFAULT_CONFIG.review.semantic");
+    const defaultAdversarial = DEFAULT_CONFIG.review.adversarial;
+    assertDefined(defaultAdversarial, "DEFAULT_CONFIG.review.adversarial");
 
     const ctx = makeCtx({
       execution: {
@@ -207,21 +212,21 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
         enabled: true,
         checks: ["semantic", "adversarial"],
         // Clear hardcoded excludePatterns so both helpers derive from resolved patterns.
-        semantic: withoutExcludePatterns(DEFAULT_CONFIG.review.semantic!),
-        adversarial: withoutExcludePatterns(DEFAULT_CONFIG.review.adversarial!),
+        semantic: withoutExcludePatterns(defaultSemantic),
+        adversarial: withoutExcludePatterns(defaultAdversarial),
       },
     });
     ctx.storyGitRef = "abc123";
     const inputs = await assemblePlanInputsFromCtx(ctx);
 
     // Both review slots populated (no skip)
-    expect(inputs.semanticReview).toBeDefined();
-    expect(inputs.adversarialReview).toBeDefined();
+    assertDefined(inputs.semanticReview, "inputs.semanticReview");
+    assertDefined(inputs.adversarialReview, "inputs.adversarialReview");
 
     // Both outputs carry the sentinel — proves resolvedTestPatterns was threaded
     // from the single plan-inputs.ts resolution into both prepare-inputs helpers.
-    const semanticExcludes = inputs.semanticReview!.excludePatterns ?? [];
-    const adversarialExcludes = inputs.adversarialReview!.refExcludePatterns ?? [];
+    const semanticExcludes = inputs.semanticReview.excludePatterns ?? [];
+    const adversarialExcludes = inputs.adversarialReview.refExcludePatterns ?? [];
     expect(semanticExcludes).toContain(SENTINEL_PATHSPEC);
     expect(semanticExcludes).toContain(SENTINEL_DIR_PATHSPEC);
     expect(adversarialExcludes).toContain(SENTINEL_PATHSPEC);
@@ -242,8 +247,8 @@ describe("assemblePlanInputsFromCtx — evidence substantiation wiring (#1668)",
     });
     ctx.storyGitRef = "abc123";
     const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.semanticReview).toBeDefined();
-    expect(inputs.semanticReview!.repoRoot).toBe("/tmp/proj");
+    assertDefined(inputs.semanticReview, "inputs.semanticReview");
+    expect(inputs.semanticReview.repoRoot).toBe("/tmp/proj");
   });
 
   test("adversarial review input carries repoRoot so evidence resolves against the repo root", async () => {
@@ -252,8 +257,8 @@ describe("assemblePlanInputsFromCtx — evidence substantiation wiring (#1668)",
     });
     ctx.storyGitRef = "abc123";
     const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.adversarialReview).toBeDefined();
-    expect(inputs.adversarialReview!.repoRoot).toBe("/tmp/proj");
+    assertDefined(inputs.adversarialReview, "inputs.adversarialReview");
+    expect(inputs.adversarialReview.repoRoot).toBe("/tmp/proj");
   });
 
   test("repoRoot is distinct from workdir, so the package prefix is not double-counted", async () => {
@@ -264,9 +269,11 @@ describe("assemblePlanInputsFromCtx — evidence substantiation wiring (#1668)",
     });
     ctx.storyGitRef = "abc123";
     const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.semanticReview!.repoRoot).toBeDefined();
-    expect(inputs.adversarialReview!.repoRoot).toBeDefined();
-    expect(inputs.semanticReview!.repoRoot).not.toBe(inputs.semanticReview!.workdir);
-    expect(inputs.adversarialReview!.repoRoot).not.toBe(inputs.adversarialReview!.workdir);
+    assertDefined(inputs.semanticReview, "inputs.semanticReview");
+    assertDefined(inputs.adversarialReview, "inputs.adversarialReview");
+    expect(inputs.semanticReview.repoRoot).toBeDefined();
+    expect(inputs.adversarialReview.repoRoot).toBeDefined();
+    expect(inputs.semanticReview.repoRoot).not.toBe(inputs.semanticReview.workdir);
+    expect(inputs.adversarialReview.repoRoot).not.toBe(inputs.adversarialReview.workdir);
   });
 });

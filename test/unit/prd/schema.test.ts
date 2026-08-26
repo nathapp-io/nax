@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import type { Complexity, TestStrategy } from "@/config";
 import { MAX_OUT_OF_SCOPE_ITEMS } from "@/prd";
 import { extractJsonFromMarkdown, validatePlanOutput } from "@/prd/schema";
-import type { UserStory } from "@/prd/types";
+import type { PRD, UserStory } from "@/prd/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -23,6 +24,13 @@ function makeStory(overrides: Record<string, unknown> = {}): Record<string, unkn
 
 function makeInput(stories: unknown[] = [makeStory()]): Record<string, unknown> {
   return { userStories: stories };
+}
+
+/** The first story of a parsed PRD, failing the test loudly if validation dropped it. */
+function firstStory(prd: PRD): UserStory {
+  const story = prd.userStories[0];
+  assertDefined(story, "prd.userStories[0]");
+  return story;
 }
 
 // ---------------------------------------------------------------------------
@@ -72,7 +80,7 @@ describe("validatePlanOutput — valid input", () => {
     ["attempts to 0", makeInput([makeStory({ attempts: 5 })]), (s: UserStory) => s.attempts, 0],
   ])("forces %s", (_label, input, getField, expected) => {
     const prd = validatePlanOutput(input, "feat", "branch");
-    expect(getField(prd.userStories[0]!)).toBe(expected);
+    expect(getField(firstStory(prd))).toBe(expected);
   });
 
   test("forces escalations to empty array", () => {
@@ -80,7 +88,7 @@ describe("validatePlanOutput — valid input", () => {
       makeStory({ escalations: [{ fromTier: "haiku", toTier: "sonnet", reason: "x", timestamp: "t" }] }),
     ]);
     const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.escalations).toEqual([]);
+    expect(firstStory(prd).escalations).toEqual([]);
   });
 
   test("validates multiple stories successfully", () => {
@@ -158,7 +166,9 @@ describe("validatePlanOutput — dependency validation", () => {
       "branch",
     );
     const storyIds = new Set(prd.userStories.map((s) => s.id));
-    const storedDep = prd.userStories[1]!.dependencies[0];
+    const secondStory = prd.userStories[1];
+    assertDefined(secondStory, "prd.userStories[1]");
+    const storedDep = secondStory.dependencies[0];
     expect(storedDep).toBe("ST-001");
     expect(storyIds.has(storedDep as string)).toBe(true);
   });
@@ -172,7 +182,9 @@ describe("validatePlanOutput — dependency validation", () => {
       "feat",
       "branch",
     );
-    expect(prd.userStories[1]!.dependencies).toEqual(["ST-001"]);
+    const secondStory = prd.userStories[1];
+    assertDefined(secondStory, "prd.userStories[1]");
+    expect(secondStory.dependencies).toEqual(["ST-001"]);
   });
 
   // BUG-27: a dependency cycle was never rejected at plan/validate time —
@@ -255,7 +267,7 @@ describe("validatePlanOutput — status forced to pending (AC-5)", () => {
     (status) => {
       const input = makeInput([makeStory({ status })]);
       const prd = validatePlanOutput(input, "feat", "branch");
-      expect(prd.userStories[0]!.status).toBe("pending");
+      expect(firstStory(prd).status).toBe("pending");
     },
   );
 });
@@ -291,7 +303,7 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
     ["`ST001`", "ST-001"],
   ])("normalizes story ID %s → %s", (id, expected) => {
     const prd = validatePlanOutput(makeInput([makeStory({ id })]), "feat", "branch");
-    expect(prd.userStories[0]!.id).toBe(expected);
+    expect(firstStory(prd).id).toBe(expected);
   });
 
   test.each<[string, Complexity]>([
@@ -299,7 +311,7 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
     ["COMPLEX", "complex"],
   ])("normalizes complexity '%s' to '%s'", (input, expected) => {
     const prd = validatePlanOutput(makeInput([makeStory({ complexity: input })]), "feat", "branch");
-    expect(prd.userStories[0]!.routing?.complexity).toBe(expected);
+    expect(firstStory(prd).routing?.complexity).toBe(expected);
   });
 
   test.each<[string, string, TestStrategy]>([
@@ -308,7 +320,7 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
     ["falls back to test-after for unknown", "unknown-strategy", "test-after"],
   ])("testStrategy: %s", (_label, input, expected) => {
     const prd = validatePlanOutput(makeInput([makeStory({ testStrategy: input })]), "feat", "branch");
-    expect(prd.userStories[0]!.routing?.testStrategy).toBe(expected);
+    expect(firstStory(prd).routing?.testStrategy).toBe(expected);
   });
 
   test.each([
@@ -324,7 +336,7 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
     const overrides: Record<string, unknown> =
       input !== undefined ? { routing: { complexity: "simple", testStrategy: "tdd-simple", reasoning: input } } : {};
     const prd = validatePlanOutput(makeInput([makeStory(overrides)]), "feat", "branch");
-    expect(prd.userStories[0]!.routing?.reasoning).toBe(expected);
+    expect(firstStory(prd).routing?.reasoning).toBe(expected);
   });
 
   test.each([
@@ -333,7 +345,7 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
   ] as const)("fixes %s to correct unicode char", (_label, escaped, expected) => {
     const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
     expect(() => validatePlanOutput(json, "feat", "branch")).not.toThrow();
-    expect(validatePlanOutput(json, "feat", "branch").userStories[0]!.description).toBe(expected);
+    expect(firstStory(validatePlanOutput(json, "feat", "branch")).description).toBe(expected);
   });
 
   test("strips backslash from invalid \\u (no hex digits) and bare invalid escape sequences", () => {
@@ -342,7 +354,7 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
     expect(() => validatePlanOutput(makeJson("\\uQQQQ"), "feat", "branch")).not.toThrow();
     const prd = validatePlanOutput(makeJson("foo\\nbar"), "feat", "branch");
     expect(() => validatePlanOutput(makeJson("foo\\nbar"), "feat", "branch")).not.toThrow();
-    expect(prd.userStories[0]!.description).toContain("a");
+    expect(firstStory(prd).description).toContain("a");
   });
 
   test.each<[string, string, string]>([
@@ -355,14 +367,14 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
     ["\\\\( regex — regression for sanitizeInvalidEscapes", "regex /expect\\\\(|foo/", "regex /expect\\(|foo/"],
   ])("preserves %s unchanged in description", (_label, escaped, expected) => {
     const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
-    expect(validatePlanOutput(json, "feat", "branch").userStories[0]!.description).toBe(expected);
+    expect(firstStory(validatePlanOutput(json, "feat", "branch")).description).toBe(expected);
   });
 
   test("fixes \\x escape in markdown-wrapped JSON", () => {
     const escaped = "\\x41";
     const wrapped = `\`\`\`json\n{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}\n\`\`\``;
     const prd = validatePlanOutput(wrapped, "feat", "branch");
-    expect(prd.userStories[0]!.description).toBe("A");
+    expect(firstStory(prd).description).toBe("A");
   });
 });
 
@@ -377,7 +389,7 @@ describe("validatePlanOutput — workdir validation (MW-001)", () => {
   ])("accepts %s", (_, workdir) => {
     const input = makeInput([makeStory({ workdir })]);
     const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.workdir).toBe(workdir);
+    expect(firstStory(prd).workdir).toBe(workdir);
   });
 
   test.each([
@@ -391,7 +403,7 @@ describe("validatePlanOutput — workdir validation (MW-001)", () => {
 
   test("workdir is optional — omitting it leaves field undefined", () => {
     const prd = validatePlanOutput(makeInput([makeStory()]), "feat", "branch");
-    expect(prd.userStories[0]!.workdir).toBeUndefined();
+    expect(firstStory(prd).workdir).toBeUndefined();
   });
 });
 
@@ -612,7 +624,7 @@ describe("suggestedCriteria", () => {
 describe("validatePlanOutput — Phase 2 citation fields (AC4-AC6)", () => {
   test("AC4+AC5: accepts legacy PRD without citation fields; omits verifiedBy from stories that lack it", () => {
     const prd1 = validatePlanOutput(makeInput([makeStory()]), "feat", "feat/feat");
-    const story = prd1.userStories[0]!;
+    const story = firstStory(prd1);
     expect(story.verifiedBy).toBeUndefined();
     expect(story.intent).toBeUndefined();
     expect(story.contextFiles).toBeUndefined();
@@ -622,8 +634,11 @@ describe("validatePlanOutput — Phase 2 citation fields (AC4-AC6)", () => {
       makeStory({ id: "ST-002", verifiedBy: { kind: "file", anchor: "src/x.ts", factIds: [] } }),
     ];
     const prd2 = validatePlanOutput(makeInput(stories), "feat", "feat/feat");
-    expect(prd2.userStories[0]!.verifiedBy).toBeUndefined();
-    expect(prd2.userStories[1]!.verifiedBy?.kind).toBe("file");
+    expect(firstStory(prd2).verifiedBy).toBeUndefined();
+
+    const secondStory = prd2.userStories[1];
+    assertDefined(secondStory, "prd2.userStories[1]");
+    expect(secondStory.verifiedBy?.kind).toBe("file");
   });
 
   test.each<[string, Record<string, unknown>, (s: UserStory) => unknown, unknown]>([
@@ -636,7 +651,7 @@ describe("validatePlanOutput — Phase 2 citation fields (AC4-AC6)", () => {
     ["intent", makeStory({ intent: true }), (s: UserStory) => s.intent, true],
   ])("AC5: preserves %s when present", (_label, story, getField, expected) => {
     const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
-    expect(getField(prd.userStories[0]!)).toEqual(expected);
+    expect(getField(firstStory(prd))).toEqual(expected);
   });
 
   test("AC5: preserves contextFiles[].factId when present", () => {
@@ -644,7 +659,8 @@ describe("validatePlanOutput — Phase 2 citation fields (AC4-AC6)", () => {
       contextFiles: [{ path: "src/auth.ts", factId: "fact-001" }, { path: "src/utils.ts" }, "src/plain.ts"],
     });
     const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
-    const files = prd.userStories[0]!.contextFiles!;
+    const files = firstStory(prd).contextFiles;
+    assertDefined(files, "story.contextFiles");
     expect(files).toHaveLength(3);
     expect(files[0]).toEqual({ path: "src/auth.ts", factId: "fact-001" });
     expect(files[1]).toEqual({ path: "src/utils.ts" });
@@ -719,7 +735,9 @@ describe("validatePlanOutput — testStrategy auto-downgrade (BUG-26)", () => {
       noTestJustification: "This is a config-only change with no testable behavior.",
     });
     const prd = validatePlanOutput(makeInput([story]), "feat", "branch");
-    expect(prd.userStories[0]!.routing!.testStrategy).toBe("no-test");
+    const parsed = firstStory(prd);
+    assertDefined(parsed.routing, "parsed.routing");
+    expect(parsed.routing.testStrategy).toBe("no-test");
   });
 
   test("does NOT downgrade when noTestJustification is a stray unrelated note", () => {
@@ -729,7 +747,9 @@ describe("validatePlanOutput — testStrategy auto-downgrade (BUG-26)", () => {
       noTestJustification: "See PR #123 for related discussion.",
     });
     const prd = validatePlanOutput(makeInput([story]), "feat", "branch");
-    expect(prd.userStories[0]!.routing!.testStrategy).toBe("test-after");
+    const parsed = firstStory(prd);
+    assertDefined(parsed.routing, "parsed.routing");
+    expect(parsed.routing.testStrategy).toBe("test-after");
   });
 
   test("still requires noTestJustification when testStrategy is explicitly no-test", () => {
@@ -742,7 +762,9 @@ describe("validatePlanOutput — testStrategy auto-downgrade (BUG-26)", () => {
       noTestJustification: "See PR #123 for related discussion.",
     });
     const prd = validatePlanOutput(makeInput([story]), "feat", "branch");
-    expect(prd.userStories[0]!.routing!.testStrategy).toBe("no-test");
+    const parsed = firstStory(prd);
+    assertDefined(parsed.routing, "parsed.routing");
+    expect(parsed.routing.testStrategy).toBe("no-test");
   });
 
   test("recognizes several real no-test justification phrasings", () => {
@@ -760,7 +782,9 @@ describe("validatePlanOutput — testStrategy auto-downgrade (BUG-26)", () => {
         noTestJustification,
       });
       const prd = validatePlanOutput(makeInput([story]), "feat", "branch");
-      expect(prd.userStories[0]!.routing!.testStrategy, noTestJustification).toBe("no-test");
+      const parsed = firstStory(prd);
+      assertDefined(parsed.routing, "parsed.routing");
+      expect(parsed.routing.testStrategy, noTestJustification).toBe("no-test");
     }
   });
 });
