@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1799,
-    "asNever": 421,
+    "asNever": 398,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T14:26:28.597Z",
+  "updatedAt": "2026-08-26T14:32:34.692Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -810,8 +810,7 @@
       "ratchetAllow": 2
     },
     "test/unit/operations/plan-refine.test.ts": {
-      "looseCast": 1,
-      "asNever": 23
+      "looseCast": 1
     },
     "test/unit/operations/call-exhaustion.test.ts": {
       "looseCast": 6
