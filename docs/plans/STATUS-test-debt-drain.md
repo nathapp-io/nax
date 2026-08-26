@@ -16,21 +16,21 @@ log — each entry records what was true when written and is not edited afterwar
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
 | `as unknown as` | **0** | 0 | done — closed invariant (§8.13) |
-| `asAny` | 311 | 1377 | yes, then biome `noExplicitAny` retires it |
-| `anyType` | 389 | 1860 | yes, retires with `asAny` — biome says **380** |
+| `asAny` | 225 | 1377 | yes, then biome `noExplicitAny` retires it |
+| `anyType` | 289 | 1860 | yes, retires with `asAny` — biome says **278** |
 | `nonNullAssert` | 801 | 819 | yes — biome says **1085**, see §0.1 (not started) |
 | `asNever` | 605 | 608 | yes |
 | `ratchetAllow` | 103 | 105 | yes |
 | `tsSuppress` | 40 | 40 | yes |
 | `absentValue` | 17 | 17 | yes |
-| `looseCast` | 1811 | 1875 | **no** — guard only, see below |
+| `looseCast` | 1806 | 1875 | **no** — guard only, see below |
 
-The `noExplicitAny` drain is in progress on this branch (§8.14–§8.19): eighty-six files
-drained, `asAny` 1179 → 311 and `anyType` 1538 → 389 against the branch-start ratchet, with
-every other counter flat except `nonNullAssert` (819 → 801), `looseCast` (1875 → 1811),
+The `noExplicitAny` drain is in progress on this branch (§8.14–§8.20): one hundred five files
+drained, `asAny` 1179 → 225 and `anyType` 1538 → 289 against the branch-start ratchet, with
+every other counter flat except `nonNullAssert` (819 → 801), `looseCast` (1875 → 1806),
 `ratchetAllow` (105 → 103) and `asNever` (608 → 605) as benign side effects of removing
 `logger!.info = … as any` patterns and deleting real casts. Biome's authoritative
-count fell **1529 → 380**.
+count fell **1529 → 278**.
 
 `as unknown as` went **101 → 0** across nine commits (§8.1–§8.4, §8.11–§8.13); `looseCast`
 fell 1888 → 1875 and `ratchetAllow` 107 → 105 as side effects of removing real casts, and
@@ -1376,3 +1376,91 @@ src-blocked), then seven files tied at 6 — `integration/execution/fullsuite-re
 `pipeline/stages/acceptance-setup-fingerprint`,
 `pipeline/stages/completion-fragment-capture`, `prompts/builders/critic-builder`,
 `prompts/sections/isolation` — 148 files hold the remaining 380.
+
+### 8.20 Batch 7 of the `noExplicitAny` drain — the tiers at 6 and 5, four parallel delegates, biome 380 → 278 (2026-08-26)
+
+The §8.19 queue head drained: the seven files tied at 6 plus the whole twelve-file tier at 5
+(a strict top-10 cut lands mid-tie; ride-along per §8.17–§8.18 precedent) — 19 files, ~102
+biome sites taken by four parallel agents on disjoint file sets under the same brief model as
+§8.16–§8.18 (§4 forbidden list, the cheap per-file gate loop, the standing recipe table). The
+two mutation-check files that share a helper (`helpers/mutation-check.ts` +
+`operations/mutation-check-revert`) were assigned to one delegate deliberately. No delegate
+edited outside its set; zero src/ changes; **zero escalations held — all 19 files reached
+zero.**
+
+Ratchet: `asAny` ↓86 (311 → 225) and `anyType` ↓100 (389 → 289); `looseCast` ↓5 (1811 → 1806)
+as a benign side effect of deleting real casts; every other counter flat; no counter rose
+anywhere, including per-file. Gates: typecheck 0 (all three), `check:all` green, full suite
+green (**14149 / 1136 / 38, 0 fail** — after the incident below), coverage OK (101 below floor
+against baseline 103, identical to main).
+
+The largest single family was, again, dead casts — §8.19's carry-forward holding at the next
+tier down:
+
+| Shape | Where | Recipe |
+|:--|:--|:--|
+| dead casts on values the declared types already admit ×20+ | rectify-decl ×2 (`FixStrategy<Finding, any,…>[]` element params are already `any` in src), reporters-schema (`.default()` makes `otel.logs` non-optional), acceptance-setup ×2 (config/prd literals already satisfied `NaxConfig`/`PRD`), build-hop-callback (typed dep returns), isolation/builder (`"tdd-simple"` ∈ src unions), critic-builder (`require` scaffolding → static typed import) | deleted outright |
+| hand-typed runtime/ctx bags | runner-agent-resolution, session-helpers-resolver-model, helpers/mutation-check | `makeMockRuntime({...})` / `makeMockCallContext()` / structural `PackageView` with generic `select<C>(s): C { return s.select(config) }` |
+| partial-config literals | context-verification-integration, context-build ×5 sites each | `makeNaxConfig({ context: {...} })` |
+| loosely typed each()-rows | rectifier-builder | explicit `test.each<[string, ReviewCheckResult[], boolean]>()` generic |
+| story/PRD fragments | critic-builder, mutation-check-revert | `makeStory(...)` / `makePRD(...)` |
+| incomplete fixture object | mutation-check-revert PATTERNS | existing `makeResolvedTestPatterns` (+ required `resolution: "detected"`) |
+| generic dep slots (`<I, O, C>`) no wrapper satisfies by assignment | completion-fragment-capture, semantic-iteration-wiring, e2e/orchestrator-harness | mock derived via `Parameters<typeof origFn>`; slot replaced by `Object.assign(_deps, {...})` with finally-restore (§8.15 containment model) |
+
+**Fixture-value corrections, all assertion-preserving and reported per §4's carve-out:**
+semantic-iteration-wiring's prior Iteration carried `outcome: "fixes-applied"`, not an
+`IterationOutcome` member → `"resolved"` (value only round-trips through the store);
+STUB_RUN_OPTIONS gained `AgentRunOptions`-required `modelTier`/`modelDef`/`config`;
+mutation-check-revert's PATTERNS gained required `resolution: "detected"` (unread); reporters-schema
+dropped optional chains on post-`.default()` keys. Because two of these feed comparisons,
+§3's coverage rule fired at integration: floors unaffected.
+
+**The incident — mutating a `makeNaxConfig()` result poisoned `DEFAULT_CONFIG` process-wide.
+Every gate was green before it and the full suite caught it.** One helper rewrite ended
+
+```ts
+const config = makeNaxConfig();
+applyQuality(config, quality);            // writes config.quality.commands
+Object.assign(config.execution, execution);
+```
+
+`deepMerge` clones only the levels it descends into, so **each unmodified subtree is still
+the same object as `DEFAULT_CONFIG`'s** — both writes landed on the global default. The
+helper's historical contract set `quality.commands = { test: "bun test" }`; the schema default
+is `{}`. Later files' `makeNaxConfig()` inherited the pollution, and
+`precheck-checks-tier2-warnings`' "skips silently when test command is undefined" assertion
+(reads `execution.testCommand || quality.commands.test`) flipped to "configured: bun test".
+`mutation-check-wiring` failed the same way one hop removed. Both files passed **solo**, and
+the four delegates had each run their own sets green: the failure only exists in the
+full-suite runner's shared worker. Fixed by deep-cloning first:
+`structuredClone(makeNaxConfig())` before either write.
+
+Carry forward, two halves: **a factory return is safe to read and unsafe to write below its
+top level** — `deepMerge`'s sharing is invisible until someone assigns through it, so any
+mutation of a helper-built config must clone first (worth grepping for whenever a new
+`makeXConfig()` caller appears); and **"passes solo" proves nothing about state leakage** —
+the full suite is not a slower version of the per-file loop, it is the only gate that runs
+every fixture against every other fixture's leftovers. Related: §8.10's nine hand-built
+runtime stubs — shared-helper rewrites change what *other* files receive, which is why the
+helper and its heaviest consumer shared a delegate this batch.
+
+Two judgment calls resolved without counter trades, recorded for reuse: the harness's legacy
+`parsedSummary` (deliberately missing `failures` to drive the validator-error crash path)
+cannot satisfy `RunTestsResult` — merged onto the module dep via `Object.assign` instead of
+asserted, preserving the crash byte-for-byte; and generic dep slots rejected concretely-typed
+wrappers by assignment, replaced the same way with restore. Minor tooling note: verifying a
+file hit zero needs biome's `--reporter=json` — the default reporter's diagnostics carry no
+machine-readable category, so grep-based verification silently reports zero on anything.
+
+**New top of queue** (biome count per file): `interaction/plugins/cli` 8 (held escalation,
+src-blocked), then a twenty-two-file tier tied at 4 (`integration/acceptance/red-green-cycle`,
+`integration/execution/rectification-routing`, `agents/retry/tiered-parse-retry`,
+`cli/init-context`, `config/regression-gate-schema`, `config/test-strategy`,
+`debate/runner-events`, `debate/runner-one-shot-roles`, `debate/runner-rounds-and-cost`,
+`execution/_revalidation-fixtures`, `execution/post-run-isolation`,
+`metrics/tracker-escalation`, `operations/adversarial-review-verify`,
+`operations/autofix-test-writer`, `operations/full-suite-rectify`,
+`pipeline/stages/acceptance-setup-commit`, `plugins/builtin/curator-paths`,
+`plugins/builtin/otel-resource-git`, `review/recurrence-demotion`,
+`review/semantic-debate`, `session/session-keeper`, `verification/import-grep-fallback`) —
+129 files hold the remaining 278. The head has flattened again: no drainable file exceeds 4.
