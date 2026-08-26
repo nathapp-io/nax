@@ -188,12 +188,10 @@ export class AgentManager implements IAgentManager {
     }
   }
 
-  private _isExcludedCandidate(candidate: string): boolean {
-    return this._prunedFallback.has(candidate) || this.isUnavailable(candidate);
-  }
+  private readonly _isExcluded = (c: string): boolean => this._prunedFallback.has(c) || this.isUnavailable(c);
 
   resolveFallbackChain(agent: string, _failure: AdapterFailure): string[] {
-    return availableCandidates(this._config.agent?.fallback?.map, agent, (c) => this._isExcludedCandidate(c));
+    return availableCandidates(this._config.agent?.fallback?.map, agent, this._isExcluded);
   }
 
   shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number, hasBundle: boolean): boolean {
@@ -201,9 +199,7 @@ export class AgentManager implements IAgentManager {
   }
 
   nextCandidate(current: string, _hopsSoFar: number): string | null {
-    return (
-      availableCandidates(this._config.agent?.fallback?.map, current, (c) => this._isExcludedCandidate(c))[0] ?? null
-    );
+    return availableCandidates(this._config.agent?.fallback?.map, current, this._isExcluded)[0] ?? null;
   }
 
   // Swap hops produced here reach StoryMetrics.fallback via the run-scoped
@@ -331,12 +327,8 @@ export class AgentManager implements IAgentManager {
         // context rebuild to decide whether to swap to a fallback agent.
         const hasBundleForSwap = !!bundleForSwapCheck || isFailStale;
 
-        const swapDecision = decideSwap(
-          result.adapterFailure,
-          hopsSoFar,
-          hasBundleForSwap,
-          this._config.agent?.fallback,
-        );
+        const fb = this._config.agent?.fallback;
+        const swapDecision = decideSwap(result.adapterFailure, hopsSoFar, hasBundleForSwap, fb);
         if (!swapDecision.swap) {
           // #1713: the neighbouring terminal exits below emit; this one was silent.
           logSwapDecline(logger, swapDecision.reason, {
@@ -465,7 +457,7 @@ export class AgentManager implements IAgentManager {
     options: ResolvedCompleteOptions,
     primaryAgentOverride?: string,
   ): Promise<AgentCompleteOutcome> {
-    const logger = getSafeLogger();
+    const logger = this._loggerOverride ?? getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
     let currentAgent = primaryAgent;
@@ -553,9 +545,15 @@ export class AgentManager implements IAgentManager {
           continue;
         }
 
-        // completeWithFallback has no ContextBundle object, but swap is still allowed on
-        // availability failures — pass true so the hasBundle guard does not block swapping.
-        if (!this.shouldSwap(result.adapterFailure, hopsSoFar, true)) {
+        // No ContextBundle here, but swap is still allowed: pass true past the hasBundle gate.
+        const dec = decideSwap(result.adapterFailure, hopsSoFar, true, this._config.agent?.fallback);
+        if (!dec.swap) {
+          logSwapDecline(logger, dec.reason, {
+            storyId: options.storyId,
+            agent: currentAgent,
+            hopsSoFar,
+            failure: result.adapterFailure,
+          });
           _finalStatus = hopsSoFar > 0 ? "exhausted" : "error";
           return { result, fallbacks };
         }
