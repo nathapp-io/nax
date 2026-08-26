@@ -7,9 +7,9 @@
     "anyType": 10,
     "looseCast": 1800,
     "asNever": 603,
-    "nonNullAssert": 457
+    "nonNullAssert": 366
   },
-  "updatedAt": "2026-08-26T10:38:28.490Z",
+  "updatedAt": "2026-08-26T11:04:32.602Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -203,9 +203,6 @@
     "test/integration/config/profile-loader.test.ts": {
       "looseCast": 5
     },
-    "test/integration/context/feature-engine-read-path.test.ts": {
-      "nonNullAssert": 11
-    },
     "test/integration/pipeline/pipeline.test.ts": {
       "looseCast": 1,
       "asNever": 1
@@ -396,14 +393,10 @@
       "looseCast": 1
     },
     "test/unit/review/semantic-audit-shape.test.ts": {
-      "looseCast": 4,
-      "nonNullAssert": 10
+      "looseCast": 4
     },
     "test/unit/review/semantic-unverifiable.test.ts": {
       "looseCast": 2
-    },
-    "test/unit/review/semantic-threshold.test.ts": {
-      "nonNullAssert": 9
     },
     "test/unit/review/semantic-debate.test.ts": {
       "looseCast": 3,
@@ -452,9 +445,6 @@
     },
     "test/unit/review/adversarial-audit-shape.test.ts": {
       "looseCast": 2
-    },
-    "test/unit/review/adversarial-threshold.test.ts": {
-      "nonNullAssert": 8
     },
     "test/unit/review/semantic-agent-session.test.ts": {
       "looseCast": 7
@@ -957,14 +947,8 @@
       "asNever": 8,
       "nonNullAssert": 1
     },
-    "test/unit/operations/implementer.test.ts": {
-      "nonNullAssert": 9
-    },
     "test/unit/operations/plan-critic-llm.test.ts": {
       "looseCast": 3
-    },
-    "test/unit/operations/write-test-op.test.ts": {
-      "nonNullAssert": 9
     },
     "test/unit/operations/plan-draft.test.ts": {
       "looseCast": 1,
@@ -1222,8 +1206,7 @@
     },
     "test/unit/utils/git.test.ts": {
       "anyType": 1,
-      "looseCast": 1,
-      "nonNullAssert": 11
+      "looseCast": 1
     },
     "test/unit/utils/process-alive.test.ts": {
       "looseCast": 1
@@ -1444,9 +1427,6 @@
     "test/unit/plugins/builtin/auto-pr-bug8.test.ts": {
       "looseCast": 3
     },
-    "test/unit/plugins/builtin/otel-reporter-lifecycle.test.ts": {
-      "nonNullAssert": 12
-    },
     "test/unit/plugins/builtin/auto-pr-template.test.ts": {
       "looseCast": 1
     },
@@ -1456,9 +1436,6 @@
     },
     "test/unit/plugins/builtin/otel-reporter-logs-lifecycle.test.ts": {
       "nonNullAssert": 1
-    },
-    "test/unit/plugins/builtin/auto-pr-acceptance.test.ts": {
-      "nonNullAssert": 12
     },
     "test/unit/plugins/builtin/otel-logs.test.ts": {
       "looseCast": 1

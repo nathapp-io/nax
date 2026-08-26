@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config/types";
 import { filterContextByRole, truncateToContextBudget } from "@/context/feature-context-filter";
@@ -110,13 +110,13 @@ describe("Feature Engine v1 read path (integration)", () => {
     const config = makeConfig(true);
     const result = await provider.getContext(story, tempDir, config);
 
-    expect(result).not.toBeNull();
-    expect(result!.featureId).toBe("auth-feature");
-    expect(result!.label).toBe("feature-context:auth-feature");
-    expect(result!.content).toContain("## Feature Context");
-    expect(result!.content).toContain("_Feature: auth-feature_");
-    expect(result!.content).toContain("Database schema defined");
-    expect(result!.estimatedTokens).toBeGreaterThan(0);
+    assertDefined(result, "context result");
+    expect(result.featureId).toBe("auth-feature");
+    expect(result.label).toBe("feature-context:auth-feature");
+    expect(result.content).toContain("## Feature Context");
+    expect(result.content).toContain("_Feature: auth-feature_");
+    expect(result.content).toContain("Database schema defined");
+    expect(result.estimatedTokens).toBeGreaterThan(0);
   });
 
   test("enabled engine with unattached story returns null", async () => {
@@ -153,8 +153,8 @@ describe("Feature Engine v1 read path (integration)", () => {
     const config = makeConfig(true);
     const result = await provider.getContext(story, tempDir, config);
 
-    expect(result).not.toBeNull();
-    const filtered = filterContextByRole(result!.content, "implementer");
+    assertDefined(result, "context result");
+    const filtered = filterContextByRole(result.content, "implementer");
 
     expect(filtered).toContain("Database schema defined");
     expect(filtered).toContain("Shared constraint");
@@ -168,8 +168,8 @@ describe("Feature Engine v1 read path (integration)", () => {
     const config = makeConfig(true);
     const result = await provider.getContext(story, tempDir, config);
 
-    expect(result).not.toBeNull();
-    const filtered = filterContextByRole(result!.content, "test-writer");
+    assertDefined(result, "context result");
+    const filtered = filterContextByRole(result.content, "test-writer");
 
     expect(filtered).toContain("Test fixtures available");
     expect(filtered).toContain("Shared constraint");
@@ -183,8 +183,8 @@ describe("Feature Engine v1 read path (integration)", () => {
     const config = makeConfig(true);
     const result = await provider.getContext(story, tempDir, config);
 
-    expect(result).not.toBeNull();
-    const filtered = filterContextByRole(result!.content, "reviewer-semantic");
+    assertDefined(result, "context result");
+    const filtered = filterContextByRole(result.content, "reviewer-semantic");
 
     expect(filtered).toContain("Security concern");
     expect(filtered).toContain("Shared constraint");
@@ -198,9 +198,9 @@ describe("Feature Engine v1 read path (integration)", () => {
     const config = makeConfig(true, 10); // very small budget (10 tokens = 40 chars)
     const result = await provider.getContext(story, tempDir, config);
 
-    expect(result).not.toBeNull();
-    const filtered = filterContextByRole(result!.content, "implementer");
-    const truncated = truncateToContextBudget(filtered, 10, result!.featureId);
+    assertDefined(result, "context result");
+    const filtered = filterContextByRole(result.content, "implementer");
+    const truncated = truncateToContextBudget(filtered, 10, result.featureId);
 
     // Truncated should be shorter than filtered
     expect(truncated.length).toBeLessThan(filtered.length);

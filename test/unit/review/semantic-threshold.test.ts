@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
+import { assertDefined, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { SemanticStory } from "@/review/semantic";
 import { _semanticDeps, runSemanticReview } from "@/review/semantic";
@@ -170,8 +170,10 @@ describe("runSemanticReview — blockingThreshold defaults to 'error'", () => {
     expect(result.success).toBe(true);
     expect(!result.findings || result.findings.length === 0).toBe(true);
     expect(result.advisoryFindings).toBeDefined();
-    expect(result.advisoryFindings!.length).toBe(1);
-    expect(result.advisoryFindings![0].message).toBe("Just a warning");
+    const advisoryFindings = result.advisoryFindings;
+    assertDefined(advisoryFindings, "result.advisoryFindings");
+    expect(advisoryFindings.length).toBe(1);
+    expect(advisoryFindings[0].message).toBe("Just a warning");
   });
 
   test("error finding blocks by default (goes to findings)", async () => {
@@ -202,7 +204,9 @@ describe("runSemanticReview — blockingThreshold defaults to 'error'", () => {
 
     expect(result.success).toBe(false);
     expect(result.findings).toBeDefined();
-    expect(result.findings!.length).toBe(1);
+    const findings = result.findings;
+    assertDefined(findings, "result.findings");
+    expect(findings.length).toBe(1);
   });
 
   test("mixed: error goes to findings, warning to advisoryFindings by default", async () => {
@@ -218,10 +222,14 @@ describe("runSemanticReview — blockingThreshold defaults to 'error'", () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.findings!.length).toBe(1);
-    expect(result.findings![0].message).toBe("An error");
-    expect(result.advisoryFindings!.length).toBe(1);
-    expect(result.advisoryFindings![0].message).toBe("A warning");
+    const findings = result.findings;
+    assertDefined(findings, "result.findings");
+    expect(findings.length).toBe(1);
+    expect(findings[0].message).toBe("An error");
+    const advisoryFindings = result.advisoryFindings;
+    assertDefined(advisoryFindings, "result.advisoryFindings");
+    expect(advisoryFindings.length).toBe(1);
+    expect(advisoryFindings[0].message).toBe("A warning");
   });
 
   test("info finding goes to advisoryFindings by default", async () => {
@@ -238,7 +246,9 @@ describe("runSemanticReview — blockingThreshold defaults to 'error'", () => {
 
     expect(result.success).toBe(true);
     expect(!result.findings || result.findings.length === 0).toBe(true);
-    expect(result.advisoryFindings!.length).toBe(1);
+    const advisoryFindings = result.advisoryFindings;
+    assertDefined(advisoryFindings, "result.advisoryFindings");
+    expect(advisoryFindings.length).toBe(1);
   });
 });
 
@@ -261,7 +271,9 @@ describe("runSemanticReview — blockingThreshold: 'warning'", () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.findings!.length).toBe(1);
+    const findings = result.findings;
+    assertDefined(findings, "result.findings");
+    expect(findings.length).toBe(1);
     expect(!result.advisoryFindings || result.advisoryFindings.length === 0).toBe(true);
   });
 
@@ -280,7 +292,9 @@ describe("runSemanticReview — blockingThreshold: 'warning'", () => {
 
     expect(result.success).toBe(true);
     expect(!result.findings || result.findings.length === 0).toBe(true);
-    expect(result.advisoryFindings!.length).toBe(1);
+    const advisoryFindings = result.advisoryFindings;
+    assertDefined(advisoryFindings, "result.advisoryFindings");
+    expect(advisoryFindings.length).toBe(1);
   });
 
   test("both error and warning block when threshold is 'warning'", async () => {
@@ -297,7 +311,9 @@ describe("runSemanticReview — blockingThreshold: 'warning'", () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.findings!.length).toBe(2);
+    const findings = result.findings;
+    assertDefined(findings, "result.findings");
+    expect(findings.length).toBe(2);
     expect(!result.advisoryFindings || result.advisoryFindings.length === 0).toBe(true);
   });
 });
@@ -321,7 +337,9 @@ describe("runSemanticReview — blockingThreshold: 'info'", () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.findings!.length).toBe(1);
+    const findings = result.findings;
+    assertDefined(findings, "result.findings");
+    expect(findings.length).toBe(1);
     expect(!result.advisoryFindings || result.advisoryFindings.length === 0).toBe(true);
   });
 });

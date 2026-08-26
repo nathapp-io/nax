@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { mockFetch, withWarnSpy } from "@test/helpers";
+import { assertDefined, mockFetch, withWarnSpy } from "@test/helpers";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { createOtelReporterPlugin, type PostJsonDeps } from "@/plugins";
 import {
@@ -93,11 +93,17 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function reporterOf(p: ReturnType<typeof createOtelReporterPlugin>) {
+  const r = p.extensions.reporter;
+  assertDefined(r, "extensions.reporter");
+  return r;
+}
+
 describe("otel-reporter heartbeat", () => {
   test("AC1-AC5: heartbeat gauges are exported once the interval elapses, carrying phase_elapsed_ms, cost_usd, and the full attribute set from the most recently completed phase", async () => {
     const { posts, deps } = capturing();
     const plugin = createOtelReporterPlugin({ ...baseCfg, heartbeatIntervalMs: 40 }, deps);
-    const r = plugin.extensions.reporter!;
+    const r = reporterOf(plugin);
 
     try {
       await r.onRunStart?.({
@@ -170,7 +176,7 @@ describe("otel-reporter heartbeat", () => {
         { ...baseCfg, heartbeatIntervalMs: 40, headers: { Authorization: "Bearer ${OTLP_TOKEN}" } },
         deps,
       );
-      const r = plugin.extensions.reporter!;
+      const r = reporterOf(plugin);
 
       try {
         await r.onRunStart?.({
@@ -193,7 +199,7 @@ describe("otel-reporter heartbeat", () => {
   test("AC6: heartbeatIntervalMs=0 issues no heartbeat export regardless of elapsed time", async () => {
     const { posts, deps } = capturing();
     const plugin = createOtelReporterPlugin({ ...baseCfg, heartbeatIntervalMs: 0 }, deps);
-    const r = plugin.extensions.reporter!;
+    const r = reporterOf(plugin);
 
     await r.onRunStart?.({
       runId: "hb0",
@@ -210,7 +216,7 @@ describe("otel-reporter heartbeat", () => {
   test("AC7/AC14: after onRunEnd (with no preceding run:completed bus event), no further heartbeat export is issued", async () => {
     const { posts, deps } = capturing();
     const plugin = createOtelReporterPlugin({ ...baseCfg, heartbeatIntervalMs: 40 }, deps);
-    const r = plugin.extensions.reporter!;
+    const r = reporterOf(plugin);
 
     await r.onRunStart?.({
       runId: "hb7",
@@ -238,7 +244,7 @@ describe("otel-reporter detail-gated review payloads", () => {
   test("AC8+AC9: detail='counts' — the review phase span carries no items array and no finding message text anywhere in the exported payload", async () => {
     const { posts, deps } = capturing();
     const plugin = createOtelReporterPlugin({ ...baseCfg, detail: "counts" }, deps);
-    const r = plugin.extensions.reporter!;
+    const r = reporterOf(plugin);
 
     await r.onRunStart?.({
       runId: "r89",
@@ -283,7 +289,7 @@ describe("otel-reporter detail-gated review payloads", () => {
   test("AC10: detail='verbose' — the exported payload contains a span event carrying a review finding's message", async () => {
     const { posts, deps } = capturing();
     const plugin = createOtelReporterPlugin({ ...baseCfg, detail: "verbose" }, deps);
-    const r = plugin.extensions.reporter!;
+    const r = reporterOf(plugin);
 
     await r.onRunStart?.({
       runId: "r10",
@@ -328,7 +334,7 @@ describe("otel-reporter detail-gated review payloads", () => {
   test("AC11: detail='verbose' — every exported file path is relative to the repository root", async () => {
     const { posts, deps } = capturing();
     const plugin = createOtelReporterPlugin({ ...baseCfg, detail: "verbose" }, deps);
-    const r = plugin.extensions.reporter!;
+    const r = reporterOf(plugin);
 
     await r.onRunStart?.({
       runId: "r11",
@@ -384,7 +390,7 @@ describe("otel-reporter log redaction", () => {
       process.env.OTLP_TOKEN = "super-secret-token-value";
       const { posts, deps } = capturing();
       const plugin = createOtelReporterPlugin({ ...baseCfg, headers: { Authorization: "Bearer ${OTLP_TOKEN}" } }, deps);
-      const r = plugin.extensions.reporter!;
+      const r = reporterOf(plugin);
 
       await r.onRunStart?.({
         runId: "r12",
@@ -433,7 +439,7 @@ describe("otel-reporter flush and teardown lifecycle", () => {
   test("AC13: onRunEnd (with no preceding run:completed bus event) exports every queued phase span", async () => {
     const { posts, deps } = capturing();
     const plugin = createOtelReporterPlugin(baseCfg, deps);
-    const r = plugin.extensions.reporter!;
+    const r = reporterOf(plugin);
 
     await r.onRunStart?.({
       runId: "r13",
@@ -473,7 +479,7 @@ describe("otel-reporter flush and teardown lifecycle", () => {
   test("AC15: teardown invoked without a prior onRunEnd flushes as a backstop, and a second teardown call issues no additional export", async () => {
     const { posts, deps } = capturing();
     const plugin = createOtelReporterPlugin(baseCfg, deps);
-    const r = plugin.extensions.reporter!;
+    const r = reporterOf(plugin);
 
     await r.onRunStart?.({
       runId: "r15",
@@ -505,7 +511,7 @@ describe("otel-reporter flush and teardown lifecycle", () => {
   test("AC15 boundary: teardown invoked after onRunEnd has already completed issues no additional export request", async () => {
     const { posts, deps } = capturing();
     const plugin = createOtelReporterPlugin(baseCfg, deps);
-    const r = plugin.extensions.reporter!;
+    const r = reporterOf(plugin);
 
     await r.onRunStart?.({
       runId: "r15b",
@@ -528,7 +534,7 @@ describe("otel-reporter flush and teardown lifecycle", () => {
 
   test("AC16: onRunEnd with no preceding onRunStart exports a run span whose start is back-computed from the reported duration", async () => {
     const { posts, deps } = capturing();
-    const r = createOtelReporterPlugin(baseCfg, deps).extensions.reporter!;
+    const r = reporterOf(createOtelReporterPlugin(baseCfg, deps));
 
     const before = Date.now();
     await r.onRunEnd?.({

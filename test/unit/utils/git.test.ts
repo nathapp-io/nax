@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { cleanupTempDir, makeLogger, makeSpawn, makeSpawnResult, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeLogger, makeSpawn, makeSpawnResult, makeTempDir } from "@test/helpers";
 import {
   _gitDeps,
   autoCommitIfDirty,
@@ -509,9 +509,9 @@ describe("autoCommitIfDirty .nax/ restore", () => {
       .map((c) => ({ message: c.message, data: c.data ?? {} }));
     expect(errorCalls.length).toBeGreaterThan(0);
     const failureLog = errorCalls.find((c) => c.data.exitCode === 128);
-    expect(failureLog).toBeDefined();
-    expect(failureLog!.data.storyId).toBe("US-002");
-    expect(failureLog!.data.stderr).toContain("pathspec");
+    assertDefined(failureLog, "failure log entry");
+    expect(failureLog.data.storyId).toBe("US-002");
+    expect(failureLog.data.stderr).toContain("pathspec");
   });
 
   test("spawns the restore checkout from the repo root, not a monorepo package subdir", async () => {
@@ -538,8 +538,8 @@ describe("autoCommitIfDirty .nax/ restore", () => {
       await autoCommitIfDirty(packageDir, "test", "implementer", "US-002");
 
       const checkoutCall = calls.find((c) => c.args[0] === "git" && c.args[1] === "checkout");
-      expect(checkoutCall).toBeDefined();
-      expect(checkoutCall!.cwd).toBe(realRepoRoot);
+      assertDefined(checkoutCall, "checkout call");
+      expect(checkoutCall.cwd).toBe(realRepoRoot);
     } finally {
       cleanupTempDir(repoRoot);
     }
@@ -599,11 +599,11 @@ describe("autoCommitIfDirty .nax/ restore", () => {
     await autoCommitIfDirty("/tmp/repo", "test", "implementer", "US-002");
 
     const checkoutCall = calls.find((c) => c.args[0] === "git" && c.args[1] === "checkout");
-    expect(checkoutCall).toBeDefined();
+    assertDefined(checkoutCall, "checkout call");
     // The `HEAD` token MUST appear so the index-level deletion is bypassed.
-    expect(checkoutCall!.args).toContain("HEAD");
-    expect(checkoutCall!.args).toContain("--");
-    expect(checkoutCall!.args).toContain(".nax/features/f/.nax-acceptance.test.tsx");
+    expect(checkoutCall.args).toContain("HEAD");
+    expect(checkoutCall.args).toContain("--");
+    expect(checkoutCall.args).toContain(".nax/features/f/.nax-acceptance.test.tsx");
   });
 
   test("uses git checkout HEAD -- <path> for a staged rename (R )", async () => {
@@ -621,11 +621,11 @@ describe("autoCommitIfDirty .nax/ restore", () => {
     await autoCommitIfDirty("/tmp/repo", "test", "implementer", "US-002");
 
     const checkoutCall = calls.find((c) => c.args[0] === "git" && c.args[1] === "checkout");
-    expect(checkoutCall).toBeDefined();
-    expect(checkoutCall!.args).toContain("HEAD");
+    assertDefined(checkoutCall, "checkout call");
+    expect(checkoutCall.args).toContain("HEAD");
     // Restoring the OLD path (not the new one)
-    expect(checkoutCall!.args).toContain(".nax/features/f/.nax-acceptance.test.tsx");
-    expect(checkoutCall!.args).not.toContain("src/leak.tsx");
+    expect(checkoutCall.args).toContain(".nax/features/f/.nax-acceptance.test.tsx");
+    expect(checkoutCall.args).not.toContain("src/leak.tsx");
   });
 
   test("uses plain git checkout -- <path> for an unstaged deletion ( D)", async () => {
@@ -643,9 +643,9 @@ describe("autoCommitIfDirty .nax/ restore", () => {
     await autoCommitIfDirty("/tmp/repo", "test", "implementer", "US-002");
 
     const checkoutCall = calls.find((c) => c.args[0] === "git" && c.args[1] === "checkout");
-    expect(checkoutCall).toBeDefined();
-    expect(checkoutCall!.args).not.toContain("HEAD");
-    expect(checkoutCall!.args).toContain("--");
+    assertDefined(checkoutCall, "checkout call");
+    expect(checkoutCall.args).not.toContain("HEAD");
+    expect(checkoutCall.args).toContain("--");
   });
 });
 

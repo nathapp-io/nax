@@ -35,7 +35,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { makeTurnResult, withTempDir } from "@test/helpers";
+import { assertDefined, makeTurnResult, withTempDir } from "@test/helpers";
 import { type SemanticReviewInput, semanticReviewOp } from "@/operations/semantic-review";
 import type { HopBodyContext } from "@/operations/types";
 import type { NaxRuntime } from "@/runtime";
@@ -45,6 +45,8 @@ afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
+assertDefined(semanticReviewOp.hopBody, "semanticReviewOp.hopBody");
+const runHopBody = semanticReviewOp.hopBody.bind(semanticReviewOp);
 
 const STORY_WITH_AC = {
   id: "STORY-SEM-GROUND",
@@ -117,7 +119,7 @@ describe("semanticReviewOp.hopBody — reground AC1: trigger issues exactly one 
         return makeTurnResult({ output: callCount === 1 ? firstTurn : secondTurn });
       });
 
-      await semanticReviewOp.hopBody!("initial prompt", {
+      await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -148,7 +150,7 @@ describe("semanticReviewOp.hopBody — reground AC1: trigger issues exactly one 
         return makeTurnResult({ output: firstTurn });
       });
 
-      const result = await semanticReviewOp.hopBody!("initial prompt", {
+      const result = await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -188,7 +190,7 @@ describe("semanticReviewOp.hopBody — reground AC2: reprompt prompt content", (
         return makeTurnResult({ output: secondTurn });
       });
 
-      await semanticReviewOp.hopBody!("initial prompt", {
+      await runHopBody("initial prompt", {
         send: sendImpl,
         sendWithParseRetry: mock(async () => makeTurnResult({ output: firstTurn })),
         input: {
@@ -224,7 +226,7 @@ describe("semanticReviewOp.hopBody — reground AC2: reprompt prompt content", (
         return makeTurnResult({ output: secondTurn });
       });
 
-      await semanticReviewOp.hopBody!("initial prompt", {
+      await runHopBody("initial prompt", {
         send: sendImpl,
         sendWithParseRetry: mock(async () => makeTurnResult({ output: firstTurn })),
         input: {
@@ -272,7 +274,7 @@ describe("semanticReviewOp.hopBody — reground AC3: second turn has surviving b
         return makeTurnResult({ output: callCount === 1 ? firstTurn : secondTurn });
       });
 
-      const result = await semanticReviewOp.hopBody!("initial prompt", {
+      const result = await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -322,7 +324,7 @@ describe("semanticReviewOp.hopBody — reground AC4: second turn passed:true wit
         return makeTurnResult({ output: callCount === 1 ? firstTurn : secondTurn });
       });
 
-      const result = await semanticReviewOp.hopBody!("initial prompt", {
+      const result = await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -374,7 +376,7 @@ describe("semanticReviewOp.hopBody — reground AC5: second turn fails or all bl
         return makeTurnResult({ output: callCount === 1 ? firstTurn : secondTurn });
       });
 
-      const result = await semanticReviewOp.hopBody!("initial prompt", {
+      const result = await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -413,7 +415,7 @@ describe("semanticReviewOp.hopBody — reground AC5: second turn fails or all bl
         return makeTurnResult({ output: callCount === 1 ? firstTurn : secondTurn });
       });
 
-      const result = await semanticReviewOp.hopBody!("initial prompt", {
+      const result = await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -446,7 +448,7 @@ describe("semanticReviewOp.hopBody — reground AC6: acRegroundOnDrop === false 
         return makeTurnResult({ output: firstTurn });
       });
 
-      const result = await semanticReviewOp.hopBody!("initial prompt", {
+      const result = await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -483,7 +485,7 @@ describe("semanticReviewOp.hopBody — reground preconditions not met (AC7)", ()
         return makeTurnResult({ output: firstTurn });
       });
 
-      await semanticReviewOp.hopBody!("initial prompt", {
+      await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -514,7 +516,7 @@ describe("semanticReviewOp.hopBody — reground preconditions not met (AC7)", ()
         return makeTurnResult({ output: firstTurn });
       });
 
-      await semanticReviewOp.hopBody!("initial prompt", {
+      await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -545,7 +547,7 @@ describe("semanticReviewOp.hopBody — reground preconditions not met (AC7)", ()
         return makeTurnResult({ output: firstTurn });
       });
 
-      await semanticReviewOp.hopBody!("initial prompt", {
+      await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {

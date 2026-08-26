@@ -21,7 +21,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { makeStory } from "@test/helpers";
+import { assertDefined, makeStory } from "@test/helpers";
 import { loadPlugins } from "@/plugins";
 import { _autoPrDeps, autoPrPlugin } from "@/plugins/builtin/auto-pr";
 import { buildBody, buildTitle } from "@/plugins/builtin/auto-pr/pr-body";
@@ -57,6 +57,12 @@ function makeDeps(): AutoPrDeps {
     run: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
     readText: async () => null,
   };
+}
+
+function postAction(p: typeof autoPrPlugin) {
+  const action = p.extensions.postRunAction;
+  assertDefined(action, "extensions.postRunAction");
+  return action;
 }
 
 let saved: typeof _autoPrDeps;
@@ -109,34 +115,34 @@ describe("autoPrPlugin — metadata", () => {
 describe("autoPrPlugin.shouldRun", () => {
   test("AC1 — returns false when ctx.config.autoPr.enabled === false", async () => {
     const ctx = makeContext({ config: { autoPr: { enabled: false, draft: true } } });
-    expect(await autoPrPlugin.extensions.postRunAction!.shouldRun(ctx)).toBe(false);
+    expect(await postAction(autoPrPlugin).shouldRun(ctx)).toBe(false);
   });
 
   test("AC2 — returns false when ctx.storySummary.failed > 0", async () => {
     const ctx = makeContext({
       storySummary: { completed: 1, failed: 1, skipped: 0, paused: 0 },
     });
-    expect(await autoPrPlugin.extensions.postRunAction!.shouldRun(ctx)).toBe(false);
+    expect(await postAction(autoPrPlugin).shouldRun(ctx)).toBe(false);
   });
 
   test("AC3 — returns false when ctx.storySummary.paused > 0", async () => {
     const ctx = makeContext({
       storySummary: { completed: 1, failed: 0, skipped: 0, paused: 1 },
     });
-    expect(await autoPrPlugin.extensions.postRunAction!.shouldRun(ctx)).toBe(false);
+    expect(await postAction(autoPrPlugin).shouldRun(ctx)).toBe(false);
   });
 
   test("AC4 — returns false when ctx.storySummary.completed === 0", async () => {
     const ctx = makeContext({
       storySummary: { completed: 0, failed: 0, skipped: 0, paused: 0 },
     });
-    expect(await autoPrPlugin.extensions.postRunAction!.shouldRun(ctx)).toBe(false);
+    expect(await postAction(autoPrPlugin).shouldRun(ctx)).toBe(false);
   });
 
   test("AC5 — returns false when detectForge returns null", async () => {
     _autoPrDeps.detectForge = (() => null) as typeof _autoPrDeps.detectForge;
     const ctx = makeContext();
-    expect(await autoPrPlugin.extensions.postRunAction!.shouldRun(ctx)).toBe(false);
+    expect(await postAction(autoPrPlugin).shouldRun(ctx)).toBe(false);
   });
 
   test("AC6 — returns false when hasOpenPr reports an existing PR and logs skip reason", async () => {
@@ -153,14 +159,14 @@ describe("autoPrPlugin.shouldRun", () => {
       },
     });
 
-    expect(await autoPrPlugin.extensions.postRunAction!.shouldRun(ctx)).toBe(false);
+    expect(await postAction(autoPrPlugin).shouldRun(ctx)).toBe(false);
     expect(warned.value).not.toBeNull();
     expect(warned.value?.message.toLowerCase()).toContain("open pr");
   });
 
   test("AC7 — returns true on the happy path", async () => {
     const ctx = makeContext();
-    expect(await autoPrPlugin.extensions.postRunAction!.shouldRun(ctx)).toBe(true);
+    expect(await postAction(autoPrPlugin).shouldRun(ctx)).toBe(true);
   });
 });
 
@@ -187,7 +193,7 @@ describe("autoPrPlugin.execute", () => {
       config: { autoPr: { enabled: true, draft: true } },
     });
 
-    const result = await autoPrPlugin.extensions.postRunAction!.execute(ctx);
+    const result = await postAction(autoPrPlugin).execute(ctx);
 
     expect(result.success).toBe(true);
     expect(result.url).toBe("https://github.com/owner/repo/pull/42");
@@ -244,7 +250,7 @@ describe("autoPrPlugin.execute", () => {
     }) as typeof _autoPrDeps.openDraft;
 
     const ctx = makeContext();
-    const result = await autoPrPlugin.extensions.postRunAction!.execute(ctx);
+    const result = await postAction(autoPrPlugin).execute(ctx);
 
     expect(result.success).toBe(true);
     expect(pushCalls).toContainEqual(["git", "push", "-u", "origin", ctx.branch]);
@@ -265,7 +271,7 @@ describe("autoPrPlugin.execute", () => {
     }) as typeof _autoPrDeps.openDraft;
 
     const ctx = makeContext();
-    const result = await autoPrPlugin.extensions.postRunAction!.execute(ctx);
+    const result = await postAction(autoPrPlugin).execute(ctx);
 
     expect(result.success).toBe(false);
     expect(result.message).toContain(ctx.branch);
@@ -283,7 +289,7 @@ describe("autoPrPlugin.execute", () => {
     let threw = false;
     let result: Awaited<ReturnType<NonNullable<typeof autoPrPlugin.extensions.postRunAction>["execute"]>> | undefined;
     try {
-      result = await autoPrPlugin.extensions.postRunAction!.execute(ctx);
+      result = await postAction(autoPrPlugin).execute(ctx);
     } catch {
       threw = true;
     }
@@ -334,7 +340,7 @@ describe("autoPrPlugin.execute", () => {
     let result: Awaited<ReturnType<NonNullable<typeof autoPrPlugin.extensions.postRunAction>["execute"]>> | undefined;
     let threw = false;
     try {
-      result = await autoPrPlugin.extensions.postRunAction!.execute(ctx);
+      result = await postAction(autoPrPlugin).execute(ctx);
     } catch {
       threw = true;
     } finally {

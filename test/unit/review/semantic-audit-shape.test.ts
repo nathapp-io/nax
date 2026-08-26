@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   agentManagerWithFixedLLMResponse,
+  assertDefined,
   captureAuditDecisions,
   makeMockRuntime,
   mockDiffUtilsDeps,
@@ -53,6 +54,12 @@ const SEMANTIC_LLM_RESPONSE = JSON.stringify({
   ],
 });
 
+function first<T>(items: T[]): T {
+  const v = items[0];
+  assertDefined(v, "first item");
+  return v;
+}
+
 describe("semantic reviewer audit shape (#942 AC-1 / AC-2)", () => {
   let decisions: ReviewAuditDecision[];
   let teardown: () => void;
@@ -83,12 +90,13 @@ describe("semantic reviewer audit shape (#942 AC-1 / AC-2)", () => {
     });
 
     expect(decisions.length).toBeGreaterThanOrEqual(1);
-    const decision = decisions[0]!;
+    const decision = first(decisions);
     const findings = decision.result?.findings as Array<Record<string, unknown>>;
+    assertDefined(findings, "result findings");
     expect(Array.isArray(findings)).toBe(true);
-    expect(findings!.length).toBe(2);
+    expect(findings.length).toBe(2);
 
-    for (const f of findings!) {
+    for (const f of findings) {
       expect(typeof f.ruleId).toBe("string");
       expect((f.ruleId as string).length).toBeGreaterThan(0);
       expect(typeof f.message).toBe("string");
@@ -97,7 +105,8 @@ describe("semantic reviewer audit shape (#942 AC-1 / AC-2)", () => {
       expect(f.suggestion).toBeUndefined();
     }
 
-    const blocking = findings!.find((f) => f.line === 73)!;
+    const blocking = findings.find((f) => f.line === 73);
+    assertDefined(blocking, "line-73 finding");
     expect(blocking.message).toContain("does not validate that listener is a function");
     expect(blocking.message).toContain("→ Add a typeof guard");
     expect(blocking.severity).toBe("error");
@@ -112,8 +121,9 @@ describe("semantic reviewer audit shape (#942 AC-1 / AC-2)", () => {
     // also conform to canonical ReviewFinding shape, not raw LLMFinding shape.
     const advisory = decision.advisoryFindings as Array<Record<string, unknown>> | undefined;
     expect(Array.isArray(advisory)).toBe(true);
-    expect(advisory!.length).toBe(1);
-    const advisoryFinding = advisory![0]!;
+    assertDefined(advisory, "advisoryFindings");
+    expect(advisory.length).toBe(1);
+    const advisoryFinding = first(advisory);
     expect(typeof advisoryFinding.ruleId).toBe("string");
     expect((advisoryFinding.ruleId as string).length).toBeGreaterThan(0);
     expect(typeof advisoryFinding.message).toBe("string");
@@ -138,7 +148,7 @@ describe("semantic reviewer audit shape (#942 AC-1 / AC-2)", () => {
       runtime,
     });
 
-    const decision = decisions[0]!;
+    const decision = first(decisions);
     const findings = decision.result?.findings as Array<{ ruleId: string }>;
     for (const f of findings) {
       expect(f.ruleId).toContain(":");
@@ -175,7 +185,7 @@ describe("semantic reviewer audit shape (#942 AC-1 / AC-2)", () => {
       runtime,
     });
 
-    const decision = decisions[0]!;
+    const decision = first(decisions);
     expect(decision.result?.passed).toBe(true);
     expect(decision.result?.findings).toEqual([]);
     expect(decision.acks).toHaveLength(2);
@@ -214,6 +224,6 @@ describe("semantic reviewer audit shape (#942 AC-1 / AC-2)", () => {
       runtime,
     });
 
-    expect(decisions[0]!.acks).toHaveLength(1);
+    expect(first(decisions).acks).toHaveLength(1);
   });
 });
