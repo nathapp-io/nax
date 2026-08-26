@@ -16,8 +16,8 @@ log — each entry records what was true when written and is not edited afterwar
 | `tsc --noEmit` (src) | **0** | — | hard gate |
 | `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
 | `as unknown as` | **0** | 0 | done — closed invariant (§8.13) |
-| `asAny` | 9 | 1377 | yes, then biome `noExplicitAny` retires it |
-| `anyType` | 18 | 1860 | yes, retires with `asAny` — biome says **8** |
+| `asAny` | 1 | 1377 | **done** — biome says **0**; rule promoted to `"error"` (§8.25) |
+| `anyType` | 10 | 1860 | **done** — biome says **0**; the 11 residual regex hits are prose/string literals |
 | `nonNullAssert` | 792 | 819 | yes — biome says **1064**, see §0.1 (not started) |
 | `asNever` | 603 | 608 | yes |
 | `ratchetAllow` | 103 | 105 | yes |
@@ -25,12 +25,15 @@ log — each entry records what was true when written and is not edited afterwar
 | `absentValue` | 17 | 17 | yes |
 | `looseCast` | 1800 | 1875 | **no** — guard only, see below |
 
-The `noExplicitAny` drain is in progress on this branch (§8.14–§8.23): two hundred thirty-four
-files drained, `asAny` 1179 → 9 and `anyType` 1538 → 18 against the
+**The `noExplicitAny` drain is complete and gated** (§8.14–§8.25): two hundred thirty-five
+files drained, `asAny` 1179 → 1 and `anyType` 1538 → 10 against the
 branch-start ratchet, with every other counter flat except `nonNullAssert` (819 → 792),
 `looseCast` (1875 → 1800), `ratchetAllow` (105 → 103) and `asNever` (608 → 603) as benign side
 effects of removing `logger!.info = … as any` patterns and deleting real casts. Biome's
-authoritative count fell **1529 → 8**, all of it the held escalation.
+authoritative count fell **1529 → 0**, and `biome.json`'s `test/**` override now says
+`"noExplicitAny": "error"` — the first half of endgame item 4, closed. The residual regex
+readings are comments and the ratchet parser's own string fixtures, which biome does not see.
+**Endgame item 4's remaining half is `noNonNullAssertion`** (biome 1064, §0.1) — untouched.
 
 `as unknown as` went **101 → 0** across nine commits (§8.1–§8.4, §8.11–§8.13); `looseCast`
 fell 1888 → 1875 and `ratchetAllow` 107 → 105 as side effects of removing real casts, and
@@ -1746,3 +1749,68 @@ test subclass, plus that file's fixture corrections). With it drained or exempte
 `noExplicitAny` half of endgame item 4 is ready to promote to `"error"`. The other half —
 `nonNullAssertion`, biome 1064 against regex 792 — is untouched and is roughly ten times the
 size of the entire `noExplicitAny` drain just completed.
+
+### 8.25 The held escalation drained via a src-side seam — biome 8 → 0, rule promoted to `"error"` (2026-08-26)
+
+The last file, `interaction/plugins/cli.test.ts` (8 sites, held since §8.19 as src-blocked).
+The seam §8.19 asked for turned out to be one line of `src/`, and neither of the two shapes it
+proposed:
+
+**The blocker was the field's *type*, not the member's privacy.** §8.19's failed routes both
+attacked privacy — an upcast to a local view interface (TS2342) and a generic keyed accessor
+(`keyof` excludes private members). But §1's ruling already settled privacy: literal element
+access (`p["rl"]`) reaches a `private` member, is more checked than a cast, and is the
+containment pattern `test/helpers/*-internals.ts` was built for (`biome.json` already turns
+`useLiteralKeys` off there for exactly this). What actually rejected the mock was that `rl`
+was declared `readline.Interface | null`, and the test's stub is a two-method object.
+
+So the src change is interface segregation, not injection and not a visibility downgrade:
+
+```ts
+export interface CLIReadline {
+  question(prompt: string, callback: (answer: string) => void): void;
+  close(): void;
+}
+// private rl: readline.Interface | null  →  private rl: CLIReadline | null
+```
+
+A real `readline.Interface` satisfies it structurally, so `init()` and `recreateReadline()` are
+untouched and no caller changes. **This is not §4's "weakening a source type so a fixture
+fits"**: the plugin genuinely calls only `question` and `close`, and naming the contract it
+depends on narrows what the class may do, where `_deps.createReadline` injection (§8.19's first
+proposal) would have added a constructor parameter and a second environment seam to buy the
+same thing. The test side is then a `cliInternals(plugin)` live view in the existing
+`interaction-internals.ts` helper — one more accessor beside `telegramInternals` /
+`webhookInternals`, with a `set rl` for the injection and a bound `promptUser`.
+
+All three BUG-21 assertions survive verbatim, including `closeCalls === 1` and the
+post-recreate identity check (`internals.rl` is the live field, so `not.toBe(staleRl)` still
+reads the real slot) — the public-API redesign §8.19 rejected was never needed.
+
+The fixture corrections §8.19 flagged, applied: `stage: "verify"` → `"execution"` (`"verify"`
+is not an `InteractionStage` member; the value is only read by `send()`, which this test never
+calls), the non-member `prompt`/`context` keys dropped, and the required `fallback`/`createdAt`
+added — `makeRequest` now returns a real `InteractionRequest` with the annotation to prove it.
+
+Ratchet: `asAny` ↓8 (9 → 1) and `anyType` ↓8 (18 → 10); every other counter flat, no counter
+rose. Gates: typecheck 0 (all three), `check:all` green, full suite green (**14149 / 1136 / 38
+pass, 0 fail** — unchanged for the fourth consecutive batch). Coverage not re-run: the only
+changed values are a private-path fixture's `stage`/`fallback`, which no classifier or switch
+in `src/interaction/` reads.
+
+**Then the promotion.** With biome's `test/` count at 0, `biome.json`'s `test/**` override was
+changed from `"noExplicitAny": "off"` to `"error"` (`"noNonNullAssertion"` and `"noDelete"`
+left as-is). `bun x biome check src/ bin/ test/` reports zero `noExplicitAny` diagnostics at
+any severity, and `bun run lint` is green — so the ~2900 drained sites are now held by a hard
+gate rather than by a counting ratchet with slack in it. Half of endgame item 4 is closed.
+
+**Carry forward: a "src-blocked" ruling names a seam the author had in mind, not the seam the
+error demands.** §8.19's write-up was rigorous about what it tried and still framed the fix as
+injection-or-visibility, because both failed attempts were about privacy. Reading the actual
+rejection — the *declared type* of the slot — gave a fix an order of magnitude smaller. Before
+building a proposed seam, re-derive which property of the site rejects the test; the held
+escalation's own report is evidence, not a specification.
+
+**Remaining:** biome `noExplicitAny` in `test/` = **0**, gated at `"error"`. The drain queue is
+empty. The next target is `noNonNullAssertion` — biome 1064 against regex 792 (§0.1), roughly
+ten times the `noExplicitAny` drain, and not started.
