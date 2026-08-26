@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 232,
+    "asNever": 225,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:39:30.608Z",
+  "updatedAt": "2026-08-26T15:42:26.360Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -1092,9 +1092,6 @@
     },
     "test/unit/agents/manager-rate-limit.test.ts": {
       "asNever": 4
-    },
-    "test/unit/agents/fail-timeout-should-swap.test.ts": {
-      "asNever": 7
     },
     "test/unit/agents/manager-dispatch-emission.test.ts": {
       "looseCast": 2,

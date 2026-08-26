@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { makeContextBundle, makeNaxConfig } from "@test/helpers";
 import { AgentManager } from "@/agents";
 import { DEFAULT_CONFIG } from "@/config";
-import type { AdapterFailure } from "@/context/engine";
+import type { AdapterFailure, ContextBundle } from "@/context/engine";
 
 // Shared run options used by runWithFallback tests.
 const RUN_OPTIONS = {
@@ -25,19 +26,19 @@ const failTimeoutRetryable: AdapterFailure = {
 // agent.fallback.onQualityFailure is unset (default).
 describe("AgentManager.shouldSwap with fail-timeout (US-001 AC10)", () => {
   test("returns false when onQualityFailure is unset (default)", () => {
-    const manager = new AgentManager({
-      ...DEFAULT_CONFIG,
-      agent: {
-        ...DEFAULT_CONFIG.agent,
-        fallback: {
-          enabled: true,
-          map: { claude: ["codex"] },
-          maxHopsPerStory: 2,
-          onQualityFailure: false,
-          rebuildContext: true,
+    const manager = new AgentManager(
+      makeNaxConfig({
+        agent: {
+          fallback: {
+            enabled: true,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: false,
+            rebuildContext: true,
+          },
         },
-      },
-    } as never);
+      }),
+    );
     expect(manager.shouldSwap(failTimeoutRetryable, 0, true)).toBe(false);
   });
 
@@ -52,19 +53,19 @@ describe("AgentManager.shouldSwap with fail-timeout (US-001 AC10)", () => {
     // the swap branch would call markUnavailable and prune the timed-out
     // agent for the remainder of the run (poisoning the pool). Fail-timeout
     // is per-turn, not per-agent. This invariant overrides onQualityFailure.
-    const manager = new AgentManager({
-      ...DEFAULT_CONFIG,
-      agent: {
-        ...DEFAULT_CONFIG.agent,
-        fallback: {
-          enabled: true,
-          map: { claude: ["codex"] },
-          maxHopsPerStory: 2,
-          onQualityFailure: true,
-          rebuildContext: true,
+    const manager = new AgentManager(
+      makeNaxConfig({
+        agent: {
+          fallback: {
+            enabled: true,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: true,
+            rebuildContext: true,
+          },
         },
-      },
-    } as never);
+      }),
+    );
     expect(manager.shouldSwap(failTimeoutRetryable, 0, true)).toBe(false);
   });
 });
@@ -77,10 +78,8 @@ describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
     const dispatchedAgents: string[] = [];
 
     const manager = new AgentManager(
-      {
-        ...DEFAULT_CONFIG,
+      makeNaxConfig({
         agent: {
-          ...DEFAULT_CONFIG.agent,
           timeoutRetry: { maxAttempts: 0, budgetMultiplier: 0.5 },
           fallback: {
             // Swap is disabled — fail-timeout must terminate the hop but
@@ -92,7 +91,7 @@ describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
             rebuildContext: true,
           },
         },
-      } as never,
+      }),
       undefined,
       {
         runHop: async (agent) => {
@@ -123,10 +122,8 @@ describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
     const dispatchedAgents: string[] = [];
 
     const manager = new AgentManager(
-      {
-        ...DEFAULT_CONFIG,
+      makeNaxConfig({
         agent: {
-          ...DEFAULT_CONFIG.agent,
           timeoutRetry: { maxAttempts: 0, budgetMultiplier: 0.5 },
           fallback: {
             // Swap IS enabled but onQualityFailure defaults to false — the
@@ -140,7 +137,7 @@ describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
             rebuildContext: true,
           },
         },
-      } as never,
+      }),
       undefined,
       {
         runHop: async (agent) => {
@@ -180,10 +177,8 @@ describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
     let storyCount = 0;
 
     const manager = new AgentManager(
-      {
-        ...DEFAULT_CONFIG,
+      makeNaxConfig({
         agent: {
-          ...DEFAULT_CONFIG.agent,
           timeoutRetry: { maxAttempts: 0, budgetMultiplier: 0.5 },
           fallback: {
             enabled: true,
@@ -193,7 +188,7 @@ describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
             rebuildContext: true,
           },
         },
-      } as never,
+      }),
       undefined,
       {
         runHop: async (agent) => {
@@ -250,10 +245,8 @@ describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
     const dispatchedAgents: string[] = [];
 
     const manager = new AgentManager(
-      {
-        ...DEFAULT_CONFIG,
+      makeNaxConfig({
         agent: {
-          ...DEFAULT_CONFIG.agent,
           fallback: {
             enabled: true,
             map: { claude: ["codex"] },
@@ -262,7 +255,7 @@ describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
             rebuildContext: true,
           },
         },
-      } as never,
+      }),
       undefined,
       {
         runHop: async (agent) => {
@@ -288,7 +281,7 @@ describe("AgentManager.runWithFallback with fail-timeout (US-001 AC11)", () => {
     // branch is bypassed regardless of shouldSwap.
     await manager.runWithFallback({
       runOptions: RUN_OPTIONS,
-      bundle: { pushMarkdown: "ctx", pullTools: [], digest: "", manifest: {} as never, chunks: [] },
+      bundle: makeContextBundle({ pushMarkdown: "ctx" }),
     });
 
     // AC11: dispatched agent must NOT be recorded as unavailable, even when
