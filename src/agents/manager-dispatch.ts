@@ -9,15 +9,19 @@
  * event. All I/O (emitting, timing) stays with the manager.
  */
 
-import type { PipelineStage, ResolvedPermissions } from "../config/permissions";
+import { trackedSpawnDeadlines } from "@/config";
+import type { AgentManagerConfig } from "@/config/selectors";
+import { type PipelineStage, type ResolvedPermissions, resolvePermissions } from "../config/permissions";
 import type { ModelDef, ModelTier } from "../config/schema";
+import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
 import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "../runtime/dispatch-events";
+import { formatSessionName } from "../runtime/session-name";
 import type { SessionRole } from "../runtime/session-role";
 import { errorMessage } from "../utils/errors";
 import { parseModelSpec } from "./acp/model-spec";
-import type { RunAsSessionOpts } from "./manager-types";
-import type { CompleteOptions, SessionHandle, TurnResult } from "./types";
+import type { AgentFallbackRecord, RunAsSessionOpts } from "./manager-types";
+import type { CompleteOptions, ResolvedCompleteOptions, SessionHandle, TurnResult } from "./types";
 
 /**
  * Model attribution fields for a dispatch event (#1433, #1464).
@@ -165,5 +169,68 @@ export function buildDispatchErrorEvent(input: {
     resolvedPermissions: input.resolvedPermissions,
     ...(input.callId !== undefined ? { callId: input.callId } : {}),
     ...(input.scopeId !== undefined ? { scopeId: input.scopeId } : {}),
+  };
+}
+
+/**
+ * Build the per-call preamble `completeAsWithFallback` needs: resolved permissions,
+ * the augmented options handed to the adapter, and the session name.
+ *
+ * Lives here rather than inline in AgentManager because manager.ts is over its
+ * size limit and this is the same concern manager-dispatch already owns — turning
+ * a CompleteOptions into the shape the dispatch layer reports on.
+ */
+export function buildCompleteCallPreamble(input: {
+  options: CompleteOptions;
+  config: AgentManagerConfig;
+  stage: PipelineStage;
+}): { resolvedPermissions: ResolvedPermissions; augmented: ResolvedCompleteOptions; sessionName: string } {
+  const { options, config, stage } = input;
+  const resolvedPermissions = resolvePermissions(options.config ?? config, stage);
+  return {
+    resolvedPermissions,
+    augmented: {
+      ...options,
+      resolvedPermissions,
+      promptRetries: config.agent?.acp?.promptRetries,
+      ...trackedSpawnDeadlines(config),
+    },
+    sessionName:
+      options.sessionName ??
+      formatSessionName({
+        workdir: options.workdir ?? "",
+        featureName: options.featureName,
+        storyId: options.storyId,
+        role: options.sessionRole,
+      }),
+  };
+}
+
+/**
+ * Build an AgentFallbackRecord.
+ *
+ * nax#1712: completeWithFallback used to build its same-agent retry record and its
+ * swap record inline, and they disagreed — only the retry record carried storyId.
+ * toFallbackHops backfills the id from the store key, so the divergence was latent,
+ * but it would bite the first consumer reading the raw records. One builder for both
+ * makes them unable to drift again.
+ */
+export function buildFallbackRecord(input: {
+  storyId: string | undefined;
+  priorAgent: string;
+  newAgent: string;
+  hop: number;
+  failure: Pick<AdapterFailure, "outcome" | "category">;
+  costUsd: number;
+}): AgentFallbackRecord {
+  return {
+    storyId: input.storyId,
+    priorAgent: input.priorAgent,
+    newAgent: input.newAgent,
+    hop: input.hop,
+    outcome: input.failure.outcome,
+    category: input.failure.category,
+    timestamp: new Date().toISOString(),
+    costUsd: input.costUsd,
   };
 }
