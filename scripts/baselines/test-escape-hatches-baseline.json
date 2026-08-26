@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 171,
+    "asNever": 167,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:56:27.889Z",
+  "updatedAt": "2026-08-26T15:58:39.538Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -949,8 +949,7 @@
       "looseCast": 13
     },
     "test/unit/cli/plan-decompose-writeback.test.ts": {
-      "looseCast": 4,
-      "asNever": 4
+      "looseCast": 4
     },
     "test/unit/cli/plan-decompose-ac13-14.test.ts": {
       "asNever": 1
