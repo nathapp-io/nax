@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeStory } from "@test/helpers";
-import { synthesizeBackfillMetric } from "@/execution";
+import { isExecutionFailure, synthesizeBackfillMetric } from "@/execution";
 import type { StoryRouting } from "@/prd/types";
 
 const TS = "2026-07-03T00:00:00.000Z";
@@ -236,5 +236,89 @@ describe("synthesizeBackfillMetric — swap hops and crash retries (#1709)", () 
     expect(m.source).toBe("completion-phase");
     expect(m.fallback).toBeUndefined();
     expect(m.runtimeCrashes).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// nax#1714 / #1721 — zero-cost evidence must survive.
+//
+// The back-fill was driven off the cost aggregator and skipped anything that did
+// not spend, so a story that failed having spent nothing produced no StoryMetrics
+// entry at all and its swap hops and crash retries were dropped. That kept
+// deriveRunFallbackAggregates' exhausted rule (which requires !success)
+// unreachable for exactly the case it exists to measure: a fallback chain where
+// every candidate fails auth instantly, costing nothing.
+//
+// isExecutionFailure additionally required attempts > 0, which excludes a story
+// that died at session creation — it carries a failed status with no attempt
+// recorded. The requirement was already redundant against the branch it guards,
+// which floors attempts at Math.max(1, ...).
+// ---------------------------------------------------------------------------
+
+describe("synthesizeBackfillMetric — zero-cost failed stories (#1714)", () => {
+  const ZERO_HOP = {
+    storyId: "US-001",
+    priorAgent: "claude",
+    newAgent: "codex",
+    hop: 1,
+    outcome: "fail-auth",
+    category: "availability",
+    costUsd: 0,
+  } as const;
+
+  test("AC-1: a failed story with attempts 0 and no cost still carries its hops", () => {
+    const m = synthesizeBackfillMetric({
+      storyId: "US-001",
+      story: makeStory({ id: "US-001", status: "failed", attempts: 0, routing: routing({}) }),
+      totalCostUsd: 0,
+      config,
+      defaultAgent: "claude",
+      timestamp: TS,
+      fallbackHops: [ZERO_HOP],
+    });
+
+    expect(m.source).toBe("execution-failed");
+    expect(m.success).toBe(false);
+    expect(m.fallback?.hops).toEqual([ZERO_HOP]);
+  });
+
+  test("AC-2: that metric reports the branch's attempts floor of 1, not 0", () => {
+    const m = synthesizeBackfillMetric({
+      storyId: "US-001",
+      story: makeStory({ id: "US-001", status: "failed", attempts: 0, routing: routing({}) }),
+      totalCostUsd: 0,
+      config,
+      defaultAgent: "claude",
+      timestamp: TS,
+    });
+
+    expect(m.attempts).toBe(1);
+  });
+
+  test("AC-3: a passed story with hops keeps the completion-phase placeholder", () => {
+    const m = synthesizeBackfillMetric({
+      storyId: "US-009",
+      story: makeStory({ id: "US-009", status: "passed", attempts: 0 }),
+      totalCostUsd: 0,
+      config,
+      defaultAgent: "claude",
+      timestamp: TS,
+      fallbackHops: [ZERO_HOP],
+      runtimeCrashes: 2,
+    });
+
+    expect(m.source).toBe("completion-phase");
+    expect(m.fallback).toBeUndefined();
+    expect(m.runtimeCrashes).toBe(0);
+  });
+});
+
+describe("isExecutionFailure is exported for the back-fill domain (#1721)", () => {
+  test("AC-4: true for failed with zero attempts, regression-failed; false otherwise", () => {
+    expect(isExecutionFailure(makeStory({ id: "A", status: "failed", attempts: 0 }))).toBe(true);
+    expect(isExecutionFailure(makeStory({ id: "B", status: "regression-failed", attempts: 3 }))).toBe(true);
+    expect(isExecutionFailure(makeStory({ id: "C", status: "passed", attempts: 1 }))).toBe(false);
+    expect(isExecutionFailure(makeStory({ id: "D", status: "pending", attempts: 0 }))).toBe(false);
+    expect(isExecutionFailure(undefined)).toBe(false);
   });
 });
