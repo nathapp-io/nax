@@ -9,7 +9,23 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import {
+  makeDispatchContext,
+  makeMockRuntime,
+  makeNaxConfig,
+  makePluginRegistry,
+  makePRD,
+  makeStatusWriter,
+  makeStory,
+} from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
+import type { SequentialExecutionContext, SequentialExecutionResult } from "@/execution/unified-executor";
+import { executeUnified } from "@/execution/unified-executor";
+import type { LoadedHooksConfig } from "@/hooks";
+import type { PRD } from "@/prd/types";
+import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
+
+const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
 
 const SRC = join(import.meta.dir, "../../../src");
 
@@ -60,58 +76,43 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
     return makeStory({ id, title: `Story ${id}`, description: `Description for ${id}` });
   }
 
-  function makePrd(stories: ReturnType<typeof makePendingStory>[]) {
+  function makePrd(stories: ReturnType<typeof makePendingStory>[]): PRD {
     return makePRD({ userStories: stories });
   }
 
-  function makeCtx(parallelCount = 2) {
+  function makeCtx(parallelCount = 2): SequentialExecutionContext {
     return {
       prdPath: "/tmp/test-prd.json",
       workdir: "/tmp/test-workdir",
-      config: makeNaxConfig({
-        execution: { maxIterations: 1, costLimit: 100, iterationDelayMs: 0, rectification: { maxAttemptsTotal: 2 } },
-      }),
-      hooks: {},
+      config: {
+        ...DEFAULT_CONFIG,
+        execution: {
+          ...DEFAULT_CONFIG.execution,
+          maxIterations: 1,
+          costLimit: 100,
+          iterationDelayMs: 0,
+          rectification: {
+            ...DEFAULT_CONFIG.execution.rectification,
+            maxAttemptsTotal: 2,
+          },
+        },
+      },
+      hooks: EMPTY_HOOKS,
       feature: "test-feature",
       dryRun: false,
       useBatch: false,
-      pluginRegistry: {
-        getReporters: () => [],
-        getContextProviders: () => [],
-      },
-      statusWriter: {
-        setPrd: mock(() => {}),
-        setCurrentStory: mock(() => {}),
-        setRunStatus: mock(() => {}),
-        update: mock(async () => {}),
-      },
+      pluginRegistry: makePluginRegistry(),
+      statusWriter: makeStatusWriter(),
       runId: "run-test",
       startTime: Date.now(),
       batchPlan: [],
       interactionChain: null,
-      runtime: {
-        outputDir: "/tmp/nax-test-failure-output",
-        // nax#1709: parallel metrics read these run-scoped stores.
-        agentFallbacks: new Map(),
-        runtimeCrashRetries: new Map(),
-        costAggregator: {
-          snapshot: () => ({
-            totalCostUsd: 0,
-            totalEstimatedCostUsd: 0,
-            totalInputTokens: 0,
-            totalOutputTokens: 0,
-            callCount: 0,
-            errorCount: 0,
-          }),
-          byStage: () => ({}),
-          byStory: () => ({}),
-          byAgent: () => ({}),
-          record: () => {},
-          recordError: () => {},
-          recordOperationSummary: () => {},
-          drain: async () => {},
-        },
-      },
+      ...makeDispatchContext({
+        runtime: makeMockRuntime({
+          workdir: "/tmp/nax-test-failure-output",
+          costAggregator: createNoOpCostAggregator(),
+        }),
+      }),
       parallelCount,
     };
   }
@@ -169,16 +170,13 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
     const { _resultHandlerDeps } = await import("@/execution/pipeline-result-handler");
     const origSpawn = _resultHandlerDeps.spawn;
     _resultHandlerDeps.spawn = mock(() => {
-      const proc = { exited: Promise.resolve(0) };
-      return proc as never;
+      const proc: Pick<Bun.Subprocess, "exited"> = { exited: Promise.resolve(0) };
+      return proc as typeof Bun.spawn extends (...args: never) => infer R ? R : never;
     });
 
     try {
-      const mod = await import("@/execution/unified-executor");
       // Failure routing is best-effort and must not throw.
-      const result = await mod
-        .executeUnified(makeCtx() as never, makePrd([story1, story2]) as never)
-        .catch(() => undefined);
+      const result = await executeUnified(makeCtx(), makePrd([story1, story2])).catch(() => undefined);
 
       // The failed story (story2) must be routed through the failure path, NOT counted
       // as completed: storiesCompleted reflects only the batch's `completed` array (story1).
@@ -218,15 +216,17 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
     const { _resultHandlerDeps } = await import("@/execution/pipeline-result-handler");
     const origSpawn = _resultHandlerDeps.spawn;
     _resultHandlerDeps.spawn = mock(() => {
-      const proc = { exited: Promise.resolve(0) };
-      return proc as never;
+      const proc: Pick<Bun.Subprocess, "exited"> = { exited: Promise.resolve(0) };
+      return proc as typeof Bun.spawn extends (...args: never) => infer R ? R : never;
     });
 
     try {
-      const mod = await import("@/execution/unified-executor");
-      const result = await mod
-        .executeUnified(makeCtx() as never, makePrd([story1, story2]) as never)
-        .catch(() => ({ exitReason: "error", totalCost: 0, allStoryMetrics: [], storiesCompleted: 0 }) as never);
+      // Failure routing is best-effort and must not throw. The .catch is a
+      // belt-and-braces fallback for unexpected throws so the assertion below
+      // can still observe a result.
+      const result = await executeUnified(makeCtx(), makePrd([story1, story2])).catch((): SequentialExecutionResult => {
+        throw new Error("executeUnified should not throw on failure path");
+      });
 
       // The executor must return a valid result object regardless of failures
       expect(result).toBeDefined();

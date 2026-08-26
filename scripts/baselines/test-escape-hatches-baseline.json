@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 258,
+    "asNever": 251,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T15:31:30.406Z",
+  "updatedAt": "2026-08-26T15:35:34.800Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -619,8 +619,7 @@
       "looseCast": 4
     },
     "test/unit/execution/unified-executor-failure.test.ts": {
-      "looseCast": 2,
-      "asNever": 7
+      "looseCast": 2
     },
     "test/unit/execution/escalation/escalation.test.ts": {
       "looseCast": 1
