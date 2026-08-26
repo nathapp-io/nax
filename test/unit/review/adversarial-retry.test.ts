@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { assertDefined, makeAdversarialOutput, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
 import * as loggerModule from "@/logger";
+import { Logger } from "@/logger";
 import { _adversarialDeps, runAdversarialReview } from "@/review/adversarial";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
@@ -51,20 +52,22 @@ interface MockLogger {
   warnCalls: LogCall[];
 }
 
-function makeLogger(): MockLogger {
+function makeLogger(): Logger & MockLoggerExtras {
   const infoCalls: LogCall[] = [];
   const warnCalls: LogCall[] = [];
-  return {
-    infoCalls,
-    warnCalls,
-    info: mock((stage: string, message: string, data?: Record<string, unknown>) => {
-      infoCalls.push({ stage, message, data });
-    }),
-    warn: mock((stage: string, message: string, data?: Record<string, unknown>) => {
-      warnCalls.push({ stage, message, data });
-    }),
-    debug: mock(() => {}),
-  };
+  const logger = new Logger({ level: "silent" });
+  logger.info = ((stage: string, message: string, data?: Record<string, unknown>) => {
+    infoCalls.push({ stage, message, data });
+  }) as typeof logger.info;
+  logger.warn = ((stage: string, message: string, data?: Record<string, unknown>) => {
+    warnCalls.push({ stage, message, data });
+  }) as typeof logger.warn;
+  return Object.assign(logger, { infoCalls, warnCalls });
+}
+
+interface MockLoggerExtras {
+  infoCalls: LogCall[];
+  warnCalls: LogCall[];
 }
 
 // ─── Saved deps ──────────────────────────────────────────────────────────────
@@ -292,7 +295,7 @@ describe("runAdversarialReview — logging", () => {
 
   test("logs info 'Adversarial review passed' on success", async () => {
     const logger = makeLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
 
     _adversarialDeps.callOp = mock(async () => makeAdversarialOutput({ passed: true, findings: [] }));
     const agentManager = makeAgentManager(PASSING_RESPONSE);
@@ -314,7 +317,7 @@ describe("runAdversarialReview — logging", () => {
 
   test("logs warn 'Retry exhausted — fail-open' when callOp returns failOpen", async () => {
     const logger = makeLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
 
     _adversarialDeps.callOp = mock(async () => makeAdversarialOutput({ passed: true, findings: [], failOpen: true }));
     const agentManager = makeAgentManager(PASSING_RESPONSE);
@@ -336,7 +339,7 @@ describe("runAdversarialReview — logging", () => {
 
   test("logs warn 'LLM returned truncated JSON' when callOp returns looksLikeFail", async () => {
     const logger = makeLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
 
     _adversarialDeps.callOp = mock(async () =>
       makeAdversarialOutput({ passed: false, findings: [], looksLikeFail: true }),
@@ -360,7 +363,7 @@ describe("runAdversarialReview — logging", () => {
 
   test("does not log 'Retry exhausted' when callOp returns success", async () => {
     const logger = makeLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
 
     _adversarialDeps.callOp = mock(async () => makeAdversarialOutput({ passed: true, findings: [] }));
     const agentManager = makeAgentManager(PASSING_RESPONSE);
