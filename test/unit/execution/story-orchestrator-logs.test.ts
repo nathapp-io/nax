@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeCallOp, makeStory, makeTestRuntime } from "@test/helpers";
+import { assertDefined, makeCallOp, makeStory, makeTestRuntime } from "@test/helpers";
 import { _storyOrchestratorDeps } from "@/execution";
 import { getSafeLogger } from "@/logger";
 
@@ -98,9 +98,11 @@ describe("StoryOrchestrator runPhase — log emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const logs: Array<{ stage: string; msg: string }> = [];
-    const logger = getSafeLogger()!;
+    const loggerOrNull = getSafeLogger();
+    assertDefined(loggerOrNull, "safe logger");
+    const logger = loggerOrNull;
     const origInfo = logger.info;
-    logger!.info = ((stage: string, msg: string) => {
+    logger.info = ((stage: string, msg: string) => {
       logs.push({ stage, msg });
     }) as typeof logger.info;
 
@@ -145,9 +147,11 @@ describe("StoryOrchestrator runPhase — log emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const logs: Array<{ stage: string; msg: string; data?: Record<string, unknown> }> = [];
-    const logger = getSafeLogger()!;
+    const loggerOrNull = getSafeLogger();
+    assertDefined(loggerOrNull, "safe logger");
+    const logger = loggerOrNull;
     const origInfo = logger.info;
-    logger!.info = ((stage: string, msg: string, data?: Record<string, unknown>) => {
+    logger.info = ((stage: string, msg: string, data?: Record<string, unknown>) => {
       logs.push({ stage, msg, data });
     }) as typeof logger.info;
 
@@ -173,9 +177,9 @@ describe("StoryOrchestrator runPhase — log emission", () => {
     }
 
     const createdLog = logs.find((l) => l.stage === "tdd" && l.msg === "Created test files");
-    expect(createdLog).toBeDefined();
-    expect(createdLog!.data?.testFilesCount).toBe(2);
-    expect(createdLog!.data?.testFiles).toEqual(["test/a.test.ts", "test/b.test.ts"]);
+    assertDefined(createdLog, "created-log entry");
+    expect(createdLog.data?.testFilesCount).toBe(2);
+    expect(createdLog.data?.testFiles).toEqual(["test/a.test.ts", "test/b.test.ts"]);
   });
 
   test("emits 'Isolation maintained' when phase output carries passing isolation", async () => {
@@ -195,9 +199,11 @@ describe("StoryOrchestrator runPhase — log emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const logs: Array<{ stage: string; msg: string }> = [];
-    const logger = getSafeLogger()!;
+    const loggerOrNull = getSafeLogger();
+    assertDefined(loggerOrNull, "safe logger");
+    const logger = loggerOrNull;
     const origInfo = logger.info;
-    logger!.info = ((stage: string, msg: string) => {
+    logger.info = ((stage: string, msg: string) => {
       logs.push({ stage, msg });
     }) as typeof logger.info;
 
@@ -247,9 +253,11 @@ describe("StoryOrchestrator runPhase — log emission", () => {
     };
 
     const logs: Array<{ stage: string; msg: string }> = [];
-    const logger = getSafeLogger()!;
+    const loggerOrNull = getSafeLogger();
+    assertDefined(loggerOrNull, "safe logger");
+    const logger = loggerOrNull;
     const origInfo = logger.info;
-    logger!.info = ((stage: string, msg: string) => {
+    logger.info = ((stage: string, msg: string) => {
       logs.push({ stage, msg });
     }) as typeof logger.info;
 
@@ -361,13 +369,15 @@ describe("StoryOrchestrator runPhase — log emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const logs: Array<{ stage: string; msg: string; data?: Record<string, unknown> }> = [];
-    const logger = getSafeLogger()!;
+    const loggerOrNull = getSafeLogger();
+    assertDefined(loggerOrNull, "safe logger");
+    const logger = loggerOrNull;
     const origInfo = logger.info;
     const origWarn = logger.warn;
-    logger!.info = ((stage: string, msg: string, data?: Record<string, unknown>) => {
+    logger.info = ((stage: string, msg: string, data?: Record<string, unknown>) => {
       logs.push({ stage, msg, data });
     }) as typeof logger.info;
-    logger!.warn = ((stage: string, msg: string, data?: Record<string, unknown>) => {
+    logger.warn = ((stage: string, msg: string, data?: Record<string, unknown>) => {
       logs.push({ stage, msg, data });
     }) as typeof logger.warn;
 

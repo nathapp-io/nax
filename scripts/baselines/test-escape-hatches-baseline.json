@@ -7,9 +7,9 @@
     "anyType": 10,
     "looseCast": 1800,
     "asNever": 603,
-    "nonNullAssert": 541
+    "nonNullAssert": 457
   },
-  "updatedAt": "2026-08-26T10:03:34.351Z",
+  "updatedAt": "2026-08-26T10:38:28.490Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -91,8 +91,7 @@
     },
     "test/integration/execution/runner-parallel-metrics.test.ts": {
       "looseCast": 2,
-      "asNever": 38,
-      "nonNullAssert": 14
+      "asNever": 38
     },
     "test/integration/execution/feature-status-write.test.ts": {
       "looseCast": 2
@@ -124,8 +123,7 @@
     },
     "test/integration/execution/runner-parallel-metrics-cost-duration.test.ts": {
       "looseCast": 4,
-      "asNever": 8,
-      "nonNullAssert": 13
+      "asNever": 8
     },
     "test/integration/execution/execution.test.ts": {
       "looseCast": 1
@@ -418,9 +416,6 @@
       "looseCast": 2,
       "nonNullAssert": 6
     },
-    "test/unit/review/semantic-findings.test.ts": {
-      "nonNullAssert": 3
-    },
     "test/unit/review/adversarial-retry.test.ts": {
       "asNever": 4
     },
@@ -609,9 +604,6 @@
     "test/unit/execution/pipeline-result-handler.test.ts": {
       "looseCast": 1
     },
-    "test/unit/execution/story-orchestrator-resume-guard.test.ts": {
-      "nonNullAssert": 12
-    },
     "test/unit/execution/merge-conflict-rectify.test.ts": {
       "looseCast": 1,
       "asNever": 9
@@ -649,9 +641,6 @@
     "test/unit/execution/helpers.test.ts": {
       "looseCast": 1
     },
-    "test/unit/execution/story-orchestrator-logs.test.ts": {
-      "nonNullAssert": 13
-    },
     "test/unit/execution/plan-inputs-test-patterns.test.ts": {
       "looseCast": 8
     },
@@ -663,8 +652,7 @@
       "looseCast": 6
     },
     "test/unit/execution/deferred-review.test.ts": {
-      "looseCast": 1,
-      "nonNullAssert": 13
+      "looseCast": 1
     },
     "test/unit/execution/pipeline-result-handler-pause-reason.test.ts": {
       "ratchetAllow": 1,
@@ -747,8 +735,7 @@
       "anyType": 1
     },
     "test/unit/execution/escalation/tier-escalation.test.ts": {
-      "looseCast": 2,
-      "nonNullAssert": 12
+      "looseCast": 2
     },
     "test/unit/execution/escalation/tier-outcome.test.ts": {
       "looseCast": 3
@@ -946,8 +933,7 @@
     },
     "test/unit/operations/plan-interactive.test.ts": {
       "looseCast": 3,
-      "asNever": 6,
-      "nonNullAssert": 4
+      "asNever": 6
     },
     "test/unit/operations/call-run-counter.test.ts": {
       "asNever": 1

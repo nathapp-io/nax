@@ -37,7 +37,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { withTempDir } from "@test/helpers";
+import { assertDefined, withTempDir } from "@test/helpers";
 import type { AdversarialReviewInput } from "@/operations/adversarial-review";
 import { adversarialReviewOp } from "@/operations/adversarial-review";
 import type { HopBodyContext } from "@/operations/types";
@@ -48,6 +48,8 @@ afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
+assertDefined(adversarialReviewOp.hopBody, "adversarialReviewOp.hopBody");
+const runHopBody = adversarialReviewOp.hopBody.bind(adversarialReviewOp);
 
 const ADVERSARIAL_CONFIG_DEFAULT = {
   model: "balanced" as const,
@@ -131,7 +133,7 @@ describe("adversarialReviewOp.hopBody — reground AC1: trigger issues exactly o
         };
       });
 
-      await adversarialReviewOp.hopBody!("initial prompt", {
+      await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -167,7 +169,7 @@ describe("adversarialReviewOp.hopBody — reground AC1: trigger issues exactly o
         };
       });
 
-      const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      const result = await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -210,7 +212,7 @@ describe("adversarialReviewOp.hopBody — reground AC2: reprompt prompt content"
         };
       });
 
-      await adversarialReviewOp.hopBody!("initial prompt", {
+      await runHopBody("initial prompt", {
         send: sendImpl,
         sendWithParseRetry: mock(async () => ({
           output: firstTurn,
@@ -262,7 +264,7 @@ describe("adversarialReviewOp.hopBody — reground AC2: reprompt prompt content"
         };
       });
 
-      await adversarialReviewOp.hopBody!("initial prompt", {
+      await runHopBody("initial prompt", {
         send: sendImpl,
         sendWithParseRetry: mock(async () => ({
           output: firstTurn,
@@ -323,7 +325,7 @@ describe("adversarialReviewOp.hopBody — reground AC3: second turn has survivin
         };
       });
 
-      const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      const result = await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -380,7 +382,7 @@ describe("adversarialReviewOp.hopBody — reground AC4: second turn passed:true 
         };
       });
 
-      const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      const result = await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -446,7 +448,7 @@ describe("adversarialReviewOp.hopBody — reground AC5: second turn fails or all
         };
       });
 
-      const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      const result = await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -492,7 +494,7 @@ describe("adversarialReviewOp.hopBody — reground AC5: second turn fails or all
         };
       });
 
-      const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      const result = await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -530,7 +532,7 @@ describe("adversarialReviewOp.hopBody — reground AC6: acRegroundOnDrop === fal
         };
       });
 
-      const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      const result = await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -568,7 +570,7 @@ describe("adversarialReviewOp.hopBody — reground AC7: no reprompt when trigger
         };
       });
 
-      const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      const result = await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -606,7 +608,7 @@ describe("adversarialReviewOp.hopBody — reground AC7: no reprompt when trigger
         };
       });
 
-      const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      const result = await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -644,7 +646,7 @@ describe("adversarialReviewOp.hopBody — reground AC7: no reprompt when trigger
         };
       });
 
-      const result = await adversarialReviewOp.hopBody!("initial prompt", {
+      const result = await runHopBody("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
         input: {
@@ -699,7 +701,7 @@ describe("adversarialReviewOp.hopBody — reground AC8: no mutable hasReprompted
         },
       };
 
-      await adversarialReviewOp.hopBody!("prompt1", ctx1);
+      await runHopBody("prompt1", ctx1);
       expect(callCount).toBe(2);
 
       // Reset mock call count for second invocation
@@ -715,7 +717,7 @@ describe("adversarialReviewOp.hopBody — reground AC8: no mutable hasReprompted
         },
       };
 
-      await adversarialReviewOp.hopBody!("prompt2", ctx2);
+      await runHopBody("prompt2", ctx2);
       // Second invocation also fires reprompt — no persistent hasReprompted flag
       expect(callCount).toBe(2);
     });

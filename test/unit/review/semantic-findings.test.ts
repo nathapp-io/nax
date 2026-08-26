@@ -11,7 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
+import { assertDefined, makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeSpawn } from "@test/helpers";
 import { _diffUtilsDeps } from "@/review/diff-utils";
 import type { SemanticStory } from "@/review/semantic";
 import { runSemanticReview } from "@/review/semantic";
@@ -178,7 +178,9 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
 
     const result = await callRunSemanticReview(llmResponse);
 
-    expect(result.findings![0].message).toBe("src module wiring missing in runner");
+    const findings = result.findings;
+    assertDefined(findings, "result.findings");
+    expect(findings[0].message).toBe("src module wiring missing in runner");
   });
 
   test("sets source='semantic-review' on blocking ReviewFindings", async () => {
@@ -209,7 +211,9 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
 
     const result = await callRunSemanticReview(llmResponse);
 
-    for (const finding of result.findings!) {
+    const findings = result.findings;
+    assertDefined(findings, "result.findings");
+    for (const finding of findings) {
       expect(finding.source).toBe("semantic-review");
     }
   });
@@ -224,8 +228,10 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const result = await callRunSemanticReview(llmResponse);
 
     // info is advisory by default — check advisoryFindings
-    expect(result.advisoryFindings![0].rule).toBeUndefined();
-    expect(result.advisoryFindings![0].source).toBe("semantic-review");
+    const advisoryFindings = result.advisoryFindings;
+    assertDefined(advisoryFindings, "result.advisoryFindings");
+    expect(advisoryFindings[0].rule).toBeUndefined();
+    expect(advisoryFindings[0].source).toBe("semantic-review");
   });
 
   test("maps finding.file to ReviewFinding.file", async () => {
@@ -247,7 +253,9 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
 
     const result = await callRunSemanticReview(llmResponse);
 
-    expect(result.findings![0].file).toBe("src/review/runner.ts");
+    const findings = result.findings;
+    assertDefined(findings, "result.findings");
+    expect(findings[0].file).toBe("src/review/runner.ts");
   });
 
   test("maps finding.line to ReviewFinding.line", async () => {
@@ -268,7 +276,9 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     });
     const result = await callRunSemanticReview(llmResponse);
 
-    expect(result.findings![0].line).toBe(99);
+    const findings = result.findings;
+    assertDefined(findings, "result.findings");
+    expect(findings[0].line).toBe(99);
   });
 
   test("maps finding.severity 'error' directly to ReviewFinding.severity", async () => {
@@ -289,7 +299,9 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     });
     const result = await callRunSemanticReview(llmResponse);
 
-    expect(result.findings![0].severity).toBe("error");
+    const findings = result.findings;
+    assertDefined(findings, "result.findings");
+    expect(findings[0].severity).toBe("error");
   });
 
   test("normalises severity 'warn' to 'warning' in advisoryFindings (advisory at default threshold)", async () => {
@@ -301,7 +313,9 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const result = await callRunSemanticReview(llmResponse);
 
     // warn → warning, placed in advisoryFindings at default "error" threshold
-    expect(result.advisoryFindings![0].severity).toBe("warning");
+    const advisoryFindings = result.advisoryFindings;
+    assertDefined(advisoryFindings, "result.advisoryFindings");
+    expect(advisoryFindings[0].severity).toBe("warning");
   });
 
   test("maps 'info' severity as-is into advisoryFindings (advisory at default threshold)", async () => {
@@ -313,7 +327,9 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     const result = await callRunSemanticReview(llmResponse);
 
     // info is advisory at default "error" threshold
-    expect(result.advisoryFindings![0].severity).toBe("info");
+    const advisoryFindings = result.advisoryFindings;
+    assertDefined(advisoryFindings, "result.advisoryFindings");
+    expect(advisoryFindings[0].severity).toBe("info");
   });
 
   test("splits multiple findings into blocking (error) and advisory (warn/info) by default", async () => {
@@ -336,13 +352,18 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     });
     const result = await callRunSemanticReview(llmResponse);
 
+    const findings = result.findings;
+    assertDefined(findings, "result.findings");
+    const advisoryFindings = result.advisoryFindings;
+    assertDefined(advisoryFindings, "result.advisoryFindings");
+
     // Only error blocks by default
-    expect(result.findings!.length).toBe(1);
-    expect(result.findings![0].message).toBe("src module error missing in A");
+    expect(findings.length).toBe(1);
+    expect(findings[0].message).toBe("src module error missing in A");
     // warn + info are advisory
-    expect(result.advisoryFindings!.length).toBe(2);
-    expect(result.advisoryFindings![0].message).toBe("Issue B");
-    expect(result.advisoryFindings![0].severity).toBe("warning");
+    expect(advisoryFindings.length).toBe(2);
+    expect(advisoryFindings[0].message).toBe("Issue B");
+    expect(advisoryFindings[0].severity).toBe("warning");
   });
 
   test("result.findings is empty or absent when LLM returns passed=true", async () => {

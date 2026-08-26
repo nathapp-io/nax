@@ -11,7 +11,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { makePRD, makeStory, makeTestRuntime, opSelector, withWarnSpy } from "@test/helpers";
+import { assertDefined, makePRD, makeStory, makeTestRuntime, opSelector, withWarnSpy } from "@test/helpers";
 import type { RetryStrategy } from "@/agents";
 import { ParseValidationError } from "@/agents";
 import { planInteractiveOp } from "@/operations";
@@ -35,6 +35,23 @@ function makeInteractiveVerifyCtx() {
     readFile: async (_p: string) => null as string | null,
     fileExists: async (_p: string) => false,
   };
+}
+
+async function runRecover(
+  input: Parameters<NonNullable<typeof planInteractiveOp.recover>>[0],
+  ctx: Parameters<NonNullable<typeof planInteractiveOp.recover>>[1],
+) {
+  assertDefined(planInteractiveOp.recover, "recover");
+  return planInteractiveOp.recover(input, ctx);
+}
+
+function runVerify(
+  prd: Parameters<NonNullable<typeof planInteractiveOp.verify>>[0],
+  input: Parameters<NonNullable<typeof planInteractiveOp.verify>>[1],
+  ctx: Parameters<NonNullable<typeof planInteractiveOp.verify>>[2],
+) {
+  assertDefined(planInteractiveOp.verify, "verify");
+  return planInteractiveOp.verify(prd, input, ctx);
 }
 
 // We'll define minimal imports to test the op shape.
@@ -203,7 +220,7 @@ describe("planInteractiveOp.recover", () => {
       branchName: "feat/test",
       outputPath: "/nonexistent/prd.json",
     };
-    const result = await planInteractiveOp.recover!(input, ctx);
+    const result = await runRecover(input, ctx);
     expect(result).toBeNull();
   });
 
@@ -252,10 +269,10 @@ describe("planInteractiveOp.recover", () => {
       branchName: "feat/test",
       outputPath: "/tmp/prd.json",
     };
-    const result = await planInteractiveOp.recover!(input, ctx);
-    expect(result).not.toBeNull();
+    const result = await runRecover(input, ctx);
+    assertDefined(result, "recover() result");
     expect(result).toHaveProperty("userStories");
-    expect(Array.isArray(result!.userStories)).toBe(true);
+    expect(Array.isArray(result.userStories)).toBe(true);
   });
 });
 
@@ -291,7 +308,7 @@ describe("planInteractiveOp.verify", () => {
       outputPath: "/tmp/prd.json",
     };
 
-    const nullResult = await planInteractiveOp.verify!(emptyPRD, input, ctx);
+    const nullResult = await runVerify(emptyPRD, input, ctx);
     expect(nullResult).toBeNull();
 
     const validPRD = {
@@ -318,8 +335,8 @@ describe("planInteractiveOp.verify", () => {
         },
       ],
     };
-    const prdResult = await planInteractiveOp.verify!(validPRD, input, ctx);
-    expect(prdResult).not.toBeNull();
+    const prdResult = await runVerify(validPRD, input, ctx);
+    assertDefined(prdResult, "verify() result");
     expect(prdResult).toEqual(validPRD);
   });
 });
@@ -425,11 +442,11 @@ describe("planInteractiveOp.recover — disk-recovery escape hatch (#993)", () =
       readFile: async (_path: string) => validPrdJson,
       fileExists: async (_path: string) => true,
     };
-    const result = await planInteractiveOp.recover!(baseInput, ctx);
-    expect(result).not.toBeNull();
-    expect(Array.isArray(result!.userStories)).toBe(true);
-    expect(result!.userStories.length).toBe(1);
-    expect(result!.userStories[0]?.id).toBe("US-001");
+    const result = await runRecover(baseInput, ctx);
+    assertDefined(result, "recover() result");
+    expect(Array.isArray(result.userStories)).toBe(true);
+    expect(result.userStories.length).toBe(1);
+    expect(result.userStories[0]?.id).toBe("US-001");
   });
 
   test.each([
@@ -449,7 +466,7 @@ describe("planInteractiveOp.recover — disk-recovery escape hatch (#993)", () =
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(opSelector(planInteractiveOp.config)), readFile, fileExists };
-    const result = await planInteractiveOp.recover!(baseInput, ctx);
+    const result = await runRecover(baseInput, ctx);
     expect(result).toBeNull();
   });
 });
@@ -481,7 +498,7 @@ describe("planInteractiveOp.verify — out-of-scope backfill (single mode)", () 
 
   test("backfills every spec exclusion the planner omitted, and warns", async () => {
     await withWarnSpy(async (warnSpy) => {
-      const result = await planInteractiveOp.verify!(prdWith(), input as never, makeInteractiveVerifyCtx() as never);
+      const result = await runVerify(prdWith(), input as never, makeInteractiveVerifyCtx() as never);
       expect(result?.outOfScope).toEqual(["An interactive Ink TUI", "Per-story checkpoints"]);
       const warn = warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("out-of-scope"));
       expect(warn).toBeDefined();
@@ -491,7 +508,7 @@ describe("planInteractiveOp.verify — out-of-scope backfill (single mode)", () 
 
   test("keeps the planner's own wording and restores only what it dropped", async () => {
     const prd = prdWith(["An interactive Ink TUI — deferred to arc 3"]);
-    const result = await planInteractiveOp.verify!(prd, input as never, makeInteractiveVerifyCtx() as never);
+    const result = await runVerify(prd, input as never, makeInteractiveVerifyCtx() as never);
     // Restored items lead so the cap can never truncate them away.
     expect(result?.outOfScope).toEqual(["Per-story checkpoints", "An interactive Ink TUI — deferred to arc 3"]);
   });
@@ -499,11 +516,7 @@ describe("planInteractiveOp.verify — out-of-scope backfill (single mode)", () 
   test("does not warn or add a field when the spec declares no exclusions", async () => {
     await withWarnSpy(async (warnSpy) => {
       const noScopeInput = { ...input, specContent: "# Feature\n\n## Design\n- build it\n" };
-      const result = await planInteractiveOp.verify!(
-        prdWith(),
-        noScopeInput as never,
-        makeInteractiveVerifyCtx() as never,
-      );
+      const result = await runVerify(prdWith(), noScopeInput as never, makeInteractiveVerifyCtx() as never);
       expect(result?.outOfScope).toBeUndefined();
       expect(warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("out-of-scope"))).toBeUndefined();
     });

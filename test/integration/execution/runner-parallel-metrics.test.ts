@@ -23,6 +23,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import type { RunParallelBatchResult } from "@/execution/parallel-batch";
 import { initLogger, resetLogger } from "@/logger";
 import type { PipelineEvent } from "@/pipeline/event-bus";
@@ -96,11 +97,13 @@ describe("AC-1 — completed story cost equals storyCosts.get(story.id)", () => 
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === s1.id);
     const m2 = result.allStoryMetrics.find((m) => m.storyId === s2.id);
+    assertDefined(m1, "metrics for s1");
+    assertDefined(m2, "metrics for s2");
 
-    expect(m1!.cost).toBe(0.12);
-    expect(m2!.cost).toBe(0.48);
+    expect(m1.cost).toBe(0.12);
+    expect(m2.cost).toBe(0.48);
     // Verify asymmetry: if even-split were used both would be 0.3
-    expect(m1!.cost).not.toBe(m2!.cost);
+    expect(m1.cost).not.toBe(m2.cost);
   });
 
   test("story cost is 0 when storyCosts Map has no entry for that story", async () => {
@@ -116,7 +119,8 @@ describe("AC-1 — completed story cost equals storyCosts.get(story.id)", () => 
     const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === s1.id);
-    expect(m1!.cost).toBe(0);
+    assertDefined(m1, "metrics for s1");
+    expect(m1.cost).toBe(0);
   });
 });
 
@@ -145,9 +149,11 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id), not batch wal
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === s1.id);
     const m2 = result.allStoryMetrics.find((m) => m.storyId === s2.id);
+    assertDefined(m1, "metrics for s1");
+    assertDefined(m2, "metrics for s2");
 
-    expect(m1!.durationMs).toBe(2500);
-    expect(m2!.durationMs).toBe(7800);
+    expect(m1.durationMs).toBe(2500);
+    expect(m2.durationMs).toBe(7800);
   });
 
   test("durationMs falls back to elapsed wall-clock when storyDurations is absent and is non-negative", async () => {
@@ -174,8 +180,10 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id), not batch wal
     const m2 = result.allStoryMetrics.find((m) => m.storyId === s2.id);
 
     // Fallback must be non-negative
-    expect(m1!.durationMs).toBeGreaterThanOrEqual(0);
-    expect(m2!.durationMs).toBeGreaterThanOrEqual(0);
+    assertDefined(m1, "metrics for s1");
+    assertDefined(m2, "metrics for s2");
+    expect(m1.durationMs).toBeGreaterThanOrEqual(0);
+    expect(m2.durationMs).toBeGreaterThanOrEqual(0);
   });
 });
 
@@ -208,8 +216,8 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     );
 
     const rectM = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
-    expect(rectM).toBeDefined();
-    expect(rectM!.source).toBe("rectification");
+    assertDefined(rectM, "metrics for rectified conflict story");
+    expect(rectM.source).toBe("rectification");
   });
 
   test("rectificationCost equals conflict.cost from the batch result", async () => {
@@ -236,7 +244,8 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     );
 
     const rectM = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
-    expect(rectM!.rectificationCost).toBe(0.04);
+    assertDefined(rectM, "metrics for rectified conflict story");
+    expect(rectM.rectificationCost).toBe(0.04);
   });
 
   test("rectified story cost (total) = storyCosts.get(story.id) + conflict.cost (BUG-37)", async () => {
@@ -267,9 +276,10 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     );
 
     const rectM = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
+    assertDefined(rectM, "metrics for rectified conflict story");
     // First-pass cost (0.15) plus the rectification re-run (0.04) = 0.19
-    expect(rectM!.cost).toBe(0.19);
-    expect(rectM!.rectificationCost).toBe(0.04);
+    expect(rectM.cost).toBe(0.19);
+    expect(rectM.rectificationCost).toBe(0.04);
   });
 
   test("non-rectified conflict (rectified: false) does not produce a 'rectification' source entry", async () => {
@@ -325,7 +335,8 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     );
 
     const rectM = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
-    expect(rectM!.firstPassSuccess).toBe(false);
+    assertDefined(rectM, "metrics for rectified conflict story");
+    expect(rectM.firstPassSuccess).toBe(false);
   });
 });
 

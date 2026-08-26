@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeLogger, makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { assertDefined, makeLogger, makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 import { resolveMaxAttemptsOutcome } from "@/execution";
 import type { EscalationHandlerContext } from "@/execution/escalation/tier-escalation";
 import { pipelineEventBus } from "@/pipeline";
@@ -755,20 +755,20 @@ describe("preIterationTierCheck — ADR-025 gap #3: prior context captured on bu
       expect(result.shouldSkipIteration).toBe(true);
 
       // savePRD must have been called with a PRD capturing prior context
-      expect(capturedPrd).toBeDefined();
+      assertDefined(capturedPrd, "captured prd");
 
-      const savedStory = capturedPrd!.userStories.find((s) => s.id === "US-prior-001");
-      expect(savedStory).toBeDefined();
+      const savedStory = capturedPrd.userStories.find((s) => s.id === "US-prior-001");
+      assertDefined(savedStory, "saved story");
 
       // priorErrors: at least one entry mentioning the tier "fast"
-      expect(savedStory!.priorErrors).toBeDefined();
-      expect((savedStory!.priorErrors ?? []).length).toBeGreaterThanOrEqual(1);
-      expect((savedStory!.priorErrors ?? []).some((e) => e.includes("fast"))).toBe(true);
+      assertDefined(savedStory.priorErrors, "savedStory.priorErrors");
+      expect(savedStory.priorErrors.length).toBeGreaterThanOrEqual(1);
+      expect(savedStory.priorErrors.some((e) => e.includes("fast"))).toBe(true);
 
       // priorFailures: exactly 1 entry with modelTier "fast" and summary containing "budget"
-      expect(savedStory!.priorFailures).toBeDefined();
-      expect((savedStory!.priorFailures ?? []).length).toBe(1);
-      const failure = (savedStory!.priorFailures ?? [])[0];
+      assertDefined(savedStory.priorFailures, "savedStory.priorFailures");
+      expect(savedStory.priorFailures.length).toBe(1);
+      const failure = savedStory.priorFailures[0];
       expect(failure.modelTier).toBe("fast");
       expect(failure.summary.toLowerCase()).toContain("budget");
     } finally {
@@ -854,16 +854,16 @@ describe("handleTierEscalation — ADR-025 gap #2: cross-agent escalation proven
       expect(result.outcome).toBe("escalated");
 
       // savePRD must have been called
-      expect(capturedPrd).toBeDefined();
-
-      const savedStory = capturedPrd!.userStories.find((s) => s.id === "US-provenance-001");
-      expect(savedStory).toBeDefined();
+      assertDefined(capturedPrd, "captured prd");
+      const savedStory = capturedPrd.userStories.find((s) => s.id === "US-provenance-001");
+      assertDefined(savedStory, "saved story");
 
       // At least one escalation record must exist
-      expect((savedStory!.escalations ?? []).length).toBeGreaterThanOrEqual(1);
-
+      const escalations = savedStory.escalations;
+      assertDefined(escalations, "savedStory.escalations");
+      expect(escalations.length).toBeGreaterThanOrEqual(1);
       // The most recent escalation record must carry cross-agent provenance
-      const record = savedStory!.escalations![savedStory!.escalations!.length - 1];
+      const record = escalations[escalations.length - 1];
       expect(record.fromAgent).toBe("claude");
       expect(record.toAgent).toBe("codex");
     } finally {

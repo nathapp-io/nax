@@ -9,6 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import type { RunParallelBatchResult } from "@/execution/parallel-batch";
 import { initLogger, resetLogger } from "@/logger";
 import type { UserStory } from "@/prd/types";
@@ -91,10 +92,10 @@ describe("AC-1 — completed story cost equals storyCosts.get(story.id)", () => 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);
     const m2 = result.allStoryMetrics.find((m) => m.storyId === story2.id);
 
-    expect(m1).toBeDefined();
-    expect(m2).toBeDefined();
-    expect(m1!.cost).toBe(0.15);
-    expect(m2!.cost).toBe(0.25);
+    assertDefined(m1, `metric for ${story1.id}`);
+    assertDefined(m2, `metric for ${story2.id}`);
+    expect(m1.cost).toBe(0.15);
+    expect(m2.cost).toBe(0.25);
   });
 
   test("story cost is not an even-split of totalCost (each story gets its own Map value)", async () => {
@@ -118,10 +119,13 @@ describe("AC-1 — completed story cost equals storyCosts.get(story.id)", () => 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);
     const m2 = result.allStoryMetrics.find((m) => m.storyId === story2.id);
 
+    assertDefined(m1, `metric for ${story1.id}`);
+    assertDefined(m2, `metric for ${story2.id}`);
+
     // Even-split would be 0.1 for both — these must differ
-    expect(m1!.cost).not.toBe(m2!.cost);
-    expect(m1!.cost).toBe(0.05);
-    expect(m2!.cost).toBe(0.15);
+    expect(m1.cost).not.toBe(m2.cost);
+    expect(m1.cost).toBe(0.05);
+    expect(m2.cost).toBe(0.15);
   });
 });
 
@@ -174,11 +178,11 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id) from batch res
     const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);
     const m2 = result.allStoryMetrics.find((m) => m.storyId === story2.id);
 
-    expect(m1).toBeDefined();
-    expect(m2).toBeDefined();
+    assertDefined(m1, `metric for ${story1.id}`);
+    assertDefined(m2, `metric for ${story2.id}`);
     // Must match the per-story values from the Map, not the batch wall-clock
-    expect(m1!.durationMs).toBe(1500);
-    expect(m2!.durationMs).toBe(3200);
+    expect(m1.durationMs).toBe(1500);
+    expect(m2.durationMs).toBe(3200);
   });
 
   test("durationMs values differ per story when storyDurations has asymmetric timings", async () => {
@@ -202,10 +206,12 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id) from batch res
     const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);
     const m2 = result.allStoryMetrics.find((m) => m.storyId === story2.id);
 
-    expect(m1!.durationMs).toBe(800);
-    expect(m2!.durationMs).toBe(4500);
+    assertDefined(m1, `metric for ${story1.id}`);
+    assertDefined(m2, `metric for ${story2.id}`);
+    expect(m1.durationMs).toBe(800);
+    expect(m2.durationMs).toBe(4500);
     // Sanity: they differ (not batch-averaged)
-    expect(m1!.durationMs).not.toBe(m2!.durationMs);
+    expect(m1.durationMs).not.toBe(m2.durationMs);
   });
 
   test("RunParallelBatchResult exposes storyDurations field (type stub check)", () => {
@@ -218,8 +224,9 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id) from batch res
       storyDurations: new Map([["story-1", 1000]]),
       totalCost: 0,
     };
-    expect(result.storyDurations).toBeDefined();
-    expect(result.storyDurations!.get("story-1")).toBe(1000);
+    const durations = result.storyDurations;
+    assertDefined(durations, "result.storyDurations");
+    expect(durations.get("story-1")).toBe(1000);
   });
 });
 
