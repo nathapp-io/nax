@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1799,
-    "asNever": 368,
+    "asNever": 356,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-26T14:51:06.548Z",
+  "updatedAt": "2026-08-26T14:53:41.096Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -1132,8 +1132,7 @@
       "looseCast": 1
     },
     "test/unit/agents/manager-swap-loop.test.ts": {
-      "looseCast": 1,
-      "asNever": 12
+      "looseCast": 1
     },
     "test/unit/agents/acp/adapter-lifecycle.test.ts": {
       "looseCast": 1
