@@ -10,9 +10,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { loadConfig } from "@/config";
-import { NaxError } from "@/errors";
 
 const tempDirs: string[] = [];
 
@@ -44,11 +43,10 @@ describe("scoped permission profile — unimplemented guard (#374)", () => {
       await loadConfig(root);
       throw new Error("expected loadConfig to throw");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      const e = err as NaxError;
-      expect(e.code).toBe("CONFIG_SCOPED_PROFILE_UNIMPLEMENTED");
-      expect(e.message).toContain("#374");
-      expect(e.message).toContain("not yet implemented");
+      assertNaxError(err);
+      expect(err.code).toBe("CONFIG_SCOPED_PROFILE_UNIMPLEMENTED");
+      expect(err.message).toContain("#374");
+      expect(err.message).toContain("not yet implemented");
     }
   });
 
@@ -80,11 +78,10 @@ describe("scoped permission profile — unimplemented guard (#374)", () => {
       await loadConfig(root);
       throw new Error("expected loadConfig to throw");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      const e = err as NaxError;
-      expect(e.code).toBe("CONFIG_PERMISSIONS_BLOCK_UNIMPLEMENTED");
-      expect(e.message).toContain("#374");
-      expect(e.message).toContain("execution.permissions");
+      assertNaxError(err);
+      expect(err.code).toBe("CONFIG_PERMISSIONS_BLOCK_UNIMPLEMENTED");
+      expect(err.message).toContain("#374");
+      expect(err.message).toContain("execution.permissions");
     }
   });
 

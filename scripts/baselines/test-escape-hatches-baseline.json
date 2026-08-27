@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 25,
-    "looseCast": 1790
+    "looseCast": 1772
   },
-  "updatedAt": "2026-08-27T08:36:26.618Z",
+  "updatedAt": "2026-08-27T09:19:24.310Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -996,9 +996,6 @@
     "test/unit/config/schemas.test.ts": {
       "looseCast": 48
     },
-    "test/unit/config/legacy-rectification-keys.test.ts": {
-      "looseCast": 6
-    },
     "test/unit/config/defaults-schema-derive.test.ts": {
       "looseCast": 1
     },
@@ -1020,14 +1017,8 @@
     "test/unit/config/mutation-check-schema.test.ts": {
       "looseCast": 6
     },
-    "test/unit/config/loader-strict-json.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/config/schemas-model.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/config/dead-quality-flags.test.ts": {
-      "looseCast": 4
     },
     "test/unit/config/defaults-ssot.test.ts": {
       "looseCast": 1
@@ -1036,9 +1027,6 @@
       "looseCast": 9
     },
     "test/unit/config/acceptance-fix-config.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/config/schema-types.test.ts": {
       "looseCast": 1
     },
     "test/unit/config/acceptance-test-strategy.test.ts": {
@@ -1056,9 +1044,6 @@
     "test/unit/config/debate-schema.test.ts": {
       "looseCast": 1
     },
-    "test/unit/config/legacy-agent-keys.test.ts": {
-      "looseCast": 4
-    },
     "test/unit/config/merge-agent-models-routing.test.ts": {
       "ratchetAllow": 2,
       "looseCast": 12
@@ -1074,9 +1059,6 @@
     },
     "test/unit/config/permissions.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/config/scoped-profile-guard.test.ts": {
-      "looseCast": 2
     },
     "test/unit/logger/redact.test.ts": {
       "looseCast": 1
