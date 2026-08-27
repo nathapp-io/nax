@@ -72,7 +72,7 @@ residue ever was.
 |:--|:--|:--|
 | `as any`, and `any` in type position (`: any`, `<any>`, `Record<string, any>`) | biome `suspicious/noExplicitAny`, `error` for `test/**` | drained 1529 → 0. Annotating a parameter `: any` is still the cheapest non-fix for a `TS7006`; give the real type |
 | postfix `!` (non-null assertion) | biome `style/noNonNullAssertion`, `error` for `test/**` | drained 1064 → 0. Clears `TS18047`/`TS18048` with no runtime check. Use `assertDefined()` from `test/helpers/assert-defined.ts` — it narrows *and* throws |
-| `as never` | `biome-plugins/no-as-never.grit` (GritQL plugin) | the bottom type is assignable to **everything**, so one word silences any assignment error. Drained 603 → 0. There is no sanctioned `as never` |
+| `as never` | `biome-plugins/no-as-never.grit` (GritQL plugin) | the bottom type is assignable to **everything**, so one word silences any assignment error. Drained 603 → 0 in `test/` and 2 → 0 in `src/`, so the plugin is wired at biome.json's **root** and covers `src/`, `bin/` and `test/` alike. There is no sanctioned `as never` |
 | `absentValue<T>()` / `nullValue<T>()` | `biome-plugins/no-absent-value.grit` (GritQL plugin) | the idiom for "this argument is deliberately missing" (`test/helpers/absent.ts`) — see *Deliberately-absent values* below |
 
 **Do not reintroduce a counter here for a shape biome already parses.** Fix the rule. And do

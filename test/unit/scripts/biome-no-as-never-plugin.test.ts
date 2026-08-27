@@ -46,13 +46,20 @@ async function lintWithPlugin(fileName: string, source: string): Promise<string[
 }
 
 describe("biome-plugins/no-as-never.grit", () => {
-  test("the plugin file exists and biome.json wires it into the test/** override", async () => {
+  test("the plugin file exists and biome.json wires it at the ROOT, not in an override", async () => {
+    // Root-level since 2026-08-27: `src/`'s last 2 sites were drained
+    // (webhook-serve-compat.ts) and the scope widened to the whole repo. An
+    // override entry would silently re-narrow it to `test/**` — the state it
+    // was in when `src/` could add `as never` freely.
     expect(existsSync(PLUGIN)).toBe(true);
     const config = (await Bun.file(join(REPO, "biome.json")).json()) as {
+      plugins?: string[];
       overrides?: Array<{ includes?: string[]; plugins?: string[] }>;
     };
-    const testOverride = config.overrides?.find((o) => o.includes?.some((i) => i.includes("test")));
-    expect(testOverride?.plugins).toContain("./biome-plugins/no-as-never.grit");
+    expect(config.plugins).toContain("./biome-plugins/no-as-never.grit");
+    for (const override of config.overrides ?? []) {
+      expect(override.plugins ?? []).not.toContain("./biome-plugins/no-as-never.grit");
+    }
   });
 
   test("flags `as never` in real code", async () => {

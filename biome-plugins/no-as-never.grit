@@ -4,6 +4,12 @@ language js
 // silences any assignment error in one word. It is a strictly stronger escape
 // hatch than `as any`, and biome ships no built-in rule for it.
 //
+// Scoped at biome.json's ROOT since 2026-08-27, so it covers src/, bin/ and
+// test/ alike. It sat in the `test/**` override until `src/`'s last 2 sites
+// were drained (webhook-serve-compat.ts passed `undefined as never` for the
+// `this` and `server` arguments of a fetch handler; both now receive the real
+// in-memory server object). An override entry would silently re-narrow it.
+//
 // This is the ONLY gate on the shape. It replaced the `asNever` counter in
 // scripts/check-test-escape-hatches.ts, which retired on 2026-08-27: that
 // counter was text, its glob missed `.tsx` for the whole drain, and its whole

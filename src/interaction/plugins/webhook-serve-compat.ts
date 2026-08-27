@@ -57,17 +57,38 @@ function createInMemoryServer(options: ServeCompatOptions, port: number): ServeC
     );
   }
 
-  inMemoryServers.set(port, {
-    fetch: (request) =>
-      fetchHandler.call(undefined as never, request, undefined as never) as Response | Promise<Response>,
-  });
-
-  return {
+  /**
+   * The in-memory stand-in for the `Server` Bun would have created, built
+   * once and used for all three of its roles: the handler's `this`, the
+   * handler's `server` argument, and this function's return value. Bun passes
+   * the same object for all three, so anything else would be a different lie.
+   *
+   * The two arguments were `undefined as never` until 2026-08-27. `never` is
+   * assignable to everything, so it silenced the type error and left a
+   * handler that read `server.port` — or any other member Bun promises — to
+   * fail with a TypeError on undefined at runtime.
+   *
+   * The cast stays, and is the reason `no-as-never.grit` can now cover `src/`
+   * while this file still compiles: `Server` declares roughly twenty members
+   * (`reload`, `upgrade`, `publish`, `subscriberCount`, …) that an in-memory
+   * shim has no implementation for and no caller for. The only route into
+   * this handler is the patched `fetch` below, gated on
+   * CALLBACK_PATH_PREFIX — nax's own callback route, whose handler reads
+   * neither `this` nor `server`. A single named cast on one object states
+   * that; two `as never` at the call site stated nothing.
+   */
+  const server = {
     port,
     stop: () => {
       inMemoryServers.delete(port);
     },
   } as ServeCompatReturn;
+
+  inMemoryServers.set(port, {
+    fetch: (request) => fetchHandler.call(server, request, server) as Response | Promise<Response>,
+  });
+
+  return server;
 }
 
 export function installServePortZeroCompat(): void {

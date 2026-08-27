@@ -1446,3 +1446,62 @@ rule's own severity, which had no test of its own.
 Typecheck 0/0/0, `bun run lint` clean, `check:all` 24/24, `bun test test/unit/scripts/`
 184 pass / 0 fail. Ratchet re-baselined deliberately (a row removal, not a count change) and
 said so here.
+
+### 8.15 `no-as-never` widened to the repo — src's last 2 sites drained (2026-08-27)
+
+§8.8 left this open: *"`src/` has 2 sites (`webhook-serve-compat.ts:62`, `this`-argument
+casts on `.call()`); widening the scope means draining those first. Left as follow-up — out
+of this drain's scope."* Both are now gone and the plugin sits at `biome.json`'s **root**,
+covering `src/`, `bin/` and `test/`.
+
+#### The two sites were one missing value, and it was already in the file
+
+```ts
+fetchHandler.call(undefined as never, request, undefined as never)
+```
+
+Probing which property rejects the site (§6) rather than reading the `as never` as a verdict:
+both stand for the *same* thing — `ThisParameterType` is `Server<unknown>` and the second
+parameter is `server: Server<unknown>`. The shim had no `Server`.
+
+Except it did. Four lines down it was fabricating one for its own return value
+(`{ port, stop } as ServeCompatReturn`). Bun passes the same object as `this`, as `server`,
+and as `serve()`'s return; building it once and using it three times removes both casts and
+is what Bun actually does.
+
+**This was a live bug, not only a type lie.** `never` is assignable to everything, so it
+silenced the error and left any handler that read `server.port` — or any other member Bun
+promises — to hit a TypeError on `undefined`. The handler now receives a real object. The
+test that pins it (`webhook-serve-compat.test.ts`) was written first and failed on
+`expect(seenServer).toBeDefined()` before the fix, which is the only reason to believe it
+tests anything: the shim's in-memory path had **no** behavioural coverage at all before this.
+
+Its isolation needed a trick worth recording. `servePortZeroCompatInstalled` is module-level
+and survives the sibling describe's `afterEach` global restore, so a second `install()` is a
+no-op and the test would silently exercise unpatched globals. `await import("…?compat=tag")`
+gives a fresh module instance in Bun — verified in a scratch file before relying on it.
+
+The remaining `as ServeCompatReturn` is not a trade. `Server` declares ~20 members
+(`reload`, `upgrade`, `publish`, `subscriberCount`, …) an in-memory shim has no
+implementation *or caller* for — the only route in is the patched `fetch`, gated on
+`CALLBACK_PATH_PREFIX`, nax's own callback route. One named cast on one object states that.
+Two `as never` at a call site stated nothing.
+
+#### Override plugins merge, they do not replace
+
+The widening moved the entry from the `test/**` override to root `plugins`, leaving
+`no-absent-value.grit` in the override (it gates a test-only helper). Whether `test/` then
+*keeps* `as never` coverage depends on merge semantics nobody had checked. It merges —
+established behaviourally, not from docs, and now pinned: `biome-test-severity.test.ts`
+asserts the plugin fires on a `src/` path **and** that `no-absent-value` does *not*, and
+`biome-no-as-never-plugin.test.ts` asserts the root wiring and that no override re-declares
+it. Mutation-probed by putting it back in the override: 2 assertions go red, including the
+`src/` behavioural one.
+
+One trap found while writing the probe: a plugin path that fails to resolve makes biome exit
+with a config error and an **empty stdout**. That parses as a JSON failure, not as "no
+findings" — the same shape §8.8 recorded for `bun x biome` in a temp cwd. The repo-config
+copy must absolutise root plugin paths as well as override ones.
+
+Typecheck 0/0/0, `bun run lint` clean, `check:all` 24/24, `bun test test/unit/scripts/`
+186 pass / 0 fail. `grep -rE '\bas never\b' src/ bin/` → 0.

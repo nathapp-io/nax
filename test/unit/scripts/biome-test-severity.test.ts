@@ -45,10 +45,17 @@ async function lintUnderRepoConfig(
   try {
     const config = (await Bun.file(join(REPO, "biome.json")).json()) as {
       assist?: unknown;
+      plugins?: string[];
       overrides?: Array<{ plugins?: string[] }>;
     };
     // Assist actions are not lint diagnostics and would add import-sort noise.
     config.assist = { actions: { source: { organizeImports: "off" } } };
+    // Plugin paths resolve against the config's directory. Miss one and biome
+    // exits with a config error and an EMPTY stdout, which parses as a JSON
+    // failure rather than as "no findings" — never as a green run.
+    if (config.plugins !== undefined) {
+      config.plugins = config.plugins.map((p) => join(REPO, p));
+    }
     for (const override of config.overrides ?? []) {
       if (override.plugins !== undefined) {
         override.plugins = override.plugins.map((p) => join(REPO, p));
@@ -103,6 +110,24 @@ describe("biome test/** severities", () => {
   test("the absent-value plugin fires on a test/ path through the repo config", async () => {
     const { diags } = await lintUnderRepoConfig(PROBE, "export const x = absentValue<string>();\n");
     expect(diags.filter((d) => d.category === "plugin")).toHaveLength(1);
+  });
+
+  test("the as-never plugin reaches src/ too, and an override does not shadow it in test/", async () => {
+    // The scope widened from `test/**` to the repo root on 2026-08-27. Both
+    // halves matter: `src/` is newly covered, and `test/` must not have LOST
+    // coverage to the override that still declares its own `plugins` list —
+    // biome merges the two rather than replacing, which is the whole reason
+    // the widening could be done without duplicating the entry.
+    const inSrc = await lintUnderRepoConfig("src/probe.ts", "export const x = { a: 1 } as never;\n");
+    expect(inSrc.diags.filter((d) => d.category === "plugin")).toHaveLength(1);
+    expect(inSrc.exitCode).not.toBe(0);
+  });
+
+  test("the absent-value plugin stays scoped to test/ and does not reach src/", async () => {
+    // `absentValue<T>()` is a test-only helper (test/helpers/absent.ts). Its
+    // plugin belongs in the override, not at the root.
+    const inSrc = await lintUnderRepoConfig("src/probe.ts", "export const x = absentValue<string>();\n");
+    expect(inSrc.diags.filter((d) => d.category === "plugin")).toEqual([]);
   });
 
   test("biome.json sets the severities explicitly in the test/** override", async () => {
