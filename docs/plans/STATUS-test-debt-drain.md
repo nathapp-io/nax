@@ -550,3 +550,252 @@ info/warn methods overridden to push into the capturing arrays.
 started). Held-back items still open: 12 `mockImplementation as never` in `debate/runner-plan.test.ts`
 (§8.2 batch 2f held back, generic mock signature) and the `DebateConfig.stages.decompose?`
 additive src/ change recorded in §8.3 batch 3b.
+
+### 8.5 Batch 5 — twenty-six commits, sixty-one sites, 159 → 74 (2026-08-27)
+
+Picked up the drain after a session break. The current-state table at §0 was
+already stale by this point — §0 read 323, the §8.4 closing number was 159,
+and the actual re-measure before this batch was 135. Re-measured first per §0
+("§0 is re-measured, not carried forward").
+
+Recipes repeated across batches: type the builder/helper so call-site casts
+fall out (§1 route 1); use the helpers (`makeContextBundle`, `makeAgentRegistry`,
+`makeInteractionChain`, `makeLogger`, `makePackageView`) instead of partial
+literal stubs; drop redundant casts (the regex counter is text, not a parser);
+for `Logger`/`ExecutionPlan`/`PidRegistry` (classes with private fields),
+construct a real instance and override the methods rather than casting a
+partial literal (§8.4 batches 4f/4l recipe); use `agentManagerConfigSelector.select(DEFAULT_CONFIG)`
+for `AgentManagerConfig`; use `makeConfigSlice` / `makeNaxConfig` for `PlanConfig` /
+`NaxConfig` partials.
+
+**Five individual files**
+
+`test/unit/cli/status-cost.test.ts` (−3). Three `loadRuns: mock(... [...]) as never`
+sites with `{ runId, feature }` partials. Added a local `makeRunMetrics(overrides)`
+helper that fills the nine other `RunMetrics` fields from baseline, used at every
+call site. No assertion changed — only the `runId`/`feature` strings matter to
+the test bodies (`expect(...).toBe(injectedRuns)` re-checks the same reference
+across the seam).
+
+`test/unit/agents/manager-rate-limit.test.ts` (−4). Dropped the `baseConfig`
+partial (had `models` and `agent.default` plus an unused `agent.fallback`).
+`baseConfig as never` showed up four times across `new AgentManager` and
+`runOptions.config`. The recipe is `agentManagerConfigSelector.select(DEFAULT_CONFIG)`:
+`AgentManagerConfig` selects `agent`/`execution`/`profile`, none of which the test
+cares about beyond `agent.fallback.enabled=false` (which `DEFAULT_CONFIG.agent.fallback`
+already supplies). Per §6 ruling on file patterns: §8.3 3d used this recipe on
+the adjacent `manager.test.ts`; this file inherited the `baseConfig` literal and
+never moved.
+
+`test/unit/agents/manager-iface-run.test.ts` (−4). Three `{ getAgent: () => adapter } as never`
+partial-`AgentRegistry` literals (one returning `undefined`) plus `bundle: {} as never`.
+Substituted `makeAgentRegistry({ getAgent: () => adapter })` and `makeContextBundle()`
+verbatim. The `bundle` is what `executeHop` returns and the test only asserts on
+`result.agentFallbacks` — the manifest content is never read.
+
+`test/unit/execution/crash-signals.test.ts` (−3). Three `pidRegistry: { ... } as never`
+partial-PidRegistry literals. PidRegistry is a class with private fields, so the
+§8.4 4f recipe applies: `new PidRegistry("/tmp/crash-signals-test-XXX")` and
+override the methods the tests use. Test 1's `pidRegistry` only needs `killAll`
+to push to a `callOrder` array; tests 2 and 3 share a `let isFrozen = false`
+closure to coordinate `freeze`/`register`/`isFrozen`. Real instances, no
+fixtures missing.
+
+`test/unit/execution/crash-signals-idempotency.test.ts` (−2). Same pattern as above.
+Added a local `makePidRegistryStub(overrides)` helper that constructs
+`new PidRegistry("/tmp/crash-signals-idempotency")` and replaces the eight
+mocked methods (the full set: `killAll`, `register`, `unregister`, `cleanupStale`,
+`freeze`, `isFrozen`, `getPids`, `snapshot`) with no-ops, then `Object.assign`s
+the test's overrides on top. Used at both call sites.
+
+**Three medium files**
+
+`test/unit/tdd/orchestrator-totals.test.ts` (−3). `agentReturning(...)` returned an
+inferred object literal; three `fakeAgentManager(agent as never, ...)` call sites
+cast through. Typed `agentReturning` to return `AgentAdapter` directly, removed
+the unused `plan`/`decompose` methods (no assertion reads them; they were vestigial),
+defaulted `tokenUsage: tokens[call] ?? { inputTokens: 0, outputTokens: 0 }` to
+match `TurnResult.tokenUsage: TokenUsage` (non-optional). All three sites drop
+cleanly.
+
+`test/unit/cli/status-cost.test.ts` (−3). Three `loadRuns: mock(... [...]) as never`
+sites — see "Five individual files" above.
+
+`test/unit/execution/lifecycle/run-completion-session-close.test.ts` (−3). Three
+sites: `prd: makePrd() as never`, `statusWriter: makeStatusWriter() as never`,
+`config: { ...DEFAULT_CONFIG, execution: { ... } } as never`. `makePrd` already
+returned all the required PRD fields (analysis is optional); typed it as `PRD`
+directly. `makeStatusWriter` returns `MockStatusWriter = StatusWriter & {...}`,
+so the cast was redundant. The config spread produces a valid `NaxConfig` (the
+inner `execution.regressionGate` spread pins the new `mode`); no cast needed.
+
+**Seven small files**
+
+`test/integration/review/adversarial-reprompt-telemetry.test.ts` (−3). Three
+`_adversarialDeps.collectDiffFileList = async () => ["src/auth.ts"] as never`.
+The signature is `(workdir, storyGitRef, options?) => Promise<string[] | undefined>`;
+the literal return matches. The cast was defensive cargo.
+
+`test/unit/cli/rules.test.ts` (−2). Two `() => ({ warn: ... }) as never` Logger
+partials. Logger is a class with private fields (§8.4 4f recipe). Switched to
+`makeLogger()` from `test/helpers/mock-logger.ts` (which returns
+`Logger & { calls, reset }`); updated assertions from
+`warnings.find((x) => x.msg.includes(...))` to
+`logger.calls.find((c) => c.level === "warn" && c.message.includes(...))`.
+Same shape as the §8.4 4l recipe.
+
+`test/unit/agents/manager-dispatch-emission.test.ts` (−1). Held back: `fakeBundle = { files: [] } as never`.
+The bundle shape wanted is `ContextBundle`, which has `chunks`, not `files` —
+the test was pinning an impossible shape. Substituted `makeContextBundle()`
+per §8.3 3d's `bundle: makeContextBundle()` recipe; the test still passes because
+the assertions are on `dispatchEvents`, not bundle content.
+
+`test/unit/operations/adversarial-review-verify.test.ts` (−1).
+`logger.info = ((...a: unknown[]) => { calls.push(a as never); }) as typeof logger.info`.
+The variadic-tuple cast hid that `calls` was typed `Array<[string, string, Record<string, unknown>?]>`.
+Replaced the variadic with the actual `info(stage, message, data?)` signature —
+no cast needed, and the assertion on `calls.filter(c => c[2]?.event === ...)` is unchanged.
+
+`test/unit/execution/unified-executor-rl002.test.ts` (−2). Two `statusWriter: ctx.statusWriter as never`.
+`ctx.statusWriter` is `makeStatusWriter()` from `makeMinimalContext()` — already
+typed as `StatusWriter`. Both casts were cargo.
+
+`test/unit/execution/pipeline-result-handler-bug12.test.ts` (−2). Two
+`mockReturnValue(logger as never)`. Same Logger class issue. `MockLogger = Logger & {...}`
+is assignable to `Logger` directly. The cast was hiding the real instance behind
+the `MakeLogger` return type.
+
+`test/unit/review/semantic-retry-truncation.test.ts` (−2). Two `mockReturnValue(logger as never)`.
+The file had a local `makeLogger` returning `{ info, warn, debug, infoCalls, warnCalls }`
+— missing the 16+ private fields of `Logger`. Switched to `makeLogger()` from
+`test/helpers/mock-logger.ts`, foregrounded the `MockLogger` returns `Logger & { calls, reset }`,
+and migrated assertions to `logger.calls.find((c) => c.level === "warn" && ...)`.
+
+`test/unit/review/adversarial-retry-truncation.test.ts` (−2). Same migration as above.
+
+**Three `ModelDef` / `ModelTier` redundant casts**
+
+`test/unit/session/manager-pid-lifecycle.test.ts` (−2). Two
+`{ model: "claude-3-5-sonnet-20241022", provider: "anthropic" } as never`. `ModelDef`
+requires exactly `provider` and `model` (`pricing?`, `env?` optional) — the literal
+already satisfies. The cast was hiding the inferred type from the assignment slot.
+
+`test/unit/agents/acp/spawn-client-process.test.ts` (−2). Two `spawn: spawn as never`.
+The `spawn` mock returns `{ pid, exited, stdout, stderr, kill }` — a valid
+`SpawnResult` (missing `stdin?` which is optional). The cast was cargo.
+
+`test/unit/pipeline/stages/routing-profile-tier.test.ts` (−2). Two `"ultra" as never`
+on `EscalationAttempt.fromTier/toTier` and `RoutingDecision.modelTier`. `ModelTier = "fast" | "balanced" | "powerful" | (string & {})`
+— the `(string & {})` is the literal-intersection trick that keeps autocomplete
+for the union but accepts any string. `"ultra"` matches. The casts were hiding
+nothing.
+
+**Three `PlanConfig` / `NaxConfig` partials**
+
+`test/unit/plan/fidelity-survives-recovery.test.ts` (−2). `config: { plan: { specGuard: false }, timeoutSeconds: 30 } as never`
+and `interactionBridge: {} as never`. The `config` field is a full `NaxConfig`
+slice (the test asserts on `ctx.config.plan.specGuard`); substituted
+`makeNaxConfig({ plan: { specGuard: false } })`. `interactionBridge: {}` was
+missing `detectQuestion` and `onQuestionDetected`; substituted the standard
+stub from §8.4 (`{ detectQuestion: async () => false, onQuestionDetected: async () => "" }`).
+
+`test/unit/operations/verify-op-normalized-findings.test.ts` (−2). `packageView: {} as never`
+and `{ story: { id: "US-001" } } as never`. `packageView` needs the full `PackageView`
+interface (`select`, `config`, etc.); added a local `makePackageView()` over
+`DEFAULT_CONFIG` matching the §8.14 recipe used by `verify-op.test.ts`. The
+`{ story: { id: "US-001" } } as never` was hiding that `VerifierInput.story: UserStory`
+(needs `title`, `description`, `acceptanceCriteria`, etc.); used `makeStory({ id: "US-001" })`.
+Also moved the dynamic `await import("@/config")` out of the helper — it was
+`await`-ing inside a sync helper, which biome flags for a different reason.
+
+`test/unit/operations/autofix-implementer-strategy-tdd-verifier.test.ts` (−2).
+Two `{ id: "US-001" } as never` on `story` parameter to `makeAutofixImplementerStrategy(story, config, sink)`.
+The signature is `story: UserStory`; substituted `makeStory({ id: "US-001" })`.
+
+**Three fixture-tied recipes**
+
+`test/unit/agents/agent-manager-reset.test.ts` (−2). Two
+`{ ...DEFAULT_CONFIG, agent: { default: "claude" } } as never` for `AgentManagerConfig`.
+The test only asserts on `manager.isUnavailable(...)` — the agent config is
+incidental. Substituted `agentManagerConfigSelector.select(DEFAULT_CONFIG)`.
+
+`test/unit/operations/build-hop-callback-stale-retry.test.ts` (−3). Three sites
+in two tests:
+- `return undefined as never;` inside an override of `createContextToolRuntime` —
+  the override returns `Runtime | undefined`; `undefined` matches.
+- `const ctx = { ...makeCtx(sessionMgr), contextToolRunCounter: counter } as never;`
+  — typed as `BuildHopCallbackContext` directly.
+- `const bundle = { pushMarkdown: "", pullTools: [], digest: "", manifest: {} } as never;`
+  — substituted `makeContextBundle()` per §8.3 3d recipe (the helper provides
+  `manifest` via `makeContextManifest`).
+
+`test/unit/operations/build-hop-callback.test.ts` (−1). One
+`mock(() => ({}) as never)` for `handoff`. The `SessionManager.handoff` slot
+returns `SessionDescriptor`. The previous `{}` was pinning an impossible shape
+(missing `id`, `role`, `state`, `agent`, etc.). Used the same `HANDOFF_DESCRIPTOR`
+recipe as `build-hop-callback-stale-retry.test.ts` line 41.
+
+**One builder-typing recipe**
+
+`test/unit/plan/strategies.test.ts` (−3). Three sites:
+- `initInteractionChain: mock(async () => interactionChain as never)` — the local
+  `interactionChain` was `{ getPrimary() { return null; } }`, which doesn't satisfy
+  `InteractionChain`. Substituted `makeInteractionChain()` from `test/helpers/interaction-chain.ts`
+  (intersects `InteractionChain` with bun mocks).
+- `createDebateRunner: mock(() => ({}) as never)` — used `mock(() => makeDebateRunner())`
+  per §8.2 2f recipe.
+- `_planDeps.createRuntime = mock(() => expectedRuntime as never)` — `expectedRuntime`
+  is `makeMockRuntime()`, already typed; cast was cargo.
+
+**One `Logger` instance recipe**
+
+`test/unit/execution/execution-stage.test.ts` (−3). Same §8.4 4f recipe:
+- `getAgent: () => makeAgentAdapter({ name: "claude" }) as never` — `getAgent`
+  returns `AgentAdapter | undefined`; the mock returns `AgentAdapter`.
+- `assemblePlanInputsFromCtx: async () => ({}) as never` — `PlanInputs` requires
+  `story` and `config`; substituted `{ story: makeTestStory(), config: cfg }`.
+- `buildPlanForStrategy: async () => ({ run: planRun }) as never` — `ExecutionPlan`
+  is a class; replaced with `new ExecutionPlan(callCtx, {}, false)` and overrode
+  `plan.run = planRun`, mirroring the `execution-phase-telemetry.test.ts:61`
+  recipe.
+
+**Cumulative across batches 1–5:** asNever 603 → 74 (−529 across 67 files since the
+drain started).
+
+**Held back (counter trade only, per §8.2 / §5):**
+- `test/unit/debate/runner-plan.test.ts` (12) — `mockImplementation` of generic
+  `<I, O, C>(ctx, op, input) => Promise<O>` returning `{ success: true, rebut: "..." }`
+  literals. The only escape is `as DebateHybridOutput` / `as DebatePlanOutput`,
+  both `looseCast`. Recipe attempted: constrained `O extends DebateHybridOutput | DebatePlanOutput`
+  (rejected — TS2322: literal satisfies constraint, not `O`); plain generic
+  arrow (same); Object.assign or union narrowing (same). No fix without a
+  counter trade.
+- `test/unit/debate/runner-plan-signal.test.ts` (2) — same pattern, same held-back
+  ruling.
+
+**Held back (escalation candidates per §5, src/ additive change needed):**
+- `test/unit/execution/story-orchestrator-revalidation.test.ts` (1) — `mk(kind)`
+  helper returns `{ kind, slot: { op: { name: kind } } }`. `InternalPhase.slot: AnySlot`
+  where `AnySlot.op: RunOperation<any, any, any> | DeterministicOperation<any, any, any, any>`
+  requires complete `OperationBase` (~10 fields including `build`, `parse`).
+  `orderGateLast` only reads `.kind`. Recipe attempted: typed mk as
+  `(): InternalPhase` (rejected — op slot still missing fields); cast `as unknown as`
+  (closed ratchet). Fix needs `orderGateLast(phases: readonly { kind: PhaseKind }[])`
+  — additive narrowing at the callee, mirrors §6 ruling.
+- `test/unit/execution/rectification-overrides.test.ts` (1) — same `mk(kind)` pattern,
+  same held-back ruling.
+- `test/unit/cli/plan-decompose-debate.test.ts` (1) — same as §8.3 batch 3b's
+  held-back item: `decompose` stage read via
+  `as unknown as Record<string, DebateStageConfig>` at `src/cli/plan-decompose.ts:86`.
+  Additive src/ change: add `DebateConfig.stages.decompose?: DebateStageConfig`.
+
+Per §6 "verifying a cluster costs about as much as doing it" — the held-back
+sites cluster on three patterns (`mockImplementation` of generic callOp, `mk(kind)`
+helpers over InternalPhase, DebateConfig.stages.decompose?). All three should be
+addressed as a single follow-up batch with the matching src/ additive changes;
+running them together avoids three round-trips through `check:all`.
+
+**Phantom counts (regex noise, no fix possible per §0.1):**
+- `test/unit/operations/full-suite-rectify.test.ts` (1) — comment mentions
+  "`{} as never` cargo" in the §1 prose. Per §4, deleting the comment that
+  merely mentions the phrase is forbidden.
