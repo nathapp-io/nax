@@ -10,7 +10,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 
 ---
 
-## 0. Current state — re-measured 2026-08-27 (after §8.17)
+## 0. Current state — re-measured 2026-08-27 (after §8.18)
 
 | Shape | Gate | Reading | Drain target? |
 |:--|:--|--:|:--|
@@ -24,7 +24,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 | `@ts-ignore` (that directive only) | biome `noTsIgnore` @ `error` | **0** | done — promoted from `warn` (§8.17) |
 | `ratchetAllow` | regex ratchet | 25 | done — floor reached (§8.9), and the floor is **not** zero: each site builds a deliberately-illegal value for a coercion guard, so the cast *is* the test |
 | `tsSuppress` | regex ratchet | **0** | done — closed invariant (§8.17); the pattern is anchored to the comment opener, so prose about a directive no longer counts |
-| `looseCast` | regex ratchet | 1790 | **no** — guard only, see below |
+| `looseCast` | regex ratchet | 1687 | **no** — guard only, see below. The 103 `as NaxError` sites drained out of it in §8.18 are the first cut into this number since the counter was born |
 
 `check:test-escape-hatches` now carries **three** counters, not eight. The five with a
 parser behind them retired in §8.14: a text regex kept as a "secondary guard" behind a
@@ -365,6 +365,12 @@ they were earned in: §4x = `archive/STATUS-1514-typecheck-drain.md`, §8.x of t
   guard", read what its residue actually contains, and ask the separate question: what was
   this counter *incidentally* guarding? Here it was the biome severities themselves, which
   had no test of their own until the counters were removed.
+- **A catch-block cast to a class type asserts nothing** (§8.18). `expect()` does not narrow,
+  so the paired `toBeInstanceOf` line and the cast are two statements of one claim that leaves
+  the value unusable to the type checker — and where the pair is missing entirely, nothing at
+  all is checked. A throwing `assertXxx` helper (the `assertDefined` family) checks for real,
+  fails with the actual caught value, and narrows; when blind casts cluster on one type, give
+  that type the helper.
 
 ## 7. Where the archived detail lives
 
@@ -1648,3 +1654,54 @@ file; a planted `@ts-ignore` fails `bun run lint`.
 
 Typecheck 0/0/0, `bun run lint` clean, `check:all` 24/24. Baseline lowered to `tsSuppress=0`
 — a deliberate recount of the same tree, which §4 permits when said in the commit.
+
+### 8.18 The NaxError catch casts — first cut into the looseCast guard (2026-08-27)
+
+§0 ruled `looseCast` "not a target" and that ruling still holds for the remaining number:
+no broad drain was opened. What was drained is one named population inside it — **every
+`as NaxError` cast in `test/`**, 124 grep sites across 40 files — dropped in this session as
+a scoped continuation. `looseCast` 1790 → 1687; every other counter flat throughout.
+
+**The shape and why the cast asserted nothing.** Test code catches an error from a command or
+op, then does `(err as NaxError).code` to read `.code`/`.context`/`.message`. A blind cast to
+a class type checks nothing: if the code under test starts throwing a plain `Error` (or any
+other shape), the compiler is silenced by a lie about reality and the downstream expectation
+fails with an indirect symptom (`undefined !== "SOME_CODE"`), not by naming the defect. Half
+the files also had a separate `expect(err).toBeInstanceOf(NaxError)` line because bun's
+`expect` does not narrow — two lines asserting the same thing, neither making the value
+readable to the type checker.
+
+**The recipe — `assertNaxError(value, label)`** in `test/helpers/assert-nax-error.ts`
+(barrel-exported): real `instanceof NaxError`, narrows via an assertion function, throws with
+what was actually caught on failure. Contract mirrors `assertDefined` (§6: throwing helpers,
+checked for real at runtime). One call replaces the instanceof+cast pair where both existed;
+where only the blind cast existed it *adds* a runtime guarantee the cast never had. Caught
+subtypes work unchanged — `NeutralityLintError extends NaxError`, so its four static-rules
+assertions keep their subtype `toBeInstanceOf` line and gain base-class narrowing underneath.
+
+Batches, each with its scanner-verified delta — `test:` config cluster 1790 → 1772;
+execution/context/cli sweep 1772 → 1700; final eight files 1700 → 1687. Total −103.
+
+- **A rule satisfied by construction beats a check after the fact — but only when the value
+  is really from that class.** The helper turned ~80 sites that were *asserted nowhere* into
+  sites that fail loudly with the actual caught value. Two files (`dead-quality-flags`,
+  `migrate`) had casts over `.catch((e) => e)` rejections with no other guard at all.
+- **The prose floor.** Four `as NaxError` matches remain in `test/` — three describe/test
+  titles and one doc comment quoting the pattern this change replaced. The scanner has never
+  counted them (verified against the per-file baseline before/after); §4 forbids rewording
+  them to dodge a counter even if something did.
+- **A blind cast to a class type was already counted — what it lacked was meaning, not
+  measurement.** The gain this batch is that ~80 sites asserting *nothing* now fail loudly
+  with the actual caught value, and the remaining redundant `instanceof` checks collapsed
+  into the one helper call that also narrows.
+
+**Two gate facts worth recording.** Adding one identifier pushed `plan.test.ts` past biome's
+print width, whose re-wrap raised the file 1196 → 1203 lines — the file-sizes baseline was
+grandfathered upward per the §8.4 precedent (+7, imports only). And one `--update-baseline`
+ran before `check:all` finished green (import-order fallout), which wrote no false number —
+the same tree re-scanned green immediately after, 1700 confirmed twice — but the ordering rule
+exists precisely so nobody has to prove that after the fact. Sequence restored for the final
+two commits.
+
+Typecheck 0/0/0, `bun run lint` clean, `check:all` 24/24, full suite + coverage green before
+the final baseline write.
