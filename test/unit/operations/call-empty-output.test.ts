@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { assertDefined, makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
+import {
+  assertDefined,
+  assertNaxError,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeSessionManager,
+} from "@test/helpers";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import type { AdapterFailure } from "@/context/engine";
 import type { RunOperation } from "@/operations";
@@ -98,7 +104,7 @@ describe("sendWithFileOutput — AC1: empty output synthesises fail-stale Adapte
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
     createdRuntimes.push(runtime);
 
-    let thrown: (Error & { code?: string }) | null = null;
+    let thrown: unknown;
     try {
       await callOp(
         { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
@@ -106,13 +112,13 @@ describe("sendWithFileOutput — AC1: empty output synthesises fail-stale Adapte
         "hello",
       );
     } catch (err) {
-      thrown = err as Error & { code?: string };
+      thrown = err;
     }
 
-    expect(thrown).not.toBeNull();
     // Must throw CALL_OP_NO_OUTPUT, not CALL_OP_PARSE_FAILED
-    expect(thrown?.message).toContain("agent returned no output");
-    expect((thrown as { code?: string })?.code).toBe("CALL_OP_NO_OUTPUT");
+    assertNaxError(thrown, "callOp rejection");
+    expect(thrown.message).toContain("agent returned no output");
+    expect(thrown.code).toBe("CALL_OP_NO_OUTPUT");
   });
 
   test("whitespace-only output → synthesis fires (adapterFailure set) → manager sees fail-stale", async () => {
@@ -180,7 +186,7 @@ describe("sendWithFileOutput — AC1: empty output synthesises fail-stale Adapte
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
     createdRuntimes.push(runtime);
 
-    let thrown: (Error & { code?: string; context?: { storyId?: string } }) | null = null;
+    let thrown: unknown;
     try {
       await callOp(
         { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
@@ -188,14 +194,14 @@ describe("sendWithFileOutput — AC1: empty output synthesises fail-stale Adapte
         "hello",
       );
     } catch (err) {
-      thrown = err as Error & { code?: string; context?: { storyId?: string } };
+      thrown = err;
     }
 
-    expect(thrown).not.toBeNull();
     // The synthesised failure output is empty string (no content injected).
     // The CALL_OP_NO_OUTPUT error message confirms synthesis did fire (op name in msg).
-    expect(thrown?.message).toContain("my-named-op");
-    expect((thrown as { code?: string })?.code).toBe("CALL_OP_NO_OUTPUT");
+    assertNaxError(thrown, "callOp rejection");
+    expect(thrown.message).toContain("my-named-op");
+    expect(thrown.code).toBe("CALL_OP_NO_OUTPUT");
     // The hop result output is empty because sendWithFileOutput set adapterFailure
     // but left output as-is (empty), which then flows to callOp as rawOutput="".
     expect(capturedOutput).toBe("");

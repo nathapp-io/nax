@@ -18,6 +18,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   assertDefined,
+  assertNaxError,
   makeMockAgentManager,
   makeMockCallContext,
   makeMockRuntime,
@@ -165,15 +166,15 @@ describe("AC3: run-kind empty-output — all retries exhausted → CALL_OP_NO_OU
 
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
 
-    let thrown: (Error & { code?: string }) | null = null;
+    let thrown: unknown;
     try {
       await callOp(makeMockCallContext({ runtime }), makeRunOp("exhaust-retries"), "hello");
     } catch (err) {
-      thrown = err as Error & { code?: string };
+      thrown = err;
     }
 
-    expect(thrown).not.toBeNull();
-    expect(thrown?.code).toBe("CALL_OP_NO_OUTPUT");
+    assertNaxError(thrown, "callOp rejection");
+    expect(thrown.code).toBe("CALL_OP_NO_OUTPUT");
     // 1 initial + 2 retries = 3 total send calls
     expect(hopCallCount).toBe(3);
   });
@@ -197,15 +198,15 @@ describe("AC3: run-kind empty-output — all retries exhausted → CALL_OP_NO_OU
 
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
 
-    let thrown: (Error & { code?: string }) | null = null;
+    let thrown: unknown;
     try {
       await callOp(makeMockCallContext({ runtime }), makeRunOp("zero-retries"), "hello");
     } catch (err) {
-      thrown = err as Error & { code?: string };
+      thrown = err;
     }
 
-    expect(thrown).not.toBeNull();
-    expect(thrown?.code).toBe("CALL_OP_NO_OUTPUT");
+    assertNaxError(thrown, "callOp rejection");
+    expect(thrown.code).toBe("CALL_OP_NO_OUTPUT");
     expect(hopCallCount).toBe(1);
   });
 });

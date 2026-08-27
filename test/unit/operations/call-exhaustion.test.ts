@@ -19,7 +19,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   agentManagerInternals,
+  assertCaughtInstanceOf,
   assertDefined,
+  assertNaxError,
   makeMockAgentManager,
   makeMockRuntime,
   makeNaxConfig,
@@ -28,6 +30,7 @@ import {
 } from "@test/helpers";
 import type { TurnResult } from "@/agents/types";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import { NaxError } from "@/errors";
 import type { CompleteOperation, RunOperation } from "@/operations";
 import { callOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -98,7 +101,7 @@ describe("AC7: run-kind — all retries exhaust → CALL_OP_NO_OUTPUT", () => {
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
     createdRuntimes.push(runtime);
 
-    let thrown: (Error & { code?: string }) | null = null;
+    let thrown: unknown;
     try {
       await callOp(
         { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "us-001" },
@@ -106,11 +109,11 @@ describe("AC7: run-kind — all retries exhaust → CALL_OP_NO_OUTPUT", () => {
         "hello",
       );
     } catch (err) {
-      thrown = err as Error & { code?: string };
+      thrown = err;
     }
 
-    expect(thrown).not.toBeNull();
-    expect(thrown?.code).toBe("CALL_OP_NO_OUTPUT");
+    assertNaxError(thrown, "callOp rejection");
+    expect(thrown.code).toBe("CALL_OP_NO_OUTPUT");
   });
 
   test("multiple retries all return empty → throws CALL_OP_NO_OUTPUT (not CALL_OP_PARSE_FAILED)", async () => {
@@ -140,7 +143,7 @@ describe("AC7: run-kind — all retries exhaust → CALL_OP_NO_OUTPUT", () => {
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
     createdRuntimes.push(runtime);
 
-    let thrown: (Error & { code?: string }) | null = null;
+    let thrown: unknown;
     try {
       await callOp(
         { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "us-002" },
@@ -148,13 +151,13 @@ describe("AC7: run-kind — all retries exhaust → CALL_OP_NO_OUTPUT", () => {
         "hello",
       );
     } catch (err) {
-      thrown = err as Error & { code?: string };
+      thrown = err;
     }
 
-    expect(thrown).not.toBeNull();
     // Error code must specifically be CALL_OP_NO_OUTPUT, not CALL_OP_PARSE_FAILED
-    expect(thrown?.code).toBe("CALL_OP_NO_OUTPUT");
-    expect(thrown?.code).not.toBe("CALL_OP_PARSE_FAILED");
+    assertNaxError(thrown, "callOp rejection");
+    expect(thrown.code).toBe("CALL_OP_NO_OUTPUT");
+    expect(thrown.code).not.toBe("CALL_OP_PARSE_FAILED");
     expect(hopCount).toBe(3);
   });
 });
@@ -240,7 +243,7 @@ describe("AC7: complete-kind — all retries exhaust → parse receives empty st
       },
     };
 
-    let thrown: (Error & { code?: string }) | null = null;
+    let thrown: unknown;
     try {
       await callOp(
         { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "us-004" },
@@ -248,14 +251,13 @@ describe("AC7: complete-kind — all retries exhaust → parse receives empty st
         "hello",
       );
     } catch (err) {
-      thrown = err as Error & { code?: string };
+      thrown = err;
     }
 
-    expect(thrown).not.toBeNull();
-    // Parse error propagates as-is (no retry strategy) — NOT CALL_OP_PARSE_FAILED
-    expect(thrown?.message).toContain("parse-rejected-empty");
-    expect(thrown?.code).not.toBe("CALL_OP_PARSE_FAILED");
-    expect(thrown?.code).not.toBe("CALL_OP_NO_OUTPUT");
+    // Parse error propagates as-is (no retry strategy) — NOT a wrapped NaxError
+    assertCaughtInstanceOf(thrown, Error, "callOp rejection");
+    expect(thrown.message).toContain("parse-rejected-empty");
+    expect(thrown).not.toBeInstanceOf(NaxError);
   });
 });
 
@@ -283,7 +285,7 @@ describe("AC7: error code is CALL_OP_NO_OUTPUT specifically (run-kind)", () => {
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
     createdRuntimes.push(runtime);
 
-    let thrown: (Error & { code?: string }) | null = null;
+    let thrown: unknown;
     try {
       await callOp(
         { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "us-005" },
@@ -291,13 +293,13 @@ describe("AC7: error code is CALL_OP_NO_OUTPUT specifically (run-kind)", () => {
         "hello",
       );
     } catch (err) {
-      thrown = err as Error & { code?: string };
+      thrown = err;
     }
 
-    expect(thrown).not.toBeNull();
     // Specifically CALL_OP_NO_OUTPUT — not a parse failure or generic error
-    expect(thrown?.code).toBe("CALL_OP_NO_OUTPUT");
-    expect(thrown?.code).not.toBe("CALL_OP_PARSE_FAILED");
+    assertNaxError(thrown, "callOp rejection");
+    expect(thrown.code).toBe("CALL_OP_NO_OUTPUT");
+    expect(thrown.code).not.toBe("CALL_OP_PARSE_FAILED");
     expect(thrown?.code).not.toBe("CALL_OP_MAX_RETRIES");
     expect(thrown?.code).not.toBe("CALL_OP_ABORTED");
   });

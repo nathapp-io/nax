@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { assertDefined, makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import {
+  assertDefined,
+  assertNaxError,
+  makeMockAgentManager,
+  makeSessionManager,
+  makeTestRuntime,
+} from "@test/helpers";
 import type { AgentRunRequest } from "@/agents";
 import type { DEFAULT_CONFIG } from "@/config";
 import { pickSelector } from "@/config";
@@ -607,7 +613,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       retry: alwaysRetry,
     };
 
-    let thrownError: Error | null = null;
+    let thrownError: unknown;
     try {
       await callOp(
         { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
@@ -615,11 +621,11 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
         { text: "hello" },
       );
     } catch (err) {
-      thrownError = err as Error;
+      thrownError = err;
     }
 
-    expect(thrownError).not.toBeNull();
-    expect((thrownError as import("@/errors").NaxError).code).toBe("CALL_OP_ABORTED");
+    assertNaxError(thrownError, "callOp rejection");
+    expect(thrownError.code).toBe("CALL_OP_ABORTED");
   });
 
   test("two sendWithParseRetry calls in one hopBody have independent retry state", async () => {

@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 25,
-    "looseCast": 1665
+    "looseCast": 1649
   },
-  "updatedAt": "2026-08-27T11:29:13.419Z",
+  "updatedAt": "2026-08-27T11:33:40.922Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -120,9 +120,6 @@
     "test/integration/execution/status-file-integration.test.ts": {
       "looseCast": 6
     },
-    "test/integration/operations/run-empty-output-retry.test.ts": {
-      "looseCast": 2
-    },
     "test/integration/operations/middleware-coverage.test.ts": {
       "looseCast": 2
     },
@@ -166,7 +163,7 @@
       "looseCast": 5
     },
     "test/integration/config/profile-loader.test.ts": {
-      "looseCast": 5
+      "looseCast": 4
     },
     "test/integration/pipeline/pipeline.test.ts": {
       "looseCast": 1
@@ -217,7 +214,7 @@
       "looseCast": 2
     },
     "test/unit/interaction/init-headless.test.ts": {
-      "looseCast": 4
+      "looseCast": 2
     },
     "test/unit/interaction/interaction-network-failures.test.ts": {
       "looseCast": 1
@@ -588,9 +585,6 @@
     "test/unit/operations/adversarial-review-reground.test.ts": {
       "looseCast": 2
     },
-    "test/unit/operations/call-empty-output.test.ts": {
-      "looseCast": 2
-    },
     "test/unit/operations/autofix-implementer-strategy.test.ts": {
       "looseCast": 9
     },
@@ -604,7 +598,7 @@
       "looseCast": 1
     },
     "test/unit/operations/call-exhaustion.test.ts": {
-      "looseCast": 6
+      "looseCast": 2
     },
     "test/unit/operations/finish-narrative.test.ts": {
       "ratchetAllow": 2
@@ -670,7 +664,7 @@
       "looseCast": 3
     },
     "test/unit/operations/run-operation-retry.test.ts": {
-      "looseCast": 3
+      "looseCast": 2
     },
     "test/unit/operations/typecheck-check-tool-diagnostics.test.ts": {
       "looseCast": 4
@@ -725,9 +719,6 @@
     },
     "test/unit/cli/plan-mode.test.ts": {
       "looseCast": 2
-    },
-    "test/unit/cli/rules-lint-isolation.test.ts": {
-      "looseCast": 1
     },
     "test/unit/cli/plan-decompose-debate.test.ts": {
       "looseCast": 5
@@ -1076,7 +1067,7 @@
       "looseCast": 1
     },
     "test/unit/context/engine/effectiveness-eval.test.ts": {
-      "looseCast": 16
+      "looseCast": 13
     },
     "test/unit/context/engine/rebuild.test.ts": {
       "looseCast": 1

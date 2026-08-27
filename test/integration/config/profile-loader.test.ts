@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { loadConfig } from "@/config/loader";
 
 /**
@@ -522,9 +522,9 @@ describe("loadConfig — multi-profile chain override", () => {
     const { loadConfigForWorkdir } = await import("@/config/loader");
     const rootConfigPath = join(projectDir, ".nax", "config.json");
 
-    const err = await loadConfigForWorkdir(rootConfigPath, "pkg").catch((e: Error) => e);
-    expect(err).toBeInstanceOf(Error);
-    expect((err as { code?: string }).code).toBe("PER_PACKAGE_PROFILE_INVALID");
-    expect((err as Error).message).toContain("pkg");
+    const err = await loadConfigForWorkdir(rootConfigPath, "pkg").catch((e: unknown) => e);
+    assertNaxError(err, "loadConfigForWorkdir rejection");
+    expect(err.code).toBe("PER_PACKAGE_PROFILE_INVALID");
+    expect(err.message).toContain("pkg");
   });
 });

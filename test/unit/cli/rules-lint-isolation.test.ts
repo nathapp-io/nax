@@ -11,7 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { LogCall } from "@test/helpers";
-import { makeLogger } from "@test/helpers";
+import { assertNaxError, makeLogger } from "@test/helpers";
 import { _rulesCLIDeps, _rulesLintDeps, rulesLintCommandDirect as rulesLintCommandFromLint } from "@/cli";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
 
@@ -158,9 +158,9 @@ describe("US-002 rulesLintCommand — AC2 reject with NaxError RULES_LINT_ROOT_F
       stdout.restore();
     }
 
-    expect(caught).toBeInstanceOf(Error);
-    expect((caught as { code?: string }).code).toBe("RULES_LINT_ROOT_FAILED");
-    expect((caught as Error).message).toContain("/project");
+    assertNaxError(caught, "rulesLintCommand rejection");
+    expect(caught.code).toBe("RULES_LINT_ROOT_FAILED");
+    expect(caught.message).toContain("/project");
   });
 });
 
