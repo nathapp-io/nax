@@ -24,7 +24,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 | `@ts-ignore` (that directive only) | biome `noTsIgnore` @ `error` | **0** | done — promoted from `warn` (§8.17) |
 | `ratchetAllow` | regex ratchet | 25 | done — floor reached (§8.9), and the floor is **not** zero: each site builds a deliberately-illegal value for a coercion guard, so the cast *is* the test |
 | `tsSuppress` | regex ratchet | **0** | done — closed invariant (§8.17); the pattern is anchored to the comment opener, so prose about a directive no longer counts |
-| `looseCast` | regex ratchet | 1687 | **no** — guard only, see below. The 103 `as NaxError` sites drained out of it in §8.18 are the first cut into this number since the counter was born |
+| `looseCast` | regex ratchet | 1687 | **no** — guard only, see below. The 103 `as NaxError` sites drained out of it in §8.18 are the first cut into this number since the counter was born. **One scoped population remains open: the error-class catch casts, queued in §0.2** |
 
 `check:test-escape-hatches` now carries **three** counters, not eight. The five with a
 parser behind them retired in §8.14: a text regex kept as a "secondary guard" behind a
@@ -128,6 +128,66 @@ was fixed or reworded is on review (§4), and there is no parser to catch the di
 
 Use the regex ratchet for what it is good at — failing a PR that *adds* debt, on every commit,
 in milliseconds.
+
+---
+
+### 0.2 Open drain — the error-class catch casts (`as Error` + subclasses), ~67 sites
+
+**This is the last scoped cut with a proven recipe behind it. When it closes, the doc
+closes with it** — the remaining `looseCast` population is the guard's residue
+(`as Record` 360, `as ReturnType` 175, `as Partial` 102, `as Parameters` 61 …), which is
+idiomatic narrowing, not debt, and §0's "not a target" ruling resumes in full.
+
+The population is §8.18's shape with different class names — blind casts on caught values
+that assert nothing at runtime and fail with indirect symptoms when the thrown type changes.
+Ranked by target (repo grep 2026-08-27; grep counts include prose, the scanner's per-file
+baseline is the measure):
+
+| Sites | Target | Extends | Note |
+|--:|:--|:--|:--|
+| 46 | `as Error` | — | catch-block reads of `.message` / `.name`, spread over 26 files (top: `profile-loader.test.ts` 5, `call-exhaustion.test.ts` 4) |
+| 11 | `as RulesFrontmatterError` | `NaxError` | `rules-frontmatter.test.ts` 6, `rules-frontmatter-description.test.ts` 5 |
+| 8 | `as SessionFailureError` | **plain `Error`** | all in `session/manager-phase-b-prompt.test.ts` |
+| 2 | `as NeutralityLintError` | `NaxError` | `canonical-loader.test.ts` |
+| 1 | `as ParseValidationError` | **plain `Error`** | `plan-draft.test.ts` |
+
+Regenerate the per-file queue any time:
+
+```bash
+grep -rn 'as [A-Za-z]*Error\b' test/ --include='*.ts' --include='*.tsx'
+```
+
+**The recipe.** Generalise `test/helpers/assert-nax-error.ts` (§8.18) rather than cloning it
+per class: one `assertCaughtInstanceOf(value, Ctor, label): asserts value is InstanceType<C>`
+that does the real `instanceof`, throws with what was actually caught (reuse the existing
+describe logic), and narrows. Keep `assertNaxError` as a thin wrapper so §8.18's 40 files do
+not churn. Two constraints the NaxError drain did not have:
+
+1. `SessionFailureError` and `ParseValidationError` extend plain `Error`, **not** `NaxError`
+   (`src/agents/types.ts:372`, `src/agents/retry/types.ts:46`) — so the generic helper is the
+   route, not a widened `assertNaxError`.
+2. For subclass sites that currently pair a cast with `expect(err).toBeInstanceOf(Subclass)`,
+   one helper call with the subclass constructor replaces both, exactly as §8.18 did for the
+   `NeutralityLintError` static-rules assertions.
+
+**Held back before you start:**
+
+- `test/unit/scripts/biome-no-as-never-plugin.test.ts` — its one `{} as Error` is the
+  **negative-control fixture** §8.14 exempted by name: it proves the plugin ignores an
+  ordinary cast, and that shape *is* what `looseCast` counts. Do not touch it.
+- The 4 remaining `as NaxError` grep hits are prose (§8.18's floor) — titles and doc
+  comments the scanner has never counted. §4 forbids rewording them.
+- Not every `as Error` is a catch cast. Read each site before applying the helper: a cast in
+  a fixture or a mock's return position is a different claim, and forcing the helper onto it
+  changes what the test builds rather than what it asserts. If it is not a caught value being
+  narrowed, leave it and note it in the commit body.
+
+Expected delta: `looseCast` 1687 → ~1622, minus whatever the site-by-site read holds back.
+Baseline slack verified **flat at 1687** on 2026-08-27 before this hand-off (§6: re-check the
+slack before every hand-off). §2's per-unit loop, §3's per-commit order, §4's forbidden list
+and §5's escalation rules all apply unchanged — in particular, do not trade the cast for
+`as unknown as`, and a subclass site where `instanceof` fails at runtime is a **finding to
+escalate** (the test was pinning a class the code never throws), not a site to re-cast.
 
 ---
 
