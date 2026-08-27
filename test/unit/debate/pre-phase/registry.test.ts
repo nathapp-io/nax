@@ -4,8 +4,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { assertNaxError } from "@test/helpers";
 import { resolvePreDebatePhase } from "@/debate";
-import { NaxError } from "@/errors";
 
 describe("resolvePreDebatePhase", () => {
   it("throws NaxError with code PRE_DEBATE_PHASE_UNKNOWN for unknown kind", () => {
@@ -15,8 +15,8 @@ describe("resolvePreDebatePhase", () => {
     } catch (e) {
       caught = e;
     }
-    expect(caught).toBeInstanceOf(NaxError);
-    expect((caught as NaxError).code).toBe("PRE_DEBATE_PHASE_UNKNOWN");
+    assertNaxError(caught);
+    expect(caught.code).toBe("PRE_DEBATE_PHASE_UNKNOWN");
   });
 
   it("throws NaxError with code PRE_DEBATE_PHASE_UNKNOWN for empty string", () => {
@@ -26,7 +26,7 @@ describe("resolvePreDebatePhase", () => {
     } catch (e) {
       caught = e;
     }
-    expect(caught).toBeInstanceOf(NaxError);
-    expect((caught as NaxError).code).toBe("PRE_DEBATE_PHASE_UNKNOWN");
+    assertNaxError(caught);
+    expect(caught.code).toBe("PRE_DEBATE_PHASE_UNKNOWN");
   });
 });

@@ -1,7 +1,7 @@
 // test/unit/commands/migrate.test.ts
 import { describe, expect, it } from "bun:test";
 import path from "node:path";
-import { withTempDir } from "@test/helpers";
+import { assertNaxError, withTempDir } from "@test/helpers";
 import { detectGeneratedContent, migrateCommand } from "@/commands/migrate";
 import { NaxError } from "@/errors";
 
@@ -50,27 +50,27 @@ describe("detectGeneratedContent", () => {
 describe("migrateCommand --reclaim", () => {
   it("throws when name does not exist in ~/.nax/", async () => {
     const err = await migrateCommand({ workdir: "/tmp", reclaim: "nonexistent-test-9999" }).catch((e) => e);
-    expect(err).toBeInstanceOf(NaxError);
-    expect((err as NaxError).code).toBe("MIGRATE_RECLAIM_NOT_FOUND");
+    assertNaxError(err);
+    expect(err.code).toBe("MIGRATE_RECLAIM_NOT_FOUND");
   });
 
   it("throws MIGRATE_INVALID_NAME when name contains path traversal characters", async () => {
     const err = await migrateCommand({ workdir: "/tmp", reclaim: "../etc" }).catch((e) => e);
-    expect(err).toBeInstanceOf(NaxError);
-    expect((err as NaxError).code).toBe("MIGRATE_INVALID_NAME");
+    assertNaxError(err);
+    expect(err.code).toBe("MIGRATE_INVALID_NAME");
   });
 });
 
 describe("migrateCommand --merge", () => {
   it("throws when identity does not exist", async () => {
     const err = await migrateCommand({ workdir: "/tmp", merge: "nonexistent-test-9999" }).catch((e) => e);
-    expect(err).toBeInstanceOf(NaxError);
-    expect((err as NaxError).code).toBe("MIGRATE_MERGE_NOT_FOUND");
+    assertNaxError(err);
+    expect(err.code).toBe("MIGRATE_MERGE_NOT_FOUND");
   });
 
   it("throws MIGRATE_INVALID_NAME when name contains path traversal characters", async () => {
     const err = await migrateCommand({ workdir: "/tmp", merge: "../etc" }).catch((e) => e);
-    expect(err).toBeInstanceOf(NaxError);
-    expect((err as NaxError).code).toBe("MIGRATE_INVALID_NAME");
+    assertNaxError(err);
+    expect(err.code).toBe("MIGRATE_INVALID_NAME");
   });
 });

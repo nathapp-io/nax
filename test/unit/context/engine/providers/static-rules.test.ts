@@ -8,11 +8,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { assertNaxError } from "@test/helpers";
 import { _staticRulesDeps, StaticRulesProvider } from "@/context/engine/providers/static-rules";
 import type { ContextRequest } from "@/context/engine/types";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
 import { NeutralityLintError } from "@/context/rules/canonical-loader";
-import type { NaxError } from "@/errors";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers
@@ -206,7 +206,8 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
       threw = e;
     }
     expect(threw).toBeInstanceOf(NeutralityLintError);
-    expect((threw as NaxError).code).toBe("NEUTRALITY_LINT_FAILED");
+    assertNaxError(threw);
+    expect(threw.code).toBe("NEUTRALITY_LINT_FAILED");
   });
 });
 
@@ -430,7 +431,8 @@ describe("StaticRulesProvider — AC-57 per-package overlay", () => {
       threw = e;
     }
     expect(threw).toBeInstanceOf(NeutralityLintError);
-    expect((threw as NaxError).code).toBe("NEUTRALITY_LINT_FAILED");
+    assertNaxError(threw);
+    expect(threw.code).toBe("NEUTRALITY_LINT_FAILED");
   });
 
   test("monorepo: empty package falls through to repo only; loadCanonicalRules called exactly twice", async () => {
@@ -748,8 +750,9 @@ describe("StaticRulesProvider — US-003 NeutralityLintError propagation", () =>
       threw = e;
     }
     expect(threw).toBeInstanceOf(NeutralityLintError);
-    expect((threw as NaxError).code).toBe("NEUTRALITY_LINT_FAILED");
-    expect((threw as NaxError).context?.stage).toBe("canonical-loader");
+    assertNaxError(threw);
+    expect(threw.code).toBe("NEUTRALITY_LINT_FAILED");
+    expect(threw.context?.stage).toBe("canonical-loader");
   });
 });
 

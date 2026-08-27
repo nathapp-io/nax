@@ -19,7 +19,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { loadConfig } from "@/config";
 import { NaxError } from "@/errors";
 
@@ -53,7 +53,8 @@ describe("dead quality flags — removal guard", () => {
 
     test(`the error names quality.${key} and how to get the behaviour`, async () => {
       const root = await writeProjectConfig({ quality: { [key]: false } });
-      const err = (await loadConfig(root).catch((e: unknown) => e)) as NaxError;
+      const err = await loadConfig(root).catch((e: unknown) => e);
+      assertNaxError(err);
       expect(err.message).toContain(`quality.${key}`);
       // The migration path is "unset the command", not "set another flag".
       expect(err.message).toContain("quality.commands");
@@ -64,7 +65,8 @@ describe("dead quality flags — removal guard", () => {
     const root = await writeProjectConfig({
       quality: { requireTypecheck: false, requireLint: true, requireTests: false },
     });
-    const err = (await loadConfig(root).catch((e: unknown) => e)) as NaxError;
+    const err = await loadConfig(root).catch((e: unknown) => e);
+    assertNaxError(err);
     expect(err.message).toContain("quality.requireTypecheck");
     expect(err.message).toContain("quality.requireLint");
     expect(err.message).toContain("quality.requireTests");
@@ -72,7 +74,8 @@ describe("dead quality flags — removal guard", () => {
 
   test("carries a machine-readable code and the offending keys in context", async () => {
     const root = await writeProjectConfig({ quality: { requireLint: false } });
-    const err = (await loadConfig(root).catch((e: unknown) => e)) as NaxError;
+    const err = await loadConfig(root).catch((e: unknown) => e);
+    assertNaxError(err);
     expect(err.code).toBe("CONFIG_DEAD_QUALITY_FLAGS");
     expect(err.context?.deadKeys).toEqual(["quality.requireLint"]);
   });
@@ -90,7 +93,8 @@ describe("dead quality flags — removal guard", () => {
 
   test("names the real command key — requireTests governs commands.test, not commands.tests", async () => {
     const root = await writeProjectConfig({ quality: { requireTests: false } });
-    const err = (await loadConfig(root).catch((e: unknown) => e)) as NaxError;
+    const err = await loadConfig(root).catch((e: unknown) => e);
+    assertNaxError(err);
     expect(err.message).toContain("quality.commands.test`");
     expect(err.message).not.toContain("quality.commands.tests");
   });

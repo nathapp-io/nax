@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { assertDefined, makeLogger, withTempDir } from "@test/helpers";
+import { assertDefined, assertNaxError, makeLogger, withTempDir } from "@test/helpers";
 import {
   _rulesCLIDeps,
   neutralizeContent,
@@ -20,7 +20,6 @@ import {
   translateLegacyFrontmatter,
 } from "@/cli/rules";
 import { lintForNeutrality } from "@/context/rules/canonical-loader";
-import { NaxError } from "@/errors";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers
@@ -157,8 +156,8 @@ describe("rulesExportCommand", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(NaxError);
-    expect((threw as NaxError).code).toBe("RULES_EXPORT_UNSUPPORTED_AGENT");
+    assertNaxError(threw);
+    expect(threw.code).toBe("RULES_EXPORT_UNSUPPORTED_AGENT");
   });
 
   test("throws NaxError when canonical store is empty", async () => {
@@ -169,8 +168,8 @@ describe("rulesExportCommand", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(NaxError);
-    expect((threw as NaxError).code).toBe("RULES_EXPORT_NO_CANONICAL_RULES");
+    assertNaxError(threw);
+    expect(threw.code).toBe("RULES_EXPORT_NO_CANONICAL_RULES");
   });
 
   test.each([
@@ -293,7 +292,8 @@ describe("rulesExportCommand", () => {
     } catch (e) {
       threw = e;
     }
-    expect((threw as NaxError)?.code).toBe("RULES_EXPORT_PATH_ESCAPE");
+    assertNaxError(threw);
+    expect(threw.code).toBe("RULES_EXPORT_PATH_ESCAPE");
   });
 
   // The design's Risks section mandates this: it is the single test pinning the
@@ -338,9 +338,9 @@ describe("rulesExportCommand", () => {
       } catch (e) {
         threw = e;
       }
-      expect(threw).toBeInstanceOf(NaxError);
-      expect((threw as NaxError).code).toBe("RULES_EXPORT_DRIFT");
-      expect((threw as NaxError).message).toContain("a.md");
+      assertNaxError(threw);
+      expect(threw.code).toBe("RULES_EXPORT_DRIFT");
+      expect(threw.message).toContain("a.md");
     });
 
     test("--check writes nothing", async () => {

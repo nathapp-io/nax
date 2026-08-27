@@ -13,6 +13,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
   assertDefined,
+  assertNaxError,
   cleanupTempDir,
   makeDebateRunner,
   makeMockAgentManager,
@@ -310,7 +311,8 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
         { feature: FEATURE, storyId: "US-001" },
       );
     } catch (err) {
-      caught = err as NaxError;
+      assertNaxError(err);
+      caught = err;
     }
 
     expect(caught).toBeInstanceOf(NaxError);
@@ -355,7 +357,8 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
         { feature: FEATURE, storyId: "US-001" },
       );
     } catch (err) {
-      caught = err as NaxError;
+      assertNaxError(err);
+      caught = err;
     }
 
     expect(caught?.message).toContain("3 attempts");

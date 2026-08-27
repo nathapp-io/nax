@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from "bun:test";
 import {
+  assertNaxError,
   makeAgentAdapter,
   makeMockRuntime,
   makeNaxConfig,
@@ -274,7 +275,8 @@ describe("executionStage.execute — runtime-crash on thrown infra errors", () =
       await executionStage.execute(ctx);
     } catch (err) {
       threw = true;
-      expect((err as NaxError).code).toBe("CALL_OP_NO_OUTPUT");
+      assertNaxError(err);
+      expect(err.code).toBe("CALL_OP_NO_OUTPUT");
     } finally {
       restore();
     }
@@ -296,7 +298,8 @@ describe("executionStage.execute — runtime-crash on thrown infra errors", () =
       await executionStage.execute(ctx);
     } catch (err) {
       threw = true;
-      expect((err as NaxError).code).toBe("CALL_OP_MAX_RETRIES");
+      assertNaxError(err);
+      expect(err.code).toBe("CALL_OP_MAX_RETRIES");
     } finally {
       restore();
     }
@@ -318,7 +321,8 @@ describe("executionStage.execute — runtime-crash on thrown infra errors", () =
       await executionStage.execute(ctx);
     } catch (err) {
       threw = true;
-      expect((err as NaxError).code).toBe("CALL_OP_ABORTED");
+      assertNaxError(err);
+      expect(err.code).toBe("CALL_OP_ABORTED");
     } finally {
       restore();
     }

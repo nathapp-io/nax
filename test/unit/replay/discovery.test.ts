@@ -15,7 +15,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { NaxError } from "@/errors";
 import { discoverRun } from "@/replay";
 
@@ -207,7 +207,8 @@ describe("discoverRun — AC5: no-match error", () => {
     try {
       await discoverRun("run-does-not-exist", deps(runsDir));
     } catch (err) {
-      expect((err as NaxError).code).toBe("RUN_NOT_FOUND");
+      assertNaxError(err);
+      expect(err.code).toBe("RUN_NOT_FOUND");
     }
   });
 });
@@ -249,7 +250,8 @@ describe("discoverRun — AC6: ambiguous-prefix error", () => {
     try {
       await discoverRun("run-2026-07-04", deps(runsDir));
     } catch (err) {
-      expect((err as NaxError).code).toBe("RUN_NOT_FOUND");
+      assertNaxError(err);
+      expect(err.code).toBe("RUN_NOT_FOUND");
     }
   });
 });

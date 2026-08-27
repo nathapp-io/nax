@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertNaxError } from "@test/helpers";
 import type { ModelsConfig, TierConfig } from "@/config/schema-types";
 import { resolveConfiguredModel, resolveModelForAgent } from "@/config/schema-types";
 import { NaxError } from "@/errors";
@@ -164,8 +165,8 @@ describe("resolveModelForAgent", () => {
     } catch (err) {
       thrown = err;
     }
-    expect(thrown).toBeInstanceOf(NaxError);
-    expect((thrown as NaxError).code).toBe("MODEL_NOT_FOUND");
+    assertNaxError(thrown);
+    expect(thrown.code).toBe("MODEL_NOT_FOUND");
   });
 
   test("throws NaxError when defaultAgent itself is missing", () => {

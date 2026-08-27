@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { assertNaxError } from "@test/helpers";
 import { NaxError } from "@/errors";
 import type { FinishPhase } from "@/finish";
 import { createFinishState, deserializeFinishState, serializeFinishState } from "@/finish";
@@ -49,8 +50,8 @@ describe("serializeFinishState / deserializeFinishState", () => {
       deserializeFinishState(badPayload);
       throw new Error("expected deserializeFinishState to throw");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      expect((err as NaxError).code).toBe("FINISH_STATE_VERSION");
+      assertNaxError(err);
+      expect(err.code).toBe("FINISH_STATE_VERSION");
     }
   });
 
@@ -60,8 +61,8 @@ describe("serializeFinishState / deserializeFinishState", () => {
       deserializeFinishState("not json");
       throw new Error("expected deserializeFinishState to throw");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      expect((err as NaxError).code).toBe("FINISH_STATE_UNPARSEABLE");
+      assertNaxError(err);
+      expect(err.code).toBe("FINISH_STATE_UNPARSEABLE");
     }
   });
 

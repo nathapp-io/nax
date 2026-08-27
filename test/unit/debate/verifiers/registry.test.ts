@@ -4,8 +4,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { assertNaxError } from "@test/helpers";
 import { resolvePostDebateVerifier } from "@/debate";
-import { NaxError } from "@/errors";
 
 describe("resolvePostDebateVerifier", () => {
   it("throws NaxError with code POST_DEBATE_VERIFIER_UNKNOWN for unknown kind", () => {
@@ -15,8 +15,8 @@ describe("resolvePostDebateVerifier", () => {
     } catch (e) {
       caught = e;
     }
-    expect(caught).toBeInstanceOf(NaxError);
-    expect((caught as NaxError).code).toBe("POST_DEBATE_VERIFIER_UNKNOWN");
+    assertNaxError(caught);
+    expect(caught.code).toBe("POST_DEBATE_VERIFIER_UNKNOWN");
   });
 
   it("throws NaxError with code POST_DEBATE_VERIFIER_UNKNOWN for empty string", () => {
@@ -26,7 +26,7 @@ describe("resolvePostDebateVerifier", () => {
     } catch (e) {
       caught = e;
     }
-    expect(caught).toBeInstanceOf(NaxError);
-    expect((caught as NaxError).code).toBe("POST_DEBATE_VERIFIER_UNKNOWN");
+    assertNaxError(caught);
+    expect(caught.code).toBe("POST_DEBATE_VERIFIER_UNKNOWN");
   });
 });

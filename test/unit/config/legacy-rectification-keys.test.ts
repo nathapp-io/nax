@@ -12,9 +12,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _clearRootConfigCache, loadConfig } from "@/config/loader";
-import { NaxError } from "@/errors";
 
 const tempDirs: string[] = [];
 
@@ -47,11 +46,10 @@ describe("rectification-config consolidation — legacy key guard", () => {
       await loadConfig(root);
       throw new Error("expected loadConfig to throw");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      const e = err as NaxError;
-      expect(e.code).toBe("CONFIG_LEGACY_RECTIFICATION_KEYS");
-      expect(e.message).toContain("quality.autofix.maxTotalAttempts");
-      expect(e.message).toContain("execution.rectification.maxAttemptsTotal");
+      assertNaxError(err);
+      expect(err.code).toBe("CONFIG_LEGACY_RECTIFICATION_KEYS");
+      expect(err.message).toContain("quality.autofix.maxTotalAttempts");
+      expect(err.message).toContain("execution.rectification.maxAttemptsTotal");
     }
   });
 
@@ -63,11 +61,10 @@ describe("rectification-config consolidation — legacy key guard", () => {
       await loadConfig(root);
       throw new Error("expected loadConfig to throw");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      const e = err as NaxError;
-      expect(e.code).toBe("CONFIG_LEGACY_RECTIFICATION_KEYS");
-      expect(e.message).toContain("quality.autofix.rethinkAtAttempt");
-      expect(e.message).toContain("execution.rectification.rethinkAtAttempt");
+      assertNaxError(err);
+      expect(err.code).toBe("CONFIG_LEGACY_RECTIFICATION_KEYS");
+      expect(err.message).toContain("quality.autofix.rethinkAtAttempt");
+      expect(err.message).toContain("execution.rectification.rethinkAtAttempt");
     }
   });
 
@@ -79,11 +76,10 @@ describe("rectification-config consolidation — legacy key guard", () => {
       await loadConfig(root);
       throw new Error("expected loadConfig to throw");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      const e = err as NaxError;
-      expect(e.code).toBe("CONFIG_LEGACY_RECTIFICATION_KEYS");
-      expect(e.message).toContain("quality.autofix.urgencyAtAttempt");
-      expect(e.message).toContain("execution.rectification.urgencyAtAttempt");
+      assertNaxError(err);
+      expect(err.code).toBe("CONFIG_LEGACY_RECTIFICATION_KEYS");
+      expect(err.message).toContain("quality.autofix.urgencyAtAttempt");
+      expect(err.message).toContain("execution.rectification.urgencyAtAttempt");
     }
   });
 
@@ -95,11 +91,10 @@ describe("rectification-config consolidation — legacy key guard", () => {
       await loadConfig(root);
       throw new Error("expected loadConfig to throw");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      const e = err as NaxError;
-      expect(e.code).toBe("CONFIG_LEGACY_RECTIFICATION_KEYS");
-      expect(e.message).toContain("execution.rectification.maxRetries");
-      expect(e.message).toContain("execution.rectification.maxAttemptsTotal");
+      assertNaxError(err);
+      expect(err.code).toBe("CONFIG_LEGACY_RECTIFICATION_KEYS");
+      expect(err.message).toContain("execution.rectification.maxRetries");
+      expect(err.message).toContain("execution.rectification.maxAttemptsTotal");
     }
   });
 
@@ -111,11 +106,10 @@ describe("rectification-config consolidation — legacy key guard", () => {
       await loadConfig(root);
       throw new Error("expected loadConfig to throw");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      const e = err as NaxError;
-      expect(e.code).toBe("CONFIG_LEGACY_RECTIFICATION_KEYS");
-      expect(e.message).toContain("execution.regressionGate.maxRectificationAttempts");
-      expect(e.message).toContain("execution.rectification.maxAttemptsTotal");
+      assertNaxError(err);
+      expect(err.code).toBe("CONFIG_LEGACY_RECTIFICATION_KEYS");
+      expect(err.message).toContain("execution.regressionGate.maxRectificationAttempts");
+      expect(err.message).toContain("execution.rectification.maxAttemptsTotal");
     }
   });
 
@@ -133,9 +127,8 @@ describe("rectification-config consolidation — legacy key guard", () => {
       await loadConfig(root);
       throw new Error("expected loadConfig to throw");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      const e = err as NaxError;
-      const ctx = e.context as { legacyKeys?: string[] } | undefined;
+      assertNaxError(err);
+      const ctx = err.context as { legacyKeys?: string[] } | undefined;
       expect(ctx?.legacyKeys).toEqual([
         "quality.autofix.maxTotalAttempts",
         "quality.autofix.rethinkAtAttempt",

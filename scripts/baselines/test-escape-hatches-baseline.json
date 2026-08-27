@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 25,
-    "looseCast": 1790
+    "looseCast": 1687
   },
-  "updatedAt": "2026-08-27T08:36:26.618Z",
+  "updatedAt": "2026-08-27T09:40:24.219Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -243,14 +243,8 @@
     "test/unit/routing/calibrate/propose.test.ts": {
       "looseCast": 3
     },
-    "test/unit/replay/discovery.test.ts": {
-      "looseCast": 2
-    },
     "test/unit/precheck/precheck-canonical-lint-orchestrator.test.ts": {
       "looseCast": 2
-    },
-    "test/unit/commands/migrate.test.ts": {
-      "looseCast": 4
     },
     "test/unit/commands/curator-gc.test.ts": {
       "looseCast": 7
@@ -260,9 +254,6 @@
     },
     "test/unit/commands/resume.test.ts": {
       "looseCast": 2
-    },
-    "test/unit/commands/common.test.ts": {
-      "looseCast": 14
     },
     "test/unit/commands/replay.test.ts": {
       "looseCast": 20
@@ -289,7 +280,7 @@
       "looseCast": 1
     },
     "test/unit/prd/decompose-mapper.test.ts": {
-      "looseCast": 8
+      "looseCast": 6
     },
     "test/unit/prd/prd-reset-failed.test.ts": {
       "looseCast": 1
@@ -355,7 +346,7 @@
       "looseCast": 1
     },
     "test/unit/finish/state.test.ts": {
-      "looseCast": 3
+      "looseCast": 1
     },
     "test/unit/finish/pr-title.test.ts": {
       "ratchetAllow": 1
@@ -369,14 +360,8 @@
     "test/unit/hooks/on-all-stories-complete.test.ts": {
       "looseCast": 1
     },
-    "test/unit/execution/plan-inputs.test.ts": {
-      "looseCast": 9
-    },
     "test/unit/execution/story-orchestrator.test.ts": {
-      "looseCast": 3
-    },
-    "test/unit/execution/story-orchestrator-duplicate-phase.test.ts": {
-      "looseCast": 1
+      "looseCast": 2
     },
     "test/unit/execution/nbf-readonly-flake-triage.test.ts": {
       "looseCast": 5
@@ -442,7 +427,7 @@
       "looseCast": 1
     },
     "test/unit/execution/runner-resume-deps.test.ts": {
-      "looseCast": 4
+      "looseCast": 3
     },
     "test/unit/execution/lifecycle-completion.test.ts": {
       "looseCast": 2
@@ -450,14 +435,8 @@
     "test/unit/execution/helpers.test.ts": {
       "looseCast": 1
     },
-    "test/unit/execution/plan-inputs-test-patterns.test.ts": {
-      "looseCast": 8
-    },
     "test/unit/execution/story-scoped-fix-budget.test.ts": {
       "looseCast": 3
-    },
-    "test/unit/execution/plan-inputs-models.test.ts": {
-      "looseCast": 6
     },
     "test/unit/execution/deferred-review.test.ts": {
       "looseCast": 1
@@ -484,7 +463,7 @@
       "looseCast": 8
     },
     "test/unit/execution/execution-stage.test.ts": {
-      "looseCast": 4
+      "looseCast": 1
     },
     "test/unit/execution/rectification-oscillation-circuit-breaker.test.ts": {
       "looseCast": 19
@@ -565,7 +544,7 @@
       "looseCast": 5
     },
     "test/unit/execution/checkpoint/writer.test.ts": {
-      "looseCast": 4
+      "looseCast": 3
     },
     "test/unit/findings/_cycle-fixtures.ts": {
       "looseCast": 1
@@ -575,9 +554,6 @@
     },
     "test/unit/bakeoff/coordinator.test.ts": {
       "looseCast": 21
-    },
-    "test/unit/bakeoff/preflight.test.ts": {
-      "looseCast": 1
     },
     "test/unit/bakeoff/contestant.test.ts": {
       "looseCast": 3
@@ -735,9 +711,6 @@
     "test/unit/debate/selectors/judge.test.ts": {
       "looseCast": 1
     },
-    "test/unit/debate/pre-phase/registry.test.ts": {
-      "looseCast": 2
-    },
     "test/unit/debate/verifiers/review-grounding-filter.test.ts": {
       "looseCast": 4
     },
@@ -747,15 +720,6 @@
     "test/unit/debate/verifiers/checks.test.ts": {
       "looseCast": 7
     },
-    "test/unit/debate/verifiers/registry.test.ts": {
-      "looseCast": 2
-    },
-    "test/unit/cli/rules.test.ts": {
-      "looseCast": 5
-    },
-    "test/unit/cli/plan-decompose-ac-repair.test.ts": {
-      "looseCast": 2
-    },
     "test/unit/cli/setup-fill.test.ts": {
       "looseCast": 13
     },
@@ -763,7 +727,7 @@
       "looseCast": 4
     },
     "test/unit/cli/plan-mode.test.ts": {
-      "looseCast": 4
+      "looseCast": 2
     },
     "test/unit/cli/rules-lint-isolation.test.ts": {
       "looseCast": 1
@@ -802,13 +766,10 @@
       "looseCast": 10
     },
     "test/unit/cli/plan.test.ts": {
-      "looseCast": 17
+      "looseCast": 13
     },
     "test/unit/cli/plan-decompose-guards.test.ts": {
       "looseCast": 5
-    },
-    "test/unit/cli/rules-migrate-plan.test.ts": {
-      "looseCast": 2
     },
     "test/unit/cli/init-detect-ui.test.ts": {
       "looseCast": 16
@@ -918,9 +879,6 @@
     "test/unit/runtime/cost-aggregator.test.ts": {
       "looseCast": 1
     },
-    "test/unit/runtime/paths.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/runtime/runtime.test.ts": {
       "looseCast": 1
     },
@@ -949,9 +907,6 @@
       "looseCast": 8
     },
     "test/unit/plan/debate-strategy.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/plan/strategies-factory.test.ts": {
       "looseCast": 1
     },
     "test/unit/plan/strategies.test.ts": {
@@ -996,9 +951,6 @@
     "test/unit/config/schemas.test.ts": {
       "looseCast": 48
     },
-    "test/unit/config/legacy-rectification-keys.test.ts": {
-      "looseCast": 6
-    },
     "test/unit/config/defaults-schema-derive.test.ts": {
       "looseCast": 1
     },
@@ -1020,14 +972,8 @@
     "test/unit/config/mutation-check-schema.test.ts": {
       "looseCast": 6
     },
-    "test/unit/config/loader-strict-json.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/config/schemas-model.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/config/dead-quality-flags.test.ts": {
-      "looseCast": 4
     },
     "test/unit/config/defaults-ssot.test.ts": {
       "looseCast": 1
@@ -1036,9 +982,6 @@
       "looseCast": 9
     },
     "test/unit/config/acceptance-fix-config.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/config/schema-types.test.ts": {
       "looseCast": 1
     },
     "test/unit/config/acceptance-test-strategy.test.ts": {
@@ -1056,9 +999,6 @@
     "test/unit/config/debate-schema.test.ts": {
       "looseCast": 1
     },
-    "test/unit/config/legacy-agent-keys.test.ts": {
-      "looseCast": 4
-    },
     "test/unit/config/merge-agent-models-routing.test.ts": {
       "ratchetAllow": 2,
       "looseCast": 12
@@ -1075,9 +1015,6 @@
     "test/unit/config/permissions.test.ts": {
       "looseCast": 1
     },
-    "test/unit/config/scoped-profile-guard.test.ts": {
-      "looseCast": 2
-    },
     "test/unit/logger/redact.test.ts": {
       "looseCast": 1
     },
@@ -1085,7 +1022,7 @@
       "looseCast": 3
     },
     "test/unit/context/engine/query-scratch.test.ts": {
-      "looseCast": 2
+      "looseCast": 1
     },
     "test/unit/context/engine/effectiveness-gate.test.ts": {
       "looseCast": 1
@@ -1109,7 +1046,7 @@
       "looseCast": 2
     },
     "test/unit/context/engine/pull-tools.test.ts": {
-      "looseCast": 6
+      "looseCast": 2
     },
     "test/unit/context/engine/lint-config-factory.test.ts": {
       "looseCast": 1
@@ -1160,7 +1097,7 @@
       "looseCast": 6
     },
     "test/unit/context/engine/providers/static-rules.test.ts": {
-      "looseCast": 6
+      "looseCast": 2
     },
     "test/unit/context/engine/providers/feature-context-fragments-realfs.test.ts": {
       "looseCast": 3

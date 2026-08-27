@@ -8,8 +8,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertNaxError } from "@test/helpers";
 import { type MigrationPlanEntry, type PlanMigrationOptions, planMigration } from "@/cli";
-import { NaxError } from "@/errors";
 
 const TARGET_DIR = "/target";
 
@@ -117,8 +117,8 @@ describe("planMigration", () => {
     } catch (err) {
       threw = err;
     }
-    expect(threw).toBeInstanceOf(NaxError);
-    expect((threw as NaxError).code).toBe("RULES_MIGRATE_TARGET_ESCAPE");
+    assertNaxError(threw);
+    expect(threw.code).toBe("RULES_MIGRATE_TARGET_ESCAPE");
   });
 
   test("rejects a relative-traversal escape before consulting fileExists", async () => {
@@ -140,8 +140,8 @@ describe("planMigration", () => {
     } catch (err) {
       threw = err;
     }
-    expect(threw).toBeInstanceOf(NaxError);
-    expect((threw as NaxError).code).toBe("RULES_MIGRATE_TARGET_ESCAPE");
+    assertNaxError(threw);
+    expect(threw.code).toBe("RULES_MIGRATE_TARGET_ESCAPE");
     expect(consulted).toBe(0);
   });
 });

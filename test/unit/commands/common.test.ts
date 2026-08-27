@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeTempDir } from "@test/helpers";
+import { assertNaxError, makeTempDir } from "@test/helpers";
 import { resolveProject, resolveProjectAsync } from "@/commands/common";
 import { NaxError } from "@/errors";
 
@@ -159,8 +159,8 @@ describe("resolveProject", () => {
         resolveProject({ feature: "nonexistent" });
         expect.unreachable("Should have thrown error");
       } catch (err) {
-        expect(err).toBeInstanceOf(NaxError);
-        const message = (err as NaxError).message;
+        assertNaxError(err);
+        const message = err.message;
         expect(message).toContain("Available features:");
         expect(message).toContain("feature-a");
         expect(message).toContain("feature-b");
@@ -177,8 +177,8 @@ describe("resolveProject", () => {
         resolveProject({ feature: "nonexistent" });
         expect.unreachable("Should have thrown error");
       } catch (err) {
-        expect(err).toBeInstanceOf(NaxError);
-        const message = (err as NaxError).message;
+        assertNaxError(err);
+        const message = err.message;
         expect(message).toMatch(/Feature not found: nonexistent/);
         expect(message).toContain("No features found in this project");
       }
@@ -212,9 +212,9 @@ describe("resolveProject", () => {
         resolveProject();
         expect.unreachable();
       } catch (err) {
-        expect(err).toBeInstanceOf(NaxError);
-        expect((err as NaxError).code).toBe("PROJECT_NOT_FOUND");
-        expect((err as NaxError).context?.cwd).toBe(s1);
+        assertNaxError(err);
+        expect(err.code).toBe("PROJECT_NOT_FOUND");
+        expect(err.context?.cwd).toBe(s1);
       }
 
       // NAX_DIR_NOT_FOUND
@@ -224,9 +224,9 @@ describe("resolveProject", () => {
         resolveProject({ dir: s2 });
         expect.unreachable();
       } catch (err) {
-        expect(err).toBeInstanceOf(NaxError);
-        expect((err as NaxError).code).toBe("NAX_DIR_NOT_FOUND");
-        expect((err as NaxError).context?.projectRoot).toBe(s2);
+        assertNaxError(err);
+        expect(err.code).toBe("NAX_DIR_NOT_FOUND");
+        expect(err.context?.projectRoot).toBe(s2);
       }
 
       // CONFIG_NOT_FOUND
@@ -238,9 +238,9 @@ describe("resolveProject", () => {
         resolveProject();
         expect.unreachable();
       } catch (err) {
-        expect(err).toBeInstanceOf(NaxError);
-        expect((err as NaxError).code).toBe("CONFIG_NOT_FOUND");
-        expect((err as NaxError).context?.configPath).toBe(join(s3Nax, "config.json"));
+        assertNaxError(err);
+        expect(err.code).toBe("CONFIG_NOT_FOUND");
+        expect(err.context?.configPath).toBe(join(s3Nax, "config.json"));
       }
 
       // FEATURE_NOT_FOUND
@@ -253,10 +253,10 @@ describe("resolveProject", () => {
         resolveProject({ feature: "nonexistent" });
         expect.unreachable();
       } catch (err) {
-        expect(err).toBeInstanceOf(NaxError);
-        expect((err as NaxError).code).toBe("FEATURE_NOT_FOUND");
-        expect((err as NaxError).context?.feature).toBe("nonexistent");
-        expect((err as NaxError).context?.availableFeatures).toEqual(["existing-feature"]);
+        assertNaxError(err);
+        expect(err.code).toBe("FEATURE_NOT_FOUND");
+        expect(err.context?.feature).toBe("nonexistent");
+        expect(err.context?.availableFeatures).toEqual(["existing-feature"]);
       }
     });
   });
@@ -321,11 +321,10 @@ describe("resolveProjectAsync", () => {
       await resolveProjectAsync({ dir: "nonexistent-project" });
       expect.unreachable("Should have thrown");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      const e = err as NaxError;
-      expect(e.code).toBe("PROJECT_NOT_FOUND");
-      expect(e.message).toContain("nonexistent-project");
-      expect(e.message).toContain("identity registry");
+      assertNaxError(err);
+      expect(err.code).toBe("PROJECT_NOT_FOUND");
+      expect(err.message).toContain("nonexistent-project");
+      expect(err.message).toContain("identity registry");
     }
 
     // path with separators that don't exist
@@ -333,8 +332,8 @@ describe("resolveProjectAsync", () => {
       await resolveProjectAsync({ dir: "some/nonexistent/path" });
       expect.unreachable("Should have thrown");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      expect(["NAX_DIR_NOT_FOUND", "PROJECT_NOT_FOUND"]).toContain((err as NaxError).code);
+      assertNaxError(err);
+      expect(["NAX_DIR_NOT_FOUND", "PROJECT_NOT_FOUND"]).toContain(err.code);
     }
 
     // corrupt identity file
@@ -346,8 +345,8 @@ describe("resolveProjectAsync", () => {
       await resolveProjectAsync({ dir: "corrupt-project" });
       expect.unreachable("Should have thrown");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      expect((err as NaxError).code).toBe("PROJECT_NOT_FOUND");
+      assertNaxError(err);
+      expect(err.code).toBe("PROJECT_NOT_FOUND");
     }
   });
 

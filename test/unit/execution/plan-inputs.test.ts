@@ -14,6 +14,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import {
   assertDefined,
+  assertNaxError,
   DEFAULT_TEST_ROUTING,
   type DeepPartial,
   makeNaxConfig,
@@ -129,9 +130,9 @@ describe("assemblePlanInputs - missing test patterns", () => {
       assemblePlanInputs(story, config);
       expect.unreachable("Should have thrown");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      expect((err as NaxError).context?.stage).toBe("execution-inputs");
-      expect((err as NaxError).message).toContain("agent");
+      assertNaxError(err);
+      expect(err.context?.stage).toBe("execution-inputs");
+      expect(err.message).toContain("agent");
     }
   });
 
@@ -157,8 +158,9 @@ describe("assemblePlanInputs - invalid config", () => {
       assemblePlanInputs(story, config);
       expect.unreachable("Should have thrown");
     } catch (err) {
-      expect((err as NaxError).context?.field).toBe("agent.default");
-      expect(/^[A-Z_]+$/.test((err as NaxError).code)).toBe(true);
+      assertNaxError(err);
+      expect(err.context?.field).toBe("agent.default");
+      expect(/^[A-Z_]+$/.test(err.code)).toBe(true);
     }
   });
 
@@ -218,7 +220,8 @@ describe("assemblePlanInputs - NaxError contract", () => {
         assemblePlanInputs(story, config);
         expect.unreachable("Should have thrown");
       } catch (err) {
-        expect((err as NaxError).code).toBe(expectedCode);
+        assertNaxError(err);
+        expect(err.code).toBe(expectedCode);
       }
     },
   );
@@ -230,10 +233,11 @@ describe("assemblePlanInputs - NaxError contract", () => {
       assemblePlanInputs(story, config);
       expect.unreachable("Should have thrown");
     } catch (err) {
-      expect((err as NaxError).context?.stage).toBe("execution-inputs");
-      expect((err as NaxError).context?.storyId).toBeDefined();
-      expect(/^[A-Z_]+$/.test((err as NaxError).code)).toBe(true);
-      expect((err as NaxError).message.toLowerCase()).toContain("required");
+      assertNaxError(err);
+      expect(err.context?.stage).toBe("execution-inputs");
+      expect(err.context?.storyId).toBeDefined();
+      expect(/^[A-Z_]+$/.test(err.code)).toBe(true);
+      expect(err.message.toLowerCase()).toContain("required");
     }
   });
 });

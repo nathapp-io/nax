@@ -11,9 +11,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _clearRootConfigCache, loadConfig } from "@/config/loader";
-import { NaxError } from "@/errors";
 
 const tempDirs: string[] = [];
 
@@ -46,12 +45,11 @@ describe("ADR-012 Phase 6 — legacy config key guard", () => {
       await loadConfig(root);
       throw new Error("expected loadConfig to throw");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      const e = err as NaxError;
-      expect(e.code).toBe("CONFIG_LEGACY_AGENT_KEYS");
-      expect(e.message).toContain("autoMode.defaultAgent");
-      expect(e.message).toContain("agent.default");
-      expect(e.message).toContain("ADR-012");
+      assertNaxError(err);
+      expect(err.code).toBe("CONFIG_LEGACY_AGENT_KEYS");
+      expect(err.message).toContain("autoMode.defaultAgent");
+      expect(err.message).toContain("agent.default");
+      expect(err.message).toContain("ADR-012");
     }
   });
 
@@ -63,12 +61,11 @@ describe("ADR-012 Phase 6 — legacy config key guard", () => {
       await loadConfig(root);
       throw new Error("expected loadConfig to throw");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      const e = err as NaxError;
-      expect(e.code).toBe("CONFIG_LEGACY_AGENT_KEYS");
-      expect(e.message).toContain("autoMode.fallbackOrder");
-      expect(e.message).toContain("agent.fallback.map");
-      expect(e.message).toContain("ADR-012");
+      assertNaxError(err);
+      expect(err.code).toBe("CONFIG_LEGACY_AGENT_KEYS");
+      expect(err.message).toContain("autoMode.fallbackOrder");
+      expect(err.message).toContain("agent.fallback.map");
+      expect(err.message).toContain("ADR-012");
     }
   });
 
@@ -80,12 +77,11 @@ describe("ADR-012 Phase 6 — legacy config key guard", () => {
       await loadConfig(root);
       throw new Error("expected loadConfig to throw");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      const e = err as NaxError;
-      expect(e.code).toBe("CONFIG_LEGACY_AGENT_KEYS");
-      expect(e.message).toContain("context.v2.fallback");
-      expect(e.message).toContain("agent.fallback");
-      expect(e.message).toContain("ADR-012");
+      assertNaxError(err);
+      expect(err.code).toBe("CONFIG_LEGACY_AGENT_KEYS");
+      expect(err.message).toContain("context.v2.fallback");
+      expect(err.message).toContain("agent.fallback");
+      expect(err.message).toContain("ADR-012");
     }
   });
 
@@ -98,12 +94,11 @@ describe("ADR-012 Phase 6 — legacy config key guard", () => {
       await loadConfig(root);
       throw new Error("expected loadConfig to throw");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      const e = err as NaxError;
-      expect(e.message).toContain("autoMode.defaultAgent");
-      expect(e.message).toContain("autoMode.fallbackOrder");
-      expect(e.message).toContain("context.v2.fallback");
-      const ctx = e.context as { legacyKeys?: string[] } | undefined;
+      assertNaxError(err);
+      expect(err.message).toContain("autoMode.defaultAgent");
+      expect(err.message).toContain("autoMode.fallbackOrder");
+      expect(err.message).toContain("context.v2.fallback");
+      const ctx = err.context as { legacyKeys?: string[] } | undefined;
       expect(ctx?.legacyKeys).toEqual(["autoMode.defaultAgent", "autoMode.fallbackOrder", "context.v2.fallback"]);
     }
   });

@@ -11,7 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeLogger, makeNaxConfig, makeStory } from "@test/helpers";
+import { assertNaxError, makeLogger, makeNaxConfig, makeStory } from "@test/helpers";
 import { _codeNeighborDeps } from "@/context/engine/providers/code-neighbor";
 import { _featureContextV2Deps } from "@/context/engine/providers/feature-context";
 import {
@@ -107,8 +107,8 @@ describe("PullToolBudget", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(NaxError);
-    expect((threw as NaxError).code).toBe("PULL_TOOL_BUDGET_EXHAUSTED");
+    assertNaxError(threw);
+    expect(threw.code).toBe("PULL_TOOL_BUDGET_EXHAUSTED");
   });
 
   test("consume() throws NaxError after run limit even with session headroom", () => {
@@ -121,8 +121,8 @@ describe("PullToolBudget", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(NaxError);
-    expect((threw as NaxError).code).toBe("PULL_TOOL_BUDGET_EXHAUSTED");
+    assertNaxError(threw);
+    expect(threw.code).toBe("PULL_TOOL_BUDGET_EXHAUSTED");
   });
 
   test.each([
@@ -237,8 +237,8 @@ describe("handleQueryNeighbor", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(NaxError);
-    expect((threw as NaxError).code).toBe("PULL_TOOL_BUDGET_EXHAUSTED");
+    assertNaxError(threw);
+    expect(threw.code).toBe("PULL_TOOL_BUDGET_EXHAUSTED");
   });
 
   test("returns neighbor content (string) for src/ file and empty string for file with no neighbors", async () => {
@@ -366,8 +366,8 @@ describe("handleQueryFeatureContext", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(NaxError);
-    expect((threw as NaxError).code).toBe("PULL_TOOL_BUDGET_EXHAUSTED");
+    assertNaxError(threw);
+    expect(threw.code).toBe("PULL_TOOL_BUDGET_EXHAUSTED");
   });
 
   test("returns full content when no filter is provided", async () => {

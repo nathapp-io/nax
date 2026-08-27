@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertNaxError } from "@test/helpers";
 import type { DecomposedStory } from "@/agents/shared/types-extended";
 import { NaxError } from "@/errors";
 import { mapDecomposedStoriesToUserStories } from "@/prd/decompose-mapper";
@@ -248,7 +249,8 @@ describe("mapDecomposedStoriesToUserStories — validation: missing id", () => {
     try {
       mapDecomposedStoriesToUserStories([story], "US-001");
     } catch (err) {
-      caught = err as NaxError;
+      assertNaxError(err);
+      caught = err;
     }
     expect(caught?.code).toBe("DECOMPOSE_VALIDATION_FAILED");
   });
@@ -270,7 +272,8 @@ describe("mapDecomposedStoriesToUserStories — validation: missing id", () => {
     try {
       mapDecomposedStoriesToUserStories(stories, "US-001");
     } catch (err) {
-      caught = err as NaxError;
+      assertNaxError(err);
+      caught = err;
     }
     expect(caught?.context?.entryIndex).toBe(expectedIndex);
   });

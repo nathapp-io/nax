@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { assertNaxError } from "@test/helpers";
 import { NaxError } from "@/errors";
 import { DebatePlanStrategy, PipelinePlanStrategy, RefinePlanStrategy, SinglePlanStrategy } from "@/plan";
 
@@ -27,8 +28,8 @@ describe("createPlanStrategy", () => {
     try {
       (createPlanStrategy as (m: string) => unknown)("unknown");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      expect((err as NaxError).code).toBe("PLAN_MODE_UNKNOWN");
+      assertNaxError(err);
+      expect(err.code).toBe("PLAN_MODE_UNKNOWN");
     }
   });
 });
