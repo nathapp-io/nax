@@ -34,7 +34,7 @@ import { buildAcceptanceRunCommand, resolveAcceptanceFeatureTestPath } from "@/a
 import type { Finding } from "@/findings";
 import { acFailureToFinding, acSentinelToFinding } from "@/findings";
 import { getLogger } from "@/logger";
-import { countStories } from "@/prd";
+import { countStories, isInAcceptanceScope } from "@/prd";
 import {
   parseTestFailures as _parseTestFailures,
   analyzeTestExitCode,
@@ -153,7 +153,7 @@ export const acceptanceStage: PipelineStage = {
     // Same SSOT grouping as AcceptanceTestGroup.stories in src/acceptance/test-path.ts.
     const storiesByPackageDir = new Map<string, number>();
     for (const s of ctx.prd.userStories) {
-      if (s.id.startsWith("US-FIX-") || s.status === "decomposed") continue;
+      if (!isInAcceptanceScope(s)) continue;
       const wd = s.workdir ?? "";
       const pkgDir = wd ? path.join(ctx.workdir, wd) : ctx.workdir;
       storiesByPackageDir.set(pkgDir, (storiesByPackageDir.get(pkgDir) ?? 0) + 1);

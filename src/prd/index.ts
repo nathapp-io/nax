@@ -10,6 +10,7 @@ import { propagateOutOfScopeToStories, stripPropagatedOutOfScope } from "./out-o
 import type { PRD, UserStory } from "./types";
 
 export type { FailureCategory } from "../tdd/types";
+export { isInAcceptanceScope, isLegacyFixStory } from "./acceptance-scope";
 export type { SpecContextFile } from "./context-files-extract";
 export { extractSpecContextFiles, MAX_SPEC_CONTEXT_FILES } from "./context-files-extract";
 export { deriveNextStoryId, validateInjectedStory } from "./inject";

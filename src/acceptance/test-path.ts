@@ -1,5 +1,6 @@
 import path from "node:path";
 import { featureDir } from "@/config";
+import { isInAcceptanceScope } from "@/prd";
 import type { PRD, UserStory } from "../prd/types";
 import { detectLanguage as _detectLanguage } from "../project/detector";
 
@@ -133,7 +134,7 @@ export async function groupStoriesByPackage(
   testPathConfig?: string,
   language?: string,
 ): Promise<AcceptanceTestGroup[]> {
-  const nonFixStories = prd.userStories.filter((s) => !s.id.startsWith("US-FIX-") && s.status !== "decomposed");
+  const nonFixStories = prd.userStories.filter(isInAcceptanceScope);
 
   const groupMap = new Map<string, { stories: UserStory[]; criteria: string[] }>();
   for (const story of nonFixStories) {

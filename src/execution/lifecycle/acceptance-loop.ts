@@ -25,6 +25,7 @@ import { acceptanceFixSourceOp, acceptanceFixTestOp } from "@/operations";
 import type { PipelineEventEmitter } from "@/pipeline/events";
 import type { AgentGetFn, PipelineContext } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins";
+import { isLegacyFixStory } from "@/prd";
 import type { PRD } from "@/prd/types";
 import { buildPriorIterationsBlock } from "@/prompts";
 import type { DispatchContext } from "@/runtime/dispatch-context";
@@ -490,9 +491,9 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
 
     // ── 4. Diagnose (fresh each iteration) ───────────────────────────────
     const semanticVerdicts = ctx.featureDir ? await _acceptanceLoopDeps.loadSemanticVerdicts(ctx.featureDir) : [];
-    const totalACs = prd.userStories
-      .filter((s) => !s.id.startsWith("US-FIX-"))
-      .flatMap((s) => s.acceptanceCriteria).length;
+    // `isLegacyFixStory`, not `isInAcceptanceScope` — see that module on why
+    // this one total keeps counting decomposed parents.
+    const totalACs = prd.userStories.filter((s) => !isLegacyFixStory(s)).flatMap((s) => s.acceptanceCriteria).length;
 
     if (!ctx.runtime) {
       logger?.error("acceptance", "Runtime not found for diagnosis", { storyId: firstStory?.id });

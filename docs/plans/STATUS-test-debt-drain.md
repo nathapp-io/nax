@@ -10,7 +10,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 
 ---
 
-## 0. Current state — re-measured 2026-08-27 (after §8.14, five counters retired to biome)
+## 0. Current state — re-measured 2026-08-27 (after §8.16)
 
 | Shape | Gate | Reading | Drain target? |
 |:--|:--|--:|:--|
@@ -19,7 +19,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 | `as unknown as` | regex ratchet | **0** | done — closed invariant (`archive/LOG-as-unknown-as-drain.md`) |
 | `as any` / `any` in type position | biome `noExplicitAny` @ `error` | **0** | done (`archive/LOG-no-explicit-any-drain.md`) |
 | postfix `!` | biome `noNonNullAssertion` @ `error` | **0** | done (`archive/LOG-non-null-assertion-drain.md`) |
-| `as never` | plugin `no-as-never.grit` @ `error` | **0** | done (§8.8) |
+| `as never` | plugin `no-as-never.grit` @ `error` | **0** | done — `test/` 603 → 0 (§8.8) and `src/` 2 → 0 (§8.15); the plugin is wired at biome.json's **root** and covers `src/`, `bin/` and `test/` |
 | `absentValue<T>()` / `nullValue<T>()` | plugin `no-absent-value.grit` @ `error` | **0** | done (§8.12) |
 | `ratchetAllow` | regex ratchet | 25 | done — floor reached (§8.9); every residue is a deliberate negative-test fixture or a sanctioned helper seam |
 | `tsSuppress` | regex ratchet | 2 | done — 5 → 2 (§8.12); §8.10's floor held one directive that asserted nothing. The 2 are prose |
@@ -346,6 +346,12 @@ they were earned in: §4x = `archive/STATUS-1514-typecheck-drain.md`, §8.x of t
 - **Reproduce against the project's own script** (cast drain §8.13), not a hand-rolled invocation of the
   same test files. `bun test <dir>` misses `--timeout=60000` and turns a passing suite into a
   cascade of misleading failures. Run the gate, then read its exit code.
+- **"Nothing produces this" is not "nothing has produced this"** (§8.16). When the reader is
+  a persistence format, ask what happens to data already on disk. A schema with no version
+  field and no validation cannot refuse the old shape, so the old shape is still an input no
+  matter how long ago its writer was deleted. `git log` dates the producer's removal; it does
+  not date the last file it wrote. Superseded *code* is safe to delete; superseded *data* is
+  not, because deleting its reader does not delete it.
 - **A secondary guard behind a parser is not a guard** (§8.14). Once a rule sees the shape,
   the regex's residue is by construction what the rule cannot see — comments and fixture
   strings. It can then only fire on a comment. Before keeping a counter "as a secondary
@@ -1504,4 +1510,64 @@ findings" — the same shape §8.8 recorded for `bun x biome` in a temp cwd. The
 copy must absolutise root plugin paths as well as override ones.
 
 Typecheck 0/0/0, `bun run lint` clean, `check:all` 24/24, `bun test test/unit/scripts/`
-186 pass / 0 fail. `grep -rE '\bas never\b' src/ bin/` → 0.
+186 pass / 0 fail.
+
+`grep -rE '\bas never\b' src/ bin/` reads **2** — and that is the right answer, not a
+leftover. Both are inside the explanatory comment this change added; the plugin, which
+parses, reads 0, which is why `bun run lint` passes. The commit message for this change says
+"→ 0" and is measuring with the wrong instrument. It is exactly §8.14's point arriving one
+commit later: the regex counts prose, the rule counts code, and only one of them is the gate.
+
+### 8.16 The four `US-FIX-*` filters — a guard, not dead code (2026-08-27)
+
+§8.13 flagged these in passing: *"Three sibling filters (`acceptance-setup.ts`,
+`acceptance.ts`, `test-path.ts`) still strip `US-FIX-*` from PRDs nothing writes them to;
+those are harmless and out of scope here, but they are the same pattern and worth a look."*
+There are four, not three — `acceptance-loop.ts:494` is the one the grep in §8.13 missed.
+
+**The look does not end in a deletion, and that is the finding.** §8.13's own rule is that
+"no caller" needs more than one instrument, and the instruments disagree:
+
+| Instrument | Result |
+|:--|:--|
+| producer in `src/` | none. `generateAndAddFixStories` went in #331 (2026-04-10); ADR-022 (2026-05-08) formalised in-place `runFixCycle` rectification; `fix-generator.ts` was deleted in §8.13 |
+| repo-wide grep | only the four filters, three tests pinning them, and historical spec prose |
+| **`prd.json` schema** | **no `schemaVersion`, no id validation** (`src/prd/types.ts:158` is a bare `id: string`) |
+
+That last row is the one that decides it. A PRD is **user data on disk in someone else's
+repo**, and nax ships as a `bin`. One written by a pre-#331 nax loads unchanged today — no
+version gate, nothing to reject it — so a feature resumed across that upgrade still carries
+its `US-FIX-*` stories, and removing the filters would fold them into acceptance
+fingerprints and AC totals. The producer is gone; **the persisted data is the caller.**
+
+This is the distinction §8.13 drew (superseded design vs unbuilt scaffolding) meeting a case
+it does not cover: superseded *code* is safe to delete, superseded *data* is not, because
+deleting the code that reads it does not delete the data.
+
+#### What was actually wrong with them
+
+Not their existence — their state. Four copies of one predicate, drifted:
+`acceptance-loop.ts` excluded fix stories only, the other three also excluded decomposed
+parents, and every comment described `US-FIX-*` in the **present tense** ("Fix stories are
+excluded so the fingerprint stays stable when fix stories are added during the acceptance
+loop"), describing a loop that has not added one since April.
+
+`src/prd/acceptance-scope.ts` now holds `isLegacyFixStory` and `isInAcceptanceScope`,
+separate on purpose because their lifetimes differ: decomposition is live, `US-FIX-*` is a
+compatibility guard, and one clause hid that. The module's doc comment carries the evidence
+above so the next reader does not re-derive it from a grep and delete the guard.
+
+The `acceptance-loop.ts` divergence is **recorded, not fixed**: its `totalACs` is the
+denominator the diagnosis step reports, so narrowing it to `isInAcceptanceScope` changes a
+reported number. That is a behaviour change and deserves its own evidence, not a ride on a
+deduplication commit.
+
+#### New ruling for §6 — "nothing produces this" is not "nothing has produced this"
+
+When the reader is a persistence format, ask what happens to data already written. A schema
+with no version field and no validation cannot refuse the old shape, so the old shape is
+still an input no matter how long ago its writer was deleted. `git log` dates the producer's
+removal; it does not date the last file it wrote.
+
+Typecheck 0/0/0, `bun run lint` clean, `check:all` 24/24, full suite 14194 + 1136 + 38
+pass / 0 fail. No ratchet counter moved.

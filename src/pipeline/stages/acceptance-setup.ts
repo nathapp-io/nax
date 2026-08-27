@@ -29,6 +29,7 @@ import { loadConfigForWorkdir } from "@/config";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { callOp as _callOp, acceptanceGenerateOp, acceptanceRefineOp } from "@/operations";
+import { isInAcceptanceScope } from "@/prd";
 import { autoCommitIfDirty as _autoCommitIfDirty } from "@/utils/git";
 import { executeWithTimeout, shellQuoteArg } from "@/verification";
 import { pipelineEventBus } from "../event-bus";
@@ -218,14 +219,11 @@ async function runAcceptanceSetup(
   const testPathConfig = ctx.config.acceptance.testPath;
   const metaPath = path.join(featureDir, "acceptance-meta.json");
 
-  // All criteria from original stories only — fix stories (US-FIX-*) and decomposed
-  // parent stories are excluded. Fix stories are excluded so the fingerprint stays
-  // stable when fix stories are added during the acceptance loop. Decomposed stories
-  // are excluded because their ACs are fully covered by their children, and including
-  // them would inflate the fingerprint with duplicate criteria.
-  const allCriteria: string[] = ctx.prd.userStories
-    .filter((s) => !s.id.startsWith("US-FIX-") && s.status !== "decomposed")
-    .flatMap((s) => s.acceptanceCriteria);
+  // Criteria from in-scope stories only, so the fingerprint stays stable: a
+  // decomposed parent's ACs are already counted via its children, and a legacy
+  // US-FIX-* story is not the feature's own acceptance surface. See
+  // src/prd/acceptance-scope.ts for why the latter guard still exists.
+  const allCriteria: string[] = ctx.prd.userStories.filter(isInAcceptanceScope).flatMap((s) => s.acceptanceCriteria);
 
   // US-001: Group non-fix, non-decomposed stories by story.workdir — one test file per package.
   // groupStoriesByPackage handles workdir grouping, path computation, and root fallback.
