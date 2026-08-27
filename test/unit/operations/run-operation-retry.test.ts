@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  assertCaughtInstanceOf,
   assertDefined,
   assertNaxError,
   makeMockAgentManager,
@@ -327,7 +328,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       },
     };
 
-    let thrownError: Error | null = null;
+    let thrownError: unknown;
     try {
       await callOp(
         {
@@ -341,10 +342,10 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
         { text: "hello" },
       );
     } catch (err) {
-      thrownError = err as Error;
+      thrownError = err;
     }
 
-    expect(thrownError).not.toBeNull();
+    assertCaughtInstanceOf(thrownError, Error, "callOp rejection");
   });
 
   test("synthetic hopBody bounds retry loop by MAX_COMPLETE_RETRY_ATTEMPTS — Phase A regression", async () => {
@@ -379,7 +380,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       retry: infiniteRetryStrategy,
     };
 
-    let thrownError: Error | null = null;
+    let thrownError: unknown;
     try {
       await callOp(
         {
@@ -393,11 +394,11 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
         { text: "hello" },
       );
     } catch (err) {
-      thrownError = err as Error;
+      thrownError = err;
     }
 
-    expect(thrownError).not.toBeNull();
-    expect(thrownError?.message).toContain("CALL_OP_MAX_RETRIES");
+    assertCaughtInstanceOf(thrownError, Error, "callOp rejection");
+    expect(thrownError.message).toContain("CALL_OP_MAX_RETRIES");
   });
 
   test("op.retry runs all attempts in a single session (Phase A same-session regression)", async () => {

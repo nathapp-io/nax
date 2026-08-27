@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertCaughtInstanceOf, assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { loadConfig } from "@/config/loader";
 
 /**
@@ -347,10 +347,9 @@ describe("loadConfig — profile activation (US-002)", () => {
       } catch (err) {
         caught = err;
       }
-      expect(caught).toBeDefined();
-      const message = (caught as Error).message;
-      expect(message).toContain("fast");
-      expect(message).toContain("NAX_TEST_DEFINITELY_UNDEFINED_VAR_XYZ");
+      assertCaughtInstanceOf(caught, Error, "loadConfig rejection");
+      expect(caught.message).toContain("fast");
+      expect(caught.message).toContain("NAX_TEST_DEFINITELY_UNDEFINED_VAR_XYZ");
     });
   });
 });
@@ -444,10 +443,10 @@ describe("loadConfig — multi-profile chain override", () => {
   test("a missing name anywhere in the chain throws fail-fast with the available list", async () => {
     writeJson(join(globalDir, "profiles", "a.json"), { execution: { sessionTimeoutSeconds: 1 } });
 
-    const err = await loadConfig(projectDir, { profile: "a,nope" }).catch((e: Error) => e);
-    expect(err).toBeInstanceOf(Error);
-    expect((err as Error).message).toContain("nope");
-    expect((err as Error).message).toContain("Available:");
+    const err = await loadConfig(projectDir, { profile: "a,nope" }).catch((e: unknown) => e);
+    assertCaughtInstanceOf(err, Error, "loadConfig rejection");
+    expect(err.message).toContain("nope");
+    expect(err.message).toContain("Available:");
   });
 
   test("a single profile still works and yields a one-element chain", async () => {
@@ -503,9 +502,9 @@ describe("loadConfig — multi-profile chain override", () => {
     const rootConfigPath = join(projectDir, ".nax", "config.json");
 
     // The old (buggy) behavior passed the composite string; "a+b" is not a profile.
-    const err = await loadConfigForWorkdir(rootConfigPath, undefined, { profile: "a+b" }).catch((e: Error) => e);
-    expect(err).toBeInstanceOf(Error);
-    expect((err as Error).message).toContain("a+b");
+    const err = await loadConfigForWorkdir(rootConfigPath, undefined, { profile: "a+b" }).catch((e: unknown) => e);
+    assertCaughtInstanceOf(err, Error, "loadConfigForWorkdir rejection");
+    expect(err.message).toContain("a+b");
   });
 
   // M2: a per-package profile that yields an invalid config fails fast rather than

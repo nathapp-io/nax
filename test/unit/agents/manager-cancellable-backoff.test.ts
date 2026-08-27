@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertCaughtInstanceOf } from "@test/helpers";
 import { _agentManagerDeps } from "@/agents/manager";
 
 describe("AgentManager — rate-limit backoff wiring", () => {
@@ -27,8 +28,8 @@ describe("AgentManager — rate-limit backoff wiring", () => {
     }
     const elapsed = performance.now() - start;
 
-    expect(error).toBeDefined();
-    expect((error as Error).message).toBe("aborted");
+    assertCaughtInstanceOf(error, Error, "cancellable backoff rejection");
+    expect(error.message).toBe("aborted");
     expect(elapsed).toBeLessThan(1_000);
   });
 

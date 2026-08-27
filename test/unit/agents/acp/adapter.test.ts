@@ -11,6 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { assertCaughtInstanceOf } from "@test/helpers";
 import { _acpAdapterDeps, AcpAgentAdapter } from "@/agents/acp/adapter";
 import type { AgentRunOptions } from "@/agents/types";
 import { CompleteError } from "@/agents/types";
@@ -475,10 +476,9 @@ describe("complete()", () => {
       await new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions());
       throw new Error("expected complete() to throw");
     } catch (err) {
-      expect(err).toBeInstanceOf(CompleteError);
-      const message = (err as Error).message;
+      assertCaughtInstanceOf(err, CompleteError, "complete() rejection");
       // Message = "complete() failed: stop reason is error: " + truncated(500) text
-      expect(message.length).toBeLessThan(560);
+      expect(err.message.length).toBeLessThan(560);
     }
   });
 });

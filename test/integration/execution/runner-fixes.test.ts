@@ -7,7 +7,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertCaughtInstanceOf, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { groupStoriesIntoBatches } from "@/execution/runner";
 import type { PRD, UserStory } from "@/prd";
 import { loadPRD, PRD_MAX_FILE_SIZE } from "@/prd";
@@ -359,10 +359,10 @@ describe("PERF-2 & MEM-1: PRD file size limit and dirty-flag optimization", () =
       await loadPRD(prdPath);
       expect(true).toBe(false); // Should not reach here
     } catch (error) {
-      expect(error).toBeInstanceOf(Error);
-      expect((error as Error).message).toContain("too large");
-      expect((error as Error).message).toContain("exceeds");
-      expect((error as Error).message).toContain("MB");
+      assertCaughtInstanceOf(error, Error, "loadPRD rejection");
+      expect(error.message).toContain("too large");
+      expect(error.message).toContain("exceeds");
+      expect(error.message).toContain("MB");
     }
 
     // Cleanup

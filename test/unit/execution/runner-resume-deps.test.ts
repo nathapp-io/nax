@@ -17,7 +17,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { assertNaxError } from "@test/helpers";
+import { assertCaughtInstanceOf, assertNaxError } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { _runnerDeps, _runnerReentrancyGuard, _storyOrchestratorDeps, type RunOptions, run } from "@/execution";
@@ -200,8 +200,8 @@ describe("runner.run() — reentrancy guard", () => {
     } catch (err) {
       caught = err;
     }
-    expect(caught).toBeInstanceOf(Error);
-    expect((caught as Error).message).toBe("second run setup failure");
+    assertCaughtInstanceOf(caught, Error, "runSetupPhase rejection");
+    expect(caught.message).toBe("second run setup failure");
     expect(caught).not.toBeInstanceOf(NaxError);
   });
 });

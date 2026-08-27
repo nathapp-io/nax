@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertCaughtInstanceOf } from "@test/helpers";
 import { cancellableDelay } from "@/utils/bun-deps";
 
 describe("cancellableDelay", () => {
@@ -32,8 +33,8 @@ describe("cancellableDelay", () => {
     }
     const elapsed = performance.now() - start;
 
-    expect(error).toBeDefined();
-    expect((error as Error).message).toBe("cancelled mid-delay");
+    assertCaughtInstanceOf(error, Error, "cancellableDelay rejection");
+    expect(error.message).toBe("cancelled mid-delay");
     expect(elapsed).toBeLessThan(1_000);
   });
 
@@ -50,8 +51,8 @@ describe("cancellableDelay", () => {
     }
     const elapsed = performance.now() - start;
 
-    expect(error).toBeDefined();
-    expect((error as Error).message).toBe("aborted before delay");
+    assertCaughtInstanceOf(error, Error, "cancellableDelay rejection");
+    expect(error.message).toBe("aborted before delay");
     expect(elapsed).toBeLessThan(100);
   });
 
@@ -76,10 +77,10 @@ describe("cancellableDelay", () => {
     } catch (err) {
       error = err;
     }
-    expect(error).toBeDefined();
+    assertCaughtInstanceOf(error, Error, "cancellableDelay rejection");
     // Some runtimes set signal.reason to DOMException("AbortError") when abort()
     // is called without arguments — accept either shape.
-    const message = (error as Error).message ?? (error as { name?: string }).name ?? "";
+    const message = error.message ?? error.name ?? "";
     expect(message.length).toBeGreaterThan(0);
   });
 });

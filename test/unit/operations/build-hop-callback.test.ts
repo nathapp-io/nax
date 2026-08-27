@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
+  assertCaughtInstanceOf,
   makeContextBundle,
   makeContextManifest,
   makeMockAgentManager,
@@ -451,13 +452,14 @@ describe("buildHopCallback — openSession throws", () => {
     const baseOptions = makeBaseOptions("p", ctx.config);
     const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
 
-    let thrown: Error | null = null;
+    let thrown: unknown;
     try {
       await cb("claude", makeBundle(), { kind: "primary" } satisfies HopKind, baseOptions);
     } catch (err) {
-      thrown = err as Error;
+      thrown = err;
     }
-    expect(thrown?.message).toContain("adapter unavailable");
+    assertCaughtInstanceOf(thrown, Error, "cb rejection");
+    expect(thrown.message).toContain("adapter unavailable");
 
     expect(agentManager.runAsSession).not.toHaveBeenCalled();
     expect(sessionManager.closeSession).not.toHaveBeenCalled();

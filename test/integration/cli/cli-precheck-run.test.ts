@@ -6,7 +6,15 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertDefined, fullTest, makeNaxConfig, makePRD, makeStory, makeTempDir } from "@test/helpers";
+import {
+  assertCaughtInstanceOf,
+  assertDefined,
+  fullTest,
+  makeNaxConfig,
+  makePRD,
+  makeStory,
+  makeTempDir,
+} from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
 import { run } from "@/execution";
@@ -461,6 +469,7 @@ describe("Precheck Integration with nax run", () => {
         },
       };
 
+      let caught: unknown;
       try {
         await run({
           prdPath,
@@ -473,10 +482,12 @@ describe("Precheck Integration with nax run", () => {
           statusFile: statusFilePath,
         });
         expect(true).toBe(false); // Should not reach here
-      } catch (error) {
-        expect((error as Error).message).toContain("Precheck failed");
-        expect((error as Error).message).toContain("working-tree-clean");
+      } catch (err) {
+        caught = err;
       }
+      assertCaughtInstanceOf(caught, Error, "precheckRun rejection");
+      expect(caught.message).toContain("Precheck failed");
+      expect(caught.message).toContain("working-tree-clean");
 
       const precheckLog = await readPrecheckLog(logFilePath);
       expect(precheckLog).not.toBeNull();

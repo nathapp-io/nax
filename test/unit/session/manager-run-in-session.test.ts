@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { makeMockAgentManager } from "@test/helpers";
+import { assertCaughtInstanceOf, makeMockAgentManager } from "@test/helpers";
 import type { AgentRunRequest, IAgentManager } from "@/agents/manager-types";
 import type { AgentResult } from "@/agents/types";
 import type { NaxConfig } from "@/config";
@@ -146,8 +146,8 @@ describe("SessionManager.runInSession — ADR-013 Phase 1", () => {
       caught = e;
     }
 
-    expect(caught).toBeDefined();
-    expect((caught as Error).message).toContain("sess-nonexistent");
+    assertCaughtInstanceOf(caught, Error, "runInSession rejection");
+    expect(caught.message).toContain("sess-nonexistent");
   });
 
   test("leaves non-CREATED sessions alone (does not force RUNNING)", async () => {

@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  assertCaughtInstanceOf,
   assertDefined,
   cleanupTempDir,
   makeMockAgentManager,
@@ -389,8 +390,8 @@ describe("mapDecomposedStoriesToUserStories — validation error format", () => 
       caught = err;
     }
 
-    expect(caught).toBeDefined();
-    expect((caught as Error).message).toContain("index 2");
+    assertCaughtInstanceOf(caught, Error, "mapDecomposedStoriesToUserStories rejection");
+    expect(caught.message).toContain("index 2");
   });
 
   test("AC-5: error message includes 'id' when story at index 2 is missing id", () => {
@@ -407,8 +408,8 @@ describe("mapDecomposedStoriesToUserStories — validation error format", () => 
       caught = err;
     }
 
-    expect(caught).toBeDefined();
-    expect((caught as Error).message).toContain("id");
+    assertCaughtInstanceOf(caught, Error, "mapDecomposedStoriesToUserStories rejection");
+    expect(caught.message).toContain("id");
   });
 
   test("AC-5: stories at indices 0 and 1 do not trigger the index-2 error", () => {

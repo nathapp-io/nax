@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { assertDefined } from "@test/helpers";
+import { assertCaughtInstanceOf, assertDefined } from "@test/helpers";
 import type { Complexity, TestStrategy } from "@/config";
 import { MAX_OUT_OF_SCOPE_ITEMS } from "@/prd";
 import { extractJsonFromMarkdown, validatePlanOutput } from "@/prd/schema";
@@ -414,13 +414,14 @@ describe("validatePlanOutput — workdir validation (MW-001)", () => {
 describe("validatePlanOutput — invalid JSON parse errors (AC-8)", () => {
   test("throws descriptive error with json/parse context for malformed JSON string", () => {
     expect(() => validatePlanOutput("{not valid json}", "feat", "branch")).toThrow();
-    let errorMessage = "";
+    let caught: unknown;
     try {
       validatePlanOutput("{bad: json}", "feat", "branch");
     } catch (err) {
-      errorMessage = (err as Error).message;
+      caught = err;
     }
-    expect(errorMessage.toLowerCase()).toMatch(/json|parse/);
+    assertCaughtInstanceOf(caught, Error, "validatePlanOutput rejection");
+    expect(caught.message.toLowerCase()).toMatch(/json|parse/);
   });
 });
 

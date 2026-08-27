@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertCaughtInstanceOf } from "@test/helpers";
 import { parseDotenv, resolveEnvVars } from "@/config/dotenv";
 
 describe("parseDotenv", () => {
@@ -32,13 +33,15 @@ describe("resolveEnvVars", () => {
 
   test("throws an error containing the variable name and $VAR reference when env var is missing", () => {
     expect(() => resolveEnvVars({ a: "$MISSING" }, {})).toThrow();
+    let caught: unknown;
     try {
       resolveEnvVars({ a: "$MISSING" }, {});
     } catch (err) {
-      const msg = (err as Error).message;
-      expect(msg).toContain("MISSING");
-      expect(msg).toContain("$MISSING");
+      caught = err;
     }
+    assertCaughtInstanceOf(caught, Error, "resolveEnvVars rejection");
+    expect(caught.message).toContain("MISSING");
+    expect(caught.message).toContain("$MISSING");
   });
 
   test("passes through non-string values unchanged (numbers and arrays)", () => {
