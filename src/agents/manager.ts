@@ -194,8 +194,8 @@ export class AgentManager implements IAgentManager {
     return availableCandidates(this._config.agent?.fallback?.map, agent, this._isExcluded);
   }
 
-  shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number, hasBundle: boolean): boolean {
-    return decideSwap(failure, hopsSoFar, hasBundle, this._config.agent?.fallback).swap;
+  shouldSwap(failure: AdapterFailure | undefined, hopsSoFar: number): boolean {
+    return decideSwap(failure, hopsSoFar, this._config.agent?.fallback).swap;
   }
 
   nextCandidate(current: string, _hopsSoFar: number): string | null {
@@ -266,8 +266,6 @@ export class AgentManager implements IAgentManager {
           return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
         }
 
-        const bundleForSwapCheck = updatedBundle ?? request.bundle;
-
         const isFailStale = result.adapterFailure?.outcome === "fail-stale";
 
         const retryState: SameAgentRetryState = {
@@ -323,12 +321,8 @@ export class AgentManager implements IAgentManager {
           return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
         }
 
-        // For fail-stale, treat hasBundle as true: session restarts don't require
-        // context rebuild to decide whether to swap to a fallback agent.
-        const hasBundleForSwap = !!bundleForSwapCheck || isFailStale;
-
         const fb = this._config.agent?.fallback;
-        const swapDecision = decideSwap(result.adapterFailure, hopsSoFar, hasBundleForSwap, fb);
+        const swapDecision = decideSwap(result.adapterFailure, hopsSoFar, fb);
         if (!swapDecision.swap) {
           // #1713: the neighbouring terminal exits below emit; this one was silent.
           logSwapDecline(logger, swapDecision.reason, {
@@ -545,8 +539,7 @@ export class AgentManager implements IAgentManager {
           continue;
         }
 
-        // No ContextBundle here, but swap is still allowed: pass true past the hasBundle gate.
-        const dec = decideSwap(result.adapterFailure, hopsSoFar, true, this._config.agent?.fallback);
+        const dec = decideSwap(result.adapterFailure, hopsSoFar, this._config.agent?.fallback);
         if (!dec.swap) {
           logSwapDecline(logger, dec.reason, {
             storyId: options.storyId,

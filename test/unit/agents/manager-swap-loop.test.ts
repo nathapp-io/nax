@@ -117,14 +117,16 @@ describe("AgentManager.runWithFallback — real loop (Phase 4)", () => {
     expect(exhausted).toHaveLength(1);
   });
 
-  test("skips swap when no bundle (bundle required for shouldSwap)", async () => {
-    const m = new AgentManager(makeConfig(), undefined, { runHop: makeRunHop({ claude: false }) });
+  // Was "skips swap when no bundle". nax#1722: the bundle requirement is gone — it
+  // declined every production run() dispatch, none of which carries a bundle.
+  test("swaps with no bundle (nax#1722)", async () => {
+    const m = new AgentManager(makeConfig(), undefined, { runHop: makeRunHop({ claude: false, codex: true }) });
     const outcome = await m.runWithFallback({
       runOptions: makeRunOptions({ storyId: "s1" }),
       bundle: undefined,
     });
-    expect(outcome.result.success).toBe(false);
-    expect(outcome.fallbacks).toHaveLength(0);
+    expect(outcome.result.success).toBe(true);
+    expect(outcome.fallbacks).toHaveLength(1);
   });
 });
 

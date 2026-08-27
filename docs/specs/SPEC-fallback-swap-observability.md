@@ -190,6 +190,12 @@ path's decline site with that reason plus the failure's outcome and category, wi
 
 ### US-002 — Report the gate that declined a swap
 
+> **Amendment (nax#1722).** AC-4 and the `hasBundle` clause of AC-5 no longer hold. The bundle
+> gate this spec deliberately left in place turned out to decline *every* swap on the `run()`
+> path — no `CallContext` in `src/` populates `contextBundle`, so `request.bundle` was always
+> undefined — and it was removed along with the `no-bundle` reason. Every other criterion below
+> stands as shipped.
+
 Fixtures for every criterion below configure a swap that is **declined**, unlike US-001's fixtures, which configure a swap that is taken.
 
 1. `[unit]` The reason-carrying decision, given an availability failure with `agent.fallback.enabled` false, reports no swap and names the disabled-fallback gate.

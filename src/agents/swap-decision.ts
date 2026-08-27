@@ -21,8 +21,6 @@ export type SwapDeclineReason =
   | "outcome-refused"
   /** `agent.fallback.enabled` is off. */
   | "fallback-disabled"
-  /** No context bundle to rebuild the call from. */
-  | "no-bundle"
   /** `agent.fallback.maxHopsPerStory` already reached for this story. */
   | "hop-cap-reached"
   /** A quality failure with `agent.fallback.onQualityFailure` off. */
@@ -42,13 +40,22 @@ const DEFAULT_MAX_HOPS = 2;
 /**
  * Decide whether to swap to a fallback agent, naming the gate on refusal.
  *
- * Gate order is load-bearing and matches the pre-#1713 `shouldSwap` exactly, so the
- * boolean it now delegates to this is unchanged for every input.
+ * Gate order is load-bearing.
+ *
+ * nax#1722: a `hasBundle` gate sat between `fallback-disabled` and `hop-cap-reached`,
+ * declining every swap that arrived without a ContextBundle. It was correct in #474,
+ * where the swap lived in the execution stage and *was* the bundle rebuild; ADR-019
+ * (#749) moved the swap into AgentManager and rebased the gate onto
+ * `CallContext.contextBundle` — a field no call site in src/ populates. The gate was
+ * therefore false for every run() dispatch in production and inert on the complete()
+ * path, which passed a literal `true` past it. Swapping needs no bundle: the swap
+ * branch never dereferences one, and `buildHopCallback` skips the rebuild when there
+ * is none. Threading the bundle to the CallContexts is a separate defect (it also
+ * gates every context pull tool) tracked on its own issue.
  */
 export function decideSwap(
   failure: AdapterFailure | undefined,
   hopsSoFar: number,
-  hasBundle: boolean,
   fallback: SwapFallbackConfig | undefined,
 ): SwapDecision {
   if (!failure) return { swap: false, reason: "no-failure" };
@@ -56,7 +63,6 @@ export function decideSwap(
     return { swap: false, reason: "outcome-refused" };
   }
   if (!fallback?.enabled) return { swap: false, reason: "fallback-disabled" };
-  if (!hasBundle) return { swap: false, reason: "no-bundle" };
   if (hopsSoFar >= (fallback.maxHopsPerStory ?? DEFAULT_MAX_HOPS)) {
     return { swap: false, reason: "hop-cap-reached" };
   }

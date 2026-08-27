@@ -49,7 +49,7 @@ function hopResult(
 }
 
 describe("AgentManager with fail-stale availability failures", () => {
-  test("shouldSwap() returns true for fail-stale availability failure when hasBundle=true", () => {
+  test("shouldSwap() returns true for a fail-stale availability failure", () => {
     const manager = new AgentManager(
       makeNaxConfig({
         agent: {
@@ -63,12 +63,14 @@ describe("AgentManager with fail-stale availability failures", () => {
         },
       }),
     );
-    expect(manager.shouldSwap(staleFailureRetryable, 0, true)).toBe(true);
+    expect(manager.shouldSwap(staleFailureRetryable, 0)).toBe(true);
   });
 
-  test("shouldSwap() returns false for fail-stale when hasBundle=false", () => {
+  // Was "returns false when hasBundle=false". nax#1722 removed that gate; DEFAULT_CONFIG
+  // leaves fallback disabled, so this now pins the gate that actually decides it.
+  test("shouldSwap() returns false for fail-stale when fallback is disabled", () => {
     const manager = new AgentManager(DEFAULT_CONFIG);
-    expect(manager.shouldSwap(staleFailureRetryable, 0, false)).toBe(false);
+    expect(manager.shouldSwap(staleFailureRetryable, 0)).toBe(false);
   });
 
   test("fail-stale does NOT trigger quality escalation (category is availability)", () => {
@@ -87,7 +89,7 @@ describe("AgentManager with fail-stale availability failures", () => {
     );
     // shouldSwap checks category != 'quality' for onQualityFailure
     // fail-stale is availability, so should not trigger quality escalation
-    expect(manager.shouldSwap(staleFailureRetryable, 0, true)).toBe(true);
+    expect(manager.shouldSwap(staleFailureRetryable, 0)).toBe(true);
   });
 
   test("markUnavailable() with fail-stale marks agent as unavailable", () => {
