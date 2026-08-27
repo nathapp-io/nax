@@ -6,8 +6,8 @@
  * the diff touched; this test stubs the spawn seam and asserts the spawned
  * command line contains the review range verbatim.
  */
-import { afterEach, describe, expect, mock, test } from "bun:test";
-import { makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
+import { afterEach, describe, expect, test } from "bun:test";
+import { makeSpawn, makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
 import type { FinishReviewInput } from "@/operations";
 import { finishReviewOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -37,26 +37,12 @@ const QUALITY_INPUT: FinishReviewInput = {
 describe("AC15 — finishReviewOp.verify invokes git with the review range", () => {
   test("spawn receives arguments containing `origin/main...HEAD` for a quality input", async () => {
     const calls: string[][] = [];
-    const spy = mock((args: string[]) => {
-      calls.push(args);
-      return {
-        exited: Promise.resolve(0),
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(new TextEncoder().encode(""));
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        kill: () => {},
-      } as unknown as ReturnType<typeof _gitDeps.spawn>; // test-ratchet-allow: as-unknown-as
-    }) as unknown as typeof _gitDeps.spawn; // test-ratchet-allow: as-unknown-as
+    const stub = makeSpawn((call) => {
+      calls.push(call.cmd);
+      return "";
+    });
     const orig = _gitDeps.spawn;
-    _gitDeps.spawn = spy;
+    _gitDeps.spawn = stub.spawn;
     try {
       await withTempDir(async (dir) => {
         const ctx = makeCtx();

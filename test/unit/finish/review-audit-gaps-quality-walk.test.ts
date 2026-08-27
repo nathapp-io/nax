@@ -1,6 +1,6 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { withTempDir } from "@test/helpers";
+import { makeSpawn, withTempDir } from "@test/helpers";
 /**
  * Coverage gate for the quality WALK — US-002.
  *
@@ -27,21 +27,7 @@ function makeReport(overrides: Partial<ReviewReport> = {}): ReviewReport {
 
 /** Spawn stub that returns `stdout` and `exitCode` on its `exited` promise. */
 function makeGitSpawnMock(stdout: string, exitCode = 0) {
-  return mock(() => ({
-    exited: Promise.resolve(exitCode),
-    stdout: new ReadableStream({
-      start(c) {
-        c.enqueue(new TextEncoder().encode(stdout));
-        c.close();
-      },
-    }),
-    stderr: new ReadableStream({
-      start(c) {
-        c.close();
-      },
-    }),
-    kill: () => {},
-  })) as unknown as typeof _gitDeps.spawn; // test-ratchet-allow: as-unknown-as
+  return makeSpawn(() => ({ stdout, exitCode })).spawn;
 }
 
 /** Wrap a spawn mock as a beforeEach-save / afterEach-restore on _gitDeps.spawn. */

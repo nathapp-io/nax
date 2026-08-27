@@ -5,7 +5,7 @@
  * built from `makeTestRuntime()`.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeTestRuntime, opSelector, withDepsRestore, withTempDir } from "@test/helpers";
+import { makeSpawn, makeTestRuntime, opSelector, withDepsRestore, withTempDir } from "@test/helpers";
 import type { RetryStrategy } from "@/agents/retry";
 import { ParseValidationError } from "@/agents/retry";
 import type { Finding } from "@/finish";
@@ -159,18 +159,7 @@ describe("finishReviewOp.verify()", () => {
    * previous value in afterEach.
    */
   function installEmptySpawnStub() {
-    const empty = new ReadableStream({
-      start(c) {
-        c.close();
-      },
-    });
-    _gitDeps.spawn = (() => ({
-      exited: Promise.resolve(0),
-      stdout: empty,
-      stderr: empty,
-      pid: 0,
-      kill: () => {},
-    })) as unknown as typeof _gitDeps.spawn; // test-ratchet-allow: as-unknown-as
+    _gitDeps.spawn = makeSpawn().spawn;
   }
 
   test("attaches the gaps auditGaps reports, against a temp workdir", async () => {

@@ -526,20 +526,11 @@ describe("completionStage — getDiffText/getDiffFilePaths bound the stream drai
   });
 
   test("getDiffText does not hang when the process exits but its streams never close", async () => {
-    _completionDeps.spawn = (() => ({
-      stdout: new ReadableStream<Uint8Array>({
-        start() {
-          // Never enqueue, never close — simulates the Bun post-kill quirk.
-        },
-      }),
-      stderr: new ReadableStream<Uint8Array>({
-        start() {
-          // Same — never closes.
-        },
-      }),
-      exited: Promise.resolve(0),
-      kill: () => {},
-    })) as unknown as typeof _completionDeps.spawn; // test-ratchet-allow: as-unknown-as
+    _completionDeps.spawn = makeSpawn(() => ({
+      stdoutStall: true,
+      stderrStall: true,
+      exitCode: 0,
+    })).spawn;
 
     const start = Date.now();
     const output = await _completionDeps.getDiffText("/repo", "base-ref");
@@ -552,20 +543,11 @@ describe("completionStage — getDiffText/getDiffFilePaths bound the stream drai
   });
 
   test("getDiffFilePaths does not hang when the process exits but its streams never close", async () => {
-    _completionDeps.spawn = (() => ({
-      stdout: new ReadableStream<Uint8Array>({
-        start() {
-          // Never enqueue, never close.
-        },
-      }),
-      stderr: new ReadableStream<Uint8Array>({
-        start() {
-          // Never closes.
-        },
-      }),
-      exited: Promise.resolve(0),
-      kill: () => {},
-    })) as unknown as typeof _completionDeps.spawn; // test-ratchet-allow: as-unknown-as
+    _completionDeps.spawn = makeSpawn(() => ({
+      stdoutStall: true,
+      stderrStall: true,
+      exitCode: 0,
+    })).spawn;
 
     const start = Date.now();
     const paths = await _completionDeps.getDiffFilePaths("/repo", "base-ref");
@@ -613,27 +595,11 @@ describe("completionStage — getDiffText/getDiffFilePaths do not truncate a slo
 
   test("getDiffText returns full output for a diff slower than the drain deadline but faster than GIT_TIMEOUT_MS", async () => {
     const content = "diff --git a/big.txt b/big.txt\n+".repeat(50);
-    let killed = false;
 
-    _completionDeps.spawn = (() => ({
-      stdout: new ReadableStream<Uint8Array>({
-        async start(controller) {
-          await new Promise((r) => setTimeout(r, SLOW_BUT_HEALTHY_MS));
-          if (killed) return; // process was wrongly killed before it could produce output
-          controller.enqueue(new TextEncoder().encode(content));
-          controller.close();
-        },
-      }),
-      stderr: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.close();
-        },
-      }),
-      exited: new Promise((resolve) => setTimeout(() => resolve(0), SLOW_BUT_HEALTHY_MS)),
-      kill: () => {
-        killed = true;
-      },
-    })) as unknown as typeof _completionDeps.spawn; // test-ratchet-allow: as-unknown-as
+    _completionDeps.spawn = makeSpawn(() => ({
+      stdout: content,
+      delayMs: SLOW_BUT_HEALTHY_MS,
+    })).spawn;
 
     const output = await _completionDeps.getDiffText("/repo", "base-ref");
 
@@ -642,27 +608,11 @@ describe("completionStage — getDiffText/getDiffFilePaths do not truncate a slo
 
   test("getDiffFilePaths returns full paths for a diff slower than the drain deadline but faster than GIT_TIMEOUT_MS", async () => {
     const paths = ["src/a.ts", "src/b.ts"];
-    let killed = false;
 
-    _completionDeps.spawn = (() => ({
-      stdout: new ReadableStream<Uint8Array>({
-        async start(controller) {
-          await new Promise((r) => setTimeout(r, SLOW_BUT_HEALTHY_MS));
-          if (killed) return;
-          controller.enqueue(new TextEncoder().encode(`${paths.join("\n")}\n`));
-          controller.close();
-        },
-      }),
-      stderr: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.close();
-        },
-      }),
-      exited: new Promise((resolve) => setTimeout(() => resolve(0), SLOW_BUT_HEALTHY_MS)),
-      kill: () => {
-        killed = true;
-      },
-    })) as unknown as typeof _completionDeps.spawn; // test-ratchet-allow: as-unknown-as
+    _completionDeps.spawn = makeSpawn(() => ({
+      stdout: `${paths.join("\n")}\n`,
+      delayMs: SLOW_BUT_HEALTHY_MS,
+    })).spawn;
 
     const result = await _completionDeps.getDiffFilePaths("/repo", "base-ref");
 

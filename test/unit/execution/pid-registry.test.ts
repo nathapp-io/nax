@@ -366,14 +366,7 @@ describe("PidRegistry", () => {
 
 describe("PidRegistry — PERF-3: bounded ps/kill subprocesses", () => {
   test("killAll() resolves within the deadline when `ps -eo` never exits", async () => {
-    _pidRegistryDeps.spawn = mock(() => {
-      return {
-        pid: 2000,
-        stdout: new ReadableStream<Uint8Array>({ start() {} }), // never closes
-        stderr: new ReadableStream<Uint8Array>({ start() {} }),
-        exited: new Promise<number>(() => {}), // wedged — never resolves
-      } as unknown as ReturnType<typeof Bun.spawn>;
-    }) as unknown as typeof Bun.spawn; // test-ratchet-allow: as-unknown-as (mock cast, mirrors lines 241/296)
+    _pidRegistryDeps.spawn = makeSpawn(() => ({ hang: true, stdoutStall: true, stderrStall: true })).spawn;
     _pidRegistryDeps.sleep = mock(async () => {}) as typeof Bun.sleep;
     _pidRegistryDeps.procExitTimeoutMs = 50;
 

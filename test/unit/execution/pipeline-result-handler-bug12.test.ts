@@ -12,6 +12,7 @@ import {
   makeDispatchContext,
   makeLogger,
   makePRD,
+  makeSpawn,
   makeSpawnResult,
   makeStory,
   makeTestContext,
@@ -198,28 +199,14 @@ describe("handlePipelineFailure — worktree removal drains streams (BUG-12)", (
       },
     });
 
-    _resultHandlerDeps.spawn = mock(() => {
-      const encoder = new TextEncoder();
-      // Distinctive markers so the swap is unambiguous in the assertion below.
-      const STDOUT_MARKER = "stdout-marker-ignore-me\n";
-      const STDERR_MARKER = "stderr-marker-include-me\n";
-      return {
-        stdout: new ReadableStream<Uint8Array>({
-          start(c) {
-            c.enqueue(encoder.encode(STDOUT_MARKER));
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream<Uint8Array>({
-          start(c) {
-            c.enqueue(encoder.encode(STDERR_MARKER));
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(128),
-        kill: mock(() => {}),
-      };
-    }) as unknown as typeof _resultHandlerDeps.spawn; // test-ratchet-allow: as-unknown-as (mock spawn cast)
+    // Distinctive markers so the swap is unambiguous in the assertion below.
+    const STDOUT_MARKER = "stdout-marker-ignore-me\n";
+    const STDERR_MARKER = "stderr-marker-include-me\n";
+    _resultHandlerDeps.spawn = makeSpawn(() => ({
+      stdout: STDOUT_MARKER,
+      stderr: STDERR_MARKER,
+      exitCode: 128,
+    })).spawn;
 
     await handlePipelineFailure(ctx, failResult);
 

@@ -30,7 +30,7 @@ function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = 
     prd,
     prdPath: "/tmp/prd.json",
     workdir: "/tmp/repo",
-    hooks: { hooks: [] } as unknown as PipelineHandlerContext["hooks"], // test-ratchet-allow: as-unknown-as
+    hooks: { hooks: {} },
     feature: "test-feature",
     totalCost: 0,
     startTime: Date.now(),

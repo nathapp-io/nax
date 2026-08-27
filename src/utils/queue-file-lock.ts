@@ -7,9 +7,16 @@ const LOCK_RETRY_MS = 10;
 const LOCK_TIMEOUT_MS = 5_000;
 const LOCK_TIME_WIDTH = 13;
 
+// The node:fs/promises signatures are overloaded; this module only ever calls
+// readdir with a directory string and reads the names as strings. Declaring the
+// seam at that used slice keeps stubs from needing an assertion (#1514
+// callop-seam): a mock returning string[] satisfies it, the real readdir is
+// still assignable, and nothing here can receive Dirent[]/Buffer[].
+type ReadDirNames = (path: string) => Promise<string[]>;
+
 export const _queueLockDeps = {
   open,
-  readdir,
+  readdir: readdir as ReadDirNames,
   stat,
   unlink,
   randomUUID,

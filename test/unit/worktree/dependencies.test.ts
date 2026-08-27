@@ -1,14 +1,10 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeSpawn } from "@test/helpers";
 import {
   _worktreeDependencyDeps,
   prepareWorktreeDependencies,
   WorktreeDependencyPreparationError,
 } from "@/worktree/dependencies";
-
-function textStream(text = ""): ReadableStream<Uint8Array> {
-  return new Response(text).body as ReadableStream<Uint8Array>;
-}
 
 const originalSpawn = _worktreeDependencyDeps.spawn;
 
@@ -76,22 +72,15 @@ describe("prepareWorktreeDependencies", () => {
   // spawn previously had no deadline at all.
   test("provision times out and SIGKILLs a hung install", async () => {
     let killed = false;
-    let resolveExited: (code: number) => void;
-    const exited = new Promise<number>((resolve) => {
-      resolveExited = resolve;
-    });
-    const spawnMock = mock(() => ({
-      exited,
-      stdout: textStream(),
-      stderr: textStream(),
+    _worktreeDependencyDeps.spawn = makeSpawn(() => ({
+      hang: true,
       pid: 456,
       // Simulates real Bun.spawn behaviour: killing the process resolves `exited`.
-      kill: (_signal?: string) => {
+      killResolvesExited: true,
+      onKill: () => {
         killed = true;
-        resolveExited(137); // 128 + SIGKILL(9)
       },
-    }));
-    _worktreeDependencyDeps.spawn = spawnMock as unknown as typeof _worktreeDependencyDeps.spawn; // test-ratchet-allow: as-unknown-as
+    })).spawn;
 
     await expect(
       prepareWorktreeDependencies({

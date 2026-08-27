@@ -49,6 +49,18 @@ export interface FakeProcSpec {
   killResolvesExited?: boolean;
   /** `stdout` stream errors immediately — for read-error contract tests. */
   stdoutError?: Error;
+  /**
+   * `stdout` starts but never enqueues nor closes — simulates the Bun
+   * post-kill quirk where a dead process leaves its streams wedged.
+   */
+  stdoutStall?: boolean;
+  /** Same as {@link FakeProcSpec.stdoutStall}, for `stderr`. */
+  stderrStall?: boolean;
+  /** Delay in ms before output arrives and `exited` resolves — a
+   * slow-but-healthy process, for deadline-ordering tests. */
+  delayMs?: number;
+  /** Called when `kill()` runs — how tests observe that SIGKILL was issued. */
+  onKill?: () => void;
 }
 
 /** One recorded `spawn()` call. */
@@ -70,10 +82,22 @@ function toSpec(result: FakeProcSpec | string): FakeProcSpec {
   return typeof result === "string" ? { stdout: result } : result;
 }
 
-function stream(text: string): ReadableStream<Uint8Array> {
+function stream(
+  text: string,
+  spec?: { stall?: boolean; delayMs?: number; killed?: () => boolean },
+): ReadableStream<Uint8Array> {
+  if (spec?.stall === true) {
+    return new ReadableStream<Uint8Array>({
+      start() {
+        // Never enqueue, never close — a wedged stream.
+      },
+    });
+  }
   const bytes = new TextEncoder().encode(text);
   return new ReadableStream({
-    start(controller) {
+    async start(controller) {
+      if (spec?.delayMs !== undefined) await new Promise((r) => setTimeout(r, spec.delayMs));
+      if (spec?.killed?.() === true) return;
       if (bytes.length > 0) controller.enqueue(bytes);
       controller.close();
     },
@@ -102,10 +126,20 @@ export function makeSpawnResult(result: FakeProcSpec | string = {}): unknown {
   const exited = new Promise<number>((resolve) => {
     resolveExited = resolve;
   });
-  if (spec.hang !== true) resolveExited(exitCode);
+  if (spec.hang !== true) {
+    if (spec.delayMs !== undefined) setTimeout(() => resolveExited(exitCode), spec.delayMs);
+    else resolveExited(exitCode);
+  }
   const proc = {
-    stdout: spec.stdoutError !== undefined ? errorStream(spec.stdoutError) : stream(spec.stdout ?? ""),
-    stderr: stream(spec.stderr ?? ""),
+    stdout:
+      spec.stdoutError !== undefined
+        ? errorStream(spec.stdoutError)
+        : stream(spec.stdout ?? "", {
+            stall: spec.stdoutStall,
+            delayMs: spec.delayMs,
+            killed: () => killed,
+          }),
+    stderr: stream(spec.stderr ?? "", { stall: spec.stderrStall }),
     stdin: null,
     pid: spec.pid ?? 4242,
     exited,
@@ -117,6 +151,7 @@ export function makeSpawnResult(result: FakeProcSpec | string = {}): unknown {
     success: exitCode === 0,
     kill: () => {
       killed = true;
+      spec.onKill?.();
       if (spec.killResolvesExited === true) resolveExited(137);
     },
     ref: () => {},
