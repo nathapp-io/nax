@@ -2,14 +2,14 @@
   "counts": {
     "asAny": 1,
     "tsSuppress": 25,
-    "ratchetAllow": 103,
+    "ratchetAllow": 70,
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1795,
     "asNever": 1,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-27T03:14:56.174Z",
+  "updatedAt": "2026-08-27T04:33:21.208Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -403,7 +403,7 @@
       "looseCast": 3
     },
     "test/unit/execution/pipeline-result-handler-bug12.test.ts": {
-      "ratchetAllow": 5
+      "ratchetAllow": 1
     },
     "test/unit/execution/merge.test.ts": {
       "tsSuppress": 10,
@@ -557,7 +557,6 @@
       "ratchetAllow": 3
     },
     "test/unit/execution/escalation/tier-escalation-source-tier.test.ts": {
-      "ratchetAllow": 22,
       "looseCast": 1
     },
     "test/unit/execution/escalation/per-tier-budget.test.ts": {
@@ -1374,7 +1373,6 @@
       "looseCast": 2
     },
     "test/unit/pipeline/stages/acceptance.test.ts": {
-      "ratchetAllow": 7,
       "looseCast": 1
     },
     "test/unit/pipeline/stages/queue-check.test.ts": {
