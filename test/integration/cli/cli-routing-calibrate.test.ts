@@ -13,7 +13,6 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { absentValue } from "@test/helpers";
 import { Command } from "commander";
 import { _routingCalibrateDeps, parseMinSamplesFlag, routingCalibrateCommand, runRoutingCalibrateCli } from "@/cli";
 import type { NaxConfig } from "@/config";
@@ -567,19 +566,19 @@ describe("CLI plumbing — Commander-driven parse path for --min-samples", () =>
 
 // ─── Partial project config overlay (no autoMode in .nax/config.json) ──────
 
-describe("routingCalibrateCommand — partial project config overlay", () => {
-  test("partial overlay without autoMode still computes a proposal and returns exit 0", async () => {
+// ─── Missing project config (readConfig → null) ─────────────────────────────
+
+// loadConfig always schema-parses and fills autoMode via .default(), so an
+// overlay *lacking* autoMode can never reach this command. The reachable
+// absence is "no .nax/config.json at all" → readConfig returns null and the
+// command materializes priorConfig from DEFAULT_CONFIG wholesale (the
+// other branch of the deepMerge ternary at routing-calibrate.ts).
+describe("routingCalibrateCommand — missing project config", () => {
+  test("falls back to DEFAULT_CONFIG.autoMode and still computes a proposal", async () => {
     const runs = makeRunsWithEscalatingSimpleBand();
-    // Minimal overlay: project .nax/config.json containing only version + execution,
-    // matching the partial-overlay style used everywhere else in this repo.
-    const partialOverlay: NaxConfig = {
-      ...(structuredClone(DEFAULT_CONFIG) as NaxConfig),
-      autoMode: absentValue<NaxConfig["autoMode"]>(),
-      name: "fixture-project",
-    };
     const { deps, writes } = makeCalibrateDepsFixture();
     (deps.loadRunMetrics as ReturnType<typeof mock>).mockResolvedValueOnce(runs);
-    (deps.readConfig as ReturnType<typeof mock>).mockResolvedValueOnce(partialOverlay);
+    (deps.readConfig as ReturnType<typeof mock>).mockResolvedValueOnce(null);
 
     const result = await routingCalibrateCommand(
       { apply: false, json: false, workdir: WORKDIR, outputDir: OUTPUT_DIR },
@@ -588,22 +587,19 @@ describe("routingCalibrateCommand — partial project config overlay", () => {
 
     expect(result.exitCode).toBe(0);
     expect(writes).toHaveLength(0);
+    // Computed against DEFAULT_CONFIG's mapping (simple → fast), so the
+    // simple band proposes its upgrade exactly as with an explicit config.
     const adj = result.proposal.adjustments.find((a) => a.band === "simple");
     expect(adj).toBeDefined();
     expect(adj?.from).toBe("fast");
     expect(adj?.to).toBe("balanced");
   });
 
-  test("--apply with partial overlay merges against DEFAULT_CONFIG.autoMode", async () => {
+  test("--apply derives the written config from DEFAULT_CONFIG.autoMode", async () => {
     const runs = makeRunsWithEscalatingSimpleBand();
-    const partialOverlay: NaxConfig = {
-      ...(structuredClone(DEFAULT_CONFIG) as NaxConfig),
-      autoMode: absentValue<NaxConfig["autoMode"]>(),
-      name: "fixture-project",
-    };
     const { deps, writes } = makeCalibrateDepsFixture();
     (deps.loadRunMetrics as ReturnType<typeof mock>).mockResolvedValueOnce(runs);
-    (deps.readConfig as ReturnType<typeof mock>).mockResolvedValueOnce(partialOverlay);
+    (deps.readConfig as ReturnType<typeof mock>).mockResolvedValueOnce(null);
 
     const result = await routingCalibrateCommand(
       { apply: true, json: false, workdir: WORKDIR, outputDir: OUTPUT_DIR },

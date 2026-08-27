@@ -36,8 +36,7 @@ branch refs/heads/nax/US-002
 describe("WorktreeManager.parseWorktreeList", () => {
   it("parses git worktree list --porcelain output", () => {
     const manager = new WorktreeManager();
-    // @ts-expect-error - accessing private method for testing
-    const worktrees = manager.parseWorktreeList(mockWorktreeListOutput);
+    const worktrees = manager["parseWorktreeList"](mockWorktreeListOutput);
 
     expect(worktrees.length).toBe(3);
 
@@ -53,8 +52,7 @@ describe("WorktreeManager.parseWorktreeList", () => {
 
   it("handles empty output", () => {
     const manager = new WorktreeManager();
-    // @ts-expect-error - accessing private method for testing
-    const worktrees = manager.parseWorktreeList("");
+    const worktrees = manager["parseWorktreeList"]("");
 
     expect(worktrees.length).toBe(0);
   });
@@ -67,8 +65,7 @@ branch refs/heads/master
 `;
 
     const manager = new WorktreeManager();
-    // @ts-expect-error - accessing private method for testing
-    const worktrees = manager.parseWorktreeList(singleOutput);
+    const worktrees = manager["parseWorktreeList"](singleOutput);
 
     expect(worktrees.length).toBe(1);
     expect(worktrees[0].path).toBe("/path/to/project");
@@ -81,8 +78,7 @@ HEAD abc123def456
 branch refs/heads/master`;
 
     const manager = new WorktreeManager();
-    // @ts-expect-error - accessing private method for testing
-    const worktrees = manager.parseWorktreeList(noTrailingNewline);
+    const worktrees = manager["parseWorktreeList"](noTrailingNewline);
 
     expect(worktrees.length).toBe(1);
     expect(worktrees[0].path).toBe("/path/to/project");
@@ -96,8 +92,7 @@ branch refs/heads/feature/my-feature
 `;
 
     const manager = new WorktreeManager();
-    // @ts-expect-error - accessing private method for testing
-    const worktrees = manager.parseWorktreeList(output);
+    const worktrees = manager["parseWorktreeList"](output);
 
     expect(worktrees[0].branch).toBe("feature/my-feature");
   });
@@ -113,8 +108,7 @@ branch refs/heads/nax/US-001
 `;
 
     const manager = new WorktreeManager();
-    // @ts-expect-error - accessing private method for testing
-    const worktrees = manager.parseWorktreeList(output);
+    const worktrees = manager["parseWorktreeList"](output);
 
     // BUG-24 (D-17): detached-HEAD worktrees are kept with branch: null
     // rather than silently dropped. Rebase/bisect worktrees would otherwise
@@ -134,8 +128,7 @@ branch refs/heads/feature
 `;
 
     const manager = new WorktreeManager();
-    // @ts-expect-error - accessing private method for testing
-    const worktrees = manager.parseWorktreeList(output);
+    const worktrees = manager["parseWorktreeList"](output);
 
     expect(worktrees.length).toBe(1);
     expect(worktrees[0].path).toBe("/path/to/project");
@@ -153,8 +146,7 @@ branch refs/heads/nax/US-001
 `;
 
     const manager = new WorktreeManager();
-    // @ts-expect-error - accessing private method for testing
-    const worktrees = manager.parseWorktreeList(output);
+    const worktrees = manager["parseWorktreeList"](output);
 
     expect(worktrees.length).toBe(2);
     expect(worktrees[0].branch).toBe("master");

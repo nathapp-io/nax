@@ -38,8 +38,9 @@ export interface FixStory {
   title: string;
   /** Primary AC (first in batch — kept for backward compat) */
   failedAC: string;
-  /** All ACs included in this fix story batch (D1) */
-  batchedACs: string[];
+  /** All ACs included in this fix story batch (D1). Optional: pre-D1 persisted
+   * fix stories lack the field, and convertFixStoryToUserStory falls back to failedAC. */
+  batchedACs?: string[];
   /** Test output showing actual vs expected */
   testOutput: string;
   /** Original stories that built this functionality */

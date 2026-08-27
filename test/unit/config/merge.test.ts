@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { absentValue, makeNaxConfig } from "@test/helpers";
+import { makeNaxConfig } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { mergePackageConfig } from "@/config/merge";
 import type { NaxConfig } from "@/config/schema";
@@ -60,13 +60,17 @@ describe("mergePackageConfig", () => {
     expect(result).toBe(root);
   });
 
-  test("returns root unchanged when packageOverride.quality has no commands", () => {
+  test("returns root merged when packageOverride.quality has no commands key", () => {
     const root = makeRoot();
-    const result = mergePackageConfig(root, {
-      quality: { ...DEFAULT_CONFIG.quality, commands: absentValue<NaxConfig["quality"]["commands"]>() },
-    } as Partial<NaxConfig>);
-    // quality without commands — no merge happens (no recognized overrideable fields)
-    expect(result).not.toBe(root); // quality is present → merge occurs
+    // Raw package overlays reach mergePackageConfig pre-parse (loader.ts), so a
+    // quality block whose commands key is absent is a reachable state — model it
+    // with an omitted key, not an undefined-typed value.
+    const qualityWithoutCommands: Partial<NaxConfig["quality"]> = { ...DEFAULT_CONFIG.quality };
+    delete qualityWithoutCommands.commands;
+    const result = mergePackageConfig(root, { quality: qualityWithoutCommands } as Partial<NaxConfig>);
+    // quality is present → the merge path runs; root's commands survive untouched
+    expect(result).not.toBe(root);
+    expect(result.quality.commands).toEqual(root.quality.commands);
   });
 
   test("merges quality.commands when packageOverride provides them", () => {

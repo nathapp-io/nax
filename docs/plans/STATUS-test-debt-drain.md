@@ -10,7 +10,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 
 ---
 
-## 0. Current state — re-measured 2026-08-27 (after §8.9, ratchetAllow drained to its floor)
+## 0. Current state — re-measured 2026-08-27 (after §8.11, absentValue drained to zero — every counter with a real drain behind it is closed)
 
 | Counter | Regex ratchet | Biome | Drain target? |
 |:--|--:|--:|:--|
@@ -22,8 +22,8 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 | `nonNullAssert` | 2 | **0** | done — rule at `"error"` (`archive/LOG-non-null-assertion-drain.md`) |
 | `asNever` | 1 | **plugin: 0** | done — **rule at `error`** via `biome-plugins/no-as-never.grit` (§8.8); the 1 is a doc comment |
 | `ratchetAllow` | 25 | — | done — floor reached (§8.9); every residue is a deliberate negative-test fixture or a sanctioned helper seam |
-| `tsSuppress` | 25 | — | yes — next |
-| `absentValue` | 17 | — | yes |
+| `tsSuppress` | 5 | — | done — floor reached (§8.10); every residue is a deliberate negative-type assertion or its load-bearing prose |
+| `absentValue` | 0 | — | done — drained to zero (§8.11); it had no floor — every site was either cargo or re-modelable |
 | `looseCast` | 1794 | — | **no** — guard only, see below |
 
 Five ratchets are closed and gated, and the phase-3c endgame is complete. `as unknown as`
@@ -1059,3 +1059,107 @@ can fall, and route 4's own carve-out requires the traded site be called out rat
 slipped under the delta — keeping the markers is the honest reading.
 
 Next target: `tsSuppress` (25).
+
+### 8.10 Batch 9 — tsSuppress drained to its floor, 25 → 5 (2026-08-27)
+
+One commit, three files, twenty sites — all the same recipe. Unlike every other counter
+in this drain, `tsSuppress` had no population problem at all: all 25 regex hits were real,
+and eighteen of them were a single shape — `// @ts-expect-error - accessing private method
+for testing` over a private-method call.
+
+**The recipe — sanctioned element access (§8.9's `client["env"]`).** TypeScript enforces
+accessibility on dot notation only; bracket access with a string literal is allowed and keeps
+the member fully typed (`MergeEngine["topologicalSort"](...)` returns `string[]`, not `any`).
+So the replacement is not an escape into weaker typing but a re-route through the hole TS
+itself provides, with zero casts:
+
+- `test/unit/execution/merge.test.ts` (−10) — all ten were private `topologicalSort`
+  calls; `engine.topologicalSort(…)` → `engine["topologicalSort"](…)`.
+- `test/unit/execution/worktree-manager.test.ts` (−8) — all eight were private
+  `parseWorktreeList` calls; same substitution.
+- `test/unit/interaction/plugins/telegram.test.ts` (−2) — two `@ts-expect-error` lines
+  above assignments to the private `botToken`/`chatId` fields ("bypass init to avoid the
+  getUpdates poller"); became `plugin["botToken"] = …` / `plugin["chatId"] = …` with the
+  explanatory comment kept (reworded so it no longer quotes the directive — it now says
+  what the code does and cites this drain).
+
+No fixture was incomplete anywhere in the batch: every suppressed line already typechecked
+modulo visibility. That makes this drain's population the inverse of the previous ones —
+where `as never` hid interface defects, `tsSuppress` was pure access-control plumbing, and
+none of it surfaced a latent bug or required a `src/` change.
+
+**The floor.** The remaining 5 all live in
+`test/unit/execution/lifecycle/run-regression.test.ts`:
+
+| Sites | What | Why unavoidable |
+|--:|:--|:--|
+| 4 | prose at :574–578 explaining the red-green mechanics of AC3/AC4 | load-bearing documentation of why the annotation sits on the property, not the declaration; §4 forbids deleting a comment that merely mentions the phrase |
+| 1 | the directive at :586 itself | **the suppression IS the test.** `_ac4TypeCheck` deliberately includes `agentManager` as an excess property to assert TS rejects it when `runtime` is missing. If that guarantee ever regressed, the directive would become *unused* → tsc fails the typecheck gate → red. It is an executable negative-type assertion whose enforcement rides tsconfig.test.json, not text luck. |
+
+Routes considered for :586 before declaring it a floor: spawning tsc against a fixture file
+(machinery of the scanner-scaffolding tests, for one site, and a *weaker* guarantee than the
+current in-gate assertion); type-level trickery (a type-level "this must be an error" can only
+fail compilation through an actual error line — which is exactly what needs suppressing). Kept:
+same reasoning as ratchetAllow's floor — where the marker *is* the assertion, keeping it is the
+honest reading.
+
+typecheck 0/0/0, `check:all` 24/24, full suite green before `--update-baseline`.
+Baseline diff shows `tsSuppress` 25 → 5, every other counter flat.
+
+Next target: `absentValue` (17).
+
+### 8.11 Batch 10 — absentValue drained to zero, 17 → 0; the drain closes (2026-08-27)
+
+Seventeen sites across seven files, three populations, one commit. Unlike
+`ratchetAllow`/`tsSuppress`, `absentValue` had **no floor**: every site was either cargo the
+types already tolerated or re-modelable at an honest seam.
+
+**Population 1 — pure cargo; the API already tolerates absence (8 sites).** The helper's
+whole point is feeding `undefined`/`null` where the *type* forbids it — but three of these
+files were feeding absence to signatures that already accept it:
+
+- `crash-detector.test.ts` (−2) — `detectRuntimeCrash(output: string | undefined | null)`;
+  the signature says it all. Plain `undefined` / `null` literals.
+- `parse-retry.test.ts` (−1) — `lastOutput?: string`; plain `undefined`.
+- `smart-runner-discovery.test.ts` (−5) — `{ value: absentValue<string>(), done: true }`
+  iterator results. A `done: true` result is `IteratorReturnResult<TReturn = any>`, which
+  `value: undefined` satisfies bare.
+
+**Population 2 — impossible-state pins removed per §6's defensive-`?.` ruling (4+2 sites).**
+`cli-routing-calibrate.test.ts` (−2) simulated "a partial overlay without autoMode" by
+nuking a full config's autoMode to undefined — but `NaxConfigSchema.autoMode` carries
+`.default(...)` and loadConfig always schema-parses, so that state can never reach the
+command. Rewritten onto the genuinely reachable absence (readConfig → null when no project
+config exists), whose src branch was previously uncovered. The old fixtures' two
+`(structuredClone(DEFAULT_CONFIG) as NaxConfig)` casts died with them — looseCast −2 as
+collateral of deleted scaffolding, the §8.9b rationale, not a trade. `merge.test.ts` (−1)
+simulated "package overlay quality block without commands" via absentValue; raw overlays do
+reach mergePackageConfig pre-parse, so the honest model is an omitted key — typed
+`Partial<NaxConfig["quality"]>` + `delete`.
+
+**Population 3 — two seams over-stated their contracts (escalation class, each loosens
+nothing):**
+
+- `FixStory.batchedACs?: string[]` (`src/acceptance/fix-generator.ts`) — the field's own
+  consumer does `fixStory.batchedACs ?? [failedAC]` for pre-D1 persisted stories that lack
+  it. The optional type just declares that documented reality; the test now omits the key.
+- `resolveOutcome(..., agentManager: IAgentManager | undefined)`
+  (`src/debate/session-helpers.ts`) — production callers always pass a live
+  `NaxRuntime.agentManager` (non-optional in NaxRuntime); the body coalesces against the
+  `_debateSessionDeps.agentManager` injection seam its doc comment describes. Widening the
+  parameter lets the five tests pass literal `undefined` instead of an absentValue-typed lie,
+  with identical runtime behavior for every existing caller.
+
+No assertion changed anywhere except becoming executable; no test deleted, skipped, or
+narrowed. With this batch every counter marked "drain target?" is closed: the four closed +
+gated by biome rules (`asAny`/`anyType`/`nonNullAssert`/`asNever` at floor or zero), the
+two floors documented (`tsSuppress` 5, `ratchetAllow` 25), `absentValue` at 0, `looseCast`
+guard-only by design. What remains is maintenance: treat any rise above the baseline as a
+regression to reject, not a number to work down.
+
+typecheck 0/0/0, `check:all` 24/24, full suite green before `--update-baseline`. Baseline
+diff: absentValue 17 → 0, looseCast −2 (collateral), every other counter flat. Note:
+`bun run test:coverage` currently fails on a **pre-existing** per-file breach
+(`src/session/manager-deps.ts` 56.25% vs 71.88%) reproducing identically on HEAD before this
+batch — per §8.7 policy the local coverage ratchet stays un-rebaselined; flagging rather
+than papering over.

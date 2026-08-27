@@ -136,7 +136,12 @@ export async function resolveOutcome(
   featureName: string | undefined,
   promptSuffix: string | undefined,
   debaters: Debater[] | undefined,
-  agentManager: IAgentManager,
+  /**
+   * Injectable manager override; production always passes a live
+   * NaxRuntime.agentManager. `undefined` routes to the `_debateSessionDeps`
+   * injection seam below — the seam tests use (see the doc comment above).
+   */
+  agentManager: IAgentManager | undefined,
 ): Promise<ResolveOutcome> {
   const logger = _debateSessionDeps.getSafeLogger();
 

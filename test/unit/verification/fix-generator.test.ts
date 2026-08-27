@@ -30,7 +30,6 @@ function buildFixPrompt(
   });
 }
 
-import { absentValue } from "@test/helpers";
 import type { PRD, UserStory } from "@/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -366,11 +365,12 @@ describe("convertFixStoryToUserStory", () => {
   });
 
   test("falls back to failedAC when batchedACs not present (backward compat)", () => {
+    // Pre-D1 persisted fix stories carry no batchedACs key — model the absence
+    // by omitting the field, which its optional type now permits.
     const fixStory = {
       id: "US-FIX-001",
       title: "Fix: AC-2 TTL expiry timing",
       failedAC: "AC-2",
-      batchedACs: absentValue<string[]>(),
       testOutput: "test output",
       relatedStories: ["US-002", "US-005"],
       description: "Update TTL implementation.",
