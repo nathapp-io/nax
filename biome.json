@@ -1,13 +1,28 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
-  "assist": { "actions": { "source": { "organizeImports": "on" } } },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "plugins": ["./biome-plugins/no-as-never.grit"],
   "linter": {
     "enabled": true,
-    "domains": { "test": "recommended" },
+    "domains": {
+      "test": "recommended"
+    },
     "rules": {
       "recommended": true,
-      "suspicious": { "noExplicitAny": "error" },
-      "style": { "noNonNullAssertion": "error", "noParameterAssign": "error" }
+      "suspicious": {
+        "noExplicitAny": "error",
+        "noTsIgnore": "error"
+      },
+      "style": {
+        "noNonNullAssertion": "error",
+        "noParameterAssign": "error"
+      }
     }
   },
   "formatter": {
@@ -19,12 +34,18 @@
   "overrides": [
     {
       "includes": ["**/test/**"],
-      "plugins": ["./biome-plugins/no-as-never.grit", "./biome-plugins/no-absent-value.grit"],
+      "plugins": ["./biome-plugins/no-absent-value.grit"],
       "linter": {
         "rules": {
-          "suspicious": { "noExplicitAny": "error" },
-          "style": { "noNonNullAssertion": "error" },
-          "performance": { "noDelete": "off" }
+          "suspicious": {
+            "noExplicitAny": "error"
+          },
+          "style": {
+            "noNonNullAssertion": "error"
+          },
+          "performance": {
+            "noDelete": "off"
+          }
         }
       }
     },
@@ -32,7 +53,9 @@
       "includes": ["**/test/helpers/**/*-internals.ts"],
       "linter": {
         "rules": {
-          "complexity": { "useLiteralKeys": "off" }
+          "complexity": {
+            "useLiteralKeys": "off"
+          }
         }
       }
     }

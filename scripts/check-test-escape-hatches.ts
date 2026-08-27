@@ -1,37 +1,45 @@
 #!/usr/bin/env bun
 /**
- * Ratchet check: the ways test/ can silence a type error that
- * `check-test-as-unknown-as` does not count.
+ * Ratchet check: the ways test/ can silence a type error that no parser sees.
  *
- * Issue #1514 phase 3c. Draining that baseline is only real progress if the
- * debt cannot walk out through a side door, and there are eight:
+ * Issue #1514 phase 3c. Draining the typecheck baseline is only real progress
+ * if the debt cannot walk out through a side door.
  *
- * The companion `check-test-typecheck` ratchet this once named alongside it is
- * gone: `test/` reached 0 errors (#1514 §47), so `bun run typecheck` now
- * compiles `tsconfig.test.json` outright and a hard gate replaced the count.
+ * SCOPE — this counts only what biome cannot. Five counters that once lived
+ * here retired on 2026-08-27 once a parser gated each of their shapes at
+ * `error`, because a text regex kept as a "secondary guard" behind a working
+ * rule guards nothing: its whole residue was prose and fixture strings, so it
+ * could only ever fire on a comment. What retired, and what now measures it:
  *
- *   asAny        `as any` — invisible to both ratchets. DRAINED: biome's
- *                noExplicitAny is now `error` for test/** too (biome.json),
- *                and reads 0. This counter did NOT retire with it, because
- *                biome sees code and this sees text: the residue it still
- *                baselines is `as any` inside comments and parser-fixture
- *                strings, which no lint rule will ever cover. Treat a rise
- *                as a regression, not as a drain to resume.
+ *   asAny, anyType       biome `noExplicitAny`, `error` for test/** (biome.json)
+ *   nonNullAssert        biome `noNonNullAssertion`, `error` for test/**
+ *   asNever              biome-plugins/no-as-never.grit (GritQL plugin)
+ *   absentValue          biome-plugins/no-absent-value.grit (GritQL plugin)
+ *
+ * `@ts-ignore` alone also has a rule now — biome `noTsIgnore`, promoted from
+ * its shipped WARN to `error` on 2026-08-27. `tsSuppress` still counts it: the
+ * counter covers three directives and is the ONLY gate for the other two, so
+ * splitting it to avoid overlap would buy nothing and open a gap.
+ *
+ * A plugin diagnostic is a hard error, so `bun run lint` fails on any of the
+ * four. Their drains are in docs/plans/archive/LOG-*.md and their final
+ * baselines in this file's git history; the retirement is
+ * docs/plans/STATUS-test-debt-drain.md §8.14. Do NOT reintroduce a counter
+ * here for a shape biome already parses — fix the rule instead.
+ *
+ * The three that remain have no parser behind them and are the measure:
+ *
  *   tsSuppress   `@ts-expect-error` / `@ts-ignore` / `@ts-nocheck` — removes a
- *                typecheck error without fixing anything.
+ *                typecheck error without fixing anything. A comment shape, so
+ *                correctly text-mode: biome parses code, and comments are
+ *                TRIVIA in its CST — `comment()` / `js_comment()` do not even
+ *                compile as GritQL patterns, so no plugin can replace this.
+ *                **Baselined at 0** since the pattern was anchored to the
+ *                comment opener; any nonzero reading is a regression to fix at
+ *                the site, not a number to work down.
  *   ratchetAllow `test-ratchet-allow: as-unknown-as` — the cast ratchet's own
  *                escape hatch. Legitimate occasionally, so it is ratcheted
- *                rather than banned.
- *   absentValue  `absentValue<T>()` / `nullValue<T>()` from
- *                test/helpers/absent.ts — a deliberately-absent value fed to a
- *                parameter whose type forbids it, because the absence is the
- *                assertion. Counts the call sites of the idiom that replaced
- *                `undefined as unknown as T` / `null as unknown as T`.
- *   anyType      `any` in TYPE position — `: any`, `<any>`, `as any`. The
- *                cheapest way to silence a TS7006 implicit any without fixing
- *                it. A superset of `asAny`, and DRAINED with it (biome 1529 →
- *                0). Same reason for staying: its baseline is prose and
- *                fixture strings biome cannot see.
+ *                rather than banned. Also a comment shape.
  *   looseCast    single `as T` casts. NOT a drain target, and MORE
  *                load-bearing now than when it was written: with
  *                `check-test-as-unknown-as` baselined at 0 and test/
@@ -41,41 +49,16 @@
  *                first") from walking out under a name the closed ratchet no
  *                longer sees. Driving it down is not progress; keeping it
  *                from rising is.
- *   asNever      `as never` — assignable to EVERY type, so it silences any
- *                assignment error outright. Lowercase, so `looseCast` (which
- *                anchors on an uppercase initial) never saw it. DRAINED, 603 →
- *                1, and SUPERSEDED: biome-plugins/no-as-never.grit is a GritQL
- *                plugin scoped to `test/**` in biome.json, and a plugin
- *                diagnostic is a hard error that fails `bun run lint`. That
- *                rule is now the measure; this counter did NOT retire with it,
- *                for the same reason `asAny` and `nonNullAssert` did not — a
- *                parser sees code, this sees text, and the 1 site still
- *                baselined is a doc comment quoting the phrase.
- *                The claim this doc used to make — "no biome rule covers this
- *                shape" — was true of biome's BUILT-IN rules and stopped being
- *                true with v2's GritQL plugins. Before writing that about
- *                `ratchetAllow`, `tsSuppress` or `absentValue`, check whether a
- *                plugin can express the shape; `absentValue` almost certainly
- *                can. See docs/plans/STATUS-test-debt-drain.md §8.8.
- *   nonNullAssert
- *                postfix `!`. Narrows away null/undefined with no runtime
- *                check. DRAINED: biome's `noNonNullAssertion` is now `error`
- *                for test/** and reads 0; the 2 matches still baselined here
- *                are prose and a parser fixture.
- *                HISTORICAL NOTE, kept because the lesson generalises: this
- *                regex undercounted badly. At the drain's start biome found
- *                1064 sites against this pattern's 792 — 272 that NOTHING
- *                counted. Draining to 0 as measured HERE would have left them
- *                live and failed the promote-back on a red build. Where a
- *                lint rule can see the same shape, it is the finish line and
- *                this is not. See the regex's own doc comment for why (raw
- *                text, no parser) and
- *                docs/plans/archive/LOG-non-null-assertion-drain.md.
  *
- * Every counter fails on growth only. Four are drained and now hold a residue
- * of comments and fixture strings no parser will ever cover; `looseCast` is a
- * guard that is not meant to fall; `asNever`, `ratchetAllow`, `tsSuppress` and
- * `absentValue` are what is left to drain.
+ * Every counter fails on growth only. `tsSuppress` is a closed invariant at 0.
+ * `ratchetAllow` is at its floor (STATUS §8.9) and that floor is NOT zero:
+ * each of its 25 sites builds a deliberately-illegal value for a function
+ * whose job is surviving contract violations (a string where the type says
+ * number), so the cast IS the test. Draining it would delete the coverage.
+ *
+ * The companion `check-test-typecheck` ratchet this once named alongside it is
+ * gone: `test/` reached 0 errors (#1514 §47), so `bun run typecheck` now
+ * compiles `tsconfig.test.json` outright and a hard gate replaced the count.
  *
  * SEVERITY POLICY (decided 2026-08-25, Biome v2 rollout step 4; DISCHARGED
  * 2026-08-26): `noExplicitAny` and `noNonNullAssertion` were `error` for src/
@@ -87,7 +70,8 @@
  * The promote-back was done by SETTING "error" in the test/** override, NOT by
  * deleting the override. Do not "tidy up" by deleting it: under Biome v2 that
  * lands the rules at default WARNING severity, `biome check` exits 0 on
- * warnings, and both drains retire into no enforcement at all. See
+ * warnings, and both drains retire into no enforcement at all — which is
+ * exactly the failure this file no longer has a counter to catch. See
  * docs/findings/biome-migration-risk.md.
  *
  * Usage:
@@ -110,61 +94,39 @@ const BASELINE_FILE = join(import.meta.dir, "baselines", "test-escape-hatches-ba
 /** Counted per match, not per line: a line-based count lets two hatches be
  *  joined onto one line to lower the number without removing either. */
 const PATTERNS = {
-  asAny: /\bas\s+any\b/g,
-  tsSuppress: /@ts-(expect-error|ignore|nocheck)\b/g,
-  ratchetAllow: /test-ratchet-allow:\s*as-unknown-as/g,
-  absentValue: /\b(absentValue|nullValue)\s*</g,
   /**
-   * `any` in TYPE position — `: any`, `<any>`, `Record<string, any>`, `as any`.
-   * The cheapest possible way to silence a `TS7006 implicit any` without
-   * fixing it. A superset of `asAny`. Both are drained (biome 1529 → 0) but
-   * neither retired: biome parses code, this reads text, and the residue is
-   * comments and parser fixtures.
+   * `@ts-expect-error` / `@ts-ignore` / `@ts-nocheck` — a typecheck error
+   * removed without fixing anything.
    *
-   * Anchored to a type-position prefix on purpose. A bare /\bany\b/ also
-   * matches the ENGLISH WORD in comments and fixture strings — 262 of them
-   * in test/ today — so writing a doc comment containing "any" would trip
-   * the ratchet and invite gaming it. Do not "simplify" this pattern.
+   * Anchored to the comment OPENER, which is where TypeScript requires a real
+   * directive to sit: the first text in the comment. Unanchored, this read the
+   * words wherever they appeared, and its entire remaining population was
+   * PROSE — a comment in `run-regression.test.ts` explaining why that test
+   * asserts at the type level *instead of* suppressing. §4 forbids deleting
+   * such a comment to lower a count, which makes the regex the defect and not
+   * the code: the counter is now a closed invariant at 0.
+   *
+   * Deliberately NOT anchored to the start of a line. `foo(); // @ts-ignore`
+   * is a real suppression, and `^` would miss it — the same undercount the
+   * `nonNullAssert` regex made 272 times and the `**\/*.ts` glob made six.
+   * A directive inside a string literal still counts; over-counting is the
+   * safe direction, and the scanner's own fixtures are exempt by path.
    */
-  anyType: /(?:\bas\s+any\b|[:<|&,(]\s*any\b)/g,
+  tsSuppress: /(?:\/\/|\/\*+|^[ \t]*\*)[ \t]*@ts-(expect-error|ignore|nocheck)\b/gm,
+  ratchetAllow: /test-ratchet-allow:\s*as-unknown-as/g,
   /**
    * Single `as T` casts. NOT a drain target — this exists so the `TS2352`
    * population ("convert the expression to `unknown` first") cannot escape
    * into unmarked single casts. With the cast ratchet baselined at 0, that
    * job matters more, not less: a single `as X` is now the cheapest way to
    * reintroduce the debt under a name the closed ratchet does not see.
+   *
+   * Anchored on `as [A-Z]`, which is why `as never` needed a separate counter
+   * for two phases of its drain — 619 lowercase sites walked out uncounted.
+   * That shape is now biome-plugins/no-as-never.grit's job, but the anchor
+   * remains: any NEW lowercase bottom-ish type is invisible here too.
    */
   looseCast: /\bas\s+[A-Z]\w*/g,
-  /**
-   * `as never`. The bottom type is assignable to every other type, so this
-   * silences ANY assignment error in one word — including the whole
-   * `Mock<() => X>`-into-a-typed-dep-slot family. `looseCast` anchors on
-   * `as [A-Z]` and `never` is lowercase, so for the first two phases of the
-   * drain this walked out uncounted; 619 of them accumulated. Deliberately
-   * its own counter rather than a `looseCast` widening: the two retire on
-   * different timelines — `asNever` is being drained, `looseCast` is a guard
-   * that stays.
-   */
-  asNever: /\bas\s+never\b/g,
-  /**
-   * Postfix `!` — the non-null assertion. Discards `null`/`undefined` from a
-   * type with no runtime check, so it clears `TS18047`/`TS18048` while leaving
-   * the unsafe access exactly as it was. Since the drain closed, biome's
-   * `noNonNullAssertion` is `error` for `test/**` too and is the real gate;
-   * this counter now guards only the text biome cannot parse.
-   *
-   * Anchored to POSTFIX position — an identifier, `)` or `]`, then `!`, then a
-   * member/argument/terminator character. That excludes prefix negation
-   * (`!x`, `!!x`), `!=`, `!==`, and the common `"…!"` fixture string. It
-   * undercounts rather than over-: `x! + 1` and an end-of-line `!` are missed.
-   *
-   * One false positive survives and is pinned by a test: prose punctuation
-   * inside a string, as in `"wow!, really"`. The 2 sites this still baselines
-   * are of exactly that family — a doc comment and a declaration fixture.
-   * Doing better needs a parser — like `anyType` above, this is a raw-text
-   * regex and inherits that ceiling.
-   */
-  nonNullAssert: /[A-Za-z0-9_$)\]]!(?=[.,;)\]])/g,
 } as const;
 
 export type HatchKind = keyof typeof PATTERNS;
@@ -178,19 +140,22 @@ const HATCH_KINDS = Object.keys(PATTERNS) as HatchKind[];
  */
 const ALL_KINDS: ReadonlySet<HatchKind> = new Set(HATCH_KINDS);
 
-const EXEMPT_BY_KIND: ReadonlyMap<string, ReadonlySet<HatchKind>> = new Map([
+export type Exemptions = ReadonlyMap<string, ReadonlySet<HatchKind>>;
+
+export const EXEMPT_BY_KIND: Exemptions = new Map([
   // Scanner scaffolding: fixture strings legitimately contain every pattern.
   ["test/unit/scripts/check-test-as-unknown-as.test.ts", ALL_KINDS],
   ["test/unit/scripts/check-test-escape-hatches.test.ts", ALL_KINDS],
   // Same, for the `as never` biome plugin's gate test. Its fixtures are source
-  // strings fed to biome, and this counter reads 11 of them where the plugin
-  // itself — which parses — reads 0. A neat demonstration of why the plugin,
-  // not this regex, is now the measure for `asNever`.
+  // strings fed to biome; among them is `{} as Error`, a NEGATIVE control
+  // proving the plugin does not fire on an ordinary cast — which is exactly
+  // the shape `looseCast` counts. The fixture is scaffolding, not debt.
   ["test/unit/scripts/biome-no-as-never-plugin.test.ts", ALL_KINDS],
-  // The idiom's own definition. Its declarations match the CALL-SITE pattern;
-  // counting them would inflate `absentValue` by 2 forever. Every other
-  // counter still applies to this file.
-  ["test/helpers/absent.ts", new Set(["absentValue"])],
+  // Same again: the biome severity gate lints planted source strings, and one
+  // of them is a real `// @ts-ignore` directive it needs `noTsIgnore` to fire
+  // on. Counting it here would baseline `tsSuppress` at 1 forever and lose the
+  // closed-invariant-at-0 property the anchored pattern just bought.
+  ["test/unit/scripts/biome-test-severity.test.ts", ALL_KINDS],
 ]);
 
 interface Baseline {
@@ -214,7 +179,13 @@ function emptyCounts(): Counts {
   return Object.fromEntries(HATCH_KINDS.map((k) => [k, 0])) as Counts;
 }
 
-export async function scanEscapeHatches(rootDir: string): Promise<ScanResult> {
+/**
+ * `exemptions` is a parameter, not a closed-over constant, so the per-kind
+ * scoping of GitHub #1682 stays testable. Every entry in the live map happens
+ * to be `ALL_KINDS` today, and without this seam a test could no longer reach
+ * the "exempt from one counter, still graded by the rest" branch at all.
+ */
+export async function scanEscapeHatches(rootDir: string, exemptions: Exemptions = EXEMPT_BY_KIND): Promise<ScanResult> {
   const counts = emptyCounts();
   const byFile: Record<string, Partial<Counts>> = {};
   // `{ts,tsx}`, not `**/*.ts`: test/ui/ is six .tsx files, and while the glob
@@ -226,7 +197,7 @@ export async function scanEscapeHatches(rootDir: string): Promise<ScanResult> {
   for await (const file of glob.scan({ cwd: join(rootDir, SCAN_DIR), absolute: false })) {
     if (file.endsWith(".d.ts")) continue;
     const rel = join(SCAN_DIR, file);
-    const exempt = EXEMPT_BY_KIND.get(rel);
+    const exempt = exemptions.get(rel);
     const text = await Bun.file(join(rootDir, rel)).text();
     // `as unknown as Foo` ends in something `looseCast` would match, and the
     // cast ratchet already counts it. Strip it for that counter only.

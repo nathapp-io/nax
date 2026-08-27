@@ -29,6 +29,68 @@ describe("installServePortZeroCompat (SEC-06)", () => {
   });
 });
 
+describe("the in-memory fallback server", () => {
+  const originalServe = Bun.serve;
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    (Bun as { serve: typeof Bun.serve }).serve = originalServe;
+    globalThis.fetch = originalFetch;
+  });
+
+  /**
+   * A fresh module instance per call. `servePortZeroCompatInstalled` is
+   * module-level state, so the sibling describe's install() would otherwise
+   * make this one a no-op: the flag stays true across the afterEach that
+   * restores the globals, and the shim would never re-patch.
+   */
+  async function freshShim(tag: string): Promise<{ install: () => void }> {
+    const mod = (await import(`@/interaction/plugins/webhook-serve-compat?compat=${tag}`)) as {
+      installServePortZeroCompat: () => void;
+    };
+    return { install: mod.installServePortZeroCompat };
+  }
+
+  test("passes the handler a real server object for `this` and for `server`", async () => {
+    // The two arguments were `undefined as never` — a lie the bottom type
+    // hid. Any handler that read `server.port` (or anything else Bun passes)
+    // got a TypeError on undefined instead. They are the same value Bun
+    // would pass: the server being created.
+    let seenServer: unknown;
+    let seenThis: unknown;
+
+    // Force the in-memory path: the shim captures Bun.serve at install time
+    // and only falls back when that captured serve throws.
+    (Bun as { serve: typeof Bun.serve }).serve = (() => {
+      throw new Error("no network permission");
+    }) as typeof Bun.serve;
+
+    const { install } = await freshShim("server-arg");
+    install();
+
+    const server = Bun.serve({
+      port: 0,
+      fetch(this: unknown, _req: Request, passed: unknown) {
+        seenThis = this;
+        seenServer = passed;
+        return new Response("ok");
+      },
+    });
+
+    const response = await fetch(`http://localhost:${server.port}/nax/interact/probe`);
+    expect(await response.text()).toBe("ok");
+
+    expect(seenServer).toBeDefined();
+    // Identity, not port equality — strictly the stronger claim, and the one
+    // Bun makes: the handler is handed the very object `serve()` returned.
+    expect(seenServer).toBe(server);
+    // Bun passes that same server as `this` as well as as the second argument.
+    expect(seenThis).toBe(server);
+
+    await server.stop();
+  });
+});
+
 describe("webhook.ts does not install the compat shim at module scope (SEC-06)", () => {
   test("installServePortZeroCompat() is not called at the top level of webhook.ts", async () => {
     // Regression guard: the shim used to run as a module-level side effect

@@ -1,19 +1,11 @@
 {
   "counts": {
-    "asAny": 1,
-    "tsSuppress": 2,
+    "tsSuppress": 0,
     "ratchetAllow": 25,
-    "absentValue": 0,
-    "anyType": 10,
-    "looseCast": 1790,
-    "asNever": 1,
-    "nonNullAssert": 2
+    "looseCast": 1790
   },
-  "updatedAt": "2026-08-27T06:32:09.946Z",
+  "updatedAt": "2026-08-27T08:36:26.618Z",
   "byFile": {
-    "test/preload.ts": {
-      "anyType": 1
-    },
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
     },
@@ -25,9 +17,6 @@
     },
     "test/helpers/execution-deps-stub.ts": {
       "looseCast": 4
-    },
-    "test/helpers/assert-defined.ts": {
-      "nonNullAssert": 1
     },
     "test/helpers/worktree-manager.ts": {
       "ratchetAllow": 1
@@ -173,10 +162,6 @@
     "test/integration/plan/logger.test.ts": {
       "looseCast": 2
     },
-    "test/integration/config/security-loader.test.ts": {
-      "asAny": 1,
-      "anyType": 1
-    },
     "test/integration/config/merger.test.ts": {
       "looseCast": 5
     },
@@ -244,7 +229,6 @@
       "looseCast": 4
     },
     "test/unit/interaction/plugins/telegram-authorization.test.ts": {
-      "anyType": 1,
       "looseCast": 6
     },
     "test/unit/tdd/capture-snapshot-ref.test.ts": {
@@ -330,9 +314,6 @@
     },
     "test/unit/review/semantic-debate-audit-shape.test.ts": {
       "looseCast": 2
-    },
-    "test/unit/review/semantic-evidence.test.ts": {
-      "anyType": 1
     },
     "test/unit/review/review-iteration-store.test.ts": {
       "looseCast": 1
@@ -518,7 +499,6 @@
       "looseCast": 2
     },
     "test/unit/execution/story-orchestrator-no-progress-bail.test.ts": {
-      "anyType": 1,
       "looseCast": 4
     },
     "test/unit/execution/post-run-review-summary.test.ts": {
@@ -532,9 +512,6 @@
     },
     "test/unit/execution/escalation/tier-escalation-source-tier.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/execution/escalation/tier-escalation-greenfield.test.ts": {
-      "anyType": 1
     },
     "test/unit/execution/escalation/tier-escalation.test.ts": {
       "looseCast": 2
@@ -564,11 +541,7 @@
       "looseCast": 1
     },
     "test/unit/execution/lifecycle/run-completion-events.test.ts": {
-      "anyType": 1,
       "looseCast": 9
-    },
-    "test/unit/execution/lifecycle/run-regression.test.ts": {
-      "tsSuppress": 2
     },
     "test/unit/execution/lifecycle/acceptance-loop-routing.test.ts": {
       "looseCast": 1
@@ -676,8 +649,7 @@
       "looseCast": 3
     },
     "test/unit/operations/full-suite-rectify.test.ts": {
-      "looseCast": 5,
-      "asNever": 1
+      "looseCast": 5
     },
     "test/unit/operations/plan-critic-llm.test.ts": {
       "looseCast": 3
@@ -699,9 +671,6 @@
     },
     "test/unit/operations/call.test.ts": {
       "looseCast": 21
-    },
-    "test/unit/operations/test-edit-declaration.test.ts": {
-      "nonNullAssert": 1
     },
     "test/unit/operations/build-hop-callback-stale-retry.test.ts": {
       "looseCast": 3
@@ -764,7 +733,6 @@
       "looseCast": 3
     },
     "test/unit/debate/selectors/judge.test.ts": {
-      "anyType": 1,
       "looseCast": 1
     },
     "test/unit/debate/pre-phase/registry.test.ts": {
@@ -861,7 +829,6 @@
       "looseCast": 5
     },
     "test/unit/utils/git.test.ts": {
-      "anyType": 1,
       "looseCast": 1
     },
     "test/unit/utils/process-alive.test.ts": {
@@ -929,9 +896,6 @@
     },
     "test/unit/agents/acp/adapter-phase-a.test.ts": {
       "looseCast": 6
-    },
-    "test/unit/agents/acp/_spawn-client-test-helpers.ts": {
-      "anyType": 1
     },
     "test/unit/agents/cost/calculate.test.ts": {
       "ratchetAllow": 4

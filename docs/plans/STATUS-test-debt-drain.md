@@ -10,21 +10,26 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 
 ---
 
-## 0. Current state — re-measured 2026-08-27 (after §8.13, both §8.11 src widenings undone)
+## 0. Current state — re-measured 2026-08-27 (after §8.17)
 
-| Counter | Regex ratchet | Biome | Drain target? |
-|:--|--:|--:|:--|
-| `tsc --noEmit` (src) | **0** | — | hard gate |
-| `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
-| `as unknown as` | **0** | — | done — closed invariant (`archive/LOG-as-unknown-as-drain.md`) |
-| `asAny` | 1 | **0** | done — rule at `"error"` (`archive/LOG-no-explicit-any-drain.md`) |
-| `anyType` | 10 | **0** | done — rule at `"error"` (`archive/LOG-no-explicit-any-drain.md`) |
-| `nonNullAssert` | 2 | **0** | done — rule at `"error"` (`archive/LOG-non-null-assertion-drain.md`) |
-| `asNever` | 1 | **plugin: 0** | done — **rule at `error`** via `biome-plugins/no-as-never.grit` (§8.8); the 1 is a doc comment |
-| `ratchetAllow` | 25 | — | done — floor reached (§8.9); every residue is a deliberate negative-test fixture or a sanctioned helper seam |
-| `tsSuppress` | 2 | — | done — 5 → 2 (§8.12); §8.10's floor held one directive that asserted nothing. The 2 are prose |
-| `absentValue` | 0 | **plugin: 0** | done — **rule at `error`** via `biome-plugins/no-absent-value.grit` (§8.12); drained to zero in §8.11 |
-| `looseCast` | 1790 | — | **no** — guard only, see below |
+| Shape | Gate | Reading | Drain target? |
+|:--|:--|--:|:--|
+| `tsc --noEmit` (src) | hard gate | **0** | hard gate |
+| `tsc --noEmit -p tsconfig.test.json` | hard gate | **0** | hard gate |
+| `as unknown as` | regex ratchet | **0** | done — closed invariant (`archive/LOG-as-unknown-as-drain.md`) |
+| `as any` / `any` in type position | biome `noExplicitAny` @ `error` | **0** | done (`archive/LOG-no-explicit-any-drain.md`) |
+| postfix `!` | biome `noNonNullAssertion` @ `error` | **0** | done (`archive/LOG-non-null-assertion-drain.md`) |
+| `as never` | plugin `no-as-never.grit` @ `error` | **0** | done — `test/` 603 → 0 (§8.8) and `src/` 2 → 0 (§8.15); the plugin is wired at biome.json's **root** and covers `src/`, `bin/` and `test/` |
+| `absentValue<T>()` / `nullValue<T>()` | plugin `no-absent-value.grit` @ `error` | **0** | done (§8.12) |
+| `@ts-ignore` (that directive only) | biome `noTsIgnore` @ `error` | **0** | done — promoted from `warn` (§8.17) |
+| `ratchetAllow` | regex ratchet | 25 | done — floor reached (§8.9), and the floor is **not** zero: each site builds a deliberately-illegal value for a coercion guard, so the cast *is* the test |
+| `tsSuppress` | regex ratchet | **0** | done — closed invariant (§8.17); the pattern is anchored to the comment opener, so prose about a directive no longer counts |
+| `looseCast` | regex ratchet | 1790 | **no** — guard only, see below |
+
+`check:test-escape-hatches` now carries **three** counters, not eight. The five with a
+parser behind them retired in §8.14: a text regex kept as a "secondary guard" behind a
+working rule guards only prose, because prose was all its residue ever was. The three that
+remain — two comment shapes and the `looseCast` guard — have no parser and are the measure.
 
 Five ratchets are closed and gated, and the phase-3c endgame is complete. `as unknown as`
 went 101 → 0 and is now a pure invariant: any nonzero reading is a regression to reject, not
@@ -342,6 +347,24 @@ they were earned in: §4x = `archive/STATUS-1514-typecheck-drain.md`, §8.x of t
 - **Reproduce against the project's own script** (cast drain §8.13), not a hand-rolled invocation of the
   same test files. `bun test <dir>` misses `--timeout=60000` and turns a passing suite into a
   cascade of misleading failures. Run the gate, then read its exit code.
+- **Fix the instrument, not the code that embarrasses it** (§8.17). `tsSuppress` read 2 where
+  `test/` had zero directives: the matches were prose *about* a directive. The tempting fix
+  is rewording the comment, which §4 forbids and which makes the comment worse. Before
+  editing correct code to satisfy a counter, ask whether the counter is measuring the thing
+  it names — and when tightening it, check both directions: the anchor that excludes prose
+  must still catch `foo(); // @ts-ignore`.
+- **"Nothing produces this" is not "nothing has produced this"** (§8.16). When the reader is
+  a persistence format, ask what happens to data already on disk. A schema with no version
+  field and no validation cannot refuse the old shape, so the old shape is still an input no
+  matter how long ago its writer was deleted. `git log` dates the producer's removal; it does
+  not date the last file it wrote. Superseded *code* is safe to delete; superseded *data* is
+  not, because deleting its reader does not delete it.
+- **A secondary guard behind a parser is not a guard** (§8.14). Once a rule sees the shape,
+  the regex's residue is by construction what the rule cannot see — comments and fixture
+  strings. It can then only fire on a comment. Before keeping a counter "as a secondary
+  guard", read what its residue actually contains, and ask the separate question: what was
+  this counter *incidentally* guarding? Here it was the biome severities themselves, which
+  had no test of their own until the counters were removed.
 
 ## 7. Where the archived detail lives
 
@@ -1366,3 +1389,262 @@ Typecheck 0/0/0, `check:all` 24/24, `bun run build` clean, suite 14183 + 1136 + 
 Coverage 87.84% lines / 87.50% functions (−0.05pp / −0.03pp: the deleted module was
 better-covered than average, so removing it and its tests lowers the ratio), per-file ratchet 101
 vs baseline 103, not re-baselined. No ratchet counter moved.
+
+### 8.14 The five counters with a parser behind them retire; the severities get a gate (2026-08-27)
+
+`check:test-escape-hatches` counted eight shapes. Five of them — `asAny`, `anyType`,
+`nonNullAssert`, `asNever`, `absentValue` — had a biome rule or GritQL plugin at `error`
+behind them, and each was kept anyway "as a secondary guard for the residue a parser cannot
+see". That sentence appears four times across the script, both `.grit` files and
+`.nax/rules/test-ratchets.md`, and it does not survive being read literally: the residue in
+question was 1 doc comment, 10 fixture strings, 2 prose `!` and 0 call sites. **A regex whose
+entire remaining population is prose cannot fail on anything but prose.** It is not a guard;
+it is a number that can only be broken by writing a comment.
+
+Retired, with their per-file baselines. Remaining: `tsSuppress`, `ratchetAllow`, `looseCast`
+— two comment shapes no parser will ever cover, and the cast guard. Baseline re-measured to
+`tsSuppress=2, ratchetAllow=25, looseCast=1790`; no reading moved, only the row count.
+
+#### What the removal exposed, and what had to be built before it was safe
+
+The counters were doing one real job nobody had written down. `noExplicitAny` and
+`noNonNullAssertion` are `error` for `test/**` **only because the override sets that
+severity explicitly**; the script's own doc comment warns that deleting the override lands
+them at Biome v2's default WARNING, where `biome check` exits 0 and two completed drains
+retire into no enforcement at all. Nothing in the suite tested that. Grep confirmed it:
+before this commit, `noExplicitAny`, `noNonNullAssertion` and `no-absent-value` appeared in
+**zero** test files. The `asAny` / `nonNullAssert` counters were the accidental backstop —
+they would have gone red as soon as the disarmed rules let sites back in.
+
+So removing them without replacement would have traded a weak guard for none. Two gates
+landed first:
+
+- `test/unit/scripts/biome-test-severity.test.ts` — lints a planted `test/unit/probe.test.ts`
+  under a faithful copy of the repo's own `biome.json` (plugin paths absolutised; assist
+  actions off) and asserts the diagnostic category, `severity: "error"`, **and a non-zero
+  exit code** — the thing CI actually reads. Also pins that both plugins fire through the
+  real override, since the `includes` glob carries the severities and the plugins together.
+- `test/unit/scripts/biome-no-absent-value-plugin.test.ts` — the sibling
+  `no-as-never-plugin.test.ts` never got. That plugin was wired in §8.12 with **no test at
+  all**, so it was already in the state §6 warns about.
+
+Both were mutation-probed before being trusted, per §6's *a rule that has never been seen to
+fail is not known to be wired*: setting `noExplicitAny` to `"off"` and unwiring
+`no-absent-value.grit` turned 4 of the 10 new assertions red, including both exit-code ones.
+`biome.json` was restored byte-identically.
+
+#### One seam, so a guarantee did not go untested
+
+Every entry in `EXEMPT_BY_KIND` is now `ALL_KINDS` — the only per-kind entry was
+`test/helpers/absent.ts`, exempt from `absentValue` alone, and it left with that counter.
+GitHub #1682's guarantee (an exemption is per kind, never per file) would then have been
+unreachable from a test. `scanEscapeHatches` takes `exemptions` as a defaulted parameter so
+the branch stays covered by a map the test supplies. The `absent.ts` exemption's removal
+moves no count: it was scoped to the retired counter, and the file's 1 `looseCast` was
+already graded.
+
+`biome-no-as-never-plugin.test.ts` keeps its `ALL_KINDS` exemption for a new reason — its
+`{} as Error` fixture is a negative control proving the plugin ignores an ordinary cast, and
+that is exactly the shape `looseCast` counts.
+
+#### New ruling for §6 — a secondary guard behind a parser is not a guard
+
+Once a rule sees the shape, the regex's residue is by construction the part the rule cannot
+see. Ask what that residue actually contains before keeping the counter: if the answer is
+"comments and fixture strings", the counter can only ever fire on a comment, and keeping it
+costs a baseline row, an exemption list and the false belief that something is watching. Ask
+the separate question too — *what was this counter incidentally guarding?* Here it was the
+rule's own severity, which had no test of its own.
+
+Typecheck 0/0/0, `bun run lint` clean, `check:all` 24/24, `bun test test/unit/scripts/`
+184 pass / 0 fail. Ratchet re-baselined deliberately (a row removal, not a count change) and
+said so here.
+
+### 8.15 `no-as-never` widened to the repo — src's last 2 sites drained (2026-08-27)
+
+§8.8 left this open: *"`src/` has 2 sites (`webhook-serve-compat.ts:62`, `this`-argument
+casts on `.call()`); widening the scope means draining those first. Left as follow-up — out
+of this drain's scope."* Both are now gone and the plugin sits at `biome.json`'s **root**,
+covering `src/`, `bin/` and `test/`.
+
+#### The two sites were one missing value, and it was already in the file
+
+```ts
+fetchHandler.call(undefined as never, request, undefined as never)
+```
+
+Probing which property rejects the site (§6) rather than reading the `as never` as a verdict:
+both stand for the *same* thing — `ThisParameterType` is `Server<unknown>` and the second
+parameter is `server: Server<unknown>`. The shim had no `Server`.
+
+Except it did. Four lines down it was fabricating one for its own return value
+(`{ port, stop } as ServeCompatReturn`). Bun passes the same object as `this`, as `server`,
+and as `serve()`'s return; building it once and using it three times removes both casts and
+is what Bun actually does.
+
+**This was a live bug, not only a type lie.** `never` is assignable to everything, so it
+silenced the error and left any handler that read `server.port` — or any other member Bun
+promises — to hit a TypeError on `undefined`. The handler now receives a real object. The
+test that pins it (`webhook-serve-compat.test.ts`) was written first and failed on
+`expect(seenServer).toBeDefined()` before the fix, which is the only reason to believe it
+tests anything: the shim's in-memory path had **no** behavioural coverage at all before this.
+
+Its isolation needed a trick worth recording. `servePortZeroCompatInstalled` is module-level
+and survives the sibling describe's `afterEach` global restore, so a second `install()` is a
+no-op and the test would silently exercise unpatched globals. `await import("…?compat=tag")`
+gives a fresh module instance in Bun — verified in a scratch file before relying on it.
+
+The remaining `as ServeCompatReturn` is not a trade. `Server` declares ~20 members
+(`reload`, `upgrade`, `publish`, `subscriberCount`, …) an in-memory shim has no
+implementation *or caller* for — the only route in is the patched `fetch`, gated on
+`CALLBACK_PATH_PREFIX`, nax's own callback route. One named cast on one object states that.
+Two `as never` at a call site stated nothing.
+
+#### Override plugins merge, they do not replace
+
+The widening moved the entry from the `test/**` override to root `plugins`, leaving
+`no-absent-value.grit` in the override (it gates a test-only helper). Whether `test/` then
+*keeps* `as never` coverage depends on merge semantics nobody had checked. It merges —
+established behaviourally, not from docs, and now pinned: `biome-test-severity.test.ts`
+asserts the plugin fires on a `src/` path **and** that `no-absent-value` does *not*, and
+`biome-no-as-never-plugin.test.ts` asserts the root wiring and that no override re-declares
+it. Mutation-probed by putting it back in the override: 2 assertions go red, including the
+`src/` behavioural one.
+
+One trap found while writing the probe: a plugin path that fails to resolve makes biome exit
+with a config error and an **empty stdout**. That parses as a JSON failure, not as "no
+findings" — the same shape §8.8 recorded for `bun x biome` in a temp cwd. The repo-config
+copy must absolutise root plugin paths as well as override ones.
+
+Typecheck 0/0/0, `bun run lint` clean, `check:all` 24/24, `bun test test/unit/scripts/`
+186 pass / 0 fail.
+
+`grep -rE '\bas never\b' src/ bin/` reads **2** — and that is the right answer, not a
+leftover. Both are inside the explanatory comment this change added; the plugin, which
+parses, reads 0, which is why `bun run lint` passes. The commit message for this change says
+"→ 0" and is measuring with the wrong instrument. It is exactly §8.14's point arriving one
+commit later: the regex counts prose, the rule counts code, and only one of them is the gate.
+
+### 8.16 The four `US-FIX-*` filters — a guard, not dead code (2026-08-27)
+
+§8.13 flagged these in passing: *"Three sibling filters (`acceptance-setup.ts`,
+`acceptance.ts`, `test-path.ts`) still strip `US-FIX-*` from PRDs nothing writes them to;
+those are harmless and out of scope here, but they are the same pattern and worth a look."*
+There are four, not three — `acceptance-loop.ts:494` is the one the grep in §8.13 missed.
+
+**The look does not end in a deletion, and that is the finding.** §8.13's own rule is that
+"no caller" needs more than one instrument, and the instruments disagree:
+
+| Instrument | Result |
+|:--|:--|
+| producer in `src/` | none. `generateAndAddFixStories` went in #331 (2026-04-10); ADR-022 (2026-05-08) formalised in-place `runFixCycle` rectification; `fix-generator.ts` was deleted in §8.13 |
+| repo-wide grep | only the four filters, three tests pinning them, and historical spec prose |
+| **`prd.json` schema** | **no `schemaVersion`, no id validation** (`src/prd/types.ts:158` is a bare `id: string`) |
+
+That last row is the one that decides it. A PRD is **user data on disk in someone else's
+repo**, and nax ships as a `bin`. One written by a pre-#331 nax loads unchanged today — no
+version gate, nothing to reject it — so a feature resumed across that upgrade still carries
+its `US-FIX-*` stories, and removing the filters would fold them into acceptance
+fingerprints and AC totals. The producer is gone; **the persisted data is the caller.**
+
+This is the distinction §8.13 drew (superseded design vs unbuilt scaffolding) meeting a case
+it does not cover: superseded *code* is safe to delete, superseded *data* is not, because
+deleting the code that reads it does not delete the data.
+
+#### What was actually wrong with them
+
+Not their existence — their state. Four copies of one predicate, drifted:
+`acceptance-loop.ts` excluded fix stories only, the other three also excluded decomposed
+parents, and every comment described `US-FIX-*` in the **present tense** ("Fix stories are
+excluded so the fingerprint stays stable when fix stories are added during the acceptance
+loop"), describing a loop that has not added one since April.
+
+`src/prd/acceptance-scope.ts` now holds `isLegacyFixStory` and `isInAcceptanceScope`,
+separate on purpose because their lifetimes differ: decomposition is live, `US-FIX-*` is a
+compatibility guard, and one clause hid that. The module's doc comment carries the evidence
+above so the next reader does not re-derive it from a grep and delete the guard.
+
+The `acceptance-loop.ts` divergence is **recorded, not fixed**: its `totalACs` is the
+denominator the diagnosis step reports, so narrowing it to `isInAcceptanceScope` changes a
+reported number. That is a behaviour change and deserves its own evidence, not a ride on a
+deduplication commit.
+
+#### New ruling for §6 — "nothing produces this" is not "nothing has produced this"
+
+When the reader is a persistence format, ask what happens to data already written. A schema
+with no version field and no validation cannot refuse the old shape, so the old shape is
+still an input no matter how long ago its writer was deleted. `git log` dates the producer's
+removal; it does not date the last file it wrote.
+
+Typecheck 0/0/0, `bun run lint` clean, `check:all` 24/24, full suite 14194 + 1136 + 38
+pass / 0 fail. No ratchet counter moved.
+
+### 8.17 `tsSuppress` was a regex defect, not a floor; `noTsIgnore` promoted (2026-08-27)
+
+§0 carried `tsSuppress` at 2 and called it a floor. It was neither a floor nor debt: **`test/`
+contains zero TypeScript directives.** Both matches were prose inside one comment in
+`run-regression.test.ts` — the comment that explains why that test asserts at the *type level
+instead of* suppressing, i.e. §8.12's own write-up quoted back into the code.
+
+The instinct is to reword the comment. §4 forbids exactly that (*"Deleting a comment that
+merely mentions the phrase"*), and rightly: a number you can move by editing prose is not
+measuring anything. It is also the wrong direction — that comment's whole subject is the
+directive it names, and mangling the spelling to dodge a regex hides the file from everyone
+who greps for it. **The code was correct; the instrument was wrong.**
+
+Anchored to the comment **opener**, where TypeScript requires a real directive to sit:
+
+```
+/(?:\/\/|\/\*+|^[ \t]*\*)[ \t]*@ts-(expect-error|ignore|nocheck)\b/gm
+```
+
+Deliberately **not** `^`-anchored. `foo(); // @ts-ignore` is a real suppression and a
+line-start anchor would miss it — the same undercount `nonNullAssert` made 272 times and the
+`**/*.ts` glob made six. Seven directive forms counted, four prose forms not, both pinned.
+`tsSuppress` is now a closed invariant at **0**, alongside `as unknown as`.
+
+`ratchetAllow` stays at 25 and that is the right number, which is worth stating plainly
+because "floor" reads like unfinished work. Every site is a cast that *constructs* an illegal
+input for a function whose job is surviving one — `{ inputTokens: "123" } as unknown as
+TokenUsage` fed to `addTokenUsage` to prove it does not string-concatenate. Draining it
+deletes the coverage. Ratcheted, not banned, exactly as designed.
+
+#### Two parser questions asked before settling for a regex
+
+Per §6's *a survey of built-in rules is not a survey of the linter*, both were probed rather
+than assumed:
+
+- **Can a GritQL plugin match a comment?** No. `comment()`, `js_comment()` and `comment as $c`
+  all fail to compile the plugin — comments are **trivia** in biome's CST, not nodes. The one
+  form that compiles matches nothing. So `tsSuppress` and `ratchetAllow` are correctly
+  text-mode and cannot be retired the way §8.14's five were.
+- **Is there a built-in rule?** Partly. `noTsIgnore` exists, is `recommended`, and covers
+  `@ts-ignore` **only** — not `@ts-expect-error`, not `@ts-nocheck`. Its shipped severity is
+  **warn**, and `biome check` exits 0 on warnings, so it reported the directive and let the
+  build through. There are zero directives in `src/`, `bin/` and `test/`, so promoting it to
+  `error` cost nothing. Done, at the root.
+
+`tsSuppress` keeps counting `@ts-ignore` even though a rule now gates it. That is not the
+§8.14 pattern: one counter covers three directives and is the sole gate for two of them, so
+splitting it to avoid an overlap buys nothing and opens a gap.
+
+**The promotion has a cost worth knowing.** `noTsIgnore` fires on the phrase in prose too —
+it flagged a `/** … */` block in this very commit for containing the words "`foo(); //
+@ts-ignore`" in an explanatory sentence. That is the same failure the anchored regex just
+fixed, in biome's own rule. A comment can no longer discuss `@ts-ignore`; it can discuss
+`@ts-expect-error` freely. Recorded in `.nax/rules/test-ratchets.md`.
+
+The severity test also settled a question the config reads either way: the `test/**` override
+declares its own `suspicious` group, and rules **merge per rule** rather than the group
+shadowing the root's. `noTsIgnore` is set once, at the root, and asserted on both a `test/`
+and a `src/` path.
+
+`biome-test-severity.test.ts` joins the three scanner-scaffolding files in `EXEMPT_BY_KIND` —
+one of its fixtures is a real `// @ts-ignore` the gate needs `noTsIgnore` to fire on, and
+counting it would baseline `tsSuppress` at 1 forever.
+
+Both gates mutation-probed: a planted `@ts-expect-error` fails the ratchet 0 → 1 naming the
+file; a planted `@ts-ignore` fails `bun run lint`.
+
+Typecheck 0/0/0, `bun run lint` clean, `check:all` 24/24. Baseline lowered to `tsSuppress=0`
+— a deliberate recount of the same tree, which §4 permits when said in the commit.
