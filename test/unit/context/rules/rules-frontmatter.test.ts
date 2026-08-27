@@ -5,7 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeLogger } from "@test/helpers";
+import { assertCaughtInstanceOf, makeLogger } from "@test/helpers";
 import { _canonicalLoaderDeps, loadCanonicalRules } from "@/context/rules/canonical-loader";
 import {
   FRONTMATTER_PRIORITY_DEFAULT,
@@ -48,9 +48,9 @@ describe("parseFrontmatter — AC4", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(RulesFrontmatterError);
-    expect((threw as RulesFrontmatterError).message).toContain("missing closing '---'");
-    expect((threw as RulesFrontmatterError).context?.filePath).toBe("/project/.nax/rules/bad.md");
+    assertCaughtInstanceOf(threw, RulesFrontmatterError, "parseFrontmatter rejection");
+    expect(threw.message).toContain("missing closing '---'");
+    expect(threw.context?.filePath).toBe("/project/.nax/rules/bad.md");
   });
 
   // BUG-03: the compact empty frontmatter block ("---\n---\n", no blank line between
@@ -130,8 +130,8 @@ describe("parseFrontmatter", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(RulesFrontmatterError);
-    expect((threw as RulesFrontmatterError).message).toContain("unknown key(s)");
+    assertCaughtInstanceOf(threw, RulesFrontmatterError, "parseFrontmatter rejection");
+    expect(threw.message).toContain("unknown key(s)");
   });
 
   test("handles CRLF line endings", () => {
@@ -228,9 +228,9 @@ describe("parseFrontmatter — AC4 stages type validation", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(RulesFrontmatterError);
-    expect((threw as RulesFrontmatterError).message).toContain("stages");
-    expect((threw as RulesFrontmatterError).context?.filePath).toBe("/project/.nax/rules/bad-stages.md");
+    assertCaughtInstanceOf(threw, RulesFrontmatterError, "parseFrontmatter rejection");
+    expect(threw.message).toContain("stages");
+    expect(threw.context?.filePath).toBe("/project/.nax/rules/bad-stages.md");
   });
 });
 
@@ -268,8 +268,8 @@ describe("parseFrontmatter — AC6 unknown key", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(RulesFrontmatterError);
-    expect((threw as RulesFrontmatterError).message).toContain("scope");
+    assertCaughtInstanceOf(threw, RulesFrontmatterError, "parseFrontmatter rejection");
+    expect(threw.message).toContain("scope");
   });
 });
 

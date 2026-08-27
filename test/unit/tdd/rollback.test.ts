@@ -8,7 +8,7 @@
  * calls instead of shelling out to `git clean`.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeSpawn } from "@test/helpers";
+import { assertCaughtInstanceOf, makeSpawn } from "@test/helpers";
 import { _rollbackDeps, rollbackToRef } from "@/tdd/rollback";
 
 function makeResetSpawn(exitCode = 0) {
@@ -99,13 +99,13 @@ describe("rollbackToRef", () => {
       return [];
     };
 
-    let thrown: Error | undefined;
+    let thrown: unknown;
     try {
       await rollbackToRef("/repo", "HEAD~1", []);
     } catch (err) {
-      thrown = err as Error;
+      thrown = err;
     }
-    expect(thrown).toBeDefined();
+    assertCaughtInstanceOf(thrown, Error, "rollbackToRef rejection");
     // Cleanup never runs after a failed reset.
     expect(getUntrackedCalled).toBe(false);
   });

@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-08-27T09:35:16.683Z",
+  "updatedAt": "2026-08-27T11:39:31.094Z",
   "byFile": {
     "src/agents/manager.ts": 786,
     "src/execution/escalation/tier-escalation.ts": 603,
@@ -17,6 +17,6 @@
     "test/unit/execution/story-orchestrator.test.ts": 1998,
     "test/unit/findings/cycle.test.ts": 933,
     "test/unit/interaction/plugins/telegram.test.ts": 870,
-    "test/unit/operations/call.test.ts": 960
+    "test/unit/operations/call.test.ts": 967
   }
 }

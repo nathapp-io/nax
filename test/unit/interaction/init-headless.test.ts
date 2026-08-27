@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
+import { assertNaxError, makeNaxConfig } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -68,26 +68,26 @@ describe("initInteractionChain — headless mode", () => {
 
   test("the removed 'auto' plugin throws a migration-hint error instead of resolving (BUG-09)", async () => {
     const { initInteractionChain } = await import("@/interaction/init");
-    let thrown: (Error & { code?: string }) | undefined;
+    let thrown: unknown;
     try {
       await initInteractionChain(makeConfig("auto"), false);
     } catch (err) {
-      thrown = err as Error & { code?: string };
+      thrown = err;
     }
-    expect(thrown).toBeDefined();
-    expect(thrown?.code).toBe("INTERACTION_PLUGIN_REMOVED");
-    expect(thrown?.message).toContain('interaction.defaults.fallback: "continue"');
+    assertNaxError(thrown, "initInteractionChain rejection");
+    expect(thrown.code).toBe("INTERACTION_PLUGIN_REMOVED");
+    expect(thrown.message).toContain('interaction.defaults.fallback: "continue"');
   });
 
   test("an unrecognized plugin name throws INTERACTION_PLUGIN_UNKNOWN", async () => {
     const { initInteractionChain } = await import("@/interaction/init");
-    let thrown: (Error & { code?: string }) | undefined;
+    let thrown: unknown;
     try {
       await initInteractionChain(makeConfig("bogus-plugin"), false);
     } catch (err) {
-      thrown = err as Error & { code?: string };
+      thrown = err;
     }
-    expect(thrown).toBeDefined();
-    expect(thrown?.code).toBe("INTERACTION_PLUGIN_UNKNOWN");
+    assertNaxError(thrown, "initInteractionChain rejection");
+    expect(thrown.code).toBe("INTERACTION_PLUGIN_UNKNOWN");
   });
 });

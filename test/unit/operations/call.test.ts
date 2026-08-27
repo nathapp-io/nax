@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, type mock, test } from "bun:test";
-import { assertDefined, firstCall, makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import {
+  assertCaughtInstanceOf,
+  assertDefined,
+  firstCall,
+  makeMockAgentManager,
+  makeSessionManager,
+  makeTestRuntime,
+} from "@test/helpers";
 import type { AgentRunRequest } from "@/agents/manager-types";
 import type { RetryPreset } from "@/agents/retry";
 import type { CompleteResult, TurnResult } from "@/agents/types";
@@ -332,7 +339,7 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
     const sessionManager = makeSessionManager();
     runtime = makeTestRuntime({ agentManager, sessionManager });
 
-    let thrown: Error | null = null;
+    let thrown: unknown;
     try {
       await callOp(
         {
@@ -346,11 +353,11 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
         { text: "hello world" },
       );
     } catch (err) {
-      thrown = err as Error;
+      thrown = err;
     }
 
-    expect(thrown).not.toBeNull();
-    expect(thrown?.message).toContain("agent returned no output");
+    assertCaughtInstanceOf(thrown, Error, "callOp rejection");
+    expect(thrown.message).toContain("agent returned no output");
   });
 
   test("uses op timeoutMs for run timeoutSeconds", async () => {

@@ -12,7 +12,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeLogger, withDepsRestore } from "@test/helpers";
+import { assertNaxError, makeLogger, withDepsRestore } from "@test/helpers";
 import { buildEvidenceTerms, classifyWithTerms } from "@/context/engine/effectiveness";
 import {
   _effectivenessEvalDeps,
@@ -114,14 +114,14 @@ describe("loadLabelSet (AC2)", () => {
         },
       ],
     });
-    let caught: Error | undefined;
+    let caught: unknown;
     try {
       loadLabelSet(json);
     } catch (err) {
-      caught = err as Error;
+      caught = err;
     }
-    expect(caught).toBeDefined();
-    expect(caught?.message).toContain("rule-A__US-007");
+    assertNaxError(caught, "loadLabelSet rejection");
+    expect(caught.message).toContain("rule-A__US-007");
   });
 
   test("[AC2] throws an error whose message names the field 'label' when it is missing", () => {
@@ -136,13 +136,14 @@ describe("loadLabelSet (AC2)", () => {
         },
       ],
     });
-    let caught: Error | undefined;
+    let caught: unknown;
     try {
       loadLabelSet(json);
     } catch (err) {
-      caught = err as Error;
+      caught = err;
     }
-    expect(caught?.message).toMatch(/label/);
+    assertNaxError(caught, "loadLabelSet rejection");
+    expect(caught.message).toMatch(/label/);
   });
 
   test("[AC2] the thrown error is a NaxError (consistent with project error handling rules)", () => {
@@ -157,15 +158,16 @@ describe("loadLabelSet (AC2)", () => {
         },
       ],
     });
-    let caught: Error | undefined;
+    let caught: unknown;
     try {
       loadLabelSet(json);
     } catch (err) {
-      caught = err as Error;
+      caught = err;
     }
     // NaxError instances are the only typed error class for nax — see
     // src/errors.ts. Plain Error is a code-review blocker.
-    expect(caught?.name).toBe("NaxError");
+    assertNaxError(caught, "loadLabelSet rejection");
+    expect(caught.name).toBe("NaxError");
   });
 });
 

@@ -10,7 +10,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 
 ---
 
-## 0. Current state — re-measured 2026-08-27 (after §8.18)
+## 0. Current state — re-measured 2026-08-27 (after §8.19)
 
 | Shape | Gate | Reading | Drain target? |
 |:--|:--|--:|:--|
@@ -24,7 +24,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 | `@ts-ignore` (that directive only) | biome `noTsIgnore` @ `error` | **0** | done — promoted from `warn` (§8.17) |
 | `ratchetAllow` | regex ratchet | 25 | done — floor reached (§8.9), and the floor is **not** zero: each site builds a deliberately-illegal value for a coercion guard, so the cast *is* the test |
 | `tsSuppress` | regex ratchet | **0** | done — closed invariant (§8.17); the pattern is anchored to the comment opener, so prose about a directive no longer counts |
-| `looseCast` | regex ratchet | 1687 | **no** — guard only, see below. The 103 `as NaxError` sites drained out of it in §8.18 are the first cut into this number since the counter was born. **One scoped population remains open: the error-class catch casts, queued in §0.2** |
+| `looseCast` | regex ratchet | 1623 | **no** — guard only, see below. Two scoped populations have been cut out of it: the 103 `as NaxError` sites (§8.18) and the 64 error-class catch casts (§0.2 → §8.19). The remainder is idiomatic narrowing (`as Record` 360, `as ReturnType` 175, `as Partial` 102, `as Parameters` 61 …), which is the guard's residue, not debt |
 
 `check:test-escape-hatches` now carries **three** counters, not eight. The five with a
 parser behind them retired in §8.14: a text regex kept as a "secondary guard" behind a
@@ -131,15 +131,17 @@ in milliseconds.
 
 ---
 
-### 0.2 Open drain — the error-class catch casts (`as Error` + subclasses), ~67 sites
+### 0.2 Closed drain — the error-class catch casts (`as Error` + subclasses), 64 sites
 
-**This is the last scoped cut with a proven recipe behind it. When it closes, the doc
-closes with it** — the remaining `looseCast` population is the guard's residue
-(`as Record` 360, `as ReturnType` 175, `as Partial` 102, `as Parameters` 61 …), which is
-idiomatic narrowing, not debt, and §0's "not a target" ruling resumes in full.
+**Closed 2026-08-27 in three commits (§8.19): `looseCast` 1687 → 1623.** This was
+the last scoped cut with a proven recipe behind it; the remaining `looseCast`
+population is the guard's residue (`as Record` 360, `as ReturnType` 175, `as
+Partial` 102, `as Parameters` 61 …), which is idiomatic narrowing, not debt, and
+the "not a target" ruling of §0 resumes in full. The recipe and queue below are
+the record of how it was drained and the reference for any future scoped cut.
 
-The population is §8.18's shape with different class names — blind casts on caught values
-that assert nothing at runtime and fail with indirect symptoms when the thrown type changes.
+The population was §8.18's shape with different class names — blind casts on caught
+values that assert nothing at runtime and fail with indirect symptoms when the thrown type changes.
 Ranked by target (repo grep 2026-08-27; grep counts include prose, the scanner's per-file
 baseline is the measure):
 
@@ -170,24 +172,29 @@ not churn. Two constraints the NaxError drain did not have:
    one helper call with the subclass constructor replaces both, exactly as §8.18 did for the
    `NeutralityLintError` static-rules assertions.
 
-**Held back before you start:**
+**Held back (final — reviewed site by site, per the recipe's own rule):**
 
 - `test/unit/scripts/biome-no-as-never-plugin.test.ts` — its one `{} as Error` is the
   **negative-control fixture** §8.14 exempted by name: it proves the plugin ignores an
-  ordinary cast, and that shape *is* what `looseCast` counts. Do not touch it.
+  ordinary cast, and that shape *is* what `looseCast` counts. Not a catch cast.
+- `test/integration/cli/cli-config-default-view.test.ts:40` and
+  `test/integration/cli/cli-core-logs.test.ts:97` — casts in a helper's **return
+  position** (the caught error is stored into a result object, not narrowed for
+  reads); forcing the helper on them changes what the helper builds.
+- `test/unit/context/engine/providers/code-neighbor-size-cap.test.ts:140` —
+  **fixture construction**, not a catch (`new Error(...) as Error & { code: string }`
+  builds an error to inject).
 - The 4 remaining `as NaxError` grep hits are prose (§8.18's floor) — titles and doc
   comments the scanner has never counted. §4 forbids rewording them.
-- Not every `as Error` is a catch cast. Read each site before applying the helper: a cast in
-  a fixture or a mock's return position is a different claim, and forcing the helper onto it
-  changes what the test builds rather than what it asserts. If it is not a caught value being
-  narrowed, leave it and note it in the commit body.
 
-Expected delta: `looseCast` 1687 → ~1622, minus whatever the site-by-site read holds back.
-Baseline slack verified **flat at 1687** on 2026-08-27 before this hand-off (§6: re-check the
-slack before every hand-off). §2's per-unit loop, §3's per-commit order, §4's forbidden list
-and §5's escalation rules all apply unchanged — in particular, do not trade the cast for
-`as unknown as`, and a subclass site where `instanceof` fails at runtime is a **finding to
-escalate** (the test was pinning a class the code never throws), not a site to re-cast.
+Expected delta: `looseCast` 1687 → ~1622 — landed at **1623** with the four
+held-back sites above. Baseline slack re-checked **flat at 1687** on 2026-08-27 before
+this hand-off (§6: re-check the slack before every hand-off). §2's per-unit loop, §3's
+per-commit order, §4's forbidden list and §5's escalation rules all applied unchanged —
+in particular, nothing traded the cast for `as unknown as`, and no subclass site where
+`instanceof` fails at runtime was found (every thrown type verified against `src/`:
+`CALL_OP_NO_OUTPUT`, `CALL_OP_ABORTED`, `INTERACTION_PLUGIN_*`,
+`RULES_LINT_ROOT_FAILED`, `PER_PACKAGE_PROFILE_INVALID`, `loadLabelSet`).
 
 ---
 
@@ -1763,5 +1770,61 @@ the same tree re-scanned green immediately after, 1700 confirmed twice — but t
 exists precisely so nobody has to prove that after the fact. Sequence restored for the final
 two commits.
 
-Typecheck 0/0/0, `bun run lint` clean, `check:all` 24/24, full suite + coverage green before
-the final baseline write.
+### 8.19 The error-class catch casts — 64 sites, three commits, 1687 → 1623 (2026-08-27)
+
+§0.2's scoped cut, drained in one session on a fresh branch. The generic helper landed
+first: `assertCaughtInstanceOf(value, Ctor, label)` in `test/helpers/assert-nax-error.ts`,
+with `assertNaxError` kept as a thin wrapper so §8.18's 40 files did not churn. The
+constructor constraint `(abstract new (...args: never[]) => unknown) & { name: string }`
+(probed in a scratch file before adoption) accepts concrete classes, gives `Ctor.name`
+for the describe, and `InstanceType<C>` narrows correctly.
+
+**Commit 1 — the subclass sites (−22, 1687 → 1665).** `RulesFrontmatterError` (11),
+`SessionFailureError` (8, plain `Error`), `NeutralityLintError` (2), `ParseValidationError`
+(1, plain `Error`). Every site paired the blind cast with `expect(x).toBeInstanceOf(Sub)`;
+one helper call with the subclass constructor replaced both, exactly as §0.2's constraint
+2 prescribed. `NeutralityLintError` site 2 (canonical-loader) had no `toBeInstanceOf` pair
+at all — the helper added the runtime check the cast never had.
+
+**Commit 2 — the NaxError-throwing `.code` reads (−16, 1665 → 1649).** Sixteen
+`as Error & { code?: string }` intersection casts whose code-under-test provably throws
+`NaxError` (each verified in `src/`: `CALL_OP_NO_OUTPUT`, `CALL_OP_ABORTED`,
+`INTERACTION_PLUGIN_REMOVED/UNKNOWN`, `RULES_LINT_ROOT_FAILED`,
+`PER_PACKAGE_PROFILE_INVALID`, `loadLabelSet`'s two codes). `assertNaxError` narrowed for
+real and the redundant `.not.toBeNull()` / `.toBeDefined()` guards collapsed. One
+behaviour-strengthening fix inside the batch: call-exhaustion's `rejectEmptyOp` test
+asserted the plain parse error's `.code` was *not* two specific codes — vacuous against a
+future wrapper with a third code. Replaced with `expect(thrown).not.toBeInstanceOf(NaxError)`,
+which fails on any wrapping. run-operation-retry's trailing
+`as import("@/errors").NaxError` read cast fell out with the helper.
+
+**Commit 3 — the plain-Error message reads (−26, 1649 → 1623).** Every remaining
+`as Error` read only `.message`/`.name`; `assertCaughtInstanceOf(err, Error)` is the least
+claim and subsumed the redundant guards. adapter.test.ts's `CompleteError` site
+(`extends Error`) got the subclass constructor per the recipe, replacing cast +
+`toBeInstanceOf` pair. The `.catch((e: Error) => e)` callbacks in profile-loader lied
+about the rejection type; they now return `unknown` and assert after. bun-deps kept its
+"accept either shape" fallback as `error.message ?? error.name ?? ""` — no cast, identical
+runtime behaviour.
+
+**Held back (4 sites, each reviewed and noted in the commit body per §0.2):** the
+`biome-no-as-never` negative-control fixture (exempt by name); two return-position casts
+in `cli-config-default-view`/`cli-core-logs` helper builders; one fixture construction in
+`code-neighbor-size-cap` (`new Error(...) as Error & { code: string }`). The four
+`as NaxError` prose hits are §8.18's documented floor.
+
+**Gate notes.** `test/unit/operations/call.test.ts` grew 960 → 967 (+7, imports only —
+one identifier pushed the `@test/helpers` import past biome's print width); the
+file-sizes baseline was grandfathered upward per the §8.4/§8.18 precedent and said so in
+the commit. `bun run lint`'s baseline is 234 pre-existing `warn`-severity diagnostics
+(exit 0) plus zero `error`s — the early failure in the session was a formatter error on
+the new helper, fixed with `biome check --write` before any commit.
+
+Typecheck 0/0/0, `check:all` 24/24, full suite green before each `--update-baseline`;
+baseline diff per commit shows `looseCast` strictly decreasing (1687 → 1665 → 1649 →
+1623), every other counter flat. `test:coverage` 87.88% lines / 87.54% functions, per-file
+ratchet 100 below floor vs baseline 103 — improved, deliberately not re-baselined (§8.7).
+
+`grep -rn 'as [A-Za-z]*Error' test/` now reads exactly the four held-back sites plus the
+four `as NaxError` prose hits. §0.2 is closed; `looseCast`'s "not a target" ruling resumes
+in full.

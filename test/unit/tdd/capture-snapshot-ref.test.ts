@@ -1,6 +1,6 @@
 // test/unit/tdd/capture-snapshot-ref.test.ts
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeSpawn } from "@test/helpers";
+import { assertCaughtInstanceOf, makeSpawn } from "@test/helpers";
 import { _rollbackDeps, captureSnapshotRef } from "@/tdd/rollback";
 
 describe("captureSnapshotRef", () => {
@@ -48,13 +48,13 @@ describe("captureSnapshotRef", () => {
     _rollbackDeps.autoCommitIfDirty = async () => {};
     _rollbackDeps.spawn = makeSpawn(() => ({ exitCode: 128 })).spawn;
 
-    let threw = false;
+    let caught: unknown;
     try {
       await captureSnapshotRef("/tmp/x", "us-001");
     } catch (err) {
-      threw = true;
-      expect((err as Error).message).toContain("non-blocking-fix snapshot");
+      caught = err;
     }
-    expect(threw).toBe(true);
+    assertCaughtInstanceOf(caught, Error, "captureSnapshotRef rejection");
+    expect(caught.message).toContain("non-blocking-fix snapshot");
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { makeAgentAdapter } from "@test/helpers";
+import { assertCaughtInstanceOf, makeAgentAdapter } from "@test/helpers";
 import { NO_OP_INTERACTION_HANDLER } from "@/agents";
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/types";
 import { SessionFailureError, SessionTurnError } from "@/agents/types";
@@ -166,11 +166,11 @@ describe("sendPrompt()", () => {
     } catch (err) {
       caught = err;
     }
-    expect(caught).toBeInstanceOf(SessionFailureError);
-    expect((caught as SessionFailureError).adapterFailure.outcome).toBe("fail-stale");
-    expect((caught as SessionFailureError).adapterFailure.category).toBe("availability");
-    expect((caught as SessionFailureError).adapterFailure.retriable).toBe(true);
-    expect((caught as SessionFailureError).adapterFailure.reason).toBe("idle-watchdog");
+    assertCaughtInstanceOf(caught, SessionFailureError, "sendPrompt rejection");
+    expect(caught.adapterFailure.outcome).toBe("fail-stale");
+    expect(caught.adapterFailure.category).toBe("availability");
+    expect(caught.adapterFailure.retriable).toBe(true);
+    expect(caught.adapterFailure.reason).toBe("idle-watchdog");
   });
 
   test("does not rewrap SessionTurnError(cancelled=true) when watchdog did not trigger the cancel", async () => {
@@ -276,9 +276,9 @@ describe("sendPrompt()", () => {
       caught = err;
     }
     // Must still be classified as fail-stale despite agent.call_ended firing first.
-    expect(caught).toBeInstanceOf(SessionFailureError);
-    expect((caught as SessionFailureError).adapterFailure.outcome).toBe("fail-stale");
-    expect((caught as SessionFailureError).adapterFailure.reason).toBe("idle-watchdog");
+    assertCaughtInstanceOf(caught, SessionFailureError, "sendPrompt rejection");
+    expect(caught.adapterFailure.outcome).toBe("fail-stale");
+    expect(caught.adapterFailure.reason).toBe("idle-watchdog");
   });
 
   test("watchdog fail-stale classification is isolated per session handle during parallel prompts", async () => {
@@ -321,9 +321,9 @@ describe("sendPrompt()", () => {
     const promiseB = sm.sendPrompt(handleB, "prompt-b");
     const [resultA] = await Promise.all([promiseA, promiseB]);
 
-    expect(resultA).toBeInstanceOf(SessionFailureError);
-    expect((resultA as SessionFailureError).adapterFailure.outcome).toBe("fail-stale");
-    expect((resultA as SessionFailureError).adapterFailure.reason).toBe("idle-watchdog");
+    assertCaughtInstanceOf(resultA, SessionFailureError, "promptA rejection");
+    expect(resultA.adapterFailure.outcome).toBe("fail-stale");
+    expect(resultA.adapterFailure.reason).toBe("idle-watchdog");
   });
 
   test("forwards maxTurns to adapter.sendTurn", async () => {

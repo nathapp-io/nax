@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeLogger } from "@test/helpers";
+import { assertCaughtInstanceOf, makeLogger } from "@test/helpers";
 import { translateLegacyFrontmatter, withReviewNotice } from "@/cli";
 import {
   _canonicalLoaderDeps,
@@ -214,8 +214,8 @@ describe("loadCanonicalRules", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(NeutralityLintError);
-    expect((threw as NeutralityLintError).code).toBe("NEUTRALITY_LINT_FAILED");
+    assertCaughtInstanceOf(threw, NeutralityLintError, "loadCanonicalRules rejection");
+    expect(threw.code).toBe("NEUTRALITY_LINT_FAILED");
   });
 
   test("collects all violations across files before throwing", async () => {
@@ -229,7 +229,8 @@ describe("loadCanonicalRules", () => {
     } catch (e) {
       threw = e;
     }
-    expect((threw as NeutralityLintError).violations.length).toBeGreaterThanOrEqual(2);
+    assertCaughtInstanceOf(threw, NeutralityLintError, "loadCanonicalRules rejection");
+    expect(threw.violations.length).toBeGreaterThanOrEqual(2);
   });
 
   test("content is trimmed", async () => {
