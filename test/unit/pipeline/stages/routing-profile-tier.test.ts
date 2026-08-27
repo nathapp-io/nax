@@ -272,9 +272,7 @@ describe("routingStage — H1: profileModelTier seeds starting tier", () => {
     // named "ultra". Escalation wrote it onto the story (with a record). The next
     // routingStage pass must not drop it just because "ultra" has no TIER_RANK.
     const story = makeStory({
-      escalations: [
-        { fromTier: "balanced", toTier: "ultra", reason: "budget", timestamp: new Date().toISOString() },
-      ],
+      escalations: [{ fromTier: "balanced", toTier: "ultra", reason: "budget", timestamp: new Date().toISOString() }],
       routing: {
         complexity: "medium",
         testStrategy: "test-after",

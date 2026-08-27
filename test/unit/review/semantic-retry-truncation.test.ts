@@ -9,9 +9,9 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import {
   assertDefined,
-  makeLogger as makeSharedLogger,
   makeMockAgentManager,
   makeSessionManager,
+  makeLogger as makeSharedLogger,
   makeTestRuntime,
 } from "@test/helpers";
 import type { AgentRunRequest } from "@/agents";

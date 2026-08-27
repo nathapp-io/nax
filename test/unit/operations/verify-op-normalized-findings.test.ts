@@ -9,8 +9,7 @@
 import { describe, expect, test } from "bun:test";
 import { makeStory } from "@test/helpers";
 import type { ConfigSelector } from "@/config";
-import { DEFAULT_CONFIG } from "@/config";
-import { tddConfigSelector } from "@/config";
+import { DEFAULT_CONFIG, tddConfigSelector } from "@/config";
 import type { PackageView } from "@/runtime";
 
 function makePackageView(): PackageView {

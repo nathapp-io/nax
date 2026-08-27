@@ -9,7 +9,14 @@
  * `### Modifies` authority still reaches disk.
  */
 import { describe, expect, test } from "bun:test";
-import { makeConfigSlice, makeDebateRunner, makeLogger, makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import {
+  makeConfigSlice,
+  makeDebateRunner,
+  makeLogger,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeNaxConfig,
+} from "@test/helpers";
 import { planConfigSelector } from "@/config";
 import { _refinePlanDeps, _singlePlanDeps, DebatePlanStrategy, RefinePlanStrategy, SinglePlanStrategy } from "@/plan";
 import type { PlanDeps, PlanModeContext } from "@/plan/strategies";

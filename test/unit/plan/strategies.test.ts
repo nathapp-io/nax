@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { makeInteractionChain, makeLogger, makeMockRuntime, makeNaxConfig } from "@test/helpers";
-import { makeDebateRunner } from "@test/helpers";
+import { makeDebateRunner, makeInteractionChain, makeLogger, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 import type { SourceRoot } from "@/analyze";
 import { _planDeps, detectProjectName } from "@/cli";
 import type { NaxConfig } from "@/config";

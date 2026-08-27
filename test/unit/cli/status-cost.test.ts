@@ -135,10 +135,7 @@ describe("emitCostReportJson — AC2: stdout payload schemaVersion", () => {
 
 describe("emitCostReportJson — AC3: toCostReport receives injected runs + seam wiring", () => {
   test("AC3: toCostReport is invoked exactly once with the runs array returned by loadRuns, plus { now, project } where now is from deps.now and project is derived from the workdir via the canonical resolveProject path", async () => {
-    const injectedRuns = [
-      makeRunMetrics(),
-      makeRunMetrics({ runId: "r2", feature: "f2" }),
-    ];
+    const injectedRuns = [makeRunMetrics(), makeRunMetrics({ runId: "r2", feature: "f2" })];
     const toCostReport = mock((_runs: RunMetrics[], _deps: { now: () => string; project: string }) => FIXED_REPORT);
     const deps = makeDeps({
       loadRuns: mock(async () => injectedRuns),
