@@ -19,6 +19,7 @@
   "overrides": [
     {
       "includes": ["**/test/**"],
+      "plugins": ["./biome-plugins/no-as-never.grit"],
       "linter": {
         "rules": {
           "suspicious": { "noExplicitAny": "error" },

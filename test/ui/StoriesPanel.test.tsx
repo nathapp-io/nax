@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { makeStory as makeUserStory } from "@test/helpers";
 import { render } from "ink-testing-library";
 import React from "react";
 import type { StoryDisplayState } from "@/tui";
@@ -6,7 +7,7 @@ import { StoriesPanel } from "@/tui/components/StoriesPanel";
 
 function makeStory(overrides: Partial<StoryDisplayState> = {}): StoryDisplayState {
   return {
-    story: { id: "US-001", title: "Story", passes: false, workdir: ".", acceptanceCriteria: [] } as never,
+    story: makeUserStory({ id: "US-001", title: "Story", workdir: "." }),
     status: "pending",
     ...overrides,
   };
@@ -36,7 +37,7 @@ describe("StoriesPanel", () => {
     test("strips a CSI sequence embedded in the story id (non-compact mode)", () => {
       const stories = [
         makeStory({
-          story: { id: "US-\x1b[2J001", title: "t", passes: false, workdir: ".", acceptanceCriteria: [] } as never,
+          story: makeUserStory({ id: "US-\x1b[2J001", title: "t", workdir: "." }),
         }),
       ];
       const { lastFrame } = render(React.createElement(StoriesPanel, { stories }));
@@ -48,7 +49,7 @@ describe("StoriesPanel", () => {
     test("strips a CSI sequence embedded in the story id (compact mode)", () => {
       const stories = [
         makeStory({
-          story: { id: "US-\x1b[2J001", title: "t", passes: false, workdir: ".", acceptanceCriteria: [] } as never,
+          story: makeUserStory({ id: "US-\x1b[2J001", title: "t", workdir: "." }),
         }),
       ];
       const { lastFrame } = render(React.createElement(StoriesPanel, { stories, compact: true }));

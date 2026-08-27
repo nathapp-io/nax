@@ -64,7 +64,12 @@ export async function scanAsUnknownAs(
 ): Promise<{ count: number; byFile: Record<string, number> }> {
   const byFile: Record<string, number> = {};
   let count = 0;
-  const glob = new Glob("**/*.ts");
+  // `{ts,tsx}`, not `**/*.ts`: test/ui/ is six .tsx files, and while the glob
+  // read only `.ts` they were invisible to every counter here. That hid six
+  // real `as never` sites for the whole drain — the same "zero on the ratchet
+  // was not zero on the rule" failure as the noNonNullAssertion undercount,
+  // with a glob ceiling instead of a regex one.
+  const glob = new Glob("**/*.{ts,tsx}");
   for await (const file of glob.scan({ cwd: join(rootDir, SCAN_DIR), absolute: false })) {
     if (file.endsWith(".d.ts")) continue;
     const rel = join(SCAN_DIR, file);

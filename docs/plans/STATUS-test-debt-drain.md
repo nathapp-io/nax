@@ -10,7 +10,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 
 ---
 
-## 0. Current state — re-measured 2026-08-27 (after batch 7, 16 → 1)
+## 0. Current state — re-measured 2026-08-27 (after §8.8, asNever gated by a biome plugin)
 
 | Counter | Regex ratchet | Biome | Drain target? |
 |:--|--:|--:|:--|
@@ -20,7 +20,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 | `asAny` | 1 | **0** | done — rule at `"error"` (`archive/LOG-no-explicit-any-drain.md`) |
 | `anyType` | 10 | **0** | done — rule at `"error"` (`archive/LOG-no-explicit-any-drain.md`) |
 | `nonNullAssert` | 2 | **0** | done — rule at `"error"` (`archive/LOG-non-null-assertion-drain.md`) |
-| `asNever` | **1** | — | done — 1 phantom comment, §4-forbidden to delete (§8.7) |
+| `asNever` | 1 | **plugin: 0** | done — **rule at `error`** via `biome-plugins/no-as-never.grit` (§8.8); the 1 is a doc comment |
 | `ratchetAllow` | 103 | — | **yes — next target** |
 | `tsSuppress` | 25 | — | yes — next |
 | `absentValue` | 17 | — | yes — next |
@@ -302,6 +302,13 @@ they were earned in: §4x = `archive/STATUS-1514-typecheck-drain.md`, §8.x of t
   an injectable dependency is that a substitute can satisfy it. When "no stub can satisfy this
   slot", ask what the seam *should* declare before concluding the site is undrainable — and
   check whether a sibling module already declares it correctly.
+- **A survey of built-in rules is not a survey of the linter** (§8.8). "No biome rule covers
+  this shape" was true of the built-ins and stopped being true with v2's GritQL plugins. A
+  five-line `.grit` file gave `as never` a parser-backed rule at `error`. Check for a plugin
+  before declaring a counter parser-less.
+- **A counter's glob is a ceiling too** (§8.8). Both ratchets read `**/*.ts`; `test/ui/`'s six
+  `.tsx` files hid six real `as never` for the whole drain. Check what the scan does not reach
+  before trusting what it reports — especially before calling a number a floor.
 - **Reproduce against the project's own script** (cast drain §8.13), not a hand-rolled invocation of the
   same test files. `bun test <dir>` misses `--timeout=60000` and turns a passing suite into a
   cascade of misleading failures. Run the gate, then read its exit code.
@@ -908,3 +915,74 @@ Baseline diff: `asNever` 16 → 1, `looseCast` 1798 → 1795, every other counte
 **Remaining 1:** `test/unit/operations/full-suite-rectify.test.ts` — a comment quoting
 "`{} as never` cargo" from §1's prose. §4 forbids deleting a comment that merely mentions
 the phrase, so 1 is the floor. `asNever` is closed; `ratchetAllow` (103) is next.
+
+### 8.8 `asNever` closed with a parser, not a floor — and the glob gap it exposed (2026-08-27)
+
+§8.7 left `asNever` at 1 and called it the floor: a doc comment in
+`full-suite-rectify.test.ts` quoting "`{} as never` cargo", which §4 forbids deleting.
+Two routes were considered to reach 0 — reword the comment, or teach the regex to skip
+comments. **Both were wrong, and the reason is the third thing that turned up.**
+
+**The counter was undercounting by 6.** Both ratchets glob `**/*.ts`
+(`check-test-escape-hatches.ts`, `check-test-as-unknown-as.ts`). Every one of `test/`'s
+six `.tsx` files lives in `test/ui/`, and four of them held **six real `as never`**:
+
+```
+test/ui/StoriesPanel.test.tsx:9,39,51   test/ui/tui-ctrl-key.test.tsx:18
+test/ui/tui-queue-write-failure.test.tsx:20   test/ui/tui-retry.test.tsx:22
+```
+
+All six were `story: { id, title, passes: false, workdir: ".", acceptanceCriteria: [] } as never`
+— an incomplete `UserStory` in a local `makeStory(): StoryDisplayState` builder, the same
+route-1 shape as batch 1. Drained with `makeStory as makeUserStory` from `@test/helpers`
+(the recipe `usePipelineBusEvents.test.tsx` already used). Glob widened to `**/*.{ts,tsx}`
+in both scripts, with a regression test.
+
+This is §0.1's lesson in a new form: **zero on the ratchet was not zero on the rule, and
+this time the ceiling was the glob, not the regex.** Rewording the comment would have
+printed a green 0 next to six live sites — strictly worse than the honest 1.
+
+**§0.1's "no biome rule covers this shape" was true of biome's BUILT-IN rules and stopped
+being true with v2's GritQL plugins.** Biome 2.5.10 is already pinned. Five lines in
+`biome-plugins/no-as-never.grit`:
+
+```grit
+language js
+`$expr as never` where { register_diagnostic(span = $expr, message = "...") }
+```
+
+Verified before adopting, not assumed: it fires on `1 as never` and `(0 as never)`; it does
+**not** fire on `as const`, `as Error`, `as unknown`, `as number`, a JSDoc quoting the
+phrase, a trailing `// as never`, a string, or a template literal. Against the real `test/`
+it found exactly the six `.tsx` sites and nothing else. A plugin diagnostic is severity
+`error` — `bun run lint` exits 1 — confirmed by planting a site and watching the gate fail.
+
+Wiring notes worth keeping:
+
+- **`plugins` is valid inside `overrides`** (schema and behaviour both checked), so the rule
+  is scoped to the existing `**/test/**` override. `src/` has 2 sites
+  (`webhook-serve-compat.ts:62`, `this`-argument casts on `.call()`); widening the scope
+  means draining those first. Left as follow-up — out of this drain's scope.
+- The gate test spawns `node_modules/.bin/biome` **by absolute path**. It runs in a temp cwd
+  with no `node_modules`, where `bun x biome` resolves to nothing and prints empty stdout —
+  which parses as a JSON error, not as "no findings". Plugin messages arrive on the
+  diagnostic's `message` field; `description` is empty.
+- `test/unit/scripts/biome-no-as-never-plugin.test.ts` joins the two scanner-scaffolding
+  files in `EXEMPT_BY_KIND` with `ALL_KINDS`. Its fixtures are source strings fed to biome:
+  the regex reads 11 `as never` in it where the plugin reads 0 — the clearest possible
+  demonstration of which instrument is the measure.
+
+**The counter stays.** It is not retired, for the same reason `asAny` and `nonNullAssert`
+were not when their rules were promoted: a parser sees code, this sees text, and the 1 site
+still baselined is prose no lint rule will ever cover. Treat a rise as a regression, not a
+drain to resume.
+
+Typecheck 0/0/0, `check:all` 24/24, suite 14201 + 1136 + 38 pass / 0 fail (six new tests).
+Coverage 87.88% lines / 87.57% functions, per-file ratchet 101 vs baseline 103 — not
+re-baselined. Baseline diff after the drain: **byte-identical apart from the timestamp**,
+which is the confirmation that the `.tsx` widening added nothing once the six were fixed.
+
+**New ruling for §6 — a survey of built-in rules is not a survey of the linter.** Before
+writing "no rule covers this shape" about `ratchetAllow`, `tsSuppress` or `absentValue`,
+check whether a GritQL plugin can express it. `absentValue<T>()` almost certainly can;
+`ratchetAllow` and `tsSuppress` are comment shapes and are correctly text-mode.

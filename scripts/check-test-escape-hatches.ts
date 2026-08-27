@@ -43,11 +43,20 @@
  *                from rising is.
  *   asNever      `as never` — assignable to EVERY type, so it silences any
  *                assignment error outright. Lowercase, so `looseCast` (which
- *                anchors on an uppercase initial) never saw it. THE CURRENT
- *                DRAIN TARGET: 603 sites across 117 files, and the largest
- *                counter left with real work behind it. No biome rule covers
- *                this shape, so unlike the two drains before it this regex IS
- *                the measure — see docs/plans/STATUS-test-debt-drain.md §1.
+ *                anchors on an uppercase initial) never saw it. DRAINED, 603 →
+ *                1, and SUPERSEDED: biome-plugins/no-as-never.grit is a GritQL
+ *                plugin scoped to `test/**` in biome.json, and a plugin
+ *                diagnostic is a hard error that fails `bun run lint`. That
+ *                rule is now the measure; this counter did NOT retire with it,
+ *                for the same reason `asAny` and `nonNullAssert` did not — a
+ *                parser sees code, this sees text, and the 1 site still
+ *                baselined is a doc comment quoting the phrase.
+ *                The claim this doc used to make — "no biome rule covers this
+ *                shape" — was true of biome's BUILT-IN rules and stopped being
+ *                true with v2's GritQL plugins. Before writing that about
+ *                `ratchetAllow`, `tsSuppress` or `absentValue`, check whether a
+ *                plugin can express the shape; `absentValue` almost certainly
+ *                can. See docs/plans/STATUS-test-debt-drain.md §8.8.
  *   nonNullAssert
  *                postfix `!`. Narrows away null/undefined with no runtime
  *                check. DRAINED: biome's `noNonNullAssertion` is now `error`
@@ -173,6 +182,11 @@ const EXEMPT_BY_KIND: ReadonlyMap<string, ReadonlySet<HatchKind>> = new Map([
   // Scanner scaffolding: fixture strings legitimately contain every pattern.
   ["test/unit/scripts/check-test-as-unknown-as.test.ts", ALL_KINDS],
   ["test/unit/scripts/check-test-escape-hatches.test.ts", ALL_KINDS],
+  // Same, for the `as never` biome plugin's gate test. Its fixtures are source
+  // strings fed to biome, and this counter reads 11 of them where the plugin
+  // itself — which parses — reads 0. A neat demonstration of why the plugin,
+  // not this regex, is now the measure for `asNever`.
+  ["test/unit/scripts/biome-no-as-never-plugin.test.ts", ALL_KINDS],
   // The idiom's own definition. Its declarations match the CALL-SITE pattern;
   // counting them would inflate `absentValue` by 2 forever. Every other
   // counter still applies to this file.
@@ -203,7 +217,12 @@ function emptyCounts(): Counts {
 export async function scanEscapeHatches(rootDir: string): Promise<ScanResult> {
   const counts = emptyCounts();
   const byFile: Record<string, Partial<Counts>> = {};
-  const glob = new Glob("**/*.ts");
+  // `{ts,tsx}`, not `**/*.ts`: test/ui/ is six .tsx files, and while the glob
+  // read only `.ts` they were invisible to every counter here. That hid six
+  // real `as never` sites for the whole drain — the same "zero on the ratchet
+  // was not zero on the rule" failure as the noNonNullAssertion undercount,
+  // with a glob ceiling instead of a regex one.
+  const glob = new Glob("**/*.{ts,tsx}");
   for await (const file of glob.scan({ cwd: join(rootDir, SCAN_DIR), absolute: false })) {
     if (file.endsWith(".d.ts")) continue;
     const rel = join(SCAN_DIR, file);

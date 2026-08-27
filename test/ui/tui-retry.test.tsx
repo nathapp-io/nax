@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeTempDir, makeStory as makeUserStory } from "@test/helpers";
 import { render } from "ink-testing-library";
 import { act } from "react";
 import { PipelineEventEmitter, pipelineEventBus } from "@/pipeline";
@@ -19,7 +19,7 @@ import { waitForFile } from "../helpers/fs";
 
 function makeStory(id: string): StoryDisplayState {
   return {
-    story: { id, title: `Story ${id}`, passes: false, workdir: ".", acceptanceCriteria: [] } as never,
+    story: makeUserStory({ id, title: `Story ${id}`, workdir: "." }),
     status: "pending",
   };
 }
