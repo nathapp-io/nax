@@ -16,6 +16,7 @@ import { makeContextBundle, makeMockAgentManager, makeNaxConfig, makeSessionMana
 import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents/types";
 import type { AdapterFailure } from "@/context/engine";
 import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
+import type { BuildHopCallbackContext } from "@/operations/build-hop-callback";
 import type { SessionDescriptor } from "@/session/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -123,14 +124,18 @@ describe("buildHopCallback — run counter threading", () => {
     const seen: unknown[] = [];
     _buildHopCallbackDeps.createContextToolRuntime = (opts: { runCounter?: unknown }) => {
       seen.push(opts.runCounter);
-      return undefined as never;
+      return undefined;
     };
     const counter = { count: 7, calls: [] };
     const sessionMgr = makeSessionManager({});
-    const ctx = { ...makeCtx(sessionMgr), contextToolRunCounter: counter } as never;
+    const ctx: BuildHopCallbackContext = {
+      ...makeCtx(sessionMgr),
+      contextToolRunCounter: counter,
+      pipelineStage: "run",
+    };
     const cb = buildHopCallback(ctx, undefined, STUB_RUN_OPTIONS);
 
-    const bundle = { pushMarkdown: "", pullTools: [], digest: "", manifest: {} } as never;
+    const bundle = makeContextBundle();
     await cb("claude", bundle, { kind: "primary" }, STUB_RUN_OPTIONS);
 
     expect(seen[0]).toBe(counter);

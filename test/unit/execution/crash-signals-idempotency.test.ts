@@ -13,8 +13,22 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeStatusWriter } from "@test/helpers";
 import { installSignalHandlers, type SignalHandlerContext } from "@/execution/crash-signals";
+import { PidRegistry } from "@/execution/pid-registry";
 
 const noopStatusWriter = makeStatusWriter();
+
+function makePidRegistryStub(overrides: Partial<PidRegistry> = {}): PidRegistry {
+  const stub = new PidRegistry("/tmp/crash-signals-idempotency");
+  stub.killAll = async () => {};
+  stub.register = async () => {};
+  stub.unregister = async () => {};
+  stub.cleanupStale = async () => {};
+  stub.freeze = () => {};
+  stub.isFrozen = () => false;
+  stub.getPids = () => [];
+  stub.snapshot = () => [];
+  return Object.assign(stub, overrides);
+}
 
 /** Invoke every SIGTERM listener registered on `process`. */
 async function fireSignal(signal: NodeJS.Signals): Promise<void> {
@@ -55,15 +69,7 @@ describe("crash-signals idempotency", () => {
       getTotalCost: () => 0,
       getIterations: () => 0,
       onShutdown,
-      pidRegistry: {
-        killAll,
-        register: async () => {},
-        unregister: async () => {},
-        cleanupStale: async () => {},
-        freeze: () => {},
-        isFrozen: () => false,
-        getPids: () => [],
-      } as never,
+      pidRegistry: makePidRegistryStub({ killAll }),
       abortController,
     };
 
@@ -126,15 +132,7 @@ describe("crash-signals idempotency", () => {
       statusWriter: noopStatusWriter,
       getTotalCost: () => 0,
       getIterations: () => 0,
-      pidRegistry: {
-        freeze,
-        killAll: async () => {},
-        register: async () => {},
-        unregister: async () => {},
-        cleanupStale: async () => {},
-        isFrozen: () => false,
-        getPids: () => [],
-      } as never,
+      pidRegistry: makePidRegistryStub({ freeze }),
     };
 
     cleanup = installSignalHandlers(ctx);

@@ -14,7 +14,7 @@ import {
   makeSpawn,
   makeStory as makeStoryBase,
 } from "@test/helpers";
-import type { AgentResult } from "@/agents/types";
+import type { AgentAdapter, AgentResult } from "@/agents/types";
 import { buildPlanForStrategy } from "@/execution/build-plan-for-strategy";
 import type { PlanInputs } from "@/execution/plan-inputs";
 import { _fullSuiteGateDeps } from "@/operations/full-suite-gate";
@@ -83,7 +83,7 @@ function makeConfig() {
  * Output is JSON-encoded so ops' parse() produces success:true and filesChanged
  * for the test-writer session — this satisfies the greenfield guard path.
  */
-function agentReturning(tokens: Array<AgentResult["tokenUsage"] | undefined>) {
+function agentReturning(tokens: Array<AgentResult["tokenUsage"] | undefined>): AgentAdapter {
   let call = 0;
   return {
     name: "mock",
@@ -97,12 +97,10 @@ function agentReturning(tokens: Array<AgentResult["tokenUsage"] | undefined>) {
     isInstalled: mock(async () => true),
     buildCommand: mock(() => [] as string[]),
     complete: mock(async () => ({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 })),
-    plan: mock(async () => ({ specContent: "" })),
-    decompose: mock(async () => ({ stories: [] })),
     closePhysicalSession: mock(async () => {}),
     openSession: mock(async () => ({ id: "mock-session", agentName: "mock" })),
     sendTurn: mock(async () => {
-      const tokenUsage = tokens[call];
+      const tokenUsage = tokens[call] ?? { inputTokens: 0, outputTokens: 0 };
       const filesChanged = call === 0 ? ["test/foo.test.ts"] : [];
       call++;
       return {
@@ -141,7 +139,7 @@ describe("buildPlanForStrategy — cost + duration aggregation", () => {
     const runtime = makeMockRuntime({
       config,
       agentManagerFactory: (rt) => {
-        agentManager = fakeAgentManager(agent as never, { dispatchEvents: rt.dispatchEvents });
+        agentManager = fakeAgentManager(agent, { dispatchEvents: rt.dispatchEvents });
         return agentManager;
       },
     });
@@ -170,7 +168,7 @@ describe("buildPlanForStrategy — cost + duration aggregation", () => {
     const runtime = makeMockRuntime({
       config,
       agentManagerFactory: (rt) => {
-        agentManager = fakeAgentManager(agent as never, { dispatchEvents: rt.dispatchEvents });
+        agentManager = fakeAgentManager(agent, { dispatchEvents: rt.dispatchEvents });
         return agentManager;
       },
     });
@@ -198,7 +196,7 @@ describe("buildPlanForStrategy — cost + duration aggregation", () => {
     const runtime = makeMockRuntime({
       config,
       agentManagerFactory: (rt) => {
-        agentManager = fakeAgentManager(agent as never, { dispatchEvents: rt.dispatchEvents });
+        agentManager = fakeAgentManager(agent, { dispatchEvents: rt.dispatchEvents });
         return agentManager;
       },
     });

@@ -1,13 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { AgentManager } from "@/agents/manager";
 import { DEFAULT_CONFIG } from "@/config/defaults";
+import { agentManagerConfigSelector } from "@/config/selectors";
 
 describe("AgentManager availability recovery between stories", () => {
   test("transient unavailable state from one story does not bleed into the next", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      agent: { default: "claude" },
-    } as never;
+    const config = agentManagerConfigSelector.select(DEFAULT_CONFIG);
     const manager = new AgentManager(config);
 
     manager.markUnavailable("claude", {
@@ -25,7 +23,7 @@ describe("AgentManager availability recovery between stories", () => {
   });
 
   test.each(["fail-auth", "fail-quota"] as const)("keeps permanent %s failures unavailable", (outcome) => {
-    const manager = new AgentManager({ ...DEFAULT_CONFIG, agent: { default: "claude" } } as never);
+    const manager = new AgentManager(agentManagerConfigSelector.select(DEFAULT_CONFIG));
     manager.markUnavailable("claude", {
       category: "availability",
       outcome,

@@ -491,7 +491,7 @@ describe("scoreEffectiveness (AC15)", () => {
 
   test("[AC15] emits a warning whose message names the failing caseId", () => {
     const mockLog = makeLogger();
-    _effectivenessEvalDeps.getLogger = () => mockLog as never;
+    _effectivenessEvalDeps.getLogger = () => mockLog;
 
     const cases: LabelCase[] = [
       makeCase({ caseId: "broken-case", label: "ignored" }),

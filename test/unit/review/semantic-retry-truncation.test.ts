@@ -7,7 +7,13 @@
  */
 
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { assertDefined, makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import {
+  assertDefined,
+  makeLogger as makeSharedLogger,
+  makeMockAgentManager,
+  makeSessionManager,
+  makeTestRuntime,
+} from "@test/helpers";
 import type { AgentRunRequest } from "@/agents";
 import * as loggerModule from "@/logger";
 import { callOp, semanticReviewOp } from "@/operations";
@@ -41,36 +47,10 @@ const PASSING_LLM_RESPONSE = JSON.stringify({ passed: true, findings: [] });
 const UNFINISHED_JSON = `{"passed": false, "findings": [${'{"severity": "error", "file": "src/a.ts", "issue": "xxxxxxxxxx"},'.repeat(60)}{"severity": "error", "file": "src/b.ts", "issue": "cut off here`;
 
 // ─── Logger mock helpers ─────────────────────────────────────────────────────
-
-interface LogCall {
-  stage: string;
-  message: string;
-  data?: Record<string, unknown>;
-}
-
-interface MockLogger {
-  info: ReturnType<typeof mock>;
-  warn: ReturnType<typeof mock>;
-  debug: ReturnType<typeof mock>;
-  infoCalls: LogCall[];
-  warnCalls: LogCall[];
-}
-
-function makeLogger(): MockLogger {
-  const infoCalls: LogCall[] = [];
-  const warnCalls: LogCall[] = [];
-  return {
-    infoCalls,
-    warnCalls,
-    info: mock((stage: string, message: string, data?: Record<string, unknown>) => {
-      infoCalls.push({ stage, message, data });
-    }),
-    warn: mock((stage: string, message: string, data?: Record<string, unknown>) => {
-      warnCalls.push({ stage, message, data });
-    }),
-    debug: mock(() => {}),
-  };
-}
+// Tests that need to spy on getSafeLogger use the shared `makeLogger` helper
+// (`test/helpers/mock-logger.ts`), which returns `Logger & { calls, reset }`.
+// The `calls` field captures every level, including `level: "warn"` entries,
+// so callers filter by `c.level === "warn"`.
 
 // ─── callOp helpers ───────────────────────────────────────────────────────────
 
@@ -185,27 +165,27 @@ describe("truncation logging", () => {
   });
 
   test("logs warn 'truncated' when the JSON is unfinished", async () => {
-    const logger = makeLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    const logger = makeSharedLogger();
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
 
     const { runtime } = makeCallOpRuntime([{ output: UNFINISHED_JSON }, { output: PASSING_LLM_RESPONSE }]);
 
     await runSemanticOp(runtime);
 
-    const truncatedLog = logger.warnCalls.find((c) => c.message.includes("truncated"));
+    const truncatedLog = logger.calls.find((c) => c.level === "warn" && c.message.includes("truncated"));
     expect(truncatedLog).toBeDefined();
     expect(truncatedLog?.stage).toBe("semantic");
   });
 
   test("does not log truncation warning when response is short unparseable text (structurally complete)", async () => {
-    const logger = makeLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    const logger = makeSharedLogger();
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
 
     const { runtime } = makeCallOpRuntime([{ output: "not json text" }, { output: PASSING_LLM_RESPONSE }]);
 
     await runSemanticOp(runtime);
 
-    const truncatedLog = logger.warnCalls.find((c) => c.message.includes("truncated"));
+    const truncatedLog = logger.calls.find((c) => c.level === "warn" && c.message.includes("truncated"));
     expect(truncatedLog).toBeUndefined();
   });
 });

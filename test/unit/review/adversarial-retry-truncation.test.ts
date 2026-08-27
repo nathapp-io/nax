@@ -7,7 +7,7 @@
  */
 
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeTestRuntime, opSelector } from "@test/helpers";
+import { makeLogger as makeSharedLogger, makeTestRuntime, opSelector } from "@test/helpers";
 import { ParseValidationError, type RetryStrategy } from "@/agents/retry/types";
 import type { ReviewConfig } from "@/config/selectors";
 import * as loggerModule from "@/logger";
@@ -55,22 +55,8 @@ const UNFINISHED_JSON = `{"passed": false, "findings": [${'{"severity": "error",
 
 // ─── Logger mock ─────────────────────────────────────────────────────────────
 
-interface LogCall {
-  stage: string;
-  message: string;
-  data?: Record<string, unknown>;
-}
-
-function makeLogger() {
-  const warnCalls: LogCall[] = [];
-  return {
-    warnCalls,
-    warn: mock((stage: string, message: string, data?: Record<string, unknown>) => {
-      warnCalls.push({ stage, message, data });
-    }),
-    info: mock(() => {}),
-    debug: mock(() => {}),
-  };
+function makeLogger(): ReturnType<typeof makeSharedLogger> {
+  return makeSharedLogger();
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -142,15 +128,15 @@ describe("adversarialReviewOp.retry — truncation-detected condensed retry", ()
 
 describe("adversarialReviewOp.retry — truncation logging", () => {
   test("logs warn 'JSON parse retry — likely truncated' when the JSON is unfinished", () => {
-    const logger = makeLogger();
-    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    const logger = makeSharedLogger();
+    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
 
     const ctx = makeBuildCtx();
     const strategy = resolveRetryStrategy(RETRY_INPUT, ctx);
 
     strategy.shouldRetry(new ParseValidationError("parse failed"), 0, makeRetryCtx(UNFINISHED_JSON));
 
-    const truncatedLog = logger.warnCalls.find((c) => c.message.includes("truncated"));
+    const truncatedLog = logger.calls.find((c) => c.level === "warn" && c.message.includes("truncated"));
     expect(truncatedLog).toBeDefined();
     expect(truncatedLog?.stage).toBe("adversarial");
 
@@ -158,8 +144,8 @@ describe("adversarialReviewOp.retry — truncation logging", () => {
   });
 
   test("logs 'invalid shape' when parseable response has wrong structure", () => {
-    const logger = makeLogger();
-    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    const logger = makeSharedLogger();
+    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
 
     const ctx = makeBuildCtx();
     const strategy = resolveRetryStrategy(RETRY_INPUT, ctx);
@@ -170,7 +156,7 @@ describe("adversarialReviewOp.retry — truncation logging", () => {
       makeRetryCtx(JSON.stringify({ passed: true })), // parseable but wrong shape
     );
 
-    const shapeLog = logger.warnCalls.find((c) => c.message.includes("invalid shape"));
+    const shapeLog = logger.calls.find((c) => c.level === "warn" && c.message.includes("invalid shape"));
     expect(shapeLog).toBeDefined();
     expect(shapeLog?.stage).toBe("adversarial");
 

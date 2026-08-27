@@ -262,9 +262,8 @@ describe("rulesExportCommand", () => {
   // remains — both scopes set, which Claude cannot express as an intersection —
   // is covered in rules-export-scope.test.ts.
   test("carries canonical package scope across instead of widening the rule", async () => {
-    const warnings: Array<{ msg: string; data: unknown }> = [];
-    _rulesCLIDeps.getLogger = () =>
-      ({ warn: (_s: string, msg: string, data: unknown) => warnings.push({ msg, data }) }) as never;
+    const logger = makeLogger();
+    _rulesCLIDeps.getLogger = () => logger;
     _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "pkg.md", content: "Body.", paths: ["apps/api/**"] }];
 
     await rulesExportCommand({ dir: "/project", agent: "claude" });
@@ -272,18 +271,18 @@ describe("rulesExportCommand", () => {
     const out = written["/project/.claude/rules/pkg.md"] ?? "";
     expect(out.startsWith("---\n")).toBe(true);
     expect(out).toContain('  - "apps/api/**"');
-    expect(warnings.find((x) => x.msg.includes("package scope"))).toBeUndefined();
+    expect(logger.calls.find((c) => c.level === "warn" && c.message.includes("package scope"))).toBeUndefined();
   });
 
   test("warns about a generated rule file with no canonical source", async () => {
-    const warnings: string[] = [];
-    _rulesCLIDeps.getLogger = () => ({ warn: (_s: string, msg: string) => warnings.push(msg) }) as never;
+    const logger = makeLogger();
+    _rulesCLIDeps.getLogger = () => logger;
     _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "a.md", content: "Body." }];
     _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/orphan.md"];
 
     await rulesExportCommand({ dir: "/project", agent: "claude" });
 
-    expect(warnings.some((m) => m.includes("no canonical source"))).toBe(true);
+    expect(logger.calls.some((c) => c.level === "warn" && c.message.includes("no canonical source"))).toBe(true);
   });
 
   test("rejects a rule path that escapes the rules directory", async () => {

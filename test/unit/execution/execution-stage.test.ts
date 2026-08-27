@@ -16,6 +16,8 @@ import {
 } from "@test/helpers";
 import type { ConfigSelector } from "@/config";
 import { NaxError } from "@/errors";
+import { ExecutionPlan } from "@/execution/story-orchestrator";
+import type { CallContext } from "@/operations";
 import { executionStage, routeTddFailure } from "@/pipeline/stages/execution";
 import type { PipelineContext } from "@/pipeline/types";
 import type { FailureCategory } from "@/tdd";
@@ -244,12 +246,16 @@ describe("executionStage.execute — runtime-crash on thrown infra errors", () =
   // Returns a restore function — call it in the test's own finally block.
   function stubDepsWithPlan(planRun: () => Promise<never>): () => void {
     const overrides = {
-      getAgent: () => makeAgentAdapter({ name: "claude" }) as never,
+      getAgent: () => makeAgentAdapter({ name: "claude" }),
       validateAgentForTier: () => true,
       captureGitRef: async () => "HEAD",
       getUntrackedPaths: async () => [],
-      assemblePlanInputsFromCtx: async () => ({}) as never,
-      buildPlanForStrategy: async () => ({ run: planRun }) as never,
+      assemblePlanInputsFromCtx: async () => ({ story: makeTestStory(), config: cfg }),
+      buildPlanForStrategy: async (callCtx: CallContext) => {
+        const plan = new ExecutionPlan(callCtx, {}, false);
+        plan.run = planRun;
+        return plan;
+      },
     };
     return withExecutionDeps(overrides);
   }

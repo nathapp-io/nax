@@ -7,14 +7,30 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makeStory } from "@test/helpers";
+import type { ConfigSelector } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
+import { tddConfigSelector } from "@/config";
+import type { PackageView } from "@/runtime";
 
-// Minimal context passed to parse — mirrors how tests in verify-op.test.ts invoke it.
-const makeCtx = async () => {
-  const { DEFAULT_CONFIG } = await import("@/config");
-  return { packageView: {} as never, config: DEFAULT_CONFIG };
-};
+function makePackageView(): PackageView {
+  const config = DEFAULT_CONFIG;
+  return {
+    packageDir: "",
+    relativeFromRoot: "",
+    repoRoot: "",
+    hasOverride: false,
+    config,
+    select: <C>(selector: ConfigSelector<C>) => selector.select(config),
+  };
+}
 
-const makeInput = () => ({ story: { id: "US-001" } as never });
+const makeCtx = () => ({
+  packageView: makePackageView(),
+  config: tddConfigSelector.select(DEFAULT_CONFIG),
+});
+
+const makeInput = () => ({ story: makeStory({ id: "US-001" }) });
 
 // ── Verdict helpers ──────────────────────────────────────────────────────────
 

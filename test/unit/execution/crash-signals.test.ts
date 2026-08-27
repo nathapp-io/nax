@@ -9,6 +9,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { SignalHandlerContext } from "@/execution/crash-signals";
 import { installSignalHandlers, performTeardown } from "@/execution/crash-signals";
+import { PidRegistry } from "@/execution/pid-registry";
 import type { StatusWriter } from "@/execution/status-writer";
 
 const minimalCtx: SignalHandlerContext = {
@@ -46,16 +47,16 @@ describe("installSignalHandlers", () => {
     // by inspecting the context wiring: both fields are accepted and onShutdown
     // is listed before killAll in the handler code path.
     const callOrder: string[] = [];
+    const pidRegistry = new PidRegistry("/tmp/crash-signals-test-228");
+    pidRegistry.killAll = async () => {
+      callOrder.push("killAll");
+    };
+    pidRegistry.register = async () => {};
+    pidRegistry.unregister = async () => {};
+    pidRegistry.cleanupStale = async () => {};
     const ctx: SignalHandlerContext = {
       ...minimalCtx,
-      pidRegistry: {
-        killAll: async () => {
-          callOrder.push("killAll");
-        },
-        register: async () => {},
-        unregister: async () => {},
-        cleanupStale: async () => {},
-      } as never,
+      pidRegistry,
       onShutdown: async () => {
         callOrder.push("onShutdown");
       },
@@ -81,27 +82,24 @@ describe("installSignalHandlers", () => {
     const killedPids: number[] = [];
     let frozenDuringShutdown: boolean | undefined;
 
-    const pidRegistry = {
-      frozen: false,
-      freeze() {
-        this.frozen = true;
-      },
-      isFrozen() {
-        return this.frozen;
-      },
-      async register(pid: number) {
-        if (this.frozen) return;
-        registered.push(pid);
-      },
-      async unregister(_pid: number) {},
-      async killAll() {
-        killedPids.push(...registered);
-      },
+    const pidRegistry = new PidRegistry("/tmp/crash-signals-test-bug11");
+    let isFrozen = false;
+    pidRegistry.freeze = () => {
+      isFrozen = true;
+    };
+    pidRegistry.isFrozen = () => isFrozen;
+    pidRegistry.register = async (pid: number) => {
+      if (isFrozen) return;
+      registered.push(pid);
+    };
+    pidRegistry.unregister = async () => {};
+    pidRegistry.killAll = async () => {
+      killedPids.push(...registered);
     };
 
     const ctx: SignalHandlerContext = {
       ...minimalCtx,
-      pidRegistry: pidRegistry as never,
+      pidRegistry,
       onShutdown: async () => {
         // Simulates spawning `acpx sessions close` during teardown — must land
         // in the registry before freeze() locks it.
@@ -119,29 +117,26 @@ describe("installSignalHandlers", () => {
 
   test("freeze() still blocks a PID registered after killAll's sweep target list is fixed (BUG-11)", async () => {
     const registered: number[] = [];
-    const pidRegistry = {
-      frozen: false,
-      freeze() {
-        this.frozen = true;
-      },
-      isFrozen() {
-        return this.frozen;
-      },
-      async register(pid: number) {
-        if (this.frozen) return;
-        registered.push(pid);
-      },
-      async unregister(_pid: number) {},
-      async killAll() {
-        // A late registration attempt after the sweep has started must be
-        // rejected — this is the invariant freeze() exists to protect.
-        await pidRegistry.register(11111);
-      },
+    const pidRegistry = new PidRegistry("/tmp/crash-signals-test-bug11-block");
+    let isFrozen = false;
+    pidRegistry.freeze = () => {
+      isFrozen = true;
+    };
+    pidRegistry.isFrozen = () => isFrozen;
+    pidRegistry.register = async (pid: number) => {
+      if (isFrozen) return;
+      registered.push(pid);
+    };
+    pidRegistry.unregister = async () => {};
+    pidRegistry.killAll = async () => {
+      // A late registration attempt after the sweep has started must be
+      // rejected — this is the invariant freeze() exists to protect.
+      await pidRegistry.register(11111);
     };
 
     const ctx: SignalHandlerContext = {
       ...minimalCtx,
-      pidRegistry: pidRegistry as never,
+      pidRegistry,
     };
 
     await performTeardown(ctx);
