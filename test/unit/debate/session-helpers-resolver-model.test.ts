@@ -6,12 +6,12 @@
  * and defaults to "fast" model when absent — matching debater model resolution behavior.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { makeMockAgentManager, makeMockCallContext, makeMockRuntime } from "@test/helpers";
 import type { CompleteOptions } from "@/agents";
 import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
 import type { DebateStageConfig } from "@/debate";
-import { _debateSessionDeps, resolveOutcome } from "@/debate";
+import { resolveOutcome } from "@/debate";
 
 function makeCallCtx() {
   return makeMockCallContext({
@@ -47,20 +47,13 @@ function makeCaptureManager(captured: { opts?: CompleteOptions }[]) {
 // ─── Synthesis resolver ───────────────────────────────────────────────────────
 
 describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", () => {
-  let origAgentManager: typeof _debateSessionDeps.agentManager;
-
-  beforeEach(() => {
-    origAgentManager = _debateSessionDeps.agentManager;
-  });
-
   afterEach(() => {
-    _debateSessionDeps.agentManager = origAgentManager;
     mock.restore();
   });
 
   test("passes modelDef with 'powerful' model when resolver.model is 'powerful'", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.agentManager = makeCaptureManager(captured);
+    const agentManager = makeCaptureManager(captured);
 
     await resolveOutcome(
       ["proposal-a", "proposal-b"],
@@ -74,8 +67,7 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
       undefined,
       undefined,
       undefined,
-      // undefined → the _debateSessionDeps injection seam provides the manager
-      undefined,
+      agentManager,
     );
 
     expect(captured.length).toBeGreaterThan(0);
@@ -86,7 +78,7 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
 
   test("passes modelDef with 'fast' model when resolver.model is absent", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.agentManager = makeCaptureManager(captured);
+    const agentManager = makeCaptureManager(captured);
 
     await resolveOutcome(
       ["proposal-a", "proposal-b"],
@@ -100,8 +92,7 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
       undefined,
       undefined,
       undefined,
-      // undefined → the _debateSessionDeps injection seam provides the manager
-      undefined,
+      agentManager,
     );
 
     expect(captured.length).toBeGreaterThan(0);
@@ -111,7 +102,7 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
 
   test("passes modelDef with 'balanced' model when resolver.model is 'sonnet' (alias)", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.agentManager = makeCaptureManager(captured);
+    const agentManager = makeCaptureManager(captured);
 
     await resolveOutcome(
       ["proposal-a", "proposal-b"],
@@ -125,8 +116,7 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
       undefined,
       undefined,
       undefined,
-      // undefined → the _debateSessionDeps injection seam provides the manager
-      undefined,
+      agentManager,
     );
 
     expect(captured.length).toBeGreaterThan(0);
@@ -138,20 +128,13 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
 // ─── Judge / custom resolver ──────────────────────────────────────────────────
 
 describe("resolveOutcome() custom/judge — resolver.model → modelDef (#352)", () => {
-  let origAgentManager: typeof _debateSessionDeps.agentManager;
-
-  beforeEach(() => {
-    origAgentManager = _debateSessionDeps.agentManager;
-  });
-
   afterEach(() => {
-    _debateSessionDeps.agentManager = origAgentManager;
     mock.restore();
   });
 
   test("passes modelDef with 'powerful' model when resolver.model is 'powerful'", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.agentManager = makeCaptureManager(captured);
+    const agentManager = makeCaptureManager(captured);
 
     await resolveOutcome(
       ["proposal-a"],
@@ -165,8 +148,7 @@ describe("resolveOutcome() custom/judge — resolver.model → modelDef (#352)",
       undefined,
       undefined,
       undefined,
-      // undefined → the _debateSessionDeps injection seam provides the manager
-      undefined,
+      agentManager,
     );
 
     expect(captured.length).toBeGreaterThan(0);
@@ -176,7 +158,7 @@ describe("resolveOutcome() custom/judge — resolver.model → modelDef (#352)",
 
   test("passes modelDef with 'fast' model when resolver.model is absent", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
-    _debateSessionDeps.agentManager = makeCaptureManager(captured);
+    const agentManager = makeCaptureManager(captured);
 
     await resolveOutcome(
       ["proposal-a"],
@@ -190,8 +172,7 @@ describe("resolveOutcome() custom/judge — resolver.model → modelDef (#352)",
       undefined,
       undefined,
       undefined,
-      // undefined → the _debateSessionDeps injection seam provides the manager
-      undefined,
+      agentManager,
     );
 
     expect(captured.length).toBeGreaterThan(0);

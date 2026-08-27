@@ -1,0 +1,29 @@
+language js
+
+// `absentValue<T>()` / `nullValue<T>()` — `undefined` and `null` handed to a
+// parameter whose type forbids them, via the single `coerce` type-lie in
+// test/helpers/absent.ts. One helper, so one place to audit, but every call
+// site is still an assertion that a type says is impossible.
+//
+// Scoped to `test/**` in biome.json. test/helpers/absent.ts declares the two
+// functions rather than calling them, so it does not match this pattern and
+// needs no exemption — unlike the regex counter, which exempts it by path.
+//
+// This replaces the `absentValue` counter in
+// scripts/check-test-escape-hatches.ts as the MEASURE. That counter is text:
+// it matches the identifiers inside the scanner's own string fixtures (which
+// it must then exempt by path) and misses any call reached through a
+// namespace or an alias. The counter stays as a secondary guard for the
+// residue a parser cannot see — prose — exactly as `asAny`, `nonNullAssert`
+// and `asNever` did when their rules were promoted.
+
+`$fn<$_>()` where {
+  or {
+    $fn <: `absentValue`,
+    $fn <: `nullValue`
+  },
+  register_diagnostic(
+    span = $fn,
+    message = "`absentValue<T>()` / `nullValue<T>()` assert a state the type forbids. Ask whether the parameter should admit `undefined` (the src type is wrong) or whether the absence is impossible after validation (the test is wrong) — see .nax/rules/test-ratchets.md."
+  )
+}

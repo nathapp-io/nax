@@ -8,13 +8,6 @@ export type { AcceptanceEntry } from "./content-loader";
 export { loadAcceptanceTestContent } from "./content-loader";
 export { loadSourceFilesForDiagnosis } from "./fix-diagnosis";
 
-export type { FixStory } from "./fix-generator";
-
-export {
-  convertFixStoryToUserStory,
-  findRelatedStories,
-  parseACTextFromSpec,
-} from "./fix-generator";
 export {
   acceptanceTestFilename,
   buildAcceptanceRunCommand,

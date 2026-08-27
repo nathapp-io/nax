@@ -10,7 +10,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 
 ---
 
-## 0. Current state — re-measured 2026-08-27 (after §8.11, absentValue drained to zero — every counter with a real drain behind it is closed)
+## 0. Current state — re-measured 2026-08-27 (after §8.13, both §8.11 src widenings undone)
 
 | Counter | Regex ratchet | Biome | Drain target? |
 |:--|--:|--:|:--|
@@ -22,9 +22,9 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 | `nonNullAssert` | 2 | **0** | done — rule at `"error"` (`archive/LOG-non-null-assertion-drain.md`) |
 | `asNever` | 1 | **plugin: 0** | done — **rule at `error`** via `biome-plugins/no-as-never.grit` (§8.8); the 1 is a doc comment |
 | `ratchetAllow` | 25 | — | done — floor reached (§8.9); every residue is a deliberate negative-test fixture or a sanctioned helper seam |
-| `tsSuppress` | 5 | — | done — floor reached (§8.10); every residue is a deliberate negative-type assertion or its load-bearing prose |
-| `absentValue` | 0 | — | done — drained to zero (§8.11); it had no floor — every site was either cargo or re-modelable |
-| `looseCast` | 1794 | — | **no** — guard only, see below |
+| `tsSuppress` | 2 | — | done — 5 → 2 (§8.12); §8.10's floor held one directive that asserted nothing. The 2 are prose |
+| `absentValue` | 0 | **plugin: 0** | done — **rule at `error`** via `biome-plugins/no-absent-value.grit` (§8.12); drained to zero in §8.11 |
+| `looseCast` | 1790 | — | **no** — guard only, see below |
 
 Five ratchets are closed and gated, and the phase-3c endgame is complete. `as unknown as`
 went 101 → 0 and is now a pure invariant: any nonzero reading is a regression to reject, not
@@ -311,6 +311,34 @@ they were earned in: §4x = `archive/STATUS-1514-typecheck-drain.md`, §8.x of t
 - **A counter's glob is a ceiling too** (§8.8). Both ratchets read `**/*.ts`; `test/ui/`'s six
   `.tsx` files hid six real `as never` for the whole drain. Check what the scan does not reach
   before trusting what it reports — especially before calling a number a floor.
+- **"Floor reached" needs the same probe "undrainable" does** (§8.12). §8.10 ruled five
+  `tsSuppress` sites a floor on the strength of what their comments claimed to assert; one of
+  them asserted nothing, and a scratch file showed it in under a minute. A floor is an
+  "undrainable" ruling with a friendlier name, and it is where a broken assertion goes to be
+  preserved.
+- **An excess-property error masks a missing-property error** (§8.12, and `TS2353 is a floor`
+  from the typecheck drain). Once an object literal carries an unknown key, TS2353 is the
+  *only* diagnostic — the TS2741 for a missing required field is suppressed. A single
+  `@ts-expect-error` over such a literal therefore asserts far less than it looks like it does.
+  Prefer a type-level assertion (`AssertFalse<A extends B ? true : false>`), which checks one
+  constraint at a time, and pair the negatives with a positive control so a mistyped property
+  name cannot make them hold vacuously.
+- **A rule that has never been seen to fail is not known to be wired** (§8.12). After adding a
+  plugin to `biome.json`, write a scratch file containing the banned shape and confirm
+  `bun run lint` fails, then delete it. Zero diagnostics is the expected reading both when the
+  rule works and when it was never loaded.
+- **An escalation you resolve yourself in the same batch is not an escalation** (§8.13). The
+  value of handing a site back is that someone re-derives it cold. §8.11 filed two src
+  widenings as escalations, answered them from the context that produced them, and shipped
+  both in the same commit — keeping the label and discarding the mechanism. Both readings were
+  wrong.
+- **"No caller" needs more than one instrument before you delete** (§8.13). A grep that finds
+  nothing is the weakest evidence there is. Confirm with the call graph, with the package's
+  own entry points (`main` / `exports` / `bin` — a library surface means callers you cannot
+  see), with every dynamic `import()` of the barrel, and finally with a build. Then ask the
+  separate question that decides the action: is this residue of a **superseded** design, or
+  scaffolding for an **unbuilt** one? Only the first is safe to delete, and the answer is
+  usually written in `src/` — here, in a comment naming the ADR that replaced it.
 - **Reproduce against the project's own script** (cast drain §8.13), not a hand-rolled invocation of the
   same test files. `bun test <dir>` misses `--timeout=60000` and turns a passing suite into a
   cascade of misleading failures. Run the gate, then read its exit code.
@@ -1163,3 +1191,178 @@ diff: absentValue 17 → 0, looseCast −2 (collateral), every other counter fla
 (`src/session/manager-deps.ts` 56.25% vs 71.88%) reproducing identically on HEAD before this
 batch — per §8.7 policy the local coverage ratchet stays un-rebaselined; flagging rather
 than papering over.
+
+---
+
+### 8.12 The two the endgame left — `absentValue` gets its rule, and §8.10's floor loses one (2026-08-27)
+
+§8.11 closed the last drain and §0 read "every counter with a real drain behind it is closed."
+Two things were still open under that heading. Neither is a drain; both are the difference
+between a counter that reads zero and a counter that *cannot* rise.
+
+#### 1. `absentValue` was at zero with nothing holding it there
+
+§8.11 drained 17 → 0 and stopped. But the same paragraph in §0.1 that predicted a plugin could
+express this shape is the paragraph explaining why the regex is not the finish line — and
+`absentValue` at 0 with only a text ratchet behind it is precisely the state
+`noNonNullAssertion` was in when its regex read 792 and biome read 1064
+(`archive/LOG-non-null-assertion-drain.md`). Zero on the ratchet is not zero on the rule until
+a rule exists.
+
+`biome-plugins/no-absent-value.grit` is eleven lines — `` `$fn<$_>()` `` where `$fn` is
+`absentValue` or `nullValue` — and is now in `biome.json`'s `test/**` override alongside
+`no-as-never.grit`. Measured before wiring: **0 hits repo-wide, `src/` included**, so the
+promotion needed no exemption and bought nothing with a `biome-ignore` (§4).
+
+Mutation-tested rather than assumed: a scratch `test/unit/_grit-probe.test.ts` containing one
+`absentValue<string>()` and one `nullValue<string>()` makes `bun run lint` **fail** with two
+plugin diagnostics, and removing it makes lint pass. A rule that has never been seen to fail is
+not known to be wired.
+
+Two things the plugin gets that the counter cannot, both visible in the counter's own source:
+`scripts/check-test-escape-hatches.ts` exempts `test/helpers/absent.ts` **by path** because the
+regex cannot tell a declaration from a call, and the scanner's own test file matches its
+identifiers inside string fixtures. The plugin needs neither exemption. Two hand-maintained
+entries replaced by a pattern that is right by construction.
+
+The counter stays as the secondary guard for prose, exactly as `asAny`, `nonNullAssert` and
+`asNever` did on promotion.
+
+#### 2. §8.10's `tsSuppress` floor of 5 included one directive that asserted nothing
+
+§8.10 ruled the residue "a deliberate negative-type assertion or its load-bearing prose". Four
+of the five are prose and that half holds. The fifth —
+`run-regression.test.ts:586`, the AC4 guard — was a **deliberate negative-type assertion that
+did not work**, and the ruling was made without probing it.
+
+The claim it carries is "runtime is required even when agentManager is present". The shape is
+one `@ts-expect-error` on the `agentManager` property of a `DeferredRegressionOptions` literal
+that omits `runtime`. A throwaway file with both literals side by side, through
+`tsconfig.test.json`:
+
+```
+(5,7):  TS2741  Property 'runtime' is missing …            ← literal WITHOUT agentManager
+(16,3): TS2353  … 'agentManager' does not exist in type …  ← literal WITH agentManager
+```
+
+**TS2741 does not appear on the second literal.** Once an object literal carries an unknown
+key, the excess-property error is the only one reported; the missing-required-property error is
+suppressed. So the directive was catching TS2353 and nothing else, and the test went green
+whether `runtime` was required or not.
+
+That is `TS2353 is a floor` from the typecheck drain arriving from the other side: there it hid
+stacked dead keys behind one error, here it hid a missing required field, and both times the
+one visible diagnostic read as the whole story.
+
+The replacement is three type aliases and no directive — `AssertFalse<T extends false>` /
+`AssertTrue<T extends true>`, which fail with TS2344:
+
+- `_Ac4RuntimeRequired` — a shape without `runtime` is not assignable to the interface.
+- `_Ac4NoAgentManager` — `"agentManager"` is not in `keyof DeferredRegressionOptions`.
+- `_Ac4Control` — the same shape **with** `runtime` **is** assignable.
+
+The control is load-bearing: two negative assertions both hold vacuously if a property name is
+mistyped, which is the type-level form of §4's rule about `?.` passing vacuously. Three
+mutations in `src/execution/lifecycle/run-regression.ts`, each reverted before the next:
+
+| Mutation | Old form | New form |
+|:--|:--|:--|
+| `runtime: NaxRuntime` → `runtime?: NaxRuntime` | green | **TS2344 at `_Ac4RuntimeRequired`** |
+| add `agentManager?: unknown` to the interface | green | **TS2344 at `_Ac4NoAgentManager`** |
+| `workdir: string` → `workdir?: string` (unrelated field) | green | green — the assertions are specific |
+
+`tsSuppress` 5 → 2. The 2 are the prose in the comment explaining this replacement, which §4
+forbids deleting and which rewording to dodge a text regex would violate in spirit.
+
+#### Closing state
+
+Typecheck 0/0/0, `check:all` 24/24, suite green. Baseline diff: `tsSuppress` 5 → 2,
+`looseCast` 1792 → 1790 (a fall — the two `{} as NaxConfig` / `{} as PRD` in the deleted AC4
+literal), every other counter flat.
+
+**New ruling for §6 — "floor reached" needs the same probe "undrainable" does.** §8.10 called
+five sites a floor on the strength of what their comments claimed to assert. One of them
+asserted nothing, and thirty seconds with a scratch file would have shown it. The doc already
+demands re-derivation before writing "undrainable" (§6, three separate entries); a floor is the
+same claim with a friendlier name, and it is where a broken assertion goes to be preserved.
+
+---
+
+### 8.13 §8.11's "population 3" — both seams re-derived; one reverted, one deleted (2026-08-27)
+
+§8.11 filed two src widenings under *"two seams over-stated their contracts (escalation class,
+each loosens nothing)."* Both are §4's forbidden shape — *"Weakening a source type in `src/` so
+a fixture fits. The fixture is wrong, not the type"* — and the escalation class is exactly where
+§6 says to enumerate again rather than accept the first framing. Re-derived, both readings were
+wrong, in opposite directions.
+
+#### `resolveOutcome(..., agentManager)` — reverted; the tests never needed it
+
+§8.11's own sentence contains the refutation: *"production callers always pass a live
+`NaxRuntime.agentManager`."* All four `src/` call sites do. A parameter widened to admit a value
+no caller passes is not a documented contract, it is a weaker type — and after the fix below,
+nothing in `src/` **or** `test/` passes `undefined` either.
+
+The five tests were already building a `makeCaptureManager(captured)`. They assigned it to
+`_debateSessionDeps.agentManager` and then passed `undefined` for the parameter it was meant to
+be — reaching the value through the seam that broke rather than the one that works (§6). Passing
+it positionally removed the widening, **and** the module-level deps mutation, **and** both
+`beforeEach`/`afterEach` save-restore blocks. Five tests, 476 in `test/unit/debate/` green. The
+injection seam stays covered by `session-helpers.test.ts`, which injects through it in five
+places.
+
+`agentManager: IAgentManager` is restored.
+
+#### `FixStory.batchedACs?: string[]` — the premise was false and the module was dead
+
+The stated justification was *"pre-D1 persisted fix stories that lack it."* No such story can
+reach that code, because **nothing reaches that code at all.** Verified five ways, because a
+single `grep` that finds nothing is the weakest possible evidence (§6):
+
+| Instrument | Result |
+|:--|:--|
+| Graph `trace_path` / `query_graph` (index coverage checked, no recorded gaps) | only importers are the barrel and its own test; all four `CALLS` edges originate in the test |
+| `package.json` | no `main`, no `exports` — ships a `bin` only, so no external consumer is *possible* |
+| every `import("@/acceptance")` site, enumerated | none pulls these names |
+| the producer | `generateAndAddFixStories` / `executeFixStory` already deleted — `acceptance-loop.ts:115` says so |
+| `bun run build` after deletion | 1010 modules bundled, zero unresolved |
+
+And the reason it is dead is on the record in `src/`, at `runner-completion.ts:266`:
+
+> *ADR-022 replaced fix-story PRD mutation with in-place `runFixCycle` rectification — the
+> acceptance loop never appends `US-FIX-*` stories.*
+
+`SPEC-acceptance-fix-strategy.md` exists specifically to replace `convertFixStoryToUserStory()`,
+and its replacement shipped: `diagnose-first` is config-wired at `schemas.ts:289` and
+`acceptance-fix.ts` runs it. So `fix-generator.ts` is **residue of a superseded design, not
+scaffolding for an unbuilt one** — the distinction that decides whether "no caller" means delete
+or means wait.
+
+All 242 lines and their 383-line, 18-test file are deleted, with the four barrel exports. Suite
+14201 → **14183**, which is −18 exactly: the deleted tests and nothing else.
+
+**The `??` was never reachable.** The field and `fixStory.batchedACs ?? [fixStory.failedAC]`
+landed in the *same commit* (`ac949ec37`, BUG-073), so the fallback never guarded an older
+on-disk shape — it was written the same day as the required field it defends against. Three
+sibling filters (`acceptance-setup.ts`, `acceptance.ts`, `test-path.ts`) still strip `US-FIX-*`
+from PRDs nothing writes them to; those are harmless and out of scope here, but they are the
+same pattern and worth a look.
+
+#### What this says about the escalation class
+
+§8.11 was right to escalate both rather than force them — that is §5 working. What it then did
+was write a *ruling* in the escalation's own words ("each loosens nothing") and ship it in the
+same batch. §6 already warns that a held escalation's report is evidence, not a specification;
+this is the case where the report was the only thing consulted, and it was wrong twice: once by
+believing a comment (`?? ` proves a tolerated absence) and once by believing a justification
+("pre-D1 persisted stories") that thirty seconds of `git log -L` disproves.
+
+**New ruling for §6 — an escalation you resolve yourself in the same batch is not an
+escalation.** The value of handing a site back is that someone re-derives it cold. Filing it,
+answering it from the same context that produced it, and shipping both in one commit keeps the
+label and discards the mechanism.
+
+Typecheck 0/0/0, `check:all` 24/24, `bun run build` clean, suite 14183 + 1136 + 38 pass / 0 fail.
+Coverage 87.84% lines / 87.50% functions (−0.05pp / −0.03pp: the deleted module was
+better-covered than average, so removing it and its tests lowers the ratio), per-file ratchet 101
+vs baseline 103, not re-baselined. No ratchet counter moved.
