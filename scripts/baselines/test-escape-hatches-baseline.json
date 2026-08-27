@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 25,
-    "looseCast": 1687
+    "looseCast": 1665
   },
-  "updatedAt": "2026-08-27T09:40:24.219Z",
+  "updatedAt": "2026-08-27T11:29:13.419Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -199,7 +199,7 @@
       "looseCast": 11
     },
     "test/unit/session/manager-phase-b-prompt.test.ts": {
-      "looseCast": 23
+      "looseCast": 15
     },
     "test/unit/session/manager-lifecycle.test.ts": {
       "looseCast": 2
@@ -629,9 +629,6 @@
     },
     "test/unit/operations/plan-critic-llm.test.ts": {
       "looseCast": 3
-    },
-    "test/unit/operations/plan-draft.test.ts": {
-      "looseCast": 1
     },
     "test/unit/operations/mutation-check-telemetry.test.ts": {
       "looseCast": 1
@@ -1122,15 +1119,6 @@
     },
     "test/unit/context/engine/providers/code-neighbor-size-cap.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/context/rules/canonical-loader.test.ts": {
-      "looseCast": 2
-    },
-    "test/unit/context/rules/rules-frontmatter.test.ts": {
-      "looseCast": 6
-    },
-    "test/unit/context/rules/rules-frontmatter-description.test.ts": {
-      "looseCast": 5
     },
     "test/unit/pipeline/effective-config.test.ts": {
       "looseCast": 17

@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeLogger } from "@test/helpers";
+import { assertCaughtInstanceOf, makeLogger } from "@test/helpers";
 import { _canonicalLoaderDeps, loadCanonicalRules } from "@/context/rules/canonical-loader";
 import { KNOWN_FRONTMATTER_KEYS, parseFrontmatter, RulesFrontmatterError } from "@/context/rules/rules-frontmatter";
 
@@ -45,8 +45,8 @@ describe("parseFrontmatter — US-001 description validation", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(RulesFrontmatterError);
-    expect((threw as RulesFrontmatterError).message).toContain("frontmatter.description must be a string");
+    assertCaughtInstanceOf(threw, RulesFrontmatterError, "parseFrontmatter rejection");
+    expect(threw.message).toContain("frontmatter.description must be a string");
   });
 
   test("[AC4] throws RulesFrontmatterError containing 'frontmatter.description cannot be empty' when description is empty", () => {
@@ -57,8 +57,8 @@ describe("parseFrontmatter — US-001 description validation", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(RulesFrontmatterError);
-    expect((threw as RulesFrontmatterError).message).toContain("frontmatter.description cannot be empty");
+    assertCaughtInstanceOf(threw, RulesFrontmatterError, "parseFrontmatter rejection");
+    expect(threw.message).toContain("frontmatter.description cannot be empty");
   });
 
   test("[AC4] throws RulesFrontmatterError containing 'frontmatter.description cannot be empty' when description is whitespace-only", () => {
@@ -69,8 +69,8 @@ describe("parseFrontmatter — US-001 description validation", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(RulesFrontmatterError);
-    expect((threw as RulesFrontmatterError).message).toContain("frontmatter.description cannot be empty");
+    assertCaughtInstanceOf(threw, RulesFrontmatterError, "parseFrontmatter rejection");
+    expect(threw.message).toContain("frontmatter.description cannot be empty");
   });
 
   test("[AC5] throws RulesFrontmatterError containing 'frontmatter.description must be a single line' when description contains a newline", () => {
@@ -84,8 +84,8 @@ describe("parseFrontmatter — US-001 description validation", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(RulesFrontmatterError);
-    expect((threw as RulesFrontmatterError).message).toContain("frontmatter.description must be a single line");
+    assertCaughtInstanceOf(threw, RulesFrontmatterError, "parseFrontmatter rejection");
+    expect(threw.message).toContain("frontmatter.description must be a single line");
   });
 });
 
@@ -98,8 +98,8 @@ describe("parseFrontmatter — US-001 description recognised in unknown-key diag
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(RulesFrontmatterError);
-    expect((threw as RulesFrontmatterError).message).toContain("description");
+    assertCaughtInstanceOf(threw, RulesFrontmatterError, "parseFrontmatter rejection");
+    expect(threw.message).toContain("description");
   });
 
   test("[AC6] KNOWN_FRONTMATTER_KEYS includes 'description'", () => {

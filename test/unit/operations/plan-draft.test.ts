@@ -5,7 +5,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { assertDefined, type DeepPartial, makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { assertCaughtInstanceOf, assertDefined, type DeepPartial, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import { ParseValidationError } from "@/agents";
 import type { NaxConfig } from "@/config";
 import { inspectDraftOutput, type PlanDraftInput, planDraftOp } from "@/operations";
@@ -224,8 +224,8 @@ describe("planDraftOp.parse — AC-14, AC-15, AC-16: failure paths", () => {
     } catch (err) {
       caught = err;
     }
-    expect(caught).toBeInstanceOf(ParseValidationError);
-    expect((caught as ParseValidationError).message).toContain("citation rate");
+    assertCaughtInstanceOf(caught, ParseValidationError, "planDraftOp.parse rejection");
+    expect(caught.message).toContain("citation rate");
   });
 
   test("AC-16: uses the configured citationThreshold, not the default 0.5", () => {
