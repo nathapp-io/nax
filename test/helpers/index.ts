@@ -13,6 +13,7 @@ export { type AgentManagerInternals, agentManagerInternals } from "./agent-manag
 export { makeAgentRegistry } from "./agent-registry";
 export { makeAgentResult } from "./agent-result";
 export { assertDefined, firstCall } from "./assert-defined";
+export { assertNaxError } from "./assert-nax-error";
 export { makeMockCallContext } from "./call-context";
 export { type CallOpStubOptions, DEFAULT_AGENT_ENVELOPE, makeCallOp } from "./call-op";
 export { opSelector } from "./config-selector";
