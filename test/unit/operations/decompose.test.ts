@@ -15,7 +15,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { makeLogger, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import { decomposeConfigSelector } from "@/config";
 import { _decomposeOpDeps, decomposeOp } from "@/operations/decompose";
 import type { NaxRuntime } from "@/runtime";
@@ -329,16 +329,8 @@ describe("decomposeOp — parse: ADR-025 — no agent re-selection, raw output r
 
   test("ADR-025: parse does not emit any logger warnings for unknown agentProfileId", () => {
     const orig = _decomposeOpDeps.getSafeLogger;
-    const warnings: Array<{ message: string; data?: Record<string, unknown> }> = [];
-    _decomposeOpDeps.getSafeLogger = () =>
-      ({
-        warn: (_stage: string, message: string, data?: Record<string, unknown>) => {
-          warnings.push({ message, data });
-        },
-        info: () => {},
-        debug: () => {},
-        error: () => {},
-      }) as never;
+    const logger = makeLogger();
+    _decomposeOpDeps.getSafeLogger = () => logger;
     try {
       const ctx = makeBuildCtx({
         routing: {
@@ -354,7 +346,7 @@ describe("decomposeOp — parse: ADR-025 — no agent re-selection, raw output r
       decomposeOp.parse(output, SAMPLE_INPUT, ctx);
 
       // parse() is a pass-through — no profile resolution, no warning
-      expect(warnings).toHaveLength(0);
+      expect(logger.calls.filter((c) => c.level === "warn")).toHaveLength(0);
     } finally {
       _decomposeOpDeps.getSafeLogger = orig;
     }

@@ -507,11 +507,11 @@ describe("annotateManifestEffectiveness — AC10: persisted scope excludes all c
   beforeEach(() => {
     // Silence the warn path so test output stays clean — AC10 asserts the
     // *written* signal, not the warn log. The #506 tests own the warn path.
-    _effectivenessDeps.getLogger = () => makeLogger() as never;
+    _effectivenessDeps.getLogger = () => makeLogger();
   });
 
   afterEach(() => {
-    _effectivenessDeps.getLogger = () => makeLogger() as never;
+    _effectivenessDeps.getLogger = () => makeLogger();
   });
 
   test("[AC10] writes 'ignored' and not 'followed' when persisted scope excludes all changed files", async () => {

@@ -23,9 +23,9 @@ describe("createPlanStrategy", () => {
     const strategyModulePath = pathToFileURL(join(import.meta.dir, "../../../src/plan/strategies/index.ts")).href;
     const { createPlanStrategy } = await import(strategyModulePath);
 
-    expect(() => createPlanStrategy("unknown" as never)).toThrow(NaxError);
+    expect(() => (createPlanStrategy as (m: string) => unknown)("unknown")).toThrow(NaxError);
     try {
-      createPlanStrategy("unknown" as never);
+      (createPlanStrategy as (m: string) => unknown)("unknown");
     } catch (err) {
       expect(err).toBeInstanceOf(NaxError);
       expect((err as NaxError).code).toBe("PLAN_MODE_UNKNOWN");

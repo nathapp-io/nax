@@ -410,7 +410,7 @@ describe("@/routing/calibrate barrel (adversarial #5)", () => {
 
     // Type-only references are checked by tsc; we still exercise them so the
     // symbols are actually imported (no `unused import` elimination).
-    const _: {
+    type _Surface = {
       proposeAdjustments: typeof proposeAdjustments;
       BandStat: BandStat;
       TierAdjustment: TierAdjustment;
@@ -418,7 +418,8 @@ describe("@/routing/calibrate barrel (adversarial #5)", () => {
       SkippedBand: SkippedBand;
       CalibrationProposal: CalibrationProposal;
       CalibrationThresholds: CalibrationThresholds;
-    } = {} as never;
-    expect(_).toBeDefined();
+    };
+    const _: _Surface | undefined = undefined;
+    expect(_).toBeUndefined();
   });
 });

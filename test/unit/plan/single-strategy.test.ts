@@ -1,5 +1,12 @@
 import { describe, expect, mock, test } from "bun:test";
-import { firstCall, makeLogger, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
+import {
+  firstCall,
+  makeDebateRunner,
+  makeLogger,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeNaxConfig,
+} from "@test/helpers";
 import type { InteractionBridge } from "@/interaction/bridge-builder";
 import { _singlePlanDeps, SinglePlanStrategy } from "@/plan";
 import type { PlanDeps, PlanModeContext } from "@/plan/strategies/types";
@@ -40,7 +47,7 @@ function makeDeps(exists = false): PlanDeps {
       detectQuestion: async () => false,
       onQuestionDetected: async () => "",
     }),
-    createDebateRunner: () => ({}) as never,
+    createDebateRunner: () => makeDebateRunner(),
     getLogger: makeLogger,
   };
 }
@@ -69,7 +76,7 @@ function makeCtx(overrides: Partial<PlanModeContext> = {}): PlanModeContext {
     projectName: "acme",
     branchName: "feat/feat-x",
     timeoutSeconds: 30,
-    config: { timeoutSeconds: 30 } as never,
+    config: makeNaxConfig({ plan: { timeoutSeconds: 30 } }),
     options: { from: "/tmp/spec.md", feature: "feat-x" },
     runtime: makeRuntime(),
     interactionChain: null,

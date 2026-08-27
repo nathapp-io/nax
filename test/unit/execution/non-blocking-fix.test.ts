@@ -1,6 +1,6 @@
 // test/unit/execution/non-blocking-fix.test.ts
 import { describe, expect, test } from "bun:test";
-import { withInfoSpy } from "@test/helpers";
+import { makeFinding, withInfoSpy } from "@test/helpers";
 import {
   actionableAdvisoryFindings,
   nonBlockingExtraPhases,
@@ -73,7 +73,9 @@ describe("runNonBlockingFix keep vs restore", () => {
   const baseArgs = {
     workdir: "/tmp/x",
     storyId: "us-001",
-    advisoryFindings: [{ source: "adversarial-review", severity: "warning", category: "input", message: "m" }] as never,
+    advisoryFindings: [
+      makeFinding({ source: "adversarial-review", severity: "warning", category: "input", message: "m" }),
+    ],
     cfg: {
       enabled: true,
       scope: "both",
@@ -519,7 +521,9 @@ describe("nonBlockingExtraPhases with triage scope", () => {
 });
 
 describe("runNonBlockingFix sourceDiffCap", () => {
-  const advisory = [{ source: "adversarial-review", severity: "warning", category: "input", message: "m" }] as never;
+  const advisory = [
+    makeFinding({ source: "adversarial-review", severity: "warning", category: "input", message: "m" }),
+  ];
 
   test("AC-2: source diff exceeding maxLines → restored over kept", async () => {
     let rolled = "";

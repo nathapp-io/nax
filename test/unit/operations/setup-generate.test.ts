@@ -151,11 +151,11 @@ describe("setupGenerateOp.parse — AC6 ext: mono monoConfigs uses LLM per-packa
 
 describe("setupGenerateOp.build — AC7: delegates to SetupPromptBuilder", () => {
   test("AC7: build calls new SetupPromptBuilder().build(analysis) and returns the result", () => {
-    const mocked = {
+    const mocked: ReturnType<SetupPromptBuilder["build"]> = {
       role: { id: "role", content: "role-content", overridable: false },
       task: { id: "task", content: "task-content", overridable: false },
     };
-    const spy = spyOn(SetupPromptBuilder.prototype, "build").mockReturnValue(mocked as never);
+    const spy = spyOn(SetupPromptBuilder.prototype, "build").mockReturnValue(mocked);
     const analysis = makeSingleAnalysis();
     const result = setupGenerateOp.build(analysis, NO_BUILD_CTX);
     expect(spy).toHaveBeenCalledWith(analysis);

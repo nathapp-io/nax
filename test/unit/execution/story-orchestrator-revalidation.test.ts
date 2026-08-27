@@ -16,6 +16,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeTestRuntime } from "@test/helpers";
 import { _storyOrchestratorDeps, orderGateLast, StoryOrchestratorBuilder } from "@/execution";
+import type { PhaseKind } from "@/execution/story-orchestrator/types";
 import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
 import type { CallContext } from "@/operations";
@@ -494,7 +495,7 @@ describe("terminal lite-validate — gate runs LAST as final arbiter (Q1/Q3)", (
 });
 
 describe("orderGateLast — pure ordering helper", () => {
-  const mk = (kind: string) => ({ kind, slot: { op: { name: kind } } }) as never;
+  const mk = (kind: PhaseKind) => ({ kind });
 
   test("moves full-suite-gate to the end, preserving order of the other phases", () => {
     const input = [mk("full-suite-gate"), mk("verifier"), mk("lint-check"), mk("semantic-review")];

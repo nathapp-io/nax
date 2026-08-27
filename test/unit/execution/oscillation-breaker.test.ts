@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeTestContext, makeTestRuntime } from "@test/helpers";
+import { makeTestContext, makeTestRuntime, makeTestStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { inspectOscillationBreaker, recordOscillations } from "@/execution";
 import type { PipelineContext } from "@/pipeline/types";
@@ -23,7 +23,7 @@ function makeCtx(
 ): PipelineContext {
   const storyId = overrides.storyId ?? "US-osc-1";
   const ctx = makeTestContext({
-    story: { id: storyId, title: "Breaker unit" } as never,
+    story: makeTestStory({ id: storyId, title: "Breaker unit" }),
   });
   const hasConflictDetectionOverride = Object.hasOwn(overrides, "conflictDetection");
   ctx.config = {

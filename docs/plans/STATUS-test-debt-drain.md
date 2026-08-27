@@ -10,7 +10,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 
 ---
 
-## 0. Current state — re-measured 2026-08-26 on `main` (after the `noNonNullAssertion` drain merged, #1726)
+## 0. Current state — re-measured 2026-08-27 (after batch 6, 74 → 16)
 
 | Counter | Regex ratchet | Biome | Drain target? |
 |:--|--:|--:|:--|
@@ -20,11 +20,11 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 | `asAny` | 1 | **0** | done — rule at `"error"` (`archive/LOG-no-explicit-any-drain.md`) |
 | `anyType` | 10 | **0** | done — rule at `"error"` (`archive/LOG-no-explicit-any-drain.md`) |
 | `nonNullAssert` | 2 | **0** | done — rule at `"error"` (`archive/LOG-non-null-assertion-drain.md`) |
-| `asNever` | **323** | — | **yes — current target (§1)** |
+| `asNever` | **16** | — | **yes — current target (§1)** |
 | `ratchetAllow` | 103 | — | yes — next |
 | `tsSuppress` | 25 | — | yes — next |
 | `absentValue` | 17 | — | yes — next |
-| `looseCast` | 1799 | — | **no** — guard only, see below |
+| `looseCast` | 1798 | — | **no** — guard only, see below |
 
 Four ratchets are closed and gated, and the phase-3c endgame is complete. `as unknown as`
 went 101 → 0 and is now a pure invariant: any nonzero reading is a regression to reject, not
@@ -799,3 +799,23 @@ running them together avoids three round-trips through `check:all`.
 - `test/unit/operations/full-suite-rectify.test.ts` (1) — comment mentions
   "`{} as never` cargo" in the §1 prose. Per §4, deleting the comment that
   merely mentions the phrase is forbidden.
+
+### 8.6 Batch 6 — forty-seven sites, 74 → 16 (2026-08-27)
+
+Continued after §8.5 (which closed at 74). Re-measured before batch: 74. Three
+parallel sub-agents plus direct fixes removed 58 sites across ~30 files, leaving
+16. The same recipes as batches 1–5 repeat, with two src additive changes that
+had been held since §8.3/§8.5.
+
+**Src additive changes (per §5 escalation, loosened nothing):**
+
+- `orderGateLast` and `phasesToRevalidate` (`src/execution/story-orchestrator/phase-eval.ts:327,300`) narrowed from `readonly InternalPhase[]` to generic `T extends { readonly kind: PhaseKind }`. Both only read `.kind`; the generic preserves the return type and lets the test helper `mk(kind)` return `{ kind }` without a full `InternalPhase` (which requires a complete `AnySlot`/`RunOperation`). Fixes `test/unit/execution/rectification-overrides.test.ts` (1) and `test/unit/execution/story-orchestrator-revalidation.test.ts` (1) — the two `mk(kind)` held items from §8.5.
+- `DebateConfig.stages.decompose?: DebateStageConfig` added to `src/debate/types.ts:124` and `src/config/schemas-debate.ts:176` (optional, defaults `enabled:false`). `src/cli/plan-decompose.ts:86` previously worked around the missing field via `as unknown as Record<string, DebateStageConfig>`. With the field present, `makeNaxConfig({ debate: { stages: { decompose: ... } } })` is valid DeepPartial and the test cast falls out. Fixes `test/unit/cli/plan-decompose-debate.test.ts` (1) and `test/unit/cli/plan-decompose-ac13-14.test.ts` (1) — the decompose-stage held items.
+
+**Other fixes in this batch (selected):**
+
+- **Helpers / cargo removal:** `test/unit/pipeline/stages/execution-agent-routing.test.ts` (`makeAgentAdapter`), `test/unit/pipeline/subscribers/events-writer.test.ts` (`makeStory`), `test/unit/context/generator.test.ts` (`buildProjectMetadata` → `{dependencies:[]}`), `test/unit/runtime/cost-aggregator.test.ts` (`makeLogger` + capturing `warn`), `test/unit/agents/manager-dispatch-emission.test.ts` (`makeContextBundle`), `test/unit/agents/manager-abort.test.ts` (`makeNaxConfig`), `test/unit/pipeline/stages/execution-repo-scoped-fixes.test.ts` (real `ExecutionPlan` + `StoryOrchestratorResult` helper), `test/unit/plan/debate-strategy.test.ts` (`makeNaxConfig` + drop `fallbackPrd as never`), `test/unit/plan/strategies-factory.test.ts` (`(createPlanStrategy as (m:string)=>unknown)`), `test/unit/plan/refine-strategy.test.ts`/`single-strategy.test.ts` (`makeDebateRunner` + `makeNaxConfig`), `test/unit/cli/rules-export-*.test.ts` (`makeLogger` + `Partial<CanonicalRule>`), `test/unit/operations/setup-generate.test.ts` (typed `ReturnType<SetupPromptBuilder["build"]>`), `test/unit/routing/calibrate/{band-stats,propose}.test.ts` (type-level `_Surface` + `undefined`), `test/unit/execution/non-blocking-fix.test.ts` (`makeFinding`), `test/unit/commands/unlock.test.ts` (`(code?:number):never=>throw`), `test/unit/config/escalation-reset-mode.test.ts` (drop redundant `as never` on `NaxConfigSchema.parse`), `test/unit/context/engine/effectiveness-scoped.test.ts` (`makeLogger`), `test/unit/metrics/tracker-context-metrics.test.ts` (`PipelineContext`), `test/unit/debate/runner-hybrid-cross-debater.test.ts` (`makeMockRuntime`/`makeMockCallContext`), `test/unit/execution/story-orchestrator-carveout-staleness.test.ts` (`makeStory`), `test/unit/execution/lifecycle/acceptance-loop-skipped-packages.test.ts` (spread real `import("@/pipeline/stages")` + `Object.assign`), `test/e2e/scripted-agent.e2e.test.ts` (`SessionRole` + `NO_OP_INTERACTION_HANDLER`), `test/integration/plan/plan-prd-preservation.test.ts` (drop cargo), `test/integration/pipeline/pipeline.test.ts` (typed `StageResult`), `test/unit/finish/phase.test.ts` (narrow `emit` to `PipelineEvent`), `test/unit/findings/_cycle-fixtures.ts` (overloaded `makeCallOpSpy`), `test/unit/execution/oscillation-breaker.test.ts` (`makeTestStory`), `test/unit/execution/lifecycle/run-completion-plugin-review.test.ts` (DeepPartial), `test/unit/execution/lifecycle/default-agent-migration.test.ts` (`agentManagerConfigSelector.select`), `test/unit/execution/lifecycle/run-setup.test.ts` (`withDepsRestore`), `test/unit/acceptance/default-agent-acceptance.test.ts` + `tdd/default-agent-tdd.test.ts` (`makeNaxConfig` + selector), `test/unit/operations/decompose.test.ts` (`makeLogger`), `test/unit/operations/call-run-counter.test.ts` (`makeMockCallContext` + `createRunCallCounter`), `test/integration/cli/cli-core-generate.test.ts` (`never` via throw).
+
+Typecheck 0/0/0, `check:all` 24/24, full suite 14194 pass / 1 fail → 14195 pass after `debate-strategy` `toMatchObject` fix before `--update-baseline`; baseline diff shows `asNever` 74 → 16 (−58), every other counter flat (`looseCast` 1798, `asAny` 1, etc.).
+
+**Remaining 16:** the 12 `mockImplementation as never` in `test/unit/debate/runner-plan.test.ts` (generic `<I,O,C>` returning `{success:true,rebut:...}` — any fix trades `asNever` for `looseCast` `as DebateHybridOutput` etc., per §8.5 held) + 2 in `test/unit/debate/runner-plan-signal.test.ts` (same pattern) + 1 `confirm.test.ts` (`_confirmDeps.exit` mocking `()=>never` with a returning stub — making it truly `never` would throw inside the `data` handler and break `emit`) + 1 phantom comment in `full-suite-rectify.test.ts` (§4 forbidden). No other `as never` remains that can be drained without a counter trade or a `src/` change beyond the two already landed.

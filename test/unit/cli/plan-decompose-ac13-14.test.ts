@@ -244,7 +244,7 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
       },
     };
 
-    await planDecomposeCommand(tmpDir, makeConfig({ debate: debateConfig as never }), {
+    await planDecomposeCommand(tmpDir, makeNaxConfig({ debate: debateConfig }), {
       feature: FEATURE,
       storyId: "US-001",
     });

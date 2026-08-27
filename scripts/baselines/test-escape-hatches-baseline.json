@@ -6,10 +6,10 @@
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1798,
-    "asNever": 74,
+    "asNever": 16,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-27T02:10:35.226Z",
+  "updatedAt": "2026-08-27T02:59:26.184Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -64,9 +64,6 @@
     },
     "test/helpers/e2e/orchestrator-harness.ts": {
       "looseCast": 1
-    },
-    "test/e2e/scripted-agent.e2e.test.ts": {
-      "asNever": 2
     },
     "test/integration/interaction/interaction-chain-pipeline.test.ts": {
       "looseCast": 3
@@ -150,9 +147,6 @@
     "test/integration/cli/cli-precheck-run.test.ts": {
       "looseCast": 2
     },
-    "test/integration/cli/cli-core-generate.test.ts": {
-      "asNever": 1
-    },
     "test/integration/cli/cli-core-logs.test.ts": {
       "looseCast": 1
     },
@@ -175,8 +169,7 @@
       "looseCast": 1
     },
     "test/integration/plan/plan-prd-preservation.test.ts": {
-      "looseCast": 1,
-      "asNever": 1
+      "looseCast": 1
     },
     "test/integration/plan/logger.test.ts": {
       "looseCast": 2
@@ -192,8 +185,7 @@
       "looseCast": 5
     },
     "test/integration/pipeline/pipeline.test.ts": {
-      "looseCast": 1,
-      "asNever": 1
+      "looseCast": 1
     },
     "test/integration/pipeline/pipeline-acceptance.test.ts": {
       "looseCast": 1
@@ -266,18 +258,11 @@
     "test/unit/tdd/rollback.test.ts": {
       "looseCast": 1
     },
-    "test/unit/tdd/default-agent-tdd.test.ts": {
-      "asNever": 1
-    },
     "test/unit/routing/routing-stability.test.ts": {
       "looseCast": 2
     },
-    "test/unit/routing/calibrate/band-stats.test.ts": {
-      "asNever": 1
-    },
     "test/unit/routing/calibrate/propose.test.ts": {
-      "looseCast": 3,
-      "asNever": 1
+      "looseCast": 3
     },
     "test/unit/replay/discovery.test.ts": {
       "looseCast": 2
@@ -302,9 +287,6 @@
     },
     "test/unit/commands/replay.test.ts": {
       "looseCast": 20
-    },
-    "test/unit/commands/unlock.test.ts": {
-      "asNever": 1
     },
     "test/unit/prompts/builder.test.ts": {
       "looseCast": 3
@@ -409,8 +391,7 @@
       "looseCast": 1
     },
     "test/unit/finish/phase.test.ts": {
-      "looseCast": 1,
-      "asNever": 1
+      "looseCast": 1
     },
     "test/unit/hooks/on-all-stories-complete.test.ts": {
       "looseCast": 1
@@ -428,9 +409,6 @@
       "tsSuppress": 10,
       "ratchetAllow": 1
     },
-    "test/unit/execution/rectification-overrides.test.ts": {
-      "asNever": 1
-    },
     "test/unit/execution/worktree-manager.test.ts": {
       "tsSuppress": 8
     },
@@ -447,8 +425,7 @@
       "looseCast": 1
     },
     "test/unit/execution/story-orchestrator-carveout-staleness.test.ts": {
-      "looseCast": 2,
-      "asNever": 2
+      "looseCast": 2
     },
     "test/unit/execution/story-orchestrator-revalidation-carveout.test.ts": {
       "looseCast": 4
@@ -469,8 +446,7 @@
       "looseCast": 8
     },
     "test/unit/execution/non-blocking-fix.test.ts": {
-      "looseCast": 6,
-      "asNever": 2
+      "looseCast": 6
     },
     "test/unit/execution/unified-executor-dispatch.test.ts": {
       "looseCast": 6
@@ -488,8 +464,7 @@
       "looseCast": 10
     },
     "test/unit/execution/story-orchestrator-revalidation.test.ts": {
-      "looseCast": 26,
-      "asNever": 1
+      "looseCast": 26
     },
     "test/unit/execution/_post-run-fixtures.ts": {
       "looseCast": 1
@@ -545,14 +520,10 @@
       "looseCast": 3
     },
     "test/unit/execution/crash-signals-idempotency.test.ts": {
-      "looseCast": 1,
-      "asNever": 1
+      "looseCast": 1
     },
     "test/unit/execution/parallel-worker.test.ts": {
       "looseCast": 8
-    },
-    "test/unit/execution/oscillation-breaker.test.ts": {
-      "asNever": 1
     },
     "test/unit/execution/execution-stage.test.ts": {
       "looseCast": 4
@@ -623,8 +594,7 @@
       "looseCast": 39
     },
     "test/unit/execution/lifecycle/acceptance-loop-skipped-packages.test.ts": {
-      "looseCast": 1,
-      "asNever": 2
+      "looseCast": 1
     },
     "test/unit/execution/lifecycle/run-completion-events.test.ts": {
       "anyType": 1,
@@ -634,14 +604,8 @@
       "tsSuppress": 5,
       "looseCast": 2
     },
-    "test/unit/execution/lifecycle/run-completion-plugin-review.test.ts": {
-      "asNever": 1
-    },
     "test/unit/execution/lifecycle/acceptance-loop-routing.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/execution/lifecycle/default-agent-migration.test.ts": {
-      "asNever": 1
     },
     "test/unit/execution/lifecycle/run-completion-postrun.test.ts": {
       "looseCast": 1
@@ -651,9 +615,6 @@
     },
     "test/unit/execution/lifecycle/acceptance-loop-cycle.test.ts": {
       "looseCast": 8
-    },
-    "test/unit/execution/lifecycle/run-setup.test.ts": {
-      "asNever": 1
     },
     "test/unit/execution/lifecycle/run-setup-credentials.test.ts": {
       "looseCast": 1
@@ -668,8 +629,7 @@
       "looseCast": 4
     },
     "test/unit/findings/_cycle-fixtures.ts": {
-      "looseCast": 1,
-      "asNever": 1
+      "looseCast": 1
     },
     "test/unit/findings/cycle.test.ts": {
       "ratchetAllow": 1
@@ -694,9 +654,6 @@
     },
     "test/unit/acceptance/refinement.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/acceptance/default-agent-acceptance.test.ts": {
-      "asNever": 1
     },
     "test/unit/acceptance/hardening.test.ts": {
       "ratchetAllow": 1,
@@ -735,9 +692,6 @@
     "test/unit/operations/autofix-implementer-strategy.test.ts": {
       "looseCast": 9
     },
-    "test/unit/operations/decompose.test.ts": {
-      "asNever": 1
-    },
     "test/unit/operations/reviewer-verdict-invariant.test.ts": {
       "looseCast": 1
     },
@@ -759,9 +713,6 @@
     "test/unit/operations/plan-interactive.test.ts": {
       "looseCast": 3
     },
-    "test/unit/operations/call-run-counter.test.ts": {
-      "asNever": 1
-    },
     "test/unit/operations/semantic-review-reground.test.ts": {
       "looseCast": 2
     },
@@ -772,8 +723,7 @@
       "looseCast": 2
     },
     "test/unit/operations/setup-generate.test.ts": {
-      "looseCast": 3,
-      "asNever": 1
+      "looseCast": 3
     },
     "test/unit/operations/full-suite-rectify.test.ts": {
       "looseCast": 5,
@@ -840,9 +790,6 @@
     "test/unit/debate/resolvers.test.ts": {
       "looseCast": 20
     },
-    "test/unit/debate/runner-hybrid-cross-debater.test.ts": {
-      "asNever": 2
-    },
     "test/unit/debate/runner-plan-helpers.test.ts": {
       "looseCast": 1
     },
@@ -903,9 +850,6 @@
     "test/unit/cli/plan-decompose-writeback.test.ts": {
       "looseCast": 4
     },
-    "test/unit/cli/plan-decompose-ac13-14.test.ts": {
-      "asNever": 1
-    },
     "test/unit/cli/plan-mode.test.ts": {
       "looseCast": 4
     },
@@ -913,15 +857,13 @@
       "looseCast": 1
     },
     "test/unit/cli/plan-decompose-debate.test.ts": {
-      "looseCast": 5,
-      "asNever": 1
+      "looseCast": 5
     },
     "test/unit/cli/rules-lint.test.ts": {
       "looseCast": 1
     },
     "test/unit/cli/rules-export-description.test.ts": {
-      "looseCast": 1,
-      "asNever": 2
+      "looseCast": 1
     },
     "test/unit/cli/runs.test.ts": {
       "looseCast": 1
@@ -936,8 +878,7 @@
       "looseCast": 7
     },
     "test/unit/cli/rules-export-scope.test.ts": {
-      "looseCast": 1,
-      "asNever": 2
+      "looseCast": 1
     },
     "test/unit/cli/status-dispatch.test.ts": {
       "looseCast": 13
@@ -1018,14 +959,10 @@
       "looseCast": 2
     },
     "test/unit/agents/manager-dispatch-emission.test.ts": {
-      "looseCast": 2,
-      "asNever": 1
+      "looseCast": 2
     },
     "test/unit/agents/manager-cancellable-backoff.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/agents/manager-abort.test.ts": {
-      "asNever": 1
     },
     "test/unit/agents/manager-credentials.test.ts": {
       "looseCast": 1
@@ -1088,8 +1025,7 @@
       "looseCast": 7
     },
     "test/unit/runtime/cost-aggregator.test.ts": {
-      "looseCast": 1,
-      "asNever": 2
+      "looseCast": 1
     },
     "test/unit/runtime/paths.test.ts": {
       "looseCast": 1
@@ -1122,26 +1058,22 @@
       "looseCast": 8
     },
     "test/unit/plan/debate-strategy.test.ts": {
-      "looseCast": 1,
-      "asNever": 2
+      "looseCast": 1
     },
     "test/unit/plan/strategies-factory.test.ts": {
-      "looseCast": 1,
-      "asNever": 2
+      "looseCast": 1
     },
     "test/unit/plan/strategies.test.ts": {
       "looseCast": 5
     },
     "test/unit/plan/refine-strategy.test.ts": {
-      "looseCast": 1,
-      "asNever": 2
+      "looseCast": 1
     },
     "test/unit/plan/debate-composition.test.ts": {
       "looseCast": 3
     },
     "test/unit/plan/single-strategy.test.ts": {
-      "looseCast": 1,
-      "asNever": 2
+      "looseCast": 1
     },
     "test/unit/plan/strategies/single.test.ts": {
       "looseCast": 5
@@ -1175,9 +1107,6 @@
     },
     "test/unit/config/legacy-rectification-keys.test.ts": {
       "looseCast": 6
-    },
-    "test/unit/config/escalation-reset-mode.test.ts": {
-      "asNever": 2
     },
     "test/unit/config/defaults-schema-derive.test.ts": {
       "looseCast": 1
@@ -1262,17 +1191,11 @@
     "test/unit/logger/redact.test.ts": {
       "looseCast": 1
     },
-    "test/unit/context/generator.test.ts": {
-      "asNever": 1
-    },
     "test/unit/context/engine/tool-runtime.test.ts": {
       "looseCast": 3
     },
     "test/unit/context/engine/query-scratch.test.ts": {
       "looseCast": 2
-    },
-    "test/unit/context/engine/effectiveness-scoped.test.ts": {
-      "asNever": 2
     },
     "test/unit/context/engine/effectiveness-gate.test.ts": {
       "looseCast": 1
@@ -1398,11 +1321,7 @@
       "looseCast": 1
     },
     "test/unit/pipeline/subscribers/events-writer.test.ts": {
-      "looseCast": 8,
-      "asNever": 1
-    },
-    "test/unit/pipeline/stages/execution-agent-routing.test.ts": {
-      "asNever": 1
+      "looseCast": 8
     },
     "test/unit/pipeline/stages/context-scope-files.test.ts": {
       "looseCast": 5
@@ -1459,8 +1378,7 @@
     },
     "test/unit/pipeline/stages/execution-repo-scoped-fixes.test.ts": {
       "ratchetAllow": 2,
-      "looseCast": 2,
-      "asNever": 2
+      "looseCast": 2
     },
     "test/unit/pipeline/stages/acceptance.test.ts": {
       "ratchetAllow": 7,
@@ -1470,8 +1388,7 @@
       "looseCast": 1
     },
     "test/unit/metrics/tracker-context-metrics.test.ts": {
-      "looseCast": 1,
-      "asNever": 1
+      "looseCast": 1
     },
     "test/unit/metrics/tracker-escalation.test.ts": {
       "looseCast": 1

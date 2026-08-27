@@ -3,6 +3,7 @@ import { makeTestRuntime, withInfoSpy } from "@test/helpers";
 import type { FinishContext, FinishPhaseContext } from "@/finish";
 import { _finishPhaseDeps, finishSkipReason, runFinishPhase, shouldRunFinish } from "@/finish";
 import { pipelineEventBus } from "@/pipeline";
+import type { PipelineEvent } from "@/pipeline/event-bus";
 
 describe("shouldRunFinish", () => {
   const base = { enabled: true, branch: "feat/x", storySummary: { completed: 2, failed: 0, paused: 0 } };
@@ -71,13 +72,13 @@ function proceedContext(): FinishContext {
  * fake, which would need an unsafe double cast to `NaxRuntime` and grow a baselined ratchet.
  */
 function makeCtx(opts?: {
-  emit?: (e: { type: string; phase?: string; costUsd?: number; passed?: boolean }) => void;
+  emit?: (e: PipelineEvent) => void;
   telegram?: boolean;
   notifyMode?: "escalation" | "always" | "off";
 }): FinishPhaseContext {
   const unsubscribers: Array<() => void> = [];
   if (opts?.emit) {
-    unsubscribers.push(pipelineEventBus.onAll((e) => opts.emit?.(e as never)));
+    unsubscribers.push(pipelineEventBus.onAll((e) => opts.emit?.(e)));
   }
   registeredUnsubscribers.push(...unsubscribers);
 

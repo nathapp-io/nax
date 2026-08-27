@@ -173,6 +173,15 @@ export const DebateConfigSchema = z.preprocess(
           },
           NonPlanStageExtensions,
         ),
+        decompose: makeDebateStageSchema(
+          {
+            enabled: false,
+            resolverType: "synthesis",
+            sessionMode: "one-shot",
+            rounds: 1,
+          },
+          NonPlanStageExtensions,
+        ).optional(),
       }),
     ),
   }),

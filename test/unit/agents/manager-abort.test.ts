@@ -7,6 +7,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import type { AgentRunOptions } from "@/agents";
 import { _agentManagerDeps, AgentManager } from "@/agents/manager";
 import { DEFAULT_CONFIG } from "@/config/defaults";
@@ -23,13 +24,11 @@ const mockBundle = {} as import("@/context/engine").ContextBundle;
 
 function makeConfigNoFallback() {
   // No fallback chain — forces the rate-limit-backoff branch rather than a swap.
-  return {
-    ...DEFAULT_CONFIG,
+  return makeNaxConfig({
     agent: {
-      ...DEFAULT_CONFIG.agent,
       fallback: { enabled: false, map: {}, maxHopsPerStory: 0, onQualityFailure: false, rebuildContext: false },
     },
-  } as never;
+  });
 }
 
 function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptions {

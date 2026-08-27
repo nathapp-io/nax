@@ -120,14 +120,17 @@ export function makeCallOpMock(result: unknown = {}) {
  * directly, so call sites need no type assertion at all, and the
  * recorded `ctx` is readable without reaching into bun's mock internals.
  */
-export function makeCallOpSpy(returnValue: unknown = {}): {
-  fn: CallOpFn;
+// Overloaded so the implementation can return a concrete function without
+// asserting through the generic `<I, O, C>` slot.
+export function makeCallOpSpy(returnValue?: unknown): {
+  fn: CallOpFn & ReturnType<typeof mock>;
   calls: Array<{ ctx: FixCycleContext; opName: string; input: unknown }>;
-} {
+};
+export function makeCallOpSpy(returnValue: unknown = {}) {
   const calls: Array<{ ctx: FixCycleContext; opName: string; input: unknown }> = [];
-  const fn: CallOpFn = async (ctx, op, input) => {
+  const fn = mock(async (ctx: FixCycleContext, op: { name: string }, input: unknown) => {
     calls.push({ ctx, opName: op.name, input });
-    return returnValue as never;
-  };
+    return returnValue;
+  });
   return { fn, calls };
 }

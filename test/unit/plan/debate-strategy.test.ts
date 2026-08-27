@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { assertDefined, firstCall, makeDebateRunner, makeLogger, makeMockRuntime } from "@test/helpers";
+import { assertDefined, firstCall, makeDebateRunner, makeLogger, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 import type { DebateRunner, DebateRunnerOptions } from "@/debate";
 import type { DebateStageConfig } from "@/debate/types";
 import type { InteractionBridge } from "@/interaction/bridge-builder";
@@ -71,11 +71,11 @@ function makeContext(overrides: Partial<PlanModeContext> = {}): PlanModeContext 
     projectName: "acme",
     branchName: "feat/feat-debate",
     timeoutSeconds: 90,
-    config: {
+    config: makeNaxConfig({
       debate: { stages: { plan: planStageConfig } },
       agent: { maxInteractionTurns: 7 },
-      project: { kind: "sentinel" },
-    } as never,
+      project: { language: "typescript" },
+    }),
     options: { from: "/tmp/spec.md", feature: "feat-debate" },
     runtime,
     interactionChain: null,
@@ -169,7 +169,7 @@ describe("DebatePlanStrategy", () => {
 
     const [runnerOptions] = createDebateRunnerMock.mock.calls[0];
     expect(runnerOptions.stage).toBe("plan");
-    expect(runnerOptions.stageConfig).toEqual({
+    expect(runnerOptions.stageConfig).toMatchObject({
       enabled: true,
       resolver: { type: "majority-fail-closed" },
       sessionMode: "one-shot",
@@ -205,7 +205,7 @@ describe("DebatePlanStrategy", () => {
       output: "",
     }));
     const createDebateRunnerMock = mock(() => makeDebateRunner({ runPlan: runPlanMock }));
-    const callOpSpy = spyOn(operationsModule, "callOp").mockResolvedValue(fallbackPrd as never);
+    const callOpSpy = spyOn(operationsModule, "callOp").mockResolvedValue(fallbackPrd);
     const origWriteOrRecoverPrd = _debatePlanDeps.writeOrRecoverPrd;
     _debatePlanDeps.writeOrRecoverPrd = mock(async () => ({
       outputPath: "/tmp/workdir/.nax/features/feat-debate/prd.json",

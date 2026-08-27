@@ -14,7 +14,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { assertDefined } from "@test/helpers";
+import { assertDefined, makeContextBundle } from "@test/helpers";
 import { _acpAdapterDeps } from "@/agents/acp/adapter";
 import { AgentManager } from "@/agents/manager";
 import type { SessionHandle, TurnResult } from "@/agents/types";
@@ -372,7 +372,7 @@ describe("runWithFallback — multi-hop dispatch emission", () => {
     bus.onOperationCompleted((e) => opCompleted.push(e));
 
     // shouldSwap requires hasBundle:true — provide a minimal stub bundle.
-    const fakeBundle = { files: [] } as never;
+    const fakeBundle = makeContextBundle();
 
     let hopCount = 0;
     await manager.runWithFallback({

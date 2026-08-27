@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import { resolveDefaultAgent } from "@/agents/utils";
-import { DEFAULT_CONFIG } from "@/config/defaults";
+import { agentConfigSelector } from "@/config/selectors";
 
 describe("resolveDefaultAgent in tdd context", () => {
   test("returns agent.default when present", () => {
-    const c = { ...DEFAULT_CONFIG, agent: { ...DEFAULT_CONFIG.agent, default: "gemini" } };
-    expect(resolveDefaultAgent(c as never)).toBe("gemini");
+    const config = makeNaxConfig({ agent: { default: "gemini" } });
+    expect(resolveDefaultAgent(agentConfigSelector.select(config))).toBe("gemini");
   });
 });

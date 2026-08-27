@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { makeScriptedAgent } from "@test/helpers";
 import type { SendTurnOpts, SessionHandle } from "@/agents/types";
+import { NO_OP_INTERACTION_HANDLER } from "@/runtime/no-op-interaction-handler";
+import type { SessionRole } from "@/runtime/session-role";
 
-function fakeHandle(role: string): SessionHandle {
-  return { id: `nax-abcd1234-feat-US-001-${role}`, agentName: "claude", role: role as never };
+function fakeHandle(role: SessionRole): SessionHandle {
+  return { id: `nax-abcd1234-feat-US-001-${role}`, agentName: "claude", role };
 }
-const noopOpts = { interactionHandler: {} as never } satisfies SendTurnOpts;
+const noopOpts = { interactionHandler: NO_OP_INTERACTION_HANDLER } satisfies SendTurnOpts;
 
 describe("E2E: makeScriptedAgent", () => {
   test("dispatches sendTurn by role and attempt", async () => {

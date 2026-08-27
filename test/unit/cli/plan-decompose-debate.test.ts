@@ -173,7 +173,7 @@ function makeConfigWithDebate(debateDecomposeEnabled: boolean) {
         rectification: makeDebateStageConfig(false),
         escalation: makeDebateStageConfig(false),
       },
-    } as never,
+    },
   });
 }
 

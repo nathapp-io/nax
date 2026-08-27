@@ -65,7 +65,7 @@ describe("generateForPackage (MW-004)", () => {
     _generatorDeps.existsSync = mock(() => false);
     _generatorDeps.readTextFile = mock(() => Promise.resolve(""));
     _generatorDeps.writeFile = mock(() => Promise.resolve(0));
-    _generatorDeps.buildProjectMetadata = mock(() => Promise.resolve(undefined as never));
+    _generatorDeps.buildProjectMetadata = mock(() => Promise.resolve({ dependencies: [] }));
   });
 
   afterEach(() => {

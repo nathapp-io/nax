@@ -21,7 +21,7 @@ describe("autoMode.escalation.resetMode (ADR-025 gap #4)", () => {
         complexityRouting: { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" },
         escalation: { enabled: true, tierOrder: [{ tier: "fast", attempts: 2 }], resetMode: "last" },
       },
-    } as never);
+    });
     expect(parsed.autoMode.escalation.resetMode).toBe("last");
   });
 
@@ -32,7 +32,7 @@ describe("autoMode.escalation.resetMode (ADR-025 gap #4)", () => {
         complexityRouting: { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" },
         escalation: { enabled: true, tierOrder: [{ tier: "fast", attempts: 2 }], resetMode: "bogus" },
       },
-    } as never);
+    });
     expect(result.success).toBe(false);
   });
 });

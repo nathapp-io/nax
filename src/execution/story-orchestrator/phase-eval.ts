@@ -297,10 +297,10 @@ export function describeGateRegression(input: GateRegressionInput): GateRegressi
  *
  * Exported for unit testing — pure function over (strategiesRun, allPhases).
  */
-export function phasesToRevalidate(
+export function phasesToRevalidate<T extends { readonly kind: PhaseKind }>(
   strategiesRun: readonly string[] | undefined,
-  allPhases: readonly InternalPhase[],
-): readonly InternalPhase[] {
+  allPhases: readonly T[],
+): readonly T[] {
   if (!strategiesRun || strategiesRun.length === 0) return allPhases;
 
   const unknown = strategiesRun.some((name) => STRATEGY_TO_REVALIDATION_PHASES[name] === undefined);
@@ -324,7 +324,7 @@ export function phasesToRevalidate(
  * acting as the final arbiter of "resolved" rather than being skipped. Pure over
  * its input — exported for unit testing.
  */
-export function orderGateLast(phases: readonly InternalPhase[]): InternalPhase[] {
+export function orderGateLast<T extends { readonly kind: PhaseKind }>(phases: readonly T[]): T[] {
   const rest = phases.filter((p) => p.kind !== "full-suite-gate");
   const gates = phases.filter((p) => p.kind === "full-suite-gate");
   return [...rest, ...gates];
