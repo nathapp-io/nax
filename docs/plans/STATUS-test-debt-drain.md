@@ -10,7 +10,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 
 ---
 
-## 0. Current state — re-measured 2026-08-27 (after §8.10, tsSuppress drained to its floor)
+## 0. Current state — re-measured 2026-08-27 (after §8.11, absentValue drained to zero — every counter with a real drain behind it is closed)
 
 | Counter | Regex ratchet | Biome | Drain target? |
 |:--|--:|--:|:--|
@@ -23,7 +23,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 | `asNever` | 1 | **plugin: 0** | done — **rule at `error`** via `biome-plugins/no-as-never.grit` (§8.8); the 1 is a doc comment |
 | `ratchetAllow` | 25 | — | done — floor reached (§8.9); every residue is a deliberate negative-test fixture or a sanctioned helper seam |
 | `tsSuppress` | 5 | — | done — floor reached (§8.10); every residue is a deliberate negative-type assertion or its load-bearing prose |
-| `absentValue` | 17 | — | yes — next |
+| `absentValue` | 0 | — | done — drained to zero (§8.11); it had no floor — every site was either cargo or re-modelable |
 | `looseCast` | 1794 | — | **no** — guard only, see below |
 
 Five ratchets are closed and gated, and the phase-3c endgame is complete. `as unknown as`
@@ -1107,3 +1107,59 @@ typecheck 0/0/0, `check:all` 24/24, full suite green before `--update-baseline`.
 Baseline diff shows `tsSuppress` 25 → 5, every other counter flat.
 
 Next target: `absentValue` (17).
+
+### 8.11 Batch 10 — absentValue drained to zero, 17 → 0; the drain closes (2026-08-27)
+
+Seventeen sites across seven files, three populations, one commit. Unlike
+`ratchetAllow`/`tsSuppress`, `absentValue` had **no floor**: every site was either cargo the
+types already tolerated or re-modelable at an honest seam.
+
+**Population 1 — pure cargo; the API already tolerates absence (8 sites).** The helper's
+whole point is feeding `undefined`/`null` where the *type* forbids it — but three of these
+files were feeding absence to signatures that already accept it:
+
+- `crash-detector.test.ts` (−2) — `detectRuntimeCrash(output: string | undefined | null)`;
+  the signature says it all. Plain `undefined` / `null` literals.
+- `parse-retry.test.ts` (−1) — `lastOutput?: string`; plain `undefined`.
+- `smart-runner-discovery.test.ts` (−5) — `{ value: absentValue<string>(), done: true }`
+  iterator results. A `done: true` result is `IteratorReturnResult<TReturn = any>`, which
+  `value: undefined` satisfies bare.
+
+**Population 2 — impossible-state pins removed per §6's defensive-`?.` ruling (4+2 sites).**
+`cli-routing-calibrate.test.ts` (−2) simulated "a partial overlay without autoMode" by
+nuking a full config's autoMode to undefined — but `NaxConfigSchema.autoMode` carries
+`.default(...)` and loadConfig always schema-parses, so that state can never reach the
+command. Rewritten onto the genuinely reachable absence (readConfig → null when no project
+config exists), whose src branch was previously uncovered. The old fixtures' two
+`(structuredClone(DEFAULT_CONFIG) as NaxConfig)` casts died with them — looseCast −2 as
+collateral of deleted scaffolding, the §8.9b rationale, not a trade. `merge.test.ts` (−1)
+simulated "package overlay quality block without commands" via absentValue; raw overlays do
+reach mergePackageConfig pre-parse, so the honest model is an omitted key — typed
+`Partial<NaxConfig["quality"]>` + `delete`.
+
+**Population 3 — two seams over-stated their contracts (escalation class, each loosens
+nothing):**
+
+- `FixStory.batchedACs?: string[]` (`src/acceptance/fix-generator.ts`) — the field's own
+  consumer does `fixStory.batchedACs ?? [failedAC]` for pre-D1 persisted stories that lack
+  it. The optional type just declares that documented reality; the test now omits the key.
+- `resolveOutcome(..., agentManager: IAgentManager | undefined)`
+  (`src/debate/session-helpers.ts`) — production callers always pass a live
+  `NaxRuntime.agentManager` (non-optional in NaxRuntime); the body coalesces against the
+  `_debateSessionDeps.agentManager` injection seam its doc comment describes. Widening the
+  parameter lets the five tests pass literal `undefined` instead of an absentValue-typed lie,
+  with identical runtime behavior for every existing caller.
+
+No assertion changed anywhere except becoming executable; no test deleted, skipped, or
+narrowed. With this batch every counter marked "drain target?" is closed: the four closed +
+gated by biome rules (`asAny`/`anyType`/`nonNullAssert`/`asNever` at floor or zero), the
+two floors documented (`tsSuppress` 5, `ratchetAllow` 25), `absentValue` at 0, `looseCast`
+guard-only by design. What remains is maintenance: treat any rise above the baseline as a
+regression to reject, not a number to work down.
+
+typecheck 0/0/0, `check:all` 24/24, full suite green before `--update-baseline`. Baseline
+diff: absentValue 17 → 0, looseCast −2 (collateral), every other counter flat. Note:
+`bun run test:coverage` currently fails on a **pre-existing** per-file breach
+(`src/session/manager-deps.ts` 56.25% vs 71.88%) reproducing identically on HEAD before this
+batch — per §8.7 policy the local coverage ratchet stays un-rebaselined; flagging rather
+than papering over.

@@ -7,8 +7,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { absentValue, makeMockAgentManager, makeMockCallContext, makeMockRuntime } from "@test/helpers";
-import type { CompleteOptions, IAgentManager } from "@/agents";
+import { makeMockAgentManager, makeMockCallContext, makeMockRuntime } from "@test/helpers";
+import type { CompleteOptions } from "@/agents";
 import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
 import type { DebateStageConfig } from "@/debate";
 import { _debateSessionDeps, resolveOutcome } from "@/debate";
@@ -74,7 +74,8 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
       undefined,
       undefined,
       undefined,
-      absentValue<IAgentManager>(),
+      // undefined → the _debateSessionDeps injection seam provides the manager
+      undefined,
     );
 
     expect(captured.length).toBeGreaterThan(0);
@@ -99,7 +100,8 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
       undefined,
       undefined,
       undefined,
-      absentValue<IAgentManager>(),
+      // undefined → the _debateSessionDeps injection seam provides the manager
+      undefined,
     );
 
     expect(captured.length).toBeGreaterThan(0);
@@ -123,7 +125,8 @@ describe("resolveOutcome() synthesis — resolver.model → modelDef (#352)", ()
       undefined,
       undefined,
       undefined,
-      absentValue<IAgentManager>(),
+      // undefined → the _debateSessionDeps injection seam provides the manager
+      undefined,
     );
 
     expect(captured.length).toBeGreaterThan(0);
@@ -162,7 +165,8 @@ describe("resolveOutcome() custom/judge — resolver.model → modelDef (#352)",
       undefined,
       undefined,
       undefined,
-      absentValue<IAgentManager>(),
+      // undefined → the _debateSessionDeps injection seam provides the manager
+      undefined,
     );
 
     expect(captured.length).toBeGreaterThan(0);
@@ -186,7 +190,8 @@ describe("resolveOutcome() custom/judge — resolver.model → modelDef (#352)",
       undefined,
       undefined,
       undefined,
-      absentValue<IAgentManager>(),
+      // undefined → the _debateSessionDeps injection seam provides the manager
+      undefined,
     );
 
     expect(captured.length).toBeGreaterThan(0);

@@ -10,7 +10,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { absentValue } from "@test/helpers";
 import { importGrepFallback, mapSourceToTests } from "@/verification/smart-runner";
 
 describe("Pass 1: mapSourceToTests (path convention)", () => {
@@ -137,7 +136,7 @@ describe("Pass 2: importGrepFallback", () => {
             return {
               async next() {
                 if (i < files.length) return { value: files[i++], done: false };
-                return { value: absentValue<string>(), done: true };
+                return { value: undefined, done: true };
               },
             };
           },
@@ -269,7 +268,7 @@ describe("Pass 3: full-suite fallback (empty return from both passes)", () => {
           [Symbol.asyncIterator]() {
             return {
               async next() {
-                return { value: absentValue<string>(), done: true };
+                return { value: undefined, done: true };
               },
             };
           },
@@ -295,7 +294,7 @@ describe("Pass 3: full-suite fallback (empty return from both passes)", () => {
                   done = true;
                   return { value: "test/unit/unrelated.test.ts", done: false };
                 }
-                return { value: absentValue<string>(), done: true };
+                return { value: undefined, done: true };
               },
             };
           },
@@ -341,7 +340,7 @@ describe("Custom testFilePatterns", () => {
           [Symbol.asyncIterator]() {
             return {
               async next() {
-                return { value: absentValue<string>(), done: true };
+                return { value: undefined, done: true };
               },
             };
           },
@@ -365,7 +364,7 @@ describe("Custom testFilePatterns", () => {
           [Symbol.asyncIterator]() {
             return {
               async next() {
-                return { value: absentValue<string>(), done: true };
+                return { value: undefined, done: true };
               },
             };
           },

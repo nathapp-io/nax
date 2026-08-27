@@ -3,13 +3,13 @@
     "asAny": 1,
     "tsSuppress": 5,
     "ratchetAllow": 25,
-    "absentValue": 17,
+    "absentValue": 0,
     "anyType": 10,
-    "looseCast": 1794,
+    "looseCast": 1792,
     "asNever": 1,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-27T05:40:14.898Z",
+  "updatedAt": "2026-08-27T05:55:54.796Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -227,20 +227,11 @@
     "test/unit/execution/lifecycle/run-completion-postrun.test.ts": {
       "looseCast": 1
     },
-    "test/unit/verification/fix-generator.test.ts": {
-      "absentValue": 1
-    },
     "test/unit/verification/flake-probe.test.ts": {
       "looseCast": 1
     },
     "test/unit/verification/smart-runner.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/verification/crash-detector.test.ts": {
-      "absentValue": 2
-    },
-    "test/unit/verification/smart-runner-discovery.test.ts": {
-      "absentValue": 5
     },
     "test/unit/verification/smart-runner-config.test.ts": {
       "looseCast": 2
@@ -601,7 +592,6 @@
       "looseCast": 1
     },
     "test/unit/agents/retry/parse-retry.test.ts": {
-      "absentValue": 1,
       "looseCast": 2
     },
     "test/unit/agents/acp/adapter-phase-a.test.ts": {
@@ -791,7 +781,6 @@
       "looseCast": 3
     },
     "test/unit/debate/session-helpers-resolver-model.test.ts": {
-      "absentValue": 5,
       "looseCast": 1
     },
     "test/unit/debate/runner-plan-signal.test.ts": {
@@ -857,7 +846,6 @@
       "looseCast": 9
     },
     "test/unit/config/merge.test.ts": {
-      "absentValue": 1,
       "looseCast": 47
     },
     "test/unit/config/smart-runner-flag.test.ts": {
@@ -1235,8 +1223,7 @@
       "looseCast": 1
     },
     "test/integration/cli/cli-routing-calibrate.test.ts": {
-      "absentValue": 2,
-      "looseCast": 47
+      "looseCast": 45
     },
     "test/integration/cli/cli-config-default-view.test.ts": {
       "looseCast": 2
