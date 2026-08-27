@@ -38,14 +38,20 @@ async function heartbeatLoop(
 ): Promise<void> {
   const logger = _heartbeatDeps.getSafeLogger();
 
+  // Capture this loop's own controller signal at launch. startHeartbeat()
+  // replaces _heartbeatAbort when it supersedes a running loop, so the loop
+  // must check the signal it actually slept on — not the module's current
+  // controller — to recognise that abort as a normal shutdown.
+  const signal = _heartbeatAbort?.signal;
+
   while (gen === _heartbeatGen && _heartbeatActive) {
     try {
-      await _heartbeatDeps.sleep(60_000, _heartbeatAbort?.signal);
+      await _heartbeatDeps.sleep(60_000, signal);
     } catch (err) {
       // MEM-3: stopHeartbeat() aborts the sleep — normal shutdown, exit the loop.
       // Genuine sleep errors (non-abort) still propagate to the outer catch so
       // they are logged, not silently swallowed.
-      if (_heartbeatAbort?.signal.aborted) break;
+      if (signal?.aborted) break;
       throw err;
     }
     if (gen !== _heartbeatGen || !_heartbeatActive) break;
@@ -89,6 +95,11 @@ export function startHeartbeat(
   jsonlFilePath?: string,
 ): void {
   const logger = _heartbeatDeps.getSafeLogger();
+
+  // Abort the previous loop's in-flight sleep before replacing the controller,
+  // so superseding a loop cancels its sleep immediately instead of leaving a
+  // live 60s timer running until the stale loop wakes and sees the gen change.
+  _heartbeatAbort?.abort();
 
   // Increment generation to invalidate any in-flight loop, then launch a fresh one.
   _heartbeatActive = true;

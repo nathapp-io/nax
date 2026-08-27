@@ -121,6 +121,49 @@ describe("crash-heartbeat — startHeartbeat", () => {
 
     expect(logger.calls.filter((c) => c.level === "warn")).toEqual([]);
   });
+
+  // Issue #1679: startHeartbeat() must abort the superseded loop's in-flight
+  // sleep when it is called again. Previously the old AbortController was
+  // dropped without aborting, leaving the superseded loop parked on a live 60s
+  // timer (an uncancellable Bun.sleep) for the rest of the process.
+  test("startHeartbeat supersedes a running loop by aborting its in-flight sleep", async () => {
+    const capturedSignals: Array<AbortSignal | undefined> = [];
+    let settleCount = 0;
+
+    _heartbeatDeps.sleep = (_ms: number, signal?: AbortSignal) => {
+      capturedSignals.push(signal);
+      // Hang until aborted — never resolve, so the loop stays parked in sleep.
+      return new Promise<void>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => {
+          settleCount++;
+          reject(signal.reason);
+        });
+      });
+    };
+
+    startHeartbeat(
+      makeStatusWriter(),
+      () => 0,
+      () => 0,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Supersede the first loop by starting a second heartbeat.
+    startHeartbeat(
+      makeStatusWriter(),
+      () => 0,
+      () => 0,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // The first loop's signal must be aborted promptly (not left on a timer),
+    // and the second loop gets its own, live controller.
+    expect(capturedSignals.length).toBe(2);
+    expect(capturedSignals[0]?.aborted).toBe(true);
+    expect(capturedSignals[1]?.aborted).toBe(false);
+    expect(settleCount).toBe(1);
+  });
+
   test("a stale-generation loop exits at the gen check when its sleep resolves after stopHeartbeat", async () => {
     // Line-51 guard: the loop re-checks the generation counter AFTER waking, so
     // a loop whose sleep resolves normally (rather than aborting) still exits

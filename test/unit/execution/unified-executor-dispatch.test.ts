@@ -14,12 +14,19 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeDispatchContext, makeMockRuntime, makePluginRegistry, makeStatusWriter } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { precomputeBatchPlan } from "@/execution/batching";
+import { stopHeartbeat } from "@/execution/crash-recovery";
 import type { SequentialExecutionContext } from "@/execution/unified-executor";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineEvent } from "@/pipeline/event-bus";
 import type { EscalationAttempt, PRD, UserStory } from "@/prd/types";
 
 const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
+
+// executeUnified starts a heartbeat that runner.ts normally owns; stop it here
+// so the unit suite does not leak parked 60s-timer loops (#1679).
+afterEach(() => {
+  stopHeartbeat();
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixture helpers

@@ -25,12 +25,19 @@ import {
 } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { _unifiedExecutorDeps, executeUnified } from "@/execution";
+import { stopHeartbeat } from "@/execution/crash-recovery";
 import type { SequentialExecutionContext } from "@/execution/unified-executor";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { PRD, UserStory } from "@/prd/types";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 
 const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
+
+// executeUnified starts a heartbeat that runner.ts normally owns; stop it here
+// so the unit suite does not leak parked 60s-timer loops (#1679).
+afterEach(() => {
+  stopHeartbeat();
+});
 
 function makePendingStory(id: string): UserStory {
   return makeStory({ id, title: `Story ${id}`, description: `Description for ${id}` });

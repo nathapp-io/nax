@@ -24,11 +24,18 @@ import {
   makeStatusWriter,
   makeStory,
 } from "@test/helpers";
+import { stopHeartbeat } from "@/execution/crash-recovery";
 import type { SequentialExecutionContext } from "@/execution/unified-executor";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { UserStory } from "@/prd/types";
 
 const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
+
+// executeUnified starts a heartbeat that runner.ts normally owns; stop it here
+// so the unit suite does not leak parked 60s-timer loops (#1679).
+afterEach(() => {
+  stopHeartbeat();
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixture helpers — delegate to shared factories (test-helpers.md); local
