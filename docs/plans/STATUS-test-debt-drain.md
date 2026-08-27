@@ -10,7 +10,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 
 ---
 
-## 0. Current state — re-measured 2026-08-27 (after §8.8, asNever gated by a biome plugin)
+## 0. Current state — re-measured 2026-08-27 (after §8.9, ratchetAllow drained to its floor)
 
 | Counter | Regex ratchet | Biome | Drain target? |
 |:--|--:|--:|:--|
@@ -21,18 +21,20 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 | `anyType` | 10 | **0** | done — rule at `"error"` (`archive/LOG-no-explicit-any-drain.md`) |
 | `nonNullAssert` | 2 | **0** | done — rule at `"error"` (`archive/LOG-non-null-assertion-drain.md`) |
 | `asNever` | 1 | **plugin: 0** | done — **rule at `error`** via `biome-plugins/no-as-never.grit` (§8.8); the 1 is a doc comment |
-| `ratchetAllow` | 103 | — | **yes — next target** |
+| `ratchetAllow` | 25 | — | done — floor reached (§8.9); every residue is a deliberate negative-test fixture or a sanctioned helper seam |
 | `tsSuppress` | 25 | — | yes — next |
-| `absentValue` | 17 | — | yes — next |
-| `looseCast` | 1795 | — | **no** — guard only, see below |
+| `absentValue` | 17 | — | yes |
+| `looseCast` | 1794 | — | **no** — guard only, see below |
 
-Four ratchets are closed and gated, and the phase-3c endgame is complete. `as unknown as`
+Five ratchets are closed and gated, and the phase-3c endgame is complete. `as unknown as`
 went 101 → 0 and is now a pure invariant: any nonzero reading is a regression to reject, not
 a number to work down. `noExplicitAny` went biome 1529 → 0 across twelve batches and 235
 files. `noNonNullAssertion` went biome 1064 → 0 across nine commits. Both biome rules now sit
 at `"error"` in `biome.json`'s `test/**` override, explicitly. The residual regex readings
 (`asAny` 1, `anyType` 10, `nonNullAssert` 2) are comments and string fixtures which biome does
-not see, and are baselined as such.
+not see, and are baselined as such. `ratchetAllow` went 70 → 25 (§8.9) — the remaining 25 are
+not backlog but the idiom's documented purpose: deliberately-impossible values whose
+impossibility *is* what the test asserts.
 
 `looseCast` is not a target. It exists so the TS2352 population ("convert the
 expression to `unknown` first") cannot escape into unmarked single casts. That job
@@ -986,3 +988,74 @@ which is the confirmation that the `.tsx` widening added nothing once the six we
 writing "no rule covers this shape" about `ratchetAllow`, `tsSuppress` or `absentValue`,
 check whether a GritQL plugin can express it. `absentValue<T>()` almost certainly can;
 `ratchetAllow` and `tsSuppress` are comment shapes and are correctly text-mode.
+
+### 8.9 Batch 8 — ratchetAllow drained to its floor, 70 → 25 (2026-08-27)
+
+The §0 table read 103; re-measuring first (§0: "re-measured, not carried forward")
+showed **70** — two closed drains had burned down the allow markers as collateral
+without anyone recording the number. First finding of the batch: **a stale §0 row had
+hidden real progress.**
+
+Three commits, three recipes — every one a seam fix at the helper or dep slot, never a
+call-site trick:
+
+**8.9a — spawn/dep seams, 70 → 38 (`ba6b18b`).** The largest cluster (~19 sites) was
+hand-rolled `{stdout, stderr, exited, kill}` literals cast into `_xDeps.spawn`. The repo
+already had the answer in `test/helpers/spawn.ts`; the fakes predated it. Extended
+`FakeProcSpec` additively with the three behaviors the fakes had been hand-rolling:
+`stdoutStall`/`stderrStall` (Bun post-kill wedged streams, which makeSpawnResult could not
+express), `delayMs` (slow-but-healthy process for deadline-ordering tests), and `onKill`
+(observability for SIGKILL-contract tests). queue-file-lock's four `readdir` casts fell to
+the callop-seam ruling again: `_queueLockDeps.readdir` was inferred as node's *overloaded*
+fs.readdir while the module only ever passes a directory string and reads string names;
+narrowed to `(path: string) => Promise<string[]>`, the real readdir is still assignable,
+and the mocks satisfy it bare. Escalation's nine `Parameters<typeof …>[n]` slice casts
+came from untyped fixture builders — replaced with shared
+`makeInProgressStory`/`makeEscalationContext`/`makeLogger` plus a real `LoadedHooksConfig`
+literal. Two `{ hooks: [] }` fixtures pinned an impossible shape (`HooksConfig.hooks` is a
+Record) — completed to `{ hooks: {} }`.
+
+**8.9b — fixture/typing seams, 38 → 25 (`61ccbb3`).** Nine files of cargo and one
+repeated lie:
+- `merge-agent-models-routing` BUG-10: `ModelsConfig` is `Record<string, Partial<ModelMap>>`
+  — the partial per-agent tier override always typechecked. Cargo.
+- `findings/cycle` BUG-38: `FixCycle.validate` returns `F[] | ValidateResult<F>` in union —
+  the cast hid that the stub's union value was already accepted. Cargo.
+- `acp/adapter` makeClient satisfied `AcpClient` directly. Cargo.
+- Two impossible-shape fixes per the §4 rule ("complete the fixture"): config-display's
+  ModelDef got its required `provider`; us004's partial config became `makeNaxConfig`.
+- execution-repo-scoped-fixes: full `PackageView` literal + dropped a hand-rolled crippled
+  runtime override (makeTestContext already ships a complete mock runtime with a dispatch bus).
+- spawn-client's private `env` reach moved to the sanctioned element-access route
+  (`client["env"]`) with no cast at all.
+- prior-run-failure's NaN/-1 attempts are valid `number`s — passed via `makeStoryMetrics`
+  overrides instead of corruption casts.
+
+**The floor.** The remaining 25 are individually reviewed and each is already commented at
+its site:
+
+| Sites | Population | Why unavoidable |
+|--:|:--|:--|
+| 5 + 4 | token-mapper / cost-calculate wire guards | feeds `"123"` where `number` is declared — simulating acpx contract violations the compiler rightly blocks |
+| 3 | provider-weights malformed manifests | defensive parsing of garbage input |
+| 2 | prior-run-failure corrupt metrics | `stories: undefined`, `storyId: undefined` — plugin-supplied data the type forbids |
+| 2 | merge-agent-models-routing BUG-06/routing-null | regression pins for `null` in config merge paths |
+| 2 | finish-narrative / pr-title | handing `undefined`/`42` to a `string` param — absence/wrong-type is the assertion |
+| 1 each | chain (`"abrt"` literal), repo-scoped-fix-record (commented "the cast is the point"), flake-triage-seam (`runtime: undefined` probe) | deliberate violations |
+| 3 | test/helpers call-op / fix-cycle-result / worktree-manager | the sanctioned seams from the closed drains (#1514 §5.3) — generic-in-return-position can't be satisfied by any concrete value |
+
+Per §0.1 there is no parser behind this counter and there cannot be one for comment shapes
+(§8.8), so "finished" means: text gone where the work was done, markers kept where the lie
+*is* the test — and reviewed as such. A future drop below 25 would be as suspicious as a rise.
+
+typecheck 0/0/0, check:all 24/24, full suite green before both `--update-baseline` runs.
+Baseline diffs show `ratchetAllow` strictly decreasing per commit; `looseCast` −1 once,
+from deleting the dead `textStream` helper in worktree/dependencies.test.ts (no counter
+traded — a single cast left alongside code that no longer exists). Every other counter flat.
+
+`absentValue` trade considered and refused: finish-narrative/prior-run-failure absence-tests
+could be rewritten onto `absentValue<T>()`, but §4 forbids raising one counter so another
+can fall, and route 4's own carve-out requires the traded site be called out rather than
+slipped under the delta — keeping the markers is the honest reading.
+
+Next target: `tsSuppress` (25).
