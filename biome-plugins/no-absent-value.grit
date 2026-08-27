@@ -9,13 +9,17 @@ language js
 // functions rather than calling them, so it does not match this pattern and
 // needs no exemption — unlike the regex counter, which exempts it by path.
 //
-// This replaces the `absentValue` counter in
-// scripts/check-test-escape-hatches.ts as the MEASURE. That counter is text:
-// it matches the identifiers inside the scanner's own string fixtures (which
-// it must then exempt by path) and misses any call reached through a
-// namespace or an alias. The counter stays as a secondary guard for the
-// residue a parser cannot see — prose — exactly as `asAny`, `nonNullAssert`
-// and `asNever` did when their rules were promoted.
+// This is the ONLY gate on the idiom. It replaced the `absentValue` counter in
+// scripts/check-test-escape-hatches.ts, which retired on 2026-08-27: that
+// counter was text, so it matched the identifiers inside the scanner's own
+// string fixtures (and had to exempt them by path), missed any call reached
+// through a namespace or an alias, and its whole remaining residue was prose.
+// A regex kept as a "secondary guard" behind a working rule guards nothing.
+//
+// Because nothing else watches this shape, the wiring is pinned behind
+// test/unit/scripts/biome-no-absent-value-plugin.test.ts. Keep it that way:
+// delete the `plugins` entry or move the `test/**` override and the gate stops
+// firing silently.
 
 `$fn<$_>()` where {
   or {

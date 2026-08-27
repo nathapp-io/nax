@@ -28,8 +28,9 @@ Two ratchets remain, guarding the side doors a clean typecheck can be bought wit
   `Object.assign`-ing mocks over it (`Object.assign` returns `T & U`), element access
   (`p["_x"]`) for a `private` reach, and an overload whose implementation signature is
   loose where the public one cannot be satisfied by any concrete value.
-- `check:test-escape-hatches` — counts the **eight** other ways to silence a type error;
-  fails if any of them grows.
+- `check:test-escape-hatches` — counts the **three** other ways to silence a type error
+  that no parser sees; fails if any of them grows. It counted eight until 2026-08-27,
+  when five retired to biome — see *What biome gates instead* below.
 
 Both behave like the existing `check:nax-error` / `check:import-cycles` ratchets: they have a `--update-baseline` to lower the threshold when intentional improvements land, and `--list` to surface offenders.
 
@@ -49,20 +50,37 @@ A strict `tsconfig.test.json` gate dropped onto 2140+ errors would have invited 
 | Escape hatch | Counted by | Notes |
 |:--|:--|:--|
 | `as unknown as T` | `check:test-as-unknown-as` | per match, not per line |
-| `as any` | `check:test-escape-hatches` (`asAny`) | 1399 at the start of the drain — the biggest hatch by far |
-| `@ts-expect-error` / `@ts-ignore` / `@ts-nocheck` | `check:test-escape-hatches` (`tsSuppress`) | |
-| `test-ratchet-allow: as-unknown-as` | `check:test-escape-hatches` (`ratchetAllow`) | the cast ratchet's own hatch, so it is ratcheted too |
-| `absentValue<T>()` / `nullValue<T>()` | `check:test-escape-hatches` (`absentValue`) | the sanctioned idiom for "this argument is deliberately missing" (`test/helpers/absent.ts`). Ratcheted, not free — see *Deliberately-absent values* below |
-| `any` in type position — `: any`, `<any>`, `Record<string, any>` | `check:test-escape-hatches` (`anyType`) | a **superset** of `asAny`. Added in phase 2: `: any` was counted by nothing, and annotating a parameter is the cheapest way to clear a `TS7006` without fixing it |
+| `@ts-expect-error` / `@ts-ignore` / `@ts-nocheck` | `check:test-escape-hatches` (`tsSuppress`) | a comment shape, so no parser can see it — correctly text-mode. At its floor; every residual site is a deliberate negative-test fixture |
+| `test-ratchet-allow: as-unknown-as` | `check:test-escape-hatches` (`ratchetAllow`) | the cast ratchet's own hatch, so it is ratcheted too. Also a comment shape, also at its floor |
 | single `as T` casts | `check:test-escape-hatches` (`looseCast`) | **not a drain target.** `TS2352` says *"convert the expression to `unknown` first"*, so a typecheck gate pushes debt toward casts; this counter makes that visible. The `as unknown as` tail is stripped before counting so the cast ratchet does not double-count it |
-| `as never` | `check:test-escape-hatches` (`asNever`) | the bottom type is assignable to **everything**, so one word silences any assignment error. `looseCast` anchors on `as [A-Z]` and missed it for two phases; 619 had accumulated when the counter landed |
-| postfix `!` (non-null assertion) | `check:test-escape-hatches` (`nonNullAssert`) | clears `TS18047`/`TS18048` with no runtime check. Biome's `noNonNullAssertion` is **off** for `test/**`, so before this counter nothing in the repo saw it at all; 827 had accumulated. Use `assertDefined()` from `test/helpers/assert-defined.ts` instead — it narrows *and* throws |
 
 Together they enforce "tests are valid instances of the types they claim to be", and that improvement is monotonic.
 
 **The counters are a closed system: no change may trade one against another.** Clearing a
-typecheck error by raising `anyType` is a failed change, not partial progress — and now that
-typecheck is a hard gate, it is the only trade still available, so it is the one to watch.
+typecheck error by raising `looseCast` is a failed change, not partial progress — and now
+that typecheck is a hard gate, it is the only trade still available, so it is the one to
+watch.
+
+## What biome gates instead
+
+Five counters retired from `check:test-escape-hatches` on 2026-08-27. Each shape now has a
+parser behind it at `error` severity, and **the parser is the measure** — a text regex kept
+as a "secondary guard" behind a working rule guards only prose, because prose is all its
+residue ever was.
+
+| Escape hatch | Gated by | Notes |
+|:--|:--|:--|
+| `as any`, and `any` in type position (`: any`, `<any>`, `Record<string, any>`) | biome `suspicious/noExplicitAny`, `error` for `test/**` | drained 1529 → 0. Annotating a parameter `: any` is still the cheapest non-fix for a `TS7006`; give the real type |
+| postfix `!` (non-null assertion) | biome `style/noNonNullAssertion`, `error` for `test/**` | drained 1064 → 0. Clears `TS18047`/`TS18048` with no runtime check. Use `assertDefined()` from `test/helpers/assert-defined.ts` — it narrows *and* throws |
+| `as never` | `biome-plugins/no-as-never.grit` (GritQL plugin) | the bottom type is assignable to **everything**, so one word silences any assignment error. Drained 603 → 0. There is no sanctioned `as never` |
+| `absentValue<T>()` / `nullValue<T>()` | `biome-plugins/no-absent-value.grit` (GritQL plugin) | the idiom for "this argument is deliberately missing" (`test/helpers/absent.ts`) — see *Deliberately-absent values* below |
+
+**Do not reintroduce a counter here for a shape biome already parses.** Fix the rule. And do
+not weaken the rules to make room: the severities and both plugins are pinned behind their
+own tests (`test/unit/scripts/biome-test-severity.test.ts`,
+`biome-no-as-never-plugin.test.ts`, `biome-no-absent-value-plugin.test.ts`), which assert the
+diagnostic *and* biome's exit code. Those tests are the backstop the retired counters used to
+be — a rule that has never been seen to fail is not known to be wired.
 
 ## When to lower the baseline
 
@@ -70,7 +88,7 @@ Only when a commit reduces the count deliberately. Do NOT lower to hide regressi
 
 ```bash
 bun run check:test-as-unknown-as:update    # after replacing M casts with factories
-bun run check:test-escape-hatches:update   # after removing `as any` / `: any` / suppressions
+bun run check:test-escape-hatches:update   # after removing suppressions / allow markers / casts
 ```
 
 Always run `bun run check:all` and see it green **before** any `--update-baseline`.
@@ -81,12 +99,15 @@ The update writes whatever it finds, a regression included.
 When the absence *is* the assertion — "what happens when this required argument is
 missing?" — use `absentValue<T>()` / `nullValue<T>()` from `test/helpers/absent.ts`
 rather than `undefined as unknown as T`. That file holds the project's only sanctioned
-generic type-lie, contained in one place and counted at the call site.
+generic type-lie, contained in one place and flagged at every call site.
 
-`test/helpers/absent.ts` is exempt from the `absentValue` counter **only** — its own
-declarations match the call-site pattern and would inflate it by two forever. Every other
-counter still grades that file (GitHub #1682). Exemptions are per-kind; do not add a
-whole-file one.
+The gate is `biome-plugins/no-absent-value.grit`, not a counter. `test/helpers/absent.ts`
+needs no exemption from it: the file *declares* the two functions rather than calling them,
+so it does not match the pattern. The retired `absentValue` counter did need a path
+exemption — a text regex cannot tell a declaration from a call — and that asymmetry is the
+clearest single argument for the parser.
+
+Exemptions in `EXEMPT_BY_KIND` are still per-kind, never per-file (GitHub #1682).
 
 ## Allow-list escape hatch
 
@@ -104,14 +125,13 @@ moves trailing comments, so all three positions count. The cast ratchet skips it
 - Don't reflow code to lower a count — joining two hatch-bearing lines, or splitting
   a line away from its allow marker. All the scanners count per match for this reason.
 - Don't annotate a parameter `: any` to clear a `TS7006` implicit-any error. That is the
-  cheapest possible non-fix; `anyType` exists to catch exactly it. Give the real type.
+  cheapest possible non-fix; `noExplicitAny` catches exactly it. Give the real type.
 - Don't reach for `as never` or a postfix `!`. Both were uncounted through phases 1–2 and
   are the cheapest fixes for the two error families left in the residue — a `Mock<() => X>`
-  in a typed dep slot, and `TS18047`/`TS18048`. Both are counted now. For `!`, the sanctioned
-  replacement is `assertDefined(value, label)`; there is no sanctioned `as never`.
+  in a typed dep slot, and `TS18047`/`TS18048`. Both are lint errors now. For `!`, the
+  sanctioned replacement is `assertDefined(value, label)`; there is no sanctioned `as never`.
 - Don't exclude files from a check, or add them to `EXEMPT_BY_KIND`. That map is only for
-  the ratchets' own test files, whose fixtures contain the literal patterns — plus
-  `test/helpers/absent.ts`, exempt from one counter and one counter only.
+  the ratchets' own test files, whose fixtures contain the literal patterns.
 - Don't resolve a conflict in `scripts/baselines/*.json` with `--update-baseline`. It
   writes whatever it measures, so a merge that lost fixes is recorded as the new floor
   with every gate still green. Resolve to the elementwise minimum of both sides (a file

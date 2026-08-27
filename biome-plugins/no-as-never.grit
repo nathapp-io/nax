@@ -4,14 +4,14 @@ language js
 // silences any assignment error in one word. It is a strictly stronger escape
 // hatch than `as any`, and biome ships no built-in rule for it.
 //
-// Scoped to `test/**` in biome.json. src/ still has 2 sites
-// (src/interaction/plugins/webhook-serve-compat.ts — `this`-argument casts on
-// `.call()`); widening the scope means draining those first.
+// This is the ONLY gate on the shape. It replaced the `asNever` counter in
+// scripts/check-test-escape-hatches.ts, which retired on 2026-08-27: that
+// counter was text, its glob missed `.tsx` for the whole drain, and its whole
+// remaining residue was prose. A regex kept as a "secondary guard" behind a
+// working rule guards nothing.
 //
-// This replaces the `asNever` counter in scripts/check-test-escape-hatches.ts
-// as the MEASURE. That counter is text and stays as a secondary guard for the
-// residue a parser cannot see (prose), exactly as `asAny` and `nonNullAssert`
-// did when their biome rules were promoted — see the script's doc comment.
+// Because nothing else watches this shape, the wiring is pinned behind
+// test/unit/scripts/biome-no-as-never-plugin.test.ts.
 `$expr as never` where {
   register_diagnostic(
     span = $expr,

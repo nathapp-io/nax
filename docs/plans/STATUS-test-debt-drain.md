@@ -10,21 +10,25 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 
 ---
 
-## 0. Current state — re-measured 2026-08-27 (after §8.13, both §8.11 src widenings undone)
+## 0. Current state — re-measured 2026-08-27 (after §8.14, five counters retired to biome)
 
-| Counter | Regex ratchet | Biome | Drain target? |
-|:--|--:|--:|:--|
-| `tsc --noEmit` (src) | **0** | — | hard gate |
-| `tsc --noEmit -p tsconfig.test.json` | **0** | — | hard gate |
-| `as unknown as` | **0** | — | done — closed invariant (`archive/LOG-as-unknown-as-drain.md`) |
-| `asAny` | 1 | **0** | done — rule at `"error"` (`archive/LOG-no-explicit-any-drain.md`) |
-| `anyType` | 10 | **0** | done — rule at `"error"` (`archive/LOG-no-explicit-any-drain.md`) |
-| `nonNullAssert` | 2 | **0** | done — rule at `"error"` (`archive/LOG-non-null-assertion-drain.md`) |
-| `asNever` | 1 | **plugin: 0** | done — **rule at `error`** via `biome-plugins/no-as-never.grit` (§8.8); the 1 is a doc comment |
-| `ratchetAllow` | 25 | — | done — floor reached (§8.9); every residue is a deliberate negative-test fixture or a sanctioned helper seam |
-| `tsSuppress` | 2 | — | done — 5 → 2 (§8.12); §8.10's floor held one directive that asserted nothing. The 2 are prose |
-| `absentValue` | 0 | **plugin: 0** | done — **rule at `error`** via `biome-plugins/no-absent-value.grit` (§8.12); drained to zero in §8.11 |
-| `looseCast` | 1790 | — | **no** — guard only, see below |
+| Shape | Gate | Reading | Drain target? |
+|:--|:--|--:|:--|
+| `tsc --noEmit` (src) | hard gate | **0** | hard gate |
+| `tsc --noEmit -p tsconfig.test.json` | hard gate | **0** | hard gate |
+| `as unknown as` | regex ratchet | **0** | done — closed invariant (`archive/LOG-as-unknown-as-drain.md`) |
+| `as any` / `any` in type position | biome `noExplicitAny` @ `error` | **0** | done (`archive/LOG-no-explicit-any-drain.md`) |
+| postfix `!` | biome `noNonNullAssertion` @ `error` | **0** | done (`archive/LOG-non-null-assertion-drain.md`) |
+| `as never` | plugin `no-as-never.grit` @ `error` | **0** | done (§8.8) |
+| `absentValue<T>()` / `nullValue<T>()` | plugin `no-absent-value.grit` @ `error` | **0** | done (§8.12) |
+| `ratchetAllow` | regex ratchet | 25 | done — floor reached (§8.9); every residue is a deliberate negative-test fixture or a sanctioned helper seam |
+| `tsSuppress` | regex ratchet | 2 | done — 5 → 2 (§8.12); §8.10's floor held one directive that asserted nothing. The 2 are prose |
+| `looseCast` | regex ratchet | 1790 | **no** — guard only, see below |
+
+`check:test-escape-hatches` now carries **three** counters, not eight. The five with a
+parser behind them retired in §8.14: a text regex kept as a "secondary guard" behind a
+working rule guards only prose, because prose was all its residue ever was. The three that
+remain — two comment shapes and the `looseCast` guard — have no parser and are the measure.
 
 Five ratchets are closed and gated, and the phase-3c endgame is complete. `as unknown as`
 went 101 → 0 and is now a pure invariant: any nonzero reading is a regression to reject, not
@@ -342,6 +346,12 @@ they were earned in: §4x = `archive/STATUS-1514-typecheck-drain.md`, §8.x of t
 - **Reproduce against the project's own script** (cast drain §8.13), not a hand-rolled invocation of the
   same test files. `bun test <dir>` misses `--timeout=60000` and turns a passing suite into a
   cascade of misleading failures. Run the gate, then read its exit code.
+- **A secondary guard behind a parser is not a guard** (§8.14). Once a rule sees the shape,
+  the regex's residue is by construction what the rule cannot see — comments and fixture
+  strings. It can then only fire on a comment. Before keeping a counter "as a secondary
+  guard", read what its residue actually contains, and ask the separate question: what was
+  this counter *incidentally* guarding? Here it was the biome severities themselves, which
+  had no test of their own until the counters were removed.
 
 ## 7. Where the archived detail lives
 
@@ -1366,3 +1376,73 @@ Typecheck 0/0/0, `check:all` 24/24, `bun run build` clean, suite 14183 + 1136 + 
 Coverage 87.84% lines / 87.50% functions (−0.05pp / −0.03pp: the deleted module was
 better-covered than average, so removing it and its tests lowers the ratio), per-file ratchet 101
 vs baseline 103, not re-baselined. No ratchet counter moved.
+
+### 8.14 The five counters with a parser behind them retire; the severities get a gate (2026-08-27)
+
+`check:test-escape-hatches` counted eight shapes. Five of them — `asAny`, `anyType`,
+`nonNullAssert`, `asNever`, `absentValue` — had a biome rule or GritQL plugin at `error`
+behind them, and each was kept anyway "as a secondary guard for the residue a parser cannot
+see". That sentence appears four times across the script, both `.grit` files and
+`.nax/rules/test-ratchets.md`, and it does not survive being read literally: the residue in
+question was 1 doc comment, 10 fixture strings, 2 prose `!` and 0 call sites. **A regex whose
+entire remaining population is prose cannot fail on anything but prose.** It is not a guard;
+it is a number that can only be broken by writing a comment.
+
+Retired, with their per-file baselines. Remaining: `tsSuppress`, `ratchetAllow`, `looseCast`
+— two comment shapes no parser will ever cover, and the cast guard. Baseline re-measured to
+`tsSuppress=2, ratchetAllow=25, looseCast=1790`; no reading moved, only the row count.
+
+#### What the removal exposed, and what had to be built before it was safe
+
+The counters were doing one real job nobody had written down. `noExplicitAny` and
+`noNonNullAssertion` are `error` for `test/**` **only because the override sets that
+severity explicitly**; the script's own doc comment warns that deleting the override lands
+them at Biome v2's default WARNING, where `biome check` exits 0 and two completed drains
+retire into no enforcement at all. Nothing in the suite tested that. Grep confirmed it:
+before this commit, `noExplicitAny`, `noNonNullAssertion` and `no-absent-value` appeared in
+**zero** test files. The `asAny` / `nonNullAssert` counters were the accidental backstop —
+they would have gone red as soon as the disarmed rules let sites back in.
+
+So removing them without replacement would have traded a weak guard for none. Two gates
+landed first:
+
+- `test/unit/scripts/biome-test-severity.test.ts` — lints a planted `test/unit/probe.test.ts`
+  under a faithful copy of the repo's own `biome.json` (plugin paths absolutised; assist
+  actions off) and asserts the diagnostic category, `severity: "error"`, **and a non-zero
+  exit code** — the thing CI actually reads. Also pins that both plugins fire through the
+  real override, since the `includes` glob carries the severities and the plugins together.
+- `test/unit/scripts/biome-no-absent-value-plugin.test.ts` — the sibling
+  `no-as-never-plugin.test.ts` never got. That plugin was wired in §8.12 with **no test at
+  all**, so it was already in the state §6 warns about.
+
+Both were mutation-probed before being trusted, per §6's *a rule that has never been seen to
+fail is not known to be wired*: setting `noExplicitAny` to `"off"` and unwiring
+`no-absent-value.grit` turned 4 of the 10 new assertions red, including both exit-code ones.
+`biome.json` was restored byte-identically.
+
+#### One seam, so a guarantee did not go untested
+
+Every entry in `EXEMPT_BY_KIND` is now `ALL_KINDS` — the only per-kind entry was
+`test/helpers/absent.ts`, exempt from `absentValue` alone, and it left with that counter.
+GitHub #1682's guarantee (an exemption is per kind, never per file) would then have been
+unreachable from a test. `scanEscapeHatches` takes `exemptions` as a defaulted parameter so
+the branch stays covered by a map the test supplies. The `absent.ts` exemption's removal
+moves no count: it was scoped to the retired counter, and the file's 1 `looseCast` was
+already graded.
+
+`biome-no-as-never-plugin.test.ts` keeps its `ALL_KINDS` exemption for a new reason — its
+`{} as Error` fixture is a negative control proving the plugin ignores an ordinary cast, and
+that is exactly the shape `looseCast` counts.
+
+#### New ruling for §6 — a secondary guard behind a parser is not a guard
+
+Once a rule sees the shape, the regex's residue is by construction the part the rule cannot
+see. Ask what that residue actually contains before keeping the counter: if the answer is
+"comments and fixture strings", the counter can only ever fire on a comment, and keeping it
+costs a baseline row, an exemption list and the false belief that something is watching. Ask
+the separate question too — *what was this counter incidentally guarding?* Here it was the
+rule's own severity, which had no test of its own.
+
+Typecheck 0/0/0, `bun run lint` clean, `check:all` 24/24, `bun test test/unit/scripts/`
+184 pass / 0 fail. Ratchet re-baselined deliberately (a row removal, not a count change) and
+said so here.
