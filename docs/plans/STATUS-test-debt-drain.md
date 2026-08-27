@@ -10,7 +10,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 
 ---
 
-## 0. Current state — re-measured 2026-08-27 (after §8.12, absentValue gated by a plugin and the AC4 floor corrected)
+## 0. Current state — re-measured 2026-08-27 (after §8.13, both §8.11 src widenings undone)
 
 | Counter | Regex ratchet | Biome | Drain target? |
 |:--|--:|--:|:--|
@@ -327,6 +327,18 @@ they were earned in: §4x = `archive/STATUS-1514-typecheck-drain.md`, §8.x of t
   plugin to `biome.json`, write a scratch file containing the banned shape and confirm
   `bun run lint` fails, then delete it. Zero diagnostics is the expected reading both when the
   rule works and when it was never loaded.
+- **An escalation you resolve yourself in the same batch is not an escalation** (§8.13). The
+  value of handing a site back is that someone re-derives it cold. §8.11 filed two src
+  widenings as escalations, answered them from the context that produced them, and shipped
+  both in the same commit — keeping the label and discarding the mechanism. Both readings were
+  wrong.
+- **"No caller" needs more than one instrument before you delete** (§8.13). A grep that finds
+  nothing is the weakest evidence there is. Confirm with the call graph, with the package's
+  own entry points (`main` / `exports` / `bin` — a library surface means callers you cannot
+  see), with every dynamic `import()` of the barrel, and finally with a build. Then ask the
+  separate question that decides the action: is this residue of a **superseded** design, or
+  scaffolding for an **unbuilt** one? Only the first is safe to delete, and the answer is
+  usually written in `src/` — here, in a comment naming the ADR that replaced it.
 - **Reproduce against the project's own script** (cast drain §8.13), not a hand-rolled invocation of the
   same test files. `bun test <dir>` misses `--timeout=60000` and turns a passing suite into a
   cascade of misleading failures. Run the gate, then read its exit code.
@@ -1273,3 +1285,84 @@ five sites a floor on the strength of what their comments claimed to assert. One
 asserted nothing, and thirty seconds with a scratch file would have shown it. The doc already
 demands re-derivation before writing "undrainable" (§6, three separate entries); a floor is the
 same claim with a friendlier name, and it is where a broken assertion goes to be preserved.
+
+---
+
+### 8.13 §8.11's "population 3" — both seams re-derived; one reverted, one deleted (2026-08-27)
+
+§8.11 filed two src widenings under *"two seams over-stated their contracts (escalation class,
+each loosens nothing)."* Both are §4's forbidden shape — *"Weakening a source type in `src/` so
+a fixture fits. The fixture is wrong, not the type"* — and the escalation class is exactly where
+§6 says to enumerate again rather than accept the first framing. Re-derived, both readings were
+wrong, in opposite directions.
+
+#### `resolveOutcome(..., agentManager)` — reverted; the tests never needed it
+
+§8.11's own sentence contains the refutation: *"production callers always pass a live
+`NaxRuntime.agentManager`."* All four `src/` call sites do. A parameter widened to admit a value
+no caller passes is not a documented contract, it is a weaker type — and after the fix below,
+nothing in `src/` **or** `test/` passes `undefined` either.
+
+The five tests were already building a `makeCaptureManager(captured)`. They assigned it to
+`_debateSessionDeps.agentManager` and then passed `undefined` for the parameter it was meant to
+be — reaching the value through the seam that broke rather than the one that works (§6). Passing
+it positionally removed the widening, **and** the module-level deps mutation, **and** both
+`beforeEach`/`afterEach` save-restore blocks. Five tests, 476 in `test/unit/debate/` green. The
+injection seam stays covered by `session-helpers.test.ts`, which injects through it in five
+places.
+
+`agentManager: IAgentManager` is restored.
+
+#### `FixStory.batchedACs?: string[]` — the premise was false and the module was dead
+
+The stated justification was *"pre-D1 persisted fix stories that lack it."* No such story can
+reach that code, because **nothing reaches that code at all.** Verified five ways, because a
+single `grep` that finds nothing is the weakest possible evidence (§6):
+
+| Instrument | Result |
+|:--|:--|
+| Graph `trace_path` / `query_graph` (index coverage checked, no recorded gaps) | only importers are the barrel and its own test; all four `CALLS` edges originate in the test |
+| `package.json` | no `main`, no `exports` — ships a `bin` only, so no external consumer is *possible* |
+| every `import("@/acceptance")` site, enumerated | none pulls these names |
+| the producer | `generateAndAddFixStories` / `executeFixStory` already deleted — `acceptance-loop.ts:115` says so |
+| `bun run build` after deletion | 1010 modules bundled, zero unresolved |
+
+And the reason it is dead is on the record in `src/`, at `runner-completion.ts:266`:
+
+> *ADR-022 replaced fix-story PRD mutation with in-place `runFixCycle` rectification — the
+> acceptance loop never appends `US-FIX-*` stories.*
+
+`SPEC-acceptance-fix-strategy.md` exists specifically to replace `convertFixStoryToUserStory()`,
+and its replacement shipped: `diagnose-first` is config-wired at `schemas.ts:289` and
+`acceptance-fix.ts` runs it. So `fix-generator.ts` is **residue of a superseded design, not
+scaffolding for an unbuilt one** — the distinction that decides whether "no caller" means delete
+or means wait.
+
+All 242 lines and their 383-line, 18-test file are deleted, with the four barrel exports. Suite
+14201 → **14183**, which is −18 exactly: the deleted tests and nothing else.
+
+**The `??` was never reachable.** The field and `fixStory.batchedACs ?? [fixStory.failedAC]`
+landed in the *same commit* (`ac949ec37`, BUG-073), so the fallback never guarded an older
+on-disk shape — it was written the same day as the required field it defends against. Three
+sibling filters (`acceptance-setup.ts`, `acceptance.ts`, `test-path.ts`) still strip `US-FIX-*`
+from PRDs nothing writes them to; those are harmless and out of scope here, but they are the
+same pattern and worth a look.
+
+#### What this says about the escalation class
+
+§8.11 was right to escalate both rather than force them — that is §5 working. What it then did
+was write a *ruling* in the escalation's own words ("each loosens nothing") and ship it in the
+same batch. §6 already warns that a held escalation's report is evidence, not a specification;
+this is the case where the report was the only thing consulted, and it was wrong twice: once by
+believing a comment (`?? ` proves a tolerated absence) and once by believing a justification
+("pre-D1 persisted stories") that thirty seconds of `git log -L` disproves.
+
+**New ruling for §6 — an escalation you resolve yourself in the same batch is not an
+escalation.** The value of handing a site back is that someone re-derives it cold. Filing it,
+answering it from the same context that produced it, and shipping both in one commit keeps the
+label and discards the mechanism.
+
+Typecheck 0/0/0, `check:all` 24/24, `bun run build` clean, suite 14183 + 1136 + 38 pass / 0 fail.
+Coverage 87.84% lines / 87.50% functions (−0.05pp / −0.03pp: the deleted module was
+better-covered than average, so removing it and its tests lowers the ratio), per-file ratchet 101
+vs baseline 103, not re-baselined. No ratchet counter moved.
