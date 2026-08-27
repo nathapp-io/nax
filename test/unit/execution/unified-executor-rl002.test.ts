@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { makeDispatchContext, makePluginRegistry, makePRD, makeStatusWriter, makeTestRuntime } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
+import { stopHeartbeat } from "@/execution/crash-recovery";
 import { _runCompletionDeps, handleRunCompletion } from "@/execution/lifecycle/run-completion";
 import { executeUnified, type SequentialExecutionContext } from "@/execution/unified-executor";
 import type { LoadedHooksConfig } from "@/hooks";
@@ -99,6 +100,12 @@ afterEach(() => {
   pipelineEventBus.emit = originalEmit;
   pipelineEventBus.clear();
   mock.restore();
+});
+
+// executeUnified starts a heartbeat that runner.ts normally owns; stop it here
+// so the unit suite does not leak parked 60s-timer loops (#1679).
+afterEach(() => {
+  stopHeartbeat();
 });
 
 // ---------------------------------------------------------------------------

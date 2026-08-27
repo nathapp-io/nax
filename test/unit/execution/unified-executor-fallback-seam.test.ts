@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import { makeDispatchContext, makePluginRegistry, makePRD, makeStatusWriter, makeTestRuntime } from "@test/helpers";
 import type { AgentFallbackRecord } from "@/agents/manager-types";
 import { DEFAULT_CONFIG } from "@/config/defaults";
+import { stopHeartbeat } from "@/execution/crash-recovery";
 import type { RunParallelBatchResult } from "@/execution/parallel-batch";
 import { _unifiedExecutorDeps, executeUnified, type SequentialExecutionContext } from "@/execution/unified-executor";
 import type { LoadedHooksConfig } from "@/hooks";
@@ -85,6 +86,12 @@ const origDeps = { ..._unifiedExecutorDeps };
 afterEach(() => {
   Object.assign(_unifiedExecutorDeps, origDeps);
   mock.restore();
+});
+
+// executeUnified starts a heartbeat that runner.ts normally owns; stop it here
+// so the unit suite does not leak parked 60s-timer loops (#1679).
+afterEach(() => {
+  stopHeartbeat();
 });
 
 /**

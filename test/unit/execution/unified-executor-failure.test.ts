@@ -19,6 +19,7 @@ import {
   makeStory,
 } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
+import { stopHeartbeat } from "@/execution/crash-recovery";
 import type { SequentialExecutionContext, SequentialExecutionResult } from "@/execution/unified-executor";
 import { executeUnified } from "@/execution/unified-executor";
 import type { LoadedHooksConfig } from "@/hooks";
@@ -28,6 +29,12 @@ import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
 
 const SRC = join(import.meta.dir, "../../../src");
+
+// executeUnified starts a heartbeat that runner.ts normally owns; stop it here
+// so the unit suite does not leak parked 60s-timer loops (#1679).
+afterEach(() => {
+  stopHeartbeat();
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // exec AC-23 — source-level: handlePipelineFailure has escalate→handleTierEscalation path
