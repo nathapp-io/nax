@@ -458,8 +458,10 @@ export class AgentManager implements IAgentManager {
     const logger = this._loggerOverride ?? getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
-    const fbEnabled = this._config.agent?.fallback?.enabled;
-    let currentAgent = resolveStartAgent(this, primaryAgent, fbEnabled, options.storyId, logger);
+    // No dead-primary skip here (nax#1722): `options.modelDef` is resolved for THIS agent
+    // and this path cannot re-resolve it — the manager's config slice carries no `models`.
+    // The hop budget is still shared with the run path.
+    let currentAgent = primaryAgent;
     let hopsSoFar = this._budget.spent(options.storyId);
     let staleRetryAttempts = 0;
     const maxStaleRetries = this._config.agent?.idleWatchdog?.maxRetryAttempts ?? 3;
