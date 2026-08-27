@@ -845,10 +845,10 @@ describe("TelegramInteractionPlugin - sendMessage timeout (BUG-7)", () => {
     });
 
     const plugin = new TelegramInteractionPlugin();
-    // @ts-expect-error bypass init to avoid getUpdates poller in this test
-    plugin.botToken = "bot-abc123";
-    // @ts-expect-error bypass init to avoid getUpdates poller in this test
-    plugin.chatId = "99999";
+    // Bypass init (which would start the getUpdates poller) — sanctioned
+    // element-access route for private fields, per test-debt drain §8.9.
+    plugin["botToken"] = "bot-abc123";
+    plugin["chatId"] = "99999";
 
     const start = Date.now();
     await expect(

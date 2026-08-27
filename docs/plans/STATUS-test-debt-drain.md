@@ -10,7 +10,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 
 ---
 
-## 0. Current state — re-measured 2026-08-27 (after §8.9, ratchetAllow drained to its floor)
+## 0. Current state — re-measured 2026-08-27 (after §8.10, tsSuppress drained to its floor)
 
 | Counter | Regex ratchet | Biome | Drain target? |
 |:--|--:|--:|:--|
@@ -22,8 +22,8 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 | `nonNullAssert` | 2 | **0** | done — rule at `"error"` (`archive/LOG-non-null-assertion-drain.md`) |
 | `asNever` | 1 | **plugin: 0** | done — **rule at `error`** via `biome-plugins/no-as-never.grit` (§8.8); the 1 is a doc comment |
 | `ratchetAllow` | 25 | — | done — floor reached (§8.9); every residue is a deliberate negative-test fixture or a sanctioned helper seam |
-| `tsSuppress` | 25 | — | yes — next |
-| `absentValue` | 17 | — | yes |
+| `tsSuppress` | 5 | — | done — floor reached (§8.10); every residue is a deliberate negative-type assertion or its load-bearing prose |
+| `absentValue` | 17 | — | yes — next |
 | `looseCast` | 1794 | — | **no** — guard only, see below |
 
 Five ratchets are closed and gated, and the phase-3c endgame is complete. `as unknown as`
@@ -1059,3 +1059,51 @@ can fall, and route 4's own carve-out requires the traded site be called out rat
 slipped under the delta — keeping the markers is the honest reading.
 
 Next target: `tsSuppress` (25).
+
+### 8.10 Batch 9 — tsSuppress drained to its floor, 25 → 5 (2026-08-27)
+
+One commit, three files, twenty sites — all the same recipe. Unlike every other counter
+in this drain, `tsSuppress` had no population problem at all: all 25 regex hits were real,
+and eighteen of them were a single shape — `// @ts-expect-error - accessing private method
+for testing` over a private-method call.
+
+**The recipe — sanctioned element access (§8.9's `client["env"]`).** TypeScript enforces
+accessibility on dot notation only; bracket access with a string literal is allowed and keeps
+the member fully typed (`MergeEngine["topologicalSort"](...)` returns `string[]`, not `any`).
+So the replacement is not an escape into weaker typing but a re-route through the hole TS
+itself provides, with zero casts:
+
+- `test/unit/execution/merge.test.ts` (−10) — all ten were private `topologicalSort`
+  calls; `engine.topologicalSort(…)` → `engine["topologicalSort"](…)`.
+- `test/unit/execution/worktree-manager.test.ts` (−8) — all eight were private
+  `parseWorktreeList` calls; same substitution.
+- `test/unit/interaction/plugins/telegram.test.ts` (−2) — two `@ts-expect-error` lines
+  above assignments to the private `botToken`/`chatId` fields ("bypass init to avoid the
+  getUpdates poller"); became `plugin["botToken"] = …` / `plugin["chatId"] = …` with the
+  explanatory comment kept (reworded so it no longer quotes the directive — it now says
+  what the code does and cites this drain).
+
+No fixture was incomplete anywhere in the batch: every suppressed line already typechecked
+modulo visibility. That makes this drain's population the inverse of the previous ones —
+where `as never` hid interface defects, `tsSuppress` was pure access-control plumbing, and
+none of it surfaced a latent bug or required a `src/` change.
+
+**The floor.** The remaining 5 all live in
+`test/unit/execution/lifecycle/run-regression.test.ts`:
+
+| Sites | What | Why unavoidable |
+|--:|:--|:--|
+| 4 | prose at :574–578 explaining the red-green mechanics of AC3/AC4 | load-bearing documentation of why the annotation sits on the property, not the declaration; §4 forbids deleting a comment that merely mentions the phrase |
+| 1 | the directive at :586 itself | **the suppression IS the test.** `_ac4TypeCheck` deliberately includes `agentManager` as an excess property to assert TS rejects it when `runtime` is missing. If that guarantee ever regressed, the directive would become *unused* → tsc fails the typecheck gate → red. It is an executable negative-type assertion whose enforcement rides tsconfig.test.json, not text luck. |
+
+Routes considered for :586 before declaring it a floor: spawning tsc against a fixture file
+(machinery of the scanner-scaffolding tests, for one site, and a *weaker* guarantee than the
+current in-gate assertion); type-level trickery (a type-level "this must be an error" can only
+fail compilation through an actual error line — which is exactly what needs suppressing). Kept:
+same reasoning as ratchetAllow's floor — where the marker *is* the assertion, keeping it is the
+honest reading.
+
+typecheck 0/0/0, `check:all` 24/24, full suite green before `--update-baseline`.
+Baseline diff shows `tsSuppress` 25 → 5, every other counter flat.
+
+Next target: `absentValue` (17).

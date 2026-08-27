@@ -1,7 +1,7 @@
 {
   "counts": {
     "asAny": 1,
-    "tsSuppress": 25,
+    "tsSuppress": 5,
     "ratchetAllow": 25,
     "absentValue": 17,
     "anyType": 10,
@@ -9,7 +9,7 @@
     "asNever": 1,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-27T05:26:07.341Z",
+  "updatedAt": "2026-08-27T05:40:14.898Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -64,9 +64,6 @@
     },
     "test/unit/execution/runner-resume-deps.test.ts": {
       "looseCast": 4
-    },
-    "test/unit/execution/merge.test.ts": {
-      "tsSuppress": 10
     },
     "test/unit/execution/deferred-review.test.ts": {
       "looseCast": 1
@@ -146,9 +143,6 @@
     },
     "test/unit/execution/_post-run-fixtures.ts": {
       "looseCast": 1
-    },
-    "test/unit/execution/worktree-manager.test.ts": {
-      "tsSuppress": 8
     },
     "test/unit/execution/story-orchestrator-flake-integration.test.ts": {
       "looseCast": 19
@@ -450,7 +444,6 @@
       "looseCast": 1
     },
     "test/unit/interaction/plugins/telegram.test.ts": {
-      "tsSuppress": 2,
       "looseCast": 4
     },
     "test/unit/interaction/plugins/telegram-authorization.test.ts": {

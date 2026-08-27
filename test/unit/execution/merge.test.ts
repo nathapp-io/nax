@@ -27,8 +27,7 @@ describe("MergeEngine.topologicalSort", () => {
     const storyIds = ["US-001", "US-002", "US-003"];
     const dependencies: StoryDependencies = {};
 
-    // @ts-expect-error - accessing private method for testing
-    const sorted = engine.topologicalSort(storyIds, dependencies);
+    const sorted = engine["topologicalSort"](storyIds, dependencies);
 
     expect(sorted.length).toBe(3);
     expect(sorted).toContain("US-001");
@@ -44,8 +43,7 @@ describe("MergeEngine.topologicalSort", () => {
       "US-003": ["US-002"],
     };
 
-    // @ts-expect-error - accessing private method for testing
-    const sorted = engine.topologicalSort(storyIds, dependencies);
+    const sorted = engine["topologicalSort"](storyIds, dependencies);
 
     expect(sorted).toEqual(["US-001", "US-002", "US-003"]);
   });
@@ -58,8 +56,7 @@ describe("MergeEngine.topologicalSort", () => {
       "US-004": ["US-002"],
     };
 
-    // @ts-expect-error - accessing private method for testing
-    const sorted = engine.topologicalSort(storyIds, dependencies);
+    const sorted = engine["topologicalSort"](storyIds, dependencies);
 
     expect(sorted.length).toBe(4);
 
@@ -84,8 +81,7 @@ describe("MergeEngine.topologicalSort", () => {
       "US-004": ["US-002", "US-003"],
     };
 
-    // @ts-expect-error - accessing private method for testing
-    const sorted = engine.topologicalSort(storyIds, dependencies);
+    const sorted = engine["topologicalSort"](storyIds, dependencies);
 
     expect(sorted.length).toBe(4);
 
@@ -110,8 +106,7 @@ describe("MergeEngine.topologicalSort", () => {
     };
 
     expect(() => {
-      // @ts-expect-error - accessing private method for testing
-      engine.topologicalSort(storyIds, dependencies);
+      engine["topologicalSort"](storyIds, dependencies);
     }).toThrow("Circular dependency detected");
   });
 
@@ -123,8 +118,7 @@ describe("MergeEngine.topologicalSort", () => {
     };
 
     expect(() => {
-      // @ts-expect-error - accessing private method for testing
-      engine.topologicalSort(storyIds, dependencies);
+      engine["topologicalSort"](storyIds, dependencies);
     }).toThrow("Circular dependency detected");
   });
 
@@ -136,8 +130,7 @@ describe("MergeEngine.topologicalSort", () => {
       "US-003": ["US-002"],
     };
 
-    // @ts-expect-error - accessing private method for testing
-    const sorted = engine.topologicalSort(storyIds, dependencies);
+    const sorted = engine["topologicalSort"](storyIds, dependencies);
 
     // Should sort US-002 before US-003, ignoring missing US-001
     expect(sorted).toEqual(["US-002", "US-003"]);
@@ -153,8 +146,7 @@ describe("MergeEngine.topologicalSort", () => {
       "US-005": ["US-003"],
     };
 
-    // @ts-expect-error - accessing private method for testing
-    const sorted = engine.topologicalSort(storyIds, dependencies);
+    const sorted = engine["topologicalSort"](storyIds, dependencies);
 
     expect(sorted.length).toBe(5);
     expect(sorted[0]).toBe("US-001");
@@ -176,8 +168,7 @@ describe("MergeEngine.topologicalSort", () => {
     const storyIds: string[] = [];
     const dependencies: StoryDependencies = {};
 
-    // @ts-expect-error - accessing private method for testing
-    const sorted = engine.topologicalSort(storyIds, dependencies);
+    const sorted = engine["topologicalSort"](storyIds, dependencies);
 
     expect(sorted.length).toBe(0);
   });
@@ -187,8 +178,7 @@ describe("MergeEngine.topologicalSort", () => {
     const storyIds = ["US-001"];
     const dependencies: StoryDependencies = {};
 
-    // @ts-expect-error - accessing private method for testing
-    const sorted = engine.topologicalSort(storyIds, dependencies);
+    const sorted = engine["topologicalSort"](storyIds, dependencies);
 
     expect(sorted).toEqual(["US-001"]);
   });
