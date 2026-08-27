@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { assertNaxError } from "@test/helpers";
 import { globalConfigDir } from "@/config/paths";
 import { NaxError } from "@/errors";
 import {
@@ -137,8 +138,8 @@ describe("claimProjectIdentity", () => {
   it("throws RUN_NAME_COLLISION when a different workdir claims the same key", async () => {
     await claimProjectIdentity(TEST_CLAIM_KEY, "/tmp/my-project", null);
     const err = await claimProjectIdentity(TEST_CLAIM_KEY, "/tmp/other-project", null).catch((e) => e);
-    expect(err).toBeInstanceOf(NaxError);
-    expect((err as NaxError).code).toBe("RUN_NAME_COLLISION");
+    assertNaxError(err);
+    expect(err.code).toBe("RUN_NAME_COLLISION");
   });
 
   it("updates lastSeen on subsequent calls for same workdir", async () => {

@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { makeNaxConfig, makeSpawn } from "@test/helpers";
+import { assertNaxError, makeNaxConfig, makeSpawn } from "@test/helpers";
 import {
   assertCompareAgentExclusive,
   buildContestantConfig,
@@ -196,11 +196,10 @@ describe("assertCompareAgentExclusive", () => {
       assertCompareAgentExclusive({ compare: "claude", agent: "codex" });
       throw new Error("expected NaxError to be thrown");
     } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      const naxErr = err as NaxError;
-      expect(naxErr.code).toBe("COMPARE_AGENT_EXCLUSIVE");
-      expect(naxErr.message).toContain("--compare");
-      expect(naxErr.message).toContain("--agent");
+      assertNaxError(err);
+      expect(err.code).toBe("COMPARE_AGENT_EXCLUSIVE");
+      expect(err.message).toContain("--compare");
+      expect(err.message).toContain("--agent");
     }
   });
 

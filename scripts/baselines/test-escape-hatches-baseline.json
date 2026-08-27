@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 25,
-    "looseCast": 1700
+    "looseCast": 1687
   },
-  "updatedAt": "2026-08-27T09:36:12.251Z",
+  "updatedAt": "2026-08-27T09:40:24.219Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -243,9 +243,6 @@
     "test/unit/routing/calibrate/propose.test.ts": {
       "looseCast": 3
     },
-    "test/unit/replay/discovery.test.ts": {
-      "looseCast": 2
-    },
     "test/unit/precheck/precheck-canonical-lint-orchestrator.test.ts": {
       "looseCast": 2
     },
@@ -283,7 +280,7 @@
       "looseCast": 1
     },
     "test/unit/prd/decompose-mapper.test.ts": {
-      "looseCast": 8
+      "looseCast": 6
     },
     "test/unit/prd/prd-reset-failed.test.ts": {
       "looseCast": 1
@@ -349,7 +346,7 @@
       "looseCast": 1
     },
     "test/unit/finish/state.test.ts": {
-      "looseCast": 3
+      "looseCast": 1
     },
     "test/unit/finish/pr-title.test.ts": {
       "ratchetAllow": 1
@@ -558,9 +555,6 @@
     "test/unit/bakeoff/coordinator.test.ts": {
       "looseCast": 21
     },
-    "test/unit/bakeoff/preflight.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/bakeoff/contestant.test.ts": {
       "looseCast": 3
     },
@@ -717,9 +711,6 @@
     "test/unit/debate/selectors/judge.test.ts": {
       "looseCast": 1
     },
-    "test/unit/debate/pre-phase/registry.test.ts": {
-      "looseCast": 2
-    },
     "test/unit/debate/verifiers/review-grounding-filter.test.ts": {
       "looseCast": 4
     },
@@ -728,9 +719,6 @@
     },
     "test/unit/debate/verifiers/checks.test.ts": {
       "looseCast": 7
-    },
-    "test/unit/debate/verifiers/registry.test.ts": {
-      "looseCast": 2
     },
     "test/unit/cli/setup-fill.test.ts": {
       "looseCast": 13
@@ -891,9 +879,6 @@
     "test/unit/runtime/cost-aggregator.test.ts": {
       "looseCast": 1
     },
-    "test/unit/runtime/paths.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/runtime/runtime.test.ts": {
       "looseCast": 1
     },
@@ -922,9 +907,6 @@
       "looseCast": 8
     },
     "test/unit/plan/debate-strategy.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/plan/strategies-factory.test.ts": {
       "looseCast": 1
     },
     "test/unit/plan/strategies.test.ts": {
