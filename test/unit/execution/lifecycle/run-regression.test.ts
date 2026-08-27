@@ -571,25 +571,33 @@ describe("runDeferredRegression — storyDurations + storyOutcomes", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // AC3/AC4: TypeScript type guards — runtime required, agentManager not a substitute
 //
-// These @ts-expect-error annotations are RED before implementation:
-//   - Before impl: `agentManager` satisfies the old interface (no TS error on the line)
-//     → @ts-expect-error is UNUSED → typecheck fails with "Unused @ts-expect-error"
-//   - After impl: `runtime` is required and missing → TS error on the line
-//     → @ts-expect-error correctly suppresses it → typecheck passes
+// Asserted at the type level, not with `@ts-expect-error` on a value literal.
+// The literal form could not express AC4: an object literal that both omits
+// `runtime` AND carries `agentManager` reports only the excess-property error
+// (TS2353) — TS suppresses the missing-property error (TS2741) once a literal
+// has an unknown key. So a single `@ts-expect-error` on `agentManager` went
+// green whether `runtime` was required or not, and the AC it claimed to pin
+// was never checked. The two constraints below are checked independently, and
+// `_Ac4Control` fails if the shape stops being satisfiable at all — without it
+// a typo in a property name would make both negatives hold vacuously.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// AC4: runtime is required even when agentManager is present
-const _ac4TypeCheck: DeferredRegressionOptions = {
-  config: {} as NaxConfig,
-  prd: {} as PRD,
-  workdir: "/tmp",
-  // @ts-expect-error — agentManager is not a substitute for the required runtime
-  // field. The directive sits on the property, not the declaration: TS reports the
-  // excess-property error at `agentManager`, so anchoring it above `const` left it
-  // unused while the real error went unsuppressed.
-  agentManager: {} as import("@/agents").IAgentManager,
-};
-void _ac4TypeCheck;
+/** Compile-time assertion: fails to typecheck (TS2344) unless `T` is `false`. */
+type AssertFalse<T extends false> = T;
+/** Compile-time assertion: fails to typecheck (TS2344) unless `T` is `true`. */
+type AssertTrue<T extends true> = T;
+
+type WithoutRuntime = { config: NaxConfig; prd: PRD; workdir: string };
+
+// AC4a: `runtime` is required — a shape without it does not satisfy the interface.
+type _Ac4RuntimeRequired = AssertFalse<WithoutRuntime extends DeferredRegressionOptions ? true : false>;
+// AC4b: `agentManager` is not a substitute — it is not a member of the interface.
+type _Ac4NoAgentManager = AssertFalse<"agentManager" extends keyof DeferredRegressionOptions ? true : false>;
+// Control: the same shape WITH `runtime` does satisfy it, so the two negatives
+// above are about the fields they name and not about a mistyped literal.
+type _Ac4Control = AssertTrue<
+  WithoutRuntime & { runtime: NaxRuntime } extends DeferredRegressionOptions ? true : false
+>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC5: runDeferredRegression reads agentManager from runtime.agentManager

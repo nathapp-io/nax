@@ -10,7 +10,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 
 ---
 
-## 0. Current state — re-measured 2026-08-27 (after §8.11, absentValue drained to zero — every counter with a real drain behind it is closed)
+## 0. Current state — re-measured 2026-08-27 (after §8.12, absentValue gated by a plugin and the AC4 floor corrected)
 
 | Counter | Regex ratchet | Biome | Drain target? |
 |:--|--:|--:|:--|
@@ -22,9 +22,9 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 | `nonNullAssert` | 2 | **0** | done — rule at `"error"` (`archive/LOG-non-null-assertion-drain.md`) |
 | `asNever` | 1 | **plugin: 0** | done — **rule at `error`** via `biome-plugins/no-as-never.grit` (§8.8); the 1 is a doc comment |
 | `ratchetAllow` | 25 | — | done — floor reached (§8.9); every residue is a deliberate negative-test fixture or a sanctioned helper seam |
-| `tsSuppress` | 5 | — | done — floor reached (§8.10); every residue is a deliberate negative-type assertion or its load-bearing prose |
-| `absentValue` | 0 | — | done — drained to zero (§8.11); it had no floor — every site was either cargo or re-modelable |
-| `looseCast` | 1794 | — | **no** — guard only, see below |
+| `tsSuppress` | 2 | — | done — 5 → 2 (§8.12); §8.10's floor held one directive that asserted nothing. The 2 are prose |
+| `absentValue` | 0 | **plugin: 0** | done — **rule at `error`** via `biome-plugins/no-absent-value.grit` (§8.12); drained to zero in §8.11 |
+| `looseCast` | 1790 | — | **no** — guard only, see below |
 
 Five ratchets are closed and gated, and the phase-3c endgame is complete. `as unknown as`
 went 101 → 0 and is now a pure invariant: any nonzero reading is a regression to reject, not
@@ -311,6 +311,22 @@ they were earned in: §4x = `archive/STATUS-1514-typecheck-drain.md`, §8.x of t
 - **A counter's glob is a ceiling too** (§8.8). Both ratchets read `**/*.ts`; `test/ui/`'s six
   `.tsx` files hid six real `as never` for the whole drain. Check what the scan does not reach
   before trusting what it reports — especially before calling a number a floor.
+- **"Floor reached" needs the same probe "undrainable" does** (§8.12). §8.10 ruled five
+  `tsSuppress` sites a floor on the strength of what their comments claimed to assert; one of
+  them asserted nothing, and a scratch file showed it in under a minute. A floor is an
+  "undrainable" ruling with a friendlier name, and it is where a broken assertion goes to be
+  preserved.
+- **An excess-property error masks a missing-property error** (§8.12, and `TS2353 is a floor`
+  from the typecheck drain). Once an object literal carries an unknown key, TS2353 is the
+  *only* diagnostic — the TS2741 for a missing required field is suppressed. A single
+  `@ts-expect-error` over such a literal therefore asserts far less than it looks like it does.
+  Prefer a type-level assertion (`AssertFalse<A extends B ? true : false>`), which checks one
+  constraint at a time, and pair the negatives with a positive control so a mistyped property
+  name cannot make them hold vacuously.
+- **A rule that has never been seen to fail is not known to be wired** (§8.12). After adding a
+  plugin to `biome.json`, write a scratch file containing the banned shape and confirm
+  `bun run lint` fails, then delete it. Zero diagnostics is the expected reading both when the
+  rule works and when it was never loaded.
 - **Reproduce against the project's own script** (cast drain §8.13), not a hand-rolled invocation of the
   same test files. `bun test <dir>` misses `--timeout=60000` and turns a passing suite into a
   cascade of misleading failures. Run the gate, then read its exit code.
@@ -1163,3 +1179,97 @@ diff: absentValue 17 → 0, looseCast −2 (collateral), every other counter fla
 (`src/session/manager-deps.ts` 56.25% vs 71.88%) reproducing identically on HEAD before this
 batch — per §8.7 policy the local coverage ratchet stays un-rebaselined; flagging rather
 than papering over.
+
+---
+
+### 8.12 The two the endgame left — `absentValue` gets its rule, and §8.10's floor loses one (2026-08-27)
+
+§8.11 closed the last drain and §0 read "every counter with a real drain behind it is closed."
+Two things were still open under that heading. Neither is a drain; both are the difference
+between a counter that reads zero and a counter that *cannot* rise.
+
+#### 1. `absentValue` was at zero with nothing holding it there
+
+§8.11 drained 17 → 0 and stopped. But the same paragraph in §0.1 that predicted a plugin could
+express this shape is the paragraph explaining why the regex is not the finish line — and
+`absentValue` at 0 with only a text ratchet behind it is precisely the state
+`noNonNullAssertion` was in when its regex read 792 and biome read 1064
+(`archive/LOG-non-null-assertion-drain.md`). Zero on the ratchet is not zero on the rule until
+a rule exists.
+
+`biome-plugins/no-absent-value.grit` is eleven lines — `` `$fn<$_>()` `` where `$fn` is
+`absentValue` or `nullValue` — and is now in `biome.json`'s `test/**` override alongside
+`no-as-never.grit`. Measured before wiring: **0 hits repo-wide, `src/` included**, so the
+promotion needed no exemption and bought nothing with a `biome-ignore` (§4).
+
+Mutation-tested rather than assumed: a scratch `test/unit/_grit-probe.test.ts` containing one
+`absentValue<string>()` and one `nullValue<string>()` makes `bun run lint` **fail** with two
+plugin diagnostics, and removing it makes lint pass. A rule that has never been seen to fail is
+not known to be wired.
+
+Two things the plugin gets that the counter cannot, both visible in the counter's own source:
+`scripts/check-test-escape-hatches.ts` exempts `test/helpers/absent.ts` **by path** because the
+regex cannot tell a declaration from a call, and the scanner's own test file matches its
+identifiers inside string fixtures. The plugin needs neither exemption. Two hand-maintained
+entries replaced by a pattern that is right by construction.
+
+The counter stays as the secondary guard for prose, exactly as `asAny`, `nonNullAssert` and
+`asNever` did on promotion.
+
+#### 2. §8.10's `tsSuppress` floor of 5 included one directive that asserted nothing
+
+§8.10 ruled the residue "a deliberate negative-type assertion or its load-bearing prose". Four
+of the five are prose and that half holds. The fifth —
+`run-regression.test.ts:586`, the AC4 guard — was a **deliberate negative-type assertion that
+did not work**, and the ruling was made without probing it.
+
+The claim it carries is "runtime is required even when agentManager is present". The shape is
+one `@ts-expect-error` on the `agentManager` property of a `DeferredRegressionOptions` literal
+that omits `runtime`. A throwaway file with both literals side by side, through
+`tsconfig.test.json`:
+
+```
+(5,7):  TS2741  Property 'runtime' is missing …            ← literal WITHOUT agentManager
+(16,3): TS2353  … 'agentManager' does not exist in type …  ← literal WITH agentManager
+```
+
+**TS2741 does not appear on the second literal.** Once an object literal carries an unknown
+key, the excess-property error is the only one reported; the missing-required-property error is
+suppressed. So the directive was catching TS2353 and nothing else, and the test went green
+whether `runtime` was required or not.
+
+That is `TS2353 is a floor` from the typecheck drain arriving from the other side: there it hid
+stacked dead keys behind one error, here it hid a missing required field, and both times the
+one visible diagnostic read as the whole story.
+
+The replacement is three type aliases and no directive — `AssertFalse<T extends false>` /
+`AssertTrue<T extends true>`, which fail with TS2344:
+
+- `_Ac4RuntimeRequired` — a shape without `runtime` is not assignable to the interface.
+- `_Ac4NoAgentManager` — `"agentManager"` is not in `keyof DeferredRegressionOptions`.
+- `_Ac4Control` — the same shape **with** `runtime` **is** assignable.
+
+The control is load-bearing: two negative assertions both hold vacuously if a property name is
+mistyped, which is the type-level form of §4's rule about `?.` passing vacuously. Three
+mutations in `src/execution/lifecycle/run-regression.ts`, each reverted before the next:
+
+| Mutation | Old form | New form |
+|:--|:--|:--|
+| `runtime: NaxRuntime` → `runtime?: NaxRuntime` | green | **TS2344 at `_Ac4RuntimeRequired`** |
+| add `agentManager?: unknown` to the interface | green | **TS2344 at `_Ac4NoAgentManager`** |
+| `workdir: string` → `workdir?: string` (unrelated field) | green | green — the assertions are specific |
+
+`tsSuppress` 5 → 2. The 2 are the prose in the comment explaining this replacement, which §4
+forbids deleting and which rewording to dodge a text regex would violate in spirit.
+
+#### Closing state
+
+Typecheck 0/0/0, `check:all` 24/24, suite green. Baseline diff: `tsSuppress` 5 → 2,
+`looseCast` 1792 → 1790 (a fall — the two `{} as NaxConfig` / `{} as PRD` in the deleted AC4
+literal), every other counter flat.
+
+**New ruling for §6 — "floor reached" needs the same probe "undrainable" does.** §8.10 called
+five sites a floor on the strength of what their comments claimed to assert. One of them
+asserted nothing, and thirty seconds with a scratch file would have shown it. The doc already
+demands re-derivation before writing "undrainable" (§6, three separate entries); a floor is the
+same claim with a friendlier name, and it is where a broken assertion goes to be preserved.
