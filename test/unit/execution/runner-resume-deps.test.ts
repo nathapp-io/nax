@@ -17,6 +17,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { assertNaxError } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { _runnerDeps, _runnerReentrancyGuard, _storyOrchestratorDeps, type RunOptions, run } from "@/execution";
@@ -161,10 +162,9 @@ describe("runner.run() — reentrancy guard", () => {
       caught = err;
     }
 
-    expect(caught).toBeInstanceOf(NaxError);
-    const nax = caught as NaxError;
-    expect(nax.code).toBe("RUNNER_REENTRANT_CALL");
-    expect(nax.context?.stage).toBe("execution");
+    assertNaxError(caught);
+    expect(caught.code).toBe("RUNNER_REENTRANT_CALL");
+    expect(caught.context?.stage).toBe("execution");
   });
 
   test("the guard is false before the first call and stays false after a setup-phase throw", async () => {

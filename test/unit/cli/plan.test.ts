@@ -8,10 +8,17 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { assertDefined, makeMockAgentManager, makeMockRuntime, makePRD, makeStory, makeTempDir } from "@test/helpers";
+import {
+  assertDefined,
+  assertNaxError,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makePRD,
+  makeStory,
+  makeTempDir,
+} from "@test/helpers";
 import { _planDeps, buildPlanComposition, planCommand, runPlanPipeline } from "@/cli";
 import { DEFAULT_CONFIG, type DebateStageConfig, type NaxConfig } from "@/config";
-import { NaxError } from "@/errors";
 import type { PRD } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
 
@@ -1115,9 +1122,9 @@ describe("runPlanPipeline (US-005)", () => {
         feature: "test-feature",
       }).catch((e) => e);
 
-      expect(err).toBeInstanceOf(NaxError);
-      expect((err as NaxError).code).toBe("PLAN_CRITIC_BLOCKED");
-      expect((err as NaxError).context?.specDeltasPath).toBeDefined();
+      assertNaxError(err);
+      expect(err.code).toBe("PLAN_CRITIC_BLOCKED");
+      expect(err.context?.specDeltasPath).toBeDefined();
     });
   });
 
@@ -1136,9 +1143,9 @@ describe("runPlanPipeline (US-005)", () => {
         feature: "test-feature",
       }).catch((e) => e);
 
-      expect(err).toBeInstanceOf(NaxError);
-      expect((err as NaxError).code).toBe("PLAN_PIPELINE_GROUND_FAILED");
-      expect((err as NaxError).context?.cause).toBe(originalError);
+      assertNaxError(err);
+      expect(err.code).toBe("PLAN_PIPELINE_GROUND_FAILED");
+      expect(err.context?.cause).toBe(originalError);
     });
   });
 

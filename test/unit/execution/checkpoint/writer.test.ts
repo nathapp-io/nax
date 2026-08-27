@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { NaxError } from "@/errors";
+import { assertNaxError } from "@test/helpers";
 import { CheckpointWriter } from "@/execution";
 
 function makeAppend() {
@@ -135,8 +135,7 @@ describe("CheckpointWriter.recordGreen error handling", () => {
     } catch (err) {
       caught = err;
     }
-    expect(caught).toBeInstanceOf(NaxError);
-    const nax = caught as NaxError;
-    expect(nax.context?.stage).toBe("checkpoint");
+    assertNaxError(caught);
+    expect(caught.context?.stage).toBe("checkpoint");
   });
 });

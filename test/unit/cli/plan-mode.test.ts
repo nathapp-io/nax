@@ -7,7 +7,14 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { assertDefined, makeLogger, makeMockAgentManager, makeMockRuntime, makeTempDir } from "@test/helpers";
+import {
+  assertDefined,
+  assertNaxError,
+  makeLogger,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeTempDir,
+} from "@test/helpers";
 import { _planDeps, planCommand, resolvePlanMode } from "@/cli";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
@@ -136,9 +143,9 @@ describe("planCommand — pipeline branch stub", () => {
       thrown = err;
     }
 
-    expect(thrown).toBeInstanceOf(NaxError);
-    expect((thrown as NaxError).code).toBe("PLAN_PIPELINE_GROUND_FAILED");
-    expect((thrown as NaxError).context?.stage).toBe("plan");
+    assertNaxError(thrown);
+    expect(thrown.code).toBe("PLAN_PIPELINE_GROUND_FAILED");
+    expect(thrown.context?.stage).toBe("plan");
   });
 
   // AC14: pipeline mode + debate.enabled emits one logger.warn then throws

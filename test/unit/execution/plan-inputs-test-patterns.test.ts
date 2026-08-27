@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeStory } from "@test/helpers";
+import { assertNaxError, makeNaxConfig, makeStory } from "@test/helpers";
 import { NaxError } from "@/errors";
 import { assemblePlanInputs } from "@/execution";
 
@@ -52,7 +52,8 @@ describe("assemblePlanInputs — test patterns validation (AC3)", () => {
       assemblePlanInputs(story, config, null);
       expect.unreachable("Should have thrown");
     } catch (err) {
-      expect((err as NaxError).code).toBe("TEST_PATTERNS_MISSING");
+      assertNaxError(err);
+      expect(err.code).toBe("TEST_PATTERNS_MISSING");
     }
   });
 
@@ -64,7 +65,8 @@ describe("assemblePlanInputs — test patterns validation (AC3)", () => {
       assemblePlanInputs(story, config, null);
       expect.unreachable("Should have thrown");
     } catch (err) {
-      expect((err as NaxError).context?.stage).toBe("execution-inputs");
+      assertNaxError(err);
+      expect(err.context?.stage).toBe("execution-inputs");
     }
   });
 
@@ -76,7 +78,8 @@ describe("assemblePlanInputs — test patterns validation (AC3)", () => {
       assemblePlanInputs(story, config, null);
       expect.unreachable("Should have thrown");
     } catch (err) {
-      expect((err as NaxError).context?.storyId).toBe("US-042");
+      assertNaxError(err);
+      expect(err.context?.storyId).toBe("US-042");
     }
   });
 
@@ -88,7 +91,8 @@ describe("assemblePlanInputs — test patterns validation (AC3)", () => {
       assemblePlanInputs(story, config, null);
       expect.unreachable("Should have thrown");
     } catch (err) {
-      expect((err as NaxError).context?.field).toBe("resolvedTestPatterns");
+      assertNaxError(err);
+      expect(err.context?.field).toBe("resolvedTestPatterns");
     }
   });
 
@@ -100,7 +104,8 @@ describe("assemblePlanInputs — test patterns validation (AC3)", () => {
       assemblePlanInputs(story, config, null);
       expect.unreachable("Should have thrown");
     } catch (err) {
-      const msg = (err as NaxError).message.toLowerCase();
+      assertNaxError(err);
+      const msg = err.message.toLowerCase();
       expect(msg).toContain("test");
       expect(msg.length).toBeGreaterThan(0);
     }
@@ -114,7 +119,8 @@ describe("assemblePlanInputs — test patterns validation (AC3)", () => {
       assemblePlanInputs(story, config, null);
       expect.unreachable("Should have thrown");
     } catch (err) {
-      expect(/^[A-Z_]+$/.test((err as NaxError).code)).toBe(true);
+      assertNaxError(err);
+      expect(/^[A-Z_]+$/.test(err.code)).toBe(true);
     }
   });
 
@@ -126,8 +132,9 @@ describe("assemblePlanInputs — test patterns validation (AC3)", () => {
       assemblePlanInputs(story, config, null);
       expect.unreachable("Should have thrown");
     } catch (err) {
+      assertNaxError(err);
       // Story validation fires first
-      expect((err as NaxError).code).toBe("STORY_ID_INVALID");
+      expect(err.code).toBe("STORY_ID_INVALID");
     }
   });
 
@@ -141,8 +148,9 @@ describe("assemblePlanInputs — test patterns validation (AC3)", () => {
       assemblePlanInputs(story, config, null);
       expect.unreachable("Should have thrown");
     } catch (err) {
+      assertNaxError(err);
       // Config validation fires before test patterns
-      expect((err as NaxError).code).toBe("CONFIG_INVALID");
+      expect(err.code).toBe("CONFIG_INVALID");
     }
   });
 

@@ -21,6 +21,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import {
   assertDefined,
+  assertNaxError,
   makeCallOp,
   makeFixCycleResult,
   makeIteration,
@@ -30,7 +31,6 @@ import {
   makeTestRuntime,
 } from "@test/helpers";
 import { pickSelector } from "@/config";
-import { NaxError } from "@/errors";
 import {
   _storyOrchestratorDeps,
   formatPhaseResultMessage,
@@ -246,8 +246,8 @@ describe("StoryOrchestratorBuilder — AC2: build() throws ORCHESTRATOR_NO_IMPLE
     } catch (err) {
       caught = err;
     }
-    expect(caught).toBeInstanceOf(NaxError);
-    expect((caught as NaxError).code).toBe("ORCHESTRATOR_NO_IMPLEMENTER");
+    assertNaxError(caught);
+    expect(caught.code).toBe("ORCHESTRATOR_NO_IMPLEMENTER");
   });
 });
 

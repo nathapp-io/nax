@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeSparseNaxConfig, makeStory } from "@test/helpers";
+import { assertNaxError, makeNaxConfig, makeSparseNaxConfig, makeStory } from "@test/helpers";
 import { NaxError } from "@/errors";
 import { assemblePlanInputs } from "@/execution";
 
@@ -41,7 +41,8 @@ describe("assemblePlanInputs — model tier mapping validation", () => {
       assemblePlanInputs(story, config);
       expect.unreachable("Should have thrown");
     } catch (err) {
-      expect((err as NaxError).code).toBe("CONFIG_INVALID");
+      assertNaxError(err);
+      expect(err.code).toBe("CONFIG_INVALID");
     }
   });
 
@@ -53,7 +54,8 @@ describe("assemblePlanInputs — model tier mapping validation", () => {
       assemblePlanInputs(story, config);
       expect.unreachable("Should have thrown");
     } catch (err) {
-      expect((err as NaxError).context?.field).toBe("models");
+      assertNaxError(err);
+      expect(err.context?.field).toBe("models");
     }
   });
 
@@ -65,7 +67,8 @@ describe("assemblePlanInputs — model tier mapping validation", () => {
       assemblePlanInputs(story, config);
       expect.unreachable("Should have thrown");
     } catch (err) {
-      expect((err as NaxError).context?.stage).toBe("execution-inputs");
+      assertNaxError(err);
+      expect(err.context?.stage).toBe("execution-inputs");
     }
   });
 
@@ -103,7 +106,8 @@ describe("assemblePlanInputs — model tier mapping validation", () => {
       assemblePlanInputs(story, config);
       expect.unreachable("Should have thrown");
     } catch (err) {
-      expect((err as NaxError).message.toLowerCase()).toContain("model");
+      assertNaxError(err);
+      expect(err.message.toLowerCase()).toContain("model");
     }
   });
 
@@ -115,7 +119,8 @@ describe("assemblePlanInputs — model tier mapping validation", () => {
       assemblePlanInputs(story, config);
       expect.unreachable("Should have thrown");
     } catch (err) {
-      expect((err as NaxError).context?.storyId).toBe("US-042");
+      assertNaxError(err);
+      expect(err.context?.storyId).toBe("US-042");
     }
   });
 
@@ -131,8 +136,9 @@ describe("assemblePlanInputs — model tier mapping validation", () => {
       assemblePlanInputs(story, config);
       expect.unreachable("Should have thrown");
     } catch (err) {
+      assertNaxError(err);
       // The agent.default guard fires first; field should be "agent.default"
-      expect((err as NaxError).context?.field).toBe("agent.default");
+      expect(err.context?.field).toBe("agent.default");
     }
   });
 });

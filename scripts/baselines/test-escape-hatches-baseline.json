@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 25,
-    "looseCast": 1772
+    "looseCast": 1700
   },
-  "updatedAt": "2026-08-27T09:19:24.310Z",
+  "updatedAt": "2026-08-27T09:36:12.251Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -249,9 +249,6 @@
     "test/unit/precheck/precheck-canonical-lint-orchestrator.test.ts": {
       "looseCast": 2
     },
-    "test/unit/commands/migrate.test.ts": {
-      "looseCast": 4
-    },
     "test/unit/commands/curator-gc.test.ts": {
       "looseCast": 7
     },
@@ -260,9 +257,6 @@
     },
     "test/unit/commands/resume.test.ts": {
       "looseCast": 2
-    },
-    "test/unit/commands/common.test.ts": {
-      "looseCast": 14
     },
     "test/unit/commands/replay.test.ts": {
       "looseCast": 20
@@ -369,14 +363,8 @@
     "test/unit/hooks/on-all-stories-complete.test.ts": {
       "looseCast": 1
     },
-    "test/unit/execution/plan-inputs.test.ts": {
-      "looseCast": 9
-    },
     "test/unit/execution/story-orchestrator.test.ts": {
-      "looseCast": 3
-    },
-    "test/unit/execution/story-orchestrator-duplicate-phase.test.ts": {
-      "looseCast": 1
+      "looseCast": 2
     },
     "test/unit/execution/nbf-readonly-flake-triage.test.ts": {
       "looseCast": 5
@@ -442,7 +430,7 @@
       "looseCast": 1
     },
     "test/unit/execution/runner-resume-deps.test.ts": {
-      "looseCast": 4
+      "looseCast": 3
     },
     "test/unit/execution/lifecycle-completion.test.ts": {
       "looseCast": 2
@@ -450,14 +438,8 @@
     "test/unit/execution/helpers.test.ts": {
       "looseCast": 1
     },
-    "test/unit/execution/plan-inputs-test-patterns.test.ts": {
-      "looseCast": 8
-    },
     "test/unit/execution/story-scoped-fix-budget.test.ts": {
       "looseCast": 3
-    },
-    "test/unit/execution/plan-inputs-models.test.ts": {
-      "looseCast": 6
     },
     "test/unit/execution/deferred-review.test.ts": {
       "looseCast": 1
@@ -484,7 +466,7 @@
       "looseCast": 8
     },
     "test/unit/execution/execution-stage.test.ts": {
-      "looseCast": 4
+      "looseCast": 1
     },
     "test/unit/execution/rectification-oscillation-circuit-breaker.test.ts": {
       "looseCast": 19
@@ -565,7 +547,7 @@
       "looseCast": 5
     },
     "test/unit/execution/checkpoint/writer.test.ts": {
-      "looseCast": 4
+      "looseCast": 3
     },
     "test/unit/findings/_cycle-fixtures.ts": {
       "looseCast": 1
@@ -750,12 +732,6 @@
     "test/unit/debate/verifiers/registry.test.ts": {
       "looseCast": 2
     },
-    "test/unit/cli/rules.test.ts": {
-      "looseCast": 5
-    },
-    "test/unit/cli/plan-decompose-ac-repair.test.ts": {
-      "looseCast": 2
-    },
     "test/unit/cli/setup-fill.test.ts": {
       "looseCast": 13
     },
@@ -763,7 +739,7 @@
       "looseCast": 4
     },
     "test/unit/cli/plan-mode.test.ts": {
-      "looseCast": 4
+      "looseCast": 2
     },
     "test/unit/cli/rules-lint-isolation.test.ts": {
       "looseCast": 1
@@ -802,13 +778,10 @@
       "looseCast": 10
     },
     "test/unit/cli/plan.test.ts": {
-      "looseCast": 17
+      "looseCast": 13
     },
     "test/unit/cli/plan-decompose-guards.test.ts": {
       "looseCast": 5
-    },
-    "test/unit/cli/rules-migrate-plan.test.ts": {
-      "looseCast": 2
     },
     "test/unit/cli/init-detect-ui.test.ts": {
       "looseCast": 16
@@ -1067,7 +1040,7 @@
       "looseCast": 3
     },
     "test/unit/context/engine/query-scratch.test.ts": {
-      "looseCast": 2
+      "looseCast": 1
     },
     "test/unit/context/engine/effectiveness-gate.test.ts": {
       "looseCast": 1
@@ -1091,7 +1064,7 @@
       "looseCast": 2
     },
     "test/unit/context/engine/pull-tools.test.ts": {
-      "looseCast": 6
+      "looseCast": 2
     },
     "test/unit/context/engine/lint-config-factory.test.ts": {
       "looseCast": 1
@@ -1142,7 +1115,7 @@
       "looseCast": 6
     },
     "test/unit/context/engine/providers/static-rules.test.ts": {
-      "looseCast": 6
+      "looseCast": 2
     },
     "test/unit/context/engine/providers/feature-context-fragments-realfs.test.ts": {
       "looseCast": 3

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { makeStory } from "@test/helpers";
+import { assertNaxError, makeStory } from "@test/helpers";
 import { NaxError } from "@/errors";
 import { StoryOrchestratorBuilder } from "@/execution/story-orchestrator";
 
@@ -19,7 +19,8 @@ describe("StoryOrchestratorBuilder — duplicate phase guard", () => {
       b.addImplementer(INPUT);
       expect(true).toBe(false); // should not reach
     } catch (err) {
-      expect((err as NaxError).code).toBe("ORCHESTRATOR_PHASE_DUPLICATE");
+      assertNaxError(err);
+      expect(err.code).toBe("ORCHESTRATOR_PHASE_DUPLICATE");
     }
   });
 

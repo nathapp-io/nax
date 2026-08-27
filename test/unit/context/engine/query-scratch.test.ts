@@ -13,7 +13,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { cleanupTempDir, makeLogger, makeStory, makeTempDir } from "@test/helpers";
+import { assertNaxError, cleanupTempDir, makeLogger, makeStory, makeTempDir } from "@test/helpers";
 import {
   _pullToolsDeps,
   createRunCallCounter,
@@ -23,7 +23,6 @@ import {
   PullToolBudget,
   QUERY_SCRATCH_DESCRIPTOR,
 } from "@/context/engine";
-import { NaxError } from "@/errors";
 import type { ScratchEntry } from "@/session";
 import { appendScratchEntry, scratchFilePath } from "@/session";
 
@@ -320,8 +319,8 @@ describe("handleQueryScratch", () => {
     } catch (e) {
       threw = e;
     }
-    expect(threw).toBeInstanceOf(NaxError);
-    expect((threw as NaxError).code).toBe("PULL_TOOL_BUDGET_EXHAUSTED");
+    assertNaxError(threw);
+    expect(threw.code).toBe("PULL_TOOL_BUDGET_EXHAUSTED");
   });
 
   test("reads scratch from multiple scratch dirs (union)", async () => {
