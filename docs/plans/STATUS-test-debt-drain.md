@@ -10,7 +10,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 
 ---
 
-## 0. Current state — re-measured 2026-08-27 (after batch 6, 74 → 16)
+## 0. Current state — re-measured 2026-08-27 (after batch 7, 16 → 1)
 
 | Counter | Regex ratchet | Biome | Drain target? |
 |:--|--:|--:|:--|
@@ -20,11 +20,11 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 | `asAny` | 1 | **0** | done — rule at `"error"` (`archive/LOG-no-explicit-any-drain.md`) |
 | `anyType` | 10 | **0** | done — rule at `"error"` (`archive/LOG-no-explicit-any-drain.md`) |
 | `nonNullAssert` | 2 | **0** | done — rule at `"error"` (`archive/LOG-non-null-assertion-drain.md`) |
-| `asNever` | **16** | — | **yes — current target (§1)** |
-| `ratchetAllow` | 103 | — | yes — next |
+| `asNever` | **1** | — | done — 1 phantom comment, §4-forbidden to delete (§8.7) |
+| `ratchetAllow` | 103 | — | **yes — next target** |
 | `tsSuppress` | 25 | — | yes — next |
 | `absentValue` | 17 | — | yes — next |
-| `looseCast` | 1798 | — | **no** — guard only, see below |
+| `looseCast` | 1795 | — | **no** — guard only, see below |
 
 Four ratchets are closed and gated, and the phase-3c endgame is complete. `as unknown as`
 went 101 → 0 and is now a pure invariant: any nonzero reading is a regression to reject, not
@@ -124,7 +124,11 @@ in milliseconds.
 
 ---
 
-## 1. Current target — `asNever` (603 sites, 117 files)
+## 1. Closed drain — `asNever` (603 → 1, seven batches)
+
+**Closed 2026-08-27 at 1** — a comment in `full-suite-rectify.test.ts` that merely quotes the
+phrase, which §4 forbids deleting. The route order below is the record of how it was drained
+and is the reference for the next counter; the per-file queue it names is historical.
 
 `as never` is assignable to **every** type, so it silences any assignment error outright — a
 strictly stronger escape hatch than `as any`, and lowercase, so `looseCast` (which anchors on
@@ -288,6 +292,16 @@ they were earned in: §4x = `archive/STATUS-1514-typecheck-drain.md`, §8.x of t
   that invalidate them precisely because they cannot fail.
 - **Verifying a cluster costs about as much as doing it.** Delegate a proven recipe with many
   sites left, not a small cluster — under roughly ten sites the review pass finishes the work.
+- **Typechecking is not evidence that a stub is typed** (§8.7). A generic helper constrained to
+  `(...args: any[]) => any` — bun's `mock()` is one — contextually types an unannotated
+  callback's parameters from the *constraint*, so they are `any` with no `noImplicitAny`
+  error. Probe it: add a nonexistent property and confirm `tsc` rejects it. The route out is
+  an annotated `impl` parameter on an install helper (`installCallOp` / `installPlanCallOp`).
+- **A seam's inferred type over-states it** (§8.7). `_hybridDeps.callOp` is declared
+  monomorphic and `_confirmDeps.exit` should never have inferred `never`: the whole point of
+  an injectable dependency is that a substitute can satisfy it. When "no stub can satisfy this
+  slot", ask what the seam *should* declare before concluding the site is undrainable — and
+  check whether a sibling module already declares it correctly.
 - **Reproduce against the project's own script** (cast drain §8.13), not a hand-rolled invocation of the
   same test files. `bun test <dir>` misses `--timeout=60000` and turns a passing suite into a
   cascade of misleading failures. Run the gate, then read its exit code.
@@ -819,3 +833,78 @@ had been held since §8.3/§8.5.
 Typecheck 0/0/0, `check:all` 24/24, full suite 14194 pass / 1 fail → 14195 pass after `debate-strategy` `toMatchObject` fix before `--update-baseline`; baseline diff shows `asNever` 74 → 16 (−58), every other counter flat (`looseCast` 1798, `asAny` 1, etc.).
 
 **Remaining 16:** the 12 `mockImplementation as never` in `test/unit/debate/runner-plan.test.ts` (generic `<I,O,C>` returning `{success:true,rebut:...}` — any fix trades `asNever` for `looseCast` `as DebateHybridOutput` etc., per §8.5 held) + 2 in `test/unit/debate/runner-plan-signal.test.ts` (same pattern) + 1 `confirm.test.ts` (`_confirmDeps.exit` mocking `()=>never` with a returning stub — making it truly `never` would throw inside the `data` handler and break `emit`) + 1 phantom comment in `full-suite-rectify.test.ts` (§4 forbidden). No other `as never` remains that can be drained without a counter trade or a `src/` change beyond the two already landed.
+
+### 8.7 Batch 7 — the held-back 15, via two src seams, 16 → 1 (2026-08-27)
+
+The residue §8.6 called undrainable "without a counter trade or a `src/` change". Both
+were src changes, and §6's "every route out trades a counter is a survey, not a proof"
+applied again: the survey had enumerated *stub shapes*, never asked what the **seam**
+should be.
+
+**Src change 1 — `src/debate/runner-plan-deps.ts` (new), `runner-plan.ts` (−3 call sites).**
+The 14 debate sites were all stubs for a generic dispatch: `spyOn(callModule, "callOp")
+.mockImplementation(async <I, O, C>(...) => Promise<O>)`, where no concrete literal can
+satisfy `O`. The sibling module `runner-hybrid.ts` had already solved this and said so in
+a comment: `_hybridDeps.callOp` is declared **monomorphic** — `(ctx, op: typeof
+hybridDebaterOp, input: DebateHybridInput) => Promise<DebateHybridOutput>` — because
+"this module dispatches exactly one op, so the inferred generic signature over-stated the
+seam and no stub could satisfy it without a cast (#1514 callop-seam)".
+`runner-plan.ts` dispatches exactly one op too (`planDebaterOp`, in all three of paths
+A/B/C) and had simply never been given the seam. Added `_planDeps` with the same
+monomorphic shape; the three `callModule.callOp(debaterCtx, planDebaterOp, …)` calls now
+go through it. **Loosens nothing** — narrowing a generic to the single op it is always
+called with; `runPlan`'s behaviour and return types are unchanged.
+
+The seam lives in its own module because inlining it pushed `runner-plan.ts` to 414 lines
+and `session-helpers.test.ts` AC1 caps `src/debate/**` at 400. That gate caught it, not review.
+
+**Src change 2 — `src/cli/confirm.ts`.** `_confirmDeps` was an unannotated object literal,
+so `exit: (code) => process.exit(code)` inferred `=> never`. That over-stated the seam in
+exactly the same way: the point of an injectable exit is that a substitute records the code
+and *returns*, which no `never`-returning stub can do — hence the test's
+`return undefined as never`. Annotated `_confirmDeps` explicitly with `exit: (code: number)
+=> void`. Nothing depended on the unreachability: the sole call site in `onData` already
+`return`s explicitly on the next line. The test stub is now a plain
+`(code: number) => { exitCodes.push(code); }` — the `as typeof _confirmDeps.exit` cast fell
+out with it (−1 uncounted cast).
+
+**Test-side recipe — `installPlanCallOp`, and the `any` the first pass smuggled in.**
+Converting the stubs to `_planDeps.callOp = mock(async (_ctx, _op, input) => …)` typechecked
+and passed, and was wrong: bun's `mock<T extends (...args: any[]) => any>(fn: T)` contextually
+types an unannotated arrow's parameters from its **constraint**, so `input` was `any` — no
+`noImplicitAny` error, and `input.nosuchfield` compiled clean. Verified by probe, then fixed
+with the `installCallOp` recipe `runner-hybrid.test.ts` already uses:
+
+```ts
+function installPlanCallOp(impl: typeof _planDeps.callOp) {
+  const spy = mock(impl);
+  _planDeps.callOp = spy;
+  return spy;
+}
+```
+
+The annotated `impl` parameter contextually types the stub for real; the same probe now
+errors with `Property 'nosuchfield' does not exist on type 'DebatePlanInput'`.
+
+**New ruling for §6: typechecking is not evidence that a stub is typed.** A generic helper
+whose type parameter is constrained to `(...args: any[]) => any` will silently hand an
+unannotated callback `any` parameters. The check is a deliberate probe — add a nonexistent
+property and confirm `tsc` rejects it — not the absence of a diagnostic.
+
+**Fallout the seam removed.** Every `if (op?.name !== "debate-plan") return origCallOp(…)`
+fall-through in the two debate test files became dead on arrival: `_planDeps.callOp` only
+ever receives `planDebaterOp`, and every other op (synthesis resolver, verifier) still runs
+through the real `callOp`, untouched. Deleting those branches took
+`runner-plan.test.ts` from 174 lines of stub scaffolding to ~40, and dropped `looseCast`
+by 3 in `runner-plan-signal.test.ts` (the `(input as PlanCallInput)` casts the generic
+slot had forced) with no counter rising anywhere.
+
+Typecheck 0/0/0, `check:all` 24/24, full suite 14195 + 1136 + 38 pass / 0 fail.
+`test:coverage` at 87.89% lines / 87.57% functions, per-file ratchet **101 below floor vs
+baseline 103** — improved, and deliberately **not** re-baselined (a local
+`--update-baseline` bakes in local numbers and drops files CI still grandfathers).
+Baseline diff: `asNever` 16 → 1, `looseCast` 1798 → 1795, every other counter flat.
+
+**Remaining 1:** `test/unit/operations/full-suite-rectify.test.ts` — a comment quoting
+"`{} as never` cargo" from §1's prose. §4 forbids deleting a comment that merely mentions
+the phrase, so 1 is the floor. `asNever` is closed; `ratchetAllow` (103) is next.

@@ -52,10 +52,9 @@ describe("promptForConfirmation", () => {
     originalExit = _confirmDeps.exit;
     exitCodes = [];
     _confirmDeps.write = () => true;
-    _confirmDeps.exit = ((code: number) => {
+    _confirmDeps.exit = (code: number) => {
       exitCodes.push(code);
-      return undefined as never;
-    }) as typeof _confirmDeps.exit;
+    };
   });
 
   afterEach(() => {

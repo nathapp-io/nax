@@ -5,11 +5,11 @@
     "ratchetAllow": 103,
     "absentValue": 17,
     "anyType": 10,
-    "looseCast": 1798,
-    "asNever": 16,
+    "looseCast": 1795,
+    "asNever": 1,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-27T02:59:26.184Z",
+  "updatedAt": "2026-08-27T03:14:56.174Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -784,9 +784,6 @@
     "test/unit/operations/typecheck-check-tool-diagnostics.test.ts": {
       "looseCast": 4
     },
-    "test/unit/debate/runner-plan.test.ts": {
-      "asNever": 12
-    },
     "test/unit/debate/resolvers.test.ts": {
       "looseCast": 20
     },
@@ -794,8 +791,7 @@
       "looseCast": 1
     },
     "test/unit/debate/runner-plan-signal.test.ts": {
-      "looseCast": 4,
-      "asNever": 2
+      "looseCast": 1
     },
     "test/unit/debate/runner-hybrid-rebuttal.test.ts": {
       "looseCast": 3
@@ -888,9 +884,6 @@
     },
     "test/unit/cli/plan-callop.test.ts": {
       "looseCast": 10
-    },
-    "test/unit/cli/confirm.test.ts": {
-      "asNever": 1
     },
     "test/unit/cli/plan.test.ts": {
       "looseCast": 17

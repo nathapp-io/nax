@@ -6,13 +6,21 @@ import type { PostDebateVerifier } from "@/debate";
 import { _runPlanDeps } from "@/debate";
 import type { PreDebatePhase } from "@/debate/pre-phase";
 import { DebateRunner } from "@/debate/runner";
+import { _planDeps } from "@/debate/runner-plan";
 import { _debateSessionDeps } from "@/debate/session-helpers";
 import type { DebateStageConfig } from "@/debate/types";
-import type { Operation } from "@/operations";
-import * as callModule from "@/operations";
 import type { CallContext } from "@/operations/types";
 import type { PackageView } from "@/runtime";
 import type { NameForRequest } from "@/session/types";
+
+// Same recipe as runner-hybrid.test.ts's installCallOp: the annotated `impl`
+// parameter contextually types the stub, so `input` is a real DebatePlanInput
+// rather than the `any` bun's `mock()` constraint would supply.
+function installPlanCallOp(impl: typeof _planDeps.callOp) {
+  const spy = mock(impl);
+  _planDeps.callOp = spy;
+  return spy;
+}
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -85,27 +93,24 @@ function makePlanDebateConfig(agents = 2): NaxConfig {
 
 let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 let origReadFile: typeof _debateSessionDeps.readFile;
-let origCallOp: typeof callModule.callOp;
+let origCallOp: typeof _planDeps.callOp;
 
 beforeEach(() => {
   origGetSafeLogger = _debateSessionDeps.getSafeLogger;
   origReadFile = _debateSessionDeps.readFile;
-  origCallOp = callModule.callOp;
+  origCallOp = _planDeps.callOp;
   _debateSessionDeps.getSafeLogger = mock(() => makeLogger());
   _debateSessionDeps.readFile = mock(async (_path: string) => '{"plan": "output"}');
-  // Default callOp mock for plan debater ops — intercepts only "debate-plan" op calls.
-  // All other ops (synthesis resolver, verifier, etc.) fall through to the real callOp.
-  spyOn(callModule, "callOp").mockImplementation(
-    async <I, O, C>(ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> => {
-      if (op?.name === "debate-plan") return { success: true, rebut: '{"plan":"output"}' } as never;
-      return origCallOp(ctx, op, input);
-    },
-  );
+  // Default stub for the plan debater dispatch. `_planDeps.callOp` is monomorphic
+  // on planDebaterOp, so every other op (synthesis resolver, verifier, ...) still
+  // runs through the real `callOp` — it never reaches this seam.
+  installPlanCallOp(async () => ({ success: true, rebut: '{"plan":"output"}' }));
 });
 
 afterEach(() => {
   _debateSessionDeps.getSafeLogger = origGetSafeLogger;
   _debateSessionDeps.readFile = origReadFile;
+  _planDeps.callOp = origCallOp;
   mock.restore();
 });
 
@@ -140,9 +145,9 @@ describe("DebateRunner.runPlan() — plan mode uses callOp (one-shot path)", () 
 
   test("runPlan launches one callOp per debater in one-shot mode", async () => {
     let callCount = 0;
-    spyOn(callModule, "callOp").mockImplementation(async () => {
+    installPlanCallOp(async () => {
       callCount++;
-      return { success: true, rebut: "ok" } as never;
+      return { success: true, rebut: "ok" };
     });
 
     const sm = makeSessionManager();
@@ -238,15 +243,11 @@ describe("DebateRunner.runPlan()", () => {
   test("passes unique index and storyId to each plan debater callOp", async () => {
     const capturedIndices: number[] = [];
     const capturedStoryIds: string[] = [];
-    spyOn(callModule, "callOp").mockImplementation(
-      async <I, O, C>(callCtx: CallContext, _op: Operation<I, O, C>, input: I): Promise<O> => {
-        if (typeof input === "object" && input !== null && "index" in input && typeof input.index === "number") {
-          capturedIndices.push(input.index);
-        }
-        capturedStoryIds.push(callCtx.storyId ?? "");
-        return { success: true, rebut: "ok" } as never;
-      },
-    );
+    installPlanCallOp(async (callCtx, _op, input) => {
+      capturedIndices.push(input.index);
+      capturedStoryIds.push(callCtx.storyId ?? "");
+      return { success: true, rebut: "ok" };
+    });
 
     const config = makePlanDebateConfig(3);
     const sm = makeSessionManager();
@@ -281,9 +282,7 @@ describe("DebateRunner.runPlan()", () => {
     const config = makePlanDebateConfig(2);
 
     let callIdx = 0;
-    spyOn(callModule, "callOp").mockImplementation(
-      async () => ({ success: true, rebut: `rebut-${callIdx++}` }) as never,
-    );
+    installPlanCallOp(async () => ({ success: true, rebut: `rebut-${callIdx++}` }));
 
     const runner = new DebateRunner({
       ctx: makeCallCtxWithIds("plan-hybrid-test", agentManager, mockSM, config),
@@ -444,20 +443,13 @@ describe("DebateRunner.runPlan()", () => {
     const startedOrder: number[] = [];
     const resolvers: Array<() => void> = [];
 
-    spyOn(callModule, "callOp").mockImplementation(
-      async <I, O, C>(_ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> => {
-        if (op?.name !== "debate-plan") return origCallOp(_ctx, op, input);
-        const idx =
-          typeof input === "object" && input !== null && "index" in input && typeof input.index === "number"
-            ? input.index
-            : -1;
-        startedOrder.push(idx);
-        await new Promise<void>((resolve) => {
-          resolvers[idx] = resolve;
-        });
-        return { success: true, rebut: "ok" } as never;
-      },
-    );
+    installPlanCallOp(async (_ctx, _op, input) => {
+      startedOrder.push(input.index);
+      await new Promise<void>((resolve) => {
+        resolvers[input.index] = resolve;
+      });
+      return { success: true, rebut: "ok" };
+    });
 
     const config = makePlanDebateConfig(2);
     const sm = makeSessionManager();
@@ -491,22 +483,10 @@ describe("DebateRunner.runPlan()", () => {
 
   test("prepends manifestSection to each debater prompt when provided, omits when not", async () => {
     const capturedPrompts: string[] = [];
-    spyOn(callModule, "callOp").mockImplementation(
-      async <I, O, C>(_ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> => {
-        if (
-          op?.name === "debate-plan" &&
-          typeof input === "object" &&
-          input !== null &&
-          "proposePrompt" in input &&
-          typeof input.proposePrompt === "string"
-        ) {
-          capturedPrompts.push(input.proposePrompt);
-        } else {
-          return origCallOp(_ctx, op, input);
-        }
-        return { success: true, rebut: "ok" } as never;
-      },
-    );
+    installPlanCallOp(async (_ctx, _op, input) => {
+      capturedPrompts.push(input.proposePrompt);
+      return { success: true, rebut: "ok" };
+    });
 
     const config = makePlanDebateConfig(2);
     const sm = makeSessionManager();
@@ -660,22 +640,10 @@ describe("runner-plan — preDebatePhase invocation", () => {
     }));
 
     const capturedPrompts: string[] = [];
-    spyOn(callModule, "callOp").mockImplementation(
-      async <I, O, C>(_ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> => {
-        if (
-          op?.name === "debate-plan" &&
-          typeof input === "object" &&
-          input !== null &&
-          "proposePrompt" in input &&
-          typeof input.proposePrompt === "string"
-        ) {
-          capturedPrompts.push(input.proposePrompt);
-        } else {
-          return origCallOp(_ctx, op, input);
-        }
-        return { success: true, rebut: "ok" } as never;
-      },
-    );
+    installPlanCallOp(async (_ctx, _op, input) => {
+      capturedPrompts.push(input.proposePrompt);
+      return { success: true, rebut: "ok" };
+    });
 
     const config = makePlanDebateConfig(2);
     const sm = makeSessionManager();
@@ -712,15 +680,10 @@ describe("runner-plan — preDebatePhase invocation", () => {
     });
 
     let debaterCallCount = 0;
-    spyOn(callModule, "callOp").mockImplementation(
-      async <I, O, C>(_ctx: CallContext, op: Operation<I, O, C>, _input: I): Promise<O> => {
-        if (op?.name === "debate-plan") {
-          debaterCallCount++;
-          return { success: true, rebut: "ok" } as never;
-        }
-        return origCallOp(_ctx, op, _input);
-      },
-    );
+    installPlanCallOp(async () => {
+      debaterCallCount++;
+      return { success: true, rebut: "ok" };
+    });
 
     const config = makePlanDebateConfig(2);
     const sm = makeSessionManager();
@@ -812,9 +775,9 @@ describe("runner-plan — stateful session lifecycle", () => {
     // After migration: coordinator delegates session lifecycle to callOp/planDebaterOp.
     // The contract is: callOp called N times, runInSession never called.
     let callCount = 0;
-    spyOn(callModule, "callOp").mockImplementation(async () => {
+    installPlanCallOp(async () => {
       callCount++;
-      return { success: true, rebut: `output-${callCount}` } as never;
+      return { success: true, rebut: `output-${callCount}` };
     });
 
     const sm = makeSessionManager();
@@ -846,25 +809,14 @@ describe("runner-plan — stateful session lifecycle", () => {
   test("AC-4: passes selectionSignal and rebuttalBarrier to each callOp when sessionMode is stateful", async () => {
     // Verify coordinator passes the correct barrier/signal wiring to each debater callOp.
     const capturedInputs: Array<{ index: number; hasSelectionSignal: boolean; hasRebuttalBarrier: boolean }> = [];
-    spyOn(callModule, "callOp").mockImplementation(
-      async <I, O, C>(_ctx: CallContext, _op: Operation<I, O, C>, input: I): Promise<O> => {
-        if (
-          typeof input === "object" &&
-          input !== null &&
-          "index" in input &&
-          typeof input.index === "number" &&
-          "selectionSignal" in input &&
-          "rebuttalBarrier" in input
-        ) {
-          capturedInputs.push({
-            index: input.index,
-            hasSelectionSignal: input.selectionSignal instanceof Promise,
-            hasRebuttalBarrier: input.rebuttalBarrier != null,
-          });
-        }
-        return { success: true, rebut: "ok" } as never;
-      },
-    );
+    installPlanCallOp(async (_ctx, _op, input) => {
+      capturedInputs.push({
+        index: input.index,
+        hasSelectionSignal: input.selectionSignal instanceof Promise,
+        hasRebuttalBarrier: input.rebuttalBarrier != null,
+      });
+      return { success: true, rebut: "ok" };
+    });
 
     const sm = makeSessionManager();
     const agentManager = makeMockAgentManager();
@@ -897,15 +849,7 @@ describe("runner-plan — stateful session lifecycle", () => {
   test("AC-4: completes successfully with both debaters when sessionMode is stateful", async () => {
     // Verifies coordinator returns a valid result after both stateful callOps complete.
     // Session lifecycle (open/close) is now managed internally by callOp/buildHopCallback.
-    spyOn(callModule, "callOp").mockImplementation(
-      async <I, O, C>(_ctx: CallContext, _op: Operation<I, O, C>, input: I): Promise<O> => {
-        const index =
-          typeof input === "object" && input !== null && "index" in input && typeof input.index === "number"
-            ? input.index
-            : 0;
-        return { success: true, rebut: `output-${index}` } as never;
-      },
-    );
+    installPlanCallOp(async (_ctx, _op, input) => ({ success: true, rebut: `output-${input.index}` }));
 
     const sm = makeSessionManager();
     const agentManager = makeMockAgentManager();
@@ -953,11 +897,9 @@ describe("runner-plan — postDebateVerifier and tag-expert rewrite", () => {
   });
 
   // BUG-15: no file-read fallback anymore — stub both debaters' proposals directly.
-  const stubDebatePlanOp = (output: string) =>
-    spyOn(callModule, "callOp").mockImplementation(
-      async <I, O, C>(_c: CallContext, op: Operation<I, O, C>, _input: I): Promise<O> =>
-        (op?.name === "debate-plan" ? { success: true, rebut: output } : Promise.reject(new Error(op?.name))) as never,
-    );
+  const stubDebatePlanOp = (output: string) => {
+    installPlanCallOp(async () => ({ success: true, rebut: output }));
+  };
   function makeRunWithVerifier(verifierFn: PostDebateVerifier) {
     const verifierCalled: string[] = [];
     _runPlanDeps.resolvePostDebateVerifier = mock((_kind: string) => {
