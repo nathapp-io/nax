@@ -384,7 +384,7 @@ describe("complete()", () => {
         opts?: { env?: Record<string, string> },
       ) => {
         capturedEnv = opts?.env;
-        return makeClient(session) as unknown as ReturnType<typeof _acpAdapterDeps.createClient>; // test-ratchet-allow: as-unknown-as
+        return makeClient(session);
       },
     );
 

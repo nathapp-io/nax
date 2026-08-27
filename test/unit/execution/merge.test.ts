@@ -478,52 +478,19 @@ describe("MergeEngine — BUG-5 git-with-timeout regression", () => {
   // _gitDeps.gitTimeoutMs bounds the call. The test asserts the call returns
   // within (timeout + slack) and SIGKILL was issued (proc.kill called).
   it("isMidMerge does not hang when the MERGE_HEAD probe never exits", async () => {
-    let resolveExited: (code: number) => void = () => {};
     let killInvoked = false;
     // Only the FIRST MERGE_HEAD probe hangs to exercise the SIGKILL path;
     // subsequent probes and the merge attempt return quickly so the test
     // only spends the timeout once. Pre-fix the entire batch hangs
     // indefinitely — that is the regression we want to catch.
     let probeCount = 0;
-    _gitDeps.spawn = mock((...args: unknown[]) => {
-      const cmd = args[0] as string[];
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
       const isProbe = cmd[1] === "rev-parse" && cmd.includes("MERGE_HEAD");
       if (!isProbe || probeCount++ > 0) {
-        return {
-          stdout: new ReadableStream({
-            start(c) {
-              c.close();
-            },
-          }),
-          stderr: new ReadableStream({
-            start(c) {
-              c.close();
-            },
-          }),
-          exited: Promise.resolve(1),
-          kill: () => {},
-        };
+        return { exitCode: 1 };
       }
-      return {
-        stdout: new ReadableStream({
-          start() {
-            /* never closes */
-          },
-        }),
-        stderr: new ReadableStream({
-          start() {
-            /* never closes */
-          },
-        }),
-        exited: new Promise<number>((r) => {
-          resolveExited = r;
-        }),
-        kill: () => {
-          killInvoked = true;
-          resolveExited(137);
-        },
-      };
-    }) as unknown as typeof _gitDeps.spawn; // test-ratchet-allow: as-unknown-as (mock spawn cast)
+      return { hang: true, killResolvesExited: true, onKill: () => (killInvoked = true) };
+    }).spawn;
 
     const engine = new MergeEngine(mockWorktreeManager);
     const start = Date.now();

@@ -97,50 +97,36 @@ describe("handleTierEscalation — runtime-crash retry cap", () => {
         routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
       });
       const prd = makePRD({ feature: "f", userStories: [story] });
-      const buildCtx = (runtimeCrash: boolean) => ({
-        story,
-        storiesToExecute: [story],
-        isBatchExecution: false,
-        routing: { modelTier: "fast", testStrategy: "test-after" },
-        pipelineResult: { reason: "Test failure", context: {} },
-        config: {
-          autoMode: {
-            escalation: {
-              enabled: true,
-              tierOrder: [
-                { tier: "fast", attempts: 2 },
-                { tier: "balanced", attempts: 3 },
-              ],
+      const buildCtx = (runtimeCrash: boolean) =>
+        makeEscalationContext({
+          story,
+          prd,
+          pipelineResult: { reason: "Test failure", context: {} },
+          config: makeNaxConfig({
+            autoMode: {
+              escalation: {
+                enabled: true,
+                tierOrder: [
+                  { tier: "fast", attempts: 2 },
+                  { tier: "balanced", attempts: 3 },
+                ],
+              },
             },
-          },
-          routing: { llm: { mode: "per-story" }, strategy: "keyword" },
-          models: {},
-        },
-        prd,
-        prdPath: "/tmp/test-prd-us002-retry-cap-reset.json",
-        featureDir: undefined,
-        hooks: { hooks: {} },
-        feature: "f",
-        totalCost: 0,
-        workdir: "/tmp",
-        ...(runtimeCrash ? { runtimeCrashResult: { status: "RUNTIME_CRASH", success: false } } : {}),
-      });
+            routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+          }),
+          prdPath: "/tmp/test-prd-us002-retry-cap-reset.json",
+          ...(runtimeCrash ? { runtimeCrashResult: { status: "RUNTIME_CRASH", success: false } } : {}),
+        });
 
       for (let i = 0; i < RUNTIME_CRASH_RETRY_CAP; i++) {
-        const result = await handleTierEscalation(
-          buildCtx(true) as unknown as Parameters<typeof handleTierEscalation>[0], // test-ratchet-allow: as-unknown-as
-        );
+        const result = await handleTierEscalation(buildCtx(true));
         expect(result.outcome).toBe("retry-same");
       }
 
-      const ordinaryFailure = await handleTierEscalation(
-        buildCtx(false) as unknown as Parameters<typeof handleTierEscalation>[0], // test-ratchet-allow: as-unknown-as
-      );
+      const ordinaryFailure = await handleTierEscalation(buildCtx(false));
       expect(ordinaryFailure.outcome).toBe("escalated");
 
-      const nextCrash = await handleTierEscalation(
-        buildCtx(true) as unknown as Parameters<typeof handleTierEscalation>[0], // test-ratchet-allow: as-unknown-as
-      );
+      const nextCrash = await handleTierEscalation(buildCtx(true));
       expect(nextCrash.outcome).toBe("retry-same");
     } finally {
       _tierEscalationDeps.savePRD = origSavePRD;

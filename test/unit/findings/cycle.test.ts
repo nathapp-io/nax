@@ -793,7 +793,7 @@ describe("runFixCycle — ValidateResult short-circuit flag", () => {
   test("BUG-38: full-validate shortCircuited:true is never classified as resolved", async () => {
     const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 5 });
     const validateResult: ValidateResult<Finding> = { findings: [], shortCircuited: true };
-    const cycle = makeCycle([lintA], [strategy], async () => validateResult as unknown as Finding[]); // test-ratchet-allow: as-unknown-as
+    const cycle = makeCycle([lintA], [strategy], async () => validateResult);
 
     const result = await runFixCycle(cycle, makeCtx(), "sc-cycle", {
       callOp: makeCallOpMock(),

@@ -11,7 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeAgentResult, makeMockRuntime, makePRD, makeStory, makeTestContext } from "@test/helpers";
+import { makeAgentResult, makeMockRuntime, makePRD, makeSpawn, makeStory, makeTestContext } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import {
   _resultHandlerDeps,
@@ -29,7 +29,7 @@ function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = 
     prd,
     prdPath: "/tmp/prd.json",
     workdir: "/tmp/repo",
-    hooks: { hooks: [] } as unknown as PipelineHandlerContext["hooks"], // test-ratchet-allow: as-unknown-as
+    hooks: { hooks: {} },
     feature: "test-feature",
     totalCost: 0,
     startTime: Date.now(),
@@ -47,23 +47,10 @@ function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = 
 }
 
 function mockSpawnCapturingCalls(calls: string[][]) {
-  return mock((args: unknown) => {
-    calls.push(args as string[]);
-    return {
-      stdout: new ReadableStream({
-        start(c) {
-          c.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(c) {
-          c.close();
-        },
-      }),
-      exited: Promise.resolve(0),
-      kill: mock(() => {}),
-    };
-  }) as unknown as typeof _resultHandlerDeps.spawn; // test-ratchet-allow: as-unknown-as
+  return makeSpawn((call) => {
+    calls.push(call.cmd);
+    return {};
+  }).spawn;
 }
 
 const WORKTREE_CONFIG = {

@@ -610,36 +610,10 @@ describe("PriorRunFailureProvider — defensive parsing of structurally corrupt 
         totalDurationMs: 0,
         stories: [
           makeStoryMetrics({ storyId: "US-003", success: false, attempts: 2 }),
-          {
-            // attempts: NaN — must be skipped, not poison the sum.
-            storyId: "US-003",
-            complexity: "medium",
-            modelTier: "balanced",
-            modelUsed: "claude-sonnet-4",
-            attempts: Number.NaN,
-            finalTier: "balanced",
-            success: false,
-            cost: 0,
-            durationMs: 0,
-            firstPassSuccess: false,
-            startedAt: "2026-01-01T00:00:00.000Z",
-            completedAt: "2026-01-01T00:01:00.000Z",
-          } as unknown as ReturnType<typeof makeStoryMetrics>, // test-ratchet-allow: as-unknown-as
-          {
-            // attempts: -1 — must be skipped, not produce a negative total.
-            storyId: "US-003",
-            complexity: "medium",
-            modelTier: "balanced",
-            modelUsed: "claude-sonnet-4",
-            attempts: -1,
-            finalTier: "balanced",
-            success: false,
-            cost: 0,
-            durationMs: 0,
-            firstPassSuccess: false,
-            startedAt: "2026-01-01T00:00:00.000Z",
-            completedAt: "2026-01-01T00:01:00.000Z",
-          } as unknown as ReturnType<typeof makeStoryMetrics>, // test-ratchet-allow: as-unknown-as
+          // attempts: NaN — must be skipped, not poison the sum.
+          makeStoryMetrics({ storyId: "US-003", success: false, attempts: Number.NaN }),
+          // attempts: -1 — must be skipped, not produce a negative total.
+          makeStoryMetrics({ storyId: "US-003", success: false, attempts: -1 }),
         ],
       },
     ];

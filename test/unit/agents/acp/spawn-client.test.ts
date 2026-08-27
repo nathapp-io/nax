@@ -152,14 +152,14 @@ describe("SpawnAcpClient — onPidSpawned callback (#228)", () => {
     const client = new SpawnAcpClient("acpx claude", "/tmp", undefined, undefined, undefined, undefined, {
       env: { ANTHROPIC_BASE_URL: "https://custom.example.com", ANTHROPIC_API_KEY: "from-model-def" },
     });
-    const internals = client as unknown as { env: Record<string, string | undefined> }; // test-ratchet-allow: as-unknown-as
+    const internals = { env: client["env"] };
     expect(internals.env.ANTHROPIC_BASE_URL).toBe("https://custom.example.com");
     expect(internals.env.ANTHROPIC_API_KEY).toBe("from-model-def");
   });
 
   test("subprocess env is unaffected when no env override is passed", () => {
     const client = new SpawnAcpClient("acpx claude", "/tmp");
-    const internals = client as unknown as { env: Record<string, string | undefined> }; // test-ratchet-allow: as-unknown-as
+    const internals = { env: client["env"] };
     expect(internals.env.ANTHROPIC_BASE_URL).toBeUndefined();
   });
 });

@@ -17,7 +17,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeInProgressStory, makeLogger, makeNaxConfig } from "@test/helpers";
+import { makeEscalationContext, makeInProgressStory, makeLogger, makeNaxConfig, makePRD } from "@test/helpers";
 import { _tierEscalationDeps, handleTierEscalation, preIterationTierCheck } from "@/execution/escalation";
 import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
 import { collectObservations } from "@/plugins/builtin/curator";
@@ -28,53 +28,25 @@ type TierEscalationDeps = typeof _tierEscalationDeps;
 // Shared scaffolding
 // ---------------------------------------------------------------------------
 
-function makeBaseContext() {
-  return {
-    isBatchExecution: false,
-    pipelineResult: { reason: "Tests failed", context: {} },
-    config: {
-      autoMode: {
-        escalation: {
-          enabled: true,
-          tierOrder: [
-            { tier: "fast", attempts: 1 },
-            { tier: "balanced", attempts: 2 },
-          ],
-          escalateEntireBatch: false,
-        },
+/** Config that enables fast→balanced escalation without LLM re-routing. */
+function makeEscalationConfig() {
+  return makeNaxConfig({
+    autoMode: {
+      escalation: {
+        enabled: true,
+        tierOrder: [
+          { tier: "fast", attempts: 1 },
+          { tier: "balanced", attempts: 2 },
+        ],
+        escalateEntireBatch: false,
       },
-      routing: { llm: { mode: "per-story" }, strategy: "keyword" },
-      models: {},
     },
-    prd: {
-      project: "test",
-      feature: "f",
-      branchName: "b",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      userStories: [
-        {
-          id: "US-001",
-          title: "Story",
-          description: "Test",
-          acceptanceCriteria: [],
-          tags: [],
-          dependencies: [],
-          status: "in-progress" as const,
-          passes: false,
-          escalations: [],
-          attempts: 0,
-          routing: { modelTier: "fast", testStrategy: "test-after" as const },
-        },
-      ],
-    },
-    prdPath: "/tmp/test-prd-us001.json",
-    featureDir: undefined,
-    hooks: { hooks: {} },
-    feature: "f",
-    totalCost: 0,
-    workdir: "/tmp",
-  };
+    routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+  });
+}
+
+function makeUs001Prd(story: ReturnType<typeof makeUs001Story>) {
+  return makePRD({ project: "test", feature: "f", branchName: "b", userStories: [story] });
 }
 
 function makeUs001Story() {
@@ -147,20 +119,20 @@ describe("US-001: handleTierEscalation routes logger through _tierEscalationDeps
     installDeps({
       getSafeLogger: () => {
         depCallCount += 1;
-        // test-ratchet-allow: as-unknown-as
-        return mockLogger as unknown as ReturnType<typeof origGetSafeLogger>; // test-ratchet-allow: as-unknown-as
+        return mockLogger;
       },
     });
 
-    const base = makeBaseContext();
-    const ctx = {
-      ...base,
-      story: base.prd.userStories[0],
-      storiesToExecute: [base.prd.userStories[0]],
-      routing: { modelTier: "fast", testStrategy: "test-after" },
-    };
-    // test-ratchet-allow: as-unknown-as
-    const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]); // test-ratchet-allow: as-unknown-as
+    const story = makeUs001Story();
+    const ctx = makeEscalationContext({
+      story,
+      storiesToExecute: [story],
+      config: makeEscalationConfig(),
+      prd: makeUs001Prd(story),
+      prdPath: "/tmp/test-prd-us001.json",
+      feature: "f",
+    });
+    const result = await handleTierEscalation(ctx);
     expect(result.outcome).toBe("escalated");
 
     // The dep was consulted at least once (proves routing through deps, not the direct import).
@@ -191,19 +163,19 @@ describe("US-001: handleTierEscalation logs fromTier and nextTier (AC-2, AC-3)",
 
     const mockLogger = makeLogger();
     installDeps({
-      // test-ratchet-allow: as-unknown-as
-      getSafeLogger: () => mockLogger as unknown as ReturnType<typeof origGetSafeLogger>, // test-ratchet-allow: as-unknown-as
+      getSafeLogger: () => mockLogger,
     });
 
-    const base = makeBaseContext();
-    const ctx = {
-      ...base,
-      story: base.prd.userStories[0],
-      storiesToExecute: [base.prd.userStories[0]],
-      routing: { modelTier: "fast", testStrategy: "test-after" },
-    };
-    // test-ratchet-allow: as-unknown-as
-    const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]); // test-ratchet-allow: as-unknown-as
+    const story = makeUs001Story();
+    const ctx = makeEscalationContext({
+      story,
+      storiesToExecute: [story],
+      config: makeEscalationConfig(),
+      prd: makeUs001Prd(story),
+      prdPath: "/tmp/test-prd-us001.json",
+      feature: "f",
+    });
+    const result = await handleTierEscalation(ctx);
     expect(result.outcome).toBe("escalated");
 
     // The escalation warn emitted by handleTierEscalation carries the fromTier and nextTier fields.
@@ -236,19 +208,19 @@ describe("US-001: escalation log entries from both emitters round-trip to collec
 
     const mockLogger = makeLogger();
     installDeps({
-      // test-ratchet-allow: as-unknown-as
-      getSafeLogger: () => mockLogger as unknown as ReturnType<typeof origGetSafeLogger>, // test-ratchet-allow: as-unknown-as
+      getSafeLogger: () => mockLogger,
     });
 
-    const base = makeBaseContext();
-    const ctx = {
-      ...base,
-      story: base.prd.userStories[0],
-      storiesToExecute: [base.prd.userStories[0]],
-      routing: { modelTier: "fast", testStrategy: "test-after" },
-    };
-    // test-ratchet-allow: as-unknown-as
-    const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]); // test-ratchet-allow: as-unknown-as
+    const story = makeUs001Story();
+    const ctx = makeEscalationContext({
+      story,
+      storiesToExecute: [story],
+      config: makeEscalationConfig(),
+      prd: makeUs001Prd(story),
+      prdPath: "/tmp/test-prd-us001.json",
+      feature: "f",
+    });
+    const result = await handleTierEscalation(ctx);
     expect(result.outcome).toBe("escalated");
 
     const escalationCalls = mockLogger.calls.filter(
@@ -283,29 +255,19 @@ describe("US-001: escalation log entries from both emitters round-trip to collec
 
     const mockLogger = makeLogger();
     installDeps({
-      // test-ratchet-allow: as-unknown-as
-      getSafeLogger: () => mockLogger as unknown as ReturnType<typeof origGetSafeLogger>, // test-ratchet-allow: as-unknown-as
+      getSafeLogger: () => mockLogger,
     });
 
     const story = {
       ...makeUs001Story(),
       attempts: 1, // >= tierCfg.attempts → triggers escalation
     };
-
-    const prd = {
-      project: "test",
-      feature: "f",
-      branchName: "b",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      userStories: [story],
-    };
+    const prd = makeUs001Prd(story);
 
     const result = await preIterationTierCheck(
-      // test-ratchet-allow: as-unknown-as
-      story as unknown as Parameters<typeof preIterationTierCheck>[0], // test-ratchet-allow: as-unknown-as
+      story,
       { modelTier: "fast" },
-      {
+      makeNaxConfig({
         autoMode: {
           escalation: {
             enabled: true,
@@ -316,15 +278,11 @@ describe("US-001: escalation log entries from both emitters round-trip to collec
           },
         },
         routing: { llm: { mode: "per-story" }, strategy: "keyword" },
-        models: {},
-        // test-ratchet-allow: as-unknown-as
-      } as unknown as Parameters<typeof preIterationTierCheck>[2], // test-ratchet-allow: as-unknown-as
-      // test-ratchet-allow: as-unknown-as
-      prd as unknown as Parameters<typeof preIterationTierCheck>[3], // test-ratchet-allow: as-unknown-as
+      }),
+      prd,
       "/tmp/test-prd-us001-pre.json",
       undefined,
-      // test-ratchet-allow: as-unknown-as
-      { hooks: {} } as unknown as Parameters<typeof preIterationTierCheck>[6], // test-ratchet-allow: as-unknown-as
+      { hooks: {} },
       "f",
       0,
       "/tmp",

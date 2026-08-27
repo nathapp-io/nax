@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeDispatchContext, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { makeDispatchContext, makeNaxConfig, makePRD, makeSpawn, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import { acceptanceStage, parseTestFailures } from "@/pipeline/stages/acceptance";
@@ -71,24 +71,12 @@ describe("US-002: per-package acceptance runner", () => {
 
     // Patch Bun.spawn for this test
     const origSpawn = _executorDeps.spawn;
-    _executorDeps.spawn = ((cmd: string[], opts: { cwd?: string }) => {
-      spawnCalls.push({ cwd: opts.cwd ?? "", cmd });
-      const mockProc = {
-        exited: Promise.resolve(0),
-        stdout: new ReadableStream({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode("1 pass\n"));
-            controller.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(controller) {
-            controller.close();
-          },
-        }),
-      };
-      return mockProc;
-    }) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
+    const { spawn } = makeSpawn((call) => {
+      const cwd = typeof call.opts.cwd === "string" ? call.opts.cwd : "";
+      spawnCalls.push({ cwd, cmd: [...call.cmd] });
+      return "1 pass\n";
+    });
+    _executorDeps.spawn = spawn;
 
     const ctx = makeCtx({
       acceptanceTestPaths: [
@@ -128,20 +116,7 @@ describe("US-002: per-package acceptance runner", () => {
 
   test("AC-4: all packages passing returns continue", async () => {
     const origSpawn = _executorDeps.spawn;
-    _executorDeps.spawn = ((_cmd: string[], _opts: { cwd?: string }) => ({
-      exited: Promise.resolve(0),
-      stdout: new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode("1 pass\n"));
-          controller.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(controller) {
-          controller.close();
-        },
-      }),
-    })) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
+    _executorDeps.spawn = makeSpawn(() => "1 pass\n").spawn;
 
     const origFile = Bun.file;
     Object.assign(Bun, { file: fileStub });
@@ -166,23 +141,12 @@ describe("US-002: per-package acceptance runner", () => {
     const spawnCalls: Array<{ cmd: string[]; cwd: string }> = [];
 
     const origSpawn = _executorDeps.spawn;
-    _executorDeps.spawn = ((cmd: string[], opts: { cwd?: string }) => {
-      spawnCalls.push({ cmd, cwd: opts.cwd ?? "" });
-      return {
-        exited: Promise.resolve(0),
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(new TextEncoder().encode("1 pass\n"));
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-      };
-    }) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
+    const { spawn } = makeSpawn((call) => {
+      const cwd = typeof call.opts.cwd === "string" ? call.opts.cwd : "";
+      spawnCalls.push({ cmd: [...call.cmd], cwd });
+      return "1 pass\n";
+    });
+    _executorDeps.spawn = spawn;
 
     const origFile = Bun.file;
     Object.assign(Bun, { file: fileStub });
@@ -226,25 +190,13 @@ describe("US-002: per-package acceptance runner", () => {
 
   test("records failed package metadata in acceptanceFailures for downstream fix routing", async () => {
     const origSpawn = _executorDeps.spawn;
-    _executorDeps.spawn = ((_cmd: string[], opts: { cwd?: string }) => {
-      const isApi = opts.cwd === "/tmp/test-workdir/apps/api";
-      const output = isApi ? "FAIL AC-2" : "1 pass\n";
-      const exitCode = isApi ? 1 : 0;
+    _executorDeps.spawn = makeSpawn((call) => {
+      const isApi = call.opts.cwd === "/tmp/test-workdir/apps/api";
       return {
-        exited: Promise.resolve(exitCode),
-        stdout: new ReadableStream({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode(output));
-            controller.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(controller) {
-            controller.close();
-          },
-        }),
+        stdout: isApi ? "FAIL AC-2" : "1 pass\n",
+        exitCode: isApi ? 1 : 0,
       };
-    }) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
+    }).spawn;
 
     const origFile = Bun.file;
     Object.assign(Bun, { file: fileStub });
@@ -287,24 +239,10 @@ describe("US-002: per-package acceptance runner", () => {
 
   test("records per-package output and failedACs on each failed package entry", async () => {
     const origSpawn = _executorDeps.spawn;
-    _executorDeps.spawn = ((_cmd: string[], opts: { cwd?: string }) => {
-      const isApi = opts.cwd === "/tmp/test-workdir/apps/api";
-      const output = isApi ? "FAIL AC-1 api boom\n" : "FAIL AC-2 web boom\n";
-      return {
-        exited: Promise.resolve(1),
-        stdout: new ReadableStream({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode(output));
-            controller.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(controller) {
-            controller.close();
-          },
-        }),
-      };
-    }) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
+    _executorDeps.spawn = makeSpawn((call) => ({
+      stdout: call.opts.cwd === "/tmp/test-workdir/apps/api" ? "FAIL AC-1 api boom\n" : "FAIL AC-2 web boom\n",
+      exitCode: 1,
+    })).spawn;
 
     const origFile = Bun.file;
     Object.assign(Bun, { file: fileStub });
@@ -348,24 +286,10 @@ describe("US-002: per-package acceptance runner", () => {
   // the aggregate — not collapsed into a single entry by bare-id dedup.
   test("BUG-12: colliding AC-2 ids from two different packages are not deduped in the aggregate", async () => {
     const origSpawn = _executorDeps.spawn;
-    _executorDeps.spawn = ((_cmd: string[], opts: { cwd?: string }) => {
-      const isApi = opts.cwd === "/tmp/test-workdir/apps/api";
-      const output = isApi ? "FAIL AC-2 api boom\n" : "FAIL AC-2 web boom\n";
-      return {
-        exited: Promise.resolve(1),
-        stdout: new ReadableStream({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode(output));
-            controller.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(controller) {
-            controller.close();
-          },
-        }),
-      };
-    }) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
+    _executorDeps.spawn = makeSpawn((call) => ({
+      stdout: call.opts.cwd === "/tmp/test-workdir/apps/api" ? "FAIL AC-2 api boom\n" : "FAIL AC-2 web boom\n",
+      exitCode: 1,
+    })).spawn;
 
     const origFile = Bun.file;
     Object.assign(Bun, { file: fileStub });
@@ -631,20 +555,7 @@ describe("acceptance verdict logger emit", () => {
     origFile = Bun.file;
     const out = pass ? "1 pass\n" : "  (fail) AC-2: handles empty input\n";
     Object.assign(Bun, { file: fileStub });
-    _executorDeps.spawn = ((_cmd: string[], _opts: { cwd?: string }) => ({
-      exited: Promise.resolve(pass ? 0 : 1),
-      stdout: new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode(out));
-          controller.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(controller) {
-          controller.close();
-        },
-      }),
-    })) as unknown as typeof _executorDeps.spawn; // test-ratchet-allow: as-unknown-as
+    _executorDeps.spawn = makeSpawn(() => out).spawn;
   }
 
   beforeEach(() => {

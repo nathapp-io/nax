@@ -22,9 +22,9 @@
  *   - deriveProviderWeights → returns the test-supplied weights verbatim.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeContextOrchestrator, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type {
   ContextBundle,
   ContextManifest,
@@ -101,12 +101,12 @@ function makeBundle(
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
-    config: {
+    config: makeNaxConfig({
       context: {
         v2: { enabled: true },
         featureEngine: { budgetTokens: 8_000 },
       },
-    } as unknown as PipelineContext["config"], // test-ratchet-allow: as-unknown-as
+    }),
     rootConfig: {} as PipelineContext["rootConfig"],
     prd: { feature: "us-004-feature" } as PipelineContext["prd"],
     story: { id: "US-004" } as PipelineContext["story"],
@@ -128,14 +128,14 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
  */
 function captureContextRequest(): { captured: ContextRequest | null } {
   const ref: { captured: ContextRequest | null } = { captured: null };
-  _contextStageDeps.createOrchestrator = () =>
-    ({
-      async assemble(req: ContextRequest) {
+  _contextStageDeps.createOrchestrator = mock(() =>
+    makeContextOrchestrator({
+      assemble: async (req: ContextRequest) => {
         ref.captured = req;
         return makeBundle();
       },
-      rebuildForAgent: () => makeBundle(),
-    }) as unknown as ReturnType<typeof _contextStageDeps.createOrchestrator>; // test-ratchet-allow: as-unknown-as
+    }),
+  );
   // Suppress scratch + digest I/O so the stage stays hermetic.
   _contextStageDeps.readDigest = async () => "";
   _contextStageDeps.writeDigest = async () => {};

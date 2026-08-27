@@ -16,10 +16,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeInProgressStory, makeNaxConfig, makePRD } from "@test/helpers";
+import { type LogCall, type MockLogger, makeInProgressStory, makeLogger, makeNaxConfig, makePRD } from "@test/helpers";
 import type { TierConfig } from "@/config";
 import { TierConfigSchema } from "@/config";
 import { _tierEscalationDeps, preIterationTierCheck } from "@/execution/escalation";
+import type { LoadedHooksConfig } from "@/hooks";
 import type { StoryRouting, UserStory } from "@/prd";
 
 // ---------------------------------------------------------------------------
@@ -63,30 +64,23 @@ function buildConfig(tierOrder: TierConfig[]) {
   });
 }
 
-function asHooks() {
+function asHooks(): LoadedHooksConfig {
   // Only read on the "no next tier" branch, which none of these cases reach.
-  return {} as unknown as Parameters<typeof preIterationTierCheck>[6]; // test-ratchet-allow: as-unknown-as
+  return { hooks: {} };
 }
 
-/** Captured warn calls, so a test can assert on the absence of a diagnostic. */
-type WarnCall = { stage: string; message: string; meta?: Record<string, unknown> };
-let warns: WarnCall[];
+/** Captured logger, so a test can assert on the absence of a diagnostic. */
+let logger: MockLogger;
 let origSavePRD: typeof _tierEscalationDeps.savePRD;
 let origGetSafeLogger: typeof _tierEscalationDeps.getSafeLogger;
 
 beforeEach(() => {
-  warns = [];
+  logger = makeLogger();
   origSavePRD = _tierEscalationDeps.savePRD;
   origGetSafeLogger = _tierEscalationDeps.getSafeLogger;
   // No-op persistence so the test never touches real disk.
   _tierEscalationDeps.savePRD = () => Promise.resolve();
-  _tierEscalationDeps.getSafeLogger = () =>
-    ({
-      warn: (stage: string, message: string, meta?: Record<string, unknown>) => warns.push({ stage, message, meta }),
-      info: () => {},
-      debug: () => {},
-      error: () => {},
-    }) as unknown as ReturnType<typeof origGetSafeLogger>; // test-ratchet-allow: as-unknown-as
+  _tierEscalationDeps.getSafeLogger = () => logger;
 });
 
 afterEach(() => {
@@ -111,8 +105,8 @@ async function runPreIter(story: UserStory, tierOrder: TierConfig[], previewTier
 
 const UNBOUNDED_WARN = "Current rung not found in tierOrder";
 
-function unboundedWarnings(): WarnCall[] {
-  return warns.filter((w) => w.message.includes(UNBOUNDED_WARN));
+function unboundedWarnings(): LogCall[] {
+  return logger.calls.filter((c) => c.level === "warn" && c.message.includes(UNBOUNDED_WARN));
 }
 
 // ---------------------------------------------------------------------------
@@ -159,7 +153,7 @@ describe("#1575: the unbounded-budget warning still fires once the rung is autho
     const result = await runPreIter(story, CROSS_AGENT_LADDER);
 
     expect(unboundedWarnings()).toHaveLength(1);
-    expect(unboundedWarnings()[0]?.meta).toMatchObject({ storyId: "US-1575", currentTier: "fast", agent: "pi" });
+    expect(unboundedWarnings()[0]?.data).toMatchObject({ storyId: "US-1575", currentTier: "fast", agent: "pi" });
     expect(result.shouldSkipIteration).toBe(false);
   });
 

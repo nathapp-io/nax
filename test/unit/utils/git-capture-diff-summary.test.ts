@@ -5,27 +5,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeSpawn } from "@test/helpers";
 import { _gitDeps, captureDiffSummary } from "@/utils/git";
 
-function mockSpawnOutput(output: string, exitCode = 0): typeof _gitDeps.spawn {
-  return mock((_args: string[], _opts: unknown) => {
-    const bytes = new TextEncoder().encode(output);
-    return {
-      stdout: new ReadableStream({
-        start(c) {
-          c.enqueue(bytes);
-          c.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(c) {
-          c.close();
-        },
-      }),
-      exited: Promise.resolve(exitCode),
-      kill: mock(() => {}),
-    };
-  }) as unknown as typeof _gitDeps.spawn; // test-ratchet-allow: as-unknown-as
+function mockSpawnOutput(output: string, exitCode = 0): typeof Bun.spawn {
+  return makeSpawn(() => ({ stdout: output, exitCode })).spawn;
 }
 
 let origSpawn: typeof _gitDeps.spawn;
@@ -53,25 +37,10 @@ describe("captureDiffSummary", () => {
 
   test("scopes to scopePrefix when provided", async () => {
     let capturedArgs: string[] = [];
-    _gitDeps.spawn = mock((args: string[], _opts: unknown) => {
-      capturedArgs = args as string[];
-      const bytes = new TextEncoder().encode("apps/api/src/index.ts | 1 +\n");
-      return {
-        stdout: new ReadableStream({
-          start(c) {
-            c.enqueue(bytes);
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream({
-          start(c) {
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(0),
-        kill: mock(() => {}),
-      };
-    }) as unknown as typeof _gitDeps.spawn; // test-ratchet-allow: as-unknown-as
+    _gitDeps.spawn = makeSpawn((call) => {
+      capturedArgs = call.cmd;
+      return "apps/api/src/index.ts | 1 +\n";
+    }).spawn;
     await captureDiffSummary("/tmp/repo", "abc123", "apps/api");
     expect(capturedArgs).toContain("--");
     expect(capturedArgs).toContain("apps/api/");

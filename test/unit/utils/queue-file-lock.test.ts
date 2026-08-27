@@ -22,7 +22,7 @@ describe("listLiveCandidates — stale-lock eviction (BUG-10)", () => {
 
     Object.assign(_queueLockDeps, {
       now: () => NOW,
-      readdir: mock(async () => [oldAliveName]) as unknown as typeof _queueLockDeps.readdir, // test-ratchet-allow: as-unknown-as
+      readdir: mock(async () => [oldAliveName]),
       stat: mock(async () => ({ birthtimeMs: 1_000_000_000 }) as Awaited<ReturnType<typeof _queueLockDeps.stat>>),
       unlink: mock(async (path: string) => {
         unlinked.push(path);
@@ -42,7 +42,7 @@ describe("listLiveCandidates — stale-lock eviction (BUG-10)", () => {
 
     Object.assign(_queueLockDeps, {
       now: () => NOW,
-      readdir: mock(async () => [deadPidName]) as unknown as typeof _queueLockDeps.readdir, // test-ratchet-allow: as-unknown-as
+      readdir: mock(async () => [deadPidName]),
       stat: mock(async () => ({ birthtimeMs: NOW }) as Awaited<ReturnType<typeof _queueLockDeps.stat>>),
       unlink: mock(async (path: string) => {
         unlinked.push(path);
@@ -68,7 +68,7 @@ describe("listLiveCandidates — stale-lock eviction (BUG-10)", () => {
 
     Object.assign(_queueLockDeps, {
       now: () => NOW,
-      readdir: mock(async () => [unparseableName]) as unknown as typeof _queueLockDeps.readdir, // test-ratchet-allow: as-unknown-as
+      readdir: mock(async () => [unparseableName]),
       stat: mock(async () => ({ birthtimeMs: NOW }) as Awaited<ReturnType<typeof _queueLockDeps.stat>>),
       unlink: mock(async (path: string) => {
         unlinked.push(path);
@@ -90,7 +90,7 @@ describe("listLiveCandidates — stale-lock eviction (BUG-10)", () => {
 
     Object.assign(_queueLockDeps, {
       now: () => NOW,
-      readdir: mock(async () => [deadPidName, newAliveName, oldAliveName]) as unknown as typeof _queueLockDeps.readdir, // test-ratchet-allow: as-unknown-as
+      readdir: mock(async () => [deadPidName, newAliveName, oldAliveName]),
       stat: mock(async (path: string) => {
         if (path.endsWith(oldAliveName))
           return { birthtimeMs: 1_000_000_000 } as Awaited<ReturnType<typeof _queueLockDeps.stat>>;

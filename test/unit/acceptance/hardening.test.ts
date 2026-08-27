@@ -491,7 +491,7 @@ describe("runHardeningPass()", () => {
       config: {
         ...TEST_CONFIG,
         acceptance: { ...TEST_CONFIG.acceptance, timeoutMs: 50 },
-      } as unknown as NaxConfig, // test-ratchet-allow: as-unknown-as
+      },
     });
 
     const originalKill = process.kill;

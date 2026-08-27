@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { makeAgentAdapter, makeNaxConfig, makeTestContext, makeTestStory, withExecutionDeps } from "@test/helpers";
+import type { ConfigSelector } from "@/config";
 import { NaxError } from "@/errors";
 import type { RepoScopedFixRecord } from "@/execution";
 import type { PostRunInspectionResult } from "@/execution/post-run";
@@ -63,15 +64,16 @@ describe("executionStage.execute — recordRepoScopedFixes wiring (US-002)", () 
         complexity: "simple",
         reasoning: "",
       },
-      packageView: { select: () => cfg } as unknown as PipelineContext["packageView"], // test-ratchet-allow: as-unknown-as
-      ...({
-        runtime: {
-          dispatchEvents: { onDispatch: () => () => {} },
-          signal: undefined,
-          packages: undefined,
-          onPidSpawned: undefined,
-        },
-      } as unknown as Partial<PipelineContext>), // test-ratchet-allow: as-unknown-as
+      // Full PackageView slice over the test config, mirroring what
+      // ctx.runtime?.packages?.resolve() would return for a single-package repo.
+      packageView: {
+        packageDir: "",
+        relativeFromRoot: "",
+        repoRoot: "",
+        hasOverride: false,
+        config: cfg,
+        select: <C>(selector: ConfigSelector<C>) => selector.select(cfg),
+      },
     });
   }
 

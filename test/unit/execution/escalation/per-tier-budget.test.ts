@@ -27,33 +27,26 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
-import type { TierConfig } from "@/config";
+import { makeInProgressStory, makeNaxConfig } from "@test/helpers";
+import type { NaxConfig, TierConfig } from "@/config";
 import { DEFAULT_CONFIG, NaxConfigSchema } from "@/config";
 import { _tierEscalationDeps, calculateMaxIterations, preIterationTierCheck } from "@/execution/escalation";
+import type { PRD, UserStory } from "@/prd";
 
 // ---------------------------------------------------------------------------
 // Shared scaffolding
 // ---------------------------------------------------------------------------
 
-function makeInProgressStory(overrides: Record<string, unknown> = {}) {
-  return {
+/** A story at the "fast" rung, complete `UserStory`, used by every AC test. */
+function fastStory(attempts: number): UserStory {
+  return makeInProgressStory({
     id: "US-003-ac",
-    title: "Story",
-    description: "Test",
-    acceptanceCriteria: [],
-    tags: [],
-    dependencies: [],
-    status: "in-progress" as const,
-    passes: false,
-    escalations: [],
-    attempts: 0,
-    routing: { modelTier: "fast", testStrategy: "test-after" as const },
-    ...overrides,
-  };
+    attempts,
+    routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+  });
 }
 
-function makePrd(stories: ReturnType<typeof makeInProgressStory>[]) {
+function makePrd(stories: UserStory[]): PRD {
   return {
     project: "test",
     feature: "f",
@@ -79,47 +72,19 @@ function buildConfig(tierOrder: TierConfig[], enabled = true) {
   });
 }
 
-/** Cast a partial story to the full UserStory shape that preIterationTierCheck
- *  expects. The function signature uses Parameters<...>[N] to stay in sync
- *  with the source — if a parameter type changes, this helper surfaces the
- *  mismatch at the call site. */
-function asStory(s: ReturnType<typeof makeInProgressStory>) {
-  return s as unknown as Parameters<typeof preIterationTierCheck>[0]; // test-ratchet-allow: as-unknown-as
-}
-
-function asConfig(c: ReturnType<typeof buildConfig>) {
-  return c as unknown as Parameters<typeof preIterationTierCheck>[2]; // test-ratchet-allow: as-unknown-as
-}
-
-function asPrd(p: ReturnType<typeof makePrd>) {
-  return p as unknown as Parameters<typeof preIterationTierCheck>[3]; // test-ratchet-allow: as-unknown-as
-}
-
-function asHooks() {
-  // The function only reads hooks via fireHook for the "no next tier" branch
-  // (AC-8 path). All our AC-3/4/5/6/7 tests never reach it; AC-8 hits the
-  // disabled-escalation branch instead. Either way, an empty hooks object
-  // is the right value.
-  return { hooks: {} } as unknown as Parameters<typeof preIterationTierCheck>[6]; // test-ratchet-allow: as-unknown-as
-}
-
 /** Run preIterationTierCheck with the standard test fixture shape, so each
- *  AC test reads as a single observable assertion instead of four cast
- *  preludes. */
-async function runPreIter(
-  story: ReturnType<typeof makeInProgressStory>,
-  config: ReturnType<typeof buildConfig>,
-  prd: ReturnType<typeof makePrd>,
-  prdPath: string,
-) {
+ *  AC test reads as a single observable assertion instead of cast preludes. */
+async function runPreIter(story: UserStory, config: NaxConfig, prd: PRD, prdPath: string) {
   return await preIterationTierCheck(
-    asStory(story),
-    { modelTier: story.routing.modelTier },
-    asConfig(config),
-    asPrd(prd),
+    story,
+    { modelTier: story.routing?.modelTier ?? "fast" },
+    config,
+    prd,
     prdPath,
     undefined,
-    asHooks(),
+    // Only read on the "no next tier" branch; escalation is either enabled on
+    // an existing rung or disabled entirely in these tests.
+    { hooks: {} },
     "f",
     0,
     "/tmp",
@@ -177,7 +142,7 @@ describe("US-003 AC-2: calculateMaxIterations on the shipped ladder", () => {
 
 describe("US-003 AC-3: preIterationTierCheck — story within rung budget", () => {
   test("returns shouldSkipIteration: false when attempts (1) < rung budget (2)", async () => {
-    const story = makeInProgressStory({ attempts: 1, routing: { modelTier: "fast", testStrategy: "test-after" } });
+    const story = fastStory(1);
     const prd = makePrd([story]);
     const config = buildConfig([
       { tier: "fast", attempts: 2 },
@@ -192,7 +157,7 @@ describe("US-003 AC-3: preIterationTierCheck — story within rung budget", () =
 
 describe("US-003 AC-4: preIterationTierCheck — story at rung budget", () => {
   test("returns shouldSkipIteration: true when attempts (2) === rung budget (2)", async () => {
-    const story = makeInProgressStory({ attempts: 2, routing: { modelTier: "fast", testStrategy: "test-after" } });
+    const story = fastStory(2);
     const prd = makePrd([story]);
     const config = buildConfig([
       { tier: "fast", attempts: 2 },
@@ -211,7 +176,7 @@ describe("US-003 AC-4: preIterationTierCheck — story at rung budget", () => {
 
 describe("US-003 AC-5: preIterationTierCheck — returned PRD advances modelTier on escalation", () => {
   test("result.prd advances story.routing.modelTier to the next rung (fast → balanced)", async () => {
-    const story = makeInProgressStory({ attempts: 2, routing: { modelTier: "fast", testStrategy: "test-after" } });
+    const story = fastStory(2);
     const prd = makePrd([story]);
     const config = buildConfig([
       { tier: "fast", attempts: 2 },
@@ -229,7 +194,7 @@ describe("US-003 AC-5: preIterationTierCheck — returned PRD advances modelTier
 
 describe("US-003 AC-6: preIterationTierCheck — returned PRD resets attempts on escalation", () => {
   test("result.prd resets story.attempts to 0 on escalation", async () => {
-    const story = makeInProgressStory({ attempts: 2, routing: { modelTier: "fast", testStrategy: "test-after" } });
+    const story = fastStory(2);
     const prd = makePrd([story]);
     const config = buildConfig([
       { tier: "fast", attempts: 2 },
@@ -252,10 +217,7 @@ describe("US-003 AC-6: preIterationTierCheck — returned PRD resets attempts on
 describe("US-003 AC-7: preIterationTierCheck — story's current tier is absent from tierOrder", () => {
   test("returns shouldSkipIteration: false when attempts (100) far exceeds any budget and current tier is absent from tierOrder", async () => {
     // Story is routed at "fast" but the only ladder rung is "balanced" — unmatched rung.
-    const story = makeInProgressStory({
-      attempts: 100,
-      routing: { modelTier: "fast", testStrategy: "test-after" },
-    });
+    const story = fastStory(100);
     const prd = makePrd([story]);
     const config = buildConfig([{ tier: "balanced", attempts: 2 }]);
 
@@ -272,7 +234,7 @@ describe("US-003 AC-7: preIterationTierCheck — story's current tier is absent 
 
 describe("US-003 AC-8: preIterationTierCheck — escalation disabled at rung budget", () => {
   test("returns shouldSkipIteration: false at budget (attempts === rung budget) when autoMode.escalation.enabled is false", async () => {
-    const story = makeInProgressStory({ attempts: 2, routing: { modelTier: "fast", testStrategy: "test-after" } });
+    const story = fastStory(2);
     const prd = makePrd([story]);
     // enabled=false → budget exhaustion must not escalate; the iteration proceeds.
     const config = buildConfig(
@@ -295,7 +257,7 @@ describe("US-003 AC-8: preIterationTierCheck — escalation disabled at rung bud
 
 describe("US-003 AC-12: full chain — story fails twice at fast reaches balanced (not powerful)", () => {
   test("default ladder, attempts=2 at fast, returned PRD has modelTier=balanced (not powerful)", async () => {
-    const story = makeInProgressStory({ attempts: 2, routing: { modelTier: "fast", testStrategy: "test-after" } });
+    const story = fastStory(2);
     const prd = makePrd([story]);
     // Use the actual default ladder shipped by NaxConfigSchema — proves AC-12 works
     // against the real SSOT defaults, not a hand-copied mirror.

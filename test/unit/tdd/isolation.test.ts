@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { cleanupTempDir, makeSpawn, makeTempDir } from "@test/helpers";
 import { _isolationDeps, getChangedFiles } from "@/tdd";
 import { getAddedLinesPerFile } from "@/tdd/isolation";
 
@@ -64,38 +64,22 @@ describe("runGitBounded (via getChangedFiles / getAddedLinesPerFile)", () => {
   let origTimeoutMs: typeof _isolationDeps.timeoutMs;
   let killed: boolean;
 
-  function makeHungProc() {
-    killed = false;
-    let resolveExited: (code: number) => void = () => {};
-    return {
-      // Simulates real Bun.spawn behaviour: proc.kill() resolves the exited
-      // promise (128 + SIGKILL(9) = 137), so the `await proc.exited` in
-      // runGitBounded unblocks instead of hanging forever on a mock.
-      exited: new Promise<number>((r) => {
-        resolveExited = r;
-      }),
-      stdout: new ReadableStream({
-        start(c) {
-          c.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(c) {
-          c.close();
-        },
-      }),
-      pid: 0,
-      kill: () => {
-        killed = true;
-        resolveExited(137);
-      },
-    };
-  }
-
   beforeEach(() => {
     origSpawn = _isolationDeps.spawn;
     origTimeoutMs = _isolationDeps.timeoutMs;
     _isolationDeps.timeoutMs = 50;
+    killed = false;
+    // Simulates real Bun.spawn behaviour via the shared stub: proc.kill()
+    // resolves the exited promise (128 + SIGKILL(9) = 137), so the
+    // `await proc.exited` in runGitBounded unblocks instead of hanging
+    // forever on a mock.
+    _isolationDeps.spawn = makeSpawn(() => ({
+      hang: true,
+      killResolvesExited: true,
+      onKill: () => {
+        killed = true;
+      },
+    })).spawn;
   });
 
   afterEach(() => {
@@ -104,15 +88,11 @@ describe("runGitBounded (via getChangedFiles / getAddedLinesPerFile)", () => {
   });
 
   test("getChangedFiles rejects and SIGKILLs the process when git hangs", async () => {
-    _isolationDeps.spawn = mock(() => makeHungProc()) as unknown as typeof _isolationDeps.spawn; // test-ratchet-allow: as-unknown-as
-
     await expect(getChangedFiles("/tmp/does-not-matter", "HEAD")).rejects.toThrow(/timed out/);
     expect(killed).toBe(true);
   });
 
   test("getAddedLinesPerFile rejects when git hangs", async () => {
-    _isolationDeps.spawn = mock(() => makeHungProc()) as unknown as typeof _isolationDeps.spawn; // test-ratchet-allow: as-unknown-as
-
     await expect(getAddedLinesPerFile("/tmp/does-not-matter", "HEAD")).rejects.toThrow(/timed out/);
     expect(killed).toBe(true);
   });

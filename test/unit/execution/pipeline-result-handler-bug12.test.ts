@@ -7,7 +7,17 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeAgentResult, makeLogger, makeMockRuntime, makePRD, makeStory, makeTestContext } from "@test/helpers";
+import {
+  makeAgentResult,
+  makeDispatchContext,
+  makeLogger,
+  makePRD,
+  makeSpawn,
+  makeSpawnResult,
+  makeStory,
+  makeTestContext,
+  type SpawnResult,
+} from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { _resultHandlerDeps, handlePipelineFailure, type PipelineHandlerContext } from "@/execution";
 import * as loggerModule from "@/logger";
@@ -26,7 +36,7 @@ function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = 
     prd,
     prdPath: "/tmp/prd.json",
     workdir: "/tmp/repo",
-    hooks: { hooks: [] } as unknown as PipelineHandlerContext["hooks"], // test-ratchet-allow: as-unknown-as
+    hooks: { hooks: {} },
     feature: "test-feature",
     totalCost: 0,
     startTime: Date.now(),
@@ -38,9 +48,9 @@ function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = 
     isBatchExecution: false,
     allStoryMetrics: [],
     storyGitRef: "abc123",
-    runtime: makeMockRuntime(),
+    ...makeDispatchContext(),
     ...overrides,
-  } as unknown as PipelineHandlerContext; // test-ratchet-allow: as-unknown-as (agentManager/sessionManager are optional in tests)
+  };
 }
 
 const WORKTREE_CONFIG = {
@@ -104,29 +114,36 @@ describe("handlePipelineFailure — worktree removal drains streams (BUG-12)", (
       });
       return { promise, resolveRead };
     })();
-    _resultHandlerDeps.spawn = mock(() => ({
-      stdout: new ReadableStream<Uint8Array>({
-        start(c) {
-          c.enqueue(encoder.encode("warning: dirty worktree\n"));
-        },
-        pull(c) {
-          onRead.resolveRead();
-          c.close();
-        },
-      }),
-      stderr: new ReadableStream<Uint8Array>({
-        start(c) {
-          c.enqueue(encoder.encode(bigOutput));
-        },
-        pull(c) {
-          onRead.resolveRead();
-          c.close();
-        },
-      }),
-      // Resolves only once BOTH streams have been read to completion.
-      exited: Promise.all([onRead.promise, onRead.promise]).then(() => 0),
-      kill: mock(() => {}),
-    })) as unknown as typeof _resultHandlerDeps.spawn; // test-ratchet-allow: as-unknown-as (mock spawn cast)
+    // Typed via an overload wrapper (the test/helpers/spawn.ts pattern): the
+    // literal is what the fake really builds, and the public signature says
+    // `SpawnResult` so the dep-slot assignment needs no assertion.
+    function drainProbeProc(): SpawnResult;
+    function drainProbeProc(): unknown {
+      return {
+        stdout: new ReadableStream<Uint8Array>({
+          start(c) {
+            c.enqueue(encoder.encode("warning: dirty worktree\n"));
+          },
+          pull(c) {
+            onRead.resolveRead();
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream<Uint8Array>({
+          start(c) {
+            c.enqueue(encoder.encode(bigOutput));
+          },
+          pull(c) {
+            onRead.resolveRead();
+            c.close();
+          },
+        }),
+        // Resolves only once BOTH streams have been read to completion.
+        exited: Promise.all([onRead.promise, onRead.promise]).then(() => 0),
+        kill: mock(() => {}),
+      };
+    }
+    _resultHandlerDeps.spawn = () => drainProbeProc();
 
     await Promise.race([
       handlePipelineFailure(ctx, failResult),
@@ -151,24 +168,8 @@ describe("handlePipelineFailure — worktree removal drains streams (BUG-12)", (
       },
     });
 
-    _resultHandlerDeps.spawn = mock(() => {
-      const encoder = new TextEncoder();
-      return {
-        stdout: new ReadableStream<Uint8Array>({
-          start(c) {
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream<Uint8Array>({
-          start(c) {
-            c.enqueue(encoder.encode("fatal: worktree is dirty\n"));
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(128),
-        kill: mock(() => {}),
-      };
-    }) as unknown as typeof _resultHandlerDeps.spawn; // test-ratchet-allow: as-unknown-as (mock spawn cast)
+    _resultHandlerDeps.spawn = () =>
+      makeSpawnResult({ stdout: "", stderr: "fatal: worktree is dirty\n", exitCode: 128 });
 
     await handlePipelineFailure(ctx, failResult);
 
@@ -198,28 +199,14 @@ describe("handlePipelineFailure — worktree removal drains streams (BUG-12)", (
       },
     });
 
-    _resultHandlerDeps.spawn = mock(() => {
-      const encoder = new TextEncoder();
-      // Distinctive markers so the swap is unambiguous in the assertion below.
-      const STDOUT_MARKER = "stdout-marker-ignore-me\n";
-      const STDERR_MARKER = "stderr-marker-include-me\n";
-      return {
-        stdout: new ReadableStream<Uint8Array>({
-          start(c) {
-            c.enqueue(encoder.encode(STDOUT_MARKER));
-            c.close();
-          },
-        }),
-        stderr: new ReadableStream<Uint8Array>({
-          start(c) {
-            c.enqueue(encoder.encode(STDERR_MARKER));
-            c.close();
-          },
-        }),
-        exited: Promise.resolve(128),
-        kill: mock(() => {}),
-      };
-    }) as unknown as typeof _resultHandlerDeps.spawn; // test-ratchet-allow: as-unknown-as (mock spawn cast)
+    // Distinctive markers so the swap is unambiguous in the assertion below.
+    const STDOUT_MARKER = "stdout-marker-ignore-me\n";
+    const STDERR_MARKER = "stderr-marker-include-me\n";
+    _resultHandlerDeps.spawn = makeSpawn(() => ({
+      stdout: STDOUT_MARKER,
+      stderr: STDERR_MARKER,
+      exitCode: 128,
+    })).spawn;
 
     await handlePipelineFailure(ctx, failResult);
 
