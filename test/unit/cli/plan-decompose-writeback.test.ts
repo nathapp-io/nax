@@ -11,6 +11,7 @@ import { join } from "node:path";
 import {
   assertDefined,
   cleanupTempDir,
+  makeDebateRunner,
   makeMockAgentManager,
   makeMockRuntime,
   makeNaxConfig,
@@ -51,6 +52,15 @@ function makeMockDecomposeManager(
 // ─────────────────────────────────────────────────────────────────────────────
 
 const FEATURE = "my-feature";
+
+function makeStageConfig() {
+  return {
+    enabled: false,
+    resolver: { type: "synthesis" as const },
+    sessionMode: "one-shot" as const,
+    rounds: 0,
+  };
+}
 
 function makeSiblingStory(id: string, title: string): UserStory {
   return makeStory({ id, title });
@@ -263,7 +273,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
     const capturedDebateOpts: unknown[] = [];
     _planDeps.createDebateRunner = mock((opts) => {
       capturedDebateOpts.push(opts);
-      return {
+      return makeDebateRunner({
         run: mock(async () => ({
           storyId: "US-001",
           stage: "decompose",
@@ -275,13 +285,18 @@ describe("planDecomposeCommand — PRD write-back", () => {
           totalCostUsd: 0,
           output: makeDecomposeResponse(stories),
         })),
-      } as never;
+      });
     });
 
     const debateConfig = {
       enabled: true,
       agents: 2,
       stages: {
+        plan: makeStageConfig(),
+        review: makeStageConfig(),
+        acceptance: makeStageConfig(),
+        rectification: makeStageConfig(),
+        escalation: makeStageConfig(),
         decompose: {
           enabled: true,
           resolver: { type: "synthesis" as const },
@@ -291,7 +306,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
       },
     };
 
-    await planDecomposeCommand(tmpDir, makeNaxConfig({ debate: debateConfig as never }), {
+    await planDecomposeCommand(tmpDir, makeNaxConfig({ debate: debateConfig }), {
       feature: FEATURE,
       storyId: "US-001",
     });
@@ -305,21 +320,20 @@ describe("planDecomposeCommand — PRD write-back", () => {
     const prd = makePrd();
     setupDeps(prd, stories);
 
-    _planDeps.createDebateRunner = mock(
-      () =>
-        ({
-          run: mock(async () => ({
-            storyId: "US-001",
-            stage: "decompose",
-            outcome: "passed" as const,
-            rounds: 1,
-            debaters: ["claude"],
-            resolverType: "synthesis" as const,
-            proposals: [],
-            totalCostUsd: 0,
-            output: makeDecomposeResponse(stories),
-          })),
-        }) as never,
+    _planDeps.createDebateRunner = mock(() =>
+      makeDebateRunner({
+        run: mock(async () => ({
+          storyId: "US-001",
+          stage: "decompose",
+          outcome: "passed" as const,
+          rounds: 1,
+          debaters: ["claude"],
+          resolverType: "synthesis" as const,
+          proposals: [],
+          totalCostUsd: 0,
+          output: makeDecomposeResponse(stories),
+        })),
+      }),
     );
 
     const adapterDecomposeCalls: unknown[] = [];
@@ -336,6 +350,11 @@ describe("planDecomposeCommand — PRD write-back", () => {
       enabled: true,
       agents: 2,
       stages: {
+        plan: makeStageConfig(),
+        review: makeStageConfig(),
+        acceptance: makeStageConfig(),
+        rectification: makeStageConfig(),
+        escalation: makeStageConfig(),
         decompose: {
           enabled: true,
           resolver: { type: "synthesis" as const },
@@ -345,7 +364,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
       },
     };
 
-    await planDecomposeCommand(tmpDir, makeNaxConfig({ debate: debateConfig as never }), {
+    await planDecomposeCommand(tmpDir, makeNaxConfig({ debate: debateConfig }), {
       feature: FEATURE,
       storyId: "US-001",
     });

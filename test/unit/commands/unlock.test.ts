@@ -67,10 +67,10 @@ describe("unlockCommand", () => {
     };
 
     // Intercept process.exit: record the code and throw so the command stops.
-    process.exit = ((code?: number) => {
+    process.exit = (code?: number): never => {
       exitCode = code ?? 0;
       throw new ExitError(exitCode);
-    }) as never;
+    };
   });
 
   afterEach(() => {

@@ -21,6 +21,7 @@ import {
 } from "@test/helpers";
 import type { AgentRunRequest } from "@/agents";
 import * as loggerModule from "@/logger";
+import { Logger } from "@/logger";
 import { callOp, semanticReviewOp } from "@/operations";
 import type { SemanticReviewInput } from "@/operations/semantic-review";
 import type { HopBodyContext } from "@/operations/types";
@@ -79,20 +80,22 @@ interface MockLogger {
   warnCalls: LogCall[];
 }
 
-function makeLogger(): MockLogger {
+function makeLogger(): Logger & MockLoggerExtras {
   const infoCalls: LogCall[] = [];
   const warnCalls: LogCall[] = [];
-  return {
-    infoCalls,
-    warnCalls,
-    info: mock((stage: string, message: string, data?: Record<string, unknown>) => {
-      infoCalls.push({ stage, message, data });
-    }),
-    warn: mock((stage: string, message: string, data?: Record<string, unknown>) => {
-      warnCalls.push({ stage, message, data });
-    }),
-    debug: mock(() => {}),
-  };
+  const logger = new Logger({ level: "silent" });
+  logger.info = ((stage: string, message: string, data?: Record<string, unknown>) => {
+    infoCalls.push({ stage, message, data });
+  }) as typeof logger.info;
+  logger.warn = ((stage: string, message: string, data?: Record<string, unknown>) => {
+    warnCalls.push({ stage, message, data });
+  }) as typeof logger.warn;
+  return Object.assign(logger, { infoCalls, warnCalls });
+}
+
+interface MockLoggerExtras {
+  infoCalls: LogCall[];
+  warnCalls: LogCall[];
 }
 
 // ─── Saved deps ──────────────────────────────────────────────────────────────
@@ -298,7 +301,7 @@ describe("runSemanticReview — logging", () => {
 
   test("logs info 'Semantic review passed' on success", async () => {
     const logger = makeLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
 
     _semanticDeps.callOp = mock(async () => makeSemanticOutput({ passed: true, findings: [] }));
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
@@ -320,7 +323,7 @@ describe("runSemanticReview — logging", () => {
 
   test("logs warn 'Retry exhausted — fail-open' when callOp returns failOpen", async () => {
     const logger = makeLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
 
     _semanticDeps.callOp = mock(async () => makeSemanticOutput({ passed: true, findings: [], failOpen: true }));
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
@@ -342,7 +345,7 @@ describe("runSemanticReview — logging", () => {
 
   test("logs warn 'LLM returned truncated JSON' when callOp returns looksLikeFail", async () => {
     const logger = makeLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
 
     _semanticDeps.callOp = mock(async () => makeSemanticOutput({ passed: false, findings: [], looksLikeFail: true }));
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);
@@ -364,7 +367,7 @@ describe("runSemanticReview — logging", () => {
 
   test("does not log 'Retry exhausted' when callOp returns success", async () => {
     const logger = makeLogger();
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
 
     _semanticDeps.callOp = mock(async () => makeSemanticOutput({ passed: true, findings: [] }));
     const agentManager = makeAgentManager(PASSING_LLM_RESPONSE);

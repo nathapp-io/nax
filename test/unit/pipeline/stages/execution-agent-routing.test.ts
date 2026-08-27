@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { makeAgentAdapter } from "@test/helpers";
 import { resolveExecutionAgent } from "@/pipeline";
 
-const fakeAdapter = (name: string) => ({ name }) as never;
+const fakeAdapter = (name: string) => makeAgentAdapter({ name });
 
 describe("resolveExecutionAgent", () => {
   test("uses the routed agent when its adapter resolves", () => {

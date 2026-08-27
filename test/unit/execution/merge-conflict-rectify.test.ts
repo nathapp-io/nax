@@ -11,6 +11,7 @@ import { describe, expect, test } from "bun:test";
 import {
   makeMockAgentManager,
   makeNaxConfig,
+  makePluginRegistry,
   makePRD,
   makeSessionManager,
   makeStory,
@@ -22,20 +23,6 @@ import {
   rectifyConflictedStory,
   rectifyMergeFailure,
 } from "@/execution/merge-conflict-rectify";
-
-const FAKE_RUNTIME = {
-  outputDir: "/tmp/nax-rect-test-output",
-  costAggregator: {
-    snapshot: () => ({
-      totalCostUsd: 0,
-      totalEstimatedCostUsd: 0,
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
-      callCount: 0,
-      errorCount: 0,
-    }),
-  },
-} as never;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // rect AC-7 — errors are caught, not propagated; returns { success: false }
@@ -53,7 +40,7 @@ describe("rect AC-7: rectifyConflictedStory catches errors and returns failure �
       workdir: "/tmp/nonexistent-workdir-for-test",
       config,
       hooks: { hooks: {} },
-      pluginRegistry: { getReporters: () => [], getContextProviders: () => [] } as never,
+      pluginRegistry: makePluginRegistry(),
       prd,
       pipelineContextBase: makeTestContext({
         config,
@@ -61,8 +48,6 @@ describe("rect AC-7: rectifyConflictedStory catches errors and returns failure �
         workdir: "/tmp/nonexistent-workdir-for-test",
         agentManager: makeMockAgentManager(),
         sessionManager: makeSessionManager(),
-        runtime: FAKE_RUNTIME,
-        abortSignal: undefined as never,
       }),
       ...overrides,
     };
@@ -102,7 +87,7 @@ describe("rect AC-7: rectifyConflictedStory catches errors and returns failure �
       workdir: "/tmp/nonexistent-workdir-for-test",
       config,
       hooks: { hooks: {} },
-      pluginRegistry: { getReporters: () => [], getContextProviders: () => [] } as never,
+      pluginRegistry: makePluginRegistry(),
       prd,
       pipelineContextBase: makeTestContext({
         config,
@@ -110,8 +95,6 @@ describe("rect AC-7: rectifyConflictedStory catches errors and returns failure �
         workdir: "/tmp/nonexistent-workdir-for-test",
         agentManager: makeMockAgentManager(),
         sessionManager: makeSessionManager(),
-        runtime: FAKE_RUNTIME,
-        abortSignal: undefined as never,
       }),
     };
 
@@ -208,8 +191,6 @@ describe("buildRectificationPipelineContext: the rectification re-run inherits t
       skipPrdPersistence: true,
       agentManager: makeMockAgentManager(),
       sessionManager: makeSessionManager(),
-      runtime: FAKE_RUNTIME,
-      abortSignal: undefined as never,
       ...overrides,
     });
   }
@@ -221,7 +202,7 @@ describe("buildRectificationPipelineContext: the rectification re-run inherits t
       story,
       config: makeNaxConfig(),
       hooks: { hooks: {} },
-      pluginRegistry: { getReporters: () => [], getContextProviders: () => [] } as never,
+      pluginRegistry: makePluginRegistry(),
       workdir: "/tmp/nax-rect-ctx",
       worktreePath: "/tmp/nax-rect-ctx/.nax-wt/US-001",
       routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
@@ -240,7 +221,7 @@ describe("buildRectificationPipelineContext: the rectification re-run inherits t
       story,
       config: makeNaxConfig(),
       hooks: { hooks: {} },
-      pluginRegistry: { getReporters: () => [], getContextProviders: () => [] } as never,
+      pluginRegistry: makePluginRegistry(),
       workdir: "/tmp/nax-rect-ctx",
       worktreePath: "/tmp/nax-rect-ctx/.nax-wt/US-001",
       routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
@@ -256,7 +237,7 @@ describe("buildRectificationPipelineContext: the rectification re-run inherits t
       story,
       config: makeNaxConfig(),
       hooks: { hooks: {} },
-      pluginRegistry: { getReporters: () => [], getContextProviders: () => [] } as never,
+      pluginRegistry: makePluginRegistry(),
       workdir: "/tmp/nax-rect-ctx",
       worktreePath: "/tmp/nax-rect-ctx/.nax-wt/US-002",
       routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },

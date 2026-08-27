@@ -13,6 +13,7 @@ import type { AdapterFailure, ContextBundle } from "@/context/engine";
 import type { BuildHopCallbackContext } from "@/operations";
 import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
 import type { TimeoutRetryInput } from "@/prompts";
+import type { SessionDescriptor } from "@/session/types";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -247,7 +248,18 @@ describe("buildHopCallback — failure hop (fallback)", () => {
     const rebuiltBundle = makeBundle({ pushMarkdown: "## Rebuilt context" });
     _buildHopCallbackDeps.rebuildForAgent = mock(() => rebuiltBundle);
 
-    const handoffMock = mock(() => ({}) as never);
+    const handoffDescriptor: SessionDescriptor = {
+      id: SESSION_ID,
+      role: "main",
+      state: "RUNNING",
+      agent: "codex",
+      workdir: "/tmp",
+      protocolIds: { recordId: null, sessionId: null },
+      completedStages: [],
+      createdAt: new Date(0).toISOString(),
+      lastActivityAt: new Date(0).toISOString(),
+    };
+    const handoffMock = mock(() => handoffDescriptor);
     const sessionManager = makeSessionManager({ handoff: handoffMock });
     const agentManager = makeAgentManagerStub();
     const ctx = makeCtx({ sessionManager, agentManager });

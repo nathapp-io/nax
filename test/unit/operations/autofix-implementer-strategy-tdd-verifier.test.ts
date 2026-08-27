@@ -9,6 +9,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { makeStory } from "@test/helpers";
 
 const BASE = join(import.meta.dir, "../../../src/operations");
 
@@ -27,7 +28,7 @@ describe("AC4: IMPLEMENTER_SOURCES includes tdd-verifier", () => {
     const { makeAutofixImplementerStrategy, makeDeclarationSink } = await import("@/operations");
     const { makeNaxConfig } = await import("@test/helpers");
 
-    const story = { id: "US-001" } as never;
+    const story = makeStory({ id: "US-001" });
     const strategy = makeAutofixImplementerStrategy(story, makeNaxConfig(), makeDeclarationSink());
 
     expect(strategy.appliesTo(makeTddVerifierFinding("source"))).toBe(true);
@@ -37,7 +38,7 @@ describe("AC4: IMPLEMENTER_SOURCES includes tdd-verifier", () => {
     const { makeAutofixImplementerStrategy, makeDeclarationSink } = await import("@/operations");
     const { makeNaxConfig } = await import("@test/helpers");
 
-    const story = { id: "US-001" } as never;
+    const story = makeStory({ id: "US-001" });
     const strategy = makeAutofixImplementerStrategy(story, makeNaxConfig(), makeDeclarationSink());
 
     // fixTarget=test routes to autofix-test-writer, not implementer

@@ -7,6 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeStory as makeUserStory } from "@test/helpers";
 import { render } from "ink-testing-library";
 import { act } from "react";
 import { PipelineEventEmitter, pipelineEventBus } from "@/pipeline";
@@ -15,7 +16,7 @@ import { App } from "@/tui/App";
 
 function makeStory(id: string): StoryDisplayState {
   return {
-    story: { id, title: `Story ${id}`, passes: false, workdir: ".", acceptanceCriteria: [] } as never,
+    story: makeUserStory({ id, title: `Story ${id}`, workdir: "." }),
     status: "pending",
   };
 }

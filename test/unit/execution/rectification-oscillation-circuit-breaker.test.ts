@@ -17,8 +17,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeTestContext, makeTestRuntime } from "@test/helpers";
-import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import { makeTestContext, makeTestRuntime, makeTestStory } from "@test/helpers";
+import { type DEFAULT_CONFIG, type NaxConfig, pickSelector } from "@/config";
 import {
   _postRunDeps,
   _storyOrchestratorDeps,
@@ -104,12 +104,13 @@ describe("AC2: countOscillationOutcomes returns 0 without a resolved-source reap
 // ─────────────────────────────────────────────────────────────────────────────
 
 const testSel = pickSelector("test-oscillation-sel", "execution");
+type ExecutionSlice = Pick<NaxConfig, "execution">;
 
-const mockImplementerOp: RunOperation<{ story: string }, { success: boolean }, typeof DEFAULT_CONFIG> = {
+const mockImplementerOp: RunOperation<{ story: string }, { success: boolean }, ExecutionSlice> = {
   kind: "run",
   name: "implementer",
   stage: "run",
-  config: testSel as never,
+  config: testSel,
   session: { role: "implementer", lifetime: "warm" },
   build: () => ({
     role: { id: "r", content: "impl", overridable: false },
@@ -120,12 +121,12 @@ const mockImplementerOp: RunOperation<{ story: string }, { success: boolean }, t
 
 function makePhaseOp(
   name: string,
-): RunOperation<{ story: string }, { success: boolean; findings: Finding[] }, typeof DEFAULT_CONFIG> {
+): RunOperation<{ story: string }, { success: boolean; findings: Finding[] }, ExecutionSlice> {
   return {
     kind: "run",
     name,
     stage: "verify",
-    config: testSel as never,
+    config: testSel,
     session: { role: "verifier", lifetime: "fresh" },
     build: () => ({
       role: { id: "r", content: name, overridable: false },
@@ -278,7 +279,7 @@ describe("AC3: runRectification increments rectificationOscillations on source r
 function buildRuntimeWithoutOscillations(): PipelineContext {
   const sharedRuntime = makeTestRuntime();
   const ctx = makeTestContext({
-    story: { id: "US-cb-9", title: "CB test" } as never,
+    story: makeTestStory({ id: "US-cb-9", title: "CB test" }),
   });
   Object.defineProperty(ctx, "runtime", {
     value: sharedRuntime,
@@ -295,7 +296,7 @@ function buildRuntimeWithoutOscillations(): PipelineContext {
       ...ctx.config.review,
       conflictDetection: { enabled: true, maxOscillations: 2 },
     },
-  } as typeof ctx.config;
+  };
   return ctx;
 }
 
@@ -351,7 +352,7 @@ describe("AC4: decideStageAction returns action === 'pause' when the breaker thr
     await buildRectificationPlan(callCtx).run();
 
     const ctx = makeTestContext({
-      story: { id: "US-cb-1", title: "CB test" } as never,
+      story: makeTestStory({ id: "US-cb-1", title: "CB test" }),
     });
     Object.defineProperty(ctx, "runtime", {
       value: sharedRuntime,
@@ -363,7 +364,7 @@ describe("AC4: decideStageAction returns action === 'pause' when the breaker thr
         ...ctx.config.review,
         conflictDetection: { enabled: true, maxOscillations: 2 },
       },
-    } as typeof ctx.config;
+    };
 
     const planResult = makePlanResult({
       success: false,
@@ -398,7 +399,7 @@ describe("AC5/AC6: pause reason includes the count and an oscillation substring"
     await buildRectificationPlan(callCtx).run();
 
     const ctx = makeTestContext({
-      story: { id: "US-cb-2", title: "CB test" } as never,
+      story: makeTestStory({ id: "US-cb-2", title: "CB test" }),
     });
     Object.defineProperty(ctx, "runtime", {
       value: sharedRuntime,
@@ -410,7 +411,7 @@ describe("AC5/AC6: pause reason includes the count and an oscillation substring"
         ...ctx.config.review,
         conflictDetection: { enabled: true, maxOscillations: 2 },
       },
-    } as typeof ctx.config;
+    };
 
     const planResult = makePlanResult({
       success: false,
@@ -452,7 +453,7 @@ describe("AC7: count below maxOscillations escalates", () => {
     expect(getOscillations(sharedRuntime.rectificationOscillations, "US-cb-3")).toBe(1);
 
     const ctx = makeTestContext({
-      story: { id: "US-cb-3", title: "CB test" } as never,
+      story: makeTestStory({ id: "US-cb-3", title: "CB test" }),
     });
     Object.defineProperty(ctx, "runtime", {
       value: sharedRuntime,
@@ -464,7 +465,7 @@ describe("AC7: count below maxOscillations escalates", () => {
         ...ctx.config.review,
         conflictDetection: { enabled: true, maxOscillations: 2 },
       },
-    } as typeof ctx.config;
+    };
 
     const planResult = makePlanResult({
       success: false,
@@ -499,7 +500,7 @@ describe("AC8: conflictDetection.enabled === false escalates even when count >= 
     await buildRectificationPlan(callCtx).run();
 
     const ctx = makeTestContext({
-      story: { id: "US-cb-4", title: "CB test" } as never,
+      story: makeTestStory({ id: "US-cb-4", title: "CB test" }),
     });
     Object.defineProperty(ctx, "runtime", {
       value: sharedRuntime,
@@ -511,7 +512,7 @@ describe("AC8: conflictDetection.enabled === false escalates even when count >= 
         ...ctx.config.review,
         conflictDetection: { enabled: false, maxOscillations: 2 },
       },
-    } as typeof ctx.config;
+    };
 
     const planResult = makePlanResult({
       success: false,
@@ -568,7 +569,7 @@ describe("AC10: count=0 on a normal single-source unfixable finding escalates", 
     expect(getOscillations(sharedRuntime.rectificationOscillations, "US-cb-6")).toBe(0);
 
     const ctx = makeTestContext({
-      story: { id: "US-cb-6", title: "CB test" } as never,
+      story: makeTestStory({ id: "US-cb-6", title: "CB test" }),
     });
     Object.defineProperty(ctx, "runtime", {
       value: sharedRuntime,
@@ -580,7 +581,7 @@ describe("AC10: count=0 on a normal single-source unfixable finding escalates", 
         ...ctx.config.review,
         conflictDetection: { enabled: true, maxOscillations: 2 },
       },
-    } as typeof ctx.config;
+    };
 
     const planResult = makePlanResult({
       success: false,
@@ -616,7 +617,7 @@ describe("AC11: pause emits a notify through the injected interaction channel", 
 
     const sent: Array<{ type: string }> = [];
     const ctx = makeTestContext({
-      story: { id: "US-cb-7", title: "CB test" } as never,
+      story: makeTestStory({ id: "US-cb-7", title: "CB test" }),
     });
     Object.defineProperty(ctx, "runtime", {
       value: sharedRuntime,
@@ -636,7 +637,7 @@ describe("AC11: pause emits a notify through the injected interaction channel", 
         ...ctx.config.review,
         conflictDetection: { enabled: true, maxOscillations: 2 },
       },
-    } as typeof ctx.config;
+    };
 
     const planResult = makePlanResult({
       success: false,
@@ -673,7 +674,7 @@ describe("AC12: interaction.send() throwing does not abort the pause", () => {
     await buildRectificationPlan(callCtx).run();
 
     const ctx = makeTestContext({
-      story: { id: "US-cb-8", title: "CB test" } as never,
+      story: makeTestStory({ id: "US-cb-8", title: "CB test" }),
     });
     Object.defineProperty(ctx, "runtime", {
       value: sharedRuntime,
@@ -693,7 +694,7 @@ describe("AC12: interaction.send() throwing does not abort the pause", () => {
         ...ctx.config.review,
         conflictDetection: { enabled: true, maxOscillations: 2 },
       },
-    } as typeof ctx.config;
+    };
 
     const planResult = makePlanResult({
       success: false,

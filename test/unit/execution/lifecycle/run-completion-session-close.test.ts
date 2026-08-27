@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeDispatchContext, makeSessionManager, makeStatusWriter } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _runCompletionDeps, handleRunCompletion } from "@/execution/lifecycle/run-completion";
+import type { PRD } from "@/prd";
 
-const makePrd = () => ({
+const makePrd = (): PRD => ({
   project: "test-project",
   feature: "test-feature",
   branchName: "test-branch",
@@ -39,14 +40,14 @@ describe("handleRunCompletion session teardown", () => {
       runId: "run-1",
       feature: "test-feature",
       startedAt: new Date().toISOString(),
-      prd: makePrd() as never,
+      prd: makePrd(),
       allStoryMetrics: [],
       totalCost: 0,
       storiesCompleted: 0,
       iterations: 1,
       startTime: Date.now() - 100,
       workdir: "/tmp/workdir",
-      statusWriter: makeStatusWriter() as never,
+      statusWriter: makeStatusWriter(),
       config: {
         ...DEFAULT_CONFIG,
         execution: {
@@ -56,7 +57,7 @@ describe("handleRunCompletion session teardown", () => {
             mode: "disabled",
           },
         },
-      } as never,
+      },
       ...makeDispatchContext({
         sessionManager: makeSessionManager({ closeStory: mock(() => []), listActive: mock(() => []) }),
       }),

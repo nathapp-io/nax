@@ -41,17 +41,17 @@ describe("fetchWithTimeout", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("ContextOrchestrator — configurable provider timeout", () => {
-  function slowProvider(delayMs: number) {
+  function slowProvider(delayMs: number): IContextProvider {
     return {
       id: "slow",
-      kind: "retrieved" as const,
+      kind: "static",
       fetch: async () => {
         await new Promise((r) => setTimeout(r, delayMs));
         return {
           chunks: [
             {
               id: "slow:1",
-              kind: "retrieved",
+              kind: "static",
               scope: "retrieved",
               role: ["all"],
               content: "x",
@@ -65,7 +65,7 @@ describe("ContextOrchestrator — configurable provider timeout", () => {
     };
   }
 
-  const REQ = {
+  const REQ: ContextRequest = {
     storyId: "US-001",
     repoRoot: "/p",
     packageDir: "/p",
@@ -73,17 +73,18 @@ describe("ContextOrchestrator — configurable provider timeout", () => {
     role: "implementer",
     budgetTokens: 8000,
     providerIds: ["slow"],
+    providerTimeoutMs: 0,
   };
 
   test("drops a provider that exceeds request.providerTimeoutMs", async () => {
-    const orch = new ContextOrchestrator([slowProvider(80) as never]);
-    const bundle = await orch.assemble({ ...REQ, providerTimeoutMs: 10 } as never);
+    const orch = new ContextOrchestrator([slowProvider(80)]);
+    const bundle = await orch.assemble({ ...REQ, providerTimeoutMs: 10 });
     expect(bundle.manifest.includedChunks).toHaveLength(0);
   });
 
   test("keeps a provider that finishes within request.providerTimeoutMs", async () => {
-    const orch = new ContextOrchestrator([slowProvider(10) as never]);
-    const bundle = await orch.assemble({ ...REQ, providerTimeoutMs: 400 } as never);
+    const orch = new ContextOrchestrator([slowProvider(10)]);
+    const bundle = await orch.assemble({ ...REQ, providerTimeoutMs: 400 });
     expect(bundle.manifest.includedChunks).toHaveLength(1);
   });
 });

@@ -1,12 +1,26 @@
 /**
  * Shared test fixtures for parallel metrics integration tests.
- * Imported by runner-parallel-metrics-cost-duration.test.ts and
+ * Imported by runner-parallel-metrics.test.ts,
+ * runner-parallel-metrics-cost-duration.test.ts and
  * runner-parallel-metrics-rectification-events.test.ts.
  */
 
-import { mock } from "bun:test";
-import { makePRD, makeStory } from "@test/helpers";
+import {
+  makeDispatchContext,
+  makePluginRegistry,
+  makePRD,
+  makeStatusWriter,
+  makeStory,
+  makeTestRuntime,
+} from "@test/helpers";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import type { SequentialExecutionContext } from "@/execution/unified-executor";
+import type { LoadedHooksConfig } from "@/hooks";
 import type { PRD, UserStory } from "@/prd/types";
+import { createNoOpCostAggregator } from "@/runtime";
+
+const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
 
 export function makePendingStory(id: string): UserStory {
   return makeStory({
@@ -35,63 +49,46 @@ export function makePrd(stories: UserStory[]): PRD {
   });
 }
 
-export function makeCtx(overrides: { parallelCount?: number; costLimit?: number; maxIterations?: number } = {}) {
+export interface MakeCtxOverrides {
+  parallelCount?: number;
+  costLimit?: number;
+  maxIterations?: number;
+}
+
+export function makeCtx(overrides: MakeCtxOverrides = {}): SequentialExecutionContext {
   const { parallelCount, costLimit = 100, maxIterations = 1 } = overrides;
+  const config: NaxConfig = {
+    ...DEFAULT_CONFIG,
+    execution: {
+      ...DEFAULT_CONFIG.execution,
+      maxIterations,
+      costLimit,
+      iterationDelayMs: 0,
+      rectification: {
+        ...DEFAULT_CONFIG.execution.rectification,
+        maxAttemptsTotal: 2,
+      },
+    },
+  };
+  // No-op aggregator keeps cost accounting deterministic: the tests drive
+  // enforceCostLimit through mocked batch totals only.
+  const runtime = makeTestRuntime({ config, costAggregator: createNoOpCostAggregator() });
   return {
     prdPath: "/tmp/test-prd.json",
     workdir: "/tmp/test-workdir",
-    config: {
-      execution: {
-        maxIterations,
-        costLimit,
-        iterationDelayMs: 0,
-        rectification: { maxAttemptsTotal: 2 },
-      },
-      agent: { default: "claude-code" },
-      interaction: {},
-    },
-    hooks: {},
+    config,
+    hooks: EMPTY_HOOKS,
     feature: "test-feature",
     featureDir: "/tmp/test-feature-dir",
     dryRun: false,
     useBatch: false,
-    pluginRegistry: {
-      getReporters: () => [],
-      getContextProviders: () => [],
-    },
-    statusWriter: {
-      setPrd: mock(() => {}),
-      setCurrentStory: mock(() => {}),
-      setRunStatus: mock(() => {}),
-      update: mock(async () => {}),
-    },
+    pluginRegistry: makePluginRegistry(),
+    statusWriter: makeStatusWriter(),
     runId: "run-test",
     startTime: Date.now(),
     batchPlan: [],
     interactionChain: null,
-    runtime: {
-      outputDir: "/tmp/nax-test-parallel-metrics-output",
-      // nax#1709: parallel metrics read these run-scoped stores.
-      agentFallbacks: new Map(),
-      runtimeCrashRetries: new Map(),
-      costAggregator: {
-        snapshot: () => ({
-          totalCostUsd: 0,
-          totalEstimatedCostUsd: 0,
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          callCount: 0,
-          errorCount: 0,
-        }),
-        byStage: () => ({}),
-        byStory: () => ({}),
-        byAgent: () => ({}),
-        record: () => {},
-        recordError: () => {},
-        recordOperationSummary: () => {},
-        drain: async () => {},
-      },
-    },
     parallelCount,
+    ...makeDispatchContext({ runtime }),
   };
 }

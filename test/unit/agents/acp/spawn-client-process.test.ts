@@ -116,7 +116,7 @@ describe("runTrackedSpawn — MEM-19 normal-exit drain deadline", () => {
     const startedAt = Date.now();
     const result = await runTrackedSpawn(
       {
-        spawn: spawn as never,
+        spawn,
         // Far away — the exited race must win; the DRAIN must be what bounds it.
         trackedSpawnDeadlineMs: 60_000,
         killTreeGraceMs: 1,
@@ -158,7 +158,7 @@ describe("runTrackedSpawn — MEM-19 normal-exit drain deadline", () => {
 
     const result = await runTrackedSpawn(
       {
-        spawn: spawn as never,
+        spawn,
         trackedSpawnDeadlineMs: 60_000,
         killTreeGraceMs: 1,
         streamDrainTimeoutMs: 50,

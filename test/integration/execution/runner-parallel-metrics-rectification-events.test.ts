@@ -108,10 +108,7 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(
-      makeCtx({ parallelCount: 2 }) as never,
-      makePrd([conflictStory, story2]) as never,
-    );
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([conflictStory, story2]));
 
     const rectMetrics = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
     assertDefined(rectMetrics, "rectMetrics");
@@ -136,10 +133,7 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(
-      makeCtx({ parallelCount: 2 }) as never,
-      makePrd([conflictStory, otherStory]) as never,
-    );
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([conflictStory, otherStory]));
 
     const rectMetrics = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
     assertDefined(rectMetrics, "rectMetrics");
@@ -165,10 +159,7 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(
-      makeCtx({ parallelCount: 2 }) as never,
-      makePrd([conflictStory, otherStory]) as never,
-    );
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([conflictStory, otherStory]));
 
     const rectMetrics = result.allStoryMetrics.find(
       (m) => m.storyId === conflictStory.id && m.source === "rectification",
@@ -231,7 +222,7 @@ describe("AC-4 — story:started emitted with correct storyId for each batch sto
 
     try {
       const { executeUnified } = await import("@/execution/unified-executor");
-      await executeUnified(makeCtx({ parallelCount: 3 }) as never, makePrd([story1, story2, story3]) as never);
+      await executeUnified(makeCtx({ parallelCount: 3 }), makePrd([story1, story2, story3]));
     } finally {
       pipelineEventBus.emit = origEmit;
     }
@@ -275,7 +266,7 @@ describe("AC-4 — story:started emitted with correct storyId for each batch sto
 
     try {
       const { executeUnified } = await import("@/execution/unified-executor");
-      await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([story1, story2]) as never);
+      await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([story1, story2]));
     } finally {
       pipelineEventBus.emit = origEmit;
     }

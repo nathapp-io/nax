@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { assertDefined, makeAgentAdapter, makeNaxConfig } from "@test/helpers";
+import { assertDefined, makeAgentAdapter, makeContextBundle, makeNaxConfig } from "@test/helpers";
+import type { AgentRunOptions } from "@/agents";
 import { _acpAdapterDeps } from "@/agents/acp/adapter";
 import { AgentManager } from "@/agents/manager";
 import type { AgentRegistry } from "@/agents/registry";
@@ -7,24 +8,39 @@ import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { ResolvedPermissions } from "@/config/permissions";
 import { NaxConfigSchema } from "@/config/schemas";
+import { agentManagerConfigSelector } from "@/config/selectors";
 import { type AgentMiddleware, MiddlewareChain, type MiddlewareContext } from "@/runtime/agent-middleware";
 import { makeClient, makeSession } from "./acp/adapter.test";
 
+function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptions {
+  return {
+    prompt: "p",
+    workdir: "/tmp",
+    modelTier: "balanced",
+    modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+    timeoutSeconds: 60,
+    config: agentManagerConfigSelector.select(DEFAULT_CONFIG),
+    ...overrides,
+  };
+}
+
 function makeManager(fallback: Record<string, unknown> = {}) {
-  return new AgentManager({
-    ...DEFAULT_CONFIG,
-    agent: {
-      ...DEFAULT_CONFIG.agent,
-      fallback: {
-        enabled: true,
-        map: { claude: ["codex"] },
-        maxHopsPerStory: 2,
-        onQualityFailure: false,
-        rebuildContext: true,
-        ...fallback,
+  return new AgentManager(
+    agentManagerConfigSelector.select({
+      ...DEFAULT_CONFIG,
+      agent: {
+        ...DEFAULT_CONFIG.agent,
+        fallback: {
+          enabled: true,
+          map: { claude: ["codex"] },
+          maxHopsPerStory: 2,
+          onQualityFailure: false,
+          rebuildContext: true,
+          ...fallback,
+        },
       },
-    },
-  } as never);
+    }),
+  );
 }
 
 const availFailure = {
@@ -229,7 +245,7 @@ describe("AgentManager — middleware envelope", () => {
       return { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 };
     };
     try {
-      await manager.run({ runOptions: { prompt: "test" } as never });
+      await manager.run({ runOptions: makeRunOptions({ prompt: "test" }) });
     } catch {}
     expect(calledRunAs).toBe(true);
 
@@ -239,7 +255,10 @@ describe("AgentManager — middleware envelope", () => {
       return { output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     };
     try {
-      await manager.complete("prompt", {} as never);
+      await manager.complete("prompt", {
+        modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+        workdir: "/tmp",
+      });
     } catch {}
     expect(calledCompleteAs).toBe(true);
   });
@@ -254,7 +273,7 @@ describe("AgentManager — middleware envelope", () => {
     };
     const manager = makeMiddlewareManager(mw);
     try {
-      await manager.runAs("claude", { runOptions: { prompt: "test", workdir: "/tmp" } as never });
+      await manager.runAs("claude", { runOptions: makeRunOptions({ prompt: "test", workdir: "/tmp" }) });
     } catch {}
     expect(calls).toContain("before");
   });
@@ -269,7 +288,7 @@ describe("AgentManager — middleware envelope", () => {
     };
     const manager = makeMiddlewareManager(mw);
     try {
-      await manager.runAs("claude", { runOptions: { prompt: "test", workdir: "/tmp" } as never });
+      await manager.runAs("claude", { runOptions: makeRunOptions({ prompt: "test", workdir: "/tmp" }) });
     } catch {}
     expect(capturedPerms).toBeDefined();
     assertDefined(capturedPerms, "capturedPerms");
@@ -278,7 +297,9 @@ describe("AgentManager — middleware envelope", () => {
 
   test("runAs() re-throws adapter errors (middleware onError no longer invoked — ADR-020 Wave 1)", async () => {
     const manager = makeMiddlewareManager();
-    await expect(manager.runAs("nonexistent-agent-xyz", { runOptions: { prompt: "test" } as never })).rejects.toThrow();
+    await expect(
+      manager.runAs("nonexistent-agent-xyz", { runOptions: makeRunOptions({ prompt: "test" }) }),
+    ).rejects.toThrow();
   });
 
   test("fallback still works after agent swap (agentFallbacks in result)", async () => {
@@ -298,14 +319,14 @@ describe("AgentManager — middleware envelope", () => {
 
     let callCount = 0;
     const result = await manager.runAs("claude", {
-      runOptions: {
+      runOptions: makeRunOptions({
         prompt: "original-prompt",
         workdir: "/tmp",
         modelTier: "fast",
         modelDef: { provider: "anthropic", model: "m", env: {} },
         timeoutSeconds: 10,
-        config,
-      } as never,
+        config: agentManagerConfigSelector.select(config),
+      }),
       executeHop: async (_agentName, _bundle, _failure) => {
         callCount += 1;
         if (callCount === 1) {
@@ -324,7 +345,7 @@ describe("AgentManager — middleware envelope", () => {
                 message: "",
               },
             },
-            bundle: { files: [] } as never,
+            bundle: makeContextBundle(),
             prompt: "original-prompt",
           };
         }

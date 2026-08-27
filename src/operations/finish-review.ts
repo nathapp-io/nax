@@ -26,7 +26,7 @@ import { finishConfigSelector } from "@/config";
 import type { FinishConfig } from "@/config/selectors";
 import { auditGaps, buildReviewPrompt, parseReviewReport } from "../finish/review";
 import type { Finding, ReviewReport } from "../finish/types";
-import type { RunOperation, RunOperationWithHooks } from "./types";
+import type { RunOperationWithHooks } from "./types";
 
 export interface FinishReviewInput {
   phase: "spec" | "quality";

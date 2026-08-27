@@ -1,6 +1,7 @@
 // test/unit/execution/rectification-overrides.test.ts
 import { describe, expect, test } from "bun:test";
 import { phasesToRevalidate, StoryOrchestratorBuilder } from "@/execution";
+import type { PhaseKind } from "@/execution/story-orchestrator/types";
 import type { FixCycleContext } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
 
@@ -9,7 +10,7 @@ import type { Finding } from "@/findings/types";
 // when the strategy mapping lists them.
 describe("review-stripped revalidation", () => {
   test("excluding review phases removes them from autofix-implementer's selected set", () => {
-    const mk = (kind: string) => ({ kind, slot: { op: { name: kind } } }) as never;
+    const mk = (kind: PhaseKind) => ({ kind });
     const all = [
       mk("lint-check"),
       mk("typecheck-check"),
@@ -17,15 +18,9 @@ describe("review-stripped revalidation", () => {
       mk("semantic-review"),
       mk("adversarial-review"),
     ];
-    const stripped = all.filter(
-      (p) => !["semantic-review", "adversarial-review"].includes((p as { kind: string }).kind),
-    );
+    const stripped = all.filter((p) => !["semantic-review", "adversarial-review"].includes(p.kind));
     const selected = phasesToRevalidate(["autofix-implementer"], stripped);
-    expect(selected.map((p) => (p as { kind: string }).kind)).toEqual([
-      "lint-check",
-      "typecheck-check",
-      "full-suite-gate",
-    ]);
+    expect(selected.map((p) => p.kind)).toEqual(["lint-check", "typecheck-check", "full-suite-gate"]);
   });
 });
 

@@ -24,7 +24,7 @@ afterEach(() => {
 function makePluginModeConfig(pluginMode: "observational" | "gating"): NaxConfig {
   return makeNaxConfig({
     execution: {
-      regressionGate: { mode: "disabled" } as never,
+      regressionGate: { mode: "disabled" },
     },
     review: { pluginMode },
   });

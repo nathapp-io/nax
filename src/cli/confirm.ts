@@ -26,7 +26,19 @@ export interface ConfirmStdin {
   removeListener(event: string, listener: (...args: never[]) => void): unknown;
 }
 
-export const _confirmDeps = {
+/**
+ * `exit` is annotated `=> void`, not the `never` `process.exit` infers. The
+ * inferred type over-stated the seam (same reasoning as `_hybridDeps` in
+ * src/debate/runner-hybrid.ts): the point of an injectable exit is that a
+ * substitute records the code and returns, which no `never`-returning stub can
+ * do. Nothing depends on the unreachability — the sole call site in `onData`
+ * already `return`s explicitly on the next line.
+ */
+export const _confirmDeps: {
+  stdin: ConfirmStdin;
+  write: (text: string) => boolean;
+  exit: (code: number) => void;
+} = {
   stdin: process.stdin as unknown as ConfirmStdin,
   write: (text: string) => process.stdout.write(text),
   exit: (code: number) => process.exit(code),

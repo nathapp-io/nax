@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
+import { makeAgentAdapter, makeAgentRegistry, makeContextBundle, makeNaxConfig } from "@test/helpers";
 import { _agentManagerDeps, AgentManager } from "@/agents/manager";
 import type { AgentRunRequest } from "@/agents/manager-types";
 import type { AgentAdapter, CompleteResult } from "@/agents/types";
@@ -206,7 +206,7 @@ describe("IAgentManager.run() — agent swap", () => {
           },
         }),
       },
-      bundle: {} as never,
+      bundle: makeContextBundle(),
     });
 
     expect(result.success).toBe(true);
@@ -240,7 +240,7 @@ describe("IAgentManager.complete()", () => {
           },
         },
       }),
-      { getAgent: () => adapter } as never,
+      makeAgentRegistry({ getAgent: () => adapter }),
     );
 
     const result = await mgr.complete("hello", {
@@ -280,7 +280,7 @@ describe("IAgentManager.getAgent()", () => {
           },
         },
       }),
-      { getAgent: () => adapter } as never,
+      makeAgentRegistry({ getAgent: () => adapter }),
     );
 
     expect(mgr.getAgent("claude")).toBe(adapter);
@@ -300,7 +300,7 @@ describe("IAgentManager.getAgent()", () => {
           },
         },
       }),
-      { getAgent: () => undefined } as never,
+      makeAgentRegistry({ getAgent: () => undefined }),
     );
 
     expect(mgr.getAgent("nonexistent")).toBeUndefined();

@@ -254,29 +254,24 @@ describe("US-004 AC-1: runAcceptanceLoop propagates skippedPackages on missing-t
   test("propagates skippedPackages from acceptanceFailures.missingTargets to AcceptanceLoopResult", async () => {
     // The real acceptance stage puts missing targets on ctx.acceptanceFailures.missingTargets.
     // The loop must surface that on the returned AcceptanceLoopResult.skippedPackages.
-    _runAcceptanceTestsOnceDeps.importAcceptanceStage = async () =>
-      ({
-        acceptanceStage: {
-          execute: (ctx: {
-            acceptanceFailures?: {
-              failedACs: string[];
-              findings: unknown[];
-              testOutput: string;
-              failedPackages?: unknown[];
-              missingTargets?: string[];
-            };
-          }) => {
-            ctx.acceptanceFailures = {
-              failedACs: [],
-              findings: [],
-              testOutput: "",
-              failedPackages: [],
-              missingTargets: ["/tmp/workdir/pkg-a", "/tmp/workdir/pkg-b"],
-            };
-            return Promise.resolve({ action: "fail" as const, reason: "missing" });
-          },
+    _runAcceptanceTestsOnceDeps.importAcceptanceStage = async () => {
+      const mod = await import("@/pipeline/stages");
+      const acceptanceStage: import("@/pipeline/types").PipelineStage = {
+        name: "acceptance",
+        enabled: () => true,
+        execute: async (ctx) => {
+          ctx.acceptanceFailures = {
+            failedACs: [],
+            findings: [],
+            testOutput: "",
+            failedPackages: [],
+            missingTargets: ["/tmp/workdir/pkg-a", "/tmp/workdir/pkg-b"],
+          };
+          return { action: "fail", reason: "missing" };
         },
-      }) as never;
+      };
+      return { ...mod, acceptanceStage };
+    };
 
     const ctx = makeAcceptanceCtx();
     ctx.featureDir = undefined;
@@ -295,17 +290,16 @@ describe("US-004 AC-1: runAcceptanceLoop propagates skippedPackages on missing-t
     // The action-level skippedPackages field is the source-of-truth when the
     // acceptance stage itself reports which packages it skipped (or in the
     // test scenario where a stub returns it on the action).
-    _runAcceptanceTestsOnceDeps.importAcceptanceStage = async () =>
-      ({
-        acceptanceStage: {
-          execute: (_ctx: unknown) =>
-            Promise.resolve({
-              action: "fail" as const,
-              reason: "missing",
-              skippedPackages: ["pkg-a"],
-            }),
-        },
-      }) as never;
+    _runAcceptanceTestsOnceDeps.importAcceptanceStage = async () => {
+      const mod = await import("@/pipeline/stages");
+      const acceptanceStage: import("@/pipeline/types").PipelineStage = {
+        name: "acceptance",
+        enabled: () => true,
+        execute: async () =>
+          Object.assign({ action: "fail" as const, reason: "missing" }, { skippedPackages: ["pkg-a"] }),
+      };
+      return { ...mod, acceptanceStage };
+    };
 
     const ctx = makeAcceptanceCtx();
     ctx.featureDir = undefined;

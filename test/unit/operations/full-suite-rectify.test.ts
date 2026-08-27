@@ -37,6 +37,13 @@ function makeFixCycleContext(packageDir?: string): FixCycleContext {
   return { ...makeMockCallContext({ packageDir }), storyId: "US-001" };
 }
 
+/** Minimal FullSuiteRectifyInput — `extractApplied` does not read it, but the
+ *  FixStrategy type requires a complete value so the test asserts against the
+ *  shape, not a `{} as never` cargo. */
+function makeRectifyInput(scope: "story" | "repo" = "repo"): FullSuiteRectifyInput {
+  return { story: makeTestStory(), findings: [], scope };
+}
+
 describe("makeFullSuiteRectifyStrategy", () => {
   test("name is full-suite-rectify", () => {
     const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig());
@@ -328,7 +335,7 @@ describe("makeRepoScopedTestFixStrategy", () => {
   });
 
   test("buildInput requests repo scope", () => {
-    const input = strategy().buildInput([makeTestFinding()], [], {} as never) as FullSuiteRectifyInput;
+    const input = strategy().buildInput([makeTestFinding()], [], makeFixCycleContext());
     expect(input.scope).toBe("repo");
   });
 
@@ -346,13 +353,13 @@ describe("makeRepoScopedTestFixStrategy", () => {
       testEditDeclarations: [],
       unresolvedReason: "tests contradict",
     } as FullSuiteRectifyOutput;
-    const applied = await strategy().extractApplied?.(output, {} as never);
+    const applied = await strategy().extractApplied?.(output, makeRectifyInput());
     expect(applied?.unresolved).toBe("tests contradict");
   });
 
   test("reports no unresolved when the agent fixed the tests", async () => {
     const output = { applied: true, testEditDeclarations: [] } as FullSuiteRectifyOutput;
-    const applied = await strategy().extractApplied?.(output, {} as never);
+    const applied = await strategy().extractApplied?.(output, makeRectifyInput());
     expect(applied?.unresolved).toBeUndefined();
   });
 });
@@ -379,7 +386,7 @@ describe("makeRepoScopedTestFixStrategy — change attribution", () => {
 
     const strategy = makeRepoScopedTestFixStrategy(makeTestStory(), makeDeclarationSink());
     strategy.buildInput([makeTestFinding()], [], ctx);
-    const applied = await strategy.extractApplied?.(output, {} as never);
+    const applied = await strategy.extractApplied?.(output, makeRectifyInput());
     expect(applied?.targetFiles).toEqual(["src/legacy/auth.ts", "test/legacy/auth.spec.ts"]);
   });
 
@@ -393,7 +400,7 @@ describe("makeRepoScopedTestFixStrategy — change attribution", () => {
 
     const strategy = makeRepoScopedTestFixStrategy(makeTestStory(), makeDeclarationSink());
     strategy.buildInput([makeTestFinding()], [], ctx);
-    await strategy.extractApplied?.(output, {} as never);
+    await strategy.extractApplied?.(output, makeRectifyInput());
     expect(seenWorkdir).toBe("/repo");
   });
 
@@ -407,7 +414,7 @@ describe("makeRepoScopedTestFixStrategy — change attribution", () => {
 
     const strategy = makeRepoScopedTestFixStrategy(makeTestStory(), makeDeclarationSink());
     strategy.buildInput([makeTestFinding()], [], ctx);
-    const applied = await strategy.extractApplied?.(output, {} as never);
+    const applied = await strategy.extractApplied?.(output, makeRectifyInput());
     expect(applied?.targetFiles).toEqual([]);
   });
 
@@ -419,7 +426,7 @@ describe("makeRepoScopedTestFixStrategy — change attribution", () => {
 
     const strategy = makeRepoScopedTestFixStrategy(makeTestStory(), makeDeclarationSink());
     strategy.buildInput([makeTestFinding()], [], ctx);
-    const applied = await strategy.extractApplied?.(output, {} as never);
+    const applied = await strategy.extractApplied?.(output, makeRectifyInput());
     expect(applied?.targetFiles).toEqual([]);
   });
 
@@ -431,7 +438,7 @@ describe("makeRepoScopedTestFixStrategy — change attribution", () => {
     strategy.buildInput([makeTestFinding()], [], ctx);
     const applied = await strategy.extractApplied?.(
       { applied: true, testEditDeclarations: [], unresolvedReason: "cannot fix" } as FullSuiteRectifyOutput,
-      {} as never,
+      makeRectifyInput(),
     );
     expect(applied?.unresolved).toBe("cannot fix");
     expect(applied?.targetFiles).toEqual(["src/a.ts"]);

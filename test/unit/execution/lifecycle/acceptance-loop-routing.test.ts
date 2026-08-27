@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { makeAgentAdapter } from "@test/helpers";
+import { makeAgentAdapter, makePluginRegistry, makeStatusWriter } from "@test/helpers";
 import type { DiagnosisResult } from "@/acceptance/types";
 import type { AgentAdapter } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config/defaults";
@@ -125,26 +125,14 @@ describe("AC-1: runAcceptanceLoop obtains agent via (ctx.agentGetFn ?? _acceptan
       prd: makePrd(),
       prdPath: "/tmp/test-prd.json",
       workdir: "/tmp",
-      hooks: {} as never,
+      hooks: { hooks: {} },
       feature: "test-feature",
       totalCost: 0,
       iterations: 0,
       storiesCompleted: 0,
-      allStoryMetrics: [] as never[],
-      pluginRegistry: {
-        getReporters: mock(() => []),
-        getContextProviders: mock(() => []),
-        getReviewers: mock(() => []),
-        getRoutingStrategies: mock(() => []),
-        teardownAll: mock(async () => {}),
-      } as never,
-      statusWriter: {
-        setPrd: mock(() => {}),
-        setCurrentStory: mock(() => {}),
-        setRunStatus: mock(() => {}),
-        update: mock(async () => {}),
-        writeFeatureStatus: mock(async () => {}),
-      } as never,
+      allStoryMetrics: [],
+      pluginRegistry: makePluginRegistry(),
+      statusWriter: makeStatusWriter(),
       agentGetFn,
     };
 

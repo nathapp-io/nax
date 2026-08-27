@@ -87,7 +87,7 @@ describe("AC-1 — completed story cost equals storyCosts.get(story.id)", () => 
     const prd = makePrd([story1, story2]);
     const ctx = makeCtx({ parallelCount: 2 });
 
-    const result = await executeUnified(ctx as never, prd as never);
+    const result = await executeUnified(ctx, prd);
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);
     const m2 = result.allStoryMetrics.find((m) => m.storyId === story2.id);
@@ -114,7 +114,7 @@ describe("AC-1 — completed story cost equals storyCosts.get(story.id)", () => 
     const prd = makePrd([story1, story2]);
     const ctx = makeCtx({ parallelCount: 2 });
 
-    const result = await executeUnified(ctx as never, prd as never);
+    const result = await executeUnified(ctx, prd);
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);
     const m2 = result.allStoryMetrics.find((m) => m.storyId === story2.id);
@@ -173,7 +173,7 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id) from batch res
     const prd = makePrd([story1, story2]);
     const ctx = makeCtx({ parallelCount: 2 });
 
-    const result = await executeUnified(ctx as never, prd as never);
+    const result = await executeUnified(ctx, prd);
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);
     const m2 = result.allStoryMetrics.find((m) => m.storyId === story2.id);
@@ -201,7 +201,7 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id) from batch res
     deps.runParallelBatch = mock(async () => makeBatchResult([story1, story2], costMap, durationsMap));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([story1, story2]) as never);
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([story1, story2]));
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);
     const m2 = result.allStoryMetrics.find((m) => m.storyId === story2.id);

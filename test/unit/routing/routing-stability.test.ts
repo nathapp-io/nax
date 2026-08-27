@@ -8,10 +8,12 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { assertDefined, makeStory } from "@test/helpers";
-import type { NaxConfig } from "@/config";
+import type { ConfigSelector, NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
+import type { RoutingConfig } from "@/config/selectors";
 import { initLogger, resetLogger } from "@/logger";
 import { classifyRouteBatchOp, classifyRouteOp } from "@/operations";
+import type { BuildContext } from "@/operations/types";
 import type { UserStory } from "@/prd/types";
 import { classifyComplexity, complexityToModelTier, determineTestStrategy } from "@/routing";
 
@@ -234,13 +236,20 @@ describe("classifyRouteOp declares retry preset (issue #856 site #4)", () => {
   });
 
   test("retry resolver uses routing.llm.retries when set (deprecation bridge)", () => {
-    const config = {
+    const config: NaxConfig = {
       ...DEFAULT_CONFIG,
       routing: { ...DEFAULT_CONFIG.routing, llm: { mode: "per-story" as const, retries: 3, retryDelayMs: 2000 } },
     };
-    const buildCtx = {
-      packageView: null as never,
-      config: { routing: config.routing, autoMode: config.autoMode } as never,
+    const buildCtx: BuildContext<RoutingConfig> = {
+      packageView: {
+        packageDir: "/tmp",
+        repoRoot: "/tmp",
+        hasOverride: false,
+        config,
+        relativeFromRoot: "",
+        select: <C>(sel: ConfigSelector<C>) => sel.select(config),
+      },
+      config: { routing: config.routing, autoMode: config.autoMode, tdd: config.tdd },
     };
     const resolver = classifyRouteOp.retry as (
       input: unknown,
@@ -252,13 +261,20 @@ describe("classifyRouteOp declares retry preset (issue #856 site #4)", () => {
   });
 
   test("retry resolver yields maxAttempts: 1 when retries: 0 (single attempt, no retry)", () => {
-    const config = {
+    const config: NaxConfig = {
       ...DEFAULT_CONFIG,
       routing: { ...DEFAULT_CONFIG.routing, llm: { mode: "per-story" as const, retries: 0, retryDelayMs: 500 } },
     };
-    const buildCtx = {
-      packageView: null as never,
-      config: { routing: config.routing, autoMode: config.autoMode } as never,
+    const buildCtx: BuildContext<RoutingConfig> = {
+      packageView: {
+        packageDir: "/tmp",
+        repoRoot: "/tmp",
+        hasOverride: false,
+        config,
+        relativeFromRoot: "",
+        select: <C>(sel: ConfigSelector<C>) => sel.select(config),
+      },
+      config: { routing: config.routing, autoMode: config.autoMode, tdd: config.tdd },
     };
     const resolver = classifyRouteOp.retry as (
       input: unknown,

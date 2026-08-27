@@ -321,9 +321,10 @@ describe("nax generate command", () => {
     test("rejects unknown agent types", async () => {
       let exitCode = 0;
       const originalExit = process.exit;
-      process.exit = ((code?: number) => {
+      process.exit = (code?: number): never => {
         exitCode = code ?? 1;
-      }) as never;
+        throw new Error(`process.exit(${exitCode})`);
+      };
 
       try {
         await generateCommand({
@@ -332,6 +333,8 @@ describe("nax generate command", () => {
           agent: "unknown",
           dryRun: false,
         });
+      } catch {
+        // expected — process.exit mocked to throw
       } finally {
         process.exit = originalExit;
       }

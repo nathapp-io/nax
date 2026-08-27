@@ -7,94 +7,76 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeDispatchContext, makeMockRuntime, makePluginRegistry, makeStatusWriter } from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
+import type { InteractionConfig } from "@/config/runtime-types";
+import type { SequentialExecutionContext } from "@/execution/unified-executor";
+import type { LoadedHooksConfig } from "@/hooks";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "@/interaction";
 import { InteractionChain } from "@/interaction";
 import { pipelineEventBus } from "@/pipeline";
+import type { EscalationAttempt, PRD, UserStory } from "@/prd/types";
+
+const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixture helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makePendingStory(id: string) {
+function makePendingStory(id: string): UserStory {
+  const acceptanceCriteria: string[] = [];
+  const tags: string[] = [];
+  const dependencies: string[] = [];
+  const escalations: EscalationAttempt[] = [];
   return {
     id,
     title: `Story ${id}`,
     description: `Description for ${id}`,
-    acceptanceCriteria: [],
-    tags: [],
-    dependencies: [],
-    status: "pending" as const,
+    acceptanceCriteria,
+    tags,
+    dependencies,
+    status: "pending",
     passes: false,
     attempts: 0,
-    priorFailures: [],
+    escalations,
   };
 }
 
-function makePrd(stories: ReturnType<typeof makePendingStory>[]) {
+function makePrd(stories: UserStory[]): PRD {
   return {
     project: "test-project",
     feature: "test-feature",
     branchName: "test-branch",
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     userStories: stories,
   };
 }
 
-function makeCtx(overrides: { parallelCount?: number } = {}) {
+function makeCtx(overrides: { parallelCount?: number } = {}): SequentialExecutionContext {
   return {
     prdPath: "/tmp/test-prd.json",
     workdir: "/tmp/test-workdir",
     config: {
+      ...DEFAULT_CONFIG,
       execution: {
+        ...DEFAULT_CONFIG.execution,
         maxIterations: 1,
         costLimit: 10,
         iterationDelayMs: 0,
-        rectification: { maxAttemptsTotal: 2 },
       },
-      autoMode: { defaultAgent: "claude-code" },
-      interaction: {},
     },
-    hooks: {},
+    hooks: EMPTY_HOOKS,
     feature: "test-feature",
     dryRun: false,
     useBatch: false,
-    pluginRegistry: {
-      getReporters: () => [],
-      getContextProviders: () => [],
-    },
-    statusWriter: {
-      setPrd: mock(() => {}),
-      setCurrentStory: mock(() => {}),
-      setRunStatus: mock(() => {}),
-      update: mock(async () => {}),
-    },
+    pluginRegistry: makePluginRegistry(),
+    statusWriter: makeStatusWriter(),
     runId: "run-test",
     startTime: Date.now(),
     batchPlan: [],
     interactionChain: null,
-    runtime: {
-      outputDir: "/tmp/nax-test-cost-output",
-      // nax#1709: parallel metrics read these run-scoped stores.
-      agentFallbacks: new Map(),
-      runtimeCrashRetries: new Map(),
-      costAggregator: {
-        snapshot: () => ({
-          totalCostUsd: 0,
-          totalEstimatedCostUsd: 0,
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          callCount: 0,
-          errorCount: 0,
-        }),
-        byStage: () => ({}),
-        byStory: () => ({}),
-        byAgent: () => ({}),
-        record: () => {},
-        recordError: () => {},
-        recordOperationSummary: () => {},
-        drain: async () => {},
-      },
-    },
+    ...makeDispatchContext({ runtime: makeMockRuntime({ workdir: "/tmp/nax-test-cost-output" }) }),
     ...overrides,
   };
 }
@@ -154,7 +136,7 @@ describe("AC-7 — cost-limit exit after parallel batch (runtime)", () => {
       },
     };
 
-    const result = await executeUnified(ctx as never, prd as never);
+    const result = await executeUnified(ctx, prd);
     expect(result.exitReason).toBe("cost-limit");
     expect(result.totalCost).toBeGreaterThanOrEqual(6);
   });
@@ -190,9 +172,7 @@ describe("AC-7 — cost-limit exit after parallel batch (runtime)", () => {
       },
     };
 
-    const result = await executeUnified(ctx as never, prd as never).catch(
-      () => ({ exitReason: "error" }) as { exitReason: string },
-    );
+    const result = await executeUnified(ctx, prd).catch(() => ({ exitReason: "error" }) as { exitReason: string });
     expect(result.exitReason).not.toBe("cost-limit");
   });
 });
@@ -257,12 +237,18 @@ describe("BUG-61 — cost-warning trigger fires after a parallel batch, not just
     const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
     const baseCtx = makeCtx({ parallelCount: 2 });
-    const ctx = {
+    const costWarningInteraction: InteractionConfig = {
+      plugin: "cli",
+      config: {},
+      defaults: { timeout: 600000 },
+      triggers: { "cost-warning": { enabled: true, threshold: 0.8 } },
+    };
+    const ctx: SequentialExecutionContext = {
       ...baseCtx,
       interactionChain,
       config: {
         ...baseCtx.config,
-        interaction: { triggers: { "cost-warning": { enabled: true, threshold: 0.8 } } },
+        interaction: costWarningInteraction,
         execution: {
           ...baseCtx.config.execution,
           costLimit: 10, // totalCost=8 is 80% of this — crosses the warning threshold but not the hard limit
@@ -271,7 +257,7 @@ describe("BUG-61 — cost-warning trigger fires after a parallel batch, not just
       },
     };
 
-    await executeUnified(ctx as never, prd as never).catch(() => undefined);
+    await executeUnified(ctx, prd).catch(() => undefined);
 
     expect(sentTriggers).toContain("cost-warning");
   });
@@ -344,7 +330,7 @@ describe("BUG-6 — parallel cost-limit stop has parity with sequential (event +
       },
     };
 
-    const result = await executeUnified(ctx as never, prd as never);
+    const result = await executeUnified(ctx, prd);
 
     expect(result.exitReason).toBe("cost-limit");
     expect(capturedRunPaused).toHaveLength(1);
@@ -385,12 +371,18 @@ describe("BUG-6 — parallel cost-limit stop has parity with sequential (event +
     const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1, story2]);
     const baseCtx = makeCtx({ parallelCount: 2 });
-    const ctx = {
+    const costExceededInteraction: InteractionConfig = {
+      plugin: "cli",
+      config: {},
+      defaults: { timeout: 600000 },
+      triggers: { "cost-exceeded": { enabled: true } },
+    };
+    const ctx: SequentialExecutionContext = {
       ...baseCtx,
       interactionChain,
       config: {
         ...baseCtx.config,
-        interaction: { triggers: { "cost-exceeded": { enabled: true } } },
+        interaction: costExceededInteraction,
         execution: { ...baseCtx.config.execution, costLimit: 5, maxIterations: 2 },
       },
     };
@@ -399,9 +391,7 @@ describe("BUG-6 — parallel cost-limit stop has parity with sequential (event +
     // this fixture) — tolerate that the same way the existing "does NOT exit"
     // AC-7 test above does. What matters here is the trigger was consulted and
     // the run did not silently stop with exitReason "cost-limit".
-    const result = await executeUnified(ctx as never, prd as never).catch(
-      () => ({ exitReason: "error" }) as { exitReason: string },
-    );
+    const result = await executeUnified(ctx, prd).catch(() => ({ exitReason: "error" }) as { exitReason: string });
 
     expect(result.exitReason).not.toBe("cost-limit");
     expect(capturedRunResumed).toBe(1);
@@ -461,7 +451,7 @@ describe("BUG-13 — parallel batch updates statusWriter after batch completion"
       },
     };
 
-    await executeUnified(ctx as never, prd as never).catch(() => undefined);
+    await executeUnified(ctx, prd).catch(() => undefined);
 
     expect((ctx.statusWriter.setPrd as ReturnType<typeof mock>).mock.calls.length).toBeGreaterThanOrEqual(1);
     expect((ctx.statusWriter.setCurrentStory as ReturnType<typeof mock>).mock.calls.length).toBeGreaterThanOrEqual(1);
@@ -529,7 +519,7 @@ describe("BUG-7 — pre-dispatch cost gate on the parallel batch path", () => {
       },
     };
 
-    const result = await executeUnified(ctx as never, prd as never);
+    const result = await executeUnified(ctx, prd);
 
     expect(result.exitReason).toBe("cost-limit");
     expect(runParallelBatchMock).not.toHaveBeenCalled();
@@ -570,9 +560,7 @@ describe("BUG-7 — pre-dispatch cost gate on the parallel batch path", () => {
       },
     };
 
-    const result = await executeUnified(ctx as never, prd as never).catch(
-      () => ({ exitReason: "error" }) as { exitReason: string },
-    );
+    const result = await executeUnified(ctx, prd).catch(() => ({ exitReason: "error" }) as { exitReason: string });
 
     expect(result.exitReason).not.toBe("cost-limit");
     expect(runParallelBatchMock).toHaveBeenCalled();

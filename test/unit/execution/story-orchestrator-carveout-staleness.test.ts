@@ -15,7 +15,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMockCallContext, makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { makeMockCallContext, makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
 import { pickSelector } from "@/config";
 import {
   _storyOrchestratorDeps,
@@ -280,7 +280,7 @@ describe("ExecutionPlan.run — carve-out staleness", () => {
   ) {
     return new StoryOrchestratorBuilder()
       .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-      .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as never, workdir: "/tmp" } })
+      .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-t" }), workdir: "/tmp" } })
       .addVerifier({ op: makeDeterministicOp("verifier", { success: true }), input: {} })
       .addSemanticReview({ op: reviewOp, input: {} })
       .addRectification({ maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false })
@@ -639,7 +639,7 @@ describe("ExecutionPlan.run — completeness guard (configured review must run)"
 
       const result = await new StoryOrchestratorBuilder()
         .addImplementer({ op: mockImplementerOp, input: { code: "" } })
-        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-adv" } as never, workdir: "/tmp" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-adv" }), workdir: "/tmp" } })
         .addVerifier({ op: makeDeterministicOp("verifier", { success: true }), input: {} })
         .addSemanticReview({ op: semanticOp, input: {} })
         .addAdversarialReview({ op: adversarialOp, input: {} })

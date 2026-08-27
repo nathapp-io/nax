@@ -121,6 +121,8 @@ export interface DebateConfig {
     rectification: DebateStageConfig;
     /** Escalation phase debate */
     escalation: DebateStageConfig;
+    /** Decompose phase debate (optional, for plan-decompose) */
+    decompose?: DebateStageConfig;
   };
 }
 

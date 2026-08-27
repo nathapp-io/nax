@@ -11,9 +11,10 @@
 
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makePRD, makeStory, makeTestRuntime, opSelector, withWarnSpy } from "@test/helpers";
+import type { PlanConfig } from "@/config/selectors";
 import type { PlanRefineInput } from "@/operations";
 import { _planRefineDeps, planRefineOp } from "@/operations";
-import type { HopBodyContext } from "@/operations/types";
+import type { HopBodyContext, VerifyContext } from "@/operations/types";
 import { PlanPromptBuilder } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
 
@@ -109,7 +110,7 @@ describe("planRefineOp.hopBody — out-of-scope self-heal turn", () => {
 });
 
 describe("planRefineOp.verify — out-of-scope backfill", () => {
-  function makeVerifyCtx() {
+  function makeVerifyCtx(): VerifyContext<PlanConfig> {
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
@@ -121,7 +122,7 @@ describe("planRefineOp.verify — out-of-scope backfill", () => {
     };
   }
 
-  const input = {
+  const input: PlanRefineInput = {
     specContent: SPEC,
     codebaseContext: "",
     featureName: "f",
@@ -131,7 +132,7 @@ describe("planRefineOp.verify — out-of-scope backfill", () => {
 
   test("restores exclusions the repair turn still missed, and warns", async () => {
     await withWarnSpy(async (warnSpy) => {
-      const result = await planRefineOp.verify(makePrd(), input as never, makeVerifyCtx() as never);
+      const result = await planRefineOp.verify(makePrd(), input, makeVerifyCtx());
 
       expect(result?.outOfScope).toEqual(["An interactive Ink TUI", "Per-story checkpoints"]);
       const warn = warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("out-of-scope"));
@@ -143,7 +144,7 @@ describe("planRefineOp.verify — out-of-scope backfill", () => {
   test("leaves a fully preserved list untouched and does not warn", async () => {
     await withWarnSpy(async (warnSpy) => {
       const preserved = ["An interactive Ink TUI", "Per-story checkpoints"];
-      const result = await planRefineOp.verify(makePrd(preserved), input as never, makeVerifyCtx() as never);
+      const result = await planRefineOp.verify(makePrd(preserved), input, makeVerifyCtx());
 
       expect(result?.outOfScope).toEqual(preserved);
       expect(warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("out-of-scope"))).toBeUndefined();
@@ -151,8 +152,8 @@ describe("planRefineOp.verify — out-of-scope backfill", () => {
   });
 
   test("adds no field when the spec declares no exclusions", async () => {
-    const noScope = { ...input, specContent: "# Feature\n\n## Design\n- build it\n" };
-    const result = await planRefineOp.verify(makePrd() as never, noScope as never, makeVerifyCtx() as never);
+    const noScope: PlanRefineInput = { ...input, specContent: "# Feature\n\n## Design\n- build it\n" };
+    const result = await planRefineOp.verify(makePrd(), noScope, makeVerifyCtx());
 
     expect(result?.outOfScope).toBeUndefined();
   });
@@ -171,7 +172,7 @@ describe("planRefineOp.verify — story-local hoist demotion (#1446)", () => {
     "**Out of scope:** body-size limits on the import endpoint, deferred to arc 3.",
   ].join("\n");
 
-  function makeVerifyCtx() {
+  function makeVerifyCtx(): VerifyContext<PlanConfig> {
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
@@ -183,7 +184,7 @@ describe("planRefineOp.verify — story-local hoist demotion (#1446)", () => {
     };
   }
 
-  const input = {
+  const input: PlanRefineInput = {
     specContent: HOIST_SPEC,
     codebaseContext: "",
     featureName: "f",
@@ -198,7 +199,7 @@ describe("planRefineOp.verify — story-local hoist demotion (#1446)", () => {
         "body-size limits on the import endpoint, deferred to arc 3.",
       ]);
 
-      const result = await planRefineOp.verify(hoisted, input as never, makeVerifyCtx() as never);
+      const result = await planRefineOp.verify(hoisted, input, makeVerifyCtx());
 
       expect(result?.outOfScope).toEqual(["An interactive Ink TUI"]);
       expect(result?.userStories[0].outOfScope).toEqual([
@@ -213,7 +214,7 @@ describe("planRefineOp.verify — story-local hoist demotion (#1446)", () => {
   test("the demotion does not trip the backfill into restoring it at feature level", async () => {
     const hoisted = makePrd(["An interactive Ink TUI", "body-size limits on the import endpoint, deferred to arc 3."]);
 
-    const result = await planRefineOp.verify(hoisted, input as never, makeVerifyCtx() as never);
+    const result = await planRefineOp.verify(hoisted, input, makeVerifyCtx());
 
     expect(result?.outOfScope).not.toContain("body-size limits on the import endpoint, deferred to arc 3.");
   });

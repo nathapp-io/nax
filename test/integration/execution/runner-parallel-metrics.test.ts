@@ -93,7 +93,7 @@ describe("AC-1 — completed story cost equals storyCosts.get(story.id)", () => 
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([s1, s2]));
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === s1.id);
     const m2 = result.allStoryMetrics.find((m) => m.storyId === s2.id);
@@ -116,7 +116,7 @@ describe("AC-1 — completed story cost equals storyCosts.get(story.id)", () => 
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([s1, s2]));
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === s1.id);
     assertDefined(m1, "metrics for s1");
@@ -145,7 +145,7 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id), not batch wal
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap, durMap));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([s1, s2]));
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === s1.id);
     const m2 = result.allStoryMetrics.find((m) => m.storyId === s2.id);
@@ -174,7 +174,7 @@ describe("AC-2 — durationMs equals storyDurations.get(story.id), not batch wal
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([s1, s2]));
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === s1.id);
     const m2 = result.allStoryMetrics.find((m) => m.storyId === s2.id);
@@ -210,10 +210,7 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(
-      makeCtx({ parallelCount: 2 }) as never,
-      makePrd([conflictStory, cleanStory]) as never,
-    );
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([conflictStory, cleanStory]));
 
     const rectM = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
     assertDefined(rectM, "metrics for rectified conflict story");
@@ -238,10 +235,7 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(
-      makeCtx({ parallelCount: 2 }) as never,
-      makePrd([conflictStory, cleanStory]) as never,
-    );
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([conflictStory, cleanStory]));
 
     const rectM = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
     assertDefined(rectM, "metrics for rectified conflict story");
@@ -270,10 +264,7 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(
-      makeCtx({ parallelCount: 2 }) as never,
-      makePrd([conflictStory, cleanStory]) as never,
-    );
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([conflictStory, cleanStory]));
 
     const rectM = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
     assertDefined(rectM, "metrics for rectified conflict story");
@@ -300,10 +291,7 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(
-      makeCtx({ parallelCount: 2 }) as never,
-      makePrd([failedConflict, cleanStory]) as never,
-    );
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([failedConflict, cleanStory]));
 
     const rectEntry = result.allStoryMetrics.find(
       (m) => m.storyId === failedConflict.id && m.source === "rectification",
@@ -329,10 +317,7 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(
-      makeCtx({ parallelCount: 2 }) as never,
-      makePrd([conflictStory, cleanStory]) as never,
-    );
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([conflictStory, cleanStory]));
 
     const rectM = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
     assertDefined(rectM, "metrics for rectified conflict story");
@@ -371,7 +356,7 @@ describe("AC-4 — story:started emitted with correct storyId before batch execu
 
     try {
       const { executeUnified } = await import("@/execution/unified-executor");
-      await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
+      await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([s1, s2]));
     } finally {
       pipelineEventBus.emit = origEmit;
     }
@@ -413,7 +398,7 @@ describe("AC-4 — story:started emitted with correct storyId before batch execu
 
     try {
       const { executeUnified } = await import("@/execution/unified-executor");
-      await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
+      await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([s1, s2]));
     } finally {
       pipelineEventBus.emit = origEmit;
     }
@@ -464,7 +449,7 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2, s3], costMap));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(makeCtx({ parallelCount: 3 }) as never, makePrd([s1, s2, s3]) as never);
+    const result = await executeUnified(makeCtx({ parallelCount: 3 }), makePrd([s1, s2, s3]));
 
     expect(result.storiesCompleted).toBe(3);
   });
@@ -481,7 +466,7 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([s1, s2]));
 
     expect(result.totalCost).toBe(1.0);
   });
@@ -499,10 +484,7 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
 
     const { executeUnified } = await import("@/execution/unified-executor");
     // maxIterations: 1 → the loop processes the batch then exits naturally
-    const result = await executeUnified(
-      makeCtx({ parallelCount: 2, maxIterations: 1 }) as never,
-      makePrd([s1, s2]) as never,
-    );
+    const result = await executeUnified(makeCtx({ parallelCount: 2, maxIterations: 1 }), makePrd([s1, s2]));
 
     expect(result.exitReason).toBe("max-iterations");
   });
@@ -519,7 +501,7 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([s1, s2]));
 
     const ids = result.allStoryMetrics.map((m) => m.storyId);
     const uniqueIds = new Set(ids);
@@ -538,7 +520,7 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([s1, s2]));
 
     for (const m of result.allStoryMetrics) {
       expect(m.firstPassSuccess).toBe(true);
@@ -557,7 +539,7 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(makeCtx({ parallelCount: 2 }) as never, makePrd([s1, s2]) as never);
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([s1, s2]));
 
     for (const m of result.allStoryMetrics) {
       expect(m.source).toBe("parallel");
@@ -584,7 +566,7 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    const result = await executeUnified(makeCtx({ parallelCount: 3 }) as never, makePrd([s1, s2, rectStory]) as never);
+    const result = await executeUnified(makeCtx({ parallelCount: 3 }), makePrd([s1, s2, rectStory]));
 
     // 2 completed + 1 rectified = 3 entries total
     expect(result.allStoryMetrics).toHaveLength(3);
@@ -604,8 +586,8 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
 
     const { executeUnified } = await import("@/execution/unified-executor");
     const result = await executeUnified(
-      makeCtx({ parallelCount: 2, costLimit: 100, maxIterations: 10 }) as never,
-      makePrd([s1, s2]) as never,
+      makeCtx({ parallelCount: 2, costLimit: 100, maxIterations: 10 }),
+      makePrd([s1, s2]),
     );
 
     expect(result.exitReason).toBe("cost-limit");

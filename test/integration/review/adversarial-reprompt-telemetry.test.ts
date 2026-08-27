@@ -176,7 +176,7 @@ describe("AC4 + AC5: reprompt with grounded second turn", () => {
       _diffUtilsDeps.isGitRefValid = mock(async () => true);
       _diffUtilsDeps.getMergeBase = mock(async () => undefined);
       _diffUtilsDeps.spawn = makeSpawn(() => "1 file changed").spawn;
-      _adversarialDeps.collectDiffFileList = async () => ["src/auth.ts"] as never;
+      _adversarialDeps.collectDiffFileList = async () => ["src/auth.ts"];
       _adversarialDeps.writeReviewAudit = async () => {};
       _adversarialDeps.callOp = makeMockedCallOpWithSendTracking({
         secondTurnOutput: SECOND_TURN_GROUNDED,
@@ -218,7 +218,7 @@ describe("AC4 + AC5: reprompt with grounded second turn", () => {
       _diffUtilsDeps.isGitRefValid = mock(async () => true);
       _diffUtilsDeps.getMergeBase = mock(async () => undefined);
       _diffUtilsDeps.spawn = makeSpawn(() => "1 file changed").spawn;
-      _adversarialDeps.collectDiffFileList = async () => ["src/auth.ts"] as never;
+      _adversarialDeps.collectDiffFileList = async () => ["src/auth.ts"];
       _adversarialDeps.writeReviewAudit = async () => {};
       _adversarialDeps.callOp = makeMockedCallOpWithSendTracking({
         secondTurnOutput: SECOND_TURN_GROUNDED,
@@ -257,7 +257,7 @@ describe("AC6: parse-failed outcome when second turn is invalid JSON", () => {
       _diffUtilsDeps.isGitRefValid = mock(async () => true);
       _diffUtilsDeps.getMergeBase = mock(async () => undefined);
       _diffUtilsDeps.spawn = makeSpawn(() => "1 file changed").spawn;
-      _adversarialDeps.collectDiffFileList = async () => ["src/auth.ts"] as never;
+      _adversarialDeps.collectDiffFileList = async () => ["src/auth.ts"];
       _adversarialDeps.writeReviewAudit = async () => {};
       _adversarialDeps.callOp = makeMockedCallOpWithSendTracking({
         secondTurnOutput: SECOND_TURN_INVALID,

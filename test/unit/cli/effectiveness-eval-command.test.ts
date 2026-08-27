@@ -64,13 +64,16 @@ function stripAnsi(s: string): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("effectivenessEvalCommand (AC11)", () => {
-  let exitMock: { exit: ReturnType<typeof mock> };
+  let exitMock: { exit: typeof process.exit };
   let originalProcessExit: typeof process.exit;
 
   beforeEach(() => {
     originalProcessExit = process.exit;
-    exitMock = { exit: mock() };
-    process.exit = exitMock.exit as never;
+    const exitFn = mock((code?: number | string | null) => {
+      throw new Error(`process.exit(${code})`);
+    });
+    exitMock = { exit: exitFn as typeof process.exit };
+    process.exit = exitMock.exit;
   });
 
   afterEach(() => {
@@ -81,10 +84,12 @@ describe("effectivenessEvalCommand (AC11)", () => {
   test("[AC11] exits 2 when the labels path does not exist", async () => {
     const { streams, restore } = captureStreams();
     let exitCode = -1;
-    exitMock.exit.mockImplementation((code?: number) => {
-      exitCode = code ?? 0;
+    const exitSpy = mock((code?: number | string | null) => {
+      exitCode = typeof code === "number" ? code : 0;
       throw new Error(`process.exit(${code})`);
     });
+    exitMock.exit = exitSpy as typeof process.exit;
+    process.exit = exitMock.exit;
     try {
       await withTempDir(async (dir) => {
         const phantom = join(dir, "does-not-exist.json");
@@ -125,7 +130,7 @@ describe("effectivenessEvalCommand (AC12)", () => {
     process.exit = mock((code?: number) => {
       exitCode = code ?? 0;
       throw new Error(`process.exit(${code})`);
-    }) as never;
+    }) as typeof process.exit;
 
     try {
       await withTempDir(async (dir) => {
@@ -183,7 +188,7 @@ describe("effectivenessEvalCommand (AC13)", () => {
     process.exit = mock((code?: number) => {
       exitCode = code ?? 0;
       throw new Error(`process.exit(${code})`);
-    }) as never;
+    }) as typeof process.exit;
 
     try {
       await withTempDir(async (dir) => {
@@ -337,7 +342,7 @@ describe("effectivenessEvalCommand (AC10)", () => {
     process.exit = mock((code?: number) => {
       exitCode = code ?? 0;
       throw new Error(`process.exit(${code})`);
-    }) as never;
+    }) as typeof process.exit;
     try {
       try {
         const result = await effectivenessEvalCommand({ labels: COMMITTED_FIXTURE });
@@ -441,7 +446,7 @@ describe("effectivenessEvalCommand (US-003 AC14)", () => {
 
     process.exit = mock(() => {
       throw new Error("process.exit");
-    }) as never;
+    }) as typeof process.exit;
 
     try {
       try {
@@ -486,7 +491,7 @@ describe("effectivenessEvalCommand (US-003 AC14)", () => {
 
     process.exit = mock(() => {
       throw new Error("process.exit");
-    }) as never;
+    }) as typeof process.exit;
 
     try {
       try {

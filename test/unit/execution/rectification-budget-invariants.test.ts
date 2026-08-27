@@ -49,6 +49,7 @@ import type { NaxRuntime } from "@/runtime";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const testSel = pickSelector("test-us005b-sel", "execution");
+type ExecutionSlice = Pick<typeof DEFAULT_CONFIG, "execution">;
 
 const NR_FIXOP_NAME = "nr-fixop";
 
@@ -60,11 +61,11 @@ const GATE_FINDING: Finding = {
   file: "test/us005b.test.ts",
 };
 
-const nrGateOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+const nrGateOp: DeterministicOperation<unknown, unknown, ExecutionSlice> = {
   kind: "deterministic",
   name: "full-suite-gate",
   stage: "verify",
-  config: testSel as never,
+  config: testSel,
   execute: async () => ({
     success: false,
     findings: [GATE_FINDING],
@@ -73,11 +74,11 @@ const nrGateOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> 
   }),
 };
 
-const nrFixOp: RunOperation<{ story: string }, { applied: boolean }, typeof DEFAULT_CONFIG> = {
+const nrFixOp: RunOperation<{ story: string }, { applied: boolean }, ExecutionSlice> = {
   kind: "run",
   name: NR_FIXOP_NAME,
   stage: "rectification",
-  config: testSel as never,
+  config: testSel,
   session: { role: "implementer", lifetime: "warm" },
   build: () => ({
     role: { id: "r", content: "Fix", overridable: false },
@@ -140,7 +141,7 @@ function nrCtx(runtime: NaxRuntime, storyId: string | undefined, tier?: string):
 function makeBudgetRuntime(storyScopedFixBudget: boolean): NaxRuntime {
   const config = makeNaxConfig({
     execution: { rectification: { storyScopedFixBudget } },
-  } as never);
+  });
   return makeTestRuntime({ config, agentManager: makeMockAgentManager() });
 }
 
@@ -202,7 +203,7 @@ async function nrRun(runtime: NaxRuntime, opts: NrRunOptions): Promise<NrRunResu
     const result = await runRectification(ctx, nrState(maxAttempts), {}, phaseOutputs, {
       skipGateTriage: true,
       ...overrides,
-    } as never);
+    });
     return { dispatchCount, phaseOutputs, result };
   } finally {
     _storyOrchestratorDeps.callOp = origCallOp;
@@ -369,7 +370,7 @@ async function nrRunWithStaticIterations(
     const result = await runRectification(ctx, nrState(3), {}, phaseOutputs, {
       skipGateTriage: true,
       ...overrides,
-    } as never);
+    });
     return { phaseOutputs, result };
   } finally {
     _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
@@ -563,7 +564,7 @@ describe("US-005b AC6: absent runtime.storyFixHistory fails open to per-cycle be
       const phaseOutputs = nrSeedPhaseOutputs();
       // Must complete without throwing — fail-open.
       await expect(
-        runRectification(ctx, nrState(3), {}, phaseOutputs, { skipGateTriage: true } as never),
+        runRectification(ctx, nrState(3), {}, phaseOutputs, { skipGateTriage: true }),
       ).resolves.toBeDefined();
       // Must dispatch fix operations under per-cycle behavior — the runtime
       // cannot record exhaustion (the store is absent), so the cycle starts
@@ -608,11 +609,11 @@ describe("US-005b AC6: absent runtime.storyFixHistory fails open to per-cycle be
       // absent store as "exhausted" would surface here as a 0 dispatch on
       // the second call.
       await expect(
-        runRectification(ctx, nrState(3), {}, phaseOutputs, { skipGateTriage: true } as never),
+        runRectification(ctx, nrState(3), {}, phaseOutputs, { skipGateTriage: true }),
       ).resolves.toBeDefined();
       const afterFirst = dispatchCount;
       await expect(
-        runRectification(ctx, nrState(3), {}, phaseOutputs, { skipGateTriage: true } as never),
+        runRectification(ctx, nrState(3), {}, phaseOutputs, { skipGateTriage: true }),
       ).resolves.toBeDefined();
       const afterSecond = dispatchCount;
 

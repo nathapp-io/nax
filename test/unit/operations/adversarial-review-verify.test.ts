@@ -482,8 +482,8 @@ describe("adversarialReviewOp.verify() — scope grounding", () => {
     const logger = initLogger({ level: "silent" });
     const calls: Array<[string, string, Record<string, unknown>?]> = [];
     const origInfo = logger.info.bind(logger);
-    logger.info = ((...a: unknown[]) => {
-      calls.push(a as never);
+    logger.info = ((stage: string, message: string, data?: Record<string, unknown>) => {
+      calls.push([stage, message, data]);
     }) as typeof logger.info;
 
     try {

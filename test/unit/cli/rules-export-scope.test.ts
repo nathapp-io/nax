@@ -16,8 +16,10 @@
  * Split from rules.test.ts, which is at 747 of the 800-line limit.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeLogger } from "@test/helpers";
 import { _rulesCLIDeps, rulesExportCommand } from "@/cli/rules";
+import type { CanonicalRule } from "@/context/rules/rules-frontmatter";
 
 let origWriteFile: typeof _rulesCLIDeps.writeFile;
 let origGlobInDir: typeof _rulesCLIDeps.globInDir;
@@ -44,8 +46,11 @@ beforeEach(() => {
   _rulesCLIDeps.globInDir = () => [];
   _rulesCLIDeps.mkdir = async () => {};
   _rulesCLIDeps.loadCanonicalRules = async () => [];
-  _rulesCLIDeps.getLogger = () =>
-    ({ warn: (_s: string, msg: string, data: unknown) => warnings.push({ msg, data }) }) as never;
+  _rulesCLIDeps.getLogger = () => {
+    const logger = makeLogger();
+    logger.warn = mock((_s: string, msg: string, data: unknown) => warnings.push({ msg, data })) as typeof logger.warn;
+    return logger;
+  };
 });
 
 afterEach(() => {
@@ -57,8 +62,8 @@ afterEach(() => {
 });
 
 /** Export one rule and return the generated file body. */
-async function exportOne(rule: Record<string, unknown>): Promise<string> {
-  _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "r.md", content: "Body.", ...rule } as never];
+async function exportOne(rule: Partial<CanonicalRule>): Promise<string> {
+  _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "r.md", content: "Body.", ...rule }];
   await rulesExportCommand({ dir: "/project", agent: "claude" });
   return written["/project/.claude/rules/r.md"] ?? "";
 }

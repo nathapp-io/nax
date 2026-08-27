@@ -194,7 +194,7 @@ describe("RL-002: run:completed event payload requirements", () => {
         iterations: 2,
         startTime: Date.now() - 1000,
         workdir: ctx.workdir,
-        statusWriter: ctx.statusWriter as never,
+        statusWriter: ctx.statusWriter,
         config: ctx.config,
         ...makeDispatchContext({ runtime: ctx.runtime }),
       });
@@ -249,7 +249,7 @@ describe("RL-002: run:completed event payload requirements", () => {
         iterations: 3,
         startTime: Date.now() - 1000,
         workdir: ctx.workdir,
-        statusWriter: ctx.statusWriter as never,
+        statusWriter: ctx.statusWriter,
         config: ctx.config,
         ...makeDispatchContext({ runtime: ctx.runtime }),
       });

@@ -166,7 +166,7 @@ describe("planCommand", () => {
       throw new Error(`Unexpected readFile call: ${path}`);
     });
 
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: specPath,
       feature: "url-shortener",
       auto: true,
@@ -182,7 +182,7 @@ describe("planCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-2: prompt includes codebase context, output schema, complexity guide, and test strategy guide", async () => {
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
       auto: true,
@@ -245,7 +245,7 @@ describe("planCommand", () => {
       },
     } as const;
 
-    await planCommand(tmpDir, config as never, {
+    await planCommand(tmpDir, config, {
       from: "/spec.md",
       feature: "url-shortener",
       auto: true,
@@ -282,7 +282,7 @@ describe("planCommand", () => {
       }),
     );
 
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -316,7 +316,7 @@ describe("planCommand", () => {
     );
     _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
     await expect(
-      planCommand(tmpDir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "url-shortener", auto: true }),
+      planCommand(tmpDir, DEFAULT_CONFIG, { from: "/spec.md", feature: "url-shortener", auto: true }),
     ).rejects.toThrow(/parse JSON|Failed to parse/);
 
     // Scenario 2: missing userStories → throws "userStories"
@@ -342,7 +342,7 @@ describe("planCommand", () => {
     );
     _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
     await expect(
-      planCommand(tmpDir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "url-shortener", auto: true }),
+      planCommand(tmpDir, DEFAULT_CONFIG, { from: "/spec.md", feature: "url-shortener", auto: true }),
     ).rejects.toThrow("userStories");
   });
 
@@ -370,7 +370,7 @@ describe("planCommand", () => {
       }),
     );
 
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
       auto: true,
@@ -387,7 +387,7 @@ describe("planCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-5: output path is nax/features/<feature>/prd.json and content is valid JSON with PRD structure", async () => {
-    const result = await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    const result = await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
       auto: true,
@@ -434,7 +434,7 @@ describe("planCommand", () => {
       }),
     );
 
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
       auto: true,
@@ -453,7 +453,7 @@ describe("planCommand", () => {
 
   test("AC-7: project from package.json name; falls back to git remote when name absent", async () => {
     _planDeps.readPackageJson = mock(async (_workdir: string) => ({ name: "my-awesome-pkg" }));
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "url-shortener", auto: true });
+    await planCommand(tmpDir, DEFAULT_CONFIG, { from: "/spec.md", feature: "url-shortener", auto: true });
     expect((JSON.parse(capturedWriteArgs[0][1]) as PRD).project).toBe("my-awesome-pkg");
 
     capturedWriteArgs = [];
@@ -462,7 +462,7 @@ describe("planCommand", () => {
       stdout: Buffer.from("https://github.com/org/repo-name.git\n"),
       exitCode: 0,
     }));
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "url-shortener", auto: true });
+    await planCommand(tmpDir, DEFAULT_CONFIG, { from: "/spec.md", feature: "url-shortener", auto: true });
     expect((JSON.parse(capturedWriteArgs[0][1]) as PRD).project).toBe("repo-name");
   });
 
@@ -474,7 +474,7 @@ describe("planCommand", () => {
     ["defaults to feat/<feature>", undefined, "feat/my-feat"],
     ["can be overridden via branch option", "custom/branch-name", "custom/branch-name"],
   ] as const)("AC-8: branchName %s", async (_label, branch, expected) => {
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "my-feat",
       auto: true,
@@ -496,7 +496,7 @@ describe("planCommand", () => {
     _planDeps.existsSync = origExistsSync; // use real FS — .nax doesn't exist here
 
     expect(
-      planCommand(emptyDir, {} as never, {
+      planCommand(emptyDir, DEFAULT_CONFIG, {
         from: "/spec.md",
         feature: "test",
         auto: true,
@@ -511,7 +511,7 @@ describe("planCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("output PRD has createdAt and updatedAt ISO timestamps", async () => {
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
       auto: true,
@@ -540,7 +540,7 @@ describe("planCommand", () => {
       return [];
     });
     try {
-      await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+      await planCommand(tmpDir, DEFAULT_CONFIG, {
         from: "/spec.md",
         feature: "url-shortener",
         auto: true,
@@ -579,7 +579,7 @@ describe("planCommand", () => {
       { path: "packages/api", language: "typescript", framework: "NestJS", testRunner: "jest" },
     ]);
     try {
-      await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+      await planCommand(tmpDir, DEFAULT_CONFIG, {
         from: "/spec.md",
         feature: "url-shortener",
         auto: true,
@@ -735,7 +735,7 @@ describe("assertIsValidPrd guard (#993)", () => {
     _planDeps.readFile = mock(async () => SAMPLE_SPEC);
 
     await expect(
-      planCommand(tmpDir993, DEFAULT_CONFIG as never, {
+      planCommand(tmpDir993, DEFAULT_CONFIG, {
         from: "/spec.md",
         feature: "url-shortener",
       }),
@@ -750,7 +750,7 @@ describe("assertIsValidPrd guard (#993)", () => {
       return SAMPLE_SPEC;
     });
 
-    const result = await planCommand(tmpDir993, DEFAULT_CONFIG as never, {
+    const result = await planCommand(tmpDir993, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -787,7 +787,7 @@ describe("assertIsValidPrd guard (#993)", () => {
     _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
     _planDeps.readFile = mock(async () => SAMPLE_SPEC);
 
-    await planCommand(tmpDir993, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir993, DEFAULT_CONFIG, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -1016,7 +1016,7 @@ describe("runPlanPipeline (US-005)", () => {
       });
       _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
 
-      await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
+      await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG, { from: "/spec.md", feature: "test-feature" });
 
       expect(callLog[0]).toBe("groundOp");
       expect(callLog.filter((l) => l === "groundOp").length).toBe(1);
@@ -1040,7 +1040,7 @@ describe("runPlanPipeline (US-005)", () => {
           workdir: tempWorkdir,
         }),
       );
-      await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
+      await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG, { from: "/spec.md", feature: "test-feature" });
       expect(capturedPrompts[1]).toContain("DISTINCTIVE_MANIFEST_MARKER_XY9Z");
 
       // Scenario 2: no citationThreshold in config → defaults to 0.5 in planDraftOp prompt
@@ -1048,7 +1048,7 @@ describe("runPlanPipeline (US-005)", () => {
       _planDeps.createRuntime = mock(() =>
         makeMockRuntime({ agentManager: makePipelineAgentManager({ capturedPrompts }), workdir: tempWorkdir }),
       );
-      await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
+      await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG, { from: "/spec.md", feature: "test-feature" });
       expect(capturedPrompts[1]).toContain("0.5");
     });
   });
@@ -1079,7 +1079,7 @@ describe("runPlanPipeline (US-005)", () => {
         },
       });
       _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager: agentManager10, workdir: tempWorkdir }));
-      const result10 = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, {
+      const result10 = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG, {
         from: "/spec.md",
         feature: "test-feature",
       });
@@ -1090,7 +1090,7 @@ describe("runPlanPipeline (US-005)", () => {
       capturedPipelineWrites = [];
       const agentManager11 = makePipelineAgentManager();
       _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager: agentManager11, workdir: tempWorkdir }));
-      const result11 = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, {
+      const result11 = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG, {
         from: "/spec.md",
         feature: "test-feature",
       });
@@ -1110,7 +1110,7 @@ describe("runPlanPipeline (US-005)", () => {
       const agentManager = makePipelineAgentManager({ draftPrd: blockerPrd });
       _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
 
-      const err = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, {
+      const err = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG, {
         from: "/spec.md",
         feature: "test-feature",
       }).catch((e) => e);
@@ -1131,7 +1131,7 @@ describe("runPlanPipeline (US-005)", () => {
       });
       _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
 
-      const err = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, {
+      const err = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG, {
         from: "/spec.md",
         feature: "test-feature",
       }).catch((e) => e);
@@ -1167,9 +1167,7 @@ describe("runPlanPipeline (US-005)", () => {
       };
       _planDeps.createRuntime = mock(() => mockRt);
 
-      await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" }).catch(
-        () => {},
-      );
+      await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG, { from: "/spec.md", feature: "test-feature" }).catch(() => {});
 
       expect(closeCallCount).toBe(1);
     });
@@ -1185,7 +1183,7 @@ describe("runPlanPipeline (US-005)", () => {
         plan: { ...DEFAULT_CONFIG.plan, mode: "pipeline" as const },
       };
 
-      const result = await planCommand(tempWorkdir, pipelineConfig as never, {
+      const result = await planCommand(tempWorkdir, pipelineConfig, {
         from: "/spec.md",
         feature: "test-feature",
       });

@@ -11,7 +11,7 @@ import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config/schema";
 import { initLogger, resetLogger } from "@/logger";
 import { runPipeline } from "@/pipeline/runner";
-import type { PipelineContext, PipelineStage } from "@/pipeline/types";
+import type { PipelineContext, PipelineStage, StageResult } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
 
 /** Helper: Create minimal test context */
@@ -156,29 +156,34 @@ describe("Pipeline Runner", () => {
     });
 
     test("stops pipeline when stage returns skip, fail, escalate, or pause", async () => {
-      const scenarios = [
+      const scenarios: Array<{
+        action: Extract<StageResult["action"], "skip" | "fail" | "escalate" | "pause">;
+        name: string;
+        stageReturn: StageResult;
+        expectedReason: string | undefined;
+      }> = [
         {
-          action: "skip" as const,
+          action: "skip",
           name: "skipStage",
-          stageReturn: { action: "skip" as const, reason: "Story already completed" },
+          stageReturn: { action: "skip", reason: "Story already completed" },
           expectedReason: "Story already completed",
         },
         {
-          action: "fail" as const,
+          action: "fail",
           name: "failStage",
-          stageReturn: { action: "fail" as const, reason: "Tests failed" },
+          stageReturn: { action: "fail", reason: "Tests failed" },
           expectedReason: "Tests failed",
         },
         {
-          action: "escalate" as const,
+          action: "escalate",
           name: "escalateStage",
-          stageReturn: { action: "escalate" as const },
+          stageReturn: { action: "escalate" },
           expectedReason: "Stage requested escalation to higher tier",
         },
         {
-          action: "pause" as const,
+          action: "pause",
           name: "pauseStage",
-          stageReturn: { action: "pause" as const, reason: "User intervention required" },
+          stageReturn: { action: "pause", reason: "User intervention required" },
           expectedReason: "User intervention required",
         },
       ];
@@ -199,7 +204,7 @@ describe("Pipeline Runner", () => {
             enabled: () => true,
             execute: async () => {
               executedStages.push(name);
-              return stageReturn as never;
+              return stageReturn;
             },
           },
           {

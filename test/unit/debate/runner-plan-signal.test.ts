@@ -1,21 +1,23 @@
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeLogger, makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeSessionManager } from "@test/helpers";
 import { _debateSessionDeps } from "@/debate";
-import { runPlan } from "@/debate/runner-plan";
-import * as callModule from "@/operations";
-import type { DebatePlanInput } from "@/operations/debate-plan";
+import { _planDeps, runPlan } from "@/debate/runner-plan";
+
+// Same recipe as runner-hybrid.test.ts's installCallOp: the annotated `impl`
+// parameter contextually types the stub, so `input` is a real DebatePlanInput
+// rather than the `any` bun's `mock()` constraint would supply.
+function installPlanCallOp(impl: typeof _planDeps.callOp) {
+  const spy = mock(impl);
+  _planDeps.callOp = spy;
+  return spy;
+}
 
 /**
- * Overload seam (deepMerge precedent): callers see callOp's real generic
- * signature; the implementation works in concrete DebatePlanInput, so the
- * mock can read `input.index` without an assertion.
+ * `_planDeps.callOp` is monomorphic on planDebaterOp, so the stub reads
+ * `input.index` directly — no generic slot to satisfy, no assertion.
  */
-function makeRebuttingCallOp(rebutFor: (index: number) => string): typeof callModule.callOp;
-function makeRebuttingCallOp(rebutFor: (index: number) => string): unknown {
-  return async (_ctx: unknown, _op: unknown, input: DebatePlanInput) => ({
-    success: true,
-    rebut: rebutFor(input.index),
-  });
+function makeRebuttingCallOp(rebutFor: (index: number) => string): typeof _planDeps.callOp {
+  return async (_ctx, _op, input) => ({ success: true, rebut: rebutFor(input.index) });
 }
 
 interface PlanCallInput {
@@ -75,12 +77,16 @@ function makePlanContext(stageConfigOverrides: Record<string, unknown> = {}) {
   } as Parameters<typeof runPlan>[0];
 }
 
+let origCallOp: typeof _planDeps.callOp;
+
 beforeEach(() => {
+  origCallOp = _planDeps.callOp;
   _debateSessionDeps.getSafeLogger = mock(() => makeLogger());
   _debateSessionDeps.readFile = mock(async () => '{"passed":true}');
 });
 
 afterEach(() => {
+  _planDeps.callOp = origCallOp;
   mock.restore();
 });
 
@@ -88,13 +94,13 @@ describe("runPlan coordinator", () => {
   test("launches plan debaters through callOp with selection signals and rebuttal barriers instead of session-manager turns", async () => {
     const ctx = makePlanContext();
     const callInputs: PlanCallInput[] = [];
-    const callOpSpy = spyOn(callModule, "callOp").mockImplementation(async (_callCtx, op, input) => {
+    const callOpSpy = installPlanCallOp(async (_callCtx, _op, input) => {
       callInputs.push({
-        debater: (input as PlanCallInput).debater,
-        selectionSignal: (input as PlanCallInput).selectionSignal,
-        rebuttalBarrier: (input as PlanCallInput).rebuttalBarrier,
+        debater: input.debater,
+        selectionSignal: input.selectionSignal,
+        rebuttalBarrier: input.rebuttalBarrier,
       });
-      return { success: true, rebut: "rebut-0" } as never;
+      return { success: true, rebut: "rebut-0" };
     });
 
     await runPlan(ctx, "task context", "output format", {
@@ -141,10 +147,10 @@ describe("runPlan coordinator", () => {
     // so Promise.allSettled(rebuttalBarriers) resolves and the runner returns quickly.
     const ctx = makePlanContext();
     let callCount = 0;
-    spyOn(callModule, "callOp").mockImplementation(async () => {
+    installPlanCallOp(async () => {
       const idx = callCount++;
       if (idx === 1) throw new Error("debater 1 failed");
-      return { success: true, rebut: `rebut-${idx}` } as never;
+      return { success: true, rebut: `rebut-${idx}` };
     });
 
     const result = await runPlan(ctx, "task context", "output format", {
@@ -171,7 +177,7 @@ describe("runPlan coordinator", () => {
       selector: undefined,
     });
 
-    spyOn(callModule, "callOp").mockImplementation(makeRebuttingCallOp((index) => `rebut-1-${index}`));
+    _planDeps.callOp = makeRebuttingCallOp((index) => `rebut-1-${index}`);
 
     const result = await runPlan(ctx, "task context", "output format", {
       workdir: "/tmp/work",

@@ -1,6 +1,5 @@
 import { join } from "node:path";
 import type { DebateConfig } from "../config/selectors";
-import * as callModule from "../operations/call";
 import type { DebatePlanInput } from "../operations/debate-plan";
 import { planDebaterOp } from "../operations/debate-plan";
 import type { CallContext } from "../operations/types";
@@ -9,6 +8,7 @@ import type { DispatchContext } from "../runtime/dispatch-context";
 import type { SessionRole } from "../session/types";
 import { allSettledBounded } from "./concurrency";
 import { resolvePersonas } from "./personas";
+import { _planDeps } from "./runner-plan-deps";
 import {
   buildPlanProposalPrompt,
   buildPlanRebuttalPrompt,
@@ -37,6 +37,7 @@ interface PlanCtx extends DispatchContext {
 
 const DEFAULT_MAX_CONCURRENT_DEBATERS = 2;
 
+export { _planDeps } from "./runner-plan-deps";
 // Re-export so existing callers (plan.ts, tests) can continue to import from this module.
 export { _runPlanDeps } from "./runner-plan-helpers";
 
@@ -144,7 +145,7 @@ export async function runPlan(
         agentName,
         sessionOverride: { role: `debate-plan-${index}` as SessionRole },
       };
-      return callModule.callOp(debaterCtx, planDebaterOp, {
+      return _planDeps.callOp(debaterCtx, planDebaterOp, {
         debater,
         index,
         proposePrompt: buildPlanProposalPrompt(proposalBuilder, index, outputPaths[index], manifestSection),
@@ -255,7 +256,7 @@ export async function runPlan(
         agentName,
         sessionOverride: { role: `debate-plan-${index}` as SessionRole },
       };
-      return callModule.callOp(debaterCtx, planDebaterOp, {
+      return _planDeps.callOp(debaterCtx, planDebaterOp, {
         debater,
         index,
         proposePrompt: buildPlanProposalPrompt(proposalBuilder, index, outputPaths[index], manifestSection),
@@ -339,7 +340,7 @@ export async function runPlan(
           agentName,
           sessionOverride: { role: `debate-plan-${index}` as SessionRole },
         };
-        const result = await callModule.callOp(debaterCtx, planDebaterOp, {
+        const result = await _planDeps.callOp(debaterCtx, planDebaterOp, {
           debater,
           index,
           proposePrompt: buildPlanProposalPrompt(proposalBuilder, index, outputPaths[index], manifestSection),

@@ -8,8 +8,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import { makeMockAgentManager, makeMockCallContext, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import { createRunCallCounter } from "@/context/engine";
 import type { BuildHopCallbackContext, RunOperation } from "@/operations";
 import { _callOpDeps, callOp } from "@/operations";
 
@@ -56,18 +57,19 @@ describe("callOp — contextToolRunCounter threading", () => {
       });
     };
 
-    const counter = { count: 3, calls: [] };
+    const counter = createRunCallCounter();
+    counter.count = 3;
     const agentManager = makeMockAgentManager({});
     const localRuntime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager({}) });
     try {
       await callOp(
-        {
+        makeMockCallContext({
           runtime: localRuntime,
           packageView: localRuntime.packages.repo(),
           packageDir: "/tmp",
           agentName: "claude",
           contextToolRunCounter: counter,
-        } as never,
+        }),
         runEchoOp,
         { text: "hi" },
       ).catch(() => undefined);

@@ -242,9 +242,8 @@ describe("@/routing barrel - calibration public type surface", () => {
   test("re-exports all calibration types (compile-time surface guard)", () => {
     // Type-only references preserve the public barrel contract: removing
     // any of these from `src/routing/index.ts` would break the imports
-    // below at compile time. The `expect(_)` assertion forces the file
-    // to actually import the symbols (no "unused import" elimination).
-    const _: {
+    // below at compile time.
+    type _Surface = {
       computeBandStats: typeof computeBandStats;
       BandStat: BandStat;
       TierAdjustment: TierAdjustment;
@@ -252,8 +251,9 @@ describe("@/routing barrel - calibration public type surface", () => {
       SkippedBand: SkippedBand;
       CalibrationProposal: CalibrationProposal;
       CalibrationThresholds: CalibrationThresholds;
-    } = {} as never;
-    expect(_).toBeDefined();
+    };
+    const _: _Surface | undefined = undefined;
+    expect(_).toBeUndefined();
   });
 
   test("runtime-exports computeBandStats (the only value export)", async () => {

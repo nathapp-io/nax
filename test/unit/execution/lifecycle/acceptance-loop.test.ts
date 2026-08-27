@@ -8,7 +8,14 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeDispatchContext, makeNaxConfig, makeTempDir } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeDispatchContext,
+  makeNaxConfig,
+  makePluginRegistry,
+  makeStatusWriter,
+  makeTempDir,
+} from "@test/helpers";
 import {
   _regenerateDeps,
   type AcceptanceLoopContext,
@@ -158,36 +165,22 @@ describe("runAcceptanceLoop threads agentGetFn through the pipeline context", ()
     const prd = makePrd(); // all stories passed
 
     const ctx: AcceptanceLoopContext = {
-      config: {
+      config: makeNaxConfig({
         acceptance: { maxRetries: 1 },
         agent: { default: "claude" },
-        models: {},
-        analyze: { model: "default" },
-      } as never,
+      }),
       prd,
       prdPath: "/tmp/test-prd.json",
       workdir: "/tmp",
       ...makeDispatchContext(),
-      hooks: {} as never,
+      hooks: { hooks: {} },
       feature: "test-feature",
       totalCost: 0,
       iterations: 0,
       storiesCompleted: 0,
       allStoryMetrics: [],
-      pluginRegistry: {
-        getReporters: mock(() => []),
-        getContextProviders: mock(() => []),
-        getReviewers: mock(() => []),
-        getRoutingStrategies: mock(() => []),
-        teardownAll: mock(async () => {}),
-      } as never,
-      statusWriter: {
-        setPrd: mock(() => {}),
-        setCurrentStory: mock(() => {}),
-        setRunStatus: mock(() => {}),
-        update: mock(async () => {}),
-        writeFeatureStatus: mock(async () => {}),
-      } as never,
+      pluginRegistry: makePluginRegistry(),
+      statusWriter: makeStatusWriter(),
       agentGetFn,
     };
 
@@ -395,8 +388,8 @@ describe("resolveAcceptanceFixTarget", () => {
 
 function makeMinimalPipelineContext(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
-    config: { acceptance: { maxRetries: 1 }, agent: { default: "claude" } } as never,
-    rootConfig: { acceptance: { maxRetries: 1 }, agent: { default: "claude" } } as never,
+    config: makeNaxConfig({ acceptance: { maxRetries: 1 }, agent: { default: "claude" } }),
+    rootConfig: makeNaxConfig({ acceptance: { maxRetries: 1 }, agent: { default: "claude" } }),
     prd: { project: "p", feature: "f", branchName: "b", createdAt: "", updatedAt: "", userStories: [] },
     story: {
       id: "US-001",
@@ -414,7 +407,7 @@ function makeMinimalPipelineContext(overrides: Partial<PipelineContext> = {}): P
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "no-test", reasoning: "" },
     workdir: "/tmp/workdir",
     projectDir: "/tmp/workdir",
-    hooks: {} as never,
+    hooks: { hooks: {} },
     ...makeDispatchContext(),
     ...overrides,
   };

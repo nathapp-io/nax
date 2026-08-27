@@ -29,7 +29,7 @@ describe("exportPromptCommand — stdout mode", () => {
     // Prevent process.exit from killing the test runner
     process.exit = mock((_code?: number) => {
       throw new Error(`process.exit(${_code})`);
-    }) as never;
+    }) as typeof process.exit;
   });
 
   afterEach(() => {
@@ -84,7 +84,7 @@ describe("exportPromptCommand — file output mode (--out)", () => {
     };
     process.exit = mock((_code?: number) => {
       throw new Error(`process.exit(${_code})`);
-    }) as never;
+    }) as typeof process.exit;
   });
 
   afterEach(() => {
@@ -137,7 +137,7 @@ describe("exportPromptCommand — invalid role", () => {
     };
     process.exit = mock((_code?: number) => {
       throw new Error(`process.exit(${_code})`);
-    }) as never;
+    }) as typeof process.exit;
   });
 
   afterEach(() => {
@@ -153,7 +153,7 @@ describe("exportPromptCommand — invalid role", () => {
       process.exit = mock((code?: number) => {
         exitCode = code;
         throw new Error(`process.exit(${code})`);
-      }) as never;
+      }) as typeof process.exit;
       try {
         await exportPromptCommand({ role });
         expect(true).toBe(false);
@@ -183,7 +183,7 @@ describe("exportPromptCommand — all valid roles produce complete prompts", () 
     originalProcessExit = process.exit;
     process.exit = mock((_code?: number) => {
       throw new Error(`process.exit(${_code})`);
-    }) as never;
+    }) as typeof process.exit;
   });
 
   afterEach(() => {

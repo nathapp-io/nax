@@ -138,7 +138,7 @@ describe("handlePipelineFailure — worktree removal drains streams (BUG-12)", (
 
   test("logs a warning when git worktree remove exits non-zero", async () => {
     const logger = makeLogger();
-    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
 
     const story = makeStory({ id: "US-bug12", status: "pending", passes: false, attempts: 2 });
     const ctx = makeCtx(story, {
@@ -185,7 +185,7 @@ describe("handlePipelineFailure — worktree removal drains streams (BUG-12)", (
   // what gets logged (not stdout, which is empty for `git worktree remove`).
   test("logs the actual stderr content from git (BUG-3 stdout/stderr swap)", async () => {
     const logger = makeLogger();
-    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
 
     const story = makeStory({ id: "US-bug3", status: "pending", passes: false, attempts: 2 });
     const ctx = makeCtx(story, {

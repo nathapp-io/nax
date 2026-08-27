@@ -15,70 +15,53 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import {
+  makeDispatchContext,
+  makeMockRuntime,
+  makeNaxConfig,
+  makePluginRegistry,
+  makePRD,
+  makeStatusWriter,
+  makeStory,
+} from "@test/helpers";
+import type { SequentialExecutionContext } from "@/execution/unified-executor";
+import type { LoadedHooksConfig } from "@/hooks";
+import type { UserStory } from "@/prd/types";
+
+const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixture helpers — delegate to shared factories (test-helpers.md); local
 // wrappers keep call sites terse (makePendingStory(id) / makePrd(stories)).
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makePendingStory(id: string) {
+function makePendingStory(id: string): UserStory {
   return makeStory({ id, title: `Story ${id}`, description: `Description for ${id}` });
 }
 
-function makePrd(stories: ReturnType<typeof makePendingStory>[]) {
+function makePrd(stories: UserStory[]) {
   return makePRD({ userStories: stories });
 }
 
-function makeCtx(overrides: Record<string, unknown> = {}) {
+function makeCtx(overrides: Record<string, unknown> = {}): SequentialExecutionContext {
   return {
     prdPath: "/tmp/test-prd.json",
     workdir: "/tmp/test-workdir",
     config: makeNaxConfig({
-      execution: { maxIterations: 1, costLimit: 100, iterationDelayMs: 0, rectification: { maxAttemptsTotal: 2 } },
+      execution: { maxIterations: 1, costLimit: 100, iterationDelayMs: 0 },
     }),
-    hooks: {},
+    hooks: EMPTY_HOOKS,
     feature: "test-feature",
     dryRun: false,
     useBatch: false,
-    pluginRegistry: {
-      getReporters: () => [],
-      getContextProviders: () => [],
-    },
-    statusWriter: {
-      setPrd: mock(() => {}),
-      setCurrentStory: mock(() => {}),
-      setRunStatus: mock(() => {}),
-      update: mock(async () => {}),
-    },
+    pluginRegistry: makePluginRegistry(),
+    statusWriter: makeStatusWriter(),
     runId: "run-test",
     startTime: Date.now(),
     batchPlan: [],
     interactionChain: null,
-    runtime: {
-      outputDir: "/tmp/nax-test-results-output",
-      // nax#1709: parallel metrics read these run-scoped stores.
-      agentFallbacks: new Map(),
-      runtimeCrashRetries: new Map(),
-      costAggregator: {
-        snapshot: () => ({
-          totalCostUsd: 0,
-          totalEstimatedCostUsd: 0,
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          callCount: 0,
-          errorCount: 0,
-        }),
-        byStage: () => ({}),
-        byStory: () => ({}),
-        byAgent: () => ({}),
-        record: () => {},
-        recordError: () => {},
-        recordOperationSummary: () => {},
-        drain: async () => {},
-      },
-    },
     parallelCount: 2,
+    ...makeDispatchContext({ runtime: makeMockRuntime({ workdir: "/tmp/nax-test-results-output" }) }),
     ...overrides,
   };
 }
@@ -92,7 +75,7 @@ describe("exec AC-18: executeUnified return value matches SequentialExecutionRes
     type R = import("@/execution/executor-types").SequentialExecutionResult;
     // Compile-time: if any key is missing, TypeScript will reject this file
     const result: R = {
-      prd: makePrd([]) as never,
+      prd: makePrd([]),
       iterations: 0,
       storiesCompleted: 0,
       totalCost: 0,
@@ -130,7 +113,7 @@ describe("exec AC-18: executeUnified return value matches SequentialExecutionRes
     }));
 
     try {
-      const result = await mod.executeUnified(makeCtx() as never, prd as never);
+      const result = await mod.executeUnified(makeCtx(), prd);
       // All required keys must exist
       expect(typeof result.iterations).toBe("number");
       expect(typeof result.storiesCompleted).toBe("number");
@@ -204,7 +187,7 @@ describe("results AC-1 / AC-4 / exec AC-29: completed stories produce correct me
     ]);
     ctx.runtime.runtimeCrashRetries.set(story2.id, 2);
 
-    const result = await mod.executeUnified(ctx as never, makePrd([story1, story2]) as never);
+    const result = await mod.executeUnified(ctx, makePrd([story1, story2]));
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);
     const m2 = result.allStoryMetrics.find((m) => m.storyId === story2.id);
@@ -256,7 +239,7 @@ describe("results AC-1 / AC-4 / exec AC-29: completed stories produce correct me
     }));
 
     const mod = await import("@/execution/unified-executor");
-    const result = await mod.executeUnified(makeCtx() as never, makePrd([profiled, plain]) as never);
+    const result = await mod.executeUnified(makeCtx(), makePrd([profiled, plain]));
 
     expect(result.allStoryMetrics.find((m) => m.storyId === profiled.id)?.modelUsed).toBe("pi");
     // A story with no assigned agent still falls back to the run default.
@@ -282,7 +265,7 @@ describe("results AC-1 / AC-4 / exec AC-29: completed stories produce correct me
     }));
 
     const mod = await import("@/execution/unified-executor");
-    const result = await mod.executeUnified(makeCtx() as never, makePrd([story1, story2]) as never);
+    const result = await mod.executeUnified(makeCtx(), makePrd([story1, story2]));
 
     const mA = result.allStoryMetrics.find((m) => m.storyId === story1.id);
     const mB = result.allStoryMetrics.find((m) => m.storyId === story2.id);
@@ -336,7 +319,7 @@ describe("results AC-5: totalCost sums all batch costs", () => {
     }));
 
     const mod = await import("@/execution/unified-executor");
-    const result = await mod.executeUnified(makeCtx() as never, makePrd([story1, story2]) as never);
+    const result = await mod.executeUnified(makeCtx(), makePrd([story1, story2]));
 
     // totalCost accumulates the batch's totalCost
     expect(result.totalCost).toBeCloseTo(batchCost, 5);
@@ -417,7 +400,7 @@ describe("results AC-3 / exec AC-31: rectified merge-conflict stories produce co
     }));
 
     const mod = await import("@/execution/unified-executor");
-    const result = await mod.executeUnified(makeCtx() as never, makePrd([story1, conflictStory]) as never);
+    const result = await mod.executeUnified(makeCtx(), makePrd([story1, conflictStory]));
 
     const conflictMetric = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
 
@@ -457,7 +440,7 @@ describe("results AC-3 / exec AC-31: rectified merge-conflict stories produce co
     }));
 
     const mod = await import("@/execution/unified-executor");
-    const result = await mod.executeUnified(makeCtx() as never, makePrd([story1, conflictStory]) as never);
+    const result = await mod.executeUnified(makeCtx(), makePrd([story1, conflictStory]));
 
     const conflictMetric = result.allStoryMetrics.find((m) => m.storyId === conflictStory.id);
     // Un-rectified conflicts are not pushed into allStoryMetrics
@@ -510,7 +493,7 @@ describe("exec AC-30: durationMs is per-story elapsed from storyDurations Map", 
     }));
 
     const mod = await import("@/execution/unified-executor");
-    const result = await mod.executeUnified(makeCtx() as never, makePrd([story1, story2]) as never);
+    const result = await mod.executeUnified(makeCtx(), makePrd([story1, story2]));
 
     const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);
     const m2 = result.allStoryMetrics.find((m) => m.storyId === story2.id);

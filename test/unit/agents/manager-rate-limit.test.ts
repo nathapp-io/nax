@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _agentManagerDeps, AgentManager } from "@/agents/manager";
 import type { RetryDecision, RetryStrategy } from "@/agents/retry";
+import { DEFAULT_CONFIG } from "@/config";
+import { agentManagerConfigSelector } from "@/config/selectors";
 import type { AdapterFailure } from "@/context/engine";
 
 const rateLimitFailure: AdapterFailure = {
@@ -10,10 +12,7 @@ const rateLimitFailure: AdapterFailure = {
   message: "rate limited",
 };
 
-const baseConfig = {
-  models: { claude: { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-6", powerful: "claude-opus-4-7" } },
-  agent: { default: "claude", fallback: { enabled: false, map: {} } },
-};
+const config = agentManagerConfigSelector.select(DEFAULT_CONFIG);
 
 let origSleep: typeof _agentManagerDeps.sleep;
 beforeEach(() => {
@@ -38,7 +37,7 @@ describe("AgentManager — injectable retryStrategy", () => {
       sleepCalls.push(ms);
     };
 
-    const manager = new AgentManager(baseConfig as never, undefined, { retryStrategy: neverRetry });
+    const manager = new AgentManager(config, undefined, { retryStrategy: neverRetry });
 
     const outcome = await manager.runWithFallback({
       runOptions: {
@@ -47,7 +46,7 @@ describe("AgentManager — injectable retryStrategy", () => {
         modelTier: "fast",
         modelDef: { provider: "anthropic", model: "claude-haiku-4-5" },
         timeoutSeconds: 30,
-        config: baseConfig as never,
+        config,
         pipelineStage: "run",
       },
       executeHop: async () => ({
@@ -77,7 +76,7 @@ describe("AgentManager — injectable retryStrategy", () => {
       sleepCalls.push(ms);
     };
 
-    const manager = new AgentManager(baseConfig as never);
+    const manager = new AgentManager(config);
 
     await manager.runWithFallback({
       runOptions: {
@@ -86,7 +85,7 @@ describe("AgentManager — injectable retryStrategy", () => {
         modelTier: "fast",
         modelDef: { provider: "anthropic", model: "claude-haiku-4-5" },
         timeoutSeconds: 30,
-        config: baseConfig as never,
+        config,
         pipelineStage: "run",
       },
       executeHop: async () => ({

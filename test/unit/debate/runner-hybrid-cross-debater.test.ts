@@ -13,6 +13,8 @@ import {
   makeDispatchContext,
   makeLogger,
   makeMockAgentManager,
+  makeMockCallContext,
+  makeMockRuntime,
   makeNaxConfig,
   makeSessionManager,
   withDepsRestore,
@@ -52,6 +54,14 @@ function makeHybridCtx(stageConfigOverrides: Partial<DebateStageConfig> = {}): H
     closeSession: mock(async () => {}),
     nameFor: mock((req) => req.role ?? ""),
   });
+  const runtime = makeMockRuntime({ agentManager, sessionManager, config: fullConfig });
+  const callContext = makeMockCallContext({
+    runtime,
+    packageDir: "/tmp/work",
+    agentName: "claude",
+    storyId: "US-cross-debater",
+    featureName: "feat-hybrid",
+  });
 
   return {
     storyId: "US-cross-debater",
@@ -61,21 +71,8 @@ function makeHybridCtx(stageConfigOverrides: Partial<DebateStageConfig> = {}): H
     workdir: "/tmp/work",
     featureName: "feat-hybrid",
     timeoutSeconds: 60,
-    callContext: {
-      runtime: {
-        agentManager,
-        sessionManager,
-        configLoader: { current: () => fullConfig, select: (_sel: unknown) => fullConfig },
-        packages: { resolve: () => ({ config: fullConfig, select: (_sel: unknown) => fullConfig }) },
-        signal: undefined,
-      } as never,
-      packageView: { config: fullConfig, select: (_sel: unknown) => fullConfig } as never,
-      packageDir: "/tmp/work",
-      agentName: "claude",
-      storyId: "US-cross-debater",
-      featureName: "feat-hybrid",
-    },
-    ...makeDispatchContext({ agentManager, sessionManager }),
+    callContext,
+    ...makeDispatchContext({ runtime }),
   };
 }
 

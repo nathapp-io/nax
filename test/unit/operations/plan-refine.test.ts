@@ -14,6 +14,7 @@ import type { PlanConfig } from "@/config/selectors";
 import type { PlanRefineInput, VerifyContext } from "@/operations";
 import { _planRefineDeps, callOp, normalizeCreatedContextFiles, planInteractiveOp, planRefineOp } from "@/operations";
 import type { HopBodyContext } from "@/operations/types";
+import type { PRD, UserStory } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
 
@@ -39,7 +40,7 @@ async function hopBodyInit(ctx: HopBodyContext<PlanRefineInput>) {
   return planRefineOp.hopBody("init", ctx);
 }
 
-function makeValidPrd(feature: string, branchName: string) {
+function makeValidPrd(feature: string, branchName: string): PRD {
   return {
     project: "test-project",
     feature,
@@ -105,7 +106,15 @@ describe("planRefineOp export and identity", () => {
     const mod = await import("@/operations");
     const { planRefineOp } = mod;
     const outputPath = "/tmp/plan-refine-prd.json";
-    expect(planRefineOp.fileOutput?.({ outputPath } as never)).toBe(outputPath);
+    expect(
+      planRefineOp.fileOutput?.({
+        specContent: "",
+        codebaseContext: "",
+        featureName: "f",
+        branchName: "feat/f",
+        outputPath,
+      }),
+    ).toBe(outputPath);
   });
 });
 
@@ -405,7 +414,7 @@ describe("planRefineOp.verify — specGuard warnOnSpecDrift", () => {
     };
   }
 
-  const input = {
+  const input: PlanRefineInput = {
     specContent: "# Spec",
     codebaseContext: "",
     featureName: "f",
@@ -428,7 +437,7 @@ describe("planRefineOp.verify — specGuard warnOnSpecDrift", () => {
 
   test("emits spec-drift warning when specGuard=true and violations remain", async () => {
     await withWarnSpy(async (warnSpy) => {
-      const result = await planRefineOp.verify?.(makeDriftPrd() as never, input as never, makeVerifyCtx(true));
+      const result = await planRefineOp.verify?.(makeDriftPrd(), input, makeVerifyCtx(true));
       expect(result).toBeTruthy();
       const call = warnSpy.mock.calls.find((c) => typeof c[1] === "string" && c[1].includes("spec-drift"));
       expect(call).toBeDefined();
@@ -438,7 +447,7 @@ describe("planRefineOp.verify — specGuard warnOnSpecDrift", () => {
 
   test("does not emit spec-drift warning when specGuard=false even with violations", async () => {
     await withWarnSpy(async (warnSpy) => {
-      await planRefineOp.verify?.(makeDriftPrd() as never, input as never, makeVerifyCtx(false));
+      await planRefineOp.verify?.(makeDriftPrd(), input, makeVerifyCtx(false));
       const driftWarn = warnSpy.mock.calls.find((c) => typeof c[1] === "string" && c[1].includes("spec-drift"));
       expect(driftWarn).toBeUndefined();
     });
@@ -535,7 +544,7 @@ describe("planRefineOp.recover()", () => {
 describe("normalizeCreatedContextFiles — move absent reads to expectedFiles", () => {
   const WORKDIR = "/repo";
 
-  function prdWith(contextFiles: Array<string | { path: string; factId?: string }>, expectedFiles?: string[]) {
+  function prdWith(contextFiles: Array<string | { path: string; factId?: string }>, expectedFiles?: string[]): PRD {
     const base = makeValidPrd("f", "feat/f");
     return {
       ...base,
@@ -543,15 +552,17 @@ describe("normalizeCreatedContextFiles — move absent reads to expectedFiles", 
     };
   }
 
-  function story0(prd: { userStories: Array<Record<string, unknown>> }) {
-    return prd.userStories[0] as { contextFiles?: unknown[]; expectedFiles?: string[] };
+  function story0(prd: PRD) {
+    const first = prd.userStories[0];
+    assertDefined(first, "prd.userStories[0]");
+    return first;
   }
 
   test("moves an uncited contextFile absent on disk into expectedFiles", async () => {
     await withWarnSpy(async () => {
       const fileExists = mock(async () => false);
-      const out = await normalizeCreatedContextFiles(prdWith(["src/_chat.ts"]) as never, WORKDIR, fileExists);
-      const s = story0(out as never);
+      const out = await normalizeCreatedContextFiles(prdWith(["src/_chat.ts"]), WORKDIR, fileExists);
+      const s = story0(out);
       expect(s.expectedFiles).toEqual(["src/_chat.ts"]);
       expect(s.contextFiles ?? []).toEqual([]); // removed from the read list
       expect(fileExists).toHaveBeenCalledWith(join(WORKDIR, "src/_chat.ts"));
@@ -562,20 +573,16 @@ describe("normalizeCreatedContextFiles — move absent reads to expectedFiles", 
     await withWarnSpy(async () => {
       const fileExists = mock(async () => true);
       const prd = prdWith(["src/real.ts"]);
-      const out = await normalizeCreatedContextFiles(prd as never, WORKDIR, fileExists);
-      expect(out).toBe(prd as never); // unchanged → same reference
+      const out = await normalizeCreatedContextFiles(prd, WORKDIR, fileExists);
+      expect(out).toBe(prd); // unchanged → same reference
     });
   });
 
   test("does not duplicate a path already declared in expectedFiles", async () => {
     await withWarnSpy(async () => {
       const fileExists = mock(async () => false);
-      const out = await normalizeCreatedContextFiles(
-        prdWith(["src/_chat.ts"], ["src/_chat.ts"]) as never,
-        WORKDIR,
-        fileExists,
-      );
-      const s = story0(out as never);
+      const out = await normalizeCreatedContextFiles(prdWith(["src/_chat.ts"], ["src/_chat.ts"]), WORKDIR, fileExists);
+      const s = story0(out);
       // already an output — absence is expected, no move, no duplicate
       expect(s.expectedFiles).toEqual(["src/_chat.ts"]);
     });
@@ -585,11 +592,11 @@ describe("normalizeCreatedContextFiles — move absent reads to expectedFiles", 
     await withWarnSpy(async (warnSpy) => {
       const fileExists = mock(async () => false);
       const out = await normalizeCreatedContextFiles(
-        prdWith([{ path: "src/cited.ts", factId: "F-001" }]) as never,
+        prdWith([{ path: "src/cited.ts", factId: "F-001" }]),
         WORKDIR,
         fileExists,
       );
-      const s = story0(out as never);
+      const s = story0(out);
       expect(s.contextFiles).toEqual([{ path: "src/cited.ts", factId: "F-001" }]); // kept
       expect(s.expectedFiles ?? []).toEqual([]); // NOT moved
       const warns = warnSpy.mock.calls.filter((c) => c[0] === "plan" && String(c[1]).includes("cites a manifest fact"));
@@ -608,12 +615,10 @@ describe("normalizeCreatedContextFiles — move absent reads to expectedFiles", 
         contextFiles: ["src/Card.tsx"], // created by US-001 — absent on disk at plan time
         expectedFiles: ["src/Badge.tsx"],
       };
-      const prd = { ...base, userStories: [producer, consumer] };
+      const prd: PRD = { ...base, userStories: [producer, consumer] };
       const fileExists = mock(async () => false); // nothing on disk yet
 
-      const out = (await normalizeCreatedContextFiles(prd as never, WORKDIR, fileExists)) as never as {
-        userStories: Array<{ id: string; contextFiles?: unknown[]; expectedFiles?: string[] }>;
-      };
+      const out = await normalizeCreatedContextFiles(prd, WORKDIR, fileExists);
 
       const b = out.userStories.find((s) => s.id === "US-002");
       assertDefined(b, "US-002 story");
@@ -634,12 +639,10 @@ describe("normalizeCreatedContextFiles — move absent reads to expectedFiles", 
         dependencies: ["US-001"],
         contextFiles: ["src/own.tsx"],
       };
-      const prd = { ...base, userStories: [producer, consumer] };
+      const prd: PRD = { ...base, userStories: [producer, consumer] };
       const fileExists = mock(async () => false);
 
-      const out = (await normalizeCreatedContextFiles(prd as never, WORKDIR, fileExists)) as never as {
-        userStories: Array<{ id: string; contextFiles?: unknown[]; expectedFiles?: string[] }>;
-      };
+      const out = await normalizeCreatedContextFiles(prd, WORKDIR, fileExists);
 
       const b = out.userStories.find((s) => s.id === "US-002");
       assertDefined(b, "US-002 story");
@@ -651,8 +654,8 @@ describe("normalizeCreatedContextFiles — move absent reads to expectedFiles", 
   test("is a no-op (returns input) when workdir is undefined", async () => {
     const fileExists = mock(async () => false);
     const prd = prdWith(["src/ghost.ts"]);
-    const out = await normalizeCreatedContextFiles(prd as never, undefined, fileExists);
-    expect(out).toBe(prd as never);
+    const out = await normalizeCreatedContextFiles(prd, undefined, fileExists);
+    expect(out).toBe(prd);
     expect(fileExists).not.toHaveBeenCalled();
   });
 
@@ -661,21 +664,19 @@ describe("normalizeCreatedContextFiles — move absent reads to expectedFiles", 
       const base = makeValidPrd("f", "feat/f");
       const s0 = { ...base.userStories[0], id: "US-001", contextFiles: ["src/real.ts"] }; // exists → unchanged
       const s1 = { ...base.userStories[0], id: "US-002", contextFiles: ["src/_new.ts"] }; // absent → moved
-      const prd = { ...base, userStories: [s0, s1] };
+      const prd: PRD = { ...base, userStories: [s0, s1] };
       // Only src/real.ts exists on disk.
       const fileExists = mock(async (p: string) => p.endsWith("src/real.ts"));
 
-      const out = (await normalizeCreatedContextFiles(prd as never, WORKDIR, fileExists)) as never as {
-        userStories: Array<{ id: string; contextFiles?: unknown[]; expectedFiles?: string[] }>;
-      };
+      const out = await normalizeCreatedContextFiles(prd, WORKDIR, fileExists);
 
-      expect(out).not.toBe(prd as never); // a story changed → new PRD object
+      expect(out).not.toBe(prd); // a story changed → new PRD object
       const a = out.userStories.find((s) => s.id === "US-001");
       const b = out.userStories.find((s) => s.id === "US-002");
       assertDefined(a, "US-001 story");
       assertDefined(b, "US-002 story");
       // Unchanged story keeps its original object reference (no needless copy).
-      expect(a).toBe(s0 as never);
+      expect(a).toBe(s0);
       expect(a.contextFiles).toEqual(["src/real.ts"]);
       // Changed story moved its absent read to expectedFiles.
       expect(b.contextFiles ?? []).toEqual([]);

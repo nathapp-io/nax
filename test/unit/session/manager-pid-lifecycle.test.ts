@@ -43,7 +43,7 @@ describe("SessionManager PID lifecycle — configureRuntime", () => {
       pidRegistry: registry,
     });
 
-    const modelDef = { model: "claude-3-5-sonnet-20241022", provider: "anthropic" } as never;
+    const modelDef = { model: "claude-3-5-sonnet-20241022", provider: "anthropic" };
     await sm.openSession("test-session", {
       agentName: "mock",
       workdir: "/tmp",
@@ -81,7 +81,7 @@ describe("SessionManager PID lifecycle — configureRuntime", () => {
     const sm = new SessionManager({ getAdapter: () => adapter });
     sm.configureRuntime({ config: makeNaxConfig() });
 
-    const modelDef = { model: "claude-3-5-sonnet-20241022", provider: "anthropic" } as never;
+    const modelDef = { model: "claude-3-5-sonnet-20241022", provider: "anthropic" };
     await sm.openSession("test-session-no-pid", {
       agentName: "mock",
       workdir: "/tmp",

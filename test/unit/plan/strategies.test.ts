@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { makeLogger, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import { makeDebateRunner, makeInteractionChain, makeLogger, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 import type { SourceRoot } from "@/analyze";
 import { _planDeps, detectProjectName } from "@/cli";
 import type { NaxConfig } from "@/config";
@@ -59,11 +59,7 @@ function makeSourceRoots(workdir: string): SourceRoot[] {
 }
 
 function makeDeps(overrides: Partial<PlanDeps> = {}): PlanDeps {
-  const interactionChain = {
-    getPrimary() {
-      return null;
-    },
-  };
+  const interactionChain = makeInteractionChain();
 
   const deps: PlanDeps = {
     readFile: mock(async (path: string) => {
@@ -94,12 +90,12 @@ function makeDeps(overrides: Partial<PlanDeps> = {}): PlanDeps {
       stdout: Buffer.from("git@github.com:acme/remote-repo.git"),
       exitCode: 0,
     })),
-    initInteractionChain: mock(async () => interactionChain as never),
+    initInteractionChain: mock(async () => interactionChain),
     createInteractionBridge: mock(() => ({
       detectQuestion: async () => false,
       onQuestionDetected: async () => "",
     })),
-    createDebateRunner: mock(() => ({}) as never),
+    createDebateRunner: mock(() => makeDebateRunner()),
     getLogger: makeLogger,
     ...overrides,
   };
@@ -146,7 +142,7 @@ describe("buildPlanModeContext", () => {
     const expectedRuntime = makeMockRuntime();
 
     const origCreateRuntime = _planDeps.createRuntime;
-    _planDeps.createRuntime = mock(() => expectedRuntime as never);
+    _planDeps.createRuntime = mock(() => expectedRuntime);
 
     try {
       const ctx = await buildPlanModeContext(

@@ -151,7 +151,7 @@ describe("plan PRD preservation — issue #993 regression (AC1)", () => {
       }),
     );
 
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG, {
       from: join(tmpDir, "spec.md"),
       feature: "url-shortener",
     });

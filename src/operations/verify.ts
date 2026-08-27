@@ -11,7 +11,7 @@ import type { FailureCategory, IsolationCheck } from "../tdd/types";
 import type { VerdictCategorization, VerifierVerdict } from "../tdd/verdict";
 import { categorizeVerdict, cleanupVerdict, coerceVerdict, isValidVerdict, readVerdict } from "../tdd/verdict";
 import { tryParseLLMJson } from "../utils/llm-json";
-import type { BuildContext, RunOperation, RunOperationWithHooks, VerifyContext } from "./types";
+import type { BuildContext, RunOperationWithHooks, VerifyContext } from "./types";
 
 void _isolationDeps; // re-export to keep test mocks pointed at the same singleton
 

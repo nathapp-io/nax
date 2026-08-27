@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeLogger, makeMockAgentManager, makeNaxConfig, makeSessionManager, withDepsRestore } from "@test/helpers";
+import {
+  makeLogger,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeNaxConfig,
+  makeSessionManager,
+  withDepsRestore,
+} from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { DebateRunner } from "@/debate/runner";
 import { _hybridDeps } from "@/debate/runner-hybrid";
@@ -41,15 +48,10 @@ function makeCallCtx(
     },
   });
 
+  const runtime = makeMockRuntime({ agentManager, sessionManager });
   return {
-    runtime: {
-      agentManager,
-      sessionManager,
-      configLoader: { current: () => config, select: (_sel: unknown) => config } as never,
-      packages: { resolve: () => ({ config, select: (_sel: unknown) => config }) } as never,
-      signal: undefined,
-    } as never,
-    packageView: { config, select: (_sel: unknown) => config } as never,
+    runtime,
+    packageView: runtime.packages.repo(),
     packageDir: "/tmp/work",
     agentName: "claude",
     storyId,

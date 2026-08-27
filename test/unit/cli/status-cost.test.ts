@@ -25,6 +25,22 @@ import type { CostReportV1 } from "@/metrics";
 import type { RunMetrics } from "@/metrics/types";
 import { projectOutputDir } from "@/runtime";
 
+function makeRunMetrics(overrides: Partial<RunMetrics> = {}): RunMetrics {
+  return {
+    runId: "r1",
+    feature: "f1",
+    startedAt: "2026-01-01T00:00:00.000Z",
+    completedAt: "2026-01-01T00:00:10.000Z",
+    totalCost: 0,
+    totalStories: 1,
+    storiesCompleted: 1,
+    storiesFailed: 0,
+    totalDurationMs: 10000,
+    stories: [],
+    ...overrides,
+  };
+}
+
 const FIXED_REPORT: CostReportV1 = {
   schemaVersion: "1.0",
   project: "myproj",
@@ -91,7 +107,7 @@ describe("emitCostReportJson — AC1: export shape", () => {
 describe("emitCostReportJson — AC2: stdout payload schemaVersion", () => {
   test("AC2: with non-empty runs and stdout spy, stdout is called once with a string whose JSON.parse has schemaVersion === '1.0'", async () => {
     const stdout = mock((_text: string) => {});
-    const loadRuns = mock(async (_outputDir: string) => [{ runId: "r1", feature: "f1" }] as never);
+    const loadRuns = mock(async (_outputDir: string) => [makeRunMetrics()]);
     const deps = makeDeps({
       loadRuns,
       stdout,
@@ -119,10 +135,7 @@ describe("emitCostReportJson — AC2: stdout payload schemaVersion", () => {
 
 describe("emitCostReportJson — AC3: toCostReport receives injected runs + seam wiring", () => {
   test("AC3: toCostReport is invoked exactly once with the runs array returned by loadRuns, plus { now, project } where now is from deps.now and project is derived from the workdir via the canonical resolveProject path", async () => {
-    const injectedRuns = [
-      { runId: "r1", feature: "f1" },
-      { runId: "r2", feature: "f2" },
-    ] as never;
+    const injectedRuns = [makeRunMetrics(), makeRunMetrics({ runId: "r2", feature: "f2" })];
     const toCostReport = mock((_runs: RunMetrics[], _deps: { now: () => string; project: string }) => FIXED_REPORT);
     const deps = makeDeps({
       loadRuns: mock(async () => injectedRuns),
@@ -175,7 +188,7 @@ describe("emitCostReportJson — AC5: stdout deep-equals report", () => {
   test("AC5: JSON.parse(stdout) deep-equals the report returned by toCostReport and the string contains a newline", async () => {
     const stdout = mock((_text: string) => {});
     const deps = makeDeps({
-      loadRuns: mock(async () => [{ runId: "r1" }] as never),
+      loadRuns: mock(async () => [makeRunMetrics()]),
       toCostReport: mock(() => FIXED_REPORT),
       stdout,
     });

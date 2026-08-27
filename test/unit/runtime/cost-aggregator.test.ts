@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { assertDefined, withTempDir } from "@test/helpers";
+import { assertDefined, makeLogger, withTempDir } from "@test/helpers";
 import { _costAggDeps, CostAggregator, type CostEvent, createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 
 function makeEvent(overrides: Partial<CostEvent> = {}): CostEvent {
@@ -373,14 +373,11 @@ describe("CostAggregator", () => {
 
     // Scenario 1: unclosed scope → warn with openScopeCount
     const warnCalls1: Array<[string, string, Record<string, unknown>]> = [];
-    _costAggDeps.getSafeLogger = mock(() => ({
-      warn: (stage: string, msg: string, data: Record<string, unknown>) => {
-        warnCalls1.push([stage, msg, data]);
-      },
-      info: () => {},
-      error: () => {},
-      debug: () => {},
-    })) as never;
+    const mockLogger1 = makeLogger();
+    mockLogger1.warn = mock((stage: string, msg: string, data: Record<string, unknown>) => {
+      warnCalls1.push([stage, msg, data]);
+    }) as typeof mockLogger1.warn;
+    _costAggDeps.getSafeLogger = mock(() => mockLogger1);
     const agg1 = new CostAggregator("r-001", "/tmp/drain");
     agg1.openScope("unclosed-scope");
     await agg1.drain();
@@ -393,14 +390,11 @@ describe("CostAggregator", () => {
 
     // Scenario 2: closed scope → no warn with openScopeCount
     const warnCalls2: Array<Record<string, unknown>> = [];
-    _costAggDeps.getSafeLogger = mock(() => ({
-      warn: (_stage: string, _msg: string, data: Record<string, unknown>) => {
-        warnCalls2.push(data);
-      },
-      info: () => {},
-      error: () => {},
-      debug: () => {},
-    })) as never;
+    const mockLogger2 = makeLogger();
+    mockLogger2.warn = mock((_stage: string, _msg: string, data: Record<string, unknown>) => {
+      warnCalls2.push(data);
+    }) as typeof mockLogger2.warn;
+    _costAggDeps.getSafeLogger = mock(() => mockLogger2);
     const agg2 = new CostAggregator("r-001", "/tmp/drain");
     agg2.openScope("closed-scope").close();
     await agg2.drain();

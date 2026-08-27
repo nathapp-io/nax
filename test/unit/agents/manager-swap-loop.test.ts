@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
-import type { HopKind } from "@/agents";
+import type { AgentRunOptions, HopKind } from "@/agents";
 import { _agentManagerDeps, AgentManager } from "@/agents";
+import { DEFAULT_CONFIG } from "@/config";
+import { agentManagerConfigSelector } from "@/config/selectors";
 import type { ContextBundle } from "@/context/engine";
 
 const availFailure = {
@@ -11,6 +13,18 @@ const availFailure = {
   message: "",
 };
 const mockBundle = {} as ContextBundle;
+
+function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptions {
+  return {
+    prompt: "p",
+    workdir: "/tmp",
+    modelTier: "balanced",
+    modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+    timeoutSeconds: 60,
+    config: agentManagerConfigSelector.select(DEFAULT_CONFIG),
+    ...overrides,
+  };
+}
 
 function makeConfig(map: Record<string, string[]> = { claude: ["codex"] }) {
   return makeNaxConfig({
@@ -57,7 +71,7 @@ describe("AgentManager.runWithFallback — real loop (Phase 4)", () => {
   test("returns success on first attempt", async () => {
     const m = new AgentManager(makeConfig(), undefined, { runHop: makeRunHop({ claude: true }) });
     const outcome = await m.runWithFallback({
-      runOptions: { storyId: "s1" } as never,
+      runOptions: makeRunOptions({ storyId: "s1" }),
       bundle: mockBundle,
     });
     expect(outcome.result.success).toBe(true);
@@ -67,7 +81,7 @@ describe("AgentManager.runWithFallback — real loop (Phase 4)", () => {
   test("swaps to codex on auth failure and succeeds", async () => {
     const m = new AgentManager(makeConfig(), undefined, { runHop: makeRunHop({ claude: false, codex: true }) });
     const outcome = await m.runWithFallback({
-      runOptions: { storyId: "s1" } as never,
+      runOptions: makeRunOptions({ storyId: "s1" }),
       bundle: mockBundle,
     });
     expect(outcome.result.success).toBe(true);
@@ -80,7 +94,7 @@ describe("AgentManager.runWithFallback — real loop (Phase 4)", () => {
   test("returns failure when all candidates exhausted", async () => {
     const m = new AgentManager(makeConfig(), undefined, { runHop: makeRunHop({ claude: false, codex: false }) });
     const outcome = await m.runWithFallback({
-      runOptions: { storyId: "s1" } as never,
+      runOptions: makeRunOptions({ storyId: "s1" }),
       bundle: mockBundle,
     });
     expect(outcome.result.success).toBe(false);
@@ -91,7 +105,7 @@ describe("AgentManager.runWithFallback — real loop (Phase 4)", () => {
     const m = new AgentManager(makeConfig(), undefined, { runHop: makeRunHop({ claude: false, codex: true }) });
     const events: unknown[] = [];
     m.events.on("onSwapAttempt", (e) => events.push(e));
-    await m.runWithFallback({ runOptions: { storyId: "s1" } as never, bundle: mockBundle });
+    await m.runWithFallback({ runOptions: makeRunOptions({ storyId: "s1" }), bundle: mockBundle });
     expect(events).toHaveLength(1);
   });
 
@@ -99,14 +113,14 @@ describe("AgentManager.runWithFallback — real loop (Phase 4)", () => {
     const m = new AgentManager(makeConfig(), undefined, { runHop: makeRunHop({ claude: false, codex: false }) });
     const exhausted: unknown[] = [];
     m.events.on("onSwapExhausted", (e) => exhausted.push(e));
-    await m.runWithFallback({ runOptions: { storyId: "s1" } as never, bundle: mockBundle });
+    await m.runWithFallback({ runOptions: makeRunOptions({ storyId: "s1" }), bundle: mockBundle });
     expect(exhausted).toHaveLength(1);
   });
 
   test("skips swap when no bundle (bundle required for shouldSwap)", async () => {
     const m = new AgentManager(makeConfig(), undefined, { runHop: makeRunHop({ claude: false }) });
     const outcome = await m.runWithFallback({
-      runOptions: { storyId: "s1" } as never,
+      runOptions: makeRunOptions({ storyId: "s1" }),
       bundle: undefined,
     });
     expect(outcome.result.success).toBe(false);
@@ -119,7 +133,7 @@ describe("AgentManager.runWithFallback — executeHop callback", () => {
     const calls: Array<{ agentName: string; hopKind: HopKind }> = [];
     const m = new AgentManager(makeConfig(), undefined /* no registry — executeHop replaces it */);
     const outcome = await m.runWithFallback({
-      runOptions: {} as never,
+      runOptions: makeRunOptions(),
       bundle: mockBundle,
       executeHop: async (agentName, bundle, hopKind) => {
         calls.push({ agentName, hopKind });
@@ -142,7 +156,7 @@ describe("AgentManager.runWithFallback — executeHop callback", () => {
     let hop = 0;
     const m = new AgentManager(makeConfig({ claude: ["codex"] }), undefined);
     const outcome = await m.runWithFallback({
-      runOptions: {} as never,
+      runOptions: makeRunOptions(),
       bundle: mockBundle,
       executeHop: async (agentName, bundle, hopKind) => {
         calls.push({ agentName, hopKind });
@@ -227,7 +241,7 @@ describe("AgentManager.runWithFallback — rate-limit backoff (no swap candidate
         };
       },
     });
-    const outcome = await m.runWithFallback({ runOptions: { storyId: "s1" } as never, bundle: mockBundle });
+    const outcome = await m.runWithFallback({ runOptions: makeRunOptions({ storyId: "s1" }), bundle: mockBundle });
 
     expect(outcome.result.success).toBe(true);
     expect(attempts).toBe(3);
@@ -269,7 +283,7 @@ describe("AgentManager.runWithFallback — fail-stale retry", () => {
       },
     });
 
-    const outcome = await m.runWithFallback({ runOptions: { storyId: "s1" } as never, bundle: mockBundle });
+    const outcome = await m.runWithFallback({ runOptions: makeRunOptions({ storyId: "s1" }), bundle: mockBundle });
 
     expect(outcome.result.success).toBe(true);
     expect(attempts).toBe(2);
@@ -306,7 +320,7 @@ describe("AgentManager.runWithFallback — fail-stale retry", () => {
       },
     });
 
-    const outcome = await m.runWithFallback({ runOptions: { storyId: "s1" } as never, bundle: mockBundle });
+    const outcome = await m.runWithFallback({ runOptions: makeRunOptions({ storyId: "s1" }), bundle: mockBundle });
 
     // Should succeed via codex after claude's stale retry was exhausted
     expect(outcome.result.success).toBe(true);
@@ -343,7 +357,7 @@ describe("AgentManager.runWithFallback — fail-stale retry", () => {
         }),
       });
 
-      const outcome = await m.runWithFallback({ runOptions: { storyId: "s1" } as never, bundle: mockBundle });
+      const outcome = await m.runWithFallback({ runOptions: makeRunOptions({ storyId: "s1" }), bundle: mockBundle });
 
       expect(outcome.result.success).toBe(false);
       // No backoff sleep for fail-stale (unlike fail-rate-limit)

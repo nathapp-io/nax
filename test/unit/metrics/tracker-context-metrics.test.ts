@@ -619,10 +619,10 @@ describe("collectStoryMetrics — context.pullCalls (AC-18)", () => {
     chunkIds: ["code-neighbor:a:001"],
   };
 
-  function ctxWithCalls(calls: PullCallRecord[]) {
+  function ctxWithCalls(calls: PullCallRecord[]): PipelineContext {
     const ctx = makeCtx();
     ctx.contextToolRunCounter = { count: calls.length, calls };
-    return ctx as never;
+    return ctx;
   }
 
   test("surfaces the recorded invocations on the story's context metrics", async () => {

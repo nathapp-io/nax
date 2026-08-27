@@ -9,7 +9,14 @@
  * `### Modifies` authority still reaches disk.
  */
 import { describe, expect, test } from "bun:test";
-import { makeDebateRunner, makeLogger, makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import {
+  makeConfigSlice,
+  makeDebateRunner,
+  makeLogger,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeNaxConfig,
+} from "@test/helpers";
 import { planConfigSelector } from "@/config";
 import { _refinePlanDeps, _singlePlanDeps, DebatePlanStrategy, RefinePlanStrategy, SinglePlanStrategy } from "@/plan";
 import type { PlanDeps, PlanModeContext } from "@/plan/strategies";
@@ -97,12 +104,15 @@ function makeCtx(written: { value: string | null }): PlanModeContext {
     projectName: "acme",
     branchName: "feat/feat-x",
     timeoutSeconds: 30,
-    config: { plan: { specGuard: false }, timeoutSeconds: 30 } as never,
+    config: makeNaxConfig({ plan: { specGuard: false } }),
     profileName: undefined,
     options: { from: "/tmp/spec.md", feature: "feat-x" },
     runtime: makeMockRuntime({ agentManager: makeMockAgentManager({ getDefaultAgent: "agent-x" }) }),
     interactionChain: null,
-    interactionBridge: {} as never,
+    interactionBridge: {
+      detectQuestion: async () => false,
+      onQuestionDetected: async () => "",
+    },
     deps,
   };
 }

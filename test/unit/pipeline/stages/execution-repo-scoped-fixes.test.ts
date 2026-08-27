@@ -12,6 +12,8 @@ import { NaxError } from "@/errors";
 import type { RepoScopedFixRecord } from "@/execution";
 import type { PostRunInspectionResult } from "@/execution/post-run";
 import type { StoryOrchestratorResult } from "@/execution/story-orchestrator";
+import { ExecutionPlan } from "@/execution/story-orchestrator";
+import type { CallContext } from "@/operations";
 import { executionStage } from "@/pipeline/stages/execution";
 import type { PipelineContext, StageResult } from "@/pipeline/types";
 
@@ -20,35 +22,15 @@ interface PlanResultOptions {
   readonly repoScopedFixes?: readonly RepoScopedFixRecord[];
 }
 
-function planResultWith(opts: PlanResultOptions): {
-  success: boolean;
-  phaseCosts: Record<string, number>;
-  totalCostUsd: number;
-  durationMs: number;
-  phaseOutputs: Record<string, unknown>;
-  repoScopedFixes?: readonly RepoScopedFixRecord[];
-  outputFiles: string[];
-  diffSummary: string;
-} {
-  const result: {
-    success: boolean;
-    phaseCosts: Record<string, number>;
-    totalCostUsd: number;
-    durationMs: number;
-    phaseOutputs: Record<string, unknown>;
-    repoScopedFixes?: readonly RepoScopedFixRecord[];
-    outputFiles: string[];
-    diffSummary: string;
-  } = {
+function planResultWith(opts: PlanResultOptions): StoryOrchestratorResult {
+  const result: StoryOrchestratorResult = {
     success: opts.success ?? true,
     phaseCosts: {},
     totalCostUsd: 0,
     durationMs: 0,
     phaseOutputs: {},
-    outputFiles: [],
-    diffSummary: "",
+    repoScopedFixes: opts.repoScopedFixes,
   };
-  if (opts.repoScopedFixes) result.repoScopedFixes = opts.repoScopedFixes;
   return result;
 }
 
@@ -59,11 +41,11 @@ const SAMPLE_RECORD: RepoScopedFixRecord = {
 };
 
 const baseOverrides = {
-  getAgent: () => makeAgentAdapter({ name: "claude" }) as never,
+  getAgent: () => makeAgentAdapter({ name: "claude" }),
   validateAgentForTier: () => true,
   captureGitRef: async () => "HEAD",
   getUntrackedPaths: async () => [],
-  assemblePlanInputsFromCtx: async () => ({}) as never,
+  assemblePlanInputsFromCtx: async (ctx: PipelineContext) => ({ story: ctx.story, config: ctx.config }),
 } as const;
 
 describe("executionStage.execute — recordRepoScopedFixes wiring (US-002)", () => {
@@ -94,7 +76,7 @@ describe("executionStage.execute — recordRepoScopedFixes wiring (US-002)", () 
   }
 
   function spyRecord(
-    planRun: () => Promise<ReturnType<typeof planResultWith>>,
+    planRun: () => Promise<StoryOrchestratorResult>,
     onRecord?: (s: unknown, r: unknown) => void,
     onInspect?: (s: unknown, p: unknown) => void,
   ): () => void {
@@ -122,14 +104,18 @@ describe("executionStage.execute — recordRepoScopedFixes wiring (US-002)", () 
     };
     return withExecutionDeps({
       ...baseOverrides,
-      buildPlanForStrategy: async () => ({ run: planRun }) as never,
-      recordRepoScopedFixes: recordSpy as never,
-      applyPostRunInspection: inspectSpy as never,
-      decideStageAction: (() => ({ action: "continue" }) as StageResult) as never,
+      buildPlanForStrategy: async (callCtx: CallContext) => {
+        const plan = new ExecutionPlan(callCtx, {}, false);
+        plan.run = planRun;
+        return plan;
+      },
+      recordRepoScopedFixes: recordSpy,
+      applyPostRunInspection: inspectSpy,
+      decideStageAction: async () => ({ action: "continue" }) as StageResult,
     });
   }
 
-  function realRecorder(planRun: () => Promise<ReturnType<typeof planResultWith>>): () => void {
+  function realRecorder(planRun: () => Promise<StoryOrchestratorResult>): () => void {
     const inspectStub = async (
       _ctx: PipelineContext,
       planResult: StoryOrchestratorResult,
@@ -148,9 +134,13 @@ describe("executionStage.execute — recordRepoScopedFixes wiring (US-002)", () 
     });
     return withExecutionDeps({
       ...baseOverrides,
-      buildPlanForStrategy: async () => ({ run: planRun }) as never,
-      applyPostRunInspection: inspectStub as never,
-      decideStageAction: (() => ({ action: "continue" }) as StageResult) as never,
+      buildPlanForStrategy: async (callCtx: CallContext) => {
+        const plan = new ExecutionPlan(callCtx, {}, false);
+        plan.run = planRun;
+        return plan;
+      },
+      applyPostRunInspection: inspectStub,
+      decideStageAction: async () => ({ action: "continue" }) as StageResult,
     });
   }
 

@@ -28,6 +28,16 @@ describe("scanEscapeHatches", () => {
   });
   afterEach(() => cleanupTempDir(root));
 
+  test("scans .tsx as well as .ts", async () => {
+    // Regression guard: the glob read `**/*.ts` for the whole drain, so
+    // test/ui/'s six .tsx files were invisible to every counter and six real
+    // `as never` sites went uncounted. See the glob's comment in the script.
+    write(root, "test/ui/a.test.tsx", "const x = y as never;\n");
+    const { counts, byFile } = await scanEscapeHatches(root);
+    expect(counts.asNever).toBe(1);
+    expect(byFile["test/ui/a.test.tsx"]?.asNever).toBe(1);
+  });
+
   test("counts each hatch kind separately", async () => {
     write(
       root,

@@ -6,9 +6,17 @@
  * receives the auto-detected value.
  */
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, describe, expect, mock, test } from "bun:test";
 import { rmSync } from "node:fs";
-import { assertDefined, makeLogger, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import {
+  assertDefined,
+  makeLogger,
+  makeNaxConfig,
+  makePRD,
+  makeStory,
+  makeTempDir,
+  withDepsRestore,
+} from "@test/helpers";
 import { _runSetupDeps, warnFallbackMisconfiguration, warnProfileMismatch } from "@/execution/lifecycle/run-setup";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -17,13 +25,7 @@ import { _runSetupDeps, warnFallbackMisconfiguration, warnProfileMismatch } from
 
 const tmpDir = makeTempDir("nax-test-runsetup-");
 
-afterEach(() => {
-  // restore original deps after each test
-  _runSetupDeps.detectProjectProfile = undefined as never;
-});
-
-import { afterAll } from "bun:test";
-import { makeTempDir } from "@test/helpers";
+withDepsRestore(_runSetupDeps);
 
 afterAll(() => {
   rmSync(tmpDir, { recursive: true, force: true });

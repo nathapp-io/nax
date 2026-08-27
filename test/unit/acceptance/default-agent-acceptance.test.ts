@@ -1,14 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import { resolveDefaultAgent } from "@/agents";
-import { DEFAULT_CONFIG } from "@/config/defaults";
+import { agentConfigSelector } from "@/config/selectors";
 
 describe("resolveDefaultAgent in acceptance context", () => {
   test("resolves correctly", () => {
-    expect(
-      resolveDefaultAgent({
-        ...DEFAULT_CONFIG,
-        agent: { ...DEFAULT_CONFIG.agent, default: "claude" },
-      } as never),
-    ).toBe("claude");
+    const config = makeNaxConfig({ agent: { default: "claude" } });
+    expect(resolveDefaultAgent(agentConfigSelector.select(config))).toBe("claude");
   });
 });
