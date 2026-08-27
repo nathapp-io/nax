@@ -142,7 +142,7 @@ describe("mergePackageConfig — models section", () => {
     };
     const result = mergePackageConfig(root, {
       models: { claude: { fast: "pkg-claude-fast" } },
-    } as unknown as Partial<NaxConfig>); // test-ratchet-allow: as-unknown-as
+    });
 
     expect(result.models.claude).toEqual({ fast: "pkg-claude-fast", balanced: "sonnet", powerful: "opus" });
     // Agent not mentioned in the override is untouched.

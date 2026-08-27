@@ -33,10 +33,10 @@ describe("configCommand — SEC-05: default view masks secrets", () => {
       models: {
         ...DEFAULT_CONFIG.models,
         claude: {
-          fast: { model: "claude-fast", env: { OPENAI_API_KEY: "sk-live-super-secret-value" } },
+          fast: { model: "claude-fast", provider: "anthropic", env: { OPENAI_API_KEY: "sk-live-super-secret-value" } },
         },
       },
-    } as unknown as NaxConfig; // test-ratchet-allow: as-unknown-as
+    };
 
     await configCommand(config, {});
 

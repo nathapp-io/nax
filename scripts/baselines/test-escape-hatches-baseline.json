@@ -2,14 +2,14 @@
   "counts": {
     "asAny": 1,
     "tsSuppress": 25,
-    "ratchetAllow": 38,
+    "ratchetAllow": 25,
     "absentValue": 17,
     "anyType": 10,
     "looseCast": 1794,
     "asNever": 1,
     "nonNullAssert": 2
   },
-  "updatedAt": "2026-08-27T05:17:07.848Z",
+  "updatedAt": "2026-08-27T05:26:07.341Z",
   "byFile": {
     "test/preload.ts": {
       "anyType": 1
@@ -315,7 +315,6 @@
       "looseCast": 1
     },
     "test/unit/cli/config-display.test.ts": {
-      "ratchetAllow": 1,
       "looseCast": 1
     },
     "test/unit/cli/rules-migrate-plan.test.ts": {
@@ -612,9 +611,6 @@
       "absentValue": 1,
       "looseCast": 2
     },
-    "test/unit/agents/acp/spawn-client.test.ts": {
-      "ratchetAllow": 2
-    },
     "test/unit/agents/acp/adapter-phase-a.test.ts": {
       "looseCast": 6
     },
@@ -634,7 +630,6 @@
       "looseCast": 1
     },
     "test/unit/agents/acp/adapter.test.ts": {
-      "ratchetAllow": 1,
       "looseCast": 1
     },
     "test/unit/agents/acp/adapter-lifecycle.test.ts": {
@@ -671,7 +666,6 @@
       "looseCast": 1
     },
     "test/unit/acceptance/hardening.test.ts": {
-      "ratchetAllow": 1,
       "looseCast": 6
     },
     "test/unit/acceptance/refinement.test.ts": {
@@ -708,7 +702,6 @@
       "looseCast": 1
     },
     "test/unit/pipeline/stages/context-us004.test.ts": {
-      "ratchetAllow": 2,
       "looseCast": 8
     },
     "test/unit/pipeline/stages/acceptance-setup-events.test.ts": {
@@ -739,7 +732,6 @@
       "looseCast": 1
     },
     "test/unit/pipeline/stages/execution-repo-scoped-fixes.test.ts": {
-      "ratchetAllow": 2,
       "looseCast": 2
     },
     "test/unit/pipeline/stages/routing-persistence.test.ts": {
@@ -762,9 +754,6 @@
     },
     "test/unit/replay/discovery.test.ts": {
       "looseCast": 2
-    },
-    "test/unit/findings/cycle.test.ts": {
-      "ratchetAllow": 1
     },
     "test/unit/findings/_cycle-fixtures.ts": {
       "looseCast": 1
@@ -856,7 +845,7 @@
       "looseCast": 1
     },
     "test/unit/config/merge-agent-models-routing.test.ts": {
-      "ratchetAllow": 3,
+      "ratchetAllow": 2,
       "looseCast": 12
     },
     "test/unit/config/plan-mode-refine.test.ts": {
@@ -1157,7 +1146,7 @@
       "looseCast": 13
     },
     "test/unit/context/engine/providers/prior-run-failure.test.ts": {
-      "ratchetAllow": 4
+      "ratchetAllow": 2
     },
     "test/unit/context/engine/providers/feature-context-fragments-realfs.test.ts": {
       "looseCast": 3
