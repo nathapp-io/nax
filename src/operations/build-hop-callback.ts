@@ -24,6 +24,7 @@ import type { UserStory } from "../prd";
 import type { TimeoutRetryInput } from "../prompts";
 import { timeoutRetry as defaultTimeoutRetry, RectifierPromptBuilder } from "../prompts";
 import type { ISessionManager } from "../session";
+import { recordAgentHandoff } from "../session";
 import { captureGitRef, captureWorkingTreeChanges } from "../utils/git";
 
 export const _buildHopCallbackDeps = {
@@ -50,6 +51,17 @@ export interface BuildHopCallbackContext {
   workdir: string;
   effectiveTier: Parameters<typeof resolveModelForAgent>[2];
   defaultAgent: string;
+  /**
+   * The agent `runOptions.modelDef` was resolved for — `dispatchAgent` in callOp, which
+   * may differ from `ctx.agentName` when `op.model` pins an `{ agent, model }` pair.
+   *
+   * nax#1722: a hop can now run on a DIFFERENT agent than the options were resolved for
+   * (`resolveStartAgent` starts an operation on a fallback when the primary is already
+   * unavailable). A pinned modelDef belongs to this agent alone; carried onto another it
+   * produces `acpx --model haiku ... codex`, which the ACP agent rejects outright
+   * ("did not advertise that model"). Absent = trust the pin, the pre-#1722 behaviour.
+   */
+  pinnedModelAgent?: string;
   contextToolRunCounter?: RunCallCounter;
   pipelineStage?: import("../config/permissions").PipelineStage;
   /**
@@ -116,6 +128,7 @@ export function buildHopCallback(
     workdir,
     effectiveTier,
     defaultAgent,
+    pinnedModelAgent,
     contextToolRunCounter,
     storyScratchDirs,
     pipelineStage,
@@ -199,10 +212,6 @@ export function buildHopCallback(
       }
       prompt = RectifierPromptBuilder.swapHandoff(resolvedRunOptions.prompt, workingBundle.pushMarkdown);
     }
-    // Record descriptor handoff for any swap, regardless of whether a bundle was rebuilt.
-    if (hopKind.kind === "swap" && sessionId) {
-      sessionManager.handoff?.(sessionId, agentName, hopKind.failure.outcome);
-    }
 
     // US-003: compose the timeout-retry prompt with the pre-attempt ref + elapsed time.
     // Called exactly once on the timeout-retry hop; absent a captured ref the helper
@@ -256,6 +265,11 @@ export function buildHopCallback(
       pipelineStage: stage,
     });
 
+    // The caller's pinned model is usable only on the agent it was resolved for; any
+    // other agent re-resolves from its own tier map (nax#1722 — see pinnedModelAgent).
+    const pinnedModelDef =
+      pinnedModelAgent === undefined || pinnedModelAgent === agentName ? resolvedRunOptions.modelDef : undefined;
+
     // STALE-RETRY: reuse the existing live handle — no openSession, no acpx reconnect.
     // PRIMARY / SWAP: open (or resume) the session via the normal path.
     let handle: import("../agents/types").SessionHandle;
@@ -272,8 +286,7 @@ export function buildHopCallback(
           sessionName,
           attempt: hopKind.attempt,
         });
-        const modelDef =
-          resolvedRunOptions.modelDef ?? resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent);
+        const modelDef = pinnedModelDef ?? resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent);
         handle = await sessionManager.openSession(sessionName, {
           agentName,
           role: resolvedRunOptions.sessionRole ?? "implementer",
@@ -285,7 +298,7 @@ export function buildHopCallback(
           // Only report a tier when one actually selected the model. A caller-pinned
           // modelDef bypassed tier resolution, and `effectiveTier` is defaulted, so
           // forwarding it there would record a tier that never applied (#1433).
-          ...(resolvedRunOptions.modelDef !== undefined ? {} : { modelTier: effectiveTier }),
+          ...(pinnedModelDef !== undefined ? {} : { modelTier: effectiveTier }),
           timeoutSeconds:
             resolvedRunOptions.timeoutSeconds ??
             config.execution?.sessionTimeoutSeconds ??
@@ -296,10 +309,10 @@ export function buildHopCallback(
         });
       }
     } else {
-      const pinned = hopKind.kind === "primary" && resolvedRunOptions.modelDef !== undefined;
+      const pinned = hopKind.kind === "primary" && pinnedModelDef !== undefined;
       const modelDef =
         hopKind.kind === "primary"
-          ? (resolvedRunOptions.modelDef ?? resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent))
+          ? (pinnedModelDef ?? resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent))
           : resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent);
       // openSession errors propagate naturally — no handle, no closeSession needed
       handle = await sessionManager.openSession(sessionName, {
@@ -320,6 +333,14 @@ export function buildHopCallback(
         storyId: story.id,
         signal: resolvedRunOptions.abortSignal,
       });
+    }
+
+    // Record the descriptor handoff for any swap, whether or not a bundle was rebuilt.
+    // nax#1722: callOp carries no sessionId, so fall back to the session NAME — without
+    // it the descriptor kept naming the failed primary on every production swap.
+    if (hopKind.kind === "swap") {
+      if (sessionId) sessionManager.handoff?.(sessionId, agentName, hopKind.failure.outcome);
+      else recordAgentHandoff(sessionManager, sessionName, agentName, hopKind.failure.outcome);
     }
 
     let timedOut = false;

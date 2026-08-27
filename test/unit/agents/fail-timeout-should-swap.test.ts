@@ -39,12 +39,12 @@ describe("AgentManager.shouldSwap with fail-timeout (US-001 AC10)", () => {
         },
       }),
     );
-    expect(manager.shouldSwap(failTimeoutRetryable, 0, true)).toBe(false);
+    expect(manager.shouldSwap(failTimeoutRetryable, 0)).toBe(false);
   });
 
   test("returns false when fallback config is absent", () => {
     const manager = new AgentManager(DEFAULT_CONFIG);
-    expect(manager.shouldSwap(failTimeoutRetryable, 0, true)).toBe(false);
+    expect(manager.shouldSwap(failTimeoutRetryable, 0)).toBe(false);
   });
 
   test("returns false even when onQualityFailure is explicitly enabled (US-001 invariant)", () => {
@@ -66,7 +66,7 @@ describe("AgentManager.shouldSwap with fail-timeout (US-001 AC10)", () => {
         },
       }),
     );
-    expect(manager.shouldSwap(failTimeoutRetryable, 0, true)).toBe(false);
+    expect(manager.shouldSwap(failTimeoutRetryable, 0)).toBe(false);
   });
 });
 

@@ -26,7 +26,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "agent.fallback.map":
     'Keyed fallback chain: primary agent → ordered list of candidates to try on availability failure. Example: { "claude": ["codex", "gemini"] }',
   "agent.fallback.enabled": "Enable automatic fallback to candidate agents on primary failure.",
-  "agent.fallback.maxHopsPerStory": "Maximum number of agent swaps per story (default 2).",
+  "agent.fallback.maxHopsPerStory": "Maximum agent swaps per story, shared by all of its operations (default 2).",
   "autoMode.complexityRouting":
     "Model tier routing rules mapped to story complexity levels. Determines which model (fast/balanced/powerful) to use based on task complexity: simple → fast, medium → balanced, complex → powerful, expert → powerful.",
   "autoMode.complexityRouting.simple": "Model tier for simple tasks (low complexity, straightforward changes)",

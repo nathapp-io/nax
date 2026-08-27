@@ -3,6 +3,7 @@ import type { IAgentManager } from "../agents/manager-types";
 import type { AgentResult, AgentRunOptions } from "../agents/types";
 import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { ISessionManager } from "../session";
+import { recordAgentHandoff } from "../session";
 
 export interface SessionRunHopResult {
   result: AgentResult;
@@ -42,6 +43,10 @@ export function createSessionRunHop(
       signal: options.abortSignal,
       onSessionEstablished: options.onSessionEstablished,
     });
+
+    // nax#1722: a swap re-opens the same session name under the fallback agent, and
+    // openSession leaves the descriptor's `agent` at the primary. No-op when unchanged.
+    recordAgentHandoff(sessionManager, sessionName, agentName, "agent-swap");
 
     try {
       const hasContextTools = Boolean(options.contextToolRuntime && (options.contextPullTools?.length ?? 0) > 0);
