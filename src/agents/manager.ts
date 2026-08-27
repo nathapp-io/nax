@@ -20,6 +20,7 @@ import type { IDispatchEventBus } from "../runtime/dispatch-events";
 import { DispatchEventBus } from "../runtime/dispatch-events";
 import { cancellableDelay } from "../utils/bun-deps";
 import { classifyCompleteException } from "./complete-exception-classifier";
+import { resolveStartAgent, StoryHopBudget } from "./hop-budget";
 import {
   buildCompleteCallPreamble,
   buildCompleteEvent,
@@ -81,6 +82,7 @@ export class AgentManager implements IAgentManager {
   private _registry: AgentRegistry | undefined;
   private readonly _unavailable = new Map<string, AdapterFailure>();
   private readonly _prunedFallback = new Set<string>();
+  private readonly _budget = new StoryHopBudget();
   private readonly _emitter = (() => {
     const ee = new EventEmitter();
     ee.setMaxListeners(MAX_EMITTER_LISTENERS);
@@ -161,6 +163,7 @@ export class AgentManager implements IAgentManager {
   reset(): void {
     this._unavailable.clear();
     this._prunedFallback.clear();
+    this._budget.clear();
   }
   resetTransientUnavailable(): void {
     for (const [agent, failure] of this._unavailable) {
@@ -210,8 +213,9 @@ export class AgentManager implements IAgentManager {
     const logger = this._loggerOverride ?? getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
-    let currentAgent = primaryAgent;
-    let hopsSoFar = 0;
+    const storyId = request.runOptions.storyId;
+    let currentAgent = resolveStartAgent(this, primaryAgent, this._config.agent?.fallback?.enabled, storyId, logger);
+    let hopsSoFar = this._budget.spent(storyId);
     let rateLimitRetry = 0;
     let staleRetryAttempts = 0;
     let timeoutRetryAttempts = 0;
@@ -400,7 +404,7 @@ export class AgentManager implements IAgentManager {
           _finalStatus = "exhausted";
           return { result, fallbacks, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent };
         }
-        hopsSoFar += 1;
+        hopsSoFar = this._budget.spend(storyId, hopsSoFar);
         // Reset per-agent rate-limit counter so the new agent gets its own backoff budget.
         rateLimitRetry = 0;
         currentBundle = updatedBundle;
@@ -454,8 +458,9 @@ export class AgentManager implements IAgentManager {
     const logger = this._loggerOverride ?? getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
-    let currentAgent = primaryAgent;
-    let hopsSoFar = 0;
+    const fbEnabled = this._config.agent?.fallback?.enabled;
+    let currentAgent = resolveStartAgent(this, primaryAgent, fbEnabled, options.storyId, logger);
+    let hopsSoFar = this._budget.spent(options.storyId);
     let staleRetryAttempts = 0;
     const maxStaleRetries = this._config.agent?.idleWatchdog?.maxRetryAttempts ?? 3;
 
@@ -559,7 +564,7 @@ export class AgentManager implements IAgentManager {
           return { result, fallbacks };
         }
 
-        hopsSoFar += 1;
+        hopsSoFar = this._budget.spend(options.storyId, hopsSoFar);
 
         const hop = buildFallbackRecord({
           storyId: options.storyId,
