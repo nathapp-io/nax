@@ -5,6 +5,7 @@
 export type { ProtocolIds } from "../runtime/protocol-types";
 export { _sessionManagerDeps, SessionManager } from "./manager";
 export { formatSessionName } from "./naming";
+export { recordAgentHandoff } from "./reopen-handoff";
 export { purgeStaleScratch } from "./scratch-purge";
 export type {
   RectifyScratchEntry,

@@ -50,6 +50,41 @@ describe("createSessionRunHop", () => {
   // tokenUsage/cost the adapter already accumulated before failing — the
   // failure AgentResult must surface it instead of hardcoding
   // estimatedCostUsd: 0, mirroring the same fix in build-hop-callback.ts.
+  // nax#1722: this path re-opens the same session name under the fallback agent on a
+  // swap, and openSession leaves the descriptor's `agent` at the primary — so the hop
+  // records the handoff itself.
+  test("records a handoff when the session's descriptor names a different agent", async () => {
+    const descriptor = {
+      id: "sess-primary",
+      role: "main" as const,
+      state: "RUNNING" as const,
+      agent: "claude",
+      workdir: "/tmp/work",
+      protocolIds: { recordId: null, sessionId: null },
+      completedStages: [],
+      createdAt: new Date(0).toISOString(),
+      lastActivityAt: new Date(0).toISOString(),
+    };
+    const handoff = mock(() => ({ ...descriptor, agent: "codex" }));
+    const sessionManager = makeSessionManager({
+      nameFor: mock(() => "nax-session"),
+      openSession: mock(async () => ({ id: "nax-session", agentName: "codex" }) satisfies SessionHandle),
+      descriptor: mock(() => descriptor),
+      handoff,
+      sendPrompt: mock(async () => ({
+        output: "done",
+        tokenUsage: { inputTokens: 1, outputTokens: 1 },
+        estimatedCostUsd: 0,
+        internalRoundTrips: 1,
+      })),
+      closeSession: mock(async () => {}),
+    });
+
+    await createSessionRunHop(sessionManager)("codex", makeRunOptions());
+
+    expect(handoff).toHaveBeenCalledWith("sess-primary", "codex", "agent-swap");
+  });
+
   test("SessionTurnError's carried tokenUsage/cost flow through to the failure AgentResult", async () => {
     const handle: SessionHandle = { id: "nax-session", agentName: "claude" };
     const turnError = new SessionTurnError(

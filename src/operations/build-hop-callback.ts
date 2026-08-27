@@ -24,6 +24,7 @@ import type { UserStory } from "../prd";
 import type { TimeoutRetryInput } from "../prompts";
 import { timeoutRetry as defaultTimeoutRetry, RectifierPromptBuilder } from "../prompts";
 import type { ISessionManager } from "../session";
+import { recordAgentHandoff } from "../session";
 import { captureGitRef, captureWorkingTreeChanges } from "../utils/git";
 
 export const _buildHopCallbackDeps = {
@@ -199,10 +200,6 @@ export function buildHopCallback(
       }
       prompt = RectifierPromptBuilder.swapHandoff(resolvedRunOptions.prompt, workingBundle.pushMarkdown);
     }
-    // Record descriptor handoff for any swap, regardless of whether a bundle was rebuilt.
-    if (hopKind.kind === "swap" && sessionId) {
-      sessionManager.handoff?.(sessionId, agentName, hopKind.failure.outcome);
-    }
 
     // US-003: compose the timeout-retry prompt with the pre-attempt ref + elapsed time.
     // Called exactly once on the timeout-retry hop; absent a captured ref the helper
@@ -320,6 +317,14 @@ export function buildHopCallback(
         storyId: story.id,
         signal: resolvedRunOptions.abortSignal,
       });
+    }
+
+    // Record the descriptor handoff for any swap, whether or not a bundle was rebuilt.
+    // nax#1722: callOp carries no sessionId, so fall back to the session NAME — without
+    // it the descriptor kept naming the failed primary on every production swap.
+    if (hopKind.kind === "swap") {
+      if (sessionId) sessionManager.handoff?.(sessionId, agentName, hopKind.failure.outcome);
+      else recordAgentHandoff(sessionManager, sessionName, agentName, hopKind.failure.outcome);
     }
 
     let timedOut = false;

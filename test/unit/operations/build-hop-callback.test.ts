@@ -282,6 +282,42 @@ describe("buildHopCallback — failure hop (fallback)", () => {
     expect(hop.result.success).toBe(true);
     expect(hop.bundle).toBe(rebuiltBundle);
   });
+
+  // nax#1722: this is the production shape — callOp passes no sessionId
+  // ("callOp doesn't carry pipeline-level session descriptors"), so the id-guarded
+  // handoff above never fired on a real run and the descriptor kept naming the failed
+  // primary. The name-keyed fallback records it from what a hop actually knows.
+  test("records the handoff by session name when no sessionId is carried", async () => {
+    const failure: AdapterFailure = {
+      outcome: "fail-quota",
+      category: "availability",
+      message: "quota",
+      retriable: false,
+    };
+    const primaryDescriptor: SessionDescriptor = {
+      id: "sess-primary",
+      role: "main",
+      state: "RUNNING",
+      agent: "claude",
+      workdir: "/tmp",
+      protocolIds: { recordId: null, sessionId: null },
+      completedStages: [],
+      createdAt: new Date(0).toISOString(),
+      lastActivityAt: new Date(0).toISOString(),
+    };
+    const handoffMock = mock(() => ({ ...primaryDescriptor, agent: "codex" }));
+    const sessionManager = makeSessionManager({
+      handoff: handoffMock,
+      descriptor: mock(() => primaryDescriptor),
+    });
+    const ctx = makeCtx({ sessionManager, agentManager: makeAgentManagerStub() });
+    const baseOptions = makeBaseOptions("original prompt", ctx.config);
+    const cb = buildHopCallback(ctx, undefined, baseOptions);
+
+    await cb("codex", makeBundle(), { kind: "swap", failure } satisfies HopKind, baseOptions);
+
+    expect(handoffMock).toHaveBeenCalledWith("sess-primary", "codex", "fail-quota");
+  });
 });
 
 describe("buildHopCallback — runAsSession throws", () => {
