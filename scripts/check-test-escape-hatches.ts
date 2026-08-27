@@ -16,6 +16,11 @@
  *   asNever              biome-plugins/no-as-never.grit (GritQL plugin)
  *   absentValue          biome-plugins/no-absent-value.grit (GritQL plugin)
  *
+ * `@ts-ignore` alone also has a rule now — biome `noTsIgnore`, promoted from
+ * its shipped WARN to `error` on 2026-08-27. `tsSuppress` still counts it: the
+ * counter covers three directives and is the ONLY gate for the other two, so
+ * splitting it to avoid overlap would buy nothing and open a gap.
+ *
  * A plugin diagnostic is a hard error, so `bun run lint` fails on any of the
  * four. Their drains are in docs/plans/archive/LOG-*.md and their final
  * baselines in this file's git history; the retirement is
@@ -26,7 +31,12 @@
  *
  *   tsSuppress   `@ts-expect-error` / `@ts-ignore` / `@ts-nocheck` — removes a
  *                typecheck error without fixing anything. A comment shape, so
- *                correctly text-mode: biome parses code, and these are not it.
+ *                correctly text-mode: biome parses code, and comments are
+ *                TRIVIA in its CST — `comment()` / `js_comment()` do not even
+ *                compile as GritQL patterns, so no plugin can replace this.
+ *                **Baselined at 0** since the pattern was anchored to the
+ *                comment opener; any nonzero reading is a regression to fix at
+ *                the site, not a number to work down.
  *   ratchetAllow `test-ratchet-allow: as-unknown-as` — the cast ratchet's own
  *                escape hatch. Legitimate occasionally, so it is ratcheted
  *                rather than banned. Also a comment shape.
@@ -40,9 +50,11 @@
  *                longer sees. Driving it down is not progress; keeping it
  *                from rising is.
  *
- * Every counter fails on growth only. `tsSuppress` and `ratchetAllow` are at
- * their floors (STATUS §8.9, §8.12) — each residual site is a deliberate
- * negative-test fixture whose impossibility is what the test asserts.
+ * Every counter fails on growth only. `tsSuppress` is a closed invariant at 0.
+ * `ratchetAllow` is at its floor (STATUS §8.9) and that floor is NOT zero:
+ * each of its 25 sites builds a deliberately-illegal value for a function
+ * whose job is surviving contract violations (a string where the type says
+ * number), so the cast IS the test. Draining it would delete the coverage.
  *
  * The companion `check-test-typecheck` ratchet this once named alongside it is
  * gone: `test/` reached 0 errors (#1514 §47), so `bun run typecheck` now
@@ -82,7 +94,25 @@ const BASELINE_FILE = join(import.meta.dir, "baselines", "test-escape-hatches-ba
 /** Counted per match, not per line: a line-based count lets two hatches be
  *  joined onto one line to lower the number without removing either. */
 const PATTERNS = {
-  tsSuppress: /@ts-(expect-error|ignore|nocheck)\b/g,
+  /**
+   * `@ts-expect-error` / `@ts-ignore` / `@ts-nocheck` — a typecheck error
+   * removed without fixing anything.
+   *
+   * Anchored to the comment OPENER, which is where TypeScript requires a real
+   * directive to sit: the first text in the comment. Unanchored, this read the
+   * words wherever they appeared, and its entire remaining population was
+   * PROSE — a comment in `run-regression.test.ts` explaining why that test
+   * asserts at the type level *instead of* suppressing. §4 forbids deleting
+   * such a comment to lower a count, which makes the regex the defect and not
+   * the code: the counter is now a closed invariant at 0.
+   *
+   * Deliberately NOT anchored to the start of a line. `foo(); // @ts-ignore`
+   * is a real suppression, and `^` would miss it — the same undercount the
+   * `nonNullAssert` regex made 272 times and the `**\/*.ts` glob made six.
+   * A directive inside a string literal still counts; over-counting is the
+   * safe direction, and the scanner's own fixtures are exempt by path.
+   */
+  tsSuppress: /(?:\/\/|\/\*+|^[ \t]*\*)[ \t]*@ts-(expect-error|ignore|nocheck)\b/gm,
   ratchetAllow: /test-ratchet-allow:\s*as-unknown-as/g,
   /**
    * Single `as T` casts. NOT a drain target — this exists so the `TS2352`
@@ -121,6 +151,11 @@ export const EXEMPT_BY_KIND: Exemptions = new Map([
   // proving the plugin does not fire on an ordinary cast — which is exactly
   // the shape `looseCast` counts. The fixture is scaffolding, not debt.
   ["test/unit/scripts/biome-no-as-never-plugin.test.ts", ALL_KINDS],
+  // Same again: the biome severity gate lints planted source strings, and one
+  // of them is a real `// @ts-ignore` directive it needs `noTsIgnore` to fire
+  // on. Counting it here would baseline `tsSuppress` at 1 forever and lose the
+  // closed-invariant-at-0 property the anchored pattern just bought.
+  ["test/unit/scripts/biome-test-severity.test.ts", ALL_KINDS],
 ]);
 
 interface Baseline {

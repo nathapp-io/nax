@@ -130,6 +130,25 @@ describe("biome test/** severities", () => {
     expect(inSrc.diags.filter((d) => d.category === "plugin")).toEqual([]);
   });
 
+  test("`@ts-ignore` is an error in test/ and in src/, and biome exits non-zero", async () => {
+    // Promoted warn -> error on 2026-08-27. It ships `recommended` at WARN,
+    // where `biome check` exits 0 — so before this it reported the directive
+    // and let the build through. There were zero directives anywhere in src/,
+    // bin/ and test/, so the promotion cost nothing.
+    //
+    // Set at the ROOT while the test/** override declares its own `suspicious`
+    // group. Whether that group shadows the root's is exactly what this pins:
+    // both paths are asserted, because a rules-group merge is not something to
+    // assume from a config file that reads either way.
+    for (const path of [PROBE, "src/probe.ts"]) {
+      const { exitCode, diags } = await lintUnderRepoConfig(path, "// @ts-ignore\nexport const x: number = 1;\n");
+      const found = diags.filter((d) => d.category === "lint/suspicious/noTsIgnore");
+      expect(found).toHaveLength(1);
+      expect(found[0]?.severity).toBe("error");
+      expect(exitCode).not.toBe(0);
+    }
+  });
+
   test("biome.json sets the severities explicitly in the test/** override", async () => {
     // The behavioural assertions above would still pass if the override were
     // deleted and the root rules applied — but then a FUTURE `off` in the root

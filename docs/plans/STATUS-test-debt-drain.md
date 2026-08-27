@@ -10,7 +10,7 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 
 ---
 
-## 0. Current state — re-measured 2026-08-27 (after §8.16)
+## 0. Current state — re-measured 2026-08-27 (after §8.17)
 
 | Shape | Gate | Reading | Drain target? |
 |:--|:--|--:|:--|
@@ -21,8 +21,9 @@ are lifted out to `archive/` once their ratchet is gated; see §7.
 | postfix `!` | biome `noNonNullAssertion` @ `error` | **0** | done (`archive/LOG-non-null-assertion-drain.md`) |
 | `as never` | plugin `no-as-never.grit` @ `error` | **0** | done — `test/` 603 → 0 (§8.8) and `src/` 2 → 0 (§8.15); the plugin is wired at biome.json's **root** and covers `src/`, `bin/` and `test/` |
 | `absentValue<T>()` / `nullValue<T>()` | plugin `no-absent-value.grit` @ `error` | **0** | done (§8.12) |
-| `ratchetAllow` | regex ratchet | 25 | done — floor reached (§8.9); every residue is a deliberate negative-test fixture or a sanctioned helper seam |
-| `tsSuppress` | regex ratchet | 2 | done — 5 → 2 (§8.12); §8.10's floor held one directive that asserted nothing. The 2 are prose |
+| `@ts-ignore` (that directive only) | biome `noTsIgnore` @ `error` | **0** | done — promoted from `warn` (§8.17) |
+| `ratchetAllow` | regex ratchet | 25 | done — floor reached (§8.9), and the floor is **not** zero: each site builds a deliberately-illegal value for a coercion guard, so the cast *is* the test |
+| `tsSuppress` | regex ratchet | **0** | done — closed invariant (§8.17); the pattern is anchored to the comment opener, so prose about a directive no longer counts |
 | `looseCast` | regex ratchet | 1790 | **no** — guard only, see below |
 
 `check:test-escape-hatches` now carries **three** counters, not eight. The five with a
@@ -346,6 +347,12 @@ they were earned in: §4x = `archive/STATUS-1514-typecheck-drain.md`, §8.x of t
 - **Reproduce against the project's own script** (cast drain §8.13), not a hand-rolled invocation of the
   same test files. `bun test <dir>` misses `--timeout=60000` and turns a passing suite into a
   cascade of misleading failures. Run the gate, then read its exit code.
+- **Fix the instrument, not the code that embarrasses it** (§8.17). `tsSuppress` read 2 where
+  `test/` had zero directives: the matches were prose *about* a directive. The tempting fix
+  is rewording the comment, which §4 forbids and which makes the comment worse. Before
+  editing correct code to satisfy a counter, ask whether the counter is measuring the thing
+  it names — and when tightening it, check both directions: the anchor that excludes prose
+  must still catch `foo(); // @ts-ignore`.
 - **"Nothing produces this" is not "nothing has produced this"** (§8.16). When the reader is
   a persistence format, ask what happens to data already on disk. A schema with no version
   field and no validation cannot refuse the old shape, so the old shape is still an input no
@@ -1571,3 +1578,73 @@ removal; it does not date the last file it wrote.
 
 Typecheck 0/0/0, `bun run lint` clean, `check:all` 24/24, full suite 14194 + 1136 + 38
 pass / 0 fail. No ratchet counter moved.
+
+### 8.17 `tsSuppress` was a regex defect, not a floor; `noTsIgnore` promoted (2026-08-27)
+
+§0 carried `tsSuppress` at 2 and called it a floor. It was neither a floor nor debt: **`test/`
+contains zero TypeScript directives.** Both matches were prose inside one comment in
+`run-regression.test.ts` — the comment that explains why that test asserts at the *type level
+instead of* suppressing, i.e. §8.12's own write-up quoted back into the code.
+
+The instinct is to reword the comment. §4 forbids exactly that (*"Deleting a comment that
+merely mentions the phrase"*), and rightly: a number you can move by editing prose is not
+measuring anything. It is also the wrong direction — that comment's whole subject is the
+directive it names, and mangling the spelling to dodge a regex hides the file from everyone
+who greps for it. **The code was correct; the instrument was wrong.**
+
+Anchored to the comment **opener**, where TypeScript requires a real directive to sit:
+
+```
+/(?:\/\/|\/\*+|^[ \t]*\*)[ \t]*@ts-(expect-error|ignore|nocheck)\b/gm
+```
+
+Deliberately **not** `^`-anchored. `foo(); // @ts-ignore` is a real suppression and a
+line-start anchor would miss it — the same undercount `nonNullAssert` made 272 times and the
+`**/*.ts` glob made six. Seven directive forms counted, four prose forms not, both pinned.
+`tsSuppress` is now a closed invariant at **0**, alongside `as unknown as`.
+
+`ratchetAllow` stays at 25 and that is the right number, which is worth stating plainly
+because "floor" reads like unfinished work. Every site is a cast that *constructs* an illegal
+input for a function whose job is surviving one — `{ inputTokens: "123" } as unknown as
+TokenUsage` fed to `addTokenUsage` to prove it does not string-concatenate. Draining it
+deletes the coverage. Ratcheted, not banned, exactly as designed.
+
+#### Two parser questions asked before settling for a regex
+
+Per §6's *a survey of built-in rules is not a survey of the linter*, both were probed rather
+than assumed:
+
+- **Can a GritQL plugin match a comment?** No. `comment()`, `js_comment()` and `comment as $c`
+  all fail to compile the plugin — comments are **trivia** in biome's CST, not nodes. The one
+  form that compiles matches nothing. So `tsSuppress` and `ratchetAllow` are correctly
+  text-mode and cannot be retired the way §8.14's five were.
+- **Is there a built-in rule?** Partly. `noTsIgnore` exists, is `recommended`, and covers
+  `@ts-ignore` **only** — not `@ts-expect-error`, not `@ts-nocheck`. Its shipped severity is
+  **warn**, and `biome check` exits 0 on warnings, so it reported the directive and let the
+  build through. There are zero directives in `src/`, `bin/` and `test/`, so promoting it to
+  `error` cost nothing. Done, at the root.
+
+`tsSuppress` keeps counting `@ts-ignore` even though a rule now gates it. That is not the
+§8.14 pattern: one counter covers three directives and is the sole gate for two of them, so
+splitting it to avoid an overlap buys nothing and opens a gap.
+
+**The promotion has a cost worth knowing.** `noTsIgnore` fires on the phrase in prose too —
+it flagged a `/** … */` block in this very commit for containing the words "`foo(); //
+@ts-ignore`" in an explanatory sentence. That is the same failure the anchored regex just
+fixed, in biome's own rule. A comment can no longer discuss `@ts-ignore`; it can discuss
+`@ts-expect-error` freely. Recorded in `.nax/rules/test-ratchets.md`.
+
+The severity test also settled a question the config reads either way: the `test/**` override
+declares its own `suspicious` group, and rules **merge per rule** rather than the group
+shadowing the root's. `noTsIgnore` is set once, at the root, and asserted on both a `test/`
+and a `src/` path.
+
+`biome-test-severity.test.ts` joins the three scanner-scaffolding files in `EXEMPT_BY_KIND` —
+one of its fixtures is a real `// @ts-ignore` the gate needs `noTsIgnore` to fire on, and
+counting it would baseline `tsSuppress` at 1 forever.
+
+Both gates mutation-probed: a planted `@ts-expect-error` fails the ratchet 0 → 1 naming the
+file; a planted `@ts-ignore` fails `bun run lint`.
+
+Typecheck 0/0/0, `bun run lint` clean, `check:all` 24/24. Baseline lowered to `tsSuppress=0`
+— a deliberate recount of the same tree, which §4 permits when said in the commit.

@@ -34,6 +34,9 @@ Two ratchets remain, guarding the side doors a clean typecheck can be bought wit
 
 Both behave like the existing `check:nax-error` / `check:import-cycles` ratchets: they have a `--update-baseline` to lower the threshold when intentional improvements land, and `--list` to surface offenders.
 
+`noTsIgnore` was promoted `warn` -> `error` on 2026-08-27; there were zero TypeScript
+directives anywhere in `src/`, `bin/` and `test/`, so it cost nothing.
+
 `test/` is also linted by Biome (`bun run lint`), with one rule deferred for
 `test/**` in `biome.json` (plus one narrower override: `complexity/useLiteralKeys` is off
 for `test/helpers/*-internals.ts`, where element access is what makes a `private` member
@@ -50,8 +53,8 @@ A strict `tsconfig.test.json` gate dropped onto 2140+ errors would have invited 
 | Escape hatch | Counted by | Notes |
 |:--|:--|:--|
 | `as unknown as T` | `check:test-as-unknown-as` | per match, not per line |
-| `@ts-expect-error` / `@ts-ignore` / `@ts-nocheck` | `check:test-escape-hatches` (`tsSuppress`) | a comment shape, so no parser can see it — correctly text-mode. At its floor; every residual site is a deliberate negative-test fixture |
-| `test-ratchet-allow: as-unknown-as` | `check:test-escape-hatches` (`ratchetAllow`) | the cast ratchet's own hatch, so it is ratcheted too. Also a comment shape, also at its floor |
+| `@ts-expect-error` / `@ts-ignore` / `@ts-nocheck` | `check:test-escape-hatches` (`tsSuppress`) | a comment shape, and comments are **trivia** in biome's CST — `comment()` / `js_comment()` do not compile as GritQL patterns, so no plugin can replace this. **Baselined at 0**: the pattern is anchored to the comment opener, where TypeScript requires a real directive to sit, so prose *about* a directive no longer counts. Any nonzero reading is a regression to fix at the site |
+| `test-ratchet-allow: as-unknown-as` | `check:test-escape-hatches` (`ratchetAllow`) | the cast ratchet's own hatch, so it is ratcheted too. Also a comment shape. At its floor of **25, and that floor is not zero**: each site builds a deliberately-illegal value for a function whose job is surviving contract violations (a string where the type says number), so the cast *is* the test. Draining it deletes the coverage |
 | single `as T` casts | `check:test-escape-hatches` (`looseCast`) | **not a drain target.** `TS2352` says *"convert the expression to `unknown` first"*, so a typecheck gate pushes debt toward casts; this counter makes that visible. The `as unknown as` tail is stripped before counting so the cast ratchet does not double-count it |
 
 Together they enforce "tests are valid instances of the types they claim to be", and that improvement is monotonic.
@@ -72,6 +75,7 @@ residue ever was.
 |:--|:--|:--|
 | `as any`, and `any` in type position (`: any`, `<any>`, `Record<string, any>`) | biome `suspicious/noExplicitAny`, `error` for `test/**` | drained 1529 → 0. Annotating a parameter `: any` is still the cheapest non-fix for a `TS7006`; give the real type |
 | postfix `!` (non-null assertion) | biome `style/noNonNullAssertion`, `error` for `test/**` | drained 1064 → 0. Clears `TS18047`/`TS18048` with no runtime check. Use `assertDefined()` from `test/helpers/assert-defined.ts` — it narrows *and* throws |
+| `@ts-ignore` (that one directive only) | biome `suspicious/noTsIgnore`, `error` repo-wide | promoted from its shipped **warn** on 2026-08-27, where `biome check` exits 0 and the directive was reported but let through. `tsSuppress` still counts it: that counter is the only gate for the other two directives, so splitting it buys nothing. Note the rule fires on the phrase in **prose** too — a comment cannot discuss `@ts-ignore` |
 | `as never` | `biome-plugins/no-as-never.grit` (GritQL plugin) | the bottom type is assignable to **everything**, so one word silences any assignment error. Drained 603 → 0 in `test/` and 2 → 0 in `src/`, so the plugin is wired at biome.json's **root** and covers `src/`, `bin/` and `test/` alike. There is no sanctioned `as never` |
 | `absentValue<T>()` / `nullValue<T>()` | `biome-plugins/no-absent-value.grit` (GritQL plugin) | the idiom for "this argument is deliberately missing" (`test/helpers/absent.ts`) — see *Deliberately-absent values* below |
 

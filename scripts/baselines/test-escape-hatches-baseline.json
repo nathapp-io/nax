@@ -1,10 +1,10 @@
 {
   "counts": {
-    "tsSuppress": 2,
+    "tsSuppress": 0,
     "ratchetAllow": 25,
     "looseCast": 1790
   },
-  "updatedAt": "2026-08-27T07:09:31.474Z",
+  "updatedAt": "2026-08-27T08:36:26.618Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -542,9 +542,6 @@
     },
     "test/unit/execution/lifecycle/run-completion-events.test.ts": {
       "looseCast": 9
-    },
-    "test/unit/execution/lifecycle/run-regression.test.ts": {
-      "tsSuppress": 2
     },
     "test/unit/execution/lifecycle/acceptance-loop-routing.test.ts": {
       "looseCast": 1

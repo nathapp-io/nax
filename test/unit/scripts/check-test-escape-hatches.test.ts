@@ -67,6 +67,52 @@ describe("scanEscapeHatches", () => {
     expect((await scanEscapeHatches(root)).counts.tsSuppress).toBe(3);
   });
 
+  /**
+   * Anchored to the comment OPENER, which is where TypeScript requires a real
+   * directive to sit: the first text in the comment. Anything else in between
+   * makes it prose about the directive, not the directive.
+   *
+   * Deliberately NOT anchored to the start of a line — `foo(); // @ts-expect-error`
+   * is a real suppression, and a `^`-anchored pattern would miss it. This
+   * counter has been wrong in that direction twice before (the `**\/*.ts` glob
+   * that hid six .tsx files, and the `nonNullAssert` regex that undercounted
+   * by 272), so the cases below pin both halves.
+   */
+  test("tsSuppress counts every real directive form, including one trailing after code", async () => {
+    write(
+      root,
+      "test/unit/a.test.ts",
+      [
+        "// @ts-expect-error spaced",
+        "//@ts-expect-error unspaced",
+        "/* @ts-ignore */",
+        "/** @ts-expect-error */",
+        " * @ts-nocheck",
+        "foo(); // @ts-ignore trailing after code",
+        "  // @ts-nocheck indented",
+      ].join("\n"),
+    );
+    expect((await scanEscapeHatches(root)).counts.tsSuppress).toBe(7);
+  });
+
+  test("tsSuppress does not count prose that merely names a directive", async () => {
+    // The real residue this closed: run-regression.test.ts explains why it
+    // asserts at the type level INSTEAD of suppressing, and the unanchored
+    // pattern read those two sentences as two suppressions. §4 forbids
+    // deleting such a comment to lower a count, so the regex was the defect.
+    write(
+      root,
+      "test/unit/a.test.ts",
+      [
+        "// Asserted at the type level, not with `@ts-expect-error` on a value literal.",
+        "// a single @ts-expect-error on the literal asserts less than it looks",
+        "/** Prefer a type-level assertion over @ts-expect-error here. */",
+        'const s = "a string mentioning @ts-ignore";',
+      ].join("\n"),
+    );
+    expect((await scanEscapeHatches(root)).counts.tsSuppress).toBe(0);
+  });
+
   test("does not scan src/, scripts/ or bin/", async () => {
     mkdirSync(join(root, "test"), { recursive: true });
     write(root, "src/foo.ts", "const x = a as Foo;\n");
