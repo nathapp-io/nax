@@ -287,6 +287,47 @@ describe("biome test/** severities", () => {
     }
   }
 
+  // --- Tier 3: noConsole (docs/plans/biome-v2-rule-gaps.md), wired 2026-08-28 ---
+  //
+  // This rule's value is entirely in its OVERRIDE LIST, so that is what the
+  // cases below pin. Measured on adoption: all 753 src-side hits and 74 of the
+  // 80 test-side hits were legitimate — user-facing CLI writes, the logger's own
+  // console sink, and `originalLog = console.log` spies. Zero were stray debug
+  // logs. So the rule gates nothing that exists today and everything written
+  // tomorrow, and an override glob that drifts one directory too wide silently
+  // gives that up.
+
+  test("noConsole is an error in an ordinary src/ module, and biome exits non-zero", async () => {
+    const { exitCode, diags } = await lintUnderRepoConfig(
+      "src/execution/probe.ts",
+      ["export function f(): void {", '  console.log("debug");', "}", ""].join("\n"),
+    );
+    const found = diags.filter((d) => d.category === "lint/suspicious/noConsole");
+    expect(found).toHaveLength(1);
+    expect(found[0]?.severity).toBe("error");
+    expect(exitCode).not.toBe(0);
+  });
+
+  test("noConsole is off in every layer whose job is terminal output", async () => {
+    // A CLI's user-facing write IS console. Each path below was measured to hold
+    // only such writes; widening this list is how the rule stops meaning anything.
+    for (const path of [
+      "bin/nax.ts",
+      "src/cli/probe.ts",
+      "src/commands/probe.ts",
+      "src/precheck/index.ts",
+      "src/execution/lifecycle/headless-formatter.ts",
+      "src/logger/logger.ts",
+      "test/unit/probe.test.ts",
+    ]) {
+      const { diags } = await lintUnderRepoConfig(
+        path,
+        ["export function f(): void {", '  console.log("out");', "}", ""].join("\n"),
+      );
+      expect(diags.filter((d) => d.category === "lint/suspicious/noConsole")).toEqual([]);
+    }
+  });
+
   test("biome.json keeps the `types` domain, which the behavioural probes cannot see", async () => {
     // This assertion is NOT redundant with the two nursery cases above, and the
     // reason is a trap worth recording.

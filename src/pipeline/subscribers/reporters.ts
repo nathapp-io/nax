@@ -31,7 +31,12 @@ async function fanOutReporters(
     } catch (err) {
       try {
         logger?.warn("plugins", `Reporter '${reporter.name}' ${hook} failed`, { error: err });
-      } catch {}
+      } catch {
+        // Deliberately terminal: this guard wraps the logger itself, so there is
+        // nothing left to report a logging failure to. A reporter plugin must
+        // never take the run down, and neither must the warning about it.
+        void 0;
+      }
     }
   }
 }
