@@ -1,4 +1,5 @@
 import type { NaxConfig } from "@/config";
+import { contextStageForOp } from "@/context/engine";
 import type { Finding, FindingSeverity, FixStrategy, Iteration } from "@/findings";
 import { markNaxBailWrapper, runFixCycle } from "@/findings";
 import { getSafeLogger } from "@/logger";
@@ -207,7 +208,32 @@ export async function runPhase(
   const scope = ctx.runtime.costAggregator.openScope();
   let outcome: "passed" | "failed" | "skipped" | "error" = "passed";
   try {
-    const output = await _storyOrchestratorDeps.callOp({ ...ctx, scopeId: scope.scopeId }, slot.op, dispatchInput);
+    // nax#1737 Phase B: mapped ops get a bundle assembled for their own
+    // context-engine stage (tdd-test-writer / tdd-implementer / tdd-verifier /
+    // review-semantic / review-adversarial / rectify) instead of reusing
+    // whatever bundle Phase A already put on ctx.contextBundle. Unmapped ops,
+    // a disabled/failed assembly (assembleStageBundle resolves undefined), or
+    // a rejecting assembleStageBundle all fall through to the existing bundle
+    // unchanged — this must never fail the phase. Intentionally not memoized:
+    // rectify's query_scratch pull tool needs the current verify-result on
+    // every retry, and a cached bundle would freeze that stale.
+    const stageKey = contextStageForOp(opName, isThreeSession);
+    let phaseBundle: import("@/context/engine").ContextBundle | undefined;
+    if (stageKey) {
+      try {
+        phaseBundle = await ctx.assembleStageBundle?.(stageKey);
+      } catch (err) {
+        logger?.warn("execution", "assembleStageBundle failed — dispatching with the existing bundle", {
+          storyId: ctx.storyId,
+          stage: stageKey,
+          error: errorMessage(err),
+        });
+      }
+    }
+    const dispatchCtx = phaseBundle
+      ? { ...ctx, contextBundle: phaseBundle, scopeId: scope.scopeId }
+      : { ...ctx, scopeId: scope.scopeId };
+    const output = await _storyOrchestratorDeps.callOp(dispatchCtx, slot.op, dispatchInput);
     phaseOutputs[opName] = output;
     emitReviewDecision(ctx, opName, output);
     if (opName === "adversarial-review" && ctx.storyId) {
