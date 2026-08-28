@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
-import { _acpAdapterDeps } from "@/agents";
 import { DEFAULT_CONFIG } from "@/config";
 import type { RunOptions } from "@/execution/runner";
 import { run } from "@/execution/runner";
@@ -264,76 +263,75 @@ describe("execution runner", () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  // Un-skipped 2026-08-28. The old skip blamed the acceptance loop for a
-  // non-deterministic iteration count, which this test's own config already
-  // disables (`acceptance.enabled: false` below). It was not flaky either:
-  // it failed deterministically, for two reasons, both fixed here.
+  // Un-skipped 2026-08-28 by `suspicious/noSkippedTests`, which is the point of
+  // that rule: this test had been skipped long enough for two real defects to
+  // accumulate behind it, and neither could be reported while it never ran.
   //
-  // 1. `iterations` is taken straight from the unified executor
-  //    (runner-execution.ts:210), which runs zero story iterations when no
-  //    story is pending, so a pre-completed PRD yields 0. The old `=== 1`
-  //    ("one iteration to detect completion") described a loop the unified
-  //    executor does not have.
-  // 2. `dryRun: false` is required — the completion path is the subject, and
-  //    dry run skips it — but that path runs the real agent-installed check,
-  //    which resolves the binary through `_acpAdapterDeps.which`. That passes
-  //    on a dev machine with `claude` on PATH and fails on CI, which has no
-  //    agent installed. Stubbing the lookup keeps the assertions about
-  //    completion behaviour rather than about the runner's PATH.
+  // The old skip comment blamed the acceptance loop for a non-deterministic
+  // iteration count. That was wrong twice over — this test's own config already
+  // disables the acceptance loop (`acceptance.enabled: false` below), and the
+  // failure was deterministic, not flaky. What it was actually hiding:
+  //
+  // 1. A stale assertion. `iterations` comes straight off the unified executor
+  //    (runner-execution.ts:210), which runs zero story iterations when no story
+  //    is pending, so a pre-completed PRD yields 0. The old `=== 1` ("one
+  //    iteration to detect completion") described a loop that does not exist.
+  // 2. An eager agent preflight. `initializeRun` verified the agent was
+  //    installed before it knew whether any agent would be used, so this run —
+  //    which dispatches nothing — demanded a binary it never called, and failed
+  //    on CI while passing on any machine with `claude` on PATH. Fixed in
+  //    run-initialization.ts: the preflight is now conditional, so this test
+  //    needs no stub and passes with no agent installed.
   test("completes when all stories are done", async () => {
     const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    const origWhich = _acpAdapterDeps.which;
-    _acpAdapterDeps.which = () => "/usr/local/bin/claude";
-    try {
-      const prd = createTestPRD([
-        {
-          id: "US-001",
-          title: "Task 1",
-          description: "First task",
-          acceptanceCriteria: ["Works"],
-          status: "passed",
-          passes: true,
-        },
-        {
-          id: "US-002",
-          title: "Task 2",
-          description: "Second task",
-          acceptanceCriteria: ["Works"],
-          status: "passed",
-          passes: true,
-        },
-      ]);
+    const prd = createTestPRD([
+      {
+        id: "US-001",
+        title: "Task 1",
+        description: "First task",
+        acceptanceCriteria: ["Works"],
+        status: "passed",
+        passes: true,
+      },
+      {
+        id: "US-002",
+        title: "Task 2",
+        description: "Second task",
+        acceptanceCriteria: ["Works"],
+        status: "passed",
+        passes: true,
+      },
+    ]);
 
-      await mkdir(tmpDir, { recursive: true });
-      const prdPath = `${tmpDir}/prd.json`;
-      await Bun.write(prdPath, JSON.stringify(prd, null, 2));
+    await mkdir(tmpDir, { recursive: true });
+    const prdPath = `${tmpDir}/prd.json`;
+    await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
-      const opts: RunOptions = {
-        prdPath,
-        workdir: tmpDir,
-        statusFile: `${tmpDir}/status.json`,
-        config: {
-          ...TEST_CONFIG,
-          execution: { ...TEST_CONFIG.execution, maxIterations: 2 },
-          // Disable acceptance loop — it runs after completion and increments iterations,
-          // making the iterations === 1 assertion flaky.
-          acceptance: { ...TEST_CONFIG.acceptance, enabled: false },
-        },
-        hooks: { hooks: {} },
-        feature: "test-feature",
-        dryRun: false, // Not dry run since all stories already complete
-        skipPrecheck: true,
-      };
+    const opts: RunOptions = {
+      prdPath,
+      workdir: tmpDir,
+      statusFile: `${tmpDir}/status.json`,
+      config: {
+        ...TEST_CONFIG,
+        execution: { ...TEST_CONFIG.execution, maxIterations: 2 },
+        // Acceptance off keeps this test about the completion path alone —
+        // and it is what makes the run provably agent-free, so the preflight
+        // is skipped and no agent need be installed.
+        acceptance: { ...TEST_CONFIG.acceptance, enabled: false },
+      },
+      hooks: { hooks: {} },
+      feature: "test-feature",
+      dryRun: false, // Not dry run since all stories already complete
+      skipPrecheck: true,
+    };
 
-      const result = await run(opts);
+    const result = await run(opts);
 
-      expect(result.success).toBe(true);
-      expect(result.iterations).toBe(0); // No pending stories — the executor runs no iterations
-      expect(result.storiesCompleted).toBe(0); // Already completed
-    } finally {
-      _acpAdapterDeps.which = origWhich;
-      await rm(tmpDir, { recursive: true, force: true });
-    }
+    expect(result.success).toBe(true);
+    expect(result.iterations).toBe(0); // No pending stories — the executor runs no iterations
+    expect(result.storiesCompleted).toBe(0); // Already completed
+
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("escalates entire batch when escalateEntireBatch is true (default)", async () => {

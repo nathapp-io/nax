@@ -124,6 +124,20 @@ async function reconcileState(prd: PRD, prdPath: string, workdir: string, config
 }
 
 /**
+ * Will this run actually reach an agent?
+ *
+ * Two ways it can. Any story that is not already `passed` will be dispatched —
+ * `reconcileState` below only ever promotes `failed` -> `passed`, never the
+ * reverse, so a PRD whose stories are all passed stays that way and dispatches
+ * nothing. And the completion phase calls agents when acceptance is enabled
+ * (acceptance-loop.ts); its other agent references are a name string for
+ * metrics attribution and session teardown, neither of which needs the binary.
+ */
+function runWillUseAgent(prd: PRD, config: NaxConfig): boolean {
+  return prd.userStories.some((story) => story.status !== "passed") || config.acceptance.enabled;
+}
+
+/**
  * Validate agent installation
  */
 async function checkAgentInstalled(config: NaxConfig, dryRun: boolean, agentGetFn?: AgentGetFn): Promise<void> {
@@ -180,16 +194,30 @@ export function logActiveProtocol(_config: NaxConfig): void {
 export async function initializeRun(ctx: InitializationContext): Promise<InitializationResult> {
   const logger = getSafeLogger();
 
-  // Check agent installation
-  await checkAgentInstalled(ctx.config, ctx.dryRun, ctx.agentGetFn);
-
   // EXEC-002: Log the story isolation mode for observability
   logger?.info("execution", "Story isolation mode", {
     storyIsolation: ctx.config.execution.storyIsolation,
   });
 
-  // Load and reconcile PRD
+  // Load the PRD before the agent preflight so the check can be conditional.
+  // The preflight used to run first, unconditionally, which made an installed
+  // agent a prerequisite for runs that never call one — re-running a feature
+  // whose stories are all passed failed with "Agent is not installed" when the
+  // correct answer was "nothing to do". Loading the PRD is a file read and
+  // cannot reach an agent, so doing it first costs nothing.
   let prd = await loadPRD(ctx.prdPath);
+
+  if (runWillUseAgent(prd, ctx.config)) {
+    await checkAgentInstalled(ctx.config, ctx.dryRun, ctx.agentGetFn);
+  } else {
+    logger?.info("execution", "Skipping agent preflight — no story needs work and acceptance is disabled", {
+      totalStories: prd.userStories.length,
+    });
+  }
+
+  // Reconciliation can call the agent (it re-runs review for failed stories),
+  // but only for stories with status `failed` — which `runWillUseAgent` has
+  // already treated as needing an agent, so the preflight has run by here.
   prd = await reconcileState(prd, ctx.prdPath, ctx.workdir, ctx.config);
 
   // Reset failed stories to pending so they are retried on re-run.
