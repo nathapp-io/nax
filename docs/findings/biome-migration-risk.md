@@ -6,6 +6,8 @@ Revised: 2026-08-25 — re-measured against `main` at `7549b8a1d`. **The 2026-08
 described a lint scope and config that no longer exist**, which inverted one of its own
 conclusions; and it missed the finding that now ranks second in this document (the severity
 demotion, below). See "Revision Notes" at the end.
+Revised: 2026-08-28 — `check:process-cwd`'s "Fair GritQL Pilot" ruling was carried out;
+outcome recorded in place, below.
 
 ## Scope
 
@@ -285,6 +287,25 @@ Risk: a plugin without precise path scoping fails `lint` on valid CLI entry-poin
 
 Mitigation: scope the plugin with `files.includes` / `linter.includes`, validate against
 negative fixtures, and keep `check:process-cwd` as a wrapper until parity is proven.
+
+**Outcome (2026-08-28):** migrated. `biome-plugins/no-process-cwd.grit`, scoped via a
+`biome.json` `overrides` entry with negated `includes`
+(`["src/**", "!src/cli/**", "!src/commands/**", "!src/config/loader.ts"]`) — the `files.includes`
+/ `linter.includes` mitigation above, expressed the way this repo's other scoped override
+(`test/**` → `no-absent-value.grit`) already does it. Parity proof: **0** plugin findings on
+the real `src/` tree (all 32 real occurrences sit inside the three exempt paths) against a
+**1-finding** hit on a planted violation in a non-exempt path — the negative-fixture
+validation this mitigation called for. `scripts/check-process-cwd.sh` is deleted, not kept
+as a wrapper; the risk that mitigation was hedging against (silent miscoping) is what the
+positive-control requirement below rules out.
+
+One risk this section did not anticipate: a GritQL plugin that fails to load — an invalid
+pattern, or a capturing regex group — reports `<name> errored: ...` at **info** severity
+with **exit 0**, indistinguishable from a clean run. A first attempt at this plugin used
+`span = $_`, invalid GritQL, and it reported zero hits — reading exactly like a correctly
+scoped zero. **Any "0 findings" result from a GritQL plugin needs a planted positive control
+before it can be trusted**, not just path-scoping validation against negative fixtures as
+originally scoped here.
 
 ### `check:test-mocks` — Still Not A Replacement Candidate
 

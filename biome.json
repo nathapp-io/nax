@@ -57,6 +57,10 @@
   },
   "overrides": [
     {
+      "includes": ["src/**", "!src/cli/**", "!src/commands/**", "!src/config/loader.ts"],
+      "plugins": ["./biome-plugins/no-process-cwd.grit"]
+    },
+    {
       "includes": [
         "bin/**",
         "scripts/**",
