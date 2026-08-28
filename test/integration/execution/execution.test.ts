@@ -263,10 +263,15 @@ describe("execution runner", () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  // SKIP: Flaky — acceptance loop (enabled by default) runs after sequential completes
-  // and increments iterations unpredictably even when all stories are pre-passed.
-  // Root cause tracked: acceptance loop iteration count is non-deterministic in test env.
-  test.skip("completes when all stories are done", async () => {
+  // Un-skipped 2026-08-28. The skip reason above was stale on two counts: the
+  // acceptance loop it blamed is already disabled by this test's own config
+  // (see `acceptance.enabled: false` below), and the test is not flaky — it
+  // failed 5/5 runs, deterministically, on one assertion. `iterations` is
+  // taken straight from the unified executor (runner-execution.ts:210), which
+  // runs zero story iterations when no story is pending, so a pre-completed
+  // PRD yields 0. The old `=== 1` ("one iteration to detect completion")
+  // described a loop the unified executor does not have.
+  test("completes when all stories are done", async () => {
     const prd = createTestPRD([
       {
         id: "US-001",
@@ -311,7 +316,7 @@ describe("execution runner", () => {
     const result = await run(opts);
 
     expect(result.success).toBe(true);
-    expect(result.iterations).toBe(1); // One iteration to detect completion
+    expect(result.iterations).toBe(0); // No pending stories — the executor runs no iterations
     expect(result.storiesCompleted).toBe(0); // Already completed
 
     // Cleanup
