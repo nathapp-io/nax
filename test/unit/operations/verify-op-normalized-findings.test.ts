@@ -114,7 +114,7 @@ function makeAdvisoryOnlyVerdict() {
 describe("AC1: normalizedFindings when tests-failing", () => {
   test("AC1: normalizedFindings is non-empty when categorization.failureCategory === tests-failing", async () => {
     const { verifierOp } = await import("@/operations");
-    const ctx = await makeCtx();
+    const ctx = makeCtx();
     const parse = verifierOp.parse;
 
     const result = parse(makeTestsFailingVerdict(), makeInput(), ctx);
@@ -125,7 +125,7 @@ describe("AC1: normalizedFindings when tests-failing", () => {
 
   test("AC1: first finding has source === tdd-verifier", async () => {
     const { verifierOp } = await import("@/operations");
-    const ctx = await makeCtx();
+    const ctx = makeCtx();
     const parse = verifierOp.parse;
 
     const result = parse(makeTestsFailingVerdict(), makeInput(), ctx);
@@ -136,7 +136,7 @@ describe("AC1: normalizedFindings when tests-failing", () => {
 
   test("AC1: first finding has severity === error", async () => {
     const { verifierOp } = await import("@/operations");
-    const ctx = await makeCtx();
+    const ctx = makeCtx();
     const parse = verifierOp.parse;
 
     const result = parse(makeTestsFailingVerdict(), makeInput(), ctx);
@@ -146,7 +146,7 @@ describe("AC1: normalizedFindings when tests-failing", () => {
 
   test("AC1: first finding has category === tests-failed", async () => {
     const { verifierOp } = await import("@/operations");
-    const ctx = await makeCtx();
+    const ctx = makeCtx();
     const parse = verifierOp.parse;
 
     const result = parse(makeTestsFailingVerdict(), makeInput(), ctx);
@@ -156,7 +156,7 @@ describe("AC1: normalizedFindings when tests-failing", () => {
 
   test("AC1: first finding has fixTarget === source", async () => {
     const { verifierOp } = await import("@/operations");
-    const ctx = await makeCtx();
+    const ctx = makeCtx();
     const parse = verifierOp.parse;
 
     const result = parse(makeTestsFailingVerdict(), makeInput(), ctx);
@@ -166,7 +166,7 @@ describe("AC1: normalizedFindings when tests-failing", () => {
 
   test("AC1: first finding has a non-empty message", async () => {
     const { verifierOp } = await import("@/operations");
-    const ctx = await makeCtx();
+    const ctx = makeCtx();
     const parse = verifierOp.parse;
 
     const result = parse(makeTestsFailingVerdict(3), makeInput(), ctx);
@@ -182,7 +182,7 @@ describe("AC1: normalizedFindings when tests-failing", () => {
 describe("AC2: normalizedFindings is empty on success", () => {
   test("AC2: approved verdict → normalizedFindings.length === 0", async () => {
     const { verifierOp } = await import("@/operations");
-    const ctx = await makeCtx();
+    const ctx = makeCtx();
     const parse = verifierOp.parse;
 
     const result = parse(makeApprovedVerdict(), makeInput(), ctx);
@@ -192,7 +192,7 @@ describe("AC2: normalizedFindings is empty on success", () => {
 
   test("AC2: advisory-only verdict (tests pass, AC/quality concerns only) → normalizedFindings.length === 0", async () => {
     const { verifierOp } = await import("@/operations");
-    const ctx = await makeCtx();
+    const ctx = makeCtx();
     const parse = verifierOp.parse;
 
     // categorizeVerdict treats AC/quality-only as success (advisory)
@@ -207,7 +207,7 @@ describe("AC2: normalizedFindings is empty on success", () => {
 describe("AC3: normalizedFindings when verifier-rejected", () => {
   test("AC3: normalizedFindings contains exactly one entry", async () => {
     const { verifierOp } = await import("@/operations");
-    const ctx = await makeCtx();
+    const ctx = makeCtx();
     const parse = verifierOp.parse;
 
     const result = parse(makeVerifierRejectedVerdict(), makeInput(), ctx);
@@ -217,7 +217,7 @@ describe("AC3: normalizedFindings when verifier-rejected", () => {
 
   test("AC3: finding has source === tdd-verifier", async () => {
     const { verifierOp } = await import("@/operations");
-    const ctx = await makeCtx();
+    const ctx = makeCtx();
     const parse = verifierOp.parse;
 
     const result = parse(makeVerifierRejectedVerdict(), makeInput(), ctx);
@@ -228,7 +228,7 @@ describe("AC3: normalizedFindings when verifier-rejected", () => {
 
   test("AC3: finding has severity === error", async () => {
     const { verifierOp } = await import("@/operations");
-    const ctx = await makeCtx();
+    const ctx = makeCtx();
     const parse = verifierOp.parse;
 
     const result = parse(makeVerifierRejectedVerdict(), makeInput(), ctx);
@@ -238,7 +238,7 @@ describe("AC3: normalizedFindings when verifier-rejected", () => {
 
   test("AC3: finding has category === illegitimate-test-edits", async () => {
     const { verifierOp } = await import("@/operations");
-    const ctx = await makeCtx();
+    const ctx = makeCtx();
     const parse = verifierOp.parse;
 
     const result = parse(makeVerifierRejectedVerdict(), makeInput(), ctx);
@@ -248,7 +248,7 @@ describe("AC3: normalizedFindings when verifier-rejected", () => {
 
   test("AC3: finding has fixTarget === test", async () => {
     const { verifierOp } = await import("@/operations");
-    const ctx = await makeCtx();
+    const ctx = makeCtx();
     const parse = verifierOp.parse;
 
     const result = parse(makeVerifierRejectedVerdict(), makeInput(), ctx);
@@ -258,7 +258,7 @@ describe("AC3: normalizedFindings when verifier-rejected", () => {
 
   test("AC3: normalizedFindings present when testModifications.files is empty list", async () => {
     const { verifierOp } = await import("@/operations");
-    const ctx = await makeCtx();
+    const ctx = makeCtx();
     const parse = verifierOp.parse;
 
     const result = parse(makeVerifierRejectedVerdict([]), makeInput(), ctx);
@@ -272,7 +272,7 @@ describe("AC3: normalizedFindings when verifier-rejected", () => {
 describe("test-incorrect normalized finding", () => {
   test("preserves the assertion diagnosis as a test-targeted finding", async () => {
     const { verifierOp } = await import("@/operations");
-    const ctx = await makeCtx();
+    const ctx = makeCtx();
     const parse = verifierOp.parse;
 
     const result = parse(makeIncorrectTestVerdict(), makeInput(), ctx);

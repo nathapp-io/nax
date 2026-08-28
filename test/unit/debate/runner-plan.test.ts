@@ -270,7 +270,7 @@ describe("DebateRunner.runPlan()", () => {
       outputDir: "/tmp/out",
     });
 
-    expect(capturedIndices.sort()).toEqual([0, 1, 2]);
+    expect(capturedIndices.sort((a, b) => a - b)).toEqual([0, 1, 2]);
     expect(capturedStoryIds).toEqual(["config-ssot", "config-ssot", "config-ssot"]);
   });
 

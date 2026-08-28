@@ -17,6 +17,7 @@ import { _staticRulesDeps, StaticRulesProvider } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
 import type { RuleSection } from "@/context/rules/rule-sections";
+import { byCodePoint } from "@/utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep save/restore
@@ -123,7 +124,7 @@ describe("StaticRulesProvider — US-004 AC1: splitRuleIntoSections invocation",
     const provider = new StaticRulesProvider();
     await provider.fetch(BASE_REQUEST);
 
-    expect(calls.sort()).toEqual(["a", "b", "c"]);
+    expect(calls.sort(byCodePoint)).toEqual(["a", "b", "c"]);
     expect(calls).toHaveLength(rules.length);
   });
 });

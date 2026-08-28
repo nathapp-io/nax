@@ -463,6 +463,16 @@ export async function handlePipelineFailure(
       prdDirty = escalationResult.prdDirty;
       break;
     }
+
+    // Listed so the switch is exhaustive over PipelineRunResult["finalAction"]
+    // rather than falling through silently. Neither reaches here: this function
+    // is entered only when `pipelineResult.success` is false (see
+    // iteration-runner.ts), and "complete" is the sole action the pipeline
+    // pairs with success — while "decomposed" is declared on the union but no
+    // stage produces it.
+    case "complete":
+    case "decomposed":
+      break;
   }
 
   return { prd, prdDirty, costDelta };

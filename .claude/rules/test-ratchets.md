@@ -96,13 +96,37 @@ They gate shapes no counter ever covered:
 | `suspicious/noSkippedTests` | `.skip` on a test | the parser-backed version of the no-`.skip` rule |
 | `suspicious/noDuplicateTestHooks` | duplicated `beforeEach`/`afterEach` | zero sites at adoption; pure regression guard |
 
+### Tier 2 promotions (2026-08-28)
+
+Three more, same day, same contract — `error`, pinned behaviourally:
+
+| Rule | Gates | Notes |
+|:--|:--|:--|
+| `nursery/useAwaitThenable` | `await` on a non-promise | type-aware. 49 of the 51 sites were genuinely redundant — mostly `await` on a synchronous test helper (`makeTempDir`, `cleanupTempDir`, `makeTestRuntime`). The other 2 were **false positives**: Biome 2.5.10 cannot infer through `<function-type alias> \| undefined`, which is exactly the `_deps` slot shape — see below |
+| `nursery/useExhaustiveSwitchCases` | a `switch` over a union missing an arm | type-aware. Its one site turned up a union member (`finalAction: "decomposed"`) that no code produces |
+| `suspicious/useArraySortCompare` | `.sort()` with no comparator | stable. Zero defects found: 58 of 60 sites sort a `string[]`, where the default order is the intended one. Use `byCodePoint` / `byNumber` from `src/utils/sort.ts` |
+
+**The `useAwaitThenable` false positive to expect.** With
+`type F = (a: string) => Promise<number>`, a `private _a: F | undefined` flags at
+`await this._a(...)`; the same property written with the function type *inline*, or declared
+non-optional, does not. `private _d?: F` flags too — it is the alias inside the union, not
+the optionality syntax. Binding to an un-annotated local does not help. The fix that does,
+and the one to reach for first, is a **post-guard local with a non-optional annotation**:
+`const f: F = this._a;`. Suppress only when that is not available
+(`test/helpers/mock-agent-manager.ts` is the sole such site), and put the repro in the comment.
+
+**A `useArraySortCompare` fixture must annotate the element type.** `[3, 1, 2].sort()`
+reports nothing; `function f(xs: string[]) { return xs.sort(); }` reports. Write the probe
+the obvious way and it pins nothing while passing.
+
 **`linter.domains.types` is load-bearing and invisible to a behavioural probe.** Deleting it
 while leaving the two `nursery` entries in place drops both rules to **zero findings
 repo-wide**, silently, with the config still reading as enabled. The single-file temp-dir
 harness in `biome-test-severity.test.ts` fires either way, so it cannot see the regression —
 which is why that file also asserts the domain's presence by reading `biome.json`. Keep it at
-`"recommended"`: `"all"` enables every types-domain rule, adding 549 findings from
-`noUnnecessaryConditions` and `useArraySortCompare`, neither of which is adopted.
+`"recommended"`: `"all"` enables every types-domain rule, adding ~489 findings from
+`noUnnecessaryConditions`, which is not adopted. (`useArraySortCompare` accounted for the
+rest of the original 549 and *is* adopted now — as an explicit entry, not via the domain.)
 
 **Do not reintroduce a counter here for a shape biome already parses.** Fix the rule. And do
 not weaken the rules to make room: the severities and both plugins are pinned behind their

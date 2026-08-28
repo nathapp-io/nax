@@ -25,6 +25,7 @@ import { join } from "node:path";
 import { cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
 import { _manifestStoreDeps, contextStoryDir, loadFeatureManifests } from "@/context/engine";
 import type { ContextManifest } from "@/context/engine/types";
+import { byCodePoint } from "@/utils/sort";
 
 // _manifestStoreDeps has both default real-IO entries (mkdirp, writeJson,
 // fileExists, readFile, listFeatureDirs, listManifestFiles) and is mutated
@@ -73,7 +74,7 @@ describe("loadFeatureManifests — two story subdirs (AC4)", () => {
   });
 
   afterAll(async () => {
-    if (projectDir) await cleanupTempDir(projectDir);
+    if (projectDir) cleanupTempDir(projectDir);
   });
 
   test("AC4: a feature dir with two story subdirs each containing one manifest returns both manifests", async () => {
@@ -85,9 +86,9 @@ describe("loadFeatureManifests — two story subdirs (AC4)", () => {
 
     // Order is path-sorted alphabetically: US-001 sorts before US-002.
     expect(loaded).toHaveLength(2);
-    const stages = loaded.map((m) => m.stage).sort();
+    const stages = loaded.map((m) => m.stage).sort(byCodePoint);
     expect(stages).toEqual(["execution", "execution"]);
-    const storyIds = loaded.map((m) => m.path).sort();
+    const storyIds = loaded.map((m) => m.path).sort(byCodePoint);
     expect(storyIds).toContain(pathA);
     expect(storyIds).toContain(pathB);
 
@@ -108,7 +109,7 @@ describe("loadFeatureManifests — two story subdirs (AC4)", () => {
     const loaded = await loadFeatureManifests(FEATURE, { featureDir: projectDir });
     expect(loaded).toHaveLength(4);
 
-    const allPaths = loaded.map((m) => m.path).sort();
+    const allPaths = loaded.map((m) => m.path).sort(byCodePoint);
     expect(allPaths).toContain(path1a);
     expect(allPaths).toContain(path1b);
     expect(allPaths).toContain(path2a);
@@ -118,7 +119,7 @@ describe("loadFeatureManifests — two story subdirs (AC4)", () => {
     const stagesA = loaded
       .filter((m) => m.path.startsWith(contextStoryDir(projectDir, FEATURE, "US-A")))
       .map((m) => m.stage)
-      .sort();
+      .sort(byCodePoint);
     expect(stagesA).toEqual(["execution", "review-semantic"]);
   });
 });
@@ -135,7 +136,7 @@ describe("loadFeatureManifests — stray non-directory entry (AC5)", () => {
   });
 
   afterAll(async () => {
-    if (projectDir) await cleanupTempDir(projectDir);
+    if (projectDir) cleanupTempDir(projectDir);
   });
 
   test("AC5: a stray non-directory entry alongside story dirs does not cause throw", async () => {
@@ -158,7 +159,7 @@ describe("loadFeatureManifests — stray non-directory entry (AC5)", () => {
 
     // The two story manifests still come back; the stray entry is skipped.
     expect(loaded).toHaveLength(2);
-    const allPaths = loaded.map((m) => m.path).sort();
+    const allPaths = loaded.map((m) => m.path).sort(byCodePoint);
     expect(allPaths).toContain(storyPathA);
     expect(allPaths).toContain(storyPathB);
     expect(allPaths).not.toContain(strayPath);

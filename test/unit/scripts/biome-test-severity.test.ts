@@ -233,6 +233,60 @@ describe("biome test/** severities", () => {
     });
   }
 
+  // --- Tier 2 promotions (docs/plans/biome-v2-rule-gaps.md), wired 2026-08-28 ---
+  //
+  // Same contract as Tier 1: plant a fixture the rule must reject, assert the
+  // diagnostic AND the exit code. Two of the three are type-aware and need
+  // `linter.domains.types` as well as their rule entry — pinned separately below.
+
+  const TIER2: Array<{ rule: string; category: string; source: string }> = [
+    {
+      rule: "useExhaustiveSwitchCases",
+      category: "lint/nursery/useExhaustiveSwitchCases",
+      source: [
+        'type Action = "a" | "b";',
+        "export function f(x: Action): number {",
+        "  switch (x) {",
+        '    case "a":',
+        "      return 1;",
+        "  }",
+        "  return 0;",
+        "}",
+      ].join("\n"),
+    },
+    {
+      rule: "useAwaitThenable",
+      category: "lint/nursery/useAwaitThenable",
+      source: [
+        "function sync(): number {",
+        "  return 1;",
+        "}",
+        "export async function f(): Promise<number> {",
+        "  return await sync();",
+        "}",
+      ].join("\n"),
+    },
+    {
+      rule: "useArraySortCompare",
+      category: "lint/suspicious/useArraySortCompare",
+      // An annotated parameter, not an inline `[3, 1, 2].sort()`: Biome resolves
+      // the element type from the annotation and stays silent on the literal.
+      source: ["export function f(xs: string[]): string[] {", "  return xs.sort();", "}"].join("\n"),
+    },
+  ];
+
+  for (const { rule, category, source } of TIER2) {
+    for (const path of [PROBE, "src/probe.ts"]) {
+      test(`${rule} is an error in ${path.split("/")[0]}/, and biome exits non-zero`, async () => {
+        const { exitCode, diags } = await lintUnderRepoConfig(path, `${source}\n`);
+        const found = diags.filter((d) => d.category === category);
+        expect(found).toHaveLength(1);
+        expect(found[0]?.severity).toBe("error");
+        expect(exitCode).not.toBe(0);
+      });
+    }
+  }
+
   test("biome.json keeps the `types` domain, which the behavioural probes cannot see", async () => {
     // This assertion is NOT redundant with the two nursery cases above, and the
     // reason is a trap worth recording.
@@ -251,14 +305,16 @@ describe("biome test/** severities", () => {
     // config that gates nothing. Only reading the config catches it.
     //
     // `"recommended"`, not `"all"`: `all` enables every rule in the domain,
-    // which on this repo adds 549 findings from noUnnecessaryConditions and
-    // useArraySortCompare — rules deliberately not adopted. See the doc.
+    // which on this repo adds ~489 findings from noUnnecessaryConditions — a
+    // rule deliberately not adopted. See the doc.
     const config = (await Bun.file(join(REPO, "biome.json")).json()) as {
       linter?: { domains?: Record<string, string>; rules?: { nursery?: Record<string, string> } };
     };
     expect(config.linter?.domains?.types).toBe("recommended");
     expect(config.linter?.rules?.nursery?.noFloatingPromises).toBe("error");
     expect(config.linter?.rules?.nursery?.noMisusedPromises).toBe("error");
+    expect(config.linter?.rules?.nursery?.useAwaitThenable).toBe("error");
+    expect(config.linter?.rules?.nursery?.useExhaustiveSwitchCases).toBe("error");
   });
 
   test("biome.json sets the severities explicitly in the test/** override", async () => {

@@ -38,6 +38,7 @@ import type {
   ContextRequest,
   IContextProvider,
 } from "@/context/engine/types";
+import { byCodePoint } from "@/utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -315,8 +316,8 @@ describe("US-003 — rebuild AC3: rebuilt chunks retain every prior chunk ID whe
     const orch = new ContextOrchestrator([]);
     const rebuilt = orch.rebuildForAgent(prior, {});
 
-    const priorIds = prior.chunks.map((c) => c.id).sort();
-    const rebuiltIds = rebuilt.chunks.map((c) => c.id).sort();
+    const priorIds = prior.chunks.map((c) => c.id).sort(byCodePoint);
+    const rebuiltIds = rebuilt.chunks.map((c) => c.id).sort(byCodePoint);
     expect(rebuiltIds).toEqual(priorIds);
   });
 
@@ -734,7 +735,7 @@ describe("US-003 — rebuild AC10: chunkIdMap pairs every prior chunk ID with it
 
     const chunkIdMap = rebuilt.manifest.rebuildInfo?.chunkIdMap;
     expect(chunkIdMap).toBeDefined();
-    const priorIds = prior.chunks.map((c) => c.id).sort();
+    const priorIds = prior.chunks.map((c) => c.id).sort(byCodePoint);
     // The injected failure-note chunk also appears in the map, paired with itself.
     const failureId = `failure-note:claude:gemini:${AVAILABILITY_FAILURE.outcome}`;
     const expectedPairs = [...priorIds, failureId].sort().map((id) => ({ priorChunkId: id, newChunkId: id }));

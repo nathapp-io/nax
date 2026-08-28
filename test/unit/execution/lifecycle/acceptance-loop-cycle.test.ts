@@ -691,7 +691,7 @@ describe("runAcceptanceLoop per-package fan-out", () => {
 
       await runAcceptanceLoop(ctx);
 
-      expect(fixedPackages.sort()).toEqual(["/repo/apps/api", "/repo/apps/web"]);
+      expect(fixedPackages.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))).toEqual(["/repo/apps/api", "/repo/apps/web"]);
     } finally {
       _diagnosisDeps.callOp = origCallOp;
       _runAcceptanceTestsOnceDeps.importAcceptanceStage = origImportAcceptanceStage;

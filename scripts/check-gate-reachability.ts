@@ -23,6 +23,7 @@
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { byCodePoint } from "../src/utils/sort";
 
 const CI_WORKFLOW = join(".github", "workflows", "ci.yml");
 
@@ -114,7 +115,7 @@ export function findUnreachableCheckScripts(
   inputs: UnreachableInputs
 ): string[] {
   const reachable = collectReachableScriptFiles(inputs);
-  return inputs.checkScripts.filter((name) => !reachable.has(name)).sort();
+  return inputs.checkScripts.filter((name) => !reachable.has(name)).sort(byCodePoint);
 }
 
 /** Resolves every input from the repo on disk, then applies the rule. */

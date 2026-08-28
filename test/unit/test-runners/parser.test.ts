@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { analyzeTestExitCode, parseBunTestOutput, parseTestOutput } from "@/test-runners";
+import { byCodePoint } from "@/utils/sort";
 
 describe("pytest output — structured error/stack extraction", () => {
   test("extracts stackTrace file:line reference from verbose FAILURES block", () => {
@@ -183,7 +184,7 @@ ERROR tests/unit/test_broker_cancel.py - ImportError while importing test module
 
     const result = parseTestOutput(output);
 
-    const files = result.failures.map((f) => f.file).sort();
+    const files = result.failures.map((f) => f.file).sort(byCodePoint);
     expect(files).toEqual(["tests/unit/test_alpaca_adapter.py", "tests/unit/test_broker_cancel.py"]);
     expect(result.failures.every((f) => f.error.length > 0)).toBe(true);
   });

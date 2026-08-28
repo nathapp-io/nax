@@ -231,6 +231,11 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
     if (transport) {
       return mock(async (req: AgentRunRequest) => {
         await notifyOpenSession(req);
+        // `RunWithFallbackTransportFn` returns `Promise<TurnResult>`, but Biome 2.5.10
+        // cannot infer the return type of a value typed by a function-type alias, so it
+        // reads this call as synchronous. Same false positive as `AgentManager._sendPrompt`
+        // in src/agents/manager.ts. Revisit on the next Biome bump.
+        // biome-ignore lint/nursery/useAwaitThenable: false positive, see above
         return hopOutcome(await transport(req.runOptions, (t: TurnResult) => t));
       });
     }

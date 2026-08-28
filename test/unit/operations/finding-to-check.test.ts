@@ -4,6 +4,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Finding } from "@/findings/types";
 import { findingsToFailedChecks } from "@/operations";
+import { byCodePoint } from "@/utils/sort";
 
 const SEMANTIC_FINDING: Finding = {
   source: "semantic-review",
@@ -62,14 +63,14 @@ describe("findingsToFailedChecks", () => {
   test("AC2.2: mixed semantic + adversarial → 2 entries, one per source", () => {
     const result = findingsToFailedChecks([SEMANTIC_FINDING, ADVERSARIAL_FINDING]);
     expect(result).toHaveLength(2);
-    const checks = result.map((r) => r.check).sort();
+    const checks = result.map((r) => r.check).sort(byCodePoint);
     expect(checks).toEqual(["adversarial", "semantic"]);
   });
 
   test("AC2.2: lint + typecheck findings → 2 entries", () => {
     const result = findingsToFailedChecks([LINT_FINDING, TYPECHECK_FINDING]);
     expect(result).toHaveLength(2);
-    const checks = result.map((r) => r.check).sort();
+    const checks = result.map((r) => r.check).sort(byCodePoint);
     expect(checks).toEqual(["lint", "typecheck"]);
   });
 

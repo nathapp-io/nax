@@ -9,6 +9,7 @@
 import { describe, expect, test } from "bun:test";
 import { globsToTestRegex } from "@/test-runners/conventions";
 import { expandExtglob, expandExtglobAll } from "@/test-runners/detect/extglob";
+import { byCodePoint } from "@/utils/sort";
 
 describe("expandExtglob — passthrough cases", () => {
   test("returns plain pattern unchanged when no extglob/brace syntax is present", () => {
@@ -28,19 +29,19 @@ describe("expandExtglob — passthrough cases", () => {
 
 describe("expandExtglob — single constructs", () => {
   test("brace alternation", () => {
-    expect(expandExtglob("**/*.{ts,js}").sort()).toEqual(["**/*.js", "**/*.ts"]);
+    expect(expandExtglob("**/*.{ts,js}").sort(byCodePoint)).toEqual(["**/*.js", "**/*.ts"]);
   });
 
   test("character class", () => {
-    expect(expandExtglob("**/*.[jt]s").sort()).toEqual(["**/*.js", "**/*.ts"]);
+    expect(expandExtglob("**/*.[jt]s").sort(byCodePoint)).toEqual(["**/*.js", "**/*.ts"]);
   });
 
   test("optional group ?(x) emits empty + content", () => {
-    expect(expandExtglob("**/*.ts?(x)").sort()).toEqual(["**/*.ts", "**/*.tsx"]);
+    expect(expandExtglob("**/*.ts?(x)").sort(byCodePoint)).toEqual(["**/*.ts", "**/*.tsx"]);
   });
 
   test("zero-or-more *(x|y) emits empty + each alternative", () => {
-    expect(expandExtglob("**/spec*(.unit|.int).ts").sort()).toEqual([
+    expect(expandExtglob("**/spec*(.unit|.int).ts").sort(byCodePoint)).toEqual([
       "**/spec.int.ts",
       "**/spec.ts",
       "**/spec.unit.ts",
@@ -48,17 +49,17 @@ describe("expandExtglob — single constructs", () => {
   });
 
   test("one-or-more +(x|y) emits each alternative", () => {
-    expect(expandExtglob("**/+(spec|test).ts").sort()).toEqual(["**/spec.ts", "**/test.ts"]);
+    expect(expandExtglob("**/+(spec|test).ts").sort(byCodePoint)).toEqual(["**/spec.ts", "**/test.ts"]);
   });
 
   test("exactly-one @(x|y) emits each alternative", () => {
-    expect(expandExtglob("**/@(spec|test).ts").sort()).toEqual(["**/spec.ts", "**/test.ts"]);
+    expect(expandExtglob("**/@(spec|test).ts").sort(byCodePoint)).toEqual(["**/spec.ts", "**/test.ts"]);
   });
 });
 
 describe("expandExtglob — Jest defaults", () => {
   test("**/__tests__/**/*.[jt]s?(x) → 4 simple globs", () => {
-    const result = expandExtglob("**/__tests__/**/*.[jt]s?(x)").sort();
+    const result = expandExtglob("**/__tests__/**/*.[jt]s?(x)").sort(byCodePoint);
     expect(result).toEqual([
       "**/__tests__/**/*.js",
       "**/__tests__/**/*.jsx",
@@ -68,7 +69,7 @@ describe("expandExtglob — Jest defaults", () => {
   });
 
   test("**/?(*.)+(spec|test).[jt]s?(x) → 16 simple globs covering all shapes", () => {
-    const result = expandExtglob("**/?(*.)+(spec|test).[jt]s?(x)").sort();
+    const result = expandExtglob("**/?(*.)+(spec|test).[jt]s?(x)").sort(byCodePoint);
     expect(result).toContain("**/*.spec.ts");
     expect(result).toContain("**/*.spec.tsx");
     expect(result).toContain("**/*.test.js");
@@ -91,12 +92,12 @@ describe("expandExtglob — Vitest defaults", () => {
 describe("expandExtglobAll — multi-pattern de-duplication", () => {
   test("merges and de-dupes overlapping expansions", () => {
     const result = expandExtglobAll(["**/*.{ts,js}", "**/*.[jt]s"]);
-    expect(result.sort()).toEqual(["**/*.js", "**/*.ts"]);
+    expect(result.sort(byCodePoint)).toEqual(["**/*.js", "**/*.ts"]);
   });
 
   test("preserves passthrough patterns alongside expanded ones", () => {
     const result = expandExtglobAll(["**/*.test.ts", "**/*.{spec,test}.js"]);
-    expect(result.sort()).toEqual(["**/*.spec.js", "**/*.test.js", "**/*.test.ts"]);
+    expect(result.sort(byCodePoint)).toEqual(["**/*.spec.js", "**/*.test.js", "**/*.test.ts"]);
   });
 });
 

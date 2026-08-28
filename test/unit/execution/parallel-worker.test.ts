@@ -7,6 +7,7 @@ import { defaultPipeline } from "@/pipeline/stages";
 import type { PipelineContext, PipelineStage } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
 import type { RoutingDecision } from "@/routing/decision";
+import { byCodePoint } from "@/utils/sort";
 import type { WorktreeDependencyContext } from "@/worktree/types";
 
 function makeStory(id: string): UserStory {
@@ -133,7 +134,7 @@ describe("executeParallelBatch", () => {
     expect(result.failed[0].error).toContain("worktree exploded");
 
     // Crucially, the siblings still completed and their results were kept.
-    expect(result.pipelinePassed.map((s) => s.id).sort()).toEqual(["US-002", "US-003"]);
+    expect(result.pipelinePassed.map((s) => s.id).sort(byCodePoint)).toEqual(["US-002", "US-003"]);
     expect(result.totalCost).toBeCloseTo(1.0, 5);
   });
 });

@@ -21,6 +21,7 @@
 import { Glob } from "bun";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { byCodePoint } from "../src/utils/sort";
 
 const ROOT = join(import.meta.dir, "..");
 const BASELINE_FILE = join(import.meta.dir, "baselines", "nax-error-baseline.json");
@@ -88,7 +89,7 @@ function diffByFile(
   for (const file of Object.keys(current)) {
     if ((current[file] ?? 0) > (baseline[file] ?? 0)) offenders.push(file);
   }
-  return offenders.sort();
+  return offenders.sort(byCodePoint);
 }
 
 async function main() {

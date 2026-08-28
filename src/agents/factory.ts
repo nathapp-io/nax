@@ -4,9 +4,8 @@ import type { AgentManagerConfig } from "@/config/selectors";
 // src/runtime/index.ts → internal/agent-manager-factory → agents/factory → agents/manager → runtime/index.ts
 import type { MiddlewareChain } from "../runtime/agent-middleware";
 import type { IDispatchEventBus } from "../runtime/dispatch-events";
-import type { SendPromptFn } from "./manager";
 import { AgentManager } from "./manager";
-import type { IAgentManager, SessionRunHopFn } from "./manager-types";
+import type { IAgentManager, SendPromptFn, SessionRunHopFn } from "./manager-types";
 
 export interface CreateAgentManagerOpts {
   middleware?: MiddlewareChain;

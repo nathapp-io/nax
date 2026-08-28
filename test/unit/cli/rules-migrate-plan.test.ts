@@ -10,6 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import { assertNaxError } from "@test/helpers";
 import { type MigrationPlanEntry, type PlanMigrationOptions, planMigration } from "@/cli";
+import { byCodePoint } from "@/utils/sort";
 
 const TARGET_DIR = "/target";
 
@@ -75,7 +76,7 @@ describe("planMigration", () => {
     ];
     const fileExists = async (p: string): Promise<boolean> => p === "/target/a.md";
     const plan = await planMigration(entries, makeOptions({ force: false, fileExists }));
-    expect(plan.writes.map((e) => e.targetFileName).sort()).toEqual(["b.md", "c.md"]);
+    expect(plan.writes.map((e) => e.targetFileName).sort(byCodePoint)).toEqual(["b.md", "c.md"]);
     expect(plan.skips.map((e) => e.targetFileName)).toEqual(["a.md"]);
     expect(plan.writes.length + plan.skips.length).toBe(entries.length);
   });

@@ -74,7 +74,7 @@ describe("resolveStoryPathAnchors (#1451)", () => {
 describe("#1451 end-to-end — real resolver and validator against a temp monorepo", () => {
   /** Repo with a per-package pattern override and one real test file. */
   async function makeMonorepo(): Promise<string> {
-    const root = await makeTempDir("nax-1451-");
+    const root = makeTempDir("nax-1451-");
     await Bun.write(
       join(root, ".nax/config.json"),
       JSON.stringify({ execution: { smartTestRunner: { testFilePatterns: ["test/**/*.spec.ts"] } } }),
@@ -98,7 +98,7 @@ describe("#1451 end-to-end — real resolver and validator against a temp monore
       );
       expect(resolved.globs).toEqual(["tests/**/*.py"]);
     } finally {
-      await cleanupTempDir(root);
+      cleanupTempDir(root);
     }
   });
 
@@ -125,7 +125,7 @@ describe("#1451 end-to-end — real resolver and validator against a temp monore
       expect(invalid).toHaveLength(0);
       expect(valid).toHaveLength(1);
     } finally {
-      await cleanupTempDir(root);
+      cleanupTempDir(root);
     }
   });
 
@@ -150,7 +150,7 @@ describe("#1451 end-to-end — real resolver and validator against a temp monore
       expect(valid).toHaveLength(0);
       expect(invalid).toHaveLength(1);
     } finally {
-      await cleanupTempDir(root);
+      cleanupTempDir(root);
     }
   });
 });

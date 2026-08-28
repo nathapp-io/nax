@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { NaxError } from "@/errors";
 import { _sessionManagerDeps, SessionManager } from "@/session/manager";
 import type { SessionState } from "@/session/types";
+import { byCodePoint } from "@/utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test setup
@@ -431,7 +432,7 @@ describe("SessionManager.getForStory()", () => {
 
     const results = mgr.getForStory("US-001");
     expect(results).toHaveLength(3);
-    expect(results.map((s) => s.id).sort()).toEqual([s1.id, s2.id, s3.id].sort());
+    expect(results.map((s) => s.id).sort(byCodePoint)).toEqual([s1.id, s2.id, s3.id].sort(byCodePoint));
     expect(results.some((s) => s.state === "COMPLETED")).toBe(true);
     expect(mgr.getForStory("US-999")).toHaveLength(0);
 

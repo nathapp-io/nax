@@ -5,7 +5,7 @@ import { loadPlugins } from "@/plugins";
 describe("loadPlugins — built-in reporters", () => {
   let dir = "";
   afterEach(async () => {
-    if (dir) await cleanupTempDir(dir);
+    if (dir) cleanupTempDir(dir);
     dir = "";
   });
 
@@ -26,7 +26,7 @@ describe("loadPlugins — built-in reporters", () => {
   } as const;
 
   test("registers webhook-reporter when enabled, exposed via getReporters()", async () => {
-    dir = await makeTempDir();
+    dir = makeTempDir();
     const reg = await loadPlugins(dir, dir, [], dir, [], undefined, enabled);
     const names = reg.getReporters().map((r) => r.name);
     expect(names).toContain("webhook-reporter");
@@ -34,7 +34,7 @@ describe("loadPlugins — built-in reporters", () => {
   });
 
   test("does not register a reporter that is disabled in config", async () => {
-    dir = await makeTempDir();
+    dir = makeTempDir();
     const reg = await loadPlugins(dir, dir, [], dir, [], undefined, {
       webhook: { enabled: false, headers: {}, timeoutMs: 5000 },
       otel: {
@@ -54,13 +54,13 @@ describe("loadPlugins — built-in reporters", () => {
   });
 
   test("disabledPlugins overrides enabled config", async () => {
-    dir = await makeTempDir();
+    dir = makeTempDir();
     const reg = await loadPlugins(dir, dir, [], dir, ["webhook-reporter"], undefined, enabled);
     expect(reg.getReporters().map((r) => r.name)).not.toContain("webhook-reporter");
   });
 
   test("registers nothing when reporters arg is omitted", async () => {
-    dir = await makeTempDir();
+    dir = makeTempDir();
     const reg = await loadPlugins(dir, dir, [], dir, []);
     expect(reg.getReporters()).toHaveLength(0);
   });

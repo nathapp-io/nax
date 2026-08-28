@@ -11,6 +11,7 @@ import type { StoryBatch } from "@/execution/batching";
 import { groupStoriesByDependencies, selectIndependentBatch, selectNextStories } from "@/execution/story-selector";
 import { markStoryFailed, markStoryPassed } from "@/prd";
 import type { UserStory } from "@/prd/types";
+import { byCodePoint } from "@/utils/sort";
 
 /**
  * Helper to create a minimal UserStory for testing
@@ -97,7 +98,7 @@ describe("selectIndependentBatch", () => {
     // Should include: US-003 (deps all passed), US-005 (no deps)
     // Should not include: completed stories (passes=true), withUnmetDep (US-005 not passed)
     expect(result).toHaveLength(2);
-    expect(result.map((s) => s.id).sort()).toEqual(["US-003", "US-005"]);
+    expect(result.map((s) => s.id).sort(byCodePoint)).toEqual(["US-003", "US-005"]);
   });
 
   test("skips stories that already passed", () => {
@@ -136,7 +137,7 @@ describe("selectIndependentBatch", () => {
 
     // Should return US-002 and US-003 (both have all deps completed)
     expect(result).toHaveLength(2);
-    expect(result.map((s) => s.id).sort()).toEqual(["US-002", "US-003"]);
+    expect(result.map((s) => s.id).sort(byCodePoint)).toEqual(["US-002", "US-003"]);
   });
 
   test("respects maxCount limit with multiple independent stories", () => {
@@ -185,7 +186,7 @@ describe("groupStoriesByDependencies", () => {
     const batches = groupStoriesByDependencies(stories);
     expect(batches).toHaveLength(2);
     expect(batches[0].map((s) => s.id)).toEqual(["US-001"]);
-    expect(batches[1].map((s) => s.id).sort()).toEqual(["US-002", "US-003"]);
+    expect(batches[1].map((s) => s.id).sort(byCodePoint)).toEqual(["US-002", "US-003"]);
   });
 
   test("handles single story", () => {

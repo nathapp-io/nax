@@ -11,6 +11,7 @@ import {
   type TestFileInfo,
   truncateToTokenBudget,
 } from "@/context/test-scanner";
+import { byCodePoint } from "@/utils/sort";
 
 describe("extractTestStructure", () => {
   test("extracts describe and test blocks", () => {
@@ -374,7 +375,7 @@ describe("scanTestFiles — per-file size cap (PERF-2)", () => {
         scopeToStory: false,
       });
 
-      const rels = result.map((f) => f.relativePath).sort();
+      const rels = result.map((f) => f.relativePath).sort(byCodePoint);
       expect(rels.some((p) => p.endsWith("small.test.ts"))).toBe(true);
       expect(rels.some((p) => p.endsWith("huge.test.ts"))).toBe(false);
     } finally {

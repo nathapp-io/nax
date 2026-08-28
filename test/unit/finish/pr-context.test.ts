@@ -19,12 +19,12 @@ function stateFor(workdir: string) {
 }
 
 beforeEach(async () => {
-  dir = await makeTempDir("pr-context");
+  dir = makeTempDir("pr-context");
 });
 
 afterEach(async () => {
   Object.assign(_finishPrDeps, originalDeps);
-  await cleanupTempDir(dir);
+  cleanupTempDir(dir);
 });
 
 describe("loadFinishPrContext", () => {

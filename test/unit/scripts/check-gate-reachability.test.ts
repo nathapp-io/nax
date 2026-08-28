@@ -8,6 +8,7 @@ import {
   parseCiEntryPoints,
 } from "@scripts/check-gate-reachability";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { byCodePoint } from "@/utils/sort";
 
 function writeScripts(root: string, names: string[]) {
   mkdirSync(join(root, "scripts"), { recursive: true });
@@ -27,7 +28,7 @@ describe("discoverCheckScripts", () => {
   test("finds check-*.ts and check-*.sh, ignoring other scripts", () => {
     writeScripts(root, ["check-file-sizes.ts", "check-process-cwd.sh", "release.ts", "analyze-coverage-gap.ts"]);
 
-    expect(discoverCheckScripts(root).sort()).toEqual(["check-file-sizes.ts", "check-process-cwd.sh"]);
+    expect(discoverCheckScripts(root).sort(byCodePoint)).toEqual(["check-file-sizes.ts", "check-process-cwd.sh"]);
   });
 
   test("returns an empty list when scripts/ has no check scripts", () => {

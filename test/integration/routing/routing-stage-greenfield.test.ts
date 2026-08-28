@@ -185,7 +185,7 @@ describe("Routing Stage - Greenfield Detection forces test-after strategy when n
 
   beforeEach(async () => {
     workdir = makeTempDir("nax-routing-greenfield-test-");
-    await initLogger({ level: "silent" });
+    initLogger({ level: "silent" });
   });
 
   afterEach(async () => {

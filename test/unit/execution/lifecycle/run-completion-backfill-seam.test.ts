@@ -34,6 +34,7 @@ import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
 import type { CostSnapshot, ICostAggregator } from "@/runtime/cost-aggregator";
+import { byCodePoint } from "@/utils/sort";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -284,7 +285,7 @@ describe("handleRunCompletion — back-fill domain covers every story that ran (
 
     await captureRunCompleted(opts);
 
-    const ids = opts.allStoryMetrics.map((m) => m.storyId).sort();
+    const ids = opts.allStoryMetrics.map((m) => m.storyId).sort(byCodePoint);
     expect(ids).toEqual(["US-001", "US-002", "US-003"]);
 
     const sibling = opts.allStoryMetrics.find((m) => m.storyId === "US-002");

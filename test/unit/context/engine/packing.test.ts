@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { packChunks } from "@/context/engine/packing";
 import type { ScoredChunk } from "@/context/engine/scoring";
+import { byCodePoint } from "@/utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -388,7 +389,7 @@ describe("packChunks — availableBudgetTokens", () => {
     expect(withUndefined.effectiveBudget).toBe(budget);
     // Packed set is identical to the single-arg form.
     expect(withUndefined.packed.map((c) => c.id)).toEqual(withOmitted.packed.map((c) => c.id));
-    expect(withUndefined.budgetExcludedIds.sort()).toEqual(withOmitted.budgetExcludedIds.sort());
+    expect(withUndefined.budgetExcludedIds.sort(byCodePoint)).toEqual(withOmitted.budgetExcludedIds.sort(byCodePoint));
   });
 });
 

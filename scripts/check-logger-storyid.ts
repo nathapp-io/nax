@@ -22,6 +22,7 @@
 import { Glob } from "bun";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { byCodePoint } from "../src/utils/sort";
 
 const ROOT = join(import.meta.dir, "..");
 const BASELINE_FILE = join(import.meta.dir, "baselines", "logger-storyid-baseline.json");
@@ -202,7 +203,7 @@ function diffByFile(
   for (const f of Object.keys(current)) {
     if ((current[f] ?? 0) > (baseline[f] ?? 0)) out.push(f);
   }
-  return out.sort();
+  return out.sort(byCodePoint);
 }
 
 function printViolation(v: Violation) {

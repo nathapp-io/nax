@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildImportGraph, findCyclicModules, formatReport, resolveSpecifier } from "@scripts/check-import-cycles";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { byCodePoint } from "@/utils/sort";
 
 function write(root: string, rel: string, content: string): void {
   const full = join(root, rel);
@@ -74,7 +75,7 @@ describe("findCyclicModules", () => {
   const files = (root: string) =>
     findCyclicModules(root)
       .map((m) => m.file)
-      .sort();
+      .sort(byCodePoint);
 
   test("reports nothing for an acyclic graph", () => {
     write(root, "src/a/index.ts", 'export { a } from "./leaf";\n');

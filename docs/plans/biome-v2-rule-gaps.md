@@ -4,7 +4,9 @@ Audit of `biome.json` (Biome **2.5.10**, `recommended: true` + four explicit pro
 two GritQL plugins) against the v2 catalog's off-by-default rules.
 **Tier 1 was re-verified and then ADOPTED on 2026-08-28** — all seven rules are wired at
 `error` in `biome.json`, all 17 sites are cleared, and the severities are pinned in
-`test/unit/scripts/biome-test-severity.test.ts`. See *Adoption log*. Tiers 2–3 are untouched. Every count below was
+`test/unit/scripts/biome-test-severity.test.ts`. **Tier 2 was ADOPTED the same day** — all
+three rules at `error`, all 60 sites cleared, pinned in the same test. See *Adoption log*.
+Tier 3 is untouched. Every count below was
 **measured against this repo on 2026-08-27**, not estimated: a probe config with
 `recommended: false` and only the candidate rules at `error`, run over `src/`, `bin/`,
 `scripts/` and `test/` with the JSON reporter (`.nax/`, `examples/`, `dist/` excluded from
@@ -32,7 +34,7 @@ The two promise rules are **nursery** and need the `types` domain (see *Enabling
 type-aware rules* below) — the trade-off is theirs alone; the other five are stable and
 one-line enables.
 
-## Tier 2 — worth enabling, small drain first
+## Tier 2 — worth enabling, small drain first — **ADOPTED 2026-08-28**
 
 | Rule | Hits (src / test) | The drain |
 |:--|:--|:--|
@@ -194,3 +196,84 @@ If Tier 1 is adopted, wire the new severities into
 record the change in `.nax/rules/test-ratchets.md`'s *What biome gates instead* table —
 that test is the backstop that keeps a future config edit from silently landing a rule at
 `warn`.
+
+---
+
+## Adoption log — Tier 2
+
+**2026-08-28, Biome 2.5.10, immediately after Tier 1.** All three rules are at `error` in
+`biome.json` (`useArraySortCompare` under `suspicious`; `useAwaitThenable` and
+`useExhaustiveSwitchCases` under `nursery`, both riding the `types` domain Tier 1 already
+turned on). `bun run lint`, `bun run typecheck` and `bun run test` (15,506 tests) are green.
+
+**All three hit counts reproduce exactly** — 1/0, 3/48, 10/50.
+
+### What the drain actually found
+
+- **`useExhaustiveSwitchCases` found no bug, but a dead union member.** The one site,
+  `handlePipelineFailure` in `src/execution/pipeline-result-handler.ts`, is missing
+  `"complete"` and `"decomposed"`. Neither is reachable: the function is entered only when
+  `pipelineResult.success` is false (`iteration-runner.ts`), `"complete"` is the sole action
+  the pipeline pairs with success — and **no stage anywhere produces `finalAction:
+  "decomposed"`**, though the union declares it. Both are now listed as explicit no-op arms
+  with that reasoning; retiring the dead member is a separate change.
+- **`useAwaitThenable` found 49 real redundant awaits and 2 false positives.** 47 are in
+  `test/` — `await` on helpers that are plainly synchronous (`makeTempDir`,
+  `cleanupTempDir`, `makeTestRuntime`, `initLogger`, `parseDiagnostics`, one local
+  `makeCtx`) — and 2 in `src/`, both `await deriveProviderWeights(...)`, which is a plain
+  synchronous function. Each callee's signature was read before the `await` came off; none
+  returns a promise.
+- **`useArraySortCompare` found zero bugs.** 58 of the 60 sites sort a `string[]`, where the
+  default lexicographic order is exactly the intended one. The two that are not strings are
+  both in tests and both worked only by coincidence: a `number[]` whose values happened to be
+  `0,1,2`, and a `boolean[]` relying on `"false" < "true"`. The rule still earns its place —
+  it would catch the real defect in new code — but the table's "real-bug class" framing
+  described the risk, not this repo.
+
+### Two things only doing it surfaced
+
+- **Biome 2.5.10 cannot infer through `<function-type alias> | undefined`.** Two of the
+  three "src" `useAwaitThenable` hits were false positives on exactly that shape — a
+  promise-returning function held in an optional dependency slot, which is the repo's
+  standard `_deps` idiom. Reduced to a minimal repro: with
+  `type F = (a: string) => Promise<number>`, a `private _a: F | undefined` flags at
+  `await this._a(...)`, while the *same property written with an inline function type*
+  (`private _b: ((a: string) => Promise<number>) | undefined`) and a *non-optional*
+  `private _c: F` both pass. `private _d?: F` fails too — it is the union with the alias,
+  not the optionality syntax. Binding to an un-annotated local does not help; binding to a
+  local **annotated non-optional after the guard** does. So `src/agents/manager.ts` needed
+  no suppression: `SendPromptFn` moved to `manager-types.ts` (beside `SessionRunHopFn`,
+  where it belonged) and `runAsSession` binds `const sendPrompt: SendPromptFn =
+  this._sendPrompt` after its existing guard. `test/helpers/mock-agent-manager.ts` carries
+  the one `biome-ignore`, with the repro in the comment. **Expect more of these** as more
+  `_deps` slots are read; the rule's cost here is not the sweep, it is this shape.
+- **The severity-test fixture for `useArraySortCompare` is not the obvious one.**
+  `[3, 1, 2].sort()` reports **nothing** under the repo config — the rule wants an element
+  type it can resolve from an annotation, so the fixture is
+  `function f(xs: string[]) { return xs.sort(); }`. A test written the obvious way would
+  have failed at authoring time; one written the obvious way *and* asserting only "no crash"
+  would have pinned nothing. Same family as the Tier 1 `noDuplicateTestHooks` lesson: a rule
+  that has never been seen to fail is not known to be wired.
+
+### Costs, on the record
+
+- **`src/utils/sort.ts` is new** — `byCodePoint` and `byNumber`. 60 sites needed *some*
+  comparator, and the code-point idiom was already open-coded in `src/context/engine/digest.ts`
+  and `providers/static-rules.ts` under the CTX-5 comment; this is that SSOT. `byCodePoint` is
+  byte-identical to what a bare `.sort()` already did on a `string[]`, so no ordering changed.
+- **Three grandfathered files could not absorb the import line.** `check:file-sizes` forbids
+  any growth in a file already over the limit, and a new `import` is growth.
+  `runner-plan.test.ts` and `acceptance-loop-cycle.test.ts` therefore use an inline
+  comparator instead of the helper — deliberate inconsistency, not an oversight.
+  `src/agents/manager.ts` came out 4 lines *shorter* because the `SendPromptFn` move was
+  the fix anyway.
+- **Lint time did not move.** 3.27s (Tier 1) -> **3.4s** wall on `biome check src/ bin/ test/`.
+  The `types` domain was already paid for; two more type-aware rules are marginal. The 3x
+  step cost recorded under Tier 1 stands as the whole price of type-aware linting here.
+- **1 suppression** (`mock-agent-manager.ts`), against Tier 1's 3.
+
+### Not done
+
+`scripts/` is outside `bun run lint`'s paths, so its 4 `useArraySortCompare` sites were
+fixed for correctness but are **not gated**. Tier 3 is untouched.
+
