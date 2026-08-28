@@ -150,17 +150,21 @@ function handleWarnThenCancelTimeout(
   state.inGracePeriod = true;
   state.graceReason = reason;
   // setTimeout permitted here for grace period cancellation via clearTimeout
-  state.graceTimer = _idleWatchdogDeps.setTimeout(async () => {
-    if (!activeStates.has(state.callId)) return;
-    state.inGracePeriod = false;
-    state.graceTimer = undefined;
-    state.graceReason = undefined;
-    const currentReason = getTimeoutReason(state, _idleWatchdogDeps.now(), idleTimeoutMs, toolCallOnlyTimeoutMs);
-    if (currentReason !== reason) return;
-    state.cancelAttempts++;
-    state.lastActivityAt = _idleWatchdogDeps.now();
-    const cancel = controllerRegistry.get(state.callId);
-    if (cancel) await cancel().catch(() => {});
+  // The timer slot expects `void`; an async callback there would make a
+  // rejection unobservable. Wrap so the promise is explicitly discarded.
+  state.graceTimer = _idleWatchdogDeps.setTimeout(() => {
+    void (async () => {
+      if (!activeStates.has(state.callId)) return;
+      state.inGracePeriod = false;
+      state.graceTimer = undefined;
+      state.graceReason = undefined;
+      const currentReason = getTimeoutReason(state, _idleWatchdogDeps.now(), idleTimeoutMs, toolCallOnlyTimeoutMs);
+      if (currentReason !== reason) return;
+      state.cancelAttempts++;
+      state.lastActivityAt = _idleWatchdogDeps.now();
+      const cancel = controllerRegistry.get(state.callId);
+      if (cancel) await cancel().catch(() => {});
+    })();
   }, graceMs);
 }
 

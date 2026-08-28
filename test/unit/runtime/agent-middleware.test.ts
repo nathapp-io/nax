@@ -75,7 +75,7 @@ describe("MiddlewareChain", () => {
     const mw: AgentMiddleware = { name: "noop" };
     await expect(MiddlewareChain.from([mw]).runBefore(makeCtx())).resolves.toBeUndefined();
     await expect(MiddlewareChain.from([mw]).runAfter(makeCtx(), null, 0)).resolves.toBeUndefined();
-    await expect(MiddlewareChain.from([mw]).runOnError(makeCtx(), new Error(), 0)).resolves.toBeUndefined();
+    await expect(MiddlewareChain.from([mw]).runOnError(makeCtx(), new Error("boom"), 0)).resolves.toBeUndefined();
   });
 
   test("passes MiddlewareContext through to each hook", async () => {

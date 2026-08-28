@@ -222,6 +222,7 @@ describe("runContestant (US-002 AC8: pipeline crash classification)", () => {
 
   it("US-002 AC8 (boundary): non-Error throws are stringified into the error field", async () => {
     const pipeline = mock(async () => {
+      // biome-ignore lint/style/useThrowOnlyError: US-002 AC8 pins the non-Error throw path; an Error here would test nothing
       throw "string-only failure";
     });
 

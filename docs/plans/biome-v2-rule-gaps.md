@@ -1,7 +1,10 @@
 # Biome v2 rule gaps — what the repo could enable, measured
 
 Audit of `biome.json` (Biome **2.5.10**, `recommended: true` + four explicit promotions +
-two GritQL plugins) against the v2 catalog's off-by-default rules. Every count below was
+two GritQL plugins) against the v2 catalog's off-by-default rules.
+**Tier 1 was re-verified and then ADOPTED on 2026-08-28** — all seven rules are wired at
+`error` in `biome.json`, all 17 sites are cleared, and the severities are pinned in
+`test/unit/scripts/biome-test-severity.test.ts`. See *Adoption log*. Tiers 2–3 are untouched. Every count below was
 **measured against this repo on 2026-08-27**, not estimated: a probe config with
 `recommended: false` and only the candidate rules at `error`, run over `src/`, `bin/`,
 `scripts/` and `test/` with the JSON reporter (`.nax/`, `examples/`, `dist/` excluded from
@@ -52,7 +55,7 @@ one-line enables.
 | `suspicious/useAwait` | 126 src / **2084** test | The test population is overwhelmingly `async () => ({...})` mock stubs — async **by contract** to satisfy a promise-returning dep slot, with nothing to await. Flagging them invites `await Promise.resolve()` noise or, worse, de-asyncing stubs out of interface conformance. |
 | `performance/useTopLevelRegex` | 291 src / 566 test | Micro-optimization; no measured hot path justifies 850+ edits. |
 | `style/noNegationElse` | 167 src / 40 test | Pure style churn. |
-| `suspicious/noUnnecessaryConditions` (`types` domain) | 237 src / 256 test | Fires on defensive checks the repo keeps deliberately (e.g. guards over `.default()`-filled config where the schema, not the type, guarantees presence). Too many judgment calls per hit. |
+| `suspicious/noUnnecessaryConditions` (`types` domain) | 236 src / 253 test | Fires on defensive checks the repo keeps deliberately (e.g. guards over `.default()`-filled config where the schema, not the type, guarantees presence). Too many judgment calls per hit. |
 | `style/useNamingConvention`, `style/noDefaultExport` | not probed | Convention-heavy; the repo's conventions live in `.nax/rules/` and reviews, and the expected churn dwarfs the payoff. |
 | `performance/noBarrelFile` / `noReExportAll` | not probed | The repo's import convention is barrels, on purpose (`.claude/rules/project-conventions.md`). Directly contradicts it. |
 
@@ -60,10 +63,12 @@ one-line enables.
 
 The three nursery rules in Tiers 1–2 need both the domain and the explicit rule entry:
 
+Use `"types": "recommended"`, **not** `"all"` — see the domain trap below.
+
 ```jsonc
 {
   "linter": {
-    "domains": { "types": "all" },
+    "domains": { "types": "recommended" },
     "rules": {
       "nursery": {
         "noFloatingPromises": "error",
@@ -75,13 +80,38 @@ The three nursery rules in Tiers 1–2 need both the domain and the explicit rul
 }
 ```
 
+**The domain trap — `"all"` silently enables the rules this doc rejected.** Three switches
+act independently: `rules.recommended` covers the recommended subset of the *non-domain*
+rules and does **not** reach into a domain; `domains.<name>` (`none` / `recommended` /
+`all`) gates that domain separately; an **explicit rule entry is honoured regardless of
+either** — which is why the nursery rules above fire under `"recommended"` even though
+nursery is not recommended. So `"types": "all"` does not mean "the listed rules"; it means
+every rule in the domain. Applied verbatim on top of this repo's config it lands
+**549 unintended findings**:
+
+| Rule | Baseline | With `types: "all"` | |
+|:--|--:|--:|:--|
+| `nursery/noFloatingPromises` | 0 | 3 | wanted |
+| `nursery/noMisusedPromises` | 0 | 7 | wanted |
+| `suspicious/noUnnecessaryConditions` | 0 | **489** | *Considered and rejected*, above |
+| `suspicious/useArraySortCompare` | 0 | **60** | Tier 2 — drain not done |
+
+`"types": "recommended"` honours every explicitly listed nursery rule and adds **nothing
+else** — verified: with all three entries above it reports `noFloatingPromises` 3,
+`noMisusedPromises` 7, `useExhaustiveSwitchCases` 1, and with just the two Tier 1 rules the
+full category diff against baseline is 304 → 314 findings with no third category. It is also
+byte-identical in output to `"types": "all"` with the noisy pair set to `"off"` — same
+result, no suppressions to maintain, and it will not silently absorb whatever Biome adds to
+the `types` domain in a future 2.x.
+
 Costs to accept, on the record:
 
 - **Nursery means unstable**: not covered by semver, may change or be renamed in a minor.
   Pin biome (already pinned at 2.5.10) and re-check on upgrades.
-- **Type inference costs lint time.** Measured on this repo: the full type-aware probe over
-  `src` + `test` + `bin` + `scripts` completed in well under the existing lint budget, but
-  re-measure once wired into `bun run lint` before treating it as free.
+- **Type inference costs lint time — 3x on the biome step.** Re-measured 2026-08-28 as
+  `bun run lint` actually invokes it (`biome check src/ bin/ test/`): **1.08s -> 3.27s wall**
+  (9s -> 15s CPU). Small in absolute terms, but it is not free, and it scales with the
+  project graph rather than with the number of enabled rules.
 - **A trap that produced a false zero during this audit**: with `--config-path` pointing at
   a directory *outside* the project tree, the type-aware rules silently report **nothing**
   (the project scanner does not run) — zero diagnostics with exit 0, indistinguishable from
@@ -99,6 +129,65 @@ into the scratchpad; type-aware rules required swapping the repo `biome.json` fo
 probe and restoring it byte-identically (verified with `git diff`) because of the scanner
 trap above. `noFloatingPromises` was mutation-probed against a planted floating promise
 before its repo reading was trusted.
+
+Two scope facts the counts depend on:
+
+- **The `src` column bundles `src/` + `bin/` + `scripts/`.** That matters for adoption:
+  `bun run lint` checks `src/ bin/ test/` only, so the `scripts/run-tests.ts` hit under
+  `noMisusedPromises` is counted here but would **not** be gated by the lint script.
+- **None of the seven Tier 1 rules is in the `recommended` set.** Verified by layering each
+  on top of the repo's real config (`recommended: true`) rather than only probing with
+  `recommended: false`: every rule moves off zero, so the table is a true delta and not a
+  re-count of coverage the repo already has.
+
+## Adoption log
+
+**2026-08-28, Biome 2.5.10, clean tree.** Re-ran every Tier 1 probe. Findings:
+
+- **All seven hit counts reproduce exactly**, as do every file named in the Tier 1 table.
+- `noDuplicateTestHooks` (0 / 0) was **mutation-probed** with a planted duplicate
+  `beforeEach` — it fires and exits 1, so the zero is real coverage, not a false zero of the
+  kind the `--config-path` trap produces. (That fixture is also the only way to tell: a
+  0-hit rule is invisible to a baseline diff.)
+- **Corrected:** the enabling snippet (`types: "all"` -> `"recommended"`, 549 unintended
+  findings); the lint-time claim (measured 3x, was "well under budget"); `noUnnecessaryConditions` drifted 493 -> 489 since the
+  original audit, so treat all Tier 2/3 counts as approximate to within a few percent.
+- **Noted, out of scope for this doc:** `bun run lint` reports 234 warnings and 22 infos and
+  **exits 0** — the same severity failure mode the note at the top warns about. The
+  `error`-severity findings it does not see live in `scripts/`, outside the lint script's paths.
+
+### What adoption changed, and two claims it corrected
+
+All seven rules are at `error` in `biome.json` with `linter.domains.types: "recommended"`.
+`bun run lint`, `bun run typecheck` and `bun run test` (15,475 tests) are green. Clearing the
+17 sites showed **two of the Tier 1 justifications above were wrong about what the hits are**:
+
+- **`noMisusedPromises` found no defects.** The table calls these "the same defect class" as a
+  promise in a boolean position. All 7 are the *nullable-promise presence* idiom — `if
+  (this.poller)`, `abortPromise ? [abortPromise] : []` — where the variable is
+  `Promise<T> | null`, so the truthiness test is asking "is one pending?" and is correct.
+  Fixed to explicit `!== null` / `!== undefined`: clearer, but a readability change, not a
+  bug fix. The rule still earns its place — it would catch the real defect in new code — but
+  it should not have been sold as finding live bugs.
+- **`useThrowOnlyError`'s two sites are load-bearing fixtures, not violations.** Both are
+  deliberate non-`Error` throws in tests that assert the non-`Error` path
+  (`contestant.test.ts` is literally *"US-002 AC8 (boundary): non-Error throws are stringified"*).
+  "Fixing" either would delete the coverage. They carry a `biome-ignore` with a reason. Cost
+  is 2 suppressions, not 2 fixes. A third suppression went to `fake-clock.test.ts`, whose
+  async callback in a `() => void` slot is the very thing that test exercises.
+
+Two further things surfaced only by doing it:
+
+- **The skipped test was neither flaky nor caused by what its comment claimed.** The skip
+  blamed the acceptance loop, which the test's own config already disables. Un-skipped it
+  failed **5/5 deterministically** on one assertion: `iterations` is read straight off the
+  unified executor, which runs zero iterations when no story is pending, so a pre-completed
+  PRD yields 0, not the 1 the test expected. Assertion corrected to pin real behaviour.
+- **Fixing one rule's site revealed another's.** Making the `spawn-client-process.ts` ternary
+  explicit sharpened the inferred type enough for `noFloatingPromises` to see a genuine
+  floating `raced.then(...)` one line below — invisible while the ternary was truthiness-based.
+  Expect a second pass when adopting type-aware rules; the first fix changes what the next
+  one can infer.
 
 If Tier 1 is adopted, wire the new severities into
 `test/unit/scripts/biome-test-severity.test.ts` (assert diagnostic **and exit code**) and

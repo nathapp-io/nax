@@ -11,7 +11,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import { makeSpawn, makeTempDir } from "@test/helpers";
+import { makeAgentAdapter, makeSpawn, makeTempDir } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { _reconcileDeps, initializeRun } from "@/execution/lifecycle/run-initialization";
 import type { PRD } from "@/prd/types";
@@ -367,5 +367,63 @@ describe("reconcileState", () => {
     expect(story.attempts).toBe(0);
     // resetMode=last: modelTier should remain at escalated value "powerful"
     expect(story.routing?.modelTier).toBe("powerful");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agent preflight
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("agent preflight", () => {
+  // The preflight used to be the first statement in initializeRun, gated only
+  // on dryRun — so it ran before the PRD was even loaded and could not tell a
+  // run with work to do from one with none. Re-running a feature whose stories
+  // were all passed then failed with "Agent is not installed" on a machine
+  // without the binary, when the correct answer was "nothing to do".
+  //
+  // These run with `dryRun: false`, which is the only mode that reaches the
+  // check at all. `agentGetFn` stands in for the registry so the assertions are
+  // about *whether* the preflight runs, not about the host's PATH.
+
+  async function initWith(prd: PRD, opts: { installed: boolean; acceptance: boolean; suffix: string }) {
+    const prdPath = join(tmpDir, `prd-preflight-${opts.suffix}.json`);
+    await Bun.write(prdPath, JSON.stringify(prd));
+    return initializeRun({
+      config: {
+        ...DEFAULT_CONFIG,
+        acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: opts.acceptance },
+      },
+      prdPath,
+      workdir: tmpDir,
+      dryRun: false,
+      agentGetFn: () => makeAgentAdapter({ binary: "claude", isInstalled: () => Promise.resolve(opts.installed) }),
+    });
+  }
+
+  test("is skipped when every story is passed and acceptance is off", async () => {
+    // The regression: no story dispatches and the completion phase calls no
+    // agent, so a missing binary must not fail the run.
+    const prd = makePrd({ status: "passed", passes: true });
+    const { prd: result } = await initWith(prd, { installed: false, acceptance: false, suffix: "skip" });
+    expect(result.userStories[0].status).toBe("passed");
+  });
+
+  test("still runs when a story needs work", async () => {
+    // A pending story dispatches, so the missing binary must be reported up
+    // front rather than surfacing later from inside the run.
+    const prd = makePrd({ status: "pending", passes: false });
+    await expect(initWith(prd, { installed: false, acceptance: false, suffix: "pending" })).rejects.toThrow(
+      /not installed or not in PATH/,
+    );
+  });
+
+  test("still runs when acceptance is enabled, even with every story passed", async () => {
+    // Nothing dispatches, but the acceptance loop calls agents in the
+    // completion phase — so the preflight must not be skipped on story state
+    // alone.
+    const prd = makePrd({ status: "passed", passes: true });
+    await expect(initWith(prd, { installed: false, acceptance: true, suffix: "acceptance" })).rejects.toThrow(
+      /not installed or not in PATH/,
+    );
   });
 });

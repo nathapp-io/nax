@@ -443,7 +443,7 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
    */
   private async startServer(): Promise<void> {
     if (this.server) return; // Already running
-    if (this.serverStartPromise) {
+    if (this.serverStartPromise !== null) {
       await this.serverStartPromise;
       return;
     }

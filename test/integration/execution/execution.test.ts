@@ -263,10 +263,29 @@ describe("execution runner", () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  // SKIP: Flaky — acceptance loop (enabled by default) runs after sequential completes
-  // and increments iterations unpredictably even when all stories are pre-passed.
-  // Root cause tracked: acceptance loop iteration count is non-deterministic in test env.
-  test.skip("completes when all stories are done", async () => {
+  // Un-skipped 2026-08-28 by `suspicious/noSkippedTests`, which is the point of
+  // that rule: this test had been skipped long enough for two real defects to
+  // accumulate behind it, and neither could be reported while it never ran.
+  //
+  // The old skip comment blamed the acceptance loop for a non-deterministic
+  // iteration count. That was wrong twice over — this test's own config already
+  // disables the acceptance loop (`acceptance.enabled: false` below), and the
+  // failure was deterministic, not flaky. What it was actually hiding:
+  //
+  // 1. An assertion that had gone stale. The test (assertion and `.skip`
+  //    together) dates to 2026-03-06; the pre-loop short-circuit it now trips
+  //    over landed 2026-03-29, when the parallel and sequential executors were
+  //    unified. The `=== 1` was written against the executor that preceded it
+  //    and was already skipped by the time the semantics changed, so nothing
+  //    caught the drift for five months. See the assertion below.
+  // 2. An eager agent preflight. `initializeRun` verified the agent was
+  //    installed before it knew whether any agent would be used, so this run —
+  //    which dispatches nothing — demanded a binary it never called, and failed
+  //    on CI while passing on any machine with `claude` on PATH. Fixed in
+  //    run-initialization.ts: the preflight is now conditional, so this test
+  //    needs no stub and passes with no agent installed.
+  test("completes when all stories are done", async () => {
+    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
     const prd = createTestPRD([
       {
         id: "US-001",
@@ -286,7 +305,6 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
     await mkdir(tmpDir, { recursive: true });
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
@@ -298,8 +316,9 @@ describe("execution runner", () => {
       config: {
         ...TEST_CONFIG,
         execution: { ...TEST_CONFIG.execution, maxIterations: 2 },
-        // Disable acceptance loop — it runs after completion and increments iterations,
-        // making the iterations === 1 assertion flaky.
+        // Acceptance off keeps this test about the completion path alone —
+        // and it is what makes the run provably agent-free, so the preflight
+        // is skipped and no agent need be installed.
         acceptance: { ...TEST_CONFIG.acceptance, enabled: false },
       },
       hooks: { hooks: {} },
@@ -311,10 +330,15 @@ describe("execution runner", () => {
     const result = await run(opts);
 
     expect(result.success).toBe(true);
-    expect(result.iterations).toBe(1); // One iteration to detect completion
+    // 0, not 1: an already-complete PRD takes the pre-loop short-circuit
+    // (unified-executor.ts:171) and never enters the dispatch loop. The in-loop
+    // completion path cannot report 0 — `iterations++` runs at the top of the
+    // loop and `isComplete` is checked after it, so anything entering the loop
+    // reports >= 1. If that short-circuit is ever removed, this is the
+    // assertion that should change, and to 1.
+    expect(result.iterations).toBe(0);
     expect(result.storiesCompleted).toBe(0); // Already completed
 
-    // Cleanup
     await rm(tmpDir, { recursive: true, force: true });
   });
 

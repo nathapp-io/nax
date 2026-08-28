@@ -54,7 +54,7 @@ function boundedProcRead(proc: SpawnResult, timeoutMs: number): Promise<{ exitCo
       }
       finish(-1, "");
     }, timeoutMs);
-    Promise.all([proc.exited.catch(() => -1), new Response(proc.stdout).text().catch(() => "")]).then(
+    void Promise.all([proc.exited.catch(() => -1), new Response(proc.stdout).text().catch(() => "")]).then(
       ([exitCode, stdout]) => finish(exitCode, stdout),
     );
   });

@@ -93,9 +93,9 @@ export function killProcessTree(pid: number, graceMs: number, exited?: Promise<u
     () => "exited" as const,
     () => "exited" as const,
   );
-  const raced = exitedPromise ? Promise.race([gracePromise, exitedPromise]) : gracePromise;
+  const raced = exitedPromise !== undefined ? Promise.race([gracePromise, exitedPromise]) : gracePromise;
 
-  raced.then((outcome) => {
+  void raced.then((outcome) => {
     // Rule 07: always clear the grace timer once the race settles, regardless
     // of which side won or whether this call was cancelled — an armed-but-
     // uncleared setTimeout holds the event loop open even when unref'd from

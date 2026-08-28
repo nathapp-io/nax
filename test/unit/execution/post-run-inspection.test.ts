@@ -472,12 +472,12 @@ describe("_postRunDeps.rollbackToRef injection", () => {
     _postRunDeps.rollbackToRef = origRollback;
   });
 
-  test("rollbackToRef dep is replaceable", () => {
+  test("rollbackToRef dep is replaceable", async () => {
     let called = false;
     _postRunDeps.rollbackToRef = mock(async () => {
       called = true;
     });
-    _postRunDeps.rollbackToRef("/tmp", "HEAD", null);
+    await _postRunDeps.rollbackToRef("/tmp", "HEAD", null);
     expect(called).toBe(true);
   });
 });

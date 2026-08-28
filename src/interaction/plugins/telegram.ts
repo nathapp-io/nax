@@ -252,7 +252,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   }
 
   private ensurePoller(): void {
-    if (this.poller) return;
+    if (this.poller !== null) return;
     this.poller = this.runPoller().finally(() => {
       this.poller = null;
       if (this.pendingReceivers.size > 0) this.ensurePoller();
