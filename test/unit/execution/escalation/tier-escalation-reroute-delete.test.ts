@@ -18,13 +18,20 @@
  * 800-line test-file cap).
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeEscalationContext, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  makeEscalationContext,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeNaxConfig,
+  makePRD,
+  makeStory,
+} from "@test/helpers";
 import type { EscalationHandlerContext } from "@/execution/escalation/tier-escalation";
 import { _tierEscalationDeps, handleTierEscalation } from "@/execution/escalation/tier-escalation";
-
-const TIER_ESCALATION_PATH = new URL("../../../../src/execution/escalation/tier-escalation.ts", import.meta.url)
-  .pathname;
+import { resolveOperatingTier, resolveRouting } from "@/routing";
+import type { NaxRuntime } from "@/runtime";
+import type { DispatchContext } from "@/runtime/dispatch-context";
 
 let origSavePRD: typeof _tierEscalationDeps.savePRD;
 
@@ -39,18 +46,58 @@ afterEach(() => {
 
 // ---------------------------------------------------------------------------
 // #1710 — handleTierEscalation does not LLM-re-route
-//
-// SOURCE-LEVEL GUARD: strongest regression check. If `tier-escalation.ts`
-// doesn't import or call `tryLlmBatchRoute`, the function cannot be invoked
-// from `handleTierEscalation` or `preIterationTierCheck`. This catches every
-// shape of re-introduction (call site, dynamic import, helper wrapper).
 // ---------------------------------------------------------------------------
 
 describe("#1710 — handleTierEscalation does not LLM-re-route", () => {
-  test("tier-escalation.ts source contains no tryLlmBatchRoute or hybrid-re-route reference", async () => {
-    const source = await Bun.file(TIER_ESCALATION_PATH).text();
-    expect(source).not.toContain("tryLlmBatchRoute");
-    expect(source).not.toContain("hybrid-re-route");
+  test("batch escalation with a routing-less non-lead member and a runtime does not dispatch an LLM", async () => {
+    const completeAsFn = mock(async () => {
+      throw new Error("LLM dispatch must not occur during escalation");
+    });
+    const config = makeNaxConfig({
+      autoMode: {
+        escalation: {
+          enabled: true,
+          tierOrder: [
+            { tier: "fast", attempts: 1 },
+            { tier: "balanced", attempts: 2 },
+          ],
+          escalateEntireBatch: true,
+          resetMode: "initial",
+        },
+      },
+      routing: { strategy: "llm", llm: { mode: "hybrid" } },
+      models: {},
+    });
+    const runtime = makeMockRuntime({ config, agentManager: makeMockAgentManager({ completeAsFn }) });
+    const lead = makeStory({
+      id: "US-lead-reroute",
+      title: "Lead",
+      status: "in-progress",
+      attempts: 1,
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    });
+    const nonLead = makeStory({
+      id: "US-inject-reroute",
+      title: "INJECT-shaped non-lead",
+      status: "in-progress",
+      attempts: 1,
+    });
+
+    const result = await handleTierEscalation(
+      makeEscalationContext({
+        story: lead,
+        storiesToExecute: [lead, nonLead],
+        isBatchExecution: true,
+        routing: { modelTier: "fast", testStrategy: "test-after" },
+        pipelineResult: { reason: "Tests failed", context: {} },
+        config,
+        prd: makePRD({ userStories: [lead, nonLead] }),
+        runtime,
+      }),
+    );
+
+    expect(result.outcome).toBe("escalated");
+    expect(completeAsFn).not.toHaveBeenCalled();
   });
 });
 
@@ -68,7 +115,26 @@ describe("#1710 — handleTierEscalation does not LLM-re-route", () => {
 // ---------------------------------------------------------------------------
 
 describe("#1710 — escalation writes the escalated tier to the result PRD", () => {
-  test("after escalation, the story's routing.modelTier in the returned PRD reflects the escalated tier", async () => {
+  test("an escalated tier wins over a lower-tier routing cache entry", async () => {
+    const config = makeNaxConfig({
+      autoMode: {
+        escalation: {
+          enabled: true,
+          tierOrder: [
+            { tier: "fast", attempts: 1 },
+            { tier: "balanced", attempts: 2 },
+          ],
+          escalateEntireBatch: false,
+          resetMode: "initial",
+        },
+      },
+      routing: {
+        strategy: "llm",
+        llm: { mode: "hybrid", cacheDecisions: true, fallbackToKeywords: true },
+      },
+      models: {},
+    });
+    const runtime = makeMockRuntime({ config });
     const story = makeStory({
       id: "US-escalation-tier-write",
       title: "Story",
@@ -83,22 +149,15 @@ describe("#1710 — escalation writes the escalated tier to the result PRD", () 
       isBatchExecution: false,
       routing: { modelTier: "fast", testStrategy: "test-after" },
       pipelineResult: { reason: "Tests failed", context: {} },
-      config: makeNaxConfig({
-        autoMode: {
-          escalation: {
-            enabled: true,
-            tierOrder: [
-              { tier: "fast", attempts: 1 },
-              { tier: "balanced", attempts: 2 },
-            ],
-            escalateEntireBatch: false,
-            resetMode: "initial",
-          },
-        },
-        routing: { llm: { mode: "per-story" }, strategy: "keyword" },
-        models: {},
-      }),
+      config,
       prd: makePRD({ userStories: [story] }),
+    });
+
+    runtime.routingCache.set(story.id, {
+      complexity: "simple",
+      modelTier: "fast",
+      testStrategy: "test-after",
+      reasoning: "lower-tier cached decision",
     });
 
     const result = await handleTierEscalation(ctx);
@@ -109,8 +168,26 @@ describe("#1710 — escalation writes the escalated tier to the result PRD", () 
     // userStories entry.
     const escalatedStory = result.prd.userStories.find((s) => s.id === story.id);
     expect(escalatedStory?.routing?.modelTier).toBe("balanced");
+    if (!escalatedStory) throw new Error("Expected escalated story in returned PRD");
+
+    const decision = await resolveRouting(escalatedStory, config, undefined, makeDispatchContext(runtime));
+    const operating = resolveOperatingTier({
+      previousTier: escalatedStory.routing?.modelTier,
+      derivedTier: decision.modelTier,
+      hasEscalationRecords: escalatedStory.escalations.length > 0,
+    });
+    expect(operating.tier).toBe("balanced");
   });
 });
+
+function makeDispatchContext(runtime: NaxRuntime): DispatchContext {
+  return {
+    agentManager: runtime.agentManager,
+    sessionManager: runtime.sessionManager,
+    runtime,
+    abortSignal: runtime.signal,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // #1745 — INJECT-ed non-lead story latches with no complexity after batch escalation
