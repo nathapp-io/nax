@@ -200,6 +200,7 @@ export class ExecutionPlan {
 
     const rectResult = await runRectification(this.ctx, this.state, phaseCosts, phaseOutputs, {
       gateBaselineKeys: preRectGateFailureKeys,
+      isThreeSession: this.isThreeSession,
     });
 
     // Resume the canonical loop after rectification resolves. The strategy-specific
@@ -257,6 +258,7 @@ export class ExecutionPlan {
             const secondRect = await runRectification(this.ctx, this.state, phaseCosts, phaseOutputs, {
               skipGateTriage: true,
               gateBaselineKeys: preRectGateFailureKeys,
+              isThreeSession: this.isThreeSession,
             });
             if (secondRect.rectificationExhausted) {
               logger?.warn("story-orchestrator", "Second rectification pass exhausted — terminal failure", {
@@ -372,6 +374,7 @@ export class ExecutionPlan {
               extraRevalidationKinds: nonBlockingExtraPhases(advCfg),
               maxAttempts,
               postValidate: this.state.nonBlockingFixPostValidate,
+              isThreeSession: this.isThreeSession,
             }),
           // ADR-024 §3 — restore any kept pass that regressed the full-suite gate.
           // Same predicate + baseline the final verdict's staleness guard uses below

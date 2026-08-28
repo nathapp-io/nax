@@ -292,6 +292,15 @@ export interface RectificationOverrides {
    * marker. This override keeps triage idempotent across both passes.
    */
   skipGateTriage?: boolean;
+  /**
+   * The plan's session model (`ExecutionPlan.isThreeSession`), not a behavioural
+   * override. Threaded through so `runPhase` can resolve the right context-engine
+   * stage (nax#1737 Phase B follow-up) for both the fix-op dispatch and the
+   * revalidation sweep — without it, `isThreeSession` silently defaulted to `false`
+   * inside rectification and a three-session run's revalidation `verifier` never
+   * mapped to `tdd-verifier`.
+   */
+  isThreeSession?: boolean;
 }
 
 export interface RectificationResult {

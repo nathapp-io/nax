@@ -326,7 +326,18 @@ export async function runRectification(
     // runFixCycle dispatches fixOps, which are Operation<I,O,C> (run or complete). The
     // builder's runPhase wrapper only needs op.name + dispatch, so widening the cast is safe.
     const slot: AnySlot = { op: op as unknown as RunOperation<unknown, unknown, unknown>, input };
-    return (await runPhase(cycleCtx, slot, phaseCosts, fixOpPhaseOutputs)) as O;
+    // inRectification=true so a fix-cycle `implementer` requests the `rectify`
+    // context-engine stage (query_scratch) rather than `tdd-implementer` — see
+    // contextStageForOp's precedence rule (nax#1737 Phase B follow-up).
+    return (await runPhase(
+      cycleCtx,
+      slot,
+      phaseCosts,
+      fixOpPhaseOutputs,
+      overrides?.isThreeSession,
+      undefined,
+      true,
+    )) as O;
   };
 
   const cycle: FixCycle<Finding> = {
@@ -392,7 +403,11 @@ export async function runRectification(
       const findings: Finding[] = [];
       let shortCircuited = false;
       for (const phase of phases) {
-        await runPhase(ctx, phase.slot, phaseCosts, phaseOutputs);
+        // isThreeSession forwarded from RectificationOverrides (the plan's session
+        // model) so a three-session run's revalidation `verifier` maps to
+        // `tdd-verifier` (nax#1737 Phase B follow-up). inRectification is NOT set
+        // here — this is the revalidation sweep, not the fix-op dispatch.
+        await runPhase(ctx, phase.slot, phaseCosts, phaseOutputs, overrides?.isThreeSession);
         if (shouldSkipPhaseForRectification({ phase, state, phaseOutputs, nbfPath })) {
           // Carve-out fired: the verifier explicitly passed, so this story is not failed
           // by the gate here. It still must not swallow a regression rectification just
