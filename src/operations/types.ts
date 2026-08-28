@@ -58,6 +58,14 @@ export interface CallContext {
    */
   readonly contextBundle?: import("../context/engine").ContextBundle;
   /**
+   * Assemble a ContextBundle for a context-engine stage key on demand (nax#1737
+   * Phase B). Wired by the execution stage, which owns the PipelineContext that
+   * `assembleForStage` requires; the operations layer never sees that type.
+   * Returns undefined when v2 is disabled or assembly failed — callers keep the
+   * bundle they already have.
+   */
+  readonly assembleStageBundle?: (stage: string) => Promise<import("../context/engine").ContextBundle | undefined>;
+  /**
    * Optional interaction bridge for mid-session human Q&A. When set, the hop
    * callback wires an interactionHandler so the agent can ask questions and
    * receive answers without terminating the session.
