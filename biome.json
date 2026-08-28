@@ -7,7 +7,7 @@
       }
     }
   },
-  "plugins": ["./biome-plugins/no-as-never.grit"],
+  "plugins": ["./biome-plugins/no-as-never.grit", "./biome-plugins/no-empty-catch.grit"],
   "linter": {
     "enabled": true,
     "domains": {
@@ -16,7 +16,14 @@
     },
     "rules": {
       "recommended": true,
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "error",
+          "options": { "maxAllowedComplexity": 176 }
+        }
+      },
       "suspicious": {
+        "noConsole": "error",
         "noDuplicateTestHooks": "error",
         "noEvolvingTypes": "error",
         "noExplicitAny": "error",
@@ -46,11 +53,24 @@
   },
   "overrides": [
     {
+      "includes": [
+        "bin/**",
+        "scripts/**",
+        "src/cli/**",
+        "src/commands/**",
+        "src/precheck/index.ts",
+        "src/execution/lifecycle/headless-formatter.ts",
+        "src/logger/logger.ts"
+      ],
+      "linter": { "rules": { "suspicious": { "noConsole": "off" } } }
+    },
+    {
       "includes": ["**/test/**"],
       "plugins": ["./biome-plugins/no-absent-value.grit"],
       "linter": {
         "rules": {
           "suspicious": {
+            "noConsole": "off",
             "noExplicitAny": "error"
           },
           "style": {

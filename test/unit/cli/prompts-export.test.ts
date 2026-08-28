@@ -154,18 +154,16 @@ describe("exportPromptCommand — invalid role", () => {
         exitCode = code;
         throw new Error(`process.exit(${code})`);
       }) as typeof process.exit;
-      try {
-        await exportPromptCommand({ role });
-        expect(true).toBe(false);
-      } catch {}
+      // The `expect(true).toBe(false)` that used to stand in for this lived inside
+      // the try, so the empty catch swallowed its own failure — the "it must throw"
+      // half of the assertion could never fail. `.rejects` puts it back, live.
+      await expect(exportPromptCommand({ role })).rejects.toThrow(/^process\.exit\(/);
       expect(exitCode, `role: "${role}"`).toBe(1);
     }
   });
 
   test("error output for unknown-role mentions invalid/unknown and lists all valid roles", async () => {
-    try {
-      await exportPromptCommand({ role: "unknown-role" });
-    } catch {}
+    await expect(exportPromptCommand({ role: "unknown-role" })).rejects.toThrow(/^process\.exit\(/);
 
     const allOutput = [...consoleOutput, ...consoleErrors].join("\n");
     const hasError = allOutput.toLowerCase().match(/error|invalid|unknown/);

@@ -5,8 +5,10 @@ two GritQL plugins) against the v2 catalog's off-by-default rules.
 **Tier 1 was re-verified and then ADOPTED on 2026-08-28** — all seven rules are wired at
 `error` in `biome.json`, all 17 sites are cleared, and the severities are pinned in
 `test/unit/scripts/biome-test-severity.test.ts`. **Tier 2 was ADOPTED the same day** — all
-three rules at `error`, all 60 sites cleared, pinned in the same test. See *Adoption log*.
-Tier 3 is untouched. Every count below was
+three rules at `error`, all 60 sites cleared, pinned in the same test. **Tier 3 was
+RESOLVED the same day** — one rule adopted with an override list, one adopted as a ratchet,
+one **rejected on measurement** and replaced by a GritQL plugin. See *Adoption log — Tier 3*.
+Every count below was
 **measured against this repo on 2026-08-27**, not estimated: a probe config with
 `recommended: false` and only the candidate rules at `error`, run over `src/`, `bin/`,
 `scripts/` and `test/` with the JSON reporter (`.nax/`, `examples/`, `dist/` excluded from
@@ -42,7 +44,12 @@ one-line enables.
 | `nursery/useAwaitThenable` (`types` domain) | 3 / 48 | `await` on a non-promise — usually a signature that stopped being async and callers never noticed. The 48 test hits are mostly harmless `await` on sync helpers; a mechanical sweep. |
 | `suspicious/useArraySortCompare` | 10 / 50 | `.sort()` without a comparator sorts **lexicographically** — a real-bug class when the array holds numbers. Site-by-site read needed: string sorts are fine and get an explicit comparator only for the rule's sake. |
 
-## Tier 3 — high alignment, but a real drain or a policy decision first
+## Tier 3 — high alignment, but a real drain or a policy decision first — **RESOLVED 2026-08-28**
+
+> **Read the Tier 3 adoption log before trusting this table.** Two of its three
+> "what blocks it" claims did not survive measurement: `noConsole` has **zero** real
+> violations in the repo, and `noEmptyBlockStatements` reaches the inert-catch population
+> it names in **10 of 1087** sites.
 
 | Rule | Hits | What blocks it |
 |:--|:--|:--|
@@ -276,4 +283,114 @@ turned on). `bun run lint`, `bun run typecheck` and `bun run test` (15,506 tests
 
 `scripts/` is outside `bun run lint`'s paths, so its 4 `useArraySortCompare` sites were
 fixed for correctness but are **not gated**. Tier 3 is untouched.
+
+---
+
+## Adoption log — Tier 3
+
+**2026-08-28, Biome 2.5.10, immediately after Tier 2.** All three counts reproduce (1087,
+753/80, 314 — the table said 1083, 753/80, 313). `bun run lint`, `bun run typecheck` and
+`bun run test` (15,515 tests) are green.
+
+The outcome is **not** the one this table predicted. Two of its three blocking claims were
+wrong, and measuring them first is what made Tier 3 a day's work instead of a quarter's.
+
+### `noConsole` — ADOPTED at `error`, zero code changes
+
+The table says the hits "cluster in `src/cli` (209) and `src/commands` (78)" and that an
+override would leave "the other ~470 src sites" to gate. **Every one of those ~470 was read.
+None is a violation of the structured-logging rule.** The `src` column bundles `bin/` (151,
+the CLI entry point) and `scripts/` (292, outside `bun run lint`'s paths entirely). What is
+left in `src/` proper is 23 sites in exactly three places:
+
+| Site | What it is |
+|:--|:--|
+| `src/execution/lifecycle/headless-formatter.ts` (12) | the headless run banner and summary — its entire job is terminal output |
+| `src/precheck/index.ts` (10) | the precheck report, human and `--json` |
+| `src/logger/logger.ts` (1) | the logger's own console sink — the sanctioned writer itself |
+
+The test side is the same story: **74 of the 80** hits are `originalLog = console.log`
+spies, which is how the CLI tests capture output. The rule fires on any `console` member
+reference, saving it included.
+
+So the rule gates nothing that exists and everything written tomorrow. It is wired at
+`error` with an override turning it `off` for the layers whose job *is* output — `bin/**`,
+`scripts/**`, `src/cli/**`, `src/commands/**`, and the three files above — plus `test/**`.
+**The override list is the whole rule**, so that is what
+`biome-test-severity.test.ts` pins: one case proving a `console.log` in an ordinary `src/`
+module fails, one proving each listed layer stays silent. A glob that drifts one directory
+wide gives the gate up without a single test going red.
+
+The table's second option — "routing CLI output through one sanctioned writer" — is not
+needed and would be a large refactor for no measured defect.
+
+### `noExcessiveCognitiveComplexity` — ADOPTED as a ratchet at `maxAllowedComplexity: 176`
+
+314 findings at biome's default of 15; max 176, median 22. The worst are core orchestration:
+`unified-executor.ts` (176), `prd/schema.ts` (164), `agents/acp/parser.ts` (145),
+`execution/post-run.ts` (113), `bin/nax.ts` (111). Refactoring those is a different project
+with a different risk profile, and the table's "tune upward until the count is a handful"
+lands on 10 findings at 80 — still ten core-path refactors.
+
+Set instead to **176, the current ceiling**: zero findings today, zero code change, and any
+new function worse than today's worst hard-fails. `maxAllowedComplexity` is itself the
+ratchet — one number, lowered in later PRs as functions get refactored, with no baseline
+file to maintain. Verified to bite: a synthetic 200-complexity function reports
+`Excessive complexity of 200 detected (max: 176)` and exits 1.
+
+Findings remaining at each threshold, for whoever lowers it:
+
+| max | 30 | 50 | 80 | 100 | 120 | 150 |
+|:--|--:|--:|--:|--:|--:|--:|
+| findings | 84 | 31 | 10 | 5 | 3 | 2 |
+
+### `noEmptyBlockStatements` — REJECTED, replaced by `biome-plugins/no-empty-catch.grit`
+
+The table calls this "the highest-value drain left" and says it "directly targets the
+inert-test population STATUS §6 names". **It does not.** Of its 1087 sites:
+
+| Shape | Count |
+|:--|--:|
+| no-op arrow (`markUnavailable: () => {}`) | 1001 |
+| empty function body (`async close() {}`) | 74 |
+| **empty `catch`** | **10** |
+| other | 2 |
+
+The 1075 stubs are the `test/helpers/` mock-factory idiom that
+`.claude/rules/test-helpers.md` **mandates**. Adopting the rule would mean a 1087-site drain
+fighting the repo's own convention to reach 10 real sites. Rejected.
+
+The 10 were fixed anyway, and one was live coverage loss:
+`prompts-export.test.ts` had `expect(true).toBe(false)` *inside* the `try`, so the empty
+catch swallowed that assertion's own failure — the "it must throw" half could never fail.
+Replaced with `await expect(...).rejects.toThrow(...)` and mutation-probed: the assertion
+now fails when broken, which the swallowed version never could. The other nine were a
+logger-guard (given a body saying why nothing can be reported), a silently-swallowed
+interaction-bridge construction failure in `plan/strategies/context-builder.ts` (now logged),
+six test try/catches replaced by `await p.catch(() => {})`, and one temp-dir teardown.
+
+The shape *is* worth gating, so it now has a GritQL plugin — the third, after
+`no-as-never.grit` and `no-absent-value.grit`.
+
+**A comment in the body satisfies it, deliberately.** That is what biome's own rule allows,
+and 204 of the repo's 214 empty catches already carry a reason
+(`catch { // process may have already exited }`). Demanding a statement instead would have
+been 204 edits that make the code worse. Since comments are trivia in biome's CST, the
+structural pattern alone flags all 214; a regex on the matched node's **source text**
+restores the distinction.
+
+**The trap that regex introduces, and why the plugin test guards it.** GritQL reads a regex
+capture group as a variable binding. Write `(\([^)]*\))?` instead of `(?:\([^)]*\))?` and
+biome reports `p1 errored: regex pattern matched 1 variables, but expected 0` — at **info**
+severity, **exit 0**, indistinguishable from a clean run. The plugin sat silently disarmed
+until that was spotted. `biome-no-empty-catch-plugin.test.ts` therefore asserts the plugin
+emits no `errored` diagnostic on a clean file, alongside the fixtures that must fail. Same
+family as §8.15's empty-stdout plugin-path trap and the `--config-path` false zero above.
+
+### The through-line for Tier 3
+
+Every one of the three entries was blocked on a claim about the hit population, and in two
+of three the claim was wrong in the direction of "this is a huge drain". Reading the hits
+cost about an hour and turned a quarter of work into a day. **Measure the population before
+accepting a drain estimate**, including one written in this document.
 

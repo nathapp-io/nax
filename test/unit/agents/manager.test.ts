@@ -238,9 +238,8 @@ describe("AgentManager — middleware envelope", () => {
       calledRunAs = true;
       return { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 };
     };
-    try {
-      await manager.run({ runOptions: makeRunOptions({ prompt: "test" }) });
-    } catch {}
+    // The stubbed hop rejects; the assertion below is about the side effect, not the outcome.
+    await manager.run({ runOptions: makeRunOptions({ prompt: "test" }) }).catch(() => {});
     expect(calledRunAs).toBe(true);
 
     let calledCompleteAs = false;
@@ -248,12 +247,12 @@ describe("AgentManager — middleware envelope", () => {
       calledCompleteAs = true;
       return { output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     };
-    try {
-      await manager.complete("prompt", {
+    await manager
+      .complete("prompt", {
         modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
         workdir: "/tmp",
-      });
-    } catch {}
+      })
+      .catch(() => {});
     expect(calledCompleteAs).toBe(true);
   });
 
@@ -266,9 +265,7 @@ describe("AgentManager — middleware envelope", () => {
       },
     };
     const manager = makeMiddlewareManager(mw);
-    try {
-      await manager.runAs("claude", { runOptions: makeRunOptions({ prompt: "test", workdir: "/tmp" }) });
-    } catch {}
+    await manager.runAs("claude", { runOptions: makeRunOptions({ prompt: "test", workdir: "/tmp" }) }).catch(() => {});
     expect(calls).toContain("before");
   });
 
@@ -281,9 +278,7 @@ describe("AgentManager — middleware envelope", () => {
       },
     };
     const manager = makeMiddlewareManager(mw);
-    try {
-      await manager.runAs("claude", { runOptions: makeRunOptions({ prompt: "test", workdir: "/tmp" }) });
-    } catch {}
+    await manager.runAs("claude", { runOptions: makeRunOptions({ prompt: "test", workdir: "/tmp" }) }).catch(() => {});
     expect(capturedPerms).toBeDefined();
     assertDefined(capturedPerms, "capturedPerms");
     expect(typeof capturedPerms.mode).toBe("string");
@@ -444,13 +439,13 @@ describe("AgentManager — middleware envelope", () => {
       },
     };
     const manager = makeMiddlewareManager(mw);
-    try {
-      await manager.completeAs("claude", "prompt", {
+    await manager
+      .completeAs("claude", "prompt", {
         modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
         workdir: "/tmp/test",
         timeoutMs: 100,
-      });
-    } catch {}
+      })
+      .catch(() => {});
     expect(calls).toHaveLength(0);
     expect(capturedSignal).toBeUndefined();
   });

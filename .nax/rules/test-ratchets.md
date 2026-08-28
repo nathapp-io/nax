@@ -82,6 +82,7 @@ residue ever was.
 | `@ts-ignore` (that one directive only) | biome `suspicious/noTsIgnore`, `error` repo-wide | promoted from its shipped **warn** on 2026-08-27, where `biome check` exits 0 and the directive was reported but let through. `tsSuppress` still counts it: that counter is the only gate for the other two directives, so splitting it buys nothing. Note the rule fires on the phrase in **prose** too — a comment cannot discuss `@ts-ignore` |
 | `as never` | `biome-plugins/no-as-never.grit` (GritQL plugin) | the bottom type is assignable to **everything**, so one word silences any assignment error. Drained 603 → 0 in `test/` and 2 → 0 in `src/`, so the plugin is wired at biome.json's **root** and covers `src/`, `bin/` and `test/` alike. There is no sanctioned `as never` |
 | `absentValue<T>()` / `nullValue<T>()` | `biome-plugins/no-absent-value.grit` (GritQL plugin) | the idiom for "this argument is deliberately missing" (`test/helpers/absent.ts`) — see *Deliberately-absent values* below |
+| undocumented `} catch {}` | `biome-plugins/no-empty-catch.grit` (GritQL plugin) | the STATUS §6 inert-swallow shape. **A comment in the body satisfies it** — that is biome's own allowance, and 204 of the repo's 214 empty catches already carry a reason. See *Empty catches* below |
 
 
 ### Tier 1 promotions (2026-08-28)
@@ -123,6 +124,44 @@ and the one to reach for first, is a **post-guard local with a non-optional anno
 reports nothing; `function f(xs: string[]) { return xs.sort(); }` reports. Write the probe
 the obvious way and it pins nothing while passing.
 
+### Tier 3 outcomes (2026-08-28)
+
+| Rule | Outcome |
+|:--|:--|
+| `suspicious/noConsole` | **adopted at `error`**, with an override turning it `off` for the layers whose job is terminal output — `bin/**`, `scripts/**`, `src/cli/**`, `src/commands/**`, `src/precheck/index.ts`, `src/execution/lifecycle/headless-formatter.ts`, `src/logger/logger.ts`, and `test/**`. Zero code changes: measured, **not one** of the 753 src-side hits was a stray debug log, and 74 of the 80 test-side hits are `originalLog = console.log` spies |
+| `complexity/noExcessiveCognitiveComplexity` | **adopted as a ratchet** at `maxAllowedComplexity: 176` — the current ceiling, so nothing fails today and anything worse than today's worst does. The number *is* the ratchet; lower it as functions get refactored (findings: 84 at 30, 31 at 50, 10 at 80) |
+| `suspicious/noEmptyBlockStatements` | **rejected.** 1075 of its 1087 sites are the no-op mock stubs `test-helpers.md` mandates; only 10 were empty catches. Replaced by `biome-plugins/no-empty-catch.grit` |
+
+**`noConsole`'s override list is the whole rule.** It gates nothing that exists and
+everything written tomorrow, so a glob that drifts one directory wide gives the gate up
+with no test going red. `biome-test-severity.test.ts` pins both halves: a `console.log` in
+an ordinary `src/` module must fail, and every listed layer must stay silent. Widen that
+list only with a measurement showing the new path is genuinely an output layer.
+
+### Empty catches
+
+`} catch {}` with **no comment and no statement** is a lint error
+(`biome-plugins/no-empty-catch.grit`). The error disappears with no trace and the block can
+never fail — STATUS §6's inert-swallow shape. One of the 10 sites at adoption was live
+coverage loss: an `expect(true).toBe(false)` sat *inside* the `try`, so the catch swallowed
+that assertion's own failure and the "it must throw" half could never fail.
+
+Ways out, in order of preference:
+
+1. **Give the catch a reason** — a comment saying why nothing can be done, or a real log.
+   A comment is enough; this is the intended route and what 204 of the repo's 214 empty
+   catches already do.
+2. **`await p.catch(() => {})`** when you simply do not care whether a promise rejected.
+   Not a catch clause, so the plugin does not see it — and it says the same thing in a line.
+3. `// biome-ignore lint/plugin: <reason>` on the line **above the `try`** (not above the
+   `catch` — the diagnostic spans the whole try statement).
+
+**If you edit that .grit file, keep every regex group non-capturing.** GritQL reads a
+capture group as a variable binding and the plugin then fails as `p1 errored: regex pattern
+matched N variables` — reported at **info** severity with **exit 0**, indistinguishable from
+a clean run. `biome-no-empty-catch-plugin.test.ts` asserts the plugin emits no `errored`
+diagnostic for exactly this reason.
+
 **`linter.domains.types` is load-bearing and invisible to a behavioural probe.** Deleting it
 while leaving the two `nursery` entries in place drops both rules to **zero findings
 repo-wide**, silently, with the config still reading as enabled. The single-file temp-dir
@@ -133,9 +172,10 @@ which is why that file also asserts the domain's presence by reading `biome.json
 rest of the original 549 and *is* adopted now — as an explicit entry, not via the domain.)
 
 **Do not reintroduce a counter here for a shape biome already parses.** Fix the rule. And do
-not weaken the rules to make room: the severities and both plugins are pinned behind their
+not weaken the rules to make room: the severities and all three plugins are pinned behind their
 own tests (`test/unit/scripts/biome-test-severity.test.ts`,
-`biome-no-as-never-plugin.test.ts`, `biome-no-absent-value-plugin.test.ts`), which assert the
+`biome-no-as-never-plugin.test.ts`, `biome-no-absent-value-plugin.test.ts`,
+`biome-no-empty-catch-plugin.test.ts`), which assert the
 diagnostic *and* biome's exit code. Those tests are the backstop the retired counters used to
 be — a rule that has never been seen to fail is not known to be wired.
 

@@ -917,9 +917,7 @@ describe("runPlanPipeline (US-005)", () => {
     _planDeps.spawnSync = origSpawnSync;
     _planDeps.mkdirp = origMkdirp;
     _planDeps.existsSync = origExistsSync;
-    try {
-      await rm(tempWorkdir, { recursive: true, force: true });
-    } catch {}
+    await rm(tempWorkdir, { recursive: true, force: true }).catch(() => {});
   });
 
   // planDraftOp's parse validates:

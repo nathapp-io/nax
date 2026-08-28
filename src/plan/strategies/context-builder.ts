@@ -10,6 +10,8 @@ import type { NaxConfig } from "@/config";
 import { planConfigSelector } from "@/config";
 import { NaxError } from "@/errors";
 import { buildInteractionBridge } from "@/interaction";
+import { getSafeLogger } from "@/logger";
+import { errorMessage } from "@/utils/errors";
 import { validateFeatureName } from "@/utils/feature-name";
 import type { PlanCommandOptions, PlanDeps, PlanModeContext } from "./types";
 
@@ -75,7 +77,15 @@ export async function buildPlanModeContext(
         featureName: options.feature,
         stage: "pre-flight",
       });
-    } catch {}
+    } catch (err) {
+      // Fall back to the default bridge rather than failing the plan, but do not
+      // swallow the reason: a misconfigured interaction chain used to disappear
+      // here with no trace at any log level.
+      getSafeLogger()?.warn("plan", "Configured interaction bridge failed to build; using the default", {
+        feature: options.feature,
+        error: errorMessage(err),
+      });
+    }
   }
   const interactionBridge = configuredBridge ?? deps.createInteractionBridge();
 
