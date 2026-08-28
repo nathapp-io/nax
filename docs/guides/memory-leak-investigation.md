@@ -133,7 +133,7 @@ Cross-reference grep hits with Phase A's CSV — overlaps are highest-priority t
 4. `beforeAll` count == `afterAll` count per file.
 
 Wire it into:
-- `package.json` `lint` script (alongside `check:alias-internals`, `check:deep-relatives`)
+- `package.json` `lint` script (alongside `check:alias-internals`)
 - pre-commit hook
 - CI
 

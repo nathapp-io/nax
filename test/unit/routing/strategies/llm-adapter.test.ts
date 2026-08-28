@@ -23,9 +23,7 @@ afterEach(() => {
 
 describe("llm.ts module exports — cache utilities still available", () => {
   test("clearCache, getCacheSize, injectCacheEntry are exported", async () => {
-    const { clearCache, getCacheSize, injectCacheEntry, clearCacheForStory } = await import(
-      "../../../../src/routing/strategies/llm"
-    );
+    const { clearCache, getCacheSize, injectCacheEntry, clearCacheForStory } = await import("@/routing/strategies/llm");
     expect(typeof clearCache).toBe("function");
     expect(typeof getCacheSize).toBe("function");
     expect(typeof injectCacheEntry).toBe("function");
