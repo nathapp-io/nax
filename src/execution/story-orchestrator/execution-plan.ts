@@ -118,6 +118,25 @@ export class ExecutionPlan {
     // the verifier run on broken-gate code as an "unrelated regression" escape
     // hatch, at the cost of every common case. The escalation boundary in
     // deriveTddFailureCategory now handles that case instead.
+    //
+    // #1666 amendment: `semantic-review` failing is an EXCEPTION to the
+    // unconditional halt above, scoped narrowly to that one transition
+    // (semantic-review -> adversarial-review, its immediate successor in
+    // CANONICAL_ORDER). ff640e6b's revert does not cover this case: that change
+    // let the VERIFIER run on a broken-gate tree (judging code that might not even
+    // build), which is exactly the "verifier and reviews must never judge broken
+    // state" hazard above. Here the working tree is green — every gate ahead of
+    // semantic-review (full-suite-gate, verifier, lint-check, typecheck-check) has
+    // already passed for semantic-review to have run at all. Continuing to
+    // adversarial-review asks a second, independent reviewer for its own opinion
+    // on that same green tree; it does not let anything judge broken code. Measured
+    // across 1010 run logs, semantic-review short-circuited 231 times and took
+    // adversarial-review down with it in 132 of those — a lost second opinion, not
+    // a safety hatch. Every OTHER phase (gate, verifier, lint/typecheck, implementer)
+    // still halts unconditionally; this is a continuation, not a general
+    // "reviews are exempt" rule. The story still fails on semantic-review's own
+    // finding (see `success` below) — running adversarial-review changes what gets
+    // reported, not the verdict.
     const orderedPhases = collectOrderedPhases(this.state);
     // Part A (#1666) — the phase (if any) whose failure caused the loop below to
     // stop before reaching the end of `orderedPhases`. Used only to classify a
@@ -151,11 +170,24 @@ export class ExecutionPlan {
         throw error;
       }
 
-      // Short-circuit on any phase failure (spec §2C: any phase returning success=false halts execution).
-      // No exemptions — verifier and reviews must never judge broken-gate code. Gate findings are
-      // captured in phaseOutputs before this check, so runRectification() still consumes them.
+      // Short-circuit on any phase failure (spec §2C: any phase returning success=false halts execution),
+      // with one narrow exception: `semantic-review` failing continues to `adversarial-review` (see the
+      // #1666 amendment above) instead of halting. Every other phase still halts unconditionally — verifier
+      // and reviews must never judge broken-gate code. Gate findings are captured in phaseOutputs before
+      // this check, so runRectification() still consumes them.
       if (!phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
         shortCircuitPhase = name;
+        if (name === "semantic-review") {
+          logger?.warn(
+            "story-orchestrator",
+            "semantic-review failed — continuing to adversarial-review for a second opinion",
+            {
+              storyId: this.ctx.storyId,
+              phase: name,
+            },
+          );
+          continue;
+        }
         logger?.warn("story-orchestrator", "Short-circuiting on phase failure", {
           storyId: this.ctx.storyId,
           phase: name,
