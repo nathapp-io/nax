@@ -88,4 +88,4 @@ The following symbols are **test-only** and must never appear in `src/` producti
 |:---|:---|:---|
 | `fakeAgentManager` | `test/helpers/fake-agent-manager.ts` | Unit tests that need an `IAgentManager` without booting a full runtime. Wraps a single adapter with no middleware chain and no fallback policy. |
 
-CI gate: `scripts/check-no-adapter-wrap.sh` runs in pre-commit to block `wrapAdapterAsManager` from re-entering `src/`.
+CI gate: `test/integration/agents/no-adapter-wrap.test.ts` blocks `wrapAdapterAsManager` from re-entering `src/` (both as a barrel export and as a local, unexported declaration).
