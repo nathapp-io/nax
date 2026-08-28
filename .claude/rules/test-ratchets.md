@@ -79,6 +79,31 @@ residue ever was.
 | `as never` | `biome-plugins/no-as-never.grit` (GritQL plugin) | the bottom type is assignable to **everything**, so one word silences any assignment error. Drained 603 → 0 in `test/` and 2 → 0 in `src/`, so the plugin is wired at biome.json's **root** and covers `src/`, `bin/` and `test/` alike. There is no sanctioned `as never` |
 | `absentValue<T>()` / `nullValue<T>()` | `biome-plugins/no-absent-value.grit` (GritQL plugin) | the idiom for "this argument is deliberately missing" (`test/helpers/absent.ts`) — see *Deliberately-absent values* below |
 
+
+### Tier 1 promotions (2026-08-28)
+
+Seven further off-by-default rules, all at `error`, from
+`docs/plans/biome-v2-rule-gaps.md`. None was in `recommended`, so each was dark until now.
+They gate shapes no counter ever covered:
+
+| Rule | Gates | Notes |
+|:--|:--|:--|
+| `nursery/noFloatingPromises` | un-awaited promise with no rejection handler | type-aware; **needs `linter.domains.types`** as well as the rule entry |
+| `nursery/noMisusedPromises` | a promise where a non-promise is expected | same; the 7 sites at adoption were all *nullable-promise presence checks*, not defects — fixed to explicit `!== null` / `!== undefined` |
+| `suspicious/noEvolvingTypes` | `let`/`const` with no annotation whose type evolves | the implicit-`any` cousin `noExplicitAny` cannot see |
+| `style/useThrowOnlyError` | `throw` of a non-`Error` | breaks NaxError cause chaining. Both sites at adoption were deliberate non-Error-throw fixtures and carry a `biome-ignore` with a reason |
+| `suspicious/useErrorMessage` | `new Error()` with no message | |
+| `suspicious/noSkippedTests` | `.skip` on a test | the parser-backed version of the no-`.skip` rule |
+| `suspicious/noDuplicateTestHooks` | duplicated `beforeEach`/`afterEach` | zero sites at adoption; pure regression guard |
+
+**`linter.domains.types` is load-bearing and invisible to a behavioural probe.** Deleting it
+while leaving the two `nursery` entries in place drops both rules to **zero findings
+repo-wide**, silently, with the config still reading as enabled. The single-file temp-dir
+harness in `biome-test-severity.test.ts` fires either way, so it cannot see the regression —
+which is why that file also asserts the domain's presence by reading `biome.json`. Keep it at
+`"recommended"`: `"all"` enables every types-domain rule, adding 549 findings from
+`noUnnecessaryConditions` and `useArraySortCompare`, neither of which is adopted.
+
 **Do not reintroduce a counter here for a shape biome already parses.** Fix the rule. And do
 not weaken the rules to make room: the severities and both plugins are pinned behind their
 own tests (`test/unit/scripts/biome-test-severity.test.ts`,
