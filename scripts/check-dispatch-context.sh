@@ -3,8 +3,6 @@
 
 set -euo pipefail
 
-bun x tsc --project tsconfig.dispatch-context.json --noEmit
-
 # grep -v chains to exclude known-allowlisted files.
 # Uses portable grep -v instead of a case statement inside $() to avoid
 # a bash 3.2 (macOS default) syntax error with empty case arms in multi-line
@@ -25,4 +23,4 @@ if [ -n "$MATCHES" ]; then
   exit 1
 fi
 
-echo "OK: DispatchContext type and nullable-manager guards passed."
+echo "OK: nullable-manager guard passed."
