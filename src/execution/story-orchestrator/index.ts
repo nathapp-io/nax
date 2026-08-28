@@ -25,6 +25,11 @@ export type { RepoScopedFixRecord } from "./repo-scoped-fix-record";
 export { deriveRepoScopedFixes, REPO_SCOPED_STRATEGY_NAME, recordRepoScopedFixes } from "./repo-scoped-fix-record";
 export { toReviewDecisionPayload } from "./review-decision";
 export {
+  classifyMissingReviewPhases,
+  type ReviewPhaseReport,
+  type ReviewPhaseReportInput,
+} from "./review-phase-report";
+export {
   _storyOrchestratorDeps,
   refreshReviewInputForDispatch,
   runPhase,
