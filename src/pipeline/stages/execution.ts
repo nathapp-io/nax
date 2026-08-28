@@ -12,6 +12,7 @@
 import { validateAgentForTier } from "@/agents";
 import type { AgentAdapter } from "@/agents/types";
 import { isThreeSessionStrategy } from "@/config";
+import { assembleForStage } from "@/context/engine";
 import { NaxError } from "@/errors";
 import {
   applyPostRunInspection,
@@ -105,6 +106,15 @@ export const executionStage: PipelineStage = {
       // promptStage overwrites ctx.contextBundle with the execution-stage
       // assembly where it runs; the contextStage bundle is the floor elsewhere.
       ...(ctx.contextBundle ? { contextBundle: ctx.contextBundle } : {}),
+      // nax#1737 Phase B: let runPhase request a bundle assembled for its own
+      // context-engine stage key (tdd-test-writer, tdd-implementer, tdd-verifier,
+      // review-semantic, review-adversarial, rectify) instead of reusing the
+      // execution-stage bundle above for every phase. A closure, not the bundle
+      // itself, because assembleForStage needs the full PipelineContext, which
+      // the operations layer must not gain. Intentionally NOT memoized here —
+      // rectify's query_scratch pull tool depends on re-reading the current
+      // verify-result on every retry, and caching would freeze it stale.
+      assembleStageBundle: async (stage: string) => (await _executionDeps.assembleForStage(ctx, stage)) ?? undefined,
       // US-005: thread the story scratch dirs the stage-assembly path resolved
       // so the pull-tool runtime's query_scratch handler reads the same JSONL
       // the push providers (SessionScratchProvider / ToolDiagnosticsProvider)
@@ -206,4 +216,5 @@ export const _executionDeps = {
   recordRepoScopedFixes,
   applyPostRunInspection,
   decideStageAction,
+  assembleForStage,
 };

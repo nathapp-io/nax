@@ -53,6 +53,7 @@ export { _orchestratorDeps, ContextOrchestrator } from "./orchestrator";
 export { createDefaultOrchestrator } from "./orchestrator-factory";
 export type { PackedChunk, PackResult } from "./packing";
 export { FLOOR_KINDS, packChunks } from "./packing";
+export { contextStageForOp } from "./phase-stage-map";
 export { deriveProviderWeights } from "./provider-weights";
 export { _providerWeightsCacheDeps, ProviderWeightsCache } from "./provider-weights-cache";
 export type { ContentCacheState } from "./providers/code-neighbor";
