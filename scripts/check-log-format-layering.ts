@@ -60,7 +60,9 @@ for (const dir of SCAN_DIRS) {
 }
 
 if (violations.length > 0) {
-  console.error("[FAIL] log-format layering guard: presentation layer must not value-import review/operations barrels.");
+  console.error(
+    "[FAIL] log-format layering guard: presentation layer must not value-import review/operations barrels.",
+  );
   console.error("       Import a dependency-free leaf (e.g. ../review/severity) instead of the barrel.");
   console.error("       See scripts/check-log-format-layering.ts for the circular-init rationale.\n");
   for (const v of violations) console.error(`  ${v}`);

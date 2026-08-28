@@ -1,4 +1,6 @@
 #!/usr/bin/env bun
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 /**
  * Ratchet check: enforces the file-size hard limits from
  * .claude/rules/project-conventions.md — 600 lines for source files,
@@ -21,8 +23,6 @@
  *   1 — ratchet breached or baseline missing
  */
 import { Glob } from "bun";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 
 const ROOT = join(import.meta.dir, "..");
 const BASELINE_FILE = join(import.meta.dir, "baselines", "file-sizes-baseline.json");
@@ -95,10 +95,7 @@ function loadBaseline(): Baseline | null {
 function saveBaseline(byFile: Record<string, number>) {
   mkdirSync(dirname(BASELINE_FILE), { recursive: true });
   const sorted = Object.fromEntries(Object.entries(byFile).sort(([a], [b]) => a.localeCompare(b)));
-  writeFileSync(
-    BASELINE_FILE,
-    `${JSON.stringify({ updatedAt: new Date().toISOString(), byFile: sorted }, null, 2)}\n`,
-  );
+  writeFileSync(BASELINE_FILE, `${JSON.stringify({ updatedAt: new Date().toISOString(), byFile: sorted }, null, 2)}\n`);
 }
 
 async function main() {
@@ -135,14 +132,11 @@ async function main() {
   for (const o of oversized) {
     const recorded = baseline.byFile[o.file];
     if (recorded === undefined) newViolations.push(`  ${o.file}: ${o.lines} lines (limit ${o.limit})`);
-    else if (o.lines > recorded)
-      grown.push(`  ${o.file}: ${o.lines} lines (was ${recorded}, limit ${o.limit})`);
+    else if (o.lines > recorded) grown.push(`  ${o.file}: ${o.lines} lines (was ${recorded}, limit ${o.limit})`);
   }
 
   if (newViolations.length === 0 && grown.length === 0) {
-    const shrunk = Object.keys(baseline.byFile).some(
-      (f) => (byFile[f] ?? 0) < (baseline.byFile[f] ?? 0),
-    );
+    const shrunk = Object.keys(baseline.byFile).some((f) => (byFile[f] ?? 0) < (baseline.byFile[f] ?? 0));
     console.log(`OK: ${count} grandfathered oversized files (baseline ${Object.keys(baseline.byFile).length}).`);
     if (shrunk) console.log("Baseline can be lowered with --update-baseline.");
     return;

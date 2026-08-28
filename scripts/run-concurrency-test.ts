@@ -21,7 +21,9 @@ function runTests(label: string, extraArgs: string[], outFile: string) {
   console.log("=".repeat(60));
 
   const cmd = [
-    "bun", "test", "test/",
+    "bun",
+    "test",
+    "test/",
     "--timeout=60000",
     "--reporter=junit",
     `--reporter-outfile=${outFile}`,
@@ -42,19 +44,11 @@ let baselineExit = 0;
 let concurrentExit = 0;
 
 if (!only || only === "baseline") {
-  baselineExit = runTests(
-    "SEQUENTIAL BASELINE",
-    [],
-    "/tmp/nax-baseline.xml"
-  );
+  baselineExit = runTests("SEQUENTIAL BASELINE", [], "/tmp/nax-baseline.xml");
 }
 
 if (!only || only === "concurrent") {
-  concurrentExit = runTests(
-    "CONCURRENT RUN (--concurrent)",
-    ["--concurrent"],
-    "/tmp/nax-concurrent.xml"
-  );
+  concurrentExit = runTests("CONCURRENT RUN (--concurrent)", ["--concurrent"], "/tmp/nax-concurrent.xml");
 }
 
 console.log("\n=== Done ===");

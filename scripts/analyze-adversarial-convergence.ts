@@ -38,7 +38,7 @@
  *   bun scripts/analyze-adversarial-convergence.ts ~/.nax --since 2026-05-11 --project nax,my-project
  */
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 

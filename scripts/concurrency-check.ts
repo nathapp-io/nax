@@ -14,7 +14,7 @@ const args = Object.fromEntries(
   process.argv.slice(2).map((a) => {
     const [k, v] = a.replace(/^--/, "").split("=");
     return [k, v];
-  })
+  }),
 );
 
 const baselinePath = args.baseline ?? "/tmp/nax-baseline.xml";
@@ -42,8 +42,7 @@ function parseJUnit(xml: string): Map<string, TestCase> {
   function parseAttrs(attrStr: string): Record<string, string> {
     const attrs: Record<string, string> = {};
     const re = /(\w+)="([^"]*)"/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(attrStr)) !== null) {
+    for (const m of attrStr.matchAll(re)) {
       attrs[m[1]] = m[2];
     }
     return attrs;
@@ -62,14 +61,13 @@ function parseJUnit(xml: string): Map<string, TestCase> {
   }
 
   // Self-closing first (no inner content)
-  let m: RegExpExecArray | null;
   const selfMatches = new Set<number>();
-  while ((m = selfClosing.exec(xml)) !== null) {
+  for (const m of xml.matchAll(selfClosing)) {
     selfMatches.add(m.index);
     addCase(m[1], "");
   }
 
-  while ((m = openTag.exec(xml)) !== null) {
+  for (const m of xml.matchAll(openTag)) {
     addCase(m[1], m[2]);
   }
 
@@ -114,7 +112,8 @@ for (const [key, conc] of concurrent) {
   const base = baseline.get(key);
   if (!base) {
     // New test in concurrent run
-    if (conc.failed) diffs.push({ key, classname: conc.classname, name: conc.name, kind: "new-failure", failureMsg: conc.failureMsg });
+    if (conc.failed)
+      diffs.push({ key, classname: conc.classname, name: conc.name, kind: "new-failure", failureMsg: conc.failureMsg });
     else diffs.push({ key, classname: conc.classname, name: conc.name, kind: "new-pass" });
   } else if (!base.failed && conc.failed) {
     diffs.push({ key, classname: conc.classname, name: conc.name, kind: "regression", failureMsg: conc.failureMsg });
@@ -161,8 +160,9 @@ if (regressions.length > 0) {
   const byFile = new Map<string, Diff[]>();
   for (const d of regressions) {
     const file = d.classname;
-    if (!byFile.has(file)) byFile.set(file, []);
-    byFile.get(file)!.push(d);
+    const entries = byFile.get(file) ?? [];
+    entries.push(d);
+    byFile.set(file, entries);
   }
 
   for (const [file, tests] of byFile) {
@@ -211,5 +211,7 @@ if (regressions.length === 0 && newFailures.length === 0) {
   console.log("\n✅ No regressions! All tests pass under concurrency.");
   console.log("   The suite is safe to run with --concurrent.\n");
 } else {
-  console.log(`\n⚠️  ${regressions.length + newFailures.length} test(s) need --concurrent guard or sequential isolation.\n`);
+  console.log(
+    `\n⚠️  ${regressions.length + newFailures.length} test(s) need --concurrent guard or sequential isolation.\n`,
+  );
 }

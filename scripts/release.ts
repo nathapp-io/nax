@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 /**
  * release.ts — One-command release for nax (GitHub PR-first flow)
  *
@@ -19,10 +20,10 @@
  *   3. bun run release tag     → pushes tag, triggers npm publish via OIDC
  */
 
-import { $ } from "bun";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { $ } from "bun";
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -233,9 +234,8 @@ async function bumpRelease() {
   const prBody = `## Release ${tagName}\n\nBumps version: ${currentVersion} → ${nextVersion}\n\nAfter merging, run:\n\`\`\`bash\ngit checkout main && git pull origin main\nbun run release tag\n\`\`\``;
 
   try {
-    const result = (
-      await $`gh pr create --title ${prTitle} --body ${prBody} --base main --head ${branchName} --label skip-changelog`
-    );
+    const result =
+      await $`gh pr create --title ${prTitle} --body ${prBody} --base main --head ${branchName} --label skip-changelog`;
     const prUrl = result.text().trim();
     console.log(`\n✅ PR created: ${prUrl}`);
   } catch (e) {

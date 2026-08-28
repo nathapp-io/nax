@@ -1,4 +1,6 @@
 #!/usr/bin/env bun
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 /**
  * Ratchet check: prevents `as unknown as` casts from being added to test/.
  * Issue #1514 — required by the issue's plan: "The ratchet must also count
@@ -22,8 +24,6 @@
  * stuck on legitimate uses).
  */
 import { Glob } from "bun";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 
 const ROOT = join(import.meta.dir, "..");
 const SCAN_DIR = "test";
@@ -43,9 +43,7 @@ const ALLOW_MARKER = "test-ratchet-allow: as-unknown-as";
  * them. They are not real double-casts. Skip them so the ratchet doesn't
  * grade its own scaffolding.
  */
-const EXEMPT_FILES = new Set<string>([
-  "test/unit/scripts/check-test-as-unknown-as.test.ts",
-]);
+const EXEMPT_FILES = new Set<string>(["test/unit/scripts/check-test-as-unknown-as.test.ts"]);
 
 interface Baseline {
   count: number;
@@ -59,9 +57,7 @@ export interface RatchetOutcome {
   newViolations: Array<{ file: string; baseline: number; current: number }>;
 }
 
-export async function scanAsUnknownAs(
-  rootDir: string,
-): Promise<{ count: number; byFile: Record<string, number> }> {
+export async function scanAsUnknownAs(rootDir: string): Promise<{ count: number; byFile: Record<string, number> }> {
   const byFile: Record<string, number> = {};
   let count = 0;
   // `{ts,tsx}`, not `**/*.ts`: test/ui/ is six .tsx files, and while the glob
@@ -85,11 +81,7 @@ export async function scanAsUnknownAs(
       // Either neighbouring line counts too: the formatter reflows long lines
       // and pushes a trailing comment onto its own line, which would otherwise
       // silently un-suppress a deliberately allowed cast.
-      if (
-        line.includes(ALLOW_MARKER) ||
-        lines[i - 1]?.includes(ALLOW_MARKER) ||
-        lines[i + 1]?.includes(ALLOW_MARKER)
-      ) {
+      if (line.includes(ALLOW_MARKER) || lines[i - 1]?.includes(ALLOW_MARKER) || lines[i + 1]?.includes(ALLOW_MARKER)) {
         continue;
       }
       byFile[rel] = (byFile[rel] ?? 0) + matches.length;
@@ -183,9 +175,7 @@ async function main() {
 
   if (update) {
     saveBaseline(current);
-    console.log(
-      `[OK] Baseline saved: ${current.count} casts across ${Object.keys(current.byFile).length} files.`,
-    );
+    console.log(`[OK] Baseline saved: ${current.count} casts across ${Object.keys(current.byFile).length} files.`);
     return;
   }
 

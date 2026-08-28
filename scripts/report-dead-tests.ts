@@ -7,8 +7,8 @@
  * Generates a report listing test files that need cleanup.
  */
 
-import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { join, relative, dirname } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 
 interface TestInfo {
   path: string;
@@ -20,12 +20,7 @@ interface TestInfo {
 }
 
 // Features that have been removed from the codebase
-const REMOVED_FEATURES = [
-  "tdd-orchestrator-prompts",
-  "verification v0.21",
-  "verification v0.22.0",
-  "pre-v0.22.1",
-];
+const REMOVED_FEATURES = ["tdd-orchestrator-prompts", "verification v0.21", "verification v0.22.0", "pre-v0.22.1"];
 
 /**
  * Parse a test file and extract imports, test names, and describe blocks
@@ -40,18 +35,15 @@ export function parseTestFile(content: string, filePath: string): TestInfo {
   const firstBlockIdx = content.search(/^(?:describe|test|it)\s*\(/m);
   const importSection = firstBlockIdx >= 0 ? content.slice(0, firstBlockIdx) : content;
   const importRegex = /^\s*import\s+.*?\s+from\s+["']([^"']+)["']/gm;
-  let match: RegExpExecArray | null;
 
-  while ((match = importRegex.exec(importSection)) !== null) {
-    const importPath = match[1];
+  for (const importMatch of importSection.matchAll(importRegex)) {
+    const importPath = importMatch[1];
     // Skip non-src imports
     if (!importPath.startsWith("src/") && !importPath.includes("/src/")) {
       continue;
     }
     // Normalize paths like ../../../../src/config/loader to src/config/loader
-    const normalized = importPath
-      .replace(/^\.\.\/*/g, "")
-      .replace(/^.*src\//, "src/");
+    const normalized = importPath.replace(/^\.\.\/*/g, "").replace(/^.*src\//, "src/");
 
     if (normalized.startsWith("src/")) {
       imports.add(normalized);
@@ -60,14 +52,14 @@ export function parseTestFile(content: string, filePath: string): TestInfo {
 
   // Extract describe blocks: describe("name", ...)
   const describeRegex = /describe\s*\(\s*["'`]([^"'`]+)["'`]/g;
-  while ((match = describeRegex.exec(content)) !== null) {
-    describes.push(match[1]);
+  for (const describeMatch of content.matchAll(describeRegex)) {
+    describes.push(describeMatch[1]);
   }
 
   // Extract test blocks: test("name", ...) or it("name", ...)
   const testRegex = /(?:test|it)\s*\(\s*["'`]([^"'`]+)["'`]/g;
-  while ((match = testRegex.exec(content)) !== null) {
-    testNames.push(match[1]);
+  for (const testMatch of content.matchAll(testRegex)) {
+    testNames.push(testMatch[1]);
   }
 
   return {
@@ -238,9 +230,7 @@ export function generateDeadTestsReport(findings: TestInfo[]): string {
     }
 
     lines.push("**Recommendation:** Review this test file. ");
-    lines.push(
-      "Either fix the imports/references, update the test, or delete it if no longer needed."
-    );
+    lines.push("Either fix the imports/references, update the test, or delete it if no longer needed.");
     lines.push("");
   }
 
@@ -249,14 +239,8 @@ export function generateDeadTestsReport(findings: TestInfo[]): string {
   lines.push("## Summary");
   lines.push("");
   lines.push(`- Total files with issues: ${findings.length}`);
-  const totalDeadImports = findings.reduce(
-    (sum, f) => sum + (f.deadImports?.length || 0),
-    0
-  );
-  const totalDeadRefs = findings.reduce(
-    (sum, f) => sum + (f.deadReferences?.length || 0),
-    0
-  );
+  const totalDeadImports = findings.reduce((sum, f) => sum + (f.deadImports?.length || 0), 0);
+  const totalDeadRefs = findings.reduce((sum, f) => sum + (f.deadReferences?.length || 0), 0);
   lines.push(`- Dead imports: ${totalDeadImports}`);
   lines.push(`- Dead references: ${totalDeadRefs}`);
 
@@ -301,14 +285,8 @@ async function main() {
   console.log("");
   console.log("Summary:");
   console.log(`- Files with issues: ${findings.length}`);
-  const totalDeadImports = findings.reduce(
-    (sum, f) => sum + (f.deadImports?.length || 0),
-    0
-  );
-  const totalDeadRefs = findings.reduce(
-    (sum, f) => sum + (f.deadReferences?.length || 0),
-    0
-  );
+  const totalDeadImports = findings.reduce((sum, f) => sum + (f.deadImports?.length || 0), 0);
+  const totalDeadRefs = findings.reduce((sum, f) => sum + (f.deadReferences?.length || 0), 0);
   console.log(`- Dead imports: ${totalDeadImports}`);
   console.log(`- Dead references: ${totalDeadRefs}`);
 }

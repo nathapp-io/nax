@@ -1,4 +1,6 @@
 #!/usr/bin/env bun
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 /**
  * Ratchet check: every logger.{info,warn,error,debug} call inside the scoped
  * dirs must pass a data object whose FIRST key is `storyId`.
@@ -20,8 +22,6 @@
  * Exit 0 if count <= baseline, exit 1 if ratchet breached or baseline missing.
  */
 import { Glob } from "bun";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 import { byCodePoint } from "../src/utils/sort";
 
 const ROOT = join(import.meta.dir, "..");
@@ -189,16 +189,10 @@ function loadBaseline(): Baseline | null {
 
 function saveBaseline(count: number, byFile: Record<string, number>) {
   mkdirSync(dirname(BASELINE_FILE), { recursive: true });
-  writeFileSync(
-    BASELINE_FILE,
-    `${JSON.stringify({ count, updatedAt: new Date().toISOString(), byFile }, null, 2)}\n`,
-  );
+  writeFileSync(BASELINE_FILE, `${JSON.stringify({ count, updatedAt: new Date().toISOString(), byFile }, null, 2)}\n`);
 }
 
-function diffByFile(
-  current: Record<string, number>,
-  baseline: Record<string, number>,
-): string[] {
+function diffByFile(current: Record<string, number>, baseline: Record<string, number>): string[] {
   const out: string[] = [];
   for (const f of Object.keys(current)) {
     if ((current[f] ?? 0) > (baseline[f] ?? 0)) out.push(f);
@@ -258,9 +252,7 @@ async function main() {
   }
 
   const offenders = diffByFile(byFile, baseline.byFile ?? {});
-  console.error(
-    `ERROR: ${count} logger calls violate the storyId-first rule (baseline ${baseline.count}).`,
-  );
+  console.error(`ERROR: ${count} logger calls violate the storyId-first rule (baseline ${baseline.count}).`);
   console.error("New or increased violations in these files:");
   for (const f of offenders) {
     console.error(`  ${f}  (was ${baseline.byFile?.[f] ?? 0}, now ${byFile[f]})`);

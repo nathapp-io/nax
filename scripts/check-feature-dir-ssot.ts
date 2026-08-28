@@ -19,7 +19,7 @@
  * rather than growing an invisible allow-list.
  */
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const SCAN_ROOTS = ["src"] as const;

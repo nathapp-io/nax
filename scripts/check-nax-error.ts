@@ -1,4 +1,6 @@
 #!/usr/bin/env bun
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 /**
  * Ratchet check: prevents new `throw new Error(...)` from being added to src/.
  * All errors must use NaxError per .claude/rules/error-handling.md.
@@ -19,8 +21,6 @@
  *   1 — ratchet breached or baseline missing
  */
 import { Glob } from "bun";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 import { byCodePoint } from "../src/utils/sort";
 
 const ROOT = join(import.meta.dir, "..");
@@ -75,16 +75,10 @@ function loadBaseline(): Baseline | null {
 
 function saveBaseline(count: number, byFile: Record<string, number>) {
   mkdirSync(dirname(BASELINE_FILE), { recursive: true });
-  writeFileSync(
-    BASELINE_FILE,
-    `${JSON.stringify({ count, updatedAt: new Date().toISOString(), byFile }, null, 2)}\n`,
-  );
+  writeFileSync(BASELINE_FILE, `${JSON.stringify({ count, updatedAt: new Date().toISOString(), byFile }, null, 2)}\n`);
 }
 
-function diffByFile(
-  current: Record<string, number>,
-  baseline: Record<string, number>,
-): string[] {
+function diffByFile(current: Record<string, number>, baseline: Record<string, number>): string[] {
   const offenders: string[] = [];
   for (const file of Object.keys(current)) {
     if ((current[file] ?? 0) > (baseline[file] ?? 0)) offenders.push(file);

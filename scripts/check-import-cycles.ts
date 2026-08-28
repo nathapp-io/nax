@@ -43,7 +43,7 @@
  *   0 — no newly cyclic modules (count <= baseline)
  *   1 — ratchet breached (count > baseline) or baseline missing
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
 const ROOT = join(import.meta.dir, "..");
@@ -125,9 +125,7 @@ export function buildImportGraph(rootDir: string): Map<string, string[]> {
   for (const file of walk(join(rootDir, SCAN_DIR))) {
     const content = readFileSync(file, "utf8");
     const deps: string[] = [];
-    STATIC_IMPORT_RE.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = STATIC_IMPORT_RE.exec(content)) !== null) {
+    for (const match of content.matchAll(STATIC_IMPORT_RE)) {
       if (isTypeOnlyImport(match[1] ?? "")) continue;
       const spec = match[2];
       if (!spec) continue;
