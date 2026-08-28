@@ -205,7 +205,7 @@ No acceptance criterion may use a deprecated verification tag (\`[grep]\`, \`[fi
 Review the draft with a strict self-audit mindset. Re-read the codebase context and compare the PRD against it. Focus only on the issues below, then rewrite the PRD if needed.
 
 #### spec-ac-preservation
-Enumerate every acceptance criterion the spec states. Confirm each one appears in some story's acceptanceCriteria — never drop a spec AC during this audit. If an AC looks unsupported by the current codebase, keep it: the story may be adding that capability. An AC carrying a deprecated \`[grep]\`/\`[file]\`/\`[verbatim]\` tag is a file-content check, not a runtime behaviour — rewrite it as the behaviour it was meant to prove and drop the tag; that rewrite is required, not a dropped AC.
+Enumerate every acceptance criterion the spec states. Confirm each one appears in some story's acceptanceCriteria — never drop a spec AC during this audit, and confirm any trailing qualifying clause (a subordinate clause or parenthetical using phrasing like \`matching\`, \`unchanged\`, \`existing\`, \`as before\`, \`already\`, or \`preserving\`) survived alongside the assertion it qualifies — that clause marks the AC as a regression anchor, not a second assertion, and dropping it is dropping part of the AC. If an AC looks unsupported by the current codebase, keep it: the story may be adding that capability. An AC carrying a deprecated \`[grep]\`/\`[file]\`/\`[verbatim]\` tag is a file-content check, not a runtime behaviour — rewrite it as the behaviour it was meant to prove and drop the tag; that rewrite is required, not a dropped AC.
 
 #### ac-testable
 For each acceptance criterion, ask whether the assertion is observable through a return value, exception, log output, file content, or state change. If any AC is not directly testable, rewrite it so it is observable.
@@ -395,7 +395,7 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
       "id": "string — e.g. US-001",
       "title": "string — concise story title",
       "description": "string — detailed description of the story",
-      "acceptanceCriteria": ["string — behavioral, testable criteria. Format: 'When [X], then [Y]'. One assertion per AC. Never include quality gates."],${suggestedCriteriaField}
+      "acceptanceCriteria": ["string — behavioral, testable criteria. Format: 'When [X], then [Y]'. One assertion per AC — but keep a trailing clause that qualifies that assertion (e.g. preserving/unchanged/existing behaviour), it is not a second assertion. Never include quality gates."],${suggestedCriteriaField}
       "contextFiles": ["string — EXISTING source files the agent should read (max 5, relative paths)"],
       ${EXPECTED_FILES_SCHEMA_FIELD}
       ${STORY_OUT_OF_SCOPE_SCHEMA_FIELD}
@@ -507,7 +507,7 @@ Produce a JSON object with this exact structure. Field names are mandatory — d
       "id": "string — e.g. US-001",
       "title": "string — concise story title",
       "description": "string — detailed description of what to implement",
-      "acceptanceCriteria": ["string — behavioral criterion, format: 'When [X], then [Y]'. One assertion per item."],${suggestedCriteriaField}
+      "acceptanceCriteria": ["string — behavioral criterion, format: 'When [X], then [Y]'. One assertion per item — but keep a trailing clause that qualifies that assertion (e.g. preserving/unchanged/existing behaviour), it is not a second assertion."],${suggestedCriteriaField}
       "contextFiles": ["string — EXISTING relative paths the implementer should read (max 5)"],
       ${EXPECTED_FILES_SCHEMA_FIELD}
       ${STORY_OUT_OF_SCOPE_SCHEMA_FIELD}

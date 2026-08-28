@@ -10,6 +10,7 @@ import {
   isThreeSessionStrategy,
   resolveTestStrategy,
   SINGLE_SESSION_TEST_OWNING_STRATEGIES,
+  SPEC_ANCHOR_RULES,
   TEST_STRATEGY_GUIDE,
   THREE_SESSION_STRATEGIES,
   VALID_TEST_STRATEGIES,
@@ -179,6 +180,21 @@ describe("getAcQualityRules", () => {
     test.each([[undefined], [{}]])("returns AC_QUALITY_RULES for profile %j", (profile) => {
       expect(getAcQualityRules(profile as Parameters<typeof getAcQualityRules>[0])).toBe(AC_QUALITY_RULES);
     });
+  });
+});
+
+describe("SPEC_ANCHOR_RULES — qualifying-clause preservation (#1667)", () => {
+  test("Preserve spec ACs rule names the qualifying-clause phrasing to protect", () => {
+    expect(SPEC_ANCHOR_RULES).toContain("Preserve spec ACs");
+    expect(SPEC_ANCHOR_RULES).toContain("trailing qualifying clause");
+    for (const phrase of ["matching", "unchanged", "existing", "as before", "already", "preserving"]) {
+      expect(SPEC_ANCHOR_RULES).toContain(phrase);
+    }
+  });
+
+  test("still requires retaining the same assertion and concrete identifiers", () => {
+    expect(SPEC_ANCHOR_RULES).toContain("same assertion");
+    expect(SPEC_ANCHOR_RULES).toContain("concrete identifiers");
   });
 });
 

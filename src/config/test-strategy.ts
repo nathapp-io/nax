@@ -216,13 +216,15 @@ export function getAcQualityRules(profile?: ProjectProfile): string {
 
 /**
  * Spec fidelity rules — injected into buildPlanningPrompt() when a spec is provided.
- * Mirrors the synthesis anchor in session-plan.ts (debate mode) but for non-debate plan runs.
+ * Mirrors the synthesis anchor in src/debate/runner-plan-helpers.ts (buildPlanSynthesisSuffix,
+ * debate mode) but for non-debate plan runs. Keep the trailing-qualifying-clause wording in
+ * sync between the two when either changes (see #1667).
  */
 export const SPEC_ANCHOR_RULES = `## Spec Fidelity Rules
 
 When a spec is provided, these rules govern acceptance criteria generation:
 
-1. **Preserve spec ACs.** Every acceptance criterion stated in the spec must appear in \`acceptanceCriteria\`. Never silently drop a spec AC. ACs may be lightly rephrased for testability, but must retain the same assertion and concrete identifiers. An AC carrying a deprecated \`[grep]\`/\`[file]\`/\`[verbatim]\` tag describes a file-content check rather than a runtime behaviour: rewrite it as the behaviour that check was meant to prove, and drop the tag.
+1. **Preserve spec ACs.** Every acceptance criterion stated in the spec must appear in \`acceptanceCriteria\`. Never silently drop a spec AC. ACs may be lightly rephrased for testability, but must retain the same assertion, concrete identifiers, and any trailing qualifying clause — a subordinate clause or parenthetical using phrasing like \`matching\`, \`unchanged\`, \`existing\`, \`as before\`, \`already\`, or \`preserving\` that marks the AC as a regression anchor rather than new behaviour. That clause is metadata about the single assertion, not a second one — do not trim it. An AC carrying a deprecated \`[grep]\`/\`[file]\`/\`[verbatim]\` tag describes a file-content check rather than a runtime behaviour: rewrite it as the behaviour that check was meant to prove, and drop the tag.
 2. **Do not invent spec ACs.** If you identify useful behavioral edge cases or negative paths that the spec did not explicitly list, place them in \`suggestedCriteria\` (a string array on the same story object) — never in \`acceptanceCriteria\`. These go through a separate hardening pass.
 3. **Respect story scope.** Each story's criteria must only cover what the spec says for that story. Do not assign criteria that belong to a different story's scope (wrong feature area, wrong file, wrong dependency chain).
 4. **\`suggestedCriteria\` format.** Each element must be a plain behavioral assertion — an observable output, return value, state change, or error condition that a test can assert. Never include implementation details (imports, internal structure), design suggestions, or vague descriptions.
