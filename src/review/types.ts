@@ -4,6 +4,12 @@
  * Post-implementation quality verification
  */
 
+import type { z } from "zod";
+import type {
+  AdversarialReviewConfigSchema,
+  ReviewConfigSchema,
+  SemanticReviewConfigSchema,
+} from "../config/schemas-review";
 import type { Finding } from "../findings";
 
 /** Review check name */
@@ -320,6 +326,78 @@ export interface ReviewConfig {
   semantic?: SemanticReviewConfig;
   /** Adversarial review configuration (when 'adversarial' is in checks) */
   adversarial?: AdversarialReviewConfig;
-  /** Parsed oscillation circuit-breaker configuration. */
-  conflictDetection: { enabled: boolean; maxOscillations: number };
+  /** Parsed oscillation + cross-attempt review-recurrence circuit-breaker configuration. */
+  conflictDetection: { enabled: boolean; maxOscillations: number; maxCrossAttemptRecurrences: number };
 }
+
+/**
+ * Compile-time drift guard (#1666).
+ *
+ * `ReviewConfig` above is hand-written rather than `z.infer<typeof
+ * ReviewConfigSchema>` (src/config/schemas-review.ts) — this is a leaf
+ * review-domain module and `src/config/` already imports FROM it
+ * (config/runtime-types.ts), so deriving the type here would need a
+ * value-level import back into `src/config/`, which the barrel-gate /
+ * import-cycle ratchet treats as exactly the kind of edge to avoid (see
+ * `.claude/rules/project-conventions.md`'s cycle-ratchet section). A
+ * type-only import back is fine (erased, cannot participate in a runtime
+ * cycle) and is all this guard needs.
+ *
+ * Without this, the two shapes can silently diverge — which they already had:
+ * `SemanticReviewConfig.acRegroundOnDrop` existed here and was read
+ * unconditionally by `src/operations/semantic-review.ts`, but the schema had
+ * no such field, so it was always `undefined` at runtime and the knob could
+ * never be disabled via config (fixed alongside this guard, see
+ * schemas-review.ts). This assertion fails `bun run typecheck` the moment
+ * `ReviewConfig` and the schema's inferred shape disagree in EITHER
+ * direction, so that class of bug cannot reappear unnoticed.
+ *
+ * Both `extends` clauses are required — TypeScript's structural typing lets
+ * a type with a superset of required fields (or narrower optionality)
+ * satisfy `extends` against a looser type in one direction without the
+ * reverse holding, so checking only one direction would miss a field ADDED
+ * to just one side.
+ */
+type _ReviewConfigSchemaShape = z.infer<typeof ReviewConfigSchema>;
+type _SemanticReviewConfigSchemaShape = z.infer<typeof SemanticReviewConfigSchema>;
+type _AdversarialReviewConfigSchemaShape = z.infer<typeof AdversarialReviewConfigSchema>;
+
+/**
+ * Keys present on exactly one side of A/B — a field added to (or removed
+ * from) only one of the two shapes. Deliberately KEYS-ONLY, not full
+ * structural equality: many fields here are `.default()`-ed in the schema
+ * (so required in its inferred OUTPUT type) but marked optional (`?`) in
+ * these hand-written interfaces on purpose — that laxness lets tests build
+ * partial fixtures without threading every default through, and is not the
+ * hazard this guard exists for. The hazard is a field that exists on ONE
+ * side ONLY — exactly what happened with #1666 Part C's `maxCrossAttemptRecurrences`
+ * (added to the schema, forgotten here) and the pre-existing
+ * `SemanticReviewConfig.acRegroundOnDrop` gap this same change fixes (existed
+ * here, was missing from `SemanticReviewConfigSchema` — see schemas-review.ts).
+ * A full mutual-`extends`/equality check was tried first and rejected: it
+ * flags every one of those legitimate optional-vs-required differences,
+ * which is a much larger, noisier ripple than the one real class of bug this
+ * guard is for.
+ */
+type _KeyDrift<A, B> = Exclude<keyof A, keyof B> | Exclude<keyof B, keyof A>;
+
+type _ReviewConfigKeyDrift = _KeyDrift<ReviewConfig, _ReviewConfigSchemaShape>;
+type _SemanticReviewConfigKeyDrift = _KeyDrift<SemanticReviewConfig, _SemanticReviewConfigSchemaShape>;
+type _AdversarialReviewConfigKeyDrift = _KeyDrift<AdversarialReviewConfig, _AdversarialReviewConfigSchemaShape>;
+
+/**
+ * Type-only assertion (fully erased, no runtime code) — `T extends never`
+ * only resolves when the drift type argument actually has no members, i.e.
+ * no drifted keys. Instantiating it below with each drift type is the
+ * assertion; if any drifted key exists, TypeScript's "does not satisfy the
+ * constraint 'never'" error names it right there.
+ */
+type _AssertNoKeyDrift<_T extends never> = true;
+
+// If any of these three lines fails to typecheck, the error names the
+// drifted key(s) — reconcile the interface (this file) and the matching
+// schema (config/schemas-review.ts) before touching either one further. Do
+// not silence this by widening either side to `unknown`/`any`.
+type _reviewConfigKeyDriftCheck = _AssertNoKeyDrift<_ReviewConfigKeyDrift>;
+type _semanticReviewConfigKeyDriftCheck = _AssertNoKeyDrift<_SemanticReviewConfigKeyDrift>;
+type _adversarialReviewConfigKeyDriftCheck = _AssertNoKeyDrift<_AdversarialReviewConfigKeyDrift>;

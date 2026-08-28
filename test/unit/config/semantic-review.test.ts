@@ -115,6 +115,7 @@ describe("ReviewConfig semantic field", () => {
         rules: [],
         timeoutMs: 600_000,
         demandInspectionTrail: true,
+        acRegroundOnDrop: true,
         substantiation: { requote: true, maxRequotes: 5 },
         // excludePatterns is now optional (ADR-009): undefined means resolver will derive at runtime
       });
@@ -259,6 +260,7 @@ describe("DEFAULT_CONFIG.review.semantic", () => {
       rules: [],
       timeoutMs: 600_000,
       demandInspectionTrail: true,
+      acRegroundOnDrop: true,
       substantiation: { requote: true, maxRequotes: 5 },
       excludePatterns: [
         ":!test/",

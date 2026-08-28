@@ -294,7 +294,7 @@ function buildRuntimeWithoutOscillations(): PipelineContext {
     ...ctx.config,
     review: {
       ...ctx.config.review,
-      conflictDetection: { enabled: true, maxOscillations: 2 },
+      conflictDetection: { enabled: true, maxOscillations: 2, maxCrossAttemptRecurrences: 2 },
     },
   };
   return ctx;
@@ -362,7 +362,7 @@ describe("AC4: decideStageAction returns action === 'pause' when the breaker thr
       ...ctx.config,
       review: {
         ...ctx.config.review,
-        conflictDetection: { enabled: true, maxOscillations: 2 },
+        conflictDetection: { enabled: true, maxOscillations: 2, maxCrossAttemptRecurrences: 2 },
       },
     };
 
@@ -409,7 +409,7 @@ describe("AC5/AC6: pause reason includes the count and an oscillation substring"
       ...ctx.config,
       review: {
         ...ctx.config.review,
-        conflictDetection: { enabled: true, maxOscillations: 2 },
+        conflictDetection: { enabled: true, maxOscillations: 2, maxCrossAttemptRecurrences: 2 },
       },
     };
 
@@ -463,7 +463,7 @@ describe("AC7: count below maxOscillations escalates", () => {
       ...ctx.config,
       review: {
         ...ctx.config.review,
-        conflictDetection: { enabled: true, maxOscillations: 2 },
+        conflictDetection: { enabled: true, maxOscillations: 2, maxCrossAttemptRecurrences: 2 },
       },
     };
 
@@ -510,7 +510,7 @@ describe("AC8: conflictDetection.enabled === false escalates even when count >= 
       ...ctx.config,
       review: {
         ...ctx.config.review,
-        conflictDetection: { enabled: false, maxOscillations: 2 },
+        conflictDetection: { enabled: false, maxOscillations: 2, maxCrossAttemptRecurrences: 2 },
       },
     };
 
@@ -579,7 +579,7 @@ describe("AC10: count=0 on a normal single-source unfixable finding escalates", 
       ...ctx.config,
       review: {
         ...ctx.config.review,
-        conflictDetection: { enabled: true, maxOscillations: 2 },
+        conflictDetection: { enabled: true, maxOscillations: 2, maxCrossAttemptRecurrences: 2 },
       },
     };
 
@@ -635,7 +635,7 @@ describe("AC11: pause emits a notify through the injected interaction channel", 
       ...ctx.config,
       review: {
         ...ctx.config.review,
-        conflictDetection: { enabled: true, maxOscillations: 2 },
+        conflictDetection: { enabled: true, maxOscillations: 2, maxCrossAttemptRecurrences: 2 },
       },
     };
 
@@ -692,7 +692,7 @@ describe("AC12: interaction.send() throwing does not abort the pause", () => {
       ...ctx.config,
       review: {
         ...ctx.config.review,
-        conflictDetection: { enabled: true, maxOscillations: 2 },
+        conflictDetection: { enabled: true, maxOscillations: 2, maxCrossAttemptRecurrences: 2 },
       },
     };
 

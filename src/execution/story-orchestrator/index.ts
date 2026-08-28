@@ -21,9 +21,15 @@ export {
   selectRegressedGateFindings,
 } from "./phase-eval";
 export { gatherRectificationFindings, runRectification, type TriageResult, triageGateFindings } from "./rectification";
+export { recordReviewRecurrencesForAttempt } from "./recurrence-recording";
 export type { RepoScopedFixRecord } from "./repo-scoped-fix-record";
 export { deriveRepoScopedFixes, REPO_SCOPED_STRATEGY_NAME, recordRepoScopedFixes } from "./repo-scoped-fix-record";
 export { toReviewDecisionPayload } from "./review-decision";
+export {
+  classifyMissingReviewPhases,
+  type ReviewPhaseReport,
+  type ReviewPhaseReportInput,
+} from "./review-phase-report";
 export {
   _storyOrchestratorDeps,
   refreshReviewInputForDispatch,

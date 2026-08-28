@@ -12,9 +12,11 @@ import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
 import { _fullSuiteGateDeps, _lintCheckDeps, _typecheckCheckDeps } from "@/operations";
 import type { UserStory } from "@/prd/types";
 import type { QualityCommandResult } from "@/quality/runner";
+import type { NaxRuntime } from "@/runtime";
 import {
   cleanupTempDir,
   type DeepPartial,
+  fakeAgentManager,
   makeMockCallContext,
   makeMockPlanInputs,
   makeNaxConfig,
@@ -84,6 +86,21 @@ export interface E2EOptions {
     abortOnIncreasingFailures?: boolean;
     consecutiveIncreasesToBail?: number;
   };
+  /**
+   * Drive this attempt against an EXISTING runtime instead of creating a fresh
+   * one, and skip closing it in `finally` — the caller owns its lifecycle.
+   *
+   * Default behaviour (omitted / undefined) is byte-identical to before this
+   * option existed: a fresh runtime per call, closed on the way out. Set this
+   * when a test needs several sequential `runOrchestratorE2E()` attempts to
+   * share one runtime's run-scoped state (e.g. `reviewFindingRecurrences`,
+   * which only accumulates across attempts of the SAME runtime instance).
+   *
+   * Each attempt still gets its own scripted-agent instance wired onto the
+   * shared runtime (mirroring `makeRuntimeWithFakeAgent`'s swap), so per-attempt
+   * agent scripts stay independent even though the runtime persists.
+   */
+  sharedRuntime?: NaxRuntime;
 }
 
 /** Surfaced non-blocking-fix outcome (ADR-024). Captured by spying
@@ -156,7 +173,18 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
   }
   const story = makeStory({ id: "US-001", ...opts.story });
 
-  const { runtime } = makeRuntimeWithFakeAgent(makeScriptedAgent(opts.agent), { config, workdir });
+  const runtime =
+    opts.sharedRuntime ?? makeRuntimeWithFakeAgent(makeScriptedAgent(opts.agent), { config, workdir }).runtime;
+  if (opts.sharedRuntime) {
+    // Wire THIS attempt's scripted agent onto the shared runtime — same swap
+    // makeRuntimeWithFakeAgent performs internally, applied to an existing
+    // instance so its run-scoped maps (reviewFindingRecurrences, etc.) survive.
+    Object.defineProperty(runtime, "agentManager", {
+      value: fakeAgentManager(makeScriptedAgent(opts.agent), { dispatchEvents: runtime.dispatchEvents }),
+      writable: false,
+      configurable: true,
+    });
+  }
 
   // --- save originals ---
   const origCallOp = _storyOrchestratorDeps.callOp;
@@ -337,7 +365,9 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
     _lintCheckDeps.runQualityCommand = origLint;
     _typecheckCheckDeps.runQualityCommand = origTc;
     _fullSuiteGateDeps.runTests = origRunTests;
-    await runtime.close();
+    if (!opts.sharedRuntime) {
+      await runtime.close();
+    }
     cleanupTempDir(workdir);
   }
 }

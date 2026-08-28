@@ -16,6 +16,8 @@ import type { GateRegressionDetail } from "./phase-eval";
 import { describeGateRegression, gateFailureKeys, phaseExplicitlyPassed, phasePassed } from "./phase-eval";
 import { collectOrderedPhases } from "./phase-state";
 import { runRectification } from "./rectification";
+import { recordReviewRecurrencesForAttempt } from "./recurrence-recording";
+import { classifyMissingReviewPhases } from "./review-phase-report";
 import { _storyOrchestratorDeps, runPhase } from "./run-phase";
 import type { InternalBuildState, StoryOrchestratorResult } from "./types";
 
@@ -117,7 +119,34 @@ export class ExecutionPlan {
     // the verifier run on broken-gate code as an "unrelated regression" escape
     // hatch, at the cost of every common case. The escalation boundary in
     // deriveTddFailureCategory now handles that case instead.
+    //
+    // #1666 amendment: `semantic-review` failing is an EXCEPTION to the
+    // unconditional halt above, scoped narrowly to that one transition
+    // (semantic-review -> adversarial-review, its immediate successor in
+    // CANONICAL_ORDER). ff640e6b's revert does not cover this case: that change
+    // let the VERIFIER run on a broken-gate tree (judging code that might not even
+    // build), which is exactly the "verifier and reviews must never judge broken
+    // state" hazard above. Here the working tree is green — every gate ahead of
+    // semantic-review (full-suite-gate, verifier, lint-check, typecheck-check) has
+    // already passed for semantic-review to have run at all. Continuing to
+    // adversarial-review asks a second, independent reviewer for its own opinion
+    // on that same green tree; it does not let anything judge broken code. Measured
+    // across 1010 run logs, semantic-review short-circuited 231 times and took
+    // adversarial-review down with it in 132 of those — a lost second opinion, not
+    // a safety hatch. Every OTHER phase (gate, verifier, lint/typecheck, implementer)
+    // still halts unconditionally; this is a continuation, not a general
+    // "reviews are exempt" rule. The story still fails on semantic-review's own
+    // finding (see `success` below) — running adversarial-review changes what gets
+    // reported, not the verdict.
     const orderedPhases = collectOrderedPhases(this.state);
+    // Part A (#1666) — the phase (if any) whose failure caused the loop below to
+    // stop before reaching the end of `orderedPhases`. Used only to classify a
+    // required review phase that later turns up missing from `phaseOutputs`: was
+    // it never reached because of a failure the story already reports elsewhere
+    // (this phase), or is it the separate post-rectification resume case (US-002)
+    // that this variable does not track? See the `missingRequiredReviewPhases`
+    // classification below for how the two are told apart.
+    let shortCircuitPhase: string | undefined;
     for (const [phaseIndex, phase] of orderedPhases.entries()) {
       const name = phase.slot.op.name;
 
@@ -142,10 +171,24 @@ export class ExecutionPlan {
         throw error;
       }
 
-      // Short-circuit on any phase failure (spec §2C: any phase returning success=false halts execution).
-      // No exemptions — verifier and reviews must never judge broken-gate code. Gate findings are
-      // captured in phaseOutputs before this check, so runRectification() still consumes them.
+      // Short-circuit on any phase failure (spec §2C: any phase returning success=false halts execution),
+      // with one narrow exception: `semantic-review` failing continues to `adversarial-review` (see the
+      // #1666 amendment above) instead of halting. Every other phase still halts unconditionally — verifier
+      // and reviews must never judge broken-gate code. Gate findings are captured in phaseOutputs before
+      // this check, so runRectification() still consumes them.
       if (!phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
+        shortCircuitPhase = name;
+        if (name === "semantic-review") {
+          logger?.warn(
+            "story-orchestrator",
+            "semantic-review failed — continuing to adversarial-review for a second opinion",
+            {
+              storyId: this.ctx.storyId,
+              phase: name,
+            },
+          );
+          continue;
+        }
         logger?.warn("story-orchestrator", "Short-circuiting on phase failure", {
           storyId: this.ctx.storyId,
           phase: name,
@@ -213,11 +256,21 @@ export class ExecutionPlan {
     // canonical sequence and runs any phase whose output is missing or non-passing.
     // Halts on first failure (same RED→GREEN contract as the main loop). Skipped
     // entirely when rectification was exhausted — the story is already terminal.
-    if (
-      this.state.rectification &&
+    //
+    // Part A (#1666): also the deciding line for whether a still-missing required
+    // review phase is attributable to the main loop's short-circuit above, or to
+    // this resume loop's own halt (US-002). When this condition is false, the
+    // resume loop never runs at all, so a review phase left unreached by the main
+    // loop gets no second chance — its absence is entirely explained by
+    // `shortCircuitPhase`. When it is true, this loop walks the full canonical
+    // order (including the reviews) and only a phase left missing AFTER this loop
+    // ran can be the US-002 case (this loop broke at a still-red gate before
+    // reaching it).
+    const resumeLoopEligible =
+      !!this.state.rectification &&
       !rectResult.terminalReviewRequired &&
-      (!rectResult.rectificationExhausted || rectResult.liteScopeIncomplete)
-    ) {
+      (!rectResult.rectificationExhausted || !!rectResult.liteScopeIncomplete);
+    if (resumeLoopEligible) {
       // The first rectification ran with a strategy-specific revalidation set
       // (STRATEGY_TO_REVALIDATION_PHASES) that may have excluded phases this
       // resume block runs for the first time (e.g. full-suite-rectify excludes
@@ -457,13 +510,22 @@ export class ExecutionPlan {
       this.state.adversarialReview?.slot.op.name,
     ].filter((name): name is string => name !== undefined);
     const missingRequiredReviewPhases = requiredReviewPhaseNames.filter((name) => !(name in phaseOutputs));
-    if (missingRequiredReviewPhases.length > 0) {
-      logger?.warn(
-        "story-orchestrator",
-        "Configured review phase(s) never ran — story cannot pass without review judgment, failing for escalation",
-        { storyId: this.ctx.storyId, packageDir: this.ctx.packageDir, missingRequiredReviewPhases },
-      );
-    }
+
+    // Part A (#1666) — see review-phase-report.ts for the two-cause classification
+    // and why only one of them is suppressed from `failedPhases` below.
+    const { upstreamShortCircuited, failedPhaseEntries } = classifyMissingReviewPhases({
+      storyId: this.ctx.storyId,
+      packageDir: this.ctx.packageDir,
+      missingRequiredReviewPhases,
+      shortCircuitPhase,
+      resumeLoopEligible,
+    });
+
+    // Part C (#1666) — feed this attempt's review findings into the cross-attempt
+    // recurrence store so `inspectRecurrenceBreaker` (post-run.ts) can see a same-source
+    // finding repeating across escalation attempts. Runs regardless of `success` — the
+    // breaker needs every attempt's data, not just failing ones.
+    recordReviewRecurrencesForAttempt(this.ctx.runtime, this.ctx.storyId, phaseOutputs);
 
     const success =
       missingRequiredReviewPhases.length === 0 &&
@@ -483,7 +545,9 @@ export class ExecutionPlan {
           return !phasePassed(name, output, this.ctx.storyId);
         })
         .map(([name]) => name),
-      ...missingRequiredReviewPhases.map((name) => `${name} (never ran)`),
+      // Part A (#1666): `failedPhaseEntries` excludes review phases skipped by an
+      // upstream short-circuit — see review-phase-report.ts.
+      ...failedPhaseEntries.map((name) => `${name} (never ran)`),
     ];
     const summary: Record<string, unknown> = {
       storyId: this.ctx.storyId,
@@ -507,7 +571,15 @@ export class ExecutionPlan {
       }));
     }
     if (rectResult.unfixedFindings) summary.unfixedFindingsCount = rectResult.unfixedFindings.length;
-    if (missingRequiredReviewPhases.length > 0) summary.missingRequiredReviewPhases = missingRequiredReviewPhases;
+    if (missingRequiredReviewPhases.length > 0) {
+      summary.missingRequiredReviewPhases = missingRequiredReviewPhases;
+      // Part A (#1666): distinct key so the upstream-short-circuit cause is not
+      // lost even though it is excluded from `failedPhases` above.
+      if (upstreamShortCircuited) {
+        summary.reviewPhasesSkippedByShortCircuit = missingRequiredReviewPhases;
+        summary.shortCircuitPhase = shortCircuitPhase;
+      }
+    }
     if (success) {
       logger?.info("story-orchestrator", "Story orchestration complete", summary);
     } else {

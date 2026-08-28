@@ -6,6 +6,7 @@
 
 import type { BunFile } from "bun";
 import type { IAgentManager } from "@/agents";
+import { AdversarialReviewConfigSchema, SemanticReviewConfigSchema } from "@/config";
 import type { ExecutionConfig, QualityConfig } from "@/config/schema";
 import type { ReviewConfig as ReviewNaxConfig } from "@/config/selectors";
 import type { Iteration } from "@/findings";
@@ -345,14 +346,11 @@ async function runSemanticCheck(opts: RunReviewOptions): Promise<ReviewCheckResu
     naxIgnoreIndex,
     runtime,
   } = opts;
-  const semanticCfg = config.semantic ?? {
-    model: "balanced" as const,
-    diffMode: "ref" as const,
-    resetRefOnRerun: false,
-    rules: [] as string[],
-    timeoutMs: 600_000,
-    // excludePatterns omitted — runSemanticReview derives via resolveReviewExcludePatterns (ADR-009)
-  };
+  // Derived from the schema's own defaults (SSOT, #1666) rather than hand-copied —
+  // a hand-copied fallback silently stops matching SemanticReviewConfig the moment
+  // the schema gains a new required (`.default()`-ed) field.
+  // excludePatterns stays absent — runSemanticReview derives via resolveReviewExcludePatterns (ADR-009).
+  const semanticCfg = config.semantic ?? SemanticReviewConfigSchema.parse({});
   const runSemantic = _reviewSemanticDeps.runSemanticReview;
   return runSemantic({
     workdir,
@@ -391,15 +389,10 @@ async function runAdversarialCheck(opts: RunReviewOptions): Promise<ReviewCheckR
     runtime,
     priorAdversarialIterations,
   } = opts;
-  const adversarialCfg = config.adversarial ?? {
-    model: "balanced" as const,
-    diffMode: "ref" as const,
-    rules: [] as string[],
-    timeoutMs: 600_000,
-    // excludePatterns omitted — collectDiff always appends ALWAYS_EXCLUDED (.nax/ etc.) (ADR-009)
-    parallel: false,
-    maxConcurrentSessions: 2,
-  };
+  // Derived from the schema's own defaults (SSOT, #1666) rather than hand-copied —
+  // same reasoning as semanticCfg above.
+  // excludePatterns stays absent — collectDiff always appends ALWAYS_EXCLUDED (.nax/ etc.) (ADR-009).
+  const adversarialCfg = config.adversarial ?? AdversarialReviewConfigSchema.parse({});
   const runAdversarial = _reviewAdversarialDeps.runAdversarialReview;
   return runAdversarial({
     workdir,
