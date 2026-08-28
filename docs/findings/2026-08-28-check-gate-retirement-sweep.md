@@ -117,21 +117,40 @@ segments" is a fixed shape, so `group: ["../../*", "../../**"]` expresses it exa
 **Re-check when:** Biome gains a barrel/package-boundary rule, or a GritQL plugin can
 take a generated list of barrel paths as input.
 
-### `check:process-cwd` — KEEP for now, but it is the best GritQL pilot available.
+### `check:process-cwd` — DONE. Migrated to `biome-plugins/no-process-cwd.grit` on 2026-08-28.
 
-The script's own header says it is "a temporary grep-based lint guard" to be migrated
-"once Biome supports custom lint rules via its plugin system". **That prerequisite is now
-met** — Biome 2.5.10 has GritQL plugins and this repo already ships three
-(`no-as-never`, `no-absent-value`, `no-empty-catch`).
+The script's own header said it was "a temporary grep-based lint guard" to be migrated
+"once Biome supports custom lint rules via its plugin system". That prerequisite was met —
+Biome 2.5.10 has GritQL plugins and this repo already shipped three
+(`no-as-never`, `no-absent-value`, `no-empty-catch`) — and the migration this section called
+unblocked-but-not-done is now done.
 
-`docs/findings/biome-migration-risk.md` §"`check:process-cwd` — Fair GritQL Pilot" already
-reached the same conclusion and adds the mitigation: the plugin needs precise path scoping
-(`src/cli/**`, `src/commands/**`, `src/config/loader.ts` are legitimately allowed to call
-`process.cwd()`), validated against negative fixtures, with the script kept as a wrapper
-until parity is proven. Nothing in this sweep changes that; it only removes the "Biome
-can't do plugins yet" excuse.
+`docs/findings/biome-migration-risk.md` §"`check:process-cwd` — Fair GritQL Pilot" reached
+the same conclusion first and named the mitigation this migration applied: precise path
+scoping (`src/cli/**`, `src/commands/**`, `src/config/loader.ts` are legitimately allowed to
+call `process.cwd()`), validated against negative fixtures, with the script kept as a
+wrapper until parity was proven. Parity: **0** plugin findings on the real `src/` tree
+(all 32 real `process.cwd()` occurrences there sit inside the three exempt paths) and a
+**1-finding** hit on a planted violation in a non-exempt path. Both numbers, plus the
+planted-violation diagnostic text, are recorded in the commit that retired the script.
 
-**Status:** unblocked, not done. Genuinely actionable work, not a ruling to re-check.
+**New finding this migration surfaced, not yet in either doc above:** a GritQL plugin that
+fails to load — an invalid pattern, or a capturing regex group, which GritQL reads as a
+variable binding — reports `<name> errored: ...` at **info** severity with exit 0. That is
+indistinguishable from a clean run in both human and `--reporter=json` output. A first
+attempt at this plugin used `span = $_`, which is invalid GritQL ("cannot make resolved
+pattern from arbitrary pattern UNDERSCORE"); it reported zero hits, which reads exactly
+like a correctly-scoped zero. **A "0 findings" result from any GritQL plugin is meaningless
+without a planted positive control** — plant a violation and confirm it fires before
+trusting a zero, in every plugin measurement, not just this one.
+
+The exemption list is expressed as a `biome.json` `overrides` entry with negated
+`includes` (`["src/**", "!src/cli/**", "!src/commands/**", "!src/config/loader.ts"]`),
+scoped to that one override rather than the root `plugins` array — unlike `no-as-never` and
+`no-empty-catch`, which are root-scoped because they apply repo-wide. The scoping and the
+silent-disarm trap are both pinned by
+`test/unit/scripts/biome-no-process-cwd-plugin.test.ts`, following
+`biome-no-empty-catch-plugin.test.ts`'s technique for the "does not error" assertion.
 
 ### `check:test-mocks` — KEEP. Already ruled on; no change.
 

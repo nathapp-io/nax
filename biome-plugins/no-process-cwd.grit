@@ -1,0 +1,37 @@
+language js
+
+// `process.cwd()` outside the permitted CLI entry points. nax resolves a
+// project's working directory once, at the CLI boundary, and threads it down
+// through config/context — a `process.cwd()` call anywhere else silently
+// re-derives it against whatever directory the *process* happens to be
+// running in, which can disagree with the resolved project root (worktrees,
+// tests that `cd`, nested invocations).
+//
+// Scoped in biome.json's `overrides` to `src/**` minus the three permitted
+// entry points (`src/cli/**`, `src/commands/**`, `src/config/loader.ts`) via
+// negated `includes` — the same exemption list
+// `scripts/check-process-cwd.sh` carried. `bin/`, `test/` and `scripts/`
+// are deliberately NOT in scope: this gate only ever covered `src/`, and
+// widening it would mean draining 102 combined occurrences that are
+// legitimately outside it.
+//
+// This is the ONLY gate on the shape. It replaced
+// `scripts/check-process-cwd.sh`, a 26-line grep, which retired once parity
+// was measured: 32 `process.cwd()` occurrences in `src/`, and all 32 are
+// inside the three exempt paths, so the correct plugin output on the real
+// tree is exactly 0 — proven against a planted violation in a non-exempt
+// file (see test/unit/scripts/biome-no-process-cwd-plugin.test.ts) rather
+// than trusted as a bare zero. A GritQL plugin that fails to load reports
+// `<name> errored: ...` at **info** severity with exit 0 — indistinguishable
+// from a clean run — so a "0 findings" result is meaningless without a
+// planted positive control; that trap is why this pattern avoids `$_` and
+// any capturing regex group.
+//
+// Because nothing else watches this shape, the wiring is pinned behind
+// test/unit/scripts/biome-no-process-cwd-plugin.test.ts.
+`process.cwd()` as $call where {
+  register_diagnostic(
+    span = $call,
+    message = "`process.cwd()` outside the permitted CLI entry points (src/cli/**, src/commands/**, src/config/loader.ts). Thread the resolved working directory down through config/context instead — see .nax/rules/project-conventions.md."
+  )
+}
