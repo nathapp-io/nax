@@ -31,7 +31,7 @@ export class WorktreeManager {
     // (e.g. parallel story setup) don't interleave read-read-write-write
     // and clobber each other's appended entries. Without this, the last
     // writer wins and one story's entries silently disappear. mkdir first
-    // so the lock's candidate-file write can land in `.git/info/`.
+    // so the lock file can land in `.git/info/`.
     await mkdir(infoDir, { recursive: true });
 
     const { withPathFileLock } = await import("../utils/path-file-lock");

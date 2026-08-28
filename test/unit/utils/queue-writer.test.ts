@@ -64,13 +64,17 @@ describe("writeQueueCommand", () => {
   });
 
   test("recovers an ownership lock left by a crashed writer", async () => {
+    // Legacy candidate-format lock from the pre-#1731 design. It is inert
+    // under the exclusive-create scheme (different file name) and must not
+    // wedge the queue write. The new scheme's equivalent — a leaked
+    // `<queue>.lock` with a proven-dead holder pid — is reclaimed during
+    // acquisition; see file-lock.test.ts.
     const orphan = `${queueFile}.lock.0000000000001.2147483647.orphan`;
     await Bun.write(orphan, "");
 
     await writeQueueCommand(queueFile, { type: "PAUSE" });
 
     expect(parseQueueFile(await Bun.file(queueFile).text()).commands).toEqual([{ type: "PAUSE" }]);
-    expect(await Bun.file(orphan).exists()).toBe(false);
   });
 
   // BUG-10: age-based eviction of a lock whose pid is still alive was removed —

@@ -71,9 +71,9 @@ export async function appendToRollup(observations: Observation[], rollupPath: st
   // and then destroyed by the rename. Telemetry loss only — but the
   // curator's whole purpose is preserving observations.
   //
-  // mkdir first so the lock-candidate file can land on disk; the
-  // path-file-lock requires the parent directory to exist before it can
-  // write its `<path>.lock.<ts>.<pid>.<uuid>` candidate.
+  // mkdir first so the lock file can land on disk; the path-file-lock
+  // requires the parent directory to exist before it can create its
+  // `<path>.lock` file.
   const dir = path.dirname(rollupPath);
   await mkdir(dir, { recursive: true }).catch(() => {
     // Already-exists or read-only parent surfaces inside the locked body.

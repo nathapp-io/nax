@@ -1,107 +1,28 @@
-import { randomUUID } from "node:crypto";
-import { open, readdir, stat, unlink } from "node:fs/promises";
-import { basename, dirname } from "node:path";
-import { isProcessAlive } from "./process-alive";
-
-const LOCK_RETRY_MS = 10;
-const LOCK_TIMEOUT_MS = 5_000;
-const LOCK_TIME_WIDTH = 13;
-
-// The node:fs/promises signatures are overloaded; this module only ever calls
-// readdir with a directory string and reads the names as strings. Declaring the
-// seam at that used slice keeps stubs from needing an assertion (#1514
-// callop-seam): a mock returning string[] satisfies it, the real readdir is
-// still assignable, and nothing here can receive Dirent[]/Buffer[].
-type ReadDirNames = (path: string) => Promise<string[]>;
-
-export const _queueLockDeps = {
-  open,
-  readdir: readdir as ReadDirNames,
-  stat,
-  unlink,
-  randomUUID,
-  now: () => Date.now(),
-  sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
-  isPidAlive: isProcessAlive,
-};
-
-function buildCandidatePath(queuePath: string): string {
-  const time = _queueLockDeps.now().toString().padStart(LOCK_TIME_WIDTH, "0");
-  return `${queuePath}.lock.${time}.${process.pid}.${_queueLockDeps.randomUUID()}`;
-}
-
-function candidatePid(fileName: string): number | null {
-  const segments = fileName.split(".");
-  const pid = Number(segments.at(-2));
-  return Number.isInteger(pid) && pid > 0 ? pid : null;
-}
-
-function candidateTime(fileName: string): number | null {
-  const segments = fileName.split(".");
-  try {
-    const timestamp = Number(segments.at(-3));
-    return Number.isFinite(timestamp) ? timestamp : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
+ * Queue-file lock: serializes read-modify-write sequences on the mid-run
+ * queue file so a queued PAUSE/ABORT/SKIP command cannot be lost to a
+ * concurrent writer.
+ *
+ * Implementation is the shared single-file exclusive-create lock in
+ * `file-lock.ts` (see its module doc for the #1731 correctness argument).
+ * Staleness rules carried over from the candidate design:
+ *
  * BUG-10: a lock whose holder pid is still alive must never be unlinked,
  * no matter how old it is — a long-held lock (slow queue command) is not
  * the same as an abandoned one.
  *
- * BUG-25: when the candidate's own timestamp can't be parsed (renamed
- * scheme, older format), liveness can't be judged from age alone. Fall
- * back to the pid liveness check — a live pid must keep its lock. The
- * MAX_LOCK_AGE_MS bound is still applied at the caller when the timestamp
- * is missing AND the pid is dead.
+ * BUG-25: when the holder pid can't be parsed (creator crashed between
+ * create and pid write, older format), liveness can't be judged — the
+ * waiter fails closed (waits, then times out) rather than entering over a
+ * possible holder. The unparseable file is only reclaimed after
+ * `EMPTY_LOCK_EVICT_AGE_MS`, which proves creator death.
  */
-function isLiveCandidate(pid: number | null, createdAt: number | null): boolean {
-  if (pid === null) return false;
-  if (createdAt !== null) return _queueLockDeps.isPidAlive(pid);
-  // BUG-25: timestamp unparseable — consult pid liveness before evicting.
-  return _queueLockDeps.isPidAlive(pid);
-}
 
-export async function listLiveCandidates(queuePath: string): Promise<string[]> {
-  const directory = dirname(queuePath);
-  const prefix = `${basename(queuePath)}.lock.`;
-  const candidates = (await _queueLockDeps.readdir(directory)).filter((name) => name.startsWith(prefix));
-  const live: Array<{ name: string; createdAt: number }> = [];
-  for (const candidate of candidates) {
-    const pid = candidatePid(candidate);
-    const createdAt = candidateTime(candidate);
-    const candidatePath = `${directory}/${candidate}`;
-    if (isLiveCandidate(pid, createdAt)) {
-      const stats = await _queueLockDeps.stat(candidatePath).catch(() => null);
-      if (stats) live.push({ name: candidate, createdAt: stats.birthtimeMs });
-    } else await _queueLockDeps.unlink(candidatePath).catch(() => {});
-  }
-  return live.sort((a, b) => a.createdAt - b.createdAt || a.name.localeCompare(b.name)).map(({ name }) => name);
-}
-
-async function acquire(queuePath: string): Promise<() => Promise<void>> {
-  const candidatePath = buildCandidatePath(queuePath);
-  const handle = await _queueLockDeps.open(candidatePath, "wx");
-  await handle.close();
-  const deadline = Date.now() + LOCK_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    const candidates = await listLiveCandidates(queuePath);
-    if (candidates[0] === basename(candidatePath)) {
-      return () => _queueLockDeps.unlink(candidatePath).catch(() => {});
-    }
-    await _queueLockDeps.sleep(LOCK_RETRY_MS);
-  }
-  await _queueLockDeps.unlink(candidatePath).catch(() => {});
-  throw new Error(`[queue] Timed out acquiring queue lock: ${queuePath}`);
-}
+import { withFileLock } from "./file-lock";
 
 export async function withQueueFileLock<T>(queuePath: string, operation: () => Promise<T>): Promise<T> {
-  const release = await acquire(queuePath);
-  try {
-    return await operation();
-  } finally {
-    await release();
-  }
+  return withFileLock(`${queuePath}.lock`, operation, {
+    lockName: "queue",
+    errorPrefix: "[queue]",
+  });
 }
