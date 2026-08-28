@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { ConfiguredModelSchema } from "./schemas-model";
 
-const SemanticReviewConfigSchema = z.object({
+export const SemanticReviewConfigSchema = z.object({
   /**
    * Model selector for semantic review. Tier label or `{ agent, model }` pin.
    * Renamed from `modelTier` (schema-types ConfiguredModel widening). Legacy
@@ -49,6 +49,20 @@ const SemanticReviewConfigSchema = z.object({
    * Mirrors the adversarial field so the guard is configurable on both reviewers.
    */
   demandInspectionTrail: z.boolean().default(true),
+  /**
+   * When true (default), after the first semantic pass, if all blocking findings
+   * were dropped by AC-grounding (filterByAcGroundingMinimal) while no blocking
+   * findings remain, issue one reprompt asking the reviewer to re-ground their
+   * findings against the AC text. Mirrors the adversarial field of the same name.
+   *
+   * #1666 — this field existed on the hand-written `SemanticReviewConfig`
+   * interface (src/review/types.ts) and was read unconditionally by
+   * src/operations/semantic-review.ts, but was missing from THIS schema — so
+   * `semanticConfig.acRegroundOnDrop` was always `undefined` at runtime and the
+   * knob could never actually be disabled via config. Caught by the drift guard
+   * added alongside this fix (see review/types.ts).
+   */
+  acRegroundOnDrop: z.boolean().default(true),
   /**
    * Semantic counterpart of the adversarial setting below. A non-blocking-lane
    * error finding blocks for at most `maxBlockingRounds` rounds; once its

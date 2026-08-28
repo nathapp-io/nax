@@ -38,12 +38,12 @@ import {
 } from "./schemas-infra";
 import { ConfiguredModelSchema, ModelMapSchema } from "./schemas-model";
 import { ReportersConfigSchema } from "./schemas-reporters";
-import { AdversarialReviewConfigSchema, ReviewConfigSchema } from "./schemas-review";
+import { AdversarialReviewConfigSchema, ReviewConfigSchema, SemanticReviewConfigSchema } from "./schemas-review";
 
 export { ContextConfigSchema, ContextV2ConfigSchema } from "./schemas-context";
 // Re-export named schemas consumed by other modules (via config/schema.ts barrel)
 export { AcceptanceConfigSchema, PlanConfigSchema, PromptsConfigSchema } from "./schemas-infra";
-export { AdversarialReviewConfigSchema } from "./schemas-review";
+export { AdversarialReviewConfigSchema, SemanticReviewConfigSchema } from "./schemas-review";
 
 export const NaxConfigSchema = z
   .object({
@@ -232,18 +232,14 @@ export const NaxConfigSchema = z
 
       pluginMode: "observational",
       parseRetryMaxAttempts: 3,
+      // Derived from the schema's own defaults (SSOT, issue #1338 / #1666) so new
+      // SemanticReviewConfigSchema fields (e.g. acRegroundOnDrop) flow in
+      // automatically instead of being hand-copied here — a hand-copied literal
+      // silently stops matching the schema's OUTPUT type the moment a new
+      // required (`.default()`-ed) field is added, since `.default()`'s value
+      // argument must satisfy the full output shape.
       semantic: {
-        model: "balanced",
-        diffMode: "ref",
-        resetRefOnRerun: false,
-        rules: [],
-        timeoutMs: 600_000,
-        demandInspectionTrail: true,
-        recurrenceDemotion: { enabled: false, maxBlockingRounds: 2 },
-        substantiation: {
-          requote: true,
-          maxRequotes: 5,
-        },
+        ...SemanticReviewConfigSchema.parse({}),
         excludePatterns: [
           ":!test/",
           ":!tests/",

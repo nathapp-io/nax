@@ -84,7 +84,7 @@ export {
   RoutingConfigSchema,
 } from "./schemas-infra";
 export { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
-export { AdversarialReviewConfigSchema, ReviewConfigSchema } from "./schemas-review";
+export { AdversarialReviewConfigSchema, ReviewConfigSchema, SemanticReviewConfigSchema } from "./schemas-review";
 export type { ConfigSelector } from "./selector";
 export { pickSelector, reshapeSelector } from "./selector";
 export type {
