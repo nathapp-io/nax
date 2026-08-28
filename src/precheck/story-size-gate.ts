@@ -73,7 +73,7 @@ function analyzeStory(story: UserStory, config: PrecheckConfig): FlaggedStory | 
   };
 
   // Build recommendation message
-  const flaggedSignals = [];
+  const flaggedSignals: string[] = [];
   if (acFlagged) flaggedSignals.push(`${acCount} AC (max ${thresholds.maxAcCount})`);
   if (descFlagged) flaggedSignals.push(`${descriptionLength} chars (max ${thresholds.maxDescriptionLength})`);
   if (bulletsFlagged) flaggedSignals.push(`${bulletPoints} bullets (max ${thresholds.maxBulletPoints})`);

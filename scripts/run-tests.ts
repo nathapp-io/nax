@@ -149,7 +149,7 @@ async function runPhase(phase: Phase): Promise<number> {
   // `null` or non-zero exit signals abnormal termination; always sweep the
   // group as a safety net to prevent orphan accumulation across phases.
   const abnormal = timedOut || exitCode === null || exitCode !== 0;
-  if (timeoutReapPromise) {
+  if (timeoutReapPromise !== undefined) {
     await timeoutReapPromise;
   } else if (abnormal && groupHasSurvivors(pgid)) {
     const reason =

@@ -51,7 +51,7 @@ function makeNaxConfigWithMapping(mapping = PRIOR_MAPPING): NaxConfig {
  * "balanced" — to register a mismatch).
  */
 function makeRunsWithNoBreachingBands(): RunMetrics[] {
-  const stories = [];
+  const stories: RunMetrics["stories"] = [];
   // 10 "simple" stories — first-pass success keeps firstPassRate=1 and
   // escalationRate=0, finalTier == mapped tier so mismatchRate=0; no proposal.
   for (let i = 0; i < 10; i++) {
@@ -88,7 +88,7 @@ function makeRunsWithNoBreachingBands(): RunMetrics[] {
 }
 
 function makeRunsWithEscalatingSimpleBand(): RunMetrics[] {
-  const stories = [];
+  const stories: RunMetrics["stories"] = [];
   // 10 stories in "simple" band, all escalated (attempts > 1) to drive
   // escalationRate=1.0 and finalTier=balanced to drive mismatchRate=1.0
   // (since mapping assigns "fast" but observed "balanced").

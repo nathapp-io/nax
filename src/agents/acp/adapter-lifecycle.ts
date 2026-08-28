@@ -227,7 +227,7 @@ export async function runSessionPrompt(
 
   let winner: AcpSessionResponse | "timeout" | "aborted";
   try {
-    winner = await Promise.race([promptPromise, timeoutPromise, ...(abortPromise ? [abortPromise] : [])]);
+    winner = await Promise.race([promptPromise, timeoutPromise, ...(abortPromise !== null ? [abortPromise] : [])]);
   } finally {
     clearTimeout(timeoutId);
     if (signal && abortHandler) {

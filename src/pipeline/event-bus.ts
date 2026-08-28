@@ -297,7 +297,7 @@ export class PipelineEventBus {
             logger.warn("event-bus", `Subscriber error on ${event.type}`, { error: String(err) });
           }) as Promise<void>;
           this._pending.add(tracked);
-          tracked.finally(() => this._pending.delete(tracked));
+          void tracked.finally(() => this._pending.delete(tracked));
         }
       } catch (err) {
         logger.warn("event-bus", `Subscriber threw on ${event.type}`, { error: String(err) });
