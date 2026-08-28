@@ -144,6 +144,12 @@ export async function refreshReviewInputForDispatch(opName: string, input: unkno
   }
 }
 
+/**
+ * `inRectification` is added as a seventh optional positional parameter rather than
+ * folding `runPhase` into an options object: 57 `runPhase(` call sites across `test/`
+ * depend on the existing positional shape, and that churn would bury a real
+ * regression in noise (nax#1737 Phase B follow-up). This is the minimal change.
+ */
 export async function runPhase(
   ctx: CallContext,
   slot: AnySlot,
@@ -151,6 +157,7 @@ export async function runPhase(
   phaseOutputs: Record<string, unknown>,
   isThreeSession = false,
   progress?: { index: number; total: number },
+  inRectification = false,
 ): Promise<unknown> {
   const logger = getSafeLogger();
   const opName = slot.op.name;
@@ -217,7 +224,7 @@ export async function runPhase(
     // unchanged — this must never fail the phase. Intentionally not memoized:
     // rectify's query_scratch pull tool needs the current verify-result on
     // every retry, and a cached bundle would freeze that stale.
-    const stageKey = contextStageForOp(opName, isThreeSession);
+    const stageKey = contextStageForOp(opName, { isThreeSession, inRectification });
     let phaseBundle: import("@/context/engine").ContextBundle | undefined;
     if (stageKey) {
       try {

@@ -135,3 +135,49 @@ describe("runPhase — assembleStageBundle override (nax#1737 Phase B)", () => {
     expect(dispatchedCtx?.contextBundle).toBe(floorBundle);
   });
 });
+
+describe("runPhase — inRectification override (nax#1737 Phase B2)", () => {
+  test("inRectification=true dispatches autofix-implementer with the rectify bundle", async () => {
+    const rectifyBundle = makeContextBundle({ pushMarkdown: "## rectify bundle" });
+    const floorBundle = makeContextBundle({ pushMarkdown: "## floor bundle" });
+    const ctx = makeMockCallContext({
+      contextBundle: floorBundle,
+      assembleStageBundle: async (stage: string) => (stage === "rectify" ? rectifyBundle : undefined),
+    });
+
+    await runPhase(ctx, makeSlot("autofix-implementer"), {}, {}, false, undefined, true);
+
+    expect(dispatchedCtx?.contextBundle).toBe(rectifyBundle);
+  });
+
+  test("the same op with inRectification=false does not override", async () => {
+    const rectifyBundle = makeContextBundle({ pushMarkdown: "## rectify bundle" });
+    const floorBundle = makeContextBundle({ pushMarkdown: "## floor bundle" });
+    const ctx = makeMockCallContext({
+      contextBundle: floorBundle,
+      assembleStageBundle: async () => rectifyBundle,
+    });
+
+    await runPhase(ctx, makeSlot("autofix-implementer"), {}, {}, false, undefined, false);
+
+    expect(dispatchedCtx?.contextBundle).toBe(floorBundle);
+  });
+
+  test("inRectification=true takes precedence over isThreeSession for implementer", async () => {
+    const rectifyBundle = makeContextBundle({ pushMarkdown: "## rectify bundle" });
+    const tddBundle = makeContextBundle({ pushMarkdown: "## tdd-implementer bundle" });
+    const floorBundle = makeContextBundle({ pushMarkdown: "## floor bundle" });
+    const ctx = makeMockCallContext({
+      contextBundle: floorBundle,
+      assembleStageBundle: async (stage: string) => {
+        if (stage === "rectify") return rectifyBundle;
+        if (stage === "tdd-implementer") return tddBundle;
+        return undefined;
+      },
+    });
+
+    await runPhase(ctx, makeSlot("implementer"), {}, {}, true, undefined, true);
+
+    expect(dispatchedCtx?.contextBundle).toBe(rectifyBundle);
+  });
+});
