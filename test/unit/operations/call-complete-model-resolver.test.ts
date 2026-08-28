@@ -99,4 +99,29 @@ describe("callOp injects a per-agent model resolver (nax#1739)", () => {
 
     expect(seen[0].modelDefFor?.("claude")).toEqual(seen[0].modelDef);
   });
+
+  test("AC-8: an agent with no models entry degrades to the default agent's, exactly as run() does", async () => {
+    const seen: CompleteOptions[] = [];
+    const runtime = makeMockRuntime({
+      agentManager: makeMockAgentManager({
+        completeAsWithFallbackFn: async (_a: string, _p: string, options?: CompleteOptions) => {
+          if (options) seen.push(options);
+          return {
+            result: { output: "out", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 },
+            fallbacks: [],
+          };
+        },
+      }),
+      config: makeNaxConfig({ agent: { default: "claude" }, models: { claude: MODELS.claude } }),
+    });
+    createdRuntimes.push(runtime);
+
+    await callOp(ctxFor(runtime), makeCompleteOp(), "input");
+
+    // resolveModelForAgent falls back to models[defaultAgent][tier] before throwing,
+    // so a fallback agent the operator never gave models still dispatches the default
+    // agent's model. Pinned rather than fixed: the run() path resolves identically
+    // (build-hop-callback.ts), and diverging here would put the two seams out of step.
+    expect(seen[0].modelDefFor?.("agent-with-no-models")?.model).toBe("claude-sonnet");
+  });
 });

@@ -14,6 +14,7 @@ import { makeAgentAdapter, makeAgentRegistry, makeNaxConfig } from "@test/helper
 import { AgentManager } from "@/agents/manager";
 import type { AgentAdapter, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
 import type { ModelDef } from "@/config";
+import { DispatchEventBus } from "@/runtime/dispatch-events";
 
 const CLAUDE_MODEL: ModelDef = { provider: "anthropic", model: "haiku", env: {} };
 const CODEX_MODEL: ModelDef = { provider: "openai", model: "gpt-5.6-luna", env: {} };
@@ -46,7 +47,7 @@ function recordingAdapter(seen: ResolvedCompleteOptions[]): AgentAdapter {
   });
 }
 
-function swappingManager(seen: ResolvedCompleteOptions[]): AgentManager {
+function swappingManager(seen: ResolvedCompleteOptions[], dispatchEvents?: DispatchEventBus): AgentManager {
   const primary = failingAvailability();
   const secondary = recordingAdapter(seen);
   const config = makeNaxConfig({
@@ -64,6 +65,7 @@ function swappingManager(seen: ResolvedCompleteOptions[]): AgentManager {
   return new AgentManager(
     config,
     makeAgentRegistry({ getAgent: (name: string) => (name === "claude" ? primary : secondary) }),
+    dispatchEvents ? { dispatchEvents } : undefined,
   );
 }
 
@@ -118,5 +120,23 @@ describe("completeWithFallback model re-resolution (nax#1739)", () => {
     expect(seen).toHaveLength(1);
     expect(seen[0].modelDef).toEqual(CODEX_MODEL);
     expect(modelDefFor).not.toHaveBeenCalled();
+  });
+
+  test("AC-8: the complete dispatch event attributes the hop that actually ran", async () => {
+    const seen: ResolvedCompleteOptions[] = [];
+    const bus = new DispatchEventBus();
+    const events: { agentName: string; model?: string }[] = [];
+    bus.onDispatch((e) => {
+      if (e.kind === "complete") events.push({ agentName: e.agentName, model: e.model });
+    });
+
+    await swappingManager(seen, bus).completeAsWithFallback("claude", "hi", {
+      ...BASE_OPTS,
+      modelDefFor: (agent: string) => (agent === "claude" ? CLAUDE_MODEL : CODEX_MODEL),
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0].agentName).toBe("codex");
+    expect(events[0].model).toBe("gpt-5.6-luna");
   });
 });

@@ -27,6 +27,7 @@ import {
   buildDispatchErrorEvent,
   buildFallbackRecord,
   buildSessionTurnEvent,
+  resolveFinalDispatch,
   resolveHopCompleteOptions,
 } from "./manager-dispatch";
 import type {
@@ -729,9 +730,8 @@ export class AgentManager implements IAgentManager {
         sessionName,
         prompt,
         response: outcome.result.output,
-        agentName,
+        ...resolveFinalDispatch(augmented, agentName, outcome.fallbacks),
         stage,
-        options,
         resolvedPermissions,
         tokenUsage: outcome.result.tokenUsage,
         estimatedCostUsd: outcome.result.estimatedCostUsd,
