@@ -15,7 +15,6 @@ import { getSafeLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline";
 import type { PRD, StructuredFailure, UserStory, VerificationStage } from "@/prd";
 import { markStoryFailed, savePRD } from "@/prd";
-import { tryLlmBatchRoute } from "@/routing";
 import type { FailureCategory } from "@/tdd/types";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalation";
 import { appendProgress } from "../progress";
@@ -178,7 +177,6 @@ export async function preIterationTierCheck(
   const currentRung = hasAgentRungs ? { tier: currentTier, agent: story.routing?.agent } : { tier: currentTier };
   const escalationResult = escalateTier(currentRung, tierOrder);
   const nextAgent = escalationResult?.agent;
-  const routingMode = config.routing?.llm?.mode ?? "hybrid";
 
   if (escalationResult && config.autoMode?.escalation?.enabled) {
     const escalatedTier = escalationResult.tier;
@@ -243,21 +241,8 @@ export async function preIterationTierCheck(
       toTier: escalatedTier,
     });
 
-    // No routing-cache invalidation needed here: resolveRouting's "PRD wins"
-    // branch (router.ts) short-circuits on story.routing.complexity +
-    // testStrategy, which this function sets on the story above and never
-    // clears. Any story reaching escalation has already been routed, so its
-    // cache entry — if any — is never read again regardless of whether it's
-    // cleared. The hybrid re-route immediately below (`runtime: undefined`)
-    // is inert for the same reason, independent of its missing runtime.
-
-    // Hybrid mode: re-route story after escalation
-    if (routingMode === "hybrid") {
-      await tryLlmBatchRoute(config, [story], "hybrid-re-route", {
-        agentManager: undefined,
-        runtime: undefined,
-      });
-    }
+    // No routing-cache invalidation needed. Escalation does not LLM-re-route
+    // (see #1710); tier is deterministic and ladder's testStrategy is authoritative.
 
     // Skip to next iteration (will reload PRD and use new tier)
     return { shouldSkipIteration: true, prdDirty: true, prd: updatedPrd };
@@ -450,7 +435,6 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   // (the three-session test-writer is skipped on greenfield, BUG-010); tdd-simple is
   // preferred over test-after because it writes tests first (RED) from the ACs.
   const escalateRetryAsTddSimple = escalateFailureCategory === "greenfield-no-tests";
-  const routingMode = ctx.config.routing.llm?.mode ?? "hybrid";
 
   if (!escalationResult || !ctx.config.autoMode.escalation.enabled) {
     // No next tier or escalation disabled — pause or fail based on failure category
@@ -574,19 +558,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
 
   await _tierEscalationDeps.savePRD(updatedPrd, ctx.prdPath);
 
-  // No routing-cache invalidation needed here, for the same reason as
-  // preIterationTierCheck above: updatedRouting preserves complexity and
-  // testStrategy, so resolveRouting's "PRD wins" short-circuit means any
-  // cache entry for an escalated story is never read again regardless of
-  // whether it's cleared.
-
-  // Hybrid mode: re-route escalated stories
-  if (routingMode === "hybrid") {
-    await tryLlmBatchRoute(ctx.config, storiesToEscalate, "hybrid-re-route-pipeline", {
-      agentManager: ctx.agentManager,
-      // runtime deliberately NOT forwarded — would activate a billable re-route. See #1710.
-    });
-  }
+  // Escalation does not LLM-re-route; tier is deterministic. See #1710.
 
   pipelineEventBus.emit({
     type: "story:escalated",
