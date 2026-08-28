@@ -46,12 +46,13 @@ const DEFAULT_MAX_HOPS = 2;
  * declining every swap that arrived without a ContextBundle. It was correct in #474,
  * where the swap lived in the execution stage and *was* the bundle rebuild; ADR-019
  * (#749) moved the swap into AgentManager and rebased the gate onto
- * `CallContext.contextBundle` — a field no call site in src/ populates. The gate was
- * therefore false for every run() dispatch in production and inert on the complete()
- * path, which passed a literal `true` past it. Swapping needs no bundle: the swap
- * branch never dereferences one, and `buildHopCallback` skips the rebuild when there
- * is none. Threading the bundle to the CallContexts is a separate defect (it also
- * gates every context pull tool) tracked on its own issue.
+ * `CallContext.contextBundle` — a field no call site in src/ populated at the time.
+ * The gate was therefore false for every run() dispatch in production and inert on
+ * the complete() path, which passed a literal `true` past it. Swapping needs no
+ * bundle: the swap branch never dereferences one, and `buildHopCallback` skips the
+ * rebuild when there is none. nax#1737 has since threaded the bundle from
+ * `PipelineContext` onto the execution stage's CallContext, which is what makes the
+ * rebuild and the context pull tools reachable — but the gate stays removed.
  */
 export function decideSwap(
   failure: AdapterFailure | undefined,

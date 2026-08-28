@@ -2,7 +2,7 @@ import { computeAcpHandle } from "../agents";
 import { ParseValidationError } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
 import type { ConfiguredModel } from "../config";
-import { DEFAULT_CONFIG, resolveConfiguredModel } from "../config";
+import { DEFAULT_CONFIG, resolveConfiguredModel, resolveModelForAgent } from "../config";
 import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
@@ -88,6 +88,16 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
         : undefined;
     const completeOptions = {
       modelDef: resolved.modelDef,
+      // nax#1739: `resolved.modelDef` belongs to `dispatchAgent`. When
+      // completeWithFallback swaps agents it must dispatch the NEW agent's model,
+      // or acpx receives a `--model` that agent never advertised. Mirrors the
+      // run() path's pinnedModelAgent semantics (build-hop-callback.ts): a
+      // caller-pinned `{ agent, model }` survives for its own agent, and any
+      // other agent re-resolves from its own tier map.
+      modelDefFor: (agent: string) =>
+        agent === dispatchAgent
+          ? resolved.modelDef
+          : resolveModelForAgent(effectiveModels, agent, effectiveTier, defaultAgent),
       ...(resolved.modelTier !== undefined ? { modelTier: resolved.modelTier } : {}),
       jsonMode: completeOp.jsonMode ?? false,
       pipelineStage: op.stage,

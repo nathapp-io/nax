@@ -240,6 +240,18 @@ export interface CompleteOptions extends TrackedSpawnDeadlineOptions {
    */
   modelDef: ModelDef;
   /**
+   * Optional per-agent model resolver, consulted by `completeWithFallback` after
+   * an agent swap (nax#1739). `modelDef` above is resolved for the PRIMARY agent
+   * only; dispatching it verbatim to a fallback agent sends acpx a `--model` the
+   * new agent never advertised, which the ACP agent rejects outright.
+   *
+   * The manager cannot re-resolve on its own — `agentManagerConfigSelector` picks
+   * no `models` slice — so model policy stays at the `callOp` seam that already
+   * owns it (ADR-019: the manager owns the swap loop, callOp owns model
+   * resolution). Absent, or returning undefined, leaves `modelDef` in place.
+   */
+  modelDefFor?: (agentName: string) => ModelDef | undefined;
+  /**
    * Tier the model was resolved from, when it came from one. Absent when an
    * explicit `{ agent, model }` pin bypassed tier resolution. Recorded on cost
    * rows for attribution (#1433) — never branch on it.

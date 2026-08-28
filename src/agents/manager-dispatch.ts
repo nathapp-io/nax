@@ -207,6 +207,48 @@ export function buildCompleteCallPreamble(input: {
 }
 
 /**
+ * Resolve the CompleteOptions for one hop of `completeWithFallback`.
+ *
+ * nax#1739: `options.modelDef` was resolved by the caller for the PRIMARY agent.
+ * Reusing it after a swap dispatches `acpx --model <primary's model> <new agent>`,
+ * which the ACP agent rejects — it never advertised that model. The manager cannot
+ * re-resolve on its own (`agentManagerConfigSelector` picks no `models` slice), so
+ * the caller injects `modelDefFor` and this reads it.
+ *
+ * Mirrors the run() path's `pinnedModelAgent` (build-hop-callback.ts): the primary
+ * keeps the model it was resolved with — so an explicit `{ agent, model }` pin
+ * survives — and only a swapped-to agent re-resolves. A missing or undefined
+ * resolution leaves `modelDef` untouched, preserving pre-#1739 behaviour.
+ */
+export function resolveHopCompleteOptions(
+  options: ResolvedCompleteOptions,
+  currentAgent: string,
+  primaryAgent: string,
+): ResolvedCompleteOptions {
+  if (currentAgent === primaryAgent) return options;
+  return { ...options, modelDef: options.modelDefFor?.(currentAgent) ?? options.modelDef };
+}
+
+/**
+ * Attribute a finished `completeWithFallback` operation to the hop that actually ran.
+ *
+ * `buildCompleteEvent` used to receive the primary's agent name and the primary's
+ * `modelDef`, so after a swap the cost row credited the primary for the fallback
+ * agent's spend. That was invisible while nax#1739 dispatched the primary's model
+ * regardless; once the dispatch is correct, the event must follow it. The last
+ * fallback record names the final agent — same-agent fail-stale retries record
+ * `newAgent === priorAgent`, so it holds for those too.
+ */
+export function resolveFinalDispatch(
+  options: ResolvedCompleteOptions,
+  primaryAgent: string,
+  fallbacks: readonly AgentFallbackRecord[],
+): { agentName: string; options: ResolvedCompleteOptions } {
+  const agentName = fallbacks.at(-1)?.newAgent ?? primaryAgent;
+  return { agentName, options: resolveHopCompleteOptions(options, agentName, primaryAgent) };
+}
+
+/**
  * Build an AgentFallbackRecord.
  *
  * nax#1712: completeWithFallback used to build its same-agent retry record and its

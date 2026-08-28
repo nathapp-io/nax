@@ -27,6 +27,8 @@ import {
   buildDispatchErrorEvent,
   buildFallbackRecord,
   buildSessionTurnEvent,
+  resolveFinalDispatch,
+  resolveHopCompleteOptions,
 } from "./manager-dispatch";
 import type {
   AgentCompleteOutcome,
@@ -458,9 +460,7 @@ export class AgentManager implements IAgentManager {
     const logger = this._loggerOverride ?? getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
-    // No dead-primary skip here (nax#1722): `options.modelDef` is resolved for THIS agent
-    // and this path cannot re-resolve it — the manager's config slice carries no `models`.
-    // The hop budget is still shared with the run path.
+    // No dead-primary skip (nax#1722); swapped hops re-resolve the model (nax#1739). Hop budget shared with run().
     let currentAgent = primaryAgent;
     let hopsSoFar = this._budget.spent(options.storyId);
     let staleRetryAttempts = 0;
@@ -482,15 +482,16 @@ export class AgentManager implements IAgentManager {
           });
         }
 
+        const hopOptions = resolveHopCompleteOptions(options, currentAgent, primaryAgent);
         let result: CompleteResult;
         try {
           const optionsWithLifecycle: ResolvedCompleteOptions = this._pidRegistry
             ? {
-                ...options,
+                ...hopOptions,
                 onPidSpawned: (pid: number) => this._pidRegistry?.register(pid),
                 onPidExited: (pid: number) => this._pidRegistry?.unregister(pid),
               }
-            : options;
+            : hopOptions;
           result = await adapter.complete(prompt, optionsWithLifecycle);
         } catch (err) {
           result = {
@@ -729,9 +730,8 @@ export class AgentManager implements IAgentManager {
         sessionName,
         prompt,
         response: outcome.result.output,
-        agentName,
+        ...resolveFinalDispatch(augmented, agentName, outcome.fallbacks),
         stage,
-        options,
         resolvedPermissions,
         tokenUsage: outcome.result.tokenUsage,
         estimatedCostUsd: outcome.result.estimatedCostUsd,

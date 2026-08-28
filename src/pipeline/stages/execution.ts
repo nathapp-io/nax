@@ -97,6 +97,14 @@ export const executionStage: PipelineStage = {
       packageView,
       packageDir: ctx.workdir,
       ...(ctx.contextToolRunCounter ? { contextToolRunCounter: ctx.contextToolRunCounter } : {}),
+      // nax#1737: hand the assembled bundle to callOp -> runWithFallback, which
+      // gates both the cross-agent rebuildForAgent + swap-handoff prompt rewrite
+      // and createContextToolRuntime on its presence. Omitting it made
+      // `agent.fallback.rebuildContext` configure nothing and left every pull
+      // tool unreachable — while contextToolRunCounter above was already threaded.
+      // promptStage overwrites ctx.contextBundle with the execution-stage
+      // assembly where it runs; the contextStage bundle is the floor elsewhere.
+      ...(ctx.contextBundle ? { contextBundle: ctx.contextBundle } : {}),
       // US-005: thread the story scratch dirs the stage-assembly path resolved
       // so the pull-tool runtime's query_scratch handler reads the same JSONL
       // the push providers (SessionScratchProvider / ToolDiagnosticsProvider)
