@@ -235,6 +235,39 @@ describe("PlanPromptBuilder.buildRefineContinuation()", () => {
     expect(result.toLowerCase()).toMatch(/flaws|adversarial/);
     expect(result).not.toContain("```json");
   });
+
+  test("spec-ac-preservation audit item calls out qualifying-clause phrasing by name (#1667)", () => {
+    const result = new PlanPromptBuilder().buildRefineContinuation("/path/to/prd.json");
+    expect(result).toContain("spec-ac-preservation");
+    expect(result).toContain("qualifying clause");
+    expect(result).toContain("regression anchor");
+    for (const phrase of ["matching", "unchanged", "existing", "as before", "already", "preserving"]) {
+      expect(result).toContain(phrase);
+    }
+  });
+});
+
+// ─── AC qualifying-clause preservation in schema guidance (#1667) ────────────
+
+describe("PlanPromptBuilder.build — AC qualifying-clause preservation (#1667)", () => {
+  test("outputFormat schema softens 'One assertion per AC' to spare a trailing qualifying clause", () => {
+    const { outputFormat } = new PlanPromptBuilder().build(SPEC, CTX);
+    expect(outputFormat).toContain("One assertion per AC");
+    expect(outputFormat).toContain("not a second assertion");
+  });
+
+  test("second-prompt schema ('One assertion per item') also spares a trailing qualifying clause", () => {
+    const draft = new PlanPromptBuilder().buildDraft({
+      manifestSection: "## Manifest\n",
+      specContent: SPEC,
+      codebaseContext: CTX,
+      feature: "feat",
+      branchName: "feat/x",
+      citationThreshold: 0.5,
+    });
+    expect(draft.task.content).toContain("One assertion per item");
+    expect(draft.task.content).toContain("not a second assertion");
+  });
 });
 
 // ─── Source Roots section (wireSourceRoots story) ─────────────────────────────
