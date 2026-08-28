@@ -207,6 +207,29 @@ export function buildCompleteCallPreamble(input: {
 }
 
 /**
+ * Resolve the CompleteOptions for one hop of `completeWithFallback`.
+ *
+ * nax#1739: `options.modelDef` was resolved by the caller for the PRIMARY agent.
+ * Reusing it after a swap dispatches `acpx --model <primary's model> <new agent>`,
+ * which the ACP agent rejects — it never advertised that model. The manager cannot
+ * re-resolve on its own (`agentManagerConfigSelector` picks no `models` slice), so
+ * the caller injects `modelDefFor` and this reads it.
+ *
+ * Mirrors the run() path's `pinnedModelAgent` (build-hop-callback.ts): the primary
+ * keeps the model it was resolved with — so an explicit `{ agent, model }` pin
+ * survives — and only a swapped-to agent re-resolves. A missing or undefined
+ * resolution leaves `modelDef` untouched, preserving pre-#1739 behaviour.
+ */
+export function resolveHopCompleteOptions(
+  options: ResolvedCompleteOptions,
+  currentAgent: string,
+  primaryAgent: string,
+): ResolvedCompleteOptions {
+  if (currentAgent === primaryAgent) return options;
+  return { ...options, modelDef: options.modelDefFor?.(currentAgent) ?? options.modelDef };
+}
+
+/**
  * Build an AgentFallbackRecord.
  *
  * nax#1712: completeWithFallback used to build its same-agent retry record and its
