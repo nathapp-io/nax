@@ -166,9 +166,7 @@ describe("_sessionManagerDeps.writeDescriptor (production impl)", () => {
         scratchDir: nestedScratch,
       }),
     );
-    const parsed: { workdir?: unknown } = JSON.parse(
-      await Bun.file(join(nestedScratch, "descriptor.json")).text(),
-    );
+    const parsed: { workdir?: unknown } = JSON.parse(await Bun.file(join(nestedScratch, "descriptor.json")).text());
     expect(parsed.workdir).toBe("src");
   });
 });
