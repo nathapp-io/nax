@@ -37,6 +37,7 @@ export { analyzeTestExitCode, formatFailureSummary, parseBunTestOutput, parseTes
 export type { ResolvedTestPatterns } from "./resolver";
 export {
   _resolverDeps,
+  buildResolved,
   findPackageDir,
   resolveReviewExcludePatterns,
   resolveTestFilePatterns,

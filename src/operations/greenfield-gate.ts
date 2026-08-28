@@ -55,10 +55,9 @@ export const greenfieldGateOp: DeterministicOperation<GreenfieldGateInput, Green
       // tests are still untracked when this gate runs, so a tracked-only check would
       // miss them and falsely report greenfield. hasTestFilesOnDisk also excludes
       // `.nax/` so the generated acceptance harness never counts.
-      const globs: readonly string[] = input.resolvedTestPatterns.globs;
       let hasTests: boolean;
       try {
-        hasTests = await hasTestFilesOnDisk(input.workdir, globs);
+        hasTests = await hasTestFilesOnDisk(input.workdir, input.resolvedTestPatterns);
       } catch {
         // Scan failed (e.g. workdir vanished) — do not pause the story on a flaky scan.
         return { success: true, hasPreExistingTests: true };

@@ -79,9 +79,23 @@ export const _resolverDeps = {
   detectTestFilePatterns: detectTestFilePatterns as (workdir: string) => Promise<DetectionResult>,
 };
 
-// ─── Internal helpers ─────────────────────────────────────────────────────────
+// ─── Public helpers ───────────────────────────────────────────────────────────
 
-function buildResolved(globs: readonly string[], resolution: ResolvedTestPatterns["resolution"]): ResolvedTestPatterns {
+/**
+ * Construct a `ResolvedTestPatterns` from raw globs.
+ *
+ * Public SSOT constructor — derives `pathspec`, `regex`, and `testDirs` from
+ * the supplied globs via the same `globsToPathspec` / `globsToTestRegex` /
+ * `extractTestDirs` helpers `resolveTestFilePatterns` uses, so any caller
+ * that has globs but not a full config+workdir can build the struct with
+ * matching semantics. Exposed so depth-agnostic predicates like
+ * `createTestFileClassifier` can be used directly (e.g. `hasTestFilesOnDisk`)
+ * without re-deriving the artefacts by hand.
+ */
+export function buildResolved(
+  globs: readonly string[],
+  resolution: ResolvedTestPatterns["resolution"],
+): ResolvedTestPatterns {
   return {
     globs,
     pathspec: globsToPathspec(globs),

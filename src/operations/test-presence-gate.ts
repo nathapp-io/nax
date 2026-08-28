@@ -68,10 +68,9 @@ export const testPresenceGateOp: DeterministicOperation<
     // tests and they are still untracked, so a tracked-only check would miss them and
     // false-fire. `hasTestFilesOnDisk` excludes `.nax/` so the generated acceptance
     // harness never counts as authored coverage.
-    const globs: readonly string[] = input.resolvedTestPatterns.globs;
     let hasTests: boolean;
     try {
-      hasTests = await hasTestFilesOnDisk(input.workdir, globs);
+      hasTests = await hasTestFilesOnDisk(input.workdir, input.resolvedTestPatterns);
     } catch {
       // Scan failed (e.g. workdir vanished) — do not block the story on a flaky scan.
       return { success: true, hasTests: true };
