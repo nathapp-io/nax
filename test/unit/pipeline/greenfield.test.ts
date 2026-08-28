@@ -9,8 +9,9 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTempDir } from "@test/helpers";
-import { isGreenfieldStory } from "@/context/greenfield";
+import { hasTestFilesOnDisk, isGreenfieldStory } from "@/context/greenfield";
 import type { UserStory } from "@/prd/types";
+import { buildResolved } from "@/test-runners/resolver";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Helpers
@@ -240,5 +241,79 @@ describe("pre-existing test files prevent false greenfield detection", () => {
 
     // IS greenfield — the file is in src/, not test/, so pattern does not match
     expect(result).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #1725 Regression: hasTestFilesOnDisk must agree with the depth-agnostic regex
+// ─────────────────────────────────────────────────────────────────────────────
+
+// #1725: ResolvedTestPatterns.globs (consumed by hasTestFilesOnDisk via Bun.Glob.scan,
+// cwd-anchored) and .regex (depth-agnostic, consumed by isTestFileByPatterns) had
+// different depth semantics. On nested test layouts the gate false-fired
+// `greenfield-no-tests` even when the routing pre-check correctly saw tests.
+// Fix: hasTestFilesOnDisk now walks the tree once and classifies each path via
+// createTestFileClassifier(resolved), so the on-disk predicate matches the
+// pre-check predicate by construction.
+describe("#1725 regression: hasTestFilesOnDisk uses depth-agnostic classifier", () => {
+  let workdir: string;
+
+  beforeEach(async () => {
+    workdir = makeTempDir("nax-greenfield-1725-");
+  });
+
+  afterEach(async () => {
+    await rm(workdir, { recursive: true, force: true });
+  });
+
+  it("detects tests nested below root when patterns lack a leading **/", async () => {
+    // The bug: Bun.Glob("test_*.py").scan({ cwd: root }) anchors at root only,
+    // so packages/x/tests/unit/test_a.py is missed. After the fix the walk sees
+    // every file and the classifier matches at any depth.
+    await createTestFile(workdir, "packages/x/tests/unit/test_a.py", "");
+
+    const globs = ["test_*.py", "*_test.py", "tests/**/*.py"];
+    const resolved = buildResolved(globs, "fallback");
+
+    expect(await hasTestFilesOnDisk(workdir, resolved)).toBe(true);
+  });
+
+  it("does not classify source files below root as tests (negative control)", async () => {
+    await createTestFile(workdir, "packages/x/src/foo.py", "");
+
+    const globs = ["test_*.py", "*_test.py", "tests/**/*.py"];
+    const resolved = buildResolved(globs, "fallback");
+
+    expect(await hasTestFilesOnDisk(workdir, resolved)).toBe(false);
+  });
+
+  it("still excludes .nax/ artifacts (preserves #1279 regression)", async () => {
+    // nax's own generated acceptance harness must never count as authored coverage.
+    await createTestFile(workdir, ".nax/nax-acceptance.test.ts", "");
+
+    const resolved = buildResolved(["**/*.test.ts"], "fallback");
+
+    expect(await hasTestFilesOnDisk(workdir, resolved)).toBe(false);
+  });
+
+  it("still excludes node_modules, dist, .venv, coverage (preserves IGNORE_DIRS)", async () => {
+    await createTestFile(workdir, "node_modules/lib/foo.test.ts", "");
+    await createTestFile(workdir, "dist/foo.test.ts", "");
+    await createTestFile(workdir, ".venv/foo.test.ts", "");
+    await createTestFile(workdir, "coverage/foo.test.ts", "");
+
+    const resolved = buildResolved(["**/*.test.ts"], "fallback");
+
+    expect(await hasTestFilesOnDisk(workdir, resolved)).toBe(false);
+  });
+
+  it("detects root-level test files when patterns match at the root", async () => {
+    // Sanity: a pattern like `test_*.py` should still match test_foo.py at root —
+    // the fix must not regress the co-located case.
+    await createTestFile(workdir, "test_foo.py", "");
+
+    const resolved = buildResolved(["test_*.py"], "fallback");
+
+    expect(await hasTestFilesOnDisk(workdir, resolved)).toBe(true);
   });
 });

@@ -7,15 +7,24 @@
  * empty test files, BUG-010), so one session writes tests-first then implements.
  */
 
+import { readdir } from "node:fs/promises";
+import { join, relative } from "node:path";
 import type { UserStory } from "../prd/types";
-import { DEFAULT_TEST_FILE_PATTERNS, isTestFileByPatterns } from "../test-runners";
+import {
+  buildResolved,
+  createTestFileClassifier,
+  DEFAULT_TEST_FILE_PATTERNS,
+  isTestFileByPatterns,
+  type ResolvedTestPatterns,
+} from "../test-runners";
 
 /** Injectable deps for testability. */
 export const _greenfieldDeps = {
   spawn: Bun.spawn as typeof Bun.spawn,
 };
 
-/** Directories excluded from the Bun.Glob fallback scan (non-git workdirs only). */
+/** Directories excluded from the on-disk walk (used by `walkFiles` for the non-git
+ * fallback path; the git-ls-files branch relies on git's own exclude rules). */
 const IGNORE_DIRS = new Set([
   "node_modules",
   "dist",
@@ -61,22 +70,59 @@ async function gitLsFiles(workdir: string): Promise<string[] | null> {
 }
 
 /**
- * Return true if at least one test file matching `patterns` exists ON DISK in
- * `workdir` — tracked OR untracked. Pure filesystem scan (Bun.Glob), so it sees
- * files the agent just authored but has not committed. `IGNORE_DIRS` (incl.
- * `.nax`, `node_modules`) are excluded so nax artifacts never count.
+ * Walk `root` once and yield the relative path of every regular file, pruning
+ * directories in `IGNORE_DIRS` at descent time so `node_modules`, `.venv`, etc.
+ * never enter the queue. Symlinks are not followed.
  *
- * Use this (not `isGreenfieldStory`) for any POST-implementer check: by then the
- * authored tests are untracked, and `git ls-files` would not list them.
+ * Throws if `root` itself is missing or unreadable (preserves the original
+ * `Bun.Glob.scan` "throw on missing workdir" contract callers rely on for
+ * fail-open). Permission errors on subdirectories are swallowed — those dirs
+ * typically live inside `IGNORE_DIRS` (e.g. protected `.venv`).
  */
-export async function hasTestFilesOnDisk(workdir: string, patterns: readonly string[]): Promise<boolean> {
-  for (const pattern of patterns) {
-    const g = new Bun.Glob(pattern);
-    for await (const path of g.scan({ cwd: workdir, onlyFiles: true })) {
-      if (!path.split("/").some((seg) => IGNORE_DIRS.has(seg))) {
-        return true;
+async function* walkFiles(root: string): AsyncIterable<string> {
+  const queue: string[] = [root];
+  let isRoot = true;
+  while (queue.length > 0) {
+    const dir = queue.shift() as string;
+    try {
+      const entries = await readdir(dir, { withFileTypes: true });
+      isRoot = false;
+      for (const entry of entries) {
+        if (entry.isSymbolicLink()) continue;
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (IGNORE_DIRS.has(entry.name)) continue;
+          queue.push(full);
+        } else if (entry.isFile()) {
+          yield relative(root, full);
+        }
       }
+    } catch {
+      if (isRoot) throw new Error(`[greenfield] cannot read workdir '${root}'`);
+      // Subdirectory we don't have permission to read — skip it; the parent
+      // walk continues. Permission errors inside `IGNORE_DIRS` are expected.
+      isRoot = false;
     }
+  }
+}
+
+/**
+ * Return true if at least one test file matching `resolved.regex` exists ON DISK
+ * in `workdir` — tracked OR untracked. Walks the tree once (pruning
+ * `IGNORE_DIRS` to keep nax artifacts and dependency dirs out of the scan) and
+ * classifies each path with the depth-agnostic `createTestFileClassifier`, so
+ * the verdict agrees with the routing pre-check `isGreenfieldStory` makes from
+ * `git ls-files` + `isTestFileByPatterns` (which also uses `.regex`). Fixes the
+ * #1725 depth-semantics divergence where raw globs fed to `Bun.Glob.scan`
+ * anchored at the cwd root and missed nested test files.
+ *
+ * Use this (not `isGreenfieldStory`) for any POST-implementer check: by then
+ * the authored tests are untracked, and `git ls-files` would not list them.
+ */
+export async function hasTestFilesOnDisk(workdir: string, resolved: ResolvedTestPatterns): Promise<boolean> {
+  const isTestFile = createTestFileClassifier(resolved);
+  for await (const relPath of walkFiles(workdir)) {
+    if (isTestFile(relPath)) return true;
   }
   return false;
 }
@@ -91,11 +137,16 @@ async function hasTestFiles(workdir: string, patterns: readonly string[]): Promi
   const files = await gitLsFiles(workdir);
 
   if (files !== null) {
+    // Git branch already uses the depth-agnostic `isTestFileByPatterns` (regex)
+    // — the same depth semantics as `hasTestFilesOnDisk` after the #1725 fix,
+    // so both paths agree by construction. Intentionally untouched.
     return files.some((f) => isTestFileByPatterns(f, patterns));
   }
 
   // Fallback: filesystem scan for non-git workdirs (e.g. temp fixtures in tests).
-  return hasTestFilesOnDisk(workdir, patterns);
+  // Build the resolved struct on the fly so the depth-agnostic classifier is
+  // used in the fallback too (#1725).
+  return hasTestFilesOnDisk(workdir, buildResolved(patterns, "fallback"));
 }
 
 /**
