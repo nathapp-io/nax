@@ -216,7 +216,9 @@ export function getAcQualityRules(profile?: ProjectProfile): string {
 
 /**
  * Spec fidelity rules — injected into buildPlanningPrompt() when a spec is provided.
- * Mirrors the synthesis anchor in session-plan.ts (debate mode) but for non-debate plan runs.
+ * Mirrors the synthesis anchor in src/debate/runner-plan-helpers.ts (buildPlanSynthesisSuffix,
+ * debate mode) but for non-debate plan runs. Keep the trailing-qualifying-clause wording in
+ * sync between the two when either changes (see #1667).
  */
 export const SPEC_ANCHOR_RULES = `## Spec Fidelity Rules
 

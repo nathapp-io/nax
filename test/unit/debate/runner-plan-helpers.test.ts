@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { finalizePlanSelection } from "@/debate/runner-plan-helpers";
+import { buildPlanSynthesisSuffix, finalizePlanSelection } from "@/debate/runner-plan-helpers";
 import type { ScoredProposal } from "@/debate/selectors/verifier-pick";
 import * as verifierPick from "@/debate/selectors/verifier-pick";
 import type { SuccessfulProposal } from "@/debate/session-helpers";
@@ -76,5 +76,29 @@ describe("finalizePlanSelection", () => {
     expect(winnerResolved.patchPrompt).toBeDefined();
     expect(winnerResolved.patchPrompt).toContain("AC2");
     expect(runnerUpResolved).toEqual({});
+  });
+});
+
+describe("buildPlanSynthesisSuffix — AC trailing-qualifying-clause preservation (#1667)", () => {
+  test("Acceptance Criteria synthesis rule protects a trailing regression-qualifying clause", () => {
+    const suffix = buildPlanSynthesisSuffix("Some spec content");
+
+    // Discriminating: this exact protection clause did not exist before #1667's
+    // debate-path fix — a suffix built without it would fail these assertions.
+    expect(suffix).toContain("regression anchor");
+    expect(suffix).toContain("not a second assertion");
+    for (const phrase of ["matching", "unchanged", "existing", "as before", "already", "preserving"]) {
+      expect(suffix).toContain(phrase);
+    }
+
+    // The pre-existing rule text must still be present — this is an extension, not a rewrite.
+    expect(suffix).toContain("Preserve the spec's AC wording");
+    expect(suffix).toContain("must not change semantics");
+  });
+
+  test("returns empty spec anchor (no synthesis rules) when specContent is undefined", () => {
+    const suffix = buildPlanSynthesisSuffix(undefined);
+    expect(suffix).not.toContain("Synthesis Rules");
+    expect(suffix).not.toContain("regression anchor");
   });
 });
