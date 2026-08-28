@@ -149,6 +149,118 @@ describe("biome test/** severities", () => {
     }
   });
 
+  // --- Tier 1 promotions (docs/plans/biome-v2-rule-gaps.md), wired 2026-08-28 ---
+  //
+  // Seven off-by-default rules promoted straight to "error". They ship either
+  // absent from `recommended` or at WARN, and `biome check` exits 0 on warnings
+  // — so "present in biome.json" proves nothing. Each case below plants a
+  // fixture the rule must reject and asserts the exit code, per the file header.
+
+  const TIER1: Array<{ rule: string; category: string; source: string; src: boolean }> = [
+    {
+      rule: "noFloatingPromises",
+      category: "lint/nursery/noFloatingPromises",
+      source: ["async function work(): Promise<void> {}", "export function go(): void {", "  work();", "}"].join("\n"),
+      src: true,
+    },
+    {
+      rule: "noMisusedPromises",
+      category: "lint/nursery/noMisusedPromises",
+      source: ["declare function take(cb: () => void): void;", "take(async () => {});"].join("\n"),
+      src: true,
+    },
+    {
+      rule: "noEvolvingTypes",
+      category: "lint/suspicious/noEvolvingTypes",
+      source: ["export function f() {", "  const xs = [];", "  xs.push(1);", "  return xs;", "}"].join("\n"),
+      src: true,
+    },
+    {
+      rule: "useThrowOnlyError",
+      category: "lint/style/useThrowOnlyError",
+      source: ["export function f(): void {", '  throw "x";', "}"].join("\n"),
+      src: true,
+    },
+    {
+      rule: "useErrorMessage",
+      category: "lint/suspicious/useErrorMessage",
+      source: "export const e = new Error();",
+      src: true,
+    },
+    // Test-domain rules: biome selects them by filename, so they have no src/ half.
+    {
+      rule: "noSkippedTests",
+      category: "lint/suspicious/noSkippedTests",
+      source: ['import { test } from "bun:test";', 'test.skip("x", () => {});'].join("\n"),
+      src: false,
+    },
+    {
+      rule: "noDuplicateTestHooks",
+      category: "lint/suspicious/noDuplicateTestHooks",
+      source: [
+        'import { beforeEach, describe, test } from "bun:test";',
+        'describe("d", () => {',
+        "  beforeEach(() => {});",
+        "  beforeEach(() => {});",
+        '  test("t", () => {});',
+        "});",
+      ].join("\n"),
+      src: false,
+    },
+  ];
+
+  for (const { rule, category, source } of TIER1) {
+    test(`${rule} is an error in test/, and biome exits non-zero`, async () => {
+      const { exitCode, diags } = await lintUnderRepoConfig(PROBE, `${source}\n`);
+      const found = diags.filter((d) => d.category === category);
+      expect(found).toHaveLength(1);
+      expect(found[0]?.severity).toBe("error");
+      expect(exitCode).not.toBe(0);
+    });
+  }
+
+  for (const { rule, category, source } of TIER1.filter((r) => r.src)) {
+    test(`${rule} is an error in src/ too, and biome exits non-zero`, async () => {
+      // The test/** override declares its own `suspicious` and `style` groups.
+      // These are set at the ROOT, so both halves are asserted for the same
+      // reason noTsIgnore is above: a rules-group merge is not something to
+      // assume from a config that reads either way.
+      const { exitCode, diags } = await lintUnderRepoConfig("src/probe.ts", `${source}\n`);
+      const found = diags.filter((d) => d.category === category);
+      expect(found).toHaveLength(1);
+      expect(found[0]?.severity).toBe("error");
+      expect(exitCode).not.toBe(0);
+    });
+  }
+
+  test("biome.json keeps the `types` domain, which the behavioural probes cannot see", async () => {
+    // This assertion is NOT redundant with the two nursery cases above, and the
+    // reason is a trap worth recording.
+    //
+    // `noFloatingPromises` and `noMisusedPromises` are type-aware: they need
+    // `linter.domains.types` as well as their explicit rule entry. Measured on
+    // 2026-08-28, deleting the domain from the repo config while leaving the
+    // `nursery` entries in place drops BOTH rules to zero findings across
+    // src/, bin/, scripts/ and test/ — silently, with the config still reading
+    // as though they were enabled.
+    //
+    // The behavioural probes above cannot catch that. They lint a single
+    // planted file in a temp dir with no tsconfig and no project around it,
+    // and in that setup the rule fires whether or not the domain is present —
+    // measured too. So the harness would report a cheerful pass over a repo
+    // config that gates nothing. Only reading the config catches it.
+    //
+    // `"recommended"`, not `"all"`: `all` enables every rule in the domain,
+    // which on this repo adds 549 findings from noUnnecessaryConditions and
+    // useArraySortCompare — rules deliberately not adopted. See the doc.
+    const config = (await Bun.file(join(REPO, "biome.json")).json()) as {
+      linter?: { domains?: Record<string, string>; rules?: { nursery?: Record<string, string> } };
+    };
+    expect(config.linter?.domains?.types).toBe("recommended");
+    expect(config.linter?.rules?.nursery?.noFloatingPromises).toBe("error");
+    expect(config.linter?.rules?.nursery?.noMisusedPromises).toBe("error");
+  });
+
   test("biome.json sets the severities explicitly in the test/** override", async () => {
     // The behavioural assertions above would still pass if the override were
     // deleted and the root rules applied — but then a FUTURE `off` in the root

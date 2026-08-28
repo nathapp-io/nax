@@ -124,6 +124,7 @@ describe("makeFakeClock", () => {
   test("settles an async callback before firing the next timer", async () => {
     const clock = makeFakeClock();
     const order: string[] = [];
+    // biome-ignore lint/nursery/noMisusedPromises: passing an async callback to the `() => void` slot is exactly what this test exercises — that advance() drains its microtasks
     clock.setTimeout(async () => {
       order.push("a:start");
       await Promise.resolve();

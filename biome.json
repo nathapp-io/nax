@@ -11,17 +11,27 @@
   "linter": {
     "enabled": true,
     "domains": {
-      "test": "recommended"
+      "test": "recommended",
+      "types": "recommended"
     },
     "rules": {
       "recommended": true,
       "suspicious": {
+        "noDuplicateTestHooks": "error",
+        "noEvolvingTypes": "error",
         "noExplicitAny": "error",
-        "noTsIgnore": "error"
+        "noSkippedTests": "error",
+        "noTsIgnore": "error",
+        "useErrorMessage": "error"
       },
       "style": {
         "noNonNullAssertion": "error",
-        "noParameterAssign": "error"
+        "noParameterAssign": "error",
+        "useThrowOnlyError": "error"
+      },
+      "nursery": {
+        "noFloatingPromises": "error",
+        "noMisusedPromises": "error"
       }
     }
   },

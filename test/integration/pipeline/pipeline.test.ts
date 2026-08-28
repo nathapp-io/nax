@@ -267,6 +267,7 @@ describe("Pipeline Runner", () => {
             name: "throwStringStage",
             enabled: () => true,
             execute: async () => {
+              // biome-ignore lint/style/useThrowOnlyError: the fixture IS a non-Error throw — this asserts the pipeline stringifies it
               throw "String error message";
             },
           },
