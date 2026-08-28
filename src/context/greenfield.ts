@@ -97,11 +97,12 @@ async function* walkFiles(root: string): AsyncIterable<string> {
           yield relative(root, full);
         }
       }
-    } catch {
-      if (isRoot) throw new Error(`[greenfield] cannot read workdir '${root}'`);
+    } catch (err) {
+      if (isRoot) {
+        throw new Error(`[greenfield] cannot read workdir '${root}': ${(err as Error).message}`);
+      }
       // Subdirectory we don't have permission to read — skip it; the parent
       // walk continues. Permission errors inside `IGNORE_DIRS` are expected.
-      isRoot = false;
     }
   }
 }
