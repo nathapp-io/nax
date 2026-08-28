@@ -26,10 +26,18 @@ import type { Finding } from "@/findings";
 import { findingRecurrenceKey } from "@/findings";
 
 export interface ReviewRecurrenceEntry {
-  /** `findingRecurrenceKey` values seen from this (storyId, source) in any prior attempt. */
-  readonly seenKeys: ReadonlySet<string>;
-  /** Cumulative count of keys that recurred (matched a previously-seen key) across attempts. */
-  readonly recurrenceCount: number;
+  /** How many attempts each `findingRecurrenceKey` has been seen in, for this (storyId, source). */
+  readonly keySightings: ReadonlyMap<string, number>;
+  /**
+   * Recurrences of the single most persistent finding — `max(sightings) - 1`.
+   *
+   * Deliberately a MAX over keys, not a sum. Summing conflates "one finding the
+   * reviewer keeps re-raising" (the deadlock #1666 is about) with "several
+   * different findings that each happened to reappear once" (a story that may
+   * well be making partial progress). Only the former should trip the breaker,
+   * and only the former matches the operator-facing reason text.
+   */
+  readonly maxRecurrences: number;
 }
 
 /** Run-scoped store: one entry per (storyId, reviewer source) pair. */
@@ -56,22 +64,31 @@ export function recordReviewFindings(
 ): number {
   const key = storeKey(storyId, source);
   const prior = store.get(key);
-  const priorKeys = prior?.seenKeys ?? new Set<string>();
+  const priorSightings = prior?.keySightings ?? new Map<string, number>();
   const currentKeys = new Set(findings.map((f) => findingRecurrenceKey(f)));
 
+  const keySightings = new Map(priorSightings);
   let newRecurrences = 0;
   for (const k of currentKeys) {
-    if (priorKeys.has(k)) newRecurrences += 1;
+    const seenBefore = priorSightings.get(k) ?? 0;
+    if (seenBefore > 0) newRecurrences += 1;
+    keySightings.set(k, seenBefore + 1);
   }
 
-  store.set(key, {
-    seenKeys: new Set([...priorKeys, ...currentKeys]),
-    recurrenceCount: (prior?.recurrenceCount ?? 0) + newRecurrences,
-  });
+  let maxRecurrences = 0;
+  for (const sightings of keySightings.values()) {
+    if (sightings - 1 > maxRecurrences) maxRecurrences = sightings - 1;
+  }
+
+  store.set(key, { keySightings, maxRecurrences });
   return newRecurrences;
 }
 
-/** Cumulative recurrence count for one (storyId, source) pair. Zero when never recorded. */
+/**
+ * Recurrences of the most persistent single finding for one (storyId, source)
+ * pair — `max(sightings) - 1`. Zero when never recorded, and zero after a first
+ * attempt (nothing can have repeated yet).
+ */
 export function getReviewRecurrenceCount(store: ReviewRecurrenceStore, storyId: string, source: string): number {
-  return store.get(storeKey(storyId, source))?.recurrenceCount ?? 0;
+  return store.get(storeKey(storyId, source))?.maxRecurrences ?? 0;
 }

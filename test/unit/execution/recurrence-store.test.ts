@@ -21,6 +21,32 @@ function semanticFinding(rule: string, message = rule): Finding {
   };
 }
 
+describe("recordReviewFindings — max-per-key, not a sum across findings", () => {
+  test("two DIFFERENT findings each recurring once does NOT reach the default threshold of 2", () => {
+    const store: ReviewRecurrenceStore = new Map();
+    recordReviewFindings(store, "US-1", "semantic-review", [semanticFinding("R1"), semanticFinding("R2")]);
+    // R1 repeats on attempt 2, R2 repeats on attempt 3 — no single finding has
+    // recurred twice, so the story is not deadlocked on one reviewer opinion.
+    expect(recordReviewFindings(store, "US-1", "semantic-review", [semanticFinding("R1")])).toBe(1);
+    expect(recordReviewFindings(store, "US-1", "semantic-review", [semanticFinding("R2")])).toBe(1);
+    expect(getReviewRecurrenceCount(store, "US-1", "semantic-review")).toBe(1);
+  });
+
+  test("one finding recurring on two later attempts DOES reach 2", () => {
+    const store: ReviewRecurrenceStore = new Map();
+    recordReviewFindings(store, "US-2", "semantic-review", [semanticFinding("R1")]);
+    recordReviewFindings(store, "US-2", "semantic-review", [semanticFinding("R1")]);
+    recordReviewFindings(store, "US-2", "semantic-review", [semanticFinding("R1")]);
+    expect(getReviewRecurrenceCount(store, "US-2", "semantic-review")).toBe(2);
+  });
+
+  test("a reworded message at the same location still counts as the same finding (#1581)", () => {
+    const store: ReviewRecurrenceStore = new Map();
+    recordReviewFindings(store, "US-3", "semantic-review", [semanticFinding("R1", "first wording")]);
+    expect(recordReviewFindings(store, "US-3", "semantic-review", [semanticFinding("R1", "reworded")])).toBe(1);
+  });
+});
+
 describe("recordReviewFindings / getReviewRecurrenceCount", () => {
   test("exports callable helpers", () => {
     expect(typeof recordReviewFindings).toBe("function");

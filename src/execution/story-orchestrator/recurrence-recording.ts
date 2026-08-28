@@ -10,7 +10,7 @@
  * correctness requirement; `inspectRecurrenceBreaker` is separately fail-open.
  */
 import { type ReviewRecurrenceStore, recordReviewFindings } from "../recurrence-store";
-import { extractPhaseFindings } from "./phase-eval";
+import { extractPhaseFindings, phasePassed } from "./phase-eval";
 
 /** Reviewer phase names this recording covers — the two Part B keeps both dispatching. */
 const RECORDED_REVIEW_PHASES = ["semantic-review", "adversarial-review"] as const;
@@ -24,6 +24,12 @@ export function recordReviewRecurrencesForAttempt(
   if (!storyId || !store) return;
   for (const source of RECORDED_REVIEW_PHASES) {
     if (!(source in phaseOutputs)) continue;
+    // Only a review that BLOCKED contributes. `extractPhaseFindings` returns a
+    // phase's findings regardless of its verdict, so a passing reviewer's
+    // sub-threshold advisory findings would otherwise accumulate here and could
+    // pause a story over an opinion that never blocked anything — a deadlock the
+    // operator cannot act on because no reviewer is actually objecting.
+    if (phasePassed(source, phaseOutputs[source], storyId)) continue;
     recordReviewFindings(store, storyId, source, extractPhaseFindings(phaseOutputs[source]));
   }
 }
