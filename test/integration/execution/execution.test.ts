@@ -272,10 +272,12 @@ describe("execution runner", () => {
   // disables the acceptance loop (`acceptance.enabled: false` below), and the
   // failure was deterministic, not flaky. What it was actually hiding:
   //
-  // 1. A stale assertion. `iterations` comes straight off the unified executor
-  //    (runner-execution.ts:210), which runs zero story iterations when no story
-  //    is pending, so a pre-completed PRD yields 0. The old `=== 1` ("one
-  //    iteration to detect completion") described a loop that does not exist.
+  // 1. An assertion that had gone stale. The test (assertion and `.skip`
+  //    together) dates to 2026-03-06; the pre-loop short-circuit it now trips
+  //    over landed 2026-03-29, when the parallel and sequential executors were
+  //    unified. The `=== 1` was written against the executor that preceded it
+  //    and was already skipped by the time the semantics changed, so nothing
+  //    caught the drift for five months. See the assertion below.
   // 2. An eager agent preflight. `initializeRun` verified the agent was
   //    installed before it knew whether any agent would be used, so this run —
   //    which dispatches nothing — demanded a binary it never called, and failed
@@ -328,7 +330,13 @@ describe("execution runner", () => {
     const result = await run(opts);
 
     expect(result.success).toBe(true);
-    expect(result.iterations).toBe(0); // No pending stories — the executor runs no iterations
+    // 0, not 1: an already-complete PRD takes the pre-loop short-circuit
+    // (unified-executor.ts:171) and never enters the dispatch loop. The in-loop
+    // completion path cannot report 0 — `iterations++` runs at the top of the
+    // loop and `isComplete` is checked after it, so anything entering the loop
+    // reports >= 1. If that short-circuit is ever removed, this is the
+    // assertion that should change, and to 1.
+    expect(result.iterations).toBe(0);
     expect(result.storiesCompleted).toBe(0); // Already completed
 
     await rm(tmpDir, { recursive: true, force: true });
