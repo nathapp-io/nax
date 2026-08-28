@@ -27,6 +27,7 @@ import { errorMessage } from "../utils/errors";
 import { autoCommitIfDirty, detectMergeConflict } from "../utils/git";
 import { inspectOscillationBreaker } from "./oscillation-breaker";
 import { applyReviewsFailedOpen } from "./post-run-review-summary";
+import { maybeHandleRecurrenceBreaker } from "./recurrence-pause";
 import { failAndClose } from "./session-manager-runtime";
 import type { StoryOrchestratorResult } from "./story-orchestrator";
 import { deriveTddFailureCategory } from "./tdd-failure-category";
@@ -434,6 +435,13 @@ export async function decideStageAction(
         }
         return { action: "pause", reason: breaker.reason };
       }
+      // Cross-attempt review-recurrence circuit-breaker (#1666 Part C). Distinct from
+      // the oscillation breaker above: that one catches within-cycle ping-pong, this one
+      // catches a reviewer (semantic or adversarial) raising the SAME finding again on a
+      // LATER escalation attempt — the shape #1666 Part B enables by letting
+      // adversarial-review run even when semantic-review fails.
+      const recurrencePause = await maybeHandleRecurrenceBreaker(ctx, logger);
+      if (recurrencePause) return recurrencePause;
       const exhaustedReason = planResult.unresolvedDetail
         ? `Rectification exhausted: ${planResult.unresolvedDetail}`
         : "Rectification exhausted with unfixed findings";

@@ -227,7 +227,7 @@ export const NaxConfigSchema = z
       checks: ["typecheck", "lint"],
       commands: {},
       audit: { enabled: false },
-      conflictDetection: { enabled: true, maxOscillations: 2 },
+      conflictDetection: { enabled: true, maxOscillations: 2, maxCrossAttemptRecurrences: 2 },
       blockingThreshold: "error",
 
       pluginMode: "observational",

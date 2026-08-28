@@ -77,6 +77,7 @@ import type { ConfigLoader, NaxConfig } from "../config";
 import { createConfigLoader, getProjectKey } from "../config";
 import { NaxError } from "../errors";
 import { PidRegistry } from "../execution/pid-registry";
+import type { ReviewRecurrenceStore } from "../execution/recurrence-store";
 import type { Iteration, StoryFixHistory } from "../findings";
 import { createStoryFixHistory } from "../findings";
 import type { Logger } from "../logger";
@@ -139,6 +140,14 @@ export interface NaxRuntime {
   readonly semanticIterations: Map<string, Iteration[]>;
   /** Run-scoped per-story rectification oscillation totals. */
   readonly rectificationOscillations: Map<string, number>;
+  /**
+   * Run-scoped cross-attempt review-finding recurrence store (#1666 Part C).
+   * Keyed per (storyId, reviewer source) — see `recurrence-store.ts`. Distinct from
+   * `rectificationOscillations`: that map counts within-cycle ping-pong, this one
+   * counts the SAME finding from the SAME reviewer recurring across escalation
+   * attempts, which the oscillation counter structurally cannot see.
+   */
+  readonly reviewFindingRecurrences: ReviewRecurrenceStore;
   /**
    * Run-scoped per-story agent-swap hops, keyed by storyId (ADR-012 PR-2, nax#1707).
    *
@@ -315,6 +324,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const adversarialIterations = new Map<string, Iteration[]>();
   const semanticIterations = new Map<string, Iteration[]>();
   const rectificationOscillations = new Map<string, number>();
+  const reviewFindingRecurrences: ReviewRecurrenceStore = new Map();
   const agentFallbacks = new Map<string, AgentFallbackRecord[]>();
   const runtimeCrashRetries = new Map<string, number>();
   const storyFixHistory = createStoryFixHistory();
@@ -347,6 +357,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     adversarialIterations,
     semanticIterations,
     rectificationOscillations,
+    reviewFindingRecurrences,
     agentFallbacks,
     runtimeCrashRetries,
     storyFixHistory,

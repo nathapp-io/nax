@@ -18,7 +18,7 @@ describe("AdversarialReviewConfigSchema.recurrenceDemotion", () => {
 describe("ReviewConfigSchema.conflictDetection", () => {
   test("defaults enabled with maxOscillations 2", () => {
     const parsed = ReviewConfigSchema.parse({ enabled: true, checks: [], commands: {} });
-    expect(parsed.conflictDetection).toEqual({ enabled: true, maxOscillations: 2 });
+    expect(parsed.conflictDetection).toEqual({ enabled: true, maxOscillations: 2, maxCrossAttemptRecurrences: 2 });
   });
 
   test("accepts a maxOscillations override", () => {

@@ -16,6 +16,7 @@ import type { GateRegressionDetail } from "./phase-eval";
 import { describeGateRegression, gateFailureKeys, phaseExplicitlyPassed, phasePassed } from "./phase-eval";
 import { collectOrderedPhases } from "./phase-state";
 import { runRectification } from "./rectification";
+import { recordReviewRecurrencesForAttempt } from "./recurrence-recording";
 import { classifyMissingReviewPhases } from "./review-phase-report";
 import { _storyOrchestratorDeps, runPhase } from "./run-phase";
 import type { InternalBuildState, StoryOrchestratorResult } from "./types";
@@ -519,6 +520,12 @@ export class ExecutionPlan {
       shortCircuitPhase,
       resumeLoopEligible,
     });
+
+    // Part C (#1666) — feed this attempt's review findings into the cross-attempt
+    // recurrence store so `inspectRecurrenceBreaker` (post-run.ts) can see a same-source
+    // finding repeating across escalation attempts. Runs regardless of `success` — the
+    // breaker needs every attempt's data, not just failing ones.
+    recordReviewRecurrencesForAttempt(this.ctx.runtime, this.ctx.storyId, phaseOutputs);
 
     const success =
       missingRequiredReviewPhases.length === 0 &&

@@ -239,6 +239,17 @@ export const ReviewConfigSchema = z.object({
     .object({
       enabled: z.boolean().default(true),
       maxOscillations: z.number().int().min(1).default(2),
+      /**
+       * Cross-attempt review-recurrence circuit-breaker threshold (#1666 Part C).
+       * Distinct from `maxOscillations`, which counts only a resolved-then-reappearing
+       * finding SOURCE within one rectification cycle's iterations — it cannot fire
+       * when the SAME finding from the SAME reviewer source simply recurs unchanged
+       * across separate escalation attempts of the whole story (e.g. semantic-review
+       * keeps raising the same objection while adversarial-review keeps passing).
+       * Trips when a `findingRecurrenceKey` from one reviewer source is produced on
+       * this many LATER attempts after its first sighting.
+       */
+      maxCrossAttemptRecurrences: z.number().int().min(1).default(2),
     })
-    .default({ enabled: true, maxOscillations: 2 }),
+    .default({ enabled: true, maxOscillations: 2, maxCrossAttemptRecurrences: 2 }),
 });
