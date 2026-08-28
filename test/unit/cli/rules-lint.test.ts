@@ -183,11 +183,11 @@ describe("globHasMatch — #1471 scan-cap false negative", () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = await makeTempDir("rules-lint-dead-glob-");
+    tempDir = makeTempDir("rules-lint-dead-glob-");
   });
 
   afterEach(async () => {
-    await cleanupTempDir(tempDir);
+    cleanupTempDir(tempDir);
   });
 
   test("finds a match under bin/ even when node_modules/ noise exceeds the scan cap", async () => {

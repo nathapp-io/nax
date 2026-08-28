@@ -23,6 +23,7 @@ import {
 } from "@/metrics/tracker";
 import type { RunMetrics, StoryMetrics } from "@/metrics/types";
 import { TokenUsage } from "@/metrics/types";
+import { byCodePoint } from "@/utils/sort";
 
 // OUTPUT_DIR plays the role of outputDir (e.g. ~/.nax/<projectKey>): metrics are written
 // directly to OUTPUT_DIR/metrics.json, no .nax/ subdirectory.
@@ -382,7 +383,7 @@ describe("saveRunMetrics - concurrent writers (BUG-6)", () => {
 
     const saved = await readMetricsFile();
     expect(saved).toHaveLength(writerCount);
-    const ids = saved.map((s) => s.runId).sort();
+    const ids = saved.map((s) => s.runId).sort(byCodePoint);
     expect(ids).toEqual(metrics.map((m) => m.runId).sort());
   });
 });

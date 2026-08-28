@@ -19,6 +19,7 @@ import {
   type StoryCounts,
 } from "@/execution/helpers";
 import type { PRD, UserStory } from "@/prd";
+import { byCodePoint } from "@/utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -125,7 +126,7 @@ describe("getAllReadyStories", () => {
 
     const ready = getAllReadyStories(prd);
     expect(ready.length).toBe(2);
-    expect(ready.map((s) => s.id).sort()).toEqual(["US-003", "US-004"]);
+    expect(ready.map((s) => s.id).sort(byCodePoint)).toEqual(["US-003", "US-004"]);
   });
 
   it("returns empty array when all stories are complete", () => {

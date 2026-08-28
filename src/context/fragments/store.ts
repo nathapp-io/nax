@@ -22,6 +22,7 @@ import { dirname, join } from "node:path";
 import { featureDir } from "@/config";
 import { estimateTokens } from "@/optimizer";
 import { atomicWriteText } from "@/utils/json-file";
+import { byCodePoint } from "@/utils/sort";
 
 /** Injectable file I/O — tests override to use in-memory stores. */
 export const _fragmentStoreDeps = {
@@ -52,7 +53,7 @@ export const _fragmentStoreDeps = {
     for await (const entry of new Bun.Glob("*.md").scan({ cwd: fragmentsDir, absolute: false })) {
       files.push(entry);
     }
-    return files.sort();
+    return files.sort(byCodePoint);
   },
   removeFile: async (path: string): Promise<void> => {
     await rm(path, { force: true });

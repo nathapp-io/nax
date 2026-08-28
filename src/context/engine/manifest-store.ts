@@ -11,6 +11,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { featureDir, featuresDir } from "@/config";
 import { saveJsonFile } from "@/utils/json-file";
+import { byCodePoint } from "@/utils/sort";
 import type { ContextManifest } from "./types";
 
 export const _manifestStoreDeps = {
@@ -34,7 +35,7 @@ export const _manifestStoreDeps = {
       for await (const entry of new Bun.Glob("*/").scan({ cwd: baseDir, absolute: false, onlyFiles: false })) {
         dirs.push(entry);
       }
-      return dirs.sort();
+      return dirs.sort(byCodePoint);
     } catch {
       return [];
     }
@@ -45,7 +46,7 @@ export const _manifestStoreDeps = {
       for await (const entry of new Bun.Glob("context-manifest-*.json").scan({ cwd: storyDir, absolute: false })) {
         files.push(entry);
       }
-      return files.sort();
+      return files.sort(byCodePoint);
     } catch {
       return [];
     }
@@ -62,7 +63,7 @@ export const _manifestStoreDeps = {
       for await (const entry of new Bun.Glob("*/").scan({ cwd: storiesDir, absolute: false, onlyFiles: false })) {
         dirs.push(entry);
       }
-      return dirs.sort();
+      return dirs.sort(byCodePoint);
     } catch {
       return [];
     }

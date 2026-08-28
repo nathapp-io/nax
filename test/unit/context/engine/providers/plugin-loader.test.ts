@@ -18,6 +18,7 @@ import {
   loadPluginProviders,
   resolveModuleSpecifier,
 } from "@/context/engine/providers/plugin-loader";
+import { byCodePoint } from "@/utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -261,7 +262,7 @@ describe("loadPluginProviders — parallel loading", () => {
     const result = await loadPluginProviders(configs, "/repo");
     expect(result).toHaveLength(3);
     expect(callCount).toBe(3);
-    const ids = result.map((p) => p.id).sort();
+    const ids = result.map((p) => p.id).sort(byCodePoint);
     expect(ids).toEqual(["graph", "kb", "rag"]);
   });
 

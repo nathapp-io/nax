@@ -14,6 +14,7 @@ import {
   PHASE_DURATION_BOUNDS,
 } from "@/plugins/builtin/otel-reporter/span-tree";
 import type { PhaseCompleteEvent } from "@/plugins/types";
+import { byCodePoint } from "@/utils/sort";
 
 function makePhaseEvent(overrides: Partial<PhaseCompleteEvent> = {}): PhaseCompleteEvent {
   return {
@@ -173,7 +174,7 @@ describe("createPhaseMetricsAggregator", () => {
       timeUnixNano: "1000",
     });
     const point = histogramPoint(payload, "nax.phase.duration");
-    const keys = point.attributes.map((a) => a.key).sort();
+    const keys = point.attributes.map((a) => a.key).sort(byCodePoint);
     expect(keys).toEqual(["outcome", "phase", "session_model", "test_strategy", "tier"]);
   });
 

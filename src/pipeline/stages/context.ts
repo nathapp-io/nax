@@ -220,7 +220,7 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   try {
     request.providerWeights = ctx.providerWeightsCache
       ? await ctx.providerWeightsCache.loadOrGet(providerWeightsFeatureId, ctx.projectDir ?? ctx.workdir)
-      : await _contextStageDeps.deriveProviderWeights(
+      : _contextStageDeps.deriveProviderWeights(
           (
             await _contextStageDeps.loadFeatureManifests({
               featureId: providerWeightsFeatureId,

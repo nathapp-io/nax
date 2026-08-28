@@ -273,7 +273,7 @@ export async function assembleForStage(
     try {
       request.providerWeights = ctx.providerWeightsCache
         ? await ctx.providerWeightsCache.loadOrGet(providerWeightsFeatureId, ctx.projectDir ?? ctx.workdir)
-        : await _stageAssemblerDeps.deriveProviderWeights(
+        : _stageAssemblerDeps.deriveProviderWeights(
             (
               await _stageAssemblerDeps.loadFeatureManifests({
                 featureId: providerWeightsFeatureId,

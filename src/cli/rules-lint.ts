@@ -13,6 +13,7 @@ import { CANONICAL_RULES_DIR, loadCanonicalRules } from "../context/rules/canoni
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { discoverWorkspacePackages } from "../test-runners";
+import { byCodePoint } from "../utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps
@@ -54,7 +55,7 @@ export const _rulesLintDeps = {
         if (CANONICAL_RULE_GLOB_EXCLUDE_SEGMENTS.some((seg) => normalized.includes(seg))) continue;
         found.push(file);
       }
-      return found.sort();
+      return found.sort(byCodePoint);
     } catch {
       return [];
     }

@@ -20,7 +20,7 @@ describe("grounderStrategy", () => {
   });
 
   test("AC 1: invokes callOp with specContent, codebaseContext, and workdir", async () => {
-    runtime = await makeTestRuntime();
+    runtime = makeTestRuntime();
 
     const ctx: PreDebatePhaseContext = {
       ctx: {
@@ -57,7 +57,7 @@ describe("grounderStrategy", () => {
   });
 
   test("AC 1: writes manifest to .nax/runs/<runId>/plan/<storyId>/facts-manifest.json", async () => {
-    runtime = await makeTestRuntime();
+    runtime = makeTestRuntime();
 
     const ctx: PreDebatePhaseContext = {
       ctx: {
@@ -91,7 +91,7 @@ describe("grounderStrategy", () => {
   });
 
   test("AC 1: returns renderManifestSection result with manifestSection and costUsd", async () => {
-    runtime = await makeTestRuntime();
+    runtime = makeTestRuntime();
 
     const ctx: PreDebatePhaseContext = {
       ctx: {
@@ -128,7 +128,7 @@ describe("grounderStrategy", () => {
   });
 
   test("AC 2: returns empty manifestSection when specContent is empty", async () => {
-    runtime = await makeTestRuntime();
+    runtime = makeTestRuntime();
 
     const ctx: PreDebatePhaseContext = {
       ctx: {
@@ -160,7 +160,7 @@ describe("grounderStrategy", () => {
   });
 
   test("AC 2: does not read nonexistent ctx.stageConfig.preDebatePhase.model or .agent", async () => {
-    runtime = await makeTestRuntime();
+    runtime = makeTestRuntime();
 
     const ctx: PreDebatePhaseContext = {
       ctx: {
@@ -202,7 +202,7 @@ describe("grounderStrategy", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-15: grounderStrategy invokes _grounderDeps.scanSourceRoots(workdir)", async () => {
-    runtime = await makeTestRuntime();
+    runtime = makeTestRuntime();
     const { _grounderDeps } = require("@/debate/pre-phase/grounder");
     const originalScanSourceRoots = _grounderDeps.scanSourceRoots;
 

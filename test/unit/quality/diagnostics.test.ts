@@ -37,7 +37,7 @@ describe("parseDiagnostics — AC1: importable and returns an array", () => {
   });
 
   test("AC1: returns an array when called with successful QualityCommandResult and tool=tsc", async () => {
-    const result = await parseDiagnostics(makeResult({ success: true, exitCode: 0, output: "" }), "tsc");
+    const result = parseDiagnostics(makeResult({ success: true, exitCode: 0, output: "" }), "tsc");
     expect(Array.isArray(result)).toBe(true);
   });
 });
@@ -49,7 +49,7 @@ describe("parseDiagnostics — AC1: importable and returns an array", () => {
 describe("parseDiagnostics — AC2: tsc error parsing", () => {
   test("AC2: tsc error for src/a.ts at line 12 returns one Diagnostic with file, line, severity", async () => {
     const output = "src/a.ts(12,5): error TS2304: Cannot find name 'foo'.";
-    const result = await parseDiagnostics(makeResult({ success: false, exitCode: 2, output }), "tsc");
+    const result = parseDiagnostics(makeResult({ success: false, exitCode: 2, output }), "tsc");
     expect(result).toHaveLength(1);
     const [first] = result;
     expect(first.file).toBe("src/a.ts");
@@ -77,7 +77,7 @@ describe("parseDiagnostics — AC3: biome diagnostic naming a rule", () => {
         },
       ],
     });
-    const result = await parseDiagnostics(makeResult({ success: false, exitCode: 1, output }), "biome");
+    const result = parseDiagnostics(makeResult({ success: false, exitCode: 1, output }), "biome");
     expect(result).toHaveLength(1);
     const [first] = result;
     expect(first.rule).toBe("lint/some-rule");
@@ -91,7 +91,7 @@ describe("parseDiagnostics — AC3: biome diagnostic naming a rule", () => {
 describe("parseDiagnostics — AC4: unknown-linter non-empty output", () => {
   test("AC4: unknown-linter non-empty output returns one Diagnostic with non-empty message and tool=unknown-linter", async () => {
     const output = "some error message from a tool we don't recognize";
-    const result = await parseDiagnostics(makeResult({ success: false, exitCode: 1, output }), "unknown-linter");
+    const result = parseDiagnostics(makeResult({ success: false, exitCode: 1, output }), "unknown-linter");
     expect(result).toHaveLength(1);
     const [first] = result;
     expect(first.message.length).toBeGreaterThan(0);
@@ -106,7 +106,7 @@ describe("parseDiagnostics — AC4: unknown-linter non-empty output", () => {
 describe("parseDiagnostics — AC5: bounded tail limit for unknown-linter", () => {
   test("AC5: unknown-linter output longer than the bounded tail limit → message length does not exceed that limit", async () => {
     const output = "x".repeat(10_000);
-    const result = await parseDiagnostics(makeResult({ success: false, exitCode: 1, output }), "unknown-linter");
+    const result = parseDiagnostics(makeResult({ success: false, exitCode: 1, output }), "unknown-linter");
     expect(result).toHaveLength(1);
     const [first] = result;
     // The message should be a bounded tail — definitely not the full 10000 chars.
@@ -124,12 +124,12 @@ describe("parseDiagnostics — AC5: bounded tail limit for unknown-linter", () =
 
 describe("parseDiagnostics — AC6: successful with empty output", () => {
   test("AC6: successful QualityCommandResult with empty output returns empty array", async () => {
-    const result = await parseDiagnostics(makeResult({ success: true, exitCode: 0, output: "" }), "tsc");
+    const result = parseDiagnostics(makeResult({ success: true, exitCode: 0, output: "" }), "tsc");
     expect(result).toEqual([]);
   });
 
   test("AC6: successful QualityCommandResult with empty output returns empty array (biome tool too)", async () => {
-    const result = await parseDiagnostics(makeResult({ success: true, exitCode: 0, output: "" }), "biome");
+    const result = parseDiagnostics(makeResult({ success: true, exitCode: 0, output: "" }), "biome");
     expect(result).toEqual([]);
   });
 });

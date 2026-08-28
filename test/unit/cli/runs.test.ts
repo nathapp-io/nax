@@ -93,13 +93,13 @@ describe("nax runs — event lookup", () => {
   let outputDir: string;
 
   beforeEach(async () => {
-    workdir = await makeTempDir("nax-runs-");
+    workdir = makeTempDir("nax-runs-");
     outputDir = join(workdir, "out");
   });
 
   afterEach(async () => {
     resetLogger();
-    await cleanupTempDir(workdir);
+    cleanupTempDir(workdir);
   });
 
   // BUG-01: `run.start` is the STAGE; its message is "Starting feature: …".

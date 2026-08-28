@@ -498,7 +498,8 @@ describe("adversarialReviewOp.verify() — scope grounding", () => {
 
       const events = calls.filter((c) => c[2]?.event === "review.adversarial.scope_finding_accepted");
       expect(events).toHaveLength(2);
-      expect(events.map((e) => e[2]?.grounded).sort()).toEqual([false, true]);
+      // Booleans have no meaningful default sort — order by falsy-first explicitly.
+      expect(events.map((e) => e[2]?.grounded).sort((a, b) => Number(a) - Number(b))).toEqual([false, true]);
       expect(events[0][2]?.declaredExclusions).toBe(2);
     } finally {
       logger.info = origInfo;

@@ -9,6 +9,7 @@ import {
   scanFileForAliasInternals,
 } from "@scripts/check-alias-internals";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { byCodePoint } from "@/utils/sort";
 
 function setupRepo(root: string) {
   mkdirSync(join(root, "src", "routing"), { recursive: true });
@@ -130,7 +131,7 @@ describe("findAliasInternalViolations", () => {
     writeFileSync(join(root, "bin", "c.ts"), 'import { Router } from "@/routing";\n');
 
     const violations = findAliasInternalViolations(root);
-    const paths = violations.map((v) => v.file).sort();
+    const paths = violations.map((v) => v.file).sort(byCodePoint);
     expect(paths).toEqual(["src/a.ts", "test/unit/b.test.ts"]);
   });
 });

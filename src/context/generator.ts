@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { NaxConfig } from "../config";
 import { validateFilePath } from "../config/path-security";
+import { byCodePoint } from "../utils/sort";
 import { aiderGenerator } from "./generators/aider";
 import { claudeGenerator } from "./generators/claude";
 import { codexGenerator } from "./generators/codex";
@@ -273,7 +274,7 @@ export async function discoverWorkspacePackages(repoRoot: string): Promise<strin
     // file absent or malformed yaml — skip
   }
 
-  return results.sort();
+  return results.sort(byCodePoint);
 }
 
 /**

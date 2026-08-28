@@ -24,6 +24,7 @@ import {
 } from "@/cli";
 import { _fragmentStoreDeps, listFragmentStoryIds, readFragment } from "@/context";
 import type { PRD, UserStory } from "@/prd";
+import { byCodePoint } from "@/utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -212,7 +213,7 @@ describe("listDependentStoryIds — reverse transitive dependents", () => {
     // reverse direction: starting from US-001 in the reverse graph, you can
     // reach every story the forward graph reaches from US-001.
     const result = listDependentStoryIds(prd, "US-001");
-    expect(result.sort()).toEqual(["US-002", "US-003", "US-004"]);
+    expect(result.sort(byCodePoint)).toEqual(["US-002", "US-003", "US-004"]);
   });
 
   test("diamond: story with multiple direct dependents returns all of them, no duplicates", () => {
@@ -222,7 +223,7 @@ describe("listDependentStoryIds — reverse transitive dependents", () => {
       makeStory({ id: "US-003", dependencies: ["US-001"] }),
       makeStory({ id: "US-004", dependencies: ["US-002", "US-003"] }),
     ]);
-    expect(listDependentStoryIds(prd, "US-001").sort()).toEqual(["US-002", "US-003", "US-004"]);
+    expect(listDependentStoryIds(prd, "US-001").sort(byCodePoint)).toEqual(["US-002", "US-003", "US-004"]);
   });
 
   test("story with no dependents returns []", () => {

@@ -3,6 +3,7 @@ import { makePRD, makeStory } from "@test/helpers";
 import type { LogEntry } from "@/logger";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import { applyPlanFidelity, backfillModifiedFiles, backfillOutOfScope, warnOnDroppedContextFiles } from "@/operations";
+import { byCodePoint } from "@/utils/sort";
 
 const SPEC = [
   "# Feature",
@@ -190,7 +191,7 @@ describe("warnOnDroppedContextFiles — #1466", () => {
     warnOnDroppedContextFiles(prd, CONTEXT_FILES_SPEC, "feat");
 
     const warnings = entries.filter((e) => e.level === "warn" && e.stage === "plan" && e.message.includes("absent"));
-    expect(warnings.map((w) => w.data?.storyId).sort()).toEqual(["US-001", "US-002"]);
+    expect(warnings.map((w) => String(w.data?.storyId)).sort(byCodePoint)).toEqual(["US-001", "US-002"]);
   });
 
   test("ignores an absolute or traversing path instead of counting it as a drop", () => {

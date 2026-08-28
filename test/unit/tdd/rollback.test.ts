@@ -10,6 +10,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { assertCaughtInstanceOf, makeSpawn } from "@test/helpers";
 import { _rollbackDeps, rollbackToRef } from "@/tdd/rollback";
+import { byCodePoint } from "@/utils/sort";
 
 function makeResetSpawn(exitCode = 0) {
   return makeSpawn(() => ({ exitCode })).spawn;
@@ -46,7 +47,9 @@ describe("rollbackToRef", () => {
 
     await rollbackToRef("/repo", "HEAD~1", []);
 
-    expect(removed.sort()).toEqual(["/repo/scratch/notes.md", "/repo/stray-agent-file.ts"].sort());
+    expect(removed.sort(byCodePoint)).toEqual(
+      ["/repo/scratch/notes.md", "/repo/stray-agent-file.ts"].sort(byCodePoint),
+    );
   });
 
   test("leaves pre-existing untracked paths alone (the .env case)", async () => {

@@ -21,6 +21,7 @@
 
 import { readdir, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { byCodePoint } from "../src/utils/sort";
 
 interface Options {
   dir: string;
@@ -68,7 +69,7 @@ async function findTestFiles(root: string): Promise<string[]> {
   );
   if (!exists) throw new Error(`Directory not found: ${root}`);
   await walk(root);
-  return out.sort();
+  return out.sort(byCodePoint);
 }
 
 async function readRssKb(pid: number): Promise<number | null> {

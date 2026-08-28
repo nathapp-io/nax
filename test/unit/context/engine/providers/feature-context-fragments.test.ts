@@ -23,6 +23,7 @@ import type { NaxConfig } from "@/config/types";
 import { _featureContextV2Deps, FeatureContextProviderV2 } from "@/context/engine";
 import type { ContextRequest, RawChunk } from "@/context/engine/types";
 import type { PRD, UserStory } from "@/prd";
+import { byCodePoint } from "@/utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixture builders
@@ -193,7 +194,7 @@ describe("FeatureContextProviderV2 US-003 — fragment dependency walk", () => {
     const result = await provider.fetch(makeRequest({ storyId: "US-001" }));
 
     const f = fragmentChunks(result.chunks);
-    const ids = f.map((chunk) => chunk.id).sort();
+    const ids = f.map((chunk) => chunk.id).sort(byCodePoint);
     expect(ids).toEqual(["feature-fragment:US-002", "feature-fragment:US-003"]);
     expect(f.some((chunk) => chunk.id === "feature-fragment:US-001")).toBe(false);
   });
@@ -452,7 +453,7 @@ describe("FeatureContextProviderV2 US-003 — fragment dependency walk", () => {
 
     const ids = fragmentChunks(result.chunks)
       .map((chunk) => chunk.id)
-      .sort();
+      .sort(byCodePoint);
     expect(ids).toEqual(["feature-fragment:US-002"]);
   });
 
@@ -475,7 +476,7 @@ describe("FeatureContextProviderV2 US-003 — fragment dependency walk", () => {
 
     const ids = fragmentChunks(result.chunks)
       .map((chunk) => chunk.id)
-      .sort();
+      .sort(byCodePoint);
     expect(ids).toEqual(["feature-fragment:US-002", "feature-fragment:US-003"]);
   });
 });

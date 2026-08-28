@@ -257,4 +257,16 @@ export interface IAgentManager {
   ): Promise<import("./types").TurnResult>;
 }
 
+/**
+ * The session-turn transport `AgentManager.runAsSession` dispatches through.
+ * Lives here beside `SessionRunHopFn` rather than in manager.ts — Biome's
+ * `useAwaitThenable` cannot infer through a function-type alias declared and
+ * consumed in the same module as an optional class property.
+ */
+export type SendPromptFn = (
+  handle: import("./types").SessionHandle,
+  prompt: string,
+  opts: RunAsSessionOpts,
+) => Promise<import("./types").TurnResult>;
+
 export type { SessionRunHopFn };

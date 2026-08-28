@@ -8,6 +8,7 @@ import {
   suggestedTestFilename,
 } from "@/acceptance";
 import type { PRD, UserStory } from "@/prd";
+import { byCodePoint } from "@/utils/sort";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -60,7 +61,7 @@ describe("groupStoriesByPackage()", () => {
     ]);
     const groups = await groupStoriesByPackage(prd, WORKDIR, "my-feature");
     expect(groups).toHaveLength(2);
-    const dirs = groups.map((g) => g.packageDir).sort();
+    const dirs = groups.map((g) => g.packageDir).sort(byCodePoint);
     expect(dirs).toEqual(["/repo/apps/api", "/repo/apps/cli"]);
   });
 

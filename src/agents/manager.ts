@@ -39,6 +39,7 @@ import type {
   AgentRunRequest,
   IAgentManager,
   RunAsSessionOpts,
+  SendPromptFn,
   SessionRunHopFn,
 } from "./manager-types";
 import type { AgentRegistry } from "./registry";
@@ -62,12 +63,6 @@ type LoggerLike = {
  * disable the very warning that surfaces a genuine listener leak.
  */
 const MAX_EMITTER_LISTENERS = 100;
-
-export type SendPromptFn = (
-  handle: import("./types").SessionHandle,
-  prompt: string,
-  opts: RunAsSessionOpts,
-) => Promise<import("./types").TurnResult>;
 
 /** Injectable deps for testability. */
 export const _agentManagerDeps = {
@@ -664,13 +659,14 @@ export class AgentManager implements IAgentManager {
         { stage: opts.pipelineStage ?? "run", agentName },
       );
     }
+    const sendPrompt: SendPromptFn = this._sendPrompt;
     const stage = opts.pipelineStage ?? "run";
     // SEC-3: per-package permissionProfile (monorepo). Per plan §3.3 Note: needs full NaxConfig.
     const resolvedPermissions = resolvePermissions(opts.config ?? this._config, stage);
     const sessionRole = handle.role ?? opts.sessionRole ?? "main";
     const start = Date.now();
     try {
-      const rawResult = await this._sendPrompt(handle, prompt, opts);
+      const rawResult = await sendPrompt(handle, prompt, opts);
       const result = {
         ...rawResult,
         protocolIds: rawResult.protocolIds ?? handle.protocolIds,

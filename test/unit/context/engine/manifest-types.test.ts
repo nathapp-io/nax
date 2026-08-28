@@ -10,7 +10,7 @@ beforeAll(() => {
 });
 
 afterAll(async () => {
-  if (projectDir) await cleanupTempDir(projectDir);
+  if (projectDir) cleanupTempDir(projectDir);
 });
 
 const PROJECT_DIR = () => projectDir;
