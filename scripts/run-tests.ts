@@ -132,9 +132,7 @@ async function runPhase(phase: Phase): Promise<number> {
   let timeoutReapPromise: Promise<void> | undefined;
   const timer = setTimeout(() => {
     timedOut = true;
-    process.stderr.write(
-      `\n[run-tests] ${phase.name} exceeded ${phase.phaseTimeoutMs / 1000}s\n`,
-    );
+    process.stderr.write(`\n[run-tests] ${phase.name} exceeded ${phase.phaseTimeoutMs / 1000}s\n`);
     timeoutReapPromise = reapGroup(pgid, "phase timeout");
   }, phase.phaseTimeoutMs);
   timer.unref();
@@ -152,8 +150,7 @@ async function runPhase(phase: Phase): Promise<number> {
   if (timeoutReapPromise !== undefined) {
     await timeoutReapPromise;
   } else if (abnormal && groupHasSurvivors(pgid)) {
-    const reason =
-      exitCode === null ? "leader signaled (likely Bun panic/segfault)" : `leader exit ${exitCode}`;
+    const reason = exitCode === null ? "leader signaled (likely Bun panic/segfault)" : `leader exit ${exitCode}`;
     await reapGroup(pgid, reason);
   }
 

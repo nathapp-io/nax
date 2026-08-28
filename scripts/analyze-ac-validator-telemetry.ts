@@ -139,7 +139,6 @@ function main(): void {
       if (survive) bucket.survive += 1;
       else bucket.notSurvive += 1;
       dropCrosstab.set(drop.dropCode, bucket);
-
     }
 
     for (const accept of audit.adversarialAcceptAnalysis ?? []) {
@@ -184,7 +183,9 @@ function main(): void {
   lines.push(`Accepts with diff available:      ${totalAcceptsWithDiff}`);
   lines.push("Accepted by counterfactual (diff-available only):");
   lines.push(`  Would survive structural:        ${pct(acceptsSurviveStructural, totalAcceptsWithDiff)}`);
-  lines.push(`  Would NOT survive structural:    ${pct(acceptsNotSurviveStructural, totalAcceptsWithDiff)}  ← over-rejection risk if we replaced`);
+  lines.push(
+    `  Would NOT survive structural:    ${pct(acceptsNotSurviveStructural, totalAcceptsWithDiff)}  ← over-rejection risk if we replaced`,
+  );
   lines.push("");
   lines.push("Categories of accepted findings that would NOT survive structural:");
   if (acceptsNotSurviveCategories.size === 0) {
@@ -196,19 +197,25 @@ function main(): void {
   }
   lines.push("");
   lines.push("Decision-gate inputs:");
-  const fragilityTotalDrops = (dropCrosstab.get("ac_quote_not_substring")?.notSurvive ?? 0)
-    + (dropCrosstab.get("ac_quote_not_substring")?.survive ?? 0)
-    + (dropCrosstab.get("ac_quote_does_not_constrain_locus")?.notSurvive ?? 0)
-    + (dropCrosstab.get("ac_quote_does_not_constrain_locus")?.survive ?? 0);
-  const fragilityNotSurvive = (dropCrosstab.get("ac_quote_not_substring")?.notSurvive ?? 0)
-    + (dropCrosstab.get("ac_quote_does_not_constrain_locus")?.notSurvive ?? 0);
+  const fragilityTotalDrops =
+    (dropCrosstab.get("ac_quote_not_substring")?.notSurvive ?? 0) +
+    (dropCrosstab.get("ac_quote_not_substring")?.survive ?? 0) +
+    (dropCrosstab.get("ac_quote_does_not_constrain_locus")?.notSurvive ?? 0) +
+    (dropCrosstab.get("ac_quote_does_not_constrain_locus")?.survive ?? 0);
+  const fragilityNotSurvive =
+    (dropCrosstab.get("ac_quote_not_substring")?.notSurvive ?? 0) +
+    (dropCrosstab.get("ac_quote_does_not_constrain_locus")?.notSurvive ?? 0);
   lines.push(`  Substring-fragility drops (diff-available): ${fragilityTotalDrops}`);
-  lines.push(`  ...of which NOT-survive structural:         ${pct(fragilityNotSurvive, fragilityTotalDrops)} → drives keep/refine/replace`);
+  lines.push(
+    `  ...of which NOT-survive structural:         ${pct(fragilityNotSurvive, fragilityTotalDrops)} → drives keep/refine/replace`,
+  );
   lines.push("");
   lines.push(`Prompt-compliance proxy: ${promptComplianceFailures} substring-fragility drops had fileInDiff=false`);
   lines.push(`  (these are reviewer scope-violation findings — fixable in the prompt, not the validator)`);
   lines.push("");
-  lines.push(`Decision gate trigger: N >= 50 distinct drops. Current: ${totalDrops} drop(s) total, ${totalDropsWithDiff} with diff.`);
+  lines.push(
+    `Decision gate trigger: N >= 50 distinct drops. Current: ${totalDrops} drop(s) total, ${totalDropsWithDiff} with diff.`,
+  );
 
   console.log(lines.join("\n"));
 }

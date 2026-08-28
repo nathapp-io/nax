@@ -10,7 +10,7 @@ paths:
 # Test Debt Ratchets
 
 **`test/` must typecheck clean.** `bun run typecheck` compiles `tsconfig.test.json`
-alongside `tsconfig.json` and `tsconfig.contracts.json`; any error fails CI. There is no
+alongside `tsconfig.json`; any error fails CI. There is no
 allowance and no baseline to raise — fix the fixture.
 
 This is a hard gate, not a ratchet, since #1514 §47 drained the last 9 errors (2009 → 0).

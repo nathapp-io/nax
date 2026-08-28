@@ -57,6 +57,90 @@ one-line enables.
 | `suspicious/noConsole` | 753 src / 80 test | The structured-logging rule has no gate today. But the hits cluster in `src/cli` (209) and `src/commands` (78) — a CLI's user-facing output *is* console. Needs a policy decision first: either an override turning it off for the CLI/commands layers (gating the other ~470 src sites), or routing CLI output through one sanctioned writer. Do not enable repo-wide as-is. |
 | `complexity/noExcessiveCognitiveComplexity` | 292 src / 21 test | Aligns with the ≤30-line function rule, but at the default threshold (15) it lands 313 findings. Enabling means either a long refactor drain or tuning `maxAllowedComplexity` upward until the count is a handful, then ratcheting the option down over time. |
 
+## Tier 4 — evaluated, not adopted: overlaps an existing hand-rolled ratchet
+
+This document never evaluated `suspicious/noImportCycles`. It should have: the repo already
+runs `scripts/check-import-cycles.ts` as a `check:import-cycles` ratchet over the same
+shape (import cycles in `src/`), so a Biome rule covering the same ground is exactly the
+kind of gap this doc exists to catch. It was probed and is **not recommended for
+adoption**, for reasons measured below, not assumed.
+
+| Rule | Hits | What blocks it |
+|:--|:--|:--|
+| `suspicious/noImportCycles` (`project` domain, shipped since 2.0.0, default `warn`) | 399 diagnostics / **151** distinct `src/` files | Biome has **no baseline or ratchet mechanism** for any rule — a rule is `error` or it is not — so enabling this at `error` is a same-day 399-finding drain, not a config change, with no way to land it today and lower the count over time the way `check:import-cycles`'s baseline file does. |
+
+Confirmed with `bun x biome explain noImportCycles`: default severity `warn`, `project`
+domain, available since 2.0.0. Measured against this repo with a probe `biome.json`
+(`domains.project: "all"`, `suspicious.noImportCycles: "error"`, otherwise the repo's real
+config) run as `./node_modules/.bin/biome check src/ --reporter=json --max-diagnostics=5000`
+— **399 diagnostics across 151 distinct files**, reproducing the number this entry was
+opened with exactly. The probe edit was reverted immediately after and `git status`
+confirmed clean before anything else ran.
+
+### Does it subsume `check:import-cycles`? No — verified, not assumed
+
+`scripts/check-import-cycles.ts`'s header states the check counts **modules inside a
+strongly-connected component** (Tarjan's SCC algorithm, run over `src/` only) and
+**deliberately excludes type-only imports**, because TypeScript erases them and they cannot
+participate in a runtime module-init cycle. Two things had to be checked before treating
+Biome's rule as equivalent:
+
+- **Type-only exclusion: matches, verified with a fixture.** Biome's own `ignoreTypes`
+  option (enabled by default) makes the same exclusion for the same reason. Built a
+  two-file fixture — `a.ts` and `b.ts`, each importing the other with a pure `import type`
+  — and ran it through the repo's pinned `./node_modules/.bin/biome` (2.5.10): **zero
+  diagnostics**, exit 0. The same two files rewritten as plain value imports (`import { useB
+  } from "./b.ts"` etc.) fired the rule immediately, confirming the fixture and the binary
+  both work and the type-only case is a genuine exclusion, not a false negative from a
+  broken probe. Neither tool excludes *mixed* named-type imports
+  (`import { type Foo, bar }`) — the repo's regex only recognizes a whole-statement `import
+  type` prelude, and Biome's own docs note the same shape isn't type-only-safe without
+  `verbatimModuleSyntax` (which this repo does not set) — so the two tools agree on both the
+  excluded and the non-excluded case.
+- **Membership overlap is high but not total, and the counting unit is different.**
+  Comparing the probe's 151 flagged files against the ratchet baseline's 135: **134 of the
+  135 ratchet modules are also flagged by Biome.** The one exception,
+  `src/review/semantic.ts`, is a file that imports itself
+  (`src/review/semantic.ts -> src/review/semantic.ts` per `check-import-cycles.ts --list`)
+  — Biome's own rule doc states self-imports are explicitly allowed and never trigger the
+  rule ("this allows for encapsulation of functions/variables into a namespace"), while the
+  repo's Tarjan pass counts a self-loop as a one-module cycle. That is a real, documented
+  semantic difference, not noise. The other direction — **17 files Biome flags that the
+  ratchet does not** — was not fully traced; the likely cause is that Biome resolves
+  imports through real TypeScript module resolution while the repo's script resolves
+  specifiers with a small hand-rolled function (`@/` prefix and relative paths only), so a
+  resolution edge Biome sees and the script's resolver misses would under-count on the
+  ratchet's side rather than over-count on Biome's. Not verified further; flagged here so a
+  future reader does not assume the 17 are Biome noise. **Separately, the two report in
+  different units entirely** — Biome emits one diagnostic per cycle-participating `import`
+  statement (399), the ratchet counts distinct modules inside a component (135) — so even
+  where the file sets matched exactly, the headline numbers would not.
+
+### Recommendation: do not adopt, keep `check:import-cycles`
+
+Per `.nax/rules/test-ratchets.md`'s *What biome gates instead* principle — prefer the
+parser over a text counter, pin severity at `error` because `biome check` exits 0 on
+warnings, and treat a rule that has never been seen to fail as not known to be wired — the
+abstract case for `noImportCycles` is real: it is a parser-backed check, not a regex, and
+this entry mutation-probed it (the plain-import fixture above) so it is known to fire.
+But the practical case fails on the two things a gate needs and Biome's rule does not have:
+
+1. **No ratchet.** `check:import-cycles` exists specifically because the repo carries a
+   live, non-zero count (currently 135) that is being brought down over time via
+   `--update-baseline`. `noImportCycles` at `error` has no equivalent — day one is a
+   399-finding hard failure with no lever to land it and improve later, which is the same
+   trap Tier 3's `noExcessiveCognitiveComplexity` avoided by ratcheting `maxAllowedComplexity`
+   instead of accepting the rule's fixed threshold.
+2. **It is not a strict superset.** The self-import exemption means Biome would report a
+   *smaller* module set than the ratchet already covers for at least one real repo file,
+   so swapping the ratchet out for the Biome rule would be a silent coverage loss, not a
+   like-for-like replacement.
+
+Both tools should keep running: `check:import-cycles` as the gate with a working baseline,
+and `noImportCycles` left off. If Biome ever ships a baseline/ratchet option for this rule,
+or the self-import exemption is made configurable, re-measure — the file-set overlap (134 of
+135) is close enough that the gap is a mechanism problem, not a relevance problem.
+
 ## Considered and rejected — measured, and the noise verdict stands
 
 | Rule | Hits | Why not |

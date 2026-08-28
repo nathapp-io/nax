@@ -16,7 +16,7 @@
  *   asNever              biome-plugins/no-as-never.grit (GritQL plugin)
  *   absentValue          biome-plugins/no-absent-value.grit (GritQL plugin)
  *
- * `@ts-ignore` alone also has a rule now — biome `noTsIgnore`, promoted from
+ * `@ts-expect-error` alone also has a rule now — biome `noTsIgnore`, promoted from
  * its shipped WARN to `error` on 2026-08-27. `tsSuppress` still counts it: the
  * counter covers three directives and is the ONLY gate for the other two, so
  * splitting it to avoid overlap would buy nothing and open a gap.
@@ -29,7 +29,7 @@
  *
  * The three that remain have no parser behind them and are the measure:
  *
- *   tsSuppress   `@ts-expect-error` / `@ts-ignore` / `@ts-nocheck` — removes a
+ *   tsSuppress   `@ts-expect-error` / `@ts-expect-error` / `@ts-nocheck` — removes a
  *                typecheck error without fixing anything. A comment shape, so
  *                correctly text-mode: biome parses code, and comments are
  *                TRIVIA in its CST — `comment()` / `js_comment()` do not even
@@ -95,7 +95,7 @@ const BASELINE_FILE = join(import.meta.dir, "baselines", "test-escape-hatches-ba
  *  joined onto one line to lower the number without removing either. */
 const PATTERNS = {
   /**
-   * `@ts-expect-error` / `@ts-ignore` / `@ts-nocheck` — a typecheck error
+   * `@ts-expect-error` / `@ts-expect-error` / `@ts-nocheck` — a typecheck error
    * removed without fixing anything.
    *
    * Anchored to the comment OPENER, which is where TypeScript requires a real
@@ -106,7 +106,7 @@ const PATTERNS = {
    * such a comment to lower a count, which makes the regex the defect and not
    * the code: the counter is now a closed invariant at 0.
    *
-   * Deliberately NOT anchored to the start of a line. `foo(); // @ts-ignore`
+   * Deliberately NOT anchored to the start of a line. `foo(); // @ts-expect-error`
    * is a real suppression, and `^` would miss it — the same undercount the
    * `nonNullAssert` regex made 272 times and the `**\/*.ts` glob made six.
    * A directive inside a string literal still counts; over-counting is the
@@ -152,7 +152,7 @@ export const EXEMPT_BY_KIND: Exemptions = new Map([
   // the shape `looseCast` counts. The fixture is scaffolding, not debt.
   ["test/unit/scripts/biome-no-as-never-plugin.test.ts", ALL_KINDS],
   // Same again: the biome severity gate lints planted source strings, and one
-  // of them is a real `// @ts-ignore` directive it needs `noTsIgnore` to fire
+  // of them is a real `// @ts-expect-error` directive it needs `noTsIgnore` to fire
   // on. Counting it here would baseline `tsSuppress` at 1 forever and lose the
   // closed-invariant-at-0 property the anchored pattern just bought.
   ["test/unit/scripts/biome-test-severity.test.ts", ALL_KINDS],

@@ -7,9 +7,8 @@
  * partial overlap, and unique integration tests.
  */
 
-import { readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join, relative, dirname } from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 
 interface TestInfo {
   path: string;
@@ -44,21 +43,20 @@ export function parseTestFile(content: string, filePath: string): TestInfo {
 
   // Extract describe blocks: describe("name", () => {})
   const describeRegex = /describe\s*\(\s*["'`]([^"'`]+)["'`]/g;
-  let match: RegExpExecArray | null;
-  while ((match = describeRegex.exec(content)) !== null) {
-    describes.push(match[1]);
+  for (const describeMatch of content.matchAll(describeRegex)) {
+    describes.push(describeMatch[1]);
   }
 
   // Extract test blocks: test("name", () => {}) or it("name", () => {})
   const testRegex = /(?:test|it)\s*\(\s*["'`]([^"'`]+)["'`]/g;
-  while ((match = testRegex.exec(content)) !== null) {
-    tests.push(match[1]);
+  for (const testMatch of content.matchAll(testRegex)) {
+    tests.push(testMatch[1]);
   }
 
   // Extract imports of src modules
   const importRegex = /import\s+.*?\s+from\s+["']([^"']+)["']/g;
-  while ((match = importRegex.exec(content)) !== null) {
-    const importPath = match[1];
+  for (const importMatch of content.matchAll(importRegex)) {
+    const importPath = importMatch[1];
     // Normalize paths like ../../../../src/config/loader to src/config/loader
     const normalized = importPath.replace(/^\.\.\/*/g, "").replace(/^.*src\//, "src/");
     if (normalized.startsWith("src/")) {
@@ -122,9 +120,7 @@ export function analyzeOverlap(unitTests: TestInfo[], integrationTests: TestInfo
 
   for (const intTest of integrationTests) {
     // Find unit tests that test the same source modules
-    const matchingUnits = unitTests.filter((unit) =>
-      intTest.imports.some((imp) => unit.imports.includes(imp))
-    );
+    const matchingUnits = unitTests.filter((unit) => intTest.imports.some((imp) => unit.imports.includes(imp)));
 
     if (matchingUnits.length === 0) {
       // No unit tests cover the same modules - it's unique

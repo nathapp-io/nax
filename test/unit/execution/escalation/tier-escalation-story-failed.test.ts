@@ -54,9 +54,7 @@ describe("preIterationTierCheck — story:failed event emission (BUG-5)", () => 
   });
 
   test("emits story:failed when the story has exhausted the final tier's budget (no next tier)", async () => {
-    const { preIterationTierCheck, _tierEscalationDeps } = await import(
-      "../../../../src/execution/escalation/tier-escalation"
-    );
+    const { preIterationTierCheck, _tierEscalationDeps } = await import("@/execution/escalation/tier-escalation");
 
     const origSavePRD = _tierEscalationDeps.savePRD;
     _tierEscalationDeps.savePRD = () => Promise.resolve();
@@ -108,9 +106,7 @@ describe("preIterationTierCheck — story:failed event emission (BUG-5)", () => 
   });
 
   test("does not emit story:failed when the story still has escalation budget or a next tier", async () => {
-    const { preIterationTierCheck, _tierEscalationDeps } = await import(
-      "../../../../src/execution/escalation/tier-escalation"
-    );
+    const { preIterationTierCheck, _tierEscalationDeps } = await import("@/execution/escalation/tier-escalation");
 
     const origSavePRD = _tierEscalationDeps.savePRD;
     _tierEscalationDeps.savePRD = () => Promise.resolve();
@@ -159,9 +155,7 @@ describe("preIterationTierCheck — story:failed event emission (BUG-5)", () => 
   });
 
   test("cost falls back to totalCost when no runtime is passed", async () => {
-    const { preIterationTierCheck, _tierEscalationDeps } = await import(
-      "../../../../src/execution/escalation/tier-escalation"
-    );
+    const { preIterationTierCheck, _tierEscalationDeps } = await import("@/execution/escalation/tier-escalation");
 
     const origSavePRD = _tierEscalationDeps.savePRD;
     _tierEscalationDeps.savePRD = () => Promise.resolve();
@@ -201,9 +195,7 @@ describe("preIterationTierCheck — story:failed event emission (BUG-5)", () => 
   });
 
   test("cost uses the per-story total from runtime.costAggregator.byStory() when a runtime is passed", async () => {
-    const { preIterationTierCheck, _tierEscalationDeps } = await import(
-      "../../../../src/execution/escalation/tier-escalation"
-    );
+    const { preIterationTierCheck, _tierEscalationDeps } = await import("@/execution/escalation/tier-escalation");
 
     const origSavePRD = _tierEscalationDeps.savePRD;
     _tierEscalationDeps.savePRD = () => Promise.resolve();
@@ -274,9 +266,7 @@ describe("preIterationTierCheck — on-story-fail hook fires exactly once (regre
   });
 
   test("terminal tier-exhaustion fires the on-story-fail hook exactly once", async () => {
-    const { preIterationTierCheck, _tierEscalationDeps } = await import(
-      "../../../../src/execution/escalation/tier-escalation"
-    );
+    const { preIterationTierCheck, _tierEscalationDeps } = await import("@/execution/escalation/tier-escalation");
 
     const origSavePRD = _tierEscalationDeps.savePRD;
     _tierEscalationDeps.savePRD = () => Promise.resolve();

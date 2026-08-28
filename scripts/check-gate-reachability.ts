@@ -21,7 +21,7 @@
  *   0 — every check script is reachable
  *   1 — one or more check scripts are unreachable (listed on stderr)
  */
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { byCodePoint } from "../src/utils/sort";
 
@@ -31,10 +31,7 @@ const CI_WORKFLOW = join(".github", "workflows", "ci.yml");
 export function discoverCheckScripts(root: string): string[] {
   const dir = join(root, "scripts");
   if (!existsSync(dir)) return [];
-  return readdirSync(dir).filter(
-    (name) =>
-      name.startsWith("check-") && (name.endsWith(".ts") || name.endsWith(".sh"))
-  );
+  return readdirSync(dir).filter((name) => name.startsWith("check-") && (name.endsWith(".ts") || name.endsWith(".sh")));
 }
 
 export interface CiEntryPoints {
@@ -60,9 +57,7 @@ function matchAll(text: string, re: RegExp): string[] {
  * to resolve the expression by hand, and the workflow is ours to keep simple.
  */
 export function parseCiEntryPoints(ciYaml: string): CiEntryPoints {
-  const scriptNames = matchAll(ciYaml, BUN_RUN_RE).filter(
-    (name) => !name.startsWith("$")
-  );
+  const scriptNames = matchAll(ciYaml, BUN_RUN_RE).filter((name) => !name.startsWith("$"));
   for (const list of matchAll(ciYaml, MATRIX_CHECK_RE)) {
     for (const entry of list.split(",")) {
       const name = entry.trim();
@@ -85,9 +80,7 @@ export interface ReachabilityInputs {
  * Walks the entry points, following `bun run <name>` hops through
  * package.json, and returns every `scripts/check-*` file they reach.
  */
-export function collectReachableScriptFiles(
-  inputs: ReachabilityInputs
-): Set<string> {
+export function collectReachableScriptFiles(inputs: ReachabilityInputs): Set<string> {
   const reached = new Set<string>(inputs.entryScriptFiles);
   const visited = new Set<string>();
   const queue = [...inputs.entryScriptNames];
@@ -111,9 +104,7 @@ export interface UnreachableInputs extends ReachabilityInputs {
   checkScripts: string[];
 }
 
-export function findUnreachableCheckScripts(
-  inputs: UnreachableInputs
-): string[] {
+export function findUnreachableCheckScripts(inputs: UnreachableInputs): string[] {
   const reachable = collectReachableScriptFiles(inputs);
   return inputs.checkScripts.filter((name) => !reachable.has(name)).sort(byCodePoint);
 }
@@ -143,19 +134,13 @@ function main() {
   const unreachable = findUnreachableCheckScriptsInRepo(root);
 
   if (unreachable.length > 0) {
-    console.error(
-      `[FAIL] ${unreachable.length} check script(s) run in no pipeline:`
-    );
+    console.error(`[FAIL] ${unreachable.length} check script(s) run in no pipeline:`);
     for (const name of unreachable) console.error(`  - scripts/${name}`);
-    console.error(
-      `\nAdd each to the "check:all" script in package.json, or delete it.`
-    );
+    console.error(`\nAdd each to the "check:all" script in package.json, or delete it.`);
     process.exit(1);
   }
 
-  console.log(
-    `OK: all ${discoverCheckScripts(root).length} check scripts are reachable from CI`
-  );
+  console.log(`OK: all ${discoverCheckScripts(root).length} check scripts are reachable from CI`);
 }
 
 if (import.meta.main) {

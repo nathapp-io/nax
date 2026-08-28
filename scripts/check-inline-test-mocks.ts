@@ -138,7 +138,7 @@ const SKIP_FILES = new Set([
   "test/integration/execution/status-file.test.ts",
   "test/integration/execution/agent-swap.test.ts",
   "test/integration/prompts/pb-004-migration.test.ts",
-// Pattern A (makeConfig) - complex full configs not spreading DEFAULT_CONFIG
+  // Pattern A (makeConfig) - complex full configs not spreading DEFAULT_CONFIG
   "test/unit/pipeline/stages/completion-semantic.test.ts",
   "test/unit/pipeline/stages/verify-crash-detection.test.ts",
   "test/unit/pipeline/stages/prompt-batch.test.ts",
@@ -288,9 +288,10 @@ for (const file of files) {
   for (let i = 0; i < lines.length; i++) {
     for (const p of PATTERNS) {
       if (p.re.test(lines[i])) {
-        const matchIndex = text.indexOf(lines[i], lines
-          .slice(0, i)
-          .reduce((acc, l) => acc + l.length + 1, 0));
+        const matchIndex = text.indexOf(
+          lines[i],
+          lines.slice(0, i).reduce((acc, l) => acc + l.length + 1, 0),
+        );
 
         if (p.kind === "inline-agent-adapter" && isInsideHelperCall(text, matchIndex)) {
           continue;

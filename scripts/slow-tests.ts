@@ -62,12 +62,11 @@ function parseJUnit(xml: string): TestCase[] {
   // IMPORTANT: self-closing alternative must come FIRST — otherwise the open-tag
   // pattern matches `/>` as attrs-char + `>`, consuming multiple testcases in one hit.
   const testcaseRegex = /<testcase([^>]*?)\/>\s*|<testcase([^>]*?)>([\s\S]*?)<\/testcase>/g;
-  let match: RegExpExecArray | null;
 
-  while ((match = testcaseRegex.exec(xml)) !== null) {
+  for (const match of xml.matchAll(testcaseRegex)) {
     const isSelfClosing = match[1] !== undefined;
-    const attrs = isSelfClosing ? match[1] : match[2] ?? "";
-    const inner = isSelfClosing ? "" : match[3] ?? "";
+    const attrs = (isSelfClosing ? match[1] : match[2]) ?? "";
+    const inner = isSelfClosing ? "" : (match[3] ?? "");
 
     const name = extractAttr(attrs, "name");
     const classname = extractAttr(attrs, "classname");
@@ -144,21 +143,9 @@ function printTable(tests: TestCase[]): void {
   const fileW = Math.min(50, Math.max(20, ...tests.map((t) => t.file.length)));
   const nameW = Math.min(60, Math.max(20, ...tests.map((t) => t.name.length)));
 
-  const header = [
-    "Rank".padEnd(rankW),
-    "Duration".padEnd(durW),
-    "S",
-    "File".padEnd(fileW),
-    "Test Name",
-  ].join("  ");
+  const header = ["Rank".padEnd(rankW), "Duration".padEnd(durW), "S", "File".padEnd(fileW), "Test Name"].join("  ");
 
-  const sep = [
-    "─".repeat(rankW),
-    "─".repeat(durW),
-    "─",
-    "─".repeat(fileW),
-    "─".repeat(nameW),
-  ].join("  ");
+  const sep = ["─".repeat(rankW), "─".repeat(durW), "─", "─".repeat(fileW), "─".repeat(nameW)].join("  ");
 
   console.log(`\n🐢 Slowest Tests (top ${tests.length}, min ${minMs}ms)\n`);
   console.log(header);

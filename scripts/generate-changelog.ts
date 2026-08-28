@@ -92,7 +92,9 @@ function filterCommits(commits: ReturnType<typeof parseCommit>[]): NonNullable<R
   });
 }
 
-function groupByType(commits: NonNullable<ReturnType<typeof parseCommit>>[]): Record<string, NonNullable<ReturnType<typeof parseCommit>>[]> {
+function groupByType(
+  commits: NonNullable<ReturnType<typeof parseCommit>>[],
+): Record<string, NonNullable<ReturnType<typeof parseCommit>>[]> {
   const groups: Record<string, NonNullable<ReturnType<typeof parseCommit>>[]> = {};
   for (const c of commits) {
     const key = c.type;
@@ -145,10 +147,12 @@ async function rewriteBatch(batch: BatchEntry[]): Promise<Map<string, string>> {
   if (batch.length === 0) return result;
 
   // Build per-version sections with a unique anchor tag
-  const versionBlocks = batch.map(({ tag, date, raw }) => {
-    const version = tag.replace(/^v/, "");
-    return `[V_${version}] ${date}\n${raw}`;
-  }).join("\n\n");
+  const versionBlocks = batch
+    .map(({ tag, date, raw }) => {
+      const version = tag.replace(/^v/, "");
+      return `[V_${version}] ${date}\n${raw}`;
+    })
+    .join("\n\n");
 
   const prompt = `You are writing a public CHANGELOG for an open-source CLI tool called "nax" (AI coding agent orchestrator).
 
@@ -179,7 +183,7 @@ ${versionBlocks}`;
   let lastError = "";
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     if (attempt > 0) {
-      const delay = RETRY_BASE_MS * Math.pow(2, attempt - 1);
+      const delay = RETRY_BASE_MS * 2 ** (attempt - 1);
       console.error(`  ⏳ Retry ${attempt}/${MAX_RETRIES - 1} after ${delay}ms…`);
       await Bun.sleep(delay);
     }
@@ -228,11 +232,9 @@ ${versionBlocks}`;
 
       // Parse response: extract [V_version] blocks
       const versionRe = /\[V_([\d.]+)\]/g;
-      let lastIndex = 0;
-      let match: RegExpExecArray | null;
       const blocks: { version: string; content: string }[] = [];
 
-      while ((match = versionRe.exec(text)) !== null) {
+      for (const match of text.matchAll(versionRe)) {
         const start = match.index;
         const version = match[1];
         // Find next [V_...] or end of string
@@ -240,13 +242,12 @@ ${versionBlocks}`;
         const end = nextMatch ? start + match[0].length + (nextMatch.index ?? text.length) : text.length;
         const content = text.slice(start + match[0].length, end).trim();
         blocks.push({ version, content });
-        lastIndex = end;
       }
 
       // Build map from version string (e.g. "0.42.0") to tag (e.g. "v0.42.0")
       for (const { tag, raw } of batch) {
         const version = tag.replace(/^v/, "");
-        const block = blocks.find(b => b.version === version);
+        const block = blocks.find((b) => b.version === version);
         result.set(tag, block?.content ?? raw);
       }
 
@@ -280,13 +281,19 @@ async function main() {
   let baseTag: string | undefined;
   if (fromTag) {
     const idx = tags.indexOf(fromTag);
-    if (idx < 0) { console.error(`Tag ${fromTag} not found`); process.exit(1); }
+    if (idx < 0) {
+      console.error(`Tag ${fromTag} not found`);
+      process.exit(1);
+    }
     baseTag = idx > 0 ? tags[idx - 1] : undefined;
     tags = tags.slice(idx);
   }
   if (toTag) {
     const idx = tags.indexOf(toTag);
-    if (idx < 0) { console.error(`Tag ${toTag} not found`); process.exit(1); }
+    if (idx < 0) {
+      console.error(`Tag ${toTag} not found`);
+      process.exit(1);
+    }
     tags = tags.slice(0, idx + 1);
   }
 
@@ -310,7 +317,10 @@ async function main() {
 
   if (dryRun) {
     for (const entry of entries) {
-      if (entry.commits.length === 0) { changelogByTag.set(entry.tag, "_No user-facing changes._"); continue; }
+      if (entry.commits.length === 0) {
+        changelogByTag.set(entry.tag, "_No user-facing changes._");
+        continue;
+      }
       const grouped = groupByType(entry.commits);
       changelogByTag.set(entry.tag, formatGrouped(grouped));
     }
@@ -331,7 +341,7 @@ async function main() {
       }
 
       if (batch.length > 0) {
-        console.error(`\n  📦 Batch ${Math.floor(i / batchSize) + 1}: ${batch.map(b => b.tag).join(", ")}`);
+        console.error(`\n  📦 Batch ${Math.floor(i / batchSize) + 1}: ${batch.map((b) => b.tag).join(", ")}`);
         await Bun.sleep(300); // inter-batch delay
         const polished = await rewriteBatch(batch);
         for (const [tag, content] of polished) {

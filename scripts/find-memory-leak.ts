@@ -42,7 +42,7 @@ interface Result {
 function parseArgs(argv: string[]): Options {
   const get = (flag: string, fallback: string): string => {
     const idx = argv.indexOf(flag);
-    return idx >= 0 && idx + 1 < argv.length ? argv[idx + 1]! : fallback;
+    return idx >= 0 ? (argv[idx + 1] ?? fallback) : fallback;
   };
   return {
     dir: get("--dir", "test/unit"),
@@ -76,7 +76,8 @@ async function readRssKb(pid: number): Promise<number | null> {
   try {
     const text = await Bun.file(`/proc/${pid}/status`).text();
     const m = text.match(/^VmRSS:\s+(\d+)\s*kB/m);
-    return m ? Number.parseInt(m[1]!, 10) : null;
+    const digits = m?.[1];
+    return digits === undefined ? null : Number.parseInt(digits, 10);
   } catch {
     return null;
   }
@@ -101,23 +102,11 @@ async function pollPeakRss(pid: number, signal: AbortSignal): Promise<number> {
 
 async function runOne(file: string, opts: Options): Promise<Result> {
   const start = performance.now();
-  const proc = Bun.spawn(
-    [
-      "timeout",
-      "-k",
-      "5s",
-      `${opts.timeoutSec}s`,
-      "bun",
-      "test",
-      file,
-      "--timeout=5000",
-    ],
-    {
-      stdout: "ignore",
-      stderr: "ignore",
-      env: { ...process.env, FORCE_COLOR: "0" },
-    },
-  );
+  const proc = Bun.spawn(["timeout", "-k", "5s", `${opts.timeoutSec}s`, "bun", "test", file, "--timeout=5000"], {
+    stdout: "ignore",
+    stderr: "ignore",
+    env: { ...process.env, FORCE_COLOR: "0" },
+  });
 
   const abort = new AbortController();
   const peakPromise = pollPeakRss(proc.pid, abort.signal);
@@ -128,8 +117,7 @@ async function runOne(file: string, opts: Options): Promise<Result> {
 
   let verdict: Result["verdict"] = "OK";
   if (exitCode === 124) verdict = "HANG";
-  else if (exitCode === 134 || exitCode === 132 || exitCode === 139)
-    verdict = "CRASH";
+  else if (exitCode === 134 || exitCode === 132 || exitCode === 139) verdict = "CRASH";
   else if (exitCode !== 0) verdict = "FAIL";
   else if (peakRssMb >= opts.memThresholdMb) verdict = "MEM_HIGH";
 
@@ -145,8 +133,8 @@ async function runBatched(files: string[], opts: Options): Promise<Result[]> {
   async function worker(): Promise<void> {
     while (true) {
       const idx = cursor++;
-      if (idx >= files.length) return;
-      const file = files[idx]!;
+      const file = files[idx];
+      if (file === undefined) return;
       const result = await runOne(file, opts);
       results.push(result);
       done++;
@@ -167,11 +155,7 @@ async function runBatched(files: string[], opts: Options): Promise<Result[]> {
     }
   }
 
-  await Promise.all(
-    Array.from({ length: Math.min(opts.parallel, files.length) }, () =>
-      worker(),
-    ),
-  );
+  await Promise.all(Array.from({ length: Math.min(opts.parallel, files.length) }, () => worker()));
   return results;
 }
 
@@ -188,18 +172,12 @@ function rank(results: Result[]): Result[] {
 
 async function writeCsv(results: Result[], outPath: string): Promise<void> {
   const header = "file,exit_code,duration_ms,peak_rss_mb,verdict\n";
-  const rows = results
-    .map(
-      (r) =>
-        `${r.file},${r.exitCode},${r.durationMs},${r.peakRssMb},${r.verdict}`,
-    )
-    .join("\n");
+  const rows = results.map((r) => `${r.file},${r.exitCode},${r.durationMs},${r.peakRssMb},${r.verdict}`).join("\n");
   await writeFile(outPath, header + rows + "\n", "utf8");
 }
 
 function printSummary(results: Result[], opts: Options): void {
-  const by = (v: Result["verdict"]): number =>
-    results.filter((r) => r.verdict === v).length;
+  const by = (v: Result["verdict"]): number => results.filter((r) => r.verdict === v).length;
   console.log("\n=== Summary ===");
   console.log(`  Total files:  ${results.length}`);
   console.log(`  OK:           ${by("OK")}`);

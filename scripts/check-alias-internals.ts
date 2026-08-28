@@ -52,7 +52,7 @@
  * Usage: bun scripts/check-alias-internals.ts
  * Exit 0 if clean, exit 1 if violations found.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 export interface AliasViolation {
@@ -228,9 +228,7 @@ export function scanFileForAliasInternals(
   const violations: AliasViolation[] = [];
   const testImporter = isTestImporter(relative(rootDir, file));
 
-  STATIC_IMPORT_RE.lastIndex = 0;
-  let staticMatch: RegExpExecArray | null;
-  while ((staticMatch = STATIC_IMPORT_RE.exec(content)) !== null) {
+  for (const staticMatch of content.matchAll(STATIC_IMPORT_RE)) {
     const prelude = staticMatch[1] ?? "";
     const spec = staticMatch[2];
     if (!spec || !(spec.startsWith("@/") || spec.startsWith("@test/"))) continue;
@@ -242,9 +240,7 @@ export function scanFileForAliasInternals(
     violations.push({ file: relative(rootDir, file), line, importPath: spec, suggestion: hit.barrel });
   }
 
-  DYNAMIC_IMPORT_RE.lastIndex = 0;
-  let dynMatch: RegExpExecArray | null;
-  while ((dynMatch = DYNAMIC_IMPORT_RE.exec(content)) !== null) {
+  for (const dynMatch of content.matchAll(DYNAMIC_IMPORT_RE)) {
     const spec = dynMatch[1];
     if (!spec || !(spec.startsWith("@/") || spec.startsWith("@test/"))) continue;
     if (testImporter && isSrcAlias(spec)) continue;

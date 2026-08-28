@@ -49,11 +49,14 @@ see. Driving it down is not progress; keeping it from rising is.
 
 ### What is already done
 
-The typecheck half is finished and gated. `bun run typecheck` compiles all three projects:
+The typecheck half is finished and gated. `bun run typecheck` compiles both projects:
 
 ```
-bun x tsc --noEmit && bun x tsc --noEmit -p tsconfig.contracts.json && bun x tsc --noEmit -p tsconfig.test.json
+bun x tsc --noEmit && bun x tsc --noEmit -p tsconfig.test.json
 ```
+
+(It compiled a third, `tsconfig.contracts.json`, until that config was retired as a
+strict subset of `tsconfig.test.json`'s file set.)
 
 `check:test-typecheck`, its baseline and its parser are deleted — a counting ratchet at zero
 reports a number where `tsc` reports a file and a line. Issue #1514 is closed. Against the

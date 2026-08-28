@@ -79,7 +79,7 @@ export function formatGlobalNaxViolationReport(violations: GlobalNaxViolation[])
     "[FAIL] Direct ~/.nax path construction found",
     "",
     "Use shared helpers like globalConfigDir(), getRunsDir(), getEventsRootDir(),",
-    "or runtime path utilities instead of join(homedir(), \".nax\", ...).",
+    'or runtime path utilities instead of join(homedir(), ".nax", ...).',
     "",
   ];
 

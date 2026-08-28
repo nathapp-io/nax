@@ -35,6 +35,10 @@
       "style": {
         "noNonNullAssertion": "error",
         "noParameterAssign": "error",
+        "noRestrictedImports": {
+          "level": "error",
+          "options": { "patterns": [{ "group": ["../../*", "../../**"] }] }
+        },
         "useThrowOnlyError": "error"
       },
       "nursery": {
