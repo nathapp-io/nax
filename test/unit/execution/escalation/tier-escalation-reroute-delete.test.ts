@@ -19,17 +19,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeEscalationContext, makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import { makeEscalationContext, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 import type { EscalationHandlerContext } from "@/execution/escalation/tier-escalation";
 import { _tierEscalationDeps, handleTierEscalation } from "@/execution/escalation/tier-escalation";
-import type { RoutingDecision } from "@/routing/decision";
-import { injectCacheEntry } from "@/routing/strategies/llm-cache";
-import type { NaxRuntime } from "@/runtime";
 
 const TIER_ESCALATION_PATH = new URL("../../../../src/execution/escalation/tier-escalation.ts", import.meta.url)
   .pathname;
 
-const createdRuntimes: NaxRuntime[] = [];
 let origSavePRD: typeof _tierEscalationDeps.savePRD;
 
 beforeEach(() => {
@@ -37,10 +33,8 @@ beforeEach(() => {
   _tierEscalationDeps.savePRD = () => Promise.resolve();
 });
 
-afterEach(async () => {
+afterEach(() => {
   _tierEscalationDeps.savePRD = origSavePRD;
-  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
-  createdRuntimes.length = 0;
 });
 
 // ---------------------------------------------------------------------------
@@ -61,39 +55,27 @@ describe("#1710 — handleTierEscalation does not LLM-re-route", () => {
 });
 
 // ---------------------------------------------------------------------------
-// #1710 — escalated tier wins over a lower-tier routingCache entry
+// #1710 — escalation writes the escalated tier to the result PRD
 //
-// Integration guard: pre-populates `runtime.routingCache` with a lower-tier
-// decision, escalates, and asserts the story runs at the escalated tier. Pins
-// `resolveOperatingTier` precedence against future cache writers. The unit
-// rule itself is covered in `test/unit/routing/operating-tier.test.ts`; this
-// test pins it transitively through `handleTierEscalation`.
+// Integration guard: the tier the escalated retry actually runs at is the
+// next rung in tierOrder, written into the returned PRD's userStories entry.
+// The `resolveOperatingTier` precedence rule (escalated tier wins over a
+// lower-tier cache hit) is pinned at unit level in
+// `test/unit/routing/operating-tier.test.ts`. This test pins the equivalent
+// invariant on the `handleTierEscalation` write path — the next iteration
+// will read `story.routing.modelTier` from this PRD and run at the escalated
+// tier regardless of any prior cache state.
 // ---------------------------------------------------------------------------
 
-describe("#1710 — escalated tier wins over lower-tier routingCache entry", () => {
-  test("after escalation, story.routing.modelTier reflects the escalated tier, not the cached lower tier", async () => {
+describe("#1710 — escalation writes the escalated tier to the result PRD", () => {
+  test("after escalation, the story's routing.modelTier in the returned PRD reflects the escalated tier", async () => {
     const story = makeStory({
-      id: "US-cache-vs-escalation",
-      title: "Story with stale cache",
+      id: "US-escalation-tier-write",
+      title: "Story",
       status: "in-progress",
       attempts: 1,
       routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
     });
-
-    const runtime = makeMockRuntime({
-      config: makeNaxConfig({
-        routing: { strategy: "llm", llm: { mode: "hybrid", cacheDecisions: true } },
-      }),
-    });
-    createdRuntimes.push(runtime);
-
-    const staleDecision: RoutingDecision = {
-      complexity: "simple",
-      modelTier: "fast",
-      testStrategy: "test-after",
-      reasoning: "pre-cached lower-tier decision",
-    };
-    injectCacheEntry(runtime.routingCache, story.id, staleDecision);
 
     const ctx: EscalationHandlerContext = makeEscalationContext({
       story,
@@ -113,19 +95,17 @@ describe("#1710 — escalated tier wins over lower-tier routingCache entry", () 
             resetMode: "initial",
           },
         },
-        routing: { strategy: "llm", llm: { mode: "hybrid", cacheDecisions: true } },
+        routing: { llm: { mode: "per-story" }, strategy: "keyword" },
         models: {},
       }),
       prd: makePRD({ userStories: [story] }),
-      runtime,
     });
 
     const result = await handleTierEscalation(ctx);
 
     expect(result.outcome).toBe("escalated");
-    // Escalation fast → balanced must win over the cached "fast" tier. The
-    // story reference itself is not mutated by handleTierEscalation — it
-    // returns a new PRD with the updated routing on the corresponding
+    // The story reference itself is not mutated by handleTierEscalation —
+    // it returns a new PRD with the updated routing on the corresponding
     // userStories entry.
     const escalatedStory = result.prd.userStories.find((s) => s.id === story.id);
     expect(escalatedStory?.routing?.modelTier).toBe("balanced");
@@ -137,8 +117,8 @@ describe("#1710 — escalated tier wins over lower-tier routingCache entry", () 
 //
 // Characterization of the related defect #1745: an INJECT-ed non-lead batch
 // member (routing: undefined) reaches escalation with no routing, and the
-// `baseRouting = s.routing ?? { ...ctx.routing }` fallback at
-// `tier-escalation.ts:525` writes a `StoryRouting` permanently missing the
+// `baseRouting = s.routing ?? { ...ctx.routing }` fallback inside
+// `handleTierEscalation` writes a `StoryRouting` permanently missing the
 // type-required `complexity`. After #1710's deletion, escalation still does
 // NOT fix this — it persists. When #1745 lands and routing is defaulted at
 // inject time (or `EscalationHandlerContext.routing` gains `complexity`),
@@ -186,10 +166,14 @@ describe("#1745 — INJECT-ed non-lead story latches with no complexity after ba
       prd: makePRD({ userStories: [lead, nonLead] }),
     });
 
-    await handleTierEscalation(ctx);
+    const result = await handleTierEscalation(ctx);
 
+    // Assert on the returned PRD's userStories entry, not the input
+    // reference — handleTierEscalation constructs a new PRD rather than
+    // mutating the input stories. Same shape used by Test 2 above.
+    const resultNonLead = result.prd.userStories.find((s) => s.id === nonLead.id);
     // The non-lead story should still have no routing.complexity — the
     // #1745 latch. Update rather than delete when #1745 is fixed.
-    expect(nonLead.routing?.complexity).toBeUndefined();
+    expect(resultNonLead?.routing?.complexity).toBeUndefined();
   });
 });
