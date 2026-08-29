@@ -120,6 +120,10 @@ describe("mutationCheckOp — US-002 AC12: even-spread selection across multiple
           success: true,
           countsTowardEscalation: true,
           output: "",
+          // BUG-13: SUCCESS needs test-evidence counts or classifyMutant now
+          // treats it as inconclusive ("errored"), not "survived" (#1207).
+          passCount: 1,
+          failCount: 0,
         }),
       });
 

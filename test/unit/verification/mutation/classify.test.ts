@@ -86,8 +86,40 @@ describe("classifyMutant — outcomes", () => {
     ).toBe("errored");
   });
 
-  test("AC5: SUCCESS -> survived", () => {
-    expect(classifyMutant(makeResult("SUCCESS"))).toBe("survived");
+  test("AC5: SUCCESS with executed tests -> survived", () => {
+    expect(
+      classifyMutant({
+        status: "SUCCESS",
+        success: true,
+        countsTowardEscalation: true,
+        passCount: 3,
+        failCount: 0,
+      }),
+    ).toBe("survived");
+  });
+
+  // BUG-13 (nax review 20260829, issue #1207): a scoped command that exits 0
+  // having executed ZERO tests must not classify as "survived" — that is the
+  // worst possible test-quality verdict, produced by a run that proves
+  // nothing. Language-independent cases named in verify-scoped.ts's #1207
+  // rationale: Go `[no test files]` on a helper-only file, Mocha on a
+  // spec-less mapped `.js` file. Mirrors the TEST_FAILURE arm's
+  // hasValidEvidence check (AC1/AC2 above) rather than SUCCESS being
+  // unconditional.
+  test("BUG-13: SUCCESS with zero executed tests -> errored, not survived", () => {
+    expect(classifyMutant(makeResult("SUCCESS"))).toBe("errored");
+  });
+
+  test("BUG-13: SUCCESS with passCount 0 / failCount 0 -> errored", () => {
+    expect(
+      classifyMutant({
+        status: "SUCCESS",
+        success: true,
+        countsTowardEscalation: true,
+        passCount: 0,
+        failCount: 0,
+      }),
+    ).toBe("errored");
   });
 
   test("AC6: TIMEOUT -> errored", () => {
