@@ -97,8 +97,6 @@ function renderScratchEntry(entry: ScratchEntry, targetAgent: string): string {
       }
       return lines.join("\n");
     }
-    case "rectify-attempt":
-      return `**Rectify** attempt ${entry.attempt} at ${entry.timestamp}: ${entry.succeeded ? "succeeded" : "failed"}`;
     case "tdd-session": {
       const lines = [
         `**TDD ${entry.role}** at ${entry.timestamp}: ${entry.success ? "succeeded" : "failed"}${

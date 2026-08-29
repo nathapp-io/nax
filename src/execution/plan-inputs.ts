@@ -288,6 +288,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
         repoRoot: ctx.projectDir,
         packagePrefix: packageDirRel,
         resolvedTestPatterns,
+        sessionScratchDir: ctx.sessionScratchDir,
       }
     : undefined;
 

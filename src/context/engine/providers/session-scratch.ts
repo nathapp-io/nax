@@ -7,7 +7,7 @@
  * The provider is stateless: scratch dirs are passed via ContextRequest.storyScratchDirs.
  * Each dir is expected to contain a scratch.jsonl file; missing files return empty.
  *
- * Phase 1: reads verify-result and rectify-attempt entries.
+ * Phase 1: reads verify-result entries.
  * Phase 2+: additional entry kinds (review findings, tool call results).
  * AC-42: neutralizes agent-specific tool references when entry.writtenByAgent
  *        differs from the target agent (request.agentId).
@@ -89,8 +89,6 @@ function renderEntry(
       }
       return lines.join("\n");
     }
-    case "rectify-attempt":
-      return `**Rectify** attempt ${entry.attempt} at ${entry.timestamp}: ${entry.succeeded ? "succeeded" : "failed"}`;
     case "tdd-session": {
       // #542: drop .nax/ bookkeeping noise so the prompt only surfaces real code changes.
       const userChanged = filterNaxInternalPaths(entry.filesChanged, ignoreMatchers);
@@ -133,8 +131,8 @@ async function readScratchDir(
   if (allEntries.length === 0) return null;
 
   // US-001: filter tool-diagnostics entries BEFORE the recency cap so a flood of
-  // diagnostic entries can't evict the verify-result / rectify-attempt entries a
-  // rectifier actually needs. Diagnostics are surfaced via the dedicated
+  // diagnostic entries can't evict the verify-result entries a rectifier
+  // actually needs. Diagnostics are surfaced via the dedicated
   // ToolDiagnosticsProvider / query_scratch, not this push-style session chunk.
   const renderableEntries = allEntries.filter((e) => e.kind !== "tool-diagnostics");
   if (renderableEntries.length === 0) return null;

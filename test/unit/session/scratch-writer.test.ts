@@ -37,13 +37,15 @@ const VERIFY_ENTRY: ScratchEntry = {
   rawOutputTail: "Expected 1 but got 2",
 };
 
-const RECTIFY_ENTRY: ScratchEntry = {
-  kind: "rectify-attempt",
+const TDD_SESSION_ENTRY: ScratchEntry = {
+  kind: "tdd-session",
   timestamp: "2026-01-01T00:01:00.000Z",
   storyId: "US-001",
-  stage: "rectify",
-  attempt: 1,
-  succeeded: true,
+  stage: "tdd-implementer",
+  role: "implementer",
+  success: true,
+  filesChanged: ["src/index.ts"],
+  outputTail: "Implemented the fix.",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,19 +86,19 @@ describe("appendScratchEntry", () => {
   test("appends on second call — two JSONL lines", async () => {
     const scratchDir = join(tmpDir, "sess-b");
     await appendScratchEntry(scratchDir, VERIFY_ENTRY);
-    await appendScratchEntry(scratchDir, RECTIFY_ENTRY);
+    await appendScratchEntry(scratchDir, TDD_SESSION_ENTRY);
 
     const raw = await Bun.file(scratchFilePath(scratchDir)).text();
     const lines = raw.trim().split("\n").filter(Boolean);
     expect(lines).toHaveLength(2);
     expect(JSON.parse(lines[0]).kind).toBe("verify-result");
-    expect(JSON.parse(lines[1]).kind).toBe("rectify-attempt");
+    expect(JSON.parse(lines[1]).kind).toBe("tdd-session");
   });
 
   test("each line is valid JSON", async () => {
     const scratchDir = join(tmpDir, "sess-c");
     await appendScratchEntry(scratchDir, VERIFY_ENTRY);
-    await appendScratchEntry(scratchDir, RECTIFY_ENTRY);
+    await appendScratchEntry(scratchDir, TDD_SESSION_ENTRY);
 
     const raw = await Bun.file(scratchFilePath(scratchDir)).text();
     for (const line of raw.trim().split("\n").filter(Boolean)) {

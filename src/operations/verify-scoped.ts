@@ -5,8 +5,10 @@ import { maybeRunNewPackageSetup } from "../execution/new-package-setup";
 import { executionFailureToFinding, testSummaryToFindings } from "../findings";
 import type { Finding } from "../findings/types";
 import { getLogger } from "../logger";
+import { appendScratchEntry } from "../session/scratch-writer";
 import type { ResolvedTestPatterns, SelectScopedTestsResult, TestSummary } from "../test-runners";
 import { parseTestOutput, selectScopedTests } from "../test-runners";
+import { errorMessage } from "../utils/errors";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { regression } from "../verification/runners";
 import type { VerificationGateOptions, VerificationResult } from "../verification/types";
@@ -28,6 +30,12 @@ export interface VerifyScopedInput {
   readonly packagePrefix?: string;
   /** ADR-009 resolved test patterns (language-agnostic, per-package override-aware). */
   readonly resolvedTestPatterns?: ResolvedTestPatterns;
+  /**
+   * Session scratch dir for verify-result capture (nax#1757). Populated by
+   * plan-inputs from PipelineContext.sessionScratchDir in production; injected
+   * tests may omit it and instead set `deps.sessionScratchDir`.
+   */
+  readonly sessionScratchDir?: string;
 }
 
 export type VerifyScopedStatus = "passed" | "failed" | "skipped" | "timeout";
@@ -47,6 +55,15 @@ export interface VerifyScopedDeps {
   regression: (opts: VerificationGateOptions) => Promise<VerificationResult>;
   parseTestOutput: (output: string) => TestSummary;
   testSummaryToFindings: (summary: TestSummary) => Finding[];
+  /**
+   * Optional scratch dir for verify-result capture (nax#1757). When set
+   * (and `config.context.v2.enabled` is true), a scoped-test run writes a
+   * `verify-result` scratch entry to this dir using `appendScratchEntry`.
+   * Capture is best-effort — errors are swallowed so the verify result is
+   * never blocked.
+   */
+  sessionScratchDir?: string;
+  appendScratchEntry?: (scratchDir: string, entry: import("../session/scratch-writer").ScratchEntry) => Promise<void>;
 }
 
 export const _verifyScopedDeps: VerifyScopedDeps = {
@@ -54,7 +71,44 @@ export const _verifyScopedDeps: VerifyScopedDeps = {
   regression,
   parseTestOutput,
   testSummaryToFindings,
+  appendScratchEntry,
 };
+
+/**
+ * Best-effort capture of the verify-result scratch entry (nax#1757). Only
+ * fires when v2 is enabled AND a scratch dir + append fn are wired. Errors
+ * are logged at warn and swallowed — capture never blocks the verify result.
+ */
+async function captureVerifyResult(
+  storyId: string,
+  writtenByAgent: string,
+  v2Enabled: boolean,
+  result: { success: boolean; status: VerifyScopedStatus; passCount: number; failCount: number },
+  rawOutput: string,
+  sessionScratchDir: string | undefined,
+  appendScratchEntryDep: VerifyScopedDeps["appendScratchEntry"],
+): Promise<void> {
+  if (!v2Enabled || !sessionScratchDir || !appendScratchEntryDep) return;
+  try {
+    await appendScratchEntryDep(sessionScratchDir, {
+      kind: "verify-result",
+      timestamp: new Date().toISOString(),
+      storyId,
+      stage: "verify",
+      success: result.success,
+      status: result.status,
+      passCount: result.passCount,
+      failCount: result.failCount,
+      rawOutputTail: rawOutput.slice(-500),
+      writtenByAgent,
+    });
+  } catch (err) {
+    getLogger()?.warn("verify[scoped]", "Failed to write verify-result scratch entry — continuing", {
+      storyId,
+      error: errorMessage(err),
+    });
+  }
+}
 
 export const verifyScopedOp: DeterministicOperation<
   VerifyScopedInput,
@@ -74,6 +128,11 @@ export const verifyScopedOp: DeterministicOperation<
     const logger = getLogger();
     const quality = ctx.packageView.select(qualityConfigSelector);
     let baseCommand = quality.quality?.commands?.test;
+    // nax#1757: verify-result scratch capture — gated on v2 being enabled, mirroring
+    // src/execution/post-run.ts:172. sessionScratchDir threads via input (production)
+    // or deps (tests), matching the lint-check / typecheck-check precedent.
+    const v2Enabled = ctx.packageView.config.context?.v2?.enabled === true;
+    const scratchDir = input.sessionScratchDir ?? deps.sessionScratchDir;
 
     // Detection fallback: no command configured (root or per-package) — derive one
     // from the package's manifest (e.g. a new package's scaffolded pyproject.toml).
@@ -244,6 +303,15 @@ export const verifyScopedOp: DeterministicOperation<
         scopeTestFallback: scopeTestFallback ?? false,
         isFullSuite,
       });
+      await captureVerifyResult(
+        input.storyId,
+        ctx.agentName,
+        v2Enabled,
+        { success: true, status: "passed", passCount: parsed.passed, failCount: parsed.failed },
+        result.output ?? "",
+        scratchDir,
+        deps.appendScratchEntry,
+      );
       return {
         success: true,
         status: "passed",
@@ -262,6 +330,15 @@ export const verifyScopedOp: DeterministicOperation<
         scopeTestFallback: scopeTestFallback ?? false,
         isFullSuite,
       });
+      await captureVerifyResult(
+        input.storyId,
+        ctx.agentName,
+        v2Enabled,
+        { success: false, status: "timeout", passCount: parsed.passed, failCount: parsed.failed },
+        result.output ?? "",
+        scratchDir,
+        deps.appendScratchEntry,
+      );
       return {
         success: false,
         status: "timeout",
@@ -306,6 +383,15 @@ export const verifyScopedOp: DeterministicOperation<
         }),
       ];
     }
+    await captureVerifyResult(
+      input.storyId,
+      ctx.agentName,
+      v2Enabled,
+      { success: false, status: "failed", passCount: parsed.passed, failCount: parsed.failed },
+      result.output ?? "",
+      scratchDir,
+      deps.appendScratchEntry,
+    );
     return {
       success: false,
       status: "failed",

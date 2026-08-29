@@ -250,16 +250,16 @@ describe("ToolDiagnosticsProvider — AC9 only verify-result entries", () => {
     expect(result.chunks).toHaveLength(0);
   });
 
-  test("returns empty chunks when scratch dir contains rectify-attempt and tdd-session entries (no tool-diagnostics)", async () => {
-    const rectifyEntry = JSON.stringify({
-      kind: "rectify-attempt",
+  test("returns empty chunks when scratch dir contains self-verification and tdd-session entries (no tool-diagnostics)", async () => {
+    const selfVerificationEntry = JSON.stringify({
+      kind: "self-verification",
       timestamp: "2026-01-01T00:01:00.000Z",
       storyId: "US-002",
-      stage: "rectify",
-      attempt: 1,
-      succeeded: false,
+      stage: "execution",
+      role: "implementer",
+      selfVerification: { lint: "pass", typecheck: "pass", preExistingFailures: [] },
     });
-    mockScratchFile(`${VERIFY_ENTRY}\n${rectifyEntry}\n`);
+    mockScratchFile(`${VERIFY_ENTRY}\n${selfVerificationEntry}\n`);
 
     const provider = new ToolDiagnosticsProvider();
     const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"] }));

@@ -31,15 +31,6 @@ const VERIFY_ENTRY = JSON.stringify({
   rawOutputTail: "Expected true but got false",
 });
 
-const RECTIFY_ENTRY = JSON.stringify({
-  kind: "rectify-attempt",
-  timestamp: "2026-01-01T00:01:00.000Z",
-  storyId: "US-001",
-  stage: "rectify",
-  attempt: 1,
-  succeeded: false,
-});
-
 const TDD_ENTRY = JSON.stringify({
   kind: "tdd-session",
   timestamp: "2026-01-01T00:02:00.000Z",
@@ -147,13 +138,13 @@ describe("SessionScratchProvider", () => {
   });
 
   test("includes content from multiple entries", async () => {
-    mockScratchFile(`${VERIFY_ENTRY}\n${RECTIFY_ENTRY}\n`);
+    mockScratchFile(`${VERIFY_ENTRY}\n${TDD_ENTRY}\n`);
     const provider = new SessionScratchProvider();
     const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"] }));
 
     expect(result.chunks).toHaveLength(1);
     expect(result.chunks[0].content).toContain("Verify");
-    expect(result.chunks[0].content).toContain("Rectify");
+    expect(result.chunks[0].content).toContain("TDD implementer");
   });
 
   test("renders TDD session entries with changed files and output", async () => {
@@ -192,7 +183,7 @@ describe("SessionScratchProvider", () => {
   });
 
   test("skips malformed JSONL lines without throwing", async () => {
-    mockScratchFile(`${VERIFY_ENTRY}\nnot-valid-json\n${RECTIFY_ENTRY}\n`);
+    mockScratchFile(`${VERIFY_ENTRY}\nnot-valid-json\n${TDD_ENTRY}\n`);
     const provider = new SessionScratchProvider();
     const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"] }));
 
