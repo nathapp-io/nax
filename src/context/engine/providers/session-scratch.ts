@@ -20,6 +20,7 @@ import type { ScratchEntry } from "@/session";
 import { scratchFilePath } from "@/session";
 import { readJsonlTail } from "@/utils/jsonl-tail";
 import { filterNaxInternalPaths, type NaxIgnoreMatcher, resolveNaxIgnorePatterns } from "@/utils/path-filters";
+import { fitScratchBlocks } from "../render-utils";
 import { neutralizeForAgent } from "../scratch-neutralizer";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
@@ -139,13 +140,19 @@ async function readScratchDir(
 
   // Take most recent N entries (tail of the JSONL)
   const entries = renderableEntries.slice(-MAX_ENTRIES_PER_DIR);
-  const content = entries.map((e) => renderEntry(e, targetAgentId, ignoreMatchers)).join("\n\n");
 
-  // Truncate content to the token ceiling so the reported token count
-  // matches the actual content length. Without truncation the packing stage
-  // would trust the capped number and silently overrun the context budget.
+  // Fit the rendered entries to the token ceiling so the reported token count
+  // matches the actual content length. Without a cap the packing stage would
+  // trust the capped number and silently overrun the context budget.
+  //
+  // nax#1757: fitScratchBlocks drops whole entries from the OLDEST end so the
+  // newest survive, matching the recency selection above. See its doc comment
+  // for what the previous `slice(0, MAX)` did instead.
   const MAX_CONTENT_CHARS = MAX_CHUNK_TOKENS * 4;
-  const truncated = content.length > MAX_CONTENT_CHARS ? content.slice(0, MAX_CONTENT_CHARS) : content;
+  const truncated = fitScratchBlocks(
+    entries.map((e) => renderEntry(e, targetAgentId, ignoreMatchers)),
+    MAX_CONTENT_CHARS,
+  );
 
   const hash = contentHash8(truncated);
   const tokens = Math.ceil(truncated.length / 4);
