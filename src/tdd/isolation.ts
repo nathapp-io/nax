@@ -12,6 +12,7 @@
  */
 
 import { NaxError } from "../errors";
+import { getLogger } from "../logger";
 import { DEFAULT_TEST_FILE_PATTERNS, isTestFileByPatterns } from "../test-runners";
 import { spawn } from "../utils/bun-deps";
 import type { IsolationCheck } from "./types";
@@ -142,9 +143,23 @@ export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promis
 /**
  * Count added (non-blank) lines per file via `git diff --numstat`.
  * Used by the lite-mode stub heuristic — files with small additions are stub-sized.
+ *
+ * Rejects with NaxError code "GIT_ERROR" when `git diff --numstat` exits
+ * non-zero. Previously the exit code was discarded and an empty map returned —
+ * which silently turned a git hiccup into "no additions, no stub violations"
+ * and reported the file as a test-writer offence. Surfacing the failure lets
+ * the lite-mode policy catch the rejection and choose its disposition.
  */
 export async function getAddedLinesPerFile(workdir: string, fromRef = "HEAD"): Promise<Map<string, number>> {
-  const { stdout: output } = await runGitBounded(["diff", "--numstat", fromRef], workdir);
+  const { stdout: output, stderr, exitCode } = await runGitBounded(["diff", "--numstat", fromRef], workdir);
+
+  if (exitCode !== 0) {
+    throw new NaxError(`git diff --numstat ${fromRef} failed (exit ${exitCode}): ${stderr.trim()}`, "GIT_ERROR", {
+      stage: "tdd-isolation",
+      fromRef,
+      exitCode,
+    });
+  }
 
   const result = new Map<string, number>();
   for (const line of output.trim().split("\n").filter(Boolean)) {
@@ -237,8 +252,22 @@ export async function verifyTestWriterIsolation(
   const sourceFiles = changed.filter((f) => isSourceFile(f) && !isTestFileByPatterns(f, testFilePatterns));
 
   // Lite mode resolves stub-sized src/ writes (≤ ceiling added lines) into soft violations.
-  // Strict mode skips numstat entirely.
-  const addedLines = mode === "lite" && sourceFiles.length > 0 ? await getAddedLinesPerFile(workdir, beforeRef) : null;
+  // Strict mode skips numstat entirely. When numstat fails the lite policy cannot prove
+  // a file is stub-sized, so it falls back to the strict-mode disposition (hard violation
+  // for every src/ write) and logs a warning — the check never rejects.
+  let addedLines: Map<string, number> | null = null;
+  if (mode === "lite" && sourceFiles.length > 0) {
+    try {
+      addedLines = await getAddedLinesPerFile(workdir, beforeRef);
+    } catch (err) {
+      const logger = getLogger();
+      logger.warn("tdd-isolation", "git diff --numstat failed; falling back to strict-mode disposition", {
+        workdir,
+        fromRef: beforeRef,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   // Separate hard violations from soft violations (allowed paths + lite stub allowance)
   const softViolations: string[] = [];

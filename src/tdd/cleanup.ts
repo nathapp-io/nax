@@ -19,6 +19,21 @@ export const _cleanupDeps = {
 };
 
 /**
+ * Poll interval for the bounded grace-period wait inside `cleanupProcessTree`.
+ *
+ * Replaces the previous unconditional `sleep(gracePeriodMs)` with a bounded
+ * poll over `hasLiveGroupMembers(pgid)`, capped at
+ * `ceil(gracePeriodMs / CLEANUP_GRACE_POLL_INTERVAL_MS)` iterations so the
+ * wait terminates as soon as the process group dies — even with an injected
+ * instant `_cleanupDeps.sleep`.
+ *
+ * Picked well under the 3000 ms default grace so the SIGKILL escalation can
+ * still fire on stubborn processes, but small enough that a healthy cleanup
+ * returns almost immediately after SIGTERM takes effect.
+ */
+export const CLEANUP_GRACE_POLL_INTERVAL_MS = 100;
+
+/**
  * Get process group ID (PGID) for a given process ID.
  *
  * @param pid - Process ID to get PGID for
@@ -117,13 +132,21 @@ export async function cleanupProcessTree(pid: number, gracePeriodMs = 3000): Pro
       return;
     }
 
-    // Wait for graceful shutdown
-    await _cleanupDeps.sleep(gracePeriodMs);
+    // Wait for graceful shutdown via a bounded poll. Each iteration sleeps
+    // CLEANUP_GRACE_POLL_INTERVAL_MS and re-checks the GROUP (not just the
+    // original leader pid) — SIGTERM commonly kills the leader while a
+    // SIGTERM-trapping child survives in the same group, and re-checking only
+    // the leader's own PGID would see it gone and skip the SIGKILL escalation,
+    // orphaning that survivor (BUG-23). The iteration count is capped at
+    // ceil(gracePeriodMs / CLEANUP_GRACE_POLL_INTERVAL_MS) so the wait
+    // terminates under an injected instant sleep (tests) and under the full
+    // grace window in production.
+    const maxIterations = Math.ceil(gracePeriodMs / CLEANUP_GRACE_POLL_INTERVAL_MS);
+    for (let i = 0; i < maxIterations; i++) {
+      await _cleanupDeps.sleep(CLEANUP_GRACE_POLL_INTERVAL_MS);
+      if (!(await hasLiveGroupMembers(pgid))) break;
+    }
 
-    // Re-check the GROUP (not just the original leader pid) before SIGKILL. SIGTERM
-    // commonly kills the leader while a SIGTERM-trapping child survives in the same
-    // group — re-checking only the leader's own PGID would see it gone and skip the
-    // SIGKILL escalation, orphaning that survivor (BUG-23).
     if (await hasLiveGroupMembers(pgid)) {
       _cleanupDeps.killProcessGroupFn(pgid, "SIGKILL");
     }

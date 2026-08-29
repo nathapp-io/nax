@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { cleanupTempDir, makeSpawn, makeTempDir } from "@test/helpers";
+import { NaxError } from "@/errors";
 import { _isolationDeps, getChangedFiles } from "@/tdd";
 import { getAddedLinesPerFile } from "@/tdd/isolation";
 
@@ -95,5 +96,56 @@ describe("runGitBounded (via getChangedFiles / getAddedLinesPerFile)", () => {
   test("getAddedLinesPerFile rejects when git hangs", async () => {
     await expect(getAddedLinesPerFile("/tmp/does-not-matter", "HEAD")).rejects.toThrow(/timed out/);
     expect(killed).toBe(true);
+  });
+});
+
+// US-002: a failed `git diff --numstat` must surface through a NaxError with
+// code "GIT_ERROR" carrying git stderr — not be silently turned into an empty
+// Map. The empty Map was previously read as "no additions, no stub violations"
+// and a git hiccup was reported as a test-writer offence.
+describe("getAddedLinesPerFile (US-002: loud git failures)", () => {
+  let origSpawn: typeof _isolationDeps.spawn;
+
+  beforeEach(() => {
+    origSpawn = _isolationDeps.spawn;
+  });
+
+  afterEach(() => {
+    _isolationDeps.spawn = origSpawn;
+  });
+
+  // AC1 — numstat exit 1 with stderr "fatal: bad revision 'HEAD'" must
+  // reject with NaxError code "GIT_ERROR" whose message contains the stderr.
+  test("rejects with NaxError code GIT_ERROR when numstat exits non-zero", async () => {
+    _isolationDeps.spawn = makeSpawn(() => ({
+      stdout: "",
+      stderr: "fatal: bad revision 'HEAD'\n",
+      exitCode: 1,
+    })).spawn;
+
+    let caught: unknown;
+    try {
+      await getAddedLinesPerFile("/tmp/does-not-matter", "HEAD");
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(NaxError);
+    if (!(caught instanceof NaxError)) throw new Error("expected NaxError");
+    expect(caught.code).toBe("GIT_ERROR");
+    expect(caught.message).toContain("bad revision");
+  });
+
+  // AC2 — numstat exit 0 with stdout "3\t0\tsrc/a.ts" must resolve to a map
+  // mapping "src/a.ts" to 3. Sanity-check the success path stays untouched.
+  test("returns a Map mapping path to added lines on numstat success", async () => {
+    _isolationDeps.spawn = makeSpawn(() => ({
+      stdout: "3\t0\tsrc/a.ts\n",
+      exitCode: 0,
+    })).spawn;
+
+    const result = await getAddedLinesPerFile("/tmp/does-not-matter", "HEAD");
+
+    expect(result.get("src/a.ts")).toBe(3);
   });
 });
