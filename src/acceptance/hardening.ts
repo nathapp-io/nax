@@ -245,9 +245,10 @@ async function processPackageGroup(
       }
     }
 
+    let actuallyPromoted: string[] = [];
     if (toPromote.length > 0) {
       const existingACs = new Set(story.acceptanceCriteria);
-      const actuallyPromoted = toPromote.filter((ac) => !existingACs.has(ac));
+      actuallyPromoted = toPromote.filter((ac) => !existingACs.has(ac));
       story.acceptanceCriteria = [...story.acceptanceCriteria, ...actuallyPromoted];
       // Only count promotions that actually mutated the PRD; a criterion
       // already present in acceptanceCriteria is filtered out before mutation
@@ -268,7 +269,7 @@ async function processPackageGroup(
     // suggestions stay in place, the next run refines them again.
     if (toDiscard.length > 0) {
       story.suggestedCriteria = toDiscard;
-    } else if (toPromote.length > 0) {
+    } else if (actuallyPromoted.length > 0) {
       story.suggestedCriteria = undefined;
     }
     // else: refine returned no criteria; leave story.suggestedCriteria as-is.

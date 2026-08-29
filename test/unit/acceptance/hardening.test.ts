@@ -239,6 +239,11 @@ describe("runHardeningPass()", () => {
     // savePRD must NOT fire on a no-op pass even when an already-present
     // criterion went through the promote path.
     expect(_hardeningDeps.savePRD).not.toHaveBeenCalled();
+    // Adversarial review (US-006): since nothing was actually promoted, the
+    // duplicate-only path must NOT clear story.suggestedCriteria. The old code
+    // keyed the clear on toPromote (non-empty here), so it wiped the in-memory
+    // suggestedCriteria without persisting — a silent in-memory/disk divergence.
+    expect(story.suggestedCriteria).toEqual(["already there"]);
   });
 
   // US-006 AC-2: when the pass is a no-op (no promotion AND no discard —
