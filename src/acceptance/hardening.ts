@@ -247,8 +247,14 @@ async function processPackageGroup(
 
     if (toPromote.length > 0) {
       const existingACs = new Set(story.acceptanceCriteria);
-      story.acceptanceCriteria = [...story.acceptanceCriteria, ...toPromote.filter((ac) => !existingACs.has(ac))];
-      result.promoted.push(...toPromote);
+      const actuallyPromoted = toPromote.filter((ac) => !existingACs.has(ac));
+      story.acceptanceCriteria = [...story.acceptanceCriteria, ...actuallyPromoted];
+      // Only count promotions that actually mutated the PRD; a criterion
+      // already present in acceptanceCriteria is filtered out before mutation
+      // and so does not represent a change. result.promoted feeds the
+      // persistence condition — counting unchanged items there caused
+      // savePRD to fire on a no-op pass (semantic review finding).
+      result.promoted.push(...actuallyPromoted);
     }
     result.discarded.push(...toDiscard);
     story.suggestedCriteria = toDiscard.length > 0 ? toDiscard : undefined;

@@ -201,6 +201,46 @@ describe("runHardeningPass()", () => {
     expect(_hardeningDeps.savePRD).toHaveBeenCalledTimes(1);
   });
 
+  // US-006 (semantic review): a criterion already present in
+  // acceptanceCriteria is filtered out before the mutation but used to be
+  // counted in result.promoted, so savePRD fired even though the PRD did
+  // not change. Verify result.promoted only carries actually-added items.
+  test("does not count already-present criteria in result.promoted (no spurious persistence)", async () => {
+    const story = makeStory({
+      acceptanceCriteria: ["spec AC", "already there"],
+      suggestedCriteria: ["already there"],
+      status: "passed",
+      passes: true,
+      attempts: 1,
+    });
+    const ctx = makeCtx({ prd: makePRD({ userStories: [story] }) });
+
+    _hardeningDeps.callOp = mockCallOp(
+      [
+        {
+          original: "already there",
+          refined: "already there",
+          testable: true,
+          storyId: "US-001",
+        },
+      ],
+      { testCode: 'test("AC-1", () => {})' },
+    );
+    _hardeningDeps.writeFile = mock(async () => {});
+    _hardeningDeps.savePRD = mock(async () => {});
+    _hardeningDeps.spawn = passingSpawn();
+
+    const result = await runHardeningPass(ctx);
+
+    // The criterion is already in acceptanceCriteria — nothing changed.
+    expect(result.promoted).toEqual([]);
+    expect(result.discarded).toEqual([]);
+    expect(story.acceptanceCriteria).toEqual(["spec AC", "already there"]);
+    // savePRD must NOT fire on a no-op pass even when an already-present
+    // criterion went through the promote path.
+    expect(_hardeningDeps.savePRD).not.toHaveBeenCalled();
+  });
+
   // US-006 AC-2: when the pass is a no-op (no promotion AND no discard —
   // e.g. refine returns an empty list so no criterion is processed), do NOT
   // persist. The previous condition fired whenever `promoted.length > 0`; we
