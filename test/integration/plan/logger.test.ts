@@ -261,6 +261,42 @@ describe("Logger", () => {
       expect(() => logger.flushSync()).not.toThrow();
     });
 
+    // BUG-10 (nax review 20260829): close() used to be a no-op ("Bun handles file
+    // operations internally" — stale; writes go through node:fs/promises, not
+    // Bun.write). resetLogger() calls close() then nulls the instance, so whatever
+    // sat in pendingLines (not yet claimed by an in-flight async batch) was lost —
+    // this fires in production too: bin/nax.ts calls resetLogger() between the
+    // plan and run phases of `nax run --plan`, so the plan-phase JSONL tail was
+    // unrecoverable.
+    test("resetLogger() flushes buffered lines to disk instead of dropping them", () => {
+      initLogger({ level: "info", filePath: TEST_LOG_FILE });
+      const logger = getLogger();
+      logger?.info("test", "buffered line one");
+      logger?.info("test", "buffered line two");
+      // Deliberately NOT awaiting flush()/flushSync() — resetLogger() itself must
+      // flush whatever is still buffered before the instance is discarded.
+      resetLogger();
+
+      const content = readFileSync(TEST_LOG_FILE, "utf8");
+      const lines = content
+        .trim()
+        .split("\n")
+        .filter((line) => line);
+      expect(lines.length).toBe(2);
+      const entries = lines.map((line) => JSON.parse(line));
+      expect(entries[0].message).toBe("buffered line one");
+      expect(entries[1].message).toBe("buffered line two");
+    });
+
+    test("close() flushes buffered lines to disk", () => {
+      const logger = initLogger({ level: "info", filePath: TEST_LOG_FILE });
+      logger.info("test", "closed without awaiting flush");
+      logger.close();
+
+      const content = readFileSync(TEST_LOG_FILE, "utf8");
+      expect(content).toContain("closed without awaiting flush");
+    });
+
     test("registering the process exit listener does not throw across repeated initLogger/resetLogger cycles", () => {
       // Regression for listener accumulation: every test file that calls
       // initLogger() with a filePath must not add a new "exit" listener each
