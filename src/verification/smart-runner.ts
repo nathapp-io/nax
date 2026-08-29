@@ -13,6 +13,7 @@
 import { join, relative } from "node:path";
 import { getSafeLogger } from "../logger";
 import { DEFAULT_SEPARATED_TEST_DIRS, DEFAULT_TEST_FILE_PATTERNS, extractTestDirs } from "../test-runners/conventions";
+import { errorMessage } from "../utils/errors";
 import { getGitRoot, gitWithTimeout } from "../utils/git";
 import { filterNaxInternalPaths, type NaxIgnoreIndex, resolveNaxIgnorePatterns } from "../utils/path-filters";
 
@@ -40,6 +41,7 @@ export const MAX_GREP_TEST_FILES = 200;
  */
 export const _gitUtilDeps = {
   getGitRoot,
+  gitWithTimeout,
 };
 
 /** Per-process memo: workdir → resolved git root. Cleared at run end via clearGitRootCache(). */
@@ -476,13 +478,14 @@ export async function getChangedNonTestFiles(
   naxIgnoreIndex?: NaxIgnoreIndex,
   repoRoot?: string,
 ): Promise<string[]> {
+  const ref = baseRef ?? "HEAD~1";
   try {
-    // FEAT-010: Use per-attempt baseRef for precise diff; fall back to HEAD~1 if not provided
-    const ref = baseRef ?? "HEAD~1";
-    // @design: BUG-039: Use gitWithTimeout to prevent orphan processes on hang
-    const { stdout, exitCode } = await gitWithTimeout(["diff", "--name-only", ref], workdir);
-    if (exitCode !== 0) return [];
-
+    // BUG-039: route through _gitUtilDeps.gitWithTimeout to prevent orphan processes on hang
+    const { stdout, exitCode, stderr } = await _gitUtilDeps.gitWithTimeout(["diff", "--name-only", ref], workdir);
+    if (exitCode !== 0) {
+      getSafeLogger()?.warn("verification", "git diff failed — returning empty list", { ref, exitCode, stderr });
+      return [];
+    }
     const lines = stdout.trim().split("\n").filter(Boolean);
     const effectiveRepoRoot = repoRoot ?? workdir;
     const packageDir = packagePrefix ? join(effectiveRepoRoot, packagePrefix) : undefined;
@@ -509,8 +512,8 @@ export async function getChangedNonTestFiles(
     const scoped = filterNaxInternalPaths(stripped, ignoreMatchers);
     if (testFileRegex.length === 0) return scoped;
     return scoped.filter((f) => !testFileRegex.some((re) => re.test(f)));
-  } catch {
-    return [];
+  } catch (error) {
+    return warnDiffFailed(ref, error);
   }
 }
 
@@ -542,10 +545,13 @@ export async function getChangedTestFiles(
   naxIgnoreIndex?: NaxIgnoreIndex,
 ): Promise<string[]> {
   if (testFileRegex.length === 0) return [];
+  const ref = baseRef ?? "HEAD~1";
   try {
-    const ref = baseRef ?? "HEAD~1";
-    const { stdout, exitCode } = await gitWithTimeout(["diff", "--name-only", ref], workdir);
-    if (exitCode !== 0) return [];
+    const { stdout, exitCode, stderr } = await _gitUtilDeps.gitWithTimeout(["diff", "--name-only", ref], workdir);
+    if (exitCode !== 0) {
+      getSafeLogger()?.warn("verification", "git diff failed — returning empty list", { ref, exitCode, stderr });
+      return [];
+    }
 
     const lines = stdout.trim().split("\n").filter(Boolean);
     const packageDir = packagePrefix ? join(repoRoot, packagePrefix) : undefined;
@@ -568,23 +574,18 @@ export async function getChangedTestFiles(
     // Strip the extraPrefix before constructing absolute paths so join(repoRoot, f) is correct.
     const stripped = extraPrefix ? scoped.map((f) => f.slice(`${extraPrefix}/`.length)) : scoped;
     return stripped.filter((f) => testFileRegex.some((re) => re.test(f))).map((f) => join(repoRoot, f));
-  } catch {
-    return [];
+  } catch (error) {
+    return warnDiffFailed(ref, error);
   }
 }
 
-/**
-/**
- * Injectable dependencies for testing.
- * Allows tests to swap implementations without using mock.module(),
- * which leaks across files in Bun 1.x due to shared module registry.
- *
- * Bun API wrappers use closures so that tests mocking Bun.Glob / Bun.file
- * on the global namespace continue to work (closures evaluate Bun.* at
- * call time, not at module initialisation time).
- *
- * @internal - test use only. Do not use in production code.
- */
+/** Shared catch-handler — log a verification-stage warn and return []. @internal */
+function warnDiffFailed(ref: string, error: unknown): string[] {
+  getSafeLogger()?.warn("verification", "git diff threw — returning empty list", { ref, error: errorMessage(error) });
+  return [];
+}
+
+/** Test seams (avoid mock.module, which leaks across files in Bun 1.x). @internal */
 export const _smartRunnerDeps = {
   /** Wraps Bun.Glob construction — injectable for testing. */
   glob: _bunDeps.glob,

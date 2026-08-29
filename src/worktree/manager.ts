@@ -9,6 +9,16 @@ import { gitWithTimeout } from "../utils/git";
 import { NAX_GITIGNORE_ENTRIES } from "../utils/gitignore";
 import type { WorktreeInfo } from "./types";
 
+/**
+ * Injectable git subprocess seam. Tests stub `gitWithTimeout` to drive
+ * `create()` and `remove()` end to end without spawning real git.
+ *
+ * @internal
+ */
+export const _worktreeManagerDeps = {
+  gitWithTimeout,
+};
+
 export class WorktreeManager {
   /**
    * Ensures nax runtime files are excluded from git in all worktrees by writing
@@ -82,7 +92,10 @@ export class WorktreeManager {
    */
   private async hasWorktreeRecord(projectRoot: string, branchName: string): Promise<boolean> {
     try {
-      const { stdout, exitCode } = await gitWithTimeout(["worktree", "list", "--porcelain"], projectRoot);
+      const { stdout, exitCode } = await _worktreeManagerDeps.gitWithTimeout(
+        ["worktree", "list", "--porcelain"],
+        projectRoot,
+      );
       if (exitCode !== 0) return false;
 
       const targetBranch = `refs/heads/${branchName}`;
@@ -128,7 +141,7 @@ export class WorktreeManager {
     try {
       // Step 1: Prune orphaned worktree references (dir deleted but .git/worktrees/ entry remains)
       // BUG-5: route through gitWithTimeout so a wedged git (NFS hang) can't stall create().
-      await gitWithTimeout(["worktree", "prune"], projectRoot);
+      await _worktreeManagerDeps.gitWithTimeout(["worktree", "prune"], projectRoot);
     } catch {
       // prune is best-effort
     }
@@ -139,8 +152,20 @@ export class WorktreeManager {
       // also force-deletes branchName once the worktree removal succeeds).
       await this.remove(projectRoot, storyId);
       removedLiveWorktree = true;
-    } catch {
-      // remove() throws if worktree doesn't exist — that's fine
+    } catch (error) {
+      // remove() throws WORKTREE_NOT_FOUND when there is nothing to clean up —
+      // that is the expected clean-slate case for a fresh run, so stay silent.
+      // Any other NaxError carries a genuine git failure (e.g. could not lock
+      // ref) that the subsequent `worktree add` will surface again — log it now
+      // so the upstream cause is visible before the second failure masks it.
+      if (!(error instanceof NaxError) || error.code !== "WORKTREE_NOT_FOUND") {
+        const logger = getSafeLogger();
+        logger?.warn("worktree", "Step-2 remove failed before create", {
+          storyId,
+          projectRoot,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     if (!removedLiveWorktree && hadWorktreeRecord) {
@@ -149,7 +174,7 @@ export class WorktreeManager {
         // nothing), but hadWorktreeRecord proves this branch/worktree pair
         // was created by a prior nax run — safe to force-delete the orphan.
         // BUG-5: route through gitWithTimeout so a wedged git can't stall create().
-        await gitWithTimeout(["branch", "-D", branchName], projectRoot);
+        await _worktreeManagerDeps.gitWithTimeout(["branch", "-D", branchName], projectRoot);
       } catch {
         // branch may not exist — that's fine
       }
@@ -157,7 +182,7 @@ export class WorktreeManager {
 
     try {
       // Create worktree with new branch
-      const { exitCode, stderr } = await gitWithTimeout(
+      const { exitCode, stderr } = await _worktreeManagerDeps.gitWithTimeout(
         ["worktree", "add", worktreePath, "-b", branchName],
         projectRoot,
       );
@@ -226,7 +251,10 @@ export class WorktreeManager {
 
     // Remove worktree
     try {
-      const { exitCode, stderr } = await gitWithTimeout(["worktree", "remove", worktreePath, "--force"], projectRoot);
+      const { exitCode, stderr } = await _worktreeManagerDeps.gitWithTimeout(
+        ["worktree", "remove", worktreePath, "--force"],
+        projectRoot,
+      );
       if (exitCode !== 0) {
         if (
           stderr.includes("not found") ||
@@ -234,7 +262,7 @@ export class WorktreeManager {
           stderr.includes("no such worktree") ||
           stderr.includes("is not a working tree")
         ) {
-          throw new NaxError(`Worktree not found: ${worktreePath}`, "WORKTREE_ERROR", {
+          throw new NaxError(`Worktree not found: ${worktreePath}`, "WORKTREE_NOT_FOUND", {
             stage: "worktree",
             storyId,
             worktreePath,
@@ -261,7 +289,7 @@ export class WorktreeManager {
 
     // Delete branch
     try {
-      const { exitCode, stderr } = await gitWithTimeout(["branch", "-D", branchName], projectRoot);
+      const { exitCode, stderr } = await _worktreeManagerDeps.gitWithTimeout(["branch", "-D", branchName], projectRoot);
       if (exitCode !== 0) {
         // Don't fail if branch doesn't exist
         if (!stderr.includes("not found")) {
@@ -283,7 +311,10 @@ export class WorktreeManager {
    */
   async list(projectRoot: string): Promise<WorktreeInfo[]> {
     try {
-      const { stdout, stderr, exitCode } = await gitWithTimeout(["worktree", "list", "--porcelain"], projectRoot);
+      const { stdout, stderr, exitCode } = await _worktreeManagerDeps.gitWithTimeout(
+        ["worktree", "list", "--porcelain"],
+        projectRoot,
+      );
       if (exitCode !== 0) {
         throw new NaxError(`Failed to list worktrees: ${stderr || "unknown error"}`, "WORKTREE_ERROR", {
           stage: "worktree",
