@@ -140,16 +140,15 @@ export class UnresolvedEnvVarError extends Error {
   }
 }
 
-const DOUBLE_DOLLAR_PLACEHOLDER = "`__DOLLAR_ESCAPE__`";
-// Matches the placeholder sentinel followed by an identifier (bare or brace
-// form). The backtick wraps the marker so a user-authored literal that
-// happens to spell the marker without backticks (e.g. `__DOLLAR_ESCAPE__HOME`)
-// is not confused with a protected escape in the restoration pass — the bare
-// text lacks the backtick delimiters and so does not match this regex.
-const DOUBLE_DOLLAR_PLACEHOLDER_RE = new RegExp(
-  `${DOUBLE_DOLLAR_PLACEHOLDER}(\\{[A-Za-z_][A-Za-z0-9_]*\\}|[A-Za-z_][A-Za-z0-9_]*)`,
-  "g",
-);
+// The placeholder sentinel inserted by step 1 around an escaped `$$VAR`.
+// Wrapped in NUL bytes so that a user-authored literal which happens to
+// spell the sentinel's plain text (e.g. `\0__DOLLAR_ESCAPE__\0HOME`)
+// cannot be matched by the restoration regex — the regex requires the
+// `$$` prefix that step 1 inserts, so user input never produces it.
+const DOUBLE_DOLLAR_PLACEHOLDER = "\x00__DOLLAR_ESCAPE__\x00";
+const DOUBLE_DOLLAR_PROTECT_RE = /\$\$(\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)/g;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: the NUL bytes are exactly the point — they make the sentinel unforgeable.
+const DOUBLE_DOLLAR_RESTORE_RE = /\$\$\x00__DOLLAR_ESCAPE__\x00(\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)/g;
 
 function resolveString(str: string, env: Record<string, string>, path: string[]): string {
   const resolveOne = (varName: string): string => {
@@ -158,12 +157,18 @@ function resolveString(str: string, env: Record<string, string>, path: string[])
     }
     return env[varName];
   };
-  // First protect $$VAR/$${VAR} escapes, then resolve $VAR and ${VAR}
-  // references (CFG-5 — the brace form previously passed through literally),
-  // then restore the escaped form.
+  // First protect $$VAR/$${VAR} escapes by inserting the placeholder
+  // sandwiched between the two leading dollars — `$$VAR` becomes
+  // `$$<PLACEHOLDER>VAR` — then resolve $VAR and ${VAR} references, then
+  // restore only the placeholders that step 1 introduced (the regex
+  // matches the leading `$$` as part of the consumed sequence and drops
+  // it, yielding the single-`$` literal the escape syntax denotes — and
+  // because user input can never produce a `\0…\0` placeholder without
+  // the surrounding `$$`, the restoration regex never fires on user
+  // input, satisfying US-003 AC3).
   return str
-    .replace(/\$\$(\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)/g, `${DOUBLE_DOLLAR_PLACEHOLDER}$1`)
+    .replace(DOUBLE_DOLLAR_PROTECT_RE, `$$$${DOUBLE_DOLLAR_PLACEHOLDER}$1`)
     .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, varName: string) => resolveOne(varName))
     .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_match, varName: string) => resolveOne(varName))
-    .replace(DOUBLE_DOLLAR_PLACEHOLDER_RE, "$$$1");
+    .replace(DOUBLE_DOLLAR_RESTORE_RE, "$$$1");
 }
