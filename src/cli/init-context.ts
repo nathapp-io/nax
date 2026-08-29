@@ -7,7 +7,7 @@
  */
 
 import { mkdir, readdir } from "node:fs/promises";
-import { basename, join, relative } from "node:path";
+import { basename, join, relative, sep } from "node:path";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { isRelativeAndSafe } from "../utils/path-security";
@@ -76,7 +76,10 @@ async function walkDir(root: string, current: string, out: string[], maxFiles: n
       if (EXCLUDED_DIR_NAMES.has(entry.name)) continue;
       await walkDir(root, join(current, entry.name), out, maxFiles);
     } else if (entry.isFile()) {
-      out.push(relative(root, join(current, entry.name)));
+      // Normalize to forward slashes — `relative` returns platform-native
+      // separators, so on Windows this would otherwise emit `nested\\deep\\a.ts`
+      // and break the repo-relative contract.
+      out.push(relative(root, join(current, entry.name)).replaceAll(sep, "/"));
     }
   }
 }

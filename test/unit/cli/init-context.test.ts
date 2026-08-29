@@ -68,6 +68,10 @@ describe("scanProject — file tree", () => {
         expect(entry.startsWith("/")).toBe(false);
         expect(entry.startsWith(dir)).toBe(false);
         expect(entry.startsWith("./")).toBe(false);
+        // Adversarial: must use forward slashes — the native walker would
+        // emit platform-native separators (e.g. '\\' on Windows), which
+        // would violate the repo-relative contract.
+        expect(entry.includes("\\")).toBe(false);
       }
     });
   });
