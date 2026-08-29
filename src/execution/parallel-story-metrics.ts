@@ -28,6 +28,13 @@ export interface ParallelStoryMetricArgs {
   completedAt: string;
   source: "parallel" | "rectification";
   firstPassSuccess: boolean;
+  /**
+   * Whether the story ultimately succeeded. Defaults to `true` — every existing caller
+   * synthesizes a completed story. A non-rectified merge conflict (BUG-3, nax review
+   * 20260829) is the one case that must record `false`: the story passed its own
+   * pipeline but never landed on the base branch.
+   */
+  success?: boolean;
   /** Rectification spend alone, for a merge-conflict story that was rectified (BUG-37). */
   rectificationCost?: number;
   /** Agent-swap hops recorded for this story during the batch (nax#1709). */
@@ -49,7 +56,7 @@ export function synthesizeParallelStoryMetric(args: ParallelStoryMetricArgs): St
     modelUsed: args.modelUsed,
     attempts: 1,
     finalTier: tier,
-    success: true,
+    success: args.success ?? true,
     cost: args.cost,
     durationMs: args.durationMs,
     firstPassSuccess: args.firstPassSuccess,

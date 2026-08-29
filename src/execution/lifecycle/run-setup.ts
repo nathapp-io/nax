@@ -39,6 +39,8 @@ import { StatusWriter } from "../status-writer";
 /** Injectable deps for run-setup (enables testing without heavy side-effects) */
 export const _runSetupDeps = {
   detectProjectProfile,
+  createRuntime,
+  installCrashHandlers,
 };
 
 /**
@@ -231,7 +233,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   // Passes through the existing sessionManager and options.agentManager (if any)
   // so callers that pre-create an AgentManager for credential validation continue
   // to work (e.g. run-precheck validates credentials before handing off the manager).
-  const runtime = createRuntime(config, workdir, {
+  const runtime = _runSetupDeps.createRuntime(config, workdir, {
     parentSignal: shutdownController.signal,
     sessionManager,
     agentManager: options.agentManager,
@@ -257,248 +259,276 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   // Cleanup stale PIDs from previous crashed runs
   await runtime.pidRegistry.cleanupStale();
 
-  // Install crash handlers for signal recovery (US-007, BUG-1+MEM-1 fix: pass getters, cleanup in finally)
-  const cleanupCrashHandlers = installCrashHandlers({
-    statusWriter,
-    getTotalCost,
-    getIterations,
-    jsonlFilePath: logFilePath,
-    pidRegistry: runtime.pidRegistry,
-    abortController: shutdownController,
-    // @design: BUG-017: Pass context for run.complete event on SIGTERM
-    runId: options.runId,
-    feature: options.feature,
-    featureDir: options.featureDir,
-    getStartTime: () => options.startTime,
-    getTotalStories: options.getTotalStories,
-    getStoriesCompleted: options.getStoriesCompleted,
-    emitError: (reason: string) => {
-      pipelineEventBus.emit({ type: "run:errored", reason, feature: options.feature });
-    },
-    onShutdown: async () => {
-      // force=true: signal-driven shutdown must hard-terminate daemons (acpx stop)
-      // regardless of session state to prevent orphaned acpx/claude/opencode processes.
-      await closeAllRunSessions(sessionManager, options.agentGetFn, { force: true });
-    },
-  });
+  // MEM-1 (nax review 20260829): everything from crash-handler installation onward is
+  // wrapped in this try/catch. runner.ts's own finally (which calls cleanupCrashHandlers()
+  // and runtime.close()) only runs once setupRun has RESOLVED — a throw from any setup
+  // step (loadPRD, initInteractionChain, the .nax/ auto-migration, sweepOrphans, or
+  // anything in the post-lock try below) used to leave SIGTERM/SIGINT/SIGHUP/
+  // uncaughtException/unhandledRejection handlers installed and bound to a run that
+  // never started, and never closed the runtime (agentManager/sessionManager teardown).
+  // In-process consumers (tests, an embedded TUI/watch) then hit stale teardown —
+  // pidRegistry.killAll(), process.exit(130) — on a later signal. This replaces the old
+  // EXEC-2 site-specific cleanupCrashHandlers() call at the lock-acquisition-failure
+  // branch below, which covered only that one throw site.
+  // Not definite-assignment-asserted: installCrashHandlers() itself can throw, so the
+  // catch below genuinely may run before this is assigned. The optional type is what
+  // makes the `cleanupCrashHandlers?.()` call there honest rather than defensive.
+  let cleanupCrashHandlers: (() => void) | undefined;
+  try {
+    // Install crash handlers for signal recovery (US-007, BUG-1+MEM-1 fix: pass getters, cleanup in finally)
+    cleanupCrashHandlers = _runSetupDeps.installCrashHandlers({
+      statusWriter,
+      getTotalCost,
+      getIterations,
+      jsonlFilePath: logFilePath,
+      pidRegistry: runtime.pidRegistry,
+      abortController: shutdownController,
+      // @design: BUG-017: Pass context for run.complete event on SIGTERM
+      runId: options.runId,
+      feature: options.feature,
+      featureDir: options.featureDir,
+      getStartTime: () => options.startTime,
+      getTotalStories: options.getTotalStories,
+      getStoriesCompleted: options.getStoriesCompleted,
+      emitError: (reason: string) => {
+        pipelineEventBus.emit({ type: "run:errored", reason, feature: options.feature });
+      },
+      onShutdown: async () => {
+        // force=true: signal-driven shutdown must hard-terminate daemons (acpx stop)
+        // regardless of session state to prevent orphaned acpx/claude/opencode processes.
+        await closeAllRunSessions(sessionManager, options.agentGetFn, { force: true });
+      },
+    });
 
-  // Load PRD (before try block so it's accessible in finally for onRunEnd)
-  let prd = await loadPRD(prdPath);
+    // Load PRD (before try block so it's accessible in finally for onRunEnd)
+    let prd = await loadPRD(prdPath);
 
-  // Initialize interaction chain (US-008) — do this BEFORE precheck so story size prompts can use it
-  const interactionChain = await initInteractionChain(config, headless);
+    // Initialize interaction chain (US-008) — do this BEFORE precheck so story size prompts can use it
+    const interactionChain = await initInteractionChain(config, headless);
 
-  // ── Prime StatusWriter with PRD so precheck-failed can be recorded ─────────
-  statusWriter.setPrd(prd);
+    // ── Prime StatusWriter with PRD so precheck-failed can be recorded ─────────
+    statusWriter.setPrd(prd);
 
-  // Auto-migrate generated content out of .nax/ if needed (no-op when already migrated)
-  {
-    const { detectGeneratedContent, migrateCommand } = await import("@/commands");
-    const naxDir = path.join(workdir, ".nax");
-    const candidates = await detectGeneratedContent(naxDir).catch(() => []);
-    if (candidates.length > 0) {
-      logger?.info("setup", "Found generated content under .nax/ — migrating to output dir", {
-        storyId: "_setup",
-        count: candidates.length,
-      });
+    // Auto-migrate generated content out of .nax/ if needed (no-op when already migrated)
+    {
+      const { detectGeneratedContent, migrateCommand } = await import("@/commands");
+      const naxDir = path.join(workdir, ".nax");
+      const candidates = await detectGeneratedContent(naxDir).catch(() => []);
+      if (candidates.length > 0) {
+        logger?.info("setup", "Found generated content under .nax/ — migrating to output dir", {
+          storyId: "_setup",
+          count: candidates.length,
+        });
+        try {
+          await migrateCommand({ workdir });
+          logger?.info("setup", "Auto-migration complete", { storyId: "_setup" });
+        } catch (err) {
+          logger?.warn("setup", "Auto-migration failed — continuing without migration", {
+            storyId: "_setup",
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
+
+    // Claim project identity on first run (no-op if already claimed for this workdir)
+    {
+      const { claimProjectIdentity } = await import("@/runtime");
+      let remoteUrl: string | null = null;
       try {
-        await migrateCommand({ workdir });
-        logger?.info("setup", "Auto-migration complete", { storyId: "_setup" });
-      } catch (err) {
-        logger?.warn("setup", "Auto-migration failed — continuing without migration", {
+        const gitResult = Bun.spawnSync(["git", "remote", "get-url", "origin"], { cwd: workdir });
+        if (gitResult.exitCode === 0) {
+          remoteUrl = new TextDecoder().decode(gitResult.stdout).trim() || null;
+        }
+      } catch {
+        /* non-git project — remoteUrl stays null */
+      }
+      const projectKey = config.name?.trim() || path.basename(workdir);
+      await claimProjectIdentity(projectKey, workdir, remoteUrl).catch((err) => {
+        if (err instanceof NaxError && err.code === "RUN_NAME_COLLISION") {
+          throw err;
+        }
+        logger?.warn("setup", "Failed to claim project identity", {
           storyId: "_setup",
           error: err instanceof Error ? err.message : String(err),
         });
-      }
-    }
-  }
-
-  // Claim project identity on first run (no-op if already claimed for this workdir)
-  {
-    const { claimProjectIdentity } = await import("@/runtime");
-    let remoteUrl: string | null = null;
-    try {
-      const gitResult = Bun.spawnSync(["git", "remote", "get-url", "origin"], { cwd: workdir });
-      if (gitResult.exitCode === 0) {
-        remoteUrl = new TextDecoder().decode(gitResult.stdout).trim() || null;
-      }
-    } catch {
-      /* non-git project — remoteUrl stays null */
-    }
-    const projectKey = config.name?.trim() || path.basename(workdir);
-    await claimProjectIdentity(projectKey, workdir, remoteUrl).catch((err) => {
-      if (err instanceof NaxError && err.code === "RUN_NAME_COLLISION") {
-        throw err;
-      }
-      logger?.warn("setup", "Failed to claim project identity", {
-        storyId: "_setup",
-        error: err instanceof Error ? err.message : String(err),
       });
-    });
-  }
-
-  // ── Run precheck validations (unless --skip-precheck) ──────────────────────
-  if (!skipPrecheck) {
-    const { runPrecheckValidation } = await import("./precheck-runner");
-    await runPrecheckValidation({
-      config,
-      prd,
-      workdir,
-      logFilePath,
-      statusWriter,
-      headless,
-      formatterMode,
-      interactionChain,
-      featureName: feature,
-    });
-  } else {
-    logger?.warn("precheck", "Precheck validations skipped (--skip-precheck)");
-  }
-
-  // Phase 3 (#477): stale session sweep via sidecar removed.
-  // Run-level SessionManager now owns orphan sweeps at startup.
-  const sweptOrphans = sessionManager.sweepOrphans();
-  if (sweptOrphans > 0) {
-    logger?.info("session", "Swept orphan sessions at run setup", { sweptOrphans });
-  }
-
-  // Acquire lock to prevent concurrent execution
-  const lockAcquired = await acquireLock(workdir);
-  if (!lockAcquired) {
-    logger?.error("execution", "Another nax process is already running in this directory");
-    logger?.error("execution", "If you believe this is an error, remove nax.lock manually");
-    // EXEC-2: installCrashHandlers ran above, before lock acquisition. This
-    // throw is outside the try/finally below (whose finally calls
-    // cleanupCrashHandlers), so without this call the SIGTERM/SIGINT/
-    // uncaughtException handlers stay installed — bound to a StatusWriter
-    // for a run that never started — for the lifetime of the process (e.g.
-    // in-process consumers like tests or an embedded TUI).
-    cleanupCrashHandlers();
-    throw new LockAcquisitionError(workdir);
-  }
-
-  // Everything after lock acquisition is wrapped in try-catch to ensure
-  // the lock is released if any setup step fails (FIX-H16)
-  try {
-    // ── Detect project profile (US-003) and log explicit vs auto-detected values ──
-    const existingProjectConfig = config.project ?? {};
-    const detectedProfile = await _runSetupDeps.detectProjectProfile(workdir, existingProjectConfig);
-    config.project = detectedProfile;
-
-    // Distinguish explicit config from auto-detected values (AC-4)
-    const explicitFields = Object.keys(existingProjectConfig) as Array<keyof typeof existingProjectConfig>;
-    const autodetectedFields = Object.keys(detectedProfile).filter(
-      (key) => !explicitFields.includes(key as keyof typeof existingProjectConfig),
-    ) as Array<keyof typeof detectedProfile>;
-
-    let projectLogMessage = "";
-    if (explicitFields.length > 0) {
-      const explicitValues = explicitFields.map((field) => `${field}=${existingProjectConfig[field]}`).join(", ");
-      const detectedValues =
-        autodetectedFields.length > 0
-          ? `detected: ${autodetectedFields.map((field) => `${field}=${detectedProfile[field]}`).join(", ")}`
-          : "";
-      projectLogMessage = `Using explicit config: ${explicitValues}${detectedValues ? `; ${detectedValues}` : ""}`;
-    } else {
-      projectLogMessage = `Detected: ${detectedProfile.language ?? "unknown"}/${detectedProfile.type ?? "unknown"} (${detectedProfile.testFramework ?? "none"}, ${detectedProfile.lintTool ?? "none"})`;
     }
-    logger?.info("project", projectLogMessage, {
-      explicit: Object.fromEntries(explicitFields.map((f) => [f, existingProjectConfig[f]])),
-      detected: Object.fromEntries(autodetectedFields.map((f) => [f, detectedProfile[f]])),
-    });
 
-    // Load plugins (before try block so it's accessible in finally)
-    const globalPluginsDir = path.join(globalConfigDir(), "plugins");
-    const projectPluginsDir = path.join(workdir, ".nax", "plugins");
-    const configPlugins = config.plugins || [];
-    // Build a test-file classifier from resolved patterns so the plugin loader
-    // honours custom testFilePatterns (ADR-009) instead of hardcoded TS suffixes.
-    const resolvedPatterns = await resolveTestFilePatterns(config, workdir);
-    const isTestFileFn = (filename: string): boolean => resolvedPatterns.regex.some((re) => re.test(filename));
-    const pluginRegistry = await loadPlugins(
-      globalPluginsDir,
-      projectPluginsDir,
-      configPlugins,
-      workdir,
-      config.disabledPlugins,
-      isTestFileFn,
-      config.reporters,
-    );
-
-    // The LLM routing cache is run-scoped (runtime.routingCache, BUG-19) and
-    // already starts empty for this run — no explicit clear needed here.
-
-    // Log plugins loaded
-    logger?.info("plugins", `Loaded ${pluginRegistry.plugins.length} plugins`, {
-      plugins: pluginRegistry.plugins.map((p) => ({ name: p.name, version: p.version, provides: p.provides })),
-    });
-
-    // Log run start
-    const routingMode = config.routing.llm?.mode ?? "hybrid";
-    logger?.info("run.start", `Starting feature: ${feature} [nax ${NAX_BUILD_INFO}]`, {
-      runId,
-      feature,
-      workdir,
-      dryRun,
-      routingMode,
-      naxVersion: NAX_VERSION,
-      naxCommit: NAX_COMMIT,
-    });
-
-    // on-start hook is now fired by the hooks.ts subscriber via the run:started event
-    // emitted inside executeUnified/executeSequential after bus wiring.
-
-    // Initialize run: check agent, reconcile state, validate limits
-    // Fall back to runtime.agentManager.getAgent when no explicit agentGetFn is
-    // provided (runner.ts derives agentGetFn from runtime only after setupRun returns).
-    const effectiveAgentGetFn = options.agentGetFn ?? runtime.agentManager.getAgent.bind(runtime.agentManager);
-    const { initializeRun } = await import("./run-initialization");
-    const initResult = await initializeRun({
-      config,
-      prdPath,
-      workdir,
-      dryRun,
-      agentGetFn: effectiveAgentGetFn,
-    });
-    prd = initResult.prd;
-    // initializeRun calls loadPRD() internally, producing a new object.
-    // Re-prime statusWriter so crash handlers during the prompt window see current state (#356).
-    statusWriter.setPrd(prd);
-
-    // Warn when any story was planned with an agent profile that has since been removed.
-    warnProfileMismatch(prd, config, logger);
-
-    let counts = initResult.storyCounts;
-
-    // Prompt user for each paused story — skip in headless mode
-    if (counts.paused > 0 && interactionChain !== null) {
-      const { promptForPausedStories } = await import("./paused-story-prompts");
-      const pausedSummary = await promptForPausedStories(
+    // ── Run precheck validations (unless --skip-precheck) ──────────────────────
+    if (!skipPrecheck) {
+      const { runPrecheckValidation } = await import("./precheck-runner");
+      await runPrecheckValidation({
+        config,
         prd,
+        workdir,
+        logFilePath,
+        statusWriter,
+        headless,
+        formatterMode,
         interactionChain,
-        feature,
-        config.execution.storyIsolation,
-      );
-      if (pausedSummary.resumed.length > 0 || pausedSummary.skipped.length > 0) {
-        await savePRD(prd, prdPath);
-        counts = countStories(prd);
-      }
+        featureName: feature,
+      });
+    } else {
+      logger?.warn("precheck", "Precheck validations skipped (--skip-precheck)");
     }
 
-    return {
-      statusWriter,
-      sessionManager,
-      cleanupCrashHandlers,
-      pluginRegistry,
-      prd,
-      storyCounts: counts,
-      interactionChain,
-      shutdownController,
-      runtime,
-    };
+    // Phase 3 (#477): stale session sweep via sidecar removed.
+    // Run-level SessionManager now owns orphan sweeps at startup.
+    const sweptOrphans = sessionManager.sweepOrphans();
+    if (sweptOrphans > 0) {
+      logger?.info("session", "Swept orphan sessions at run setup", { sweptOrphans });
+    }
+
+    // Acquire lock to prevent concurrent execution
+    const lockAcquired = await acquireLock(workdir);
+    if (!lockAcquired) {
+      logger?.error("execution", "Another nax process is already running in this directory");
+      logger?.error("execution", "If you believe this is an error, remove nax.lock manually");
+      // EXEC-2: this throw is caught by the outer try/catch above (MEM-1), whose catch
+      // calls cleanupCrashHandlers() and closes the runtime — no site-specific cleanup
+      // needed here any more.
+      throw new LockAcquisitionError(workdir);
+    }
+
+    // Everything after lock acquisition is wrapped in try-catch to ensure
+    // the lock is released if any setup step fails (FIX-H16)
+    try {
+      // ── Detect project profile (US-003) and log explicit vs auto-detected values ──
+      const existingProjectConfig = config.project ?? {};
+      const detectedProfile = await _runSetupDeps.detectProjectProfile(workdir, existingProjectConfig);
+      config.project = detectedProfile;
+
+      // Distinguish explicit config from auto-detected values (AC-4)
+      const explicitFields = Object.keys(existingProjectConfig) as Array<keyof typeof existingProjectConfig>;
+      const autodetectedFields = Object.keys(detectedProfile).filter(
+        (key) => !explicitFields.includes(key as keyof typeof existingProjectConfig),
+      ) as Array<keyof typeof detectedProfile>;
+
+      let projectLogMessage = "";
+      if (explicitFields.length > 0) {
+        const explicitValues = explicitFields.map((field) => `${field}=${existingProjectConfig[field]}`).join(", ");
+        const detectedValues =
+          autodetectedFields.length > 0
+            ? `detected: ${autodetectedFields.map((field) => `${field}=${detectedProfile[field]}`).join(", ")}`
+            : "";
+        projectLogMessage = `Using explicit config: ${explicitValues}${detectedValues ? `; ${detectedValues}` : ""}`;
+      } else {
+        projectLogMessage = `Detected: ${detectedProfile.language ?? "unknown"}/${detectedProfile.type ?? "unknown"} (${detectedProfile.testFramework ?? "none"}, ${detectedProfile.lintTool ?? "none"})`;
+      }
+      logger?.info("project", projectLogMessage, {
+        explicit: Object.fromEntries(explicitFields.map((f) => [f, existingProjectConfig[f]])),
+        detected: Object.fromEntries(autodetectedFields.map((f) => [f, detectedProfile[f]])),
+      });
+
+      // Load plugins (before try block so it's accessible in finally)
+      const globalPluginsDir = path.join(globalConfigDir(), "plugins");
+      const projectPluginsDir = path.join(workdir, ".nax", "plugins");
+      const configPlugins = config.plugins || [];
+      // Build a test-file classifier from resolved patterns so the plugin loader
+      // honours custom testFilePatterns (ADR-009) instead of hardcoded TS suffixes.
+      const resolvedPatterns = await resolveTestFilePatterns(config, workdir);
+      const isTestFileFn = (filename: string): boolean => resolvedPatterns.regex.some((re) => re.test(filename));
+      const pluginRegistry = await loadPlugins(
+        globalPluginsDir,
+        projectPluginsDir,
+        configPlugins,
+        workdir,
+        config.disabledPlugins,
+        isTestFileFn,
+        config.reporters,
+      );
+
+      // The LLM routing cache is run-scoped (runtime.routingCache, BUG-19) and
+      // already starts empty for this run — no explicit clear needed here.
+
+      // Log plugins loaded
+      logger?.info("plugins", `Loaded ${pluginRegistry.plugins.length} plugins`, {
+        plugins: pluginRegistry.plugins.map((p) => ({ name: p.name, version: p.version, provides: p.provides })),
+      });
+
+      // Log run start
+      const routingMode = config.routing.llm?.mode ?? "hybrid";
+      logger?.info("run.start", `Starting feature: ${feature} [nax ${NAX_BUILD_INFO}]`, {
+        runId,
+        feature,
+        workdir,
+        dryRun,
+        routingMode,
+        naxVersion: NAX_VERSION,
+        naxCommit: NAX_COMMIT,
+      });
+
+      // on-start hook is now fired by the hooks.ts subscriber via the run:started event
+      // emitted inside executeUnified/executeSequential after bus wiring.
+
+      // Initialize run: check agent, reconcile state, validate limits
+      // Fall back to runtime.agentManager.getAgent when no explicit agentGetFn is
+      // provided (runner.ts derives agentGetFn from runtime only after setupRun returns).
+      const effectiveAgentGetFn = options.agentGetFn ?? runtime.agentManager.getAgent.bind(runtime.agentManager);
+      const { initializeRun } = await import("./run-initialization");
+      const initResult = await initializeRun({
+        config,
+        prdPath,
+        workdir,
+        dryRun,
+        agentGetFn: effectiveAgentGetFn,
+      });
+      prd = initResult.prd;
+      // initializeRun calls loadPRD() internally, producing a new object.
+      // Re-prime statusWriter so crash handlers during the prompt window see current state (#356).
+      statusWriter.setPrd(prd);
+
+      // Warn when any story was planned with an agent profile that has since been removed.
+      warnProfileMismatch(prd, config, logger);
+
+      let counts = initResult.storyCounts;
+
+      // Prompt user for each paused story — skip in headless mode
+      if (counts.paused > 0 && interactionChain !== null) {
+        const { promptForPausedStories } = await import("./paused-story-prompts");
+        const pausedSummary = await promptForPausedStories(
+          prd,
+          interactionChain,
+          feature,
+          config.execution.storyIsolation,
+        );
+        if (pausedSummary.resumed.length > 0 || pausedSummary.skipped.length > 0) {
+          await savePRD(prd, prdPath);
+          counts = countStories(prd);
+        }
+      }
+
+      return {
+        statusWriter,
+        sessionManager,
+        cleanupCrashHandlers,
+        pluginRegistry,
+        prd,
+        storyCounts: counts,
+        interactionChain,
+        shutdownController,
+        runtime,
+      };
+    } catch (error) {
+      // Release lock before re-throwing so the directory isn't permanently locked
+      await releaseLock(workdir);
+      throw error;
+    }
   } catch (error) {
-    // Release lock before re-throwing so the directory isn't permanently locked
-    await releaseLock(workdir);
+    // MEM-1 (nax review 20260829): uninstall crash handlers and close the runtime before
+    // propagating — see the rationale comment above the outer try. runtime.close() may
+    // itself throw (e.g. a session already mid-teardown); swallow that so it can never
+    // mask the original setup failure, which is what the caller needs to see.
+    cleanupCrashHandlers?.();
+    try {
+      await runtime.close();
+    } catch (closeError) {
+      getSafeLogger()?.warn("run-setup", "runtime.close() failed during setup-failure cleanup", {
+        storyId: "_setup",
+        error: errorMessage(closeError),
+      });
+    }
     throw error;
   }
 }

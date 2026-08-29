@@ -273,7 +273,11 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     expect(rectM.rectificationCost).toBe(0.04);
   });
 
-  test("non-rectified conflict (rectified: false) does not produce a 'rectification' source entry", async () => {
+  // BUG-3 (nax review 20260829): a non-rectified conflict used to be silently
+  // dropped from allStoryMetrics — invisible to per-agent cost attribution and
+  // the run rollup. It must now appear, marked failed. See
+  // unified-executor.ts's recordMergeConflictOutcomes.
+  test("non-rectified conflict (rectified: false) DOES produce a 'rectification' source entry, marked failed", async () => {
     const failedConflict = makePendingStory("US-FAILRECT");
     const cleanStory = makePendingStory("US-CLEAND");
     const costMap = new Map([
@@ -296,7 +300,8 @@ describe("AC-3 — rectified story StoryMetrics has source 'rectification' and r
     const rectEntry = result.allStoryMetrics.find(
       (m) => m.storyId === failedConflict.id && m.source === "rectification",
     );
-    expect(rectEntry).toBeUndefined();
+    assertDefined(rectEntry, "rectEntry");
+    expect(rectEntry.success).toBe(false);
   });
 
   test("rectified story has firstPassSuccess false", async () => {

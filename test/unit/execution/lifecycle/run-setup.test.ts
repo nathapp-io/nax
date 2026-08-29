@@ -6,8 +6,9 @@
  * receives the auto-detected value.
  */
 
-import { afterAll, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, mock, test } from "bun:test";
 import { rmSync } from "node:fs";
+import { join } from "node:path";
 import {
   assertDefined,
   makeLogger,
@@ -17,7 +18,14 @@ import {
   makeTempDir,
   withDepsRestore,
 } from "@test/helpers";
-import { _runSetupDeps, warnFallbackMisconfiguration, warnProfileMismatch } from "@/execution/lifecycle/run-setup";
+import {
+  _runSetupDeps,
+  type RunSetupOptions,
+  setupRun,
+  warnFallbackMisconfiguration,
+  warnProfileMismatch,
+} from "@/execution/lifecycle/run-setup";
+import type { NaxRuntime } from "@/runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -315,5 +323,79 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
     );
     expect(agentWarns).toHaveLength(1);
     expect(agentWarns[0]?.data).toMatchObject({ storyId: "US-1", agent: "ghost" });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MEM-1 (nax review 20260829): a throw between crash-handler installation and the
+// lock-guarded try/finally must still uninstall the handlers and close the runtime.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("setupRun — MEM-1: setup-phase throw cleans up crash handlers + runtime", () => {
+  const runtimesToClose: NaxRuntime[] = [];
+
+  afterEach(async () => {
+    await Promise.allSettled(runtimesToClose.map((r) => r.close()));
+    runtimesToClose.length = 0;
+  });
+
+  test("a throw before lock acquisition still uninstalls crash handlers and closes the runtime", async () => {
+    const setupWorkdir = makeTempDir("nax-test-runsetup-mem1-");
+
+    let cleanupSpy: ReturnType<typeof mock> | undefined;
+    let closeSpy: ReturnType<typeof mock> | undefined;
+
+    const origInstallCrashHandlers = _runSetupDeps.installCrashHandlers;
+    const origCreateRuntime = _runSetupDeps.createRuntime;
+
+    _runSetupDeps.createRuntime = ((...args: Parameters<typeof origCreateRuntime>) => {
+      const runtime = origCreateRuntime(...args);
+      runtimesToClose.push(runtime);
+      closeSpy = mock(runtime.close.bind(runtime));
+      runtime.close = closeSpy as typeof runtime.close;
+      return runtime;
+    }) as typeof origCreateRuntime;
+
+    _runSetupDeps.installCrashHandlers = ((...args: Parameters<typeof origInstallCrashHandlers>) => {
+      const cleanup = origInstallCrashHandlers(...args);
+      cleanupSpy = mock(cleanup);
+      return cleanupSpy;
+    }) as typeof origInstallCrashHandlers;
+
+    try {
+      // loadPRD throws "PRD file not found" — a real setup-step failure that fires
+      // after installCrashHandlers/createRuntime but before lock acquisition (one of
+      // the unprotected throw sites named by the finding).
+      const options: RunSetupOptions = {
+        prdPath: join(setupWorkdir, "does-not-exist.json"),
+        workdir: setupWorkdir,
+        config: makeNaxConfig(),
+        hooks: { hooks: {} },
+        feature: "mem1-test-feature",
+        dryRun: false,
+        statusFile: join(setupWorkdir, "status.json"),
+        runId: "run-mem1-test",
+        startedAt: new Date().toISOString(),
+        startTime: Date.now(),
+        skipPrecheck: true,
+        headless: true,
+        formatterMode: "quiet",
+        getTotalCost: () => 0,
+        getIterations: () => 0,
+        getStoriesCompleted: () => 0,
+        getTotalStories: () => 0,
+      };
+
+      await expect(setupRun(options)).rejects.toThrow(/PRD file not found/);
+
+      assertDefined(cleanupSpy, "cleanupSpy");
+      assertDefined(closeSpy, "closeSpy");
+      expect(cleanupSpy).toHaveBeenCalledTimes(1);
+      expect(closeSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      _runSetupDeps.installCrashHandlers = origInstallCrashHandlers;
+      _runSetupDeps.createRuntime = origCreateRuntime;
+      rmSync(setupWorkdir, { recursive: true, force: true });
+    }
   });
 });

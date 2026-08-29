@@ -41,6 +41,11 @@ export function makeMutationCheckDeps(overrides: Partial<MutationCheckDeps> = {}
       success: true,
       countsTowardEscalation: true,
       output: "",
+      // BUG-13: "a passing regression run" means tests actually ran and passed —
+      // classifyMutant now treats a zero-evidence SUCCESS as inconclusive
+      // ("errored"), not "survived" (nax review 20260829, issue #1207).
+      passCount: 1,
+      failCount: 0,
     }),
     ...overrides,
   };

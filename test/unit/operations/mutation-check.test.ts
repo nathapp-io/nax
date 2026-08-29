@@ -149,7 +149,16 @@ describe("mutationCheckOp — AC3: surviving mutant (regression SUCCESS)", () =>
         }),
         regression: async (opts) => {
           capturedRegressionCommand = opts.command;
-          return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
+          // BUG-13: SUCCESS needs test-evidence counts or classifyMutant now
+          // treats it as inconclusive ("errored"), not "survived" (#1207).
+          return {
+            status: "SUCCESS" as const,
+            success: true,
+            countsTowardEscalation: true,
+            output: "",
+            passCount: 1,
+            failCount: 0,
+          };
         },
       });
 
@@ -401,9 +410,17 @@ describe("mutationCheckOp — outcomes aggregation (US-003)", () => {
     expect(out.outcomes.killed).toBe(1);
   });
 
-  test("AC12: SUCCESS -> outcomes.survived is 1", async () => {
-    const out = await runWithRegression({ status: "SUCCESS" });
+  test("AC12: SUCCESS with executed tests -> outcomes.survived is 1", async () => {
+    const out = await runWithRegression({ status: "SUCCESS", passCount: 1, failCount: 0 });
     expect(out.outcomes.survived).toBe(1);
+  });
+
+  // BUG-13 (nax review 20260829, #1207): a zero-test SUCCESS run is inconclusive,
+  // not a pass — see classify.test.ts for the unit-level coverage.
+  test("BUG-13: SUCCESS with zero executed tests -> outcomes.errored is 1, not survived", async () => {
+    const out = await runWithRegression({ status: "SUCCESS" });
+    expect(out.outcomes.errored).toBe(1);
+    expect(out.outcomes.survived).toBe(0);
   });
 
   test("AC13: TEST_FAILURE with both counts 0 -> survivors has length 0", async () => {

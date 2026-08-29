@@ -324,11 +324,23 @@ export class Logger {
   }
 
   /**
-   * Close logger (cleanup method for shutdown)
-   * Note: Bun.write handles file operations automatically, no manual cleanup needed
+   * Close logger (cleanup method for shutdown).
+   *
+   * BUG-10 (nax review 20260829): this used to be a no-op on the theory that
+   * "Bun handles file operations automatically" — never true; writes go
+   * through node:fs/promises appendFile (writeToFile above), not Bun.write.
+   * resetLogger() calls close() then nulls the singleton, so whatever sat in
+   * pendingLines (buffered lines not yet claimed by an in-flight async batch)
+   * was silently dropped. This fires in production, not just tests:
+   * bin/nax.ts calls resetLogger() between the plan and run phases of
+   * `nax run --plan`, and the exit handler then reads the NEW instance, so
+   * the plan-phase JSONL tail was unrecoverable. close() is the method that
+   * claims to be cleanup, so it — not just resetLogger() — is the right place
+   * to flush; flushSync() is already the correct call (wired to
+   * process.on("exit") below).
    */
   close(): void {
-    // No-op: Bun handles file operations internally
+    this.flushSync();
   }
 }
 
