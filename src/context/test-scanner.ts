@@ -6,13 +6,30 @@
  * Prevents test duplication across isolated story sessions.
  */
 
-import { stat } from "node:fs/promises";
+import { stat as _nodeStat } from "node:fs/promises";
 import path from "node:path";
 import { Glob } from "bun";
 import { getLogger } from "../logger";
 import { estimateTokens } from "../optimizer/types";
 import { DEFAULT_SCAN_TEST_DIRS, DEFAULT_TS_DERIVE_SUFFIXES, extractTestDirs } from "../test-runners/conventions";
 import { errorMessage } from "../utils/errors";
+
+// ============================================================================
+// Injectable deps
+// ============================================================================
+
+/**
+ * Module-level deps for testability (`_deps` pattern).
+ *
+ * Tests mutate `stat` to inject a fake that records paths or rejects, so
+ * scanTestFiles can be exercised without real filesystem state at every
+ * probe site.
+ *
+ * @internal
+ */
+export const _testScannerDeps = {
+  stat: _nodeStat,
+};
 
 // ============================================================================
 // Types
@@ -218,10 +235,11 @@ async function detectTestDir(workdir: string, resolvedGlobs?: readonly string[])
     candidateDirs.map(async (dir) => {
       const fullPath = path.join(workdir, dir);
       try {
-        // Bun.file().exists() returns false for directories, use shell test -d
-        const proc = Bun.spawn(["test", "-d", fullPath], { stdout: "pipe", stderr: "pipe" });
-        const exitCode = await proc.exited;
-        return exitCode === 0 ? dir : null;
+        // Native stat replaces the previous `test -d` shell probe. A path that
+        // exists but is not a directory (or any stat failure) is treated as
+        // "no test directory" — same disposition the non-zero exit produced.
+        const s = await _testScannerDeps.stat(fullPath);
+        return s.isDirectory() ? dir : null;
       } catch {
         return null;
       }
@@ -271,9 +289,15 @@ export async function scanTestFiles(options: TestScanOptions): Promise<TestFileI
 
   const scanDir = path.join(workdir, testDir);
 
-  // Check directory exists
-  const dirCheck = Bun.spawn(["test", "-d", scanDir], { stdout: "pipe", stderr: "pipe" });
-  if ((await dirCheck.exited) !== 0) {
+  // Check directory exists. A path that exists but is not a directory must
+  // also be treated as "no test directory" — matches the prior `test -d`
+  // non-zero exit disposition.
+  try {
+    const s = await _testScannerDeps.stat(scanDir);
+    if (!s.isDirectory()) {
+      return [];
+    }
+  } catch {
     return [];
   }
 
@@ -315,7 +339,7 @@ export async function scanTestFiles(options: TestScanOptions): Promise<TestFileI
       // describes/tests wastes memory. The 1MB cap mirrors
       // MAX_NEIGHBOR_FILE_SIZE_BYTES in code-neighbor-cache.
       try {
-        const fileStat = await stat(fullPath);
+        const fileStat = await _testScannerDeps.stat(fullPath);
         if (fileStat.size > MAX_TEST_FILE_SIZE_BYTES) {
           getLogger().debug("test-scanner", "File exceeds size cap — skipped without read", {
             path: fullPath,

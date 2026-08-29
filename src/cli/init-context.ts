@@ -6,18 +6,20 @@
  * AI mode (--ai flag): LLM-powered narrative context
  */
 
-import { basename, join } from "node:path";
+import { mkdir, readdir } from "node:fs/promises";
+import { basename, join, relative } from "node:path";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { isRelativeAndSafe } from "../utils/path-security";
+
+const EXCLUDED_DIR_NAMES = new Set(["node_modules", ".git", "dist"]);
 
 async function bunFileExists(path: string): Promise<boolean> {
   return Bun.file(path).exists();
 }
 
 async function bunMkdirp(path: string): Promise<void> {
-  const proc = Bun.spawn(["mkdir", "-p", path]);
-  await proc.exited;
+  await mkdir(path, { recursive: true });
 }
 
 /** Project scan results */
@@ -50,45 +52,33 @@ export interface InitContextOptions {
 
 /**
  * Recursively find all files in a directory, excluding certain paths.
- * Returns relative paths, limited to maxFiles entries.
+ * Returns repo-relative paths, limited to maxFiles entries.
  */
 async function findFiles(dir: string, maxFiles = 200): Promise<string[]> {
-  // Use find command to locate files, excluding common directories
-  try {
-    const proc = Bun.spawnSync(
-      [
-        "find",
-        dir,
-        "-type",
-        "f",
-        "-not",
-        "-path",
-        "*/node_modules/*",
-        "-not",
-        "-path",
-        "*/.git/*",
-        "-not",
-        "-path",
-        "*/dist/*",
-      ],
-      { stdio: ["pipe", "pipe", "pipe"] },
-    );
+  const files: string[] = [];
+  await walkDir(dir, dir, files, maxFiles);
+  return files;
+}
 
-    if (proc.success) {
-      const output = new TextDecoder().decode(proc.stdout);
-      const files = output
-        .trim()
-        .split("\n")
-        .filter((f) => f.length > 0)
-        .map((f) => f.replace(`${dir}/`, ""))
-        .slice(0, maxFiles);
-      return files;
-    }
+async function walkDir(root: string, current: string, out: string[], maxFiles: number): Promise<void> {
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await readdir(current, { withFileTypes: true });
   } catch {
-    // find command failed, use fallback
+    // Fail-open: directory unreadable yields no entries, matching the prior
+    // behavior of the `find` shell-out swallowing its own failure.
+    return;
   }
 
-  return [];
+  for (const entry of entries) {
+    if (out.length >= maxFiles) return;
+    if (entry.isDirectory()) {
+      if (EXCLUDED_DIR_NAMES.has(entry.name)) continue;
+      await walkDir(root, join(current, entry.name), out, maxFiles);
+    } else if (entry.isFile()) {
+      out.push(relative(root, join(current, entry.name)));
+    }
+  }
 }
 
 /**
@@ -351,9 +341,18 @@ export async function initContext(projectRoot: string, options: InitContextOptio
     return;
   }
 
-  // Create nax directory if needed
-  if (!(await bunFileExists(naxDir))) {
+  // Create nax directory. mkdir(..., { recursive: true }) throws EEXIST when
+  // the path is a regular file — that is exactly the failure mode that the
+  // previous spawn-and-ignore-exit-code path was silently turning into an
+  // empty-success result. Surface it as a typed NaxError instead.
+  try {
     await bunMkdirp(naxDir);
+  } catch (err) {
+    throw new NaxError(`initContext: failed to create ${naxDir}: ${(err as Error).message}`, "INIT_ERROR", {
+      stage: "init-context",
+      path: naxDir,
+      cause: err,
+    });
   }
 
   // Scan the project

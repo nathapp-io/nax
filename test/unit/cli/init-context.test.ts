@@ -8,7 +8,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { withTempDir } from "@test/helpers";
+import { assertNaxError, withTempDir } from "@test/helpers";
 import type { ProjectScan } from "@/cli/init-context";
 import { generateContextTemplate, initContext, scanProject } from "@/cli/init-context";
 
@@ -53,6 +53,22 @@ describe("scanProject — file tree", () => {
       const scan = await scanProject(dir);
 
       expect(scan.fileTree.length).toBeLessThanOrEqual(200);
+    });
+  });
+
+  test("US-003 AC1 — fileTree contains repo-relative path with no leading separator or root prefix", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(join(dir, "nested", "deep", "a.ts"), "export {}");
+
+      const scan = await scanProject(dir);
+
+      expect(scan.fileTree).toContain("nested/deep/a.ts");
+      // Ensure no entry contains the absolute root prefix or starts with a separator.
+      for (const entry of scan.fileTree) {
+        expect(entry.startsWith("/")).toBe(false);
+        expect(entry.startsWith(dir)).toBe(false);
+        expect(entry.startsWith("./")).toBe(false);
+      }
     });
   });
 });
@@ -329,6 +345,23 @@ describe("initContext — creates context.md from template", () => {
       const content = await Bun.file(join(dir, ".nax", "context.md")).text();
       expect(content).toContain("scan-test-proj");
       expect(content).toContain("src/index.ts");
+    });
+  });
+
+  test("US-003 AC2 — rejects with NaxError code INIT_ERROR when .nax exists as a regular file", async () => {
+    await withTempDir(async (dir) => {
+      // Place a regular file at the `.nax` path so mkdir must fail.
+      await Bun.write(join(dir, ".nax"), "not a directory");
+
+      let caught: unknown;
+      try {
+        await initContext(dir);
+      } catch (err) {
+        caught = err;
+      }
+
+      assertNaxError(caught, "initContext rejection when .nax is a file");
+      expect((caught as { code: string }).code).toBe("INIT_ERROR");
     });
   });
 });
