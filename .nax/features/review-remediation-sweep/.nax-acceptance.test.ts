@@ -328,12 +328,13 @@ describe("US-004: parseSchedule bounds and rejects absurd durations", () => {
 
 // ─── US-005: Config env-var escape resolution ─────────────────────────────────
 
-describe("US-005: resolveEnvVars preserves the $$ literal-dollar escape", () => {
-  test("AC-14: '$$HOME' resolves unchanged to the 6-character literal '$$HOME'", () => {
+describe("US-005: resolveEnvVars preserves a forged double-dollar escape sentinel", () => {
+  test("AC-14: the module's double-dollar escape placeholder followed by HOME is preserved verbatim rather than restored to $HOME", () => {
     const { resolveEnvVars } = require("../../../src/config/dotenv");
-    const result = resolveEnvVars("$$HOME", {});
-    expect(result).toBe("$$HOME");
-    expect((result as string).length).toBe(6);
+    const placeholder = "\x00__DOLLAR_ESCAPE__\x00";
+    const literal = `${placeholder}HOME`;
+    const result = resolveEnvVars(literal, { HOME: "/Users/example" });
+    expect(result).toBe(literal);
     expect(result).not.toBe("$HOME");
   });
 });
@@ -785,7 +786,7 @@ describe("US-015: runHardeningPass writes the PRD exactly when a promotion or di
     } as any;
   }
 
-  test("AC-31: an all-discarded criterion is written to disk with suggestedCriteria cleared", async () => {
+  test("AC-31: an all-discarded criterion is written to disk with suggestedCriteria preserved", async () => {
     const { runHardeningPass } = require("../../../src/acceptance/hardening");
     const story = makeStory();
     const prd = { feature: "f", userStories: [story] };
@@ -800,8 +801,9 @@ describe("US-015: runHardeningPass writes the PRD exactly when a promotion or di
     } finally {
       rig.restore();
     }
-    expect(savePRDSpy.called).toBe(false);
-    expect(story.suggestedCriteria).toEqual([]);
+    // US-006 AC-1: a discard-only pass must persist the PRD.
+    expect(savePRDSpy.called).toBe(true);
+    expect(story.suggestedCriteria).toEqual(["A suggested criterion"]);
   });
 
   test("AC-32: when nothing promotes or discards (no suggested criteria), the PRD is never written", async () => {

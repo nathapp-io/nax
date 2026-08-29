@@ -258,21 +258,17 @@ async function processPackageGroup(
       result.promoted.push(...actuallyPromoted);
     }
     result.discarded.push(...toDiscard);
-    // Adversarial review: only overwrite story.suggestedCriteria when there
-    // are discarded items to record. The previous behaviour set it to
-    // undefined for two distinct cases — all-promoted (handled, clear is
-    // intentional) and refine-returned-empty (no verdict, clearing was an
-    // in-memory mutation that persistence skipped, leaving the PRD on disk
-    // out of sync with the in-memory state). Preserve the all-promoted
-    // clear to keep existing tests green, and skip the clear entirely when
-    // refine returned nothing — that case is a true no-op pass: the
+    // On an all-promoted pass, clear suggestedCriteria entirely. When any
+    // discards occurred (discard-only or mixed with promotions), trim
+    // suggestedCriteria down to just the still-discarded items — a
+    // promoted item must not linger and get re-refined/re-tested on every
+    // future pass. A refine-returned-nothing pass is a true no-op — the
     // suggestions stay in place, the next run refines them again.
-    if (toDiscard.length > 0) {
-      story.suggestedCriteria = [];
-    } else if (actuallyPromoted.length > 0) {
+    if (actuallyPromoted.length > 0 && toDiscard.length === 0) {
       story.suggestedCriteria = undefined;
+    } else if (toDiscard.length > 0) {
+      story.suggestedCriteria = toDiscard;
     }
-    // else: refine returned no criteria; leave story.suggestedCriteria as-is.
   }
 }
 
@@ -307,7 +303,7 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
       await processPackageGroup(ctx, packageDir, groupStories, detectedLang ?? ctx.config.project?.language, result);
     }
 
-    if (result.promoted.length > 0) {
+    if (result.promoted.length > 0 || result.discarded.length > 0) {
       await _hardeningDeps.savePRD(ctx.prd, ctx.prdPath);
     }
 

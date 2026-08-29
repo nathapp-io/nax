@@ -140,7 +140,12 @@ function escapeAttributeValue(value: string): string {
 }
 
 function escapeResultBody(body: string): string {
-  return body.replace(/<\//g, "<\\/");
+  // Only the exact closing-delimiter sequence is a threat to the AC4
+  // "exactly one closing delimiter" invariant — escaping every `</` in the
+  // body would corrupt legitimate content the agent needs verbatim (HTML/JSX
+  // snippets, `</script>` in a fetched page, etc.) that a tool result may
+  // legitimately carry.
+  return body.replace(/<\/nax_tool_result>/g, "<\\/nax_tool_result>");
 }
 
 function buildContextToolResult(name: string, result: string, status: "ok" | "error" = "ok"): string {

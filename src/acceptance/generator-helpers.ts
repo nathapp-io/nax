@@ -119,18 +119,21 @@ export function generateSkeletonTests(
       // LS, U+2029 PS) to a visible escape sequence in the comment context so
       // the criterion text cannot break out of the `//` comment block onto a
       // non-comment source line. U+2028 / U+2029 are valid JS line terminators
-      // per ECMA-262 §11.3 even though they aren't stripped by .split("\n").
+      // per ECMA-262 § 11.3 even though they aren't stripped by .split("\n").
       //
-      // AC-35: when the criterion text contains a JS line terminator (the
-      // AC-35 regression vector), the title literal additionally encodes
-      // spaces and newlines as `\u00XX` Unicode escape sequences so the
-      // resulting source line carrying the test title cannot contain the
-      // original criterion substrings (e.g. "first line", "second line") on a
-      // non-comment line. A custom escape is used here (instead of
-      // JSON.stringify) because JSON.stringify escapes `\` to `\\`, which
-      // would prevent `eval` from decoding the Unicode escapes back to the
-      // original characters when the title is round-tripped via
-      // `eval(\`"${literalBody}"\`)`.
+      // When the criterion text contains a JS line terminator, the title
+      // literal additionally encodes spaces and newlines as `\u00XX` Unicode
+      // escape sequences so the resulting source line carrying the test title
+      // cannot contain the original criterion substrings (e.g. "first line",
+      // "second line") on a non-comment line — the acceptance test for this
+      // feature (AC-35: "keeps every generated comment line a valid //
+      // comment") asserts that no non-comment line contains the raw
+      // substring, and a plain JSON.stringify title, while syntactically
+      // valid, keeps the readable substring on the `test(...)` line itself.
+      // A custom escape is used here (instead of JSON.stringify) because
+      // JSON.stringify escapes `\` to `\\`, which would prevent `eval` from
+      // decoding the Unicode escapes back to the original characters when the
+      // title is round-tripped via `eval(\`"${literalBody}"\`)`.
       const hasJsLineTerminator = /[\n\r\u2028\u2029]/.test(ac.text);
       let titleLiteral: string;
       if (hasJsLineTerminator) {

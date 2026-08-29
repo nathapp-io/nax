@@ -28,7 +28,7 @@ describe("loadConfig — root schema validation throws coded NaxError (US-004 AC
 
   afterEach(async () => {
     if (root) await rm(root, { recursive: true, force: true });
-    if (originalGlobalDir === undefined) process.env.NAX_GLOBAL_CONFIG_DIR = undefined;
+    if (originalGlobalDir === undefined) delete process.env.NAX_GLOBAL_CONFIG_DIR;
     else process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
   });
 

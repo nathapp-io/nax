@@ -103,6 +103,16 @@ async function listFilesInDir(workdir: string, dir: string): Promise<string[]> {
       detached: true,
     });
 
+    // Start draining concurrently with the exit wait — a child that fills its
+    // pipe's OS buffer before being read would otherwise block on the write
+    // and never reach `exited`, defeating the SIGKILL the timeout relies on.
+    // Must be created BEFORE the exit race below, not after: `new
+    // Response(stream).text()` begins consuming the stream as soon as it is
+    // constructed, so creating it only after `proc.exited` settles leaves the
+    // pipe unread for the whole race window.
+    const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
+    const stderrPromise = new Response(proc.stderr).text().catch(() => "");
+
     // Race `proc.exited` against a hard deadline so a wedged child cannot stall
     // the caller indefinitely. The timer resolves the race directly on expiry
     // — we do NOT rely on SIGKILL causing `proc.exited` to settle, because
@@ -127,12 +137,6 @@ async function listFilesInDir(workdir: string, dir: string): Promise<string[]> {
       }, _directoryScanDeps.timeoutMs);
       proc.exited.then(finish, () => finish(-1));
     });
-
-    // Drain concurrently with the exit wait — a child that fills its pipe's OS
-    // buffer before being read would otherwise block on the write and never
-    // reach `exited`, defeating the SIGKILL the timeout relies on.
-    const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
-    const stderrPromise = new Response(proc.stderr).text().catch(() => "");
 
     if (exitCode === 0) {
       // BUG-2-style: bound the drain. proc.exited resolves when the spawned
