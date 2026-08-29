@@ -442,4 +442,22 @@ describe("parseJestOutput — distinct-file failures are not collapsed (US-005 A
       expect(failure.testName).toBe("renders");
     }
   });
+
+  test("adversarial fix: the SAME file reported under two path forms ('src/foo.spec.ts' vs 'foo.spec.ts') still collapses to one entry", () => {
+    const output = [
+      "FAIL src/components/Button.spec.tsx",
+      "  ● renders",
+      "    Expected 1 to equal 2",
+      "",
+      "FAIL components/Button.spec.tsx",
+      "  ● renders",
+      "    Expected 1 to equal 2",
+      "",
+      "Tests: 1 failed, 0 passed, 1 total",
+    ].join("\n");
+
+    const r = parseTestOutput(output);
+
+    expect(r.failures).toHaveLength(1);
+  });
 });

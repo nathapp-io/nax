@@ -89,6 +89,18 @@ export function parseDiskSpaceOutput(output: string): Check {
     };
   }
 
+  // `Number.parseInt` accepts a leading numeric prefix of a malformed token
+  // (e.g. "250000x" -> 250000), so validate the whole token is digits before
+  // parsing rather than relying on parseInt/isNaN alone.
+  if (!/^\d+$/.test(parts[3])) {
+    return {
+      name: "disk-space-sufficient",
+      tier: "warning",
+      passed: false,
+      message: "Unable to parse disk space output",
+    };
+  }
+
   const availableKB = Number.parseInt(parts[3], 10);
   if (Number.isNaN(availableKB)) {
     return {

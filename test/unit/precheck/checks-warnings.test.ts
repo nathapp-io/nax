@@ -268,6 +268,19 @@ describe("parseDiskSpaceOutput (US-005 AC6)", () => {
     expect(result.passed).toBe(false);
     expect(result.message).not.toContain("NaN");
   });
+
+  test("adversarial fix: a malformed available-space token with a trailing non-digit (e.g. '250000x') is treated as a parse failure, not accepted as 250000", () => {
+    const output = [
+      "Filesystem 1024-blocks Used Available Capacity iused ifree %iused Mounted",
+      "/dev/disk1s1 1000000000 500000000 250000x 50% 1234 5678 10% /",
+    ].join("\n");
+
+    const result = parseDiskSpaceOutput(output);
+
+    expect(result.passed).toBe(false);
+    expect(result.message).not.toContain("NaN");
+    expect(result.message.toLowerCase()).toMatch(/parse|unable|could not/);
+  });
 });
 
 describe("checkDiskSpace (US-005 AC6 — spawn seam)", () => {
