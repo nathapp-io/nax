@@ -3,7 +3,7 @@
   "feature": "review-remediation-sweep",
   "branchName": "feat/review-remediation-sweep",
   "createdAt": "2026-08-29T07:37:12.333Z",
-  "updatedAt": "2026-08-29T07:43:46.799Z",
+  "updatedAt": "2026-08-29T08:14:00.493Z",
   "userStories": [
     {
       "id": "US-001",
@@ -35,7 +35,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/utils/git.ts",
@@ -43,7 +45,11 @@
         "src/utils/process-kill.ts",
         "src/tdd/rollback.ts",
         "src/execution/merge-conflict-rectify.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "bb29436897fd1b49404a8fda0099b12c7d3e62a1"
     },
     {
       "id": "US-002",
@@ -86,6 +92,9 @@
         "src/utils/path-security.ts",
         "src/errors.ts"
       ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
       "outOfScope": [
         "*Symlink-based escape.* A `--package` or `--run-id` value naming a real relative path that is itself a symlink pointing outside the repo is not rejected. `isRelativeAndSafe` deliberately inspects raw path segments without resolving the filesystem — normalising first would collapse `src/../etc/passwd` and hide the `..` segment, which is the documented reason for the segment-wise check. Symlink containment is a distinct check (`safeRealpathForComparison`, used by `validateModulePath`) and applying it here would change the behaviour of every caller of the shared helper.",
         "*Percent-encoded and Unicode-normalised traversal.* These values arrive as process argv and are never URL-decoded or re-normalised on the way to `join`, so an encoded `..` reaches the check as literal text and fails the segment comparison as a non-matching directory name rather than as traversal.",
@@ -130,7 +139,10 @@
         "src/config/dotenv.ts",
         "src/agents/acp/adapter-output.ts",
         "src/errors.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -171,7 +183,10 @@
         "src/config/loader.ts",
         "src/utils/json-file.ts",
         "src/errors.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -222,7 +237,10 @@
           "path": "test/unit/bakeoff/contestant.test.ts",
           "reason": "the test named \"maps total cost -> costUsd, total durationMs -> wallTimeMs, attempts -> tierEscalations\" pins the old mapping in its name. Its assertion is a loose `toBeGreaterThanOrEqual(0)` that survives the change, which is exactly why the name must be corrected rather than left to pass silently: rename it to state that escalations are derived from attempts beyond the first, and tighten the assertion to the exact expected count. Every other assertion in that test is unaffected and must continue to pass."
         }
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -266,7 +284,10 @@
           "path": "test/unit/acceptance/hardening.test.ts",
           "reason": "the test named \"discards failing suggested criteria\" asserts `expect(_hardeningDeps.savePRD).not.toHaveBeenCalled()` for a pass in which one criterion was discarded and none promoted. That is precisely the case AC-1 inverts, so a correct implementation necessarily fails this assertion and, without this authorisation, would have to revert AC-1 to get the suite green. Replace that one assertion with one that `savePRD` was called exactly once. Keep every other assertion in the test unchanged — the discard bookkeeping it pins (`result.discarded`, `story.acceptanceCriteria`, `story.suggestedCriteria`) is still correct and must continue to pass."
         }
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Existing Bun/TypeScript CLI remediation; no greenfield architecture or migration is needed. The six stories are independent local behavioral corrections that must reuse established conventions rather than introduce abstractions. US-001 spans `detectFromFileScan` (`src/test-runners/detect/file-scan.ts:89`), `detectFromDirectoryScan` (`src/test-runners/detect/directory-scan.ts:77`), `rollbackToRef`/`captureSnapshotRef` (`src/tdd/rollback.ts:30,91`), and `rectifyConflictedStory` (`src/execution/merge-conflict-rectify.ts:154`). Existing bounded-process helpers are `gitWithTimeout` (`src/utils/git.ts:71`), `raceWithDeadline` (`src/verification/executor.ts:23`), and `killProcessGroup` (`src/utils/process-kill.ts:28`). Preserve each caller contract: advisory scans return their established null/fallback result, rollback rejects when it cannot complete, and stale ACP-session eviction remains best effort. `rectifyConflictedStory` is used by parallel execution (`src/execution/parallel-batch.ts:109`), so its public signature stays unchanged; the only new exports are the requested US-001 injectable dependency object and exported eviction seam for unit tests.\n\nUS-002 affects `resolveTestFilePatterns` (`src/test-runners/resolver.ts:134`), `initPackage` (`src/cli/init-context.ts:305`), generate command handling (`src/cli/generate.ts:47`), and `curatorCommit` (`src/commands/curator.ts:305`). Reuse `isRelativeAndSafe` (`src/utils/path-security.ts:60`) and `NaxError` (`src/errors.ts:11`) before any join, read, or directory creation; reject empty package paths without attempting filesystem work. This is lexical validation only: do not add symlink containment or mutate shared path-helper semantics.\n\nUS-003 retains `parseSchedule` (`src/schedule/parse.ts:79`) and `buildRunInteractionHandler` (`src/agents/acp/adapter-output.ts:127`) interfaces. The config escape sentinel lives in `src/config/dotenv.ts:143`; context result construction is `buildContextToolResult` (`src/agents/acp/adapter-output.ts:119`). Protect serialized delimiter payloads and attributes without changing the existing runtime/tool-list gate, and preserve ordinary duration parsing while rejecting `Invalid Date` overflow.\n\nUS-004 normalizes error contracts at `loadPRD` (`src/prd/index.ts:55`), `validateStoryId` (`src/prd/validate.ts:24`), and root-config loading/validation (`src/config/loader.ts:293`, `src/config/validate.ts:29`). Retain useful messages and every field-path diagnostic while replacing raw errors with coded `NaxError` instances and required path context. Do not lower the NaxError ratchet baseline.\n\nUS-005 is a set of presentation/projection fixes: cost aggregation (`src/runtime/cost-aggregator.ts`, especially `CostErrorEvent` and `accumulateError`), bakeoff totals (`src/bakeoff/contestant.ts:71`), disk diagnostics (`src/precheck/checks-warnings.ts:43`), Jest output identity (`src/test-runners/parser.ts:189`), and ACP listing (`src/cli/agents.ts:26`). The list must consume `ACP_ADAPTER_NAMES` (`src/agents/acp/agent-entries.ts:61`) rather than modify `KNOWN_AGENT_NAMES`, because `aider` remains intentionally supported in context-generation/config/precheck paths. Update the stale bakeoff test name and its loose assertion as explicitly authorized.\n\nUS-006 changes `runHardeningPass` (`src/acceptance/hardening.ts:260`) and `generateSkeletonTests` (`src/acceptance/generator-helpers.ts:92`): persist every actual PRD mutation (promotion or discard), retain no-write behavior for an unchanged pass, and safely serialize criterion text into TypeScript titles/comments. Update only the specified stale discard assertion. All affected source files have current graph coverage with no recorded indexing issue; relevant tests mirror source directories, including `test/unit/bakeoff/contestant.test.ts`, `test/unit/acceptance/hardening.test.ts`, `test/unit/acceptance/generator-helpers.test.ts`, and tests for the listed modules. Primary risks are changing timeout failure semantics, normalizing traversal before inspection, losing error context/field paths, narrowing the broader agent registry, and escaping text in a way that does not round-trip. APIs and config formats remain compatible; no files are created, no configuration format changes occur, and the only added exports are US-001 test seams.",
