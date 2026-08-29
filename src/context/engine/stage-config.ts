@@ -200,7 +200,12 @@ export const STAGE_CONTEXT_MAP = {
   },
 
   // Autofix — implementer role, tight budget (mechanical fixes)
-  // Declared but not assembled by any site today — see nax#1743.
+  // Declared but not assembled by any site today — see nax#1743. Remains
+  // #1743's untracked fourth key (nax#1758): deliberately unassembled,
+  // declares no pull tools, so it is not subject to the pull-tool
+  // reachability guard. Assembling it would change only role/budget/
+  // providers, not pull-tool wiring — noted here so it is not rediscovered
+  // as a mystery.
   autofix: {
     role: "implementer",
     budgetTokens: 6_000,
@@ -274,13 +279,18 @@ export const STAGE_CONTEXT_MAP = {
     providerIds: PHASE_0_PROVIDERS,
   },
 
-  // Review dialogue — reviewer role; same pull access as semantic review
-  // Declared but not assembled by any site today — see nax#1743.
+  // Review dialogue — reviewer role.
+  // Declared but not assembled by any site today — see nax#1743. nax#1758
+  // resolved the pull-tool question: there is no dispatch seam
+  // (src/review/semantic-debate.ts makes no callOp/assembleForStage call —
+  // the debate builder owns those prompts), and query_feature_context is
+  // already available to the two review stages that ARE assembled
+  // (review-semantic, review-adversarial). Dropped pullToolNames rather
+  // than building a dialogue seam for a capability nothing could deliver.
   "review-dialogue": {
     role: "reviewer",
     budgetTokens: 6_000,
     providerIds: PHASE_0_PROVIDERS,
-    pullToolNames: ["query_feature_context"],
   },
 
   // Debate — reviewer role; static + feature context for multi-agent critique

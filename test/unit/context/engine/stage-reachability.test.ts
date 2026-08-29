@@ -14,9 +14,12 @@
  * Not every key in STAGE_CONTEXT_MAP is checked: the declared-but-unassembled
  * keys autofix, verify, review, acceptance, plan, route and debate carry no
  * pull tools and are intentionally aspirational — see the reachability comment
- * above STAGE_CONTEXT_MAP. `review-dialogue` is the one exception: it declares
- * pull tools AND is unassembled, so it is excluded explicitly below and that
- * exclusion is itself asserted to stay accurate.
+ * above STAGE_CONTEXT_MAP. `review-dialogue` used to be the one exception —
+ * it declared pull tools AND was unassembled — but nax#1758 dropped its
+ * `pullToolNames` (no dispatch seam exists to wire; `query_feature_context`
+ * is already available to the two review stages that ARE assembled). Every
+ * pull-tool-declaring stage in STAGE_CONTEXT_MAP is now reachable, with no
+ * exemptions — this guard fails outright if that regresses.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -72,40 +75,16 @@ function buildReachableStageKeys(): Set<string> {
   return reachable;
 }
 
-/**
- * "review-dialogue" declares `pullToolNames: ["query_feature_context"]` but is
- * not dispatched by any of the three assembly sites today — a real gap, not a
- * false positive in this guard. It is deliberately left unwired (nax#1743
- * spec item 6: annotate-only) rather than fixed here, so it is excluded from
- * the reachability assertion below instead of failing this test on every run.
- * Wiring it (or dropping its pullToolNames) is separate follow-up work.
- */
-const KNOWN_UNREACHABLE_PULL_STAGES = new Set(["review-dialogue"]);
-
-describe("STAGE_CONTEXT_MAP — reachability guard (nax#1743)", () => {
+describe("STAGE_CONTEXT_MAP — reachability guard (nax#1743, nax#1758)", () => {
   const reachable = buildReachableStageKeys();
 
   const stagesWithPullTools = Object.entries(STAGE_CONFIGS)
     .filter(([, config]) => (config.pullToolNames?.length ?? 0) > 0)
-    .map(([stage]) => stage)
-    .filter((stage) => !KNOWN_UNREACHABLE_PULL_STAGES.has(stage));
+    .map(([stage]) => stage);
 
   test("at least one stage declares pull tools (sanity check the fixture isn't vacuous)", () => {
     expect(stagesWithPullTools.length).toBeGreaterThan(0);
   });
-
-  // Keeps the exclusion list above honest: an entry that is no longer a
-  // pull-tool-declaring, unreachable stage is a stale exemption that would
-  // silently shrink this guard's coverage. Delete it from the set instead.
-  test.each([...KNOWN_UNREACHABLE_PULL_STAGES])(
-    "%s is still an unreachable pull-tool stage — otherwise drop it from KNOWN_UNREACHABLE_PULL_STAGES",
-    (stage) => {
-      const config = STAGE_CONFIGS[stage];
-      expect(config).toBeDefined();
-      expect(config?.pullToolNames?.length ?? 0).toBeGreaterThan(0);
-      expect(reachable.has(stage)).toBe(false);
-    },
-  );
 
   test.each(stagesWithPullTools)(
     "%s declares pullToolNames and is reachable from a live assembly site — otherwise its pull tools can never reach an agent",
