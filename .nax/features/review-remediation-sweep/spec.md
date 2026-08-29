@@ -10,17 +10,17 @@ Close 19 verified findings from the 2026-08-29 deep code review (`docs/20260829-
 
 The review verified each of these against source, and the P0/P1 tranche shipped separately. What is left is a long tail with a common shape: in each case the codebase already solves the same problem correctly somewhere else, and one site was missed.
 
-- **Three subprocess spawns have no deadline** while every other spawn in the tree is bounded. A wedged `git` or `acpx` blocks the run with no error and no log.
+- **Five subprocess spawns across three findings have no deadline** — two `git ls-files` scans, the two git calls in TDD rollback, and the `acpx sessions close` eviction — while every other spawn in the tree is bounded. A wedged `git` or `acpx` blocks the run with no error and no log.
 - **Four boundaries accept values they should reject.** A per-package `testFilePatterns` string is iterated character-by-character into per-character globs; `--package` and `curator commit --run-id` are joined into paths unvalidated; a schedule duration overflows to `Invalid Date` and either starts the run immediately or throws an unhandled `RangeError`.
 - **Six error sites throw bare `Error`** where a sibling call in the same file throws `NaxError` with a code, leaving callers unable to branch on failure kind.
-- **Five reported numbers are wrong**: error counts are always zero in three cost breakdowns, escalations are inflated by one per story, disk space renders as `NaNGB`, same-named tests in different suites collapse into one failure, and `nax agents` prints a row for an agent that has no adapter, borrowing another binary's install state and version.
+- **Four reported numbers and one reported status are wrong**: error counts are always zero in three cost breakdowns, escalations are inflated by one per story, disk space renders as `NaNGB`, and same-named tests in different suites collapse into one failure — while `nax agents` prints a row for an agent that has no adapter, borrowing another binary's install state and version.
 - **Two acceptance-pipeline defects waste spend and break generated code**: a discard-only hardening pass never persists, so the next run re-pays the same LLM refine, generate and test spawn — every run, indefinitely; and LLM-refined acceptance-criteria text is interpolated unescaped into generated test source, so a quote or newline produces a syntactically invalid test and the fix loop burns retries on a generator artifact.
 
 None of these is individually urgent. Together they are the difference between a codebase whose conventions are enforced and one where the convention is aspirational.
 
 ## Design
 
-The unifying rule: **each fix mirrors the pattern the codebase already applies elsewhere.** No new abstractions, no new exported symbols, no new files. Every story is a local correction at a site that has a working sibling to copy.
+The unifying rule: **each fix mirrors the pattern the codebase already applies elsewhere.** No new abstractions and no new files. Every story is a local correction at a site that has a working sibling to copy. The only new exported symbols anywhere in this spec are the two test seams US-001 needs in `merge-conflict-rectify.ts`, described under Integration.
 
 ### Integration
 
@@ -49,7 +49,7 @@ All symbols below were opened and verified at the shapes listed.
   - Target: signatures unchanged; both settle under a deadline when git wedges.
 - `rectifyConflictedStory(options: RectifyConflictedStoryOptions): Promise<RectificationResult>` — `src/execution/merge-conflict-rectify.ts:154`.
   - Baseline: its internal `closeStaleAcpSession` calls `typedSpawn` imported inline from `../utils/bun-deps` and awaits `proc.exited` unbounded, with no injection seam.
-  - Target: signature unchanged; the module gains a module-private injectable spawn seam following the `_<module>Deps` convention already used across the codebase, and a hung `acpx` no longer stalls rectification.
+  - Target: `rectifyConflictedStory`'s own signature is unchanged, and a hung `acpx` no longer stalls rectification. Reaching that requires two new module-level exports, which are the single exception to the "no new exported symbols" rule stated above: an injectable deps object following the `_<module>Deps` convention (every existing one — `_fileScanDeps`, `_rollbackDeps`, `_directoryScanDeps` — is exported, because a test in a sibling file cannot stub a module-private binding), and the stale-session eviction step itself, so AC-5 can assert on it directly. Both are test seams, not API surface; no production caller outside this module may use either.
 - `resolveTestFilePatterns` — `src/test-runners/resolver.ts`.
   - Baseline: casts raw per-package JSON to `MonoConfigShape` and passes `testFilePatterns` straight to `validateGlobs`, which iterates it; a string iterates as characters, each passing the per-element check.
   - Target: a non-array `testFilePatterns` is rejected as a configuration error rather than silently degraded.
@@ -79,6 +79,7 @@ All symbols below were opened and verified at the shapes listed.
 | `closeStaleAcpSession` exceeds its deadline | Swallow and continue, matching its existing best-effort contract — it is an eviction optimisation, not a correctness step. |
 | A per-package `testFilePatterns` is not an array of non-empty strings | Raise a `NaxError`. Silently degrading to per-character globs is what this fixes. |
 | `--package` or `--run-id` names an absolute path or escapes the repo | Reject before any path is built. |
+| `--package` is the empty string | Reject. An empty package path silently resolves to the repo root, which is never what the flag means. |
 | A schedule duration is not representable as a date | Reject at parse time with a message naming the accepted forms. |
 
 ## Out of Scope
@@ -151,24 +152,24 @@ Two defects in the acceptance pipeline: one re-pays an LLM round trip every run 
 
 ### Seams
 
-No story introduces a new externally-visible symbol, and no story consumes a symbol another story creates, so there are no cross-story seam invariants. Every acceptance criterion below exercises an entry point that already exists at the shape stated in Integration.
+No story consumes a symbol another story creates, so there are no cross-story seam invariants. US-001 introduces two module-level exports in `merge-conflict-rectify.ts` (an injectable deps object and the stale-session eviction step), but both are test seams consumed only by US-001's own acceptance criteria and by no other story or production caller, so neither needs a cross-story seam invariant. Every other acceptance criterion exercises an entry point that already exists at the shape stated in Integration.
 
 ## Acceptance Criteria
 
 ### US-001 — Bounded subprocess deadlines
 
 1. `[unit]` With `_fileScanDeps.spawn` returning a child whose `exited` promise never settles, `detectFromFileScan(workdir)` settles rather than remaining pending, and resolves to `null`.
-2. `[unit]` With `_directoryScanDeps.spawn` returning a child whose `exited` promise never settles, `detectFromDirectoryScan(workdir)` settles rather than remaining pending, and resolves to `null`.
+2. `[unit]` Against a fixture workdir that contains one of the well-known test directories, and with `_directoryScanDeps.spawn` returning a child whose `exited` promise never settles, `detectFromDirectoryScan(workdir)` settles rather than remaining pending, and the returned source's `path` names that directory. The fixture must contain the directory: `listFilesInDir` is reached only for a directory that `dirExists` confirms, so a fixture without one never invokes the spawn and the test would pass without exercising the deadline at all. The result is not `null` here — an existing-but-unlistable directory takes the empty-extensions fallback glob, so `patterns` is non-empty by construction.
 3. `[unit]` With `_rollbackDeps.spawn` returning a child whose `exited` promise never settles, `rollbackToRef(workdir, ref, null)` rejects rather than remaining pending, and the rejection value is an `Error` whose message names the rollback failure.
 4. `[unit]` With `_rollbackDeps.spawn` returning a child whose `exited` promise never settles, `captureSnapshotRef(workdir, storyId)` rejects rather than remaining pending, and the rejection is a `NaxError` whose `code` is `SNAPSHOT_REF_FAILED`.
-5. `[unit]` With the merge-conflict-rectify module's injectable spawn seam returning a child whose `exited` promise never settles, `rectifyConflictedStory` proceeds past its stale-session eviction step and reaches its pipeline call, rather than remaining pending on the eviction.
+5. `[unit]` With the merge-conflict-rectify module's exported spawn seam returning a child whose `exited` promise never settles, invoking that module's stale-ACP-session eviction settles rather than remaining pending, and resolves without raising — preserving its best-effort contract. The assertion is on the eviction step alone, not on `rectifyConflictedStory`: that function has no dependency seam and performs a real worktree remove and create before the eviction is reached, so driving it from a unit test is not possible without also standing up a git worktree and a full pipeline.
 
 ### US-002 — Path and shape validation at boundaries
 
 1. `[unit]` `resolveTestFilePatterns` reading a per-package config whose `execution.smartTestRunner.testFilePatterns` is the string `test/**/*.ts` rejects with a `NaxError` whose `code` is `INVALID_TEST_GLOB`.
 2. `[unit]` `resolveTestFilePatterns` reading a per-package config whose `execution.smartTestRunner.testFilePatterns` is the array `["test/**/*.ts"]` resolves successfully and yields that single pattern, confirming the new guard admits the valid shape.
 3. `[unit]` `initPackage(repoRoot, "../../evil")` rejects with a `NaxError` before creating any directory, and the rejection names the package argument as the offending value.
-4. `[unit]` Invoking the generate command with a `package` option of `/etc` rejects with a `NaxError` rather than resolving a directory outside the repo.
+4. `[unit]` Invoking the generate command with a `package` option of `/etc` rejects with a `NaxError` rather than silently reinterpreting it as the repo-relative directory `etc`. (`join(workdir, "/etc")` yields `<workdir>/etc`, so an absolute value is swallowed rather than escaping — it is rejected because it is not a relative package path, not because it reaches outside the repo. `../../evil` is the value that genuinely escapes, and AC-3 covers that shape on the sibling command.)
 5. `[unit]` `curatorCommit` called with a `runId` of `../../etc` rejects with a `NaxError` before any file under the run directory is read.
 6. `[unit]` `initPackage(repoRoot, "")` rejects with a `NaxError` rather than resolving to the repo root itself.
 
@@ -181,7 +182,7 @@ No story introduces a new externally-visible symbol, and no story consumes a sym
 
 1. `[unit]` `parseSchedule("999999999999d", now)` returns a result whose `ok` is `false`, and whose `error` names the accepted duration forms.
 2. `[unit]` `parseSchedule("2h", now)` returns a result whose `ok` is `true` and whose `target` is two hours after `now`, confirming the new overflow guard still admits ordinary durations.
-3. `[unit]` Resolving a config whose value is the literal text of the module's double-dollar escape placeholder followed by `HOME` yields that same literal text unchanged, rather than the value of the `HOME` environment variable.
+3. `[unit]` Resolving a config whose value is the literal text of the module's double-dollar escape placeholder followed by `HOME` yields that same literal text unchanged, rather than the string `$HOME`. The forged sentinel is rewritten by the final restore pass, which runs *after* both resolution passes — so the defect corrupts a literal into a different literal and can neither read nor leak the environment variable, matching the review's recorded finding for BUG-35.
 4. `[unit]` A handler from `buildRunInteractionHandler`, built with a non-empty `contextPullTools` and a `contextToolRuntime` whose `callTool` resolves to text that itself includes a `nax_tool_result` closing delimiter, returns an `answer` in which exactly one `nax_tool_result` closing delimiter is present.
 5. `[unit]` The same handler, invoked for a `context-tool` request whose `name` includes a double-quote character, returns an `answer` whose opening `nax_tool_result` delimiter parses to a single `name` attribute whose value equals the request's `name` exactly.
 
