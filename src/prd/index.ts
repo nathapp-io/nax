@@ -56,7 +56,7 @@ export const PRD_MAX_FILE_SIZE = 5 * 1024 * 1024;
 /** Load PRD from file */
 export async function loadPRD(path: string): Promise<PRD> {
   if (!existsSync(path)) {
-    throw new Error(`PRD file not found: ${path}`);
+    throw new NaxError(`PRD file not found: ${path}`, "PRD_NOT_FOUND", { stage: "prd", path });
   }
 
   // Check file size to prevent loading oversized PRDs
@@ -78,7 +78,11 @@ export async function loadPRD(path: string): Promise<PRD> {
     throw new NaxError(`PRD file is corrupt: ${path}`, "PRD_INVALID", { stage: "prd", path, cause: err });
   }
 
-  if (!Array.isArray(prd.userStories)) {
+  // `null` and non-object JSON values parse successfully but have no
+  // `.userStories` — accessing it would raise a native TypeError and bypass
+  // the coded rejection. Guard the top-level shape explicitly so every
+  // malformed-PRD failure surfaces as PRD_INVALID.
+  if (prd === null || typeof prd !== "object" || !Array.isArray(prd.userStories)) {
     throw new NaxError(`PRD file is missing or has a corrupt "userStories" array: ${path}`, "PRD_INVALID", {
       stage: "prd",
       path,

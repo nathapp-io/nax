@@ -72,4 +72,31 @@ describe("loadPRD — loader failure standardization (US-004)", () => {
     const prd = await loadPRD(prdPath);
     expect(prd.userStories).toHaveLength(1);
   });
+
+  // Rectification: a missing PRD must reject with a coded NaxError rather
+  // than a bare Error, matching the rest of the loader's rejection shape.
+  // The userStories-missing and corrupt-JSON sites throw PRD_INVALID; this
+  // site needs a code so callers branch on the failure kind uniformly.
+  test("rejects a missing PRD file with a coded NaxError", async () => {
+    const missingPath = join(testDir, "does-not-exist.json");
+    const err = await loadPRD(missingPath).catch((e: unknown) => e);
+    assertNaxError(err, "loadPRD rejection on missing file");
+    expect(typeof err.code).toBe("string");
+    expect(err.code.length).toBeGreaterThan(0);
+  });
+
+  // Rectification: `null` is valid JSON, so `Bun.file().json()` returns `null`
+  // without throwing. The userStories-array guard then accesses
+  // `null.userStories` and a native TypeError escapes — bypassing the
+  // intended coded PRD_INVALID rejection. The loader must guard the
+  // top-level shape explicitly so callers see the same code as every other
+  // malformed-PRD failure.
+  test("rejects a PRD whose top-level JSON value is null with PRD_INVALID", async () => {
+    await Bun.write(prdPath, "null");
+
+    const err = await loadPRD(prdPath).catch((e: unknown) => e);
+    assertNaxError(err, "loadPRD rejection on null JSON");
+    expect(err.code).toBe("PRD_INVALID");
+    expect(err.context?.path).toBe(prdPath);
+  });
 });
