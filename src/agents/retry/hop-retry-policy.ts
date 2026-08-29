@@ -14,6 +14,7 @@
 import type { AgentManagerConfig } from "@/config";
 import { DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG, DEFAULT_CONFIG } from "@/config";
 import type { AdapterFailure } from "@/context";
+import { resolveIdleWatchdogSettings } from "@/runtime/middleware/idle-watchdog";
 import type { AgentResult, AgentRunOptions } from "../types";
 
 export interface TimeoutRetryConfig {
@@ -82,7 +83,7 @@ export function trySameAgentRetry(
 
   // fail-stale: same-agent retries up to maxRetryAttempts before swap or terminal failure.
   const isFailStale = result.adapterFailure?.outcome === "fail-stale";
-  const maxStaleRetries = config.agent?.idleWatchdog?.maxRetryAttempts ?? 3;
+  const maxStaleRetries = resolveIdleWatchdogSettings(config.agent?.idleWatchdog).maxRetryAttempts;
   if (isFailStale && result.adapterFailure?.retriable && staleRetryAttempts < maxStaleRetries) {
     const newAttempts = staleRetryAttempts + 1;
     return {

@@ -15,16 +15,19 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
-import type { AgentRunOptions } from "@/agents";
+import { makeNaxConfig, makeSparseNaxConfig } from "@test/helpers";
+import type { AgentResult, AgentRunOptions } from "@/agents";
 import {
   extractTimeoutRetryConfig,
   resolveTimeoutRetryOptions,
+  type SameAgentRetryState,
   type TimeoutRetryConfig,
   timeoutRetryShouldRetry,
+  trySameAgentRetry,
 } from "@/agents";
 import { DEFAULT_CONFIG } from "@/config";
 import { agentManagerConfigSelector } from "@/config/selectors";
+import type { AdapterFailure } from "@/context/engine";
 
 const TIMEOUT_RETRY_DEFAULTS: TimeoutRetryConfig = {
   maxAttempts: 1,
@@ -94,5 +97,66 @@ describe("timeoutRetryShouldRetry — attempt-counter enforcement", () => {
 
   test("boundary: maxAttempts=0 → no retry even at attempts=0", () => {
     expect(timeoutRetryShouldRetry(0, { maxAttempts: 0, budgetMultiplier: 0.5 })).toBe(false);
+  });
+});
+
+/**
+ * US-005 — `trySameAgentRetry` reads `maxRetryAttempts` from the shared
+ * `resolveIdleWatchdogSettings` SSOT rather than the inline `?? 3` default.
+ *
+ * The default cap (3) lives in `DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG`. When
+ * `agent.idleWatchdog` is absent, the policy must still cap stale-retry at 3,
+ * and at attempt 3 it must return `null` (no other arm matches `fail-stale`).
+ */
+
+const FAIL_STALE_RETRIABLE: AdapterFailure = {
+  category: "availability",
+  outcome: "fail-stale",
+  retriable: true,
+  message: "idle watchdog cancelled prompt due to no stream activity",
+};
+
+function makeFailStaleResult(): AgentResult {
+  return {
+    success: false,
+    exitCode: 1,
+    output: "",
+    rateLimited: false,
+    durationMs: 0,
+    estimatedCostUsd: 0,
+    adapterFailure: FAIL_STALE_RETRIABLE,
+  };
+}
+
+function makeState(overrides: Partial<SameAgentRetryState> = {}): SameAgentRetryState {
+  return {
+    staleRetryAttempts: 0,
+    timeoutRetryAttempts: 0,
+    adapterErrorRetries: 0,
+    currentRunOptions: makeRunOptions(),
+    ...overrides,
+  };
+}
+
+describe("trySameAgentRetry — fail-stale cap comes from the shared SSOT default", () => {
+  test("AC6: staleRetryAttempts=2 with no agent.idleWatchdog block returns outcome 'stale-retry'", () => {
+    const sparse = makeSparseNaxConfig({});
+    const config = agentManagerConfigSelector.select(sparse);
+    const decision = trySameAgentRetry(makeFailStaleResult(), makeState({ staleRetryAttempts: 2 }), {
+      config,
+      requestRunOptions: makeRunOptions(),
+    });
+    expect(decision).not.toBeNull();
+    expect(decision?.outcome).toBe("stale-retry");
+  });
+
+  test("AC7: staleRetryAttempts=3 with no agent.idleWatchdog block returns null (shared cap is 3)", () => {
+    const sparse = makeSparseNaxConfig({});
+    const config = agentManagerConfigSelector.select(sparse);
+    const decision = trySameAgentRetry(makeFailStaleResult(), makeState({ staleRetryAttempts: 3 }), {
+      config,
+      requestRunOptions: makeRunOptions(),
+    });
+    expect(decision).toBeNull();
   });
 });

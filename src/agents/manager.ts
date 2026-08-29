@@ -18,6 +18,7 @@ import type { MiddlewareContext } from "../runtime/agent-middleware";
 import { MiddlewareChain } from "../runtime/agent-middleware";
 import type { IDispatchEventBus } from "../runtime/dispatch-events";
 import { DispatchEventBus } from "../runtime/dispatch-events";
+import { resolveIdleWatchdogSettings } from "../runtime/middleware/idle-watchdog";
 import { cancellableDelay } from "../utils/bun-deps";
 import { classifyCompleteException } from "./complete-exception-classifier";
 import { resolveStartAgent, StoryHopBudget } from "./hop-budget";
@@ -459,7 +460,7 @@ export class AgentManager implements IAgentManager {
     let currentAgent = primaryAgent;
     let hopsSoFar = this._budget.spent(options.storyId);
     let staleRetryAttempts = 0;
-    const maxStaleRetries = this._config.agent?.idleWatchdog?.maxRetryAttempts ?? 3;
+    const maxStaleRetries = resolveIdleWatchdogSettings(this._config.agent?.idleWatchdog).maxRetryAttempts;
 
     const _opStartMs = Date.now();
     const _agentChain: string[] = [primaryAgent];
